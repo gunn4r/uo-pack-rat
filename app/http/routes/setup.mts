@@ -82,7 +82,7 @@ export function routes(ctx: ServerContext): Route[] {
       // yes or no about a folder the user picked, and validateScriptsDir's own messages name the
       // path they probed — which made that yes/no a filesystem oracle for any absolute path on the
       // machine (the body cap above is what bounds the path's length).
-      const result = validateScriptsDir(dir, adapter);
+      const result = validateScriptsDir(dir, adapter, ADAPTERS_DIR);
       if (!result.ok) return send(res, 400, { ok: false, error: NO_CLIENT_FOLDER });
       return send(res, 200, { ok: true, scriptsDir: result.scriptsDir, installed: installedVersion(result.scriptsDir, adapter) });
     } },
@@ -104,7 +104,7 @@ export function routes(ctx: ServerContext): Route[] {
       // statSync().isDirectory() stood between it and the copy loop. What gets written to (and
       // persisted as the configured client) is validateScriptsDir's RESOLVED path, so a caller that
       // names a client root gets the nested scripts folder locate would have returned, not the root.
-      const located = validateScriptsDir(scriptsDir, adapter);
+      const located = validateScriptsDir(scriptsDir, adapter, ADAPTERS_DIR);
       if (!located.ok) return send(res, 400, { ok: false, error: NO_CLIENT_FOLDER, code: "badDir" });
       const destDir = located.scriptsDir;
       // bridgeStatusPath is THIS adapter's own bridge status (the one whose scripts are about to be

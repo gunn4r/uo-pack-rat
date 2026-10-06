@@ -1,6 +1,6 @@
 // installer.test.mts — `app/installer.mts`: adapter discovery, client-folder detection, script install, the data-folder check and the update check.
 //
-// `app/installer.mts`: `listAdapters` against the real `adapters/tazuo/` folder (copied into a temp dir, not a hand-built fixture) and, since Phase 6, also against the real `adapters/classicuo-web/` folder (`transport: "paste"`, no scripts to install) and both `adapters/tazuo/` + `adapters/razor-enhanced/` side by side (proving one adapter's install never copies another's scripts into the destination); `candidateClientRoots`/`validateScriptsDir`'s folder-detection forms, including that `candidateClientRoots` proposes nothing at all for `razor-enhanced` on any platform (it has no fixed install location — see `adapters/razor-enhanced/README.md`'s "What's still outstanding") while `validateScriptsDir` still accepts a hand-picked folder for it; `installedVersion`; `installScripts` (the running-script 409 guard, `.new`-then-rename, `packrat-paths.json` written last, a bad/traversal adapter id rejected, and — Phase 6 — a paste-transport adapter refused with code `noInstall` before touching the filesystem); and `repoFromPackage`/`checkForUpdates` (every `package.json` `repository` shape, an injected `fetchImpl` — no real network in this file). All `[fast]`. `checkScriptsDataDir` (issue #39), temp folders only: match, mismatch, a missing `packrat-paths.json` (and an empty/absent `dataDir`) compared against the scripts' `~/.pack-rat` default, malformed files (bad JSON, an array, a non-string `dataDir`, one past the 64 KiB read cap) reported rather than thrown, a symlinked file not followed, the same folder written differently (trailing slash, `~`, `..`, a symlink either side, case on darwin/win32 but not linux), no client, a folder with no Pack Rat script, and an auto-detected folder where any matching candidate wins, a later mismatch not hidden behind an earlier unreadable file, and a UNC or device `dataDir` giving no verdict without being touched. `installScripts` also gets a regression test that a symlinked `packrat-paths.json` naming another folder is refused, not read through and reported "kept" (`readHead` now checks `lstat` before opening, since win32 has no `O_NOFOLLOW`). The retired `packrat-refresh.py` (renamed `packrat-character-refresh.py` in TazUO 2.12.0 and Razor Enhanced 1.10.0, issue #10) removed on install when its first line is that adapter's own, and any other file of that name (another adapter's header included), a symlink or a folder left alone.
+// `app/installer.mts`: `listAdapters` against the real `adapters/tazuo/` folder (copied into a temp dir, not a hand-built fixture) and, since Phase 6, also against the real `adapters/classicuo-web/` folder (`transport: "paste"`, no scripts to install) and both `adapters/tazuo/` + `adapters/razor-enhanced/` side by side (proving one adapter's install never copies another's scripts into the destination); `candidateClientRoots`/`validateScriptsDir`'s folder-detection forms, including that `candidateClientRoots` proposes nothing at all for `razor-enhanced` on any platform (it has no fixed install location — see `adapters/razor-enhanced/README.md`'s "What's still outstanding") while `validateScriptsDir` still accepts a hand-picked folder for it; `installedVersion`; `installScripts` (the running-script 409 guard, `.new`-then-rename, `packrat-paths.json` written last, a bad/traversal adapter id rejected, and — Phase 6 — a paste-transport adapter refused with code `noInstall` before touching the filesystem); and `repoFromPackage`/`checkForUpdates` (every `package.json` `repository` shape, an injected `fetchImpl` — no real network in this file). All `[fast]`. `checkScriptsDataDir` (issue #39), temp folders only: match, mismatch, a missing `packrat-paths.json` (and an empty/absent `dataDir`) compared against the scripts' `~/.pack-rat` default, malformed files (bad JSON, an array, a non-string `dataDir`, one past the 64 KiB read cap) reported rather than thrown, a symlinked file not followed, the same folder written differently (trailing slash, `~`, `..`, a symlink either side, case on darwin/win32 but not linux), no client, a folder with no Pack Rat script, and an auto-detected folder where any matching candidate wins, a later mismatch not hidden behind an earlier unreadable file, and a UNC or device `dataDir` giving no verdict without being touched. `installScripts` also gets a regression test that a symlinked `packrat-paths.json` naming another folder is refused, not read through and reported "kept" (`readHead` now checks `lstat` before opening, since win32 has no `O_NOFOLLOW`). The retired `packrat-refresh.py` (renamed `packrat-character-refresh.py` in TazUO 2.12.0 and Razor Enhanced 1.10.0, issue #10) removed on install when its first line is that adapter's own, and any other file of that name (another adapter's header included), a symlink or a folder left alone. Everything per client comes from the manifest's `install` section: TazUO's running refusal word for word from its `stopHint`, an adapter's own `candidateRoot` and `scriptsSuffix` read from the `adaptersDir` passed in, and the `register` step (`"none"` installs exactly the scripts; a step this build lacks is refused before anything is written).
 //
 // Temp folders only, and no real network: checkForUpdates takes an injected fetchImpl in every test here.
 import { test } from "node:test";
@@ -12,14 +12,18 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import {
   listAdapters, candidateClientRoots, validateScriptsDir, installedVersion, installScripts,
-  repoFromPackage, checkForUpdates, checkScriptsDataDir, pasteScanner, RUNNING_MESSAGE, RUNNING_MESSAGE_OTHER,
+  repoFromPackage, checkForUpdates, checkScriptsDataDir, pasteScanner, RUNNING_MESSAGE_OTHER,
 } from "./installer.mts";
+import type { AdapterManifestV1 } from "./schema/types.d.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REAL_ADAPTERS_DIR = join(HERE, "..", "adapters");
 // Read, never hard-coded: an adapter version bump must not need an edit here.
 const TAZUO_VERSION = (JSON.parse(readFileSync(join(REAL_ADAPTERS_DIR, "tazuo", "capabilities.json"), "utf8")) as { version: string }).version;
 const tmp = (prefix: string): string => mkdtempSync(join(tmpdir(), prefix));
+// TazUO's running refusal, word for word: the installer builds it from the manifest's stopHint now, and this pins that the
+// player still reads exactly what the hard-coded message said.
+const RUNNING_MESSAGE = 'a Pack Rat script is running in the client — type -stopall in game, wait for "No scripts are currently running", then retry';
 
 // Creating a symlink needs elevated privilege (or Developer Mode) on Windows, and a FIFO can't be
 // created there at all — the Phase 7 path-handling tests below pin behaviour against exactly those
@@ -59,6 +63,14 @@ function fakeWebAdapterDir() {
   const dir = tmp("qm-installer-web-adapter-");
   cpSync(join(REAL_ADAPTERS_DIR, "classicuo-web"), join(dir, "classicuo-web"), { recursive: true });
   return dir;
+}
+
+// Rewrites a copied adapter's capabilities.json, for the tests that need a manifest the shipped adapters don't have.
+function editManifest(adapterDir: string, change: (m: AdapterManifestV1) => void): void {
+  const path = join(adapterDir, "capabilities.json");
+  const manifest = JSON.parse(readFileSync(path, "utf8")) as AdapterManifestV1;
+  change(manifest);
+  writeFileSync(path, JSON.stringify(manifest));
 }
 
 // ---- listAdapters -----------------------------------------------------------------------------------
@@ -156,10 +168,10 @@ test("[fast] candidateClientRoots returns [] for an unknown adapter or a missing
 });
 
 // Razor Enhanced has no fixed install location (its own official docs say only "unpack in your own
-// folder, run Razor.exe" — see app/installer.mts's NESTED_SCRIPTS_SUFFIX comment), so unlike tazuo it
-// has no entry in CANDIDATE_ROOT_NAME and candidateClientRoots must propose nothing for it — on any
-// platform, even win32, and even when a folder that would match one of its NESTED_SCRIPTS_SUFFIX
-// shapes actually exists. The manual folder picker (validateScriptsDir, below) is the only path.
+// folder, run Razor.exe" — see adapters/razor-enhanced/README.md), so unlike tazuo its manifest names
+// no install.candidateRoot and candidateClientRoots must propose nothing for it — on any platform,
+// even win32, and even when a folder that would match one of its install.scriptsSuffix shapes
+// actually exists. The manual folder picker (validateScriptsDir, below) is the only path.
 test("[fast] candidateClientRoots proposes nothing for razor-enhanced (no known install location), on any platform", () => {
   const home = "C:\\Users\\example";
   const scripts = join(home, "Desktop", "CUOLauncher", "Razor", "Scripts");
@@ -173,7 +185,7 @@ test("[fast] candidateClientRoots proposes nothing for razor-enhanced (no known 
 // Phase 6 final review follow-up: the platform gate is now data-driven (an `adapterPlatform` param,
 // fed from the adapter's own capabilities.json via listAdapters — see docs/adapter-guide.md's
 // "Platform restriction"), not a hard-coded `adapter === "razor-enhanced"` check. razor-enhanced
-// itself can't prove this in isolation (it has no CANDIDATE_ROOT_NAME entry at all, so it always
+// itself can't prove this in isolation (its manifest has no candidateRoot at all, so it always
 // returns [] regardless of platform — the test above already covers that path). This exercises the
 // adapterPlatform parameter directly, using tazuo (which DOES have a real candidate path) as the
 // vehicle, to prove the gate itself works for any adapter a future capabilities.json restricts.
@@ -191,6 +203,21 @@ test("[fast] candidateClientRoots gates on the adapterPlatform param, not a hard
   // Omitting adapterPlatform entirely (the default) behaves exactly as before — no gating at all.
   const unrestricted = candidateClientRoots({ adapter: "tazuo", home, platform: "darwin", env: {}, exists });
   assert.deepEqual(unrestricted, [legionScripts]);
+});
+
+// The folder shapes and the root name are the manifest's install section, not a table in the installer: a new
+// client gets candidates and a working folder picker from its capabilities.json alone.
+test("[fast] candidateClientRoots and validateScriptsDir read an adapter's own install section from adaptersDir", () => {
+  const adaptersDir = tmp("qm-manifest-adapters-");
+  cpSync(join(REAL_ADAPTERS_DIR, "tazuo"), join(adaptersDir, "orion"), { recursive: true });
+  editManifest(join(adaptersDir, "orion"), (m) => { m.install.candidateRoot = "Orion"; m.install.scriptsSuffix = [["Scripts"]]; });
+  const home = "/Users/example";
+  const scripts = join(home, "Documents", "Orion", "Scripts");
+  assert.deepEqual(candidateClientRoots({ adapter: "orion", home, platform: "darwin", env: {}, exists: (p) => p === scripts, adaptersDir }), [scripts]);
+  assert.deepEqual(candidateClientRoots({ adapter: "orion", home, platform: "darwin", env: {}, exists: () => true }), [], "the bundled adapters folder has no orion");
+  const picked = tmp("qm-manifest-picked-");
+  mkdirSync(join(picked, "Scripts"));
+  assert.deepEqual(validateScriptsDir(picked, "orion", adaptersDir), { ok: true, scriptsDir: join(picked, "Scripts") });
 });
 
 // ---- validateScriptsDir -------------------------------------------------------------------------------
@@ -217,8 +244,8 @@ test("[fast] validateScriptsDir rejects a file and a missing dir", () => {
   assert.equal(validateScriptsDir(null, "tazuo").ok, false);
 });
 
-// Post-review fix (security, Phase 7): both NESTED_SCRIPTS_SUFFIX and CANDIDATE_ROOT_NAME are plain
-// object literals, so a prototype-chain key used to resolve to something truthy and defeat the
+// Post-review fix (security, Phase 7): the per-adapter folder shapes and root names used to be plain
+// object literals, so a prototype-chain key resolved to something truthy and defeated the
 // fallback — validateScriptsDir("/tmp", "constructor") threw "suffixes.map is not a function" and
 // candidateClientRoots threw ERR_INVALID_ARG_TYPE out of path.join, instead of the documented
 // not-found result. Neither is reachable through a route (every one checks the id against
@@ -476,6 +503,7 @@ test("[fast] installScripts' running refusal names Razor Enhanced's own stop ste
 test("[fast] installScripts' running refusal for a client it has no wording for names no client's command", () => {
   const adaptersDir = tmp("qm-is-running-other-adapters-");
   cpSync(join(REAL_ADAPTERS_DIR, "tazuo"), join(adaptersDir, "orion"), { recursive: true });
+  editManifest(join(adaptersDir, "orion"), (m) => { delete m.install.stopHint; });
   const sp = statusPath(tmp("qm-is-running-other-"));
   writeFileSync(sp, JSON.stringify({ alive: new Date(Date.now() - 10_000).toISOString() }));
   const result = installScripts({ adapter: "orion", adaptersDir, scriptsDir: tmp("qm-is-running-other-dest-"), dataDir: tmp("qm-is-data-"), bridgeStatusPath: sp });
@@ -678,6 +706,24 @@ test("[fast] installScripts refuses a paste-transport adapter with code noInstal
   assert.equal(result.code, "noInstall", JSON.stringify(result));
   assert.match(result.error, /nothing to install/);
   assert.deepEqual(readdirSync(scriptsDir), [], "nothing was written for a paste-transport adapter");
+});
+
+// install.register names the client-specific step an install runs once the scripts are in place (issue #157 adds Razor
+// Enhanced's profile registration there). "none" installs exactly the scripts; a step this build lacks installs nothing.
+test("[fast] installScripts runs the \"none\" registrar as a plain install, and refuses a registrar it does not have before writing", () => {
+  const adaptersDir = fakeAdaptersDir();
+  const scriptsDir = tmp("qm-is-register-none-");
+  const result = installScripts({ adapter: "tazuo", adaptersDir, scriptsDir, dataDir: tmp("qm-is-data-"), bridgeStatusPath: join(scriptsDir, "no-status.json") });
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.deepEqual(readdirSync(scriptsDir).sort(), [...result.installed!, "packrat-paths.json"].sort());
+
+  editManifest(join(adaptersDir, "tazuo"), (m) => { (m.install as { register: string }).register = "razor-profiles"; });
+  const refusedDir = tmp("qm-is-register-unknown-");
+  const refused = installScripts({ adapter: "tazuo", adaptersDir, scriptsDir: refusedDir, dataDir: tmp("qm-is-data-"), bridgeStatusPath: join(refusedDir, "no-status.json") });
+  assert.equal(refused.ok, false);
+  assert.equal(refused.code, "badAdapter");
+  assert.match(refused.error!, /razor-profiles/);
+  assert.deepEqual(readdirSync(refusedDir), [], "nothing was written");
 });
 
 // Post-review fix (security, Phase 7): the temp file each script is copied through is randomly named

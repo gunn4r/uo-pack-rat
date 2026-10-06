@@ -1,6 +1,6 @@
 // contracts.test.mts — folds every adapter's fixture.scan.json against its own capabilities.json, checking the two agree with each other and with the shared scan and bridge schemas.
 //
-// walks every `adapters/<id>/` directory that ships both `capabilities.json` and `fixture.scan.json` (today: `adapters/tazuo/`, and `adapters/razor-enhanced/`, whose fixture comes from the fake client) and checks, with no adapter-specific code: `capabilities.json` validates against the scan schema's `adapter.capabilities` shape; `fixture.scan.json` validates against the full `scan.v2.schema.json`; the fixture folds into a character with at least one nested container and at least one worn item located on it; and `capabilities.json`'s `capabilities` object (and its `features`) is deep-equal to the fixture's own `adapter.capabilities` (and `adapter.features`); every declared feature is one the app gates on, and an adapter with a bridge declares the `protocol` the app writes (catches a script's `CAPABILITIES` dict, its `capabilities.json`, and its fixture drifting apart from each other). Every ground root in a fixture carries its tooltip, with a Contents line, and a facet (issue #11). A guard test fails the whole suite if no adapter directory ships a contract at all. Also covers `app/schema/bridge.v1.schema.json` directly: the documented command/result/status examples (including a `stopped: true` status) validate, and an unknown `action` is rejected. See `docs/adapter-guide.md` for what shipping a contract requires.
+// walks every `adapters/<id>/` directory that ships both `capabilities.json` and `fixture.scan.json` (today: `adapters/tazuo/`, and `adapters/razor-enhanced/`, whose fixture comes from the fake client) and checks, with no adapter-specific code: the whole `capabilities.json` validates against `app/schema/adapter-manifest.v1.schema.json` and names its own folder, a folder adapter's `install` section lists its scripts folders and a paste adapter's holds only `register`; its `capabilities` object validates against the scan schema's `adapter.capabilities` shape; `fixture.scan.json` validates against the full `scan.v2.schema.json`; the fixture folds into a character with at least one nested container and at least one worn item located on it; and `capabilities.json`'s `capabilities` object (and its `features`) is deep-equal to the fixture's own `adapter.capabilities` (and `adapter.features`); every declared feature is one the app gates on, and an adapter with a bridge declares the `protocol` the app writes (catches a script's `CAPABILITIES` dict, its `capabilities.json`, and its fixture drifting apart from each other). Every ground root in a fixture carries its tooltip, with a Contents line, and a facet (issue #11). A guard test fails the whole suite if no adapter directory ships a contract at all. Also covers `app/schema/bridge.v1.schema.json` directly: the documented command/result/status examples (including a `stopped: true` status) validate, and an unknown `action` is rejected. See `docs/adapter-guide.md` for what shipping a contract requires.
 //
 // An "adapter" here is any directory under adapters/ that ships both a capabilities.json and a fixture.scan.json; a future adapter picks these tests up for free just by shipping those two files. With app/scan-schema.test.mts, app/rules.test.mts and app/bridge-trip.test.mts it keeps the contracts in docs/scan-schema.md, docs/bridge-protocol.md and docs/shard-rules.md honest against the code that ships.
 import { test } from "node:test";
@@ -13,7 +13,7 @@ import { BRIDGE_PROTOCOL } from "./bridge-contract.mts";
 import { BAG_TAKES } from "./organize.mts";
 import { SCAN_V2_SCHEMA } from "./scan-schema.mts";
 import { foldSnapshots, setRules } from "./vault-lib.mts";
-import type { RulesV1, ScanV2, ScanV2AdapterCapabilities } from "./schema/types.d.mts";
+import type { AdapterManifestV1, RulesV1, ScanV2, ScanV2AdapterCapabilities } from "./schema/types.d.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = dirname(HERE);
@@ -32,6 +32,8 @@ const adapterDirs = existsSync(ADAPTERS_DIR)
 const BRIDGE_SCHEMA = JSON.parse(readFileSync(join(HERE, "schema", "bridge.v1.schema.json"), "utf8")) as { command: ValidatorSchema; result: ValidatorSchema; status: ValidatorSchema };
 // The Organize trip (issue #11): its own shape, written only by app/bridge-trip.mts's queueTrip.
 const TRIP_SCHEMA = JSON.parse(readFileSync(join(HERE, "schema", "bridge-trip.v1.schema.json"), "utf8")) as ValidatorSchema;
+// The whole capabilities.json (its capabilities object is the scan schema's, checked below).
+const MANIFEST_SCHEMA = JSON.parse(readFileSync(join(HERE, "schema", "adapter-manifest.v1.schema.json"), "utf8")) as ValidatorSchema;
 
 // capabilities.json's own shape (app/installer.mts's AdapterInfo reads more of it; this file only ever
 // reads .capabilities off it).
@@ -51,6 +53,16 @@ for (const name of adapterDirs) {
   const dir = join(ADAPTERS_DIR, name);
   const capsPath = join(dir, "capabilities.json");
   if (!existsSync(capsPath)) continue;   // not an adapter directory at all
+
+  test(`[smoke] adapters/${name}: capabilities.json validates against the adapter manifest schema and names its own folder`, () => {
+    const manifest = JSON.parse(readFileSync(capsPath, "utf8")) as AdapterManifestV1;
+    const { ok, errors } = validate(MANIFEST_SCHEMA, manifest);
+    assert.ok(ok, JSON.stringify(errors));
+    assert.equal(manifest.adapter, name);
+    // A folder client needs a folder to find; a paste client installs nothing, so it carries only register.
+    if (manifest.transport === "folder") assert.ok(manifest.install.scriptsSuffix?.length, "a folder adapter lists install.scriptsSuffix");
+    else assert.deepEqual(Object.keys(manifest.install), ["register"], "a paste adapter's install section holds only register");
+  });
 
   test(`[smoke] adapters/${name}: capabilities.json validates against the scan schema's capabilities shape`, () => {
     const caps = JSON.parse(readFileSync(capsPath, "utf8")) as CapabilitiesFile;

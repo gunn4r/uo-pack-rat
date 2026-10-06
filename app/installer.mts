@@ -7,49 +7,59 @@ import {
   openSync, readSync, closeSync, fstatSync, unlinkSync, constants, type Dirent, type Stats,
 } from "node:fs";
 import { basename, join, resolve, dirname, isAbsolute } from "node:path";
+import { fileURLToPath } from "node:url";
 import { atomicReplace, writeFileAtomic } from "./atomic-write.mts";
 import type { DataDirCheckInfo } from "./data-dir-notice.mts";
+import type { AdapterManifestV1, AdapterManifestV1Install, AdapterManifestV1InstallRetiredItem } from "./schema/types.d.mts";
 
 const VERSION_RE = /ADAPTER_VERSION\s*=\s*"([^"]+)"/;
 const ADAPTER_ID_RE = /^[a-z0-9-]+$/;
-export const RUNNING_MESSAGE = 'a Pack Rat script is running in the client — type -stopall in game, wait for "No scripts are currently running", then retry';
-// Each client stops its scripts its own way (-stopall is TazUO's chat command); one not listed gets
-// neutral wording rather than another client's command.
-const RUNNING_MESSAGES: Record<string, string> = {
-  tazuo: RUNNING_MESSAGE,
-  "razor-enhanced": "a Pack Rat script is running in the client — stop it in Razor Enhanced's Scripting tab (select it and press Stop), then retry",
-};
-export const RUNNING_MESSAGE_OTHER = "a Pack Rat script is running in the client — stop the Pack Rat scripts in the client, then retry";
+// The adapters folder this build ships, config.mts's default for --adapters: where candidateClientRoots and
+// validateScriptsDir find an adapter's manifest when the caller names no other folder.
+const BUNDLED_ADAPTERS_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "adapters");
+// The install refusal while a script runs ends with the adapter's own stopHint (each client stops its
+// scripts its own way: -stopall is TazUO's chat command); one with no stopHint gets neutral wording rather
+// than another client's command.
+const RUNNING_PREFIX = "a Pack Rat script is running in the client — ";
+export const RUNNING_MESSAGE_OTHER = `${RUNNING_PREFIX}stop the Pack Rat scripts in the client, then retry`;
 
-// Per-adapter shape of "the folder inside a candidate/picked root that actually holds the scripts",
-// most-specific form first. Shared by candidateClientRoots (known install locations) and
-// validateScriptsDir (whatever folder the player picked by hand) so a new folder-transport adapter
-// only ever grows this one map instead of both functions separately. A paste-transport adapter (see
-// docs/adapter-guide.md) has no entry here on purpose — it has no scripts folder to find.
-type ScriptsSuffix = string[][];
+// ---- the adapter manifest's install section -----------------------------------------------------------
+// Everything the installer knows about one client lives in its adapters/<id>/capabilities.json `install`
+// section (app/schema/adapter-manifest.v1.schema.json, docs/adapter-guide.md's Manifest reference): the
+// folders under a root that hold the scripts (scriptsSuffix, most specific first, shared by
+// candidateClientRoots and validateScriptsDir), the client folder's well-known name (candidateRoot; none for
+// a client with no fixed install location, such as Razor Enhanced, so nothing is guessed), scripts an
+// earlier version shipped under a retired name, the stop hint, and the registrar. A paste-transport adapter
+// carries only register: it has no scripts folder to find.
+//
+// The id goes through the same shape and containment guard installScripts applies before it reaches a
+// path.join, so a prototype-chain name ("constructor") or a traversal finds no manifest, the ordinary
+// unknown-adapter result. The manifest is the app's own file, checked in full by app/contracts.test.mts;
+// the cast describes that trust.
+function readManifest(adaptersDir: string, adapter: unknown): AdapterManifestV1 | null {
+  if (typeof adapter !== "string" || !ADAPTER_ID_RE.test(adapter)) return null;
+  const root = resolve(adaptersDir);
+  const dir = join(root, adapter);
+  if (dirname(dir) !== root) return null;
+  try { return JSON.parse(readFileSync(join(dir, "capabilities.json"), "utf8")) as AdapterManifestV1; }
+  catch { return null; }
+}
 
-const NESTED_SCRIPTS_SUFFIX: Record<string, ScriptsSuffix> = {
-  tazuo: [["TazUO", "LegionScripts"], ["LegionScripts"]],
-  // Razor Enhanced's own official install docs (razorenhanced.net/dokuwiki, "Install & Configure",
-  // fetched 2026-09-17) say only "unpack archive in your own folder, run Razor.exe" — there is no
-  // fixed install location, so there is no well-known root name for candidateClientRoots to guess
-  // (see CANDIDATE_ROOT_NAME below: razor-enhanced has no entry there, on purpose — candidateClientRoots
-  // returns [] for this adapter before it ever reaches this array, so nothing here feeds an
-  // auto-detected candidate). These shapes are for validateScriptsDir only: a player who points the
-  // folder picker at their own Razor Enhanced install (whatever they named it, wherever it lives)
-  // still resolves to its Scripts subfolder. The ClassicUO/Data/Plugins/Razor/Scripts form covers a
-  // player who picked the ClassicUO Launcher root instead of the Razor folder itself — a real, common
-  // shape for players who also run the separate Razor Community Edition/CUO Launcher combo (see
-  // adapters/razor-enhanced/README.md's Sources for why that combo is a DIFFERENT product from Razor
-  // Enhanced and must never be offered as an auto-detected guess); recognizing it here when the player
-  // picks it by hand is a harmless convenience, not a claim about where Razor Enhanced installs.
-  "razor-enhanced": [["ClassicUO", "Data", "Plugins", "Razor", "Scripts"], ["Razor", "Scripts"], ["Scripts"]],
+function installOf(adaptersDir: string, adapter: unknown): AdapterManifestV1Install | null {
+  return readManifest(adaptersDir, adapter)?.install ?? null;
+}
+
+// The client-specific step an install runs once the scripts are in place, named by the manifest's
+// install.register. "none" is every shipped adapter today; a client whose scripts must also be entered in
+// its own settings (Razor Enhanced's profiles, issue #157) adds its step here and names it in its manifest.
+export interface RegistrarContext {
+  scriptsDir: string;
+  installed: string[];
+  log: (msg: string) => void;
+}
+const REGISTRARS: Record<string, (ctx: RegistrarContext) => void> = {
+  none: () => {},
 };
-// The well-known root folder name candidateClientRoots looks for under Desktop/Downloads/Documents
-// (and, on win32, LOCALAPPDATA and the drive root) for each folder-transport adapter. An adapter with
-// no fixed install location (razor-enhanced — see NESTED_SCRIPTS_SUFFIX above) has no entry here on
-// purpose: candidateClientRoots returns [] for it and the manual folder picker is the only path.
-const CANDIDATE_ROOT_NAME: Record<string, string> = { tazuo: "TazUO" };
 
 // ---- safe writes and bounded reads ------------------------------------------------------------------
 // Every destination this module writes (an adapter script, packrat-paths.json, an imported scan) goes
@@ -96,16 +106,14 @@ function readHead(path: string, max: number = HEAD_READ_BYTES): string | null {
   finally { closeSync(fd); }
 }
 
-// Object.hasOwn, not a bare index: both maps above are plain object literals, so every key on
-// Object.prototype ("constructor", "__proto__", "toString", …) resolved to something truthy and
-// defeated the `|| tazuo` fallback — validateScriptsDir(dir, "constructor") threw "suffixes.map is not
-// a function" and candidateClientRoots threw ERR_INVALID_ARG_TYPE out of path.join, instead of the
-// ordinary not-found result both are documented to return for an unknown adapter. Not reachable
-// through any route (each checks the id against listAdapters first), but the documented contract has
-// to be true for the next caller that trusts it.
-function suffixesFor(adapter: unknown): ScriptsSuffix | null {
-  if (typeof adapter !== "string" || !Object.hasOwn(NESTED_SCRIPTS_SUFFIX, adapter)) return null;
-  return NESTED_SCRIPTS_SUFFIX[adapter]!;
+// A plain object index here once resolved every key on Object.prototype ("constructor", "__proto__",
+// "toString", …) to something truthy: validateScriptsDir(dir, "constructor") threw "suffixes.map is not a
+// function" and candidateClientRoots threw ERR_INVALID_ARG_TYPE out of path.join, instead of the ordinary
+// not-found result both are documented to return for an unknown adapter. readManifest's id guard keeps that
+// true. Not reachable through any route (each checks the id against listAdapters first), but the documented
+// contract has to be true for the next caller that trusts it.
+function suffixesFor(adapter: unknown, adaptersDir: string): string[][] | null {
+  return installOf(adaptersDir, adapter)?.scriptsSuffix ?? null;
 }
 
 // ---- listAdapters ---------------------------------------------------------------------------------
@@ -194,12 +202,12 @@ function summarize(capabilities: unknown): string {
 }
 
 // ---- candidateClientRoots --------------------------------------------------------------------------
-// Where a folder-transport client's folder usually lands, per adapter (NESTED_SCRIPTS_SUFFIX /
-// CANDIDATE_ROOT_NAME above). Each candidate root is checked in most-specific-first order — the
+// Where a folder-transport client's folder usually lands, per adapter (its manifest's scriptsSuffix and
+// candidateRoot, above). Each candidate root is checked in most-specific-first order — the
 // client unzipped one or more levels deeper than the download folder (the common real-world layout —
 // see validateScriptsDir's identical nested forms) down to the direct/shallowest shape — and only the
 // scripts directories that actually exist are returned, deduped, in root order. An adapter with no
-// entry in NESTED_SCRIPTS_SUFFIX (paste-transport, or simply unknown) proposes nothing: there is
+// scriptsSuffix (paste-transport, or simply unknown) proposes nothing: there is
 // either no folder to find, or no known layout to look for yet.
 // adapterPlatform is the calling adapter's own capabilities.json `platform` field (listAdapters'
 // output carries it as `a.platform`) — never a hard-coded adapter id here. A platform-restricted
@@ -212,19 +220,21 @@ export interface CandidateClientRootsOptions {
   env?: NodeJS.ProcessEnv;
   exists?: (path: string) => boolean;
   adapterPlatform?: string | null;
+  adaptersDir?: string;
 }
 
 export function candidateClientRoots(
   {
-    adapter, home, platform = process.platform, env = process.env, exists = existsSync, adapterPlatform = null,
+    adapter, home, platform = process.platform, env = process.env, exists = existsSync, adapterPlatform = null, adaptersDir = BUNDLED_ADAPTERS_DIR,
   }: CandidateClientRootsOptions = {} as CandidateClientRootsOptions,   // every real call site supplies adapter/home (see app/installer.test.mts, app/vault-server.mts); this cast is compiler-only, matching config.mts's rawPort pattern
 ): string[] {
-  const suffixes = suffixesFor(adapter);
+  const install = installOf(adaptersDir, adapter);
+  const suffixes = install?.scriptsSuffix;
   if (!suffixes || !home) return [];
   if (adapterPlatform && platform !== adapterPlatform) return [];
-  const rootName = Object.hasOwn(CANDIDATE_ROOT_NAME, adapter) ? CANDIDATE_ROOT_NAME[adapter] : undefined;
-  // No well-known root name for this adapter (razor-enhanced today — see CANDIDATE_ROOT_NAME's
-  // comment): nothing to guess at, so propose no candidates rather than joining onto `undefined`.
+  const rootName = install?.candidateRoot;
+  // No well-known root name for this adapter (razor-enhanced today: no fixed install location): nothing
+  // to guess at, so propose no candidates rather than joining onto `undefined`.
   if (!rootName) return [];
   const roots = [join(home, "Desktop", rootName), join(home, "Downloads", rootName), join(home, "Documents", rootName)];
   if (platform === "win32") {
@@ -246,8 +256,8 @@ export function candidateClientRoots(
 
 // ---- validateScriptsDir -----------------------------------------------------------------------------
 // Accepts the folder the user picked as-is, or any of that adapter's real-world layouts a step or more
-// down from it (NESTED_SCRIPTS_SUFFIX above). adapter with no entry there (a future folder-transport
-// adapter this map hasn't caught up with yet) falls back to tazuo's own shape rather than accepting
+// down from it (its manifest's scriptsSuffix, above). An adapter with none (a future folder-transport
+// adapter whose manifest hasn't caught up yet) falls back to tazuo's own shape rather than accepting
 // nothing — the closest guess is better than refusing every folder outright.
 // The `error?: undefined`/`scriptsDir?: undefined` siblings let a caller (see app/installer.test.mts)
 // read either field off the union before narrowing on `ok`, without each read site needing its own
@@ -274,11 +284,11 @@ export function badPathShape(dir: string): string | null {
 // below before use, exactly as the pre-TypeScript code did, and adapter is only ever used as an object
 // index (a JS index coerces any value to a string key regardless of what TS is told it is here), so
 // the cast at that read site describes the existing behaviour rather than changing it.
-export function validateScriptsDir(dir: unknown, adapter: unknown): ValidateScriptsDirResult {
+export function validateScriptsDir(dir: unknown, adapter: unknown, adaptersDir: string = BUNDLED_ADAPTERS_DIR): ValidateScriptsDirResult {
   if (!dir || typeof dir !== "string") return { ok: false, error: "a folder is required" };
   const shapeError = badPathShape(dir);
   if (shapeError) return { ok: false, error: `${shapeError}: ${dir}` };
-  const suffixes = suffixesFor(adapter) || NESTED_SCRIPTS_SUFFIX.tazuo!;
+  const suffixes = suffixesFor(adapter, adaptersDir) ?? suffixesFor("tazuo", adaptersDir) ?? [];
   // Check the more-specific nested forms first: a picked folder that itself happens to exist (it
   // almost always does — it's a folder the user or a file dialog chose) must not shadow a real
   // scripts folder one or more levels below it.
@@ -421,18 +431,6 @@ export function checkScriptsDataDir({
 // as alive, so the guard doesn't get weaker for the normal case.
 const FUTURE_SKEW_TOLERANCE_S = 300;
 
-// Reads capabilities.json straight off disk rather than going through listAdapters (which the caller
-// has usually already called, but installScripts must stand on its own — see its own comment above
-// about defence in depth against a caller that skips the allowlist check). Missing/unreadable
-// capabilities.json is treated as "folder" (installable) rather than refused: an adapter this
-// permissive about its own metadata is a metadata problem, not evidence it has nothing to install.
-function adapterTransport(srcDir: string): "folder" | "paste" {
-  try {
-    const raw = JSON.parse(readFileSync(join(srcDir, "capabilities.json"), "utf8")) as Record<string, unknown>;
-    return raw.transport === "paste" ? "paste" : "folder";
-  } catch { return "folder"; }
-}
-
 // A heartbeat file a running script rewrites every couple of seconds: the bridge's status.json, and the
 // in-game panel's panel.json beside it (adapters/tazuo/packrat-panel.py), which has the same
 // alive/stopped shape. Either one fresh means a script is running against the folder about to change.
@@ -513,17 +511,28 @@ export function installScripts(
   if (dirname(srcDir) !== resolvedAdaptersDir) {
     return { ok: false, code: "badAdapter", error: `adapter "${adapter}" does not resolve under ${adaptersDir}` };
   }
+  // The manifest is read straight off disk rather than through listAdapters (which the caller has usually
+  // already called, but this function must stand on its own — see the defence-in-depth note above). A
+  // missing or unreadable one is treated as "folder" (installable) with no install section, rather than
+  // refused: an adapter this permissive about its own metadata is a metadata problem, not evidence it has
+  // nothing to install.
+  const manifest = readManifest(resolvedAdaptersDir, adapter);
+  const install = manifest?.install;
   // A paste-transport adapter (docs/adapter-guide.md) has no scripts folder to write to — its whole
   // point is that its sandbox can't write files at all. Reject it here, before the running-script
   // guard and the scriptsDir check, so the error names the real reason ("nothing to install") instead
   // of the misleading "badDir: no adapter scripts found" scriptNamesIn would otherwise produce below
   // (true today only because a paste-transport adapter happens to ship no packrat-*.py files).
-  if (adapterTransport(srcDir) === "paste") {
+  if (manifest?.transport === "paste") {
     return { ok: false, code: "noInstall", error: `adapter "${adapter}" has nothing to install — it has no scripts folder; use the Import tab instead` };
   }
   if (bridgeStatusPath && [bridgeStatusPath, join(dirname(bridgeStatusPath), "panel.json")].some((p) => heartbeatAlive(p, now(), log))) {
-    return { ok: false, code: "running", error: RUNNING_MESSAGES[adapter] ?? RUNNING_MESSAGE_OTHER };
+    return { ok: false, code: "running", error: install?.stopHint ? `${RUNNING_PREFIX}${install.stopHint}` : RUNNING_MESSAGE_OTHER };
   }
+  // Checked before anything is written, so a manifest naming a step this build lacks installs nothing.
+  const registerName = install?.register ?? "none";
+  const register = Object.hasOwn(REGISTRARS, registerName) ? REGISTRARS[registerName]! : null;
+  if (!register) return { ok: false, code: "badAdapter", error: `adapter "${adapter}" names an install step this build does not have: ${JSON.stringify(registerName)}` };
   let destStat: Stats | null = null;
   // The cast is compiler-only: statSync() throws ERR_INVALID_ARG_TYPE on anything that is not a path,
   // and that throw lands in this same catch, so a non-string scriptsDir comes out as badDir below.
@@ -546,7 +555,9 @@ export function installScripts(
     catch (e) { return { ok: false, code: "writeFailed", error: (e as Error).message, installed: [...installed] }; }
     installed.push(name);
   }
-  removeRetired(adapter, destDir, log);
+  removeRetired(install?.retired ?? [], destDir, log);
+  try { register({ scriptsDir: destDir, installed: [...installed], log }); }
+  catch (e) { return { ok: false, code: "writeFailed", error: (e as Error).message, installed: [...installed] }; }
   const { version } = installedVersion(destDir, adapter);
   let pathsFile: PathsFileOutcome;
   try { pathsFile = writePathsFile(destDir, dataDir); }
@@ -554,17 +565,13 @@ export function installScripts(
   return { ok: true, installed, version, pathsFile };
 }
 
-// Scripts an earlier version shipped under a name it no longer uses, by adapter, each with the first line that marks the
-// file as Pack Rat's own (issue #10: TazUO 2.12.0 and Razor Enhanced 1.10.0 renamed packrat-refresh.py to
+// Scripts an earlier version shipped under a name it no longer uses (the manifest's install.retired), each with the first
+// line that marks the file as Pack Rat's own (issue #10: TazUO 2.12.0 and Razor Enhanced 1.10.0 renamed packrat-refresh.py to
 // packrat-character-refresh.py, and the old copy would stay in the client's script list beside the new one). An install removes such a file once the scripts are in
 // place; a file of that name with any other first line, a symlink or a folder is left alone, and a removal that fails
 // costs the install nothing.
-const RETIRED_SCRIPTS: Record<string, Array<{ name: string; header: string }>> = {
-  tazuo: [{ name: "packrat-refresh.py", header: "# packrat-refresh.py — ATTENDED one-shot: QUICK character refresh for the Pack Rat" }],
-  "razor-enhanced": [{ name: "packrat-refresh.py", header: "# packrat-refresh.py -- ATTENDED one-shot: QUICK character refresh for the Pack Rat app without a" }],
-};
-function removeRetired(adapter: string, destDir: string, log: (msg: string) => void): void {
-  for (const { name, header } of Object.hasOwn(RETIRED_SCRIPTS, adapter) ? RETIRED_SCRIPTS[adapter]! : []) {
+function removeRetired(retired: AdapterManifestV1InstallRetiredItem[], destDir: string, log: (msg: string) => void): void {
+  for (const { name, header } of retired) {
     const path = join(destDir, name);
     if (readHead(path)?.split(/\r?\n/, 1)[0] !== header) continue;
     try { unlinkSync(path); log(`removed the retired ${name}`); }

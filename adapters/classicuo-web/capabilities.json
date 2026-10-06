@@ -13,5 +13,8 @@
     "nested": true,
     "tooltips": "opl",
     "bridge": []
+  },
+  "install": {
+    "register": "none"
   }
 }
