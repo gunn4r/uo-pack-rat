@@ -2,3 +2,4 @@
 *.sh text eol=lf
 scripts/test_runner.sh eol=lf
 adapters/classicuo-web/packrat-scanner.ts text eol=lf
+CHANGELOG.md merge=union

@@ -1,4 +1,16 @@
+Closes #N / Part of #N
+
 ## What changed and why
+
+## Change kind(s)
+
+Which kinds of change from [`docs/change-checklists.md`](../blob/main/docs/change-checklists.md) this is (for example: add an HTTP route, change the scan format).
+
+- [ ] Checklist walked for each kind.
+
+## Docs touched
+
+Which docs this updates, or why none needed to change.
 
 ## Tests
 
