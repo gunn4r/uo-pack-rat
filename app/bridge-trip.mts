@@ -12,11 +12,11 @@ import { APP_DIR, DATA_DIR_MODE, DATA_FILE_MODE, type ConfigPaths } from "./conf
 import { writeFileAtomic } from "./atomic-write.mts";
 import { validate, type ValidatorSchema } from "./schema/validate.mts";
 import type { BridgeTripV1 } from "./schema/types.d.mts";
-import { TRIP_MAX_BYTES, TRIP_NAME_MAX } from "./bridge-contract.mts";
+import { BRIDGE_PROTOCOL, TRIP_MAX_BYTES, TRIP_NAME_MAX } from "./bridge-contract.mts";
 
 const TRIP_SCHEMA = JSON.parse(readFileSync(join(APP_DIR, "schema", "bridge-trip.v1.schema.json"), "utf8")) as ValidatorSchema;
 
-export type TripInput = Omit<BridgeTripV1, "id" | "action" | "queuedAt">;
+export type TripInput = Omit<BridgeTripV1, "id" | "action" | "queuedAt" | "protocol">;
 export type QueueTripResult = { ok: true; id: string } | { ok: false; error: string };
 
 // A decimal serial as a roots key: what check_trip accepts, minus leading zeros.
@@ -28,7 +28,7 @@ const hasDuplicates = (serials: number[]): boolean => new Set(serials).size !== 
 
 export function queueTrip(paths: Pick<ConfigPaths, "bridgeFor" | "bridgeQueueFor">, adapter: string, trip: TripInput, now: Date = new Date()): QueueTripResult {
   const line: BridgeTripV1 = {
-    id: randomUUID(), action: "trip", index: trip.index, stamp: trip.stamp, queuedAt: now.toISOString(),
+    id: randomUUID(), action: "trip", protocol: BRIDGE_PROTOCOL, index: trip.index, stamp: trip.stamp, queuedAt: now.toISOString(),
     roots: trip.roots, takes: cutNames(trip.takes), puts: cutNames(trip.puts), ...(trip.putAway ? { putAway: trip.putAway } : {}),
   };
   const { ok, errors } = validate(TRIP_SCHEMA, line);

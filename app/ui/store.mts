@@ -4,7 +4,7 @@ import type { Item, EffectiveProfile } from "../vault-lib.mts";
 import type { FlatProfile, ProfilesV3, TemplateMap } from "../build-spec.mts";
 import type { Facets } from "../item-query.mts";
 import type { RulesV1 } from "../schema/types.d.mts";
-import type { InventoryData, SettingsData, ShardOption, SetupApiResponse, OptSuit, OptimizeResult, OptimizeProgress, SavedRunLike, OrganizeConfig, OrganizePlan, OrganizePreset } from "./api-types.mts";
+import type { BridgeAdapterReport, InventoryData, SettingsData, ShardOption, SetupApiResponse, OptSuit, OptimizeResult, OptimizeProgress, SavedRunLike, OrganizeConfig, OrganizePlan, OrganizePreset } from "./api-types.mts";
 
 // The suit builder's own working copy of a character's settings: the flat profile app/build-spec.mts's
 // characterProfile hands out (a saved character's spec, or the first template applied), with its race and template.
@@ -70,6 +70,8 @@ export interface BuildMeta {
 export interface BridgeState {
   online: boolean;
   character: string | null;
+  // The running bridge's report of itself (status.json's adapter), null from an older bridge.
+  adapter: BridgeAdapterReport | null;
   seen: Set<string>;
   pending: Map<string, string>;
 }
@@ -133,7 +135,7 @@ export const state: AppState = {
 };
 
 // ---------------------------------------------------------------- bridge (Highlight / Grab / Go to)
-export const bridge: BridgeState = { online: false, character: null, seen: new Set(), pending: new Map() };
+export const bridge: BridgeState = { online: false, character: null, adapter: null, seen: new Set(), pending: new Map() };
 
 // ---------------------------------------------------------------- saved runs (history, open, compare)
 // The newest scan's own stamp, compared as instants: adapters write naive local or offset stamps and

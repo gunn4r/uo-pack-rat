@@ -5,18 +5,19 @@ import { randomUUID } from "node:crypto";
 import { DATA_DIR_MODE, DATA_FILE_MODE, type ConfigPaths } from "../config.mts";
 import { writeFileAtomic } from "../atomic-write.mts";
 import { isBoundedString } from "../guards.mts";
+import { readBridgeStatus } from "../bridge-status.mts";
 import { queueTrip } from "../bridge-trip.mts";
 import { ancestry, applyOverlay, packKept, planOrganize, stampMs, tripCommand, type Plan, type PutAway } from "../organize.mts";
 import { harvestTrips, noteSeen, pruneOverlay, PENDING_GRACE_MS, type BridgeView, type OrganizeState } from "../organize-state.mts";
 import { checkPutAwayRequest, nothingDetail, requestId, tripMsg, FRESH_MARGIN_MS, MAX_REQUEST_BYTES, PUT_AWAY_REPLY, type PutAwayReply, type PutAwayRequest } from "../put-away.mts";
 import { suitPieces, type SavedRun } from "../runs-lib.mts";
 import type { OrganizeConfig, RuleMatch } from "../organize-config.mts";
-import type { BlacklistEntry, Inventory } from "../vault-lib.mts";
+import { bridgeFeatures, newestScanAdapter, type BlacklistEntry, type FeatureDeclaration, type Inventory } from "../vault-lib.mts";
 import type { RulesV1 } from "../schema/types.d.mts";
 
-// `getInventory` is the inventory service's; `rules` the current shard's rules; `runsTrips` whether an adapter's
-// bridge runs trips; `log` appends one line to the server log.
-export function createOrganizeService({ paths, getInventory, organizeStore, organizeStateStore, blacklistStore, runStore, rules, runsTrips, events, log }: {
+// `getInventory` is the inventory service's; `rules` the current shard's rules; `bridgeAdapter` the client the bridge
+// commands go to; `manifest` what an adapter's shipped capabilities.json declares; `log` appends one line to the server log.
+export function createOrganizeService({ paths, getInventory, organizeStore, organizeStateStore, blacklistStore, runStore, rules, bridgeAdapter, manifest, events, log }: {
   paths: Pick<ConfigPaths, "bridgeFor" | "bridgeQueueFor" | "bridgeStatusFor">;
   getInventory: () => Promise<{ fold: Inventory }>;
   organizeStore: { read(): { config: OrganizeConfig; problems: string[] } };
@@ -24,7 +25,8 @@ export function createOrganizeService({ paths, getInventory, organizeStore, orga
   blacklistStore: { read(): BlacklistEntry[] };
   runStore: { all(): SavedRun[] };
   rules: () => RulesV1;
-  runsTrips: (adapter: string) => boolean;
+  bridgeAdapter: () => string;
+  manifest: (adapter: string) => FeatureDeclaration | null;
   events: { broadcast(event: string, data: unknown): void };
   log: (line: string) => void;
 }) {
@@ -32,19 +34,21 @@ export function createOrganizeService({ paths, getInventory, organizeStore, orga
   // asks on every pause in typing, and few setups have such a rule.
   function suitsFor(matches: RuleMatch[]): Set<number> | undefined { return matches.some((m) => m.skipSuits) ? suitPieces(runStore.all()) : undefined; }
   // What harvestTrips needs of one adapter's status.json (GET /api/bridge/status reads the same file for the page).
-  // `current` counts only while the bridge's heartbeat is recent: a client that quit mid-trip leaves its last
-  // `current` in the file for good, which would otherwise hold Organize's one trip in flight forever.
+  // `current` counts only while the bridge's heartbeat is under PENDING_GRACE_MS (90 s) old either way, a longer wait
+  // than "online" (8 s): a trip in flight is not given up on for a missed heartbeat, but a client that quit mid-trip
+  // leaves its last `current` in the file for good, which would otherwise hold Organize's one trip in flight forever.
   function bridgeView(adapter: string, now: number): BridgeView {
-    try {
-      const st: unknown = JSON.parse(readFileSync(paths.bridgeStatusFor(adapter), "utf8"));
-      if (!st || typeof st !== "object" || Array.isArray(st)) return { results: {}, current: null };
-      const { results, current, alive, character } = st as Record<string, unknown>;
-      const aliveMs = typeof alive === "number" ? alive * 1000 : typeof alive === "string" ? Date.parse(alive) : NaN;
-      const live = Math.abs(now - aliveMs) <= PENDING_GRACE_MS;
-      const id = live && current && typeof current === "object" ? (current as { id?: unknown }).id : null;
-      return { results: results && typeof results === "object" && !Array.isArray(results) ? results as Record<string, unknown> : {}, current: typeof id === "string" ? id : null,
-        character: isBoundedString(character, 64) ? character : null };
-    } catch { return { results: {}, current: null }; }
+    const { status, aliveMs } = readBridgeStatus(paths.bridgeStatusFor(adapter), now);
+    if (!status) return { results: {}, current: null };
+    const live = Math.abs(now - aliveMs) <= PENDING_GRACE_MS;
+    const id = live && status.current ? (status.current as { id?: unknown }).id : null;
+    return { results: status.results, current: typeof id === "string" ? id : null, character: isBoundedString(status.character, 64) ? status.character : null };
+  }
+  // What an adapter's bridge can do (vault-lib.mts's bridgeFeatures): the running bridge's own report while it is
+  // online, else the newest scan made with that adapter, else what this app ships.
+  function featuresOf(adapter: string, fold: Inventory, now: number): Set<string> {
+    const live = readBridgeStatus(paths.bridgeStatusFor(adapter), now);
+    return bridgeFeatures({ running: live.online ? live.status?.adapter : null, scan: newestScanAdapter(fold.characters, adapter), manifest: manifest(adapter) }).features;
   }
   // Finished trips read out of their bridges' status files into the overlay. Runs on every getInventory() and on the
   // page's bridge status poll (every 2.5 s while any page is open), so a trip that reports back moves its items in
@@ -62,20 +66,20 @@ export function createOrganizeService({ paths, getInventory, organizeStore, orga
   // What a plan starts from now: finished trips harvested, entries a newer scan has settled dropped, labels' last-seen
   // times refreshed (the state file is rewritten only when that changed something). Organize works on the fold alone
   // and applies the overlay itself. organizeNow adds the plan; Put away plans its own (planOf with a source).
-  async function organizeInputs(): Promise<{ fold: Inventory; config: OrganizeConfig; state: OrganizeState; problems: string[]; bridges: Record<string, BridgeView> }> {
+  async function organizeInputs(adapter = bridgeAdapter()): Promise<{ fold: Inventory; config: OrganizeConfig; state: OrganizeState; problems: string[]; bridges: Record<string, BridgeView>; features: Set<string> }> {
     const { fold } = await getInventory();
     const { config, problems } = organizeStore.read();
     const now = Date.now();
     const { state: harvested, bridges } = harvestNow(now);
     const state = noteSeen(pruneOverlay(harvested, fold, now), config, fold);
     if (JSON.stringify(state) !== JSON.stringify(harvested)) organizeStateStore.write(state);
-    return { fold, config, state, problems, bridges };
+    return { fold, config, state, problems, bridges, features: featuresOf(adapter, fold, now) };
   }
-  const planOf = (fold: Inventory, config: OrganizeConfig, state: OrganizeState, putAway?: PutAway): Plan =>
-    planOrganize(fold, config, state.moves, { now: Date.now(), rarity: rules().rarity, suitPieces: suitsFor(config.rules.map((r) => r.match)), blacklist: blacklistStore.read().map((e) => e.serial), seen: state.seen, putAway });
-  async function organizeNow(): Promise<{ fold: Inventory; config: OrganizeConfig; state: OrganizeState; plan: Plan; problems: string[]; bridges: Record<string, BridgeView> }> {
+  const planOf = (fold: Inventory, config: OrganizeConfig, state: OrganizeState, features: ReadonlySet<string>, putAway?: PutAway): Plan =>
+    planOrganize(fold, config, state.moves, { now: Date.now(), rarity: rules().rarity, suitPieces: suitsFor(config.rules.map((r) => r.match)), blacklist: blacklistStore.read().map((e) => e.serial), seen: state.seen, features, putAway });
+  async function organizeNow(): Promise<{ fold: Inventory; config: OrganizeConfig; state: OrganizeState; plan: Plan; problems: string[]; bridges: Record<string, BridgeView>; features: Set<string> }> {
     const got = await organizeInputs();
-    return { ...got, plan: planOf(got.fold, got.config, got.state) };
+    return { ...got, plan: planOf(got.fold, got.config, got.state, got.features) };
   }
 
   // Trip `index` of `plan` queued with queueTrip and recorded as pending, so its result is read back into the
@@ -118,8 +122,8 @@ export function createOrganizeService({ paths, getInventory, organizeStore, orga
   // picked (their backpack or a bag in it, put into the house they stand in, or a container in a labelled chest).
   // The panel asks again after each trip until nothing is left.
   async function putAwayRun(adapter: string, req: PutAwayRequest): Promise<Omit<PutAwayReply, "id" | "t">> {
-    if (!runsTrips(adapter)) return { ok: false, msg: "This client's bridge cannot run Put away." };
-    const { fold, config, state, problems } = await organizeInputs();
+    const { fold, config, state, problems, features } = await organizeInputs(adapter);
+    if (!features.has("trip")) return { ok: false, msg: "This client's bridge cannot run Put away." };
     if (problems.length) return { ok: false, msg: "Organize's setup was hand-edited.", detail: "Open Organize in the app and save it." };
     if (state.pending[0]) return { ok: false, msg: `Trip ${state.pending[0].index} has not reported back yet.` };
     // The picked container: the character's backpack or a bag at any depth in it, or a container in a labelled ground
@@ -139,7 +143,7 @@ export function createOrganizeService({ paths, getInventory, organizeStore, orga
     const black = new Set(blacklistStore.read().map((e) => e.serial));
     if (chain.some((s) => black.has(s))) return { ok: false, msg: "That container is blacklisted.", detail: "Pack Rat never opens it." };
     if (chain.some((s) => config.labels[String(s)]?.pinned)) return { ok: false, msg: "That container is pinned.", detail: "Organize never takes items out of it." };
-    const plan = planOf(fold, config, state, source);
+    const plan = planOf(fold, config, state, features, source);
     if (source.from === "ground" && !plan.sites.some((s) => s.roots.includes(+root.serial))) {
       const why = plan.warnings.find((w) => w.serial === +root.serial);
       return { ok: false, msg: "That container cannot be used.", detail: why?.detail ?? "It needs a scan with its position." };

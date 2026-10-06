@@ -55,6 +55,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `app/adapters.test.mts` — runs every adapter's Python test file and holds the manifest-versus-source contract for `capabilities.json`'s `actions` list.
 - `app/atomic-write.test.mts` — `app/atomic-write.mts`'s `renameRetrying` and its Windows retry.
 - `app/bridge-adapter-fallback.test.mts` — `app/ui/bridge.mts`'s `currentAdapter()`/`bridgeNote()` falling back to the server's bridge adapter when no client is set.
+- `app/bridge-status.test.mts` — the bridge reporting itself: `readBridgeStatus` (`app/bridge-status.mts`), the one reader of status.json, and `bridgeFeatures` (`app/vault-lib.mts`), what a bridge can do.
 - `app/bridge-toast.test.mts` — `app/ui/bridge.mts`'s `pollBridge()` toasting what the bridge reports for the commands this page queued.
 - `app/bridge-trip.test.mts` — `queueTrip` (`app/bridge-trip.mts`), the only writer of an Organize trip line, and the stop flag behind POST /api/bridge/stop.
 - `app/buffs-plan.test.mts` — Automatic's buffs in the optimizer's profile (issue #12, `app/buffs.mts` `plannedProfile`), across the combinations.

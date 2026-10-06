@@ -1,6 +1,7 @@
-// setup.mts — the adapters this install ships and what the client setup needs of them: which ids are real, which bridge runs Organize trips, and whether the client's installed scripts write to this data folder.
+// setup.mts — the adapters this install ships and what the client setup needs of them: which ids are real, what each one's bridge declares it can do, and whether the client's installed scripts write to this data folder.
 import { listAdapters, checkScriptsDataDir, type AdapterInfo, type DataDirCheck } from "../installer.mts";
 import type { ClientSettings } from "../store/settings.mts";
+import type { FeatureDeclaration } from "../vault-lib.mts";
 
 // The registry is read from disk on every call, as the routes always have: an adapter folder added or edited while
 // the app runs is seen at once. `clientSearch` is where the server looks for the game client's scripts.
@@ -12,10 +13,11 @@ export function createSetupService({ adaptersDir, dataDir, demo, clientSearch }:
 }) {
   const adapters = (): AdapterInfo[] => listAdapters(adaptersDir);
   const isKnown = (id: unknown): boolean => adapters().some((a) => a.id === id);
-  // Whether this adapter's bridge declares the "trip" capability (Organize trips and Put away).
-  const runsTrips = (adapter: string): boolean => {
-    const caps = adapters().find((a) => a.id === adapter)?.capabilities as { bridge?: unknown } | undefined;
-    return Array.isArray(caps?.bridge) && caps.bridge.includes("trip");
+  // What this adapter's shipped capabilities.json declares its bridge can do (vault-lib.mts's bridgeFeatures reads it
+  // last, after the running bridge and the newest scan), or null for an adapter this install does not ship.
+  const manifest = (adapter: string): FeatureDeclaration | null => {
+    const a = adapters().find((x) => x.id === adapter);
+    return a ? { capabilities: a.capabilities as FeatureDeclaration["capabilities"], features: a.features } : null;
   };
   // Whether the client's installed scripts write to this data folder (installer.mts's
   // checkScriptsDataDir). Run on every GET /api/setup, so a reinstall clears the page's banner with no
@@ -27,6 +29,6 @@ export function createSetupService({ adaptersDir, dataDir, demo, clientSearch }:
     const candidates = client ? [] : adapters().flatMap((a) => clientSearch.candidates(a));
     return checkScriptsDataDir({ dataDir, client, candidates, home: clientSearch.home, platform: process.platform });
   }
-  return { adaptersDir, adapters, isKnown, runsTrips, dataDirCheck };
+  return { adaptersDir, adapters, isKnown, manifest, dataDirCheck };
 }
 export type SetupService = ReturnType<typeof createSetupService>;

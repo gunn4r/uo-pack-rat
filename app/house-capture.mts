@@ -1,4 +1,5 @@
 // house-capture.mts — the houses the scans have captured (issue #10). A scan taken inside a house carries a `house` section: the house's own tiles (every level, read from anywhere inside), and the furniture and containers the server had sent (within about 18 tiles of the player). The newest capture of a house gives its tiles; furniture is merged across captures, so a castle fills in from scans at different spots; a house whose footprint a newer capture on its facet overlaps (redesigned or moved) is superseded and no longer served.
+import { isKnownKind } from "./scan-schema.mts";
 import type { ScanV2 } from "./schema/types.d.mts";
 
 export type HouseTile = [graphic: number, x: number, y: number, z: number, impassable: number];
@@ -23,7 +24,7 @@ export function houseGroups(scans: ScanV2[]): HouseGroup[] {
   const byId = new Map<string, HouseGroup>();
   scans.forEach((s, scan) => {
     const h = s.house;
-    if (!h || !h.tiles.length) return;
+    if (!h || !h.tiles.length || !isKnownKind(s)) return;   // a kind from a newer adapter is not read
     const id = houseIdOf(h.facet, h.tiles as HouseTile[]);
     const g: HouseGroup = byId.get(id) ?? { id, captures: [], items: new Map(), containers: new Map(), trash: new Map(), supersededBy: [] };
     g.captures.push({ scan, house: h }); byId.set(id, g);

@@ -253,7 +253,7 @@ test("[fast] POST /api/setup/locate resolves a nested .../ClassicUO/Data/Plugins
 // the whole server at a throwaway folder holding a copy of the real tazuo adapter (full bridge) next
 // to a minimal fixture adapter that declares no bridge at all, standing in for a client like the
 // ClassicUO web adapter that can't run one.
-test("[fast] GET /api/setup: an adapter with no bridge reports capabilities.bridge:[]; tazuo still reports its four actions", async () => {
+test("[fast] GET /api/setup: an adapter with no bridge reports capabilities.bridge:[]; tazuo still reports its four actions and trip-bags", async () => {
   const adaptersDir = mkdtempSync(join(tmpdir(), "qm-adapters-"));
   cpSync(join(HERE, "..", "adapters", "tazuo"), join(adaptersDir, "tazuo"), { recursive: true });
   const noBridgeDir = join(adaptersDir, "nobridge");
@@ -270,6 +270,7 @@ test("[fast] GET /api/setup: an adapter with no bridge reports capabilities.brid
     assert.deepEqual(setup.adapters.map((a) => a.id).sort(), ["nobridge", "tazuo"]);
     assert.deepEqual(setup.adapters.find((a) => a.id === "nobridge")!.capabilities.bridge, []);
     assert.deepEqual(setup.adapters.find((a) => a.id === "tazuo")!.capabilities.bridge, ["highlight", "grab", "goto", "trip", "trip-bags"]);
+    assert.deepEqual(setup.adapters.find((a) => a.id === "nobridge")!.features, []);
 
     // settings.client names which of those is active — PUT it at the no-bridge adapter first.
     const putNoBridge = await fetch(s2.url + "/api/settings", {
@@ -590,7 +591,7 @@ test("[fast] POST /api/setup/locate never echoes the path it probed", async () =
 // an environment folder or a fixed root.
 test("[fast] PACKRAT_CLIENT_HOME confines the client search to that folder", () => {
   const home = mkdtempSync(join(tmpdir(), "qm-clienthome-"));
-  const tazuo = { id: "tazuo", name: "TazUO", scripts: [], capabilities: {}, transport: "folder" as const, platform: null, summary: "" };
+  const tazuo = { id: "tazuo", name: "TazUO", scripts: [], capabilities: {}, features: [], transport: "folder" as const, platform: null, summary: "" };
   try {
     const empty = defaultClientSearch({ PACKRAT_CLIENT_HOME: home, LOCALAPPDATA: join(home, "..") });
     assert.equal(empty.home, home);

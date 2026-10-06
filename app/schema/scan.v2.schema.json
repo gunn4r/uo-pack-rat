@@ -1,5 +1,5 @@
 {
-  "$comment": "Pack Rat scan file schema v2. Draft-07 style, restricted to the keyword subset app/schema/validate.mts supports. additionalProperties is true at the top level (adapters may add fields, e.g. refresh's meta) but false inside adapter and adapter.capabilities, which are a closed contract every adapter must match exactly, and a SUBSCHEMA on the arbitrarily-keyed maps (stats, maxes, resists, position, skills, containers), which is how their values get checked at all. This JSON literal must stay identical to SCAN_V2_SCHEMA in app/scan-schema.mts (app/scan-schema.test.mts asserts that) because scan-schema.mts is served to the browser and cannot load this file via fs or a JSON import attribute.",
+  "$comment": "Pack Rat scan file schema v2. Draft-07 style, restricted to the keyword subset app/schema/validate.mts supports. additionalProperties is true at the top level (adapters may add fields, e.g. refresh's meta) true inside adapter and adapter.capabilities, whose known fields are still required and checked (a newer adapter's addition never makes an older app drop the scan), and a SUBSCHEMA on the arbitrarily-keyed maps (stats, maxes, resists, position, skills, containers), which is how their values get checked at all. This JSON literal must stay identical to SCAN_V2_SCHEMA in app/scan-schema.mts (app/scan-schema.test.mts asserts that) because scan-schema.mts is served to the browser and cannot load this file via fs or a JSON import attribute.",
   "type": "object",
   "additionalProperties": true,
   "required": ["schemaVersion", "character", "scannedAt", "adapter", "stats", "roots", "containers", "items", "equipped"],
@@ -9,10 +9,10 @@
     "scannedAt": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?([+-]\\d{2}:\\d{2}|Z)$" },
     "shard": { "type": ["string", "null"] },
     "account": { "type": "string", "pattern": "^[a-f0-9]{16,64}$", "$comment": "an opaque hashed account id (e.g. hex SHA-256 of the account name) — never the plaintext name" },
-    "kind": { "type": "string", "enum": ["house"], "$comment": "Left out for a scan. \"house\" marks a house-only file (TazUO's packrat-house-map-refresh.py, 2.12.0 and later): it carries the house section and nothing else (stats {}, every inventory list empty, which validateScan checks), and only the house map reads it; the fold, Missing and Organize skip it." },
+    "kind": { "type": "string", "minLength": 1, "maxLength": 64, "$comment": "Left out for a scan. \"house\" marks a house-only file (TazUO's packrat-house-map-refresh.py, 2.12.0 and later): it carries the house section and nothing else (stats {}, every inventory list empty, which validateScan checks), and only the house map reads it; the fold, Missing and Organize skip it. Any other value is a kind from a newer adapter: the file is kept, and every reader skips it (the scans store logs it)." },
     "adapter": {
       "type": "object",
-      "additionalProperties": false,
+      "additionalProperties": true,
       "required": ["id", "version", "client", "clientVersion", "capabilities"],
       "properties": {
         "id": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "^[a-z0-9-]+$", "$comment": "the same shape app/installer.mts's ADAPTER_ID_RE admits and every adapter-taking route checks — this id names an inbox, a bridge directory and a capabilities folder, so a scan must not be able to carry one that could not be an adapter directory name; 64 matches the bound PUT /api/settings puts on client.adapter" },
@@ -21,7 +21,7 @@
         "clientVersion": { "type": ["string", "null"] },
         "capabilities": {
           "type": "object",
-          "additionalProperties": false,
+          "additionalProperties": true,
           "required": ["layers", "arms", "bank", "ground", "nested", "tooltips", "bridge"],
           "properties": {
             "layers": { "type": "array", "items": { "type": "string" } },
@@ -32,7 +32,8 @@
             "tooltips": { "type": "string", "enum": ["opl", "label"] },
             "bridge": { "type": "array", "items": { "type": "string" } }
           }
-        }
+        },
+        "features": { "type": "array", "maxItems": 64, "items": { "type": "string", "minLength": 1, "maxLength": 64 }, "$comment": "Optional: what the adapter's bridge does besides the actions in capabilities.bridge, by name (\"trip-bags\", TazUO 2.16.0 and later; older scripts listed it in capabilities.bridge, where it is still recognized). A name this app does not know is ignored. The shipped scanners do not write it yet: trip-bags stays in capabilities.bridge, which every Pack Rat reads, until an app that accepts this field has been out for a release." }
       }
     },
     "stats": { "type": "object", "additionalProperties": { "type": "number" } },

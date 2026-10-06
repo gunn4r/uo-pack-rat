@@ -488,7 +488,7 @@ test("[fast] with actions allowed, Grab / Highlight / Go to queue the line the a
     assert.equal(lines.length, 2);
     assert.deepEqual(command(lines[0]!), command(lines[1]!));
     assert.equal((await call(port, "highlight_item", { serial: B, waitSeconds: 0 })).ok, true, "a ground chest, by its serial");
-    assert.deepEqual(command(queued(sv.dir)[2]!), { action: "highlight", serial: B, name: "Box " + B, chain: [], pos: { x: 102, y: 100, z: 0, facet: 1 } });
+    assert.deepEqual(command(queued(sv.dir)[2]!), { action: "highlight", serial: B, name: "Box " + B, chain: [], pos: { x: 102, y: 100, z: 0, facet: 1 }, protocol: 1 });
     assert.equal((await call(port, "go_to_item", { serial: REAG, waitSeconds: 0 })).ok, true);
     assert.deepEqual((queued(sv.dir)[3]!).chain, [A]);
     assert.match((await call(port, "grab_item", { serial: A })).text, /Grab takes items/);

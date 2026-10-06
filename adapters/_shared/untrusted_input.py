@@ -5,6 +5,7 @@
 # so adapters/test_adapters.py can drive it directly, and the block is byte-identical in every
 # adapter's bridge (that test asserts it), which is why it is ASCII and uses .format() rather than
 # this file's own em dashes and f-strings: Razor Enhanced's IronPython carries the same text.
+PROTOCOL = 1               # the newest queue-line protocol this bridge reads (capabilities.json's "protocol")
 MAX_CHAIN = 8              # containers one command may open (app/ui/bridge.mts's own chainOf guard)
 MAX_NAME = 120             # a name is only ever printed on screen
 MAX_ID = 64                # the app's ids are 36-character UUIDs; a result is keyed by one
@@ -322,9 +323,25 @@ def check_trip(cmd, now_s):
             "putAway": put_away}, ""
 
 
+def check_protocol(cmd):
+    """A line names the protocol it was written in; one with none comes from an app older than the field
+    and reads as protocol 1. A newer protocol than this bridge knows is refused, never guessed at."""
+    p = cmd.get("protocol", 1)
+    if not isinstance(p, int) or isinstance(p, bool) or p < 1:
+        return "protocol is not a protocol number"
+    if p > PROTOCOL:
+        return "this bridge is older than Pack Rat: reinstall the scripts from Settings (protocol {0}, this bridge reads {1})".format(p, PROTOCOL)
+    return ""
+
+
 def check_line(cmd, actions, now_s):
-    """A trip goes to check_trip on a bridge that runs trips; everything else, and a trip on a bridge
-    that does not, goes to check_command, which refuses an action the bridge lacks."""
+    """A line in a newer protocol is refused first. A trip goes to check_trip on a bridge that runs trips;
+    everything else, and a trip on a bridge that does not, goes to check_command, which refuses an action
+    the bridge lacks."""
+    if isinstance(cmd, dict):
+        why = check_protocol(cmd)
+        if why:
+            return None, why
     if isinstance(cmd, dict) and cmd.get("action") == "trip" and "trip" in actions:
         return check_trip(cmd, now_s)
     return check_command(cmd, actions, now_s)

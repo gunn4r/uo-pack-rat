@@ -281,7 +281,7 @@ function sharedChests(groups: readonly { key: string }[], chains: ReadonlyMap<st
   return new Map([...by].filter(([, keys]) => keys.length > 1));
 }
 
-export interface ProposeOptions extends ScopeOptions { strategy: StrategyId; containers?: readonly number[] | undefined; rarity?: RulesV1RarityItem[] | undefined; suitPieces?: ReadonlySet<number> | undefined }
+export interface ProposeOptions extends ScopeOptions { strategy: StrategyId; containers?: readonly number[] | undefined; rarity?: RulesV1RarityItem[] | undefined; suitPieces?: ReadonlySet<number> | undefined; features?: ReadonlySet<string> | undefined }
 
 const bySerial = (a: number, b: number): number => a - b;
 const plainName = (c: Container): string => ((c.label || bagLabel(c)) || `0x${(+c.serial).toString(16)}`).slice(0, 64);

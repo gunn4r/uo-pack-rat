@@ -23,7 +23,7 @@ function setup() {
     organizeStore: { read: () => ({ config: emptyOrganizeConfig(), problems: [] }) },
     organizeStateStore: { read: () => { stateReads++; return emptyOrganizeState(); }, write: () => { stateWrites++; } },
     blacklistStore: { read: () => [] }, runStore: { all: () => { runReads++; return []; } },
-    rules: () => loadRules("uoalive"), runsTrips: () => false, events: { broadcast: (e) => events.push(e) }, log: (line) => logged.push(line),
+    rules: () => loadRules("uoalive"), bridgeAdapter: () => "tazuo", manifest: () => null, events: { broadcast: (e) => events.push(e) }, log: (line) => logged.push(line),
   });
   return { dir, paths, service, events, logged, counts: () => ({ stateReads, stateWrites, runReads }) };
 }

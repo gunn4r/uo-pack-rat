@@ -2,8 +2,8 @@
 
 adapters/tazuo/test_paths.py still covers the TazUO-specific header and contract details; this file is what a second and third adapter pick up for free just by existing. Two halves:
 
-1. Conventions — none of the three banned unbounded-loop literals (see scripts/no-unbounded-loop.test.mts, which spells them out; this file must not, since TazUO refuses a script whose text contains one anywhere, comments included) in any adapter .py, `import API` alone on its line, each script's `CAPABILITIES` literal and version agreeing with its `capabilities.json`, no public-speech call in a bridge, and the never-a-container names and graphics and the wearable names (read from their `adapters/_shared/` fragments) refusing what they must and nothing else. That the scripts' copies of a shared helper match is scripts/gen-contracts.mts's job (adapters/_shared/), not this file's.
-2. The bridge's untrusted-input guards (Phase 7 security review, area 5). Every bridge carries the same generated block of PURE functions — no game API, no files — bounded by the constants above them; this file extracts that block, execs it, and drives it directly, the same way adapters/tazuo/test_paths.py execs `data_dir` without a running client. Checked: stale, future-dated or unstamped commands refused, unknown actions, bad serials, over-long chains, out-of-range positions and walks, and over-long names refused, the burst budget (a 25-piece Grab all fits, a flood does not), partial and over-long queue lines, `resolve_root` and the chain check refusing another player's pack, and a trip's `putAway` (a container serial, and a Put away trip takes nothing).
+1. Conventions — none of the three banned unbounded-loop literals (see scripts/no-unbounded-loop.test.mts, which spells them out; this file must not, since TazUO refuses a script whose text contains one anywhere, comments included) in any adapter .py, `import API` alone on its line, each script's `CAPABILITIES` and `FEATURES` literals and version agreeing with its `capabilities.json` (and each bridge's `PROTOCOL` with its `protocol`), no public-speech call in a bridge, and the never-a-container names and graphics and the wearable names (read from their `adapters/_shared/` fragments) refusing what they must and nothing else. That the scripts' copies of a shared helper match is scripts/gen-contracts.mts's job (adapters/_shared/), not this file's.
+2. The bridge's untrusted-input guards (Phase 7 security review, area 5). Every bridge carries the same generated block of PURE functions — no game API, no files — bounded by the constants above them; this file extracts that block, execs it, and drives it directly, the same way adapters/tazuo/test_paths.py execs `data_dir` without a running client. Checked: stale, future-dated or unstamped commands refused, unknown actions, bad serials, over-long chains, out-of-range positions and walks, and over-long names refused, a line in a newer protocol refused (one with none read as protocol 1), an unknown top-level field ignored by both checks (what keeps installed bridges working when the app adds one), the burst budget (a 25-piece Grab all fits, a flood does not), partial and over-long queue lines, `resolve_root` and the chain check refusing another player's pack, and a trip's `putAway` (a container serial, and a Put away trip takes nothing).
 
 Run: python3 adapters/test_adapters.py  (app/adapters.test.mts also spawns it, so `npm test` does).
 """
@@ -79,7 +79,7 @@ class Item(object):
 def fresh(**over):
     """A legitimate command exactly as POST /api/bridge writes it, at t=1000000."""
     cmd = {"id": "1700000000000-4213", "action": "grab", "serial": 0x40000010, "name": "Ring",
-           "chain": [0x40000001, 0x40000002], "pos": None, "queuedAt": "1970-01-12T13:46:40Z"}
+           "chain": [0x40000001, 0x40000002], "pos": None, "queuedAt": "1970-01-12T13:46:40Z", "protocol": 1}
     cmd.update(over)
     return cmd
 
@@ -89,7 +89,7 @@ NOW = 1000000.0   # matches the queuedAt above, so a `fresh()` command is 0 seco
 
 def fresh_trip(**over):
     """A legitimate trip exactly as app/bridge-trip.mts's queueTrip writes it, at t=1000000."""
-    cmd = {"id": "0b6f3c1e-2a4d-4e8f-9c3a-5d7e1f2a3b4c", "action": "trip", "index": 3,
+    cmd = {"id": "0b6f3c1e-2a4d-4e8f-9c3a-5d7e1f2a3b4c", "action": "trip", "index": 3, "protocol": 1,
            "stamp": "2026-09-28T12:00:00.000Z", "queuedAt": "1970-01-12T13:46:40Z",
            "roots": {"1073741825": {"x": 10, "y": 10, "z": 0, "facet": 1},
                      "1073741904": {"x": 12, "y": 10, "z": 0}},
@@ -143,6 +143,22 @@ class Conventions(unittest.TestCase):
                                  "%s/%s CAPABILITIES differs from capabilities.json" % (name, f))
             if os.path.exists(os.path.join(d, "packrat-scanner.py")):
                 self.assertGreaterEqual(found, 1, "%s ships no CAPABILITIES literal" % name)
+
+    def test_features_literal_matches_capabilities_json(self):
+        # FEATURES is what a script reports besides its bridge actions (a scan's adapter.features, the bridge's
+        # status); a manifest without "features" declares none.
+        for name, d in adapter_dirs():
+            features = json.loads(read_text(os.path.join(d, "capabilities.json"))).get("features", [])
+            for f in py_files(d):
+                src = constant_source(read_text(os.path.join(d, f)), "FEATURES")
+                if src is not None:
+                    self.assertEqual(ast.literal_eval(src.split("=", 1)[1].strip()), features,
+                                     "%s/%s FEATURES differs from capabilities.json" % (name, f))
+
+    def test_every_bridge_declares_the_protocol_it_reads(self):
+        for name, d in bridge_dirs():
+            ns = load_block(os.path.join(d, "packrat-bridge.py"))
+            self.assertEqual(json.loads(read_text(os.path.join(d, "capabilities.json"))).get("protocol"), ns["PROTOCOL"], name)
 
     def test_adapter_version_agrees_with_the_manifest(self):
         for name, d in adapter_dirs():
@@ -445,6 +461,37 @@ class UntrustedInput(unittest.TestCase):
             trip, why = ns["check_line"](fresh_trip(), ["highlight", "grab", "goto"], NOW)
             self.assertIsNone(trip, name)
             self.assertEqual(why, "unknown action", name)
+
+    # ---- protocol ------------------------------------------------------------------------------
+    def test_a_line_in_a_newer_protocol_is_refused_whatever_it_asks(self):
+        for name, ns in self.each():
+            for line in (fresh(protocol=ns["PROTOCOL"] + 1), fresh_trip(protocol=ns["PROTOCOL"] + 1), fresh(protocol=99, action="dance")):
+                cmd, why = ns["check_line"](line, TRIPS, NOW)
+                self.assertIsNone(cmd, name)
+                self.assertIn("reinstall the scripts", why, name)
+
+    def test_a_line_with_no_protocol_comes_from_an_older_app_and_reads_as_protocol_1(self):
+        for name, ns in self.each():
+            for line in (fresh(), fresh_trip()):
+                del line["protocol"]
+                cmd, why = ns["check_line"](line, TRIPS, NOW)
+                self.assertIsNotNone(cmd, "%s: %s" % (name, why))
+
+    def test_an_unknown_top_level_field_is_ignored_by_both_checks(self):
+        # This is what let bridges older than the protocol field accept lines that carry it. Keep it true: the next
+        # field the app adds must not break the bridges players already have installed.
+        for name, ns in self.each():
+            cmd, why = ns["check_command"](fresh(since="2026", hint={"x": 1}), TRIPS, NOW)
+            self.assertIsNotNone(cmd, "%s: %s" % (name, why))
+            trip, why = ns["check_trip"](fresh_trip(since="2026", hint={"x": 1}), NOW)
+            self.assertIsNotNone(trip, "%s: %s" % (name, why))
+
+    def test_a_protocol_that_is_not_a_positive_integer_is_refused(self):
+        for name, ns in self.each():
+            for bad in (0, -1, "1", 1.0, True, None):
+                cmd, why = ns["check_line"](fresh(protocol=bad), TRIPS, NOW)
+                self.assertIsNone(cmd, "%s accepted protocol %r" % (name, bad))
+                self.assertEqual(why, "protocol is not a protocol number", name)
 
     def test_check_line_sends_every_other_command_to_check_command(self):
         for name, ns in self.each():

@@ -117,6 +117,8 @@ export interface AdapterInfo {
   name: string;
   scripts: string[];
   capabilities: unknown;
+  // What the bridge does besides the actions in capabilities.bridge (capabilities.json's optional "features").
+  features: string[];
   transport: "folder" | "paste";
   platform: string | null;
   summary: string;
@@ -155,7 +157,8 @@ export function listAdapters(adaptersDir: string): AdapterInfo[] {
       if (m) name = m[1]!.trim();
     } catch { /* no README — fall back to the directory name */ }
     const scripts = scriptNamesIn(dir);
-    out.push({ id: d.name, name, scripts, capabilities, transport, platform, summary: summarize(capabilities) });
+    const features = Array.isArray(raw.features) ? raw.features.filter((f): f is string => typeof f === "string") : [];
+    out.push({ id: d.name, name, scripts, capabilities, features, transport, platform, summary: summarize(capabilities) });
   }
   return out;
 }
