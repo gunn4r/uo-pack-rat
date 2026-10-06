@@ -18,6 +18,8 @@ test("[fast] json-file: empty hands the salvage the document, or undefined for a
   writeFileSync(f, "{oops");
   assert.deepEqual(readJsonFile(f, { onBad: "empty", salvage }), { got: undefined });
   assert.ok(existsSync(f), "an empty read never moves the file");
+  writeFileSync(f, "{\"x\":1}");
+  assert.deepEqual(readJsonFile(f, { onBad: "empty", salvage: (doc) => { if (doc) throw new Error("bad"); return "empty"; } }), "empty", "a salvage that throws reads as an empty file");
 });
 
 test("[fast] json-file: aside moves a bad file to .corrupt and says why, and reads a missing file as missing", () => {

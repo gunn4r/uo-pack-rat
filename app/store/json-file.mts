@@ -1,6 +1,6 @@
 // json-file.mts — the one way a store reads and writes a JSON data file. Reading names what a bad file means to its reader (onBad); writing creates the folder and replaces the file atomically with the data folder's file mode.
 //
-// - "empty": a missing, oversized, unreadable or unparsable file reads as `salvage(undefined)`, and a parsed one as `salvage(doc)`. Nothing on disk changes.
+// - "empty": a missing, oversized, unreadable or unparsable file reads as `salvage(undefined)`, and a parsed one as `salvage(doc)`; a salvage that throws on the parsed document reads as an empty file too. Nothing on disk changes.
 // - "aside": a bad file (oversized, unparsable, unreadable, or refused by `check`) is moved aside as <file>.corrupt and reported, so the next write cannot overwrite what was in it. A missing file reads as `{missing: true}`. With `ioErrors: "throw"`, a failed read (a missing file included) throws instead, since it says nothing about the file's contents.
 // - "skip": any failure throws, for a reader that skips that file and says why (one scan or run in a folder).
 import { lstatSync, mkdirSync, readFileSync } from "node:fs";
@@ -26,7 +26,7 @@ export function readJsonFile(path: string, opts: { maxBytes?: number; onBad: "em
     if ((e as NodeJS.ErrnoException).code === "ENOENT") return { missing: true };
     bad = e instanceof SyntaxError ? { why: "syntax", error: e } : { why: "io", error: e as Error };
   }
-  if (opts.onBad === "empty") return opts.salvage!(bad ? undefined : doc);
+  if (opts.onBad === "empty") { if (bad) return opts.salvage!(undefined); try { return opts.salvage!(doc); } catch { return opts.salvage!(undefined); } }
   if (bad && opts.onBad === "skip") throw new Error(`it is over ${opts.maxBytes} bytes`);
   if (!bad && opts.onBad === "skip") return doc;
   if (!bad) { const reason = opts.check?.(doc); if (reason) bad = { why: "check", reason }; }
