@@ -130,7 +130,7 @@ export function resolveConfig(argv: string[] = process.argv.slice(2), env: NodeJ
       // failing to parse/validate is computed by app/watcher.mts itself (join(inboxDir, "rejected")),
       // not exposed here — nothing outside the watcher needs it.
       inbox, inboxFor: (adapter: string) => join(inbox, adapter),
-      // mcp: the MCP server's settings and token (app/mcp.mts), written only when it is first turned on.
+      // mcp: the MCP server's settings and token (app/mcp.mts), written the first time a Settings switch changes them.
       mcp: join(dataDir, "mcp.json"),
     },
   };

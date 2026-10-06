@@ -461,7 +461,12 @@ export const TOOLS: Tool[] = [
       }
       if (suit.twoHanded?.twoHanded && suit.oneHanded) throw new ToolError("a two-handed weapon leaves the one-hand slot empty");
       if (name && a.keepWorn !== false) {
-        for (const w of inv.worn[name] || []) if (w.slot && GEAR_SLOTS.includes(w.slot) && !suit[w.slot] && !(w.slot === "oneHanded" && suit.twoHanded?.twoHanded)) suit[w.slot] = w;
+        // A worn piece fills an unnamed slot unless it would put a one-hander beside a named two-hander, or the reverse.
+        for (const w of inv.worn[name] || []) {
+          if (!w.slot || !GEAR_SLOTS.includes(w.slot) || suit[w.slot]) continue;
+          if ((w.slot === "oneHanded" && suit.twoHanded?.twoHanded) || (w.slot === "twoHanded" && w.twoHanded && suit.oneHanded)) continue;
+          suit[w.slot] = w;
+        }
       }
       const plan = await planProfile(ctx, inv, name, a, Object.values(suit));
       const totals = totalsOf(Object.fromEntries(Object.entries(suit).map(([slot, it]) => [slot, toOptItem(it)])));
