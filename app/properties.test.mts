@@ -68,10 +68,14 @@ const FROZEN_PROP_FULL: Record<string, string> = {
 const FROZEN_EXTRA_COLS: Record<string, [string, string]> = { strReq: ["STR req", "Strength Requirement"], weight: ["Wt", "Weight (stones)"] };
 
 test("[fast] properties: every list derived from the registry equals the literal it replaced", () => {
-  // Order counts for the patterns (the first match wins: Spell Damage before Damage Increase) and the extra columns.
+  // Order counts everywhere: the first matching pattern wins (Spell Damage before Damage Increase), and the Suit Builder's
+  // rows and the sheet's "Other" group list the keys in PROP_LABELS's and PROP_FULL's order. deepEqual ignores key
+  // order, so the orders are compared on their own. NOT_BUILDER_KEYS is only ever asked .has(), so its order is free.
   assert.deepEqual(PROP_PATTERNS, FROZEN_PROP_PATTERNS);
   assert.deepEqual(PROP_LABELS, FROZEN_PROP_LABELS);
+  assert.deepEqual(Object.keys(PROP_LABELS), Object.keys(FROZEN_PROP_LABELS));
   assert.deepEqual(PROP_FULL, FROZEN_PROP_FULL);
+  assert.deepEqual(Object.keys(PROP_FULL), Object.keys(FROZEN_PROP_FULL));
   assert.deepEqual(NOT_BUILDER_KEYS, FROZEN_NOT_BUILDER_KEYS);
   assert.deepEqual(EXTRA_COLS, FROZEN_EXTRA_COLS);
   assert.deepEqual(Object.keys(EXTRA_COLS), Object.keys(FROZEN_EXTRA_COLS));

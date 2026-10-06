@@ -181,7 +181,8 @@ export function getRules(): RulesV1 {
 // Tooltip parsing. ORDER MATTERS: FCR before FC, Spell Damage before Damage Increase — the same
 // property table the TazUO adapter scripts use in-game, so both sides agree on property keys.
 // ---------------------------------------------------------------------------
-// The property registry: every property key the app knows, in tooltip-parsing order. A parsed property has the
+// The property registry: every property key the app knows, in display order (the Suit Builder's rows and the character
+// sheet's "Other" group list them in it). A parsed property has the
 // tooltip pattern that reads it; the rest are set by parseTooltip itself (psLevel, sotPoints, tagPenalty), by the
 // fold (the pools) or read off the item (the "extra" columns). `builder` is whether the Suit Builder's weight and
 // requirement rows offer it. The exports below are derived from it.
@@ -195,11 +196,11 @@ export const PROPERTIES = [
   parsed("physResist", "physical resist", "Phys", "Physical Resist"), parsed("fireResist", "fire resist", "Fire", "Fire Resist"),
   parsed("coldResist", "cold resist", "Cold", "Cold Resist"), parsed("poisonResist", "poison resist", "Poison", "Poison Resist"),
   parsed("energyResist", "energy resist", "Energy", "Energy Resist"),
-  parsed("fcr", "faster cast recovery", "FCR", "Faster Cast Recovery"), parsed("fc", "faster casting", "FC", "Faster Casting"),
-  parsed("sdi", "spell damage increase", "SDI", "Spell Damage Increase"), parsed("di", "damage increase", "DI", "Damage Increase"),
   parsed("hci", "hit chance increase", "HCI", "Hit Chance Increase"), parsed("dci", "defense chance increase", "DCI", "Defense Chance Increase"),
-  parsed("ssi", "swing speed increase", "SSI", "Swing Speed Increase"),
+  parsed("ssi", "swing speed increase", "SSI", "Swing Speed Increase"), parsed("di", "damage increase", "DI", "Damage Increase"),
   parsed("lmc", "lower mana cost", "LMC", "Lower Mana Cost"), parsed("lrc", "lower reagent cost", "LRC", "Lower Reagent Cost"),
+  parsed("fc", "faster casting", "FC", "Faster Casting"), parsed("fcr", "faster cast recovery", "FCR", "Faster Cast Recovery"),
+  parsed("sdi", "spell damage increase", "SDI", "Spell Damage Increase"),
   parsed("hpi", "hit point increase", "HP+", "Hit Point Increase"), parsed("hpRegen", "hit point regeneration", "HPR", "Hit Point Regeneration"),
   parsed("stamInc", "stamina increase", "Stam+", "Stamina Increase"), parsed("stamRegen", "stamina regeneration", "SR", "Stamina Regeneration"),
   parsed("manaInc", "mana increase", "Mana+", "Mana Increase"), parsed("manaRegen", "mana regeneration", "MR", "Mana Regeneration"),
@@ -232,7 +233,14 @@ export const PROPERTIES = [
 export type PropKey = (typeof PROPERTIES)[number]["key"];
 const NUMBER_PROPS = PROPERTIES.filter((p) => p.kind === "number");
 
-export const PROP_PATTERNS: Array<[string, RegExp]> = PROPERTIES.flatMap((p): Array<[string, RegExp]> => (p.pattern ? [[p.key, p.pattern]] : []));
+// The tooltip reader tries the patterns in registry order, except that these nine go in this order where the first of
+// them stands: a longer name before the shorter one it contains (Spell Damage Increase before Damage Increase).
+const PARSE_ORDER: PropKey[] = ["fcr", "fc", "sdi", "di", "hci", "dci", "ssi", "lmc", "lrc"];
+const parsedProps = PROPERTIES.filter((p) => p.pattern);
+const firstOrdered = parsedProps.findIndex((p) => PARSE_ORDER.includes(p.key));
+const parseOrdered = parsedProps.filter((p) => !PARSE_ORDER.includes(p.key));
+parseOrdered.splice(firstOrdered, 0, ...PARSE_ORDER.map((k) => parsedProps.find((p) => p.key === k)!));
+export const PROP_PATTERNS: Array<[string, RegExp]> = parseOrdered.map((p): [string, RegExp] => [p.key, p.pattern!]);
 export const PROP_LABELS: Record<string, string> = Object.fromEntries(NUMBER_PROPS.map((p) => [p.key, p.label]));
 // Properties the builder's weight and requirement rows never offer (see the registry's note).
 export const NOT_BUILDER_KEYS = new Set(NUMBER_PROPS.filter((p) => !p.builder).map((p): string => p.key));
