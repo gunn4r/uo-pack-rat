@@ -1,0 +1,10 @@
+{
+  "id": "golden-run-1",
+  "key": "0000000000000000000000000000000000000000",
+  "character": "Kestrel",
+  "createdAt": "2026-09-01T12:00:00.000Z",
+  "label": "",
+  "solverVersion": 1,
+  "settings": { "weaponSkill": "archery", "allowOthers": true, "budgetS": 30, "exact": true },
+  "result": { "method": "exact", "proven": true, "best": { "ring": { "serial": 1879769089 } } }
+}

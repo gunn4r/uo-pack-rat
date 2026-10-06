@@ -17,8 +17,11 @@ import {
 import type { Item, Inventory, ItemLocation, ProfilesFile, CharacterEntryRaw } from "./vault-lib.mts";
 import { specFromProfile, templateSettings, type TemplateMap } from "./build-spec.mts";
 import { upgradeScan, TAZUO_V1_CAPS } from "./scan-schema.mts";
-import { runKey, reusableRun, runSummary, normalizeRun, suitPieces, SOLVER_VERSION } from "./runs-lib.mts";
+import { runKey, reusableRun, runSummary, suitPieces, SOLVER_VERSION } from "./runs-lib.mts";
 import type { SavedRun } from "./runs-lib.mts";
+import { migrate } from "./migrate.mts";
+// A run as the runs store reads it (app/migrate.mts, the runs steps).
+const normalizeRun = (run: SavedRun): SavedRun => migrate("runs", run).doc as SavedRun;
 import { corePath } from "./config.mts";
 import { validate, type ValidatorSchema } from "./schema/validate.mts";
 import type { RulesV1, ScanV2 } from "./schema/types.d.mts";
@@ -1281,7 +1284,7 @@ test("[fast] saved runs: the key carries the solver version, so runs saved befor
 });
 // Issue #28: a run saved before the soft-floor fix (PROOF_SOUND_SINCE) may have proved a worse suit optimal, so
 // its claim is withdrawn — no verdict at all, not relabelled "best within budget".
-test("[fast] runs: normalizeRun withdraws the proof of a run saved before the soft-floor fix", () => {
+test("[fast] runs: the runs migration withdraws the proof of a run saved before the soft-floor fix", () => {
   const old = normalizeRun({ id: "o", result: { method: "exact", proven: true } });
   assert.equal(old.result!.proven, undefined);
   assert.equal(runSummary(old).proven, null);
@@ -1293,7 +1296,7 @@ test("[fast] runs: suitPieces is every piece of every saved suit, empty slots an
   const runs: SavedRun[] = [{ id: "a", result: { best: { ring: { serial: 1 }, arms: null, chest: { serial: 2 } } } }, { id: "b", result: { best: { ring: { serial: 1 }, legs: { serial: 3 } } } }, { id: "c" }, { id: "d", result: {} }];
   assert.deepEqual([...suitPieces(runs)].sort(), [1, 2, 3]);
 });
-test("[fast] runs: normalizeRun upgrades allowOthers/budgetS and stamps schemaVersion", () => {
+test("[fast] runs: the runs migration upgrades allowOthers/budgetS and stamps schemaVersion", () => {
   const r = normalizeRun({ id: "x", settings: { allowOthers: true, budgetS: 30 }, result: {} });
   assert.equal(r.schemaVersion, 1);
   assert.equal(r.settings!.allowOthersWorn, true);
@@ -1302,7 +1305,7 @@ test("[fast] runs: normalizeRun upgrades allowOthers/budgetS and stamps schemaVe
   assert.equal("budgetS" in r.settings!, false);
   assert.deepEqual(normalizeRun(r), r);   // idempotent
 });
-test("[fast] runs: normalizeRun turns a run's single weapon choice into the exclusions it was built with", () => {
+test("[fast] runs: the runs migration turns a run's single weapon choice into the exclusions it was built with", () => {
   const r = normalizeRun({ id: "w", settings: { weaponSkill: "archery", allowOthers: true }, result: {} });
   assert.deepEqual(r.settings!.excludeWeapons, OTHERS("archery"));
   assert.equal("weaponSkill" in r.settings!, false);
@@ -1312,7 +1315,7 @@ test("[fast] settingsDiff: budgets compare in ms and print seconds", () => {
   const d = settingsDiff({ budgetMs: 30000, exact: true }, { budgetMs: 60000, exact: true });
   assert.ok(d.some((l) => l === "budget 30 s → 60 s"), d.join("|"));
 });
-test("[fast] runs: normalizeRun is applied wherever runs are read, so schemaVersion and allowOthersWorn reach the list endpoint", () => {
+test("[fast] runs: the runs migration is applied wherever runs are read, so schemaVersion and allowOthersWorn reach the list endpoint", () => {
   const old: SavedRun = { id: "y", character: "Dorran", result: { method: "exact", proven: true }, settings: { allowOthers: false, budgetS: 45 } };
   const s = runSummary(normalizeRun(old));
   assert.equal(s.schemaVersion, 1);

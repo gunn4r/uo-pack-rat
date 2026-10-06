@@ -64,7 +64,7 @@ Examples: `02b052e`, `e0b1eb0`.
 
 Examples: `166eb05`, `d311bdb`, `f1eced4`.
 
-1. Contract: the `BuildSpec` group it belongs to in `app/build-spec.mts` (the type, `buildSpec`'s defaults, `buildSpecError`, `specFromProfile`/`profileFromSpec`, and `planBuild` if a build reads it) and `app/schema/profiles.v3.schema.json` (types regenerate with `npm run build:types`); the built-in templates in `app/data/templates/<shard>.json` if they set it; `TEMPLATE_KEYS` in `app/vault-lib.mts` if templates carry it. A change to what an older file means needs a migration step in `migrateProfilesV3` and a golden file in `app/fixtures/profiles-v2/`.
+1. Contract: the `BuildSpec` group it belongs to in `app/build-spec.mts` (the type, `buildSpec`'s defaults, `buildSpecError`, `specFromProfile`/`profileFromSpec`, and `planBuild` if a build reads it) and `app/schema/profiles.v3.schema.json` (types regenerate with `npm run build:types`); the built-in templates in `app/data/templates/<shard>.json` if they set it; `TEMPLATE_KEYS` in `app/vault-lib.mts` if templates carry it. A change to what an older file means needs a migration step (see "Change the shape of a data file") and a golden file in `app/fixtures/profiles-v2/`.
 2. Logic: `app/vault-lib.mts` (templates, `settingsDiff`); `app/evaluate.mts` if a suit's totals or requirements read it; `app/runs-lib.mts` (run identity and instant repeats: bump `SOLVER_VERSION` if results change); `app/run-settings.mts` (`runSettingsError`, the one check `POST /api/optimize`, `POST /api/runs` and `POST /api/evaluate` hold a run's settings to, `RUN_SETTING_LIMITS`, `OPTS_LIMITS` and `RUN_DEFAULTS`); `app/bench/mip-spike.mts`, `app/bench/run-bench.mts`.
 3. UI: `app/ui/builder-model.mts`, `app/ui/builder.mts`, `app/ui/builder-result.mts`, `app/ui/runs.mts` (`settingsSnapshot`), `app/ui/sheet.mts`, `app/ui/components.mts`, `app/ui/builder.css`.
 4. MCP: the `build_suit` and `score_suit` arguments in `app/mcp-tools.mts` if a model should set it.
@@ -82,11 +82,20 @@ Examples: `e6288f2`, `5416327`, `97c6363`.
 5. `docs/architecture.md` (the data folder, if it writes a file), `docs/threat-model.md` (a new boundary), `PRIVACY.md` (if it stores or forgets player data).
 6. `app/mcp-tools.mts` if a model should reach it.
 
+## Change the shape of a data file
+
+A rename, a removal, a change of meaning or a newly required field in a file under the data folder (`docs/architecture.md`, Data directory layout). An added optional field needs none of this.
+
+1. `app/migrate.mts`: raise the kind's `current` in `DOC_KINDS` and add a numbered step `{from, to, what, run}` at the end of its list. The step is pure and idempotent and returns its input itself when it has nothing to change; the domain function it calls lives in the kind's own module (as `migrateProfilesV3` in `app/build-spec.mts`), never the other way round, since nothing the registry imports may import it. The writer then writes the new version, in the field the file already uses.
+2. A golden file of the old version stays in `app/fixtures/golden/<kind>/`, and one of the new version is added beside it: `app/migrate.test.mts` loads every one to the current version and checks it with the kind's own check.
+3. A build older than this one now sees a newer file: its reader loads what it can and refuses to save (409), so nothing more is needed for that.
+4. Docs: the file's line in `docs/architecture.md`'s data folder.
+
 ## Change the scan format
 
 Examples: `2b30944`, `9b03dcc`, `219861a`.
 
-1. Contract: `app/schema/scan.v2.schema.json` and the inline copy in `app/scan-schema.mts` together (a test keeps them equal), the upgrade and checks in `app/scan-schema.mts`, the generated types (`scripts/build-schema-types.mts`).
+1. Contract: `app/schema/scan.v2.schema.json` and the inline copy in `app/scan-schema.mts` together (a test keeps them equal), the upgrade and checks in `app/scan-schema.mts` (a new scan version is also a step in `app/migrate.mts`, "Change the shape of a data file"), the generated types (`scripts/build-schema-types.mts`).
 2. Every adapter: `adapters/tazuo/packrat-scanner.py`, `adapters/tazuo/packrat-character-refresh.py`, `adapters/tazuo/packrat-house-map-refresh.py`, `adapters/tazuo/packrat-bridge.py`, `adapters/tazuo/packrat-panel.py`; `adapters/razor-enhanced/packrat-scanner.py`, `adapters/razor-enhanced/packrat-character-refresh.py`, `adapters/razor-enhanced/packrat-bridge.py`; `adapters/classicuo-web/packrat-scanner.ts`; each `capabilities.json`; a version bump per adapter (`docs/adapter-guide.md`, Versions). A helper inside a `# BEGIN generated:` block is edited once, in its `adapters/_shared/` fragment, then `npm run gen:contracts`.
 3. Fixtures and fakes: `adapters/tazuo/fixture.scan.json`, `scripts/make-adapter-fixture.mts`, `adapters/fake_clients.py`, `adapters/test_scanners.py`, `adapters/tazuo/test_paths.py`.
 4. Fold and consumers: `app/vault-lib.mts`, `app/retention.mts`, `app/house-capture.mts`, `app/item-query.mts`; `app/ui/inv-model.mts`, `app/ui/inventory.mts`, `app/ui/sheet.mts`, `app/ui/store.mts`, `app/ui/view-state.mts`.

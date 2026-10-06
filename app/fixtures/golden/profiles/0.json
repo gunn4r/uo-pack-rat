@@ -1,0 +1,8 @@
+{
+  "archetypes": {
+    "melee": { "floors": { "hci": 45 }, "weights": { "dci": 10, "ssi": 5 } }
+  },
+  "characters": {
+    "Kestrel": { "archetype": "melee", "race": "human", "weights": { "dci": 10 } }
+  }
+}

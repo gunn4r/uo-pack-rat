@@ -1,14 +1,15 @@
 // scans.mts — <data>/scans/: every accepted scan, one JSON file each (the watcher writes them, /api/forget* adds tombstones, retention removes old ones).
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { isKnownKind, upgradeScan, validateScan } from "../scan-schema.mts";
+import { isKnownKind, validateScan } from "../scan-schema.mts";
+import { migrate } from "../migrate.mts";
 import type { ScanV2 } from "../schema/types.d.mts";
 import type { ScanFile } from "../retention.mts";
 import { readJsonFile } from "./json-file.mts";
 
 // `shard` is the current shard, read on every call: a v1 scan is upgraded under it.
 export function createScansStore({ dir, shard }: { dir: string; shard: () => string }) {
-  // Every scan file on disk is v1 or v2; upgradeScan() normalizes either to v2 and validateScan()
+  // Every scan file on disk is v1 or v2; migrate() (app/migrate.mts) brings either to v2 and validateScan()
   // checks the result against the contract before it ever reaches foldSnapshots (which now requires
   // v2 and throws otherwise). A file that doesn't parse, doesn't upgrade (neither v1 nor v2 shaped)
   // or fails validation is logged and skipped — never thrown, so one bad scan can't take the whole
@@ -19,7 +20,10 @@ export function createScansStore({ dir, shard }: { dir: string; shard: () => str
     for (const f of readdirSync(dir).filter((f) => f.endsWith(".json")).sort()) {
       try {
         const raw: unknown = readJsonFile(join(dir, f), { onBad: "skip" });
-        const doc = upgradeScan(raw, { shard: shard() });
+        const m = migrate("scan", raw, { shard: shard() });
+        if (m.newer) throw new Error("it was made by a newer Pack Rat");
+        if (m.fromVersion === null) throw new TypeError("it is neither a v1 nor a v2 scan");
+        const doc = m.doc as Record<string, unknown>;
         const { ok, errors } = validateScan(doc);
         if (!ok) { console.warn(`skipping ${f}: ${errors.map((e) => `${e.path} ${e.msg}`).join("; ")}`); continue; }
         // doc passed validateScan — this is the one place a v2-shaped document earns the ScanV2 cast

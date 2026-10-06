@@ -143,6 +143,7 @@ export interface ProfilesApiResponse {
   ok: boolean;
   profiles: ProfilesV3;
   builtinTemplates: TemplateMap;   // the shard's built-in templates, read-only (app/data/templates/<shard>.json)
+  readOnly?: string;   // why profiles.json cannot be saved, when a newer Pack Rat made it (app/migrate.mts)
 }
 
 // ---------------------------------------------------------------- setup / wizard / adapters
@@ -261,7 +262,8 @@ export interface BlacklistApiResponse {
 }
 // GET and POST /api/item-kinds, POST /api/item-kinds/import (issue #150): the whole item-kinds.json document after
 // the change; an import also says how many entries it left out and why (the first few).
-export interface ItemKindsApiResponse extends KindOverrides { ok: boolean; version: 1; skipped?: number; problems?: string[] }
+// `readOnly` (GET): why the file cannot be changed, when a newer Pack Rat made it (app/migrate.mts).
+export interface ItemKindsApiResponse extends KindOverrides { ok: boolean; version: 1; skipped?: number; problems?: string[]; readOnly?: string }
 
 // ---------------------------------------------------------------- suit builder: optimize / runs
 
@@ -443,7 +445,7 @@ export type {
   StrategyId as AutoStrategy, Candidate as ProposalCandidate, GroupReport as ProposalGroup, Layout as ProposalLayout, Proposal as OrganizeProposal, OrganizeProposeApiResponse,
 } from "../organize-types.mts";
 export interface OrganizePreset { id: string; name: string; match: RuleMatch }
-export interface OrganizeApiResponse { ok: boolean; config: OrganizeConfig; problems: string[] }
+export interface OrganizeApiResponse { ok: boolean; config: OrganizeConfig; problems: string[]; readOnly?: string }
 export interface OrganizePresetsApiResponse { ok: boolean; presets: OrganizePreset[] }
 export interface OrganizeTripApiResponse { ok: boolean; id: string; index: number }
 // POST /api/organize/match: what one rule filter takes of the movable items in labelled roots (app/organize.mts's matchCount).
@@ -495,5 +497,5 @@ export interface AreaRect { x0: number; y0: number; x1: number; y1: number }
 // `color` is a token name, "area-1" … "area-8" (--color-area-N).
 export interface HouseArea { id: string; name: string; level: number; color: string; rects: AreaRect[] }
 export interface HouseMapEntry { name: string; bounds?: HouseBounds | undefined; areas?: HouseArea[] | undefined }
-export interface HouseMapApiResponse { ok: boolean; houses: Record<string, HouseMapEntry> }
+export interface HouseMapApiResponse { ok: boolean; houses: Record<string, HouseMapEntry>; readOnly?: string }
 export interface HouseMapPutApiResponse { ok: boolean; entry: HouseMapEntry | null }
