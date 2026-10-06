@@ -24,6 +24,7 @@ import { writeFileAtomic } from "./atomic-write.mts";
 import { DATA_FILE_MODE } from "./config.mts";
 import { validate } from "./schema/validate.mts";
 import { INSTRUCTIONS, TOOLS, ToolError, type ToolContext } from "./mcp-tools.mts";
+import { isJsonContentType, readBody, type HttpError } from "./read-body.mts";
 
 export const MCP_DEFAULT_PORT = 47615;
 // Newest first: an initialize naming one of these gets it back, any other gets the newest.
@@ -38,20 +39,31 @@ export interface McpLive { listening: boolean; port: number | null; portBusy: nu
 export const defaultMcpConfig = (): McpConfig => ({ version: 1, enabled: false, allowActions: false, port: MCP_DEFAULT_PORT, token: null });
 const TOKEN_RE = /^[A-Za-z0-9-]{16,128}$/;
 
-// A file that does not parse, is not an object, or carries a wrong version, switch or port reads as the defaults
-// (off), with one line in the log; the next save replaces it. A file with no usable token gets a new one, saved.
+// A file that does not parse, or is not an object, reads as the defaults (off). Otherwise each field that is wrong
+// falls back to its default on its own (a switch to off), so one bad field never costs the token; each is logged, and
+// the next save replaces the file. A leading BOM (a Windows editor's) is ignored. A file with no usable token gets a
+// new one, saved; when it cannot be saved, the error is logged and MCP stays off for this run.
 export function readMcpConfig(file: string, warn: (msg: string) => void): McpConfig {
-  if (!existsSync(file)) return defaultMcpConfig();
-  let doc: unknown;
-  try { doc = JSON.parse(readFileSync(file, "utf8")); } catch { doc = null; }
-  const d = doc && typeof doc === "object" && !Array.isArray(doc) ? doc as Record<string, unknown> : null;
-  const portOk = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= 65535;
-  if (!d || d.version !== 1 || typeof d.enabled !== "boolean" || typeof d.allowActions !== "boolean" || !portOk(d.port)) {
-    warn("mcp.json is not a valid MCP settings file; MCP stays off until it is turned on in Settings, which replaces the file");
-    return defaultMcpConfig();
+  const cfg = defaultMcpConfig();
+  if (!existsSync(file)) return cfg;
+  let d: Record<string, unknown> | null = null;
+  try {
+    const doc: unknown = JSON.parse(readFileSync(file, "utf8").replace(/^\uFEFF/, ""));
+    if (doc && typeof doc === "object" && !Array.isArray(doc)) d = doc as Record<string, unknown>;
+  } catch { d = null; }
+  if (!d) { warn("mcp.json does not parse; MCP stays off until a Settings switch replaces the file"); return cfg; }
+  const bad: string[] = [];
+  if (d.version !== 1) bad.push("version");
+  if (typeof d.enabled === "boolean") cfg.enabled = d.enabled; else bad.push("enabled");
+  if (typeof d.allowActions === "boolean") cfg.allowActions = d.allowActions; else bad.push("allowActions");
+  if (typeof d.port === "number" && Number.isInteger(d.port) && d.port >= 0 && d.port <= 65535) cfg.port = d.port; else bad.push("port");
+  if (typeof d.token === "string" && TOKEN_RE.test(d.token)) cfg.token = d.token;
+  if (bad.length) warn(`mcp.json: ${bad.join(", ")} not valid, read as the default`);
+  if (!cfg.token) {
+    cfg.token = randomUUID();
+    try { writeMcpConfig(file, cfg); }
+    catch (e) { warn(`mcp.json could not be saved with a new token (${(e as Error).message}); MCP stays off`); cfg.enabled = false; }
   }
-  const cfg: McpConfig = { version: 1, enabled: d.enabled, allowActions: d.allowActions, port: d.port, token: typeof d.token === "string" && TOKEN_RE.test(d.token) ? d.token : null };
-  if (!cfg.token) { cfg.token = randomUUID(); writeMcpConfig(file, cfg); }
   return cfg;
 }
 export function writeMcpConfig(file: string, cfg: McpConfig): void {
@@ -76,41 +88,20 @@ export interface McpController {
   close(): Promise<void>;
 }
 
-const JSON_HEADERS = { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff", "x-frame-options": "DENY" };
+const BASE_HEADERS = { "cache-control": "no-store", "x-content-type-options": "nosniff", "x-frame-options": "DENY" };
 function reply(res: http.ServerResponse, status: number, body: unknown, extra: Record<string, string> = {}): void {
-  if (body === null) { res.writeHead(status, { "cache-control": "no-store", "x-content-type-options": "nosniff", "x-frame-options": "DENY", ...extra }); res.end(); return; }
-  res.writeHead(status, { ...JSON_HEADERS, ...extra });
+  if (body === null) { res.writeHead(status, { ...BASE_HEADERS, ...extra }); res.end(); return; }
+  res.writeHead(status, { ...BASE_HEADERS, "content-type": "application/json; charset=utf-8", ...extra });
   res.end(JSON.stringify(body));
 }
 type RpcId = string | number | null;
 const rpcError = (id: RpcId, code: number, message: string) => ({ jsonrpc: "2.0", id, error: { code, message } });
 const rpcResult = (id: RpcId, result: unknown) => ({ jsonrpc: "2.0", id, result });
-class HttpError extends Error { status = 400; }
-const httpError = (status: number, message: string): HttpError => Object.assign(new HttpError(message), { status });
-
-// Past the cap a body is counted and dropped, and the 413 waits for the request to end so a client still writing can
-// read it (vault-server.mts's readBody does the same); past 4 MB more the socket is destroyed.
-function readJson(req: http.IncomingMessage): Promise<unknown> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    let bytes = 0;
-    req.on("data", (c: Buffer) => {
-      bytes += c.length;
-      if (bytes <= MAX_BODY_BYTES) { chunks.push(c); return; }
-      chunks.length = 0;
-      if (bytes > MAX_BODY_BYTES + 4 * 1024 * 1024) { reject(httpError(413, "body too large")); req.destroy(); }
-    });
-    req.on("end", () => {
-      if (bytes > MAX_BODY_BYTES) return reject(httpError(413, "body too large"));
-      try { resolve(JSON.parse(Buffer.concat(chunks).toString("utf8"))); }
-      catch { reject(httpError(400, "parse error")); }
-    });
-    req.on("error", reject);
-  });
-}
-
 export function createMcp(opts: McpOptions): McpController {
-  let config = readMcpConfig(opts.file, (msg) => opts.log(`mcp: ${msg}`));
+  const warn = (msg: string): void => opts.log(`mcp: ${msg}`);
+  let config: McpConfig;
+  try { config = readMcpConfig(opts.file, warn); }
+  catch (e) { warn(`mcp.json could not be read (${(e as Error).message}); MCP stays off`); config = defaultMcpConfig(); }
   let listener: http.Server | null = null, boundPort: number | null = null, portBusy: number | null = null;
   // Opening and closing run one at a time, in the order asked (a quick on/off/on ends on).
   let applying: Promise<void> = Promise.resolve();
@@ -128,7 +119,7 @@ export function createMcp(opts: McpOptions): McpController {
       if (!r.ok) throw new ToolError(typeof data.error === "string" ? data.error : `${method} ${path} failed (${r.status})`);
       return data as never;
     },
-    allowActions: () => config.allowActions,
+    memory: { actions: new Map(), replaced: new Set() },
     sleep: (ms) => new Promise((ok) => setTimeout(ok, ms).unref()),
   };
 
@@ -179,21 +170,24 @@ export function createMcp(opts: McpOptions): McpController {
       const want = Buffer.from(`Bearer ${config.token ?? ""}`), got = Buffer.from(String(req.headers.authorization || ""));
       if (!config.token || got.length !== want.length || !timingSafeEqual(got, want)) return reply(res, 401, { error: "unauthorized" }, { "www-authenticate": "Bearer" });
       if (req.method !== "POST") return reply(res, 405, { error: "method not allowed" }, { allow: "POST" });
-      if (!String(req.headers["content-type"] || "").startsWith("application/json")) { req.resume(); return reply(res, 415, { error: "content-type must be application/json" }); }
+      if (!isJsonContentType(req.headers["content-type"])) { req.resume(); return reply(res, 415, { error: "content-type must be application/json" }); }
       const asked = req.headers["mcp-protocol-version"];
       if (asked != null && !PROTOCOL_VERSIONS.includes(String(asked))) { req.resume(); return reply(res, 400, rpcError(null, -32600, `Unsupported MCP-Protocol-Version: ${String(asked).slice(0, 32)}`)); }
       let msg: unknown;
-      try { msg = await readJson(req); }
+      try { msg = await readBody(req, { limit: MAX_BODY_BYTES }); }
       catch (e) {
-        if (e instanceof HttpError && e.status === 413) { res.setHeader("connection", "close"); return reply(res, 413, { error: "body too large" }); }
-        if (e instanceof HttpError) return reply(res, 400, rpcError(null, -32700, "Parse error"));
+        const status = (e as HttpError).statusCode;
+        if (status === 413) { res.setHeader("connection", "close"); return reply(res, 413, { error: "body too large" }); }
+        if (status === 400) return reply(res, 400, rpcError(null, -32700, "Parse error"));
         throw e;
       }
       if (Array.isArray(msg)) return reply(res, 400, rpcError(null, -32600, "Batch requests are not supported"));
       const m = msg && typeof msg === "object" ? msg as Record<string, unknown> : null;
       if (!m || m.jsonrpc !== "2.0") return reply(res, 400, rpcError(null, -32600, "Invalid Request"));
-      // A notification (no id) or a response to something this server never sends: accepted, nothing to answer.
-      if (typeof m.method !== "string" || !("id" in m)) return reply(res, 202, null);
+      // A notification (no id) or a response to something this server never sends: accepted, nothing to answer. An id
+      // with no method name and no result or error is neither.
+      if (!("id" in m) || (typeof m.method !== "string" && ("result" in m || "error" in m))) return reply(res, 202, null);
+      if (typeof m.method !== "string") return reply(res, 400, rpcError(null, -32600, "Invalid Request: method must be a string"));
       const id = m.id;
       if (typeof id !== "string" && typeof id !== "number") return reply(res, 400, rpcError(null, -32600, "Invalid Request: id must be a string or a number"));
       const params = m.params ?? {};

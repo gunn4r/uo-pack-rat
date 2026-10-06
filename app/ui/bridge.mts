@@ -81,10 +81,6 @@ export function currentAdapter() {
   return state.setup?.adapters?.find((a) => a.id === id) || null;
 }
 const ALL_BRIDGE_ACTIONS: BridgeAction[] = ["highlight", "grab", "goto"];
-// The action names the page's buttons use (BRIDGE_ACTION_LABELS) — the note names actions the same way the
-// missing buttons would have read, not the raw capability strings ("goto" reads as "Go to" in here,
-// same as the button that isn't there).
-const ACTION_LABELS = BRIDGE_ACTION_LABELS;
 // One short line explaining what the bridge controls are doing or why they're missing/limited — null
 // only when a real configured client is present AND every KNOWN action is present (today, that's
 // exactly TazUO's set, so a TazUO player who ran the wizard's install step sees nothing new here). A
@@ -120,7 +116,7 @@ export function bridgeNote(): string | null {
   const known = ALL_BRIDGE_ACTIONS.filter((a) => allowedSet.has(a));
   const missing = ALL_BRIDGE_ACTIONS.filter((a) => !allowedSet.has(a));
   if (!known.length) return `${name} can't run in-game actions — Highlight, Grab and Go to aren't available for this client.`;
-  return `${name} only supports ${known.map((a) => ACTION_LABELS[a]).join(", ")} here — ${missing.map((a) => ACTION_LABELS[a]).join(", ")} ${missing.length === 1 ? "isn't" : "aren't"} available for this client.`;
+  return `${name} only supports ${known.map((a) => BRIDGE_ACTION_LABELS[a]).join(", ")} here — ${missing.map((a) => BRIDGE_ACTION_LABELS[a]).join(", ")} ${missing.length === 1 ? "isn't" : "aren't"} available for this client.`;
 }
 // The note as a ready-to-insert element, or null when there's nothing to say (keeps callers from
 // repeating the `bridgeNote() ? el(...) : null` conditional at every call site).
@@ -231,5 +227,5 @@ export function bridgeActionReason(action: BridgeAction, it: BridgeTarget): stri
 // the game's answer later).
 export async function runBridgeAction(action: BridgeAction, it: BridgeTarget, opts: { pos?: unknown } = {}): Promise<void> {
   const r = await sendBridge(action, it, opts);
-  toast(r.ok ? `${ACTION_LABELS[action]}: ${it.name} queued for ${bridge.character}` : r.error, r.ok ? "" : "bad");
+  toast(r.ok ? `${BRIDGE_ACTION_LABELS[action]}: ${it.name} queued for ${bridge.character}` : r.error, r.ok ? "" : "bad");
 }

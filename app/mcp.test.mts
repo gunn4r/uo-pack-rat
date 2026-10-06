@@ -7,7 +7,7 @@
 // Run: node --test app/mcp.test.mts
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, readFileSync, existsSync, statSync, mkdirSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, existsSync, statSync, mkdirSync, chmodSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import http from "node:http";
@@ -30,10 +30,10 @@ const KESTREL_CHEST = 1879769088;
 interface Served { s: ServerHandle; dir: string; appToken: string | null }
 // A server on a temp data folder. `mcp` is written as mcp.json first (port 0: any free port, so tests never race each
 // other or a Pack Rat running on this machine for 47615); null writes none.
-async function serve({ mcp = { enabled: true, allowActions: false }, demo = true, appToken = null, before }: { mcp?: Record<string, unknown> | null; demo?: boolean; appToken?: string | null; before?: (dir: string) => void } = {}): Promise<Served> {
+async function serve({ mcp = { enabled: true, allowActions: false }, demo = true, appToken = null, before, env = {} }: { mcp?: Record<string, unknown> | null; demo?: boolean; appToken?: string | null; before?: (dir: string) => void; env?: NodeJS.ProcessEnv } = {}): Promise<Served> {
   const dir = mkdtempSync(join(tmpdir(), "qm-mcp-"));
   if (mcp) writeFileSync(join(dir, "mcp.json"), JSON.stringify({ version: 1, port: 0, token: TOKEN, ...mcp }));
-  const config = ensureLayout(resolveConfig(["--port", "0", "--data", dir, ...(demo ? ["--demo"] : []), ...(appToken ? ["--token", appToken] : [])], {}));
+  const config = ensureLayout(resolveConfig(["--port", "0", "--data", dir, ...(demo ? ["--demo"] : []), ...(appToken ? ["--token", appToken] : [])], env));
   before?.(dir);
   const s = await startServer(config, {
     clientSearch: { home: FAKE_HOME, candidates: (a) => candidateClientRoots({ adapter: a.id, home: FAKE_HOME, platform: "linux", env: {}, adapterPlatform: a.platform }) },
@@ -119,6 +119,14 @@ test("[fast] JSON-RPC edges: notifications, unknown methods and tools, parse err
     assert.equal(bad.ok, false);
     assert.match(bad.text, /limit/);
     assert.match((await call(port, "search_items", { nope: 1 })).text, /nope/);
+    // An id with no method is an invalid request, not a notification; a response to nothing is accepted quietly.
+    const noMethod = await raw(port, { headers: AUTH, body: JSON.stringify({ jsonrpc: "2.0", id: 7 }) });
+    assert.deepEqual([noMethod.status, noMethod.json!.error.code], [400, -32600]);
+    assert.equal((await raw(port, { headers: AUTH, body: JSON.stringify({ jsonrpc: "2.0", id: 7, result: {} }) })).status, 202);
+    // The content type's case and its parameters don't matter; another type is refused.
+    const ping = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping" });
+    assert.equal((await raw(port, { headers: { ...AUTH, "content-type": "Application/JSON; charset=utf-8" }, body: ping })).status, 200);
+    assert.equal((await raw(port, { headers: { ...AUTH, "content-type": "application/jsonx" }, body: ping })).status, 415);
   } finally { await sv.s.close(); }
 });
 
@@ -153,6 +161,7 @@ test("[fast] off by default; GET/PUT /api/mcp turn it on and off at once; a bad 
   const sv = await serve({ mcp: { enabled: false, allowActions: false } });
   try {
     for (const bad of [{ enabled: "yes" }, { port: 1 }, { token: "x" }, [true], null]) assert.equal((await app(sv, "/api/mcp", "PUT", bad)).status, 400, JSON.stringify(bad));
+    assert.equal((await app(sv, "/api/mcp/token", "POST", { x: 1 })).status, 400);
     const on = (await app<McpState>(sv, "/api/mcp", "PUT", { enabled: true })).body;
     assert.equal(on.live.listening, true);
     const port = on.live.port!;
@@ -197,13 +206,34 @@ test("[fast] a busy port falls back to a free one for this run, and a broken mcp
     assert.equal((await rpc(st.live.port!, "ping")).status, 200);
     assert.equal(JSON.parse(readFileSync(join(sv.dir, "mcp.json"), "utf8")).port, taken, "the fallback is not saved");
   } finally { await sv.s.close(); blocker.close(); }
-  const broken = await serve({ mcp: null, before: (dir) => writeFileSync(join(dir, "mcp.json"), JSON.stringify({ version: 1, enabled: "yes", port: 0 })) });
+});
+
+test("[fast] a hand-edited mcp.json: a bad field falls back alone and keeps the token, a BOM is ignored, an unwritable folder leaves MCP off", async () => {
+  const oneBad = await serve({ mcp: null, before: (dir) => writeFileSync(join(dir, "mcp.json"), JSON.stringify({ version: 1, enabled: "yes", allowActions: true, port: 0, token: TOKEN })) });
   try {
-    const st = await mcpState(broken);
-    assert.equal(st.config.enabled, false);
+    const st = await mcpState(oneBad);
+    assert.deepEqual(st.config, { enabled: false, allowActions: true, port: 0, token: TOKEN });
+    assert.match(readFileSync(join(oneBad.dir, "logs", "server.log"), "utf8"), /mcp\.json: enabled not valid, read as the default/);
+  } finally { await oneBad.s.close(); }
+  const bom = await serve({ mcp: null, before: (dir) => writeFileSync(join(dir, "mcp.json"), "\uFEFF" + JSON.stringify({ version: 1, enabled: true, allowActions: false, port: 0, token: TOKEN })) });
+  try {
+    const st = await mcpState(bom);
+    assert.equal(st.live.listening, true);
+    assert.equal((await rpc(st.live.port!, "ping")).status, 200);
+  } finally { await bom.s.close(); }
+  for (const text of ["{oops", ""]) {
+    const broken = await serve({ mcp: null, before: (dir) => writeFileSync(join(dir, "mcp.json"), text) });
+    try { assert.deepEqual((await mcpState(broken)).config, { enabled: false, allowActions: false, port: MCP_DEFAULT_PORT, token: null }); }
+    finally { await broken.s.close(); }
+  }
+  if (process.platform === "win32") return;   // folder modes do not stop a write there
+  let dir = "";
+  const locked = await serve({ mcp: null, before: (d) => { dir = d; writeFileSync(join(d, "mcp.json"), JSON.stringify({ version: 1, enabled: true, allowActions: false, port: 0 })); chmodSync(d, 0o500); } });
+  try {
+    const st = await mcpState(locked);
     assert.equal(st.live.listening, false);
-    assert.match(readFileSync(join(broken.dir, "logs", "server.log"), "utf8"), /mcp\.json is not a valid MCP settings file/);
-  } finally { await broken.s.close(); }
+    assert.match(readFileSync(join(dir, "logs", "server.log"), "utf8"), /could not be saved with a new token.*MCP stays off/);
+  } finally { chmodSync(dir, 0o700); await locked.s.close(); }
 });
 
 test("[fast] the read tools over the demo fixtures, with their paging", async () => {
@@ -218,7 +248,7 @@ test("[fast] the read tools over the demo fixtures, with their paging", async ()
     const page = (await call(port, "search_items", { props: ["lrc:1"], limit: 2, offset: 1, sort: "lrc" })).data;
     assert.equal(page.total, all.total);
     assert.equal(page.items.length, 2);
-    for (const it of page.items) assert.ok(it.props.lrc >= 1 && typeof it.where === "string" && it.lines === undefined, JSON.stringify(it));
+    for (const it of page.items) assert.ok(it.props.lrc >= 1 && typeof it.where === "string" && it.lines === undefined && (it.wornBy || (it.root > 0 && it.container > 0)), JSON.stringify(it));
     assert.ok(page.items[0].props.lrc >= page.items[1].props.lrc, "highest first");
     assert.equal((await call(port, "search_items", { limit: 100 })).data.items.length, 100);
     const grouped = (await call(port, "search_items", { kind: ["reagent"], group: true })).data;
@@ -253,11 +283,72 @@ test("[fast] the read tools over the demo fixtures, with their paging", async ()
   } finally { await sv.s.close(); }
 });
 
+test("[fast] search_items: property rules the route cannot parse are refused, and filters match whatever their case", async () => {
+  const sv = await serve();
+  try {
+    const port = await mcpPort(sv);
+    for (const rule of ["lrc:lt:20", "lrc", "lrc:", ":20", "lrc:eq:abc", "lrc:ge"]) {
+      const r = await call(port, "search_items", { props: [rule] });
+      assert.equal(r.ok, false, rule);
+      assert.match(r.text, /is not one of key:min, key:le:max, key:eq:value/, rule);
+    }
+    assert.match((await call(port, "search_items", { props: ["nosuchkey:5"] })).text, /no item has the property "nosuchkey"/);
+    const total = async (args: Record<string, unknown>): Promise<number> => { const r = await call(port, "search_items", args); assert.equal(r.ok, true, r.text); return r.data.total; };
+    assert.equal(await total({ props: ["LRC:20"] }), await total({ props: ["lrc:20"] }));
+    for (const [upper, lower] of [[{ slot: ["Ring"] }, { slot: ["ring"] }], [{ kind: ["Gear"] }, { kind: ["gear"] }], [{ tags: ["Cursed"] }, { tags: ["cursed"] }], [{ slot: ["ONEHANDED"] }, { slot: ["oneHanded"] }]] as const) {
+      const n = await total(lower);
+      assert.ok(n > 0, JSON.stringify(lower));
+      assert.equal(await total(upper), n, JSON.stringify(upper));
+    }
+    const slayer = ((await call(port, "inventory_facets")).data.slayers as Array<{ name: string }>)[0]!.name;
+    assert.equal(await total({ slayer: slayer.toUpperCase() }), await total({ slayer }));
+  } finally { await sv.s.close(); }
+});
+
+test("[fast] score_suit keeps the hands legal around a named weapon, and plans with Manual's buffs", async () => {
+  const sv = await serve();
+  try {
+    const port = await mcpPort(sv);
+    const HALBERD = 1879769175, WAR_AXE = 1879769094, KATANA = 1879834650, SHIELD = 1879769093;
+    const k = (await call(port, "score_suit", { character: "Kestrel", pieces: [HALBERD] })).data;
+    assert.equal(k.suit.twoHanded.serial, HALBERD);
+    assert.equal(k.suit.oneHanded, undefined, "the worn War Axe stays out beside a two-hander");
+    assert.match((await call(port, "score_suit", { character: "Kestrel", pieces: [HALBERD, WAR_AXE] })).text, /two-handed weapon leaves the one-hand slot empty/);
+    const d = (await call(port, "score_suit", { character: "Dorran", pieces: [KATANA] })).data;
+    assert.equal(d.suit.oneHanded.serial, KATANA);
+    assert.equal(d.suit.twoHanded, undefined, "the worn two-handed staff stays out beside a one-hander");
+    const shield = (await call(port, "score_suit", { character: "Kestrel", pieces: [KATANA] })).data;
+    assert.equal(shield.suit.twoHanded.serial, SHIELD, "a worn shield stays beside a one-hander");
+    // With no buffs named, the ones Manual counts: its own list while its totals count buffs, none while they don't.
+    assert.deepEqual((await call(port, "score_suit", { character: "Kestrel" })).data.buffs, []);
+    assert.equal((await app(sv, "/api/ui-prefs", "PUT", { manualBuffs: ["divineFury"] })).status, 200);
+    assert.deepEqual((await call(port, "score_suit", { character: "Kestrel" })).data.buffs, ["divineFury"]);
+    assert.deepEqual((await call(port, "build_suit", { character: "Kestrel", timeBudgetSeconds: 2 })).data.buffs, [], "Automatic's buffs for an unpinned build");
+    assert.equal((await app(sv, "/api/ui-prefs", "PUT", { buffsCount: "off" })).status, 200);
+    assert.deepEqual((await call(port, "score_suit", { character: "Kestrel" })).data.buffs, []);
+  } finally { await sv.s.close(); }
+});
+
+test("[fast] a build replaced by a newer build_suit call says so", async () => {
+  const core = join(mkdtempSync(join(tmpdir(), "qm-core-park-")), "optimizer-core.mts");
+  writeFileSync(core, "export function optimizeSuit() {\n  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0);\n  return {};\n}\n");
+  const sv = await serve({ env: { PACKRAT_CORE: core, PACKRAT_NO_HIGHS: "1" } });
+  try {
+    const port = await mcpPort(sv);
+    const first = (await call(port, "build_suit", { character: "Kestrel", waitSeconds: 0 })).data;
+    assert.equal(first.state, "running", JSON.stringify(first));
+    const second = (await call(port, "build_suit", { character: "Dorran", waitSeconds: 0 })).data;
+    assert.equal(second.superseded, first.id);
+    const old = (await call(port, "get_suit_build", { id: first.id })).data;
+    assert.deepEqual([old.state, old.error], ["cancelled", "replaced by a newer build_suit call (one build_suit runs at a time)"]);
+  } finally { await sv.s.close(); }
+});
+
 test("[fast] build_suit runs the Suit Builder for a character and saves the run; the run tools read it back", async () => {
   const sv = await serve();
   try {
     const port = await mcpPort(sv);
-    const k = (await call(port, "build_suit", { character: "Kestrel", timeBudgetSeconds: 2, waitSeconds: 60 })).data;
+    const k = (await call(port, "build_suit", { character: "Kestrel", timeBudgetSeconds: 2, waitSeconds: 45 })).data;
     assert.equal(k.state, "done", JSON.stringify(k));
     assert.ok(k.runId && k.suit && k.totals && k.method);
     const again = (await call(port, "build_suit", { character: "Kestrel", timeBudgetSeconds: 2 })).data;
@@ -277,6 +368,14 @@ test("[fast] build_suit runs the Suit Builder for a character and saves the run;
     assert.ok(Object.values(cmp.slots).every((names) => (names as unknown[]).length === 2));
     assert.equal((await call(port, "build_suit", { character: "Kestrel", noCharacter: true })).ok, false);
     assert.match((await call(port, "build_suit", { character: "Kestrel", template: "Nope" })).text, /no template named "Nope"/);
+    assert.equal((await call(port, "build_suit", { character: "Kestrel", pinned: {}, timeBudgetSeconds: 2 })).data.reused, true, "an empty pinned map is no pins");
+    const ring = (k.suit as Record<string, { serial: number } | null>).ring;
+    if (ring) {
+      const pinned = (await call(port, "build_suit", { character: "Kestrel", pinned: { ring: ring.serial }, timeBudgetSeconds: 2 })).data;
+      assert.equal(pinned.state, "done", JSON.stringify(pinned));
+      assert.equal(pinned.currentScore, undefined, "a fill's currentScore is the pins' own, left out");
+      assert.equal(pinned.suit.ring.serial, ring.serial);
+    }
     const fill = (await call(port, "build_suit", { noCharacter: true, timeBudgetSeconds: 2 })).data;
     assert.equal(fill.state, "done", JSON.stringify(fill));
     assert.equal((await call(port, "list_runs")).data.total, 2, "a No character fill is not saved");
@@ -352,11 +451,20 @@ test("[fast] with actions allowed, Grab / Highlight / Go to queue the line the a
     assert.equal((await call(port, "go_to_item", { serial: REAG, waitSeconds: 0 })).ok, true);
     assert.deepEqual((queued(sv.dir)[3]!).chain, [A]);
     assert.match((await call(port, "grab_item", { serial: A })).text, /Grab takes items/);
+    // A bag inside a chest: only what is in the bag.
+    const bag = (await call(port, "container_contents", { serial: BAG })).data;
+    assert.deepEqual([bag.container.root, bag.total, bag.items.map((i: { serial: number }) => i.serial)], [A, 1, [GEM]]);
+    assert.deepEqual((await call(port, "container_contents", { serial: A })).data.items.map((i: { serial: number }) => i.serial).sort(), [BAG, GEM, REAG].sort());
     assert.match((await call(port, "grab_item", { serial: 7 })).text, /nothing with serial 7/);
     // The bridge reports back: get_action_status says so.
     bridgeAlive(sv.dir, { [String(grab.data.id)]: { ok: true, msg: "Sapphire moved to your backpack", t: new Date().toISOString() } });
     const done = (await call(port, "get_action_status", { id: grab.data.id })).data;
     assert.deepEqual([done.state, done.result.msg], ["done", "Sapphire moved to your backpack"]);
+    // A command this server queued and the bridge has not reported is queued; an id nobody knows is an error.
+    const highlight = (await call(port, "highlight_item", { serial: GEM, waitSeconds: 0 })).data;
+    assert.equal((await call(port, "get_action_status", { id: highlight.id })).data.state, "queued");
+    const unknown = await call(port, "get_action_status", { id: "nope" });
+    assert.deepEqual([unknown.ok, unknown.text], [false, "No such action (unknown or expired)"]);
   } finally { await sv.s.close(); }
 });
 
@@ -378,6 +486,33 @@ test("[fast] organize_trip queues the current plan's trip through the Organize r
     const st = (await call(port, "get_action_status", { id: trip.data.id })).data;
     assert.equal(st.state, "done");
     assert.equal(st.result.steps.length, 2);
+  } finally { await sv.s.close(); }
+});
+
+test("[fast] organize_trip counts a move as made only when the bridge reports its put", async () => {
+  const sv = await serve({ demo: false, mcp: { enabled: true, allowActions: true }, before: (dir) => { house(dir); bridgeAlive(dir); } });
+  try {
+    const port = await mcpPort(sv);
+    // Runs trip 1 and, once its line is in the queue, has the bridge report `result` for it.
+    const run = async (result: Record<string, unknown>): Promise<Record<string, any>> => {
+      const { stamp } = (await call(port, "organize_plan")).data;
+      const before = queued(sv.dir).length;
+      const pending = call(port, "organize_trip", { index: 1, stamp, waitSeconds: 20 });
+      for (let i = 0; i < 200 && queued(sv.dir).length === before; i++) await new Promise((ok) => setTimeout(ok, 25));
+      const id = String(queued(sv.dir).at(-1)!.id);
+      bridgeAlive(sv.dir, { [id]: { t: new Date().toISOString(), ...result } });
+      const r = await pending;
+      assert.equal(r.ok, true, r.text);
+      return r.data;
+    };
+    const refused = await run({ ok: false, msg: "trip refused: too far", steps: [] });
+    assert.equal(refused.state, "failed");
+    assert.deepEqual(refused.moves.map((m: { serial: number; moved: boolean }) => [m.serial, m.moved]), [[REAG, false]]);
+    const tookOnly = await run({ ok: false, msg: "stopped partway", steps: [{ op: "take", serial: REAG, ok: true, msg: "taken" }] });
+    assert.deepEqual(tookOnly.moves.map((m: { moved: boolean }) => m.moved), [false], "a take without its put is not a move");
+    const done = await run({ ok: true, msg: "Trip 1: 1 moved", steps: [{ op: "take", serial: REAG, ok: true, msg: "taken" }, { op: "put", serial: REAG, ok: true, msg: "put" }] });
+    assert.equal(done.state, "done");
+    assert.deepEqual(done.moves.map((m: { moved: boolean; to: string }) => [m.moved, m.to]), [[true, "Box " + B]]);
   } finally { await sv.s.close(); }
 });
 
