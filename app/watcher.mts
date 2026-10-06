@@ -261,8 +261,9 @@ export interface StartWatcherOptions {
   retries?: number;
   retryDelayMs?: number;
   watch?: WatchFn;
-  // A file of this name is not a scan: it goes to `handle` in its turn in the chain, so a scan dropped before it
-  // is ingested first (Put away, issue #131: the panel's refresh, then its request). `handle` removes the file.
+  // A file of this name is not a scan: it goes to `handle` in its turn in the chain, after every scan then waiting in the
+  // inbox is ingested, whatever order the watch reported them in (Put away, issues #131 and #227: the panel's refresh,
+  // then its request). `handle` removes the file.
   request?: { name: string; handle: (path: string) => Promise<void> | void } | undefined;
   // How often the inbox is swept anyway. fs.watch can stay silent for a watcher's whole life (the OS drops the
   // notifications: app/server.test.mts, readUntilOrRescan), which left a drop waiting for a manual Rescan; a
@@ -318,6 +319,13 @@ export function startWatcher(
 
   async function processFile(name: string): Promise<void> {
     if (name === request?.name) {
+      if (closed || !existsSync(join(inboxDir, name))) return;
+      // Every scan waiting beside the request is ingested first, whatever order their watch events came in (issue #227):
+      // each file has its own debounce, so the request's turn can come before the refresh scan's. A scan's own later
+      // turn then finds its file gone and does nothing.
+      let waiting: string[] = [];
+      try { waiting = readdirSync(inboxDir).filter((f) => f.endsWith(".json") && f !== name); } catch { /* the request is handled anyway */ }
+      for (const scan of waiting) await processFile(scan);
       if (!closed && existsSync(join(inboxDir, name))) await request.handle(join(inboxDir, name));
       return;
     }

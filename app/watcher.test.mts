@@ -228,6 +228,27 @@ test("[fast] startWatcher: the request file goes to its handler after the scan d
   handle.close();
 });
 
+test("[fast] startWatcher: a request whose turn comes before the scan's still sees the scan ingested first (issue #227)", async () => {
+  const inboxDir = tmp("qm-inbox-req-race-"), scansDir = tmp("qm-scans-req-race-");
+  const watch = fakeWatch();
+  const seen: string[] = [];
+  const handle = startWatcher({
+    inboxDir, adapter: "tazuo", scansDir, getShard: () => SHARD, watch, debounceMs: 20, retries: 3, retryDelayMs: 20,
+    onAccepted: (a) => seen.push(`scan ${a.character}`),
+    request: { name: "putaway-request.json", handle: (path) => { seen.push(`request ${readdirSync(scansDir).length}`); rmSync(path); } },
+  });
+  dropFile(inboxDir, "putaway-request.json", "{}");
+  watch.fire("rename", "putaway-request.json");
+  await new Promise((r) => setTimeout(r, 5));
+  dropFile(inboxDir, "scan.json", JSON.stringify(validDoc()));
+  watch.fire("rename", "scan.json");
+  await waitFor(() => seen.length === 2);
+  await new Promise((r) => setTimeout(r, 60));   // the scan's own later turn finds nothing left to do
+  assert.deepEqual(seen, ["scan Fixture", "request 1"]);
+  assert.deepEqual([readdirSync(inboxDir), readdirSync(scansDir).length], [[], 1]);
+  handle.close();
+});
+
 test("[fast] startWatcher: a sweep handles the request file after every scan beside it, whatever their names (issue #131)", async () => {
   const inboxDir = tmp("qm-inbox-req-sweep-"), scansDir = tmp("qm-scans-req-sweep-");
   writeFileSync(join(inboxDir, "putaway-request.json"), "{}");
