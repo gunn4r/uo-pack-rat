@@ -9,7 +9,7 @@ import { state } from "./store.mts";
 import { $, el, toast, safeColor, compactChildren } from "./dom.mts";
 import { box, txt, button, meter, message, field, input, select, textarea, pill, check, token, createDrawer, confirmDialog, showToast, type DrawerHandle } from "./components.mts";
 import { errorText } from "./messages.mts";
-import { filterContext } from "./inventory.mts";
+import { filterContext } from "./item-parts.mts";
 import { loadOrganize, loadPresets, matchCount, refreshPlaces, saveConfig } from "./organize-data.mts";
 import { BUILD_TEXT, SCHOOL_TEXT, fillText, fillTone, withoutRule, newRuleId, ruleQueryFrom, blankQuery, droppedNote, ruleNameFrom, checkDraft, extraFilters, targetView, targetOptions, withTargetLabels, moveIn, upsertRule, matchLine, debounced, MATCH_DEBOUNCE_MS, type TargetView } from "./organize-model.mts";
 import type { ItemQuery, RuleQuery } from "../item-query.mts";
