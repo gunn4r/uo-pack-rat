@@ -532,12 +532,18 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     return doc;
   }
   const organizeStateStore = createOrganizeStateStore(join(CONFIG.dataDir, "organize-state.json"));
+  // ---- saved runs: one JSON file per finished build in app/data/runs/ -------------------------------
+  const runStore = createRunsStore(RUNS);
+  const jobService = createJobsService({ coreUrl: CORE_URL, timings: jobTimings, runStore, log: (line) => safeAppendLog(CONFIG.paths.log, line) });
+  const organizeService = createOrganizeService({ paths: CONFIG.paths, getInventory: () => getInventory(), organizeStore, organizeStateStore, blacklistStore, runStore,
+    rules: appSettings.rules, runsTrips: setupService.runsTrips, events: eventBus, log: (line) => safeAppendLog(CONFIG.paths.log, line) });
+  // Organize is built first, so the harvest hook below never reaches it before it exists; it reads the inventory through a getter.
   const inventoryService = createInventoryService({ scanStore, itemKindsStore, organizeStateStore, shard: () => appSettings.current().shard, harvest: (now) => organizeService.harvestNow(now) });
   const getInventory = inventoryService.getInventory;
   const profilesStore = createProfilesStore({ file: PROFILES, defaults: DEFAULT_PROFILES, log: (line) => safeAppendLog(CONFIG.paths.log, line) });
 
   // ---- optimizer jobs: one worker thread per build, progress over Server-Sent Events -----------
-  const timers = new Set<NodeJS.Timeout>();   // every setTimeout/setInterval this instance owns, so close() can stop them all
+  const timers = new Set<NodeJS.Timeout>();   // the host-call timeouts and stream pings this server owns, so close() can stop them all; the jobs service clears its own
 
   // A folder dialog whose answer never comes back would otherwise hang this request for ever:
   // server.requestTimeout governs request RECEIPT only and never touches a response that has not
@@ -569,11 +575,6 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     res.on("close", () => { clearInterval(ping); timers.delete(ping); job.clients.delete(res); });
   }
 
-  // ---- saved runs: one JSON file per finished build in app/data/runs/ -------------------------------
-  const runStore = createRunsStore(RUNS);
-  const jobService = createJobsService({ coreUrl: CORE_URL, timings: jobTimings, runStore, log: (line) => safeAppendLog(CONFIG.paths.log, line) });
-  const organizeService = createOrganizeService({ paths: CONFIG.paths, getInventory, organizeStore, organizeStateStore, blacklistStore, runStore,
-    rules: appSettings.rules, runsTrips: setupService.runsTrips, events: eventBus, log: (line) => safeAppendLog(CONFIG.paths.log, line) });
 
   // ---- retention (issue #28): old scans and saved runs, per settings.json's `retention` ----------------
   const retentionService = createRetentionService({ demo: CONFIG.demo, retention: () => appSettings.saved().retention, scanStore, runStore, events: eventBus,

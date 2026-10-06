@@ -49,7 +49,7 @@ async function runReload(): Promise<void> {
 export function connectEvents(): EventSource {
   if (source) return source;
   source = new EventSource("/api/events");
-  // "inventory"/"rejected" are custom SSE event names (vault-server.mts's broadcastEvent), not one of
+  // "inventory"/"rejected" are custom SSE event names (app/services/events.mts's event bus), not one of
   // EventSource's own known listener types — the browser still delivers them as MessageEvent (SSE's
   // own wire format), just not something addEventListener's overloads can infer from the name alone.
   source.addEventListener("inventory", (e: MessageEvent<string>) => {

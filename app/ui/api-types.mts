@@ -439,8 +439,8 @@ export interface OrganizeTripApiResponse { ok: boolean; id: string; index: numbe
 // POST /api/organize/match: what one rule filter takes of the movable items in labelled roots (app/organize.mts's matchCount).
 export interface OrganizeMatchApiResponse { ok: boolean; count: number; pieces: number; sample: string[] }
 
-// SSE payloads on the shared /api/events stream (ui/events.mts) — mirror vault-server.mts's
-// broadcastEvent("inventory", …) / broadcastEvent("rejected", …) literals (app/watcher.mts's
+// SSE payloads on the shared /api/events stream (ui/events.mts) — mirror the server's
+// eventBus.broadcast("inventory", …) / eventBus.broadcast("rejected", …) literals (app/services/events.mts) (app/watcher.mts's
 // onAccepted/onRejected info plus an `at` timestamp).
 export interface InventoryEvent {
   file: string;
@@ -453,7 +453,7 @@ export interface RejectedEvent {
   reason: string;
   at: number;
 }
-// broadcastEvent("changed", …): a forget / forget-character or an Organize trip reporting back ("inventory"), or a
+// eventBus.broadcast("changed", …): a forget / forget-character or an Organize trip reporting back ("inventory"), or a
 // run deletion ("runs") — every tab reloads that data.
 export interface ChangedEvent {
   what: "inventory" | "runs";
