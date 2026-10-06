@@ -4,7 +4,7 @@
  "scannedAt": "2026-01-01T12:00:00+00:00",
  "adapter": {
   "id": "razor-enhanced",
-  "version": "1.11.0",
+  "version": "1.11.1",
   "client": "Razor Enhanced",
   "clientVersion": null,
   "capabilities": {

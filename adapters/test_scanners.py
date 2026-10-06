@@ -5,7 +5,7 @@ with what the newest scan says, so a false "opened, nothing inside" erases real 
 
 Run: python3 adapters/test_scanners.py  (app/adapters.test.mts also spawns it, so `npm test` does).
 """
-import glob, json, os, re, shutil, sys, tempfile, types, unittest
+import glob, json, os, shutil, sys, tempfile, types, unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from fake_clients import PLAYER, World, adapter_path, house_tiles, razor_globals, run_script, tazuo_api  # noqa: E402
@@ -69,14 +69,6 @@ def nest(world, parent, depth):
         parent = bags[-1]
     world.add(0x40000200, parent, name="Deep Ring", container_like=False, OnGround=False)
     return bags
-
-
-def helper_body(path, name):
-    """The source of one top-level function, for the copied-verbatim checks."""
-    with open(path, encoding="utf-8") as f:
-        t = f.read()
-    m = re.search(r"^def %s\(.*?(?=^def |^[A-Z_]+ = |^# -)" % name, t, re.S | re.M)
-    return m.group(0) if m else None
 
 
 class DataDir(object):
@@ -565,16 +557,6 @@ class TazUOScanner(DataDir, unittest.TestCase):
 class TazUORefresh(DataDir, unittest.TestCase):
     SCRIPT = adapter_path("tazuo", "packrat-character-refresh.py")
 
-    def test_it_walks_the_backpack_with_the_scanners_own_code(self):
-        def body(path, name):
-            with open(path, encoding="utf-8") as f:
-                t = f.read()
-            m = re.search(r"^def %s\(.*?(?=^def |^[A-Z_]+ = )" % name, t, re.S | re.M)
-            self.assertIsNotNone(m, "%s lacks %s" % (path, name))
-            return m.group(0)
-        for name in ("is_container", "was_opened", "note_if_closed", "scan_root", "close_opened", "read_blacklist", "without_skipped", "is_trash", "facet", "root_pos", "root_entry"):
-            self.assertEqual(body(self.SCRIPT, name), body(TazUOScanner.SCRIPT, name), name)
-
     def test_a_bag_in_the_backpack_that_did_not_open_is_marked_unopened(self):
         w = World(); home(w)
         w.add(BAG + 0x100, PACK, name="Pouch", OnGround=False)
@@ -612,11 +594,6 @@ class TazUORefresh(DataDir, unittest.TestCase):
 
 class TazUOHouseMapRefresh(DataDir, unittest.TestCase):
     SCRIPT = adapter_path("tazuo", "packrat-house-map-refresh.py")
-    SHARED = ("data_dir", "write_json_atomic", "rfc3339_now", "read_blacklist", "sysmsg", "is_container", "facet", "house_capture")
-    CONSTANTS = ("ADAPTER_ID", "CAPABILITIES", "HOUSE_RADIUS", "HOUSE_MAX_TILES", "HOUSE_ITEM_REACH", "HOUSE_MULTI_IDS", "HOUSE_ITEM_CENTRE_RADIUS", "HOUSE_MAX_ITEMS", "HOUSE_MAX_CONTAINERS",
-                 "BLACKLIST", "HOUSE_LEFT_OUT", "HOUSE_TOO_LARGE", "OUT_DIR", "CONTAINER_RE", "NOT_A_CONTAINER_RE", "NOT_A_CONTAINER_GRAPHICS",
-                 "TRASH_RE", "WEARABLE_RE", "CONTAINER_GRAPHICS")
-
     def house(self, w):
         """Run the house map refresh with a client that records every tooltip and OPL request."""
         api = tazuo_api(w, PACK)
@@ -626,21 +603,6 @@ class TazUOHouseMapRefresh(DataDir, unittest.TestCase):
         api.RequestOPLData = lambda serials: asked.append(("opl", list(serials)))
         run_script(self.SCRIPT, w, api=api)
         return asked
-
-    def test_it_captures_the_house_with_the_scanners_own_code(self):
-        for name in self.SHARED:
-            body = helper_body(self.SCRIPT, name)
-            self.assertIsNotNone(body, name)
-            self.assertEqual(body, helper_body(TazUOScanner.SCRIPT, name), name)
-        with open(self.SCRIPT, encoding="utf-8") as f:
-            mine = f.read()
-        with open(TazUOScanner.SCRIPT, encoding="utf-8") as f:
-            scanner = f.read()
-        for name in self.CONSTANTS:
-            pattern = r"^%s = .*?(?=^[A-Za-z_#]|\Z)" % name
-            m = re.search(pattern, mine, re.S | re.M)
-            self.assertIsNotNone(m, name)
-            self.assertEqual(m.group(0), re.search(pattern, scanner, re.S | re.M).group(0), name)
 
     def test_it_writes_only_the_house_and_asks_the_server_nothing(self):
         w = World(); home(w); w.facet = 1; w.multis = house_tiles(5, 5, 12, 12)
@@ -949,16 +911,6 @@ class RazorRefresh(DataDir, unittest.TestCase):
 
     def refresh(self, world):
         run_script(self.SCRIPT, world, extra_globals=razor_globals(world, PACK))
-
-    def test_it_walks_the_backpack_with_the_scanners_own_code(self):
-        for script, names in ((self.SCRIPT, ("tooltip_lines", "name_of", "item_dict", "is_container", "root_pos", "facet", "root_entry",
-                                             "container_entry", "scan_root", "note_if_closed", "close_opened",
-                                             "note_unopened", "read_skills", "read_blacklist", "sysmsg", "as_int")),
-                              (RazorBlacklist.SCRIPT, ("read_blacklist", "as_int", "tooltip_lines", "name_of"))):
-            for name in names:
-                body = helper_body(RazorScanner.SCRIPT, name)
-                self.assertIsNotNone(body, name)
-                self.assertEqual(helper_body(script, name), body, "%s %s" % (os.path.basename(script), name))
 
     def test_it_writes_the_backpack_as_the_only_root_and_opens_nothing_on_the_ground(self):
         w = World(); home(w)

@@ -335,6 +335,11 @@ test("[slow] Settings › AI assistants (MCP): the switch opens the server, the 
   setupDone(dataDir);
   writeFileSync(join(dataDir, "mcp.json"), JSON.stringify({ version: 1, enabled: false, allowActions: false, port: 0, token: "11111111-2222-3333-4444-555555555555" }));
   const mcp = (): { enabled: boolean; allowActions: boolean; token: string } => JSON.parse(readFileSync(join(dataDir, "mcp.json"), "utf8"));
+  // The page updates a switch before the server has written mcp.json, so wait for the file rather than read it once.
+  const fileShows = async (want: (m: ReturnType<typeof mcp>) => boolean): Promise<ReturnType<typeof mcp>> => {
+    for (const until = Date.now() + 10_000; !want(mcp()) && Date.now() < until;) await new Promise((r) => setTimeout(r, 100));
+    return mcp();
+  };
   const { app, page, errors } = await launch(dataDir);
   try {
     await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
@@ -344,7 +349,7 @@ test("[slow] Settings › AI assistants (MCP): the switch opens the server, the 
     assert.equal(await page.locator("#set-mcp-card .set-row").count(), 2, "off: only the two switches");
     await page.locator("#set-mcp-card label.check").first().click();
     await page.waitForSelector("#set-mcp-url");
-    assert.equal(mcp().enabled, true);
+    assert.equal((await fileShows((m) => m.enabled)).enabled, true);
     const url = await page.locator("#set-mcp-url").innerText();
     assert.match(url, /^http:\/\/127\.0\.0\.1:\d+\/mcp$/);
     assert.doesNotMatch(await page.locator("#set-mcp-card").innerText(), /11111111/, "the token is hidden");
@@ -357,13 +362,14 @@ test("[slow] Settings › AI assistants (MCP): the switch opens the server, the 
     assert.equal(await page.locator("dialog.dialog[open] h2").innerText(), "Make a new token?");
     await page.locator("dialog.dialog[open] [data-confirm]").click();
     await page.waitForFunction(() => document.querySelector("#set-mcp-token")?.textContent !== "11111111-2222-3333-4444-555555555555");
-    assert.equal(await page.locator("#set-mcp-token").innerText(), mcp().token);
+    const shown = await page.locator("#set-mcp-token").innerText();
+    assert.equal((await fileShows((m) => m.token === shown)).token, shown);
     await page.locator("#set-mcp-card label.check").nth(1).click();
     await page.waitForFunction(() => (document.querySelector("#set-mcp-actions") as HTMLInputElement | null)?.checked === true);
-    assert.equal(mcp().allowActions, true);
+    assert.equal((await fileShows((m) => m.allowActions)).allowActions, true);
     await page.locator("#set-mcp-card label.check").first().click();
     await page.waitForFunction(() => !document.querySelector("#set-mcp-url"));
-    assert.equal(mcp().enabled, false);
+    assert.equal((await fileShows((m) => !m.enabled)).enabled, false);
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
