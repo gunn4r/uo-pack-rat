@@ -1,0 +1,277 @@
+# Module map
+
+Where each concept lives, area by area. Each table row is one module: its path, what it does, and the names it owns (the one place that name is defined). When you add, move or delete a module, update this file in the same change: `scripts/module-map.test.mts` fails when a tracked `.mts` file under `app/`, `scripts/` or `electron/` is missing here, or when a path named here no longer exists.
+
+`docs/change-checklists.md` says which of these modules a given kind of change touches. `docs/architecture.md` has the processes and the data folder; `docs/ui.md` the page's design rules.
+
+Three files keep names from before the project became Pack Rat: `app/vault-server.mts`, `app/vault-lib.mts` and `app/gear-vault.test.mts`. Nothing else about them is legacy, and there is no plan to rename them.
+
+## Scan & fold
+
+| Module | Role | Owns |
+|---|---|---|
+| `app/scan-schema.mts` | The scan v2 schema inline (deep-equal to the JSON copy, a test checks), the v1→v2 upgrade on read, scan ordering by time. Browser-safe. | `SCAN_V2_SCHEMA`, `TAZUO_V1_CAPS`, `validateScan`, `upgradeScan`, `parseStamp`, `isRealStamp` |
+| `app/schema/scan.v2.schema.json` | The scan contract as JSON Schema (`docs/scan-schema.md`). | the scan shape |
+| `app/schema/validate.mts` | The hand-written JSON Schema subset validator every schema here is checked with. Browser-safe. | `validate`, the supported keyword subset |
+| `app/paste-scan.mts` | Finds, parses, upgrades and validates a pasted scan. Browser-safe, so the Import drawer's preview and `POST /api/import/paste` apply one rule. | `parsePastedScan`, `PASTE_BEGIN`/`PASTE_END`, `jsonErrorReason` |
+| `app/import.mts` | Writes a pasted or rescanned scan into an adapter's inbox for the watcher. | `writeScanToInbox` |
+| `app/watcher.mts` | The inbox watcher: one per adapter, `fs.watch` with a 300 ms debounce, retry then quarantine to `<data>/inbox/<adapter>/rejected/`, normalize-then-move into `<data>/scans/`. A symlink, directory or device, or a file over `MAX_INBOX_BYTES` (32 MiB), is refused unread; idempotent, never throws. | `startWatcher`, `ingestFile`, `acceptedName` (the one place scan text becomes a file name), `MAX_INBOX_BYTES` |
+| `app/vault-lib.mts` | The shared kernel, page and server alike. Its scan side: the inventory types, the tooltip parser and the fold (a scan replaces everything under each root it lists). Its other parts are listed under the areas below. | `Item`, `Container`, `Character`, `Inventory`, `ScanSummary`, `parseTooltip`, `foldSnapshots`, `locationOf`, `containerPath`, `capacityOf`, `TRASH_RE`, `groupByName`, `slayersOf`, `medableOf` |
+| `app/missing.mts` | Missing since last scan: what a root's previous scan saw that is nowhere in the fold now. | `missingSinceLastScan`, `MissingItem` |
+| `app/retention.mts` | Which old scans and saved runs may be pruned (the fold must not change). Pure; the server deletes what it names. | `scansToPrune`, `runsToPrune`, `RETENTION_DEFAULTS`, `RETENTION_LIMITS`, `retentionOf` |
+| `app/fixtures/demo-Dorran.json`, `app/fixtures/demo-Kestrel.json` | Synthetic scans for tests and `--demo` (`app/fixtures/README.md`). | the demo characters |
+
+## Kinds & classification
+
+| Module | Role | Owns |
+|---|---|---|
+| `app/vault-lib.mts` (classifier part) | Which slot a piece goes in (the worn layer, then the graphic's tiledata layer, then name rules) and which kind every item is. | `LAYER_TO_SLOT`, `GEAR_SLOTS`, `REQUIRED_SLOTS`, `SLOT_LABELS`, `classify`, `layerOfGraphic`, the wearable-graphic table, `spellSchoolOf`, `KINDS`, `OVERRIDE_KINDS`, `kindOf`, `overriddenKind`, `INSTRUMENTS` |
+| `app/item-kinds.mts` | The player's own item kinds, `<data>/item-kinds.json`: checks, merges and resets the document. Pure. An entry this version does not know is left out and named, never an error; the server folds again when the file changes, and refuses a change past `MAX_KINDS_BYTES` with a 409. | `salvageKindOverrides`, `withKinds`, `withoutKinds`, `kindsDocument`, `MAX_KINDS_BYTES` |
+| `scripts/gen-graphic-layers.mts` | Regenerates the wearable-graphic table in `app/vault-lib.mts` from a client's tiledata.mul. | `wearableLayers`, `spliceTable` |
+
+## Item query
+
+| Module | Role | Owns |
+|---|---|---|
+| `app/item-query.mts` | Pure item filtering, sorting, paging and facets, shared by `GET /api/items` and the page. | `parseItemQuery`, `matchesItem`, `applyItemQuery`, `facetsOf`, `ItemQuery`, `RuleQuery`, `EXTRA_COLS`, `colVal`, `rarityRank`, `HIT_LIMIT` |
+| `app/vault-lib.mts` (property part) | The property keys a tooltip line becomes, their labels and the search blobs. | `PROP_PATTERNS`, `PROP_LABELS`, `PROP_FULL`, `NOT_BUILDER_KEYS`, `SKILL_NAMES`, `RESIST_KEYS`, `labelOf`, `fullOf`, `propertyKeys`, `extraKeys`, `flagKeys`, `itemSearchBlob` |
+
+## Shard rules
+
+| Module | Role | Owns |
+|---|---|---|
+| `app/rules.mts` | Node-only loader: a rules file from `<data>/rules/` or the builtin set, validated before anything sees it. | `loadRules`, `listRules`, `DEFAULT_SHARD`, `scrollBinderProblem`, `slayerGroupsProblem` |
+| `app/rules/uoalive.json`, `app/rules/generic-osi.json` | The builtin shard rules files (`docs/shard-rules.md`). | caps, `raceCaps`, `resistSkillBonus`, `tagUnits`, `rarity`, `raceLock`, `freeSkills`, `scrollBinder`, `slayerGroups` |
+| `app/schema/rules.v1.schema.json` | The contract every rules file is checked against. | the rules shape |
+| `app/vault-lib.mts` (rules part) | Holds the loaded rules for page and server, and the rules-driven math. | `setRules`, `getRules`, `resistSkillBonus`, `shardResistCap`, `tagUnits`, `tagInfo` |
+
+## Suit Builder
+
+Profiles, buffs, pools, solvers, saved runs and Manual. `docs/solver.md` describes the model.
+
+| Module | Role | Owns |
+|---|---|---|
+| `app/vault-lib.mts` (builder part) | Profiles and templates, the effective profile the solvers see, pools, weapons, run settings and requirement reports. | `Profile`, `EffectiveProfile`, `effectiveProfile`, `RESIST_CAP_LIMITS`, `resistCapsFor`, `TEMPLATE_KEYS`, `templateFrom`, `migrateProfiles`, `characterProfile`, `OptItem`, `toOptItem`, `buildPools`, `WEAPON_SKILLS`, `MELEE_SKILLS`, `RunSettings`, `settingsDiff`, `totalsOf`, `requirementReport` |
+| `app/data/profiles.default.json` | Default profiles and templates, copied to `<data>/profiles.json` on first run and migrated on read. `schemaVersion: 2`: no `caps` key, since caps are shard rules. | the shipped templates |
+| `app/schema/profiles.v2.schema.json` | The contract `PUT /api/profiles` checks a body against. | the profiles shape |
+| `app/buffs.mts` | Buffs, forms and abilities as data, and their effect on a suit and on the planned profile. Page and server alike. | `BUFFS`, `BUFF_INPUTS`, `BUFF_GROUPS`, `applyBuffs`, `buffPlanOf`, `manualProfile`, `plannedProfile`, `planBuffs`, `isBuffList`, `normalizeBuffs`, `isRunBuffs`, `savedBuffs` |
+| `scripts/optimizer-core.mts` | The heuristic suit search and scoring. Paste-able: no imports, one export line; loaded from source by the path `corePath()` resolves. | `optimizeSuit`, `scoreSet`, `optDefaultSlots`, `optDefaultOptionalSlots`, `optDominancePrune` |
+| `app/mip.mts` | The suit problem as a mixed-integer program (HiGHS sparse arrays). Pure. | `buildSuitMip`, `startVector`, `pickedOf`, `noGoodRow`, `HARD_FLOOR_BONUS`, `DEFAULT_SLOTS`, `optionalSlotsFor` |
+| `app/mip-solve.mts` | The HiGHS runtime: load, solve, add a no-good cut, close. | `loadHighs`, `openModel`, `solveModel`, `addNoGood`, `closeModel`, `gapFromEvents` |
+| `app/exact-solver.mts` | One exact solve: the core's heuristic for an incumbent, then HiGHS for the proof, alternatives and the floors-conflict retry. | `solveExact` |
+| `app/optimize-worker.mts` | Worker thread that runs one optimize job off the main thread: the core's heuristic, or the exact orchestrator, falling back to the core when HiGHS does not load. One worker per job; cancel terminates it. | the worker message types |
+| `app/runs-lib.mts` | Saved runs: the cache key (pools, worn suit, scoring profile and options, minus budget and warm start), the reuse rule (proven, heuristic, or a budget already as large; never a fallback result), the list summary, a manual run. Node-only (`node:crypto`). Bump `SOLVER_VERSION` on any change to the model, the orchestration or the core's scoring. | `SOLVER_VERSION`, `runKey`, `reusableRun`, `runSummary`, `manualRun`, `normalizeRun` |
+| `app/solver-fixture.mts` | Test fixture: the adapter fixture folded and pooled, and `runBoth` to check HiGHS against the core. | `cell`, `runBoth`, `fuzzSlots` |
+| `app/bench/gen-inventory.mts` | Synthetic scan generator learned from real gear, for the scale benchmark. | `learnModel`, `generateScan` |
+| `app/bench/run-bench.mts` | The scale benchmark sweep through `app/optimize-worker.mts`. | — |
+| `app/bench/make-fixtures.mts` | Regenerates the demo fixtures from the generator's model (needs real scans). | — |
+| `app/bench/mip-spike.mts` | The HiGHS spike, superseded by `app/mip.mts`; kept as evidence for `app/bench/REPORT.md`. | — |
+| `app/ui/builder.mts` | The Suit Builder screen: the panel, the optimize job over SSE, the empty state. | `initBuilder`, `selectCharacter`, `readControls`, `followJob`, `cancelJob` |
+| `app/ui/builder-result.mts` | The result beside the panel and the compare view. | `renderResult`, `renderCurrentSuit`, `openRunCompare` |
+| `app/ui/builder-manual.mts` | Manual mode: slot cards, picker, totals, undo, Fill the rest, Save as run; the builder's ui-prefs. | `renderManual`, `openInManual`, `applyBuilderPrefs`, `savePrefs`, `buffInputsOf`, `editBuffInputs` |
+| `app/ui/builder-buffs.mts` | The buff chips, Manual's Buffs row and the buff picker. | `buffChip`, `createBuffPicker` |
+| `app/ui/builder-model.mts` | Pure: summaries, Advanced-field checks, resist-cap lines, badges, compare rows, run labels. | `KNOB_RANGES`, `SOLVER_LIMITS`, `compareModel`, `runAutoLabel` |
+| `app/ui/manual-model.mts` | Pure: Manual's totals keys, slot groups, hand rule, deltas, undo history, hand-offs. | `TOTAL_KEYS`, `STAT_KEYS`, `MANUAL_GROUPS`, `handConflict`, `slotDelta`, `fillableSlots` |
+| `app/ui/runs.mts` | The Saved runs drawer, and the settings snapshot a run is saved with. | `settingsSnapshot`, `applySettings`, `openRunsDrawer` |
+
+## Organize
+
+| Module | Role | Owns |
+|---|---|---|
+| `app/organize-config.mts` | Organize's saved setup, `<data>/organize.json`: labels, ordered rules, catch-all, pinned items. Pure. | `OrganizeConfig`, `checkOrganizeConfig`, `salvageOrganizeConfig`, `ruleMatchOf`, `CATCH_ALL_ID`, `EMPTY_BAGS_ID`, `BUILDS`, `SCHOOLS`, `LIMITS` |
+| `app/organize.mts` | The planner: which item goes where, in which trip, and what does not fit. Pure and deterministic. | `planOrganize`, `tripCommand`, `scopeOf`, `claimOf`, `buildOf`, `CASTER_PROPS`, `MELEE_PROPS`, `TRIP_DEFAULTS` |
+| `app/organize-presets.mts` | Ready-made rule filters. | `PRESETS`, `ruleFromPreset` |
+| `app/organize-strategies.mts` | Auto organize: the Simple, Detailed and By build strategies and the proposal. | `STRATEGIES`, `groupItems`, `assignGroups`, `proposeOrganize` |
+| `app/organize-state.mts` | The results overlay, `<data>/organize-state.json`: pending trips and grabs, confirmed moves. | `OrganizeState`, `harvestTrips`, `addGrab`, `pruneOverlay`, `noteSeen` |
+| `app/put-away.mts` | Put away: the panel's request file checked field by field, and the reply's words. | `PUT_AWAY_REQUEST`, `PUT_AWAY_REPLY`, `checkPutAwayRequest` |
+| `app/organize-fixture.mts` | Test fixture: hand-built house scans for the Organize tests. | `houseScan` |
+| `app/ui/organize.mts` | The Organize screen: the Rules card and the Plan card with Run trip / Run all / Stop. | `showOrganize` |
+| `app/ui/organize-model.mts` | Pure: setup edits, the screen's words, trip watching, proposal text. | `LABEL_COLOURS`, `targetView`, `tripRows`, `stepWatch`, `acceptGate` |
+| `app/ui/organize-data.mts` | The page's copy of the setup: load, save whole, presets, live match count. | `loadOrganize`, `saveConfig`, `matchCount` |
+| `app/ui/rule-editor.mts` | The rule editor drawer. | `openRuleEditor` |
+| `app/ui/auto-organize.mts` | The Auto organize drawer. | `openAutoOrganize` |
+
+## Bridge & trips
+
+| Module | Role | Owns |
+|---|---|---|
+| `app/schema/bridge.v1.schema.json` | The bridge protocol: command, result and status (`docs/bridge-protocol.md`). | the bridge shapes |
+| `app/schema/bridge-trip.v1.schema.json` | An Organize trip line. | the trip shape |
+| `app/bridge-trip.mts` | The only writer of a trip line, and the Stop flag. | `queueTrip`, `writeBridgeStop` |
+| `app/bridge-contract.mts` | The limits every game bridge script enforces on a trip, as plain constants with no I/O, so the Organize planner needn't load the trip writer. | `TRIP_MAX_BYTES`, `TRIP_NAME_MAX` |
+| `app/vault-lib.mts` (bridge part) | The chain a command opens and why an action cannot run, in the buttons' and the MCP tools' words. | `containerChain`, `bridgeRefusal`, `BRIDGE_ACTION_LABELS`, `BRIDGE_OFFLINE` |
+| `app/ui/bridge.mts` | Highlight / Grab / Go to, Grab all, and the bridge status polling. | `sendBridge`, `runBridgeAction`, `grabAll`, `pollBridge`, `bridgeActionReason` |
+
+## House map & client files
+
+| Module | Role | Owns |
+|---|---|---|
+| `app/tiledata.mts` | Reads the client's tiledata.mul and classifies tiles. | `readTileData`, `classify` (tiles), `FLAG`, `uoFolderFromTazuo`, `loadTileData` |
+| `app/facet-map.mts` | Decodes a facetNN.mul world-map overview and renders a region. Pure. | `decodeFacet`, `renderRegion`, `MAX_SIDE` |
+| `app/png.mts` | A minimal PNG encoder for the facet image. | `encodePng`, `crc32` |
+| `app/house-capture.mts` | The houses the scans captured: ids and the newest tiles with furniture merged. | `houseIdOf`, `latestHouses`, `houseGroups`, `HOUSE_ITEM_REACH` |
+| `app/house-model.mts` | A house as the map draws it: levels, cells, rooms, furniture, stacks, spots. Pure. | `buildHouseModel`, `HouseModel`, `plotBounds` |
+| `app/house-names.mts` | `<data>/house-map.json`: house names and drawn areas, with its own reads and saves. A file that does not parse is moved aside as `.corrupt`; a save that would grow the map past 500 names or 1 MB is refused (the route answers 409). | `checkHouseEntry`, `readHouseMap`, `saveHouseEntry`, `NAME_MAX`, `MAX_AREAS`, `AREA_COLORS` |
+| `app/house-fixture.mts`, `app/tiledata-fixture.mts`, `app/facet-fixture.mts` | Test fixtures: synthetic houses, tiledata and facet files. | `syntheticTileData`, `syntheticFacet` |
+| `app/ui/house-map.mts` | The House map screen: SVG levels, callouts, cut-away, pan and zoom, the detail panel. | `showMap`, `applyMapPrefs` |
+| `app/ui/house-map-model.mts` | Pure: projection, painter's order, fit, container joins with the inventory, color modes, callouts, totals, house picker. | `project`, `paintOrder`, `chestViews`, `pickHouse` |
+| `app/ui/house-links.mts` | Which house holds each container, for "Show on map". | `houseOfContainer`, `houseOfItem`, `showOnMap` |
+| `app/ui/world-map.mts` | The world map lightbox. | `openWorldMap` |
+| `app/ui/world-map-model.mts` | Pure: the lightbox's zoom and pan. | `MAX_PX_PER_TILE`, `zoomView`, `panView` |
+
+## Scrolls
+
+| Module | Role | Owns |
+|---|---|---|
+| `app/ui/scrolls.mts` | The Inventory's Scrolls view: power scrolls and Scrolls of Transcendence per skill. | `showScrolls` |
+| `app/ui/scrolls-model.mts` | Pure: counts, roll-ups against the shard's Scroll Binder recipes, the binder plan. | `powerRows`, `sotPlan`, `bindEverything` |
+| `scripts/scrolls-fixture.mts` | The demo scans with extra scrolls, for the Electron test. | `writeScrollScans` |
+
+The recipes are the shard rules' `scrollBinder` (Shard rules, above).
+
+## MCP
+
+| Module | Role | Owns |
+|---|---|---|
+| `app/mcp.mts` | The built-in MCP server: a second loopback listener, its guards, the JSON-RPC subset, `<data>/mcp.json` (`docs/mcp.md`). | `createMcp`, `readMcpConfig`, `writeMcpConfig`, `PROTOCOL_VERSIONS`, `MCP_DEFAULT_PORT` |
+| `app/mcp-tools.mts` | The tools, one table entry each, calling the app's own routes over loopback; where the page computes before a route, a tool calls the same shared function. Tools that wait stop at 45 s by default, 50 at most. | `TOOLS`, `INSTRUCTIONS`, `ToolContext` |
+
+## Server
+
+| Module | Role | Owns |
+|---|---|---|
+| `app/vault-server.mts` | The local HTTP server. `startServer(config)` returns `{ server, port, url, close() }` and nothing runs at import time; `close()` tears down every timer, stream and worker. Its header comment is the full route list. Every HTML response carries the Content-Security-Policy, every response sent through `send()` carries `nosniff`, `no-store` and `DENY` framing, and a body-reading `PUT`/`POST` must declare JSON; `headersTimeout` is 60 s and `requestTimeout` 300 s, with only the idle-socket timeout off so an SSE stream survives (`CONTRIBUTING.md`, Security). | `startServer`, `OPTS_LIMITS` |
+| `app/read-body.mts` | A request's JSON body under a byte cap, shared with the MCP listener. | `readBody`, `HttpError`, `isJsonContentType` |
+| `app/config.mts` | Every path, the port and the token, from flags then environment then defaults; creates the data folder's directories. | `resolveConfig`, `ensureLayout`, `corePath`, `DATA_DIR_MODE`, `DATA_FILE_MODE`, `DEFAULT_PORT` |
+| `app/data-dir-notice.mts` | The sentence that says the client's scripts write to another data folder. Browser-safe, so the server's startup log and the page (`app/ui/messages.mts` re-exports it) share one sentence. | `dataDirNotice`, `DataDirCheckInfo` |
+| `app/atomic-write.mts` | The one way this app replaces a file. | `atomicReplace`, `writeFileAtomic`, `moveAside` |
+
+What lives inside `startServer` today (each a closure over the config, the settings and the rules, so none can be imported on its own):
+
+- **HTTP helpers:** `send`, `asObject`, `isBoundedString`, `isBoundedInt`, `safeAppendLog`, the Content-Security-Policy.
+- **Build request checks:** `poolsError`, `currentError`, `optsError`, `runSettingsError`, `pickMeta`, `OPTS_LIMITS`.
+- **Stores** (file reads and writes): settings (`loadSettings`, `saveSettings`), profiles (`readProfiles`), `readUiPrefs`, `readBlacklist`, `readKindOverrides`/`saveKindOverrides`, `readOrganize`, `readNames`, `readOrganizeState`, runs (`readRuns`, `saveRun`). The seven single-file stores (`<data>/ui-prefs.json`, `<data>/tazuo-panel.json`, `<data>/scan-blacklist.json`, `<data>/item-kinds.json`, `<data>/organize.json`, `<data>/house-map.json`, `<data>/organize-state.json`) have their paths built here, not in `app/config.mts`.
+- **Services:** the inventory (`readScans`, `scansSignature`, `getInventory` and the fold cache), houses (`uoFolder`, `houseTileData`, `facetPng`, `houseModel`), Organize (`bridgeView`, `organizeInputs`, `organizeNow`, `queuePlanTrip`, `putAway`), optimize jobs (`startJob`, `spawnWorker`, `runJob`, `cancelJob`, `streamJob`), retention (`planPrune`, `pruneData`), the inbox watchers and the shared event stream (`startWatchers`, `broadcastEvent`).
+- **Routes:** one request handler with the Host, Origin, token and content-type checks ahead of every route (`CONTRIBUTING.md`, Security).
+
+## Desktop shell
+
+| Module | Role | Owns |
+|---|---|---|
+| `electron/main.mts` | The main process: forks the server, one window, the per-launch token, single instance, the native folder picker and Open folder. | the window and token lifecycle |
+| `electron/server-entry.mts` | The server's utility-process entry, which calls `startServer()`. | — |
+| `electron/protocol.mts` | Type-only message shapes between the main process and the server child. | `HostRequestMessage`, `HostResultMessage`, `ChildToMainMessage`, `MainToChildMessage` |
+| `electron/host-args.mts` | Runtime checks on the two host-bridge arguments. | `openPathTarget`, `dialogTitle` |
+| `electron/navigation.mts` | Where the page may navigate and which links go to the OS browser. | `navigationDecision`, `externalOpenDecision` |
+| `electron/pending-calls.mts` | The id→promise registry for relayed host calls. | `createPendingHostCalls`, `HOST_CALL_TIMEOUT_MS` |
+| `electron/restart-policy.mts` | Whether a crashed server child is restarted. | `shouldRestart`, `RESTART_WINDOW_MS` |
+
+`electron/README.md` and `docs/architecture.md` describe the processes.
+
+## Installer & adapters
+
+| Module | Role | Owns |
+|---|---|---|
+| `app/installer.mts` | Behind the setup wizard and Settings: adapters, client folders, install, the running-script guard, the update check, the data-folder check. Rejects relative and UNC folder paths; reads an installed version from regular files only (`O_NOFOLLOW`, first 64 KiB); writes each script atomically with packrat-paths.json last; accepts a release URL only under this repository's releases. No Electron import. | `listAdapters`, `candidateClientRoots`, `validateScriptsDir`, `installedVersion`, `installScripts`, `checkForUpdates`, `checkScriptsDataDir`, `RUNNING_MESSAGE` |
+| `app/tazuo-panel.mts` | The TazUO in-game panel's options file and adding the panel to TazUO's autostart list. | `readPanelPrefs`, `writePanelPrefs`, `addPanelAutostart`, `tazuoRunning` |
+| `app/tazuo-panel-prefs.mts` | The panel options' checks, with no Node imports. | `PANEL_DEFAULTS`, `panelPrefsError`, `panelPrefsOf`, `HOTKEY_KEYS` |
+| `scripts/make-adapter-fixture.mts` | Turns a real scan into an anonymized adapter fixture. | — |
+| `adapters/tazuo/`, `adapters/razor-enhanced/`, `adapters/classicuo-web/` | Each game client's scripts, `adapters/<id>/capabilities.json` and README (`docs/adapter-guide.md`). | the adapter contract, `ADAPTER_VERSION` |
+| `adapters/fake_clients.py`, `adapters/test_adapters.py`, `adapters/test_scanners.py`, `adapters/test_bridges.py`, `adapters/test_panel.py` | Fake game clients and the adapter tests, run by `app/adapters.test.mts`. | — |
+
+## UI
+
+The page is `app/index.html` plus `app/ui/`, compiled by `scripts/build-ui.mts` and served through the `/ui/<name>` route. Screens that belong to one feature are listed in that feature's section above: Suit Builder, Organize, House map, Scrolls. The DOM-free modules are the ones `node:test` suites import directly.
+
+### Bootstrap
+
+| Module | Role | Owns |
+|---|---|---|
+| `app/index.html` | The page shell: markup, one `<main>` per screen, the stylesheet links, the one module script. No inline scripts (the CSP forbids them) and no remote loads: the fonts are bundled under `app/ui/fonts/` with their OFL license texts. | the screens' containers |
+| `app/ui/app.mts` | `load()` / `reload()`, the hash router, screen and drawer switching. | `load`, `reload`, `parseRoute`, `routeFor` |
+| `app/ui/shell.mts` | The left sidebar: nav with counts, the shard and last-scan line, the bridge control, collapse. | `initShell`, `renderNavCounts` |
+| `app/ui/theme.mts` | Theme family and light/system/dark mode. | `resolveTheme`, `resolveMode`, `applyLook`, `BUILT_THEMES` |
+
+### Infrastructure
+
+| Module | Role | Owns |
+|---|---|---|
+| `app/ui/store.mts` | The shared mutable page state. | `state`, `bridge`, `invStamp`, `AppState` |
+| `app/ui/api.mts` | The one place every page fetch goes through. | `api`, `CLIENT_ID` |
+| `app/ui/api-types.mts` | Every response shape the page reads off its fetches. | the `*ApiResponse` types |
+| `app/ui/events.mts` | The one shared `EventSource("/api/events")`. | `connectEvents` |
+| `app/ui/items.mts` | Turns a serial into a full item record. | `resolveItems` |
+| `app/ui/item-tip.mts` | Where the item tooltip gets its item. DOM-free. | `createTipResolver` |
+| `app/ui/dom.mts` | DOM helpers, formatting, labels, rarity color, toasts, the hover tooltip. | `el`, `$`, `fmtN`, `slotLabel`, `rarityColor`, `toast`, `installTooltip` |
+
+### Components and shared widgets
+
+| Module | Role | Owns |
+|---|---|---|
+| `app/ui/components.mts` | The component primitives as DOM builders, styled by `app/ui/components.css`. `box()` refuses a bare text child. | `box`, `txt`, `button`, `input`, `select`, `popover`, `createDrawer`, `openDialog`, `confirmDialog`, `table`, `menu`, `FLEX_CLASSES` |
+| `app/ui/dialog.mts` | A one-field prompt (Electron has no `window.prompt`). | `promptText` |
+| `app/ui/item-browser.mts` | The item browser: filter toolbar, filter strip, column popover and virtual table, mounted more than once. | `createItemBrowser` |
+| `app/ui/sheet.mts` | The character sheet, shared by Characters and the Suit Builder. | `sheetNode`, `SLOT_GROUPS`, `SHEET_GROUPS`, `RESISTS` |
+| `app/ui/tazuo-panel.mts` | The TazUO panel's two options as controls. | `panelControls` |
+| `app/ui/paste-scanner.mts` | The Copy scanner script button for a paste-transport client. | `scannerCopy` |
+| `app/ui/shard.mts` | The one place a shard switch is saved and the page reloaded. | `changeShard` |
+
+### Data modules (pure)
+
+| Module | Role | Owns |
+|---|---|---|
+| `app/ui/messages.mts` | The sentences the page shows for a server outcome. | `errorText`, `bridgeView`, `optimizeErrorMessage` |
+| `app/ui/adapters.mts` | Adapter-selection helpers. | `defaultAdapterId`, `availableAdapters`, `platformCompatible` |
+| `app/ui/adapter-copy.mts` | What the page says about each game client. | `adapterCopy`, `shortName`, `wizardSteps` |
+| `app/ui/view-state.mts` | What a refresh keeps, what Clear all resets, the starting columns. | `optionsKeeping`, `clearedQuery`, `COLS_VERSION` |
+
+### Screens
+
+| Module | Role | Owns |
+|---|---|---|
+| `app/ui/inventory.mts` | The Inventory's Items view and the entry points other screens use to open it. | `showItem`, `showContainer`, `showSearch`, `itemMenu` |
+| `app/ui/containers.mts` | The Inventory's Containers view. | `renderContainers`, `labelContainer` |
+| `app/ui/peek.mts` | The item peek beside the table. | `openPeek`, `closePeek` |
+| `app/ui/kinds.mts` | Classify this…, and the kinds file's export and import. | `openClassify`, `exportKinds`, `importKinds` |
+| `app/ui/characters.mts` | The Characters roster and a character's sheet. | `renderCharacters`, `showCharacter` |
+| `app/ui/settings.mts` | The Settings screen. | `renderSettings` |
+| `app/ui/wizard.mts` | The first-run / Run setup wizard. | `openWizard` |
+| `app/ui/import.mts` | The Import drawer. | `renderImport` |
+
+### Models (pure)
+
+| Module | Role | Owns |
+|---|---|---|
+| `app/ui/inv-model.mts` | The Inventory's query string, filter tokens, counts, row window and keyboard model. | `DEFAULT_COLS`, `ITEM_COLS`, `COL_GROUPS`, `queryParams`, `activeFilters` |
+| `app/ui/roster.mts` | The Characters roster's filter and sort, and the sheet's scan summary. | `rosterView`, `sheetMeta` |
+| `app/ui/import-preview.mts` | The Import drawer's preview card as data. | `scanPreview` |
+
+Stylesheets (`app/ui/tokens.css`, `app/ui/britannia.css`, `app/ui/components.css`, `app/ui/styles.css`, `app/ui/shell.css` and one per screen) and the bundled fonts under `app/ui/fonts/` are served straight from source. CSS classes are global across every stylesheet. Icons are `app/assets/icon.png`, `app/assets/favicon.png` and `app/assets/logo-mark.png`; the installers' master is `build/icon.png`.
+
+## Tooling & tests
+
+| Module | Role | Owns |
+|---|---|---|
+| `scripts/test-runner.mts` | The test interface behind `scripts/test_runner.sh`: `--smoke`, `--fast`, `--changed`, full. | the summary file, test_logs/latest_summary.json |
+| `scripts/run-suite.mts` | The counting half of the runner: build, discover, run, fold the events into the summary. | `runSuite`, `patternsFor` |
+| `scripts/select-tests.mts` | Which test files `--changed` runs for the changed paths. | `selectTests`, `SCREENS` |
+| `scripts/test-file-watchdog.mts` | Ends a test file's process that does not exit on its own after its tests. | — |
+| `scripts/build-ui.mts` | Compiles the page into app/dist/ (git-ignored). | `buildUi` |
+| `scripts/build-schema-types.mts` | Generates app/schema/types.d.mts (git-ignored) from the JSON Schema files. | `buildSchemaTypes`, `schemaToTypeSource` |
+| `scripts/start.mts` | `npm start`: builds, then runs the bare server. | — |
+| `scripts/electron-window.mts` | How the Electron UI tests size the window. | `fitWindow`, `testEnv` |
+| `scripts/contrast-probe.mts` | Measures WCAG contrast on the rendered page. | `probeContrast` |
+| `scripts/localstorage-shim-for-tests.mts` | A `localStorage` stub installed on import, for tests of modules that use it. | — |
+| `app/timing-fixture.mts` | Speed checks that keep the fastest of several samples. | `fastestMs` |
+
+Every `*.test.mts` file sits beside the module it is named after, and `TESTING.md` lists them with their tags.
+
+## Where concepts are restated today
+
+These concepts have one owner above but are copied by hand elsewhere. Until the architecture pass (#218) gives each one source, a change to one copy means updating the others.
+
+- **Gear slots.** Owner: `app/vault-lib.mts` (`LAYER_TO_SLOT`, `GEAR_SLOTS`, `REQUIRED_SLOTS`, `SLOT_LABELS`). Restated: `JEWEL_SLOTS` and `ARMOR_SLOT_SET` inside `app/vault-lib.mts`; the default and optional slot lists in `scripts/optimizer-core.mts`; `SLOT_GROUPS` in `app/ui/sheet.mts`; `MANUAL_GROUPS` in `app/ui/manual-model.mts`; the slot-to-group table in `app/ui/item-browser.mts`; the Armor and Jewelry groups in `app/organize-strategies.mts`; the slot presets in `app/organize-presets.mts`. The groupings disagree on `neck`: the item browser and Organize file it under Jewelry, the sheet and Manual under Armor.
+- **Property keys.** Owner: `app/vault-lib.mts` (`PROP_PATTERNS`, `PROP_LABELS`, `PROP_FULL`, `NOT_BUILDER_KEYS`, `RESIST_KEYS`). Restated or extended: `BOOLEAN_FLAGS` in `app/vault-lib.mts`; `EXTRA_COLS` in `app/item-query.mts`; the column groups in `app/ui/inv-model.mts`; the sheet groups in `app/ui/sheet.mts`; `TOTAL_KEYS` in `app/ui/manual-model.mts`; `CASTER_PROPS` and `MELEE_PROPS` in `app/organize.mts`; the cap keys in each `app/rules/` file; bare key strings in `app/buffs.mts`, `app/mip.mts` and the core.
+- **HTTP response shapes.** The server builds each response in `app/vault-server.mts`; `app/ui/api-types.mts` declares the page's copy by hand, and no test compares the two. Change a route's response and its type together.
+- **The browser-shared module list.** A server module the page imports at run time must be reachable from `tsconfig.browser.json`'s `include` (a missing entry is silently dropped, not an error) and served by its own static route in `app/vault-server.mts` (`/vault-lib.mjs`, `/item-query.mjs`, `/scan-schema.mjs`, `/paste-scan.mjs`, `/organize-config.mjs`, `/buffs.mjs`, `/schema/validate.mjs`). The list is also written out in the header comments of `scripts/build-ui.mts` and `app/vault-server.mts`, and in `CONTRIBUTING.md`'s Run / dev loop.
+- **Adapter helpers.** Game scripts cannot import their siblings, so each adapter copies its helpers into every script: `data_dir`, `write_json_atomic` and `rfc3339_now` (kept identical by `adapters/test_adapters.py`), container detection, the trash and blacklist readers and the never-a-container lists (also checked there), plus others such as `tooltip_lines`, `facet` and `sysmsg` that no test compares.
