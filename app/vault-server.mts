@@ -123,7 +123,7 @@
 import http from "node:http";
 import { readFileSync, appendFileSync, readdirSync, existsSync, mkdirSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-import { basename, dirname, join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { statSync, lstatSync } from "node:fs";
 import { Worker } from "node:worker_threads";
@@ -155,6 +155,7 @@ import { createSettingsService } from "./services/settings.mts";
 import { createEventBus, sse } from "./services/events.mts";
 import { createSetupService } from "./services/setup.mts";
 import { createHousesService } from "./services/houses.mts";
+import { createRetentionService } from "./services/retention.mts";
 import { send, asObject, SSE_HEADERS } from "./http/respond.mts";
 import { isBoundedInt, isBoundedString, MAX_SERIAL, short } from "./guards.mts";
 import { writeFileAtomic } from "./atomic-write.mts";
@@ -175,7 +176,7 @@ import type { RunBody, RunsListBody, RunSummary } from "./runs-types.mts";
 import { renderRegion, type Region } from "./facet-map.mts";
 import { encodePng } from "./png.mts";
 import { addGrab, harvestTrips, noteSeen, pruneOverlay, PENDING_GRACE_MS, type BridgeView, type OrganizeState } from "./organize-state.mts";
-import { retentionError, retentionOf, runsToPrune, scansToPrune } from "./retention.mts";
+import { retentionError, retentionOf } from "./retention.mts";
 import { missingSinceLastScan, type MissingItem } from "./missing.mts";
 import {
   candidateClientRoots, validateScriptsDir, badPathShape, installedVersion, installScripts, pasteScanner,
@@ -870,47 +871,8 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   function suitsFor(matches: RuleMatch[]): Set<number> | undefined { return matches.some((m) => m.skipSuits) ? suitPieces(runStore.all()) : undefined; }
 
   // ---- retention (issue #28): old scans and saved runs, per settings.json's `retention` ----------------
-  // Only files scanStore.files()/runStore.files() read are ever candidates (a scan that fails validation or
-  // a run that does not parse stays), only by their bare name inside scans/ or runs/, and only a
-  // regular file: lstat, so a symlink is left alone rather than followed. Nothing is pruned under
-  // --demo: its scans are the committed fixtures and its runs folder is still the player's own.
-  // `refused`: old scans were due to go, but the fold without them differed (or, `reason: "houses"`, a listed house would have changed), so every scan was kept.
-  interface PrunePlan { scans: string[]; runs: string[]; refused: boolean; reason?: "houses" }
-  async function planPrune(): Promise<PrunePlan> {
-    if (CONFIG.demo) return { scans: [], runs: [], refused: false };
-    const r = retentionOf(appSettings.saved().retention);
-    const scans = scansToPrune(scanStore.files(), foldSnapshots, r, Date.now());
-    const runs = runsToPrune(runStore.files().map(({ file, run }) => ({ file, character: String(run.character), createdAt: String(run.createdAt), label: String(run.label || "") })), r);
-    return { scans: scans.files, runs, refused: scans.refused, ...(scans.reason ? { reason: scans.reason } : {}) };
-  }
-  function removeFiles(dir: string, files: string[]): string[] {
-    const removed: string[] = [];
-    for (const f of files) {
-      const p = join(dir, f);
-      try {
-        if (basename(f) !== f || !f.endsWith(".json") || !lstatSync(p).isFile()) continue;
-        unlinkSync(p);
-        removed.push(f);
-      } catch (e) { safeAppendLog(CONFIG.paths.log, `${new Date().toISOString()} retention could not remove ${JSON.stringify(f)}: ${(e as Error).message}\n`); }
-    }
-    return removed;
-  }
-  // One prune at a time: each call waits for the one before it to finish.
-  let pruning: Promise<unknown> = Promise.resolve();
-  function pruneData(why: string): Promise<{ scans: number; runs: number; refused: boolean }> {
-    const next = pruning.catch(() => {}).then(async () => {
-      const plan = await planPrune();
-      const scans = removeFiles(SCANS, plan.scans), runs = removeFiles(RUNS, plan.runs);
-      const at = new Date().toISOString();
-      if (plan.refused) safeAppendLog(CONFIG.paths.log, `${at} retention (${why}) kept every scan: ${plan.reason === "houses" ? "a house's newest capture or furniture would have changed without the old ones" : "the inventory folded without the old ones differed"}\n`);
-      if (scans.length || runs.length) safeAppendLog(CONFIG.paths.log, `${at} retention (${why}) removed ${scans.length} scans ${JSON.stringify(scans)} and ${runs.length} runs ${JSON.stringify(runs)}\n`);
-      if (scans.length) eventBus.broadcast("changed", { what: "inventory", at: Date.now() });
-      if (runs.length) eventBus.broadcast("changed", { what: "runs", at: Date.now() });
-      return { scans: scans.length, runs: runs.length, refused: plan.refused };
-    });
-    pruning = next;
-    return next;
-  }
+  const retentionService = createRetentionService({ demo: CONFIG.demo, retention: () => appSettings.saved().retention, scanStore, runStore, events: eventBus,
+    log: (line) => safeAppendLog(CONFIG.paths.log, line) });
   function saveRun(job: Job) {
     const meta = job.meta || {};
     const run = { id: job.id, key: job.key, character: meta.character || "?", createdAt: new Date().toISOString(), label: "",
@@ -1200,8 +1162,8 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         const { dryRun } = asObject(await readBody(req, { limit: 8e3 }));
         if (typeof dryRun !== "boolean") return send(res, 400, { ok: false, error: "dryRun must be a boolean" });
         if (CONFIG.demo) return send(res, 409, { ok: false, error: "demo data is read-only" });
-        if (dryRun) { const plan = await planPrune(); return send(res, 200, { ok: true, scans: plan.scans.length, runs: plan.runs.length, refused: plan.refused }); }
-        return send(res, 200, { ok: true, ...await pruneData("clean up now") });
+        if (dryRun) { const plan = await retentionService.plan(); return send(res, 200, { ok: true, scans: plan.scans.length, runs: plan.runs.length, refused: plan.refused }); }
+        return send(res, 200, { ok: true, ...await retentionService.prune("clean up now") });
       }
       if (req.method === "GET" && url.pathname === "/api/rules") {
         return send(res, 200, { ok: true, shard: appSettings.current().shard, rules: appSettings.rules(), available: listRules({ userRulesDir: USER_RULES_DIR }), fallback: appSettings.rulesFallback() });
@@ -1963,7 +1925,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   });
   startWatchers();
   await mcp.start();
-  pruneData("startup").catch((e: Error) => safeAppendLog(CONFIG.paths.log, `${new Date().toISOString()} retention (startup) failed: ${e.stack || e.message}\n`));
+  retentionService.prune("startup").catch((e: Error) => safeAppendLog(CONFIG.paths.log, `${new Date().toISOString()} retention (startup) failed: ${e.stack || e.message}\n`));
   const port = (server.address() as AddressInfo).port;
   const url = `http://localhost:${port}`;
   console.log(`Pack Rat: ${url}  (data: ${CONFIG.dataDir})  token: ${CONFIG.token ? "set" : "none (dev)"}`);
