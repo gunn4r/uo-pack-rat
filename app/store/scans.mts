@@ -31,7 +31,11 @@ export function createScansStore({ dir, shard }: { dir: string; shard: () => str
   }
   // Every scan the readers use (the fold, Missing, the house map): a file of a kind from a newer adapter is kept on
   // disk and left out here, with a line in the log.
-  const all = (): ScanV2[] => files().filter((s) => isKnownKind(s.doc) || (console.warn(`skipping ${s.file}: kind ${JSON.stringify(s.doc.kind)} is from a newer Pack Rat`), false)).map((s) => s.doc);
+  const all = (): ScanV2[] => files().filter((s) => {
+    if (isKnownKind(s.doc)) return true;
+    console.warn(`skipping ${s.file}: kind ${JSON.stringify(s.doc.kind)} is from a newer Pack Rat`);
+    return false;
+  }).map((s) => s.doc);
   // Every *.json file's name, mtimeMs and size, so an add/edit/delete/rename is caught with no restart.
   function signature(): string {
     if (!existsSync(dir)) return "no-scans-dir";
