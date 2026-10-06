@@ -1,12 +1,14 @@
-// json-file.mts — the one way a store reads and writes a JSON data file. Reading names what a bad file means to its reader (onBad); writing creates the folder and replaces the file atomically with the data folder's file mode.
+// json-file.mts — the one way a store reads and writes a JSON data file. Reading names what a bad file means to its reader (onBad); writing creates the folder and replaces the file atomically with the data folder's file mode; refuseNewer keeps a save off a file a newer Pack Rat made.
 //
 // - "empty": a missing, oversized, unreadable or unparsable file reads as `salvage(undefined)`, and a parsed one as `salvage(doc)`; a salvage that throws on the parsed document reads as an empty file too. Nothing on disk changes.
 // - "aside": a bad file (oversized, unparsable, unreadable, or refused by `check`) is moved aside as <file>.corrupt and reported, so the next write cannot overwrite what was in it. A missing file reads as `{missing: true}`. With `ioErrors: "throw"`, a failed read (a missing file included) throws instead, since it says nothing about the file's contents.
 // - "skip": any failure throws, for a reader that skips that file and says why (one scan or run in a folder).
 import { lstatSync, mkdirSync, readFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { basename, dirname } from "node:path";
 import { moveAside, writeFileAtomic } from "../atomic-write.mts";
 import { DATA_DIR_MODE, DATA_FILE_MODE } from "../config.mts";
+import { newerNotice, type DocKind } from "../migrate.mts";
+import type { HttpError } from "../read-body.mts";
 
 // Why a file was not taken: over maxBytes (lstat's size), JSON.parse refused it, the read failed, or check() refused the parsed document.
 export type BadJson = { why: "too-big" } | { why: "syntax"; error: SyntaxError } | { why: "io"; error: Error } | { why: "check"; reason: string };
@@ -38,4 +40,17 @@ export function readJsonFile(path: string, opts: { maxBytes?: number; onBad: "em
 export function writeJsonFile(path: string, doc: unknown, { indent, newline = true }: { indent?: number; newline?: boolean } = {}): void {
   mkdirSync(dirname(path), { recursive: true, mode: DATA_DIR_MODE });
   writeFileAtomic(path, JSON.stringify(doc, null, indent) + (newline ? "\n" : ""), DATA_FILE_MODE);
+}
+
+// Why `path` may not be written, or null: the document on disk was made by a newer Pack Rat (app/migrate.mts), and a
+// save from this build would lose what it cannot read. A file that is missing or does not parse says nothing.
+export function newerOnDisk(path: string, kind: DocKind): string | null {
+  let doc: unknown;
+  try { doc = JSON.parse(readFileSync(path, "utf8")); } catch { return null; }
+  return newerNotice(basename(path), kind, doc);
+}
+// newerOnDisk as a 409, which the server's request handler answers with its message.
+export function refuseNewer(path: string, kind: DocKind): void {
+  const why = newerOnDisk(path, kind);
+  if (why) throw Object.assign(new Error(why), { statusCode: 409 }) as HttpError;
 }

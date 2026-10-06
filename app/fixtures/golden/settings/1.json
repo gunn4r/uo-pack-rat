@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "shard": "uoalive",
+  "setupDone": true,
+  "client": { "adapter": "tazuo", "scriptsDir": "LegionScripts" },
+  "autoUpdateCheck": true
+}

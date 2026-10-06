@@ -1,6 +1,6 @@
 // house-names.test.mts — `app/house-names.mts`, the house names and drawn areas in `<data>/house-map.json` (issue #164).
 //
-// `[fast]`: `app/house-names.mts`, `<data>/house-map.json` (issue #164): the name rules (trimmed, 1 to 60 characters, no control characters, empty removes), optional integer bounds, unknown entry fields kept; the drawn areas (issue #10): id, trimmed name, level, a palette colour and rectangles checked (each refusal by its reason), unknown area fields kept, an area-only house kept with an empty name and no name and no areas removing the entry, rectangles allowed 8 tiles past the bounds and no further, at most 32 areas and 16 rectangles with the largest entry under the PUT cap, a round trip through the file (a bad area drops its house's entry on read), and areas carried over to a redesigned house's bounds; the house-id shape, an atomic round trip, and a corrupt file moved aside as `.corrupt` (an older one never overwritten) while a bad entry in a good file is left out of the read.
+// `[fast]`: `app/house-names.mts`, `<data>/house-map.json` (issue #164): the name rules (trimmed, 1 to 60 characters, no control characters, empty removes), optional integer bounds, unknown entry fields kept; the drawn areas (issue #10): id, trimmed name, level, a palette colour and rectangles checked (each refusal by its reason), unknown area fields kept, an area-only house kept with an empty name and no name and no areas removing the entry, rectangles allowed 8 tiles past the bounds and no further, at most 32 areas and 16 rectangles with the largest entry under the PUT cap, a round trip through the file (a bad area drops its house's entry on read), and areas carried over to a redesigned house's bounds; the house-id shape, an atomic round trip, and a corrupt file moved aside as `.corrupt` (an older one never overwritten) while a bad entry in a good file is left out of the read; a map a newer Pack Rat made read and marked read-only, never moved aside.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -105,7 +105,7 @@ test("[fast] house names: an id is <facet>-<x>-<y>, the facet a number or x", ()
 
 test("[fast] house names: write then read round-trips atomically, an entry set to null is removed, and a missing file reads empty", () => {
   const dir = mkdtempSync(join(tmpdir(), "pr-names-")), file = join(dir, "house-map.json");
-  assert.deepEqual(readHouseMap(file), { doc: emptyHouseMap(), problem: null });
+  assert.deepEqual(readHouseMap(file), { doc: emptyHouseMap(), problem: null, readOnly: null });
   assert.equal(saveHouseEntry(file, emptyHouseMap(), "1-3000-1000", { name: "Main house", notes: "kept" }), null);
   assert.equal(saveHouseEntry(file, readHouseMap(file).doc, "3-10-20", { name: "Forge" }), null);
   assert.deepEqual(readHouseMap(file).doc, { version: 1, houses: { "1-3000-1000": { name: "Main house", notes: "kept" }, "3-10-20": { name: "Forge" } } });
@@ -131,7 +131,7 @@ test("[fast] house names: a change that grows a full map is refused, leaving the
 
 test("[fast] house names: a corrupt file is renamed .corrupt and reads empty; a bad entry in a good file is dropped", () => {
   const dir = mkdtempSync(join(tmpdir(), "pr-names-")), file = join(dir, "house-map.json");
-  for (const body of ["{not json", JSON.stringify({ version: 2, houses: {} }), JSON.stringify([1])]) {
+  for (const body of ["{not json", JSON.stringify({ version: "2", houses: {} }), JSON.stringify([1])]) {
     writeFileSync(file, body);
     const r = readHouseMap(file);
     assert.deepEqual(r.doc, emptyHouseMap(), body);
@@ -144,4 +144,15 @@ test("[fast] house names: a corrupt file is renamed .corrupt and reads empty; a 
   assert.deepEqual(r.doc.houses, { "1-1-1": { name: "Good" } });
   assert.match(r.problem ?? "", /2 entries/);
   assert.equal(readFileSync(file, "utf8").includes("Bad id"), true, "a salvage read leaves the file alone");
+});
+
+test("[fast] house names: a map made by a newer Pack Rat is read as far as this build understands it and marked read-only, never moved aside", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pr-names-")), file = join(dir, "house-map.json");
+  writeFileSync(file, JSON.stringify({ version: 2, houses: { "1-1-1": { name: "Good", future: true }, "nope": { name: "Bad id" } }, more: [] }));
+  const r = readHouseMap(file);
+  assert.deepEqual(r.doc, { version: 1, houses: { "1-1-1": { name: "Good", future: true } } });
+  assert.equal(r.readOnly, "house-map.json was made by a newer Pack Rat (version 2); it is read-only here until Pack Rat is updated");
+  assert.deepEqual(readdirSync(dir), ["house-map.json"]);
+  writeFileSync(file, JSON.stringify({ version: 1, houses: {} }));
+  assert.equal(readHouseMap(file).readOnly, null);
 });

@@ -29,6 +29,12 @@ function loadClientId(): string {
 }
 export const CLIENT_ID = loadClientId();
 
+// A data file made by a newer Pack Rat is read-only here: the server says so in a response's `readOnly`, and the page
+// shows each such message once (app.mts hands in the toast).
+let showReadOnly: (msg: string) => void = () => {};
+const shownReadOnly = new Set<string>();
+export function onReadOnly(show: (msg: string) => void): void { showReadOnly = show; }
+
 export interface ApiOptions {
   method?: string | undefined;
   body?: unknown;
@@ -59,5 +65,7 @@ export async function api<T = unknown>(path: string, { method = "GET", body }: A
     err.code = errBody && errBody.code;
     throw err;
   }
+  const readOnly = (data as { readOnly?: unknown } | null)?.readOnly;
+  if (typeof readOnly === "string" && !shownReadOnly.has(readOnly)) { shownReadOnly.add(readOnly); showReadOnly(readOnly); }
   return data as T;
 }
