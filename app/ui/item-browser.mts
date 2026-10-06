@@ -8,7 +8,7 @@
 // between two spacer rows sized to the rest, and loads the matching rows from the server in 500-row
 // chunks as they scroll into view, so a large inventory costs one request per screenful reached, never
 // a pager click.
-import { SLOT_LABELS, tagUnits, flagLabel } from "../vault-lib.mts";
+import { SLOT_LABELS, SLOT_GROUP, tagUnits, flagLabel } from "../vault-lib.mts";
 import type { Item } from "../vault-lib.mts";
 import type { ItemQuery, ItemQueryGroups, Place } from "../item-query.mts";
 import { state } from "./store.mts";
@@ -164,12 +164,6 @@ function checklist({ title, options, selected, onChange, searchable = options.le
   if (find) { find.input.classList.add("input-sm"); find.input.addEventListener("input", () => draw(find.input.value.trim().toLowerCase())); }
   return [box("div", { class: "inv-pop-head" }, txt(title, "caps"), el("span", { class: "spacer" }), clear), find?.root, list];
 }
-const SLOT_GROUPS: Record<string, string> = {
-  helmet: "Armor", chest: "Armor", arms: "Armor", hands: "Armor", legs: "Armor", outerLegs: "Clothing",
-  neck: "Jewelry", ring: "Jewelry", bracelet: "Jewelry", earrings: "Jewelry", talisman: "Jewelry",
-  oneHanded: "Weapons", twoHanded: "Weapons",
-  cloak: "Clothing", robe: "Clothing", tunic: "Clothing", shirt: "Clothing", feet: "Clothing", waist: "Clothing",
-};
 const SLOT_GROUP_ORDER = ["Armor", "Jewelry", "Weapons", "Clothing", "Other"];
 function placesByCharacter(): Map<string, Place[]> {
   const m = new Map<string, Place[]>();
@@ -187,7 +181,7 @@ function charOptions(q: ItemQuery): Option[] {
 }
 function slotOptions(q: ItemQuery): Option[] {
   const order = Object.keys(SLOT_LABELS);
-  const opts: Option[] = (state.facets?.slots || []).map((s) => ({ value: s, label: slotLabel(s), group: SLOT_GROUPS[s] || "Other" }))
+  const opts: Option[] = (state.facets?.slots || []).map((s) => ({ value: s, label: slotLabel(s), group: SLOT_GROUP[s] || "Other" }))
     .sort((a, b) => SLOT_GROUP_ORDER.indexOf(a.group!) - SLOT_GROUP_ORDER.indexOf(b.group!) || order.indexOf(a.value) - order.indexOf(b.value));
   opts.push({ value: "?", label: "No known slot", group: "Other" });
   return keeping(opts, q.slot, slotLabel);

@@ -621,6 +621,22 @@ export const LAYER_ALIASES: Record<string, string> = {
 // Manual groups them (armor, weapons, clothing, jewelry), which every slot list on the page follows. Both solvers
 // search them all, and the Suit Builder's Manual mode shows them all.
 export const GEAR_SLOTS: string[] = [...new Set(Object.values(LAYER_TO_SLOT))];
+// Each gear slot's group, the one place it is decided: the groups in display order, each with its slots in display
+// order. The neck is Armor, since it sits on the paperdoll's armor row; feet and a kilt or skirt are Clothing.
+export type SlotGroup = "Armor" | "Weapons" | "Clothing" | "Jewelry";
+export const GEAR_SLOT_GROUPS: ReadonlyArray<readonly [SlotGroup, readonly string[]]> = [
+  ["Armor", ["helmet", "neck", "chest", "arms", "hands", "legs"]],
+  ["Weapons", ["oneHanded", "twoHanded"]],
+  ["Clothing", ["cloak", "robe", "tunic", "shirt", "waist", "feet", "outerLegs"]],
+  ["Jewelry", ["ring", "bracelet", "earrings", "talisman"]],
+];
+export const SLOT_GROUP: Readonly<Record<string, SlotGroup>> = Object.fromEntries(GEAR_SLOT_GROUPS.flatMap(([g, slots]) => slots.map((s) => [s, g])));
+export const SLOTS_IN_GROUP = Object.fromEntries(GEAR_SLOT_GROUPS) as Readonly<Record<SlotGroup, readonly string[]>>;
+// The words that make a neck piece armor rather than a necklace: a gorget, a mempo, a collar, or a set piece named
+// Armor (Armor Of Initiation). Meditation and Organize's "Armor: neck" preset both read them.
+export const NECK_ARMOR_WORDS: readonly string[] = ["gorget", "mempo", "collar", "armor", "armour"];
+const NECK_ARMOR_RE = new RegExp(`\\b(${NECK_ARMOR_WORDS.join("|")})\\b`, "i");
+export const isNeckArmor = (name: string): boolean => NECK_ARMOR_RE.test(name);
 // The armor slots a search keeps filled while something is worn there; every other slot may be left empty.
 export const REQUIRED_SLOTS: string[] = ["helmet", "chest", "arms", "hands", "legs"];
 const HAND_SLOTS = ["oneHanded", "twoHanded"];
@@ -1538,9 +1554,10 @@ export function slayersOf(flags: string[] | null | undefined): string[] {
 
 // Meditation rule (ServUO): armour materials with MeditationAllowance None/Half block or halve mana regen unless the
 // piece has Mage Armor; a held weapon or shield blocks it unless Spell Channeling (spellbooks are fine). Jewellery,
-// cloaks, talismans and cloth never interfere: in the neck slot only a gorget, a mempo or a collar is armor, so a
-// Gold Necklace or Gold Beads is never read as gold armor.
-const ARMOR_SLOT_SET = new Set(["helmet", "chest", "arms", "hands", "legs", "outerLegs", "neck", "feet", "robe", "tunic", "waist", "shirt"]);
+// cloaks, talismans and cloth never interfere: in the neck slot only a piece isNeckArmor names is armor, so a
+// Gold Necklace or Gold Beads is never read as gold armor. The slots a material can block are the Armor group and the
+// clothing worn on the body (a robe, tunic, shirt, belt, boots or kilt can be leather or metal): every one but the cloak.
+const ARMOR_SLOT_SET = new Set([...SLOTS_IN_GROUP.Armor, ...SLOTS_IN_GROUP.Clothing.filter((s) => s !== "cloak")]);
 // material words that always block meditation (platemail, chain, bone, studded …)
 const NONMED_RE = /\b(platemail|plate|chainmail|chain|ringmail|bone|dragon|woodland|studded|metal|stone|verite|valorite|agapite|bronze|copper|shadow iron|dull copper|gold|scale)\b/i;
 // material words that mean leather/cloth (meditation allowed) — checked before the helm list
@@ -1555,7 +1572,7 @@ export function medableOf(name: string, slot: string | null | undefined, gear: b
     return f.includes("spell channeling");
   }
   if (!ARMOR_SLOT_SET.has(slot as string)) return true;
-  if (slot === "neck" && !/\b(gorget|mempo|collar)\b/i.test(name)) return true;
+  if (slot === "neck" && !isNeckArmor(name)) return true;
   if (f.includes("mage armor")) return true;
   if (NONMED_RE.test(name)) return false;
   if (MED_MATERIAL_RE.test(name)) return true;

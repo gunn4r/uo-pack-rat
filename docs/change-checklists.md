@@ -16,12 +16,12 @@ Walk the list for each kind your change is, and say in the pull request which ki
 
 Examples: `d3bbb2e` (#202 part A), `532b7cc` (#202 part B), `4982888`.
 
-1. Classifier: `app/vault-lib.mts` (`LAYER_TO_SLOT`, `GEAR_SLOTS`, `REQUIRED_SLOTS`, `SLOT_LABELS`, `JEWEL_SLOTS`, `ARMOR_SLOT_SET`); the wearable-graphic table, regenerated with `scripts/gen-graphic-layers.mts`.
+1. The slot table first: put the slot in its group in `GEAR_SLOT_GROUPS` in `app/vault-lib.mts` (the sheet's tiles, the item browser's slot filter and the meditation slot set follow from it). Then the classifier there: `LAYER_TO_SLOT` (which gives `GEAR_SLOTS`), `REQUIRED_SLOTS`, `SLOT_LABELS`, `JEWEL_SLOTS`, and `ARMOR_SLOT_SET` if the slot's material should not count for meditation; the wearable-graphic table, regenerated with `scripts/gen-graphic-layers.mts`.
 2. Solvers: the slot lists in `scripts/optimizer-core.mts` (`optDefaultSlots`, `optDefaultOptionalSlots`); `app/mip.mts` (derived from `GEAR_SLOTS`, check it still is); `app/buffs.mts`; `app/runs-lib.mts` (saved runs that name the old slot); `app/bench/make-fixtures.mts`, `app/bench/run-bench.mts`.
-3. UI: `SLOT_GROUPS` in `app/ui/sheet.mts`; `MANUAL_GROUPS` in `app/ui/manual-model.mts`; the slot groups in `app/ui/item-browser.mts`; `app/ui/builder-manual.mts`, `app/ui/builder-model.mts`, `app/ui/builder-result.mts`, `app/ui/builder.mts`, `app/ui/runs.mts`, `app/ui/builder.css`.
-4. Organize: the Armor and Jewelry groups in `app/organize-strategies.mts`; the slot presets in `app/organize-presets.mts`.
+3. UI: `MANUAL_GROUPS` in `app/ui/manual-model.mts` (a layout, so place the slot by hand); check `SLOT_GROUPS` in `app/ui/sheet.mts` still reads well with the new slot; `app/ui/builder-manual.mts`, `app/ui/builder-model.mts`, `app/ui/builder-result.mts`, `app/ui/builder.mts`, `app/ui/runs.mts`, `app/ui/builder.css`.
+4. Organize: the Armor and Jewelry groups in `app/organize-strategies.mts` (kept by hand: they move real items); the slot presets in `app/organize-presets.mts`.
 5. MCP: `build_suit`'s `pinned` description in `app/mcp-tools.mts` (it lists `GEAR_SLOTS`; check the wording still fits).
-6. Tests: `app/gear-vault.test.mts`, `app/manual-model.test.mts`, `app/manual-handoffs.test.mts`, `app/solver.test.mts`, `app/solver-fuzz.test.mts`, `app/solver-buffs-fuzz.test.mts`, `app/buffs-plan.test.mts`, `scripts/optimizer-core.test.mts`, `app/organize-strategies.test.mts`, `app/server.test.mts`, `app/ui-render.test.mts`, `scripts/ui-builder.test.mts`; the fixture `app/solver-fixture.mts`.
+6. Tests: `app/slot-groups.test.mts`, `scripts/slot-lists.test.mts` (its allow-list, if a hand-kept list changed size), `app/gear-vault.test.mts`, `app/manual-model.test.mts`, `app/manual-handoffs.test.mts`, `app/solver.test.mts`, `app/solver-fuzz.test.mts`, `app/solver-buffs-fuzz.test.mts`, `app/buffs-plan.test.mts`, `scripts/optimizer-core.test.mts`, `app/organize-strategies.test.mts`, `app/server.test.mts`, `app/ui-render.test.mts`, `scripts/ui-builder.test.mts`; the fixture `app/solver-fixture.mts`.
 7. Docs: `docs/solver.md`, `docs/ui.md`, `docs/scan-schema.md`, `CONTRIBUTING.md`.
 8. If adapters start recording the layer, this is also a scan-format change (below).
 
@@ -34,7 +34,7 @@ Examples: `ee9da51`, `97c6363`.
 3. UI: `app/ui/kinds.mts`, `app/ui/inventory.mts`, `app/ui/organize.mts`, `app/ui/settings.mts`, `app/ui/api-types.mts`.
 4. Server: the routes in `app/vault-server.mts`. If a server module becomes page-visible, the browser-shared list (see Add an HTTP route).
 5. MCP: `list_item_kinds` and the `kind` filter's description in `app/mcp-tools.mts`.
-6. Tests: `app/gear-vault.test.mts`, `app/item-kinds.test.mts`, `app/organize-config.test.mts`, `app/organize-strategies.test.mts`, `app/organize-server.test.mts`, `app/server.test.mts`, `scripts/ui-organize.test.mts`.
+6. Tests: `app/slot-groups.test.mts`, `scripts/slot-lists.test.mts` (its allow-list, if a hand-kept list changed size), `app/gear-vault.test.mts`, `app/item-kinds.test.mts`, `app/organize-config.test.mts`, `app/organize-strategies.test.mts`, `app/organize-server.test.mts`, `app/server.test.mts`, `scripts/ui-organize.test.mts`.
 7. Docs: `README.md` (kinds are player-visible), `CONTRIBUTING.md`, `docs/architecture.md` (data folder), `docs/ui.md`.
 
 ## Add an item property or property filter

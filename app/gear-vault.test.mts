@@ -329,6 +329,8 @@ test("[smoke] medableOf: materials, Mage Armor and Spell Channeling decide medit
   // jewelry in the neck slot never blocks meditation, whatever metal it is made of
   assert.equal(medableOf("Gold Necklace", "neck", true, []), true);
   assert.equal(medableOf("Gold Beads", "neck", true, []), true);
+  // a neck piece named Armor is armor (isNeckArmor), so its material counts
+  assert.equal(medableOf("Platemail Armor Of Initiation", "neck", true, []), false);
   assert.equal(medableOf("Leaf Tonlet", "legs", true, []), true);
   assert.equal(medableOf("Woodland Chest", "chest", true, []), false);
   assert.equal(medableOf("Studded Tunic", "chest", true, []), false);
