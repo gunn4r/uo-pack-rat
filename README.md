@@ -104,7 +104,7 @@ Click **Copy scanner script** (in setup, or later in **Settings › Game client*
 
 ### AI assistants (MCP)
 
-Turn on **Settings › AI assistants (MCP)** and Claude Code (or another MCP client) can search your inventory, read character sheets and saved runs, and run the Suit Builder for you: "what's my best LRC ring?", "build Kestrel a 70-resist suit with Divine Fury on". **Copy command** gives a one-line `claude mcp add …` to run once. A second switch, **Allow in-game actions**, also lets it Highlight, Go to, Grab and run Organize trips, while you are at the keyboard. What the client reads, it may send to its own AI provider. [docs/mcp.md](docs/mcp.md) has the tools and the details.
+Turn on **Settings › AI assistants (MCP)** and Claude Code (or another MCP client) can search your inventory, read character sheets and saved runs, and run the Suit Builder for you: "what's my best LRC ring?", "build Kestrel a 70-resist suit with Divine Fury on". **Copy command** gives a one-line `claude mcp add …` to run once. A second switch, **Allow in-game actions**, also lets it Highlight, Go to, Grab and run Organize trips. What the client reads, it may send to its own AI provider. [docs/mcp.md](docs/mcp.md) has the tools and the details.
 
 ### Play attended
 

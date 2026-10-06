@@ -7,7 +7,7 @@ Pack Rat has a built-in [Model Context Protocol](https://modelcontextprotocol.io
 **Settings › AI assistants (MCP)**:
 
 - **MCP server** — off by default. On, Pack Rat listens on `http://127.0.0.1:47615/mcp` (this computer only). Off, nothing listens.
-- **Allow in-game actions** — off by default. On, clients may also Highlight, Go to, Grab and run Organize trips. Turn it on only while you are at the keyboard: most shards allow moving items only while the player is present.
+- **Allow in-game actions** — off by default. On, clients may also Highlight, Go to, Grab and run Organize trips.
 - **Address** and **Token** — what a client connects with. The token is hidden until **Show**; **Copy** copies it. **New token** makes a new one after asking; every client set up with the old one stops connecting at once, so copy the command or the JSON into it again.
 - **Claude Code** — **Copy command** copies one line to run once in a terminal:
 
@@ -49,7 +49,7 @@ Every client receives a short usage guide when it connects (the `instructions` o
 | `build_suit`, `get_suit_build` | Runs the Suit Builder for a character with their saved profile, or a template, the buffs you name (the character's Automatic buffs by default), pinned pieces, or No character; waits for the result or answers with an id to ask again. A finished build is saved as a run, like one from the app |
 | `score_suit` | Totals a hand-picked suit against a profile, buffs counted, the way Manual does |
 
-**In game** (need **Allow in-game actions**, the bridge running in the game client, and you at the keyboard):
+**In game** (need **Allow in-game actions** and the bridge running in the game client):
 
 | Tool | What it does |
 |---|---|
@@ -65,6 +65,6 @@ These go through the same routes and checks as the app's buttons: the bridge mus
 - The server listens on `127.0.0.1` only, on its own port, and every request needs the token. A request naming any other host, or carrying an `Origin` header (which every web page's request does), is refused, so a website you visit cannot reach it.
 - The token is stored in `mcp.json` in the data folder, a file only your account can read (on Windows, the data folder's own permissions decide). A program on this computer that has the token can read your inventory, so make a new token if it leaks.
 - What a client reads goes where that client sends it. Claude Code, for one, sends tool results to its model like anything else in the conversation. Pack Rat itself still sends nothing anywhere.
-- In-game actions are a second switch on purpose: you can leave MCP read-only. Most shards allow moving items only while you are present; the tools assume you are, as the buttons do.
+- In-game actions are a second switch on purpose: you can leave MCP read-only.
 
 `docs/threat-model.md` (boundary 14) has the reasoning.

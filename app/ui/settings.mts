@@ -395,7 +395,7 @@ function mcpCard(r: McpApiResponse): HTMLElement {
   const rows: HTMLElement[] = [
     row({ title: "MCP server", control: on.root, help: "Lets Claude Code and other MCP clients search your inventory, read character sheets, compare saved runs and run the Suit Builder. Only programs on this computer that have the token can connect.",
       below: [c.enabled && !live.listening ? message({ tone: "bad", text: "The MCP server could not start. The server log in the data folder says why." }) : null] }),
-    row({ title: "Allow in-game actions", control: acts.root, help: "Also lets them Highlight, Go to, Grab and run Organize trips, through the same bridge and checks as the buttons. Use it only while you are at the keyboard: the shard allows moving items only while you play." }),
+    row({ title: "Allow in-game actions", control: acts.root, help: "Also lets them Highlight, Go to, Grab and run Organize trips, through the same bridge and checks as the buttons." }),
   ];
   if (c.enabled && live.listening && live.port != null && c.token) {
     const url = `http://127.0.0.1:${live.port}/mcp`, token = c.token;

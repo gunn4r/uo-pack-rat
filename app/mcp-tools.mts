@@ -34,7 +34,7 @@ export const INSTRUCTIONS = [
   "Pack Rat holds a player's Ultima Online inventory: every item on every character, in every bank, backpack and scanned house container, folded from scans the game client wrote. Tools read it, run its Suit Builder and, when the player allows it, act in game.",
   "Start with inventory_facets for the property keys, slots, kinds and characters a search can name, then search_items (the Inventory screen's filters; `props` takes \"lrc:20\" for at least 20, \"lrc:le:20\" for at most, \"lrc:eq:20\" for exactly). Rows are compact: get_item has the full tooltip and where an item lives. Lists are paged: `limit` (25 by default, 100 at most) and `offset`, with `total` in every answer.",
   "character_sheet, list_runs, get_run, compare_runs and scan_status read characters, saved Suit Builder runs and how fresh the scans are. build_suit runs the Suit Builder for a character with its saved profile (or a template), buffs and pinned pieces, waits up to waitSeconds and returns the suit, or a job id for get_suit_build. score_suit totals a hand-picked suit against a profile. organize_proposal and organize_plan show what Auto organize would set up and the trips the current setup would run; neither changes anything.",
-  "In-game tools (highlight_item, go_to_item, grab_item, organize_trip) need \"Allow in-game actions\" on in Pack Rat's Settings, the bridge script running in the game client, and the player at the keyboard: the shard allows moving items only while the player is present. They queue one command or one trip through the same bridge the app's buttons use and report what the bridge did; get_action_status follows one, stop_actions stops a trip after its current step.",
+  "In-game tools (highlight_item, go_to_item, grab_item, organize_trip) need \"Allow in-game actions\" on in Pack Rat's Settings and the bridge script running in the game client. They queue one command or one trip through the same bridge the app's buttons use and report what the bridge did; get_action_status follows one, stop_actions stops a trip after its current step.",
 ].join("\n\n");
 
 // ---------------------------------------------------------------- shapes the routes answer with (only what is read)
@@ -169,7 +169,7 @@ const WAIT = (def: number, max: number): Schema => ({ type: "integer", minimum: 
 function bridgeTool(action: BridgeAction, name: string, what: string): Tool {
   return {
     name, action: true,
-    description: `${what} Needs "Allow in-game actions" on in Pack Rat's Settings, the bridge running in the game client and the player at the keyboard. Same command and checks as the ${BRIDGE_ACTION_LABELS[action]} button.`,
+    description: `${what} Needs "Allow in-game actions" on in Pack Rat's Settings and the bridge running in the game client. Same command and checks as the ${BRIDGE_ACTION_LABELS[action]} button.`,
     inputSchema: { type: "object", additionalProperties: false, required: ["serial"], properties: { serial: SERIAL, waitSeconds: WAIT(10, 60) } },
     annotations: { title: BRIDGE_ACTION_LABELS[action], ...ACTS },
     async handler(a, ctx) {
@@ -508,7 +508,7 @@ export const TOOLS: Tool[] = [
   bridgeTool("grab", "grab_item", "Move an item into the backpack of the character the bridge runs on, walking to it and opening the containers down to it."),
   {
     name: "organize_trip",
-    description: "Run one trip of the current Organize plan (organize_plan lists them, with the stamp to pass), through the bridge: the character walks to the chests, takes the trip's items and puts each where its rule says. One trip at a time; only a site's first trip runs. Answers with what the bridge did (steps done, failed steps and why) once it reports back within waitSeconds, else an id for get_action_status. Needs \"Allow in-game actions\" on and the player at the keyboard.",
+    description: "Run one trip of the current Organize plan (organize_plan lists them, with the stamp to pass), through the bridge: the character walks to the chests, takes the trip's items and puts each where its rule says. One trip at a time; only a site's first trip runs. Answers with what the bridge did (steps done, failed steps and why) once it reports back within waitSeconds, else an id for get_action_status. Needs \"Allow in-game actions\" on.",
     action: true,
     inputSchema: { type: "object", additionalProperties: false, required: ["index", "stamp"], properties: {
       index: { type: "integer", minimum: 1, maximum: 10000, description: "The trip's number." },
