@@ -8,6 +8,7 @@ import { api } from "./api.mts";
 import { reload } from "./inventory-data.mts";
 import { putProfiles } from "./profiles.mts";
 import { selectCharacter } from "./builder.mts";
+import { session } from "./builder-session.mts";
 import { registerScreen, showCharacterItems, showItem } from "./nav.mts";
 import { openWizard } from "./wizard.mts";
 import { relativeWhen } from "./messages.mts";
@@ -64,7 +65,7 @@ const go = (hash: string): void => { location.hash = hash; };
 const sheetHash = (name: string): string => `#/characters/${encodeURIComponent(name)}`;
 function buildSuit(name: string): void { go(`#/builder/${encodeURIComponent(name)}`); }
 function savedRuns(name: string): void {
-  if (state.builder.character !== name) selectCharacter(name);
+  if (session.character !== name) selectCharacter(name);
   go("#/runs");
 }
 function moreMenu(anchor: HTMLElement, name: string, onSheet: boolean): void {

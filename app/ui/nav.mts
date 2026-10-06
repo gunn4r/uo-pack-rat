@@ -2,7 +2,7 @@
 // Inventory's Items view. Screens import these from here, not from app.mts or from another screen: each screen
 // registers what it does when its route is shown, and the Inventory hands over its Items view at startup.
 import type { ItemQuery } from "../item-query.mts";
-import { state } from "./store.mts";
+import { session } from "./builder-session.mts";
 
 // ---------------------------------------------------------------- hash routes
 // Six screens (Inventory, House map, Characters, Suit Builder, Organize, Settings), each a <main> in index.html, and routes on
@@ -18,7 +18,7 @@ export function parseRoute(): Route {
   const tab = ROUTES.includes(parts[0] as string) ? parts[0]! : "inventory";
   return { tab, character: tab === "builder" ? parts[1] || null : null, sheet: tab === "characters" ? parts[1] || null : null, house: tab === "map" ? parts[1] || null : null, scanner: tab === "containers" ? parts[1] || null : null, scrolls: tab === "scrolls" && parts[1] === "sot" ? "sot" : "power" };
 }
-export function routeFor(tab: string): string { return tab === "builder" && state.builder.character ? `#/builder/${encodeURIComponent(state.builder.character)}` : `#/${tab}`; }
+export function routeFor(tab: string): string { return tab === "builder" && session.character ? `#/builder/${encodeURIComponent(session.character)}` : `#/${tab}`; }
 
 // ---------------------------------------------------------------- the screen registry
 // A screen's part of showing its route, after app.mts has switched the visible screen. One per route name.

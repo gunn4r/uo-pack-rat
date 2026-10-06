@@ -3,6 +3,7 @@
 // nav's counts and current item, and ⌘I for Import. The routes themselves live in nav.mts; each screen is
 // its own <main> in index.html with its h1 in the top bar.
 import { state } from "./store.mts";
+import { session } from "./builder-session.mts";
 import { $, el } from "./dom.mts";
 import { prefs } from "./prefs.mts";
 import { box, button, keyValue, popover, txt, type PopoverHandle, modalOpen } from "./components.mts";
@@ -48,7 +49,7 @@ export function renderNavCounts(): void {
   const set = (id: string, n: number | null): void => { const e = $<HTMLElement>(id); if (e) e.textContent = n == null ? "" : n.toLocaleString(); };
   set("#nav-count-inventory", inv ? inv.itemCount : null);
   set("#nav-count-characters", inv ? Object.keys(inv.characters).length : null);
-  set("#nav-count-runs", state.builder.character ? state.builder.runs.length : null);
+  set("#nav-count-runs", session.character ? session.runs.length : null);
   const shard = state.availableShards.find((r) => r.id === state.settings?.shard)?.name || state.settings?.shard || "";
   const when = relativeWhen(state.newestScan);
   $<HTMLElement>("#status")!.textContent = [shard, inv ? (when ? `last scan ${when}` : "no scans yet") : "loading…"].filter(Boolean).join(" · ");
