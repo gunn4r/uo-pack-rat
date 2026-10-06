@@ -7,7 +7,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
-import { buildPools, setRules, foldSnapshots, GEAR_SLOTS, type ProfilesFile, type Template, type BuildPoolsResult } from "./vault-lib.mts";
+import { buildPools, setRules, foldSnapshots, GEAR_SLOTS, type Template, type BuildPoolsResult } from "./vault-lib.mts";
+import { templateSettings, type TemplateMap } from "./build-spec.mts";
 import { upgradeScan } from "./scan-schema.mts";
 import { buffSkillValues, plannedProfile } from "./buffs.mts";
 import type { ScanV2 } from "./schema/types.d.mts";
@@ -33,7 +34,9 @@ const fixtureRaw = JSON.parse(readFileSync(join(HERE, "..", "adapters", "tazuo",
 export const fixture = upgradeScan(fixtureRaw, { shard: "uoalive" }) as ScanV2;   // known-good fixture: the cast stands in for the validateScan() a real caller runs
 const inv = foldSnapshots([fixture]);
 const { pools: fixturePools, current: fixtureCurrent } = buildPools(inv, "Fixture", { excludeGargoyle: true });
-export const defaultProfiles = JSON.parse(readFileSync(join(HERE, "data", "profiles.default.json"), "utf8")) as ProfilesFile;
+// The shipped built-in templates (app/data/templates/uoalive.json), as the panel's settings.
+const builtins = (JSON.parse(readFileSync(join(HERE, "data", "templates", "uoalive.json"), "utf8")) as { templates: TemplateMap }).templates;
+export const defaultProfiles: { templates: Record<string, Template> } = { templates: Object.fromEntries(Object.entries(builtins).map(([id, t]) => [id, templateSettings(t)])) };
 export const templateNames = Object.keys(defaultProfiles.templates!);
 
 // cell(profileName, {soft, overrides}) — the fixture's pools/current, plus a profile built from one

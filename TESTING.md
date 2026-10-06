@@ -59,6 +59,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `app/bridge-trip.test.mts` — `queueTrip` (`app/bridge-trip.mts`), the only writer of an Organize trip line, and the stop flag behind POST /api/bridge/stop.
 - `app/buffs-plan.test.mts` — Automatic's buffs in the optimizer's profile (issue #12, `app/buffs.mts` `plannedProfile`), across the combinations.
 - `app/buffs.test.mts` — `app/buffs.mts`, the Suit Builder's buffs, abilities and forms (issue #12).
+- `app/build-spec.test.mts` — `app/build-spec.mts`, a build's intent as one document (issue #218, BuildSpec).
 - `app/builder-model.test.mts` — `app/ui/builder-model.mts`, the Suit Builder's pure logic.
 - `app/classicuo-web-adapter.test.mts` — stands in for app/contracts.test.mts for the ClassicUO web client adapter, which ships no fixture.scan.json yet.
 - `app/config.test.mts` — `app/config.mts`'s `resolveConfig` and the per-adapter bridge paths.

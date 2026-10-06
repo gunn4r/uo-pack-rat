@@ -12,7 +12,8 @@ import type { RunBody, RunsListBody, RunSummary } from "../../runs-types.mts";
 import { sse } from "../../services/events.mts";
 import type { Job } from "../../services/jobs.mts";
 import { isManualSuit } from "../../store/ui-prefs.mts";
-import { GEAR_SLOTS, buildPools, characterProfile, toOptItem, type Character, type Inventory, type Item, type OptItem, type Profile, type RunBuffs } from "../../vault-lib.mts";
+import { GEAR_SLOTS, buildPools, toOptItem, type Character, type Inventory, type Item, type OptItem, type Profile, type RunBuffs } from "../../vault-lib.mts";
+import { characterProfile, poolFromSpec, specFromRunSettings } from "../../build-spec.mts";
 import { send, asObject, SSE_HEADERS } from "../respond.mts";
 import { NEXT, type Route } from "../router.mts";
 import type { ServerContext } from "../context.mts";
@@ -167,14 +168,14 @@ export function routes(ctx: ServerContext): Route[] {
         // defaults treat null and undefined alike (post-review fix — null used to reach buildPools as a
         // literal `strLimit: null` or throw when an array field's null hit code expecting an array).
         const s = Object.fromEntries(Object.entries(settings || {}).filter(([, v]) => v != null));
-        // runSettingsError checked every field of `s` above. A missing strLimit means no limit here, where the page and
-        // build_suit default to the character's STR (run-settings.mts defaultStrLimit): a known difference the
-        // BuildSpec work settles.
-        const { allowOthersWorn = false, strLimit = Infinity, excludeTags = [], excludeRoots = [], allowGargoyle = false, medOnly = false, excludeWeapons = [], ubwsAnyWeapon = true, excludeSkills = [], lockedSlots = [] } = s as RunSettings;
         const { inv } = await getInventory();
         // buildPools would happily build pools from every other character's gear and save the run
         // under a name the inventory has never seen.
         if (character && !Object.hasOwn(inv.characters, character)) return send(res, 404, { ok: false, error: `no scans for character ${JSON.stringify(character)}` });
+        // runSettingsError checked every field of `s` above. What it leaves out takes the build spec's default
+        // (app/build-spec.mts poolFromSpec, as planBuild), as the page and build_suit do: a missing strLimit is the character's STR, else 125.
+        const pool = poolFromSpec(specFromRunSettings(s as RunSettings), character ? inv.characters[character] as Character : null);
+        const { allowOthersWorn, strLimit, excludeTags, excludeRoots, allowGargoyle, medOnly, excludeWeapons, ubwsAnyWeapon, excludeSkills, lockedSlots } = pool;
         const pins = (pinned || {}) as Record<string, number>;
         const badPin = manualSuitError(inv, pins, "pinned");
         if (badPin) return send(res, 400, { ok: false, error: badPin });
@@ -261,8 +262,7 @@ export function routes(ctx: ServerContext): Route[] {
       if (character && !Object.hasOwn(inv.characters, character)) return send(res, 404, { ok: false, error: `no scans for character ${JSON.stringify(character)}` });
       const badSuit = manualSuitError(inv, suit, "suit");
       if (badSuit) return send(res, 400, { ok: false, error: badSuit });
-      // profiles.json's caps are the shard's now (migrateProfiles drops them), as the page's working profile has none
-      const { caps: _caps, ...saved } = characterProfile(await profilesStore.read(), character ?? "");
+      const saved = characterProfile(await profilesStore.read(), character ?? "", profilesStore.builtins());
       const p = (profile ?? saved) as Profile & { buffs?: RunBuffs }, b = (buffs ?? p.buffs) as RunBuffs | undefined;
       const c = character ? inv.characters[character] as Character : null, pieces: Record<string, Item> = Object.fromEntries(Object.entries(suit).map(([slot, serial]) => [slot, inv.items[serial]!]));
       const worn = character ? Object.values(inv.items).filter((it) => it.equippedBy === character) : [];

@@ -6,7 +6,8 @@
 // A server-side module may be imported here, type or value, when it and everything it imports is browser-safe (no node: import anywhere in that chain), as the imports below are. One that reaches a node: module cannot be imported even for a type: the browser build (tsconfig.browser.json) type-checks with `"types": []`, a type-only import is erased only at emit time, and the imported file still has to type-check. So a server shape the page reads lives in a types-only module next to its owner (app/house-model-types.mts, app/organize-types.mts, app/runs-types.mts): the owner re-exports it, the server annotates its response with `satisfies`, and this file re-exports it (or narrows it with a mapped type), so a renamed field fails the typecheck on both sides. Never the other way around: nothing outside app/ui/ imports from app/ui/.
 //
 // What is still declared here by hand: GET /api/bridge/status (the server spreads the bridge's own status file into it, so it has no server-side type to share; see below) and the rest of the shapes below whose owners reach node: (app/installer.mts, app/exact-solver.mts, scripts/optimizer-core.mts, app/vault-server.mts). Each names the server-side type or route it mirrors, so a change on one side has somewhere obvious to update on the other. Nothing here is validated against the wire (HTTP responses are unvalidated network input, same trust level server.test.mts's own per-route interfaces document); it gives the page's own reads a name instead of `unknown`.
-import type { Item, Container, Character, ScanSummary, OptItem, RunSettings, ProfilesFile, BlacklistEntry, KindOverrides } from "../vault-lib.mts";
+import type { Item, Container, Character, ScanSummary, OptItem, RunSettings, BlacklistEntry, KindOverrides } from "../vault-lib.mts";
+import type { ProfilesV3, TemplateMap } from "../build-spec.mts";
 import type { Facets, ItemQueryRows, ItemQueryGroups, HitRow } from "../item-query.mts";
 import type { RulesV1 } from "../schema/types.d.mts";
 import type { AutostartOutcome, Hotkey as PanelHotkey, PanelPrefs } from "../tazuo-panel-prefs.mts";
@@ -77,8 +78,7 @@ export interface UiPrefs {
   manualFor?: "character" | "none" | undefined;        // Manual totals with the picked character's bonuses, or raw items (absent = character)
   manualSuit?: Record<string, number> | undefined;     // the Manual suit: a serial per slot (builder-manual.mts)
   manualBuffs?: string[] | undefined;                  // the Manual suit's buffs that are on (app/buffs.mts ids)
-  autoBuffs?: Record<string, string[]> | undefined;    // Automatic's buffs that are on, by character (app/buffs.mts ids)
-  buffSkills?: Record<string, Record<string, number>> | undefined;   // the buff numbers edited, by character ("" = No character), then app/buffs.mts input
+  manualBuffSkills?: Record<string, number> | undefined;   // the buff numbers edited for Manual's No character (a character's are its profile's)
   buffsCount?: "on" | "off" | undefined;               // whether Manual's totals count the buffs (absent = on)
   dismissedUpdate?: string | undefined;                // the release whose update notice was dismissed (settings.mts)
   copiedScanner?: string | undefined;                  // the ClassicUO web scanner version last copied (paste-scanner.mts)
@@ -141,7 +141,8 @@ export interface ItemsBySerialApiResponse {
 
 export interface ProfilesApiResponse {
   ok: boolean;
-  profiles: ProfilesFile;
+  profiles: ProfilesV3;
+  builtinTemplates: TemplateMap;   // the shard's built-in templates, read-only (app/data/templates/<shard>.json)
 }
 
 // ---------------------------------------------------------------- setup / wizard / adapters

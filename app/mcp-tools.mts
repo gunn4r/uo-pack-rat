@@ -6,12 +6,13 @@
 // page does (buffs.mts, vault-lib.mts). One entry per tool: its name, description, JSON Schema for its arguments
 // (the subset app/schema/validate.mts checks, which mcp.mts runs before the handler), annotations and handler.
 // `action: true` marks a tool that acts in game: refused while Settings' "Allow in-game actions" is off.
-import { BRIDGE_ACTION_LABELS, BRIDGE_OFFLINE, GEAR_SLOTS, bridgeRefusal, characterProfile, containerChain, fullOf, isPseudoCharacter, resistSkillBonus, templateFrom, toOptItem, totalsOf } from "./vault-lib.mts";
-import type { BridgeAction, Character, CharacterEntryRaw, Container, EffectiveProfile, Item, OptItem, Profile, ProfilesFile, PropMap, RunBuffs } from "./vault-lib.mts";
-import { buffPlanOf, buffSkillValues, manualBase, manualPlan, normalizeBuffs, ownEntry, plannedProfile, runBuffs, savedBuffs, BUFFS, type BuffPlan } from "./buffs.mts";
+import { BRIDGE_ACTION_LABELS, BRIDGE_OFFLINE, GEAR_SLOTS, bridgeRefusal, containerChain, fullOf, isPseudoCharacter, resistSkillBonus, toOptItem, totalsOf } from "./vault-lib.mts";
+import type { BridgeAction, Character, Container, Item, OptItem, Profile, PropMap } from "./vault-lib.mts";
+import { buffPlanOf, normalizeBuffs, savedBuffs, BUFFS } from "./buffs.mts";
+import { BUILTIN_PREFIX, characterBuffs, characterProfile, findTemplate, planBuild, specFromProfile, templateRefs, templateSettings, type PlannedBuild, type ProfilesV3, type TemplateMap } from "./build-spec.mts";
 import { evaluateSuit } from "./evaluate.mts";
 import { EXTRA_COLS, parseItemQuery } from "./item-query.mts";
-import { defaultStrLimit, RUN_DEFAULTS } from "./run-settings.mts";
+import { RUN_DEFAULTS } from "./run-settings.mts";
 import type { ValidatorSchema } from "./schema/validate.mts";
 import type { PlanMove } from "./organize-types.mts";
 
@@ -93,40 +94,32 @@ const newestStamp = (scans: InventoryDoc["scans"]): string => {
 };
 
 // ---------------------------------------------------------------- the Suit Builder's profile, as the page plans it
-// The character's saved profile (vault-lib's characterProfile), a template applied over it like the builder's Apply,
-// and the numbers edited for it (ui-prefs). With no hand-picked `suit` it is planned as the Automatic panel's build is
-// (buffs.mts's buffPlanOf; the character's Automatic buffs when none are named). With one (score_suit, build_suit with
-// pinned pieces or no character) it is planned as Manual plans its suit (buffs.mts's manualProfile: Enhance Potions
-// and Spell Channeling read from that suit; Manual's own buffs, while its totals count them, when none are named).
-// `base`, `character` and `plan` are what evaluate.mts's evaluateSuit takes, and `profile` is plannedProfile of them.
-interface Planned { profile: EffectiveProfile; settings: Record<string, unknown>; snapshot: Record<string, unknown>; buffs: string[]; base: Profile; character: Character | null; plan: BuffPlan }
+// The character's saved build (app/build-spec.mts: its settings, its Automatic buffs and the numbers edited for it), a
+// template applied over it like the builder's Apply (the player's own, else a built-in one), and the search knobs a
+// tool asked for, turned into a build by planBuild as the page's is. With no hand-picked `suit` it is planned as the
+// Automatic panel's build is (the character's Automatic buffs when none are named). With one (score_suit, build_suit
+// with pinned pieces or no character) it is planned as Manual plans its suit (Enhance Potions and Spell Channeling read
+// from that suit; Manual's own buffs, while its totals count them, when none are named). `base`, `character` and `plan`
+// are what evaluate.mts's evaluateSuit takes, and `profile` is plannedProfile of them.
+interface Planned extends PlannedBuild { buffsOn: string[]; character: Character | null }
 type EvalInputs = Pick<Planned, "base" | "character" | "plan">;
-interface Prefs { autoBuffs?: Record<string, string[]>; manualBuffs?: string[]; buffsCount?: string; buffSkills?: Record<string, Record<string, number>> }
+interface Prefs { manualBuffs?: string[]; buffsCount?: string; manualBuffSkills?: Record<string, number> }
 async function planProfile(ctx: ToolContext, inv: InventoryDoc, name: string | null, args: Record<string, unknown>, suit: Record<string, Item> | null): Promise<Planned> {
-  const [{ profiles }, { prefs }] = await Promise.all([ctx.api<{ profiles: ProfilesFile }>("/api/profiles"), ctx.api<{ prefs: Prefs }>("/api/ui-prefs")]);
+  const [{ profiles, builtinTemplates: builtins = {} }, { prefs }] = await Promise.all([ctx.api<{ profiles: ProfilesV3; builtinTemplates?: TemplateMap }>("/api/profiles"), ctx.api<{ prefs: Prefs }>("/api/ui-prefs")]);
   const c = name ? scannedCharacter(inv, name) : null;
-  // profiles.json's caps moved to the shard's rules file (migrateProfiles drops them); the page's working profile has none either.
-  const { caps: _caps, ...p }: CharacterEntryRaw & { excludeRoots?: Array<number | string> } = characterProfile(profiles, name ?? "");
+  const p = characterProfile(profiles, name ?? "", builtins);
   if (typeof args.template === "string") {
-    const t = profiles.templates && Object.hasOwn(profiles.templates, args.template) ? profiles.templates[args.template] : undefined;
-    if (!t) throw new ToolError(`no template named ${JSON.stringify(args.template)}; the templates are ${Object.keys(profiles.templates || {}).join(", ") || "none"}`);
-    Object.assign(p, templateFrom(t), { template: args.template });
+    const t = findTemplate(profiles, builtins, args.template) ?? findTemplate(profiles, builtins, BUILTIN_PREFIX + args.template);
+    if (!t) throw new ToolError(`no template named ${JSON.stringify(args.template)}; the templates are ${templateRefs(profiles, builtins).join(", ") || "none"}`);
+    Object.assign(p, templateSettings(t), { template: args.template });
   }
-  const preset = suit ? (prefs.buffsCount !== "off" ? prefs.manualBuffs : []) : name ? ownEntry(prefs.autoBuffs || {}, name) : null;
+  const saved = name ? characterBuffs(profiles, name) : { on: [], skills: prefs.manualBuffSkills || {} };
+  const preset = suit ? (prefs.buffsCount !== "off" ? prefs.manualBuffs : []) : saved.on;
   const on = args.buffs !== undefined ? normalizeBuffs(args.buffs) : normalizeBuffs(preset ?? []) ?? [];
   if (!on) throw new ToolError("buffs must be known buff ids");
-  const edits = ownEntry(prefs.buffSkills || {}, name ?? "") || {};
-  const worn = name ? inv.worn[name] || [] : [];
-  const rb: RunBuffs | undefined = runBuffs(on, buffSkillValues(c ? c.skills || {} : null, edits).values);
-  const base = suit ? manualBase(p, c) : p;
-  const plan = suit ? manualPlan(c, worn, suit, c ? p.race || "human" : null, on, edits) : buffPlanOf(c, worn, p.race, rb, edits);
-  const profile = plannedProfile(base, c, plan);
-  const strLimit = p.strLimit ?? defaultStrLimit(c);
-  const settings = { allowOthersWorn: !!p.allowOthersWorn, strLimit, excludeTags: p.excludeTags || [], excludeRoots: p.excludeRoots || [], allowGargoyle: !!p.allowGargoyle, medOnly: !!p.medOnly,
-    excludeWeapons: p.excludeWeapons || [], ubwsAnyWeapon: p.ubwsAnyWeapon !== false, excludeSkills: p.excludeSkills || [], lockedSlots: p.lockedSlots || [] };
-  // The saved run's settings, as the page's settingsSnapshot writes them (the runs drawer labels and compares from it).
-  const snapshot = { ...settings, floors: p.floors || {}, softFloors: p.softFloors || [], weights: p.weights || {}, race: p.race || "human", resistCaps: p.resistCaps || {}, ...(rb ? { buffs: rb } : {}) };
-  return { profile, settings, snapshot, buffs: on, base, character: c, plan };
+  const budgetMs = ((args.timeBudgetSeconds as number | undefined) ?? RUN_DEFAULTS.mcpBudgetMs / 1000) * 1000, altCount = (args.otherSuits as number | undefined) ?? 0;
+  const spec = { ...specFromProfile(p, { on, skills: saved.skills }), search: { exact: true, budgetMs, altCount } };
+  return { ...planBuild(spec, { character: c, worn: name ? inv.worn[name] || [] : [], race: p.race, ...(suit ? { suit } : {}) }), buffsOn: on, character: c };
 }
 
 // A suit (slot → piece) as names and serials.
@@ -475,16 +468,14 @@ export const TOOLS: Tool[] = [
         suit = Object.fromEntries(Object.entries(pinned).flatMap(([slot, serial]) => (found[serial] ? [[slot, found[serial]!]] : [])));
       }
       const plan = await planProfile(ctx, inv, name, a, suit);
-      const budget = ((a.timeBudgetSeconds as number | undefined) ?? RUN_DEFAULTS.mcpBudgetMs / 1000) * 1000, alt = (a.otherSuits as number | undefined) ?? 0;
-      const opts = { restarts: RUN_DEFAULTS.restarts, exact: true, timeBudgetMs: budget, ...(alt ? { alternatives: { count: alt, tolerance: 0 } } : {}) };
-      const body = { character: name, settings: plan.settings, profile: plan.profile, opts, ...(pinned ? { pinned } : {}),
-        ...(name ? { meta: { character: name, settings: { ...plan.snapshot, restarts: RUN_DEFAULTS.restarts, exact: true, budgetMs: budget, altCount: alt, altTol: 0 }, inventoryStamp: newestStamp(inv.scans) } } : {}) };
+      const body = { character: name, settings: plan.pool, profile: plan.profile, opts: plan.opts, ...(pinned ? { pinned } : {}),
+        ...(name ? { meta: { character: name, settings: plan.snapshot, inventoryStamp: newestStamp(inv.scans) } } : {}) };
       const r = await ctx.api<{ id?: string; cached?: boolean; run?: RunDoc; superseded?: string | null; warning?: string; poolSize: number }>("/api/optimize", { method: "POST", body, clientId: "mcp" });
       if (r.superseded) ctx.memory.replaced.add(r.superseded);
       if (pinned && r.id) ctx.memory.filled.add(r.id);
       const ev: EvalInputs = { base: plan.base, character: plan.character, plan: plan.plan };
       if (r.id) rememberPlan(ctx.memory, r.id, ev);
-      const head = { character: name, buffs: plan.buffs, poolSize: r.poolSize, ...(r.warning ? { warning: r.warning } : {}), ...(r.superseded ? { superseded: r.superseded } : {}) };
+      const head = { character: name, buffs: plan.buffsOn, poolSize: r.poolSize, ...(r.warning ? { warning: r.warning } : {}), ...(r.superseded ? { superseded: r.superseded } : {}) };
       if (r.cached && r.run) return { ...head, state: "done", reused: true, runId: r.run.id, ms: r.run.ms ?? null, ...resultSummary(r.run.result, ev) };
       const until = Date.now() + waitOf(a) * 1000;
       for (;;) {
@@ -541,7 +532,7 @@ export const TOOLS: Tool[] = [
       }
       const plan = await planProfile(ctx, inv, name, a, suit);
       const ev = evaluateSuit({ profile: plan.base, character: plan.character, suit: Object.fromEntries(Object.entries(suit).map(([slot, it]) => [slot, toOptItem(it)])), buffs: plan.plan });
-      return { character: name, buffs: plan.buffs, resistBonus: ev.planned.resistBonus, suit: Object.fromEntries(Object.entries(suit).map(([slot, it]) => [slot, { serial: it.serial, name: it.name }])),
+      return { character: name, buffs: plan.buffsOn, resistBonus: ev.planned.resistBonus, suit: Object.fromEntries(Object.entries(suit).map(([slot, it]) => [slot, { serial: it.serial, name: it.name }])),
         totals: nonZero(ev.gearTotals), effectiveTotals: nonZero(ev.effectiveTotals), requirements: ev.requirements.map(({ key, label, value, floor, cap, met }) => ({ key, label, value, floor, cap, met })) };
     },
   },

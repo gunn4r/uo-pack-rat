@@ -12,6 +12,7 @@ import type { Highs, LegacyHighsOptions } from "highs";
 import { resolveConfig, corePath } from "../config.mts";
 import { upgradeScan } from "../scan-schema.mts";
 import { loadRules } from "../rules.mts";
+import { characterProfile, migrateProfilesV3 } from "../build-spec.mts";
 import type * as VaultLib from "../vault-lib.mts";
 import type * as Core from "../../scripts/optimizer-core.mts";
 import type { OptPools, OptAssignment, OptProfile } from "../exact-solver.mts";
@@ -36,11 +37,7 @@ if (!existsSync(config.paths.profiles)) {
   process.exit(1);
 }
 
-// A profiles.json character entry, as far as this spike reads it — a subset of vault-lib.mts's own
-// CharacterEntryRaw (kept local rather than imported: CharacterEntryRaw's `caps` field is typed
-// `unknown`, which doesn't line up with the `caps?: Record<string, number>` this file's own `p`
-// eventually needs for lib.effectiveProfile's Profile parameter, and this spike never reads `caps`
-// off a character entry at all) plus excludeRoots, which CharacterEntryRaw doesn't declare.
+// A character's working profile (app/build-spec.mts characterProfile), as far as this spike reads it.
 interface SpikeCharacterEntry {
   excludeWeapons?: string[] | undefined;
   ubwsAnyWeapon?: boolean | undefined;
@@ -60,7 +57,8 @@ interface SpikeCharacterEntry {
 interface SpikeProfilesFile {
   characters?: Record<string, SpikeCharacterEntry> | undefined;
 }
-const profiles = lib.migrateProfiles(JSON.parse(readFileSync(config.paths.profiles, "utf8"))).profiles as SpikeProfilesFile;   // an older file's weaponSkill becomes excludeWeapons
+const saved = migrateProfilesV3(JSON.parse(readFileSync(config.paths.profiles, "utf8"))).profiles;   // an older file read as the app reads it
+const profiles: SpikeProfilesFile = { characters: Object.fromEntries(Object.keys(saved.characters).map((n) => [n, characterProfile(saved, n)])) };
 const characters = profiles.characters || {};
 const characterNames = Object.keys(characters);
 if (!whoArg && !characterNames.length) {

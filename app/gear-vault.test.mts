@@ -15,6 +15,7 @@ import {
   shardResistCap, resistCapsFor, resistCapsError, profileResistCaps, RESIST_CAP_LIMITS,
 } from "./vault-lib.mts";
 import type { Item, Inventory, ItemLocation, ProfilesFile, CharacterEntryRaw } from "./vault-lib.mts";
+import { specFromProfile, templateSettings, type TemplateMap } from "./build-spec.mts";
 import { upgradeScan, TAZUO_V1_CAPS } from "./scan-schema.mts";
 import { runKey, reusableRun, runSummary, normalizeRun, suitPieces, SOLVER_VERSION } from "./runs-lib.mts";
 import type { SavedRun } from "./runs-lib.mts";
@@ -966,11 +967,12 @@ test("[fast] weapon filter: a Use Best Weapon Skill weapon passes while any mele
 test("[fast] profiles: ubwsAnyWeapon is on unless set false, and the schema takes it", () => {
   assert.equal(templateFrom({}).ubwsAnyWeapon, true, "an old profile or template without the field");
   assert.equal(templateFrom({ ubwsAnyWeapon: false }).ubwsAnyWeapon, false);
-  const schema = JSON.parse(readFileSync(join(HERE, "schema", "profiles.v2.schema.json"), "utf8")) as ValidatorSchema;
-  assert.ok(validate(schema, { schemaVersion: 2, characters: { A: { ubwsAnyWeapon: false } }, templates: { t: templateFrom({}) } }).ok);
+  const schema = JSON.parse(readFileSync(join(HERE, "schema", "profiles.v3.schema.json"), "utf8")) as ValidatorSchema;
+  const spec = (ubwsAnyWeapon: unknown) => ({ ...specFromProfile({}), pool: { ...specFromProfile({}).pool, ubwsAnyWeapon } });
+  assert.ok(validate(schema, { schemaVersion: 3, characters: { A: { spec: spec(false) } }, templates: { t: { spec: spec(true) } } }).ok);
   for (const g of ["characters", "templates"]) {
-    const r = validate(schema, { schemaVersion: 2, characters: {}, templates: {}, [g]: { A: { ubwsAnyWeapon: "yes" } } });
-    assert.match(r.errors[0]?.path || "", new RegExp(`^/${g}/A/ubwsAnyWeapon`), `PUT /api/profiles refuses a non-boolean in ${g}: ${JSON.stringify(r.errors)}`);
+    const r = validate(schema, { schemaVersion: 3, characters: {}, templates: {}, [g]: { A: { spec: spec("yes") } } });
+    assert.match(r.errors[0]?.path || "", new RegExp(`^/${g}/A/spec/pool/ubwsAnyWeapon`), `PUT /api/profiles refuses a non-boolean in ${g}: ${JSON.stringify(r.errors)}`);
   }
   assert.deepEqual(settingsDiff({}, { ubwsAnyWeapon: false }), ["Use Best Weapon Skill weapons held to their own skill"]);
   assert.deepEqual(settingsDiff({ ubwsAnyWeapon: false }, { ubwsAnyWeapon: true }), ["Use Best Weapon Skill weapons allowed"]);
@@ -1003,9 +1005,8 @@ test("[fast] weapon exclusions: the old single choice converts to every other sk
   assert.equal(excludeWeaponsError(["archery", "mace fighting"]), null);
   assert.equal(excludeWeaponsError("archery"), "excludeWeapons must be an array");
   assert.match(excludeWeaponsError(["archery", "wrestling"], "settings.excludeWeapons")!, /^settings\.excludeWeapons\[1\] is not a weapon skill/);
-  const schema = JSON.parse(readFileSync(join(HERE, "schema", "profiles.v2.schema.json"), "utf8")) as { $defs: { entry: { properties: { excludeWeapons: { items: { enum: string[] } } } } }; properties: Record<string, { additionalProperties: { $ref: string } }> };
-  assert.deepEqual(schema.$defs.entry.properties.excludeWeapons.items.enum, WEAPON_SKILLS, "the schema knows the same skills");
-  for (const g of ["characters", "templates"]) assert.equal(schema.properties[g]!.additionalProperties.$ref, "#/$defs/entry", `${g} entries use that subschema`);
+  const schema = JSON.parse(readFileSync(join(HERE, "schema", "profiles.v3.schema.json"), "utf8")) as { $defs: { pool: { properties: { excludeWeapons: { items: { enum: string[] } } } } } };
+  assert.deepEqual(schema.$defs.pool.properties.excludeWeapons.items.enum, WEAPON_SKILLS, "the schema knows the same skills");
 });
 
 test("[fast] settingsDiff names what changed between two runs", () => {
@@ -1340,11 +1341,10 @@ const core = (await import(pathToFileURL(corePath()).href)) as typeof Core;
 // function's own signature.
 type OptProgress = Parameters<NonNullable<NonNullable<Parameters<typeof Core.optimizeSuit>[3]>["onProgress"]>>[0];
 const demoInv = foldSnapshots([kestrel, dorran]);
-const demoProfiles = JSON.parse(readFileSync(join(HERE, "data", "profiles.default.json"), "utf8")) as ProfilesFile;
+const builtinTemplates = (JSON.parse(readFileSync(join(HERE, "data", "templates", "uoalive.json"), "utf8")) as { templates: TemplateMap }).templates;
 // Any real profile shape will do here (weights/floors/caps to score item sets) — use the archer
-// template so it roughly matches Kestrel's build. caps come from the shard's rules file now that
-// profiles.json (schemaVersion 2) no longer carries its own caps object.
-const archerProfile: OptProfile = { ...demoProfiles.templates!.archer!, caps: getRules().caps as Record<string, number> };
+// template so it roughly matches Kestrel's build. caps come from the shard's rules file.
+const archerProfile: OptProfile = { ...templateSettings(builtinTemplates.archer!), caps: getRules().caps as Record<string, number> };
 const { pools: demoPools, current: demoCurrent } = buildPools(demoInv, "Kestrel", { strength: 66 });
 const res = core.optimizeSuit(demoPools as unknown as OptPools, demoCurrent as unknown as OptAssignment, archerProfile, { seed: 1, restarts: 20 });
 
