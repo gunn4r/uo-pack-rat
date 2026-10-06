@@ -166,7 +166,7 @@ export function sotRows(items: Item[], usableAt: number[] | null): SotRow[] {
 // ---------------------------------------------------------------- Scroll Binders
 // A Scroll Binder counts as empty when its tooltip has nothing past its name but its weight and the item's own state
 // (blessed, insured, a tag). A partly filled binder names what it holds on a line of its own, in a format no scan has
-// shown yet, so any other line means "not empty", and such a binder is left out of every count (docs/ui.md).
+// shown yet, so any other line means "not empty", and such a binder is left out of every count (docs/ui/inventory.md, the Scrolls view).
 const BINDER_RE = /^scroll binder$/i;
 const PLAIN_LINE_RE = /^(weight: .*|blessed|insured|cursed|antique|brittle|prized)$/i;
 export const isEmptyBinder = (it: Item): boolean => BINDER_RE.test(it.name) && (it.lines || []).slice(1).every((l) => PLAIN_LINE_RE.test(l.trim()));

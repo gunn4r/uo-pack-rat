@@ -62,7 +62,7 @@ function flag(argv: string[], name: string): string | null {
 }
 
 // corePath: where the optimizer core module lives — scripts/optimizer-core.mts by default (Node runs
-// it straight from source, no build step; see CONTRIBUTING.md), or PACKRAT_CORE when a caller wants
+// it straight from source, no build step; see docs/architecture.md, "The dev loop in detail"), or PACKRAT_CORE when a caller wants
 // to point at an alternate build without touching this file. Its own exported function, not inlined
 // into resolveConfig's return, so every caller that needs the path before a full config object exists
 // (tests, the bench) resolves it the same one way `paths.core` below does.
