@@ -11,6 +11,7 @@ import json
 import os
 import time
 
+# BEGIN generated: razor-enhanced/paths
 def data_dir():
     """<script folder>/packrat-paths.json {"dataDir": "..."} -> $PACKRAT_DATA -> ~/.pack-rat"""
     try:
@@ -34,15 +35,19 @@ def write_json_atomic(path, obj):
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(obj, f, indent=1)
     os.replace(tmp, path)
+# END generated: razor-enhanced/paths
 
 
+# BEGIN generated: rfc3339_now
 def rfc3339_now():
     t = time.localtime()
     off = time.strftime("%z", t)
     tz = "Z" if not off else off if ":" in off else off[:3] + ":" + off[3:]
     return time.strftime("%Y-%m-%dT%H:%M:%S", t) + tz
+# END generated: rfc3339_now
 
 
+# BEGIN generated: read_blacklist
 def read_blacklist(path):
     """The valid entries of <data directory>/scan-blacklist.json, the containers the player blacklisted
     ({serial, name, addedAt, where?}). A bad entry is dropped, and a missing, unreadable or oversized
@@ -55,6 +60,7 @@ def read_blacklist(path):
         return [e for e in doc if isinstance(e, dict) and type(e.get("serial")) is int and 0 < e["serial"] <= 0xFFFFFFFF]
     except Exception:
         return []
+# END generated: read_blacklist
 
 
 PROPS_WAIT_MS = 800       # Items.WaitForProps' own request-and-wait timeout, per item
@@ -66,13 +72,16 @@ def sysmsg(msg, hue=OK_HUE):
     Misc.SendMessage(msg, hue, False)
 
 
+# BEGIN generated: razor-enhanced/as_int
 def as_int(v, default=0):
     try:
         return int(v)
     except Exception:
         return default
+# END generated: razor-enhanced/as_int
 
 
+# BEGIN generated: razor-enhanced/tooltips
 def tooltip_lines(it):
     """RAW tooltip lines for one Item, via Item.Properties (List[Property]; Property.ToString()
     renders one line, per razorenhanced.readthedocs.io/api/Property.html). Requests the read first
@@ -102,6 +111,7 @@ def name_of(it):
     (just "barrel" for that art); the cached Name is the fallback when the tooltip reads nothing."""
     lines = tooltip_lines(it)
     return lines[0] if lines else str(getattr(it, "Name", "") or "")
+# END generated: razor-enhanced/tooltips
 
 
 def main():
