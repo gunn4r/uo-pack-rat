@@ -8,7 +8,7 @@
 // Every entry expires. Before this module existed nothing bounded one: a host call whose answer never
 // came back — the main process now deliberately drops a result whose originating child is gone, see
 // main.mts's handleHostOp — left its resolve function in the map for the life of the process and its
-// promise pending for ever. The bound here and app/vault-server.mts's own withHostTimeout are the
+// promise pending for ever. The bound here and app/http/routes/host.mts's own withHostTimeout are the
 // same 60 s on purpose: whichever side notices first, the caller sees the same 504, because the error
 // below carries the `statusCode` that server's route handler reads off a thrown error (both run in
 // this same process — server-entry.mts is what hosts startServer()).
@@ -27,7 +27,7 @@ interface PendingCall {
   timer: ReturnType<typeof setTimeout>;
 }
 
-// Matches HOST_CALL_TIMEOUT_MS in app/vault-server.mts — see the module comment above.
+// Matches HOST_CALL_TIMEOUT_MS in app/http/routes/host.mts — see the module comment above.
 export const HOST_CALL_TIMEOUT_MS = 60 * 1000;
 
 // The same message and status the server's own withHostTimeout answers with, so a folder dialog that
