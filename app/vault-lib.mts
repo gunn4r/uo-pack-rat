@@ -137,6 +137,14 @@ export interface Inventory {
   items: Record<string, Item>;
   scans: ScanSummary[];
 }
+// The containers a bridge command opens to reach something inside `container`: its root first, then each bag down to
+// `container` itself (at most 8, the bridge protocol's chain limit). The Highlight / Grab / Go to buttons and the MCP
+// tools both send it.
+export function containerChain(containers: Record<string, Container>, container: number | null): number[] {
+  const chain: number[] = []; let cur = container != null ? containers[container] : null, guard = 0;
+  while (cur && guard++ < 8) { chain.unshift(+cur.serial); cur = cur.parent != null ? containers[cur.parent] : null; }
+  return chain;
+}
 
 // What propertyKeys()/gearSkills() actually read — just `.items`, either the fold's Record form or
 // the plain array item-query.mts's facetsOf() passes ({items} over an already-filtered Item[]).
@@ -1176,6 +1184,14 @@ export interface ProfilesFile {
   characters?: Record<string, CharacterEntryRaw> | undefined;
   caps?: unknown;
   [key: string]: unknown;
+}
+// A character's working profile for the Suit Builder: a copy of its saved entry, or, for a character with none, the
+// first template applied (race human). The page's character picker and the MCP build tool both start from it.
+export function characterProfile(profiles: ProfilesFile, name: string): CharacterEntryRaw {
+  const saved = profiles.characters && Object.hasOwn(profiles.characters, name) ? profiles.characters[name] : undefined;
+  if (saved) return JSON.parse(JSON.stringify(saved)) as CharacterEntryRaw;
+  const [first] = Object.keys(profiles.templates || {});
+  return { ...templateFrom(first ? profiles.templates![first] : undefined), template: first, race: "human" };
 }
 // Profiles-file migration: `archetypes` (weights + floors, bound to a character by its `archetype`) became `templates`,
 // and the binding is the character's `template` (schemaVersion 1). `caps` (the global property-cap object) moved out

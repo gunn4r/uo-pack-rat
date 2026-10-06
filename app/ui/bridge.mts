@@ -7,6 +7,7 @@ import { api } from "./api.mts";
 import { confirmDialog, icon } from "./components.mts";
 import { bridgeView, dataDirNotice, dataDirBanner } from "./messages.mts";
 import type { BridgeView } from "./messages.mts";
+import { containerChain } from "../vault-lib.mts";
 import type { Item } from "../vault-lib.mts";
 import type { BridgeQueueApiResponse, BridgeStatusApiResponse } from "./api-types.mts";
 
@@ -14,11 +15,7 @@ import type { BridgeQueueApiResponse, BridgeStatusApiResponse } from "./api-type
 // What a command needs of its target: an item, or a container highlighted as itself (the Containers view's
 // Highlight in game, issue #10: its own serial, `container` its parent, so the chain stops above it).
 export type BridgeTarget = Pick<Item, "serial" | "name" | "container" | "root"> & Partial<Pick<Item, "equippedBy" | "location">>;
-export function chainOf(it: BridgeTarget): number[] {
-  const chain: number[] = []; let cur = it.container != null ? state.inv!.containers[it.container] : null, guard = 0;
-  while (cur && guard++ < 8) { chain.unshift(+cur.serial); cur = cur.parent != null ? state.inv!.containers[cur.parent] : null; }
-  return chain;
-}
+export const chainOf = (it: BridgeTarget): number[] => containerChain(state.inv!.containers, it.container);
 export const BRIDGE_OFFLINE = "Bridge offline. Press Play on packrat-bridge.py in game.";
 // A ground root's position, which the bridge's "Go to" walks to. The fold copies every scanned
 // container field onto inv.containers, `pos` included (docs/scan-schema.md), so a ground root from a
