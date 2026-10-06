@@ -61,3 +61,21 @@ test("[fast] gen-contracts: generate() finds a stale script and an unused fragme
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("[fast] gen-contracts: a CRLF checkout of a script and its fragment is up to date, and a rewrite keeps CRLF", () => {
+  const root = mkdtempSync(join(tmpdir(), "gen-contracts-"));
+  try {
+    mkdirSync(join(root, "_shared"), { recursive: true });
+    mkdirSync(join(root, "tazuo"));
+    writeFileSync(join(root, "_shared", "helper.py"), frags.helper!.replace(/\n/g, "\r\n"));
+    const current = join(root, "tazuo", "packrat-a.py"), old = join(root, "tazuo", "packrat-b.py");
+    const block = (body: string) => ("import os\n# BEGIN generated: helper\n" + body + "# END generated: helper\n").replace(/\n/g, "\r\n");
+    writeFileSync(current, block(frags.helper!));
+    writeFileSync(old, block("old\n"));
+    const { files, stale } = generate(root);
+    assert.deepEqual(stale, [old]);
+    assert.equal(files.get(old), block(frags.helper!));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

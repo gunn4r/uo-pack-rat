@@ -80,7 +80,7 @@ function readFragment(shared: string): (name: string) => string | null {
   return (name) => {
     if (!/^(?:[a-z0-9-]+\/)?[a-z0-9_]+$/.test(name)) return null;
     const p = join(shared, `${name}.py`);
-    return existsSync(p) ? readFileSync(p, "utf8") : null;
+    return existsSync(p) ? readFileSync(p, "utf8").replace(/\r\n/g, "\n") : null;
   };
 }
 
@@ -105,11 +105,14 @@ export function generate(adapters = ADAPTERS): { files: Map<string, string>; sta
   const stale: string[] = [];
   const seen = new Set<string>();
   for (const p of adapterScripts(adapters)) {
-    const before = readFileSync(p, "utf8");
+    // Compared with LF endings: a Windows checkout (.gitattributes text=auto) has CRLF. A rewrite keeps the script's own.
+    const raw = readFileSync(p, "utf8");
+    const eol = raw.includes("\r\n") ? "\r\n" : "\n";
+    const before = raw.replace(/\r\n/g, "\n");
     const adapter = relative(adapters, dirname(p));
     const { text, used } = splice(before, fragment, adapter, relative(dirname(adapters), p));
     used.forEach((n) => seen.add(n));
-    files.set(p, text);
+    files.set(p, eol === "\n" ? text : text.replace(/\n/g, eol));
     if (text !== before) stale.push(p);
   }
   const unused = existsSync(shared) ? fragmentNames(shared).filter((n) => !seen.has(n)) : [];
