@@ -15,14 +15,13 @@ import { createServer as createNetServer, type Server as NetServer } from "node:
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { resolveConfig, ensureLayout } from "./config.mts";
-import { startServer, type ServerHandle } from "./vault-server.mts";
-import { candidateClientRoots } from "./installer.mts";
+import type { ServerHandle } from "./vault-server.mts";
+import { startTestServer } from "./server-fixture.mts";
 import { houseScan } from "./organize-fixture.mts";
 import { emptyRuleQuery, emptyOrganizeConfig, type OrganizeConfig } from "./organize-config.mts";
 import { ACTIONS_OFF, MCP_DEFAULT_PORT, PROTOCOL_VERSIONS } from "./mcp.mts";
 import { BRIDGE_OFFLINE } from "./vault-lib.mts";
 
-const FAKE_HOME = mkdtempSync(join(tmpdir(), "qm-home-"));
 const TOKEN = "test-mcp-token-0123456789";
 const VERSION = (JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version: string }).version;
 const KESTREL_CHEST = 1879769088;
@@ -35,10 +34,7 @@ async function serve({ mcp = { enabled: true, allowActions: false }, demo = true
   if (mcp) writeFileSync(join(dir, "mcp.json"), JSON.stringify({ version: 1, port: 0, token: TOKEN, ...mcp }));
   const config = ensureLayout(resolveConfig(["--port", "0", "--data", dir, ...(demo ? ["--demo"] : []), ...(appToken ? ["--token", appToken] : [])], env));
   before?.(dir);
-  const s = await startServer(config, {
-    clientSearch: { home: FAKE_HOME, candidates: (a) => candidateClientRoots({ adapter: a.id, home: FAKE_HOME, platform: "linux", env: {}, adapterPlatform: a.platform }) },
-    clientRunning: () => false,
-  });
+  const s = await startTestServer(config);
   return { s, dir, appToken };
 }
 interface McpState { ok: boolean; config: { enabled: boolean; allowActions: boolean; port: number; token: string | null }; live: { listening: boolean; port: number | null; portBusy: number | null } }
