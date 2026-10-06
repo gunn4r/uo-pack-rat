@@ -92,7 +92,8 @@ test("[slow] refresh, Clear all, the virtual table and Forget keep the page's st
     // A background refresh (what the "inventory" SSE event runs) must leave the filter chip showing
     // the filter the table still applies.
     await pickOption(page, "slot", "Slot", "bracelet");
-    await waitCount(page, /^\d+ of 160 stacks/);
+    // Wait for the filtered count: "160 of 160" is the moment before the filter applies.
+    await waitCount(page, /^(?!160 of)\d+ of 160 stacks/);
     const filtered = await countText(page);
     // The page's own module (same URL as its <script>, so the same instance).
     await page.evaluate(async (url) => { await (await import(url)).reload(); }, "/ui/inventory-data.mjs");
