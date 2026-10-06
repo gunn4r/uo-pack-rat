@@ -8,7 +8,7 @@ import { createHash } from "node:crypto";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 import {
-  parseTooltip, displayName, gameName, compareNames, classify, foldSnapshots, spellSchoolOf, buildPools, requirementReport, totalsOf, propertyKeys, bagLabel, capacityOf, NOT_BUILDER_KEYS, kindOf, groupByName, slayersOf, medableOf, weaponAllowed, settingsDiff, PROP_LABELS, LAYER_TO_SLOT, effectiveProfile, resistSkillBonus, toOptItem, labelOf, builderKeys, migrateProfiles, templateFrom, TEMPLATE_KEYS, setRules, getRules, tagUnits, tagInfo,
+  parseTooltip, displayName, gameName, compareNames, classify, foldSnapshots, spellSchoolOf, buildPools, requirementReport, totalsOf, propertyKeys, bagLabel, capacityOf, NOT_BUILDER_KEYS, kindOf, groupByName, slayersOf, medableOf, weaponAllowed, settingsDiff, PROP_LABELS, LAYER_TO_SLOT, LAYER_ALIASES, effectiveProfile, resistSkillBonus, toOptItem, labelOf, builderKeys, migrateProfiles, templateFrom, TEMPLATE_KEYS, setRules, getRules, tagUnits, tagInfo,
   WEAPON_SKILLS, migrateWeaponSetting, excludeWeaponsError, weaponSkillsOf,
   shardResistCap, resistCapsFor, resistCapsError, profileResistCaps, RESIST_CAP_LIMITS,
 } from "./vault-lib.mts";
@@ -1592,4 +1592,45 @@ test("[fast] fold: the maps it builds have a null prototype, so a scan cannot na
   const named = foldSnapshots([mk("__proto__", 2)]);
   assert.equal(Object.getPrototypeOf(named.characters), null);
   assert.equal((named.characters as Record<string, unknown>)["name"], undefined);
+});
+
+// Razor Enhanced reports its own layer names in a scan's `equipped[].layer` (issue #219); each must classify exactly as
+// the TazUO name for the same layer number does, so no adapter's worn items fall back to graphics and names.
+test("[fast] every layer name an adapter declares resolves to a known slot", () => {
+  const dir = join(dirname(fileURLToPath(import.meta.url)), "..", "adapters");
+  const NOT_GEAR: string[] = [];   // a declared layer that holds no gear would be named here
+  const seen = new Set<string>();
+  for (const name of readdirSync(dir)) {
+    const file = join(dir, name, "capabilities.json");
+    if (!existsSync(file)) continue;
+    const layers = (JSON.parse(readFileSync(file, "utf8")) as { capabilities: { layers?: string[] } }).capabilities.layers ?? [];
+    for (const layer of layers) {
+      seen.add(layer);
+      if (NOT_GEAR.includes(layer)) continue;
+      assert.ok(LAYER_TO_SLOT[LAYER_ALIASES[layer] ?? layer], `${name} declares the layer "${layer}", which maps to no slot`);
+    }
+  }
+  assert.ok(seen.has("LeftHand") && seen.has("OneHanded"), "the adapter manifests were not read");
+  for (const [alias, canonical] of Object.entries(LAYER_ALIASES)) assert.ok(LAYER_TO_SLOT[canonical], `${alias} aliases "${canonical}", not a canonical layer`);
+});
+test("[fast] classify gives a Razor layer name the slot of its TazUO equivalent", () => {
+  const worn: [string, string, string, string][] = [
+    ["Heater Shield", "LeftHand", "TwoHanded", "twoHanded"],
+    ["Radiant Scimitar", "RightHand", "OneHanded", "oneHanded"],
+    ["Platemail Chest", "InnerTorso", "Torso", "chest"],
+    ["Cloth Kilt", "OuterLegs", "Skirt", "outerLegs"],
+    ["Platemail Gorget", "Neck", "Necklace", "neck"],
+    ["Platemail Helm", "Head", "Helmet", "helmet"],
+    ["Platemail Legs", "InnerLegs", "Legs", "legs"],
+    ["Doublet", "MiddleTorso", "Tunic", "tunic"],
+    ["Robe", "OuterTorso", "Robe", "robe"],
+  ];
+  for (const [name, razor, tazuo, slot] of worn) {
+    const got = classify(name, null, razor);
+    assert.equal(got.slot, slot, `${razor}: ${name}`);
+    assert.deepEqual(got, classify(name, null, tazuo), `${razor} differs from ${tazuo}`);
+  }
+  // a two-handed weapon in the left hand stays two-handed, and a shield there does not
+  assert.equal(classify("Bardiche", null, "LeftHand").twoHanded, true);
+  assert.equal(classify("Heater Shield", null, "LeftHand").twoHanded, false);
 });
