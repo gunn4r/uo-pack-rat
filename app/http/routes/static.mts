@@ -26,6 +26,8 @@ export function routes(_ctx: ServerContext): Route[] {
     { method: "GET", path: "/organize-config.mjs", handle: (_req, res) => send(res, 200, readFileSync(join(WEB, "organize-config.mjs"), "utf8"), "text/javascript") },
     // Manual's buffs read the same catalog the server checks ui-prefs with (app/buffs.mts, issue #12).
     { method: "GET", path: "/buffs.mjs", handle: (_req, res) => send(res, 200, readFileSync(join(WEB, "buffs.mjs"), "utf8"), "text/javascript") },
+    // Manual's totals and Automatic's buff picker evaluate a suit the way the server and the MCP tools do (app/evaluate.mts).
+    { method: "GET", path: "/evaluate.mjs", handle: (_req, res) => send(res, 200, readFileSync(join(WEB, "evaluate.mjs"), "utf8"), "text/javascript") },
     // The Suit Builder's Advanced fields check against the server's run-setting ranges (app/run-settings.mts), which
     // import the request guards.
     { method: "GET", path: "/run-settings.mjs", handle: (_req, res) => send(res, 200, readFileSync(join(WEB, "run-settings.mjs"), "utf8"), "text/javascript") },
