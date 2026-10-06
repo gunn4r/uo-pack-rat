@@ -122,6 +122,7 @@ Every route lives in `app/http/routes/`, one module per area, each exporting `ro
 - `GET /schema/validate.mjs` (scan-schema.mts's own import, same reason)
 - `GET /organize-config.mjs` (the rule editor's import, same reason)
 - `GET /buffs.mjs` (the Suit Builder's Manual buffs, same reason)
+- `GET /evaluate.mjs` (one suit evaluation for Manual's totals and Automatic's buff picker, the one `POST /api/evaluate` and the MCP tools use)
 - `GET /run-settings.mjs` and `GET /guards.mjs` (the Suit Builder's Advanced fields check against the server's run-setting ranges, same reason)
 - `GET /data-dir-notice.mjs` (ui/messages.mts's import, same reason)
 - `GET /paste-scan.mjs` (the Import drawer's instant preview parses a paste with the server's own rule, same reason)
@@ -175,6 +176,7 @@ Every route lives in `app/http/routes/`, one module per area, each exporting `ro
 - `GET /api/runs?character=` (saved runs, newest first)
 - `GET|PUT {label}|DELETE /api/runs/<id>`
 - `POST /api/runs` {character, suit, settings, inventoryStamp} (save Manual's suit as a run, method "manual")
+- `POST /api/evaluate` {character (null: No character), suit, profile?, buffs?} (a hand-picked suit evaluated as Manual evaluates it, `app/evaluate.mts`: gear totals, effective totals with the buffs, caps, waste and requirements; `profile` is a run's settings snapshot, the character's saved profile without it)
 
 ### `app/http/routes/mcp.mts`
 

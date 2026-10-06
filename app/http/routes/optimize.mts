@@ -1,4 +1,4 @@
-// optimize.mts — the Suit Builder's builds and saved runs: POST /api/optimize, the per-job /api/optimize/<id>/events|cancel|status, POST|GET /api/runs and GET|PUT|DELETE /api/runs/<id>.
+// optimize.mts — the Suit Builder's builds and saved runs: POST /api/optimize, the per-job /api/optimize/<id>/events|cancel|status, POST|GET /api/runs and GET|PUT|DELETE /api/runs/<id>, and POST /api/evaluate.
 import { randomUUID } from "node:crypto";
 import http from "node:http";
 import { isBoundedInt, isBoundedString, short } from "../../guards.mts";
@@ -6,11 +6,13 @@ import { optionalSlotsFor } from "../../mip.mts";
 import { readBody } from "../../read-body.mts";
 import { runKey, reusableRun, runSummary, manualRun, type RunOpts, type SavedRun } from "../../runs-lib.mts";
 import { OPTS_LIMITS, RUN_DEFAULTS, runSettingsError, type RunSettings } from "../../run-settings.mts";
+import { manualBase, manualPlan } from "../../buffs.mts";
+import { evaluateSuit } from "../../evaluate.mts";
 import type { RunBody, RunsListBody, RunSummary } from "../../runs-types.mts";
 import { sse } from "../../services/events.mts";
 import type { Job } from "../../services/jobs.mts";
 import { isManualSuit } from "../../store/ui-prefs.mts";
-import { GEAR_SLOTS, buildPools, toOptItem, type Inventory, type OptItem } from "../../vault-lib.mts";
+import { GEAR_SLOTS, buildPools, characterProfile, toOptItem, type Character, type Inventory, type Item, type OptItem, type Profile, type RunBuffs } from "../../vault-lib.mts";
 import { send, asObject, SSE_HEADERS } from "../respond.mts";
 import { NEXT, type Route } from "../router.mts";
 import type { ServerContext } from "../context.mts";
@@ -103,7 +105,7 @@ function pickMeta(meta: Record<string, unknown>): Record<string, unknown> {
 }
 
 export function routes(ctx: ServerContext): Route[] {
-  const { eventBus, getInventory, jobService, runStore, timers } = ctx;
+  const { eventBus, getInventory, jobService, profilesStore, runStore, timers } = ctx;
   function streamJob(job: Job, res: http.ServerResponse): void {
     res.writeHead(200, SSE_HEADERS);
     sse(res, "hello", jobService.snapshot(job));   // catch-up: last progress, or the final outcome if it already ended
@@ -244,6 +246,29 @@ export function routes(ctx: ServerContext): Route[] {
       runStore.write(run);
       eventBus.broadcast("changed", { what: "runs", at: Date.now() });
       return send(res, 200, { ok: true, run: runSummary(run) } satisfies RunBody<RunSummary>);
+    } },
+    { method: "POST", path: "/api/evaluate", handle: async (req, res) => {
+      // A suit evaluated as Manual evaluates it (app/evaluate.mts): {character (null: No character), suit: {slot:
+      // serial}, profile?, buffs?}. `profile` is a run's settings snapshot (floors, softFloors, weights, race,
+      // resistCaps), checked like one; without it, the character's saved profile. `buffs` is a run's {on, skills}, else
+      // the profile's; Enhance Potions and Spell Channeling are read from the suit.
+      const { character, suit, profile, buffs } = asObject(await readBody(req, { limit: 64e3 }));
+      if (character !== null && (!isBoundedString(character, 64) || !character)) return send(res, 400, { ok: false, error: "character must be a string, or null for No character" });
+      if (!isManualSuit(suit)) return send(res, 400, { ok: false, error: "suit must map gear slots to serials" });
+      const bad = runSettingsError(profile, "profile") || runSettingsError(buffs == null ? null : { buffs }, "body");
+      if (bad) return send(res, 400, { ok: false, error: bad });
+      const { inv } = await getInventory();
+      if (character && !Object.hasOwn(inv.characters, character)) return send(res, 404, { ok: false, error: `no scans for character ${JSON.stringify(character)}` });
+      const badSuit = manualSuitError(inv, suit, "suit");
+      if (badSuit) return send(res, 400, { ok: false, error: badSuit });
+      // profiles.json's caps are the shard's now (migrateProfiles drops them), as the page's working profile has none
+      const { caps: _caps, ...saved } = characterProfile(await profilesStore.read(), character ?? "");
+      const p = (profile ?? saved) as Profile & { buffs?: RunBuffs }, b = (buffs ?? p.buffs) as RunBuffs | undefined;
+      const c = character ? inv.characters[character] as Character : null, pieces: Record<string, Item> = Object.fromEntries(Object.entries(suit).map(([slot, serial]) => [slot, inv.items[serial]!]));
+      const worn = character ? Object.values(inv.items).filter((it) => it.equippedBy === character) : [];
+      const evaluation = evaluateSuit({ profile: manualBase(p, c), character: c, suit: Object.fromEntries(Object.entries(pieces).map(([slot, it]) => [slot, toOptItem(it)])),
+        buffs: manualPlan(c, worn, pieces, c ? p.race || "human" : null, b?.on ?? [], b?.skills ?? {}) });
+      return send(res, 200, { ok: true, evaluation });
     } },
     { method: "GET", path: "/api/runs", handle: async (_req, res, url) => {
       const who = url.searchParams.get("character");

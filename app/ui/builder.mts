@@ -4,10 +4,11 @@
 // suit). The result, the compare view and the Solver details are ui/builder-result.mts; the saved-runs drawer
 // is ui/runs.mts. The panel is drawn from state.builder.profile plus the Advanced knobs below, so what a
 // build sends, what a profile saves and what a run snapshots are read from state, never from the DOM.
-import { PROP_LABELS, NOT_BUILDER_KEYS, GEAR_SLOTS, tagUnits, WEAPON_SKILLS, MELEE_SKILLS, resistSkillBonus, effectiveProfile, profileResistCaps, getRules, RESIST_KEYS, RESIST_CAP_LIMITS, resistCapsFor, templateFrom, characterProfile, settingsDiff, bagLabel } from "../vault-lib.mts";
+import { PROP_LABELS, NOT_BUILDER_KEYS, GEAR_SLOTS, tagUnits, WEAPON_SKILLS, MELEE_SKILLS, resistSkillBonus, getRules, RESIST_KEYS, RESIST_CAP_LIMITS, resistCapsFor, templateFrom, characterProfile, settingsDiff, bagLabel } from "../vault-lib.mts";
 import type { EffectiveProfile, ResistCap, RunBuffs, RunSettings, Character } from "../vault-lib.mts";
-import { applyBuffs, buffById, gearNeedsText, overrideNote, planBuffs, normalizeBuffs, normalizeBuffListsByCharacter, ownEntry, plannedProfile, runBuffs, toggleBuff, buffPlanOf, type BuffPlan } from "../buffs.mts";
+import { buffById, gearNeedsText, overrideNote, planBuffs, normalizeBuffs, normalizeBuffListsByCharacter, ownEntry, plannedProfile, runBuffs, toggleBuff, buffPlanOf, type BuffPlan } from "../buffs.mts";
 import { defaultStrLimit, RUN_DEFAULTS } from "../run-settings.mts";
+import { evaluateSuit } from "../evaluate.mts";
 import { state, invStamp } from "./store.mts";
 import type { BuilderProfile, BuilderJob, BuilderJobUi, FinishedBuild, BuildMeta } from "./store.mts";
 import { $, el, label, full, fmtN, fmtSecs, slotLabel, toast } from "./dom.mts";
@@ -21,7 +22,7 @@ import { setNavBusy } from "./shell.mts";
 import { loadRuns, settingsSnapshot, openRunsDrawer } from "./runs.mts";
 import { initManual, paintCharSelect, setManualFor, renderManual, syncManual, buffInputsOf, buffEditsOf, editBuffInputs, applyRunInputs, savePrefs, filling } from "./builder-manual.mts";
 import { renderResult, renderCurrentSuit, refreshCurrentSuit, resultLoadError, closeCompare, resetResultView } from "./builder-result.mts";
-import { paperdoll, paperdollCaps, propName, weightsSummary, requirementsSummary, poolSummary, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistCapsSummary, gearCapsText, pruneResistCaps, floorCapWarning, weaponsChipText, weaponName, toggleWeapon, type Knobs, type KnobField } from "./builder-model.mts";
+import { paperdoll, propName, weightsSummary, requirementsSummary, poolSummary, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistCapsSummary, gearCapsText, pruneResistCaps, floorCapWarning, weaponsChipText, weaponName, toggleWeapon, type Knobs, type KnobField } from "./builder-model.mts";
 import type { UiPrefs, OptimizeResult, OptimizeProgress, SavedRunLike, OptimizeStartApiResponse, OptimizeCancelApiResponse, JobSnapshotEvent, JobDoneEvent, JobFailedEvent, JobCancelledEvent } from "./api-types.mts";
 
 // ---------------------------------------------------------------- panel state
@@ -313,9 +314,10 @@ function buffsSection(): HTMLElement {
 // The picker's state: the buffs on, their numbers, and what each would add, against the caps before any buff.
 function buffView(): BuffView {
   const name = state.builder.character!, p = state.builder.profile!, inputs = buffInputsOf(name), plan = buffPlan(name, p.race, { on: buffsOn(), skills: {} });
-  const prof = effectiveProfile(p, state.inv!.characters[name] as Character | null), totals = paperdoll(plan.worn, prof.resistBonus), caps = paperdollCaps(profileResistCaps(prof));
-  return { name, on: plan.on, values: plan.skills, planned: inputs.planned, edits: buffEditsOf(name), stats: plan.stats, who: plan.who, totals, caps,
-    all: applyBuffs(totals, caps, plan.on, plan.skills, plan.stats, plan.who), replaced: note && "replaced" in note ? note.replaced : null,
+  // what the character wears now, evaluated with the panel's buffs (app/evaluate.mts)
+  const ev = evaluateSuit({ profile: p, character: state.inv!.characters[name] as Character | null, suit: Object.fromEntries((state.inv!.worn[name] || []).map((i) => [String(i.serial), i])), buffs: plan });
+  return { name, on: plan.on, values: plan.skills, planned: inputs.planned, edits: buffEditsOf(name), stats: plan.stats, who: plan.who,
+    totals: paperdoll(ev.gearTotals, ev.planned.resistBonus), caps: ev.baseCaps, all: ev.buffs, replaced: note && "replaced" in note ? note.replaced : null,
     cleared: note && "cleared" in note ? note.cleared : null, count: true, open: !!picker };
 }
 // A buff on or off (or all off), with the picker's note: saved, and the chips, the count, the requirements' notes and

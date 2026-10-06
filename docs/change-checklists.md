@@ -53,11 +53,11 @@ Examples: `1486452`, `826f586`.
 
 Examples: `02b052e`, `e0b1eb0`.
 
-1. Catalog and math: `app/buffs.mts`; `app/vault-lib.mts` (profile planning); `app/runs-lib.mts` (runs record the buffs used).
+1. Catalog and math: `app/buffs.mts`; `app/vault-lib.mts` (profile planning); `app/evaluate.mts` (`evaluateSuit`, what every screen and tool shows a suit with: change it there, not in a caller); `app/runs-lib.mts` (runs record the buffs used).
 2. Server: the routes in `app/http/routes/`; `app/ui/api-types.mts`.
 3. UI: `app/ui/builder-buffs.mts`, `app/ui/builder-manual.mts`, `app/ui/builder.mts`, `app/ui/builder-model.mts`, `app/ui/builder-result.mts`, `app/ui/manual-model.mts`, `app/ui/sheet.mts`, `app/ui/components.mts`, `app/ui/runs.mts`, `app/ui/app.mts`, `app/ui/builder.css`, `app/ui/tokens.css`.
 4. MCP: `BUFF_LIST` in `app/mcp-tools.mts` (built from `BUFFS`; two tools send it).
-5. Tests: `app/buffs.test.mts`, `app/buffs-plan.test.mts`, `app/solver-buffs-fuzz.test.mts`, `app/solver.test.mts`, `app/builder-model.test.mts`, `app/ui-components.test.mts`, `scripts/ui-builder.test.mts`, `scripts/ui-contrast.test.mts`.
+5. Tests: `app/buffs.test.mts`, `app/buffs-plan.test.mts`, `app/evaluate.test.mts`, `app/solver-buffs-fuzz.test.mts`, `app/solver.test.mts`, `app/builder-model.test.mts`, `app/ui-components.test.mts`, `scripts/ui-builder.test.mts`, `scripts/ui-contrast.test.mts`.
 6. Docs: `docs/solver.md`, `docs/shard-rules.md`, `docs/ui.md`, `CONTRIBUTING.md`, `README.md`, `PRIVACY.md` if what is stored changes.
 
 ## Add or change a profile field
@@ -65,7 +65,7 @@ Examples: `02b052e`, `e0b1eb0`.
 Examples: `166eb05`, `d311bdb`, `f1eced4`.
 
 1. Contract: `app/schema/profiles.v2.schema.json` (types regenerate with `npm run build:types`); the defaults in `app/data/profiles.default.json`; `TEMPLATE_KEYS` in `app/vault-lib.mts` if templates carry it.
-2. Logic: `app/vault-lib.mts` (normalize, migrate, templates, `settingsDiff`); `app/runs-lib.mts` (run identity and instant repeats: bump `SOLVER_VERSION` if results change); `app/run-settings.mts` (`runSettingsError`, the one check `POST /api/optimize` and `POST /api/runs` hold a run's settings to, `RUN_SETTING_LIMITS`, `OPTS_LIMITS` and `RUN_DEFAULTS`); `app/bench/mip-spike.mts`, `app/bench/run-bench.mts`.
+2. Logic: `app/vault-lib.mts` (normalize, migrate, templates, `settingsDiff`); `app/evaluate.mts` if a suit's totals or requirements read it; `app/runs-lib.mts` (run identity and instant repeats: bump `SOLVER_VERSION` if results change); `app/run-settings.mts` (`runSettingsError`, the one check `POST /api/optimize`, `POST /api/runs` and `POST /api/evaluate` hold a run's settings to, `RUN_SETTING_LIMITS`, `OPTS_LIMITS` and `RUN_DEFAULTS`); `app/bench/mip-spike.mts`, `app/bench/run-bench.mts`.
 3. UI: `app/ui/builder-model.mts`, `app/ui/builder.mts`, `app/ui/builder-result.mts`, `app/ui/runs.mts` (`settingsSnapshot`), `app/ui/sheet.mts`, `app/ui/components.mts`, `app/ui/builder.css`.
 4. MCP: the `build_suit` and `score_suit` arguments in `app/mcp-tools.mts` if a model should set it.
 5. Tests: `app/builder-model.test.mts`, `app/gear-vault.test.mts`, `app/server-builder.test.mts`, `app/solver.test.mts`, `app/ui-render.test.mts`, `scripts/ui-builder.test.mts`, `scripts/ui-contrast.test.mts`, `scripts/ui-state.test.mts`.
