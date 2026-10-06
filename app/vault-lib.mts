@@ -598,7 +598,7 @@ export const LAYER_TO_SLOT: Record<string, string> = {
   Skirt: "outerLegs", Shoes: "feet", OneHanded: "oneHanded", TwoHanded: "twoHanded", Shirt: "shirt", Tunic: "tunic",
   Robe: "robe", Waist: "waist", Cloak: "cloak", Ring: "ring", Bracelet: "bracelet", Earrings: "earrings", Talisman: "talisman",
 };
-// Razor Enhanced names six paperdoll layers differently from TazUO's Layer enum (the other twelve names match). Each
+// Razor Enhanced names nine paperdoll layers differently from TazUO's Layer enum (its other eleven names match). Each
 // alias is the TazUO name for the same layer number, which `classify` resolves first; `LAYER_TO_SLOT` stays the
 // canonical names. Held items are layers 1 and 2 on both sides: RightHand is OneHanded, LeftHand is TwoHanded.
 export const LAYER_ALIASES: Record<string, string> = {
