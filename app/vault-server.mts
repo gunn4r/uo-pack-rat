@@ -14,7 +14,7 @@
 //         getInventory(), keyed by a signature of the scans directory + shard, and of
 //         organize-state.json for the overlay, so an edited/added/removed scan file or a finished trip is
 //         picked up on the next request with no restart; each scan file is upgraded v1→v2 and schema-
-//         validated on read — readScans() — an invalid or unparsable file is logged and skipped) — the
+//         validated on read — scanStore.all() — an invalid or unparsable file is logged and skipped) — the
 //         response carries facets/worn/rootCounts/missingCounts/itemCount/propKeys — never the full item map
 //         (that stopped shipping in Task 5, once the page moved to paging GET /api/items instead) ·
 //         GET /api/missing?root= — what left that root since its last scan (app/missing.mts, issue #99)
@@ -121,7 +121,7 @@
 // that throws returns {error:"internal error", ref} with the stack only in CONFIG.paths.log, keyed by ref.
 
 import http from "node:http";
-import { readFileSync, appendFileSync, readdirSync, existsSync, mkdirSync, copyFileSync } from "node:fs";
+import { readFileSync, appendFileSync, readdirSync, existsSync, mkdirSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { basename, dirname, join, resolve } from "node:path";
 import { spawn } from "node:child_process";
@@ -130,29 +130,37 @@ import { Worker } from "node:worker_threads";
 import { unlinkSync } from "node:fs";
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import type { AddressInfo } from "node:net";
-import { runKey, reusableRun, runSummary, stripOpts, normalizeRun, suitPieces, manualRun, SOLVER_VERSION, type RunOpts, type SavedRun } from "./runs-lib.mts";
-import { isPseudoCharacter, upgradeScan, validateScan } from "./scan-schema.mts";
+import { runKey, reusableRun, runSummary, stripOpts, suitPieces, manualRun, SOLVER_VERSION, type RunOpts, type SavedRun } from "./runs-lib.mts";
+import { isPseudoCharacter, validateScan } from "./scan-schema.mts";
 import { loadRules, listRules, DEFAULT_SHARD } from "./rules.mts";
 import { validate, type ValidatorSchema } from "./schema/validate.mts";
 import { parseItemQuery, applyItemQuery, facetsOf, wantsHits, hitRow, type ItemQueryRows, type ItemQueryGroups } from "./item-query.mts";
 import { optionalSlotsFor } from "./mip.mts";
-import { GEAR_SLOTS, buildPools, excludeWeaponsError, foldSnapshots, migrateProfiles, resistCapsError, setRules, toOptItem } from "./vault-lib.mts";
-import { isBuffList, isBuffListsByCharacter, isBuffSkillsByCharacter, isRunBuffs, normalizeBuffs, normalizeBuffListsByCharacter } from "./buffs.mts";
+import { GEAR_SLOTS, buildPools, excludeWeaponsError, foldSnapshots, resistCapsError, setRules, toOptItem } from "./vault-lib.mts";
+import { isBuffList, isBuffListsByCharacter, isBuffSkillsByCharacter, isRunBuffs } from "./buffs.mts";
 import { startWatcher, MAX_INBOX_BYTES, type StartWatcherOptions, type WatcherHandle } from "./watcher.mts";
 import { parsePastedScan, writeScanToInbox } from "./import.mts";
 import { createMcp } from "./mcp.mts";
 import { readBody, type HttpError } from "./read-body.mts";
+import { createScansStore } from "./store/scans.mts";
+import { createRunsStore } from "./store/runs.mts";
+import { createOrganizeStore } from "./store/organize.mts";
+import { createOrganizeStateStore } from "./store/organize-state.mts";
+import { createItemKindsStore } from "./store/item-kinds.mts";
+import { createBlacklistStore } from "./store/blacklist.mts";
+import { createProfilesStore } from "./store/profiles.mts";
+import { createUiPrefsStore, isColWidths, isDrawerWidth, isManualSuit, UI_PREF_CHOICES, UI_PREF_LISTS, UI_PREF_VERSIONS } from "./store/ui-prefs.mts";
 import { createSettingsStore, type ClientSettings, type SettingsDoc } from "./store/settings.mts";
 import { send, asObject, SSE_HEADERS } from "./http/respond.mts";
 import { isBoundedInt, isBoundedString, MAX_SERIAL } from "./guards.mts";
-import { moveAside, writeFileAtomic } from "./atomic-write.mts";
+import { writeFileAtomic } from "./atomic-write.mts";
 import { addPanelAutostart, panelPrefsError, readPanelPrefs, tazuoRunning, writePanelPrefs } from "./tazuo-panel.mts";
 import { queueTrip, writeBridgeStop } from "./bridge-trip.mts";
-import { checkOrganizeConfig, emptyOrganizeConfig, LIMITS, matchProblem, salvageOrganizeConfig, MAX_SETUP_BYTES, type OrganizeConfig, type RuleMatch } from "./organize-config.mts";
+import { checkOrganizeConfig, LIMITS, matchProblem, MAX_SETUP_BYTES, type OrganizeConfig, type RuleMatch } from "./organize-config.mts";
 import { ancestry, applyOverlay, packKept, planOrganize, stampMs, tripCommand, matchCount, overlaidInventory, type Plan, type PutAway } from "./organize.mts";
 import { checkPutAwayRequest, nothingDetail, requestId, tripMsg, FRESH_MARGIN_MS, MAX_REQUEST_BYTES, PUT_AWAY_REPLY, PUT_AWAY_REQUEST, type PutAwayReply, type PutAwayRequest } from "./put-away.mts";
 import { PRESETS } from "./organize-presets.mts";
-import { emptyKindOverrides, isKindName, kindCount, kindsDocument, kindsFor, kindsText, salvageKindOverrides, withKinds, withoutKinds, KIND_LIMITS, MAX_KINDS_BYTES, OVERRIDE_KINDS } from "./item-kinds.mts";
+import { isKindName, kindCount, kindsDocument, kindsFor, salvageKindOverrides, withKinds, withoutKinds, KIND_LIMITS, MAX_KINDS_BYTES, OVERRIDE_KINDS } from "./item-kinds.mts";
 import { proposeOrganize, STRATEGY_IDS, type StrategyId } from "./organize-strategies.mts";
 import { latestHouses, type HouseSource } from "./house-capture.mts";
 import { checkHouseEntry, isHouseId, readHouseMap, saveHouseEntry, MAX_ENTRY_BYTES, type HouseMapDoc } from "./house-names.mts";
@@ -163,20 +171,19 @@ import type { RunBody, RunsListBody, RunSummary } from "./runs-types.mts";
 import { uoFolderFromTazuo, loadTileData, type TileData } from "./tiledata.mts";
 import { decodeFacet, renderRegion, type FacetBitmap, type Region } from "./facet-map.mts";
 import { encodePng } from "./png.mts";
-import { addGrab, emptyOrganizeState, harvestTrips, noteSeen, pruneOverlay, salvageOrganizeState, PENDING_GRACE_MS, type BridgeView, type OrganizeState } from "./organize-state.mts";
-import { retentionError, retentionOf, runsToPrune, scansToPrune, type ScanFile } from "./retention.mts";
+import { addGrab, harvestTrips, noteSeen, pruneOverlay, PENDING_GRACE_MS, type BridgeView, type OrganizeState } from "./organize-state.mts";
+import { retentionError, retentionOf, runsToPrune, scansToPrune } from "./retention.mts";
 import { missingSinceLastScan, type MissingItem } from "./missing.mts";
 import {
   listAdapters, candidateClientRoots, validateScriptsDir, badPathShape, installedVersion, installScripts, pasteScanner,
   repoFromPackage, checkForUpdates, type CheckForUpdatesResult, type FetchLike, checkScriptsDataDir, type DataDirCheck, type AdapterInfo,
 } from "./installer.mts";
 import { dataDirNotice } from "./data-dir-notice.mts";
-import { jsonErrorReason } from "./paste-scan.mts";
 import { homedir } from "node:os";
 
 import { resolveConfig, ensureLayout, APP_DIR, DATA_DIR_MODE, DATA_FILE_MODE, type Config } from "./config.mts";
-import type { Item, Inventory, OptItem, ProfilesFile, BlacklistEntry, KindOverrides } from "./vault-lib.mts";
-import type { ScanV2, RulesV1 } from "./schema/types.d.mts";
+import type { Item, Inventory, OptItem } from "./vault-lib.mts";
+import type { RulesV1 } from "./schema/types.d.mts";
 import type { WorkerMessage, WorkerDoneMessage } from "./optimize-worker.mts";
 import type { OptResult, ExactSolveResult, SolveProgress } from "./exact-solver.mts";
 const HERE = APP_DIR;
@@ -192,40 +199,6 @@ const WEB = join(HERE, "dist");
 
 const UI_NAME_RE = /^[a-z0-9-]+\.(mjs|css)$/;
 const FONT_NAME_RE = /^[a-z0-9-]+\.woff2$/;
-// The closed-choice fields of <data>/ui-prefs.json (GET/PUT /api/ui-prefs) and what each may hold. The
-// page applies only the theme families it ships (app/ui/theme.mts's BUILT_THEMES) and draws Default for
-// anything else.
-const UI_PREF_CHOICES = {
-  theme: ["default", "britannia"],
-  appearance: ["light", "system", "dark"],
-  sidebar: ["auto", "collapsed"],
-  density: ["dense", "regular"],   // the Inventory table's row height
-  colsVersion: ["2"],              // the column set `cols` was saved against (app/ui/view-state.mts's COLS_VERSION)
-  areaLabels: ["show", "hide"],    // the House map's area name pills (app/ui/house-map.mts, issue #10)
-  builderMode: ["automatic", "manual"],   // the Suit Builder's mode (app/ui/builder-manual.mts, issue #12)
-  manualFor: ["character", "none"],       // whether Manual totals take the picked character's bonuses
-  buffsCount: ["on", "off"],              // whether Manual's totals count the buffs that are on (app/buffs.mts)
-} as const satisfies Record<string, readonly string[]>;
-// The list fields: the Inventory tab's columns and the character sheet's shown properties (absent = the default set).
-const UI_PREF_LISTS = ["cols", "sheetProps"] as const;
-// The version fields: the release whose in-app update notice was dismissed (ui/settings.mts's automatic
-// update check), and the ClassicUO web scanner last copied into the client (ui/paste-scanner.mts).
-const UI_PREF_VERSIONS = ["dismissedUpdate", "copiedScanner"] as const;
-type UiPrefsFile = { -readonly [K in typeof UI_PREF_LISTS[number]]?: string[] } & { -readonly [K in keyof typeof UI_PREF_CHOICES]?: string } & { -readonly [K in typeof UI_PREF_VERSIONS[number]]?: string } & { colWidths?: Record<string, number>; mapDrawerWidth?: number; manualSuit?: Record<string, number>; manualBuffs?: string[]; autoBuffs?: Record<string, string[]>; buffSkills?: Record<string, Record<string, number>> };
-// The House map's contents drawer width in px (app/ui/house-map.mts, issue #10): the page clamps it to the window.
-const isDrawerWidth = (v: unknown): v is number => isBoundedInt(v, 320, 4000);
-// The Inventory columns' dragged widths ({colKey: px}): at most 200 column keys (the same keys `cols` holds), each a whole 40 to 1200 px.
-function isColWidths(v: unknown): v is Record<string, number> {
-  if (!v || typeof v !== "object" || Array.isArray(v)) return false;
-  const entries = Object.entries(v);
-  return entries.length <= 200 && entries.every(([k, w]) => isBoundedString(k, 64) && isBoundedInt(w, 40, 1200));
-}
-// The Suit Builder's Manual suit ({slot: serial}, app/ui/builder-manual.mts): each key one of the classifier's slots
-// (vault-lib.mts's GEAR_SLOTS), each value a serial.
-function isManualSuit(v: unknown): v is Record<string, number> {
-  if (!v || typeof v !== "object" || Array.isArray(v)) return false;
-  return Object.entries(v).every(([k, s]) => GEAR_SLOTS.includes(k) && isBoundedInt(s, 1, MAX_SERIAL));
-}
 // Manual's suit against the inventory (a fill's `pinned`, a manual run's `suit`): each serial a gear piece of its slot in
 // the scans, and no two-handed weapon beside a one-hander.
 function manualSuitError(inv: Inventory, suit: Record<string, number>, path: string): string | null {
@@ -383,7 +356,7 @@ function optsError(opts: Record<string, unknown>): string | null {
 }
 // meta is the caller's own bookkeeping, and saveRun() used to persist it verbatim into
 // <data>/runs/<uuid>.json — a megabyte of padding in meta.settings became a megabyte on disk that
-// every later readRuns() re-parsed, on the two hottest routes. Copy only the fields saveRun actually
+// every later runStore.all() re-parsed, on the two hottest routes. Copy only the fields saveRun actually
 // reads; the route caps the result's serialized size on top of that.
 const META_MAX_BYTES = 32e3;
 function pickMeta(meta: Record<string, unknown>): Record<string, unknown> {
@@ -615,28 +588,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     }
   }
 
-  // Every scan file on disk is v1 or v2; upgradeScan() normalizes either to v2 and validateScan()
-  // checks the result against the contract before it ever reaches foldSnapshots (which now requires
-  // v2 and throws otherwise). A file that doesn't parse, doesn't upgrade (neither v1 nor v2 shaped)
-  // or fails validation is logged and skipped — never thrown, so one bad scan can't take the whole
-  // inventory down.
-  function readScans(): ScanV2[] { return readScanFiles().map((s) => s.doc); }
-  function readScanFiles(): ScanFile[] {
-    if (!existsSync(SCANS)) return [];
-    const out: ScanFile[] = [];
-    for (const f of readdirSync(SCANS).filter((f) => f.endsWith(".json")).sort()) {
-      try {
-        const raw: unknown = JSON.parse(readFileSync(join(SCANS, f), "utf8"));
-        const doc = upgradeScan(raw, { shard: currentSettings.shard });
-        const { ok, errors } = validateScan(doc);
-        if (!ok) { console.warn(`skipping ${f}: ${errors.map((e) => `${e.path} ${e.msg}`).join("; ")}`); continue; }
-        // doc passed validateScan — this is the one place a v2-shaped document earns the ScanV2 cast
-        // (the ScanV2 rule: upgradeScan alone only proves UnvalidatedScan).
-        out.push({ file: f, doc: doc as ScanV2 });
-      } catch (e) { console.warn(`skipping ${f}: ${(e as Error).message}`); }
-    }
-    return out;
-  }
+  const scanStore = createScansStore({ dir: SCANS, shard: () => currentSettings.shard });
 
   // getInventory() caches the fold (readScans + foldSnapshots) — the expensive part of every route that
   // needs the inventory — keyed by a signature of the scans directory (every *.json file's name, mtimeMs
@@ -659,11 +611,6 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   type InvValue = FoldValue & { inv: Inventory };
   let foldCache: { sig: string | null; value: FoldValue | null } = { sig: null, value: null };
   let invCache: { sig: string | null; value: InvValue | null } = { sig: null, value: null };
-  function scansSignature(): string {
-    if (!existsSync(SCANS)) return "no-scans-dir";
-    return readdirSync(SCANS).filter((f) => f.endsWith(".json")).sort()
-      .map((f) => { const st = statSync(join(SCANS, f)); return `${f}:${st.mtimeMs}:${st.size}`; }).join("|");
-  }
   // Where the house map's tiledata.mul comes from (issue #10): the UO folder set in Settings wins; else, with TazUO the chosen client, the folder its launcher profile names. `reason` says why there is none, for the page to put in words: the folder set here lost its tiledata.mul (or, hand-edited into settings.json, is not an absolute non-UNC path: refused on its shape before any filesystem call, as PUT /api/settings does, and not passed over for the automatic one, since the player chose a folder), no client to look through, no TazUO profile naming one, or a file that is not a 7.x tiledata.mul.
   interface TileDataFrom { td: TileData | null; folder: string | null; source: "settings" | "tazuo-profile" | null; reason: null | "override-missing" | "no-client" | "no-tazuo-profile" | "unreadable" }
   type UoFolder = { folder: string; source: "settings" | "tazuo-profile" } | { folder: null; reason: "override-missing" | "no-client" | "no-tazuo-profile" };
@@ -731,121 +678,31 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   async function getInventory(): Promise<InvValue> {
     harvestNow(Date.now());   // a trip that finished since is part of what every view shows
     let kindsSig = "no-kinds";
-    try { const st = statSync(ITEM_KINDS); kindsSig = `${st.ino}:${st.mtimeMs}:${st.size}`; } catch { /* no overrides */ }
-    const sig = `${scansSignature()}::${currentSettings.shard}::${kindsSig}`;
+    try { const st = statSync(itemKinds.file); kindsSig = `${st.ino}:${st.mtimeMs}:${st.size}`; } catch { /* no overrides */ }
+    const sig = `${scanStore.signature()}::${currentSettings.shard}::${kindsSig}`;
     if (foldCache.sig !== sig) {   // sig and value are only ever set together
-      const snaps = readScans();
-      const fold = foldSnapshots(snaps, readKindOverrides());
+      const snaps = scanStore.all();
+      const fold = foldSnapshots(snaps, itemKinds.read());
       foldCache = { sig, value: { fold, missing: missingSinceLastScan(snaps, fold), snapshotCount: snaps.length, houses: latestHouses(snaps) } };
     }
     const folded = foldCache.value!;
     let stateSig = "no-state";
-    try { const st = statSync(ORGANIZE_STATE); stateSig = `${st.ino}:${st.mtimeMs}:${st.size}`; } catch { /* no overlay yet */ }
+    try { const st = statSync(organizeState.file); stateSig = `${st.ino}:${st.mtimeMs}:${st.size}`; } catch { /* no overlay yet */ }
     // The hour, so a move the week-old cut in pruneOverlay has retired leaves the view of a long-running server.
     const invSig = `${sig}::${stateSig}::${Math.floor(Date.now() / 3600e3)}`;
     if (invCache.sig === invSig) return invCache.value!;
-    const { moves } = pruneOverlay(readOrganizeState(), folded.fold, Date.now());
+    const { moves } = pruneOverlay(organizeState.read(), folded.fold, Date.now());
     invCache = { sig: invSig, value: { ...folded, inv: overlaidInventory(folded.fold, moves) } };
     return invCache.value!;
   }
 
-  // Seeds profiles.json from the default on first run and migrates an old-shape file (archetypes → templates) in
-  // place, keeping the pre-migration file once as profiles.backup-<date>.json next to it.
-  // <data>/ui-prefs.json: the page's view choices (GET/PUT /api/ui-prefs). A missing, unreadable or
-  // malformed file reads as "nothing chosen", and the page keeps its defaults.
-  // Each field is read on its own: one bad value (a hand edit) drops that field, not the whole file.
-  const UI_PREFS = join(CONFIG.dataDir, "ui-prefs.json");
+  const uiPrefs = createUiPrefsStore(join(CONFIG.dataDir, "ui-prefs.json"));
   // The TazUO panel's hotkey and show-at-login choice (app/tazuo-panel.mts); the in-game panel writes it too.
   const PANEL_PREFS = join(CONFIG.dataDir, "tazuo-panel.json");
   const savePanel = (change: object): void => writePanelPrefs(PANEL_PREFS, { ...readPanelPrefs(PANEL_PREFS), ...change }, DATA_FILE_MODE);
-  function readUiPrefs(): UiPrefsFile {
-    let raw: Record<string, unknown>;
-    try { raw = JSON.parse(readFileSync(UI_PREFS, "utf8")) as Record<string, unknown>; } catch { return {}; }
-    if (!raw || typeof raw !== "object") return {};
-    const out: UiPrefsFile = {};
-    for (const key of UI_PREF_LISTS) {
-      const v = raw[key];
-      if (Array.isArray(v) && v.every((c) => typeof c === "string")) out[key] = v as string[];
-    }
-    for (const [key, allowed] of Object.entries(UI_PREF_CHOICES)) {
-      const v = raw[key];
-      if (typeof v === "string" && (allowed as readonly string[]).includes(v)) out[key as keyof typeof UI_PREF_CHOICES] = v;
-    }
-    if (isColWidths(raw.colWidths)) out.colWidths = raw.colWidths;
-    if (isDrawerWidth(raw.mapDrawerWidth)) out.mapDrawerWidth = raw.mapDrawerWidth;
-    if (isManualSuit(raw.manualSuit)) out.manualSuit = raw.manualSuit;
-    // the buffs read back healed (app/buffs.mts normalizeBuffs): a hand-edited second form replaces the first
-    const manualBuffs = normalizeBuffs(raw.manualBuffs), autoBuffs = normalizeBuffListsByCharacter(raw.autoBuffs);
-    if (manualBuffs) out.manualBuffs = manualBuffs;
-    if (autoBuffs) out.autoBuffs = autoBuffs;
-    if (isBuffSkillsByCharacter(raw.buffSkills)) out.buffSkills = raw.buffSkills;   // an older flat shape is dropped
-    for (const key of UI_PREF_VERSIONS) if (isBoundedString(raw[key], 64)) out[key] = raw[key];
-    return out;
-  }
-  // <data>/scan-blacklist.json: the containers scans never open, a JSON list of {serial, name, addedAt,
-  // where?} that TazUO's packrat-blacklist.py writes too. Only valid entries are read; anything else in
-  // the file (or a file too big or unparseable) is dropped, and the next write leaves it out.
-  const BLACKLIST = join(CONFIG.dataDir, "scan-blacklist.json");
-  function readBlacklist(): BlacklistEntry[] {
-    let raw: unknown;
-    try { raw = lstatSync(BLACKLIST).size <= 256 * 1024 ? JSON.parse(readFileSync(BLACKLIST, "utf8")) : null; } catch { return []; }
-    return (Array.isArray(raw) ? raw : []).filter((e): e is BlacklistEntry => !!e && typeof e === "object" && isBoundedInt(e.serial, 1, MAX_SERIAL)
-      && isBoundedString(e.name, 64) && isBoundedString(e.addedAt, 40) && (e.where === undefined || isBoundedString(e.where, 64)))
-      .slice(0, 1000).map(({ serial, name, addedAt, where }) => ({ serial, name, addedAt, ...(where ? { where } : {}) }));
-  }
-  // <data>/item-kinds.json: the player's own item kinds (issue #150, app/item-kinds.mts). Missing reads as none; a file
-  // too big or that does not parse is moved aside (the next write would otherwise overwrite it) and one with entries
-  // that make no sense loses those entries, each with a logged warning, never an error. Written only by the
-  // /api/item-kinds routes, whole.
-  const ITEM_KINDS = join(CONFIG.dataDir, "item-kinds.json");
-  function readKindOverrides(): KindOverrides {
-    let raw: unknown;
-    try {
-      if (lstatSync(ITEM_KINDS).size > MAX_KINDS_BYTES) throw new Error(`it is over ${MAX_KINDS_BYTES / 1e6} MB`);
-      raw = JSON.parse(readFileSync(ITEM_KINDS, "utf8"));
-    } catch (e) {
-      if ((e as NodeJS.ErrnoException).code === "ENOENT") return emptyKindOverrides();
-      let kept = "";
-      try { kept = `; it was moved to ${basename(moveAside(ITEM_KINDS))}`; } catch { /* left where it is */ }
-      console.warn(`item-kinds.json was ignored (${e instanceof SyntaxError ? jsonErrorReason(e) : (e as Error).message})${kept}`);
-      return emptyKindOverrides();
-    }
-    const { overrides, problems } = salvageKindOverrides(raw);
-    if (problems.length) console.warn(`item-kinds.json: left out ${problems.slice(0, 5).join("; ")}${problems.length > 5 ? ` and ${problems.length - 5} more` : ""}`);
-    return overrides;
-  }
-  // Writes the next document, or says why not: past the entry cap (withKinds' null), or a file larger than the read
-  // above accepts, which would set every kind aside at the next read.
-  function saveKindOverrides(next: KindOverrides | null): string | null {
-    const text = next && kindsText(next);
-    if (!text) return `that would make more than ${KIND_LIMITS.entries} item kinds; reset some first`;
-    if (Buffer.byteLength(text) > MAX_KINDS_BYTES) return `that would make item-kinds.json larger than ${MAX_KINDS_BYTES / 1e6} MB; reset some first`;
-    writeFileAtomic(ITEM_KINDS, text, DATA_FILE_MODE);
-    return null;
-  }
-  // <data>/organize.json: Organize's setup (issue #11, app/organize-config.mts). Read through the salvage, so a
-  // hand edit that breaks one rule drops that rule, not the whole setup, and `problems` says what went; a file
-  // that does not parse is moved aside (the way the settings store treats settings.json) and Organize starts empty.
-  // Written only by PUT /api/organize, whole.
-  const ORGANIZE = join(CONFIG.dataDir, "organize.json");
-  function readOrganize(): { config: OrganizeConfig; problems: string[] } {
-    if (!existsSync(ORGANIZE)) return { config: emptyOrganizeConfig(), problems: [] };
-    // A file that is too big, does not parse or is not a version 1 setup is moved aside rather than read as empty:
-    // the next PUT would otherwise overwrite it.
-    let why: string | null = null, raw: unknown = null;
-    if (lstatSync(ORGANIZE).size > MAX_SETUP_BYTES) why = `is over ${MAX_SETUP_BYTES / 1e6} MB`;
-    else {
-      try { raw = JSON.parse(readFileSync(ORGANIZE, "utf8")); }
-      catch (e) {
-        if (!(e instanceof SyntaxError)) throw e;
-        why = `did not parse (${jsonErrorReason(e)})`;
-      }
-      if (!why && (!raw || typeof raw !== "object" || (raw as { version?: unknown }).version !== 1)) why = "is not a version 1 Organize setup";
-    }
-    if (!why) return salvageOrganizeConfig(raw);
-    const aside = moveAside(ORGANIZE);
-    return { config: emptyOrganizeConfig(), problems: [`organize.json ${why}; it was moved to ${basename(aside)} and Organize starts empty`] };
-  }
+  const blacklist = createBlacklistStore(join(CONFIG.dataDir, "scan-blacklist.json"));
+  const itemKinds = createItemKindsStore(join(CONFIG.dataDir, "item-kinds.json"));
+  const organizeStore = createOrganizeStore(join(CONFIG.dataDir, "organize.json"));
   // <data>/house-map.json: the player's house names (issue #164, app/house-names.mts). A file that does not parse is
   // moved aside and the houses read unnamed; what a read set aside or left out goes to the log, once while it stays the same.
   const HOUSE_MAP = join(CONFIG.dataDir, "house-map.json");
@@ -856,15 +713,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     namesProblem = problem;
     return doc;
   }
-  // <data>/organize-state.json: Organize's results overlay (app/organize-state.mts). Only this server writes it;
-  // a damaged one reads as empty, which at worst plans a finished move again (the bridge then finds the item
-  // gone and says so).
-  const ORGANIZE_STATE = join(CONFIG.dataDir, "organize-state.json");
-  function readOrganizeState(): OrganizeState {
-    try { return salvageOrganizeState(lstatSync(ORGANIZE_STATE).size <= 4e6 ? JSON.parse(readFileSync(ORGANIZE_STATE, "utf8")) : null); }
-    catch { return emptyOrganizeState(); }
-  }
-  const writeOrganizeState = (state: OrganizeState): void => writeFileAtomic(ORGANIZE_STATE, JSON.stringify(state, null, 1) + "\n", DATA_FILE_MODE);
+  const organizeState = createOrganizeStateStore(join(CONFIG.dataDir, "organize-state.json"));
   // What harvestTrips needs of one adapter's status.json (GET /api/bridge/status reads the same file for the page).
   // `current` counts only while the bridge's heartbeat is recent: a client that quit mid-trip leaves its last
   // `current` in the file for good, which would otherwise hold Organize's one trip in flight forever.
@@ -885,11 +734,11 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   // every view even with Organize closed; when it brought moves in, the state file is rewritten and every open page
   // told to reload its inventory. A Grab is harvested the same way. With nothing pending it only reads the state file.
   function harvestNow(now: number): { state: OrganizeState; bridges: Record<string, BridgeView> } {
-    const before = readOrganizeState();
+    const before = organizeState.read();
     if (!before.pending.length && !before.grabs.length) return { state: before, bridges: {} };
     const bridges = Object.fromEntries([...new Set([...before.pending, ...before.grabs].map((p) => p.adapter))].map((a) => [a, bridgeView(a, now)]));
     const state = harvestTrips(before, bridges, now);
-    if (JSON.stringify(state) !== JSON.stringify(before)) writeOrganizeState(state);
+    if (JSON.stringify(state) !== JSON.stringify(before)) organizeState.write(state);
     if (JSON.stringify(state.moves) !== JSON.stringify(before.moves)) broadcastEvent("changed", { what: "inventory", at: now });
     return { state, bridges };
   }
@@ -898,15 +747,15 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   // and applies the overlay itself. organizeNow adds the plan; Put away plans its own (planOf with a source).
   async function organizeInputs(): Promise<{ fold: Inventory; config: OrganizeConfig; state: OrganizeState; problems: string[]; bridges: Record<string, BridgeView> }> {
     const { fold } = await getInventory();
-    const { config, problems } = readOrganize();
+    const { config, problems } = organizeStore.read();
     const now = Date.now();
     const { state: harvested, bridges } = harvestNow(now);
     const state = noteSeen(pruneOverlay(harvested, fold, now), config, fold);
-    if (JSON.stringify(state) !== JSON.stringify(harvested)) writeOrganizeState(state);
+    if (JSON.stringify(state) !== JSON.stringify(harvested)) organizeState.write(state);
     return { fold, config, state, problems, bridges };
   }
   const planOf = (fold: Inventory, config: OrganizeConfig, state: OrganizeState, putAway?: PutAway): Plan =>
-    planOrganize(fold, config, state.moves, { now: Date.now(), rarity: currentRules.rarity, suitPieces: suitsFor(config.rules.map((r) => r.match)), blacklist: readBlacklist().map((e) => e.serial), seen: state.seen, putAway });
+    planOrganize(fold, config, state.moves, { now: Date.now(), rarity: currentRules.rarity, suitPieces: suitsFor(config.rules.map((r) => r.match)), blacklist: blacklist.read().map((e) => e.serial), seen: state.seen, putAway });
   async function organizeNow(): Promise<{ fold: Inventory; config: OrganizeConfig; state: OrganizeState; plan: Plan; problems: string[]; bridges: Record<string, BridgeView> }> {
     const got = await organizeInputs();
     return { ...got, plan: planOf(got.fold, got.config, got.state) };
@@ -924,7 +773,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     const queued = queueTrip(CONFIG.paths, adapter, putAway ? { ...input, putAway } : input, now);
     if (!queued.ok) return queued;
     const steps = plan.moves.filter((m) => m.trip === index).map(({ serial, name, from, to }) => ({ serial, name, from, to }));
-    writeOrganizeState({ ...state, pending: [...state.pending, { id: queued.id, adapter, index, stamp: plan.stamp, queuedAt: now.toISOString(), steps }] });
+    organizeState.write({ ...state, pending: [...state.pending, { id: queued.id, adapter, index, stamp: plan.stamp, queuedAt: now.toISOString(), steps }] });
     return queued;
   }
   // Put away (issue #131, app/put-away.mts): the TazUO panel's request, handed over by the watcher of the inbox it was
@@ -973,7 +822,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     if (root.kind === "backpack" && root.scannedBy === req.character) source = { from: "pack", container: +picked.serial, at: req.at };
     else if (root.kind === "ground" && config.labels[String(root.serial)]) source = { from: "ground", container: +picked.serial };
     else return { ok: false, msg: root.kind === "ground" ? "That container is not labeled for Organize." : "Pick your backpack, a container in it,", detail: root.kind === "ground" ? "Label it in the app first." : "or a container in a labeled one on the ground." };
-    const black = new Set(readBlacklist().map((e) => e.serial));
+    const black = new Set(blacklist.read().map((e) => e.serial));
     if (chain.some((s) => black.has(s))) return { ok: false, msg: "That container is blacklisted.", detail: "Pack Rat never opens it." };
     if (chain.some((s) => config.labels[String(s)]?.pinned)) return { ok: false, msg: "That container is pinned.", detail: "Organize never takes items out of it." };
     const plan = planOf(fold, config, state, source);
@@ -989,39 +838,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     if (!queued.ok) return { ok: false, msg: "The trip could not be queued.", detail: queued.error };
     return { ok: true, msg: tripMsg(trip.puts.length, plan.moves.length - trip.puts.length), trip: queued.id };
   }
-  // A profiles.json that does not parse (a write cut short before writes were atomic, or a bad hand
-  // edit) used to answer every GET /api/profiles with a 500 until someone fixed the file by hand. It
-  // is now moved aside the same way the settings store moves an unreadable settings.json, and the
-  // defaults are seeded in its place, with a log line naming where the old file went.
-  async function readProfiles(): Promise<ProfilesFile> {
-    const seed = (): void => {
-      mkdirSync(dirname(PROFILES), { recursive: true, mode: DATA_DIR_MODE });
-      writeFileAtomic(PROFILES, readFileSync(DEFAULT_PROFILES, "utf8"), DATA_FILE_MODE);
-    };
-    if (!existsSync(PROFILES)) seed();
-    let doc: unknown, why = "not a JSON object";
-    try { doc = JSON.parse(readFileSync(PROFILES, "utf8")); }
-    catch (e) {
-      if (!(e instanceof SyntaxError)) throw e;   // an I/O failure is not a damaged file — leave it alone
-      why = jsonErrorReason(e);
-    }
-    if (!doc || typeof doc !== "object" || Array.isArray(doc)) {
-      const aside = moveAside(PROFILES);
-      seed();
-      safeAppendLog(CONFIG.paths.log, `${new Date().toISOString()} profiles.json is unreadable (${why}); reseeded from the defaults — the old file was kept as ${aside}\n`);
-      doc = JSON.parse(readFileSync(PROFILES, "utf8"));
-    }
-    // profiles.json is trusted, unvalidated file content at this point (the same trust readRules'
-    // loadFile and readScans' upgradeScan extend to their own on-disk inputs) — migrateProfiles' own
-    // loose ProfilesFile shape (every field optional) is what actually tolerates a malformed file.
-    const { profiles, changed } = migrateProfiles(doc as ProfilesFile);
-    if (changed) {
-      const backup = join(dirname(PROFILES), `profiles.backup-${new Date().toISOString().slice(0, 10)}.json`);
-      if (!existsSync(backup)) copyFileSync(PROFILES, backup);
-      writeFileAtomic(PROFILES, JSON.stringify(profiles, null, 2) + "\n", DATA_FILE_MODE);
-    }
-    return profiles;
-  }
+  const profilesStore = createProfilesStore({ file: PROFILES, defaults: DEFAULT_PROFILES, log: (line) => safeAppendLog(CONFIG.paths.log, line) });
 
   // ---- optimizer jobs: one worker thread per build, progress over Server-Sent Events -----------
   // A job keeps its last progress snapshot and its final result, so a page that reconnects (or
@@ -1189,23 +1006,13 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   }
 
   // ---- saved runs: one JSON file per finished build in app/data/runs/ -------------------------------
-  function readRuns(): SavedRun[] { return readRunFiles().map((r) => r.run); }
+  const runStore = createRunsStore(RUNS);
   // Every saved suit's pieces, for Organize (issue #133), read only when a rule asks to skip them: the live count
   // asks on every pause in typing, and few setups have such a rule.
-  function suitsFor(matches: RuleMatch[]): Set<number> | undefined { return matches.some((m) => m.skipSuits) ? suitPieces(readRuns()) : undefined; }
-  function readRunFiles(): { file: string; run: SavedRun }[] {
-    if (!existsSync(RUNS)) return [];
-    const out: { file: string; run: SavedRun }[] = [];
-    for (const f of readdirSync(RUNS).filter((f) => f.endsWith(".json"))) {
-      // A run file is this app's own prior output, not third-party input, but it still gets the same
-      // "trusted, cast at the read boundary" treatment as every other on-disk JSON file in this app.
-      try { out.push({ file: f, run: normalizeRun(JSON.parse(readFileSync(join(RUNS, f), "utf8")) as SavedRun) }); } catch (e) { console.error(`skipping run ${f}: ${(e as Error).message}`); }
-    }
-    return out.sort((a, b) => String(b.run.createdAt).localeCompare(String(a.run.createdAt)));
-  }
+  function suitsFor(matches: RuleMatch[]): Set<number> | undefined { return matches.some((m) => m.skipSuits) ? suitPieces(runStore.all()) : undefined; }
 
   // ---- retention (issue #28): old scans and saved runs, per settings.json's `retention` ----------------
-  // Only files readScanFiles()/readRunFiles() read are ever candidates (a scan that fails validation or
+  // Only files scanStore.files()/runStore.files() read are ever candidates (a scan that fails validation or
   // a run that does not parse stays), only by their bare name inside scans/ or runs/, and only a
   // regular file: lstat, so a symlink is left alone rather than followed. Nothing is pruned under
   // --demo: its scans are the committed fixtures and its runs folder is still the player's own.
@@ -1214,8 +1021,8 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   async function planPrune(): Promise<PrunePlan> {
     if (CONFIG.demo) return { scans: [], runs: [], refused: false };
     const r = retentionOf(savedSettings.retention);
-    const scans = scansToPrune(readScanFiles(), foldSnapshots, r, Date.now());
-    const runs = runsToPrune(readRunFiles().map(({ file, run }) => ({ file, character: String(run.character), createdAt: String(run.createdAt), label: String(run.label || "") })), r);
+    const scans = scansToPrune(scanStore.files(), foldSnapshots, r, Date.now());
+    const runs = runsToPrune(runStore.files().map(({ file, run }) => ({ file, character: String(run.character), createdAt: String(run.createdAt), label: String(run.label || "") })), r);
     return { scans: scans.files, runs, refused: scans.refused, ...(scans.reason ? { reason: scans.reason } : {}) };
   }
   function removeFiles(dir: string, files: string[]): string[] {
@@ -1247,14 +1054,13 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     return next;
   }
   function saveRun(job: Job) {
-    mkdirSync(RUNS, { recursive: true, mode: DATA_DIR_MODE });
     const meta = job.meta || {};
     const run = { id: job.id, key: job.key, character: meta.character || "?", createdAt: new Date().toISOString(), label: "",
       schemaVersion: 1, solverVersion: SOLVER_VERSION,
       settings: meta.settings || {}, inventoryStamp: meta.inventoryStamp || null, poolSize: meta.poolSize ?? null, skipped: meta.skipped || {},
       opts: stripOpts(job.input.opts), budgetMs: job.input.opts.timeBudgetMs ?? null, explored: job.progress?.explored ?? null,
       result: job.result, ms: job.ms };
-    writeFileAtomic(join(RUNS, `${run.id}.json`), JSON.stringify(run), DATA_FILE_MODE);
+    runStore.write(run);
     return run;
   }
 
@@ -1329,7 +1135,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         }
         const facets = facetsOf(itemsArr, { rarity: currentRules.rarity });
         // A blacklisted container is never opened again, so its last two scans are stale: it reports nothing.
-        const listed = new Set(readBlacklist().map((e) => String(e.serial)));
+        const listed = new Set(blacklist.read().map((e) => String(e.serial)));
         const missingCounts = Object.fromEntries(Object.entries(missing).filter(([root]) => !listed.has(root)).map(([root, list]) => [root, list.length]));
         const inventory = { scans: inv.scans, characters: inv.characters, containers: inv.containers, worn, rootCounts, missingCounts, itemCount: itemsArr.length, facets, propKeys: facets.propKeys };
         return send(res, 200, { ok: true, snapshotCount, demo: CONFIG.demo, inventory });
@@ -1340,7 +1146,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         const root = url.searchParams.get("root") || "";
         if (!/^\d{1,10}$/.test(root)) return send(res, 400, { ok: false, error: "root must be a container serial" });
         const { missing } = await getInventory();
-        const listed = readBlacklist().some((e) => e.serial === +root);
+        const listed = blacklist.read().some((e) => e.serial === +root);
         return send(res, 200, { ok: true, items: (!listed && missing[String(+root)]) || [] });
       }
       if (req.method === "GET" && url.pathname === "/api/items") {
@@ -1369,22 +1175,21 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         for (const s of raw) { const it = inv.items[s]; if (it) items[s] = it; }
         return send(res, 200, { ok: true, items });
       }
-      if (req.method === "GET" && url.pathname === "/api/profiles") return send(res, 200, { ok: true, profiles: await readProfiles() });
+      if (req.method === "GET" && url.pathname === "/api/profiles") return send(res, 200, { ok: true, profiles: await profilesStore.read() });
       if (req.method === "PUT" && url.pathname === "/api/profiles") {
         const body = await readBody(req, { limit: 1e6, tooLargeMsg: "profiles too large" });
         const { ok, errors } = validate(PROFILES_SCHEMA, body);
         if (!ok) return send(res, 400, { ok: false, error: `${errors[0]!.path} ${errors[0]!.msg}`, errors });
-        mkdirSync(dirname(PROFILES), { recursive: true, mode: DATA_DIR_MODE });
-        writeFileAtomic(PROFILES, JSON.stringify(body, null, 2) + "\n", DATA_FILE_MODE);
+        profilesStore.write(body);
         return send(res, 200, { ok: true });
       }
-      if (req.method === "GET" && url.pathname === "/api/ui-prefs") return send(res, 200, { ok: true, prefs: readUiPrefs() });
+      if (req.method === "GET" && url.pathname === "/api/ui-prefs") return send(res, 200, { ok: true, prefs: uiPrefs.read() });
       if (req.method === "PUT" && url.pathname === "/api/ui-prefs") {
         // The page's own view choices (the Inventory tab's columns, the look, the sidebar). Kept here rather than in
         // the page's localStorage because the desktop app serves the page from a new port, and so a new
         // origin, on every launch. Only known fields, each checked, are written.
         const body = asObject(await readBody(req, { limit: 16e3 }));
-        const next = readUiPrefs();
+        const next = uiPrefs.read();
         for (const key of UI_PREF_LISTS) {
           if (!Object.prototype.hasOwnProperty.call(body, key)) continue;
           const v = body[key];
@@ -1428,7 +1233,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
           if (!isBoundedString(body[key], 64)) return send(res, 400, { ok: false, error: `${key} must be a version of at most 64 characters` });
           next[key] = body[key];
         }
-        writeFileAtomic(UI_PREFS, JSON.stringify(next, null, 2) + "\n", DATA_FILE_MODE);
+        uiPrefs.write(next);
         return send(res, 200, { ok: true });
       }
       if (req.method === "GET" && url.pathname === "/api/settings") return send(res, 200, { ok: true, settings: currentSettings });
@@ -1846,7 +1651,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         if (!profile || typeof profile !== "object" || Array.isArray(profile)) return send(res, 400, { ok: false, error: "profile required" });
         const fullOpts = Object.assign({ seed: 2026, restarts: 200 }, opts as RunOpts);
         const key = runKey({ pools, current, profile, opts: fullOpts });
-        const runs = readRuns();
+        const runs = runStore.all();
         const hit = fill ? null : reusableRun(runs, key, fullOpts as { timeBudgetMs?: number });
         // §11c: warn (not block) once the candidate pool is large enough that the exact solver can
         // take a while — the page shows this line above the progress panel (Task 3).
@@ -1901,9 +1706,8 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         const pieces = Object.fromEntries(Object.entries(suit).map(([slot, serial]) => [slot, toOptItem(inv.items[serial]!)]));
         const worn: Record<string, OptItem> = {};
         for (const it of Object.values(inv.items)) if (it.equippedBy === character && it.slot && GEAR_SLOTS.includes(it.slot)) worn[it.slot] ??= toOptItem(it);
-        mkdirSync(RUNS, { recursive: true, mode: DATA_DIR_MODE });
         const run = manualRun({ id: randomUUID(), character, createdAt: new Date().toISOString(), settings: settings as Record<string, unknown>, inventoryStamp, suit: pieces, worn, slots: GEAR_SLOTS });
-        writeFileAtomic(join(RUNS, `${run.id}.json`), JSON.stringify(run), DATA_FILE_MODE);
+        runStore.write(run);
         broadcastEvent("changed", { what: "runs", at: Date.now() });
         return send(res, 200, { ok: true, run: runSummary(run) } satisfies RunBody<RunSummary>);
       }
@@ -1912,24 +1716,21 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // a run saved with twelve slots counts what its character wears in the others (runs-lib.mts totalsAfter)
         const { inv } = await getInventory(), worn = new Map<string, OptItem[]>();
         for (const it of Object.values(inv.items)) if (it.equippedBy && it.gear && it.slot) worn.set(it.equippedBy, [...(worn.get(it.equippedBy) || []), toOptItem(it)]);
-        return send(res, 200, { ok: true, runs: readRuns().filter((r) => !who || r.character === who).map((r) => runSummary(r, worn.get(r.character ?? "") || [])) } satisfies RunsListBody);
+        return send(res, 200, { ok: true, runs: runStore.all().filter((r) => !who || r.character === who).map((r) => runSummary(r, worn.get(r.character ?? "") || [])) } satisfies RunsListBody);
       }
       const runMatch = url.pathname.match(/^\/api\/runs\/([\w-]+)$/);
       if (runMatch) {
-        const f = join(RUNS, `${runMatch[1]!}.json`);
-        if (!existsSync(f)) return send(res, 404, { ok: false, error: "no such run" });
-        // A run file that does not parse is reported for what it is — readRuns() already leaves it out
+        const id = runMatch[1]!;
+        if (!runStore.has(id)) return send(res, 404, { ok: false, error: "no such run" });
+        // A run file that does not parse is reported for what it is — the runs store already leaves it out
         // of the list — rather than a 500 on every open; DELETE still removes it.
-        const readRun = (): SavedRun | null => {
-          try { return normalizeRun(JSON.parse(readFileSync(f, "utf8")) as SavedRun); }
-          catch (e) { if (e instanceof SyntaxError) return null; throw e; }
-        };
+        const readRun = (): SavedRun | null => runStore.read(id);
         const DAMAGED_RUN = "that saved run's file is damaged and cannot be read; delete it";
         if (req.method === "GET") {
           const run = readRun();
           return run ? send(res, 200, { ok: true, run } satisfies RunBody) : send(res, 404, { ok: false, error: DAMAGED_RUN });
         }
-        if (req.method === "DELETE") { unlinkSync(f); broadcastEvent("changed", { what: "runs", at: Date.now() }); return send(res, 200, { ok: true }); }
+        if (req.method === "DELETE") { runStore.remove(id); broadcastEvent("changed", { what: "runs", at: Date.now() }); return send(res, 200, { ok: true }); }
         if (req.method === "PUT") {
           const { label = "" } = asObject(await readBody(req, { limit: 8e3 }));
           // String() throws on an object with a null prototype or a throwing toString — a 500 plus a
@@ -1938,7 +1739,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
           const run = readRun();
           if (!run) return send(res, 404, { ok: false, error: DAMAGED_RUN });
           run.label = label.slice(0, 120);
-          writeFileAtomic(f, JSON.stringify(run), DATA_FILE_MODE);
+          runStore.write(run, id);
           return send(res, 200, { ok: true, run: runSummary(run) } satisfies RunBody<RunSummary>);
         }
       }
@@ -2012,8 +1813,8 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // A Grab is remembered like a trip (issue #148), so when it reports back the item reads as in the backpack
         // and the container it left has that slot free again (harvestTrips), until a scan says otherwise.
         if (line.action === "grab") {
-          const state = readOrganizeState();
-          writeOrganizeState(addGrab(state, { id, adapter, serial: line.serial as number, name: line.name as string, from: (line.chain as number[]).at(-1) ?? null, queuedAt: line.queuedAt }));
+          const state = organizeState.read();
+          organizeState.write(addGrab(state, { id, adapter, serial: line.serial as number, name: line.name as string, from: (line.chain as number[]).at(-1) ?? null, queuedAt: line.queuedAt }));
         }
         return send(res, 200, { ok: true, id });
       }
@@ -2074,13 +1875,13 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         const stamp = new Date().toISOString();
         const snap = tombstone(stamp, currentSettings.shard, [{ serial, kind: "ground", name: label, opened: true }]);
         // Nothing this route writes may be a file the fold then skips — check the assembled document
-        // against the same contract readScans() checks every file against. A failure here is this
+        // against the same contract scanStore.all() checks every file against. A failure here is this
         // app's own bug, so it takes the 500-with-a-ref path and no file is written.
         const { ok: snapOk, errors: snapErrors } = validateScan(snap);
         if (!snapOk) throw new Error(`refusing to write an invalid tombstone: ${snapErrors.map((e) => `${e.path} ${e.msg}`).join("; ")}`);
         // One file per forgotten root, not one per click: the name used to carry the millisecond
         // timestamp, so a loop of Forget calls (or a user who forgets the same container twice) grew
-        // <data>/scans/ without bound and slowed every later fold, since readScans() parses the whole
+        // <data>/scans/ without bound and slowed every later fold, since scanStore.all() parses the whole
         // directory. Re-forgetting a root now replaces its tombstone with a newer scannedAt, which is
         // exactly what the fold wants anyway (newest scan of a root wins, by parseStamp — the file
         // name has never been what orders them).
@@ -2088,22 +1889,22 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         broadcastEvent("changed", { what: "inventory", by: req.headers["x-client-id"], at: Date.now() });
         return send(res, 200, { ok: true });
       }
-      if (req.method === "GET" && url.pathname === "/api/blacklist") return send(res, 200, { ok: true, containers: readBlacklist() });
+      if (req.method === "GET" && url.pathname === "/api/blacklist") return send(res, 200, { ok: true, containers: blacklist.read() });
       if (req.method === "POST" && url.pathname === "/api/blacklist") {
         const { serial, name, where } = asObject(await readBody(req, { limit: 8e3 }));
         if (!isBoundedInt(serial, 1, MAX_SERIAL)) return send(res, 400, { ok: false, error: "serial required (positive integer)" });
         if (typeof name !== "string" || (where !== undefined && typeof where !== "string")) return send(res, 400, { ok: false, error: "name and where must be strings" });
-        const entries = readBlacklist();
+        const entries = blacklist.read();
         if (entries.some((e) => e.serial === serial)) return send(res, 200, { ok: true });
         if (entries.length >= 1000) return send(res, 409, { ok: false, error: "the blacklist is full (1000 containers)" });
         const place = where?.slice(0, 64).trim();
         entries.push({ serial, name: name.slice(0, 64).trim() || "container", addedAt: new Date().toISOString(), ...(place ? { where: place } : {}) });
-        writeFileAtomic(BLACKLIST, JSON.stringify(entries, null, 1) + "\n", DATA_FILE_MODE);
+        blacklist.write(entries);
         return send(res, 200, { ok: true });
       }
       const unlist = req.method === "DELETE" ? /^\/api\/blacklist\/(\d{1,10})$/.exec(url.pathname) : null;
       if (unlist) {
-        writeFileAtomic(BLACKLIST, JSON.stringify(readBlacklist().filter((e) => e.serial !== Number(unlist[1])), null, 1) + "\n", DATA_FILE_MODE);
+        blacklist.write(blacklist.read().filter((e) => e.serial !== Number(unlist[1])));
         return send(res, 200, { ok: true });
       }
       // The houses the scans captured (issue #10): GET /api/houses lists each with its size, chest count and container serials (what Inventory's "Show on map" looks an item's container up in), GET /api/houses/<id> serves one house's whole model. Both come from the fold's cache and the built models are memoised (houseModel); an id that names no house (or does not decode) is a 404.
@@ -2160,16 +1961,16 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       // POST {name?, graphic?, kind} sets the kind for an exact item name and/or a graphic, and kind null takes those
       // entries away (Reset to automatic); POST /api/item-kinds/import {names?, graphics?} merges a file in, its
       // entries winning, and says what it left out. Every change re-kinds the inventory with no rescan (getInventory).
-      if (req.method === "GET" && url.pathname === "/api/item-kinds") return send(res, 200, { ok: true, ...kindsDocument(readKindOverrides()) });
+      if (req.method === "GET" && url.pathname === "/api/item-kinds") return send(res, 200, { ok: true, ...kindsDocument(itemKinds.read()) });
       if (req.method === "POST" && url.pathname === "/api/item-kinds") {
         const { name, graphic, kind } = asObject(await readBody(req, { limit: 8e3 }));
         if (name !== undefined && !(typeof name === "string" && isKindName(name))) return send(res, 400, { ok: false, error: `name must be an item name of at most ${KIND_LIMITS.name} characters` });
         if (graphic !== undefined && !isBoundedInt(graphic, 0, 0xFFFF)) return send(res, 400, { ok: false, error: "graphic must be an item graphic (0 to 65535)" });
         if (name === undefined && graphic === undefined) return send(res, 400, { ok: false, error: "name or graphic is required" });
         if (kind !== null && !OVERRIDE_KINDS.includes(kind as string)) return send(res, 400, { ok: false, error: `kind must be null or one of ${OVERRIDE_KINDS.join(", ")}` });
-        const base = readKindOverrides(), at = { name: name as string | undefined, graphic: graphic as number | undefined };
+        const base = itemKinds.read(), at = { name: name as string | undefined, graphic: graphic as number | undefined };
         const next = kind === null ? withoutKinds(base, at) : withKinds(base, kindsFor(at, kind as string));
-        const refused = saveKindOverrides(next);
+        const refused = itemKinds.save(next);
         if (refused) return send(res, 409, { ok: false, error: refused });
         broadcastEvent("changed", { what: "inventory", by: req.headers["x-client-id"], at: Date.now() });
         return send(res, 200, { ok: true, ...kindsDocument(next!) });
@@ -2178,22 +1979,21 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         const body = asObject(await readBody(req, { limit: MAX_KINDS_BYTES, tooLargeMsg: "the item kinds file is too large" }));
         const { overrides, problems } = salvageKindOverrides(body);
         if (!kindCount(overrides)) return send(res, 400, { ok: false, error: `the file holds no item kinds to import${problems.length ? ` (${problems[0]})` : ""}` });
-        const next = withKinds(readKindOverrides(), overrides);
-        const refused = saveKindOverrides(next);
+        const next = withKinds(itemKinds.read(), overrides);
+        const refused = itemKinds.save(next);
         if (refused) return send(res, 409, { ok: false, error: `the import was refused: ${refused}` });
         broadcastEvent("changed", { what: "inventory", by: req.headers["x-client-id"], at: Date.now() });
         return send(res, 200, { ok: true, ...kindsDocument(next!), skipped: problems.length, problems: problems.slice(0, 5) });
       }
-      if (req.method === "GET" && url.pathname === "/api/organize") return send(res, 200, { ok: true, ...readOrganize() });
+      if (req.method === "GET" && url.pathname === "/api/organize") return send(res, 200, { ok: true, ...organizeStore.read() });
       if (req.method === "PUT" && url.pathname === "/api/organize") {
         const checked = checkOrganizeConfig(await readBody(req, { limit: MAX_SETUP_BYTES, tooLargeMsg: "the Organize setup is too large" }));
         if (!checked.ok) return send(res, 400, { ok: false, error: checked.error });
         // A blacklisted container is never opened by a scan, so a label on one could only plan from stale contents.
-        const black = new Set(readBlacklist().map((e) => e.serial));
+        const black = new Set(blacklist.read().map((e) => e.serial));
         const listed = Object.values(checked.config.labels).find((l) => black.has(l.serial));
         if (listed) return send(res, 400, { ok: false, error: `container ${listed.serial} is blacklisted and cannot be labeled` });
-        mkdirSync(dirname(ORGANIZE), { recursive: true, mode: DATA_DIR_MODE });
-        writeFileAtomic(ORGANIZE, JSON.stringify(checked.config, null, 2) + "\n", DATA_FILE_MODE);
+        organizeStore.write(checked.config);
         return send(res, 200, { ok: true });
       }
       if (req.method === "GET" && url.pathname === "/api/organize/presets") return send(res, 200, { ok: true, presets: PRESETS });
@@ -2203,7 +2003,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         const problem = matchProblem(match);
         if (problem) return send(res, 400, { ok: false, error: problem });
         const { inv } = await getInventory();
-        const counted = matchCount(inv, readOrganize().config, match as RuleMatch, { now: Date.now(), rarity: currentRules.rarity, suitPieces: suitsFor([match as RuleMatch]), blacklist: readBlacklist().map((e) => e.serial) });
+        const counted = matchCount(inv, organizeStore.read().config, match as RuleMatch, { now: Date.now(), rarity: currentRules.rarity, suitPieces: suitsFor([match as RuleMatch]), blacklist: blacklist.read().map((e) => e.serial) });
         return send(res, 200, { ok: true, ...counted });
       }
       if (req.method === "POST" && url.pathname === "/api/organize/propose") {
@@ -2217,7 +2017,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         }
         const { fold, config, state, problems } = await organizeNow();
         if (problems.length) return send(res, 409, { ok: false, error: `organize.json was hand-edited and parts of it were dropped (${problems[0]}); open Organize and save the setup first` });
-        const r = proposeOrganize(fold, config, state.moves, { strategy: strategy as StrategyId, containers: containers as number[] | undefined, now: Date.now(), rarity: currentRules.rarity, suitPieces: suitsFor(config.rules.map((r) => r.match)), blacklist: readBlacklist().map((e) => e.serial), seen: state.seen });
+        const r = proposeOrganize(fold, config, state.moves, { strategy: strategy as StrategyId, containers: containers as number[] | undefined, now: Date.now(), rarity: currentRules.rarity, suitPieces: suitsFor(config.rules.map((r) => r.match)), blacklist: blacklist.read().map((e) => e.serial), seen: state.seen });
         return send(res, r.ok ? 200 : 409, r satisfies ProposeResult);
       }
       if (req.method === "GET" && url.pathname === "/api/organize/plan") {
