@@ -52,7 +52,7 @@ export function initFilters(): void {
 document.addEventListener("inventorychange", () => { buildFilters(); fetchItems(); });
 // After every load and refresh: the facets changed, so the chips' words and the strip are redrawn, and
 // the toolbar comes back to life after a failed load.
-function buildFilters(): void { inv.sync(); }
+export function buildFilters(): void { inv.sync(); }
 // A refresh (a live scan landed, a Forget): the same filters, the scroll position kept.
 export function fetchItems(): void { inv.fetch(); }
 // load()'s GET /api/ui-prefs answer (null when that request failed): the saved columns and the density.
