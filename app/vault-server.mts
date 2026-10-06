@@ -131,7 +131,7 @@ import { unlinkSync } from "node:fs";
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import { runKey, reusableRun, runSummary, stripOpts, normalizeRun, suitPieces, manualRun, SOLVER_VERSION, type RunOpts, type SavedRun } from "./runs-lib.mts";
-import { upgradeScan, validateScan } from "./scan-schema.mts";
+import { isPseudoCharacter, upgradeScan, validateScan } from "./scan-schema.mts";
 import { loadRules, listRules, DEFAULT_SHARD } from "./rules.mts";
 import { validate, type ValidatorSchema } from "./schema/validate.mts";
 import { parseItemQuery, applyItemQuery, facetsOf, wantsHits, hitRow, type ItemQueryRows, type ItemQueryGroups } from "./item-query.mts";
@@ -299,6 +299,16 @@ function short(v: unknown): string { return String(v).slice(0, 64); }
 const MAX_PATH_LEN = 4096;
 // The largest serial the scan contract accepts (app/schema/scan.v2.schema.json: a 32-bit unsigned).
 const MAX_SERIAL = 0xFFFFFFFF;
+// A `_vault` tombstone scan, which the fold reads as "forget": the roots it lists (POST /api/forget) or, with
+// forgetCharacter, that character (POST /api/forget-character). The key order is the bytes written.
+function tombstone(scannedAt: string, shard: string, roots: Array<{ serial: number; kind: string; name: string; opened: boolean }>, forgetCharacter?: string) {
+  return {
+    schemaVersion: 2, character: "_vault", scannedAt, ...(forgetCharacter === undefined ? {} : { forgetCharacter }),
+    adapter: { id: "app", version: "1", client: "Pack Rat", clientVersion: null,
+      capabilities: { layers: [], arms: false, bank: false, ground: false, nested: false, tooltips: "label", bridge: [] } },
+    shard, stats: {}, equipped: [], roots, containers: {}, items: [],
+  };
+}
 // What a failed locate/install tells the caller. Deliberately says nothing about the path it probed:
 // echoing the resolved path back made these routes a clean existence oracle for any absolute path on
 // the machine — "existing directory" vs "file or absent", for free, from an unauthenticated route in
@@ -2155,13 +2165,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         const label = name.slice(0, 64).trim() || "forgotten";   // a display label, and the schema wants a non-empty one
         mkdirSync(SCANS, { recursive: true, mode: DATA_DIR_MODE });
         const stamp = new Date().toISOString();
-        const snap = {
-          schemaVersion: 2, character: "_vault", scannedAt: stamp,
-          adapter: { id: "app", version: "1", client: "Pack Rat", clientVersion: null,
-            capabilities: { layers: [], arms: false, bank: false, ground: false, nested: false, tooltips: "label", bridge: [] } },
-          shard: currentSettings.shard, stats: {}, equipped: [],
-          roots: [{ serial, kind: "ground", name: label, opened: true }], containers: {}, items: [],
-        };
+        const snap = tombstone(stamp, currentSettings.shard, [{ serial, kind: "ground", name: label, opened: true }]);
         // Nothing this route writes may be a file the fold then skips — check the assembled document
         // against the same contract readScans() checks every file against. A failure here is this
         // app's own bug, so it takes the 500-with-a-ref path and no file is written.
@@ -2345,16 +2349,11 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // backpack and bank. Same demo refusal and validate-before-write rule as /api/forget above.
         if (CONFIG.demo) return send(res, 409, { ok: false, error: "demo data is read-only" });
         const { character } = asObject(await readBody(req, { limit: 8e3 }));
-        if (!isBoundedString(character, 64) || character.startsWith("_")) return send(res, 400, { ok: false, error: "character required (a scanned character's name)" });
+        if (!isBoundedString(character, 64) || isPseudoCharacter(character)) return send(res, 400, { ok: false, error: "character required (a scanned character's name)" });
         // Only a character the inventory has: a tombstone per arbitrary name would pile up in scans/.
         if (!Object.hasOwn((await getInventory()).inv.characters, character)) return send(res, 404, { ok: false, error: `no scanned character named ${short(character)}` });
         mkdirSync(SCANS, { recursive: true, mode: DATA_DIR_MODE });
-        const snap = {
-          schemaVersion: 2, character: "_vault", scannedAt: new Date().toISOString(), forgetCharacter: character,
-          adapter: { id: "app", version: "1", client: "Pack Rat", clientVersion: null,
-            capabilities: { layers: [], arms: false, bank: false, ground: false, nested: false, tooltips: "label", bridge: [] } },
-          shard: currentSettings.shard, stats: {}, equipped: [], roots: [], containers: {}, items: [],
-        };
+        const snap = tombstone(new Date().toISOString(), currentSettings.shard, [], character);
         const { ok: snapOk, errors: snapErrors } = validateScan(snap);
         if (!snapOk) throw new Error(`refusing to write an invalid tombstone: ${snapErrors.map((e) => `${e.path} ${e.msg}`).join("; ")}`);
         // One file per forgotten character (hex of the name: any name is a safe file name that way),
