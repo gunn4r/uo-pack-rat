@@ -1,5 +1,5 @@
-// build-schema-types.mts — derive app/schema/types.d.mts from the four JSON Schema files that are
-// the runtime authority for Pack Rat's scan, bridge, rules and profile shapes (app/schema/*.schema.json,
+// build-schema-types.mts — derive app/schema/types.d.mts from the five JSON Schema files that are
+// the runtime authority for Pack Rat's scan, bridge, bridge trip, rules and profile shapes (app/schema/*.schema.json,
 // enforced at runtime by app/schema/validate.mts). Hand-written types would be a second authority
 // free to drift from what the validator actually checks; this generates one from the other instead.
 //

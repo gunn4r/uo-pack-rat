@@ -19,9 +19,9 @@ export type Selection = { full: string } | { tests: Record<string, string[]> };
 const IGNORED = /(^|\/)[^/]+\.md$|^docs\/|^\.github\/|^LICENSE$|^node_modules(\/|$)/;
 const FULL = /^(scripts\/(test-runner|run-suite|test-file-watchdog|electron-window|build-ui|build-schema-types)\.mts|scripts\/test_runner\.sh|package(-lock)?\.json|tsconfig[^/]*\.json|app\/schema\/.*|electron\/.*)$/;
 
-// app/ui file stem → the Electron test that drives that screen. A stem not listed here (tokens, dom,
+// app/ui file stem → the Electron test(s) that drive that screen. A stem not listed here (tokens, dom,
 // store, app, theme...) is shared by every screen, so it selects all of them.
-const SCREENS: Record<string, string> = {
+export const SCREENS: Record<string, string | string[]> = {
   builder: "ui-builder", "builder-model": "ui-builder", "builder-result": "ui-builder",
   components: "ui-components",
   import: "ui-forms", "import-preview": "ui-forms", wizard: "ui-forms", settings: "ui-forms", shard: "ui-forms",
@@ -29,7 +29,11 @@ const SCREENS: Record<string, string> = {
   inventory: "ui-state", "inv-model": "ui-state", characters: "ui-state", roster: "ui-state", sheet: "ui-state",
   runs: "ui-state", peek: "ui-state", containers: "ui-state", "view-state": "ui-state",
   scrolls: "ui-scrolls", "scrolls-model": "ui-scrolls",
-  "house-map": "ui-map", "house-map-model": "ui-map",
+  "house-map": "ui-map", "house-map-model": "ui-map", "world-map": "ui-map", "world-map-model": "ui-map",
+  organize: "ui-organize", "auto-organize": "ui-organize", "rule-editor": "ui-organize",
+  "organize-model": ["ui-organize", "ui-map"], kinds: "ui-organize",
+  "builder-buffs": "ui-builder", "builder-manual": "ui-builder", "manual-model": "ui-builder",
+  "item-browser": ["ui-state", "ui-builder"],
 };
 
 const LITERAL = /["'`](\.\.?\/[^"'`\s]+)["'`]/g;
@@ -67,7 +71,7 @@ export function selectTests(changed: string[], sources: Record<string, string>):
     for (const t of tests) if ([...reach.get(t)!].some(names)) pick(t, path);
     if (path.startsWith("app/ui/") || path === "app/index.html") {
       const screen = SCREENS[posix.basename(path).replace(/\.(mts|css)$/, "")];
-      for (const t of screen ? [`scripts/${screen}.test.mts`] : electronUi) pick(t, path);
+      for (const t of screen ? [screen].flat().map((n) => `scripts/${n}.test.mts`) : electronUi) pick(t, path);
       if (path.endsWith(".css")) pick("scripts/ui-contrast.test.mts", path);
     }
     if (!Object.values(picked).some((p) => p.includes(path))) return { full: `no test reaches ${path}` };

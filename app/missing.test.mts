@@ -134,7 +134,7 @@ test("[fast] a missing Scroll of Transcendence is listed by its skill and points
   const got = missing([scan(T1, [sot(PEARL, CHEST, 1)]), scan(T2, [])]);
   assert.deepEqual(got, { [CHEST]: [{ serial: PEARL, name: "Scroll of Transcendence (Chivalry - 0.6 Pts)", amount: 1, lastSeen: T1 }] });
 });
-test("[fast] missingSinceLastScan reads no shard rules: the server hands it a fold made by a freshly imported vault-lib (issue #181)", () => {
+test("[fast] missingSinceLastScan reads no shard rules (issue #181)", () => {
   const snaps = [scan(T1, [sot(PEARL, CHEST, 1)]), scan(T2, [])];
   const inv = foldSnapshots(snaps);
   const rules = getRules();

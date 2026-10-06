@@ -7,7 +7,8 @@ import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { resolveConfig, type ConfigPaths } from "./config.mts";
-import { queueTrip, writeBridgeStop, TRIP_MAX_BYTES, TRIP_NAME_MAX, type TripInput } from "./bridge-trip.mts";
+import { queueTrip, writeBridgeStop, type TripInput } from "./bridge-trip.mts";
+import { TRIP_MAX_BYTES, TRIP_NAME_MAX } from "./bridge-contract.mts";
 import { validate, type ValidatorSchema } from "./schema/validate.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));

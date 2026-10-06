@@ -532,8 +532,8 @@ function sotOf(name: string, lines: string[]): { skill: string; points: number }
   const m = SOT_NAME_RE.test(name) ? lines.slice(1).map((l) => l.match(SOT_LINE_RE)).find(Boolean) : null;
   return m ? { skill: m[1]!, points: +m[2]! } : null;
 }
-// displayName straight from a tooltip, without parseTooltip and so without the shard's rules: app/missing.mts runs
-// beside a vault-lib the server re-imports, whose rules this module instance never gets.
+// displayName straight from a tooltip, without parseTooltip's property parse and so without the shard's rules
+// (app/missing.mts names every item that left a container this way).
 export function shownName(rawLines: Array<string | undefined>, amount?: number | undefined): string {
   const lines = rawLines.map(stripHtml).filter(Boolean);
   const name = stackName(lines[0], amount), sot = sotOf(name, lines);

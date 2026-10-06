@@ -7,7 +7,8 @@ import { parseStamp } from "./scan-schema.mts";
 import { CATCH_ALL_ID, EMPTY_BAGS_ID, ruleMatchOf, type Build, type OrganizeConfig, type RuleMatch } from "./organize-config.mts";
 import { RESIST_KEYS, gameName, spellSchoolOf, TRASH_RE, locationOf, type Character, type Container, type ContainerCapacity, type Inventory, type Item } from "./vault-lib.mts";
 import type { RulesV1RarityItem } from "./schema/types.d.mts";
-import { TRIP_NAME_MAX, type TripInput } from "./bridge-trip.mts";
+import { TRIP_NAME_MAX } from "./bridge-contract.mts";
+import type { TripInput } from "./bridge-trip.mts";
 
 export type WarningKind = "stale-container" | "missing-target" | "missing-label" | "unknown-capacity" | "old-scripts" | "blacklisted" | "no-position" | "not-ground" | "nearly-full";
 export interface PlanWarning { kind: WarningKind; serial: number; detail: string }
