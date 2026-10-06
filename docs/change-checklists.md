@@ -21,7 +21,7 @@ Examples: `d3bbb2e` (#202 part A), `532b7cc` (#202 part B), `4982888`.
 3. UI: `MANUAL_GROUPS` in `app/ui/manual-model.mts` (a layout, so place the slot by hand); check `SLOT_GROUPS` in `app/ui/sheet.mts` still reads well with the new slot; `app/ui/builder-manual.mts`, `app/ui/builder-model.mts`, `app/ui/builder-result.mts`, `app/ui/builder.mts`, `app/ui/runs.mts`, `app/ui/builder.css`.
 4. Organize: the Armor and Jewelry groups in `app/organize-strategies.mts` (kept by hand: they move real items); the slot presets in `app/organize-presets.mts`.
 5. MCP: `build_suit`'s `pinned` description in `app/mcp-tools.mts` (it lists `GEAR_SLOTS`; check the wording still fits).
-6. Tests: `app/slot-groups.test.mts`, `scripts/slot-lists.test.mts` (its allow-list, if a hand-kept list changed size), `app/gear-vault.test.mts`, `app/manual-model.test.mts`, `app/manual-handoffs.test.mts`, `app/solver.test.mts`, `app/solver-fuzz.test.mts`, `app/solver-buffs-fuzz.test.mts`, `app/buffs-plan.test.mts`, `scripts/optimizer-core.test.mts`, `app/organize-strategies.test.mts`, `app/server.test.mts`, `app/ui-render.test.mts`, `scripts/ui-builder.test.mts`; the fixture `app/solver-fixture.mts`.
+6. Tests: `app/slot-groups.test.mts`, `scripts/slot-lists.test.mts` (its allow-list, if a hand-kept list changed size), `app/gear-vault.test.mts`, `app/manual-model.test.mts`, `app/manual-handoffs.test.mts`, `app/solver.test.mts`, `app/solver-fuzz.test.mts`, `app/solver-buffs-fuzz.test.mts`, `app/buffs-plan.test.mts`, `scripts/optimizer-core.test.mts`, `app/organize-strategies.test.mts`, `app/server-builder.test.mts`, `app/server-host.test.mts`, `app/ui-render.test.mts`, `scripts/ui-builder.test.mts`; the fixture `app/solver-fixture.mts`.
 7. Docs: `docs/solver.md`, `docs/ui.md`, `docs/scan-schema.md`, `CONTRIBUTING.md`.
 8. If adapters start recording the layer, this is also a scan-format change (below).
 
@@ -34,7 +34,7 @@ Examples: `ee9da51`, `97c6363`.
 3. UI: `app/ui/kinds.mts`, `app/ui/inventory.mts`, `app/ui/organize.mts`, `app/ui/settings.mts`, `app/ui/api-types.mts`.
 4. Server: the routes in `app/http/routes/`. If a server module becomes page-visible, the browser-shared list (see Add an HTTP route).
 5. MCP: `list_item_kinds` and the `kind` filter's description in `app/mcp-tools.mts`.
-6. Tests: `app/slot-groups.test.mts`, `scripts/slot-lists.test.mts` (its allow-list, if a hand-kept list changed size), `app/gear-vault.test.mts`, `app/item-kinds.test.mts`, `app/organize-config.test.mts`, `app/organize-strategies.test.mts`, `app/organize-server.test.mts`, `app/server.test.mts`, `scripts/ui-organize.test.mts`.
+6. Tests: `app/slot-groups.test.mts`, `scripts/slot-lists.test.mts` (its allow-list, if a hand-kept list changed size), `app/gear-vault.test.mts`, `app/item-kinds.test.mts`, `app/organize-config.test.mts`, `app/organize-strategies.test.mts`, `app/organize-server.test.mts`, `app/server-inventory.test.mts`, `scripts/ui-organize.test.mts`.
 7. Docs: `README.md` (kinds are player-visible), `CONTRIBUTING.md`, `docs/architecture.md` (data folder), `docs/ui.md`.
 
 ## Add an item property or property filter
@@ -46,7 +46,7 @@ Examples: `1486452`, `826f586`.
 3. UI: `app/ui/inv-model.mts`, `app/ui/inventory.mts`, `app/ui/organize-model.mts`, `app/ui/store.mts`, `app/ui/view-state.mts`; `SHEET_GROUPS` in `app/ui/sheet.mts` if the sheet shows it.
 4. Solver: `toOptItem` and the optimizer keys if the builder can weight it; the profile schema if it gets a floor (see Add or change a profile field).
 5. MCP: the keys `search_items` accepts in `app/mcp-tools.mts` (it reads the facets and `EXTRA_COLS`).
-6. Tests: `app/item-query.test.mts`, `app/organize-config.test.mts`, `app/ui-inventory.test.mts`, `app/ui-organize.test.mts`, `app/ui-state.test.mts`, `scripts/ui-state.test.mts`, `app/server.test.mts`, `app/gear-vault.test.mts` (the real-tooltip corpus).
+6. Tests: `app/item-query.test.mts`, `app/organize-config.test.mts`, `app/ui-inventory.test.mts`, `app/ui-organize.test.mts`, `app/ui-state.test.mts`, `scripts/ui-state.test.mts`, `app/server-inventory.test.mts`, `app/gear-vault.test.mts` (the real-tooltip corpus).
 7. Docs: `docs/ui.md`.
 
 ## Add a buff, form or ability
@@ -68,7 +68,7 @@ Examples: `166eb05`, `d311bdb`, `f1eced4`.
 2. Logic: `app/vault-lib.mts` (normalize, migrate, templates, `settingsDiff`); `app/runs-lib.mts` (run identity and instant repeats: bump `SOLVER_VERSION` if results change); `app/run-settings.mts` (`runSettingsError`, the one check `POST /api/optimize` and `POST /api/runs` hold a run's settings to, `RUN_SETTING_LIMITS`, `OPTS_LIMITS` and `RUN_DEFAULTS`); `app/bench/mip-spike.mts`, `app/bench/run-bench.mts`.
 3. UI: `app/ui/builder-model.mts`, `app/ui/builder.mts`, `app/ui/builder-result.mts`, `app/ui/runs.mts` (`settingsSnapshot`), `app/ui/sheet.mts`, `app/ui/components.mts`, `app/ui/builder.css`.
 4. MCP: the `build_suit` and `score_suit` arguments in `app/mcp-tools.mts` if a model should set it.
-5. Tests: `app/builder-model.test.mts`, `app/gear-vault.test.mts`, `app/server.test.mts`, `app/solver.test.mts`, `app/ui-render.test.mts`, `scripts/ui-builder.test.mts`, `scripts/ui-contrast.test.mts`, `scripts/ui-state.test.mts`.
+5. Tests: `app/builder-model.test.mts`, `app/gear-vault.test.mts`, `app/server-builder.test.mts`, `app/solver.test.mts`, `app/ui-render.test.mts`, `scripts/ui-builder.test.mts`, `scripts/ui-contrast.test.mts`, `scripts/ui-state.test.mts`.
 6. Docs: `docs/ui.md`, `docs/solver.md`, `docs/shard-rules.md` (cap overrides), `README.md`, `CONTRIBUTING.md`.
 
 ## Add an HTTP route
@@ -76,7 +76,7 @@ Examples: `166eb05`, `d311bdb`, `f1eced4`.
 Examples: `e6288f2`, `5416327`, `97c6363`.
 
 1. The route module in `app/http/routes/` for its area (a new area gets a new module, added to the route table in `app/vault-server.mts`): an entry `{ method, path, handle }` (`app/http/router.mts`; `path` a string or a RegExp, and `handle` answers `NEXT` to pass a request on), the body read through `readBody` with a size cap, `asObject` (`app/http/respond.mts`) and a check of every field (`app/guards.mts`), anything new the handler needs added to `ServerContext` (`app/http/context.mts`), and the route in `docs/architecture.md`'s HTTP routes. A route that reads or writes a data file goes through that file's store in `app/store/`; a new data file gets its own store there, built on `app/store/json-file.mts`.
-2. The matching server test: `app/server.test.mts`, `app/organize-server.test.mts`, `app/house-server.test.mts` or `app/mcp.test.mts`.
+2. The matching server test: the route family's `app/server-<family>.test.mts` (settings, setup, inventory, builder, import, host; `app/server.test.mts` for what every route shares), `app/organize-server.test.mts`, `app/house-server.test.mts` or `app/mcp.test.mts`.
 3. `app/ui/api-types.mts` (the response shape, by hand: no test compares it with the server) and the caller (`app/ui/app.mts`, `app/ui/store.mts` or the view).
 4. If the page needs a server module at run time: `tsconfig.browser.json`'s `include`, a static route in `app/http/routes/static.mts`, the list in the header comment of `scripts/build-ui.mts`, and `docs/architecture.md`'s HTTP routes.
 5. `docs/architecture.md` (the data folder, if it writes a file), `docs/threat-model.md` (a new boundary), `PRIVACY.md` (if it stores or forgets player data).
