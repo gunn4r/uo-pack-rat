@@ -148,13 +148,25 @@ The recipes are the shard rules' `scrollBinder` (Shard rules, above).
 | `app/config.mts` | Every path, the port and the token, from flags then environment then defaults; creates the data folder's directories. | `resolveConfig`, `ensureLayout`, `corePath`, `DATA_DIR_MODE`, `DATA_FILE_MODE`, `DEFAULT_PORT` |
 | `app/data-dir-notice.mts` | The sentence that says the client's scripts write to another data folder. Browser-safe, so the server's startup log and the page (`app/ui/messages.mts` re-exports it) share one sentence. | `dataDirNotice`, `DataDirCheckInfo` |
 | `app/atomic-write.mts` | The one way this app replaces a file. | `atomicReplace`, `writeFileAtomic`, `moveAside` |
+| `app/http/respond.mts` | How the server answers: `send()` with the headers every response carries, the event streams' header set, the Content-Security-Policy, and `asObject`'s 400 for a body that is not an object. | `send`, `SSE_HEADERS`, `CSP`, `asObject` |
+| `app/guards.mts` | The bounded string, integer and serial checks, shared by the HTTP layer and the stores. | `isBoundedString`, `isBoundedInt`, `MAX_SERIAL` |
+| `app/store/json-file.mts` | The one way a store reads and writes a JSON data file: each reader's bad-file policy named (`empty`, `aside`, `skip`), and the writer's folder, atomic write, indent and trailing newline. | `readJsonFile`, `writeJsonFile` |
+| `app/store/settings.mts` | `<data>/settings.json`: read with the move-aside-and-default fallback, written whole. | `createSettingsStore`, `SettingsDoc`, `ClientSettings` |
+| `app/store/profiles.mts` | `<data>/profiles.json`: seeded from the defaults, a damaged file moved aside and reseeded, an old shape migrated with a dated backup. | `createProfilesStore` |
+| `app/store/ui-prefs.mts` | `<data>/ui-prefs.json`: the page's view choices, the fields it may hold and their checks, salvaged field by field. | `createUiPrefsStore`, `UI_PREF_CHOICES`, `UI_PREF_LISTS`, `UI_PREF_VERSIONS`, `isColWidths`, `isDrawerWidth`, `isManualSuit` |
+| `app/store/blacklist.mts` | `<data>/scan-blacklist.json`, which the in-game scripts write too: only valid entries read. | `createBlacklistStore` |
+| `app/store/item-kinds.mts` | `<data>/item-kinds.json`: a bad file moved aside, entries that make no sense left out with a warning, a write refused past the caps. | `createItemKindsStore` |
+| `app/store/organize.mts` | `<data>/organize.json`: salvaged rule by rule, a bad file moved aside with `problems` saying so. | `createOrganizeStore` |
+| `app/store/organize-state.mts` | `<data>/organize-state.json`: Organize's results overlay, a damaged file read as empty. | `createOrganizeStateStore` |
+| `app/store/runs.mts` | `<data>/runs/`: one file per saved run, a damaged one skipped in the list and reported on its own. | `createRunsStore` |
+| `app/store/scans.mts` | `<data>/scans/`: every scan upgraded and validated on read (a bad one skipped), and the folder's signature. | `createScansStore` |
 
-What lives inside `startServer` today (each a closure over the config, the settings and the rules, so none can be imported on its own):
+What still lives inside `startServer` (each a closure over the config, the settings and the rules, so none can be imported on its own; the stores above are built here from the config's paths):
 
-- **HTTP helpers:** `send`, `asObject`, `isBoundedString`, `isBoundedInt`, `safeAppendLog`, the Content-Security-Policy.
+- **Logging:** `safeAppendLog`.
 - **Build request checks:** `poolsError`, `currentError`, `optsError`, `runSettingsError`, `pickMeta`, `OPTS_LIMITS`.
-- **Stores** (file reads and writes): settings (`loadSettings`, `saveSettings`), profiles (`readProfiles`), `readUiPrefs`, `readBlacklist`, `readKindOverrides`/`saveKindOverrides`, `readOrganize`, `readNames`, `readOrganizeState`, runs (`readRuns`, `saveRun`). The seven single-file stores (`<data>/ui-prefs.json`, `<data>/tazuo-panel.json`, `<data>/scan-blacklist.json`, `<data>/item-kinds.json`, `<data>/organize.json`, `<data>/house-map.json`, `<data>/organize-state.json`) have their paths built here, not in `app/config.mts`.
-- **Services:** the inventory (`readScans`, `scansSignature`, `getInventory` and the fold cache), houses (`uoFolder`, `houseTileData`, `facetPng`, `houseModel`), Organize (`bridgeView`, `organizeInputs`, `organizeNow`, `queuePlanTrip`, `putAway`), optimize jobs (`startJob`, `spawnWorker`, `runJob`, `cancelJob`, `streamJob`), retention (`planPrune`, `pruneData`), the inbox watchers and the shared event stream (`startWatchers`, `broadcastEvent`).
+- **Settings:** the saved and effective settings (`saveSettings` merges a change and writes it through the settings store) and the current rules. The single files in the data folder (`<data>/ui-prefs.json`, `<data>/tazuo-panel.json`, `<data>/scan-blacklist.json`, `<data>/item-kinds.json`, `<data>/organize.json`, `<data>/house-map.json`, `<data>/organize-state.json`) have their paths built here, not in `app/config.mts`; `<data>/tazuo-panel.json` is read and written through `app/tazuo-panel.mts` and `<data>/house-map.json` through `app/house-names.mts` (`readNames` logs its problems once).
+- **Services:** the inventory (`getInventory` and the fold cache), saved runs (`saveRun` builds a finished build's record), houses (`uoFolder`, `houseTileData`, `facetPng`, `houseModel`), Organize (`bridgeView`, `organizeInputs`, `organizeNow`, `queuePlanTrip`, `putAway`), optimize jobs (`startJob`, `spawnWorker`, `runJob`, `cancelJob`, `streamJob`), retention (`planPrune`, `pruneData`), the inbox watchers and the shared event stream (`startWatchers`, `broadcastEvent`).
 - **Routes:** one request handler with the Host, Origin, token and content-type checks ahead of every route (`CONTRIBUTING.md`, Security).
 
 ## Desktop shell
