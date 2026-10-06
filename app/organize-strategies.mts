@@ -7,7 +7,7 @@ import { isDeepStrictEqual } from "node:util";
 import { checkOrganizeConfig, emptyRuleQuery, LIMITS, type Build, type ContainerLabel, type OrganizeConfig, type OrganizeRule, type Origin, type RuleMatch } from "./organize-config.mts";
 import { PRESETS } from "./organize-presets.mts";
 import { ancestry, applyOverlay, claimOf, emptyBagsOf, planOrganize, posOk, ruleMatches, scopeOf, sitesOf, SPELLBOOK_NAMES, type OverlayMove, type ScopeOptions } from "./organize.mts";
-import { bagLabel, TRASH_RE, type Container, type ContainerCapacity, type Inventory, type Item } from "./vault-lib.mts";
+import { bagLabel, isPseudoCharacter, TRASH_RE, type Container, type ContainerCapacity, type Inventory, type Item } from "./vault-lib.mts";
 import type { RuleQuery } from "./item-query.mts";
 import type { RulesV1RarityItem } from "./schema/types.d.mts";
 import type { Candidate, Family, GroupReport, Layout, ProposeResult, StrategyId, Unusable } from "./organize-types.mts";
@@ -288,7 +288,7 @@ const plainName = (c: Container): string => ((c.label || bagLabel(c)) || `0x${(+
 // usable or with the reason it is not. Usable = what a rule target needs (scopeOf): not blacklisted or pinned,
 // opened by its newest scan, with a position and a Contents line.
 function candidatesOf(inv: Inventory, cfg: OrganizeConfig, counts: Map<number, ContainerCapacity>, black: Set<number>, mine: Set<number>, filled: Set<number>): { candidates: Candidate[]; unusable: Unusable[] } {
-  const roots = Object.values(inv.containers).filter((c) => c.parent == null && c.kind === "ground" && !String(c.scannedBy).startsWith("_") && !TRASH_RE.test(c.name ?? ""))
+  const roots = Object.values(inv.containers).filter((c) => c.parent == null && c.kind === "ground" && !isPseudoCharacter(c.scannedBy) && !TRASH_RE.test(c.name ?? ""))
     .sort((a, b) => a.serial - b.serial);
   const usable: { serial: number; name: string; cap: ContainerCapacity; l: ContainerLabel | undefined }[] = [];
   const unusable: Unusable[] = [];

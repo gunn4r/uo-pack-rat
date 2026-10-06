@@ -1159,7 +1159,7 @@ function drawPanel(): void {
     const why = stackReason(m, s, chests) ?? (highlighting ? "Sending the highlights…" : null);
     const all = button({ label: chests.length > 1 ? "Highlight the stack" : "Highlight", icon: "highlight", size: "sm", disabled: !!why, attrs: { id: "map-highlight-stack" }, onClick: () => { void highlightStack(m, s, chests); } });
     p.replaceChildren(
-      box("header", { class: "map-panel-head" }, el("h2", { class: "t-lg" }, chests.length > 1 ? `Stack ${s.letter}` : chests[0]!.name), txt(stackWhere(m, s, areasNow()), "t-sm muted")),
+      box("header", { class: "map-panel-head" }, el("h2", { class: "t-lg" }, chests.length > 1 ? `Stack ${s.letter}` : chests[0]!.name), txt(stackWhere(s, areasNow()), "t-sm muted")),
       box("ol", { class: "map-chests", "aria-label": "Containers, top first" }, ...chests.map((c) => chestRow(m, s, c))),
       box("div", { class: "map-panel-actions" }, why ? tipWrap(all, why) : all, button({ label: "Back to the house", variant: "ghost", size: "sm", onClick: unselect })),
       legend());
@@ -1517,7 +1517,7 @@ function drawDrawer(): void {
   filter.addEventListener("input", () => { dr.filter = filter.value; dr.scroll = 0; drawDrawerBody(); });
   const list = box("div", { class: "map-drawer-body", id: "map-drawer-body" });
   list.addEventListener("scroll", () => { if (list.isConnected) dr.scroll = list.scrollTop; });   // a list being replaced reads 0 once detached
-  const meta = txt(c ? drawerMeta(c, s) : stackWhere(m, s, areasNow()), "t-sm muted ellip"), summary = txt("", "t-sm muted");
+  const meta = txt(c ? drawerMeta(c, s) : stackWhere(s, areasNow()), "t-sm muted ellip"), summary = txt("", "t-sm muted");
   meta.id = "map-drawer-meta";
   summary.id = "map-drawer-summary";
   d.replaceChildren(drawerGrip(),

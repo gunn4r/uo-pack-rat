@@ -4,11 +4,11 @@
 // takes an injectable fetchImpl so callers (and tests) never depend on a real fetch global.
 import {
   existsSync, statSync, lstatSync, readdirSync, readFileSync, copyFileSync, realpathSync,
-  mkdirSync, openSync, readSync, closeSync, fstatSync, unlinkSync, constants, type Dirent, type Stats,
+  openSync, readSync, closeSync, fstatSync, unlinkSync, constants, type Dirent, type Stats,
 } from "node:fs";
 import { basename, join, resolve, dirname, isAbsolute } from "node:path";
 import { atomicReplace, writeFileAtomic } from "./atomic-write.mts";
-import { DATA_DIR_MODE } from "./config.mts";
+import type { DataDirCheckInfo } from "./data-dir-notice.mts";
 
 const VERSION_RE = /ADAPTER_VERSION\s*=\s*"([^"]+)"/;
 const ADAPTER_ID_RE = /^[a-z0-9-]+$/;
@@ -339,11 +339,8 @@ export function pasteScanner(adaptersDir: string, adapter: string): { version: s
 // none writes nothing anywhere. Among several detected folders, any one that matches is taken as the one
 // in use: the app cannot tell which client the player runs, and a false alarm is worse than a quiet one.
 // Reports; never changes anything.
-export type DataDirCheck =
-  | { status: "none" }
-  | { status: "match"; scriptsDir: string }
-  | { status: "mismatch"; scriptsDir: string; scriptsDataDir: string; dataDir: string }
-  | { status: "unreadable"; scriptsDir: string; error: string };
+// The shape lives in app/data-dir-notice.mts, which the page shares.
+export type DataDirCheck = DataDirCheckInfo;
 
 // candidates: the auto-detected client folders to fall back on when no client is configured — the
 // server passes candidateClientRoots' answers for each adapter (injectable there, so a test never

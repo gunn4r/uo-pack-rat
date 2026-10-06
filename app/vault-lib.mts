@@ -7,7 +7,8 @@
 // loaded (Node-only, by app/rules.mts) and handed in here with setRules() — this module never reads
 // a rules file itself, so it stays usable in the browser. getRules() throws until setRules() has run:
 // a forgotten call must be loud, not a silent wrong answer.
-import { parseStamp } from "./scan-schema.mts";
+import { isPseudoCharacter, parseStamp } from "./scan-schema.mts";
+export { isPseudoCharacter };
 import type { RulesV1, ScanV2, ScanV2Adapter } from "./schema/types.d.mts";
 
 // ---------------------------------------------------------------------------
@@ -180,67 +181,71 @@ export function getRules(): RulesV1 {
 // Tooltip parsing. ORDER MATTERS: FCR before FC, Spell Damage before Damage Increase — the same
 // property table the TazUO adapter scripts use in-game, so both sides agree on property keys.
 // ---------------------------------------------------------------------------
-export const PROP_PATTERNS: Array<[string, RegExp]> = [
-  ["physResist", /physical resist[^-\d]*(-?\d+)/], ["fireResist", /fire resist[^-\d]*(-?\d+)/],
-  ["coldResist", /cold resist[^-\d]*(-?\d+)/], ["poisonResist", /poison resist[^-\d]*(-?\d+)/],
-  ["energyResist", /energy resist[^-\d]*(-?\d+)/],
-  ["fcr", /faster cast recovery[^-\d]*(-?\d+)/], ["fc", /faster casting[^-\d]*(-?\d+)/],
-  ["sdi", /spell damage increase[^-\d]*(-?\d+)/], ["di", /damage increase[^-\d]*(-?\d+)/],
-  ["hci", /hit chance increase[^-\d]*(-?\d+)/], ["dci", /defense chance increase[^-\d]*(-?\d+)/],
-  ["ssi", /swing speed increase[^-\d]*(-?\d+)/],
-  ["lmc", /lower mana cost[^-\d]*(-?\d+)/], ["lrc", /lower reagent cost[^-\d]*(-?\d+)/],
-  ["hpi", /hit point increase[^-\d]*(-?\d+)/], ["hpRegen", /hit point regeneration[^-\d]*(-?\d+)/],
-  ["stamInc", /stamina increase[^-\d]*(-?\d+)/], ["stamRegen", /stamina regeneration[^-\d]*(-?\d+)/],
-  ["manaInc", /mana increase[^-\d]*(-?\d+)/], ["manaRegen", /mana regeneration[^-\d]*(-?\d+)/],
-  ["strBonus", /strength bonus[^-\d]*(-?\d+)/], ["dexBonus", /dexterity bonus[^-\d]*(-?\d+)/],
-  ["intBonus", /intelligence bonus[^-\d]*(-?\d+)/],
-  ["reflectPhys", /reflect physical damage[^-\d]*(-?\d+)/],
-  ["castingFocus", /casting focus[^-\d]*(-?\d+)/], ["luck", /^luck[^-\d]*(-?\d+)/],
-  ["hitLifeLeech", /hit life leech[^-\d]*(-?\d+)/], ["hitStamLeech", /hit stamina leech[^-\d]*(-?\d+)/],
-  ["hitManaLeech", /hit mana leech[^-\d]*(-?\d+)/], ["hitLowerDef", /hit lower defense[^-\d]*(-?\d+)/],
-  ["hitLowerAttack", /hit lower attack[^-\d]*(-?\d+)/],
-  ["enhancePotions", /enhance potions[^-\d]*(-?\d+)/], ["selfRepair", /self repair[^-\d]*(-?\d+)/],
-  ["hitFireball", /hit fireball[^-\d]*(-?\d+)/], ["hitLightning", /hit lightning[^-\d]*(-?\d+)/],
-  ["hitHarm", /hit harm[^-\d]*(-?\d+)/], ["hitMagicArrow", /hit magic arrow[^-\d]*(-?\d+)/],
-  ["hitDispel", /hit dispel[^-\d]*(-?\d+)/], ["hitPoisonArea", /hit poison area[^-\d]*(-?\d+)/],
-  ["hitFireArea", /hit fire area[^-\d]*(-?\d+)/], ["hitColdArea", /hit cold area[^-\d]*(-?\d+)/],
-  ["hitEnergyArea", /hit energy area[^-\d]*(-?\d+)/], ["hitPhysArea", /hit physical area[^-\d]*(-?\d+)/],
-  ["mageWeapon", /mage weapon[^-\d]*(-?\d+)/],
-];
+// The property registry: every property key the app knows, in display order (the Suit Builder's rows and the character
+// sheet's "Other" group list them in it). A parsed property has the
+// tooltip pattern that reads it; the rest are set by parseTooltip itself (psLevel, sotPoints, tagPenalty), by the
+// fold (the pools) or read off the item (the "extra" columns). `builder` is whether the Suit Builder's weight and
+// requirement rows offer it. The exports below are derived from it.
+type PropKind = "number" | "extra";
+interface PropDef<K extends string = string> { key: K; pattern?: RegExp; label: string; full: string; builder: boolean; kind: PropKind }
+const tip = (text: string): RegExp => new RegExp(`${text}[^-\\d]*(-?\\d+)`);
+const parsed = <K extends string>(key: K, text: string, label: string, full: string, builder = true): PropDef<K> => ({ key, pattern: tip(text), label, full, builder, kind: "number" });
+const derived = <K extends string>(key: K, label: string, full: string, builder = true): PropDef<K> => ({ key, label, full, builder, kind: "number" });
+const extra = <K extends string>(key: K, label: string, full: string): PropDef<K> => ({ key, label, full, builder: false, kind: "extra" });
+export const PROPERTIES = [
+  parsed("physResist", "physical resist", "Phys", "Physical Resist"), parsed("fireResist", "fire resist", "Fire", "Fire Resist"),
+  parsed("coldResist", "cold resist", "Cold", "Cold Resist"), parsed("poisonResist", "poison resist", "Poison", "Poison Resist"),
+  parsed("energyResist", "energy resist", "Energy", "Energy Resist"),
+  parsed("hci", "hit chance increase", "HCI", "Hit Chance Increase"), parsed("dci", "defense chance increase", "DCI", "Defense Chance Increase"),
+  parsed("ssi", "swing speed increase", "SSI", "Swing Speed Increase"), parsed("di", "damage increase", "DI", "Damage Increase"),
+  parsed("lmc", "lower mana cost", "LMC", "Lower Mana Cost"), parsed("lrc", "lower reagent cost", "LRC", "Lower Reagent Cost"),
+  parsed("fc", "faster casting", "FC", "Faster Casting"), parsed("fcr", "faster cast recovery", "FCR", "Faster Cast Recovery"),
+  parsed("sdi", "spell damage increase", "SDI", "Spell Damage Increase"),
+  parsed("hpi", "hit point increase", "HP+", "Hit Point Increase"), parsed("hpRegen", "hit point regeneration", "HPR", "Hit Point Regeneration"),
+  parsed("stamInc", "stamina increase", "Stam+", "Stamina Increase"), parsed("stamRegen", "stamina regeneration", "SR", "Stamina Regeneration"),
+  parsed("manaInc", "mana increase", "Mana+", "Mana Increase"), parsed("manaRegen", "mana regeneration", "MR", "Mana Regeneration"),
+  parsed("strBonus", "strength bonus", "STR", "Strength Bonus"), parsed("dexBonus", "dexterity bonus", "DEX", "Dexterity Bonus"),
+  parsed("intBonus", "intelligence bonus", "INT", "Intelligence Bonus"),
+  parsed("reflectPhys", "reflect physical damage", "RPD", "Reflect Physical Damage"),
+  parsed("castingFocus", "casting focus", "CF", "Casting Focus"), parsed("luck", "^luck", "Luck", "Luck"),
+  parsed("hitLifeLeech", "hit life leech", "HLL", "Hit Life Leech"), parsed("hitStamLeech", "hit stamina leech", "HSL", "Hit Stamina Leech"),
+  parsed("hitManaLeech", "hit mana leech", "HML", "Hit Mana Leech"), parsed("hitLowerDef", "hit lower defense", "HLD", "Hit Lower Defense"),
+  parsed("hitLowerAttack", "hit lower attack", "HLA", "Hit Lower Attack"),
+  parsed("enhancePotions", "enhance potions", "EP", "Enhance Potions"), parsed("selfRepair", "self repair", "Self Rep", "Self Repair"),
+  parsed("hitFireball", "hit fireball", "Hit Fireball", "Hit Fireball"), parsed("hitLightning", "hit lightning", "Hit Lightning", "Hit Lightning"),
+  parsed("hitHarm", "hit harm", "Hit Harm", "Hit Harm"), parsed("hitMagicArrow", "hit magic arrow", "Hit MA", "Hit Magic Arrow"),
+  parsed("hitDispel", "hit dispel", "Hit Dispel", "Hit Dispel"), parsed("hitPoisonArea", "hit poison area", "Poison Area", "Hit Poison Area"),
+  parsed("hitFireArea", "hit fire area", "Fire Area", "Hit Fire Area"), parsed("hitColdArea", "hit cold area", "Cold Area", "Hit Cold Area"),
+  parsed("hitEnergyArea", "hit energy area", "Energy Area", "Hit Energy Area"), parsed("hitPhysArea", "hit physical area", "Phys Area", "Hit Physical Area"),
+  // Not offered by the builder: an item without a Mage Weapon line reads mageWeapon 0, which beats every mage weapon's
+  // negative, so weighting it would reward not being one; psLevel and sotPoints are scrolls', never gear's; tagPenalty
+  // carries a fixed weight from the profile. All stay filterable in the Inventory.
+  parsed("mageWeapon", "mage weapon", "Mage Wpn", "Mage Weapon", false),
+  derived("psLevel", "PS level", "Power scroll level (the skill cap it raises to)", false),
+  derived("sotPoints", "SoT pts", "Scroll of Transcendence skill points", false),
+  derived("tagPenalty", "Tag penalty", "Penalty for Cursed / Brittle / Antique / Prized tags", false),
+  derived("stamPool", "Stam pool", "Stamina from gear: DEX bonus + Stamina Increase"),
+  derived("manaPool", "Mana pool", "Mana from gear: INT bonus + Mana Increase"),
+  derived("hitsPool", "Hits pool", "Hit points from gear: STR bonus ÷ 2 + Hit Point Increase"),
+  // Columns computed from an item but not stored under item.props (item-query.mts's EXTRA_COLS).
+  extra("strReq", "STR req", "Strength Requirement"), extra("weight", "Wt", "Weight (stones)"),
+] as const;
+export type PropKey = (typeof PROPERTIES)[number]["key"];
+const NUMBER_PROPS = PROPERTIES.filter((p) => p.kind === "number");
 
-export const PROP_LABELS: Record<string, string> = {
-  physResist: "Phys", fireResist: "Fire", coldResist: "Cold", poisonResist: "Poison", energyResist: "Energy",
-  hci: "HCI", dci: "DCI", ssi: "SSI", di: "DI", lmc: "LMC", lrc: "LRC", fc: "FC", fcr: "FCR", sdi: "SDI",
-  hpi: "HP+", hpRegen: "HPR", stamInc: "Stam+", stamRegen: "SR", manaInc: "Mana+", manaRegen: "MR",
-  strBonus: "STR", dexBonus: "DEX", intBonus: "INT", reflectPhys: "RPD", castingFocus: "CF", luck: "Luck",
-  hitLifeLeech: "HLL", hitStamLeech: "HSL", hitManaLeech: "HML", hitLowerDef: "HLD", hitLowerAttack: "HLA",
-  enhancePotions: "EP", selfRepair: "Self Rep", hitFireball: "Hit Fireball", hitLightning: "Hit Lightning",
-  hitHarm: "Hit Harm", hitMagicArrow: "Hit MA", hitDispel: "Hit Dispel", hitPoisonArea: "Poison Area",
-  hitFireArea: "Fire Area", hitColdArea: "Cold Area", hitEnergyArea: "Energy Area", hitPhysArea: "Phys Area",
-  mageWeapon: "Mage Wpn", psLevel: "PS level", sotPoints: "SoT pts", tagPenalty: "Tag penalty",
-  stamPool: "Stam pool", manaPool: "Mana pool", hitsPool: "Hits pool",
-};
-// Properties the builder's weight and requirement rows never offer: tagPenalty carries a fixed weight
-// from the profile, and an item without a Mage Weapon line reads mageWeapon 0, which beats every mage
-// weapon's negative, so weighting it would reward not being one; psLevel and sotPoints are scrolls', never gear's.
-// All stay filterable in the Inventory.
-export const NOT_BUILDER_KEYS = new Set(["tagPenalty", "mageWeapon", "psLevel", "sotPoints"]);
-
+// The tooltip reader tries the patterns in registry order, except that these nine go in this order where the first of
+// them stands: a longer name before the shorter one it contains (Spell Damage Increase before Damage Increase).
+const PARSE_ORDER: PropKey[] = ["fcr", "fc", "sdi", "di", "hci", "dci", "ssi", "lmc", "lrc"];
+const parsedProps = PROPERTIES.filter((p) => p.pattern);
+const firstOrdered = parsedProps.findIndex((p) => PARSE_ORDER.includes(p.key));
+const parseOrdered = parsedProps.filter((p) => !PARSE_ORDER.includes(p.key));
+parseOrdered.splice(firstOrdered, 0, ...PARSE_ORDER.map((k) => parsedProps.find((p) => p.key === k)!));
+export const PROP_PATTERNS: Array<[string, RegExp]> = parseOrdered.map((p): [string, RegExp] => [p.key, p.pattern!]);
+export const PROP_LABELS: Record<string, string> = Object.fromEntries(NUMBER_PROPS.map((p) => [p.key, p.label]));
+// Properties the builder's weight and requirement rows never offer (see the registry's note).
+export const NOT_BUILDER_KEYS = new Set(NUMBER_PROPS.filter((p) => !p.builder).map((p): string => p.key));
 // Full names for the abbreviations, shown as hover tooltips in the app.
-export const PROP_FULL: Record<string, string> = {
-  physResist: "Physical Resist", fireResist: "Fire Resist", coldResist: "Cold Resist", poisonResist: "Poison Resist", energyResist: "Energy Resist",
-  hci: "Hit Chance Increase", dci: "Defense Chance Increase", ssi: "Swing Speed Increase", di: "Damage Increase",
-  lmc: "Lower Mana Cost", lrc: "Lower Reagent Cost", fc: "Faster Casting", fcr: "Faster Cast Recovery", sdi: "Spell Damage Increase",
-  hpi: "Hit Point Increase", hpRegen: "Hit Point Regeneration", stamInc: "Stamina Increase", stamRegen: "Stamina Regeneration",
-  manaInc: "Mana Increase", manaRegen: "Mana Regeneration", strBonus: "Strength Bonus", dexBonus: "Dexterity Bonus", intBonus: "Intelligence Bonus",
-  reflectPhys: "Reflect Physical Damage", castingFocus: "Casting Focus", luck: "Luck",
-  hitLifeLeech: "Hit Life Leech", hitStamLeech: "Hit Stamina Leech", hitManaLeech: "Hit Mana Leech", hitLowerDef: "Hit Lower Defense", hitLowerAttack: "Hit Lower Attack",
-  enhancePotions: "Enhance Potions", selfRepair: "Self Repair", hitFireball: "Hit Fireball", hitLightning: "Hit Lightning", hitHarm: "Hit Harm",
-  hitMagicArrow: "Hit Magic Arrow", hitDispel: "Hit Dispel", hitPoisonArea: "Hit Poison Area", hitFireArea: "Hit Fire Area", hitColdArea: "Hit Cold Area",
-  hitEnergyArea: "Hit Energy Area", hitPhysArea: "Hit Physical Area", mageWeapon: "Mage Weapon", psLevel: "Power scroll level (the skill cap it raises to)", sotPoints: "Scroll of Transcendence skill points", tagPenalty: "Penalty for Cursed / Brittle / Antique / Prized tags",
-  stamPool: "Stamina from gear: DEX bonus + Stamina Increase", manaPool: "Mana from gear: INT bonus + Mana Increase",
-  hitsPool: "Hit points from gear: STR bonus ÷ 2 + Hit Point Increase",
-};
+export const PROP_FULL: Record<string, string> = Object.fromEntries(NUMBER_PROPS.map((p) => [p.key, p.full]));
 
 // Skill names as they appear in tooltips (lower-cased). A "+10 Magery" line on an item becomes the builder property
 // "sk:magery", so skill bonuses can be weighted, floored or forbidden like any other property.
@@ -527,8 +532,8 @@ function sotOf(name: string, lines: string[]): { skill: string; points: number }
   const m = SOT_NAME_RE.test(name) ? lines.slice(1).map((l) => l.match(SOT_LINE_RE)).find(Boolean) : null;
   return m ? { skill: m[1]!, points: +m[2]! } : null;
 }
-// displayName straight from a tooltip, without parseTooltip and so without the shard's rules: app/missing.mts runs
-// beside a vault-lib the server re-imports, whose rules this module instance never gets.
+// displayName straight from a tooltip, without parseTooltip's property parse and so without the shard's rules
+// (app/missing.mts names every item that left a container this way).
 export function shownName(rawLines: Array<string | undefined>, amount?: number | undefined): string {
   const lines = rawLines.map(stripHtml).filter(Boolean);
   const name = stackName(lines[0], amount), sot = sotOf(name, lines);
@@ -597,6 +602,20 @@ export const LAYER_TO_SLOT: Record<string, string> = {
   Helmet: "helmet", Necklace: "neck", Torso: "chest", Arms: "arms", Gloves: "hands", Pants: "legs", Legs: "legs",
   Skirt: "outerLegs", Shoes: "feet", OneHanded: "oneHanded", TwoHanded: "twoHanded", Shirt: "shirt", Tunic: "tunic",
   Robe: "robe", Waist: "waist", Cloak: "cloak", Ring: "ring", Bracelet: "bracelet", Earrings: "earrings", Talisman: "talisman",
+};
+// Razor Enhanced names nine paperdoll layers differently from TazUO's Layer enum (its other eleven names match). Each
+// alias is the TazUO name for the same layer number, which `classify` resolves first; `LAYER_TO_SLOT` stays the
+// canonical names. Held items are layers 1 and 2 on both sides: RightHand is OneHanded, LeftHand is TwoHanded.
+export const LAYER_ALIASES: Record<string, string> = {
+  RightHand: "OneHanded",    // 1
+  LeftHand: "TwoHanded",     // 2 (a shield, or a two-handed weapon)
+  Head: "Helmet",            // 6
+  Neck: "Necklace",          // 10
+  InnerTorso: "Torso",       // 13 (chest armor)
+  MiddleTorso: "Tunic",      // 17 (doublet, cloth tunic, sash)
+  OuterTorso: "Robe",        // 22
+  OuterLegs: "Skirt",        // 23 (kilt, skirt)
+  InnerLegs: "Legs",         // 24
 };
 // Every slot an equippable piece can be classified into: one per paperdoll layer the classifier knows, in the order
 // Manual groups them (armor, weapons, clothing, jewelry), which every slot list on the page follows. Both solvers
@@ -695,6 +714,7 @@ export const layerOfGraphic = (graphic: number | null | undefined): string | nul
 // Returns { slot, twoHanded, gear } — gear=false for consumables/resources/unknown names.
 export function classify(name: string | null | undefined, parsed?: ParsedTooltip | null | undefined, layer?: string | null | undefined, graphic?: number | null | undefined): ClassifyResult {
   const n = name || "";
+  if (layer) layer = LAYER_ALIASES[layer] ?? layer;
   let slot = null, two = false;
   if (PRIMER_RE.test(n)) return { slot: null, twoHanded: false, gear: false };
   // A spell scroll's graphic is never gear, whatever its name says: "2 Blade Spirits" holds a weapon word (issue #202).
@@ -788,7 +808,7 @@ export function foldSnapshots(snapshots: ScanV2[], overrides: KindOverrides = NO
     if (snap.schemaVersion !== 2) throw new Error("foldSnapshots needs v2 scans — call upgradeScan first");
     if (snap.kind === "house") continue;   // a house-only file (TazUO's packrat-house-map-refresh.py) is for the house map alone: it must not replace a card or a worn set
     const char = snap.character;
-    if (char === "_vault") forgetCharacter(inv, (snap as ScanV2 & { forgetCharacter?: unknown }).forgetCharacter);
+    if (isPseudoCharacter(char)) forgetCharacter(inv, (snap as ScanV2 & { forgetCharacter?: unknown }).forgetCharacter);
     // A root with opened:false (open failed — too far, locked) is still listed in snap.roots, but
     // carries no items; it must be treated exactly like a root the snapshot didn't mention at all —
     // i.e. excluded from the replace-per-root set below — so the fold keeps whatever it last knew
@@ -864,7 +884,7 @@ export function foldSnapshots(snapshots: ScanV2[], overrides: KindOverrides = NO
     for (const raw of snap.equipped || []) {
       inv.items[raw.serial] = enrich(raw, { root: null, container: null, equippedBy: char, layer: raw.layer || null, seenAt: snap.scannedAt, scannedBy: char }, overrides);
     }
-    if (!String(char).startsWith("_")) {   // "_vault" tombstones are not characters
+    if (!isPseudoCharacter(char)) {
       inv.characters[char] = { name: char, stats: snap.stats || {}, scannedAt: snap.scannedAt, position: snap.position || null,
         maxes: snap.maxes || null, resists: snap.resists || null, skills: snap.skills || {}, adapter: snap.adapter || null };
     }

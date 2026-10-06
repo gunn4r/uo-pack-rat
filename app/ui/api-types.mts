@@ -3,9 +3,9 @@
 // caller narrows through one of the types below rather than sprinkling `as Whatever` at each read
 // site, per the migration plan's "type each endpoint's response in ONE place."
 //
-// The rule: a type the page may import only from a module whose whole import graph type-checks in the browser build (tsconfig.browser.json, `"types": []`), so never from one that imports a node: module, directly or through another file. A type-only import is erased at emit time, but the imported file still has to type-check. A server shape the page reads therefore lives in a types-only module next to its owner (app/house-model-types.mts, app/organize-types.mts, app/runs-types.mts): the owner re-exports it, the server annotates its response with `satisfies`, and this file re-exports it (or narrows it with a mapped type), so a renamed field fails the typecheck on both sides. Never the other way around: nothing outside app/ui/ imports from app/ui/.
+// A server-side module may be imported here, type or value, when it and everything it imports is browser-safe (no node: import anywhere in that chain), as the imports below are. One that reaches a node: module cannot be imported even for a type: the browser build (tsconfig.browser.json) type-checks with `"types": []`, a type-only import is erased only at emit time, and the imported file still has to type-check. So a server shape the page reads lives in a types-only module next to its owner (app/house-model-types.mts, app/organize-types.mts, app/runs-types.mts): the owner re-exports it, the server annotates its response with `satisfies`, and this file re-exports it (or narrows it with a mapped type), so a renamed field fails the typecheck on both sides. Never the other way around: nothing outside app/ui/ imports from app/ui/.
 //
-// The rest are still declared fresh here, each naming the server-side type or route it mirrors (app/installer.mts, app/exact-solver.mts, scripts/optimizer-core.mts, app/vault-server.mts), so a change on one side has somewhere obvious to update on the other. Nothing here is validated against the wire (HTTP responses are unvalidated network input, same trust level server.test.mts's own per-route interfaces document); it gives the page's own reads a name instead of `unknown`.
+// What is still declared here by hand: GET /api/bridge/status (the server spreads the bridge's own status file into it, so it has no server-side type to share; see below) and the rest of the shapes below whose owners reach node: (app/installer.mts, app/exact-solver.mts, scripts/optimizer-core.mts, app/vault-server.mts). Each names the server-side type or route it mirrors, so a change on one side has somewhere obvious to update on the other. Nothing here is validated against the wire (HTTP responses are unvalidated network input, same trust level server.test.mts's own per-route interfaces document); it gives the page's own reads a name instead of `unknown`.
 import type { Item, Container, Character, ScanSummary, OptItem, RunSettings, ProfilesFile, BlacklistEntry, KindOverrides } from "../vault-lib.mts";
 import type { Facets, ItemQueryRows, ItemQueryGroups, HitRow } from "../item-query.mts";
 import type { RulesV1 } from "../schema/types.d.mts";
@@ -14,6 +14,7 @@ import type { OrganizeConfig, RuleMatch } from "../organize-config.mts";
 import type { MissingItem } from "../missing.mts";
 import type { RunBody, RunsListBody, RunSummary, SavedRun } from "../runs-types.mts";
 import type { HouseApiResponse } from "../house-model-types.mts";
+import type { DataDirCheckInfo } from "../data-dir-notice.mts";
 
 // ---------------------------------------------------------------- shared fragments
 
@@ -161,13 +162,8 @@ export interface InstalledVersionInfo {
   version: string | null;
   files: Record<string, boolean>;
 }
-// GET /api/setup's dataDirCheck — app/installer.mts's DataDirCheck, restated here because the page
-// can't import that node:fs module: whether the client's installed scripts write to this data folder.
-export type DataDirCheckInfo =
-  | { status: "none" }
-  | { status: "match"; scriptsDir: string }
-  | { status: "mismatch"; scriptsDir: string; scriptsDataDir: string; dataDir: string }
-  | { status: "unreadable"; scriptsDir: string; error: string };
+// GET /api/setup's dataDirCheck (app/data-dir-notice.mts).
+export type { DataDirCheckInfo };
 export interface SetupApiResponse {
   ok: boolean;
   firstRun: boolean;
