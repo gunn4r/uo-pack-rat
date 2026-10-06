@@ -1,4 +1,4 @@
-// vault-server.mts — Pack Rat local server. Zero dependencies.
+// vault-server.mts — Pack Rat local server. No npm imports of its own (the one runtime dependency, HiGHS, is loaded in the optimize worker, through app/mip-solve.mts).
 //   node app/vault-server.mts [--data <dir>] [--port N] [--demo] [--open]
 // Exports startServer(config) → { server, port, url, close() } — nothing runs at import time, so a
 // test (or another launcher) can start and stop as many independent instances as it likes. The file
@@ -84,7 +84,7 @@
 //         normal token-protected /api/* route (no SSE exemption — unlike /api/optimize/<id>/events,
 //         this stream carries no per-job secret an EventSource couldn't send anyway). Non-demo mode
 //         starts one app/watcher.mts per adapters/<id>/ directory that ships a capabilities.json
-//         (today: tazuo), watching paths.inboxFor(id) and normalising accepted files into
+//         (today: tazuo, razor-enhanced and classicuo-web), watching paths.inboxFor(id) and normalising accepted files into
 //         paths.scans; --demo starts none (paths.scans there is the committed app/fixtures/, which
 //         must never be written to).
 //         Setup wizard (app/installer.mts backs all of these): GET /api/setup {firstRun, settings,

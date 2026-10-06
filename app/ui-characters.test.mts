@@ -3,7 +3,7 @@
 // pluralising) from app/ui/sheet.mts, and the roster's search and sort and the sheet's scan summary from
 // app/ui/roster.mts. Lives in
 // app/ rather than app/ui/ for the reason app/ui-render.test.mts gives. Tags: [fast].
-import "../scripts/localstorage-shim-for-tests.mts";   // app/ui/store.mts reads localStorage at module scope
+import "../scripts/localstorage-shim-for-tests.mts";   // a localStorage stub for the page modules below; none reads it at module scope today (app/ui/store.mts no longer does)
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { capOver, capBadgeText, atCap, bonusBreakdown, poolChanges, moveText, keyNumbers, tagTone, plural, lowDurability, lowDurabilityCount, lowDurabilitySummary, SHEET_CATALOGUE, DEFAULT_SHEET_PROPS } from "./ui/sheet.mts";

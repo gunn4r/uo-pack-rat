@@ -13,7 +13,7 @@ Every adapter lives at `adapters/<id>/` and ships four things:
 | `capabilities.json` | This adapter's contract, as data: `{adapter, version, transport, platform?, actions, capabilities: {...}}`, where `capabilities` matches the shape of a scan's own `adapter.capabilities` (see `docs/scan-schema.md`). The scripts' own `CAPABILITIES` dict (whatever they're written in) must match the `capabilities` object exactly — that's what the contract test checks. `platform` is optional — see "Platform restriction," below — and `actions` is required — see "Declared actions," below. Neither is part of the `capabilities` object itself, so the contract test's `capabilities`-only comparison doesn't touch them. |
 | `fixture.scan.json` | One anonymized, real scan — see Fixture rules, below — that exercises this adapter's quirks: nested containers, worn items, whatever's distinctive about what this client can and can't see. |
 
-Ship all four and the contract test (`app/contracts.test.mts`) picks the adapter up automatically — nothing to register anywhere else. An `adapters/<id>/` directory missing either `capabilities.json` or `fixture.scan.json` is simply skipped by that test file (not every subdirectory has to be a finished adapter, but one that claims to be needs both).
+Ship all four and the contract test (`app/contracts.test.mts`) picks the adapter up automatically — nothing to register anywhere else. A directory under `adapters/` with no `capabilities.json` is not an adapter and is skipped; one with a `capabilities.json` but no `fixture.scan.json` gets the manifest checks but not the fixture checks (see below).
 
 ### Fixture rules
 
@@ -34,15 +34,24 @@ Only those fields are rewritten, and a name also turns up elsewhere (a container
 
 ## How the contract test runs over your fixture
 
-`app/contracts.test.mts` walks every directory under `adapters/` and, for each one that ships both `capabilities.json` and `fixture.scan.json`, runs three checks with no adapter-specific code required:
+`app/contracts.test.mts` walks every directory under `adapters/`. Every one that ships a `capabilities.json` gets the manifest checks, whether or not it has a fixture yet:
 
 1. **`capabilities.json` validates against the scan schema's capabilities shape** — the same `adapter.capabilities` subschema a real scan is checked against (`docs/scan-schema.md`).
-2. **`fixture.scan.json` validates against `scan.v2.schema.json`** in full — the whole document, not just the capabilities block.
-3. **The fixture folds correctly**: at least one character comes out of `foldSnapshots`, that character is the fixture's own `character` field, at least one nested container survives as a `kind: "container"` item with a `parent`, at least one worn item is present and located on the fixture's character, and — critically — `capabilities.json`'s `capabilities` object is deep-equal to the fixture's own `adapter.capabilities`. That last check is what keeps a script's `CAPABILITIES` dict, `capabilities.json`, and the fixture that was generated from a real run of that script from silently drifting apart from each other.
+2. **Every declared bridge action has an app button and a script that runs it** — each entry in `capabilities.bridge` is an action in `bridge.v1.schema.json` with a button in the app (or Organize's `trip`, or the `trip-bags` flag beside it), and the adapter ships a `packrat-bridge.py` or `packrat-bridge.ts` exactly when it declares any.
+
+Those that also ship a `fixture.scan.json` get the fixture checks, with no adapter-specific code required:
+
+3. **`fixture.scan.json` validates against `scan.v2.schema.json`** in full — the whole document, not just the capabilities block.
+4. **Every ground root in the fixture carries its tooltip and a facet.**
+5. **The fixture folds correctly**: at least one character comes out of `foldSnapshots`, that character is the fixture's own `character` field, at least one nested container survives as a `kind: "container"` item with a `parent`, at least one worn item is present and located on the fixture's character, and — critically — `capabilities.json`'s `capabilities` object is deep-equal to the fixture's own `adapter.capabilities`. That last check is what keeps a script's `CAPABILITIES` dict, `capabilities.json`, and the fixture that was generated from a real run of that script from silently drifting apart from each other.
 
 A final test (`"at least one adapter ships a capabilities.json + fixture.scan.json contract"`) fails the whole suite if every adapter directory somehow lost its contract files — a guard against the checks above silently testing nothing.
 
 Run it on its own with `node --test app/contracts.test.mts`, or as part of the full suite (`npm test` — see `TESTING.md`).
+
+## Versions
+
+Any change to an adapter's scripts bumps that adapter's version: `version` in its `capabilities.json` and the `ADAPTER_VERSION` line in every script that carries one, all together (`adapters/test_adapters.py` fails when they disagree). Settings compares the version installed in the client folder with the one the app ships and asks the player to reinstall when they differ, so a change shipped without a bump never reaches a player who already installed the scripts.
 
 ## Transports
 

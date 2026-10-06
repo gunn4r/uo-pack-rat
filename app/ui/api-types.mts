@@ -3,18 +3,17 @@
 // caller narrows through one of the types below rather than sprinkling `as Whatever` at each read
 // site, per the migration plan's "type each endpoint's response in ONE place."
 //
-// These are declared fresh here, NOT imported from the server-side modules that define the "real"
-// shape (app/installer.mts, app/runs-lib.mts, app/exact-solver.mts, scripts/optimizer-core.mts,
-// app/vault-server.mts) — every one of those imports a node: module or another file that does, and
-// this project's browser build (tsconfig.browser.json) type-checks with `"types": []`. A type-only
-// import is erased at EMIT time, but the imported file still has to type-check to be resolved at all,
-// and resolving e.g. app/runs-lib.mts (`import { createHash } from "node:crypto"`) under `types: []`
-// fails with "Cannot find name 'node:crypto'" — verified directly against tsconfig.browser.json before
-// writing this file (`npx tsc -p tsconfig.browser.json` against a throwaway `import type { RunSummary }
-// from "../runs-lib.mts"` file). Each interface below names the server-side type/route it mirrors, so a
-// change on one side has somewhere obvious to update on the other; nothing here is validated against
-// the wire (HTTP responses are unvalidated network input, same trust level server.test.mts's own
-// per-route interfaces document), it just gives the page's own reads a name instead of `unknown`.
+// A server-side module may be imported here, type or value, when it and everything it imports is
+// browser-safe (no node: import anywhere in that chain), as the imports below are. One that reaches a
+// node: module (app/installer.mts, app/runs-lib.mts, app/exact-solver.mts, app/vault-server.mts) cannot
+// be imported even for a type: the browser build (tsconfig.browser.json) type-checks with `"types": []`,
+// a type-only import is erased only at EMIT time, and the imported file still has to type-check — e.g.
+// app/runs-lib.mts's `import { createHash } from "node:crypto"` fails with "Cannot find name
+// 'node:crypto'". The shapes those modules define are declared again below by hand. Each interface
+// names the server-side type/route it mirrors, so a change on one side has somewhere obvious to update
+// on the other; nothing here is validated against the wire (HTTP responses are unvalidated network
+// input, same trust level server.test.mts's own per-route interfaces document), it just gives the
+// page's own reads a name instead of `unknown`.
 import type { Item, Container, Character, ScanSummary, OptItem, RunSettings, ProfilesFile, BlacklistEntry, KindOverrides } from "../vault-lib.mts";
 import type { Facets, ItemQueryRows, ItemQueryGroups, HitRow } from "../item-query.mts";
 import type { RulesV1 } from "../schema/types.d.mts";
