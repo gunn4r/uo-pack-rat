@@ -247,6 +247,11 @@ test("[fast] stores: runs writes compact with no newline, lists newest first ski
   assert.equal(readFileSync(join(d, "runs", "c.json"), "utf8"), JSON.stringify({ ...older, label: "x" }), "written under the id it was asked for");
   store.remove("c");
   assert.ok(!store.has("c"));
+  for (const text of ["null", "[1]", "0", "\"x\""]) {
+    writeFileSync(join(d, "runs", "d.json"), text);
+    assert.equal(store.read("d"), null, `a run file holding ${text} reads as damaged`);
+    assert.deepEqual(store.all().map((r) => r.id), ["b", "a"], text);
+  }
 });
 
 test("[fast] stores: scans skips a damaged file with a warning, reads a valid one, and signs the folder by name, mtime and size", (t) => {

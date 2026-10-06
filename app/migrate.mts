@@ -78,11 +78,13 @@ export type DocKind = keyof typeof DOC_KINDS;
 const isDoc = (v: unknown): v is Doc => !!v && typeof v === "object" && !Array.isArray(v);
 const isVersion = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v) && v >= 0;
 // The document's version, or null when it has none this kind accepts (a missing field reads as the kind's `missing`).
+// The field the kind's file writes wins; the other is read only when that one is absent.
 export function versionOf(kind: DocKind, doc: unknown): number | null {
   const k: Kind = DOC_KINDS[kind];
   if (!isDoc(doc)) return null;
   if (!k.field) return k.current;
-  return isVersion(doc.schemaVersion) ? doc.schemaVersion : isVersion(doc.version) ? doc.version : k.missing;
+  const [own, other] = k.field === "version" ? [doc.version, doc.schemaVersion] : [doc.schemaVersion, doc.version];
+  return isVersion(own) ? own : own === undefined && isVersion(other) ? other : k.missing;
 }
 
 export interface Migrated { doc: unknown; changed: boolean; fromVersion: number | null; newer: boolean }

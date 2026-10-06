@@ -77,10 +77,13 @@ test("[fast] migrate: a document newer than this build comes back untouched and 
   assert.equal(newerNotice("ui-prefs.json", "ui-prefs", { version: 9 }), null, "ui-prefs.json has no version");
 });
 
-test("[fast] migrate: version and schemaVersion read as one field, and come back as the field the file writes", () => {
+test("[fast] migrate: version and schemaVersion read as one field, the file's own winning, and come back as the field the file writes", () => {
   assert.deepEqual(migrate("organize", { schemaVersion: 1, labels: {} }).doc, { labels: {}, version: 1 });
   assert.deepEqual(migrate("settings", { version: 1, shard: "uoalive" }), { doc: { shard: "uoalive", schemaVersion: 1 }, changed: true, fromVersion: 1, newer: false });
   assert.equal(migrate("house-map", { schemaVersion: 2, houses: {} }).newer, true);
+  assert.deepEqual([versionOf("organize", { version: 1, schemaVersion: 5 }), versionOf("settings", { schemaVersion: 1, version: 5 })], [1, 1], "the file's own field wins");
+  assert.equal(migrate("organize", { version: 1, schemaVersion: 5, labels: {} }).newer, false);
+  assert.equal(versionOf("organize", { version: "1", schemaVersion: 1 }), null, "a malformed own field is not replaced by the other");
   const kept = { version: 1, houses: {} };
   assert.equal(migrate("house-map", kept).doc, kept, "a document with nothing to change comes back itself");
 });

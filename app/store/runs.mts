@@ -7,9 +7,10 @@ import { readJsonFile, writeJsonFile } from "./json-file.mts";
 
 // `id` is a route's [\w-]+ match or a run's own uuid, so it never leaves the folder. Every run is read through
 // migrate() (app/migrate.mts), so each one the server hands out has the current shape; it is not written back.
+class NotARun extends Error {}
 function runOf(raw: unknown): SavedRun {
   const m = migrate("runs", raw);
-  if (m.fromVersion === null) throw new Error("it is not a saved run");
+  if (m.fromVersion === null) throw new NotARun("it is not a saved run");
   return m.doc as SavedRun;
 }
 export function createRunsStore(dir: string) {
@@ -27,10 +28,10 @@ export function createRunsStore(dir: string) {
   }
   const all = (): SavedRun[] => files().map((r) => r.run);
   const has = (id: string): boolean => existsSync(fileOf(id));
-  // One run, or null when its file does not parse (a damaged run is reported, not a 500); any other failure throws.
+  // One run, or null when its file does not parse or holds no run (a damaged run is reported, not a 500); any other failure throws.
   function read(id: string): SavedRun | null {
     try { return runOf(readJsonFile(fileOf(id), { onBad: "skip" })); }
-    catch (e) { if (e instanceof SyntaxError) return null; throw e; }
+    catch (e) { if (e instanceof SyntaxError || e instanceof NotARun) return null; throw e; }
   }
   // Written compact with no trailing newline, under `id` (the run's own by default).
   function write(run: { id?: unknown }, id = `${run.id}`): void { writeJsonFile(fileOf(id), run, { newline: false }); }
