@@ -68,6 +68,8 @@ The sidebar's brand row is the mark, the rat's head cropped from the logo, as a 
 
 `<body class="pr">` is the root the resets hang off.
 
+A screen stylesheet does not restyle a component class: a new look or size becomes a component option. `scripts/css-guard.test.mts` fails on a rule whose subject carries a component class beyond its list of today's overrides, each under its reason. The window-width breakpoints are `app/ui/breakpoints.mts` (media queries cannot read custom properties, so the stylesheets write the numbers as literals, listed in `tokens.css`), and the same test fails on any other width in an `@media` rule or a `matchMedia()` call.
+
 ## Components (`app/ui/components.mts`)
 
 Small DOM builders over `el()` (`app/ui/dom.mts`); their CSS is `app/ui/components.css`, ported from the approved design canvas. Nothing sets `innerHTML` (scan files are hostile input, `docs/threat-model.md`); icons are built node by node from a fixed path table.

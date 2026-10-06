@@ -49,6 +49,11 @@
   --peek-w: 400px; --constraints-w: 360px; --drawer-w: 480px; --drawer-w-wide: 560px;
   --dialog-w-sm: 440px; --dialog-w-md: 560px; --wizard-w: 640px; --form-w: 720px;
   --popover-w: 280px; --tooltip-w: 280px; --page-max: 2048px; --buff-picker-h: 640px;
+  /* Breakpoints (window widths): media queries cannot read custom properties, so the stylesheets write them as
+     literals. The list is ui/breakpoints.mts, which says what each one changes; scripts/css-guard.test.mts
+     fails on any other width in an @media rule. max-width: 720 (tight), 1023 (compact), 1099 (stacked),
+     1179 (narrow), 1279 (medium), 1799 (wide); a min-width is one pixel above one: 1100, 1600 (roomy).
+     @container queries measure their own container and are not breakpoints. */
 
   /* z-layers */
   --z-base: 0; --z-sticky: 10; --z-sidebar: 20; --z-peek: 30; --z-popover: 40; --z-drawer: 50; --z-dialog: 60; --z-toast: 70; --z-tooltip: 80;

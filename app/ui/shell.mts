@@ -9,12 +9,13 @@ import { box, button, keyValue, popover, txt, type PopoverHandle, modalOpen } fr
 import { currentBridgeView, bridgeLastAnswered, currentAdapter, pollBridge } from "./bridge.mts";
 import { relativeWhen } from "./messages.mts";
 import type { UiPrefs } from "./api-types.mts";
+import { BREAKPOINTS, upTo } from "./breakpoints.mts";
 
 // ---------------------------------------------------------------- collapse
 // Collapsed = pinned collapsed (ui-prefs "sidebar", kept server-side like every view choice, because the
 // desktop app's page origin changes each launch) or a window under 1180 px. The pin button is hidden while
 // the width alone decides.
-const NARROW = "(max-width: 1179px)";
+const NARROW = upTo(BREAKPOINTS.narrow);
 let pinned = false;
 let narrow: MediaQueryList | null = null;
 function paintCollapse(): void {

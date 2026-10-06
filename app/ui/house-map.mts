@@ -1,4 +1,4 @@
-// ui/house-map.mts — the House map screen (#/map, #/map/<house id>; issue #10, spec section 4). It fetches the houses the scans captured (GET /api/houses) and every house's model (GET /api/houses/<id>), picks the deep-linked house (else the last one shown, else the one with the most chests; a deep link to a house that no longer exists falls back and the route is put back to #/map), and lays out three panes: levels and the player's own areas on the left (issue #10: drawn on the map by mouse or keyboard, named, renamed, recoloured, redrawn and deleted here), the map in the middle, the details on the right, and a chest's contents in a drawer beside them. Ground chests outside every drawn house are a house of their own on a plain grid. Every rule and number is ui/house-map-model.mts's; this module builds the DOM and the SVG and wires the events.
+// ui/house-map.mts — the House map screen (#/map, #/map/<house id>; issue #10, spec section 4). It gets the houses the scans captured and every house's model from ui/houses-data.mts (which keeps the models between visits), picks the deep-linked house (else the last one shown, else the one with the most chests; a deep link to a house that no longer exists falls back and the route is put back to #/map), and lays out three panes: levels and the player's own areas on the left (issue #10: drawn on the map by mouse or keyboard, named, renamed, recoloured, redrawn and deleted here), the map in the middle, the details on the right, and a chest's contents in a drawer beside them. Ground chests outside every drawn house are a house of their own on a plain grid. Every rule and number is ui/house-map-model.mts's; this module builds the DOM and the SVG and wires the events.
 import { state, bridge } from "./store.mts";
 import { $, el, itemTip, safeColor, fmtN, toast } from "./dom.mts";
 import { api } from "./api.mts";
@@ -19,9 +19,11 @@ import { PLAIN, pickHouse, plainGrid, chestCount, houseLabel, houseName, carryOv
   nextAreaId, nextAreaColor, moveCursor, project, tilePolygon, pts, liveAreas, withOrphans, redrawFailed, AREA_COLORS, AREA_COLOR_NAMES, MAX_AREAS, MAX_RECTS, areaName, drawnZs, CHEST_H,
   mapHash, parseMapHash, houseHits, levelHits, stackPlan, planHead, planRows, planNeighbor, gapText, bareText, type Plan, type PlanCard, type PlanRow, levelHitText, areaHitText, hitsSummary, searchCount, calloutHead, calloutRow, CALLOUT_MAX, hitsView, elsewhereOf, outsideText,
   type MapRoute, type HouseHits, type HitChest, type Tally, type Elsewhere, type PlainModel, type Tile, type Contents, type ContentsNode, type Marker, type View, type Mode, type Box, type Colour, type ChestView, type Piece, type Prism, type Pt, type Dir } from "./house-map-model.mts";
-import type { AreaRect, ContainerLabel, HouseArea, HouseModel, UiPrefs, HousesApiResponse, HouseApiResponse, HouseMapApiResponse, HouseMapEntry, HouseMapPutApiResponse, ItemsApiResponse, ItemHitsApiResponse, InventoryData, Stack } from "./api-types.mts";
+import type { AreaRect, ContainerLabel, HouseArea, HouseModel, UiPrefs, HousesApiResponse, HouseMapEntry, HouseMapPutApiResponse, ItemsApiResponse, ItemHitsApiResponse, InventoryData, Stack } from "./api-types.mts";
 import { HIT_LIMIT, type HitRow } from "../item-query.mts";
 import { houseLinks, setHouses } from "./house-links.mts";
+import { houses } from "./houses-data.mts";
+import { BREAKPOINTS, upTo } from "./breakpoints.mts";
 import type { Item } from "../vault-lib.mts";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -303,10 +305,9 @@ export async function showMap(r: MapRoute): Promise<void> {
   const my = ++seq;
   if (!S.model && !S.error) body().replaceChildren(message({ tone: "info", text: "Drawing the house map…", attrs: { "aria-busy": "true" } }));
   try {
-    const [list, names] = await Promise.all([api<HousesApiResponse>("/api/houses"), api<HouseMapApiResponse>("/api/house-map")]);
-    const models = await Promise.all(list.houses.map(async (h) => (await api<HouseApiResponse>(`/api/houses/${encodeURIComponent(h.id)}`)).house));
+    const { list, names, models } = await houses.load(state.inv);
     if (my !== seq) return;
-    S.list = list; S.names = names.houses; S.models = models; S.plain = plainGrid(state.inv, models); S.error = null;
+    S.list = list; S.names = names; S.models = models; S.plain = plainGrid(state.inv, models); S.error = null;
     setHouses(list.houses);
     facetImages.clear();
   } catch (e) {
@@ -1311,7 +1312,7 @@ async function putEntry(m: HouseModel, patch: () => { name?: string; areas?: Hou
   let r: HouseMapPutApiResponse;
   try {
     const body = { ...S.names[m.id], name: m.name ?? "", ...patch(), bounds: { x0: m.x0, y0: m.y0, x1: m.x1, y1: m.y1, facet: m.facet } };
-    r = await api<HouseMapPutApiResponse>(`/api/house-map/${encodeURIComponent(m.id)}`, { method: "PUT", body });
+    r = await houses.saveEntry(m.id, body);
   } catch (e) { return errorText(e); }
   if (r.entry) S.names[m.id] = r.entry; else delete S.names[m.id];
   for (const h of [...S.models, ...(S.list?.houses ?? [])]) if (h.id === m.id) h.name = r.entry?.name || undefined;
@@ -1435,7 +1436,7 @@ function placeDrawer(animate = false): void {
 }
 // ---------------------------------------------------------------- the drawer's width
 // Its handle (on its left edge, from 1100 px up): a drag, ← and → (16 px, 64 with Shift), Home and End set the width, a double-click puts back the default; each saves it. The map keeps MAP_MIN px however wide the window is: the width shown is the chosen one clamped to that (when the drawer opens and whenever the page changes size), and the map's viewBox never needs a re-fit (the SVG scales it to fit) while its pills follow through their ResizeObserver.
-const stacked = (): boolean => matchMedia("(max-width: 1099px)").matches;
+const stacked = (): boolean => matchMedia(upTo(BREAKPOINTS.stacked)).matches;
 function drawerLimit(): number {
   const d = $<HTMLElement>("#map-drawer"), m = $<HTMLElement>("#map-stage");
   return d && m ? drawerMax(d.getBoundingClientRect().width, m.getBoundingClientRect().width) : DRAWER_W;

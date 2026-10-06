@@ -6,12 +6,10 @@ import { state } from "./store.mts";
 import { $, el, installTooltip, toast } from "./dom.mts";
 import { api, onReadOnly } from "./api.mts";
 import { pollBridge } from "./bridge.mts";
-import { fetchItems, initFilters, applyUiPrefs, inventoryFailed } from "./inventory.mts";
+import { initFilters, applyUiPrefs, inventoryFailed } from "./inventory.mts";
 import { showCharacter } from "./characters.mts";
 import { initBuilder } from "./builder.mts";
 import { applyBuilderPrefs } from "./builder-manual.mts";
-import { renderContainers } from "./containers.mts";
-import { scrollsChanged } from "./scrolls.mts";
 import { connectEvents } from "./events.mts";
 import { openWizard } from "./wizard.mts";
 import { renderSettings, startUpdateChecks } from "./settings.mts";
@@ -22,6 +20,7 @@ import { initShell, applyShellPrefs, setCurrentNav } from "./shell.mts";
 import { segmented, clearToasts, closePopover } from "./components.mts";
 import { openRunsDrawer, closeRunsDrawer } from "./runs.mts";
 import "./organize.mts";   // registers its route and its inventorychange listener; nothing else imports it
+import "./scrolls.mts";    // the same for the Scrolls view
 import { applyMapPrefs } from "./house-map.mts";
 import { parseRoute, routeFor, showRoute } from "./nav.mts";
 import { get, reload, setPageLoad } from "./inventory-data.mts";
@@ -123,8 +122,6 @@ for (const a of document.querySelectorAll<HTMLAnchorElement>("#sidebar [data-nav
   if (location.hash === next) showTab(a.dataset.nav as string); else location.hash = next;
 });
 window.addEventListener("hashchange", applyRoute);
-// A saved Organize setup changes how locations read: the Containers view and the Items rows redraw.
-document.addEventListener("organizechange", () => { if (state.inv) { renderContainers(); fetchItems(); scrollsChanged(); } });
 initShell();
 initFilters();   // the Inventory's toolbar and loading skeleton, before any data arrives
 showTab(parseRoute().tab);   // before the inventory loads, so a reload never flashes the wrong screen

@@ -121,6 +121,7 @@ Profiles, buffs, pools, solvers, saved runs and Manual. `docs/solver.md` describ
 | `app/house-names.mts` | `<data>/house-map.json`: house names and drawn areas, with its own reads and saves. A file that does not parse is moved aside as `.corrupt`, a newer one is read-only; a save that would grow the map past 500 names or 1 MB is refused (the route answers 409). | `checkHouseEntry`, `readHouseMap`, `saveHouseEntry`, `NAME_MAX`, `MAX_AREAS`, `AREA_COLORS` |
 | `app/house-fixture.mts`, `app/tiledata-fixture.mts`, `app/facet-fixture.mts` | Test fixtures: synthetic houses, tiledata and facet files. | `syntheticTileData`, `syntheticFacet` |
 | `app/ui/house-map.mts` | The House map screen: SVG levels, callouts, cut-away, pan and zoom, the detail panel. | `showMap`, `applyMapPrefs` |
+| `app/ui/houses-data.mts` | The House map's data: the house list and names fetched per visit, each model kept by id and capture stamp, and the house entry save. | `houses`, `housesData` |
 | `app/ui/house-map-model.mts` | Pure: projection, painter's order, fit, container joins with the inventory, color modes, callouts, totals, house picker. | `project`, `paintOrder`, `chestViews`, `pickHouse` |
 | `app/ui/house-links.mts` | Which house holds each container, for "Show on map". | `houseOfContainer`, `houseOfItem`, `showOnMap` |
 | `app/ui/world-map.mts` | The world map lightbox. | `openWorldMap` |
@@ -239,6 +240,7 @@ The page is `app/index.html` plus `app/ui/`, compiled by `scripts/build-ui.mts` 
 | `app/ui/nav.mts` | The hash routes, the screen registry they dispatch to, and the ways into the Items view other screens use. | `parseRoute`, `routeFor`, `registerScreen`, `showRoute`, `showItem`, `showContainer`, `showSearch`, `showKind`, `showCharacterItems` |
 | `app/ui/inventory-data.mts` | `reload()`: the inventory and profiles into the store, then the `inventorychange` event the screens redraw on. | `reload`, `retryLoad` |
 | `app/ui/shell.mts` | The left sidebar: nav with counts, the shard and last-scan line, the bridge control, collapse. | `initShell`, `renderNavCounts` |
+| `app/ui/breakpoints.mts` | The window-width breakpoints the stylesheets write as literals (`app/ui/tokens.css` lists them, `scripts/css-guard.test.mts` checks them). | `BREAKPOINTS`, `upTo` |
 | `app/ui/theme.mts` | Theme family and light/system/dark mode. | `resolveTheme`, `resolveMode`, `applyLook`, `BUILT_THEMES` |
 
 ### Infrastructure
@@ -262,7 +264,7 @@ The page is `app/index.html` plus `app/ui/`, compiled by `scripts/build-ui.mts` 
 | `app/ui/components.mts` | The component primitives as DOM builders, styled by `app/ui/components.css`. `box()` refuses a bare text child. | `box`, `txt`, `button`, `input`, `select`, `popover`, `createDrawer`, `openDialog`, `confirmDialog`, `table`, `menu`, `FLEX_CLASSES` |
 | `app/ui/dialog.mts` | A one-field prompt (Electron has no `window.prompt`). | `promptText` |
 | `app/ui/item-parts.mts` | The item widgets every screen shares: rarity, tags and location elements, the row actions and the ⋯ menu, and the filter wording's context. | `rarityEl`, `tagEls`, `locationEl`, `tagWords`, `itemActions`, `itemMenu`, `filterContext`, `setItemNav` |
-| `app/ui/item-browser.mts` | The item browser: filter toolbar, filter strip, column popover and virtual table, mounted more than once. | `createItemBrowser` |
+| `app/ui/item-browser.mts` | The item browser: filter toolbar, filter strip, column popover and virtual table, mounted more than once, over a data source (`GET /api/items` and the inventory's facets by default). | `createItemBrowser`, `itemsSource` |
 | `app/ui/sheet.mts` | The character sheet, shared by Characters and the Suit Builder. | `sheetNode`, `SLOT_GROUPS`, `SHEET_GROUPS`, `RESISTS` |
 | `app/ui/tazuo-panel.mts` | The TazUO panel's two options as controls. | `panelControls` |
 | `app/ui/paste-scanner.mts` | The Copy scanner script button for a paste-transport client. | `scannerCopy` |
