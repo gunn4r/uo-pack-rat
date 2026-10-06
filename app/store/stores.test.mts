@@ -79,7 +79,7 @@ test("[fast] stores: profiles migrates a v2 file and its ui-prefs to v3 once, wi
   const logged: string[] = [], asked: string[] = [];
   const store = profilesIn(d, logged, "uoalive", async () => { asked.push("scanned"); return ["Aldric", "Brena", "Corwin"]; });
   const got = await store.read();
-  assert.equal(readFileSync(join(d, "profiles.json"), "utf8"), readFileSync(join(gold, "expected.profiles.json"), "utf8"), "the golden v3 file");
+  assert.equal(readFileSync(join(d, "profiles.json"), "utf8"), readFileSync(join(gold, "expected.profiles.json"), "utf8").replace(/\r\n/g, "\n"), "the golden v3 file (a Windows checkout's CRLF aside: the store writes LF)");
   assert.equal(logged.length, 6, "one log line per healed value");
   assert.match(logged[0]!, /^\S+ profiles\.json migration: characters\.Aldric: weights\.someProp "3" left out\n$/);
   assert.deepEqual(got, JSON.parse(readFileSync(join(gold, "expected.profiles.json"), "utf8")));
