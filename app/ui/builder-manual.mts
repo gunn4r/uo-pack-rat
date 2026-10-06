@@ -9,8 +9,9 @@
 // the switch are ui-prefs fields too, and turning one on or off is a step in the suit's undo history.
 import { GEAR_SLOTS, RESIST_KEYS, effectiveProfile, profileResistCaps, requirementReport, toOptItem, totalsOf } from "../vault-lib.mts";
 import type { Character, EffectiveProfile, Item, OptItem, RunBuffs } from "../vault-lib.mts";
-import { buffById, buffSkillValues, isBuffSkillsByCharacter, manualPlan, manualProfile, normalizeBuffs, ownEntry, rawStats, runBuffs, toggleBuff, weaponFlags, NO_CHARACTER, signed } from "../buffs.mts";
+import { buffById, buffSkillValues, isBuffSkills, manualPlan, manualProfile, normalizeBuffs, ownEntry, rawStats, runBuffs, toggleBuff, weaponFlags, NO_CHARACTER, signed } from "../buffs.mts";
 import type { Stats } from "../buffs.mts";
+import { characterBuffs } from "../build-spec.mts";
 import { evaluateSuit, type SuitEvaluation } from "../evaluate.mts";
 import type { ItemQuery } from "../item-query.mts";
 import { state, invStamp } from "./store.mts";
@@ -18,6 +19,7 @@ import { $, el, label, slotLabel, itemTip, toast } from "./dom.mts";
 import { box, txt, button, icon, segmented, tag, confirmDialog, modalOpen, tooltip, tipWrap, progress } from "./components.mts";
 import { api } from "./api.mts";
 import { prefs } from "./prefs.mts";
+import { setCharacterBuffs } from "./profiles.mts";
 import { resolveItems, rarityToken } from "./items.mts";
 import { closeCompare, fetchCard, grabAllButton, keyProps, verdict, RESIST_NAMES } from "./builder-result.mts";
 import { capNote, knobError, paperdoll, paperdollCaps, plural, type KnobField } from "./builder-model.mts";
@@ -45,7 +47,7 @@ let seg: (HTMLDivElement & { setValue: (v: string) => void }) | null = null;
 // The buffs that are on, the buff numbers the player edited, whether the totals count the buffs, whether the buff
 // picker is open, and the form a just-turned-on form replaced (its note in the picker, until the next change).
 let buffs: string[] = [];
-let buffEdits: Record<string, Record<string, number>> = {};   // by character, NO_CHARACTER for No character
+let noCharacterEdits: Record<string, number> = {};   // No character's (ui-prefs); a character's are its profile's (app/build-spec.mts)
 let countBuffs = true;
 let buffsOpen = false;
 let buffPicker: BuffPicker | null = null;
@@ -67,7 +69,8 @@ export function applyBuilderPrefs(prefs: UiPrefs | null): void {
   slots = savedSlots(prefs?.manualSuit);
   // healed (normalizeBuffs): a hand-edited file's second form replaces the first, and the list is in catalog order
   buffs = normalizeBuffs(prefs?.manualBuffs) ?? [];
-  buffEdits = isBuffSkillsByCharacter(prefs?.buffSkills) ? prefs.buffSkills : {};
+  const edits = prefs?.manualBuffSkills;
+  noCharacterEdits = isBuffSkills(edits) ? edits : {};
   countBuffs = prefs?.buffsCount !== "off";
   synced = false;
   if (seg) showMode();
@@ -177,7 +180,16 @@ function profile(): EffectiveProfile {
 // Change cell reads them.
 export type BuffInputs = { values: Record<string, number>; planned: Set<string>; stats: Stats | null; race: string | null };
 let inputsMemo: BuffInputs | null = null;
-export const buffEditsOf = (name: string | null): Record<string, number> => ownEntry(buffEdits, name ?? NO_CHARACTER) || {};
+export const buffEditsOf = (name: string | null): Record<string, number> =>
+  (name && name !== NO_CHARACTER ? (state.profiles ? characterBuffs(state.profiles, name).skills : {}) : noCharacterEdits);
+// Every set of edits by who they are for (NO_CHARACTER for No character), as manual-model.mts's undo steps take them.
+const allEdits = (): Record<string, Record<string, number>> =>
+  ({ ...Object.fromEntries(Object.keys(state.profiles?.characters || {}).map((n) => [n, buffEditsOf(n)])), [NO_CHARACTER]: noCharacterEdits });
+// One set of edits saved: No character's as a view choice, a character's in its profile.
+function saveEdits(who: string, edits: Record<string, number>): void {
+  if (who === NO_CHARACTER) { noCharacterEdits = edits; savePrefs({ manualBuffSkills: edits }); }
+  else setCharacterBuffs(who, { skills: edits });
+}
 const editsFor = (): Record<string, number> => buffEditsOf(manualCharacter());
 export function buffInputsOf(name: string | null): BuffInputs {
   const c = name ? state.inv!.characters[name] : null;
@@ -190,9 +202,8 @@ const buffInputs = (): BuffInputs => (inputsMemo ||= buffInputsOf(manualCharacte
 export function editBuffInputs(name: string | null, values: Readonly<Record<string, number | null>>): void {
   const next = { ...buffEditsOf(name) };
   for (const [id, value] of Object.entries(values)) { if (value == null) delete next[id]; else next[id] = value; }
-  buffEdits = { ...buffEdits, [name ?? NO_CHARACTER]: next };
   inputsMemo = null;
-  savePrefs({ buffSkills: buffEdits });
+  saveEdits(name ?? NO_CHARACTER, next);
 }
 // A saved run's buff numbers, where they differ from the character's now, so its buffs count as they did.
 export function applyRunInputs(name: string | null, b: RunBuffs | undefined): void {
@@ -218,16 +229,16 @@ function evaluated(suit: Record<string, Item> = suitItems(), all = false): SuitE
 // undo and redo pass none, and `from`, the step's other side (the numbers it expects to find). `note` is the form a
 // turned-on form replaced, said in the buff picker until the next change.
 function commit(next: Partial<Snapshot>, label: string | null, note: typeof replaced = null, from: Snapshot | null = null): void {
-  const e = next.edits, was: EditStep | undefined = e && { who: e.who, values: Object.fromEntries(Object.keys(e.values).map((k) => [k, ownEntry(buffEdits, e.who)?.[k] ?? null])) };
+  const all = allEdits(), e = next.edits, was: EditStep | undefined = e && { who: e.who, values: Object.fromEntries(Object.keys(e.values).map((k) => [k, ownEntry(all, e.who)?.[k] ?? null])) };
   const after: Snapshot = { slots: next.slots ?? slots, buffs: next.buffs ?? buffs, ...(next.count != null ? { count: next.count } : {}), ...(e ? { edits: e } : {}) };
   if (label) history = record(history, { slots, buffs, ...(next.count != null ? { count: countBuffs } : {}), ...(was ? { edits: was } : {}) }, after, label);
-  const edits = e ? applyEditStep(buffEdits, e.who, (from?.edits ?? was)!.values, e.values) : buffEdits;
+  const edits = e ? applyEditStep(all, e.who, (from?.edits ?? was)!.values, e.values) : all;
   const changed = { ...(after.slots !== slots ? { manualSuit: after.slots } : {}), ...(after.buffs !== buffs ? { manualBuffs: after.buffs } : {}),
-    ...(after.count != null && after.count !== countBuffs ? { buffsCount: after.count ? "on" as const : "off" as const } : {}), ...(edits !== buffEdits ? { buffSkills: edits } : {}) };
+    ...(after.count != null && after.count !== countBuffs ? { buffsCount: after.count ? "on" as const : "off" as const } : {}) };
   if (Object.keys(changed).length) savePrefs(changed);
+  if (e && edits !== all) saveEdits(e.who, edits[e.who] ?? {});
   slots = after.slots; buffs = after.buffs; replaced = note; fillNote = null;
   if (after.count != null) countBuffs = after.count;
-  buffEdits = edits;
   refresh();
 }
 // The screen, and the rows' deltas and the current row, follow the suit, its buffs and their numbers.

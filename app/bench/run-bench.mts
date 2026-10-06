@@ -26,7 +26,7 @@ import { learnModel, generateScan, readRealSnapshots, ROOT, BENCH_SHARD, type Mo
 import { resolveConfig, corePath } from "../config.mts";
 import { upgradeScan } from "../scan-schema.mts";
 import { loadRules } from "../rules.mts";
-import { migrateProfiles } from "../vault-lib.mts";
+import { characterProfile, migrateProfilesV3 } from "../build-spec.mts";
 import { DEFAULT_OPTIONAL_SLOTS } from "../mip.mts";
 import type * as VaultLib from "../vault-lib.mts";
 import type * as Core from "../../scripts/optimizer-core.mts";
@@ -53,11 +53,7 @@ if (has("render")) {
   process.exit(0);
 }
 
-// A profiles.json character entry, as far as this bench reads it — a subset of vault-lib.mts's own
-// CharacterEntryRaw (kept local rather than imported: CharacterEntryRaw's `caps` field is typed
-// `unknown`, which doesn't line up with the `caps?: Record<string, number>` this file's own `p`
-// eventually needs for lib.effectiveProfile's Profile parameter, and this bench never reads `caps`
-// off a character entry at all) plus excludeRoots, which CharacterEntryRaw doesn't declare.
+// A character's working profile (app/build-spec.mts characterProfile), as far as this bench reads it.
 interface BenchCharacterEntry {
   excludeWeapons?: string[] | undefined;
   ubwsAnyWeapon?: boolean | undefined;
@@ -86,7 +82,8 @@ if (!existsSync(BENCH_CONFIG.paths.profiles)) {
   console.error(`no profiles.json at ${BENCH_CONFIG.paths.profiles} — point PACKRAT_DATA (or --data) at a directory that has one, or create one first (the app writes it from app/data/profiles.default.json on first run)`);
   process.exit(1);
 }
-const PROFILES_FILE = migrateProfiles(JSON.parse(readFileSync(BENCH_CONFIG.paths.profiles, "utf8"))).profiles as BenchProfilesFile;   // an older file's weaponSkill becomes excludeWeapons
+const SAVED_PROFILES = migrateProfilesV3(JSON.parse(readFileSync(BENCH_CONFIG.paths.profiles, "utf8"))).profiles;   // an older file read as the app reads it
+const PROFILES_FILE: BenchProfilesFile = { characters: Object.fromEntries(Object.keys(SAVED_PROFILES.characters).map((n) => [n, characterProfile(SAVED_PROFILES, n)])) };
 const PROFILE_CHARACTERS = PROFILES_FILE.characters || {};
 const CHARACTER_NAMES = Object.keys(PROFILE_CHARACTERS);
 if (!has("profiles") && !CHARACTER_NAMES.length) {

@@ -60,12 +60,12 @@ Examples: `02b052e`, `e0b1eb0`.
 5. Tests: `app/buffs.test.mts`, `app/buffs-plan.test.mts`, `app/evaluate.test.mts`, `app/solver-buffs-fuzz.test.mts`, `app/solver.test.mts`, `app/builder-model.test.mts`, `app/ui-components.test.mts`, `scripts/ui-builder.test.mts`, `scripts/ui-contrast.test.mts`.
 6. Docs: `docs/solver.md`, `docs/shard-rules.md`, `docs/ui.md`, `README.md`, `PRIVACY.md` if what is stored changes.
 
-## Add or change a profile field
+## Add or change a BuildSpec field
 
 Examples: `166eb05`, `d311bdb`, `f1eced4`.
 
-1. Contract: `app/schema/profiles.v2.schema.json` (types regenerate with `npm run build:types`); the defaults in `app/data/profiles.default.json`; `TEMPLATE_KEYS` in `app/vault-lib.mts` if templates carry it.
-2. Logic: `app/vault-lib.mts` (normalize, migrate, templates, `settingsDiff`); `app/evaluate.mts` if a suit's totals or requirements read it; `app/runs-lib.mts` (run identity and instant repeats: bump `SOLVER_VERSION` if results change); `app/run-settings.mts` (`runSettingsError`, the one check `POST /api/optimize`, `POST /api/runs` and `POST /api/evaluate` hold a run's settings to, `RUN_SETTING_LIMITS`, `OPTS_LIMITS` and `RUN_DEFAULTS`); `app/bench/mip-spike.mts`, `app/bench/run-bench.mts`.
+1. Contract: the `BuildSpec` group it belongs to in `app/build-spec.mts` (the type, `buildSpec`'s defaults, `buildSpecError`, `specFromProfile`/`profileFromSpec`, and `planBuild` if a build reads it) and `app/schema/profiles.v3.schema.json` (types regenerate with `npm run build:types`); the built-in templates in `app/data/templates/<shard>.json` if they set it; `TEMPLATE_KEYS` in `app/vault-lib.mts` if templates carry it. A change to what an older file means needs a migration step in `migrateProfilesV3` and a golden file in `app/fixtures/profiles-v2/`.
+2. Logic: `app/vault-lib.mts` (templates, `settingsDiff`); `app/evaluate.mts` if a suit's totals or requirements read it; `app/runs-lib.mts` (run identity and instant repeats: bump `SOLVER_VERSION` if results change); `app/run-settings.mts` (`runSettingsError`, the one check `POST /api/optimize`, `POST /api/runs` and `POST /api/evaluate` hold a run's settings to, `RUN_SETTING_LIMITS`, `OPTS_LIMITS` and `RUN_DEFAULTS`); `app/bench/mip-spike.mts`, `app/bench/run-bench.mts`.
 3. UI: `app/ui/builder-model.mts`, `app/ui/builder.mts`, `app/ui/builder-result.mts`, `app/ui/runs.mts` (`settingsSnapshot`), `app/ui/sheet.mts`, `app/ui/components.mts`, `app/ui/builder.css`.
 4. MCP: the `build_suit` and `score_suit` arguments in `app/mcp-tools.mts` if a model should set it.
 5. Tests: `app/builder-model.test.mts`, `app/gear-vault.test.mts`, `app/server-builder.test.mts`, `app/solver.test.mts`, `app/ui-render.test.mts`, `scripts/ui-builder.test.mts`, `scripts/ui-contrast.test.mts`, `scripts/ui-state.test.mts`.

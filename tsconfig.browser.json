@@ -16,6 +16,7 @@
     "app/buffs.*",
     "app/evaluate.*",
     "app/run-settings.*",
+    "app/build-spec.*",
     "app/guards.*",
     "app/data-dir-notice.*",
     "app/schema/validate.*",

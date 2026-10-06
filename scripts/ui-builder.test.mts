@@ -355,7 +355,7 @@ test("[slow] resist caps: a floor past its cap warns, a race change drops a now-
     const saved = await page.evaluate(async () => {
       const r = await (await import("/ui/api.mjs" as string)).api("/api/profiles");
       const who = (document.querySelector("#b-char") as HTMLSelectElement).value;
-      return r.profiles.characters[who].resistCaps;
+      return r.profiles.characters[who].spec.intent.resistCaps;
     });
     assert.deepEqual(saved, {}, "no override stored for the Elf's own Energy cap");
 
