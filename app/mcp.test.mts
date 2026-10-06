@@ -1,6 +1,6 @@
 // mcp.test.mts — the built-in MCP server (issue #211; `app/mcp.mts`, `app/mcp-tools.mts`) on a real server and temp data folder.
 //
-// the built-in MCP server (issue #211; `app/mcp.mts`, `app/mcp-tools.mts`) on a real server and temp data folder, its `mcp.json` asking for port 0 so no test races another or a Pack Rat running on 47615: `initialize` negotiating each supported protocol version and answering the newest to any other, with `serverInfo` and the instructions; a notification's 202, an unknown method (-32601) and tool (-32602), a parse error (-32700), a batch refused, an unsupported `MCP-Protocol-Version` header (400), arguments a tool's schema refuses as an `isError` result; the listener's guards (another Host, any Origin, its own included, no or a wrong token, GET and DELETE, another path, a non-JSON content type, a body over 1 MB); off by default with nothing written, `PUT /api/mcp` refusing anything but the two booleans and opening and closing the listener at once (connection refused once off), `mcp.json` saved `0600`; `POST /api/mcp/token` replacing the token with the old one refused at once, and a file without one getting one; a busy port falling back to a free one without saving it, and a broken `mcp.json` reading as off with a log line; every read tool over the demo fixtures with paging; `build_suit` for two characters (the second build of the same inputs reusing the saved run, buffs named, No character not saved), the run tools and `score_suit` over them; the in-game tools refused with the switch off (and still listed) while `stop_actions` writes the stop flag, and with it on writing the same `queue.jsonl` line the Grab button's `POST /api/bridge` writes (refused while the bridge is offline, a ground chest highlighted by its serial), an Organize trip through the Organize route with its one-at-a-time and stale-stamp refusals, and `get_action_status` reading the bridge's report; the tools reaching a `--token` app server; and the MCP SDK's own `Client` and `StreamableHTTPClientTransport` connecting, listing the tools and calling one. Fix round 1: an id with no method refused, the content type in any case, `POST /api/mcp/token` refusing fields; a hand-edited `mcp.json` (one bad field keeps the token, a BOM, an empty or broken file, a data folder that cannot take a new token leaving MCP off); property rules the route would drop refused with the accepted forms, slots, kinds, slayers and tags in any case, rows carrying their container and root serials; `container_contents` on a bag inside a chest; `score_suit` keeping the hands legal around a named weapon and planning with Manual's buffs (`manualBuffs` while `buffsCount` is on); an empty `pinned` as no pins and a fill without `currentScore`; a build replaced by a newer call saying so (a parked core); `get_action_status` on an id nobody queued; and `organize_trip` counting a move only when its put step is reported (a refused trip, a take without its put). All `[fast]`.
+// the built-in MCP server (issue #211; `app/mcp.mts`, `app/mcp-tools.mts`) on a real server and temp data folder, its `mcp.json` asking for port 0 so no test races another or a Pack Rat running on 47615: `initialize` negotiating each supported protocol version and answering the newest to any other, with `serverInfo` and the instructions; a notification's 202, an unknown method (-32601) and tool (-32602), a parse error (-32700), a batch refused, an unsupported `MCP-Protocol-Version` header (400), arguments a tool's schema refuses as an `isError` result; the listener's guards (another Host, any Origin, its own included, no or a wrong token, GET and DELETE, another path, a non-JSON content type, a body over 1 MB); off by default with nothing written, `PUT /api/mcp` refusing anything but the two booleans and opening and closing the listener at once (connection refused once off), `mcp.json` saved `0600`; `POST /api/mcp/token` replacing the token with the old one refused at once, and a file without one getting one; a busy port falling back to a free one without saving it, and a broken `mcp.json` reading as off with a log line; every read tool over the demo fixtures with paging; `build_suit` for two characters (the second build of the same inputs reusing the saved run, buffs named, No character not saved), the run tools and `score_suit` over them; the in-game tools refused with the switch off (and still listed) while `stop_actions` writes the stop flag, and with it on writing the same `queue.jsonl` line the Grab button's `POST /api/bridge` writes (refused while the bridge is offline, a ground chest highlighted by its serial), an Organize trip through the Organize route with its one-at-a-time and stale-stamp refusals, and `get_action_status` reading the bridge's report; the tools reaching a `--token` app server; and the MCP SDK's own `Client` and `StreamableHTTPClientTransport` connecting, listing the tools and calling one. Fix round 1: an id with no method refused, the content type in any case, `POST /api/mcp/token` refusing fields; a hand-edited `mcp.json` (one bad field keeps the token, a BOM, an empty or broken file, a data folder that cannot take a new token leaving MCP off); property rules the route would drop refused with the accepted forms, slots, kinds, slayers and tags in any case, rows carrying their container and root serials; `container_contents` on a bag inside a chest; `score_suit` keeping the hands legal around a named weapon and planning with Manual's buffs (`manualBuffs` while `buffsCount` is on); suit results' `effectiveTotals` (paperdoll resists, Divine Fury's shares) on `score_suit`, `build_suit`, `get_suit_build`, `get_run` and a reused run, and `unreachableFloors` for a hard floor no piece reaches (issue #216); an empty `pinned` as no pins and a fill without `currentScore`; a build replaced by a newer call saying so (a parked core); `get_action_status` on an id nobody queued; and `organize_trip` counting a move only when its put step is reported (a refused trip, a take without its put). All `[fast]`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, readFileSync, existsSync, statSync, mkdirSync, chmodSync } from "node:fs";
@@ -16,7 +16,8 @@ import { startTestServer } from "./server-fixture.mts";
 import { houseScan } from "./organize-fixture.mts";
 import { emptyRuleQuery, emptyOrganizeConfig, type OrganizeConfig } from "./organize-config.mts";
 import { ACTIONS_OFF, MCP_DEFAULT_PORT, PROTOCOL_VERSIONS } from "./mcp.mts";
-import { BRIDGE_OFFLINE } from "./vault-lib.mts";
+import { BRIDGE_OFFLINE, RESIST_KEYS, characterProfile, type ProfilesFile } from "./vault-lib.mts";
+import { applyBuffs, buffSkillValues } from "./buffs.mts";
 
 const TOKEN = "test-mcp-token-0123456789";
 const VERSION = (JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version: string }).version;
@@ -390,6 +391,36 @@ test("[fast] build_suit runs the Suit Builder for a character and saves the run;
     const piece = Object.values(k.suit).find(Boolean) as { serial: number };
     const picked = (await call(port, "score_suit", { character: "Kestrel", pieces: [piece.serial], keepWorn: false })).data;
     assert.deepEqual(Object.values(picked.suit).map((p) => (p as { serial: number }).serial), [piece.serial]);
+  } finally { await sv.s.close(); }
+});
+
+test("[fast] suit results carry effectiveTotals beside the gear totals, and unreachableFloors where a hard floor is out of reach (issue #216)", async () => {
+  const sv = await serve();
+  try {
+    const port = await mcpPort(sv);
+    // score_suit: resists as on the paperdoll, Divine Fury's shares counted
+    const { values } = buffSkillValues(null, {});
+    const share = (k: string): number => (applyBuffs({}, {}, ["divineFury"], values, null).shares[k] || []).reduce((n, x) => n + x.value, 0);
+    const s = (await call(port, "score_suit", { character: "Kestrel", buffs: ["divineFury"] })).data;
+    const eff = s.effectiveTotals as Record<string, number>, gear = s.totals as Record<string, number>;
+    for (const k of RESIST_KEYS) assert.equal(eff[k] ?? 0, (gear[k] ?? 0) + s.resistBonus, k);
+    for (const k of ["dci", "hci", "ssi"]) assert.equal(eff[k] ?? 0, (gear[k] ?? 0) + share(k), k);
+    assert.equal(share("dci") < 0, true, "Divine Fury lowers DCI");
+    // a hard floor no piece reaches, on Kestrel's saved profile
+    const { profiles } = (await app<{ profiles: ProfilesFile }>(sv, "/api/profiles")).body;
+    const kestrel = { ...characterProfile(profiles, "Kestrel"), floors: { luck: 100000 }, softFloors: [] };
+    assert.equal((await app(sv, "/api/profiles", "PUT", { ...profiles, characters: { ...profiles.characters, Kestrel: kestrel } })).status, 200);
+    const b = (await call(port, "build_suit", { character: "Kestrel", buffs: ["divineFury"], timeBudgetSeconds: 2, waitSeconds: 45 })).data;
+    assert.equal(b.state, "done", JSON.stringify(b));
+    assert.deepEqual(b.unreachableFloors, ["luck"]);
+    assert.ok(b.effectiveTotals && Object.keys(b.effectiveTotals).length, JSON.stringify(b));
+    assert.equal(b.effectiveTotals.dci ?? 0, (b.totals.dci ?? 0) + share("dci"));
+    const polled = (await call(port, "get_suit_build", { id: b.id })).data;
+    assert.deepEqual([polled.effectiveTotals, polled.unreachableFloors], [b.effectiveTotals, ["luck"]]);
+    const run = (await call(port, "get_run", { id: b.runId })).data;
+    assert.deepEqual([run.effectiveTotals, run.unreachableFloors], [b.effectiveTotals, ["luck"]], "a saved run, evaluated from its settings, agrees with the build");
+    const again = (await call(port, "build_suit", { character: "Kestrel", buffs: ["divineFury"], timeBudgetSeconds: 2 })).data;
+    assert.deepEqual([again.reused, again.effectiveTotals, again.unreachableFloors], [true, b.effectiveTotals, ["luck"]]);
   } finally { await sv.s.close(); }
 });
 

@@ -8,9 +8,10 @@
 // drawn by ui/builder-buffs.mts) can be counted in the totals: the ones that are on, the numbers the player edited and
 // the switch are ui-prefs fields too, and turning one on or off is a step in the suit's undo history.
 import { GEAR_SLOTS, RESIST_KEYS, effectiveProfile, profileResistCaps, requirementReport, toOptItem, totalsOf } from "../vault-lib.mts";
-import type { Character, EffectiveProfile, Item, OptItem, PropMap, RunBuffs } from "../vault-lib.mts";
-import { applyBuffs, buffById, buffSkillValues, isBuffSkillsByCharacter, manualProfile, normalizeBuffs, ownEntry, rawStats, runBuffs, toggleBuff, weaponFlags, NO_CHARACTER, signed } from "../buffs.mts";
-import type { BuffResult, BuffWho, Stats } from "../buffs.mts";
+import type { Character, EffectiveProfile, Item, OptItem, RunBuffs } from "../vault-lib.mts";
+import { buffById, buffSkillValues, isBuffSkillsByCharacter, manualPlan, manualProfile, normalizeBuffs, ownEntry, rawStats, runBuffs, toggleBuff, weaponFlags, NO_CHARACTER, signed } from "../buffs.mts";
+import type { Stats } from "../buffs.mts";
+import { evaluateSuit, type SuitEvaluation } from "../evaluate.mts";
 import type { ItemQuery } from "../item-query.mts";
 import { state, invStamp } from "./store.mts";
 import { $, el, label, slotLabel, itemTip, toast } from "./dom.mts";
@@ -205,10 +206,13 @@ function runInputEdits(name: string | null, b: RunBuffs | undefined): Record<str
 // The suit's pieces by slot (a piece no longer in the scans left out), and the held weapon's flags: a two-handed
 // weapon, else the one-handed slot's piece (Enchant reads its Spell Channeling).
 const suitItems = (): Record<string, Item> => Object.fromEntries(Object.entries(slots).flatMap(([s, serial]) => (items[serial] ? [[s, items[serial]!]] : [])));
-// The strip's totals (paperdoll terms) and caps with the buffs that count: all that are on, or none with the switch off.
-function buffed(t: PropMap, caps: Record<string, number>, all = false, suit: Record<string, Item | undefined> = suitItems()): BuffResult {
-  const { values, stats, race } = buffInputs(), who: BuffWho = { race, weaponFlags: weaponFlags(suit) };
-  return applyBuffs(t, caps, countBuffs || all ? buffs : [], values, stats, who);
+// The suit evaluated as the strip shows it (app/evaluate.mts): paperdoll terms, against profile()'s caps, with the buffs
+// that count (all that are on, or none with the switch off), Enhance Potions and Spell Channeling read from `suit`.
+function evaluated(suit: Record<string, Item> = suitItems(), all = false): SuitEvaluation {
+  const name = manualCharacter(), c = name ? (state.inv!.characters[name] as Character | undefined) ?? null : null, own = !!name && !!state.builder.profile;
+  const opt = Object.fromEntries(Object.entries(suit).map(([s, it]) => [s, toOptItem(it)]));
+  return evaluateSuit({ profile: own ? state.builder.profile! : {}, character: own ? c : null, suit: opt,
+    buffs: manualPlan(c, name ? state.inv!.worn[name] || [] : [], suit, buffInputs().race, countBuffs || all ? buffs : [], editsFor()) });
 }
 // Every change to the suit or its buffs is one undo step, named by `label` ("Ring → Arcane Ring", "Divine Fury on");
 // undo and redo pass none, and `from`, the step's other side (the numbers it expects to find). `note` is the form a
@@ -303,7 +307,7 @@ function draw(): void {
 }
 function totalsCard(): HTMLElement {
   const name = manualCharacter(), prof = profile(), resists = profileResistCaps(prof), base = paperdollCaps(resists);
-  const suit = suitOpt(), r = buffed(paperdoll(totalsOf(suit), prof.resistBonus), base), t = r.totals, caps = r.caps;
+  const suit = suitOpt(), ev = evaluated(), r = ev.buffs, t = ev.effectiveTotals, caps = ev.caps;
   // One compact row: each total as "value / cap", in the ok tone at its cap, with "+N" (warn) for what is wasted past
   // it; the line a fuller tile would show ("23 to cap") is its tooltip and, for a screen reader, part of its text.
   // Under a total the buffs touch, their marker line; a cap they raised is underlined.
@@ -340,7 +344,7 @@ function statsCard(): HTMLElement {
   // With buffs counted, their in-cap shares count in the attributes, pools and properties, against the caps they
   // change; with none, the card is exactly the suit's. What they add past the cap to a property the strip doesn't
   // show (Horrific Beast's HPR) is said under the card.
-  const t = totalsOf(suitOpt()), r = buffed(t, paperdollCaps(profileResistCaps(profile())));
+  const ev = evaluated(), t = ev.gearTotals, r = ev.buffs;
   const added = Object.fromEntries(Object.keys(r.shares).filter((k) => !RESIST_KEYS.includes(k)).map((k) => [k, (r.totals[k] || 0) - (t[k] || 0)]));
   const counted = countBuffs && buffs.length;
   const { lists, props } = sheetParts(name, worn, suit, { compare: false, statsOnly: true, ...(counted ? { buffs: added, caps: r.caps } : {}) });
@@ -430,12 +434,11 @@ function paintPicker(): void {
 // Location column that says so is often scrolled out of the narrow picker.
 function deltaCell(it: Item): HTMLElement {
   if (pickSlot && slots[pickSlot] === it.serial) return txt("In this slot", "t-sm muted mb-delta");
-  const slot = pickSlot!, prof = profile(), rsb = prof.resistBonus || 0, cur = suitOpt();
-  const after = { ...cur, [slot]: toOptItem(it) }, afterItems: Record<string, Item> = { ...suitItems(), [slot]: it };
+  const slot = pickSlot!, prof = profile(), afterItems: Record<string, Item> = { ...suitItems(), [slot]: it };
   const cleared = handConflict(slot, it, held());
-  if (cleared) { delete after[cleared]; delete afterItems[cleared]; }
-  const caps = paperdollCaps(profileResistCaps(prof)), was = buffed(paperdoll(totalsOf(cur), rsb), caps), now = buffed(paperdoll(totalsOf(after), rsb), caps, false, afterItems);
-  const parts = slotDelta(was.totals, now.totals, deltaKeys(prof), now.caps);
+  if (cleared) delete afterItems[cleared];
+  const was = evaluated(), now = evaluated(afterItems);
+  const parts = slotDelta(was.effectiveTotals, now.effectiveTotals, deltaKeys(prof), now.caps);
   const kids = parts.flatMap((p, i) => [i ? txt(" · ", "faint") : null, txt(p.text, `tone-${p.tone}`)]);
   const worn = it.equippedBy ? tag(`Worn by ${it.equippedBy}`, it.equippedBy === manualCharacter() ? undefined : "warn") : null;
   return el("span", { class: "mb-delta" }, worn, it.gargoyle ? tag("Gargoyle") : null, ...(kids.length ? kids : [txt("No change", "muted")]));
@@ -457,7 +460,7 @@ function closeBuffs(): void {
 }
 function buffView(): BuffView {
   const { values, planned, stats, race } = buffInputs(), prof = profile(), t = paperdoll(totalsOf(suitOpt()), prof.resistBonus), caps = paperdollCaps(profileResistCaps(prof));
-  return { name: manualCharacter(), on: buffs, values, planned, edits: editsFor(), stats, who: { race, weaponFlags: weaponFlags(suitItems()) }, totals: t, caps, all: buffed(t, caps, true), replaced, count: countBuffs, open: buffsOpen };
+  return { name: manualCharacter(), on: buffs, values, planned, edits: editsFor(), stats, who: { race, weaponFlags: weaponFlags(suitItems()) }, totals: t, caps, all: evaluated(suitItems(), true).buffs, replaced, count: countBuffs, open: buffsOpen };
 }
 const buffActions: BuffActions = {
   // A buff on or off is an undo step; a form turned on says which one it replaced. A chip's × keeps the focus in the

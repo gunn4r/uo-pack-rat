@@ -64,6 +64,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `app/config.test.mts` — `app/config.mts`'s `resolveConfig` and the per-adapter bridge paths.
 - `app/contracts.test.mts` — folds every adapter's fixture.scan.json against its own capabilities.json, checking the two agree with each other and with the shared scan and bridge schemas.
 - `app/dialog-prompt.test.mts` — `app/ui/dialog.mts`'s `normalizePromptValue()`, the DOM-free part of the in-page prompt.
+- `app/evaluate.test.mts` — `evaluateSuit` (`app/evaluate.mts`, issue #216) against the three assemblies it replaced.
 - `app/facet-map.test.mts` — `app/facet-map.mts` (issue #164): decoding a facetNN.mul overview bitmap and cutting a region out of it.
 - `app/fold-unopened.test.mts` — `foldSnapshots` and a container a scan saw but could not open.
 - `app/gear-vault.test.mts` — `app/vault-lib.mts` (parser, classifier, fold, pools) and the optimizer core through the same loader the server uses.

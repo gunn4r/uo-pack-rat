@@ -407,10 +407,15 @@ const itemTotals = (items: Item[]): PropMap => totalsOf(Object.fromEntries(items
 // the raw stats from what the character wears now (`wornNow`) and `race` (null with no character); with no character
 // the profile's race, resist caps and caps are left out, so it plans on raw item totals.
 export function manualProfile(p: Profile, character: Character | null, wornNow: Item[], suit: Record<string, Item>, race: string | null, on: string[], edits: Readonly<Record<string, number>>): EffectiveProfile {
+  return plannedProfile(manualBase(p, character), character, manualPlan(character, wornNow, suit, race, on, edits));
+}
+// manualProfile's two halves, which evaluate.mts's evaluateSuit takes: the profile (with no character, without its
+// race, resist caps and caps) and the plan.
+export const manualBase = (p: Profile, character: Character | null): Profile => (character ? p : { ...p, race: undefined, resistCaps: undefined, caps: undefined });
+export function manualPlan(character: Character | null, wornNow: Item[], suit: Record<string, Item>, race: string | null, on: string[], edits: Readonly<Record<string, number>>): BuffPlan {
   const { values } = buffSkillValues(character ? character.skills || {} : null, edits);
-  return plannedProfile(character ? p : { ...p, race: undefined, resistCaps: undefined, caps: undefined }, character,
-    { on, skills: values, stats: character ? rawStats(character, itemTotals(wornNow)) : null, who: { race, weaponFlags: weaponFlags(suit) },
-      worn: totalsOf(Object.fromEntries(Object.entries(suit).map(([slot, it]) => [slot, toOptItem(it)]))) });
+  return { on, skills: values, stats: character ? rawStats(character, itemTotals(wornNow)) : null, who: { race, weaponFlags: weaponFlags(suit) },
+    worn: totalsOf(Object.fromEntries(Object.entries(suit).map(([slot, it]) => [slot, toOptItem(it)]))) };
 }
 export const buffContext = (skills: Skills, stats: Stats | null, totals: PropMap, who: BuffWho = {}, caps: Readonly<Record<string, number>> = {}): BuffContext =>
   ({ s: (id) => skills[id] ?? BUFF_INPUTS[id]?.def ?? 0, stats, totals, resist: skills["Resisting Spells"] ?? null, who, caps });

@@ -3,10 +3,11 @@
 // "other changes" badges and "after the change" values, the compare table's differing rows and best values,
 // and a saved run's label and badges. No DOM and no page state, so app/builder-model.test.mts can check it
 // all directly; ui/builder.mts, ui/builder-result.mts and ui/runs.mts draw what it returns.
-import { getRules, labelOf, fullOf, GEAR_SLOTS, NOT_BUILDER_KEYS, RESIST_KEYS, RESIST_CAP_LIMITS, SLOT_LABELS, settingsDiff, shardResistCap, WEAPON_SKILLS, MELEE_SKILLS, ubwsLetsIn } from "../vault-lib.mts";
+import { labelOf, fullOf, GEAR_SLOTS, NOT_BUILDER_KEYS, RESIST_KEYS, RESIST_CAP_LIMITS, SLOT_LABELS, settingsDiff, shardResistCap, WEAPON_SKILLS, MELEE_SKILLS, ubwsLetsIn } from "../vault-lib.mts";
 import type { PlannedBuffs, PropMap, ResistCap, RunSettings } from "../vault-lib.mts";
 import { applyBuffs, buffById, buffsDiff, capWord, signed, type BuffResult } from "../buffs.mts";
 import { RUN_SETTING_LIMITS, type Range } from "../run-settings.mts";
+import { paperdoll, paperdollCaps } from "../evaluate.mts";
 
 export const plural = (n: number, word: string, many = `${word}s`): string => `${n.toLocaleString("en-US")} ${n === 1 ? word : many}`;
 const num = (n: number): string => n.toLocaleString("en-US", { maximumFractionDigits: 2 });
@@ -23,18 +24,8 @@ export function propName(k: string): string {
 }
 
 // ---------------------------------------------------------------- paperdoll terms
-// Resists in paperdoll values (item totals + the Resisting Spells bonus), for the compare view and Manual's totals.
-export function paperdoll(totals: PropMap, rsb: number): PropMap {
-  const t = { ...totals };
-  for (const k of RESIST_KEYS) t[k] = (t[k] || 0) + rsb;
-  return t;
-}
-// The shard's caps with the build's resist caps (overrides included) in place of its resist ones.
-export function paperdollCaps(resists: Record<string, ResistCap>): Record<string, number> {
-  const caps = { ...(getRules().caps as Record<string, number>) };
-  for (const k of RESIST_KEYS) caps[k] = resists[k]!.cap;
-  return caps;
-}
+// paperdoll and paperdollCaps live with the suit evaluation (app/evaluate.mts).
+export { paperdoll, paperdollCaps };
 // A suit's item totals in paperdoll terms with the buffs a build planned with (none: `b` null), against `caps`.
 export function withBuffs(t: PropMap, rsb: number, caps: Record<string, number>, b: Pick<PlannedBuffs, "on" | "skills" | "stats" | "who"> | null | undefined): BuffResult {
   return applyBuffs(paperdoll(t, rsb), caps, b?.on || [], b?.skills || {}, b?.stats ?? null, b?.who);
