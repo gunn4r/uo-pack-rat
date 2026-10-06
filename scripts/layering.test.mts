@@ -8,6 +8,7 @@
 //   5. app/store/ and app/services/ import nothing from app/http/ (type imports included);
 //   6. nothing imports app/vault-server.mts except electron/, scripts/, the test fixtures (*-fixture.mts) and tests;
 //   7. no app/ui/ module imports app/ui/app.mts, the page's bootstrap (routes are nav.mts, the inventory reload is inventory-data.mts).
+//   8. every app/ui/ module that registers a screen with nav.mts's registerScreen() is reached from app/ui/app.mts by runtime imports (a side-effect `import "./x.mts"` counts): a screen module nothing loads never registers its route.
 // Rules 2-4 follow runtime imports only: `import type` and `export type` are erased, so they load nothing.
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -138,4 +139,11 @@ test("[smoke] layering: only electron/, scripts/ and the test fixtures import ap
   const allowed = (f: string): boolean => f.startsWith("electron/") || f.startsWith("scripts/") || f.endsWith("-fixture.mts");
   const found = modules.filter((f) => !allowed(f)).flatMap((f) => edges.get(f)!.filter((e) => e.to === "app/vault-server.mts").map((e) => `${f} → ${e.spec}`));
   assert.deepEqual(found, []);
+});
+
+test("[smoke] layering: every module that registers a screen is loaded from app.mts", () => {
+  const screens = modules.filter((f) => isUi(f) && f !== "app/ui/nav.mts" && /^\s*registerScreen\(/m.test(readFileSync(posix.join(root, f), "utf8")));
+  assert.ok(screens.length >= 5 && screens.includes("app/ui/scrolls.mts"), `found ${screens.join(", ")}`);
+  const loaded = reach("app/ui/app.mts");
+  assert.deepEqual(screens.filter((f) => !loaded.has(f)), [], "a screen module app.mts does not reach never registers its route: import it from app.mts");
 });
