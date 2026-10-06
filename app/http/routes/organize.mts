@@ -43,9 +43,10 @@ export function routes(ctx: ServerContext): Route[] {
       if (containers !== undefined && !(Array.isArray(containers) && containers.length <= LIMITS.labels && containers.every((v) => isBoundedInt(v, 1, MAX_SERIAL)))) {
         return send(res, 400, { ok: false, error: "containers must be a list of container serials" });
       }
-      const { fold, config, state, problems } = await organizeService.organizeNow();
+      const { fold, config, state, problems, features } = await organizeService.organizeNow();
       if (problems.length) return send(res, 409, { ok: false, error: `organize.json was hand-edited and parts of it were dropped (${problems[0]}); open Organize and save the setup first` });
-      const r = proposeOrganize(fold, config, state.moves, { strategy: strategy as StrategyId, containers: containers as number[] | undefined, now: Date.now(), rarity: appSettings.rules().rarity, suitPieces: organizeService.suitsFor(config.rules.map((r) => r.match)), blacklist: blacklistStore.read().map((e) => e.serial), seen: state.seen });
+      // `features`: what the bridge can do, as the plan Organize then shows decides it.
+      const r = proposeOrganize(fold, config, state.moves, { strategy: strategy as StrategyId, containers: containers as number[] | undefined, now: Date.now(), rarity: appSettings.rules().rarity, suitPieces: organizeService.suitsFor(config.rules.map((r) => r.match)), blacklist: blacklistStore.read().map((e) => e.serial), seen: state.seen, features });
       return send(res, r.ok ? 200 : 409, r satisfies ProposeResult);
     } },
     { method: "GET", path: "/api/organize/plan", handle: async (_req, res) => {

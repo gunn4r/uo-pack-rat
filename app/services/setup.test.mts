@@ -20,8 +20,8 @@ test("[fast] setup service: the shipped ids, what each manifest says its bridge 
   cpSync(join(ADAPTERS, "tazuo"), join(dir, "tazuo"), { recursive: true });
   assert.equal(service.isKnown("tazuo"), true, "read from disk on every call");
   assert.equal(service.isKnown(7), false);
-  assert.deepEqual(service.manifest("tazuo")?.features, ["trip-bags"]);
-  assert.ok(service.manifest("tazuo")?.capabilities?.bridge?.includes("trip"));
+  assert.deepEqual(service.manifest("tazuo")?.capabilities?.bridge, ["highlight", "grab", "goto", "trip", "trip-bags"]);
+  assert.deepEqual(service.manifest("tazuo")?.features, []);
   assert.deepEqual(service.manifest("classicuo-web")?.capabilities?.bridge, []);
   assert.equal(service.manifest("ghost"), null);
 });

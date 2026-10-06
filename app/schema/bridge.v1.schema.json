@@ -65,7 +65,7 @@
       "adapter": {
         "type": "object",
         "additionalProperties": true,
-        "$comment": "The running bridge itself (TazUO 2.16.0, Razor Enhanced 1.12.0 and later): its adapter id, script version, the newest queue-line protocol it reads, and every action and feature it has. Left out by older bridges, which the app then judges by the newest scan and the shipped manifest.",
+        "$comment": "The running bridge itself (TazUO 2.16.0, Razor Enhanced 1.12.0 and later): its adapter id, script version, the newest queue-line protocol it reads, and every action and feature it has. Left out by older bridges, which the app then judges by the newest scan and the shipped manifest. readBridgeStatus checks it on its own: a block off this shape is dropped, as if an older bridge had written the status, and the rest of the status still reads.",
         "required": ["id", "version", "protocol", "features"],
         "properties": {
           "id": { "type": "string", "minLength": 1, "maxLength": 64 },
@@ -79,7 +79,7 @@
       "results": { "type": "object" },
       "counts": {
         "type": "object",
-        "additionalProperties": false,
+        "additionalProperties": true,
         "required": ["done", "failed"],
         "properties": {
           "done": { "type": "integer" },

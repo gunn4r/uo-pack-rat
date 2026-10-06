@@ -576,7 +576,8 @@ export function tripSeconds(input: TripInput): number {
 export type PutAway = { from: "pack"; container: number; at: Spot } | { from: "ground"; container: number };
 export interface PlanOptions extends ScopeOptions {
   putAway?: PutAway | undefined;
-  // What the bridge can do (vault-lib.mts's bridgeFeatures). Left out, the newest scan's adapter block says.
+  // What the bridge can do (vault-lib.mts's bridgeFeatures); the server always passes it. Left out (tests only), the
+  // newest scan's adapter block says.
   features?: ReadonlySet<string> | undefined;
   rarity?: RulesV1RarityItem[] | undefined;
   suitPieces?: ReadonlySet<number> | undefined;

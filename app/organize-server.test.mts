@@ -1,6 +1,6 @@
 // organize-server.test.mts — the Organize routes (issue #11) and the item kinds routes (issue #150) on a real server and temp data folder.
 //
-// the Organize routes on a real server and temp data folder: `GET|PUT /api/organize` (a broken setup and a blacklisted label refused, a hand-edited file salvaged, an unparsable or non-version-1 one moved aside), `GET /api/organize/plan`, `GET /api/organize/presets`, `POST /api/organize/propose` (Auto organize: the proposal over every offered chest saved as it is with PUT and proposing again changing nothing; an unknown strategy, a bad container list and a salvaged setup refused; a container it cannot use reported), `POST /api/organize/match` (what one rule filter takes of the movable items in labelled roots, ignoring the other rules; the strict filter check; the body limit), and `POST /api/organize/trip` (a stale stamp, a second trip before the first reports back, a trip that is not its site's first, a salvaged setup and a client without `trip` refused, a running bridge that reports no `trip` refused while one too old to report itself is judged by the newest scan as before; the largest valid setup accepted and read back; a trip whose bridge went quiet stops holding the queue; a reported trip read into the overlay), and Put away (issue #131): a request dropped after a refresh's scan answered with one trip carrying the picked container's `putAway`, only the pack's own items (never the pouch's), a second request refused while it has not reported back, what stayed once it has ("1 bag stays in your pack"), a chest last scanned before the click refused, a stale request with a bad id refused, and the pouch picked next giving up its own items. The item kinds routes (issue #150): `POST /api/item-kinds` re-kinds an item with no rescan, the plan follows, it survives a restart, a name beats a graphic and kind null resets; the refusals (gear, an unknown kind, a bad name or graphic, neither named); an import merges with its entries winning and says what it left out, a file with nothing to import is refused, and export then import on a fresh data folder reproduces the kinds; a file that does not parse is moved aside with a warning. All `[fast]`.
+// the Organize routes on a real server and temp data folder: `GET|PUT /api/organize` (a broken setup and a blacklisted label refused, a hand-edited file salvaged, an unparsable or non-version-1 one moved aside), `GET /api/organize/plan`, `GET /api/organize/presets`, `POST /api/organize/propose` (Auto organize: the proposal over every offered chest saved as it is with PUT and proposing again changing nothing; planned with what the running bridge can do, like the plan; an unknown strategy, a bad container list and a salvaged setup refused; a container it cannot use reported), `POST /api/organize/match` (what one rule filter takes of the movable items in labelled roots, ignoring the other rules; the strict filter check; the body limit), and `POST /api/organize/trip` (a stale stamp, a second trip before the first reports back, a trip that is not its site's first, a salvaged setup and a client without `trip` refused, a running bridge that reports no `trip` refused while one too old to report itself is judged by the newest scan as before; the largest valid setup accepted and read back; a trip whose bridge went quiet stops holding the queue; a reported trip read into the overlay), and Put away (issue #131): a request dropped after a refresh's scan answered with one trip carrying the picked container's `putAway`, only the pack's own items (never the pouch's), a second request refused while it has not reported back, what stayed once it has ("1 bag stays in your pack"), a chest last scanned before the click refused, a stale request with a bad id refused, and the pouch picked next giving up its own items. The item kinds routes (issue #150): `POST /api/item-kinds` re-kinds an item with no rescan, the plan follows, it survives a restart, a name beats a graphic and kind null resets; the refusals (gear, an unknown kind, a bad name or graphic, neither named); an import merges with its entries winning and says what it left out, a file with nothing to import is refused, and export then import on a fresh data folder reproduces the kinds; a file that does not parse is moved aside with a warning. All `[fast]`.
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, readFileSync, existsSync, renameSync } from "node:fs";
@@ -380,6 +380,24 @@ test("[fast] POST /api/organize/propose: Simple over every offered chest; PUT sa
     assert.equal(again.body.proposal.changed, false);
     assert.deepEqual(again.body.proposal.config, p.config);
     assert.equal((await call<{ ok: boolean; plan: Plan }>(s, "/api/organize/plan")).body.plan.moves.length, 0);
+  } finally {
+    await s.close();
+  }
+});
+
+test("[fast] POST /api/organize/propose plans with what the running bridge can do, as the plan Organize then shows does", async () => {
+  const BAG = 0x40000003;
+  const { s, dir } = await serve([], [{ serial: BAG, parent: A, name: "Weapons" }]);
+  try {
+    await call(s, "/api/organize", body("PUT", { ...CONFIG_DOC, emptyBagsTo: B }));
+    const propose = async (): Promise<number> => (await call<{ proposal: Proposal }>(s, "/api/organize/propose", body("POST", { strategy: "simple" }))).body.proposal.plan.moves;
+    const planned = async (): Promise<number> => (await call<{ plan: Plan }>(s, "/api/organize/plan")).body.plan.moves.filter((m) => m.serial === BAG).length;
+    assert.equal(await planned(), 1, "the newest scan's scripts gather bags");
+    const withBag = await propose();
+    writeFileSync(join(dir, "bridge", "tazuo", "status.json"), JSON.stringify({ alive: new Date().toISOString(), character: "Tester", current: null, results: {},
+      counts: { done: 0, failed: 0 }, adapter: { id: "tazuo", version: "2.16.0", protocol: 1, features: ["highlight", "grab", "goto", "trip"] } }));
+    assert.equal(await planned(), 0, "a running bridge without trip-bags is never sent a bag");
+    assert.equal(await propose(), withBag - 1, "and the proposal plans the same");
   } finally {
     await s.close();
   }

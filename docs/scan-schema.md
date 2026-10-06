@@ -28,7 +28,7 @@ Ground truth: `app/schema/scan.v2.schema.json` (the portable JSON Schema, restri
 | `house` | object, optional | The house the player stood in when the scan ran — see "House capture" below. Written by TazUO 2.10.0 and later. |
 | `kind` | string, optional, 1–64 characters | Left out for a scan. `"house"` marks a house-only file — see "House-only files" below. Any other value is a kind from a newer adapter: the file is accepted and kept, and every reader skips it (the scans store logs "kind … is from a newer Pack Rat"; the fold and the house map skip it too). |
 
-A scan file may carry additional top-level fields beyond these (`additionalProperties: true` at the top level) — the quick-refresh adapter script adds a `meta: {mode, name, roots}` key, which the fold simply ignores. `adapter`, though, is a **closed contract**: `additionalProperties: false` there, so an adapter block must match the shape below, no extra fields. `adapter.capabilities` is open (`additionalProperties: true`): its known fields are required and checked, and a capability a newer adapter adds is ignored, so an older app keeps the scan.
+A scan file may carry additional top-level fields beyond these (`additionalProperties: true` at the top level) — the quick-refresh adapter script adds a `meta: {mode, name, roots}` key, which the fold simply ignores. `adapter` and `adapter.capabilities` are open too (`additionalProperties: true`): their known fields are required and checked, and a field a newer adapter adds is ignored, so this app keeps the scan. Apps before this change kept both closed, so the shipped scripts add nothing to either until an app that accepts the addition has been out for a release (`app/adapter-outputs.test.mts` checks every scan they write against that closed shape).
 
 ## Types and bounds
 
@@ -88,7 +88,7 @@ TazUO's `packrat-house-map-refresh.py` (2.12.0 and later) records the house with
 | `client` | string | The game client the adapter runs inside, e.g. `"TazUO"`. |
 | `clientVersion` | string or `null` | The client's own version, when the adapter can read it. |
 | `capabilities` | object, required | What this adapter can see and do — see below. |
-| `features` | array of strings, optional, at most 64 of 1–64 characters | What the adapter's bridge does besides the actions in `capabilities.bridge`, by name: `"trip-bags"` (TazUO 2.16.0 and later). A name this app does not know is ignored. See `docs/bridge-protocol.md`, Features. |
+| `features` | array of strings, optional, at most 64 of 1–64 characters | What the adapter's bridge does besides the actions in `capabilities.bridge`, by name, e.g. `"trip-bags"`. A name this app does not know is ignored. The shipped scripts do not write it yet: `trip-bags` stays in `capabilities.bridge` until an app that accepts `features` has been out for a release. See `docs/bridge-protocol.md`, Features. |
 
 ### `adapter.capabilities`
 
@@ -100,7 +100,7 @@ TazUO's `packrat-house-map-refresh.py` (2.12.0 and later) records the house with
 | `ground` | boolean | Can this adapter read containers sitting on the ground? |
 | `nested` | boolean | Can this adapter recurse into bags inside bags? |
 | `tooltips` | string, `"opl"` or `"label"` | Whether item text comes from the client's full on-paperdoll-line tooltip (`"opl"`, every property line readable) or just the bare name label (`"label"`, no properties). |
-| `bridge` | array of strings | Which bridge actions (`"highlight"`, `"grab"`, `"goto"`, and `"trip"` for Organize) this adapter's bridge script can execute — see `docs/bridge-protocol.md`. Empty for an adapter that ships no bridge. Scripts before TazUO 2.16.0 also listed the `"trip-bags"` feature here, where it is still read. |
+| `bridge` | array of strings | Which bridge actions (`"highlight"`, `"grab"`, `"goto"`, and `"trip"` for Organize) this adapter's bridge script can execute — see `docs/bridge-protocol.md`. Empty for an adapter that ships no bridge. The TazUO scripts also list the `"trip-bags"` feature here (its trips take a bag only once they have read it empty), where every Pack Rat reads it. |
 
 Other keys are allowed and ignored. Which Highlight/Grab/Go-to buttons and Organize trips are offered is one decision per configured client (`bridgeFeatures` in `app/vault-lib.mts`): the running bridge's own report first, then the newest scan made with that adapter (its `capabilities.bridge` and `features`), then the client's shipped `capabilities.json` (`docs/bridge-protocol.md`, Features). The bridge script itself is still the final word on what it will actually do.
 

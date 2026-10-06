@@ -85,7 +85,7 @@ The whole of `status.json`, replaced atomically (temp file + rename) roughly eve
 | `adapter` | object, optional | The bridge itself: `{id, version, protocol, features}` — its adapter id, script version, the newest queue-line protocol it reads, and every action and feature it has (see Features). Written by TazUO 2.16.0 and Razor Enhanced 1.12.0 on every status write; older bridges leave it out. |
 | `stopped` | boolean, optional | Present and `true` only in the final status write after a clean Stop — never `false`; its absence means the bridge is still running or was killed some other way (crash, client exit) rather than stopped cleanly. Both bridges write it from a `finally` around their main loop, so it is written whether the loop ended on its own (Stop seen between polls, `MAX_HOURS`, a flooded queue) or the client's Stop interrupted the script mid-pause (TazUO throws at the next `API.Pause`). The next start's first status write omits it again. The installer's running-script guard treats a status with `stopped: true` as not running whatever its age, so a reinstall right after `-stopall` goes ahead at once instead of waiting out the 30 s heartbeat window (issue #121). |
 
-`app/bridge-status.mts`'s `readBridgeStatus` is the one reader of this file. It checks it against the status schema, which is open (a newer bridge's added field still reads), and a missing, unreadable or off-schema file reads as not running: `GET /api/bridge/status` then returns `{ok: true, online: false}` rather than erroring. It answers the page and the MCP tools with the file's fields plus `online` and `age`. Two waits read the same `alive`, each for its own caller: **online** (8 s) is what the page, the MCP tools and the features below go by, and Organize keeps a trip pending, trusting the file's `current`, while `alive` is within 90 s either way (`PENDING_GRACE_MS`), so a trip in flight is not given up over one missed heartbeat, while a client that quit mid-trip does not hold the queue for good.
+`app/bridge-status.mts`'s `readBridgeStatus` is the one reader of this file. It checks it against the status schema, which is open (a newer bridge's added field, in the status or in `counts`, still reads), and a missing, unreadable or off-schema file reads as not running. The `adapter` block is checked on its own: one off its shape is dropped, as if an older bridge had written the status, and the rest still reads. When it reads as not running, `GET /api/bridge/status` returns `{ok: true, online: false}` rather than erroring. It answers the page and the MCP tools with the file's fields plus `online` and `age`. Two waits read the same `alive`, each for its own caller: **online** (8 s) is what the page, the MCP tools and the features below go by, and Organize keeps a trip pending, trusting the file's `current`, while `alive` is within 90 s either way (`PENDING_GRACE_MS`), so a trip in flight is not given up over one missed heartbeat, while a client that quit mid-trip does not hold the queue for good.
 
 ## Actions
 
@@ -96,7 +96,7 @@ The whole of `status.json`, replaced atomically (temp file + rename) roughly eve
 | `goto` | Walk within reach of the root container (from `chain[0]`, or straight to `pos` when there's no chain) and stop — no opening, no moving. Requires either a `chain` or a `pos`; an item with neither reports failure ("no container position known for this item"). |
 | `trip` | Organize (TazUO only). Takes, then puts, one step at a time — see Trip, below. |
 
-An `action` the adapter's own `capabilities.bridge` list doesn't include (see `docs/scan-schema.md`'s `adapter.capabilities.bridge`) is refused with `"unknown action"` rather than attempted — the reference TazUO adapter supports all three, plus `trip` (`CAPABILITIES["bridge"] = ["highlight", "grab", "goto", "trip"]`). `trip-bags` is a feature, not an action (Features, below).
+An `action` the adapter's own `capabilities.bridge` list doesn't include (see `docs/scan-schema.md`'s `adapter.capabilities.bridge`) is refused with `"unknown action"` rather than attempted — the reference TazUO adapter supports all three, plus `trip` and the `trip-bags` feature, which is not an action (`CAPABILITIES["bridge"] = ["highlight", "grab", "goto", "trip", "trip-bags"]`, `ACTIONS` without it; Features, below).
 
 ## Protocol
 
@@ -104,7 +104,7 @@ Every queue line carries `protocol`, the version of the line format it is writte
 
 ## Features
 
-What a bridge can do is one set of names: the actions it runs (`highlight`, `grab`, `goto`, `trip`) and what it does besides (`trip-bags`: its trips take a bag only once they have read it empty, issue #128). `capabilities.json` and a scan's adapter block keep them in two lists, `capabilities.bridge` for the actions and `features` for the rest; scripts before TazUO 2.16.0 listed `trip-bags` among the actions, and it is still read from there. The status `adapter.features` is the one list.
+What a bridge can do is one set of names: the actions it runs (`highlight`, `grab`, `goto`, `trip`) and what it does besides (`trip-bags`: its trips take a bag only once they have read it empty, issue #128). A scan's adapter block and `capabilities.json` may keep them in two lists, `capabilities.bridge` for the actions and `features` for the rest, and the app reads a name from either. The shipped scripts still list `trip-bags` in `capabilities.bridge` and write no `features` into scans: an older app refuses a scan whose adapter block has a field it does not know, so a scan gains `features` only once an app that accepts it has been out for a release. The status `adapter.features` is the one list.
 
 The page (Highlight, Grab and Go to, and Organize's Run buttons), Organize's planner and trip route, Put away and the MCP tools all ask `bridgeFeatures` (`app/vault-lib.mts`), which answers from:
 
@@ -112,7 +112,7 @@ The page (Highlight, Grab and Go to, and Organize's Run buttons), Organize's pla
 2. otherwise the newest scan made with that adapter (its scripts were installed with the bridge; a v1 scan's adapter block is the app's own stand-in and is skipped);
 3. otherwise the manifest this app ships, `adapters/<id>/capabilities.json`.
 
-A bridge too old to report itself (no `adapter` in its status) is judged by the newest scan and the manifest, as before. Settings still compares the installed scripts' version with the shipped one and asks for a reinstall when they differ; the shipped manifest only says what a reinstall would give.
+A bridge too old to report itself (no `adapter` in its status) is judged by the newest scan, then the manifest. Before the report, the page's buttons and trips went by the manifest alone, so one case differs: scripts reinstalled but never rescanned, with a newest scan from before a feature existed, hide that feature until the next scan. Settings still compares the installed scripts' version with the shipped one and asks for a reinstall when they differ; the shipped manifest only says what a reinstall would give.
 
 ## The offset rule
 

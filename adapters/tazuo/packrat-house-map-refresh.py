@@ -87,9 +87,8 @@ CAPABILITIES = {
                "Ring", "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic",
                "Earrings", "Arms", "Cloak", "Robe", "Skirt", "Legs"],
     "arms": True, "bank": True, "ground": True, "nested": True, "tooltips": "opl",
-    "bridge": ["highlight", "grab", "goto", "trip"],
+    "bridge": ["highlight", "grab", "goto", "trip", "trip-bags"],
 }
-FEATURES = ["trip-bags"]   # what the bridge does besides its actions (capabilities.json's "features")
 
 
 # BEGIN generated: tazuo/house_limits
@@ -304,7 +303,7 @@ def main():
     snap = {"schemaVersion": 2, "kind": "house", "character": char,
             "scannedAt": rfc3339_now(),
             "adapter": {"id": ADAPTER_ID, "version": ADAPTER_VERSION, "client": "TazUO",
-                        "clientVersion": None, "capabilities": CAPABILITIES, "features": FEATURES},
+                        "clientVersion": None, "capabilities": CAPABILITIES},
             "stats": {}, "roots": [], "containers": {}, "items": [], "equipped": [],
             "house": house}
     fname = re.sub(r"[^A-Za-z0-9_-]", "_", char) + time.strftime("-%Y%m%d-%H%M%S") + "-house.json"

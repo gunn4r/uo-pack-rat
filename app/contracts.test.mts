@@ -68,6 +68,12 @@ for (const name of adapterDirs) {
         assert.ok(validate(TRIP_SCHEMA.properties!.action!, action).ok, "trip is not bridge-trip.v1.schema.json's action");
         continue;
       }
+      // trip-bags is a feature, not a command (issue #128): its trips take a bag only once they have read it empty. It stays
+      // in this list, where every Pack Rat reads it, until an app that reads a scan's adapter.features has been out a release.
+      if (action === BAG_TAKES) {
+        assert.ok(declared.includes("trip"), "trip-bags without trip");
+        continue;
+      }
       assert.ok(ALL_BRIDGE_ACTIONS.includes(action), `unknown bridge action ${JSON.stringify(action)} — app/ui/bridge.mts renders no button for it, so nothing would ever queue it`);
       assert.ok(validate(BRIDGE_SCHEMA.command.properties!.action!, action).ok, `${action} is not in bridge.v1.schema.json's action enum`);
     }

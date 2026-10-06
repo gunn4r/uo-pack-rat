@@ -13,7 +13,6 @@
     "ground": true,
     "nested": true,
     "tooltips": "opl",
-    "bridge": ["highlight", "grab", "goto", "trip"]
-  },
-  "features": ["trip-bags"]
+    "bridge": ["highlight", "grab", "goto", "trip", "trip-bags"]
+  }
 }

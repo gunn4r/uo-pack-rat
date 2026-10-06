@@ -92,13 +92,12 @@ CAPABILITIES = {
                "Ring", "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic",
                "Earrings", "Arms", "Cloak", "Robe", "Skirt", "Legs"],
     "arms": True, "bank": True, "ground": True, "nested": True, "tooltips": "opl",
-    "bridge": ["highlight", "grab", "goto", "trip"],
+    "bridge": ["highlight", "grab", "goto", "trip", "trip-bags"],
 }
-# What this bridge does besides its actions. "trip-bags": its trips check a bag is empty before taking it
-# (issue #128), so an older bridge is never sent one. Scripts before 2.16.0 listed it among the actions.
-FEATURES = ["trip-bags"]
-# The actions a queue line may name.
-ACTIONS = CAPABILITIES["bridge"]
+# The actions a queue line may name. "trip-bags" is not one: it is a feature, telling the app this bridge's trips
+# check a bag is empty before taking it (issue #128), so an older bridge is never sent one. It stays in this list,
+# where every Pack Rat reads it, until an app that reads a scan's adapter.features has been out for a release.
+ACTIONS = [a for a in CAPABILITIES["bridge"] if a != "trip-bags"]
 
 
 BRIDGE_DIR = os.path.join(data_dir(), "bridge", "tazuo")
@@ -609,7 +608,7 @@ def sysmsg(msg, hue=OK_HUE):
 
 
 # This bridge, as status.json reports it: the app gates its buttons on what the running bridge says it can do.
-STATUS_ADAPTER = {"id": ADAPTER_ID, "version": ADAPTER_VERSION, "protocol": PROTOCOL, "features": ACTIONS + FEATURES}
+STATUS_ADAPTER = {"id": ADAPTER_ID, "version": ADAPTER_VERSION, "protocol": PROTOCOL, "features": CAPABILITIES["bridge"]}
 
 
 def write_status(current=None):

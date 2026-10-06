@@ -88,9 +88,8 @@ CAPABILITIES = {
                "Ring", "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic",
                "Earrings", "Arms", "Cloak", "Robe", "Skirt", "Legs"],
     "arms": True, "bank": True, "ground": True, "nested": True, "tooltips": "opl",
-    "bridge": ["highlight", "grab", "goto", "trip"],
+    "bridge": ["highlight", "grab", "goto", "trip", "trip-bags"],
 }
-FEATURES = ["trip-bags"]   # what the bridge does besides its actions (capabilities.json's "features")
 
 
 PAUSE_OPEN = 1.2         # after UseObject on a container (raise on laggy connections)
@@ -470,7 +469,7 @@ def main():
     snap = {"schemaVersion": 2, "character": char,
             "scannedAt": rfc3339_now(),
             "adapter": {"id": ADAPTER_ID, "version": ADAPTER_VERSION, "client": "TazUO",
-                        "clientVersion": None, "capabilities": CAPABILITIES, "features": FEATURES},
+                        "clientVersion": None, "capabilities": CAPABILITIES},
             "meta": {"mode": "quick", "name": str(__name__), "roots": ["backpack"]},
             "stats": {"str": int(p.Strength), "dex": int(p.Dexterity), "int": int(p.Intelligence)},
             "position": {"x": int(p.X), "y": int(p.Y)},
