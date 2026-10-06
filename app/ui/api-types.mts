@@ -3,24 +3,18 @@
 // caller narrows through one of the types below rather than sprinkling `as Whatever` at each read
 // site, per the migration plan's "type each endpoint's response in ONE place."
 //
-// These are declared fresh here, NOT imported from the server-side modules that define the "real"
-// shape (app/installer.mts, app/runs-lib.mts, app/exact-solver.mts, scripts/optimizer-core.mts,
-// app/vault-server.mts) — every one of those imports a node: module or another file that does, and
-// this project's browser build (tsconfig.browser.json) type-checks with `"types": []`. A type-only
-// import is erased at EMIT time, but the imported file still has to type-check to be resolved at all,
-// and resolving e.g. app/runs-lib.mts (`import { createHash } from "node:crypto"`) under `types: []`
-// fails with "Cannot find name 'node:crypto'" — verified directly against tsconfig.browser.json before
-// writing this file (`npx tsc -p tsconfig.browser.json` against a throwaway `import type { RunSummary }
-// from "../runs-lib.mts"` file). Each interface below names the server-side type/route it mirrors, so a
-// change on one side has somewhere obvious to update on the other; nothing here is validated against
-// the wire (HTTP responses are unvalidated network input, same trust level server.test.mts's own
-// per-route interfaces document), it just gives the page's own reads a name instead of `unknown`.
+// A server-side module may be imported here, type or value, when it and everything it imports is browser-safe (no node: import anywhere in that chain), as the imports below are. One that reaches a node: module cannot be imported even for a type: the browser build (tsconfig.browser.json) type-checks with `"types": []`, a type-only import is erased only at emit time, and the imported file still has to type-check. So a server shape the page reads lives in a types-only module next to its owner (app/house-model-types.mts, app/organize-types.mts, app/runs-types.mts): the owner re-exports it, the server annotates its response with `satisfies`, and this file re-exports it (or narrows it with a mapped type), so a renamed field fails the typecheck on both sides. Never the other way around: nothing outside app/ui/ imports from app/ui/.
+//
+// What is still declared here by hand: GET /api/bridge/status (the server spreads the bridge's own status file into it, so it has no server-side type to share; see below) and the rest of the shapes below whose owners reach node: (app/installer.mts, app/exact-solver.mts, scripts/optimizer-core.mts, app/vault-server.mts). Each names the server-side type or route it mirrors, so a change on one side has somewhere obvious to update on the other. Nothing here is validated against the wire (HTTP responses are unvalidated network input, same trust level server.test.mts's own per-route interfaces document); it gives the page's own reads a name instead of `unknown`.
 import type { Item, Container, Character, ScanSummary, OptItem, RunSettings, ProfilesFile, BlacklistEntry, KindOverrides } from "../vault-lib.mts";
 import type { Facets, ItemQueryRows, ItemQueryGroups, HitRow } from "../item-query.mts";
 import type { RulesV1 } from "../schema/types.d.mts";
 import type { AutostartOutcome, Hotkey as PanelHotkey, PanelPrefs } from "../tazuo-panel-prefs.mts";
-import type { OrganizeConfig, Origin, RuleMatch } from "../organize-config.mts";
+import type { OrganizeConfig, RuleMatch } from "../organize-config.mts";
 import type { MissingItem } from "../missing.mts";
+import type { RunBody, RunsListBody, RunSummary, SavedRun } from "../runs-types.mts";
+import type { HouseApiResponse } from "../house-model-types.mts";
+import type { DataDirCheckInfo } from "../data-dir-notice.mts";
 
 // ---------------------------------------------------------------- shared fragments
 
@@ -168,13 +162,8 @@ export interface InstalledVersionInfo {
   version: string | null;
   files: Record<string, boolean>;
 }
-// GET /api/setup's dataDirCheck — app/installer.mts's DataDirCheck, restated here because the page
-// can't import that node:fs module: whether the client's installed scripts write to this data folder.
-export type DataDirCheckInfo =
-  | { status: "none" }
-  | { status: "match"; scriptsDir: string }
-  | { status: "mismatch"; scriptsDir: string; scriptsDataDir: string; dataDir: string }
-  | { status: "unreadable"; scriptsDir: string; error: string };
+// GET /api/setup's dataDirCheck (app/data-dir-notice.mts).
+export type { DataDirCheckInfo };
 export interface SetupApiResponse {
   ok: boolean;
   firstRun: boolean;
@@ -357,56 +346,20 @@ export interface OptimizeCancelApiResponse {
   ok: boolean;
   state: string;
 }
-// A saved run as the server persists and returns it — mirrors app/runs-lib.mts's SavedRun, with the
-// loosely-shaped fields (settings, result) narrowed to what this page actually reads off them.
-export interface SavedRunLike {
-  id: string;
-  key?: string | undefined;
-  character?: string | undefined;
-  createdAt: string;
-  label: string;
+// The page's view of a saved run (app/runs-types.mts). The server's types are loose because it parses whatever run files are on disk; every run the server writes (vault-server.mts saveRun, runs-lib.mts manualRun) has an id, a createdAt, a label ("" until renamed), a poolSize and an ms, so the page reads those as present (Settled). Loose: optional here.
+type Settled<T, K extends keyof T> = { [P in K]-?: Exclude<T[P], undefined> };
+type Loose<T, K extends keyof T> = { [P in K]?: T[P] | undefined };
+// A saved run as GET /api/runs/<id> returns it, with the loosely-shaped fields (settings, result) narrowed to what this page actually reads off them.
+export type SavedRunLike = Settled<SavedRun, "id" | "createdAt" | "label" | "poolSize" | "ms"> & Loose<SavedRun, "key" | "character" | "inventoryStamp" | "skipped" | "explored"> & {
   settings: RunSettings;
-  inventoryStamp?: unknown;
-  poolSize: number | null;
-  skipped?: unknown;
-  ms: number | null;
-  explored?: unknown;
   result: OptimizeResult;
-}
-// GET /api/runs — mirrors app/runs-lib.mts's RunSummary: a SavedRunLike's fields, flattened with the
-// few extras (proven/score/currentScore/delta/method/nodes) runs.mts's rows read directly off the
-// summary rather than through `.result`.
-export interface RunSummaryLike {
-  id: string;
-  character?: string | undefined;
-  createdAt: string;
-  label: string;
-  settings: RunSettings;
-  inventoryStamp?: unknown;
-  poolSize: number | null;
-  ms: number | null;
-  method: string | null;
-  proven: boolean | null;
-  score: number | null;
-  currentScore: number | null;
-  delta: number | null;
-  nodes: number | null;
-  changes?: number | null | undefined;                      // absent from a server older than the drawer's badges
-  totalsAfter?: Record<string, number> | null | undefined;
-}
-export interface RunsListApiResponse {
-  ok: boolean;
-  runs: RunSummaryLike[];
-}
-export interface RunApiResponse {
-  ok: boolean;
-  run: SavedRunLike;
-  error?: string | undefined;
-}
-export interface RunPutApiResponse {
-  ok: boolean;
-  run: RunSummaryLike;
-}
+};
+// GET /api/runs — a run's summary: a SavedRunLike's fields, flattened with the few extras (proven/score/currentScore/delta/method/nodes) runs.mts's rows read directly off the summary rather than through `.result`. changes and totalsAfter are absent from a server older than the drawer's badges.
+export type RunSummaryLike = Settled<RunSummary, "id" | "createdAt" | "label" | "poolSize" | "ms" | "method" | "proven" | "score" | "currentScore" | "delta" | "nodes">
+  & Loose<RunSummary, "character" | "inventoryStamp" | "changes" | "totalsAfter"> & { settings: RunSettings };
+export type RunsListApiResponse = RunsListBody<RunSummaryLike>;
+export type RunApiResponse = RunBody<SavedRunLike> & { error?: string | undefined };
+export type RunPutApiResponse = RunBody<RunSummaryLike>;
 
 // SSE payloads (POST /api/optimize's job stream, JSON.parse()'d from MessageEvent.data by
 // builder.mts) — mirror vault-server.mts's jobSnapshot()/finish() literals.
@@ -471,61 +424,20 @@ export interface BridgeQueueApiResponse {
 // ---------------------------------------------------------------- organize (issue #11)
 // The setup's types come straight from app/organize-config.mts: unlike the modules listed at the top of this
 // file it is pure and imports only item-query.mts's and vault-lib.mts's types, so the browser build type-checks
-// it. The plan's types are mirrored from app/organize.mts, which imports server-only code (bridge-trip.mts).
+// it. The plan's and the proposal's types come from app/organize-types.mts (organize.mts and organize-strategies.mts import server-only code).
 export type { OrganizeConfig, ContainerLabel, OrganizeRule, RuleMatch, Origin, Build } from "../organize-config.mts";
 export type { SpellSchool } from "../vault-lib.mts";
-export type PlanWarningKind = "stale-container" | "missing-target" | "missing-label" | "unknown-capacity" | "old-scripts" | "blacklisted" | "no-position" | "not-ground" | "nearly-full";
-export interface PlanWarning { kind: PlanWarningKind; serial: number; detail: string }
-export interface PlanMove { serial: number; name: string; amount: number; from: number | null; to: number; ruleId: string; alsoMatched: string[]; trip: number }
-export interface PlanTrip { index: number; site: number; takes: number[]; puts: number[] }
-export interface PlanRuleReport { ruleId: string; matched: number; inPlace: number; toMove: number; noRoom: number }
-export interface PlanRoomReport { ruleId: string; needSlots: number; freeSlots: number; shortfall: number }
-export interface OrganizePlan {
-  inventoryStamp: string;
-  stamp: string;                     // the plan's identity; POST /api/organize/trip refuses any other
-  sites: { index: number; roots: number[] }[];
-  moves: PlanMove[];                 // in trip order; from null = carried in the backpack
-  trips: PlanTrip[];                 // index 1-based; the first trip of each site is the only one the server runs
-  rules: PlanRuleReport[];           // one per rule in rule order, then "catch-all" and "empty-bags" when set
-  room: PlanRoomReport[];
-  crossSite: { ruleId: string; count: number }[];
-  warnings: PlanWarning[];
-  carried: { serial: number; name: string }[];
-  unclaimed: number;
-  seconds: number;                   // about how long the trips take (app/organize.mts's tripSeconds), whole seconds
-  emptyBags: { serial: number; name: string; container: number }[];   // not yet in the gather container
-}
+export type {
+  WarningKind as PlanWarningKind, PlanWarning, PlanMove, PlanTrip, RuleReport as PlanRuleReport, RoomReport as PlanRoomReport, Plan as OrganizePlan,
+  OrganizeRunningTrip, OrganizePlanApiResponse,
+  StrategyId as AutoStrategy, Candidate as ProposalCandidate, GroupReport as ProposalGroup, Layout as ProposalLayout, Proposal as OrganizeProposal, OrganizeProposeApiResponse,
+} from "../organize-types.mts";
 export interface OrganizePreset { id: string; name: string; match: RuleMatch }
 export interface OrganizeApiResponse { ok: boolean; config: OrganizeConfig; problems: string[] }
-// `running`: the trip the server has queued and not heard back about (`picked` = its bridge is running it now).
-export interface OrganizeRunningTrip { id: string; index: number; queuedAt: string; picked: boolean }
-export interface OrganizePlanApiResponse { ok: boolean; plan: OrganizePlan; running: OrganizeRunningTrip | null }
 export interface OrganizePresetsApiResponse { ok: boolean; presets: OrganizePreset[] }
 export interface OrganizeTripApiResponse { ok: boolean; id: string; index: number }
 // POST /api/organize/match: what one rule filter takes of the movable items in labelled roots (app/organize.mts's matchCount).
 export interface OrganizeMatchApiResponse { ok: boolean; count: number; pieces: number; sample: string[] }
-// POST /api/organize/propose (Auto organize): mirrored from app/organize-strategies.mts, which is server-only.
-export type AutoStrategy = "simple" | "detailed" | "build";
-export interface ProposalCandidate { serial: number; name: string; site: number; fill: { items: number; max: number }; label: { name: string; origin: Origin } | null; mine: boolean; ticked: boolean }
-export interface ProposalGroup { key: string; name: string; family: string; ruleIds: string[]; items: number; needSlots: number; targets: number[]; bagIn: number | null; needsBag: boolean; roomSlots: number; shortfall: number; addContainers: number; crossSite: number }
-// Issue #132: what the full layout needs beyond what the player has (chest null: one of the chests to add); roomy:
-// the proposal leaves chests 20% free where filling them to the top would have used other chests.
-export interface ProposalLayout { chests: number; bags: { chest: number | null; family: string; bags: number }[]; spareBags: number; roomy: boolean }
-export interface OrganizeProposal {
-  strategy: AutoStrategy;
-  candidates: ProposalCandidate[];
-  unusable: { serial: number; name: string; reason: string }[];
-  containers: number[];
-  refused: { serial: number; reason: string }[];
-  groups: ProposalGroup[];
-  unassigned: number;
-  layout: ProposalLayout;
-  manualRules: number;
-  config: OrganizeConfig;            // the whole setup Accept saves with PUT /api/organize
-  changed: boolean;
-  plan: { moves: number; trips: number; noRoom: number; crossSite: number; unclaimed: number; seconds: number };
-}
-export interface OrganizeProposeApiResponse { ok: boolean; proposal: OrganizeProposal }
 
 // SSE payloads on the shared /api/events stream (ui/events.mts) — mirror vault-server.mts's
 // broadcastEvent("inventory", …) / broadcastEvent("rejected", …) literals (app/watcher.mts's
@@ -559,32 +471,11 @@ export interface ApiError extends Error {
 }
 
 // ---------------------------------------------------------------- house map (issue #10)
-// Mirrored from app/house-model.mts (HouseModel and its parts) and the GET /api/houses routes in app/vault-server.mts:
-// house-model.mts imports app/tiledata.mts (node:fs), so the browser build cannot even import its types.
-export type MaterialFamily = "stone" | "brick" | "plaster" | "wood" | "marble" | "sandstone" | "dirt" | "grass" | "water" | "tile" | "neutral";
-export interface Level { index: number; name: string; floorZ: number; status: "built" | "floor-only" }
-export type CellKind = "floor" | "wall" | "window" | "stair" | "roof";
-export interface Cell { level: number; x: number; y: number; kind: CellKind; material: string; family: MaterialFamily; z: number; lip: boolean; indoor: boolean; doorway: boolean }
-export interface Furniture { serial: number; kind: "block" | "door" | "teleporter"; name: string; level: number; x: number; y: number; z: number; height: number }
-// serials and zs bottom first; codes[serial] is the engraving code ("C3", or "C" alone for a single chest).
-export interface Stack { level: number; x: number; y: number; serials: number[]; zs: number[]; spot: number | null; direction: string; letter: string }
-export interface Spot { id: number; level: number; x: number; y: number; teleporter: boolean }
-export interface HouseModel {
-  id: string; facet: number | null; capturedAt: string; captures: number; x0: number; y0: number; x1: number; y1: number;
-  levels: Level[]; cells: Cell[]; furniture: Furniture[]; stacks: Stack[]; spots: Spot[]; codes: Record<string, string>; tiledata: boolean;
-  unopened: number[]; unopenedNames: Record<string, string>;   // the stacked chests no scan has opened, and their tiledata names
-  name?: string | undefined;   // the player's name for the house (house-map.json, issue #164), when it has one
-}
-// Where tiledata.mul came from (the uoFolder setting, or TazUO's launcher profile), or why there is none.
-export interface TiledataFrom { folder: string | null; source: "settings" | "tazuo-profile" | null; reason: null | "override-missing" | "no-client" | "no-tazuo-profile" | "unreadable" }
-// GET /api/houses
-// width, height and plot are the plot, without a row of front steps outside it (house-model.mts plotBounds).
-export interface HouseSummary { id: string; name?: string | undefined; facet: number | null; capturedAt: string; captures: number; width: number; height: number; plot: { x0: number; y0: number; x1: number; y1: number }; levels: number; containers: number; serials: number[] }
+// The house model and the GET /api/houses responses come from app/house-model-types.mts (house-model.mts imports app/tiledata.mts, which uses node:fs). HouseModel is the model as GET /api/houses/<id> answers it, with the player's name for the house (house-map.json, issue #164) when it has one.
+export type { MaterialFamily, Level, CellKind, Cell, Furniture, Stack, Spot, TiledataFrom, HouseSummary, HousesApiResponse, HouseApiResponse } from "../house-model-types.mts";
+export type HouseModel = HouseApiResponse["house"];
 // GET /api/facet-map/<facet>.png answers a PNG, or a 404 with why there is none: no UO folder (as TiledataFrom), or the facet file missing or not a facet bitmap.
 export type FacetMapReason = "override-missing" | "no-client" | "no-tazuo-profile" | "missing" | "unreadable";
-export interface HousesApiResponse { ok: boolean; tiledata: boolean; tiledataFrom: TiledataFrom; houses: HouseSummary[] }
-// GET /api/houses/<id>
-export interface HouseApiResponse { ok: boolean; house: HouseModel }
 // GET /api/house-map and PUT /api/house-map/<id> (app/house-names.mts, issues #164 and #10): the player's names and drawn
 // areas by house id, each with the footprint the house had when it was named or its areas drawn. `name` is "" for a house
 // with areas but no name. Other fields an entry or an area may carry later are kept, unread.

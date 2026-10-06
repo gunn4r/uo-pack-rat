@@ -6,12 +6,12 @@
 // page does (buffs.mts, vault-lib.mts). One entry per tool: its name, description, JSON Schema for its arguments
 // (the subset app/schema/validate.mts checks, which mcp.mts runs before the handler), annotations and handler.
 // `action: true` marks a tool that acts in game: refused while Settings' "Allow in-game actions" is off.
-import { BRIDGE_ACTION_LABELS, BRIDGE_OFFLINE, GEAR_SLOTS, bridgeRefusal, characterProfile, containerChain, fullOf, requirementReport, resistSkillBonus, setRules, templateFrom, toOptItem, totalsOf } from "./vault-lib.mts";
+import { BRIDGE_ACTION_LABELS, BRIDGE_OFFLINE, GEAR_SLOTS, bridgeRefusal, characterProfile, containerChain, fullOf, isPseudoCharacter, requirementReport, resistSkillBonus, templateFrom, toOptItem, totalsOf } from "./vault-lib.mts";
 import type { BridgeAction, Character, CharacterEntryRaw, Container, EffectiveProfile, Item, ProfilesFile, PropMap, RunBuffs } from "./vault-lib.mts";
 import { buffPlanOf, buffSkillValues, manualProfile, normalizeBuffs, ownEntry, plannedProfile, runBuffs, BUFFS } from "./buffs.mts";
 import { EXTRA_COLS, parseItemQuery } from "./item-query.mts";
 import type { ValidatorSchema } from "./schema/validate.mts";
-import type { RulesV1 } from "./schema/types.d.mts";
+import type { PlanMove } from "./organize-types.mts";
 
 // A tool's failure in words the model reads (a route's own refusal, a bad argument): a tool result with isError.
 export class ToolError extends Error {}
@@ -47,7 +47,6 @@ interface SetupDoc { settings: { client?: { adapter: string } | null }; bridgeAd
 interface BridgeStatus { online: boolean; age?: number; character?: string; current?: { id?: string } | null; results?: Record<string, BridgeResult> }
 interface BridgeResult { ok: boolean; msg: string; t?: string; partial?: boolean; stopped?: boolean; steps?: Array<{ op: string; serial: number; ok: boolean; msg: string }> }
 interface RunDoc { id: string; character?: string; createdAt: string; label?: string; settings?: Record<string, unknown>; result?: Record<string, unknown> | null; ms?: number | null; inventoryStamp?: string | null }
-interface PlanMove { serial: number; name: string; amount: number; from: number | null; to: number; ruleId: string; trip: number }
 interface PlanDoc { stamp: string; inventoryStamp: string; moves: PlanMove[]; trips: Array<{ index: number; site: number }>; rules: unknown[]; warnings: unknown[]; seconds: number; unclaimed: number }
 
 // ---------------------------------------------------------------- helpers
@@ -78,16 +77,12 @@ function row(it: Item): Record<string, unknown> {
 const nonZero = (m: PropMap | Record<string, number> | undefined): Record<string, number> => Object.fromEntries(Object.entries(m || {}).filter(([, v]) => v));
 const inventory = async (ctx: ToolContext): Promise<InventoryDoc> => (await ctx.api<{ inventory: InventoryDoc }>("/api/inventory")).inventory;
 const scannedCharacter = (inv: InventoryDoc, name: string): Character => {
-  if (!Object.hasOwn(inv.characters, name) || name.startsWith("_")) throw new ToolError(`no scans for character ${JSON.stringify(name)}; list_characters names them`);
+  if (!Object.hasOwn(inv.characters, name) || isPseudoCharacter(name)) throw new ToolError(`no scans for character ${JSON.stringify(name)}; list_characters names them`);
   return inv.characters[name]!;
 };
 async function itemsBySerial(ctx: ToolContext, serials: number[]): Promise<Record<string, Item>> {
   return (await ctx.api<{ items: Record<string, Item> }>(`/api/items/by-serial?serials=${serials.join(",")}`)).items;
 }
-// vault-lib's caps, the Resisting Spells bonus and the profile planning read the shard's rules; the page loads them
-// from GET /api/rules before anything else, and so does a tool that needs them (the server's own copy of the module
-// is a separate, hot-reloaded instance).
-async function loadRules(ctx: ToolContext): Promise<void> { setRules((await ctx.api<{ rules: RulesV1 }>("/api/rules")).rules); }
 const newestStamp = (scans: InventoryDoc["scans"]): string => {
   let best = "", ms = -Infinity;
   for (const s of scans) { const t = Date.parse(s.scannedAt); if (t > ms) { ms = t; best = s.scannedAt; } }
@@ -103,7 +98,6 @@ const newestStamp = (scans: InventoryDoc["scans"]): string => {
 interface Planned { profile: EffectiveProfile; settings: Record<string, unknown>; snapshot: Record<string, unknown>; buffs: string[] }
 interface Prefs { autoBuffs?: Record<string, string[]>; manualBuffs?: string[]; buffsCount?: string; buffSkills?: Record<string, Record<string, number>> }
 async function planProfile(ctx: ToolContext, inv: InventoryDoc, name: string | null, args: Record<string, unknown>, suit: Record<string, Item> | null): Promise<Planned> {
-  await loadRules(ctx);
   const [{ profiles }, { prefs }] = await Promise.all([ctx.api<{ profiles: ProfilesFile }>("/api/profiles"), ctx.api<{ prefs: Prefs }>("/api/ui-prefs")]);
   const c = name ? scannedCharacter(inv, name) : null;
   // profiles.json's caps moved to the shard's rules file (migrateProfiles drops them); the page's working profile has none either.
@@ -220,7 +214,7 @@ export const TOOLS: Tool[] = [
     async handler(_a, ctx) {
       const inv = await inventory(ctx);
       const f = inv.facets;
-      return { characters: Object.keys(inv.characters).filter((n) => !n.startsWith("_")).sort(), itemCount: inv.itemCount, slots: f.slots, kinds: f.kinds, rarities: f.rarities, slayers: f.slayers,
+      return { characters: Object.keys(inv.characters).filter((n) => !isPseudoCharacter(n)).sort(), itemCount: inv.itemCount, slots: f.slots, kinds: f.kinds, rarities: f.rarities, slayers: f.slayers,
         weaponSkills: f.weaponSkills, flags: f.flagKeys, properties: f.propKeys.map((key) => ({ key, name: fullOf(key) })), extraKeys: [...(f.extraKeys as string[]), ...Object.keys(EXTRA_COLS)] };
     },
   },
@@ -335,7 +329,7 @@ export const TOOLS: Tool[] = [
       const inv = await inventory(ctx);
       const roots = (name: string): Record<string, number> => Object.fromEntries(Object.values(inv.containers)
         .filter((c) => c.parent == null && (c.kind === "backpack" || c.kind === "bank") && c.scannedBy === name).map((c) => [c.kind!, c.serial]));
-      return { characters: Object.values(inv.characters).filter((c) => !c.name.startsWith("_")).sort((x, y) => x.name.localeCompare(y.name)).map((c) => ({
+      return { characters: Object.values(inv.characters).filter((c) => !isPseudoCharacter(c.name)).sort((x, y) => x.name.localeCompare(y.name)).map((c) => ({
         name: c.name, scannedAt: c.scannedAt, stats: c.stats, wearing: (inv.worn[c.name] || []).length, ...roots(c.name) })) };
     },
   },
@@ -347,7 +341,6 @@ export const TOOLS: Tool[] = [
     async handler(a, ctx) {
       const inv = await inventory(ctx);
       const c = scannedCharacter(inv, a.character as string);
-      await loadRules(ctx);
       const worn = inv.worn[c.name] || [];
       const skills = Object.entries(c.skills || {}).map(([k, v]) => [k, Number((v as { value?: unknown })?.value) || 0] as const).filter(([, v]) => v > 0).sort((x, y) => y[1] - x[1]);
       return { name: c.name, scannedAt: c.scannedAt, stats: c.stats, maxes: c.maxes, resists: c.resists, resistBonus: resistSkillBonus(c.skills), skills: Object.fromEntries(skills),
@@ -427,7 +420,7 @@ export const TOOLS: Tool[] = [
     async handler(_a, ctx) {
       const [inv, st, { settings }] = await Promise.all([inventory(ctx), ctx.api<BridgeStatus>("/api/bridge/status"), ctx.api<{ settings: { client?: { adapter: string } | null } }>("/api/settings")]);
       return { scans: inv.scans.length, newestScan: newestStamp(inv.scans) || null, client: settings.client?.adapter ?? null,
-        characters: Object.values(inv.characters).filter((c) => !c.name.startsWith("_")).map((c) => ({ name: c.name, scannedAt: c.scannedAt })),
+        characters: Object.values(inv.characters).filter((c) => !isPseudoCharacter(c.name)).map((c) => ({ name: c.name, scannedAt: c.scannedAt })),
         bridge: { online: !!st.online, character: st.character ?? null, secondsSinceHeartbeat: Number.isFinite(st.age) ? st.age : null } };
     },
   },

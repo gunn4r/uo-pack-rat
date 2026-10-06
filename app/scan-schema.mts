@@ -36,7 +36,7 @@ const NUMBER_MAP_OR_NULL = { type: ["object", "null"], additionalProperties: { t
 
 // Keep byte-for-byte identical to app/schema/scan.v2.schema.json (a test enforces this).
 export const SCAN_V2_SCHEMA = {
-  "$comment": "Pack Rat scan file schema v2. Draft-07 style, restricted to the keyword subset app/schema/validate.mjs supports. additionalProperties is true at the top level (adapters may add fields, e.g. refresh's meta) but false inside adapter and adapter.capabilities, which are a closed contract every adapter must match exactly, and a SUBSCHEMA on the arbitrarily-keyed maps (stats, maxes, resists, position, skills, containers), which is how their values get checked at all. This JSON literal must stay identical to SCAN_V2_SCHEMA in app/scan-schema.mjs (app/scan-schema.test.mjs asserts that) because scan-schema.mjs is served to the browser and cannot load this file via fs or a JSON import attribute.",
+  "$comment": "Pack Rat scan file schema v2. Draft-07 style, restricted to the keyword subset app/schema/validate.mts supports. additionalProperties is true at the top level (adapters may add fields, e.g. refresh's meta) but false inside adapter and adapter.capabilities, which are a closed contract every adapter must match exactly, and a SUBSCHEMA on the arbitrarily-keyed maps (stats, maxes, resists, position, skills, containers), which is how their values get checked at all. This JSON literal must stay identical to SCAN_V2_SCHEMA in app/scan-schema.mts (app/scan-schema.test.mts asserts that) because scan-schema.mts is served to the browser and cannot load this file via fs or a JSON import attribute.",
   type: "object",
   additionalProperties: true,
   required: ["schemaVersion", "character", "scannedAt", "adapter", "stats", "roots", "containers", "items", "equipped"],
@@ -236,9 +236,12 @@ function naiveLocalToRfc3339(stamp: string): string {
 
 const num = (v: unknown): number | null | undefined => (v == null ? v : Number(v));
 
+// A scan's character name starting with "_" is not a character: the app's own documents (the "_vault" tombstones) use it.
+export const isPseudoCharacter = (name: unknown): boolean => String(name ?? "").startsWith("_");
+
 function tazuoAdapter(character: unknown): ScanV2Adapter {
   return {
-    id: String(character ?? "").startsWith("_") ? "app" : "tazuo",
+    id: isPseudoCharacter(character) ? "app" : "tazuo",
     version: "1", client: "TazUO", clientVersion: null, capabilities: TAZUO_V1_CAPS,
   };
 }

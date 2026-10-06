@@ -12,12 +12,12 @@
 // string columns (name, kind, slot label, location) sort A-to-Z when dir is +1 (av.localeCompare(bv) *
 // dir) — that asymmetry is the page's existing behavior (best-stat-first is the useful default for a
 // property column; alphabetical is the useful default for a name column), reproduced exactly, not fixed.
-import { itemSearchBlob, itemOwnBlob, groupByName, compareNames, KINDS, SLOT_LABELS, propertyKeys, extraKeys, flagKeys, flagKey, gearSkills, weaponSkillsOf, WEAPON_SKILLS } from "./vault-lib.mts";
+import { itemSearchBlob, itemOwnBlob, groupByName, compareNames, KINDS, SLOT_LABELS, propertyKeys, extraKeys, flagKeys, flagKey, gearSkills, weaponSkillsOf, WEAPON_SKILLS, PROPERTIES } from "./vault-lib.mts";
 import type { Item, ItemGroup } from "./vault-lib.mts";
 import type { RulesV1RarityItem } from "./schema/types.d.mts";
 
-// Columns computed from an item but not stored under item.props — moved verbatim from ui/dom.mts (Task 4).
-export const EXTRA_COLS: Record<string, [string, string]> = { strReq: ["STR req", "Strength Requirement"], weight: ["Wt", "Weight (stones)"] };
+// Columns computed from an item but not stored under item.props: vault-lib.mts's "extra" properties, [label, full name].
+export const EXTRA_COLS: Record<string, [string, string]> = Object.fromEntries(PROPERTIES.filter((p) => p.kind === "extra").map((p) => [p.key, [p.label, p.full]]));
 // A key no property models reads the item's numeric extras (issue #133: "splintering weapon"); a range reads 0.
 export const colVal = (it: Item, c: string): number => {
   if (c === "strReq") return it.strReq || 0;
