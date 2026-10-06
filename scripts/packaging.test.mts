@@ -144,15 +144,14 @@ test("[fast] every module the shell, the server and the workers load at run time
     const refs = [...text.matchAll(/^(?:import|export)\s+(?!type\b)[^;]*?from\s+"(\.{1,2}\/[^"]+)"/gm), ...text.matchAll(/new URL\("(\.{1,2}\/[^"]+\.mts)", import\.meta\.url\)/g)];
     for (const [, spec] of refs) queue.push(relative(root, join(root, dirname(rel), spec!)).split(sep).join("/"));
   }
-  assert.ok(seen.has("app/vault-server.mts") && seen.has("app/ui/messages.mts"), "the walk must reach the server and what it imports from app/ui/");
+  assert.ok(seen.has("app/vault-server.mts") && seen.has("app/data-dir-notice.mts"), "the walk must reach the server and what it imports");
 });
 
 test("[fast] the bundle excludes the page's TypeScript sources (the compiled app/dist/ui/ is what runs) but still ships its stylesheet", () => {
   // Once app/ui/**/*.mts is compiled to app/dist/ui/ (npm run build:ui, part of predist), the .mts
   // sources are redundant weight in the packaged app — only the browser-served /ui/<name>.mjs route
-  // reads them, and that's served from app/dist/. The one exception is app/ui/messages.mts, which the
-  // server imports too, so build.files re-includes it after the exclusion (see the run-time module
-  // test above). Only this ONE pattern is excluded, not a broader "!app/**/*.mts"
+  // reads them, and that's served from app/dist/. Nothing the server runs imports from app/ui/
+  // (scripts/layering.test.mts holds that). Only this ONE pattern is excluded, not a broader "!app/**/*.mts"
   // — the server itself still runs from app/*.mts source, so excluding all .mts under app/ would break it.
   const files = build.files ?? [];
   assert.ok(files.includes("!app/ui/**/*.mts"), "app/ui/**/*.mts (the page's TS sources) must be excluded — only the compiled app/dist/ui/ output is served");

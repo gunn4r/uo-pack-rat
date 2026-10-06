@@ -1,5 +1,5 @@
 // ui/messages.mts — the plain sentences the page shows for an outcome the server reports as a count,
-// a status code or a one-word field. Pure and DOM-free (no `document`, no imports but a type), for
+// a status code or a one-word field. Pure and DOM-free (no `document`, no imports but types and app/data-dir-notice.mts), for
 // the same reason ui/adapters.mts is: a module that touches the DOM at module scope can't be loaded
 // under plain `node:test`, and these strings are exactly the part worth pinning with a test (see
 // app/ui-messages.test.mts). Every function here takes what `api.mts` throws or returns and gives
@@ -9,6 +9,7 @@
 // an install runs from both the wizard's last step and Settings' Reinstall row. Two hand-written copies of
 // one sentence is how panels drift apart.
 import type { ApiError, DataDirCheckInfo } from "./api-types.mts";
+import { dataDirNotice } from "../data-dir-notice.mts";
 
 // ---------------------------------------------------------------- reading an api() rejection
 export function errorText(e: unknown): string {
@@ -56,23 +57,8 @@ export function uoFolderErrorMessage(e: unknown): string {
 }
 
 // ---------------------------------------------------------------- GET /api/setup's dataDirCheck
-// The client's scripts writing to one data folder while the app reads another shows up as an empty
-// inventory and an offline bridge, and neither says why. The server logs this same sentence to the
-// console at startup (app/vault-server.mts imports it), so the banner and the terminal never disagree.
-// The folder names and the parse error come out of a file in the client folder, which may be an
-// unpacked third-party archive, so control characters (a terminal escape sequence, a fake newline) are
-// dropped before the sentence reaches a terminal.
-const printable = (s: string): string => s.replace(/[\u0000-\u001f\u007f-\u009f]/g, "");
-export function dataDirNotice(check: DataDirCheckInfo | undefined): string | null {
-  if (check?.status === "mismatch") {
-    const scripts = printable(check.scriptsDataDir);
-    return `Your game scripts in ${printable(check.scriptsDir)} write to ${scripts}, but Pack Rat is reading ${printable(check.dataDir)}, so new scans and the bridge won't show up here. Start Pack Rat on the scripts' folder (npm start -- --data ${scripts}), or reinstall the scripts from Settings so they write to this one.`;
-  }
-  if (check?.status === "unreadable") {
-    return `Pack Rat can't read packrat-paths.json in ${printable(check.scriptsDir)} (${printable(check.error)}), so it can't tell where your game scripts write. Reinstall the scripts from Settings to rewrite it.`;
-  }
-  return null;
-}
+// The full sentence lives in app/data-dir-notice.mts, which the server logs at startup too.
+export { dataDirNotice };
 // The same finding as the banner over every screen says it: one short line, no paths (they are long, and
 // Settings › Data, where the banner's "Show details" goes, shows the full sentence).
 export function dataDirBanner(check: DataDirCheckInfo | undefined): string | null {

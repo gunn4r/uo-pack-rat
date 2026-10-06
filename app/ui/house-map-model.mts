@@ -183,7 +183,7 @@ export function carryOverText(o: { name: string; areas: readonly HouseArea[] }):
   const text = !o.name ? `Use the ${what} from the earlier house here?` : o.areas.length ? `Use the ${what} of "${o.name}" from the earlier house here?` : `Use the name "${o.name}" from the earlier house here?`;
   return { text, action: `Use ${what}` };
 }
-export function stackWhere(m: HouseModel, s: Stack, areas: readonly HouseArea[] = []): string {
+export function stackWhere(s: Stack, areas: readonly HouseArea[] = []): string {
   const spot = s.spot == null ? "no standing spot reaches it" : s.direction === "here" ? `at standing spot ${s.spot + 1}` : `${s.direction} of standing spot ${s.spot + 1}`;
   return `${areaName(areas, s)} · ${spot} · ${plural(s.serials.length, "container")}${s.serials.length > 1 ? ", top first" : ""}`;
 }

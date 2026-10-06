@@ -98,7 +98,7 @@ Examples: `2b30944`, `9b03dcc`, `219861a`.
 Examples: `23fb19e`, `a86c64d`, `28a38de`.
 
 1. Contract: `app/schema/bridge.v1.schema.json` and `app/schema/bridge-trip.v1.schema.json`; `scripts/build-schema-types.mts` if the generator needs a new shape.
-2. Server: `app/bridge-trip.mts`, `app/config.mts` (paths), `app/vault-server.mts` (the queue route), `app/organize-state.mts` if the result changes where the app believes items are.
+2. Server: `app/bridge-trip.mts`, `app/bridge-contract.mts` (`TRIP_MAX_BYTES` and `TRIP_NAME_MAX`, which mirror the bridges' `MAX_LINE_BYTES` and `MAX_TRIP_NAME`), `app/config.mts` (paths), `app/vault-server.mts` (the queue route), `app/organize-state.mts` if the result changes where the app believes items are.
 3. Both bridge scripts: `adapters/tazuo/packrat-bridge.py` and `adapters/razor-enhanced/packrat-bridge.py`; each `capabilities.json` (`actions`); `adapters/tazuo/README.md`; a version bump per adapter.
 4. Fakes and tests: `adapters/fake_clients.py`, `adapters/test_bridges.py`, `adapters/test_adapters.py`, `app/adapters.test.mts`, `app/contracts.test.mts`, `app/bridge-trip.test.mts`.
 5. UI: `app/ui/bridge.mts` (labels, toasts), `app/ui/api-types.mts`; `BRIDGE_ACTION_LABELS` and `bridgeRefusal` in `app/vault-lib.mts`.
@@ -111,7 +111,7 @@ Examples: `c1bb797` (Organize), `e378aff` (Scrolls), `43225d1` (a view inside Ho
 
 1. `app/index.html`, `app/ui/app.mts` (routing), the screen module and its pure model (`app/ui/<view>.mts`, `app/ui/<view>-model.mts`) and stylesheet, `app/ui/store.mts`, `app/ui/components.mts` for any new shared piece.
 2. Server routes and `app/ui/api-types.mts` (see Add an HTTP route).
-3. Tests: a DOM-free `app/ui-<view>.test.mts` for the model, an Electron `scripts/ui-<view>.test.mts`, a fixture if it needs data (`scripts/scrolls-fixture.mts` is the pattern), `scripts/ui-contrast.test.mts` for new CSS; add the stems to `SCREENS` in `scripts/select-tests.mts` so `--changed` finds the Electron test (Organize's stems are missing today).
+3. Tests: a DOM-free `app/ui-<view>.test.mts` for the model, an Electron `scripts/ui-<view>.test.mts`, a fixture if it needs data (`scripts/scrolls-fixture.mts` is the pattern), `scripts/ui-contrast.test.mts` for new CSS; add the stems to `SCREENS` in `scripts/select-tests.mts` so `--changed` finds the Electron test.
 4. Docs: `docs/ui.md`, `README.md`.
 
 ## Add a shard rule

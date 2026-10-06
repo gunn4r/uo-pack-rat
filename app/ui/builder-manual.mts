@@ -9,7 +9,7 @@
 // the switch are ui-prefs fields too, and turning one on or off is a step in the suit's undo history.
 import { GEAR_SLOTS, RESIST_KEYS, effectiveProfile, profileResistCaps, requirementReport, toOptItem, totalsOf } from "../vault-lib.mts";
 import type { Character, EffectiveProfile, Item, OptItem, PropMap, RunBuffs } from "../vault-lib.mts";
-import { applyBuffs, buffById, buffSkillValues, isBuffSkillsByCharacter, manualProfile, normalizeBuffs, ownEntry, plannedProfile, rawStats, runBuffs, toggleBuff, weaponFlags, NO_CHARACTER, signed } from "../buffs.mts";
+import { applyBuffs, buffById, buffSkillValues, isBuffSkillsByCharacter, manualProfile, normalizeBuffs, ownEntry, rawStats, runBuffs, toggleBuff, weaponFlags, NO_CHARACTER, signed } from "../buffs.mts";
 import type { BuffResult, BuffWho, Stats } from "../buffs.mts";
 import type { ItemQuery } from "../item-query.mts";
 import { state, invStamp } from "./store.mts";

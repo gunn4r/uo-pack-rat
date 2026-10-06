@@ -2,7 +2,9 @@
 // `./scripts/test_runner.sh --changed`, over a small fake source tree. All `[fast]`: pure function calls.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { selectTests } from "./select-tests.mts";
+import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { selectTests, SCREENS } from "./select-tests.mts";
 
 const SOURCES: Record<string, string> = {
   "app/lib.mts": `export const x = 1;`,
@@ -12,12 +14,15 @@ const SOURCES: Record<string, string> = {
   "app/ui/theme.mts": `export {};`,
   "app/ui/builder.mts": `import "./dom.mts";`,
   "app/ui/dom.mts": `export {};`,
+  "app/ui/organize-model.mts": `export {};`,
   "app/ui-render.test.mts": `await import("./ui/builder.mts");`,
   "app/fixture.test.mts": `readFileSync(join(ROOT, "app", "fixtures", "demo.json"));`,
   "app/adapters.test.mts": `// walks adapters/`,
   "scripts/ui-builder.test.mts": `import "./electron-window.mts";`,
   "scripts/ui-contrast.test.mts": `import "./electron-window.mts";`,
   "scripts/ui-state.test.mts": `import "./electron-window.mts";`,
+  "scripts/ui-organize.test.mts": `import "./electron-window.mts";`,
+  "scripts/ui-map.test.mts": `import "./electron-window.mts";`,
   "scripts/electron-window.mts": `export {};`,
 };
 const tests = (changed: string[]): Record<string, string[]> => {
@@ -37,13 +42,22 @@ test("[fast] select-tests: a changed test file runs itself; a deleted one is dro
 test("[fast] select-tests: a data file is reached by its quoted name, a new URL() by its relative path", () => {
   assert.deepEqual(tests(["app/fixtures/demo.json"]), { "app/fixture.test.mts": ["app/fixtures/demo.json"] });
   assert.deepEqual(Object.keys(tests(["app/ui/tokens.css"])).sort(),
-    ["app/theme.test.mts", "scripts/ui-builder.test.mts", "scripts/ui-contrast.test.mts", "scripts/ui-state.test.mts"]);
+    ["app/theme.test.mts", "scripts/ui-builder.test.mts", "scripts/ui-contrast.test.mts", "scripts/ui-map.test.mts", "scripts/ui-organize.test.mts", "scripts/ui-state.test.mts"]);
 });
 
 test("[fast] select-tests: an app/ui screen adds its Electron test; a shared UI module adds all of them", () => {
   assert.deepEqual(Object.keys(tests(["app/ui/builder.mts"])).sort(), ["app/ui-render.test.mts", "scripts/ui-builder.test.mts"]);
   assert.deepEqual(Object.keys(tests(["app/ui/dom.mts"])).sort(),
-    ["app/ui-render.test.mts", "scripts/ui-builder.test.mts", "scripts/ui-contrast.test.mts", "scripts/ui-state.test.mts"]);
+    ["app/ui-render.test.mts", "scripts/ui-builder.test.mts", "scripts/ui-contrast.test.mts", "scripts/ui-map.test.mts", "scripts/ui-organize.test.mts", "scripts/ui-state.test.mts"]);
+  assert.deepEqual(tests(["app/ui/organize-model.mts"]), { "scripts/ui-map.test.mts": ["app/ui/organize-model.mts"], "scripts/ui-organize.test.mts": ["app/ui/organize-model.mts"] });
+});
+
+test("[fast] select-tests: every SCREENS entry names a real app/ui module and real Electron tests", () => {
+  const root = fileURLToPath(new URL("..", import.meta.url));
+  for (const [stem, screens] of Object.entries(SCREENS)) {
+    assert.ok(existsSync(`${root}app/ui/${stem}.mts`), `app/ui/${stem}.mts`);
+    for (const n of [screens].flat()) assert.ok(existsSync(`${root}scripts/${n}.test.mts`), `${stem} → scripts/${n}.test.mts`);
+  }
 });
 
 test("[fast] select-tests: anything under adapters/ runs the adapters test", () => {

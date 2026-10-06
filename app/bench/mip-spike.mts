@@ -100,7 +100,6 @@ const dims = [...new Set([...Object.keys(W), ...Object.keys(CAPS), ...Object.key
 for (const d of dims) if ((W[d] || 0) < 0 && Number.isFinite(CAPS[d])) throw new Error("negative weight with a cap is non-concave: " + d);
 
 // ---- LP text ----
-const terms: Record<string, string[]> = {};              // dim -> array of "coef xvar"
 const vars: string[] = [], x: { name: string; slot: string; item: VaultLib.PooledOptItem }[] = [];        // x[k] = {name, slot, item}
 const constTotals: Record<string, number> = Object.fromEntries(dims.map((d): [string, number] => [d, 0]));
 const fixed: Record<string, VaultLib.PooledOptItem> = {};
@@ -151,7 +150,6 @@ if (twoH.length && oneH.length) cons.push(`hands: ${[...twoH, ...oneH].map((v) =
 for (const [name, coef] of Object.entries(objCoef)) if (coef !== 0) obj.push(`${fmt(coef)} ${name}`);
 const objText = obj.length ? obj.join(" + ").replace(/\+ -/g, "- ") : "0 x_zero";
 const lp = `Maximize\n obj: ${objText}\nSubject To\n ${cons.join("\n ")}\nBounds\n ${bounds.join("\n ")}\n 0 <= x_zero <= 0\nBinary\n ${[...vars, ...softVars].join(" ")}\nEnd\n`;
-const constScore = dims.reduce((a, d) => a + (W[d] || 0) * 0, 0);   // constants folded into cons; objective already has none
 
 // ---- floor feasibility diagnostic: sum of per-slot maxima vs the floor ----
 for (const d of Object.keys(FL)) {

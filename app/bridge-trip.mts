@@ -12,14 +12,9 @@ import { APP_DIR, DATA_DIR_MODE, DATA_FILE_MODE, type ConfigPaths } from "./conf
 import { writeFileAtomic } from "./atomic-write.mts";
 import { validate, type ValidatorSchema } from "./schema/validate.mts";
 import type { BridgeTripV1 } from "./schema/types.d.mts";
+import { TRIP_MAX_BYTES, TRIP_NAME_MAX } from "./bridge-contract.mts";
 
 const TRIP_SCHEMA = JSON.parse(readFileSync(join(APP_DIR, "schema", "bridge-trip.v1.schema.json"), "utf8")) as ValidatorSchema;
-
-// MAX_LINE_BYTES in every packrat-bridge.py. A longer line is refused unread, with no id the page
-// could match, so the trip would never report back: it must never be written.
-export const TRIP_MAX_BYTES = 16384;
-// MAX_TRIP_NAME in every packrat-bridge.py; names are only ever printed on screen.
-export const TRIP_NAME_MAX = 40;
 
 export type TripInput = Omit<BridgeTripV1, "id" | "action" | "queuedAt">;
 export type QueueTripResult = { ok: true; id: string } | { ok: false; error: string };

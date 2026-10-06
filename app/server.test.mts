@@ -1228,6 +1228,13 @@ test("[smoke] /organize-config.mjs, the rule editor's import, is served as text/
   assert.match(await r.text(), /export function ruleMatchOf/);
 });
 
+test("[smoke] /data-dir-notice.mjs, ui/messages.mts's import, is served as text/javascript", async () => {
+  const r = await get("/data-dir-notice.mjs");
+  assert.equal(r.status, 200);
+  assert.equal(r.headers.get("content-type"), "text/javascript; charset=utf-8");
+  assert.match(await r.text(), /export function dataDirNotice/);
+});
+
 test("[smoke] /buffs.mjs, Manual's buff catalog, is served as text/javascript (issue #12)", async () => {
   const r = await get("/buffs.mjs");
   assert.equal(r.status, 200);
