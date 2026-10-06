@@ -16,7 +16,8 @@ import { startTestServer } from "./server-fixture.mts";
 import { houseScan } from "./organize-fixture.mts";
 import { emptyRuleQuery, emptyOrganizeConfig, type OrganizeConfig } from "./organize-config.mts";
 import { ACTIONS_OFF, MCP_DEFAULT_PORT, PROTOCOL_VERSIONS } from "./mcp.mts";
-import { BRIDGE_OFFLINE, RESIST_KEYS, characterProfile, type ProfilesFile } from "./vault-lib.mts";
+import { BRIDGE_OFFLINE, RESIST_KEYS } from "./vault-lib.mts";
+import { characterEntry, characterProfile, type ProfilesV3, type TemplateMap } from "./build-spec.mts";
 import { applyBuffs, buffSkillValues } from "./buffs.mts";
 
 const TOKEN = "test-mcp-token-0123456789";
@@ -302,7 +303,7 @@ test("[fast] search_items: property rules the route cannot parse are refused, an
   } finally { await sv.s.close(); }
 });
 
-test("[fast] score_suit keeps the hands legal around a named weapon, and plans with Manual's buffs", async () => {
+test("[fast] score_suit keeps the hands legal around a named weapon, and plans with Manual's buffs; build_suit with the character's saved Automatic ones; a built-in template by its id", async () => {
   const sv = await serve();
   try {
     const port = await mcpPort(sv);
@@ -321,6 +322,12 @@ test("[fast] score_suit keeps the hands legal around a named weapon, and plans w
     assert.equal((await app(sv, "/api/ui-prefs", "PUT", { manualBuffs: ["divineFury"] })).status, 200);
     assert.deepEqual((await call(port, "score_suit", { character: "Kestrel" })).data.buffs, ["divineFury"]);
     assert.deepEqual((await call(port, "build_suit", { character: "Kestrel", timeBudgetSeconds: 2 })).data.buffs, [], "Automatic's buffs for an unpinned build");
+    const { profiles, builtinTemplates } = (await app<{ profiles: ProfilesV3; builtinTemplates: TemplateMap }>(sv, "/api/profiles")).body;
+    const kestrel = characterEntry(characterProfile(profiles, "Kestrel", builtinTemplates), { on: ["bless"], skills: {} });
+    assert.equal((await app(sv, "/api/profiles", "PUT", { ...profiles, characters: { ...profiles.characters, Kestrel: kestrel } })).status, 200);
+    assert.deepEqual((await call(port, "build_suit", { character: "Kestrel", timeBudgetSeconds: 2 })).data.buffs, ["bless"], "the character's saved Automatic buffs (its profile's spec)");
+    assert.doesNotMatch((await call(port, "score_suit", { character: "Kestrel", template: "tank" })).text, /no template/, "a built-in template by its id");
+    assert.match((await call(port, "score_suit", { character: "Kestrel", template: "nope" })).text, /no template named "nope"; the templates are builtin:melee, builtin:caster, builtin:archer, builtin:tank/);
     assert.equal((await app(sv, "/api/ui-prefs", "PUT", { buffsCount: "off" })).status, 200);
     assert.deepEqual((await call(port, "score_suit", { character: "Kestrel" })).data.buffs, []);
   } finally { await sv.s.close(); }
@@ -407,8 +414,8 @@ test("[fast] suit results carry effectiveTotals beside the gear totals, and unre
     for (const k of ["dci", "hci", "ssi"]) assert.equal(eff[k] ?? 0, (gear[k] ?? 0) + share(k), k);
     assert.equal(share("dci") < 0, true, "Divine Fury lowers DCI");
     // a hard floor no piece reaches, on Kestrel's saved profile
-    const { profiles } = (await app<{ profiles: ProfilesFile }>(sv, "/api/profiles")).body;
-    const kestrel = { ...characterProfile(profiles, "Kestrel"), floors: { luck: 100000 }, softFloors: [] };
+    const { profiles } = (await app<{ profiles: ProfilesV3 }>(sv, "/api/profiles")).body;
+    const kestrel = characterEntry({ ...characterProfile(profiles, "Kestrel"), floors: { luck: 100000 }, softFloors: [] }, { on: [], skills: {} });
     assert.equal((await app(sv, "/api/profiles", "PUT", { ...profiles, characters: { ...profiles.characters, Kestrel: kestrel } })).status, 200);
     const b = (await call(port, "build_suit", { character: "Kestrel", buffs: ["divineFury"], timeBudgetSeconds: 2, waitSeconds: 45 })).data;
     assert.equal(b.state, "done", JSON.stringify(b));

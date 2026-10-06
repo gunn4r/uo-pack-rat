@@ -18,9 +18,10 @@ import {
 } from "./ui/builder-model.mts";
 import { OPTS_LIMITS } from "./vault-server.mts";
 import { RUN_SETTING_LIMITS } from "./run-settings.mts";
+import { templateSettings } from "./build-spec.mts";
 
 setRules(JSON.parse(readFileSync(new URL("./rules/uoalive.json", import.meta.url), "utf8")) as RulesV1);
-const melee = JSON.parse(readFileSync(new URL("./data/profiles.default.json", import.meta.url), "utf8")).templates.melee;
+const melee = templateSettings(JSON.parse(readFileSync(new URL("./data/templates/uoalive.json", import.meta.url), "utf8")).templates.melee);
 
 test("[fast] builder model: property names read as words in rule rows", () => {
   assert.equal(propName("physResist"), "Physical resist");

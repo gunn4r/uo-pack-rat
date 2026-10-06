@@ -274,7 +274,7 @@ export function buildSchemaTypes({ out = TYPES_OUT }: { out?: string } = {}): st
     bridge: join(SCHEMA_DIR, "bridge.v1.schema.json"),
     bridgeTrip: join(SCHEMA_DIR, "bridge-trip.v1.schema.json"),
     rules: join(SCHEMA_DIR, "rules.v1.schema.json"),
-    profiles: join(SCHEMA_DIR, "profiles.v2.schema.json"),
+    profiles: join(SCHEMA_DIR, "profiles.v3.schema.json"),
   };
 
   const bridgeDoc = asPlainObject(readJson(files.bridge), files.bridge);
@@ -286,7 +286,7 @@ export function buildSchemaTypes({ out = TYPES_OUT }: { out?: string } = {}): st
     schemaToTypeSource("BridgeV1Status", bridgeDoc.status),
     schemaToTypeSource("BridgeTripV1", readJson(files.bridgeTrip)),
     schemaToTypeSource("RulesV1", readJson(files.rules)),
-    schemaToTypeSource("ProfilesV2", readJson(files.profiles)),
+    schemaToTypeSource("ProfilesV3", readJson(files.profiles)),
   ];
 
   const sourceList = Object.values(files).map((f) => relative(ROOT, f)).join(", ");

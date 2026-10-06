@@ -22,6 +22,7 @@ export interface ConfigPaths {
   scans: string;
   profiles: string;
   defaultProfiles: string;
+  builtinTemplates: string;
   settings: string;
   rules: string;
   runs: string;
@@ -108,6 +109,7 @@ export function resolveConfig(argv: string[] = process.argv.slice(2), env: NodeJ
       scans: demo ? join(APP_DIR, "fixtures") : join(dataDir, "scans"),
       profiles: join(dataDir, "profiles.json"),
       defaultProfiles: join(APP_DIR, "data", "profiles.default.json"),
+      builtinTemplates: join(APP_DIR, "data", "templates"),   // <shard>.json: the Suit Builder's built-in templates (app/build-spec.mts)
       settings: join(dataDir, "settings.json"),
       rules: join(dataDir, "rules"),   // user-defined/overriding shard rules files; app/rules/ is the builtin set
       runs: join(dataDir, "runs"),

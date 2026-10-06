@@ -2,7 +2,6 @@
 // then dispatches "inventorychange" on document, which every screen drawn from them listens for. No screen is
 // called by name from here; the sidebar's counts are redrawn first, as before the event, because the Runs count
 // reads the builder's character before the builder's listener picks a new one.
-import { migrateProfiles } from "../vault-lib.mts";
 import { state, newestStamp } from "./store.mts";
 import { forgetTipMisses } from "./dom.mts";
 import { api } from "./api.mts";
@@ -22,7 +21,7 @@ export async function reload(): Promise<void> {
   // The Organize setup comes with the inventory (labels change how locations read); a failed one leaves the
   // locations unlabelled, and the Organize screen says why when it is opened.
   const [inv, prof] = await Promise.all([get<InventoryApiResponse>("/api/inventory"), get<ProfilesApiResponse>("/api/profiles"), loadOrganize().catch(() => undefined)]);
-  state.inv = inv.inventory; state.profiles = migrateProfiles(prof.profiles).profiles;
+  state.inv = inv.inventory; state.profiles = prof.profiles; state.builtinTemplates = prof.builtinTemplates || {};
   void loadHouseLinks();   // Show on map, on item rows and in the Containers view
   state.itemCache.clear();   // a rescan can move or drop a piece — stale by-serial lookups must not survive it
   forgetTipMisses();

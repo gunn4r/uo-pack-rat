@@ -1,20 +1,17 @@
 // ui/store.mts — the shared mutable state object, the bridge connection state, and invStamp.
 // Moved verbatim out of index.html's inline <script type="module"> (Task 4, the page split).
-import type { CharacterEntryRaw, ProfilesFile, Item, EffectiveProfile } from "../vault-lib.mts";
+import type { Item, EffectiveProfile } from "../vault-lib.mts";
+import type { FlatProfile, ProfilesV3, TemplateMap } from "../build-spec.mts";
 import type { Facets } from "../item-query.mts";
 import type { RulesV1 } from "../schema/types.d.mts";
 import type { InventoryData, SettingsData, ShardOption, SetupApiResponse, OptSuit, OptimizeResult, OptimizeProgress, RunSummaryLike, SavedRunLike, OrganizeConfig, OrganizePlan, OrganizePreset } from "./api-types.mts";
 
-// The suit builder's own working copy of a character's settings: CharacterEntryRaw (vault-lib.mts)
-// minus `caps` (a legacy v1 field the page never reads or writes — see migrateProfiles; keeping it
-// here would make this type unusable where effectiveProfile()'s `Profile` is expected, since
-// CharacterEntryRaw's `caps` is `unknown` and Profile's is `Record<string, number> | undefined`),
-// plus `excludeRoots` (not part of profiles.json's per-character schema — selectCharacter() seeds it
-// with `??= []` the first time a character is opened, same as builder.mts's other collection fields).
+// The suit builder's own working copy of a character's settings: the flat profile app/build-spec.mts's
+// characterProfile hands out (a saved character's spec, or the first template applied), with its race and template.
 // Every collection field starts absent on a freshly-applied template and is filled in by `||=`/`??=`
 // at first read (numGrid, renderProfile, readControls) — declared optional here to match, not
 // required-and-then-immediately-defaulted.
-export type BuilderProfile = Omit<CharacterEntryRaw, "caps"> & { excludeRoots?: Array<number | string> | undefined };
+export type BuilderProfile = FlatProfile;
 
 // The suit builder's live-progress UI object (builder.mts's runPanel() return value) — kept here,
 // next to BuilderJob, since it's part of what state.builder.job actually holds.
@@ -103,7 +100,8 @@ export interface OrganizePage {
 
 export interface AppState {
   inv: InventoryData | null;
-  profiles: ProfilesFile | null;
+  profiles: ProfilesV3 | null;
+  builtinTemplates: TemplateMap;   // the shard's built-in templates (GET /api/profiles), read-only
   rules: RulesV1 | null;
   settings: SettingsData | null;
   availableShards: ShardOption[];
@@ -130,7 +128,7 @@ export interface AppState {
 }
 
 export const state: AppState = {
-  inv: null, profiles: null, rules: null, settings: null, availableShards: [], propKeys: [],
+  inv: null, profiles: null, builtinTemplates: {}, rules: null, settings: null, availableShards: [], propKeys: [],
   // GET /api/setup's last known answer (adapters, candidates, installed/available versions, firstRun) —
   // load() fetches it once and the Settings tab / wizard refresh it themselves after an action changes it.
   setup: null,

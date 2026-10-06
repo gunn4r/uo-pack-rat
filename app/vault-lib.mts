@@ -306,7 +306,7 @@ export function resistCapsFor(race: string | null | undefined, overrides: Record
 }
 // What a resistCaps value is wrong about, or null when it is fine: an object naming only the five resists, each a
 // whole number within RESIST_CAP_LIMITS. The server checks a build's settings with this; PUT /api/profiles checks
-// profiles.json's with the same rule, written as JSON Schema in profiles.v2.schema.json.
+// profiles.json's with the same rule, written as JSON Schema in profiles.v3.schema.json.
 export function resistCapsError(v: unknown, path = "resistCaps"): string | null {
   if (v == null) return null;
   if (typeof v !== "object" || Array.isArray(v)) return `${path} must be an object`;
@@ -1178,7 +1178,7 @@ export function migrateWeaponSetting<T extends object>(s: T): T {
   const skill = typeof weaponSkill === "string" ? weaponSkill.toLowerCase() : "";
   return { ...rest, excludeWeapons: rest.excludeWeapons || (skill ? WEAPON_SKILLS.filter((w) => w !== skill) : []) } as T;
 }
-// The rule excludeWeapons is held to at POST /api/optimize (profiles.v2.schema.json says the same): known weapon skills.
+// The rule excludeWeapons is held to at POST /api/optimize (profiles.v3.schema.json says the same): known weapon skills.
 export function excludeWeaponsError(v: unknown, path = "excludeWeapons"): string | null {
   if (v == null) return null;
   if (!Array.isArray(v)) return `${path} must be an array`;
@@ -1236,8 +1236,8 @@ export interface CharacterEntryRaw extends TemplateSource {
   strLimit?: number | undefined;
   caps?: unknown;
 }
-// The profiles.json shape this module reads/writes across its schemaVersion 1 → 2 migration —
-// deliberately loose (mirrors profiles.v2.schema.json's own $comment: additionalProperties is true
+// The profiles.json shape this module reads/writes across its schemaVersion 1 → 2 migration (app/build-spec.mts's
+// migrateProfilesV3 takes it on to 3) — deliberately loose (as the v2 schema was: additionalProperties is true
 // throughout, so an unrecognized field must round-trip unharmed). `[key: string]: unknown` lets a
 // caller's extra top-level field (the file's own `_comment`, say) pass through `{...file}` untouched.
 export interface ProfilesFile {
@@ -1247,14 +1247,6 @@ export interface ProfilesFile {
   characters?: Record<string, CharacterEntryRaw> | undefined;
   caps?: unknown;
   [key: string]: unknown;
-}
-// A character's working profile for the Suit Builder: a copy of its saved entry, or, for a character with none, the
-// first template applied (race human). The page's character picker and the MCP build tool both start from it.
-export function characterProfile(profiles: ProfilesFile, name: string): CharacterEntryRaw {
-  const saved = profiles.characters && Object.hasOwn(profiles.characters, name) ? profiles.characters[name] : undefined;
-  if (saved) return JSON.parse(JSON.stringify(saved)) as CharacterEntryRaw;
-  const [first] = Object.keys(profiles.templates || {});
-  return { ...templateFrom(first ? profiles.templates![first] : undefined), template: first, race: "human" };
 }
 // Profiles-file migration: `archetypes` (weights + floors, bound to a character by its `archetype`) became `templates`,
 // and the binding is the character's `template` (schemaVersion 1). `caps` (the global property-cap object) moved out

@@ -6,6 +6,7 @@ import { $, el, toast, tipNode, hideItemTip, compactChildren } from "./dom.mts";
 import { txt, box, badge, button, meter, table, searchInput, message, popover, menu, confirmDialog, tooltip, type Column } from "./components.mts";
 import { api } from "./api.mts";
 import { reload } from "./inventory-data.mts";
+import { putProfiles } from "./profiles.mts";
 import { selectCharacter } from "./builder.mts";
 import { registerScreen, showCharacterItems, showItem } from "./nav.mts";
 import { openWizard } from "./wizard.mts";
@@ -195,7 +196,8 @@ export async function forgetCharacter(name: string): Promise<void> {
     const profiles = state.profiles!;
     if (profiles.characters?.[name]) {
       delete profiles.characters[name];
-      await api("/api/profiles", { method: "PUT", body: profiles });
+      const r = await putProfiles();
+      if (!r.ok) throw new Error(r.error);
     }
     if (current === name) { current = null; history.replaceState(null, "", "#/characters"); }
     await reload();

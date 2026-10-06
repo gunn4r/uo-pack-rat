@@ -1,6 +1,6 @@
 // ui-prefs.mts — <data>/ui-prefs.json: the page's view choices (GET/PUT /api/ui-prefs), the fields it may hold, and the checks a request's or a hand-edited file's value is held to.
 import { GEAR_SLOTS } from "../vault-lib.mts";
-import { isBuffSkillsByCharacter, normalizeBuffs, normalizeBuffListsByCharacter } from "../buffs.mts";
+import { isBuffSkills, isBuffSkillsByCharacter, normalizeBuffs, normalizeBuffListsByCharacter } from "../buffs.mts";
 import { isBoundedInt, isBoundedString, MAX_SERIAL } from "../guards.mts";
 import { readJsonFile, writeJsonFile } from "./json-file.mts";
 
@@ -23,7 +23,11 @@ export const UI_PREF_LISTS = ["cols", "sheetProps"] as const;
 // The version fields: the release whose in-app update notice was dismissed (ui/settings.mts's automatic
 // update check), and the ClassicUO web scanner last copied into the client (ui/paste-scanner.mts).
 export const UI_PREF_VERSIONS = ["dismissedUpdate", "copiedScanner"] as const;
-export type UiPrefsFile = { -readonly [K in typeof UI_PREF_LISTS[number]]?: string[] } & { -readonly [K in keyof typeof UI_PREF_CHOICES]?: string } & { -readonly [K in typeof UI_PREF_VERSIONS[number]]?: string } & { colWidths?: Record<string, number>; mapDrawerWidth?: number; manualSuit?: Record<string, number>; manualBuffs?: string[]; autoBuffs?: Record<string, string[]>; buffSkills?: Record<string, Record<string, number>> };
+export type UiPrefsFile = { -readonly [K in typeof UI_PREF_LISTS[number]]?: string[] } & { -readonly [K in keyof typeof UI_PREF_CHOICES]?: string } & { -readonly [K in typeof UI_PREF_VERSIONS[number]]?: string } & { colWidths?: Record<string, number>; mapDrawerWidth?: number; manualSuit?: Record<string, number>; manualBuffs?: string[]; manualBuffSkills?: Record<string, number> } & LegacyBuffPrefs;
+// Automatic's buffs and the buff numbers, by character: profiles.json holds them since schemaVersion 3. Read back only
+// so that a file the profiles migration has not reached yet keeps them through a write, until that migration moves them
+// (app/build-spec.mts migrateProfilesV3). Neither GET nor PUT /api/ui-prefs carries them.
+export interface LegacyBuffPrefs { autoBuffs?: Record<string, string[]>; buffSkills?: Record<string, Record<string, number>> }
 // The House map's contents drawer width in px (app/ui/house-map.mts, issue #10): the page clamps it to the window.
 export const isDrawerWidth = (v: unknown): v is number => isBoundedInt(v, 320, 4000);
 // The Inventory columns' dragged widths ({colKey: px}): at most 200 column keys (the same keys `cols` holds), each a whole 40 to 1200 px.
@@ -46,7 +50,7 @@ export function createUiPrefsStore(file: string) {
     return readJsonFile(file, { onBad: "empty", salvage: salvageUiPrefs });
   }
   function write(prefs: UiPrefsFile): void { writeJsonFile(file, prefs, { indent: 2 }); }
-  return { read, write };
+  return { file, read, write };
 }
 function salvageUiPrefs(doc: unknown): UiPrefsFile {
   const raw = doc as Record<string, unknown>;
@@ -67,6 +71,7 @@ function salvageUiPrefs(doc: unknown): UiPrefsFile {
   const manualBuffs = normalizeBuffs(raw.manualBuffs), autoBuffs = normalizeBuffListsByCharacter(raw.autoBuffs);
   if (manualBuffs) out.manualBuffs = manualBuffs;
   if (autoBuffs) out.autoBuffs = autoBuffs;
+  if (isBuffSkills(raw.manualBuffSkills)) out.manualBuffSkills = raw.manualBuffSkills;
   if (isBuffSkillsByCharacter(raw.buffSkills)) out.buffSkills = raw.buffSkills;   // an older flat shape is dropped
   for (const key of UI_PREF_VERSIONS) if (isBoundedString(raw[key], 64)) out[key] = raw[key];
   return out;

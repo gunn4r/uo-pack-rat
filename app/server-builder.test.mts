@@ -9,13 +9,14 @@ import { tmpdir } from "node:os";
 import { resolveConfig, ensureLayout } from "./config.mts";
 import type { ServerHandle } from "./vault-server.mts";
 import { startTestServer as startServer } from "./server-fixture.mts";
-import { buildPools, characterProfile, setRules, toOptItem, type Item, type Profile, type ProfilesFile } from "./vault-lib.mts";
+import { buildPools, setRules, toOptItem, type Item, type Profile } from "./vault-lib.mts";
+import { characterProfile, specFromProfile, templateSpecFrom, type ProfilesV3 } from "./build-spec.mts";
 import { manualBase, manualPlan } from "./buffs.mts";
 import { evaluateSuit, type SuitEvaluation } from "./evaluate.mts";
 import { DEFAULT_OPTIONAL_SLOTS } from "./mip.mts";
 import { buildUi } from "../scripts/build-ui.mts";
 import { buildSchemaTypes } from "../scripts/build-schema-types.mts";
-import { asJson, HERE, UOALIVE, foldFixtures, rawReq, JSON_HEADERS, logText, type InventoryResponse, type ProfilesResponse, type RulesResponse, type ItemsPageResponse, type OptimizeJobResponse, type ErrorBody } from "./server-routes-fixture.mts";
+import { asJson, HERE, UOALIVE, foldFixtures, rawReq, JSON_HEADERS, logText, type InventoryResponse, type ProfilesResponse, firstTemplate, type RulesResponse, type ItemsPageResponse, type OptimizeJobResponse, type ErrorBody } from "./server-routes-fixture.mts";
 
 // Order matters: build the schema types before buildUi() runs, not because tsconfig.browser.json's
 // `include` enforces it (a missing literal entry there is silently dropped, not an error — verified)
@@ -53,7 +54,7 @@ before(() => {
 after(async () => { await tsrvStarted; await tsrv?.close(); });
 const authHost = () => ({ host: `localhost:${tsrv.port}`, authorization: "Bearer t0ken" });
 
-test("[fast] PUT /api/profiles: an oversized multi-byte body is 413 (bytes, not JS string length); an invalid shape is 400 naming /characters", async () => {
+test("[fast] PUT /api/profiles: an oversized multi-byte body is 413 (bytes, not JS string length); an invalid shape is 400 naming /characters; an older page's v2 body is 400", async () => {
   // 600,000 "é" characters: 600,000 UTF-16 code units (well under the 1e6 string-length a byte-blind
   // cap would have measured) but 1,200,000 UTF-8 bytes (over the 1e6 byte cap) — this is exactly the
   // post-review fix: readBody() must count Buffer bytes, not the JS string's .length, or a body like
@@ -65,10 +66,16 @@ test("[fast] PUT /api/profiles: an oversized multi-byte body is 413 (bytes, not 
   assert.equal(big.status, 413);
   assert.equal(asJson(big.json()).error, "profiles too large");
   const bad = await rawReq(`${tsrv.url}/api/profiles`, {
-    method: "PUT", headers: { ...authHost(), "content-type": "application/json" }, body: JSON.stringify({ schemaVersion: 2, templates: {}, characters: 5 }),
+    method: "PUT", headers: { ...authHost(), "content-type": "application/json" }, body: JSON.stringify({ schemaVersion: 3, templates: {}, characters: 5 }),
   });
   assert.equal(bad.status, 400);
   assert.match(asJson<ErrorBody>(bad.json()).error, /\/characters/);
+  // a page loaded before the update sends the old shape, without the buffs that moved in: refused, never migrated
+  const old = await rawReq(`${tsrv.url}/api/profiles`, {
+    method: "PUT", headers: { ...authHost(), "content-type": "application/json" }, body: JSON.stringify({ schemaVersion: 2, templates: {}, characters: { A: { floors: {} } } }),
+  });
+  assert.equal(old.status, 400);
+  assert.equal(asJson<ErrorBody>(old.json()).error, "profiles are saved in a newer shape now; reload the page and make the change again");
 });
 
 test("[fast] two POST /api/optimize from the same X-Client-Id: the second supersedes the first, whose status becomes cancelled", async () => {
@@ -77,8 +84,7 @@ test("[fast] two POST /api/optimize from the same X-Client-Id: the second supers
   const rules = asJson<RulesResponse>((await rawReq(`${tsrv.url}/api/rules`, { headers: authHost() })).json());
   const character = Object.keys(inv.inventory.characters)[0]!;
   const { pools, current } = buildPools(foldFixtures(join(HERE, "fixtures")), character, {});
-  const templateName = Object.keys(profiles.profiles.templates!)[0]!;
-  const profile = { ...profiles.profiles.templates![templateName], caps: rules.rules.caps };
+  const profile = { ...firstTemplate(profiles), caps: rules.rules.caps };
   const body = JSON.stringify({ pools, current, profile, opts: { exact: true, timeBudgetMs: 5000 } });
   const postHeaders = { ...authHost(), "content-type": "application/json", "x-client-id": "client-A" };
   const first = asJson<OptimizeJobResponse>((await rawReq(`${tsrv.url}/api/optimize`, { method: "POST", headers: postHeaders, body })).json());
@@ -103,8 +109,7 @@ test("[fast] a job started without X-Client-Id can't be read via its events rout
     const rules = asJson<RulesResponse>(await (await fetch(s2.url + "/api/rules")).json());
     const character = Object.keys(inv.inventory.characters)[0]!;
     const { pools, current } = buildPools(foldFixtures(join(HERE, "fixtures")), character, {});
-    const templateName = Object.keys(profiles.profiles.templates!)[0]!;
-    const profile = { ...profiles.profiles.templates![templateName], caps: rules.rules.caps };
+    const profile = { ...firstTemplate(profiles), caps: rules.rules.caps };
     const r = await fetch(s2.url + "/api/optimize", {
       method: "POST", headers: { "content-type": "application/json" },   // deliberately no X-Client-Id
       body: JSON.stringify({ pools, current, profile, opts: { exact: true, timeBudgetMs: 5000 } }),
@@ -127,8 +132,7 @@ test("[fast] two POST /api/optimize with no X-Client-Id never supersede each oth
     const rules = asJson<RulesResponse>(await (await fetch(s2.url + "/api/rules")).json());
     const character = Object.keys(inv.inventory.characters)[0]!;
     const { pools, current } = buildPools(foldFixtures(join(HERE, "fixtures")), character, {});
-    const templateName = Object.keys(profiles.profiles.templates!)[0]!;
-    const profile = { ...profiles.profiles.templates![templateName], caps: rules.rules.caps };
+    const profile = { ...firstTemplate(profiles), caps: rules.rules.caps };
     const body = JSON.stringify({ pools, current, profile, opts: { exact: true, timeBudgetMs: 5000 } });
     const post = () => fetch(s2.url + "/api/optimize", { method: "POST", headers: { "content-type": "application/json" }, body }).then((x) => asJson(x.json()));
     const first = await post();
@@ -192,8 +196,7 @@ test("[fast] POST /api/optimize exact: the job finishes with solver \"highs\", p
     const rules = asJson<RulesResponse>(await (await fetch(s2.url + "/api/rules")).json());
     const character = Object.keys(inv.inventory.characters)[0]!;
     const { pools, current } = buildPools(foldFixtures(join(HERE, "fixtures")), character, {});
-    const templateName = Object.keys(profiles.profiles.templates!)[0]!;
-    const profile = { ...profiles.profiles.templates![templateName], caps: rules.rules.caps };
+    const profile = { ...firstTemplate(profiles), caps: rules.rules.caps };
     const r = await fetch(s2.url + "/api/optimize", {
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ pools, current, profile, opts: { exact: true, timeBudgetMs: 20000, restarts: 50, seed: 2026 } }),
@@ -224,8 +227,7 @@ test("[fast] /api/optimize by character builds the same pools as the client did"
     const profiles = asJson<ProfilesResponse>(await (await fetch(s2.url + "/api/profiles")).json());
     const rules = asJson<RulesResponse>(await (await fetch(s2.url + "/api/rules")).json());
     const character = Object.keys(invFull.inventory.characters)[0]!;
-    const templateName = Object.keys(profiles.profiles.templates!)[0]!;
-    const profile = { ...profiles.profiles.templates![templateName], caps: rules.rules.caps };
+    const profile = { ...firstTemplate(profiles), caps: rules.rules.caps };
     // The full item map used to come straight off /api/inventory; since Task 5 removed it from the
     // wire, fold the same demo fixtures the server folds (foldFixtures above) to get an equivalent
     // local inventory for this "does the server build what the client used to build" comparison.
@@ -275,8 +277,7 @@ test("[fast] /api/optimize by character with a bad settings type is 400", async 
   const profiles = asJson<ProfilesResponse>(await (await get("/api/profiles")).json());
   const rules = asJson<RulesResponse>(await (await get("/api/rules")).json());
   const character = Object.keys(inv.inventory.characters)[0]!;
-  const templateName = Object.keys(profiles.profiles.templates!)[0]!;
-  const profile = { ...profiles.profiles.templates![templateName], caps: rules.rules.caps };
+  const profile = { ...firstTemplate(profiles), caps: rules.rules.caps };
   const r = await fetch(srv.url + "/api/optimize", {
     method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify({ character, settings: { excludeTags: "cursed" }, profile, opts: {} }),
@@ -294,8 +295,7 @@ test("[fast] /api/optimize by character: the saved run keeps the page's settings
   const profiles = asJson<ProfilesResponse>(await (await get("/api/profiles")).json());
   const rules = asJson<RulesResponse>(await (await get("/api/rules")).json());
   const character = Object.keys(inv.inventory.characters)[0]!;
-  const templateName = Object.keys(profiles.profiles.templates!)[0]!;
-  const profile = { ...profiles.profiles.templates![templateName], caps: rules.rules.caps, floors: { hci: 3 } };
+  const profile = { ...firstTemplate(profiles), caps: rules.rules.caps, floors: { hci: 3 } };
   const snapshot = { floors: { hci: 3 }, weights: { dci: 2 }, race: "elf", restarts: 7, strLimit: 999 };
   const r = await fetch(srv.url + "/api/optimize", {
     method: "POST", headers: { "content-type": "application/json" },
@@ -323,7 +323,7 @@ test("[fast] /api/optimize: settings and meta.settings are checked like a manual
   const profiles = asJson<ProfilesResponse>(await (await get("/api/profiles")).json());
   const rules = asJson<RulesResponse>(await (await get("/api/rules")).json());
   const character = Object.keys(inv.inventory.characters)[0]!;
-  const profile = { ...profiles.profiles.templates![Object.keys(profiles.profiles.templates!)[0]!], caps: rules.rules.caps };
+  const profile = { ...firstTemplate(profiles), caps: rules.rules.caps };
   const post = (settings: unknown, metaSettings: unknown): Promise<Response> => fetch(srv.url + "/api/optimize", {
     method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ character, settings, profile, opts: { exact: false, restarts: 1 }, meta: { character, settings: metaSettings } }),
   });
@@ -348,8 +348,7 @@ test("[fast] /api/optimize heuristic-only: the time budget caps the random resta
   const profiles = asJson<ProfilesResponse>(await (await get("/api/profiles")).json());
   const rules = asJson<RulesResponse>(await (await get("/api/rules")).json());
   const character = Object.keys(inv.inventory.characters)[0]!;
-  const templateName = Object.keys(profiles.profiles.templates!)[0]!;
-  const profile = { ...profiles.profiles.templates![templateName], caps: rules.rules.caps };
+  const profile = { ...firstTemplate(profiles), caps: rules.rules.caps };
   const j = asJson<OptimizeJobResponse>(await (await fetch(srv.url + "/api/optimize", {
     method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify({ character, settings: {}, profile, opts: { exact: false, restarts: 10000, timeBudgetMs: 0 } }),
@@ -371,18 +370,18 @@ test("[fast] resist cap overrides: profiles and saved runs keep them, and a bad 
   const s2 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {})));
   const put = (body: unknown): Promise<Response> => fetch(s2.url + "/api/profiles", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   try {
-    const profiles = asJson<ProfilesResponse>(await (await fetch(s2.url + "/api/profiles")).json()).profiles;
-    const templateName = Object.keys(profiles.templates!)[0]!;
+    const got = asJson<ProfilesResponse>(await (await fetch(s2.url + "/api/profiles")).json()), profiles = got.profiles, tpl = firstTemplate(got);
     const character = Object.keys(asJson<InventoryResponse>(await (await fetch(s2.url + "/api/inventory")).json()).inventory.characters)[0]!;
-    const good = { ...profiles, characters: { ...profiles.characters, [character]: { template: templateName, race: "human", resistCaps: { fireResist: 95 } } },
-      templates: { ...profiles.templates, reaper: { ...profiles.templates![templateName]!, resistCaps: { fireResist: 95, coldResist: 60 } } } };
+    const withCaps = (resistCaps: unknown) => ({ ...specFromProfile(tpl), intent: { ...specFromProfile(tpl).intent, resistCaps } });
+    const good = { ...profiles, characters: { ...profiles.characters, [character]: { template: "builtin:melee", race: "human", spec: withCaps({ fireResist: 95 }) } },
+      templates: { ...profiles.templates, reaper: { spec: templateSpecFrom({ ...tpl, resistCaps: { fireResist: 95, coldResist: 60 } }) } } };
     assert.equal((await put(good)).status, 200);
     const back = asJson<ProfilesResponse>(await (await fetch(s2.url + "/api/profiles")).json()).profiles;
-    assert.deepEqual(back.characters![character]!.resistCaps, { fireResist: 95 });
-    assert.deepEqual(back.templates!.reaper!.resistCaps, { fireResist: 95, coldResist: 60 });
-    for (const [where, caps, path] of [["characters", { fireResist: 95.5 }, /\/characters\/.+\/resistCaps\/fireResist/], ["characters", { fireResist: 151 }, /resistCaps\/fireResist/],
-      ["templates", { luck: 5 }, /\/templates\/reaper\/resistCaps/], ["templates", "95", /\/templates\/reaper\/resistCaps/]] as const) {
-      const bad = where === "characters" ? { ...good, characters: { [character]: { resistCaps: caps } } } : { ...good, templates: { reaper: { resistCaps: caps } } };
+    assert.deepEqual(back.characters[character]!.spec.intent.resistCaps, { fireResist: 95 });
+    assert.deepEqual(back.templates.reaper!.spec.intent.resistCaps, { fireResist: 95, coldResist: 60 });
+    for (const [where, caps, path] of [["characters", { fireResist: 95.5 }, /\/characters\/.+\/spec\/intent\/resistCaps\/fireResist/], ["characters", { fireResist: 151 }, /resistCaps\/fireResist/],
+      ["templates", { luck: 5 }, /\/templates\/reaper\/spec\/intent\/resistCaps/], ["templates", "95", /\/templates\/reaper\/spec\/intent\/resistCaps/]] as const) {
+      const bad = where === "characters" ? { ...good, characters: { [character]: { spec: withCaps(caps) } } } : { ...good, templates: { reaper: { spec: withCaps(caps) } } };
       const r = await put(bad);
       assert.equal(r.status, 400, `${where} ${JSON.stringify(caps)}`);
       assert.match(asJson<ErrorBody>(await r.json()).error, path);
@@ -390,7 +389,7 @@ test("[fast] resist cap overrides: profiles and saved runs keep them, and a bad 
 
     // A build's settings snapshot carries the caps into its saved run; a bad one is refused before anything runs.
     const rules = asJson<RulesResponse>(await (await fetch(s2.url + "/api/rules")).json());
-    const profile = { ...profiles.templates![templateName], caps: { ...rules.rules.caps, fireResist: 95 } };
+    const profile = { ...tpl, caps: { ...rules.rules.caps, fireResist: 95 } };
     const post = (settings: Record<string, unknown>, snapshot: Record<string, unknown>): Promise<Response> => fetch(s2.url + "/api/optimize", {
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ character, settings, profile, opts: { exact: false, restarts: 3 }, meta: { character, settings: snapshot } }) });
@@ -424,9 +423,9 @@ test("[fast] resist cap overrides: profiles and saved runs keep them, and a bad 
 // saved with the old single weapon choice reopens with the exclusions it means.
 test("[fast] weapon exclusions: a bad list is 400, excluded weapons stay out of the build, an old run reopens converted", async () => {
   const character = Object.keys(asJson<InventoryResponse>(await (await get("/api/inventory")).json()).inventory.characters)[0]!;
-  const profiles = asJson<ProfilesResponse>(await (await get("/api/profiles")).json()).profiles;
+  const profiles = asJson<ProfilesResponse>(await (await get("/api/profiles")).json());
   const rules = asJson<RulesResponse>(await (await get("/api/rules")).json());
-  const profile = { ...Object.values(profiles.templates!)[0], caps: rules.rules.caps };
+  const profile = { ...firstTemplate(profiles), caps: rules.rules.caps };
   const post = (settings: Record<string, unknown>): Promise<Response> => fetch(srv.url + "/api/optimize", {
     method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ character, settings, profile, opts: { exact: false, restarts: 3 }, meta: { character, settings } }) });
   const bad = await post({ excludeWeapons: ["bows"] });
@@ -473,8 +472,7 @@ test("[fast] /api/optimize by character: null settings fields behave like absent
   const profiles = asJson<ProfilesResponse>(await (await get("/api/profiles")).json());
   const rules = asJson<RulesResponse>(await (await get("/api/rules")).json());
   const character = Object.keys(inv.inventory.characters)[0]!;
-  const templateName = Object.keys(profiles.profiles.templates!)[0]!;
-  const profile = { ...profiles.profiles.templates![templateName], caps: rules.rules.caps };
+  const profile = { ...firstTemplate(profiles), caps: rules.rules.caps };
   const post = async (settings: Record<string, unknown>): Promise<{ status: number; body: OptimizeJobResponse }> => {
     const r = await fetch(srv.url + "/api/optimize", {
       method: "POST", headers: { "content-type": "application/json" },
@@ -626,6 +624,39 @@ async function pollJob(url: string, id: string, until: (s: OptimizeJobResponse &
   }
 }
 
+// profiles.json v3 (app/build-spec.mts): a v2 data folder is migrated on the first read, Automatic's buffs moving in from
+// ui-prefs.json; GET carries the shard's built-in templates beside the file; PUT holds every spec to buildSpecError.
+test("[fast] GET/PUT /api/profiles v3: a v2 folder migrates on the first read, built-in templates ride along, and a bad spec is 400 naming where", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-profiles-v3-")), gold = join(HERE, "fixtures", "profiles-v2");
+  for (const n of ["profiles.json", "ui-prefs.json"]) writeFileSync(join(dir, n), readFileSync(join(gold, n)));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {})));
+  const put = (body: unknown): Promise<Response> => fetch(s2.url + "/api/profiles", { method: "PUT", headers: JSON_HEADERS, body: JSON.stringify(body) });
+  try {
+    const got = asJson<ProfilesResponse>(await (await fetch(s2.url + "/api/profiles")).json());
+    // the demo scans have none of the golden characters: Corwin, who had only buffs, gets no profile (its buffs stay in the ui-prefs backup)
+    const { Corwin: _corwin, ...rest } = (JSON.parse(readFileSync(join(gold, "expected.profiles.json"), "utf8")) as ProfilesV3).characters;
+    assert.deepEqual(got.profiles, { ...JSON.parse(readFileSync(join(gold, "expected.profiles.json"), "utf8")), characters: rest });
+    assert.match(logText(dir), /characters\.Corwin: not scanned/);
+    assert.deepEqual(Object.keys(got.builtinTemplates), ["melee", "caster", "archer", "tank"]);
+    assert.deepEqual(Object.keys(got.profiles.templates), ["melee", "my caster"], "never copied into the file");
+    assert.equal(asJson<{ prefs: Record<string, unknown> }>(await (await fetch(s2.url + "/api/ui-prefs")).json()).prefs.autoBuffs, undefined);
+    const aldric = got.profiles.characters.Aldric!;
+    const withBuffs = (buffs: unknown) => ({ ...got.profiles, characters: { ...got.profiles.characters, Aldric: { ...aldric, spec: { ...aldric.spec, buffs } } } });
+    assert.equal((await put(withBuffs({ on: ["bless"], skills: { Chivalry: 100 } }))).status, 200);
+    assert.deepEqual(asJson<ProfilesResponse>(await (await fetch(s2.url + "/api/profiles")).json()).profiles.characters.Aldric!.spec.buffs, { on: ["bless"], skills: { Chivalry: 100 } });
+    for (const [body, msg] of [[withBuffs({ on: ["bless", "bless"], skills: {} }), /^characters\.Aldric\.spec\.buffs must list known buffs/],
+      [withBuffs(undefined), /^characters\.Aldric\.spec\.buffs must list known buffs/],
+      [{ ...got.profiles, templates: { t: { spec: { ...aldric.spec, pool: { ...aldric.spec.pool, strLimit: "mine" } } } } }, /^templates\.t\.spec\.pool\.strLimit must be "character"/],
+      [{ ...got.profiles, characters: { A: { spec: { ...aldric.spec, extra: 1 } } } }, /\/characters\/A\/spec/]] as const) {
+      const r = await put(body);
+      assert.equal(r.status, 400, JSON.stringify(body).slice(0, 200));
+      assert.match(asJson<ErrorBody>(await r.json()).error, msg);
+    }
+  } finally {
+    await s2.close();
+  }
+});
+
 test("[fast] a truncated profiles.json is moved aside and reseeded from the defaults, not a 500 on every read", async () => {
   const dir = mkdtempSync(join(tmpdir(), "qm-badprofiles-"));
   const s2 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {})));
@@ -633,8 +664,8 @@ test("[fast] a truncated profiles.json is moved aside and reseeded from the defa
     writeFileSync(join(dir, "profiles.json"), '{"schemaVersion": 2, "templ');
     const r = await fetch(s2.url + "/api/profiles");
     assert.equal(r.status, 200);
-    const defaults = JSON.parse(readFileSync(join(HERE, "data", "profiles.default.json"), "utf8")) as ProfilesFile;
-    assert.deepEqual(Object.keys(asJson<ProfilesResponse>(await r.json()).profiles.templates!), Object.keys(defaults.templates!));
+    const defaults = JSON.parse(readFileSync(join(HERE, "data", "profiles.default.json"), "utf8")) as ProfilesV3;
+    assert.deepEqual(asJson<ProfilesResponse>(await r.json()).profiles, defaults);
     assert.equal(readFileSync(join(dir, "profiles.json.corrupt"), "utf8"), '{"schemaVersion": 2, "templ', "the damaged file is kept for the player");
     assert.match(logText(dir), /profiles\.json is unreadable/);
     assert.equal((await fetch(s2.url + "/api/profiles")).status, 200, "and the next read is ordinary");
@@ -825,8 +856,8 @@ test("[fast] POST /api/evaluate answers evaluateSuit's evaluation of a hand-pick
   };
   // the same evaluation, computed here from the same fixtures and the saved profile
   const inv = foldFixtures(join(HERE, "fixtures")), c = inv.characters[character]!;
-  const { profiles } = asJson<ProfilesResponse>(await (await get("/api/profiles")).json());
-  const { caps: _caps, ...saved } = characterProfile(profiles, character);
+  const { profiles, builtinTemplates } = asJson<ProfilesResponse>(await (await get("/api/profiles")).json());
+  const saved = characterProfile(profiles, character, builtinTemplates);
   const pieces = Object.fromEntries(Object.entries(suit).map(([slot, serial]) => [slot, inv.items[serial]!]));
   const wornNow = Object.values(inv.items).filter((it) => it.equippedBy === character);
   const local = (p: Profile, on: string[], skills: Record<string, number> = {}): SuitEvaluation => JSON.parse(JSON.stringify(evaluateSuit({ profile: manualBase(p, c), character: c,

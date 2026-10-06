@@ -5,29 +5,22 @@
 import { RESIST_KEYS, resistSkillBonus, totalsOf, resistCapsFor } from "../vault-lib.mts";
 import { buffById, plannedProfile, savedBuffs } from "../buffs.mts";
 import type { RunSettings, OptItem, PropMap, Character, EffectiveProfile } from "../vault-lib.mts";
-import { RUN_DEFAULTS } from "../run-settings.mts";
 import { state, invStamp } from "./store.mts";
 import { $, el, fmtSecs, fmtRunTime, toast } from "./dom.mts";
 import { api } from "./api.mts";
 import { bindDrawer, box, txt, button, badge, message, input, confirmDialog, menu, type DrawerHandle } from "./components.mts";
 import { renderNavCounts } from "./shell.mts";
 import { resolveItems } from "./items.mts";
-import { renderPanel, readControls, knobs, applyKnobs, clearCapDrafts, panelBuffs, buffPlan, loadRunBuffs } from "./builder.mts";
+import { renderPanel, applyKnobs, clearCapDrafts, panelBuild, buffPlan, loadRunBuffs } from "./builder.mts";
 import { renderResult, openRunCompare, closeCompare, renderCurrentSuit, resetResultView } from "./builder-result.mts";
 import { openInManual, showAutomatic } from "./builder-manual.mts";
 import { paperdollCaps, slotsOf, runAutoLabel, runBadges, runSettingsDiff, toggleCompare, plural, withBuffs } from "./builder-model.mts";
 import type { RunsListApiResponse, RunApiResponse, RunPutApiResponse, RunSummaryLike, SavedRunLike } from "./api-types.mts";
 
 // ---------------------------------------------------------------- settings snapshot / apply
-// Everything a run can differ by, read from the panel's state (the profile and the Advanced fields).
-export function settingsSnapshot(): RunSettings {
-  const p = readControls();
-  return { floors: { ...(p.floors || {}) }, softFloors: [...(p.softFloors || [])], weights: { ...(p.weights || {}) }, lockedSlots: [...(p.lockedSlots || [])],
-    excludeTags: [...(p.excludeTags || [])], excludeRoots: [...(p.excludeRoots || [])], strLimit: p.strLimit, allowGargoyle: !!p.allowGargoyle,
-    medOnly: !!p.medOnly, excludeWeapons: [...(p.excludeWeapons || [])], ubwsAnyWeapon: p.ubwsAnyWeapon !== false, allowOthersWorn: !!p.allowOthersWorn,
-    restarts: Number(knobs.restarts) || RUN_DEFAULTS.restarts, exact: knobs.exact, budgetMs: 1000 * Number(knobs.budgetS) || RUN_DEFAULTS.budgetMs,
-    altCount: Number(knobs.altCount) || 0, altTol: Number(knobs.altTol) || 0, race: p.race || "human", excludeSkills: [...(p.excludeSkills || [])], resistCaps: { ...(p.resistCaps || {}) }, buffs: panelBuffs() };
-}
+// Everything a run can differ by, read from the panel's state (the profile, the buffs and the Advanced fields):
+// app/build-spec.mts planBuild's snapshot of the panel.
+export const settingsSnapshot = (): RunSettings => panelBuild().snapshot;
 export function applySettings(st: RunSettings): void {
   const p = state.builder.profile!;
   Object.assign(p, { floors: { ...(st.floors || {}) }, softFloors: [...(st.softFloors || [])], weights: { ...(st.weights || {}) }, lockedSlots: [...(st.lockedSlots || [])],

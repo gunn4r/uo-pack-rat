@@ -3,7 +3,8 @@ import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import http from "node:http";
-import { foldSnapshots, type Item, type Inventory, type ProfilesFile } from "./vault-lib.mts";
+import { foldSnapshots, type Item, type Inventory, type Template } from "./vault-lib.mts";
+import { templateSettings, type ProfilesV3, type TemplateMap } from "./build-spec.mts";
 import { upgradeScan, validateScan } from "./scan-schema.mts";
 import type { RulesV1, ScanV2 } from "./schema/types.d.mts";
 import type { AdapterInfo, DataDirCheck } from "./installer.mts";
@@ -53,8 +54,11 @@ export interface InventoryResponse {
 
 export interface ProfilesResponse {
   ok?: boolean;
-  profiles: ProfilesFile;
+  profiles: ProfilesV3;
+  builtinTemplates: TemplateMap;
 }
+// The first built-in template's settings (a fresh data folder has no templates of its own), as a build's profile.
+export const firstTemplate = (r: ProfilesResponse): Template => templateSettings(Object.values(r.builtinTemplates)[0]!);
 
 export interface RulesResponse {
   ok: boolean;

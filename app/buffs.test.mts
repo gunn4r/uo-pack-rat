@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import { effectiveProfile, profileResistCaps, setRules } from "./vault-lib.mts";
 import type { Character, Item, Profile, PropMap } from "./vault-lib.mts";
 import type { RulesV1 } from "./schema/types.d.mts";
-import { BUFFS, BUFF_IDS, BUFF_GROUPS, BUFF_INPUTS, applyBuffs, buffById, buffShift, buffSkillValues, buffText, buffsDiff, gearNeedsText, isBuffList, isBuffListsByCharacter, isBuffSkills, isBuffSkillsByCharacter, isRunBuffs, manualProfile, normalizeBuffListsByCharacter, normalizeBuffs, ownEntry, plannedFromWorn, plannedProfile, runBuffs, savedBuffs, toggleBuff } from "./buffs.mts";
+import { BUFFS, BUFF_IDS, BUFF_GROUPS, BUFF_INPUTS, applyBuffs, buffById, buffShift, buffSkillValues, buffText, buffsDiff, gearNeedsText, isBuffList, isBuffSkills, isBuffSkillsByCharacter, isRunBuffs, manualProfile, normalizeBuffListsByCharacter, normalizeBuffs, ownEntry, plannedFromWorn, plannedProfile, runBuffs, savedBuffs, toggleBuff } from "./buffs.mts";
 import type { BuffPlan, Skills, Stats } from "./buffs.mts";
 
 setRules(JSON.parse(readFileSync(new URL("./rules/uoalive.json", import.meta.url), "utf8")) as RulesV1);
@@ -269,7 +269,7 @@ test("[fast] buffs: one form at a time in a sent list; a saved one is healed on 
   assert.equal(savedBuffs({ buffs: { on: [], skills } }), undefined, "an empty list is none");
   assert.deepEqual(normalizeBuffListsByCharacter({ constructor: ["reaperForm", "wraithForm"], toString: [] }), { constructor: ["wraithForm"], toString: [] });
   assert.equal(normalizeBuffListsByCharacter({ Kestrel: ["nope"] }), null);
-  assert.ok(isBuffListsByCharacter({ constructor: ["bless"] }) && isBuffSkillsByCharacter({ constructor: { Chivalry: 100 } }));
+  assert.ok(isBuffSkillsByCharacter({ constructor: { Chivalry: 100 } }));
   assert.equal(ownEntry({}, "constructor"), undefined, "never Object.prototype.constructor");
   assert.deepEqual(ownEntry({ constructor: ["bless"] }, "constructor"), ["bless"]);
 });
@@ -476,9 +476,6 @@ test("[fast] buffs: a run saves its buffs and their numbers; a change shows in t
   assert.deepEqual(buffsDiff(r, two), ["+Bless", "Chivalry 105 → 120"]);
   assert.deepEqual(buffsDiff(two, two), []);
   assert.deepEqual(buffsDiff(undefined, { on: ["bogus"] }), [], "a damaged entry counts as none");
-  // the panel's buffs by character, held to the same rule as the edits
-  assert.equal(isBuffListsByCharacter({ Dorran: ["divineFury", "bless"], Kestrel: [] }), true);
-  for (const bad of [[], { Dorran: ["nope"] }, { Dorran: ["bless", "bless"] }, { Dorran: "bless" }, null]) assert.equal(isBuffListsByCharacter(bad), false, JSON.stringify(bad));
 });
 
 test("[fast] buffs: manualProfile plans a hand-picked suit from that suit's weapon and totals, the raw stats from what is worn now", () => {

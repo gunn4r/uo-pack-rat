@@ -1,0 +1,31 @@
+{
+  "$comment": "Pack Rat profiles.json schema v3. Draft-07 style, restricted to the keyword subset app/schema/validate.mts supports (see that file's header). A character is {race?, template?, spec} and a template {name?, spec}, where `spec` is a BuildSpec (app/build-spec.mts): `intent` (floors, softFloors, weights, floorBonus, resistCaps), `buffs` ({on, skills}: the buffs counted as always on and the numbers edited for them; optional on a template), `pool` (lockedSlots, excludeTags, excludeSkills, excludeRoots, excludeWeapons, ubwsAnyWeapon, allowOthersWorn, allowGargoyle, medOnly, strLimit: a number or \"character\"), and the optional `goal` and `search`. This schema checks the shape: each group an object of the fields it names, closed. PUT /api/profiles then holds every spec to app/build-spec.mts's buildSpecError, which checks each value (known weapon skills and buffs, resist caps 0-150, the STR limit's range, and the rest). A template named in a character's `template` is the player's own, or a built-in one as \"builtin:<id>\" (app/data/templates/<shard>.json, never copied here). Fields outside the specs are left loose: a `_comment` key, and any field a newer client adds to an entry, round-trip through PUT /api/profiles unharmed. A v2 file is migrated on read (app/build-spec.mts migrateProfilesV3).",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schemaVersion", "characters", "templates"],
+  "$defs": {
+    "numbers": { "type": "object", "additionalProperties": { "type": "number" } },
+    "names": { "type": "array", "maxItems": 200, "items": { "type": "string", "maxLength": 64 } },
+    "intent": { "type": "object", "additionalProperties": false, "properties": {
+      "floors": { "$ref": "#/$defs/numbers" }, "softFloors": { "$ref": "#/$defs/names" }, "weights": { "$ref": "#/$defs/numbers" }, "floorBonus": { "type": "number" },
+      "resistCaps": { "type": "object", "additionalProperties": false, "properties": { "physResist": { "type": "integer", "minimum": 0, "maximum": 150 }, "fireResist": { "type": "integer", "minimum": 0, "maximum": 150 }, "coldResist": { "type": "integer", "minimum": 0, "maximum": 150 }, "poisonResist": { "type": "integer", "minimum": 0, "maximum": 150 }, "energyResist": { "type": "integer", "minimum": 0, "maximum": 150 } } } } },
+    "buffs": { "type": "object", "additionalProperties": false, "required": ["on", "skills"], "properties": { "on": { "$ref": "#/$defs/names" }, "skills": { "$ref": "#/$defs/numbers" } } },
+    "pool": { "type": "object", "additionalProperties": false, "properties": {
+      "lockedSlots": { "$ref": "#/$defs/names" }, "excludeTags": { "$ref": "#/$defs/names" }, "excludeSkills": { "$ref": "#/$defs/names" },
+      "excludeRoots": { "type": "array", "maxItems": 200, "items": { "type": ["integer", "string"] } },
+      "excludeWeapons": { "type": "array", "maxItems": 5, "items": { "type": "string", "enum": ["archery", "swordsmanship", "fencing", "mace fighting", "throwing"] } },
+      "ubwsAnyWeapon": { "type": "boolean" }, "allowOthersWorn": { "type": "boolean" }, "allowGargoyle": { "type": "boolean" }, "medOnly": { "type": "boolean" },
+      "strLimit": { "type": ["integer", "string"] } } },
+    "goal": { "type": "object", "additionalProperties": false, "required": ["kind"], "properties": { "kind": { "type": "string", "enum": ["best", "cheapest"] }, "suits": { "type": "integer", "minimum": 1, "maximum": 100 } } },
+    "search": { "type": "object", "additionalProperties": false, "properties": { "budgetMs": { "type": "integer" }, "exact": { "type": "boolean" }, "restarts": { "type": "integer" }, "altCount": { "type": "integer" }, "altTol": { "type": "number" } } },
+    "spec": { "type": "object", "additionalProperties": false, "required": ["intent", "pool"], "properties": { "intent": { "$ref": "#/$defs/intent" }, "buffs": { "$ref": "#/$defs/buffs" }, "pool": { "$ref": "#/$defs/pool" }, "goal": { "$ref": "#/$defs/goal" }, "search": { "$ref": "#/$defs/search" } } },
+    "character": { "type": "object", "required": ["spec"], "properties": { "race": { "type": "string", "enum": ["human", "elf", "gargoyle"] }, "template": { "type": "string", "maxLength": 128 }, "spec": { "$ref": "#/$defs/spec" } } },
+    "template": { "type": "object", "required": ["spec"], "properties": { "name": { "type": "string", "maxLength": 64 }, "spec": { "$ref": "#/$defs/spec" } } }
+  },
+  "properties": {
+    "schemaVersion": { "type": "integer", "enum": [3] },
+    "_comment": { "type": "string" },
+    "characters": { "type": "object", "additionalProperties": { "$ref": "#/$defs/character" } },
+    "templates": { "type": "object", "additionalProperties": { "$ref": "#/$defs/template" } }
+  }
+}

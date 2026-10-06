@@ -4,9 +4,10 @@
 // suit). The result, the compare view and the Solver details are ui/builder-result.mts; the saved-runs drawer
 // is ui/runs.mts. The panel is drawn from state.builder.profile plus the Advanced knobs below, so what a
 // build sends, what a profile saves and what a run snapshots are read from state, never from the DOM.
-import { PROP_LABELS, NOT_BUILDER_KEYS, GEAR_SLOTS, tagUnits, WEAPON_SKILLS, MELEE_SKILLS, resistSkillBonus, getRules, RESIST_KEYS, RESIST_CAP_LIMITS, resistCapsFor, templateFrom, characterProfile, settingsDiff, bagLabel } from "../vault-lib.mts";
-import type { EffectiveProfile, ResistCap, RunBuffs, RunSettings, Character } from "../vault-lib.mts";
-import { buffById, gearNeedsText, overrideNote, planBuffs, normalizeBuffs, normalizeBuffListsByCharacter, ownEntry, plannedProfile, runBuffs, toggleBuff, buffPlanOf, type BuffPlan } from "../buffs.mts";
+import { PROP_LABELS, NOT_BUILDER_KEYS, GEAR_SLOTS, tagUnits, WEAPON_SKILLS, MELEE_SKILLS, resistSkillBonus, getRules, RESIST_KEYS, RESIST_CAP_LIMITS, resistCapsFor, templateFrom, settingsDiff, bagLabel } from "../vault-lib.mts";
+import { BUILTIN_PREFIX, characterBuffs, characterEntry, characterProfile, findTemplate, planBuild, specFromProfile, templateLabel, templateRefs, templateSettings, templateSpecFrom, type PlannedBuild } from "../build-spec.mts";
+import type { ResistCap, RunBuffs, RunSettings, Character } from "../vault-lib.mts";
+import { buffById, gearNeedsText, overrideNote, planBuffs, normalizeBuffs, runBuffs, toggleBuff, buffPlanOf, type BuffPlan } from "../buffs.mts";
 import { defaultStrLimit, RUN_DEFAULTS } from "../run-settings.mts";
 import { evaluateSuit } from "../evaluate.mts";
 import { state, invStamp } from "./store.mts";
@@ -19,11 +20,12 @@ import { buffChip, createBuffPicker, keepChipFocus, type BuffPicker, type BuffVi
 import { optimizeErrorMessage } from "./messages.mts";
 import { parseRoute, registerScreen, routeFor } from "./nav.mts";
 import { setNavBusy } from "./shell.mts";
-import { loadRuns, settingsSnapshot, openRunsDrawer } from "./runs.mts";
-import { initManual, paintCharSelect, setManualFor, renderManual, syncManual, buffInputsOf, buffEditsOf, editBuffInputs, applyRunInputs, savePrefs, filling } from "./builder-manual.mts";
+import { loadRuns, openRunsDrawer } from "./runs.mts";
+import { initManual, paintCharSelect, setManualFor, renderManual, syncManual, buffInputsOf, buffEditsOf, editBuffInputs, applyRunInputs, filling } from "./builder-manual.mts";
+import { putProfiles, setCharacterBuffs } from "./profiles.mts";
 import { renderResult, renderCurrentSuit, refreshCurrentSuit, resultLoadError, closeCompare, resetResultView } from "./builder-result.mts";
 import { paperdoll, propName, weightsSummary, requirementsSummary, poolSummary, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistCapsSummary, gearCapsText, pruneResistCaps, floorCapWarning, weaponsChipText, weaponName, toggleWeapon, type Knobs, type KnobField } from "./builder-model.mts";
-import type { UiPrefs, OptimizeResult, OptimizeProgress, SavedRunLike, OptimizeStartApiResponse, OptimizeCancelApiResponse, JobSnapshotEvent, JobDoneEvent, JobFailedEvent, JobCancelledEvent } from "./api-types.mts";
+import type { OptimizeResult, OptimizeProgress, SavedRunLike, OptimizeStartApiResponse, OptimizeCancelApiResponse, JobSnapshotEvent, JobDoneEvent, JobFailedEvent, JobCancelledEvent } from "./api-types.mts";
 
 // ---------------------------------------------------------------- panel state
 // The solver knobs as typed (strings, so a bad value can sit in its field with its error until fixed): STR
@@ -117,7 +119,7 @@ function setNoCharacter(none: boolean): void {
 export function selectCharacter(name: string): void {
   state.builder.character = name;
   if (parseRoute().tab === "builder") history.replaceState(null, "", routeFor("builder"));
-  state.builder.profile = characterProfile(state.profiles!, name);
+  state.builder.profile = characterProfile(state.profiles!, name, state.builtinTemplates);
   state.builder.profile!.excludeRoots ??= [];
   clearCapDrafts();
   $<HTMLSelectElement>("#b-char")!.value = name;
@@ -190,8 +192,8 @@ function section(id: string, title: string, { count, summary, body, inline = fal
 // ---- template and race
 function templateSection(): HTMLElement {
   const p = state.builder.profile!;
-  const names = Object.keys(state.profiles!.templates ||= {});
-  const tpl = select(names.map((n) => ({ value: n, label: n })), names.includes(p.template as string) ? p.template as string : names[0] || "", { attrs: { id: "b-tpl" } });
+  const names = templateRefs(state.profiles!, state.builtinTemplates);
+  const tpl = select(names.map((n) => ({ value: n, label: templateLabel(state.builtinTemplates, n) })), names.includes(p.template as string) ? p.template as string : names[0] || "", { attrs: { id: "b-tpl" } });
   tpl.addEventListener("change", updateTemplateBadge);
   const menuBtn = button({ label: "Template actions: apply, save as, update, delete", icon: "more", iconOnly: true, variant: "ghost", attrs: { id: "b-tpl-menu", "aria-haspopup": "menu", "aria-expanded": "false" } });
   menuBtn.onclick = () => templateMenu(menuBtn);
@@ -209,10 +211,10 @@ function templateSection(): HTMLElement {
 // A template is a saved set of builder settings with no character in it; the badge says whether the panel
 // still matches the one it was applied from.
 function templateDrift(): { tone: "ok" | "warn" | "bad" | ""; text: string; detail: string } {
-  const name = state.builder.profile!.template, tpl = state.profiles!.templates?.[name as string];
+  const ref = state.builder.profile!.template, tpl = findTemplate(state.profiles!, state.builtinTemplates, ref), name = ref && templateLabel(state.builtinTemplates, ref);
   if (!name) return { tone: "", text: "none", detail: "Save as… stores these settings as a template." };
   if (!tpl) return { tone: "bad", text: "missing", detail: `These settings came from a template named ${name}, which no longer exists.` };
-  const lines = settingsDiff(templateFrom(tpl), templateFrom(readControls()));
+  const lines = settingsDiff(templateSettings(tpl), templateFrom(readControls()));
   return lines.length ? { tone: "warn", text: "modified", detail: `Changed from ${name}: ${lines.join(" · ")}` } : { tone: "ok", text: "matches", detail: `These settings equal the ${name} template.` };
 }
 // Redrawn after every edit; the reason ("Changed from melee: DI floor 20 → 30") is its tooltip and, for a
@@ -225,62 +227,63 @@ export function updateTemplateBadge(): void {
   s.replaceWith(tooltip(next, d.detail));
   refreshCurrentSuit();
 }
+// A built-in template (app/data/templates/<shard>.json) is read-only: Save as… makes the player's own copy.
+const BUILTIN_READ_ONLY = "Built-in templates can't be changed. Save as… makes your own copy.";
 function templateMenu(anchor: HTMLButtonElement): void {
+  const builtin = selectedTemplate().startsWith(BUILTIN_PREFIX) ? BUILTIN_READ_ONLY : undefined;
   menu(anchor, [{ label: "Apply to these settings", onSelect: applyTemplate }, { label: "Save as…", onSelect: saveTemplateAs },
-    { label: "Update this template", onSelect: updateTemplate }, { label: "Delete…", onSelect: deleteTemplate, danger: true }], { label: "Template actions" });
+    { label: "Update this template", onSelect: updateTemplate, disabled: builtin }, { label: "Delete…", onSelect: deleteTemplate, danger: true, disabled: builtin }], { label: "Template actions" });
 }
 const selectedTemplate = (): string => $<HTMLSelectElement>("#b-tpl")!.value;
-async function putProfiles(): Promise<{ ok: boolean; error?: string }> {
-  try { return await api<{ ok: boolean; error?: string }>("/api/profiles", { method: "PUT", body: state.profiles }); }
-  catch (e) { return { ok: false, error: (e as Error).message }; }
-}
 async function saveTemplates(done: string): Promise<void> {
   const r = await putProfiles();
   // putProfiles()'s only `ok: false` path is its own catch, which always sets `error`.
   toast(r.ok ? done : r.error!, r.ok ? "good" : "bad");
 }
+// A template with buffs (a built-in one may carry them) also sets the character's buffs, which are saved at once.
 function applyTemplate(): void {
-  const name = selectedTemplate(), t = state.profiles!.templates![name];
+  const ref = selectedTemplate(), t = findTemplate(state.profiles!, state.builtinTemplates, ref), name = templateLabel(state.builtinTemplates, ref);
   if (!t) return;
-  Object.assign(state.builder.profile!, templateFrom(t), { template: name });
+  Object.assign(state.builder.profile!, templateSettings(t), { template: ref });
+  if (t.spec.buffs) setCharacterBuffs(state.builder.character!, { on: t.spec.buffs.on, skills: { ...buffEditsOf(state.builder.character!), ...t.spec.buffs.skills } });
   clearCapDrafts();
   renderPanel();
   toast(`${name} applied. Save profile to keep it.`, "good");
 }
 async function saveTemplateAs(): Promise<void> {
-  const name = await promptText({ title: "Template name", value: state.builder.profile!.template || "" });
-  if (!name || (state.profiles!.templates![name] && !await confirmDialog({ title: `Overwrite the ${name} template?`, body: `The ${name} template is replaced with these settings.`, confirmLabel: `Overwrite ${name}` }))) return;
-  state.profiles!.templates![name] = templateFrom(readControls());
+  const was = state.builder.profile!.template || "";
+  const name = await promptText({ title: "Template name", value: was.startsWith(BUILTIN_PREFIX) ? "" : was });
+  if (name?.startsWith(BUILTIN_PREFIX)) { toast(`A template's name can't start with "${BUILTIN_PREFIX}".`, "bad"); return; }
+  if (!name || (state.profiles!.templates[name] && !await confirmDialog({ title: `Overwrite the ${name} template?`, body: `The ${name} template is replaced with these settings.`, confirmLabel: `Overwrite ${name}` }))) return;
+  state.profiles!.templates[name] = { spec: templateSpecFrom(readControls()) };
   state.builder.profile!.template = name;
   renderPanel();
   await saveTemplates(`Template ${name} saved.`);
 }
 async function updateTemplate(): Promise<void> {
   const name = selectedTemplate();
-  if (!state.profiles!.templates![name] || !await confirmDialog({ title: `Update the ${name} template?`, body: `The ${name} template is overwritten with these settings.`, confirmLabel: `Update ${name}` })) return;
-  state.profiles!.templates![name] = templateFrom(readControls());
+  if (!Object.hasOwn(state.profiles!.templates, name) || !await confirmDialog({ title: `Update the ${name} template?`, body: `The ${name} template is overwritten with these settings.`, confirmLabel: `Update ${name}` })) return;
+  state.profiles!.templates[name] = { ...state.profiles!.templates[name], spec: templateSpecFrom(readControls()) };
   state.builder.profile!.template = name;
   updateTemplateBadge();
   await saveTemplates(`Template ${name} updated.`);
 }
 async function deleteTemplate(): Promise<void> {
   const name = selectedTemplate();
-  if (!state.profiles!.templates![name] || !await confirmDialog({ title: `Delete the ${name} template?`, body: "Characters made from it keep their settings.", confirmLabel: `Delete ${name}` })) return;
-  delete state.profiles!.templates![name];
+  if (!Object.hasOwn(state.profiles!.templates, name) || !await confirmDialog({ title: `Delete the ${name} template?`, body: "Characters made from it keep their settings.", confirmLabel: `Delete ${name}` })) return;
+  delete state.profiles!.templates[name];
   renderPanel();
   await saveTemplates(`Template ${name} deleted.`);
 }
 
 // ---- buffs (issue #12): the ones on count as always on, so the search doesn't spend gear on what they give
-// Kept by character (ui-prefs autoBuffs). The numbers they scale with are the character's, and an edited one is shared
-// with Manual. `note` is what the picker says until the next change: the form a just-turned-on form replaced, or the
-// buffs Clear all took off, each with Undo.
-let autoBuffs: Record<string, string[]> = {};
+// Kept in the character's profile (its spec's buffs, saved at once). The numbers they scale with are the character's, and
+// an edited one is shared with Manual. `note` is what the picker says until the next change: the form a just-turned-on
+// form replaced, or the buffs Clear all took off, each with Undo.
 let note: { replaced: { on: string; off: string } } | { cleared: string[] } | null = null;
 let picker: BuffPicker | null = null;
-// load()'s GET /api/ui-prefs answer (the server has healed each list already; this heals a hand-made one too).
-export function applyAutoBuffPrefs(prefs: UiPrefs | null): void { autoBuffs = normalizeBuffListsByCharacter(prefs?.autoBuffs) ?? {}; }
-const buffsOn = (): string[] => ownEntry(autoBuffs, state.builder.character!) || [];
+// The list healed as a saved one is read back (normalizeBuffs): a hand edit's second form replaces the first.
+const buffsOn = (): string[] => normalizeBuffs(characterBuffs(state.profiles!, state.builder.character!).on) ?? [];
 // The panel's buffs, as a run saves them (absent with none on).
 export const panelBuffs = (): RunBuffs | undefined => runBuffs(buffsOn(), buffInputsOf(state.builder.character!).values);
 // What a build for `name` plans with: `buffs` (the panel's, or a saved run's; none is a plan too, for the stat caps)
@@ -290,11 +293,7 @@ export function buffPlan(name: string, race: string | null | undefined, buffs: R
   return buffPlanOf((state.inv!.characters[name] as Character | undefined) ?? null, state.inv!.worn[name] || [], race, buffs, buffEditsOf(name));
 }
 // The panel's buffs set (healed, as a saved list is), and saved.
-function setPanelBuffs(on: string[]): void {
-  const name = state.builder.character!, { [name]: _was, ...rest } = autoBuffs, list = normalizeBuffs(on) ?? [];
-  autoBuffs = list.length ? { ...rest, [name]: list } : rest;
-  savePrefs({ autoBuffs });
-}
+function setPanelBuffs(on: string[]): void { setCharacterBuffs(state.builder.character!, { on: normalizeBuffs(on) ?? [] }); }
 // A saved run's buffs back ("Load these settings"): the ones on, and the numbers they scale with where the run's differ
 // from the character's now, so building again plans as the run did. The panel is redrawn by the caller.
 export function loadRunBuffs(b: RunBuffs | undefined): void {
@@ -653,18 +652,19 @@ function focusKnob(f: KnobField, err: string): void {
 }
 
 // ---------------------------------------------------------------- the build
+// The panel as a build (app/build-spec.mts planBuild): its settings, the character's buffs and the Advanced fields'
+// search knobs, planned for the character as scanned. What a build sends and a saved run keeps both come from it.
+export function panelBuild(): PlannedBuild {
+  const name = state.builder.character!, p = readControls();
+  const spec = { ...specFromProfile(p, { on: buffsOn(), skills: buffEditsOf(name) }),
+    search: { restarts: Number(knobs.restarts), exact: knobs.exact, budgetMs: 1000 * Number(knobs.budgetS), altCount: Number(knobs.altCount), altTol: Number(knobs.altTol) } };
+  return planBuild(spec, { character: (state.inv!.characters[name] as Character | undefined) ?? null, worn: state.inv!.worn[name] || [], race: p.race });
+}
 // The panel's candidate pool settings, as POST /api/optimize's by-character form takes them.
-export function poolSettings(): RunSettings {
-  const p = readControls();
-  return { allowOthersWorn: p.allowOthersWorn, strLimit: p.strLimit, excludeTags: p.excludeTags, excludeRoots: p.excludeRoots, allowGargoyle: p.allowGargoyle, medOnly: p.medOnly, excludeWeapons: p.excludeWeapons || [], ubwsAnyWeapon: p.ubwsAnyWeapon !== false, excludeSkills: p.excludeSkills || [], lockedSlots: p.lockedSlots };
-}
-// The Advanced search options (the budget field is disabled without exact search: the server's default applies).
-export const searchOpts = (): { restarts: number; exact: boolean; timeBudgetMs?: number } =>
-  ({ restarts: Number(knobs.restarts), exact: knobs.exact, ...(knobs.exact ? { timeBudgetMs: 1000 * Number(knobs.budgetS) } : {}) });
-function optimizerProfile(): EffectiveProfile {
-  const name = state.builder.character!, p = state.builder.profile!;
-  return plannedProfile(p, state.inv!.characters[name] as Character | null, buffPlan(name, p.race, panelBuffs()));
-}
+export const poolSettings = (): RunSettings => panelBuild().pool;
+// The Advanced search options without other suits, for Manual's fill (the budget field is disabled without exact search:
+// the server's default applies).
+export const searchOpts = (): { restarts: number; exact: boolean; timeBudgetMs?: number } => { const { alternatives: _alt, ...opts } = panelBuild().opts; return opts; };
 async function runBuild(): Promise<void> {
   if (state.builder.job) return;
   if (filling()) { toast("Manual is filling its empty slots. Wait for it, or cancel it there, before building."); return; }
@@ -682,16 +682,13 @@ async function runBuild(): Promise<void> {
   }
   const badRule = document.querySelector<HTMLInputElement>("#b-panel-body .rule-row input[aria-invalid='true']");
   if (badRule) { badRule.focus(); return; }
-  const name = state.builder.character, settings = poolSettings();
+  const name = state.builder.character, { pool: settings, opts, profile, snapshot } = panelBuild();
   const exact = knobs.exact, budgetMs = 1000 * Number(knobs.budgetS);
-  const altCount = Number(knobs.altCount), altTol = Number(knobs.altTol);
-  const opts = { ...searchOpts(), ...(exact && altCount > 0 ? { alternatives: { count: altCount, tolerance: altTol } } : {}) };
   closeCompare();
   // Pools/current/skipped are the server's job (buildPools against its own cached inventory, POST
   // /api/optimize's by-character form): the page sends the character + settings and reads poolSize/skipped/
   // current/warning back. The job keeps the character and the effective profile it was started with: the
   // player can switch characters while it runs, and the result is judged against these.
-  const profile = optimizerProfile();
   const job: BuilderJob = { id: null, es: null, name, profile, exact, budgetMs, poolSize: null, skipped: {}, current: {}, warning: null, startedAt: Date.now(), lastProgressAt: Date.now(), lastServerAt: Date.now(), last: null, connected: true, ui: null, timer: null };
   state.builder.job = job;
   setBuilding(true);
@@ -701,7 +698,7 @@ async function runBuild(): Promise<void> {
   let r: (OptimizeStartApiResponse & { ok: true }) | { ok: false; error: string };
   try {
     r = (await api<OptimizeStartApiResponse>("/api/optimize", { method: "POST", body: { character: name, settings, profile, opts,
-      meta: { character: name, settings: settingsSnapshot(), inventoryStamp: invStamp() } } })) as OptimizeStartApiResponse & { ok: true };
+      meta: { character: name, settings: snapshot, inventoryStamp: invStamp() } } })) as OptimizeStartApiResponse & { ok: true };
     // optimizeErrorMessage (ui/messages.mts) explains the one refusal that isn't about this build at all: 429,
     // four jobs already running (vault-server.mts's MAX_RUNNING_JOBS) — this page only ever runs one.
   } catch (e) { r = { ok: false, error: optimizeErrorMessage(e) }; }
@@ -886,8 +883,11 @@ function runPanel(job: BuilderJob): BuilderJobUi {
 // ---------------------------------------------------------------- save
 async function saveProfile(): Promise<void> {
   if (!state.builder.character || !state.builder.profile) { toast("No character to save a profile for yet: scan one first.", "bad"); return; }
-  state.profiles!.characters ||= {};
-  state.profiles!.characters[state.builder.character!] = JSON.parse(JSON.stringify(readControls()));   // a copy: later panel edits must not ride along with a template save
+  // A copy (later panel edits must not ride along with a template save), keeping what the panel doesn't edit: any
+  // other field of the entry, and the spec's goal and search.
+  const name = state.builder.character!, chars = state.profiles!.characters, entry = characterEntry(readControls(), characterBuffs(state.profiles!, name));
+  const { race: _race, template: _template, spec: was, ...rest } = Object.hasOwn(chars, name) ? chars[name]! : { spec: undefined };
+  chars[name] = { ...rest, ...entry, spec: { ...was, ...entry.spec } };
   const r = await putProfiles();
   toast(r.ok ? `Profile for ${state.builder.character} saved.` : r.error!, r.ok ? "good" : "bad");
 }
