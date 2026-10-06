@@ -6,7 +6,8 @@
 import "../scripts/localstorage-shim-for-tests.mts";   // app/ui/store.mts reads localStorage at module scope
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { capOver, capBadgeText, atCap, bonusBreakdown, poolChanges, moveText, keyNumbers, tagTone, plural, lowDurability, lowDurabilityCount, lowDurabilitySummary, SHEET_CATALOGUE, DEFAULT_SHEET_PROPS } from "./ui/sheet.mts";
+import { capOver, capBadgeText, atCap, bonusBreakdown, poolChanges, moveText, keyNumbers, tagTone, plural, lowDurability, lowDurabilityCount, lowDurabilitySummary, SHEET_CATALOGUE, DEFAULT_SHEET_PROPS, SLOT_GROUPS } from "./ui/sheet.mts";
+import { GEAR_SLOTS } from "./vault-lib.mts";
 import { rosterView, triple, sheetMeta, openedRoots, type RosterRow } from "./ui/roster.mts";
 
 test("[fast] sheet: the cap badge says how far the raw value is past the cap, and nothing at or under it", () => {
@@ -160,4 +161,11 @@ test("[fast] sheet: the scan summary counts the containers the character's scans
   assert.equal(sheetMeta("Sir Ana", "now", 0, containers).opened, null, "no container opened: no count and no link");
   const spaced = { "7": { serial: 7, root: 7, parent: null, kind: "ground", scannedBy: "Sir Ana" } };
   assert.equal(sheetMeta("Sir Ana", "now", 0, spaced).opened!.href, "#/containers/Sir%20Ana", "the name is encoded for the hash");
+});
+
+test("[fast] sheet: the worn-gear tiles list every gear slot exactly once", () => {
+  const listed = SLOT_GROUPS.flatMap(([, slots]) => slots);
+  assert.deepEqual([...listed].sort(), [...GEAR_SLOTS].sort());
+  assert.equal(new Set(listed).size, listed.length);
+  assert.deepEqual(SLOT_GROUPS.map(([title]) => title), ["Armor", "Weapons and jewelry", "Clothing"]);
 });
