@@ -1,5 +1,5 @@
 // server.test.mts — HTTP route tests against a real listening server (ephemeral port, tmp data dir).
-import { test, before, after, type TestContext } from "node:test";
+import { test, before, after, afterEach, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, renameSync, rmSync, cpSync, statSync, symlinkSync } from "node:fs";
 import { join, dirname } from "node:path";
@@ -9,7 +9,7 @@ import http from "node:http";
 import { createConnection } from "node:net";
 import { resolveConfig, ensureLayout } from "./config.mts";
 import { startServer as startRealServer, defaultClientSearch, type ServerHandle, type StartServerOptions } from "./vault-server.mts";
-import { buildPools, foldSnapshots, setRules } from "./vault-lib.mts";
+import { buildPools, foldSnapshots, getRules, setRules } from "./vault-lib.mts";
 import { upgradeScan, validateScan } from "./scan-schema.mts";
 import { DEFAULT_OPTIONAL_SLOTS } from "./mip.mts";
 import { buildUi } from "../scripts/build-ui.mts";
@@ -188,10 +188,13 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // reads it — every assertion about a "repo-shipped" or "just installed" version compares against this
 // rather than a literal, so bumping ADAPTER_VERSION in the .py is not also a test edit.
 const TAZUO_VERSION = /ADAPTER_VERSION\s*=\s*"([^"]+)"/.exec(readFileSync(join(HERE, "..", "adapters", "tazuo", "packrat-scanner.py"), "utf8"))![1]!;
-// This file's own vault-lib.mts import is a separate module instance from the one the server
-// dynamically re-imports per request (busted by mtime) — a direct call here to a rules-aware
-// function (buildPools) needs its own setRules().
-setRules(JSON.parse(readFileSync(join(HERE, "rules", "uoalive.json"), "utf8")) as RulesV1);
+// A direct call here to a rules-aware function (buildPools) needs setRules() before any server
+// has started. A server sets the same, process-wide vault-lib's rules to its shard's, so a test whose
+// server switched shards would leave them behind for every later test and the shared `srv`: put
+// them back after each test.
+const UOALIVE = JSON.parse(readFileSync(join(HERE, "rules", "uoalive.json"), "utf8")) as RulesV1;
+setRules(UOALIVE);
+afterEach(() => setRules(UOALIVE));
 
 let srv: ServerHandle;
 before(async () => { srv = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", mkdtempSync(join(tmpdir(), "qm-"))], {}))); });
@@ -848,6 +851,38 @@ test("[fast] GET /api/settings reads back the persisted shard", async () => {
     const after = asJson<SettingsResponse>(await (await fetch(s2.url + "/api/settings")).json());
     assert.equal(after.settings.shard, "generic-osi");
     assert.equal(JSON.parse(readFileSync(join(dir, "settings.json"), "utf8")).shard, "generic-osi", "the switch is persisted to settings.json");
+  } finally {
+    await s2.close();
+  }
+});
+
+// #218: the server imports vault-lib once, the module every other server module (organize, buffs, missing, the
+// MCP tools) shares, and hands it the shard's rules at startup, with no page load or MCP call first.
+test("[fast] a fresh server folds with its shard's rules before anything else has set them", async () => {
+  setRules(null as unknown as RulesV1);
+  const s2 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", mkdtempSync(join(tmpdir(), "qm-"))], {})));
+  try {
+    assert.equal(getRules().id, "uoalive");
+    const inv = await fetch(s2.url + "/api/inventory");
+    assert.equal(inv.status, 200);
+    assert.ok(asJson<{ inventory: { itemCount: number } }>(await inv.json()).inventory.itemCount > 0);
+  } finally {
+    await s2.close();
+  }
+});
+// A shard switch reaches the fold: the demo's Antique leggings weigh in at the new shard's tag unit.
+test("[fast] PUT /api/settings switching the shard changes the tag penalty the inventory reports", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-"));
+  mkdirSync(join(dir, "rules"), { recursive: true });
+  writeFileSync(join(dir, "rules", "heavy.json"), JSON.stringify({ ...JSON.parse(validRulesFile("heavy", "Heavy tags")), tagUnits: { antique: 3 } }));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {})));
+  const LEGGINGS = 1879834629;
+  const penalty = async (): Promise<number | undefined> => asJson<ItemsBySerialResponse>(await (await fetch(`${s2.url}/api/items/by-serial?serials=${LEGGINGS}`)).json()).items[LEGGINGS]!.props.tagPenalty;
+  try {
+    assert.equal(await penalty(), 1.5);
+    const put = await fetch(s2.url + "/api/settings", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ shard: "heavy" }) });
+    assert.equal(put.status, 200);
+    assert.equal(await penalty(), 3);
   } finally {
     await s2.close();
   }

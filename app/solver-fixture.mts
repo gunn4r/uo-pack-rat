@@ -21,9 +21,8 @@ import type * as Core from "../scripts/optimizer-core.mts";
 export type OptOptions = Parameters<typeof solveExact>[0]["opts"];
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-// This file's own vault-lib.mts import is a separate module instance from the one the server
-// dynamically re-imports per request — a direct call to a rules-aware function (buildPools,
-// effectiveProfile) needs its own setRules(), same as gear-vault.test.mts / server.test.mts.
+// A direct call to a rules-aware function (buildPools, effectiveProfile) with no server started
+// needs setRules() first, same as gear-vault.test.mts / server.test.mts.
 setRules(JSON.parse(readFileSync(join(HERE, "rules", "uoalive.json"), "utf8")));
 
 export const core = (await import(pathToFileURL(corePath()).href)) as typeof Core;

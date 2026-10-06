@@ -11,7 +11,7 @@
 //         GET /ui/<name> (name matching /^[a-z0-9-]+\.(mjs|css)$/, served from app/ui/, else 404) ·
 //         GET /ui/fonts/<name>.woff2 (the bundled IBM Plex faces, app/ui/fonts/, as binary font/woff2) ·
 //         GET /api/inventory (the cached fold of every scan, with Organize's results overlay applied —
-//         getInventory(), keyed by a signature of the scans directory + shard + vault-lib.mts mtime, and of
+//         getInventory(), keyed by a signature of the scans directory + shard, and of
 //         organize-state.json for the overlay, so an edited/added/removed scan file or a finished trip is
 //         picked up on the next request with no restart; each scan file is upgraded v1→v2 and schema-
 //         validated on read — readScans() — an invalid or unparsable file is logged and skipped) — the
@@ -136,7 +136,7 @@ import { loadRules, listRules, DEFAULT_SHARD } from "./rules.mts";
 import { validate, type ValidatorSchema } from "./schema/validate.mts";
 import { parseItemQuery, applyItemQuery, facetsOf, wantsHits, hitRow, type ItemQueryRows, type ItemQueryGroups } from "./item-query.mts";
 import { optionalSlotsFor } from "./mip.mts";
-import { GEAR_SLOTS } from "./vault-lib.mts";
+import { GEAR_SLOTS, buildPools, excludeWeaponsError, foldSnapshots, migrateProfiles, resistCapsError, setRules, toOptItem } from "./vault-lib.mts";
 import { isBuffList, isBuffListsByCharacter, isBuffSkillsByCharacter, isRunBuffs, normalizeBuffs, normalizeBuffListsByCharacter } from "./buffs.mts";
 import { startWatcher, MAX_INBOX_BYTES, type StartWatcherOptions, type WatcherHandle } from "./watcher.mts";
 import { parsePastedScan, writeScanToInbox } from "./import.mts";
@@ -170,7 +170,6 @@ import { homedir } from "node:os";
 
 import { resolveConfig, ensureLayout, APP_DIR, DATA_DIR_MODE, DATA_FILE_MODE, type Config } from "./config.mts";
 import type { Item, Inventory, OptItem, ProfilesFile, BlacklistEntry, KindOverrides } from "./vault-lib.mts";
-import type * as VaultLib from "./vault-lib.mts";
 import type { ScanV2, RulesV1 } from "./schema/types.d.mts";
 import type { WorkerMessage, WorkerDoneMessage } from "./optimize-worker.mts";
 import type { OptResult, ExactSolveResult, SolveProgress } from "./exact-solver.mts";
@@ -378,7 +377,7 @@ const RUN_SETTING_NUMBERS: Record<string, [number, number, boolean]> = {
 };
 const RUN_SETTING_LISTS = ["softFloors", "lockedSlots", "excludeTags", "excludeRoots", "excludeSkills"];
 const plainKey = (k: string): boolean => isBoundedString(k, 64) && !["__proto__", "constructor", "prototype"].includes(k);
-function runSettingsError(st: Record<string, unknown>, vl: typeof VaultLib): string | null {
+function runSettingsError(st: Record<string, unknown>): string | null {
   for (const [k, v] of Object.entries(st)) {
     if (v == null) continue;
     if (k === "floors" || k === "weights") {
@@ -393,8 +392,8 @@ function runSettingsError(st: Record<string, unknown>, vl: typeof VaultLib): str
     else if (RUN_SETTING_LISTS.includes(k)) {
       if (!Array.isArray(v) || v.length > 200 || v.some((x) => !(isBoundedString(x, 64) || (k === "excludeRoots" && isBoundedInt(x, 0, MAX_SERIAL))))) return `settings.${k} must be a list of names`;
     } else if (k === "race") { if (!["human", "elf", "gargoyle"].includes(v as string)) return "settings.race must be human, elf or gargoyle"; }
-    else if (k === "excludeWeapons") { const e = vl.excludeWeaponsError(v, "settings.excludeWeapons"); if (e) return e; }
-    else if (k === "resistCaps") { const e = vl.resistCapsError(v, "settings.resistCaps"); if (e) return e; }
+    else if (k === "excludeWeapons") { const e = excludeWeaponsError(v, "settings.excludeWeapons"); if (e) return e; }
+    else if (k === "resistCaps") { const e = resistCapsError(v, "settings.resistCaps"); if (e) return e; }
     else if (k === "buffs") { if (!isRunBuffs(v)) return "settings.buffs must list known buffs, each once and one form at most, with their numbers in range"; }
     else return `settings.${short(k)} is not a run setting`;
   }
@@ -647,6 +646,9 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     rulesFallback = true;
     currentSettings = effectiveSettings();
   }
+  // vault-lib is one module instance for the whole process (this file, organize, buffs, missing, the MCP tools…), and
+  // it holds the shard's rules: hand them over here and again wherever currentRules changes (PUT /api/settings).
+  setRules(currentRules);
 
   // Whether the client's installed scripts write to this data folder (installer.mts's
   // checkScriptsDataDir). Run on every GET /api/setup, so a reinstall clears the page's banner with no
@@ -696,19 +698,6 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     }
   }
 
-  // vault-lib.mts is re-imported whenever its mtime changes, so edits to the parser/fold take effect on
-  // the next request without restarting the server (ES module cache is keyed by URL: bust with the mtime).
-  // Every access also (re-)applies the current shard's rules, since a fresh import starts with none loaded.
-  let libCache: { mtime: number; mod: typeof VaultLib | null } = { mtime: 0, mod: null };
-  async function lib(): Promise<typeof VaultLib> {
-    const mtime = statSync(join(HERE, "vault-lib.mts")).mtimeMs;
-    if (!libCache.mod || libCache.mtime !== mtime) libCache = { mtime, mod: (await import(pathToFileURL(join(HERE, "vault-lib.mts")).href + "?v=" + mtime)) as typeof VaultLib };
-    // Either branch above leaves libCache.mod non-null (the condition's own falsy check, or the cast
-    // just assigned above) — the assertions name that invariant.
-    libCache.mod!.setRules(currentRules);
-    return libCache.mod!;
-  }
-
   // Every scan file on disk is v1 or v2; upgradeScan() normalizes either to v2 and validateScan()
   // checks the result against the contract before it ever reaches foldSnapshots (which now requires
   // v2 and throws otherwise). A file that doesn't parse, doesn't upgrade (neither v1 nor v2 shaped)
@@ -735,8 +724,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   // getInventory() caches the fold (readScans + foldSnapshots) — the expensive part of every route that
   // needs the inventory — keyed by a signature of the scans directory (every *.json file's name, mtimeMs
   // and size, so an add/edit/delete/rename is caught with no restart), the current shard id (a shard
-  // switch changes parseTooltip/classify via rules) and vault-lib.mts's own mtime (the same value lib()
-  // already tracks for its dev-reload). /api/forget's tombstone is just another file landing in the scans
+  // switch changes parseTooltip/classify via rules). /api/forget's tombstone is just another file landing in the scans
   // directory, so it invalidates the cache the same way — no separate invalidation path needed. item-kinds.json's
   // inode, mtime and size are in it too (issue #150): a changed override re-kinds the inventory by folding the same
   // scans again, and the Organize plan, worked out from the fold on every request, follows.
@@ -825,13 +813,12 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   }
   async function getInventory(): Promise<InvValue> {
     harvestNow(Date.now());   // a trip that finished since is part of what every view shows
-    const libMod = await lib();   // also refreshes libCache.mtime, which the signature below reads
     let kindsSig = "no-kinds";
     try { const st = statSync(ITEM_KINDS); kindsSig = `${st.ino}:${st.mtimeMs}:${st.size}`; } catch { /* no overrides */ }
-    const sig = `${scansSignature()}::${currentSettings.shard}::${libCache.mtime}::${kindsSig}`;
+    const sig = `${scansSignature()}::${currentSettings.shard}::${kindsSig}`;
     if (foldCache.sig !== sig) {   // sig and value are only ever set together
       const snaps = readScans();
-      const fold = libMod.foldSnapshots(snaps, readKindOverrides());
+      const fold = foldSnapshots(snaps, readKindOverrides());
       foldCache = { sig, value: { fold, missing: missingSinceLastScan(snaps, fold), snapshotCount: snaps.length, houses: latestHouses(snaps) } };
     }
     const folded = foldCache.value!;
@@ -1110,7 +1097,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     // profiles.json is trusted, unvalidated file content at this point (the same trust readRules'
     // loadFile and readScans' upgradeScan extend to their own on-disk inputs) — migrateProfiles' own
     // loose ProfilesFile shape (every field optional) is what actually tolerates a malformed file.
-    const { profiles, changed } = (await lib()).migrateProfiles(doc as ProfilesFile);
+    const { profiles, changed } = migrateProfiles(doc as ProfilesFile);
     if (changed) {
       const backup = join(dirname(PROFILES), `profiles.backup-${new Date().toISOString().slice(0, 10)}.json`);
       if (!existsSync(backup)) copyFileSync(PROFILES, backup);
@@ -1310,7 +1297,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   async function planPrune(): Promise<PrunePlan> {
     if (CONFIG.demo) return { scans: [], runs: [], refused: false };
     const r = retentionOf(savedSettings.retention);
-    const scans = scansToPrune(readScanFiles(), (await lib()).foldSnapshots, r, Date.now());
+    const scans = scansToPrune(readScanFiles(), foldSnapshots, r, Date.now());
     const runs = runsToPrune(readRunFiles().map(({ file, run }) => ({ file, character: String(run.character), createdAt: String(run.createdAt), label: String(run.label || "") })), r);
     return { scans: scans.files, runs, refused: scans.refused, ...(scans.reason ? { reason: scans.reason } : {}) };
   }
@@ -1613,6 +1600,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         if (hasRetention) changes.retention = { ...retentionOf(savedSettings.retention), ...(body.retention as object) };
         saveSettings(changes);
         currentRules = nextRules;
+        setRules(currentRules);
         rulesFallback = nextFallback;
         currentSettings = effectiveSettings();
         return send(res, 200, { ok: true, settings: currentSettings });
@@ -1859,7 +1847,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         if (JSON.stringify(meta).length > META_MAX_BYTES) return send(res, 400, { ok: false, error: "meta is too large" });
         // The resist cap overrides a saved run is reopened and compared with (the page reads them back as the caps
         // the run was built with), held to the rule profiles.json's are.
-        const badCaps = (await lib()).resistCapsError((meta.settings as Record<string, unknown> | undefined)?.resistCaps, "meta.settings.resistCaps");
+        const badCaps = resistCapsError((meta.settings as Record<string, unknown> | undefined)?.resistCaps, "meta.settings.resistCaps");
         if (badCaps) return send(res, 400, { ok: false, error: badCaps });
         // …and the buffs it was planned with (app/buffs.mts), which it is reopened, labeled and compared with
         const runBuffs = (meta.settings as Record<string, unknown> | undefined)?.buffs;
@@ -1886,7 +1874,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
           // past `!= null` and then either reach buildPools as a literal `strLimit: null` or throw when
           // an array field's null hit code expecting an array).
           const s = Object.fromEntries(Object.entries(settings || {}).filter(([, v]) => v != null));
-          const badWeapons = (await lib()).excludeWeaponsError(s.excludeWeapons, "settings.excludeWeapons");
+          const badWeapons = excludeWeaponsError(s.excludeWeapons, "settings.excludeWeapons");
           if (badWeapons) return send(res, 400, { ok: false, error: badWeapons });
           for (const f of ["excludeTags", "excludeRoots", "excludeSkills", "lockedSlots"] as const) {
             if (s[f] != null && !Array.isArray(s[f])) return send(res, 400, { ok: false, error: `settings.${f} must be an array` });
@@ -1895,7 +1883,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
             if (s[f] != null && typeof s[f] !== "boolean") return send(res, 400, { ok: false, error: `settings.${f} must be a boolean` });
           }
           if (s.strLimit != null && typeof s.strLimit !== "number") return send(res, 400, { ok: false, error: "settings.strLimit must be a number" });
-          const badSettingsCaps = (await lib()).resistCapsError(s.resistCaps, "settings.resistCaps");
+          const badSettingsCaps = resistCapsError(s.resistCaps, "settings.resistCaps");
           if (badSettingsCaps) return send(res, 400, { ok: false, error: badSettingsCaps });
           // Every field of `s` was checked above (when present); this cast is the trust boundary the
           // migration recipe describes — placed AFTER those checks, not instead of them. The four list
@@ -1919,7 +1907,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
           if (badPin) return send(res, 400, { ok: false, error: badPin });
           // a fill keeps the placed pieces in place of the locked slots: they are the only slots that keep their piece
           const keep = fill ? Object.keys(pins) : lockedList;
-          const built = (await lib()).buildPools(inv, (character as string) || null, { allowOthersWorn: allowOthersWorn && !!character, strength: strLimit, excludeTags: tagList, excludeRoots: rootList, excludeGargoyle: !allowGargoyle, medOnly, excludeWeapons, ubwsAnyWeapon, excludeSkills: skillList, ...(fill ? { pinned: pins } : {}) });
+          const built = buildPools(inv, (character as string) || null, { allowOthersWorn: allowOthersWorn && !!character, strength: strLimit, excludeTags: tagList, excludeRoots: rootList, excludeGargoyle: !allowGargoyle, medOnly, excludeWeapons, ubwsAnyWeapon, excludeSkills: skillList, ...(fill ? { pinned: pins } : {}) });
           pools = built.pools; current = built.current; blocked = built.blocked;
           skipped = Object.fromEntries(Object.entries(built.skipped).map(([k, v]) => [k, v.length]));
           for (const slot of blocked) delete current[slot];       // a worn piece the filters now rule out must not stay "current"
@@ -1987,11 +1975,10 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         if (!isManualSuit(suit) || !Object.keys(suit).length) return send(res, 400, { ok: false, error: "suit must map gear slots to serials, at least one" });
         if (!settings || typeof settings !== "object" || Array.isArray(settings) || JSON.stringify(settings).length > META_MAX_BYTES) return send(res, 400, { ok: false, error: "settings must be an object" });
         if (inventoryStamp != null && !isBoundedString(inventoryStamp, 256)) return send(res, 400, { ok: false, error: "inventoryStamp must be a string" });
-        const badSettings = runSettingsError(settings as Record<string, unknown>, await lib());
+        const badSettings = runSettingsError(settings as Record<string, unknown>);
         if (badSettings) return send(res, 400, { ok: false, error: badSettings });
         const { inv } = await getInventory();
         if (!Object.hasOwn(inv.characters, character)) return send(res, 404, { ok: false, error: `no scans for character ${JSON.stringify(character)}` });
-        const { toOptItem } = await lib();
         const badSuit = manualSuitError(inv, suit, "suit");
         if (badSuit) return send(res, 400, { ok: false, error: badSuit });
         const pieces = Object.fromEntries(Object.entries(suit).map(([slot, serial]) => [slot, toOptItem(inv.items[serial]!)]));
@@ -2006,7 +1993,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       if (req.method === "GET" && url.pathname === "/api/runs") {
         const who = url.searchParams.get("character");
         // a run saved with twelve slots counts what its character wears in the others (runs-lib.mts totalsAfter)
-        const { inv } = await getInventory(), { toOptItem } = await lib(), worn = new Map<string, OptItem[]>();
+        const { inv } = await getInventory(), worn = new Map<string, OptItem[]>();
         for (const it of Object.values(inv.items)) if (it.equippedBy && it.gear && it.slot) worn.set(it.equippedBy, [...(worn.get(it.equippedBy) || []), toOptItem(it)]);
         return send(res, 200, { ok: true, runs: readRuns().filter((r) => !who || r.character === who).map((r) => runSummary(r, worn.get(r.character ?? "") || [])) });
       }
