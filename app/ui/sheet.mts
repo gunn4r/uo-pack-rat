@@ -5,11 +5,11 @@
 // Built as DOM nodes, never an HTML string (Phase 7 security review, Area 2, Important 1): a scan file
 // is attacker-controlled text, and a pasted "here's my suit" scan once turned into persistent
 // HTML/CSS injection inside the app window through this builder.
-import { totalsOf, resistSkillBonus, PROP_FULL, SLOTS_IN_GROUP } from "../vault-lib.mts";
+import { totalsOf, resistSkillBonus, PROP_FULL, SLOTS_IN_GROUP, RESIST_META } from "../vault-lib.mts";
 import type { ExtrasMap, OptItem, ResistCap } from "../vault-lib.mts";
 import { state } from "./store.mts";
-import { el, itemTip, label, slotLabel, toast } from "./dom.mts";
-import { api } from "./api.mts";
+import { el, itemTip, label, slotLabel } from "./dom.mts";
+import { prefs } from "./prefs.mts";
 import { rarityToken } from "./items.mts";
 import { txt, box, badge, tag, meter, message, button, check, searchInput, popover } from "./components.mts";
 import type { SkillEntry } from "./api-types.mts";
@@ -103,7 +103,7 @@ const numOr0 = (v: unknown): number => (Number.isFinite(Number(v)) ? Number(v) :
 const numOrNull = (v: unknown): number | null => (Number.isFinite(Number(v)) ? Number(v) : null);
 
 // [key, label, the --res-* token's suffix]
-export const RESISTS: Array<[string, string, string]> = [["physResist", "Physical", "phys"], ["fireResist", "Fire", "fire"], ["coldResist", "Cold", "cold"], ["poisonResist", "Poison", "poison"], ["energyResist", "Energy", "energy"]];
+export const RESISTS: Array<[string, string, string]> = RESIST_META.map((r) => [r.key, r.long, r.token.slice("--res-".length)]);
 // The Properties card's groups (spec 4.5), every row shown until the player picks otherwise. [key, label, suffix].
 type SheetRow = [string, string, string?];
 export const SHEET_GROUPS: Array<[string, SheetRow[]]> = [
@@ -129,7 +129,7 @@ function openPropsPicker(anchor: HTMLElement, redraw: () => void): void {
   const paintCount = (): void => { count.textContent = `${CATALOGUE_KEYS.filter((k) => shownProps().has(k)).length} of ${CATALOGUE_KEYS.length}`; };
   const choose = (keys: string[]): void => {
     state.sheetProps = keys;
-    api("/api/ui-prefs", { method: "PUT", body: { sheetProps: keys } }).catch((e: Error) => toast(`Could not save the properties shown: ${e.message}`, "bad"));
+    prefs.set({ sheetProps: keys });
     redraw(); paintCount();
   };
   const find = searchInput({ label: "Find a property", placeholder: "Find a property" });

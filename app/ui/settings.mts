@@ -10,6 +10,7 @@
 import { state } from "./store.mts";
 import { $, compactChildren, el, noteEl } from "./dom.mts";
 import { api } from "./api.mts";
+import { prefs } from "./prefs.mts";
 import { badge, box, button, check, confirmDialog, copyText, input, message, segmented, select, switchControl, txt, showToast, type Kids } from "./components.mts";
 import { plural } from "./builder-model.mts";
 import { applyLook, currentLook, resolveTheme, BUILT_THEMES, type Appearance } from "./theme.mts";
@@ -23,7 +24,7 @@ import { clientErrorMessage, uoFolderErrorMessage, dataDirNotice, errorText, hos
 import { autostartNote, hotkeyLabel, panelControls } from "./tazuo-panel.mts";
 import { exportKinds, importKinds } from "./kinds.mts";
 import { tiledataNote } from "./house-map-model.mts";
-import type { SetupApiResponse, InstallApiResponse, UpdateCheckApiResponse, BlacklistApiResponse, CleanupApiResponse, RetentionSetting, SettingsApiResponse, PanelPrefs, TazuoPanelApiResponse, McpApiResponse, HousesApiResponse, TiledataFrom, HostPickFolderApiResponse, ApiError } from "./api-types.mts";
+import type { SetupApiResponse, InstallApiResponse, UpdateCheckApiResponse, BlacklistApiResponse, CleanupApiResponse, RetentionSetting, SettingsApiResponse, PanelPrefs, TazuoPanelApiResponse, McpApiResponse, HousesApiResponse, TiledataFrom, HostPickFolderApiResponse, ApiError, UiPrefs } from "./api-types.mts";
 import { isPseudoCharacter, type BlacklistEntry } from "../vault-lib.mts";
 
 // Reinstall's own confirmation and result — separate from the wizard's, since this row acts on the client
@@ -81,12 +82,12 @@ function row({ title, help, control, label, muted = false, below = [] }: { title
 // reloads the page (shard.mts), since the rules reach everything the fold computed.
 function generalSection(): HTMLElement {
   const look = currentLook();
-  const save = (body: Record<string, string>): void => { api("/api/ui-prefs", { method: "PUT", body }).catch((e: Error) => showToast(`Could not save the look: ${e.message}`, "bad")); };
+  const save = (body: UiPrefs): void => prefs.set(body);
   const theme = select(THEMES.map((t) => ({ value: t.id, label: isBuilt(t.id) ? t.label : `${t.label} (coming soon)`, disabled: !isBuilt(t.id) })), resolveTheme(look.theme), { attrs: { id: "set-theme", class: "select set-select" } });
   theme.addEventListener("change", () => { applyLook({ theme: theme.value }); save({ theme: theme.value }); });
   const appearance = segmented({ label: "Appearance", value: look.appearance,
     options: [{ value: "light", label: "Light" }, { value: "system", label: "System" }, { value: "dark", label: "Dark" }],
-    onChange: (v) => { applyLook({ appearance: v as Appearance }); save({ appearance: v }); } });
+    onChange: (v) => { applyLook({ appearance: v as Appearance }); save({ appearance: v as Appearance }); } });
   appearance.id = "set-appearance";
   const shard = select(state.availableShards.map((r) => ({ value: r.id, label: r.name })), state.settings?.shard || "", { attrs: { id: "shard", class: "select set-select" } });
   shard.addEventListener("change", async () => { if (!await changeShard(shard.value)) shard.value = state.settings!.shard; });
@@ -488,7 +489,7 @@ function renderUpdateNotice(): void {
     r.url ? el("a", { class: "btn btn-sm", href: r.url, target: "_blank", rel: "noopener noreferrer" }, "View release") : null,
     el("button", { type: "button", class: "btn btn-ghost btn-sm", onclick: () => {
       dismissedUpdate = latest; renderUpdateNotice();
-      api("/api/ui-prefs", { method: "PUT", body: { dismissedUpdate: latest } }).catch(() => { /* a view choice; it just shows again next launch */ });
+      prefs.set({ dismissedUpdate: latest }, { quiet: true });   // a view choice; it just shows again next launch
     } }, "Dismiss"),
   ]));
 }

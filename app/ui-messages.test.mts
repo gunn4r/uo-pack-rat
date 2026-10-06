@@ -6,7 +6,7 @@
 // All [fast]. Run: node --test app/ui-messages.test.mts
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { pathsFileNote, installedIntoNote, clientFolderGone, clientErrorMessage, uoFolderErrorMessage, hostErrorMessage, optimizeErrorMessage, errorText, dataDirNotice, dataDirBanner, bridgeOfflineText, bridgeView, relativeWhen } from "./ui/messages.mts";
+import { pathsFileNote, installedIntoNote, clientFolderGone, clientErrorMessage, uoFolderErrorMessage, hostErrorMessage, optimizeErrorMessage, errorText, dataDirNotice, dataDirBanner, bridgeOfflineText, bridgeView, relativeWhen, prefsSaveFailed } from "./ui/messages.mts";
 import type { ApiError } from "./ui/api-types.mts";
 
 function apiError(message: string, extra: { status?: number; code?: unknown } = {}): ApiError {
@@ -110,6 +110,10 @@ test("[fast] a 429 explains that the builds are somebody else's, not a failure o
 test("[fast] errorText survives a rejection that isn't an Error at all", () => {
   assert.equal(errorText("plain string"), "plain string");
   assert.equal(errorText(new Error("real error")), "real error");
+});
+
+test("[fast] a view choice the server could not keep is one sentence with the server's reason", () => {
+  assert.equal(prefsSaveFailed(new Error("Disk full")), "Could not save your view choice: Disk full");
 });
 
 test("[fast] bridgeView: ready and busy whenever the bridge answers, else no client or offline", () => {

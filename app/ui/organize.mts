@@ -12,7 +12,8 @@ import { box, txt, button, badge, card, message, menu, select, tipWrap, table, t
 import { currentAdapter, BRIDGE_OFFLINE } from "./bridge.mts";
 import { setNavBusy } from "./shell.mts";
 import { errorText } from "./messages.mts";
-import { filterContext, showKind } from "./inventory.mts";
+import { showKind } from "./inventory.mts";
+import { filterContext } from "./item-parts.mts";
 import { loadOrganize, refreshPlaces, saveConfig } from "./organize-data.mts";
 import { targetChip, deleteRule, openRuleEditor } from "./rule-editor.mts";
 import { openAutoOrganize } from "./auto-organize.mts";

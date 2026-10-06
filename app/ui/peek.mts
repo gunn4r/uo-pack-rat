@@ -4,6 +4,7 @@
 // it is, its resists and its other properties, and a footer with Highlight, Grab and Go to (disabled with
 // the reason when they cannot run). ↑/↓ step through the table's rows and Esc closes, from the panel, the table or
 // the bare page. inventory.mts owns the rows; this module is handed how to step and where focus goes back.
+import { RESIST_META } from "../vault-lib.mts";
 import type { Item } from "../vault-lib.mts";
 import { $, el, slotLabel } from "./dom.mts";
 import { bridgeActionReason, runBridgeAction } from "./bridge.mts";
@@ -11,7 +12,7 @@ import { relativeWhen } from "./messages.mts";
 import { txt, box, button, badge, meter, tipWrap, kbd } from "./components.mts";
 import type { IconName } from "./components.mts";
 import { plural } from "./inv-model.mts";
-import { rarityEl, locationEl, tagEls, tagWords } from "./inventory.mts";
+import { rarityEl, locationEl, tagEls, tagWords } from "./item-parts.mts";
 
 let current: Item | null = null;
 let hooks: { step: (delta: number) => void; closed: (focusRow: boolean) => void } = { step: () => {}, closed: () => {} };
@@ -62,7 +63,7 @@ export function peekRefresh(find: (serial: number) => Item | undefined, stillThe
 }
 
 // ---------------------------------------------------------------- the panel
-export const RESISTS: Array<[string, string, string]> = [["physResist", "Phys", "--res-phys"], ["fireResist", "Fire", "--res-fire"], ["coldResist", "Cold", "--res-cold"], ["poisonResist", "Poison", "--res-poison"], ["energyResist", "Energy", "--res-energy"]];
+export const RESISTS: Array<[string, string, string]> = RESIST_META.map((r) => [r.key, r.short, r.token]);
 // A tooltip line the Where and Resists sections already show; the tier line, which the header shows.
 const SHOWN_ELSEWHERE = /^(weight\b|durability\s+\d|(physical|fire|cold|poison|energy) resist\b)/i;
 const RARITY_LINE = /^(minor|lesser|greater|major|legendary) (magic item|artifact)$/i;

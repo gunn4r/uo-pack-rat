@@ -8,13 +8,13 @@
 // between two spacer rows sized to the rest, and loads the matching rows from the server in 500-row
 // chunks as they scroll into view, so a large inventory costs one request per screenful reached, never
 // a pager click.
-import { SLOT_LABELS, SLOT_GROUP, tagUnits, flagLabel } from "../vault-lib.mts";
+import { SLOT_LABELS, SLOT_GROUP, RESIST_KEYS, tagUnits, flagLabel } from "../vault-lib.mts";
 import type { Item } from "../vault-lib.mts";
 import type { ItemQuery, ItemQueryGroups, Place } from "../item-query.mts";
 import { state } from "./store.mts";
-import { el, label, full, slotLabel, rarityColor, safeColor, toast, whereText } from "./dom.mts";
-import { rarityToken } from "./items.mts";
+import { el, label, full, slotLabel, toast, whereText } from "./dom.mts";
 import { api } from "./api.mts";
+import { prefs } from "./prefs.mts";
 import { optionsKeeping, colsFromPrefs, COLS_VERSION } from "./view-state.mts";
 import { relativeWhen } from "./messages.mts";
 import { txt, box, icon, button, searchInput, filterChip, token, pill, segmented, switchControl, popover, closePopover, message, menu, input, nextId } from "./components.mts";
@@ -23,7 +23,8 @@ import { plural, splitSerial, queryParams, withFixed, activeFilters, clearAll, m
 import type { FilterToken } from "./inv-model.mts";
 import type { ItemsApiResponse, UiPrefs } from "./api-types.mts";
 import { openRuleEditor } from "./rule-editor.mts";
-import { showItemTip, hideItemTip, tagChip } from "./dom.mts";
+import { showItemTip, hideItemTip } from "./dom.mts";
+import { filterContext, tagEls, rarityEl, locationEl } from "./item-parts.mts";
 
 const CHUNK = 500;              // rows per GET /api/items request (the server's own cap)
 const NARROW = "(max-width: 1179px)";
@@ -95,15 +96,6 @@ export interface ItemBrowser {
 const BLANK_QUERY: ItemQuery ={ q: "", chars: [], slot: [], loc: [], roots: [], rarity: "", rarityMin: "", rarityMax: "", kind: [], seenDays: 0, slayer: "", nogarg: false, med: false, hideTags: [], tags: [], props: [], flags: [], wskill: [], group: false, sort: "name", dir: 1, offset: 0, limit: 500 };
 
 // ---------------------------------------------------------------- the filter state
-export function filterContext() {
-  return {
-    slotLabel: (s: string) => slotLabel(s),
-    propLabel: (k: string) => label(k),
-    places: state.facets?.places || [],
-    ladder: (state.rules?.rarity || []).map((r) => r.name),
-  };
-}
-
 type ChipId = "char" | "slot" | "loc" | "rarity" | "kind" | "wskill" | "slayer" | "seen";
 const FACETS: ChipId[] = ["char", "slot", "loc", "rarity", "kind", "wskill"];
 const CHIP_NAMES: Record<ChipId, string> = { char: "Character", slot: "Slot", loc: "Location", rarity: "Rarity", kind: "Kind", wskill: "Weapon skill", slayer: "Slayer", seen: "Seen" };
@@ -244,26 +236,8 @@ function openPanel(anchor: HTMLElement, title: string, body: (close: () => void)
 
 // ---------------------------------------------------------------- the table: cells
 interface ColDef { key: string; label: string; title: string; num: boolean; width: number; sortable: boolean }
-const RESISTS = ["physResist", "fireResist", "coldResist", "poisonResist", "energyResist"];
 const EXTRA = "__extra";   // the extra column's key: no property is named this
 const cap = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
-// The shard's tag words ("cursed", "prized", …), lower-cased: a tooltip line that is one of them is a tag.
-export const tagWords = (): string[] => Object.keys(tagUnits());
-export function tagEls(it: Item, opts: { describe?: boolean } = {}): HTMLElement[] {
-  return it.tags.map((t) => tagChip(t, opts));
-}
-// A tier as its dot and name in its --rarity-* colour; a tier with no token keeps its game colour inside a
-// dark subtree, where the game colours were designed to live.
-export function rarityEl(rarity: string | null | undefined, cls = ""): HTMLElement | null {
-  if (!rarity) return null;
-  if (rarityToken(rarity)) return box("span", { class: `rar-tier${cls ? " " + cls : ""}`, style: `color:${rarityColor(rarity)}` }, txt(rarity));
-  const raw = rarityColor(rarity);
-  return box("span", { class: `rar-tier${cls ? " " + cls : ""}`, "data-theme": "default", "data-mode": "dark", style: raw ? `color:${safeColor(raw) || raw}` : "" }, txt(rarity));
-}
-export function locationEl(it: Item): HTMLElement {
-  const { name, serial } = splitSerial(whereText(it.location?.text));
-  return serial ? box("span", { class: "inv-loc" }, txt(name, "ellip"), txt(serial, "mono faint")) : txt(name, "ellip");
-}
 function cell(col: ColDef, it: Item): HTMLTableCellElement {
   const td = el("td", col.num ? { class: "num" } : {});
   switch (col.key) {
@@ -562,12 +536,12 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
   // serves the page from a new port on every launch, and localStorage belongs to one origin.
   function saveCols(): void {
     if (!opts.persist) return;
-    api("/api/ui-prefs", { method: "PUT", body: { cols: view.cols, colsVersion: COLS_VERSION } }).catch((e: Error) => toast(`Could not save the column choice: ${e.message}`, "bad"));
+    prefs.set({ cols: view.cols, colsVersion: COLS_VERSION });
   }
   function setCols(cols: string[]): void { view.cols = cols; saveCols(); rebuildTable(); }
   function setColWidths(widths: Record<string, number>): void {
     view.colWidths = widths;
-    if (opts.persist) api("/api/ui-prefs", { method: "PUT", body: { colWidths: widths } }).catch((e: Error) => toast(`Could not save the column widths: ${e.message}`, "bad"));
+    if (opts.persist) prefs.set({ colWidths: widths });
   }
   function openSettings(): void {
     const all = allCols();
@@ -576,7 +550,7 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
     paintCount();
     const density = segmented({ label: "Row density", options: [{ value: "dense", label: "Dense · 32" }, { value: "regular", label: "Regular · 40" }], value: view.density, onChange: (v) => {
       view.density = v === "regular" ? "regular" : "dense";
-      if (opts.persist) api("/api/ui-prefs", { method: "PUT", body: { density: view.density } }).catch((e: Error) => toast(`Could not save the density: ${e.message}`, "bad"));
+      if (opts.persist) prefs.set({ density: view.density });
       rebuildTable();
     } });
     const find = searchInput({ label: "Find a column", placeholder: "Find a column", attrs: idOf("inv-col-q") });
@@ -648,7 +622,7 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
   function columns(): ColDef[] {
     const c = (key: string, text: string, width: number, num = false, title = ""): ColDef => ({ key, label: text, title, num, width: Object.hasOwn(view.colWidths, key) ? view.colWidths[key]! : width, sortable: true });
     if (grouped()) return [c("name", "Name", 300), c("kind", "Kind", 120), c("amount", "Total", 88, true), c("stacks", "Stacks", 80, true), { ...c("where", "Where", 480), sortable: false }];
-    const width = (k: string): number => (k === "seen" ? 112 : k === "kind" ? 96 : RESISTS.includes(k) ? 52 : Math.max(52, colShort(k, label).length * 8 + 28));
+    const width = (k: string): number => (k === "seen" ? 112 : k === "kind" ? 96 : RESIST_KEYS.includes(k) ? 52 : Math.max(52, colShort(k, label).length * 8 + 28));
     const x = opts.extraColumn;
     const extra = x ? [{ ...c(EXTRA, x.label, x.width, true, x.title), sortable: false }] : [];
     // Tags, when shown, sits right after Name wherever the saved list names it; it has nothing to sort on.

@@ -12,7 +12,8 @@ import { api } from "./api.mts";
 import { txt, box, icon, button, badge, kbd, keyValue, message, meter, searchInput, segmented, tableFoot } from "./components.mts";
 import { errorText } from "./messages.mts";
 import { plural, splitSerial } from "./inv-model.mts";
-import { showSearch, tagEls } from "./inventory.mts";
+import { showSearch } from "./inventory.mts";
+import { tagEls } from "./item-parts.mts";
 import {
   powerRows, powerLevels, sotRows, emptyBinderCount, scrollFacts, filterRows, powerQuery, sotQuery, placeGroups, planText, runText, fmtTenths, toTenths, whoText, listName,
   type PowerRow, type SotRow,

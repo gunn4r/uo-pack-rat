@@ -21,7 +21,8 @@ import { plural } from "./inv-model.mts";
 import { reload } from "./app.mts";
 import { houseOfContainer, showOnMap } from "./house-links.mts";
 import { openedRoots } from "./roster.mts";
-import { showContainer, splitSerial } from "./inventory.mts";
+import { showContainer } from "./inventory.mts";
+import { splitSerial } from "./item-parts.mts";
 import { bridgeActionReason, runBridgeAction } from "./bridge.mts";
 import type { ForgetApiResponse, MissingApiResponse, OrganizeConfig } from "./api-types.mts";
 
