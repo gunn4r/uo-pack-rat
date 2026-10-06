@@ -4,9 +4,12 @@
 // "number"), properties, required, additionalProperties (false to close a shape, or a schema applied
 // to every key `properties` does not name — which is how an arbitrarily-keyed map such as a scan's
 // stats/skills/containers gets its values checked), items (a single schema applied to every array
-// element), enum, pattern, minimum, maximum, minLength, maxLength, minItems, maxItems.
+// element), enum, pattern, minimum, maximum, minLength, maxLength, minItems, maxItems, and $ref to a
+// local "#/$defs/<name>" (resolved against the schema passed to validate(); its sibling keywords are
+// ignored, as in draft-07; any other ref form, or a ref that names no definition, throws, since that
+// is a broken schema rather than a bad document).
 // "nullable" has no dedicated keyword — express it as type: ["string", "null"] etc. Every other
-// keyword (e.g. patternProperties, oneOf, $ref) is silently ignored: this is a subset, not a full
+// keyword (e.g. patternProperties, oneOf) is silently ignored: this is a subset, not a full
 // implementation, and every schema in this repo is written to stay inside it.
 //
 // validate(schema, doc, path = "") → { ok, errors: [{ path, msg }] }. Only the first 20 errors are
@@ -19,6 +22,8 @@ const MAX_ERRORS = 20;
 // actually interprets at runtime). Every field is optional: a schema specifying none of them
 // matches anything, exactly like the untyped original.
 export interface ValidatorSchema {
+  $ref?: string;
+  $defs?: Record<string, ValidatorSchema>;
   type?: string | string[];
   properties?: Record<string, ValidatorSchema>;
   required?: string[];
@@ -61,8 +66,24 @@ function typeMatches(value: unknown, t: string): boolean {
   }
 }
 
-function walk(schema: ValidatorSchema, value: unknown, path: string, errors: ValidationError[]): void {
+// Follows a chain of $refs to the schema it ends at; a chain that comes back to itself would never end.
+function resolve(root: ValidatorSchema, schema: ValidatorSchema): ValidatorSchema {
+  const seen = new Set<string>();
+  while (schema.$ref != null) {
+    const ref = schema.$ref;
+    const m = /^#\/\$defs\/([A-Za-z0-9_]+)$/.exec(ref);
+    const target = m && root.$defs && Object.prototype.hasOwnProperty.call(root.$defs, m[1]!) ? root.$defs[m[1]!] : undefined;
+    if (!target) throw new Error(`unsupported $ref ${JSON.stringify(ref)}: only a local "#/$defs/<name>" that exists`);
+    if (seen.has(ref)) throw new Error(`$ref cycle at ${JSON.stringify(ref)}`);
+    seen.add(ref);
+    schema = target;
+  }
+  return schema;
+}
+
+function walk(root: ValidatorSchema, node: ValidatorSchema, value: unknown, path: string, errors: ValidationError[]): void {
   if (errors.length >= MAX_ERRORS) return;
+  const schema = resolve(root, node);
   const at = path || "/";
 
   if (schema.type != null) {
@@ -115,7 +136,7 @@ function walk(schema: ValidatorSchema, value: unknown, path: string, errors: Val
     if (schema.properties) {
       for (const [key, sub] of Object.entries(schema.properties)) {
         if (owns(key)) {
-          walk(sub, obj[key], `${path}/${key}`, errors);
+          walk(root, sub, obj[key], `${path}/${key}`, errors);
           if (errors.length >= MAX_ERRORS) return;
         }
       }
@@ -125,7 +146,7 @@ function walk(schema: ValidatorSchema, value: unknown, path: string, errors: Val
       const sub = isSubschema(schema.additionalProperties) ? schema.additionalProperties : null;
       for (const key of Object.keys(obj)) {
         if (named.has(key)) continue;
-        if (sub) walk(sub, obj[key], `${path}/${key}`, errors);
+        if (sub) walk(root, sub, obj[key], `${path}/${key}`, errors);
         else errors.push({ path: `${path}/${key}`, msg: `additional property not allowed: ${key}` });
         if (errors.length >= MAX_ERRORS) return;
       }
@@ -137,7 +158,7 @@ function walk(schema: ValidatorSchema, value: unknown, path: string, errors: Val
     // the untrusted document actually holds — read it as unknown[], same reasoning as `obj` above.
     const arr = value as unknown[];
     for (let i = 0; i < arr.length; i++) {
-      walk(schema.items, arr[i], `${path}/${i}`, errors);
+      walk(root, schema.items, arr[i], `${path}/${i}`, errors);
       if (errors.length >= MAX_ERRORS) return;
     }
   }
@@ -145,6 +166,6 @@ function walk(schema: ValidatorSchema, value: unknown, path: string, errors: Val
 
 export function validate(schema: ValidatorSchema, doc: unknown, path = ""): ValidationResult {
   const errors: ValidationError[] = [];
-  walk(schema, doc, path, errors);
+  walk(schema, schema, doc, path, errors);
   return { ok: errors.length === 0, errors: errors.slice(0, MAX_ERRORS) };
 }

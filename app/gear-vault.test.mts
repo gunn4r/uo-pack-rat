@@ -1001,8 +1001,9 @@ test("[fast] weapon exclusions: the old single choice converts to every other sk
   assert.equal(excludeWeaponsError(["archery", "mace fighting"]), null);
   assert.equal(excludeWeaponsError("archery"), "excludeWeapons must be an array");
   assert.match(excludeWeaponsError(["archery", "wrestling"], "settings.excludeWeapons")!, /^settings\.excludeWeapons\[1\] is not a weapon skill/);
-  const schema = JSON.parse(readFileSync(join(HERE, "schema", "profiles.v2.schema.json"), "utf8")) as { properties: Record<string, { additionalProperties: { properties: { excludeWeapons: { items: { enum: string[] } } } } }> };
-  for (const g of ["characters", "templates"]) assert.deepEqual(schema.properties[g]!.additionalProperties.properties.excludeWeapons.items.enum, WEAPON_SKILLS, `the ${g} schema knows the same skills`);
+  const schema = JSON.parse(readFileSync(join(HERE, "schema", "profiles.v2.schema.json"), "utf8")) as { $defs: { entry: { properties: { excludeWeapons: { items: { enum: string[] } } } } }; properties: Record<string, { additionalProperties: { $ref: string } }> };
+  assert.deepEqual(schema.$defs.entry.properties.excludeWeapons.items.enum, WEAPON_SKILLS, "the schema knows the same skills");
+  for (const g of ["characters", "templates"]) assert.equal(schema.properties[g]!.additionalProperties.$ref, "#/$defs/entry", `${g} entries use that subschema`);
 });
 
 test("[fast] settingsDiff names what changed between two runs", () => {

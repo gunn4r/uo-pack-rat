@@ -6,7 +6,8 @@
 //   1. docs and the like (*.md, docs/, .github/, LICENSE, a node_modules symlink) select nothing;
 //   2. shared test infrastructure, the build, the Electron shell and the schema run the full suite;
 //   3. a test file runs itself (a deleted one is dropped);
-//   4. anything under adapters/ runs app/adapters.test.mts, which runs every adapters/**/test_*.py;
+//   4. anything under adapters/ runs app/adapters.test.mts, which runs every adapters/**/test_*.py,
+//      and app/adapter-outputs.test.mts, which checks what the scanners and bridges write;
 //   5. otherwise the test files that reach the path: through a chain of relative string literals
 //      ("./x.mts", "../y.css" — imports, dynamic imports and new URL() alike), or, for a file that
 //      is not a module (JSON, CSS, HTML), by naming it in quotes ("demo-Kestrel.json"). Under app/ui
@@ -65,7 +66,7 @@ export function selectTests(changed: string[], sources: Record<string, string>):
     if (IGNORED.test(path)) continue;
     if (FULL.test(path)) return { full: `${path} is shared test infrastructure` };
     if (path.endsWith(".test.mts")) { if (path in sources) pick(path, path); continue; }
-    if (path.startsWith("adapters/")) { pick("app/adapters.test.mts", path); continue; }
+    if (path.startsWith("adapters/")) { pick("app/adapters.test.mts", path); pick("app/adapter-outputs.test.mts", path); continue; }
     const quoted = path.endsWith(".mts") ? null : `"${posix.basename(path)}"`;
     const names = (f: string): boolean => refs.get(f)!.includes(path) || (quoted !== null && sources[f]!.includes(quoted));
     for (const t of tests) if ([...reach.get(t)!].some(names)) pick(t, path);

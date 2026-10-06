@@ -917,6 +917,21 @@ class RazorScanner(DataDir, unittest.TestCase):
         self.assertNotIn("tooltip", pack)
         self.assertIsNone(pack["pos"])
 
+    def test_a_worn_piece_is_recorded_on_its_own_layer(self):
+        """Also the world adapters/razor-enhanced/fixture.scan.json is made from (adapter-guide.md, Fixture rules)."""
+        w = World(); home(w); w.facet = 1
+        w.items[CHEST].Tooltip = "Wooden Chest\nContents: 1/125 Items, 3 Stones"
+        w.add(0x40000020, PLAYER, name="Katana", Layer="RightHand", container_like=False, Graphic=0x13FF, OnGround=False,
+              Tooltip="Katana\nSwordsmanship\nWeapon Damage 10 - 14\nCrafted By Tester")
+        w.add(0x40000021, PLAYER, name="Armor Of Initiation", Layer="Arms", container_like=False, Graphic=0x13CD, OnGround=False,
+              Tooltip="Armor Of Initiation\nPart Of An Armor Set (6 Pieces)\nPhysical Resist 7%\nDurability 123 / 150"
+                      "\n<br>Only When Full Set Is Present:\nPhysical Resist +2%")
+        self.scan(w, skills={"Swords": 90.0, "Magic Resist": 80.0})
+        [s] = self.scans("razor-enhanced")
+        self.assertEqual([(e["serial"], e["layer"], e["container"]) for e in s["equipped"]],
+                         [(0x40000020, "RightHand", None), (0x40000021, "Arms", None)])
+        self.assertEqual(s["equipped"][1]["tooltip"][-2:], ["<br>Only When Full Set Is Present:", "Physical Resist +2%"])
+
     def test_the_facet_is_left_out_when_the_client_cannot_say(self):
         def build_without_it():
             raise RuntimeError("Player.Map failed")
