@@ -5,16 +5,14 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "nod
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { resolveConfig, ensureLayout } from "./config.mts";
-import { startServer, type ServerHandle } from "./vault-server.mts";
-import { candidateClientRoots } from "./installer.mts";
+import type { ServerHandle } from "./vault-server.mts";
+import { startTestServer } from "./server-fixture.mts";
 import { houseScan } from "./organize-fixture.mts";
 import { vaultHouse, G } from "./house-fixture.mts";
 import { syntheticTileData } from "./tiledata-fixture.mts";
 import { syntheticFacet, rgb555, type Run } from "./facet-fixture.mts";
 import { FLAG } from "./tiledata.mts";
 import type { HouseModel } from "./house-model.mts";
-
-const FAKE_HOME = mkdtempSync(join(tmpdir(), "pr-house-home-"));
 
 const PACK = 0x40020001;
 
@@ -34,10 +32,7 @@ async function serve(withTiledata: boolean, settings?: Record<string, unknown>):
     writeFileSync(join(dir, "settings.json"), JSON.stringify({ schemaVersion: 1, shard: "uoalive", client: { adapter: "tazuo", scriptsDir: scripts } }));
   }
   if (settings) writeFileSync(join(dir, "settings.json"), JSON.stringify({ ...JSON.parse(readFileSync(join(dir, "settings.json"), "utf8")), ...settings }));
-  const s = await startServer(config, {
-    clientSearch: { home: FAKE_HOME, candidates: (a) => candidateClientRoots({ adapter: a.id, home: FAKE_HOME, platform: "linux", env: {}, adapterPlatform: a.platform }) },
-    clientRunning: () => false,
-  });
+  const s = await startTestServer(config);
   return { s, dir };
 }
 async function get<T>(s: ServerHandle, path: string): Promise<{ status: number; body: T }> {
