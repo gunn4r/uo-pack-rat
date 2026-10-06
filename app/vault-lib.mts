@@ -595,6 +595,20 @@ export const LAYER_TO_SLOT: Record<string, string> = {
   Skirt: "outerLegs", Shoes: "feet", OneHanded: "oneHanded", TwoHanded: "twoHanded", Shirt: "shirt", Tunic: "tunic",
   Robe: "robe", Waist: "waist", Cloak: "cloak", Ring: "ring", Bracelet: "bracelet", Earrings: "earrings", Talisman: "talisman",
 };
+// Razor Enhanced names nine paperdoll layers differently from TazUO's Layer enum (its other eleven names match). Each
+// alias is the TazUO name for the same layer number, which `classify` resolves first; `LAYER_TO_SLOT` stays the
+// canonical names. Held items are layers 1 and 2 on both sides: RightHand is OneHanded, LeftHand is TwoHanded.
+export const LAYER_ALIASES: Record<string, string> = {
+  RightHand: "OneHanded",    // 1
+  LeftHand: "TwoHanded",     // 2 (a shield, or a two-handed weapon)
+  Head: "Helmet",            // 6
+  Neck: "Necklace",          // 10
+  InnerTorso: "Torso",       // 13 (chest armor)
+  MiddleTorso: "Tunic",      // 17 (doublet, cloth tunic, sash)
+  OuterTorso: "Robe",        // 22
+  OuterLegs: "Skirt",        // 23 (kilt, skirt)
+  InnerLegs: "Legs",         // 24
+};
 // Every slot an equippable piece can be classified into: one per paperdoll layer the classifier knows, in the order
 // Manual groups them (armor, weapons, clothing, jewelry), which every slot list on the page follows. Both solvers
 // search them all, and the Suit Builder's Manual mode shows them all.
@@ -692,6 +706,7 @@ export const layerOfGraphic = (graphic: number | null | undefined): string | nul
 // Returns { slot, twoHanded, gear } — gear=false for consumables/resources/unknown names.
 export function classify(name: string | null | undefined, parsed?: ParsedTooltip | null | undefined, layer?: string | null | undefined, graphic?: number | null | undefined): ClassifyResult {
   const n = name || "";
+  if (layer) layer = LAYER_ALIASES[layer] ?? layer;
   let slot = null, two = false;
   if (PRIMER_RE.test(n)) return { slot: null, twoHanded: false, gear: false };
   // A spell scroll's graphic is never gear, whatever its name says: "2 Blade Spirits" holds a weapon word (issue #202).
