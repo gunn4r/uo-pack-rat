@@ -15,5 +15,11 @@
     "nested": true,
     "tooltips": "opl",
     "bridge": ["highlight", "grab", "goto"]
+  },
+  "install": {
+    "scriptsSuffix": [["ClassicUO", "Data", "Plugins", "Razor", "Scripts"], ["Razor", "Scripts"], ["Scripts"]],
+    "retired": [{ "name": "packrat-refresh.py", "header": "# packrat-refresh.py -- ATTENDED one-shot: QUICK character refresh for the Pack Rat app without a" }],
+    "stopHint": "stop it in Razor Enhanced's Scripting tab (select it and press Stop), then retry",
+    "register": "none"
   }
 }

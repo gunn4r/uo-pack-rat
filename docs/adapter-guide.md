@@ -10,7 +10,7 @@ Every adapter lives at `adapters/<id>/` and ships four things:
 |---|---|
 | One or more scripts | The actual client-side code: at minimum something that produces scan files. `adapters/tazuo/` ships six — a full scanner, a character refresh (`packrat-character-refresh.py`: stats/skills/worn/backpack only, for after a gearing session), a house map refresh (`packrat-house-map-refresh.py`: a house-only file, `"kind": "house"` in [scan-schema.md](scan-schema.md)), a bridge, a one-shot that adds a clicked container to the scan blacklist (`packrat-blacklist.py`), and an in-game panel whose buttons run the other five (`packrat-panel.py`) — but a minimal adapter can ship just a scanner. |
 | `README.md` | Install steps (where the scripts go), what to press and when, and the adapter's limits (what it can't read, what it needs standing near). Written for a player, not a developer. |
-| `capabilities.json` | This adapter's contract, as data: `{adapter, version, transport, protocol?, platform?, actions, capabilities: {...}, features?}`, where `capabilities` matches the shape of a scan's own `adapter.capabilities` (see `docs/scan-schema.md`), `features` may list what the bridge does besides its actions (none of the shipped adapters uses it yet: TazUO keeps `"trip-bags"` in `capabilities.bridge`, docs/bridge-protocol.md Features), and `protocol` is the bridge queue-line protocol its bridge reads, declared by an adapter that ships a bridge (`docs/bridge-protocol.md`, Protocol and Features). The scripts' own `CAPABILITIES` dict (whatever they're written in) must match the `capabilities` object exactly — that's what the contract test checks. `platform` is optional — see "Platform restriction," below — and `actions` is required — see "Declared actions," below. Neither is part of the `capabilities` object itself, so the contract test's `capabilities`-only comparison doesn't touch them. |
+| `capabilities.json` | This adapter's contract, as data: `{adapter, version, transport, protocol?, platform?, actions, capabilities: {...}, features?, install}` (see Manifest reference, below), where `capabilities` matches the shape of a scan's own `adapter.capabilities` (see `docs/scan-schema.md`), `features` may list what the bridge does besides its actions (none of the shipped adapters uses it yet: TazUO keeps `"trip-bags"` in `capabilities.bridge`, docs/bridge-protocol.md Features), and `protocol` is the bridge queue-line protocol its bridge reads, declared by an adapter that ships a bridge (`docs/bridge-protocol.md`, Protocol and Features). The scripts' own `CAPABILITIES` dict (whatever they're written in) must match the `capabilities` object exactly — that's what the contract test checks. `platform` is optional — see "Platform restriction," below — and `actions` is required — see "Declared actions," below. Neither is part of the `capabilities` object itself, so the contract test's `capabilities`-only comparison doesn't touch them. |
 | `fixture.scan.json` | One anonymized, real scan — see Fixture rules, below — that exercises this adapter's quirks: nested containers, worn items, whatever's distinctive about what this client can and can't see. |
 
 Ship all four and the contract test (`app/contracts.test.mts`) picks the adapter up automatically — nothing to register anywhere else. A directory under `adapters/` with no `capabilities.json` is not an adapter and is skipped; one with a `capabilities.json` but no `fixture.scan.json` gets the manifest checks but not the fixture checks (see below).
@@ -104,6 +104,34 @@ Whichever transport an adapter uses, the scan and bridge **schemas themselves do
 A read-only adapter declares `"actions": []`, and an adapter with `bridge: []` must — the test enforces that pairing. `adapters/classicuo-web/` is the example: it reads and prints, and does nothing in the world at all.
 
 Adding a new term means adding it to `ACTION_PRIMITIVES` in `app/adapters.test.mts` with the call pattern that means it, and documenting it in the table above. A world-acting primitive with no term is the case the contract exists to catch.
+
+## Manifest reference
+
+`capabilities.json` is checked in full against `app/schema/adapter-manifest.v1.schema.json` by `app/contracts.test.mts`; its `capabilities` object is checked against the scan schema's `adapter.capabilities` shape, its one definition. No other field is allowed.
+
+| Field | Required | Meaning |
+|---|---|---|
+| `adapter` | yes | The adapter's id, the same as its folder name (`[a-z0-9-]+`). |
+| `version` | yes | `x.y.z`, the same as every `ADAPTER_VERSION` line in its scripts (Versions, above). |
+| `transport` | yes | `"folder"` or `"paste"` (Transports, below). |
+| `protocol` | with a bridge | The bridge queue-line protocol its bridge reads (`docs/bridge-protocol.md`). |
+| `platform` | no | The one `process.platform` its client runs on (Platform restriction, below). |
+| `actions` | yes | What its scripts do in the world (Declared actions, below). |
+| `capabilities` | yes | What its scans can read and which bridge actions it runs: the scan's own `adapter.capabilities`. |
+| `features` | no | What the bridge does besides its actions (`docs/bridge-protocol.md`, Features). |
+| `install` | yes | What the installer knows about the client, below. |
+
+`install` is everything `app/installer.mts` knows about one client; the installer holds no table of its own, so a new folder client needs no installer change.
+
+| `install` field | Meaning |
+|---|---|
+| `scriptsSuffix` | The folders under a client folder that hold the scripts, most specific first: `[["TazUO", "LegionScripts"], ["LegionScripts"]]` for TazUO. The folder picker (`validateScriptsDir`) accepts the picked folder or any of these below it; the automatic search (`candidateClientRoots`) uses them under each candidate root. Required for a folder client; a paste client has none. |
+| `candidateRoot` | The client folder's well-known name, looked for under Desktop, Downloads and Documents in the player's home (and `LOCALAPPDATA` and the drive root on Windows). Omit it when the client has no fixed install location, as Razor Enhanced does: the folder picker is then the only way. |
+| `retired` | `[{name, header}]`: scripts an earlier version shipped under a name it no longer uses. An install removes such a file once the new scripts are in place, but only when its first line is exactly `header`; any other file of that name, a symlink or a folder is left alone. |
+| `stopHint` | How to stop this client's running scripts; the install refuses while a script runs with "a Pack Rat script is running in the client — " and this text. Omit it for neutral wording. |
+| `register` | The client-specific step an install runs once the scripts are in place, by name. `"none"` (every shipped adapter) installs exactly the scripts. A new step is a function in `app/installer.mts`'s `REGISTRARS` and a value in the schema's enum (issue #157 adds Razor Enhanced's profile registration this way); an install whose manifest names a step the build lacks is refused before anything is written. |
+
+A paste client's `install` holds only `register`, since it has no folder to find (`app/contracts.test.mts` checks both shapes).
 
 ## Platform restriction
 

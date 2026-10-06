@@ -114,6 +114,14 @@ Examples: `23fb19e`, `a86c64d`, `28a38de`.
 6. MCP: the `bridgeTool(...)` entries and `get_action_status` in `app/mcp-tools.mts`.
 7. Docs: `docs/bridge-protocol.md`, `docs/threat-model.md`, `docs/adapter-guide.md`.
 
+## Add an adapter
+
+1. `adapters/<id>/`: the scripts, `README.md`, `fixture.scan.json` once a real scan exists, and `capabilities.json` with its `install` section (`docs/adapter-guide.md`, Manifest reference). A folder client needs only its manifest to be found and installed: `scriptsSuffix`, `candidateRoot` if it has a fixed install location, `stopHint`, `register: "none"`.
+2. An install step beyond copying the scripts: a function in `REGISTRARS` in `app/installer.mts`, its name in `register`'s enum in `app/schema/adapter-manifest.v1.schema.json`, and a test in `app/installer.test.mts`.
+3. The page's words for it: `KNOWN` in `app/ui/adapter-copy.mts` (an adapter it doesn't know gets plain generic text).
+4. Tests: `app/contracts.test.mts`, `app/adapters.test.mts` and `adapters/test_adapters.py` pick it up by itself; a Python client gets a fake in `adapters/fake_clients.py` for its scanner and bridge tests.
+5. Docs: `docs/adapter-guide.md`, `README.md`, the version table under `TESTING.md`'s "Not under automated test".
+
 ## Add a UI screen or view
 
 Examples: `c1bb797` (Organize), `e378aff` (Scrolls), `43225d1` (a view inside House map).

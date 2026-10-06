@@ -1,0 +1,45 @@
+{
+  "$comment": "Pack Rat adapter manifest v1: adapters/<id>/capabilities.json, the adapter's contract as data. Read by app/installer.mts (listAdapters, and install's section for candidateClientRoots, validateScriptsDir and installScripts), checked in full by app/contracts.test.mts. capabilities is checked against scan.v2.schema.json's adapter.capabilities shape, its one definition, so this schema only says it is an object. See docs/adapter-guide.md, Manifest reference.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["adapter", "version", "transport", "actions", "capabilities", "install"],
+  "properties": {
+    "adapter": { "type": "string", "pattern": "^[a-z0-9-]+$", "$comment": "The adapter's id, the same as its folder name." },
+    "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$", "$comment": "Matches every ADAPTER_VERSION line in the adapter's scripts." },
+    "transport": { "type": "string", "enum": ["folder", "paste"] },
+    "protocol": { "type": "integer", "minimum": 1, "$comment": "The bridge queue-line protocol its bridge reads; declared by an adapter that ships a bridge." },
+    "platform": { "type": "string", "enum": ["win32", "darwin", "linux"], "$comment": "The one process.platform the client runs on; absent means every platform." },
+    "actions": { "type": "array", "items": { "type": "string" }, "$comment": "What the scripts do in the world; app/adapters.test.mts holds the vocabulary." },
+    "capabilities": { "type": "object" },
+    "features": { "type": "array", "items": { "type": "string" } },
+    "install": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["register"],
+      "$comment": "What the installer knows about this adapter's client. A paste-transport adapter installs nothing and carries only register.",
+      "properties": {
+        "scriptsSuffix": {
+          "type": "array",
+          "items": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1 },
+          "$comment": "The folders under a candidate or picked root that hold the scripts, most specific first."
+        },
+        "candidateRoot": { "type": "string", "minLength": 1, "$comment": "The client folder's well-known name, looked for under Desktop, Downloads and Documents (and LOCALAPPDATA and C:\\ on win32). Absent: the client has no fixed install location, so nothing is guessed." },
+        "retired": {
+          "type": "array",
+          "$comment": "Scripts an earlier version shipped under a name it no longer uses; an install removes one only when its first line is this header.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "header"],
+            "properties": {
+              "name": { "type": "string", "pattern": "^packrat-[a-z0-9-]+\\.py$" },
+              "header": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
+        "stopHint": { "type": "string", "minLength": 1, "$comment": "How to stop this client's running scripts, ending the install's running refusal. Absent: neutral wording." },
+        "register": { "type": "string", "enum": ["none"], "$comment": "The client-specific step an install runs once the scripts are in place (app/installer.mts's REGISTRARS)." }
+      }
+    }
+  }
+}

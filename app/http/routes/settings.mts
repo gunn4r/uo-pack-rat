@@ -73,7 +73,7 @@ export function routes(ctx: ServerContext): Route[] {
             // The same acceptance POST /api/setup/locate applies, so the wizard and a hand-written
             // settings PUT can never disagree about what a scripts folder is — and the RESOLVED
             // path is what gets persisted, not the raw body value.
-            const located = validateScriptsDir(rec.scriptsDir, adapter);
+            const located = validateScriptsDir(rec.scriptsDir, adapter, setupService.adaptersDir);
             if (!located.ok) return send(res, 400, { ok: false, error: `settings.client.scriptsDir: ${NO_CLIENT_FOLDER}` });
             nextClient = { adapter, scriptsDir: located.scriptsDir };
           }
