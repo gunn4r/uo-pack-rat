@@ -15,13 +15,6 @@ def read_text(path):
         return f.read()
 
 class Paths(unittest.TestCase):
-    def test_helpers_identical_and_present(self):
-        srcs = {s: read_text(os.path.join(HERE, s)) for s in SCRIPTS}
-        for name in ("data_dir", "write_json_atomic", "rfc3339_now"):
-            bodies = {s: helper_source(t, name) for s, t in srcs.items()}
-            for s, b in bodies.items(): self.assertIsNotNone(b, "%s lacks %s" % (s, name))
-            self.assertEqual(len(set(bodies.values())), 1, "%s differs between scripts" % name)
-
     def test_no_while_true_and_import_api_alone(self):
         for s in SCRIPTS:
             t = read_text(os.path.join(HERE, s))
@@ -63,7 +56,7 @@ class Paths(unittest.TestCase):
         for s in SCRIPTS:
             t = read_text(os.path.join(HERE, s))
             self.assertIn('ADAPTER_ID = "tazuo"', t, s)
-            self.assertIn('ADAPTER_VERSION = "2.15.0"', t, s)
+            self.assertIn('ADAPTER_VERSION = "2.15.1"', t, s)
             self.assertNotIn('"version": 1', t, s)
         for s in ("packrat-scanner.py", "packrat-character-refresh.py", "packrat-house-map-refresh.py"):
             t = read_text(os.path.join(HERE, s))

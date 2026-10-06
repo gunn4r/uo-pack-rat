@@ -55,6 +55,19 @@ Run it on its own with `node --test app/contracts.test.mts`, or as part of the f
 
 A fixture is one scan. `app/adapter-outputs.test.mts` also checks every file the Python adapters write while their own tests run: it starts `adapters/test_scanners.py` and `adapters/test_bridges.py` with `PACKRAT_TEST_OUTPUTS` set to a temp folder, and `run_script` in `adapters/fake_clients.py` copies each scan (`<data>/inbox/<id>/*.json`) and each bridge `status.json` written there. Each scan must pass `validateScan`, and each status must pass the `status` schema in `bridge.v1.schema.json`. Both TazUO and Razor Enhanced must have written at least one of each. A new Python adapter is covered once its scripts run through `run_script` in those two test files. Run it on its own with `node --test app/adapter-outputs.test.mts`.
 
+## Shared helpers
+
+Each script installs as a single file: TazUO lists every `.py` in its scripts folder as a runnable script, and Razor Enhanced has no way to import a sibling file. So a helper several scripts need, such as `data_dir`, `is_container`, the container walk or the bridge's untrusted-input block, is copied into each of them. The copies are generated, not hand-kept:
+
+- The one source is a fragment in `adapters/_shared/`: `<name>.py` for a helper every adapter shares, `<adapter>/<name>.py` for one adapter's own.
+- Each copy in a script sits between `# BEGIN generated: <name>` and `# END generated: <name>` lines.
+- To change a shared helper, edit its fragment and run `npm run gen:contracts` (`scripts/gen-contracts.mts`), which rewrites the lines between every matching pair of markers. Then bump the version of each adapter whose scripts changed (see Versions).
+- `node scripts/gen-contracts.mts --check` rewrites nothing and fails when a committed script differs from what it would generate, or when a fragment is carried by no script. `scripts/gen-contracts.test.mts` runs the same check as a `[smoke]` test.
+- A fragment a Razor Enhanced script carries must be ASCII with no f-strings, since Razor Enhanced runs IronPython. The generator refuses one that is not.
+- To share a helper that is still separate code, make the copies identical first, move the text into a fragment, and put the markers around each copy.
+
+Code outside the markers is each script's own. `ADAPTER_VERSION` and `CAPABILITIES` are not generated yet: `adapters/test_adapters.py` checks them against `capabilities.json`.
+
 ## Versions
 
 Any change to an adapter's scripts bumps that adapter's version: `version` in its `capabilities.json` and the `ADAPTER_VERSION` line in every script that carries one, all together (`adapters/test_adapters.py` fails when they disagree). Settings compares the version installed in the client folder with the one the app ships and asks the player to reinstall when they differ, so a change shipped without a bump never reaches a player who already installed the scripts.

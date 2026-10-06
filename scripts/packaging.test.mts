@@ -114,9 +114,10 @@ test("[fast] the bundle never ships a developer's own local data, even though ap
 
 test("[fast] the bundle leaves out the adapters' tests and fixtures", () => {
   // The installer copies only packrat-*.py out of adapters/; the tests, the fake clients they run
-  // against and the committed fixture are dead weight in a player's install.
+  // against, the committed fixture and the shared fragments the scripts already carry are dead weight
+  // in a player's install.
   const files = build.files ?? [];
-  for (const p of ["!adapters/**/test_*.py", "!adapters/fake_clients.py", "!adapters/**/fixture.scan.json"]) assert.ok(files.includes(p), `missing ${p}`);
+  for (const p of ["!adapters/**/test_*.py", "!adapters/fake_clients.py", "!adapters/**/fixture.scan.json", "!adapters/_shared/**"]) assert.ok(files.includes(p), `missing ${p}`);
 });
 
 test("[fast] every module the shell, the server and the workers load at run time ships", () => {

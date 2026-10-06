@@ -19,6 +19,7 @@ const SOURCES: Record<string, string> = {
   "app/fixture.test.mts": `readFileSync(join(ROOT, "app", "fixtures", "demo.json"));`,
   "app/adapters.test.mts": `// walks adapters/`,
   "app/adapter-outputs.test.mts": `// spawns adapters/test_scanners.py`,
+  "scripts/gen-contracts.test.mts": `// reads adapters/_shared/`,
   "scripts/ui-builder.test.mts": `import "./electron-window.mts";`,
   "scripts/ui-contrast.test.mts": `import "./electron-window.mts";`,
   "scripts/ui-state.test.mts": `import "./electron-window.mts";`,
@@ -63,7 +64,7 @@ test("[fast] select-tests: every SCREENS entry names a real app/ui module and re
 
 test("[fast] select-tests: anything under adapters/ runs the adapters tests", () => {
   const path = "adapters/tazuo/packrat-scanner.py";
-  assert.deepEqual(tests([path]), { "app/adapters.test.mts": [path], "app/adapter-outputs.test.mts": [path] });
+  assert.deepEqual(tests([path]), { "app/adapters.test.mts": [path], "app/adapter-outputs.test.mts": [path], "scripts/gen-contracts.test.mts": [path] });
 });
 
 test("[fast] select-tests: docs select nothing", () => {

@@ -9,6 +9,7 @@ import os
 import time
 
 
+# BEGIN generated: tazuo/paths
 def data_dir():
     """<script folder>/packrat-paths.json {"dataDir": "..."} → $PACKRAT_DATA → ~/.pack-rat"""
     try:
@@ -33,15 +34,19 @@ def write_json_atomic(path, obj):
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(obj, f, indent=1)
     os.replace(tmp, path)
+# END generated: tazuo/paths
 
 
+# BEGIN generated: rfc3339_now
 def rfc3339_now():
     t = time.localtime()
     off = time.strftime("%z", t)
     tz = "Z" if not off else off if ":" in off else off[:3] + ":" + off[3:]
     return time.strftime("%Y-%m-%dT%H:%M:%S", t) + tz
+# END generated: rfc3339_now
 
 
+# BEGIN generated: read_blacklist
 def read_blacklist(path):
     """The valid entries of <data directory>/scan-blacklist.json, the containers the player blacklisted
     ({serial, name, addedAt, where?}). A bad entry is dropped, and a missing, unreadable or oversized
@@ -54,6 +59,7 @@ def read_blacklist(path):
         return [e for e in doc if isinstance(e, dict) and type(e.get("serial")) is int and 0 < e["serial"] <= 0xFFFFFFFF]
     except Exception:
         return []
+# END generated: read_blacklist
 
 
 TARGET_S = 30            # how long the target cursor waits for a click

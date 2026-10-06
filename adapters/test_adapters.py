@@ -7,11 +7,12 @@ Two halves:
 
 1. Conventions — none of the three banned unbounded-loop literals (see scripts/no-unbounded-loop.
    test.mts, which spells them out; this file must not, since TazUO refuses a script whose text
-   contains one anywhere, comments included) in any adapter .py, the shared path/atomic-write
-   helpers identical within each adapter, and each adapter's `CAPABILITIES` dict literal matching its
-   own capabilities.json. These were machine-checked for tazuo only.
-2. The bridge's untrusted-input guards (Phase 7 security review, area 5). Every bridge carries a
-   byte-identical block of PURE functions — no game API, no files — bounded by the constants above
+   contains one anywhere, comments included) in any adapter .py, the container vocabulary the
+   shared fragments carry, and each adapter's `CAPABILITIES` dict literal matching its own
+   capabilities.json. That the scripts' copies of a shared helper match is scripts/gen-contracts.mts's
+   job (adapters/_shared/), not this file's.
+2. The bridge's untrusted-input guards (Phase 7 security review, area 5). Every bridge carries the
+   same generated block of PURE functions — no game API, no files — bounded by the constants above
    them; this file extracts that block, execs it, and drives it directly, the same way
    adapters/tazuo/test_paths.py execs `data_dir` without a running client.
 
@@ -57,6 +58,15 @@ def py_files(d):
 
 def bridge_dirs():
     return [(n, d) for n, d in adapter_dirs() if os.path.exists(os.path.join(d, "packrat-bridge.py"))]
+
+
+def load_shared(fragment):
+    """exec one adapters/_shared fragment (scripts/gen-contracts.mts copies it into the scripts) and
+    hand back its globals."""
+    ns = {"re": re}
+    path = os.path.join(HERE, "_shared", fragment + ".py")
+    exec(compile(read_text(path), path, "exec"), ns)
+    return ns
 
 
 def load_block(bridge_path):
@@ -127,19 +137,6 @@ class Conventions(unittest.TestCase):
                     continue
                 self.assertRegex(t, r"(?m)^import API$", "%s/%s" % (name, f))
 
-    def test_shared_helpers_identical_within_each_adapter(self):
-        for name, d in adapter_dirs():
-            files = [f for f in py_files(d) if "def data_dir(" in read_text(os.path.join(d, f))]
-            if len(files) < 2:
-                continue
-            srcs = {f: read_text(os.path.join(d, f)) for f in files}
-            for helper in ("data_dir", "write_json_atomic", "rfc3339_now"):
-                bodies = {f: helper_source(t, helper) for f, t in srcs.items()}
-                for f, b in bodies.items():
-                    self.assertIsNotNone(b, "%s/%s lacks %s" % (name, f, helper))
-                self.assertEqual(len(set(bodies.values())), 1,
-                                 "%s: %s differs between %s" % (name, helper, files))
-
     def test_capabilities_literal_matches_capabilities_json(self):
         # ast.literal_eval parses the Python literal (True/False/None are valid Python) without
         # executing anything. Every script carrying a CAPABILITIES literal must match the manifest —
@@ -180,99 +177,31 @@ class Conventions(unittest.TestCase):
                 t = read_text(os.path.join(d, f))
                 self.assertIsNone(speech.search(t), "%s/%s calls a public-speech primitive" % (name, f))
 
-    def test_is_container_in_the_bridge_matches_the_scanner(self):
-        # The bridge double-clicks whatever `chain` names, and double-click is UO's universal "use"
-        # verb. It must apply the scanner's own container test — including its corpse refusal —
-        # rather than a second, drifting copy.
-        for name, d in bridge_dirs():
-            scanner = os.path.join(d, "packrat-scanner.py")
-            if not os.path.exists(scanner):
-                continue
-            a = helper_source(read_text(scanner), "is_container")
-            b = helper_source(read_text(os.path.join(d, "packrat-bridge.py")), "is_container")
-            self.assertIsNotNone(a, "%s scanner lacks is_container" % name)
-            self.assertIsNotNone(b, "%s bridge lacks is_container" % name)
-            self.assertEqual(a, b, "%s: the bridge's is_container has drifted from the scanner's" % name)
-
-    def test_the_bridge_reads_trash_and_the_blacklist_with_the_scanners_own_code(self):
-        # A trip's put refuses trash and blacklisted containers by the scanner's own tests, not a
-        # second, drifting copy. Only bridges that run trips carry them; TazUO's must.
-        carriers = 0
-        for name, d in bridge_dirs():
-            bridge = read_text(os.path.join(d, "packrat-bridge.py"))
-            if "def is_trash(" not in bridge:
-                continue
-            carriers += 1
-            scanner = read_text(os.path.join(d, "packrat-scanner.py"))
-            for helper in ("read_blacklist", "tooltip_lines", "is_trash"):
-                self.assertEqual(helper_source(bridge, helper), helper_source(scanner, helper),
-                                 "%s: the bridge's %s has drifted from the scanner's" % (name, helper))
-            trash = re.compile(r"^TRASH_RE = .*$", re.M)
-            self.assertEqual(trash.search(bridge).group(0), trash.search(scanner).group(0), name)
-        self.assertGreaterEqual(carriers, 1, "no bridge carries the trash test")
-
-    def test_the_never_a_container_names_are_the_same_everywhere(self):
+    def test_the_never_a_container_names(self):
         # A deed, a bag of sending or a music box is never double-clicked, but a "Commodity Deed Box"
-        # is a real container: every scanner and bridge carries the same rule.
-        lines = set()
-        for name, d in adapter_dirs():
-            for f in py_files(d):
-                m = re.search(r"^NOT_A_CONTAINER_RE = .*$", read_text(os.path.join(d, f)), re.M)
-                if m:
-                    lines.add(m.group(0))
-                    ns = {"re": re}
-                    exec(m.group(0), ns)
-                    rx = ns["NOT_A_CONTAINER_RE"]
-                    for no in ("Wooden Chest Deed", "a bag of sending", "a music box", "Spellbook",
-                               "Mysticism Spellbook", "Book of Chivalry", "Runebook", "Runic Atlas",
-                               "Scrapper's Compendium", "a tome"):
-                        self.assertTrue(rx.search(no), "%s/%s: %s" % (name, f, no))
-                    for yes in ("Commodity Deed Box", "Bookcase", "Wooden Chest"):
-                        self.assertIsNone(rx.search(yes), "%s/%s: %s" % (name, f, yes))
-        self.assertEqual(len(lines), 1, sorted(lines))
+        # is a real container. Every scanner and bridge carries this one fragment.
+        rx = load_shared("not_a_container_re")["NOT_A_CONTAINER_RE"]
+        for no in ("Wooden Chest Deed", "a bag of sending", "a music box", "Spellbook",
+                   "Mysticism Spellbook", "Book of Chivalry", "Runebook", "Runic Atlas",
+                   "Scrapper's Compendium", "a tome"):
+            self.assertTrue(rx.search(no), no)
+        for yes in ("Commodity Deed Box", "Bookcase", "Wooden Chest"):
+            self.assertIsNone(rx.search(yes), yes)
 
-    def test_the_wearable_names_are_the_same_everywhere(self):
-        # The name fallback's armour guard: every script carrying one carries the same line, and it
-        # never refuses a real container whose name only sounds like gear.
-        lines = set()
-        for name, d in adapter_dirs():
-            for f in py_files(d):
-                m = re.search(r"^WEARABLE_RE = .*$", read_text(os.path.join(d, f)), re.M)
-                if m:
-                    lines.add(m.group(0))
-        self.assertEqual(len(lines), 1, sorted(lines))
-        ns = {"re": re}
-        exec(lines.pop(), ns)
+    def test_the_wearable_names(self):
+        # The name fallback's armour guard never refuses a real container whose name only sounds like
+        # gear.
+        rx = load_shared("tazuo/wearable_re")["WEARABLE_RE"]
         for yes in ("Gargish Chest", "Chest of Drawers", "Wooden Box", "Toolbox", "Golden Chest", "Crate"):
-            self.assertIsNone(ns["WEARABLE_RE"].search(yes), yes)
-        self.assertTrue(ns["WEARABLE_RE"].search("Platemail Chest"))
+            self.assertIsNone(rx.search(yes), yes)
+        self.assertTrue(rx.search("Platemail Chest"))
 
-    def test_the_never_a_container_graphics_are_the_same_everywhere(self):
+    def test_the_never_a_container_graphics(self):
         # A book is a container to the client (its spells are its contents), but double-clicking one
         # opens a spellbook or runebook, never a container window: every scanner and bridge refuses
-        # the same graphics, whatever the book is called.
-        lines = set()
-        for name, d in adapter_dirs():
-            for f in py_files(d):
-                t = read_text(os.path.join(d, f))
-                if "def is_container(" not in t:
-                    continue
-                m = re.search(r"^NOT_A_CONTAINER_GRAPHICS = .*$", t, re.M)
-                self.assertIsNotNone(m, "%s/%s lacks NOT_A_CONTAINER_GRAPHICS" % (name, f))
-                lines.add(m.group(0))
-        self.assertEqual(len(lines), 1, sorted(lines))
-        graphics = ast.literal_eval(lines.pop().split("=", 1)[1].split("#")[0].strip())
+        # these graphics, whatever the book is called.
+        graphics = load_shared("not_a_container_graphics")["NOT_A_CONTAINER_GRAPHICS"]
         self.assertLessEqual({0x0EFA, 0x2D50, 0x2D9D}, graphics, "the spellbooks a live scan opened")
-
-    def test_every_bridge_carries_the_same_untrusted_input_block(self):
-        blocks = {}
-        for name, d in bridge_dirs():
-            m = BLOCK_RE.search(read_text(os.path.join(d, "packrat-bridge.py")))
-            self.assertIsNotNone(m, "%s's bridge has no untrusted-input block" % name)
-            blocks[name] = m.group(0)
-        self.assertGreaterEqual(len(blocks), 2, "expected at least two bridges to compare")
-        self.assertEqual(len(set(blocks.values())), 1,
-                         "the untrusted-input block differs between %s" % sorted(blocks))
 
     def test_the_block_is_ascii_and_free_of_f_strings(self):
         # Razor Enhanced runs IronPython and the block is shared verbatim, so it stays on the

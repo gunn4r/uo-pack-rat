@@ -22,6 +22,7 @@
   "scripts": {
     "build:types": "node scripts/build-schema-types.mts",
     "build:ui": "node scripts/build-ui.mts",
+    "gen:contracts": "node scripts/gen-contracts.mts",
     "pretypecheck": "npm run build:types",
     "typecheck": "tsc -p tsconfig.json",
     "predesktop": "npm run build:types && npm run build:ui",
@@ -72,6 +73,7 @@
       "!adapters/**/test_*.py",
       "!adapters/fake_clients.py",
       "!adapters/**/fixture.scan.json",
+      "!adapters/_shared/**",
       "!app/data/profiles.json",
       "!app/data/runs/**",
       "!app/ui/**/*.mts"

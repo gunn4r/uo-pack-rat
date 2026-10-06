@@ -32,6 +32,7 @@ import re
 import time
 
 
+# BEGIN generated: razor-enhanced/paths
 def data_dir():
     """<script folder>/packrat-paths.json {"dataDir": "..."} -> $PACKRAT_DATA -> ~/.pack-rat"""
     try:
@@ -55,17 +56,20 @@ def write_json_atomic(path, obj):
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(obj, f, indent=1)
     os.replace(tmp, path)
+# END generated: razor-enhanced/paths
 
 
+# BEGIN generated: rfc3339_now
 def rfc3339_now():
     t = time.localtime()
     off = time.strftime("%z", t)
     tz = "Z" if not off else off if ":" in off else off[:3] + ":" + off[3:]
     return time.strftime("%Y-%m-%dT%H:%M:%S", t) + tz
+# END generated: rfc3339_now
 
 
 ADAPTER_ID = "razor-enhanced"
-ADAPTER_VERSION = "1.11.0"
+ADAPTER_VERSION = "1.11.1"
 # Keep this literal in sync with capabilities.json and packrat-scanner.py's own copy.
 CAPABILITIES = {
     "layers": ["RightHand", "LeftHand", "Shoes", "Pants", "Shirt", "Head", "Gloves", "Ring",
@@ -92,6 +96,7 @@ STATUS_EVERY_S = 2.0       # heartbeat: the app calls the bridge offline once `a
 HIGHLIGHT_HUE = 53         # bright yellow-green
 ALARM_HUE, OK_HUE, INFO_HUE = 33, 68, 88
 
+# BEGIN generated: untrusted_input
 # ---- untrusted input ---------------------------------------------------------------------------
 # <dataDir>/bridge/<adapter>/queue.jsonl is an ordinary file: the app writes it, but so can any
 # other local process, so the bridge validates every line itself instead of trusting that the server
@@ -425,6 +430,7 @@ def check_line(cmd, actions, now_s):
 
 
 # ---- end of the untrusted-input section --------------------------------------------------------
+# END generated: untrusted_input
 
 results = {}                # id -> {ok, msg, t}
 # The ids in the order they were recorded: the client's Python does not keep a dict in insertion order
@@ -439,11 +445,16 @@ pending = []              # validated commands waiting their turn (module-level 
 # sending raises a target cursor, a music box plays. Opening them opens nothing. A book of any kind
 # (spellbooks of every school, runebooks, a runic atlas, a tome) is a container to the client, but
 # opening one opens a spellbook or runebook window, never a container window.
+# BEGIN generated: not_a_container_re
 NOT_A_CONTAINER_RE = re.compile(r"\b(deed(?!\s+box)|sending|music box|\w*book|tome|atlas|compendium)\b", re.I)   # a "Commodity Deed Box" IS one
+# END generated: not_a_container_re
 # The books by graphic too, whatever they are called (ServUO's item classes; the first three seen live).
+# BEGIN generated: not_a_container_graphics
 NOT_A_CONTAINER_GRAPHICS = {0x0EFA, 0x2D50, 0x2D9D, 0x2252, 0x2253, 0x225A, 0x225B, 0x238C, 0x23A0, 0x22C5, 0x9C16}
+# END generated: not_a_container_graphics
 
 
+# BEGIN generated: razor-enhanced/is_container
 def is_container(it):
     # Only the client's own IsContainer flag says yes; there is no name fallback, so armour named
     # like a chest ("Platemail Chest") is never taken for one.
@@ -460,20 +471,25 @@ def is_container(it):
         return bool(getattr(it, "IsContainer", False))
     except Exception:
         return False
+# END generated: razor-enhanced/is_container
 
 
+# BEGIN generated: razor-enhanced/sysmsg
 def sysmsg(msg, hue=OK_HUE):
     # Misc.SendMessage prints to this client's own message area -- never a network speech packet,
     # unlike Player.ChatSay/ChatYell/ChatWhisper (see docs/bridge-protocol.md's "adapters never
     # speak publicly" rule, and README.md's Sources section for the citation on this distinction).
     Misc.SendMessage(msg, hue, False)
+# END generated: razor-enhanced/sysmsg
 
 
+# BEGIN generated: razor-enhanced/as_int
 def as_int(v, default=0):
     try:
         return int(v)
     except Exception:
         return default
+# END generated: razor-enhanced/as_int
 
 
 def write_status(current=None):
