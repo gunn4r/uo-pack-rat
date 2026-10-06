@@ -11,12 +11,13 @@ import { buffSkillValues, runBuffs } from "./buffs.mts";
 import type { RulesV1 } from "./schema/types.d.mts";
 import {
   propName, weightsSummary, requirementsSummary, poolSummary, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError,
-  resistOutcome, locationCrumbs, otherChanges, afterChange, compareModel, hiddenRowsNote, toggleCompare, runAutoLabel, runBadges, plural, SOLVER_LIMITS,
+  resistOutcome, locationCrumbs, otherChanges, afterChange, compareModel, hiddenRowsNote, toggleCompare, runAutoLabel, runBadges, plural, KNOB_RANGES,
   resistCapError, withResistCap, capNote, resistCapsSummary, gearCapsText, capsLine, anyOverridden, effectiveFloor, floorCapWarning, pruneResistCaps,
   weaponsSummary, weaponsChipText, toggleWeapon, withBuffs, paperdollFloors, pastCapBadges, runSettingsDiff,
   type Knobs,
 } from "./ui/builder-model.mts";
 import { OPTS_LIMITS } from "./vault-server.mts";
+import { RUN_SETTING_LIMITS } from "./run-settings.mts";
 
 setRules(JSON.parse(readFileSync(new URL("./rules/uoalive.json", import.meta.url), "utf8")) as RulesV1);
 const melee = JSON.parse(readFileSync(new URL("./data/profiles.default.json", import.meta.url), "utf8")).templates.melee;
@@ -95,7 +96,11 @@ test("[fast] builder model: an out-of-range knob gets a plain message with the a
 });
 
 test("[fast] builder model: the page's solver limits are the server's", () => {
-  assert.deepEqual(SOLVER_LIMITS, OPTS_LIMITS);
+  assert.deepEqual(KNOB_RANGES.restarts, { ...OPTS_LIMITS.restarts, whole: true });
+  assert.equal(KNOB_RANGES.budgetS.max! * 1000, OPTS_LIMITS.timeBudgetMs.max);
+  assert.deepEqual(KNOB_RANGES.altCount, { ...OPTS_LIMITS.alternativesCount, whole: true });
+  assert.deepEqual(KNOB_RANGES.strLimit, RUN_SETTING_LIMITS.strLimit);
+  assert.deepEqual(KNOB_RANGES.altTol, RUN_SETTING_LIMITS.altTol);
 });
 
 test("[fast] builder model: a resist tile says short, at cap, over cap or met", () => {

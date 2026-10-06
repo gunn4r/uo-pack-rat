@@ -313,6 +313,31 @@ test("[fast] /api/optimize by character: the saved run keeps the page's settings
   assert.equal(run.settings.strLimit, 120, "the pool settings the run actually used win over the snapshot's");
 });
 
+// Issue #218: settings and meta.settings are held to the one rule a manual run's settings are (app/run-settings.mts).
+test("[fast] /api/optimize: settings and meta.settings are checked like a manual run's, and the page's snapshot passes", async () => {
+  const inv = asJson<InventoryResponse>(await (await get("/api/inventory")).json());
+  const profiles = asJson<ProfilesResponse>(await (await get("/api/profiles")).json());
+  const rules = asJson<RulesResponse>(await (await get("/api/rules")).json());
+  const character = Object.keys(inv.inventory.characters)[0]!;
+  const profile = { ...profiles.profiles.templates![Object.keys(profiles.profiles.templates!)[0]!], caps: rules.rules.caps };
+  const post = (settings: unknown, metaSettings: unknown): Promise<Response> => fetch(srv.url + "/api/optimize", {
+    method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ character, settings, profile, opts: { exact: false, restarts: 1 }, meta: { character, settings: metaSettings } }),
+  });
+  const pool = { allowOthersWorn: false, strLimit: 110, excludeTags: [], excludeRoots: [], allowGargoyle: false, medOnly: false, excludeWeapons: [], ubwsAnyWeapon: true, excludeSkills: [], lockedSlots: [] };
+  // ui/runs.mts settingsSnapshot's shape, exact search off with junk left in its disabled fields
+  const snapshot = { ...pool, floors: { hci: 3 }, softFloors: [], weights: { dci: 2 }, restarts: 1, exact: false, budgetMs: 99999000, altCount: 500, altTol: -3, race: "elf", resistCaps: {} };
+  const ok = await post(pool, snapshot);
+  const body = asJson<OptimizeJobResponse>(await ok.json());
+  assert.equal(ok.status, 200, JSON.stringify(body));
+  if (body.id) await fetch(srv.url + `/api/optimize/${body.id}/cancel`, { method: "POST" });
+  const badPool = await post({ ...pool, excludeTags: [5] }, snapshot);
+  assert.equal(badPool.status, 400);
+  assert.equal(asJson<ErrorBody>(await badPool.json()).error, "settings.excludeTags must be a list of names");
+  const badMeta = await post(pool, { ...snapshot, race: "orc" });
+  assert.equal(badMeta.status, 400);
+  assert.equal(asJson<ErrorBody>(await badMeta.json()).error, "meta.settings.race must be human, elf or gargoyle");
+});
+
 // Issue #28: the heuristic-only path ran every requested restart whatever the time budget said.
 test("[fast] /api/optimize heuristic-only: the time budget caps the random restarts", async () => {
   const inv = asJson<InventoryResponse>(await (await get("/api/inventory")).json());

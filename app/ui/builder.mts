@@ -7,6 +7,7 @@
 import { PROP_LABELS, NOT_BUILDER_KEYS, GEAR_SLOTS, tagUnits, WEAPON_SKILLS, MELEE_SKILLS, resistSkillBonus, effectiveProfile, profileResistCaps, getRules, RESIST_KEYS, RESIST_CAP_LIMITS, resistCapsFor, templateFrom, characterProfile, settingsDiff, bagLabel } from "../vault-lib.mts";
 import type { EffectiveProfile, ResistCap, RunBuffs, RunSettings, Character } from "../vault-lib.mts";
 import { applyBuffs, buffById, gearNeedsText, overrideNote, planBuffs, normalizeBuffs, normalizeBuffListsByCharacter, ownEntry, plannedProfile, runBuffs, toggleBuff, buffPlanOf, type BuffPlan } from "../buffs.mts";
+import { defaultStrLimit, RUN_DEFAULTS } from "../run-settings.mts";
 import { state, invStamp } from "./store.mts";
 import type { BuilderProfile, BuilderJob, BuilderJobUi, FinishedBuild, BuildMeta } from "./store.mts";
 import { $, el, label, full, fmtN, fmtSecs, slotLabel, toast } from "./dom.mts";
@@ -27,7 +28,7 @@ import type { UiPrefs, OptimizeResult, OptimizeProgress, SavedRunLike, OptimizeS
 // The solver knobs as typed (strings, so a bad value can sit in its field with its error until fixed): STR
 // limit, beside Race, and the Advanced fields. STR limit lives on the profile too (it is saved with it); the
 // others are search options a profile never carried. And which sections are open.
-export const knobs: Knobs = { strLimit: "", restarts: "200", exact: true, budgetS: "300", altCount: "5", altTol: "0" };
+export const knobs: Knobs = { strLimit: "", restarts: String(RUN_DEFAULTS.restarts), exact: RUN_DEFAULTS.exact, budgetS: String(RUN_DEFAULTS.budgetMs / 1000), altCount: String(RUN_DEFAULTS.altCount), altTol: String(RUN_DEFAULTS.altTol) };
 const open: Record<string, boolean> = { buffs: true, req: true, caps: false, weights: false, pool: true, adv: false };
 // A requirement or weight row's property name: up to two lines, the full name in its title.
 const ruleName = (nm: string): HTMLSpanElement => { const t = txt(nm, "rule-name"); t.title = nm; return t; };
@@ -120,7 +121,7 @@ export function selectCharacter(name: string): void {
   clearCapDrafts();
   $<HTMLSelectElement>("#b-char")!.value = name;
   const c = state.inv!.characters[name];
-  knobs.strLimit = String(state.builder.profile!.strLimit ?? (c ? (c.stats as Record<string, number>).str ?? 125 : 125));
+  knobs.strLimit = String(state.builder.profile!.strLimit ?? defaultStrLimit(c));
   renderPanel();
   state.builder.compare = new Set(); state.builder.openRun = null; state.builder.result = null;
   closeCompare();

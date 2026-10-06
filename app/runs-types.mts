@@ -31,7 +31,7 @@ export interface SavedRun {
   poolSize?: number | null | undefined;
   skipped?: unknown;
   ms?: number | null | undefined;
-  budgetMs?: number | undefined;
+  budgetMs?: number | null | undefined;
   explored?: unknown;
   result?: RunResult | undefined;
 }

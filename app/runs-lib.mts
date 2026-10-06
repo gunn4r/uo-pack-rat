@@ -88,8 +88,21 @@ export function manualRun({ id, character, createdAt, settings, inventoryStamp, 
     return { slot: s, from: from?.name ?? null, fromSerial: from?.serial ?? 0, to: to?.name ?? null, toSerial: to?.serial ?? 0, gainedProps };
   });
   const key = `manual:${createHash("sha1").update(JSON.stringify({ character, suit: Object.fromEntries(Object.entries(best).map(([s, it]) => [s, it?.serial ?? null])), settings })).digest("hex")}`;
-  return { id, key, character, createdAt, label: "", settings, schemaVersion: 1, solverVersion: SOLVER_VERSION, inventoryStamp, poolSize: null, skipped: {}, ms: 0,
-    result: { method: "manual", best, perSlotChanges, totals: { before: totalsOf(worn), after: totalsOf(suit) } } };
+  return runRecord({ id, key, character, createdAt, settings, inventoryStamp, poolSize: null, skipped: {}, ms: 0,
+    result: { method: "manual", best, perSlotChanges, totals: { before: totalsOf(worn), after: totalsOf(suit) } } });
+}
+
+// A saved run's document, for both writers: a finished search (the jobs service's saveRun, with its `search` part) and a
+// manual run (manualRun above). The two have always listed their fields in different orders, and each keeps its own,
+// so a run file is byte for byte what it was.
+export interface RunRecordInput<R> {
+  id: string; key: string; character: string; createdAt: string; settings: RunSettingsRaw; inventoryStamp: unknown;
+  poolSize: number | null; skipped: unknown; ms: number | null; result: R;
+  search?: { opts: unknown; budgetMs: number | null; explored: unknown } | undefined;
+}
+export function runRecord<R>({ id, key, character, createdAt, settings, inventoryStamp, poolSize, skipped, ms, result, search }: RunRecordInput<R>) {
+  const head = { id, key, character, createdAt, label: "" }, versions = { schemaVersion: 1, solverVersion: SOLVER_VERSION }, source = { inventoryStamp, poolSize, skipped };
+  return search ? { ...head, ...versions, settings, ...source, ...search, result, ms } : { ...head, settings, ...versions, ...source, ms, result };
 }
 
 // The suit's item totals the drawer's badges read. A run saved while the optimizer searched only twelve slots
