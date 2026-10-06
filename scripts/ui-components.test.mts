@@ -1,10 +1,8 @@
-// ui-components.test.mts — [slow]: app/ui/components.mts's overlays and keyboard behaviour, in the real
-// Electron window (same launch as scripts/ui-smoke.test.mts). The builders' structure is unit-tested in
-// app/ui-components.test.mts on a fake DOM; what needs a browser is here: the confirm dialog's focus and
-// answers, the drawer's focus trap, Esc, inert-when-closed and focus return, the popover's light dismiss,
-// the toast stack, the tooltip on focus, and — measured on the rendered page — that no flex or grid
-// container the builders draw holds a bare text node. Skipped when electron or playwright is absent, or
-// under TEST_SKIP_ELECTRON.
+// ui-components.test.mts — [slow]: `app/ui/components.mts`'s overlays and keyboard behavior in the real Electron window.
+//
+// `[slow]`: `app/ui/components.mts`'s overlays in the real Electron window: the confirm dialog (an alertdialog, Cancel focused, the confirming button in danger, Esc and Cancel resolve false, focus back to the opener), the drawer (hidden and inert when closed, focus moved in, Tab and Shift+Tab wrap inside it, Esc closes, focus back to the opener), the popover (`aria-expanded`, focus in, Esc closes and returns focus, a click outside closes), the toast stack (at most three, an error is an alert that stays until dismissed) and the tooltip (shown on keyboard focus, `aria-describedby`). It also measures the rendered builders: no element with a computed `display` of flex or grid holds a bare text node.
+//
+// Same launch as scripts/ui-smoke.test.mts. The builders' structure is unit-tested in app/ui-components.test.mts on a fake DOM; what needs a browser is here. Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";

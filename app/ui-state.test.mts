@@ -1,6 +1,8 @@
-// ui-state.test.mts — app/ui/view-state.mts, the page's pure state rules: a filter checklist keeping the
-// value the query still applies across a refresh, and "Clear all" resetting every filter. The same transitions are driven in a real window by
-// scripts/ui-state.test.mts.
+// ui-state.test.mts — `app/ui/view-state.mts`, the page's DOM-free state rules.
+//
+// `app/ui/view-state.mts`, the page's DOM-free state rules: `optionsKeeping` (a filter checklist rebuilt after a refresh keeps the value the query still filters on, even once its facet is gone), `clearedQuery` (Clear all resets every filter, the search and the list filters included, and keeps grouping and sort), and `colsFromPrefs` (the server's saved columns win; an old localStorage choice is adopted only when the server answered with none and would accept it, never after a failed GET). All `[fast]`.
+//
+// The same transitions are driven in a real window by scripts/ui-state.test.mts.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { optionsKeeping, clearedQuery, colsFromPrefs, COLS_VERSION } from "./ui/view-state.mts";

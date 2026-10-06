@@ -320,7 +320,7 @@ function afterCard(name: string, current: OptSuit, suit: OptSuit, prof: Effectiv
     r.delta ? el("span", {}, txt(`${r.before ?? "?"} → `, "muted"), txt(r.after ?? "?", "strong")) : txt(r.before ?? "?", "strong"),
     txt(r.delta ? `${r.delta > 0 ? "+" : "−"}${Math.abs(r.delta)}` : "no change", `t-sm ${r.delta > 0 ? "tone-ok" : r.delta < 0 ? "tone-bad" : "muted"}`)));
   const full = button({ label: sheetOpen ? "Hide full sheet" : "Full sheet", variant: "ghost", size: "sm", attrs: { "aria-expanded": String(sheetOpen) }, onClick: () => { sheetOpen = !sheetOpen; rerender(); } });
-  // The full before/after sheet is sheet.mts's in-game style sheet for now (see docs/ui.md: the Characters
+  // The full before/after sheet is sheet.mts's in-game style sheet for now (see docs/ui/characters.md: the Characters
   // screen's shared "now → after" sheet replaces it).
   return el("section", { class: "card b-flush", "aria-label": "Character after the change" },
     box("div", { class: "card-head" }, el("h2", {}, `${name} after the change`), txt("Only values that move", "t-sm muted"), el("span", { class: "spacer" }), full),

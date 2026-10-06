@@ -1,6 +1,6 @@
-// solver-templates.test.mts — HiGHS and the core agree on the fixture for every shipped default template,
-// and with soft floors: app/solver.test.mts's longest [fast] checks, in a file of their own so the runner
-// runs them in parallel with the rest of it.
+// solver-templates.test.mts — HiGHS and the core agree on the fixture for every shipped default template, and with soft floors.
+//
+// HiGHS matches the core's proven optimum on every default template over the fixture inventory, and with soft floors. All `[fast]`, and the longest of the fast solver checks, hence a file of their own. It and the solver files beside it share `app/solver-fixture.mts` (the fixture folded and pooled, the templates, `cell()` and `runBoth()`).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { BASE_OPTS, cell, defaultProfiles, runBoth, templateNames } from "./solver-fixture.mts";

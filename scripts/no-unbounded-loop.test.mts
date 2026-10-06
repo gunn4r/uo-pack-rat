@@ -1,11 +1,8 @@
-// no-unbounded-loop.test.mts — [smoke]: standing guard for the project rule (CLAUDE.md's Global
-// Constraints, both the plan that added the Razor Enhanced/classicuo-web adapters and every adapter
-// script's own header) that no adapter `.py` file may contain a literal `while True`, `while (true)`,
-// or `while(true)` anywhere — comments and strings included, not just live code. TazUO itself refuses
-// to run a Legion script whose text contains any of these three forms as a plain substring match (see
-// adapters/tazuo/README.md and the project's own CLAUDE.md for the live incident that rule guards
-// against: a script got flagged for a COMMENT that said "no while True"). This had no test behind it
-// until now — every adapter script instead relied on a human remembering to grep before deploying.
+// no-unbounded-loop.test.mts — a [smoke] guard that no adapter `.py` file contains an unbounded-loop literal anywhere.
+//
+// a second `[smoke]` guard, standing behind the project rule (stated in every adapter script's own header) that no adapter `.py` file may contain a literal `while True`, `while (true)`, or `while(true)` anywhere — comments and strings included, matching TazUO's own plain-substring check that refuses to run a flagged script. Runs over `git ls-files adapters`, so it only sees what's actually tracked under `adapters/`.
+//
+// The rule is stated in every adapter script's own header. The live incident behind it: a script got flagged for a COMMENT that said "no while True". Before this test every adapter script relied on a human remembering to grep before deploying.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";

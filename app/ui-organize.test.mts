@@ -1,8 +1,8 @@
-// ui-organize.test.mts — app/ui/organize-model.mts, the Organize screen's pure rules (issue #11): editing the
-// setup (reorder, label, pin, unlabel, rule ids, a rule saved from the Inventory's filters, bags picked as
-// targets), the words for rules and their target chains, the live match count, the relabelled location texts,
-// the plan's reports and trip list, which trips may run, and how a running trip is watched until it reports
-// back. The rendered screen is driven by scripts/ui-organize.test.mts.
+// ui-organize.test.mts — `app/ui/organize-model.mts`, the Organize screen's pure rules (issue #11).
+//
+// `app/ui/organize-model.mts`, the Organize screen's pure rules (issue #11): setup edits (reorder, label, pin, unlabel, rule ids, a rule saved from the Inventory's filters without its location filters), the target picker (labelled chests with their scanned bags indented under them, never a pinned, blacklisted or unopened one; a picked bag labelled on save), rule summaries and target chains (a forgotten target still named), the live match line and its 300 ms debounce, relabelled location texts, the plan's reports, warnings and trip rows (a 1,000-move plan), what a stopped trip left in the backpack, trip gating and refusals (a salvaged setup asks to be saved), and the trip watcher (a bridge that never picks a trip up, a trip that never reports back, Run all stopping on a plan that did not shrink), and Auto organize's proposal words and gates. All `[fast]`.
+//
+// The rendered screen is driven by scripts/ui-organize.test.mts.
 import test, { mock } from "node:test";
 import assert from "node:assert/strict";
 import { parseItemQuery } from "./item-query.mts";

@@ -1,4 +1,6 @@
-// events.test.mts — app/services/events.mts on its own: sse() writes one event frame, the bus broadcasts to every attached stream and not to a removed one, and close() ends them all. Tags: [fast]. Run: node --test app/services/events.test.mts
+// events.test.mts — `app/services/events.mts` on its own: event frames, the broadcast and `close()`.
+//
+// `app/services/events.mts`: one event frame, a broadcast to the attached streams only, and `close()` ending them. `[fast]`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type http from "node:http";

@@ -1,23 +1,8 @@
-// import-children.test.mts — app/ui/dom.mts's compactChildren(), extracted for app/ui/import.mts's
-// renderImport() fix. renderImport() itself calls el()/$, which need `document`, and this repo has no
-// jsdom/happy-dom dependency to fake one, so it can't run under plain node:test (see
-// app/wizard-default-adapter.test.mts and app/bridge-adapter-fallback.test.mts for the same DOM-free-
-// testing constraint on other ui/*.mts modules; ui/import.mts specifically also transitively imports
-// ui/wizard.mts, which calls `$(...)` at MODULE SCOPE — even a DOM-free pure helper defined inside
-// import.mts itself can't be imported under plain node:test for that reason, which is why the helper
-// lives in dom.mts instead, whose own `document` uses are all inside function bodies or a lazily-
-// evaluated default-parameter expression).
+// import-children.test.mts — `app/ui/dom.mts`'s `compactChildren()`, the fix for the Import tab rendering the word "null".
 //
-// The bug: opening the Import tab before pasting/importing/rescanning anything rendered the literal
-// word "null" after the Rescan panel. renderImport() passed `imp.result ? el(...) : null` straight as
-// the last argument to replaceChildren(...) — that method's real (Node | string) signature has no null
-// member, so a literal null argument WebIDL-coerces to the text node "null" instead of being skipped
-// (unlike a null nested inside an el() call's own kids, which el() explicitly filters via its
-// `kid != null` check). compactChildren() is the fix: build the full list, then filter nulls out before
-// it ever reaches replaceChildren.
+// `app/ui/dom.mts`'s `compactChildren()`: drops a `null`/`undefined` entry from a children array instead of letting it reach `replaceChildren()`, keeps every non-null entry (including the always-present ones alongside a genuinely-set one), and never returns a list containing `null`/`undefined` for either the empty or the set case. This is the fix for the Import tab rendering the literal word "null" after the Rescan panel on first open (`imp.result ? el(...) : null` used to go straight into `root.replaceChildren(...)`, whose real `(Node | string)` signature has no `null` member and WebIDL-coerces a literal `null` argument into the text node `"null"`). The helper lives in `dom.mts` rather than `import.mts` itself — `import.mts` transitively imports `ui/wizard.mts`, which calls `$(...)` at module scope, so nothing importing `import.mts` can load under plain `node:test` without a real DOM; `dom.mts`'s own `document` uses are all inside function bodies or a lazily-evaluated default-parameter expression, so it imports cleanly standalone. All `[fast]`.
 //
-// Generic over T (plain strings stand in for the DOM nodes renderImport actually passes) — the bug and
-// the fix live entirely in the list-building/filtering logic, not in anything DOM-specific.
+// renderImport() itself calls el()/$, which need `document`, and this repo has no jsdom or happy-dom dependency to fake one, so it can't run under plain node:test (app/wizard-default-adapter.test.mts and app/bridge-adapter-fallback.test.mts work under the same DOM-free constraint). A null nested inside an el() call's own kids was never the problem, since el() filters those with its `kid != null` check. The test is generic over T (plain strings stand in for the DOM nodes renderImport passes): the bug and the fix live entirely in the list-building and filtering logic, not in anything DOM-specific.
 import "../scripts/localstorage-shim-for-tests.mts";
 
 import test from "node:test";

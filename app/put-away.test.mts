@@ -1,5 +1,8 @@
-// put-away.test.mts — app/put-away.mts (issue #131): the strict check on the TazUO panel's Put away request, and the
-// words the panel shows when a Put away plan moves nothing. Pure. Tags: [fast]. Run: node --test app/put-away.test.mts
+// put-away.test.mts — `app/put-away.mts` (issue #131): the strict check on the TazUO panel's Put away request.
+//
+// `app/put-away.mts` (issue #131): the Put away request's strict check (every field, the picked container, the 60-second window, the click time, the tile) and the one-line reason a plan moves nothing. All `[fast]`.
+//
+// Pure.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { checkPutAwayRequest, nothingDetail, requestId } from "./put-away.mts";

@@ -1,5 +1,6 @@
-// validate.test.mts — tests for the zero-dependency JSON Schema subset validator (validate.mts).
-// Tags are name prefixes: [smoke] [fast] [slow]. Run: node --test app/schema/validate.test.mts
+// validate.test.mts — `app/schema/validate.mts`, the zero-dependency JSON Schema subset validator.
+//
+// `app/schema/validate.mts`, the zero-dependency JSON Schema subset validator every scan, rules and profiles document is checked against: `type` (including array-of-types and the object/array/null edge cases), `required`, `properties`, `additionalProperties` in both its forms (`false` to close a shape, and a subschema applied to every key `properties` does not name — what checks an arbitrarily-keyed map such as a scan's `stats`/`skills`/`containers`), `items`, `enum`, `pattern`, `minimum`/`maximum`/`minLength`/`maxLength`/`maxItems`, unknown keywords ignored, nested paths (`/a/b/c`), array-index paths, the 20-error cap on a single validation, and `$ref` to a local `#/$defs/<name>` (under `properties`, `items` and `additionalProperties`, a ref to a ref, error paths through it) with every other ref form, a missing definition and a ref cycle throwing. `required`/`properties` membership is an own-property test, so a schema naming `toString`/`constructor` is not answered by `Object.prototype` instead of the document. All `[smoke]`/`[fast]`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { validate } from "./validate.mts";

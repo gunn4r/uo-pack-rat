@@ -1,12 +1,6 @@
-// manual-handoffs.test.mts — the Suit Builder's Manual ↔ Automatic hand-offs (issue #12): buildPools' pinned pieces
-// (each the only candidate for its slot and the slot's current piece, the hand rule kept, a piece another character
-// wears allowed, No character's pool of the pieces nobody wears), a manual run's saved shape and key (runs-lib.mts
-// manualRun, never reused for a search), an old run still read with the twelve slots it was saved with, a placed piece
-// in a slot the search once lacked lowering what the search needs, and the pure hand-off rules in ui/manual-model.mts (a
-// run into Manual's suit, the fillable slots, the fetch list's pieces). Then a seeded fuzz: random pinned subsets over
-// small inventories in any of the nineteen gear slots, where both solvers must find the brute-force best over the
-// unpinned slots, every pinned piece kept.
-// Tags: [fast]. Run: node --test app/manual-handoffs.test.mts
+// manual-handoffs.test.mts — the Suit Builder's Manual ↔ Automatic hand-offs (issue #12), with a seeded fuzz over pinned pieces.
+//
+// `[fast]`: the Suit Builder's Manual ↔ Automatic hand-offs (issue #12). `buildPools`' pinned pieces (each its slot's only candidate and the suit's only current pieces, a piece another character wears or a tag filter would drop kept, the hand rule held in the pools with a pinned two-hander, one-hander or shield, No character's pool of the pieces nobody wears); a manual run's shape (`runs-lib.mts` `manualRun`: every gear slot, the changes from what the character wears, no score, a `manual:` key that `reusableRun` never serves); every gear slot pooled, with the pieces worn in the new slots current a piece with no properties (a tag penalty aside) no candidate where its slot may stay empty, and a worn plain piece kept in the plan with no tie alternatives (`optionalSlotsFor`) (issue #202); an old twelve-slot run still read with the slots it planned (`slotsOf`), an old manual run's drawer totals counting its other slots and an old search's counting the worn pieces in the slots it never planned; a placed sash lowering the LRC the search needs, with boots filling the empty feet, in both solvers; `manual-model.mts`'s `suitFrom`, `fillableSlots`, `fetchPieces`, `keptSlots` and `listWords`, and `applyEditStep` (undoing Open in Manual puts back only the buff numbers it set and never one edited since), `fillPicks` (a fill lands only for the same character, counted buffs, suit and plan, into the slots empty at its start, never re-adding a placed piece); the warm-start probe (an earlier run's helmet must not empty the pinned helmet slot); and a seeded fuzz (three seeds × 120 small inventories in two to six of the nineteen gear slots with random pinned pieces, wearers and warm starts, for a character or none) where the core's exact search and HiGHS both find the brute-force best over the unpinned slots and keep every pinned piece.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildPools, GEAR_SLOTS, toOptItem, type Inventory, type Item, type OptItem } from "./vault-lib.mts";

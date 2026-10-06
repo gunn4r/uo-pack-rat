@@ -1,7 +1,6 @@
-// slot-groups.test.mts — app/vault-lib.mts's gear slot groups (issue #218): GEAR_SLOT_GROUPS gives every slot in
-// GEAR_SLOTS exactly one group, SLOT_GROUP and SLOTS_IN_GROUP agree with it, the slot lists kept elsewhere match it
-// (the five required armor pieces the optimizer core copies), and one neck-armor rule (isNeckArmor) serves meditation
-// and Organize. Tags: [fast].
+// slot-groups.test.mts — `app/vault-lib.mts`'s gear slot groups (issue #218) and the one neck-armor rule.
+//
+// `app/vault-lib.mts`'s gear slot groups (issue #218): `GEAR_SLOT_GROUPS` gives every slot in `GEAR_SLOTS` exactly one group in the display order, `SLOT_GROUP` and `SLOTS_IN_GROUP` agree with it (neck under Armor, feet and the kilt under Clothing), `REQUIRED_SLOTS` is the Armor group less the neck (which ties the optimizer core's copies, checked in `app/solver.test.mts`, to the table), and one neck-armor rule (`isNeckArmor`, `NECK_ARMOR_WORDS`) serves meditation and Organize's **Armor: neck** preset. All `[fast]`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { GEAR_SLOTS, GEAR_SLOT_GROUPS, SLOT_GROUP, SLOTS_IN_GROUP, REQUIRED_SLOTS, NECK_ARMOR_WORDS, isNeckArmor } from "./vault-lib.mts";

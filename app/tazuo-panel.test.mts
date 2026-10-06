@@ -1,7 +1,6 @@
-// tazuo-panel.test.mts — app/tazuo-panel.mts: the panel hotkey's validation, the TazUO-is-running
-// decision, and the merge-only edit of TazUO's lscript.json (every test in a temp folder).
+// tazuo-panel.test.mts — `app/tazuo-panel.mts`: the panel hotkey, the TazUO-is-running decision and the merge-only edit of TazUO's lscript.json.
 //
-// Run: node --test app/tazuo-panel.test.mts
+// `app/tazuo-panel.mts`: hotkey validation, the TazUO-is-running decision for `pgrep` and `tasklist` answers, and the merge-only `lscript.json` edit (other keys kept, one BOM kept, `.bak`, idempotent, unreadable files left alone, nothing written while TazUO runs), all in temp folders.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, existsSync } from "node:fs";

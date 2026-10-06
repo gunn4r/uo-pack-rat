@@ -1,20 +1,9 @@
-"""test_adapters.py — the adapter conventions and the bridge's untrusted-input guards, checked
-against EVERY adapter directory rather than tazuo alone (adapters/tazuo/test_paths.py still covers
-the TazUO-specific header/contract details; this file is what a second and third adapter pick up for
-free just by existing).
+"""test_adapters.py — the adapter conventions and the bridge's untrusted-input guards, checked against EVERY adapter directory rather than tazuo alone.
 
-Two halves:
+adapters/tazuo/test_paths.py still covers the TazUO-specific header and contract details; this file is what a second and third adapter pick up for free just by existing. Two halves:
 
-1. Conventions — none of the three banned unbounded-loop literals (see scripts/no-unbounded-loop.
-   test.mts, which spells them out; this file must not, since TazUO refuses a script whose text
-   contains one anywhere, comments included) in any adapter .py, the container vocabulary the
-   shared fragments carry, and each adapter's `CAPABILITIES` dict literal matching its own
-   capabilities.json. That the scripts' copies of a shared helper match is scripts/gen-contracts.mts's
-   job (adapters/_shared/), not this file's.
-2. The bridge's untrusted-input guards (Phase 7 security review, area 5). Every bridge carries the
-   same generated block of PURE functions — no game API, no files — bounded by the constants above
-   them; this file extracts that block, execs it, and drives it directly, the same way
-   adapters/tazuo/test_paths.py execs `data_dir` without a running client.
+1. Conventions — none of the three banned unbounded-loop literals (see scripts/no-unbounded-loop.test.mts, which spells them out; this file must not, since TazUO refuses a script whose text contains one anywhere, comments included) in any adapter .py, `import API` alone on its line, each script's `CAPABILITIES` literal and version agreeing with its `capabilities.json`, no public-speech call in a bridge, and the never-a-container names and graphics and the wearable names (read from their `adapters/_shared/` fragments) refusing what they must and nothing else. That the scripts' copies of a shared helper match is scripts/gen-contracts.mts's job (adapters/_shared/), not this file's.
+2. The bridge's untrusted-input guards (Phase 7 security review, area 5). Every bridge carries the same generated block of PURE functions — no game API, no files — bounded by the constants above them; this file extracts that block, execs it, and drives it directly, the same way adapters/tazuo/test_paths.py execs `data_dir` without a running client. Checked: stale, future-dated or unstamped commands refused, unknown actions, bad serials, over-long chains, out-of-range positions and walks, and over-long names refused, the burst budget (a 25-piece Grab all fits, a flood does not), partial and over-long queue lines, `resolve_root` and the chain check refusing another player's pack, and a trip's `putAway` (a container serial, and a Put away trip takes nothing).
 
 Run: python3 adapters/test_adapters.py  (app/adapters.test.mts also spawns it, so `npm test` does).
 """

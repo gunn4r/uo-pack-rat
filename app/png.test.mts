@@ -1,4 +1,6 @@
-// png.test.mts — app/png.mts (issue #164): the PNG signature, the IHDR fields, every chunk's CRC, and a tiny image's IDAT inflated back to its filtered rows. Tags: [fast]. Run: node --test app/png.test.mts
+// png.test.mts — `app/png.mts` (issue #164), the PNG writer.
+//
+// `app/png.mts` (issue #164): the CRC-32 check value, the PNG signature, IHDR (size, 8-bit RGB), every chunk's CRC, IDAT inflated back to rows each led by filter type 0, and pixel data of the wrong length refused. All `[fast]`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { inflateSync } from "node:zlib";

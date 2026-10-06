@@ -1,8 +1,8 @@
-// run-suite.test.mts — scripts/run-suite.mts, the counting half of the test runner, driven against
-// throwaway test files written into a temp directory. Every other claim in the repo rests on the
-// summary this produces, so each case here is a way a file could otherwise drop out of the count, or
-// a stale green summary could survive, while the run still exits 0. All `[fast]`: each case spawns a
-// few tiny child processes and nothing else.
+// run-suite.test.mts — `scripts/run-suite.mts`, the counting half of the test runner, driven against throwaway test files in a temp directory.
+//
+// `scripts/run-suite.mts`, the runner's counting half, driven in a separate plain `node` process against throwaway test files in a temp directory: a file that exits with code 0 before, or part-way through, its tests is a failure; one whose tests are all filtered out by the mode is not; a load failure carries its stderr; a failing test counts once; a run where nothing ran fails; a build failure in `prepare` is recorded; a hung test fails on the timeout (named as the test on Node 24, as its file on Node 22); a file left running on an open interval is stopped by the watchdog and named; an error thrown or a promise rejected after a test returned, and a failing `process.exitCode`, fail the file as "failed after its tests finished"; a mid-file `process.exit(1)` is "stopped before its tests finished", not a load failure; an empty file fails a full run as "registered no tests". It runs the suite outside its own test process because a `run()` started from inside a `node:test` child inherits that child's markers and the inner files stop reporting.
+//
+// Every other claim in the repo rests on the summary this produces, so each case here is a way a file could otherwise drop out of the count, or a stale green summary could survive, while the run still exits 0. All [fast]: each case spawns a few tiny child processes and nothing else.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";

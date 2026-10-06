@@ -1,6 +1,8 @@
-// scrub.test.mts — this repository is public. Nothing tracked in it may carry the maintainer's
-// identity or machine, the private workspace it grew out of, real in-game character names, or the
-// retired product name. The allowances below are deliberate and each one says why.
+// scrub.test.mts — a [smoke] guard: this repository is public, and nothing tracked in it may carry private details.
+//
+// the `[smoke]` guard described in `CONTRIBUTING.md`'s "The scrub guard" section: fails the suite if any tracked file carries the maintainer's identity or machine, the private workspace this project grew out of, a real in-game character name, the retired product name, or a non-placeholder `/Users/…` path. Runs over `git ls-files`, so it only sees what's actually tracked.
+//
+// The allowances below are deliberate and each one says why.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";

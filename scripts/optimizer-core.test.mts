@@ -1,28 +1,14 @@
-// ============================================================================
-// optimizer-core.test.mts — offline test harness for optimizer-core.mts.
+// optimizer-core.test.mts — the offline test harness for the suit optimizer core (`scripts/optimizer-core.mts`).
 //
-// Run:  node --test scripts/optimizer-core.test.mts   or   node scripts/optimizer-core.test.mts
+// the suit optimizer core (`scripts/optimizer-core.mts`), loaded straight from source (no build step) through Node's native TypeScript type stripping. All `[fast]` — the one exact search (dominance pruning and the bound on a negatively weighted, floored property) runs on a single two-ring slot.
 //
-// HOW THE CORE IS LOADED: no build step — every caller (this harness, the server, the bench) imports
-// scripts/optimizer-core.mts straight from source, via Node's native TypeScript type stripping, by the
-// path config.mts's corePath()/paths.core resolves (PACKRAT_CORE overrides it). The source stays
-// paste-able into the game client (no imports of its own, no top-level exports beyond its one trailing
-// `export { ... }` line) while this harness exercises the exact file that ships. Requires Node >= 24
-// (stable type stripping); verified on v24. If a future runtime drops native stripping, the fallback is
-// `npx tsx` on this same file.
+// How the core is loaded: no build step. Every caller (this harness, the server, the bench) imports scripts/optimizer-core.mts straight from source, via Node's native TypeScript type stripping, by the path config.mts's corePath()/paths.core resolves (PACKRAT_CORE overrides it). The source stays paste-able into the game client (no imports of its own, no top-level exports beyond its one trailing `export { ... }` line) while this harness exercises the exact file that ships. Requires Node >= 24 (stable type stripping); verified on v24. If a future runtime drops native stripping, the fallback is `npx tsx` on this same file.
 //
-// None of the cases below use an exact/budgeted search (no `exact: true`, no `timeBudgetMs`) — every
-// one is a cheap heuristic-restart run, so all are tagged [fast].
+// None of the cases below use an exact or budgeted search (no `exact: true`, no `timeBudgetMs`): every one is a cheap heuristic-restart run.
 //
-// TYPES: `import type * as Core` pulls in the core's export TYPES only — fully erased by type
-// stripping, so it changes nothing at runtime — while the actual value load stays the runtime-computed
-// `await import(pathToFileURL(corePath()).href)` the real path (and PACKRAT_CORE) depends on; casting
-// that value `as typeof Core` gives every destructured function its real signature instead of `any`,
-// so a real arity/shape mistake here is a compile error, not a silent pass. The core exports no type
-// names (only its functions, in one trailing `export { ... }` line — see CONTRIBUTING.md, and it must
-// stay that way), so `OptItem`/`Pools`/`Assignment`/`OptResult` below are derived structurally through
-// `Parameters<>`/`ReturnType<>` on `Core.optimizeSuit` rather than imported or hand-duplicated.
-// ============================================================================
+// Types: `import type * as Core` pulls in the core's export TYPES only — fully erased by type stripping, so it changes nothing at runtime — while the actual value load stays the runtime-computed `await import(pathToFileURL(corePath()).href)` the real path (and PACKRAT_CORE) depends on; casting that value `as typeof Core` gives every destructured function its real signature instead of `any`, so a real arity or shape mistake here is a compile error, not a silent pass. The core exports no type names (only its functions, in one trailing `export { ... }` line, and it must stay that way), so `OptItem`/`Pools`/`Assignment`/`OptResult` below are derived structurally through `Parameters<>`/`ReturnType<>` on `Core.optimizeSuit` rather than imported or hand-duplicated.
+//
+// Run: node --test scripts/optimizer-core.test.mts, or node scripts/optimizer-core.test.mts
 
 import { test } from "node:test";
 import assert from "node:assert/strict";

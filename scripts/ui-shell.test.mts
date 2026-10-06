@@ -1,10 +1,8 @@
-// ui-shell.test.mts — [slow]: the app shell (design spec 3.1, app/ui/shell.mts and app.mts's routes) in the
-// real Electron window (same launch as scripts/ui-smoke.test.mts): the sidebar nav marks the current screen
-// and each screen is its own <main> with an h1; #/containers is a view of Inventory; #/import and #/runs open
-// their drawers over a screen and closing one puts the route back; closed drawers are hidden and inert; the
-// sidebar collapses to icons below 1180 px, can be pinned collapsed, and the pin survives a restart (it is a
-// ui-prefs field, not localStorage); the bridge control opens its popover; the shard picker lives in
-// Settings. Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
+// ui-shell.test.mts — [slow]: the app shell (design spec 3.1) in the real Electron window.
+//
+// `[slow]`: the app shell in the real Electron window (`app/ui/shell.mts`, `app/ui/nav.mts`'s routes): one `<main>` screen at a time with its `h1` and the sidebar item marked `aria-current`; `#/containers` as Inventory's second view and its Items/Containers switch; ⌘I and `#/import` opening the Import drawer over the screen that was showing (the shell inert behind it) and Esc putting the route back; `#/runs` opening the builder with the saved-runs drawer and navigating away closing it; closed drawers hidden and inert; the bridge control's popover (state, last answered, focus back to the control on Esc); the shard picker in Settings; and the sidebar collapsing to 56 px icons below 1180 px (labels still named for a screen reader), pinned collapsed at 1440 px, the pin surviving a restart through `ui-prefs.json`.
+//
+// Same launch as scripts/ui-smoke.test.mts. The sidebar pin is a ui-prefs field, not localStorage. Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";

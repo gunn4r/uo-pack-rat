@@ -1,8 +1,6 @@
-// run-settings.test.mts — app/run-settings.mts, the one check a run's settings are held to: a snapshot built the way the
-// page's settingsSnapshot and build_suit build theirs passes (search fields left wrong without exact search included),
-// one refused field per kind with the label in the reason, a null field skipped, and the defaults' STR limit. Also the
-// saved-run document (runs-lib.mts runRecord): each writer's file lists its fields in the order it always has.
-// Tags: [fast]. Run: node --test app/run-settings.test.mts
+// run-settings.test.mts — `app/run-settings.mts`, the one check a run's settings are held to (issue #218).
+//
+// `[fast]`: `app/run-settings.mts`, the one check a run's settings are held to (issue #218): a snapshot built the way the page's `settingsSnapshot` and `build_suit` build theirs passes, including search fields left wrong while exact search is off; one refused field of each kind, its reason carrying the caller's label; a null field skipped; the default STR limit; and `runs-lib.mts` `runRecord`, each writer's saved-run file keeping the field order it always had.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";

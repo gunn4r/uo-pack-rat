@@ -1,4 +1,6 @@
-// router.test.mts — app/http/router.mts on its own: the first route whose method and path match answers; a string path matches exactly and a RegExp hands its match on; "*" matches any method; NEXT passes the request to the next matching route; nothing answered is false (the server's 404); a handler that throws rejects. Tags: [fast]. Run: node --test app/http/router.test.mts
+// router.test.mts — `app/http/router.mts` on its own: which route answers a request.
+//
+// `app/http/router.mts`: the first route whose method and path match answers, in table order; a string path matched exactly and a RegExp handing its match on; `"*"` matching any method; `NEXT` passing a request to the next match; a known path with another method unanswered (the server's 404, never a 405); a handler that throws rejecting. All `[fast]`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type http from "node:http";

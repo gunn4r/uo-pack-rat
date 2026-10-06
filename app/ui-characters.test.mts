@@ -1,8 +1,8 @@
-// ui-characters.test.mts — the Characters screen's pure logic: the sheet's formatters (the "cap +N" badge,
-// the at-cap meter, the attribute bonus split, "now → after", a slot tile's key numbers, tag tones,
-// pluralising) from app/ui/sheet.mts, and the roster's search and sort and the sheet's scan summary from
-// app/ui/roster.mts. Lives in
-// app/ rather than app/ui/ for the reason app/ui-render.test.mts gives. Tags: [fast].
+// ui-characters.test.mts — the Characters screen's pure logic (`app/ui/sheet.mts`'s formatters, `app/ui/roster.mts`).
+//
+// the Characters screen's pure logic: `app/ui/sheet.mts`'s formatters (the "cap +N" badge from a raw value past its cap, the at-cap meter, an attribute's "(own + gear)" split including a negative bonus, "now → after", a slot tile's two key numbers — nearest their shard cap, uncapped properties against 100, skill bonuses as "Magery +20", bookkeeping keys never shown and a power scroll's `psLevel` never offered on the Properties card — the tag tones, pluralising, and the durability watch: a piece low at 20% of its max or 10 points, never with a max of 0, at or past its max, or with no durability line, the count and its summary sentence) and `app/ui/roster.mts`'s search and sort (by name either way, by a resist's capped value or scan time with an unscanned character last, ties by name) and the sheet's scan summary (`sheetMeta`: the count of root containers the character's scans opened, backpack, bank and the containers inside others left out, its `#/containers/<Name>` link, and no count at none), and the worn-gear tiles holding every gear slot exactly once (issue #218). No DOM. All `[fast]`.
+//
+// Lives in app/ rather than app/ui/ for the reason app/ui-render.test.mts gives.
 import "../scripts/localstorage-shim-for-tests.mts";   // a localStorage stub for the page modules below; none reads it at module scope today (app/ui/store.mts no longer does)
 import { test } from "node:test";
 import assert from "node:assert/strict";

@@ -1,10 +1,10 @@
-// layering.test.mts — [smoke]: the import layering of app/, scripts/ and electron/, read from the static
-// `import … from`, `export … from` and `import()` specifiers of every non-test .mts in the tree, untracked ones included (comment lines skipped):
+// layering.test.mts — a [smoke] guard for the import layering of app/, scripts/ and electron/.
+//
+// Read from the static `import … from`, `export … from` and `import()` specifiers of every non-test .mts in the tree, untracked ones included (comment lines skipped):
 //   1. nothing outside app/ui/ imports from app/ui/ (tests excluded);
 //   2. the browser-shared modules (tsconfig.browser.json's include, minus app/ui/**) reach no node: module;
 //   3. the modules outside app/ui/ have no import cycles, and the app/ui/ modules no cycles beyond the known groups below;
-//   4. every module app/ui/ reaches outside app/ui/ has its own "/<path>.mjs" route in app/http/routes/static.mts (the page
-//      gets a 404 at load otherwise; build:ui compiles it whether or not the include lists it) and reaches no node: module;
+//   4. every module app/ui/ reaches outside app/ui/ has its own "/<path>.mjs" route in app/http/routes/static.mts (the page gets a 404 at load otherwise; build:ui compiles it whether or not the include lists it) and reaches no node: module;
 //   5. app/store/ and app/services/ import nothing from app/http/ (type imports included);
 //   6. nothing imports app/vault-server.mts except electron/, scripts/, the test fixtures (*-fixture.mts) and tests;
 //   7. no app/ui/ module imports app/ui/app.mts, the page's bootstrap (routes are nav.mts, the inventory reload is inventory-data.mts).

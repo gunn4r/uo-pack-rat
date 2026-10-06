@@ -1,10 +1,8 @@
-// evaluate.test.mts — app/evaluate.mts's evaluateSuit (issue #216) against the three assemblies it replaced, kept here
-// as they were written: Manual's totals strip, deltas and stats card (ui/builder-manual.mts), Automatic's buff picker
-// (ui/builder.mts buffView) and the MCP tools' score_suit (mcp-tools.mts). For each, on the demo characters (with
-// skills that open every buff below) and No character, with no buffs, with Divine Fury and with mixed sets (a form, a
-// stat slot, a potion, a resist override a form's loss sets aside), on the worn suit and on suits with a piece swapped,
-// the old numbers and evaluateSuit's must be equal.
-// Tags: [fast]. Run: node --test app/evaluate.test.mts
+// evaluate.test.mts — `evaluateSuit` (`app/evaluate.mts`, issue #216) against the three assemblies it replaced.
+//
+// `[fast]`: `evaluateSuit` (`app/evaluate.mts`) against the three assemblies it replaced, kept in the test as they were written: MCP `score_suit`'s totals, requirements and planned profile, Manual's totals strip, picker deltas and stats card, and Automatic's buff picker, on the demo characters with and without skills and No character, three templates (one with an Elf race and a resist override a form's loss sets aside), no buffs, Divine Fury and mixed sets, the worn suit and suits with a piece swapped; and Divine Fury's DCI −20 shown in the effective totals beside the gear's, with what is wasted past a cap.
+//
+// The replaced assemblies are Manual's totals strip, deltas and stats card (ui/builder-manual.mts), Automatic's buff picker (ui/builder.mts buffView) and the MCP tools' score_suit (mcp-tools.mts). The demo characters carry skills that open every buff below; the mixed sets hold a form, a stat slot and a potion. For each case the old numbers and evaluateSuit's must be equal.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";

@@ -1,9 +1,8 @@
-// make-adapter-fixture.test.mts — scripts/make-adapter-fixture.mts, run as a real child process
-// (the way a maintainer actually invokes it), against temp in/out paths. Covers the fix that makes
-// this tool earn its ScanV2 the way app/import.mts and app/watcher.mts do: a real scan the tool turns
-// into a committed fixture.scan.json is the first thing two never-run-against-a-live-client adapters
-// (Razor Enhanced, the ClassicUO web client) will produce, which is exactly when a malformed scan is
-// most likely — and a fixture built from an invalid one would get committed as the adapter's contract.
+// make-adapter-fixture.test.mts — `scripts/make-adapter-fixture.mts` run as a real child process, the way a maintainer invokes it, against temp in/out paths.
+//
+// runs `scripts/make-adapter-fixture.mts` as a real child process against temp in/out paths: a valid v2 scan (`adapters/tazuo/fixture.scan.json`) and a valid v1 scan (`app/fixtures/demo-Kestrel.json`) both exit 0 and produce a fixture that itself passes `validateScan`; a version-tagged but malformed scan (`{schemaVersion: 2, shard: {}}` — missing every other required field, `shard` the wrong type) exits non-zero, names a real missing/invalid field on stderr, and writes no output file. A scan from `razor-enhanced` comes out labelled as that adapter, with its own `client` and the version and capabilities from `adapters/razor-enhanced/capabilities.json`; a scan from an adapter with no `capabilities.json` is refused; and a scan whose character name (any case) or account id survives in a root or item name is refused with those JSON paths on stderr and no file written, as is a single word of a multi-word name ("Aldric" from "Aldric the Bold") while "the" is not. A container's `facet` survives anonymising while its tile becomes `{x: 1, y: 1, z: 0}` (issue #11). Covers the fix that makes this tool earn its `ScanV2` (`validateScan` the upgraded input, and the anonymised fixture it's about to write, before ever reading either as validated or writing the file) the same way `app/import.mts` and `app/watcher.mts` already do — this is the tool that will turn the first real scans from two never-run-against-a-live-client adapters into committed fixtures, exactly when a malformed scan is most likely. All `[fast]`.
+//
+// A fixture built from an invalid scan would get committed as the adapter's contract.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";

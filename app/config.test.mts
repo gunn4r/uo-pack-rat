@@ -1,3 +1,6 @@
+// config.test.mts — `app/config.mts`'s `resolveConfig` and the per-adapter bridge paths.
+//
+// `app/config.mts`'s `resolveConfig`: the `--data`/`PACKRAT_DATA`/home precedence, the `--port`/`PACKRAT_PORT` precedence and validation, `--demo`/`--open`, and `bridgeFor`/`bridgeQueueFor`/`bridgeStatusFor` (per-adapter bridge paths, mirroring `inboxFor`) — including that `bridgeFor("tazuo")` is byte-identical to the legacy fixed `bridge`/`bridgeQueue`/`bridgeStatus` keys, which is what makes the per-adapter bridge a no-migration change for an existing TazUO player. All `[smoke]`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { join, resolve } from "node:path";

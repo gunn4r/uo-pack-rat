@@ -1,7 +1,8 @@
-// item-kinds.test.mts — the player's own item kinds (issue #150): vault-lib.mts's layering over the shipped table as
-// the fold enriches each item (a name beats a graphic beats the table, names compare case-insensitively, gear never
-// changes), and app/item-kinds.mts's reading of item-kinds.json (salvage), merge and reset. The routes are in
-// app/organize-server.test.mts. Tags: [fast]. Run: node --test app/item-kinds.test.mts
+// item-kinds.test.mts — the player's own item kinds (issue #150): the layering in the fold and `app/item-kinds.mts`'s file handling.
+//
+// the player's own item kinds (issue #150): the layering in the fold (a name beats a graphic beats the shipped table, case-insensitive names, gear never changes, no inherited keys), and `app/item-kinds.mts`'s salvage of a file entry by entry, the entry cap, merge and reset. All `[fast]`.
+//
+// The routes are in app/organize-server.test.mts.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";

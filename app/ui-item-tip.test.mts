@@ -1,6 +1,6 @@
-// ui-item-tip.test.mts — app/ui/item-tip.mts, where the item tooltip gets its item (issue #10): a registered full
-// record at once, else the cache, else one lookup by serial, a miss asked for once.
-// Tags: [fast]. Run: node --test app/ui-item-tip.test.mts
+// ui-item-tip.test.mts — `app/ui/item-tip.mts`, where the item tooltip gets its item (issue #10).
+//
+// `[fast]`: `app/ui/item-tip.mts`, where the item tooltip gets its item (issue #10): a registered record with its tooltip lines shown at once, else the cache, else one lookup by serial shared by concurrent hovers, a serial the server does not know asked for once (the partial record shown) until `forget()`, and a lookup that failed on the network not counted as a miss (asked again).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createTipResolver, tipComplete, type TooltipItem } from "./ui/item-tip.mts";

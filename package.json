@@ -23,6 +23,7 @@
     "build:types": "node scripts/build-schema-types.mts",
     "build:ui": "node scripts/build-ui.mts",
     "gen:contracts": "node scripts/gen-contracts.mts",
+    "gen:test-index": "node scripts/test-index.mts --write",
     "pretypecheck": "npm run build:types",
     "typecheck": "tsc -p tsconfig.json",
     "predesktop": "npm run build:types && npm run build:ui",

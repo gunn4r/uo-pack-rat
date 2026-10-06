@@ -1,8 +1,8 @@
-// test-tags.test.mts — [smoke]: every top-level test in a tracked *.test.mts starts its name with a tag
-// ([smoke], [fast] or [slow]; TESTING.md "Tags"). The runner picks tests by name pattern, so an untagged
-// test silently runs only in full mode. Names are read from string-literal first arguments of test(…)
-// (and it(…) where a file imports it from node:test); a template literal that opens with an expression
-// can't be checked statically and is skipped. Subtests (t.test) inherit their parent's tag and are not checked.
+// test-tags.test.mts — a [smoke] guard that every top-level test name starts with a tag.
+//
+// a `[smoke]` guard that every top-level test in a tracked `*.test.mts` starts its name with a tag (`[smoke]`, `[fast]` or `[slow]`), read from the string-literal first argument of `test(…)`; subtests inherit their parent's tag and are not checked.
+//
+// The runner picks tests by name pattern, so an untagged test silently runs only in full mode. Names are also read from it(…) where a file imports it from node:test; a template literal that opens with an expression can't be checked statically and is skipped.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
