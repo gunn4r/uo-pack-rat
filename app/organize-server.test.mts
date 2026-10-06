@@ -7,8 +7,8 @@ import { mkdtempSync, writeFileSync, readFileSync, existsSync, renameSync } from
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { resolveConfig, ensureLayout } from "./config.mts";
-import { startServer, type ServerHandle } from "./vault-server.mts";
-import { candidateClientRoots } from "./installer.mts";
+import type { ServerHandle } from "./vault-server.mts";
+import { startTestServer } from "./server-fixture.mts";
 import { houseScan, maxOrganizeConfig, type BoxSpec, type ThingSpec } from "./organize-fixture.mts";
 import { emptyRuleQuery, emptyOrganizeConfig, type OrganizeConfig } from "./organize-config.mts";
 import type { Plan } from "./organize.mts";
@@ -16,7 +16,6 @@ import type { Container, Item } from "./vault-lib.mts";
 import { PRESETS } from "./organize-presets.mts";
 import type { Proposal } from "./organize-strategies.mts";
 
-const FAKE_HOME = mkdtempSync(join(tmpdir(), "qm-home-"));
 const A = 0x40000001, B = 0x40000002, PEARL = 0x40001001, RUBY = 0x40001002;
 const CONFIG_DOC: OrganizeConfig = {
   ...emptyOrganizeConfig(),
@@ -34,10 +33,7 @@ async function serve(extra: ThingSpec[] = [], extraBoxes: BoxSpec[] = []): Promi
   writeFileSync(join(dir, "scans", "house.json"), JSON.stringify(houseScan({ scannedAt,
     boxes: [{ serial: A, pos: { x: 100, y: 100, z: 0, facet: 1 } }, { serial: B, pos: { x: 104, y: 100, z: 0, facet: 1 } }, ...extraBoxes],
     things: [{ serial: PEARL, name: "Black Pearl", in: B }, { serial: RUBY, name: "Ruby", in: A }, ...extra] })));
-  const s = await startServer(config, {
-    clientSearch: { home: FAKE_HOME, candidates: (a) => candidateClientRoots({ adapter: a.id, home: FAKE_HOME, platform: "linux", env: {}, adapterPlatform: a.platform }) },
-    clientRunning: () => false,
-  });
+  const s = await startTestServer(config);
   return { s, dir };
 }
 const body = (method: string, value: unknown): RequestInit => ({ method, headers: { "content-type": "application/json" }, body: JSON.stringify(value) });
@@ -483,7 +479,7 @@ test("[fast] a Grab that worked frees its slot in the full container it left, an
 const WEAPON = 0x40001009;
 const kindOfItem = async (s: ServerHandle, serial: number): Promise<string | undefined> =>
   (await call<{ items: Record<string, Item> }>(s, `/api/items/by-serial?serials=${serial}`)).body.items[serial]?.kind;
-const restart = (dir: string): Promise<ServerHandle> => startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})), { clientSearch: { home: FAKE_HOME, candidates: () => [] }, clientRunning: () => false });
+const restart = (dir: string): Promise<ServerHandle> => startTestServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
 
 test("[fast] POST /api/item-kinds re-kinds the inventory with no rescan, the plan follows, it survives a restart, and kind null resets it", async () => {
   const { s, dir } = await serve([{ serial: WEAPON, name: "Ancient Weapon", in: A, graphic: 0x1f14 }]);

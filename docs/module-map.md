@@ -266,6 +266,7 @@ Stylesheets (`app/ui/tokens.css`, `app/ui/britannia.css`, `app/ui/components.css
 | `scripts/contrast-probe.mts` | Measures WCAG contrast on the rendered page. | `probeContrast` |
 | `scripts/localstorage-shim-for-tests.mts` | A `localStorage` stub installed on import, for tests of modules that use it. | — |
 | `app/timing-fixture.mts` | Speed checks that keep the fastest of several samples. | `fastestMs` |
+| `app/server-fixture.mts` | Test fixture: the real server on an empty temp home, with no client running and a fake update check. | `startTestServer`, `FAKE_HOME`, `updateRequests` |
 
 Every `*.test.mts` file sits beside the module it is named after, and `TESTING.md` lists them with their tags.
 
