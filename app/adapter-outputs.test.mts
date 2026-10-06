@@ -1,11 +1,8 @@
-// adapter-outputs.test.mts — what the Python adapters actually write, checked against the schemas they
-// claim to meet. adapters/test_scanners.py and adapters/test_bridges.py drive every TazUO and Razor
-// Enhanced script through adapters/fake_clients.py; with PACKRAT_TEST_OUTPUTS set, fake_clients.py
-// copies each scan and each bridge status.json those runs write into that folder. This file spawns the
-// two test files the way app/adapters.test.mts does, then runs validateScan on every scan and the
-// bridge.v1 status schema on every status.
+// adapter-outputs.test.mts — what the Python adapters really write, checked against the schemas they claim to meet.
 //
-// Run: node --test app/adapter-outputs.test.mts
+// what the Python adapters really write, checked against the schemas: spawns `adapters/test_scanners.py` and `adapters/test_bridges.py` with `PACKRAT_TEST_OUTPUTS` pointing at a temp folder, then runs `validateScan` on every TazUO and Razor Enhanced scan (house-only files included) and the `bridge.v1` status schema on every bridge status, and fails if either adapter wrote no scan or no status. `[fast]`, skipped with no `python3`/`python` on PATH.
+//
+// adapters/test_scanners.py and adapters/test_bridges.py drive every TazUO and Razor Enhanced script through adapters/fake_clients.py; with PACKRAT_TEST_OUTPUTS set, fake_clients.py copies each scan and each bridge status.json those runs write into that folder. This file spawns the two test files the way app/adapters.test.mts does.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";

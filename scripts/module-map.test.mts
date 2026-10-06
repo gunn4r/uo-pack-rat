@@ -1,6 +1,8 @@
-// module-map.test.mts — [smoke]: keeps docs/module-map.md from falling behind the tree. Every tracked non-test .mts
-// file under app/, scripts/ and electron/ (fixtures included, app/dist/ excluded) must be named in the map, and every
-// repo path the map names in backticks must exist. Reads the tree with `git ls-files` (untracked files included, so a new module counts before it is added).
+// module-map.test.mts — a [smoke] guard that keeps `docs/module-map.md` from falling behind the tree.
+//
+// a `[smoke]` guard that keeps `docs/module-map.md` current: every tracked non-test `.mts` file under `app/`, `scripts/` and `electron/` (fixtures included) must be named in the map, and every repo path the map names in backticks must exist. Runs over `git ls-files`, and a third test fails if it sees no modules or no named paths.
+//
+// app/dist/ is excluded, and untracked files count too, so a new module counts before it is added.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";

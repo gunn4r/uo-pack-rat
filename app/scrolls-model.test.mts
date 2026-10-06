@@ -1,8 +1,8 @@
-// scrolls-model.test.mts — app/ui/scrolls-model.mts, the Inventory's Scrolls view as data (issue #181): power scrolls
-// grouped per skill and level, the Scroll Binder's next roll-up and "bind everything" cascade, the row order, Scrolls of
-// Transcendence totals and their exact 2.0 / 5.0 plan, the empty Scroll Binder count, the header's facts, and the plain
-// holdings a shard without binder recipes gets. Lives in app/ for the reason app/ui-render.test.mts gives.
-// Tags: [fast]. Run: node --test app/scrolls-model.test.mts
+// scrolls-model.test.mts — `app/ui/scrolls-model.mts`, the Inventory's Scrolls view as data (issue #181).
+//
+// `app/ui/scrolls-model.mts`, the Inventory's Scrolls view as data (issue #181), against uoalive's `scrollBinder` recipes: a power scroll's skill read off its name; counts per skill and level (a stack by its amount) and the level columns; the next roll-up (fewest more needed, the higher tier on a tie, none at 120 or without recipes); "bind everything" cascading each binding into the level above before that level binds, top tier first, and no text when nothing binds; the row order (fewest more, higher tier, name; nothing to roll up last) and by name without recipes; the fewest-scrolls exact subset in whole tenths, checked against trying every subset on 300 random sets; the binder plan (exactly 5.0 when it can, else 2.0, else, at or past 5.0, the set that overshoots 5.0 least and then has the fewest scrolls, saying how much is lost and writing equal scrolls as "17 × 0.3" (`runsOf`/`runText`, also the Scrolls column's chips), else how far short of the next usable total); Transcendence totals per skill sorted by total, the skill read off the shown name with no rules loaded, and no plan without recipes; the empty Scroll Binder test (only weight and state lines) and count; the header's facts with and without recipes, a skill ready in both tabs counted once; the skill filter; the Inventory searches that find exactly one skill's scrolls; and the detail's grouping by place. All `[fast]`.
+//
+// Lives in app/ for the reason app/ui-render.test.mts gives.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";

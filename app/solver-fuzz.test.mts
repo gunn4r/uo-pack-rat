@@ -1,11 +1,8 @@
-// solver-fuzz.test.mts — a seeded brute-force equivalence check over small generated inventories.
-// Every instance is small enough to enumerate outright, so the exhaustive maximum of the core's own
-// `scoreSet` is the oracle for all three searches: the core's heuristic (a valid suit, never above
-// the oracle), the core's exact branch-and-bound (proven, equal to the oracle), and `solveExact`
-// through HiGHS (proven, equal to the oracle, bound never below its own score). The generator leans
-// on the cases that broke before: negative property values under soft and hard floors, negative
-// weights on capped and floored properties, locked slots, the shield / two-hander pair, and a warm start that
-// lacks a locked slot's piece. Each instance fills two to six of the nineteen gear slots (fuzzSlots).
+// solver-fuzz.test.mts — a seeded brute-force equivalence check of all three searches over small generated inventories.
+//
+// a seeded brute-force equivalence check: five fixed seeds × 400 generated inventories of two to six of the nineteen gear slots (`solver-fixture.mts`'s `fuzzSlots`, the hand pair together in about half; 1–4 candidates each, negative property values, negative weights on capped and floored properties, soft and hard floors, worn and locked slots, a random warm start (which must never empty a locked slot), shields and two-handers), each enumerated outright so the maximum of the core's `scoreSet` is the oracle. The heuristic must return a valid suit scoring its own re-score and never above the oracle; the core's exact search and `solveExact` (HiGHS) must both prove and equal the oracle, with HiGHS's bound never below its score. All `[fast]` (about 5 s); it is what caught the soft-floor met row forbidding negative totals and the core's pruning on negatively weighted floors.
+//
+// The three searches are the core's heuristic (a valid suit, never above the oracle), the core's exact branch-and-bound (proven, equal to the oracle), and `solveExact` through HiGHS (proven, equal to the oracle, bound never below its own score). The generator leans on the cases that broke before.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { solveExact, type OptPools, type OptAssignment, type OptProfile } from "./exact-solver.mts";

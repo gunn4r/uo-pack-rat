@@ -1,6 +1,8 @@
-// ui-smoke.test.mts — [slow]: drives the real Electron window with Playwright. The shell smoke test
-// proves the app boots and serves; this one proves the page renders and its tabs work. Skipped when
-// electron or playwright is absent (a plain clone), or under TEST_SKIP_ELECTRON.
+// ui-smoke.test.mts — [slow]: the Playwright-driven render check that the page renders and its tabs work.
+//
+// `[slow]`: the Playwright-driven render check. Where the shell smoke test only proves the app boots and serves, this one drives the real Electron window (`electron . --demo --data <tmp>`, Playwright's `_electron.launch`) and proves the page itself renders: the title is "Pack Rat", `#status` finishes loading, the first-run wizard (a real `<dialog>` a fresh `--data` dir always opens) is dismissed the way a user would via its Skip button, the demo fixtures fill `#inv-table`'s rows rather than the empty state, clicking the Characters tab shows its panel, and nothing throws a `pageerror` along the way — including that with no client configured, the rows still carry Highlight, Grab and Go to (the server's default adapter), each disabled with the bridge-offline reason, and no amber client bar sits inside the Inventory. Two further `[slow]` cases in the same file prove the bridge render path at the DOM level rather than only through `GET /api/setup`'s JSON: with `tazuo` pre-configured in `settings.json`, the demo inventory's rows carry all three Highlight/Grab/Go-to actions, held back only by the bridge being offline, and no explanatory note; with a hand-built partial-bridge adapter (`bridge: ["highlight"]` only), Grab and Go to are disabled with a reason naming the client, and Highlight only by the offline bridge. Skipped, with the same note and the same `TEST_SKIP_ELECTRON=1` env var, when `electron` or `playwright` isn't installed — a plain clone/CI box without both dev dependencies.
+//
+// This is what stands in for a full end-to-end UI test today; electron/README.md's "What's not exercised by the automated smoke test" section lists what still needs a human (the native folder dialog, Finder integration, a clean Cmd+Q with no orphaned server-entry process).
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync, realpathSync } from "node:fs";

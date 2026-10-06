@@ -1,4 +1,6 @@
-// server-host.test.mts — HTTP tests of the shared event stream (GET /api/events and the watchers behind it), the bridge (POST /api/bridge, /api/bridge/stop, GET /api/bridge/status), POST /api/host/* and GET|PUT /api/ui-prefs. Tags: [fast]. Run: node --test app/server-host.test.mts
+// server-host.test.mts — HTTP tests of the event stream, the bridge, the host calls and the UI preferences.
+//
+// `GET /api/events` (`hello` listing the adapters, `inventory` and `rejected` events from the inbox watcher, none under `--demo`, a throwing log destination not crashing the server, the anti-framing headers on both streams); the bridge (`POST /api/bridge` checked against the bridge schema and bounded, queued into the configured adapter's own folder, `POST /api/bridge/stop`, `GET /api/bridge/status` reading the configured adapter's status and never letting it override `ok`/`online`/`age`); `POST /api/host/pick-folder` and `open-path` (501 with no host, an injected host answering, a title passed on only as a short string, a bounded call answering 504); and `GET|PUT /api/ui-prefs` (the column choice on another port, theme, appearance, sidebar, density, column widths and sheet properties, the House map's area labels and drawer width, and the Suit Builder's mode, Manual suit and buffs, each kept across a restart and refused when malformed).
 import { test, before, after, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, renameSync, rmSync, statSync } from "node:fs";

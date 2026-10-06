@@ -7,10 +7,10 @@ Walk the list for each kind your change is, and say in the pull request which ki
 ## Always
 
 - `CHANGELOG.md`: one line under Unreleased when the change matters to a player or a contributor, in the file's style.
-- Tests next to every module you touched, each test name tagged `[smoke]`, `[fast]` or `[slow]`. A new test file is listed in `TESTING.md`.
+- Tests next to every module you touched, each test name tagged `[smoke]`, `[fast]` or `[slow]`. Every test file opens with a header saying what it covers (`TESTING.md`); after adding one or changing a header's first sentence, run `npm run gen:test-index`.
 - `npm run typecheck`, then `./scripts/test_runner.sh --changed` and `--fast` (`TESTING.md`).
 - `docs/module-map.md` when you add, move, delete or rename a module, or move a concept from one module to another.
-- The docs for the area you changed (the one `docs/` file, an adapter README, `README.md` for what players see).
+- The docs for the area you changed (the one `docs/` file, an adapter README, `README.md` for what players see). Below, `docs/ui.md` means the core page or the screen's own page under `docs/ui/`, whichever holds what changed.
 
 ## Add or change a gear slot
 
@@ -22,7 +22,7 @@ Examples: `d3bbb2e` (#202 part A), `532b7cc` (#202 part B), `4982888`.
 4. Organize: the Armor and Jewelry groups in `app/organize-strategies.mts` (kept by hand: they move real items); the slot presets in `app/organize-presets.mts`.
 5. MCP: `build_suit`'s `pinned` description in `app/mcp-tools.mts` (it lists `GEAR_SLOTS`; check the wording still fits).
 6. Tests: `app/slot-groups.test.mts`, `scripts/slot-lists.test.mts` (its allow-list, if a hand-kept list changed size), `app/gear-vault.test.mts`, `app/manual-model.test.mts`, `app/manual-handoffs.test.mts`, `app/solver.test.mts`, `app/solver-fuzz.test.mts`, `app/solver-buffs-fuzz.test.mts`, `app/buffs-plan.test.mts`, `scripts/optimizer-core.test.mts`, `app/organize-strategies.test.mts`, `app/server-builder.test.mts`, `app/server-host.test.mts`, `app/ui-render.test.mts`, `scripts/ui-builder.test.mts`; the fixture `app/solver-fixture.mts`.
-7. Docs: `docs/solver.md`, `docs/ui.md`, `docs/scan-schema.md`, `CONTRIBUTING.md`.
+7. Docs: `docs/solver.md`, `docs/ui.md`, `docs/scan-schema.md`, `docs/architecture.md` (the data model and the classification gotchas).
 8. If adapters start recording the layer, this is also a scan-format change (below).
 
 ## Add an item kind or change classification
@@ -35,7 +35,7 @@ Examples: `ee9da51`, `97c6363`.
 4. Server: the routes in `app/http/routes/`. If a server module becomes page-visible, the browser-shared list (see Add an HTTP route).
 5. MCP: `list_item_kinds` and the `kind` filter's description in `app/mcp-tools.mts`.
 6. Tests: `app/slot-groups.test.mts`, `scripts/slot-lists.test.mts` (its allow-list, if a hand-kept list changed size), `app/gear-vault.test.mts`, `app/item-kinds.test.mts`, `app/organize-config.test.mts`, `app/organize-strategies.test.mts`, `app/organize-server.test.mts`, `app/server-inventory.test.mts`, `scripts/ui-organize.test.mts`.
-7. Docs: `README.md` (kinds are player-visible), `CONTRIBUTING.md`, `docs/architecture.md` (data folder), `docs/ui.md`.
+7. Docs: `README.md` (kinds are player-visible), `docs/architecture.md` (data folder, classification gotchas), `docs/ui.md`.
 
 ## Add an item property or property filter
 
@@ -58,7 +58,7 @@ Examples: `02b052e`, `e0b1eb0`.
 3. UI: `app/ui/builder-buffs.mts`, `app/ui/builder-manual.mts`, `app/ui/builder.mts`, `app/ui/builder-model.mts`, `app/ui/builder-result.mts`, `app/ui/manual-model.mts`, `app/ui/sheet.mts`, `app/ui/components.mts`, `app/ui/runs.mts`, `app/ui/app.mts`, `app/ui/builder.css`, `app/ui/tokens.css`.
 4. MCP: `BUFF_LIST` in `app/mcp-tools.mts` (built from `BUFFS`; two tools send it).
 5. Tests: `app/buffs.test.mts`, `app/buffs-plan.test.mts`, `app/evaluate.test.mts`, `app/solver-buffs-fuzz.test.mts`, `app/solver.test.mts`, `app/builder-model.test.mts`, `app/ui-components.test.mts`, `scripts/ui-builder.test.mts`, `scripts/ui-contrast.test.mts`.
-6. Docs: `docs/solver.md`, `docs/shard-rules.md`, `docs/ui.md`, `CONTRIBUTING.md`, `README.md`, `PRIVACY.md` if what is stored changes.
+6. Docs: `docs/solver.md`, `docs/shard-rules.md`, `docs/ui.md`, `README.md`, `PRIVACY.md` if what is stored changes.
 
 ## Add or change a profile field
 
@@ -69,7 +69,7 @@ Examples: `166eb05`, `d311bdb`, `f1eced4`.
 3. UI: `app/ui/builder-model.mts`, `app/ui/builder.mts`, `app/ui/builder-result.mts`, `app/ui/runs.mts` (`settingsSnapshot`), `app/ui/sheet.mts`, `app/ui/components.mts`, `app/ui/builder.css`.
 4. MCP: the `build_suit` and `score_suit` arguments in `app/mcp-tools.mts` if a model should set it.
 5. Tests: `app/builder-model.test.mts`, `app/gear-vault.test.mts`, `app/server-builder.test.mts`, `app/solver.test.mts`, `app/ui-render.test.mts`, `scripts/ui-builder.test.mts`, `scripts/ui-contrast.test.mts`, `scripts/ui-state.test.mts`.
-6. Docs: `docs/ui.md`, `docs/solver.md`, `docs/shard-rules.md` (cap overrides), `README.md`, `CONTRIBUTING.md`.
+6. Docs: `docs/ui.md`, `docs/solver.md`, `docs/shard-rules.md` (cap overrides), `README.md`.
 
 ## Add an HTTP route
 
@@ -91,7 +91,7 @@ Examples: `2b30944`, `9b03dcc`, `219861a`.
 3. Fixtures and fakes: `adapters/tazuo/fixture.scan.json`, `scripts/make-adapter-fixture.mts`, `adapters/fake_clients.py`, `adapters/test_scanners.py`, `adapters/tazuo/test_paths.py`.
 4. Fold and consumers: `app/vault-lib.mts`, `app/retention.mts`, `app/house-capture.mts`, `app/item-query.mts`; `app/ui/inv-model.mts`, `app/ui/inventory.mts`, `app/ui/sheet.mts`, `app/ui/store.mts`, `app/ui/view-state.mts`.
 5. Tests: `app/scan-schema.test.mts`, `app/contracts.test.mts`, `app/classicuo-web-adapter.test.mts`, `app/gear-vault.test.mts`, `app/house-capture.test.mts`, `app/house-model.test.mts`, `app/house-server.test.mts`, `app/ui-state.test.mts`, `scripts/ui-state.test.mts`.
-6. Docs: `docs/scan-schema.md`, `docs/adapter-guide.md`, `docs/bridge-protocol.md`, each adapter `README.md`, the version list under `TESTING.md`'s "Not under automated test".
+6. Docs: `docs/scan-schema.md`, `docs/adapter-guide.md`, `docs/bridge-protocol.md`, each adapter `README.md`, the version table under `TESTING.md`'s "Not under automated test".
 
 ## Add or change a bridge command
 
@@ -112,7 +112,7 @@ Examples: `c1bb797` (Organize), `e378aff` (Scrolls), `43225d1` (a view inside Ho
 1. `app/index.html`, `app/ui/nav.mts` (the route; the screen registers its `show` there), `app/ui/app.mts` (screen switching), the screen module and its pure model (`app/ui/<view>.mts`, `app/ui/<view>-model.mts`) and stylesheet, `app/ui/store.mts`, `app/ui/components.mts` for any new shared piece.
 2. Server routes and `app/ui/api-types.mts` (see Add an HTTP route).
 3. Tests: a DOM-free `app/ui-<view>.test.mts` for the model, an Electron `scripts/ui-<view>.test.mts`, a fixture if it needs data (`scripts/scrolls-fixture.mts` is the pattern), `scripts/ui-contrast.test.mts` for new CSS; add the stems to `SCREENS` in `scripts/select-tests.mts` so `--changed` finds the Electron test.
-4. Docs: `docs/ui.md`, `README.md`.
+4. Docs: a new `docs/ui/<screen>.md` linked from `docs/ui.md`'s screen tables, `README.md`.
 
 ## Add a shard rule
 

@@ -1,6 +1,6 @@
-// organize-presets.test.mts — app/organize-presets.mts (issue #11): every preset is a valid rule filter, a rule
-// copied from one is its own, and the reagent, power scroll and rarity presets find what their names promise.
-// Tags: [fast]. Run: node --test app/organize-presets.test.mts
+// organize-presets.test.mts — `app/organize-presets.mts` (issue #11): every preset is a valid rule and finds what its name promises.
+//
+// `app/organize-presets.mts`: every preset is a valid rule, a rule copied from one is its own, and the reagent, power scroll and rarity presets find what their names promise (Bone Armor is never a Mysticism reagent). All `[fast]`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";

@@ -15,7 +15,7 @@
 // The optimizer is scripts/optimizer-core.mts, run straight from source (no build step) — every
 // caller imports it from the one path config.mts's paths.core/corePath() resolves (PACKRAT_CORE
 // overrides it).
-// Localhost security (CONTRIBUTING.md's Security section has the full writeup): every request's
+// Localhost security (docs/architecture.md's "The server's request checks" has the full writeup): every request's
 // Host must name this server and its Origin (if any) must match, or 403; with CONFIG.token set,
 // every /api/* route but the SSE events stream needs `Authorization: Bearer <token>`, or 401 — the
 // bare `node app/vault-server.mts` path runs with no token at all. PUT /api/profiles is capped at 1 MB

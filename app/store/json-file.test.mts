@@ -1,4 +1,6 @@
-// json-file.test.mts — app/store/json-file.mts: each bad-file policy (empty, aside, skip) on a missing, oversized, unparsable or refused file, and the writer's folder, indent, trailing newline and file mode. Tags: [fast]. Run: node --test app/store/json-file.test.mts
+// json-file.test.mts — `app/store/json-file.mts`: each bad-file policy and the writer.
+//
+// `app/store/json-file.mts`: each bad-file policy on a missing, oversized, unparsable or refused file (`empty` hands the salvage undefined, also when the salvage throws, and moves nothing; `aside` moves the file to `.corrupt`, a newer one to a timestamped name, and says why, with `ioErrors: "throw"` throwing a failed read; `skip` throws), and the writer creating the folder with the indent, trailing newline and the data folder's file and folder modes. All `[fast]`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";

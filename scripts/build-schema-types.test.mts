@@ -1,5 +1,6 @@
-// build-schema-types.test.mts — tests for the JSON Schema -> TypeScript generator (build-schema-types.mts).
-// Tags are name prefixes: [smoke] [fast] [slow]. Run: node --test scripts/build-schema-types.test.mts
+// build-schema-types.test.mts — the JSON Schema to TypeScript generator (`scripts/build-schema-types.mts`).
+//
+// `scripts/build-schema-types.mts`'s `schemaToTypeSource()`: required vs. optional properties, arrays/enums/unions (including an integer enum literal), a nested `type: "object"` with `properties` earning its own named export, a bare object/array with no `properties`/`items` falling back to `Record<string, unknown>`/`unknown[]` rather than being named, `additionalProperties` given a schema becoming an index signature, an array of objects naming its item type once, a local `$ref` to `#/$defs/<name>` resolving and repeated refs sharing one declaration, and that an unsupported construct (`oneOf`, a tuple-form `items`, a schema with none of `type`/`enum`/`$ref`) throws naming what it saw rather than emitting `any`. All `[fast]`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, statSync } from "node:fs";

@@ -1,9 +1,8 @@
-// import-preview.test.mts — app/ui/import-preview.mts, the Import drawer's preview card as data (design
-// spec 4.9): the counts it shows for a real scan, the "already in Pack Rat" line and when it appears, the
-// client-mismatch warning, the primary button's sentence and the size readout. The scan is parsed with
-// app/paste-scan.mts, the same rule the drawer and POST /api/import/paste use. Lives in app/ for the same
-// reason app/wizard-default-adapter.test.mts does (the module is DOM-free; app/ui/ is the browser build).
-// Tags: [fast]. Run: node --test app/import-preview.test.mts
+// import-preview.test.mts — `app/ui/import-preview.mts`, the Import drawer's preview card as data (design spec 4.9).
+//
+// `app/ui/import-preview.mts`, the Import drawer's preview card as data: counts from a real scan parsed with `app/paste-scan.mts` (worn pieces, stacks in containers, container roots, the total the primary button imports), the "already in Pack Rat" line naming only containers Pack Rat has seen before, the warning when the scan names another client than the one picked (in short names), the primary button's sentence for one and several scans, plurals, lists and the size readout, and a broken paste reporting the shape of the failure, never the pasted bytes. A house-only file (issue #10) previews as a house map refresh that only updates the house map.
+//
+// The scan is parsed with app/paste-scan.mts, the same rule the drawer and POST /api/import/paste use. Lives in app/ for the same reason app/wizard-default-adapter.test.mts does (the module is DOM-free; app/ui/ is the browser build).
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";

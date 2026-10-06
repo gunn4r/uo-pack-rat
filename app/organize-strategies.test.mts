@@ -1,7 +1,8 @@
-// organize-strategies.test.mts — app/organize-strategies.mts, Organize's Auto mode (issue #11, spec §5): the
-// Simple and Detailed group tables, assignGroups, and proposeOrganize on hand-built house scans
-// (app/organize-fixture.mts) folded by the real foldSnapshots. Pure: no server. Tags: [fast].
-// Run: node --test app/organize-strategies.test.mts
+// organize-strategies.test.mts — `app/organize-strategies.mts`, Organize's Auto mode (issue #11, spec §5).
+//
+// `app/organize-strategies.mts`, Auto organize (issue #11): the Simple and Detailed group tables (valid rule filters; every fixture kind lands in its group; shirts and cloth kilts in Other gear and a gargish kilt in the hand armor, issue #202), `assignGroups` (largest first, existing homes, ties, chains, more groups than chests, chests holding only one group's items kept), and `proposeOrganize` on hand-built house scans: which chests are offered and why not, more groups than chests and zero chests, a chain for a huge group, a group across two houses, re-running after manual edits, re-running on its own accepted setup and after its trips (idempotence), determinism, the player's catch-all, and a setup past the rule limit. All `[fast]`.
+//
+// On hand-built house scans (app/organize-fixture.mts) folded by the real foldSnapshots. Pure: no server.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";

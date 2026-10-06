@@ -1,8 +1,8 @@
-// american-spelling.test.mts — [smoke]: standing guard for the project's American spelling in what a player reads
-// (issue #10). It reads the string literals of every app/ui/*.mts file (comments and code left out, and a template
-// literal's ${…} expressions too) and the whole of app/index.html, and fails on a British form from the list the
-// sweep replaced. Identifiers that happen to carry one (a CSS class, an element id, `aria-labelledby`) are allowed
-// by name; renaming those is not the point, the words on the page are.
+// american-spelling.test.mts — a [smoke] guard for American spelling in what a player reads (issue #10).
+//
+// a `[smoke]` guard for American spelling in what a player reads (issue #10): the string literals of every `app/ui/*.mts` file (comments, code and a template's `${…}` parts left out, by a small tokenizer it also tests) and the whole of `app/index.html`, checked for colour, labelled, grey, centre, armour, jewellery, favourite and behaviour. Identifiers that carry one (`aria-labelledby`, the `lbl-colour` and `map-colour` ids and classes) are allowed by name in its `ALLOWED` set; add to that set only for an identifier, never for a word on the page.
+//
+// Renaming an identifier that happens to carry a British form is not the point; the words on the page are.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";

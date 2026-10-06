@@ -1,5 +1,6 @@
-// bridge-trip.test.mts — queueTrip (app/bridge-trip.mts), the only writer of an Organize trip line,
-// and the stop flag behind POST /api/bridge/stop. Run: node --test app/bridge-trip.test.mts
+// bridge-trip.test.mts — `queueTrip` (`app/bridge-trip.mts`), the only writer of an Organize trip line, and the stop flag behind POST /api/bridge/stop.
+//
+// `queueTrip` (the only writer of a trip line): schema-valid line in the adapter's own queue, names cut to 40, refusals for bad roots keys, unplaced or unused roots, duplicate serials, empty trips and lines over the bridges' 16 KB limit (writing nothing), the largest legal trip still fitting, the limits matching both bridges' constants, `putAway` (the picked container) written only on a Put away trip, which takes nothing, and `writeBridgeStop`. All `[fast]`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, existsSync } from "node:fs";

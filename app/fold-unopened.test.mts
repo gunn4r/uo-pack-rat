@@ -1,8 +1,8 @@
-// fold-unopened.test.mts — foldSnapshots and a container a scan saw but could not open. A scanner
-// marks such a bag `opened: false` on its `containers` entry (a bag that did not open, one nested
-// deeper than the adapter reads) instead of leaving the whole root unrecorded, and the fold keeps
-// what it last knew INSIDE that bag while the rest of the root updates normally.
-// Tags: [fast]. Run: node --test app/fold-unopened.test.mts
+// fold-unopened.test.mts — `foldSnapshots` and a container a scan saw but could not open.
+//
+// A scanner marks such a bag `opened: false` on its `containers` entry (a bag that did not open, one nested deeper than the adapter reads) instead of leaving the whole root unrecorded, and the fold keeps what it last knew INSIDE that bag while the rest of the root updates normally.
+//
+// `foldSnapshots` and a nested container a scan marks `opened: false`: everything the fold knew inside it (items, a pouch and its contents) is kept with its old `seenAt` while the rest of the root is replaced, a later scan that opens it replaces its contents as usual, and when the unopened bag has moved to another chest — the same character's or another's — what is kept takes the bag's new root and scanner, so a later scan of the old chest leaves it alone. Also (issue #74) a trash container an older scan recorded drops out of the fold with everything in it. `[fast]`.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";

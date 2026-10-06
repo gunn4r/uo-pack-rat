@@ -1,4 +1,6 @@
-// facet-map.test.mts — app/facet-map.mts (issue #164): decoding a facetNN.mul overview bitmap built byte by byte (a good file, and truncated or inconsistent ones that decode to null), and cutting a region out of it at a smaller width by box average. Tags: [fast]. Run: node --test app/facet-map.test.mts
+// facet-map.test.mts — `app/facet-map.mts` (issue #164): decoding a facetNN.mul overview bitmap and cutting a region out of it.
+//
+// `app/facet-map.mts` (issue #164) on synthetic `facetNN.mul` files built in the test (`app/facet-fixture.mts`): the runs of every row read to one colour per tile with no pixel buffer kept (the file's bytes and each row's start); a region in the middle skipping the runs before it; an empty or truncated file, a row short of or past the width, a zero or negative size, a side over 8192, a header claiming more rows than the file could hold, a byte count that is odd, negative or past the end, and trailing bytes all decoding to null without throwing; a region at its own width widening 5-bit colours to 8, a narrower width box-averaging with the aspect ratio kept, and a tall region capped in height too. All `[fast]`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { decodeFacet, renderRegion } from "./facet-map.mts";

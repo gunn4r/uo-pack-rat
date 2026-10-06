@@ -1,9 +1,8 @@
-// start.test.mts — scripts/start.mts (`npm start`), run as a real child process against a temp data
-// directory on port 0. It is a thin wrapper around the server, and the two things it can get wrong
-// are both about how it ends: a signal sent to it must reach the server rather than leave it running
-// and holding the port, and a server that dies from a signal must not read as a clean exit 0. `[fast]`:
-// one page build and one server start, a few seconds. Skipped on Windows, which has no POSIX signals
-// to forward (process.kill there terminates the target outright).
+// start.test.mts — `scripts/start.mts` (`npm start`) as a real child process: a signal reaches the server and a signal death never reads as a clean exit.
+//
+// `scripts/start.mts` (`npm start`) as a real child process on port 0 against a temp data directory and an empty temp home (so its client-folder search never reads a real one): a SIGTERM sent to it is forwarded to the server, which stops listening, and the wrapper exits 143 (128 + SIGTERM) rather than 0 or dying alone and orphaning the server. `[fast]`; skipped on Windows, which has no POSIX signals to forward.
+//
+// It is a thin wrapper around the server, and the two things it can get wrong are both about how it ends: a signal sent to it must reach the server rather than leave it running and holding the port, and a server that dies from a signal must not read as a clean exit 0. One page build and one server start, a few seconds. On Windows process.kill terminates the target outright.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";

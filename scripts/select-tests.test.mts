@@ -1,5 +1,6 @@
-// select-tests.test.mts — scripts/select-tests.mts, the changed-paths → test-files mapping behind
-// `./scripts/test_runner.sh --changed`, over a small fake source tree. All `[fast]`: pure function calls.
+// select-tests.test.mts — `scripts/select-tests.mts`, the changed-paths → test-files mapping behind `./scripts/test_runner.sh --changed`.
+//
+// `scripts/select-tests.mts`, the changed-paths-to-test-files mapping behind `--changed`, over a small fake source tree: a module selects every test that reaches it directly or through other modules, a changed test runs itself and a deleted one is dropped, a data file is reached by its quoted name and a `new URL()` by its relative path, an `app/ui` screen adds its Electron test(s) and a shared UI module all of them, every `SCREENS` entry names a real module and real Electron tests, `adapters/` runs the adapters tests, docs select nothing, and shared infrastructure or an unreached path falls back to the full suite. All `[fast]`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";

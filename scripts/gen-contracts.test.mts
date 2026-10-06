@@ -1,5 +1,6 @@
-// gen-contracts.test.mts — the generator that copies adapters/_shared/ fragments into the adapter scripts.
-// Tags are name prefixes: [smoke] [fast] [slow]. Run: node --test scripts/gen-contracts.test.mts
+// gen-contracts.test.mts — `scripts/gen-contracts.mts`, the generator that copies `adapters/_shared/` fragments into the adapter scripts.
+//
+// `scripts/gen-contracts.mts`: every adapter script's generated blocks match their `adapters/_shared/` fragments and every fragment is carried by some script (`[smoke]`, the same check as `--check`); a block's inner lines rewritten and nothing else, a second run changing nothing; an unmatched or nested marker, a missing fragment and another adapter's fragment refused; a fragment a Razor Enhanced script carries refused when it is not ASCII or uses an f-string; and `generate()` naming a stale script and an unused fragment while writing nothing. The rest `[fast]`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";

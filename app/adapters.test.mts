@@ -1,16 +1,8 @@
-// adapters.test.mts — the adapter-tree checks that belong in the top-level suite: it runs EVERY
-// adapter's Python test file (not just the one adapters/tazuo/test_paths.py that
-// scripts/test-runner.mts spawns by name), and it holds the manifest-versus-source contract for
-// `capabilities.json`'s `actions` list.
+// adapters.test.mts — runs every adapter's Python test file and holds the manifest-versus-source contract for `capabilities.json`'s `actions` list.
 //
-// Why `actions` exists (Phase 7 security review, area 5, finding 10): `capabilities` describes what
-// an adapter can READ — layers, arms, bank, ground, nested, tooltips — plus a `bridge` action-name
-// list. Nothing in it said that installing an adapter also grants a script that WALKS the character,
-// OPENS containers and MOVES items. `actions` is that declaration, and this file makes it a contract
-// rather than a comment: an adapter that starts calling a world-acting primitive without declaring
-// it fails the build, and one that declares an action it never takes fails too.
+// It walks `adapters/` for every `test_*.py` and spawns each one (`python3 -W error`, or `python`, whichever reports Python 3) as its own `[fast]` case, skipped with a note when no Python 3 interpreter is on PATH. scripts/test-runner.mts once also spawned adapters/tazuo/test_paths.py by name; that copy was removed once this walk covered it, since it ran the same file with the same flags in the same modes and a second count of it in latest_summary.json said nothing new.
 //
-// Run: node --test app/adapters.test.mts
+// Why `actions` exists (Phase 7 security review, area 5, finding 10): `capabilities` describes what an adapter can READ — layers, arms, bank, ground, nested, tooltips — plus a `bridge` action-name list. Nothing in it said that installing an adapter also grants a script that WALKS the character, OPENS containers and MOVES items. `actions` is that declaration, and this file makes it a contract rather than a comment: an adapter that starts calling a world-acting primitive without declaring it fails the build, and one that declares an action it never takes fails too.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, existsSync, statSync } from "node:fs";

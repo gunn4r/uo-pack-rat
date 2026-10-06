@@ -5,7 +5,7 @@
 // checking r.ok by hand. Deliberately carries no Authorization header and no token — the bare page
 // has no token code at all (spec §4.5); a future Electron shell adds the header itself when it
 // embeds this same page (Phase 4), which is why a --token server 401s every page fetch today (see
-// CONTRIBUTING.md's Security section).
+// docs/architecture.md's "The server's request checks").
 //
 // EventSource cannot carry custom headers, so it cannot send this id (or a token) either — callers
 // open it themselves with CLIENT_ID as a `?client=` query parameter instead (see ui/builder.mts),

@@ -1,9 +1,8 @@
-// adapter-copy.test.mts — app/ui/adapter-copy.mts, what the page says about each game client (design spec
-// 4.10, section 5): short names in running text, the wizard's client cards (badge + one plain sentence,
-// "Windows only" and "Not available on this Mac" for a client this machine can't run), the Import drawer's
-// client options, the branch-aware step names, a readable fallback for an adapter the table doesn't know,
-// and defaultImportAdapterId (the drawer defaults to the paste client). Tags: [fast].
-// Run: node --test app/adapter-copy.test.mts
+// adapter-copy.test.mts — what the page says about each game client (`app/ui/adapter-copy.mts`, design spec 4.10, section 5).
+//
+// `app/ui/adapter-copy.mts`, the page's wording for each game client: short names in running text, the wizard's client cards (badge and one plain sentence; "Windows only" and "Not available on this Mac" for a client this machine can't run; no "adapter" or "transport" in any card), the Import drawer's client options, the named wizard steps and the paste branch's renamed steps 3 and 4, per-adapter wizard copy for every shipped client with a readable fallback for an unknown one, and `app/ui/adapters.mts`'s `defaultImportAdapterId` (the drawer defaults to the paste client).
+//
+// Lives in app/ for the reason app/ui-render.test.mts gives. Tags: [fast].
 import test from "node:test";
 import assert from "node:assert/strict";
 import { adapterCopy, clientCard, importOptionLabel, shortName, wizardSteps } from "./ui/adapter-copy.mts";

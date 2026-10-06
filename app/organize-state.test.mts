@@ -1,6 +1,8 @@
-// organize-state.test.mts — app/organize-state.mts (issue #11): a trip's confirmed steps read into the overlay,
-// entries a newer scan has settled dropped, when each labelled container was last seen, and a damaged state
-// file salvaged. Pure. Tags: [fast]. Run: node --test app/organize-state.test.mts
+// organize-state.test.mts — `app/organize-state.mts` (issue #11): trip results read into the overlay, settled entries dropped and a damaged state file salvaged.
+//
+// `app/organize-state.mts`: trip results read into the overlay, pending trips kept or dropped, settled entries pruned (an item that vanished keeps counting until its destination is rescanned and opened), last-seen times, and a damaged state file salvaged. All `[fast]`.
+//
+// Pure.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";

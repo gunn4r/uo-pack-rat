@@ -1,11 +1,8 @@
-// solver.test.mts — solver-equivalence tests: HiGHS (app/exact-solver.mts, app/mip.mts,
-// app/mip-solve.mts) must never disagree with the core's own exact branch-and-bound
-// (scripts/optimizer-core.mts) about what the best suit is worth, only ever get there faster (or, on
-// a real-sized inventory where neither proves in budget, no worse). Every "equal" assertion in this
-// file compares HiGHS's re-scored result against the CORE's OWN numbers — never against the MIP's
-// internal objective, which is on a different (offset) scale. The shared fixture and helpers are
-// app/solver-fixture.mts; the default-template checks (app/solver-templates.test.mts) and the 3,000-item
-// generated cell (app/solver-large.test.mts) have files of their own, so the runner runs them in parallel.
+// solver.test.mts — solver equivalence: HiGHS must never disagree with the core's own exact branch-and-bound about what the best suit is worth.
+//
+// `app/exact-solver.mts`: k-best alternatives agree with the core, an unreachable hard floor gets the core's partial credit, jointly-unreachable hard floors fall back honestly (`floorsConflict`), a negative soft-floor total scores zero credit like the core, HiGHS-unavailable (`PACKRAT_NO_HIGHS`) reports the heuristic result flagged `solver: "fallback"`, a plain timeout with and without an incumbent is reported honestly (never invented), a reachable soft floor with a negative-total optimum and a negative weight on a capped property both prove the brute-force best, `opts.slots` narrows the MIP, both solvers' slot lists come from `GEAR_SLOTS` with only the five armor pieces required, a piece in each new slot (boots, shirt, tunic, sash, earrings, kilt) wins in both solvers when it helps while a worn robe that costs comes off and the hand rule holds (issue #202), a HiGHS objective the core cannot reproduce is reported unproven with a warning, `timeBudgetMs` bounds the heuristic's restarts and every HiGHS call and alternative (a fake clock checks the limits), and progress carries a bound during the exact phase. The k-best alternatives case is `[slow]` (the core's exact search on the fixture's melee cell takes 10-20 s) and compares scores exactly only when both solvers proved, as `runBoth` does — everything else is `[fast]`.
+//
+// HiGHS (app/exact-solver.mts, app/mip.mts, app/mip-solve.mts) must only ever get there faster than the core (scripts/optimizer-core.mts), or, on a real-sized inventory where neither proves in budget, no worse. Every "equal" assertion in this file compares HiGHS's re-scored result against the CORE's OWN numbers — never against the MIP's internal objective, which is on a different (offset) scale. The shared fixture and helpers are app/solver-fixture.mts; the default-template checks (app/solver-templates.test.mts) and the 3,000-item generated cell (app/solver-large.test.mts) have files of their own, so the runner runs them in parallel.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { effectiveProfile, GEAR_SLOTS } from "./vault-lib.mts";

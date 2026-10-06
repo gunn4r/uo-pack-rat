@@ -1,9 +1,6 @@
-// ui-messages.test.mts — app/ui/messages.mts, the plain sentences the page shows for an outcome the
-// server reports as a count, a status code or a one-word field. It lives in app/ rather than app/ui/
-// for the same reason app/ui-render.test.mts and app/wizard-default-adapter.test.mts do:
-// tsconfig.browser.json compiles app/ui/** for the browser. No DOM stub is needed here — messages.mts
-// is pure text, which is the whole point of keeping it out of the modules that render it.
-// All [fast]. Run: node --test app/ui-messages.test.mts
+// ui-messages.test.mts — `app/ui/messages.mts`, the plain sentences the page shows for an outcome the server reports as a count, a status code or a one-word field.
+//
+// `app/ui/messages.mts`, the plain sentences the page shows for an outcome the server reports as a count, a status code or a one-word field: the two `packrat-paths.json` outcomes worth telling a player about ("kept"/"backed-up") versus the two that say nothing, the resolved `scriptsDir` an install reports back, both routes' ways of saying a configured client folder is gone (`POST /api/setup/install`'s `code: "badDir"` and `PUT /api/settings`'s field-named 400) collapsing to one sentence with a next step in it, a host call the desktop app never answered (504), a refused UO folder (issue #10) said in player words without the path, and a 429 explaining that the four running builds are another tab's. Lives in `app/` for the same reason `app/ui-render.test.mts` does, but needs no DOM stub — `messages.mts` is pure text, which is why it exists as its own module. All `[fast]`. Also `dataDirNotice`/`bridgeOfflineText` for GET /api/setup's `dataDirCheck`: a mismatch names both folders and both fixes, control characters from the file never reach the sentence, an unreadable `packrat-paths.json` gives its reason, and a match, no client or an older server's missing field say nothing.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { pathsFileNote, installedIntoNote, clientFolderGone, clientErrorMessage, uoFolderErrorMessage, hostErrorMessage, optimizeErrorMessage, errorText, dataDirNotice, dataDirBanner, bridgeOfflineText, bridgeView, relativeWhen, prefsSaveFailed } from "./ui/messages.mts";

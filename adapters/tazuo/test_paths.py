@@ -1,3 +1,9 @@
+"""test_paths.py -- the TazUO adapters' shared data-directory resolver and script header rules.
+
+The resolver reads `packrat-paths.json` beside the script, else `PACKRAT_DATA`, else `~/.pack-rat`, matching `app/config.mts`'s precedence. It is Python, but it is not a separate runner step: `app/adapters.test.mts` walks `adapters/` for every `test_*.py` and spawns each one (`python3 -W error`, or `python`) as its own `[fast]` case, skipped with a note if no Python 3 interpreter is on PATH.
+
+Run: python3 -W error adapters/tazuo/test_paths.py
+"""
 import ast, json, os, re, sys, tempfile, unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS = ["packrat-scanner.py", "packrat-character-refresh.py", "packrat-house-map-refresh.py", "packrat-bridge.py", "packrat-panel.py"]

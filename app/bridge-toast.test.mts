@@ -1,11 +1,8 @@
-// bridge-toast.test.mts — app/ui/bridge.mts's pollBridge() toasting what the bridge reports for the
-// commands this page queued: a success as the bridge's own message, a refusal (an expired command, a
-// chain the bridge would not open) named after the piece it was for, and nothing for an id this page
-// never queued. The bridges record every refusal under the command's own id (docs/bridge-protocol.md,
-// "What the bridge refuses"), so this is the whole path from a refused line to the player's screen.
+// bridge-toast.test.mts — `app/ui/bridge.mts`'s `pollBridge()` toasting what the bridge reports for the commands this page queued.
 //
-// Same localStorage shim as app/bridge-adapter-fallback.test.mts, plus just enough of `document` and
-// `fetch` for pollBridge(): one #bridge pill, the toast stack toasts append to, and the status response.
+// `app/ui/bridge.mts`'s `pollBridge()` with a stubbed `document`/`fetch` (and the same localStorage shim as `app/bridge-adapter-fallback.test.mts`): a refusal the bridge recorded under a queued command's id is toasted named after the piece, a success as reported, an id the page never queued is ignored, and each result is toasted once; every status goes to the page as a `bridgestatus` event (Organize follows running trips from it). `[fast]`. Also (issue #39): the offline pill names a data-folder mismatch as the cause (and only that), and `renderDataDirNotice()`'s banner shows the mismatch, stays dismissed across re-renders, comes back for a different message and hides when there is nothing to say.
+//
+// The bridges record every refusal under the command's own id (docs/bridge-protocol.md, "What the bridge refuses"), so this is the whole path from a refused line to the player's screen. The stub `document` and `fetch` hold just enough for pollBridge(): one #bridge pill, the toast stack toasts append to, and the status response.
 import "../scripts/localstorage-shim-for-tests.mts";
 
 import test from "node:test";

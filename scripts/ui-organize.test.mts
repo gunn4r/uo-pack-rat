@@ -1,10 +1,8 @@
-// ui-organize.test.mts — [slow]: Organize (issue #11) in the real Electron window over the demo scans, on a
-// writable --data folder: the empty state that teaches labelling, Containers' Label… and Fill column, labels
-// shown wherever an item's place is listed, rules from presets and from the Inventory's Save as rule…, a bag
-// inside a chest picked as a target, the live match count, reordering by keyboard and by drag, the plan's
-// reports and collapsed trip list, a client that cannot run trips, running a trip through the bridge's queue
-// (Stop, a failed step, Pin this item), a page reloaded mid-trip picking the trip back up, the screen at
-// 1000 × 700, and the player's item kinds (Review unclassified items, Classify this…, Export and Import). Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
+// ui-organize.test.mts — [slow]: Organize (issue #11) in the real Electron window over the demo scans.
+//
+// `[slow]`: Organize in the real Electron window over the demo scans on a writable `--data` folder: the empty state that teaches labelling, Containers' Label… and Fill column, labels in the Items rows, the Rules card (fill, counts, catch-all, reordering by keyboard and drag), the rule drawer (presets, fill order, a forgotten target), a bag inside a chest picked as a target and labelled on save with the live match count (the demo scans copied into `scans/` with a pouch added, no `--demo`), Save as rule…, a mocked 600-move plan (reports first, trips collapsed), a client without `trip`, a trip run through the bridge's queue (Stop, a failed put, Pin this item), a salvaged setup refusing trips until Save setup, the screen at 1000 × 700, and Auto organize (Accept, running it again, Detailed, a 1000 × 700 drawer), and item kinds (issue #150: Review unclassified items, Classify this… and Reset to automatic, Settings' Export as an Electron download and Import through the file input).
+//
+// Also a page reloaded mid-trip picking the trip back up. Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";

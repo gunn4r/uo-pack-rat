@@ -1,4 +1,6 @@
-// house-capture.test.mts — app/house-capture.mts: house ids, the newest capture per house, furniture merged across captures from different spots (a capture that could not read the ground changing none), superseded footprints. Tags: [fast]. Run: node --test app/house-capture.test.mts
+// house-capture.test.mts — `app/house-capture.mts` (issue #10): house ids, the newest capture per house, furniture merged across captures and superseded footprints.
+//
+// `app/house-capture.mts` (issue #10): a house's id (facet and footprint corner), the newest capture of a house giving its tiles while another footprint is another house, furniture merged across captures with an item a later capture should have seen and did not dropped, a capture without `items` (the ground could not be read) erasing and adding no furniture, a newer overlapping footprint on the same facet superseding a house (another or an unknown facet superseding nothing), and a malformed `capturedAt` sorting as the oldest; containers a capture saw merged the same way; the `trash` lists of every capture of a house (issue #162) leaving those serials out of its containers, in any order, and a list without them changing nothing. All `[fast]`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { houseIdOf, latestHouses, type HouseCapture, type HouseTile } from "./house-capture.mts";

@@ -1,3 +1,6 @@
+// mip.test.mts — `app/mip.mts`, the pure MIP builder, and `app/mip-solve.mts`, the HiGHS solve.
+//
+// `app/mip.mts` (the pure MIP builder: columns, rows, hard/soft floors incl. the negative-total `u` column, the two-hander row, `startVector`/`pickedOf`/`noGoodRow`) and `app/mip-solve.mts` (HiGHS solving a toy model exactly, the no-good cut finding the runner-up, `loadHighs` honoring `PACKRAT_NO_HIGHS`, and `gapFromEvents` — a pure unit test of the absolute-gap formula, plus an integration test on a deliberately large model that accepts either an `"optimal"` or a `"timeLimit"` outcome from a short time limit rather than assuming which way the clock falls). All `[fast]`, including the short real HiGHS solves.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildSuitMip, startVector, pickedOf, noGoodRow, HARD_FLOOR_BONUS, type BuiltMip } from "./mip.mts";

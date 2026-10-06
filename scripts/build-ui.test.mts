@@ -1,3 +1,6 @@
+// build-ui.test.mts — `scripts/build-ui.mts`'s `buildUi()`, the page build.
+//
+// `scripts/build-ui.mts`'s `buildUi()`: compiling the page (into a temp folder, never under the files running alongside) produces the entry module, rewrites each `./x.mts` specifier to `./x.mjs`, emits no stylesheet and removes an output whose source is gone; with `PACKRAT_UI_BUILT=1` it leaves the built `app/dist/` alone.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";

@@ -1,4 +1,6 @@
-// inventory.test.mts — app/services/inventory.mts on its own: the fold is cached until the scans folder, the shard or item-kinds.json changes; the overlay is cached on its own until organize-state.json changes or the hour turns, without folding the scans again; and the harvest hook runs before every read. Tags: [fast]. Run: node --test app/services/inventory.test.mts
+// inventory.test.mts — `app/services/inventory.mts` on its own: when the fold and the overlay are cached and when they are made again.
+//
+// `app/services/inventory.mts` over a demo scan: a repeat read cached, the harvest hook run before every read, the scans folder, the shard or item-kinds.json folding again, and organize-state.json or a new hour re-applying the overlay without folding again. All `[fast]`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { copyFileSync, mkdirSync, mkdtempSync, utimesSync, writeFileSync } from "node:fs";

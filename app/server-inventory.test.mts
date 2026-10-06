@@ -1,4 +1,8 @@
-// server-inventory.test.mts — HTTP tests of the inventory: GET /api/inventory, /api/missing, /api/items and /api/items/by-serial, reading scan files, POST /api/forget and /api/forget-character, and the blacklist. Tags: [smoke] and [fast]. Run: node --test app/server-inventory.test.mts
+// server-inventory.test.mts — HTTP tests of the inventory routes, Forget and the blacklist.
+//
+// `GET /api/inventory` folding the demo fixtures (facets, worn gear and counts, every field the page's non-paged tabs read, no item list), a new scan picked up without a restart, `readScans()` skipping an invalid or unparsable scan file, missing items counted per root and listed by `GET /api/missing`, `GET /api/items` paging, sorting and searching, `GET /api/items/by-serial`; `POST /api/forget` (409 under `--demo`, a bad root, name bounds, only a schema-valid tombstone written, a boolean, unsafe integer or out-of-range serial refused) and its `changed` event (with a run deletion's) on open streams; `POST /api/forget-character` (refusals, one tombstone, the character dropped and given back on a newer scan, 409 under `--demo`); and `/api/blacklist` (issue #38: add, list, remove, bad bodies and entries dropped, Keep and Remove through the fold).
+//
+// Tags: [smoke] and [fast].
 import { test, before, after, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, cpSync } from "node:fs";

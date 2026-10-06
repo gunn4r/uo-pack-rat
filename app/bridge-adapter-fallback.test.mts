@@ -1,21 +1,8 @@
-// bridge-adapter-fallback.test.mts — app/ui/bridge.mts's currentAdapter()/bridgeNote(): the bug fix
-// where a player who pressed Skip in the setup wizard, or installed an adapter's scripts by hand
-// (settings.client left unset on purpose in both cases — see currentAdapter()'s own comment), lost
-// every Highlight/Grab/Go-to button even though POST /api/bridge was already routing commands to
-// bridgeAdapter()'s own default (app/vault-server.mts) the whole time. GET /api/setup now reports that
-// same routing id back as state.setup.bridgeAdapter, and currentAdapter() falls back to it when
-// settings.client is unset.
+// bridge-adapter-fallback.test.mts — `app/ui/bridge.mts`'s `currentAdapter()`/`bridgeNote()` falling back to the server's bridge adapter when no client is set.
 //
-// app/ui/bridge.mts is not DOM-free like app/ui/adapters.mts (app/wizard-default-adapter.test.mts) —
-// it imports app/ui/store.mts, which once read `localStorage.getItem` at MODULE SCOPE to seed the
-// Inventory's columns (they now live in ui/item-browser.mts). Nothing in the bridge.mts -> {store,dom,api}.mts
-// import chain touches `document` or `localStorage` at module scope now: app/ui/dom.mts's `document` uses are all inside function bodies (or
-// a default-parameter expression, evaluated lazily at call time, not at import time), and
-// app/ui/api.mts's `sessionStorage` read is already wrapped in its own try/catch with a fallback for
-// exactly this "no Web Storage global" case. So a minimal `globalThis.localStorage` stub — imported
-// FIRST, see ../scripts/localstorage-shim-for-tests.mts for why it has to be its own module rather than a plain
-// statement in this file — is enough to run bridge.mts's pure functions under plain node:test — no
-// real DOM, no Playwright.
+// The bug fixed: a player who pressed Skip in the setup wizard, or installed an adapter's scripts by hand (settings.client left unset on purpose in both cases — see currentAdapter()'s own comment), lost every Highlight/Grab/Go-to button even though POST /api/bridge was already routing commands to bridgeAdapter()'s own default (app/vault-server.mts) the whole time. GET /api/setup now reports that same routing id back as state.setup.bridgeAdapter, and currentAdapter() falls back to it when settings.client is unset.
+//
+// app/ui/bridge.mts is not DOM-free like app/ui/adapters.mts (app/wizard-default-adapter.test.mts) — it imports app/ui/store.mts, which once read `localStorage.getItem` at MODULE SCOPE to seed the Inventory's columns (they now live in ui/item-browser.mts). Nothing in the bridge.mts -> {store,dom,api}.mts import chain touches `document` or `localStorage` at module scope now: app/ui/dom.mts's `document` uses are all inside function bodies (or a default-parameter expression, evaluated lazily at call time, not at import time), and app/ui/api.mts's `sessionStorage` read is already wrapped in its own try/catch with a fallback for exactly this "no Web Storage global" case. So a minimal `globalThis.localStorage` stub — imported FIRST, see ../scripts/localstorage-shim-for-tests.mts for why it has to be its own module rather than a plain statement in this file — is enough to run bridge.mts's pure functions under plain node:test — no real DOM, no Playwright.
 import "../scripts/localstorage-shim-for-tests.mts";
 
 import test from "node:test";

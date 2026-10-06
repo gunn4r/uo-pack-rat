@@ -1,21 +1,10 @@
-// wizard-default-adapter.test.mts — app/ui/adapters.mts: defaultAdapterId (the setup wizard and the
-// Import tab must never silently default to a paste-transport adapter — Phase 6 final review, Blocker
-// 2 — a new TazUO/Razor Enhanced player who clicked through the wizard without reading the radio
-// buttons was routed down the paste branch because setup.adapters[0] sorts alphabetically, and
-// classicuo-web sorts first) and availableAdapters/platformCompatible (the wizard and Import tab must
-// never silently DEFAULT to the Windows-only Razor Enhanced adapter on any other platform — a
-// must-fix-before-merge item from the same final review, and a trap defaultAdapterId falls straight
-// into on its own: "razor-enhanced" < "tazuo" alphabetically, so an unfiltered list defaults a
-// Mac/Linux player to the one adapter that can never work for them; they're still SHOWN it, disabled,
-// with a plain note — see app/ui/wizard.mts's step2()/app/ui/import.mjs's adapterPicker() — just never
-// silently selected). platformCompatible is driven entirely by the adapter's OWN `platform` field
-// (from capabilities.json, surfaced by app/installer.mts's listAdapters), never a hard-coded adapter
-// id — several cases below build a "razor-enhanced"-id object with no `platform` field specifically to
-// prove that (it must read as compatible everywhere, since nothing here names it a restriction).
-// Lives at the top level of app/ (not app/ui/) because scripts/test-runner.mts only globs
-// app/*.test.mts — app/ui/adapters.mts is deliberately DOM-free so it can be imported directly under
-// plain node:test, unlike the rest of ui/*.mjs (which import ui/store.mts and touch localStorage at
-// module scope).
+// wizard-default-adapter.test.mts — `app/ui/adapters.mts`'s adapter-selection helpers: the wizard and the Import tab never default to a paste client or to a client this OS can't run.
+//
+// `app/ui/adapters.mts`'s three pure, DOM-free adapter-selection helpers (kept out of `app/ui/`'s DOM-dependent modules for exactly this reason — see the file's own header comment): `defaultAdapterId` never lands on a paste-transport adapter, for every ordering of a 3-adapter list; `platformCompatible`/`availableAdapters` are driven entirely by an adapter's own `platform` field (from `capabilities.json`, see docs/adapter-guide.md's "Platform restriction") rather than a hard-coded adapter id — proved by building a `razor-enhanced`-id object with no `platform` field and confirming it reads as compatible everywhere; and `defaultAdapterId(availableAdapters(...))` lands on `tazuo` on darwin/linux, never the Windows-only `razor-enhanced`, even though the latter sorts first alphabetically among folder-transport adapters and `defaultAdapterId` alone (given the unfiltered list) would pick it. All `[fast]`.
+//
+// Why (Phase 6 final review, Blocker 2 and a must-fix-before-merge item): a new TazUO or Razor Enhanced player who clicked through the wizard without reading the radio buttons was routed down the paste branch because setup.adapters[0] sorts alphabetically, and classicuo-web sorts first; and "razor-enhanced" < "tazuo", so an unfiltered list defaults a Mac or Linux player to the one adapter that can never work for them. They are still SHOWN it, disabled, with a plain note (app/ui/wizard.mts's step 2 and the Import drawer's client picker), just never silently selected.
+//
+// app/ui/adapters.mts is deliberately DOM-free so it can be imported directly under plain node:test; the file lives at the top level of app/ because tsconfig.browser.json compiles app/ui/** for the browser.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { defaultAdapterId, availableAdapters, platformCompatible } from "./ui/adapters.mts";

@@ -1,11 +1,6 @@
-// buffs-plan.test.mts — Automatic's buffs in the optimizer's profile (issue #12, app/buffs.mts plannedProfile), across
-// the combinations: every form with and without the buffs that change caps, Corpse Skin with Stone Form and Curse, No
-// character and a character with Resisting Spells, a character lacking a buff's skill and one with edited numbers,
-// the largest-wins stat slot beside gear STR, potions with Enhance Potions, the race locks, Enemy of One, and the
-// empty buff set against main's profiles. The translation is checked against its meaning (checkPlan) rather than its
-// code, and the solver cases run both the core and HiGHS: a floor a negative share pushes past reach, a floor a share
-// covers, a share past a weighted property's cap, and a cap a buff lowers under the worn total.
-// Tags: [fast]. Run: node --test app/buffs-plan.test.mts
+// buffs-plan.test.mts — Automatic's buffs in the optimizer's profile (issue #12, `app/buffs.mts` `plannedProfile`), across the combinations.
+//
+// `[fast]`: the buff plan's edge cases, checked against the plan's meaning rather than its code (`checkPlan`): every form alone and with Magic Reflection, Curse, Corpse Skin and the Gargoyle's cap changes, for No character and Resisting Spells 100; Corpse Skin, Stone Form and Curse together; resist shares past a cap, and a resist cap under the Resisting Spells bonus; a character lacking a buff's skill and an edited one; Bless and a potion sharing the STR slot; the 150 stat headroom with and without buffs; potions with Enhance Potions and Alchemy; a resist override set aside while a buff lowers that resist; the race locks; Enemy of One changing nothing; the requirement notes' wording; the run key (Enemy of One alone keys as none, a number no buff reads changes nothing, main's key with no buffs); every default template's profile with no buffs byte-equal to main's (02b052e), and with raw stats equal to it but for the stat caps, as a regression guard; and, through both solvers, a negative share pushing a hard floor out of reach (kept, reported unreachable), a share covering a floor, a share past a weighted cap, a potion filling DEX to 150, and Curse lowering a cap under the worn total.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";

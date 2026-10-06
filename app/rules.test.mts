@@ -1,6 +1,6 @@
-// rules.test.mts — tests for rules.mts (loadRules/listRules): schema validation, the builtin shards,
-// user-directory overrides, and error naming. Tags are name prefixes: [smoke] [fast] [slow].
-// Run: node --test app/rules.test.mts   or   node app/rules.test.mts
+// rules.test.mts — `app/rules.mts` (`loadRules`, `listRules`): schema validation, the builtin shards, user-folder overrides and error naming.
+//
+// `app/rules.mts`: both builtin rules files (`uoalive`, `generic-osi`) load and validate against `app/schema/rules.v1.schema.json`; `DEFAULT_SHARD`; `listRules` enumerates both builtins; a user rules file in a `userRulesDir` overrides a builtin of the same `id` (by the file's own `id` field, not its filename) and is reported with `source: "user"`; an invalid user rules file throws naming the file's path, including one whose caps, race caps, tag units or breakpoints are not numbers; the optional `scrollBinder` (issue #181): uoalive's power scroll, stat scroll and Transcendence recipes, none in generic-osi, each list optional, and a step with a non-integer or too-small count, an unknown key, a step down, two steps from one level, or usable Transcendence totals out of order, finer than a tenth, empty or zero all refused naming the file; `loadRules` throws naming the shard id when no matching file exists anywhere.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync } from "node:fs";

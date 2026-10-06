@@ -1,4 +1,6 @@
-// jobs.test.mts — app/services/jobs.mts on its own, with stand-in workers: a newer build from the same client supersedes the running one, the server-wide ceiling refuses a fifth build without cancelling anything, a cancel ends the job and its streams, a finished build is saved as a run (a fill is not) and dropped after the retention time, and a worker that exits after stop() is not logged as a failure. Tags: [fast]. Run: node --test app/services/jobs.test.mts
+// jobs.test.mts — `app/services/jobs.mts` on its own, with stand-in workers: supersede, the ceiling, cancel, saved runs and failure logging.
+//
+// `app/services/jobs.mts` with stand-in workers: a newer build from the same client superseding the running one, the ceiling refusing a fifth build without cancelling anything (a supersede freeing its own slot), a cancel ending the job and its streams, a finished build saved as a run (a fill not) and dropped after the retention time, and a failed worker logged with a ref while one that exits after `stop()` is not. All `[fast]`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";

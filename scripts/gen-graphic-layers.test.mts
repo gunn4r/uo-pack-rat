@@ -1,5 +1,6 @@
-// gen-graphic-layers.test.mts — the tiledata reader behind app/vault-lib.mts's wearable-graphic table.
-// Tags are name prefixes: [smoke] [fast] [slow]. Run: node --test scripts/gen-graphic-layers.test.mts
+// gen-graphic-layers.test.mts — `scripts/gen-graphic-layers.mts`, the tiledata reader behind `app/vault-lib.mts`'s wearable-graphic table.
+//
+// `scripts/gen-graphic-layers.mts` against a synthetic 7.x tiledata.mul: wearable gear graphics kept with their layer (hair and non-wearable art left out), consecutive graphics collapsed into runs, a file of the wrong size refused, and only the marked block of `app/vault-lib.mts` rewritten. All `[fast]`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { wearableLayers, runsOf, spliceTable } from "./gen-graphic-layers.mts";

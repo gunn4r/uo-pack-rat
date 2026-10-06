@@ -1,4 +1,6 @@
-// server-import.test.mts — HTTP tests of POST /api/import/paste and POST /api/import/rescan. Tags: [fast]. Run: node --test app/server-import.test.mts
+// server-import.test.mts — HTTP tests of `POST /api/import/paste` and `POST /api/import/rescan`.
+//
+// `POST /api/import/paste` (a good marked paste lands and is ingested, a different declared adapter warns but lands, a bad paste is 400 with the parse error, a paste past the inbox limit is 413, an unknown adapter is 400, no forged log lines through `adapter.id`) and `POST /api/import/rescan` (the adapters swept, a missed file re-swept, nothing under `--demo`, a deleted inbox recreated and a sweep that could not run reported with 503).
 import { test, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, rmSync } from "node:fs";

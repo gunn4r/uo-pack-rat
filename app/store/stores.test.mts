@@ -1,4 +1,6 @@
-// stores.test.mts — each store in app/store/ on its own: its size cap (at the cap and one byte past it), what a missing, damaged or partly bad file reads as (moved aside, empty, salvaged or skipped) with the exact warning or log text, and the exact bytes each write leaves (indent, trailing newline). These pin the policies the server's routes rely on, so a later move cannot drop one quietly. Tags: [fast]. Run: node --test app/store/stores.test.mts
+// stores.test.mts — each store in `app/store/` on its own: size caps, bad files and the exact bytes written.
+//
+// each store in `app/store/` on its own: its size cap at the cap and one byte past it (blacklist 256 KiB, organize-state 4 MB, item-kinds and organize their own limits), what a missing, damaged or partly bad file reads as (moved aside, empty, salvaged or skipped) with the exact warning, log or problem text, and the exact bytes each write leaves (indent, trailing newline, a run compact with none). All `[fast]`; they pin the policies the routes rely on while the server is split.
 import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";

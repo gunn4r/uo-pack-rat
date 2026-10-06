@@ -24,7 +24,7 @@ The app's brain is a small HTTP server that runs on your own machine and talks o
 
 If you run the app from source with `npm start` rather than using the desktop app, there is **no token** — that mode is for development and for a browser you drive yourself. All the checks above still close every route to a web page, but another program running on the same machine can reach the port. **On a machine you share with other people, use the desktop app.**
 
-You can read the exact checks in `CONTRIBUTING.md`'s Security section, and the reasoning behind each one in `docs/threat-model.md`.
+You can read the exact checks in `docs/architecture.md`'s "The server's request checks" section, and the reasoning behind each one in `docs/threat-model.md`.
 
 ## What is stored, and where
 

@@ -1,6 +1,8 @@
-// organize-config.test.mts — app/organize-config.mts (issue #11): the strict check PUT /api/organize runs on
-// an Organize setup, and the salvage every read of a hand-edited organize.json goes through. Pure.
-// Tags: [fast]. Run: node --test app/organize-config.test.mts
+// organize-config.test.mts — `app/organize-config.mts` (issue #11): the strict check PUT /api/organize runs on an Organize setup, and the salvage every read of a hand-edited organize.json goes through.
+//
+// `app/organize-config.mts` (Organize's setup, issue #11): the strict check refuses each broken part by name (a location filter in a rule, a pinned or unlabelled target, a reused rule id, …), and the salvage keeps what still makes sense in a hand-edited file, drops a dropped label from the rules that name it (not the rules), and starts empty on anything that is not a version 1 file. All `[fast]`.
+//
+// Pure.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { checkOrganizeConfig, salvageOrganizeConfig, emptyOrganizeConfig, emptyRuleQuery, ruleMatchOf, CATCH_ALL_ID, EMPTY_BAGS_ID, MAX_SETUP_BYTES, type OrganizeConfig, type OrganizeRule } from "./organize-config.mts";

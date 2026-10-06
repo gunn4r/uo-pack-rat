@@ -1,19 +1,10 @@
-// solver-buffs-fuzz.test.mts — Automatic's buffs (issue #12) under a seeded fuzz, the pattern of solver-fuzz.test.mts:
-// random buff sets (forms one at a time, through toggleBuff), random numbers for every input, random raw stats, race,
-// worn Enhance Potions and Resisting Spells, random requirements, weights and resist cap overrides in paperdoll terms,
-// and random small pools with negative values. Each instance is small enough to enumerate, so for the planned profile
-// (app/buffs.mts plannedProfile):
-//   - the core's exact search and HiGHS both prove the brute-force maximum of the core's own scoreSet;
-//   - over every suit, what the solver is paid for weighted properties differs from what the character really has with
-//     the buffs (min(gear + Resisting Spells bonus + in-cap share, buffed cap), applyBuffs' numbers) by one constant,
-//     so no suit is ever paid for points past a real cap, and the best suit's paid totals stay within the real caps;
-//   - a requirement is met by a suit's gear exactly when gear + bonus + share reaches it (a resist's up to its buffed
-//     cap), for every gear total the solvers can tell apart (a floor at 0 reads as none, which a negative gear total
-//     below it would really miss: no real suit carries one).
-// Resist cap overrides run the whole 0-150 range, under the Resisting Spells bonus included (a resist no buff touches
-// keeps main's cap there, stopped at 0, and is held to that), and raw stats leave gear what is left to 150 of STR, DEX
-// and INT.
-// Tags: [fast]. Run: node --test app/solver-buffs-fuzz.test.mts
+// solver-buffs-fuzz.test.mts — Automatic's buffs (issue #12) under a seeded fuzz, the pattern of solver-fuzz.test.mts.
+//
+// Automatic's buffs (issue #12) fuzzed the same way: three seeds × 400 instances of random buff sets (forms one at a time), random input values, raw stats, race, worn Enhance Potions and Resisting Spells, random requirements, weights and resist cap overrides over the whole 0-150 range, and small pools with negative values in two to four of the nineteen gear slots. For `plannedProfile`'s profile the core's exact search must prove the brute-force maximum and HiGHS must reach it; over every suit, what the solver is paid for weighted properties must differ by one constant from what the character really has with the buffs (`applyBuffs`' buffed caps and shares, the 150 stat headroom included, a resist override above the shard's cap set aside where a buff has a negative in-cap share, derived on its own), and a requirement must be met by gear exactly when gear plus bonus plus share reaches it. HiGHS may report a few instances unproven (a MIP issue with several hard floors out of reach, buffs or none: `solveExact` then returns the core's suit with a warning); each is named in a diagnostic and capped at 2% of a seed. `[fast]` (about 3 s).
+//
+// What is checked, in detail: the core's exact search and HiGHS both prove the brute-force maximum of the core's own scoreSet; over every suit, what the solver is paid for weighted properties differs from what the character really has with the buffs (min(gear + Resisting Spells bonus + in-cap share, buffed cap), applyBuffs' numbers) by one constant, so no suit is ever paid for points past a real cap, and the best suit's paid totals stay within the real caps; a requirement is met by a suit's gear exactly when gear + bonus + share reaches it (a resist's up to its buffed cap), for every gear total the solvers can tell apart (a floor at 0 reads as none, which a negative gear total below it would really miss: no real suit carries one).
+//
+// Random buff sets go through toggleBuff. Resist cap overrides run the whole 0-150 range, under the Resisting Spells bonus included (a resist no buff touches keeps main's cap there, stopped at 0, and is held to that), and raw stats leave gear what is left to 150 of STR, DEX and INT.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { effectiveProfile, profileResistCaps, RESIST_KEYS } from "./vault-lib.mts";
