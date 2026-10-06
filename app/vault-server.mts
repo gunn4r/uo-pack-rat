@@ -132,11 +132,11 @@ import { randomUUID, timingSafeEqual } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import { runKey, reusableRun, runSummary, stripOpts, suitPieces, manualRun, SOLVER_VERSION, type RunOpts, type SavedRun } from "./runs-lib.mts";
 import { isPseudoCharacter, validateScan } from "./scan-schema.mts";
-import { loadRules, listRules, DEFAULT_SHARD } from "./rules.mts";
+import { loadRules, listRules } from "./rules.mts";
 import { validate, type ValidatorSchema } from "./schema/validate.mts";
 import { parseItemQuery, applyItemQuery, facetsOf, wantsHits, hitRow, type ItemQueryRows, type ItemQueryGroups } from "./item-query.mts";
 import { optionalSlotsFor } from "./mip.mts";
-import { GEAR_SLOTS, buildPools, excludeWeaponsError, foldSnapshots, resistCapsError, setRules, toOptItem } from "./vault-lib.mts";
+import { GEAR_SLOTS, buildPools, excludeWeaponsError, foldSnapshots, resistCapsError, toOptItem } from "./vault-lib.mts";
 import { isBuffList, isBuffListsByCharacter, isBuffSkillsByCharacter, isRunBuffs } from "./buffs.mts";
 import { startWatcher, MAX_INBOX_BYTES, type StartWatcherOptions, type WatcherHandle } from "./watcher.mts";
 import { parsePastedScan, writeScanToInbox } from "./import.mts";
@@ -151,8 +151,9 @@ import { createBlacklistStore } from "./store/blacklist.mts";
 import { createProfilesStore } from "./store/profiles.mts";
 import { createUiPrefsStore, isColWidths, isDrawerWidth, isManualSuit, UI_PREF_CHOICES, UI_PREF_LISTS, UI_PREF_VERSIONS } from "./store/ui-prefs.mts";
 import { createSettingsStore, type ClientSettings, type SettingsDoc } from "./store/settings.mts";
+import { createSettingsService } from "./services/settings.mts";
 import { send, asObject, SSE_HEADERS } from "./http/respond.mts";
-import { isBoundedInt, isBoundedString, MAX_SERIAL } from "./guards.mts";
+import { isBoundedInt, isBoundedString, MAX_SERIAL, short } from "./guards.mts";
 import { writeFileAtomic } from "./atomic-write.mts";
 import { addPanelAutostart, panelPrefsError, readPanelPrefs, tazuoRunning, writePanelPrefs } from "./tazuo-panel.mts";
 import { queueTrip, writeBridgeStop } from "./bridge-trip.mts";
@@ -183,7 +184,6 @@ import { homedir } from "node:os";
 
 import { resolveConfig, ensureLayout, APP_DIR, DATA_DIR_MODE, DATA_FILE_MODE, type Config } from "./config.mts";
 import type { Item, Inventory, OptItem } from "./vault-lib.mts";
-import type { RulesV1 } from "./schema/types.d.mts";
 import type { WorkerMessage, WorkerDoneMessage } from "./optimize-worker.mts";
 import type { OptResult, ExactSolveResult, SolveProgress } from "./exact-solver.mts";
 const HERE = APP_DIR;
@@ -218,8 +218,6 @@ const BRIDGE_SCHEMA = JSON.parse(readFileSync(join(HERE, "schema", "bridge.v1.sc
 const EVENTS_ROUTE_RE = /^\/api\/optimize\/[\w-]+\/events$/;
 
 
-// Bounds a caller-supplied value before it is interpolated into an error message or a log line.
-function short(v: unknown): string { return String(v).slice(0, 64); }
 
 const MAX_PATH_LEN = 4096;
 // A `_vault` tombstone scan, which the fold reads as "forget": the roots it lists (POST /api/forget) or, with
@@ -468,77 +466,12 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   if (!existsSync(CONFIG.paths.core)) throw new Error(`optimizer core not found at ${CONFIG.paths.core} — check PACKRAT_CORE, or that the repo checkout has scripts/optimizer-core.mts`);
   const CORE_URL = pathToFileURL(CONFIG.paths.core).href;
 
-  // A persisted client whose adapter id is not one this install ships is dropped IN MEMORY ONLY (the
-  // same rule as the shard fallback below — settings.json is left as it stands): bridgeAdapter()
-  // joins that id into the bridge queue/status paths, and PUT /api/settings already refuses an
-  // unknown one, so a hand-edited file must not be a way round that check.
   function startupWarning(msg: string): void {
     console.warn(msg);
     safeAppendLog(CONFIG.paths.log, `${new Date().toISOString()} startup-fallback ${msg}\n`);
   }
-  const settingsStore = createSettingsStore({ file: SETTINGS, warn: startupWarning });
-  function clientIsKnown(doc: SettingsDoc): boolean {
-    const client = doc.client as unknown;
-    if (client == null) return true;
-    const rec = typeof client === "object" && !Array.isArray(client) ? client as Record<string, unknown> : null;
-    const known = !!rec && typeof rec.adapter === "string" && typeof rec.scriptsDir === "string" && listAdapters(ADAPTERS_DIR).some((a) => a.id === rec.adapter);
-    if (!known) startupWarning(`settings.json names a client adapter this install does not ship (${JSON.stringify(short(rec?.adapter))}); ignoring that client for this run — settings.json is unchanged`);
-    return known;
-  }
-  // Two views of the same settings. savedSettings is exactly what settings.json holds, and the only
-  // thing ever written back to it; currentSettings is what this run actually uses — savedSettings
-  // with the two startup fallbacks (an unknown client dropped, an unloadable shard replaced) laid on
-  // top. Every write merges only the fields its request changed into savedSettings, so a fallback
-  // can never be persisted over the player's real value by an unrelated save (a wizard's setupDone,
-  // say): fixing the rules file or reinstalling the newer version and restarting picks the original
-  // choice back up, as the fallback promises.
-  let savedSettings = settingsStore.load();
-  let clientIgnored = !clientIsKnown(savedSettings);
-  // The shard fallback below sets this; declared here so effectiveSettings() can read it.
-  let rulesFallback = false;
-  function effectiveSettings(): SettingsDoc {
-    return { ...savedSettings, retention: retentionOf(savedSettings.retention), autoUpdateCheck: savedSettings.autoUpdateCheck !== false, ...(clientIgnored ? { client: null } : {}), ...(rulesFallback ? { shard: DEFAULT_SHARD } : {}) };
-  }
-  let currentSettings = effectiveSettings();
-  function saveSettings(changes: Partial<SettingsDoc>): void {
-    const next: SettingsDoc = { ...savedSettings, schemaVersion: 1, ...changes };
-    settingsStore.write(next);
-    savedSettings = next;
-    if ("client" in changes) clientIgnored = false;
-    currentSettings = effectiveSettings();
-  }
-  // Which adapter's bridge the page-facing bridge routes (POST /api/bridge, GET /api/bridge/status)
-  // talk to — the currently CONFIGURED client, re-read live off currentSettings on every call rather
-  // than captured once at startup, so a client switch (a fresh install, or "Run setup again") takes
-  // effect on the very next request with no restart. Falls back to DEFAULT_BRIDGE_ADAPTER when no
-  // client is configured at all, matching this route's own pre-existing behavior before it became
-  // per-adapter (Phase 6 final review follow-up). GET /api/setup below reports this exact same id back
-  // to the page as `bridgeAdapter` (guarded there against a discovered-adapters list that doesn't
-  // actually contain it — a throwaway test fixture dir, say) so app/ui/bridge.mts's currentAdapter()
-  // can show the Highlight/Grab/Go-to buttons for an unconfigured/hand-installed player against the
-  // SAME adapter this function is already routing their commands to, rather than the page guessing
-  // "tazuo" independently and risking the two disagreeing.
-  const DEFAULT_BRIDGE_ADAPTER = "tazuo";
-  const bridgeAdapter = (): string => currentSettings.client?.adapter || DEFAULT_BRIDGE_ADAPTER;
-  // The app must never fail to start because settings.json names a shard that no longer loads (its
-  // rules file was deleted, edited into invalid shape, or never existed — e.g. a stale user override).
-  // Fall back to DEFAULT_SHARD IN MEMORY ONLY: settings.json itself is left untouched, so fixing the
-  // named shard's rules file and restarting picks the original choice back up. GET /api/rules reports
-  // this as `fallback: true` so the page can tell the user rather than silently serving a different
-  // shard than settings.json names.
-  let currentRules: RulesV1;
-  try {
-    currentRules = loadRules(currentSettings.shard, { userRulesDir: USER_RULES_DIR });
-  } catch (e) {
-    const msg = `settings.json names shard "${currentSettings.shard}", which failed to load (${(e as Error).message}); falling back to "${DEFAULT_SHARD}" for this run — settings.json is unchanged`;
-    startupWarning(msg);
-    currentRules = loadRules(DEFAULT_SHARD, { userRulesDir: USER_RULES_DIR });
-    rulesFallback = true;
-    currentSettings = effectiveSettings();
-  }
-  // vault-lib is one module instance for the whole process (this file, organize, buffs, missing, the MCP tools…), and
-  // it holds the shard's rules: hand them over here and again wherever currentRules changes (PUT /api/settings).
-  setRules(currentRules);
+  const appSettings = createSettingsService({ store: createSettingsStore({ file: SETTINGS, warn: startupWarning }), rulesDir: USER_RULES_DIR,
+    isKnownAdapter: (id) => listAdapters(ADAPTERS_DIR).some((a) => a.id === id), warn: startupWarning });
 
   // Whether the client's installed scripts write to this data folder (installer.mts's
   // checkScriptsDataDir). Run on every GET /api/setup, so a reinstall clears the page's banner with no
@@ -547,8 +480,8 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   // fixtures don't come from any client. The sentence is the page's own (ui/messages.mts).
   function dataDirCheck(): DataDirCheck {
     if (CONFIG.demo) return { status: "none" };
-    const candidates = currentSettings.client ? [] : listAdapters(ADAPTERS_DIR).flatMap((a) => clientSearch.candidates(a));
-    return checkScriptsDataDir({ dataDir: CONFIG.dataDir, client: currentSettings.client, candidates, home: clientSearch.home, platform: process.platform });
+    const candidates = appSettings.current().client ? [] : listAdapters(ADAPTERS_DIR).flatMap((a) => clientSearch.candidates(a));
+    return checkScriptsDataDir({ dataDir: CONFIG.dataDir, client: appSettings.current().client, candidates, home: clientSearch.home, platform: process.platform });
   }
   const dataDirWarning = dataDirNotice(dataDirCheck());
   if (dataDirWarning) console.warn(dataDirWarning);
@@ -575,9 +508,9 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     } catch { /* no adapters/ directory at all — nothing to watch */ }
     for (const id of adapterIds) {
       const handle = startWatcher({
-        // getShard reads currentSettings.shard live, per ingest — not captured once here — so a
+        // getShard reads appSettings.current().shard live, per ingest — not captured once here — so a
         // PUT /api/settings shard switch takes effect on the very next dropped file (app/watcher.mts).
-        inboxDir: CONFIG.paths.inboxFor(id), adapter: id, scansDir: SCANS, getShard: () => currentSettings.shard,
+        inboxDir: CONFIG.paths.inboxFor(id), adapter: id, scansDir: SCANS, getShard: () => appSettings.current().shard,
         log: (msg) => safeAppendLog(CONFIG.paths.log, `${new Date().toISOString()} watcher[${id}] ${msg}\n`),
         onAccepted: ({ file, character, scannedAt }) => broadcastEvent("inventory", { file, character, scannedAt, at: Date.now() }),
         onRejected: ({ file, reason }) => broadcastEvent("rejected", { file, reason, at: Date.now() }),
@@ -588,7 +521,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     }
   }
 
-  const scanStore = createScansStore({ dir: SCANS, shard: () => currentSettings.shard });
+  const scanStore = createScansStore({ dir: SCANS, shard: () => appSettings.current().shard });
 
   // getInventory() caches the fold (readScans + foldSnapshots) — the expensive part of every route that
   // needs the inventory — keyed by a signature of the scans directory (every *.json file's name, mtimeMs
@@ -615,9 +548,9 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   interface TileDataFrom { td: TileData | null; folder: string | null; source: "settings" | "tazuo-profile" | null; reason: null | "override-missing" | "no-client" | "no-tazuo-profile" | "unreadable" }
   type UoFolder = { folder: string; source: "settings" | "tazuo-profile" } | { folder: null; reason: "override-missing" | "no-client" | "no-tazuo-profile" };
   function uoFolder(): UoFolder {
-    const o = currentSettings.uoFolder;
+    const o = appSettings.current().uoFolder;
     if (o != null && o !== "") return typeof o !== "string" || badPathShape(o) ? { folder: null, reason: "override-missing" } : { folder: o, source: "settings" };
-    const c = currentSettings.client;
+    const c = appSettings.current().client;
     if (!c || c.adapter !== "tazuo") return { folder: null, reason: "no-client" };
     const uo = uoFolderFromTazuo(c.scriptsDir);
     return uo ? { folder: uo, source: "tazuo-profile" } : { folder: null, reason: "no-tazuo-profile" };
@@ -679,7 +612,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     harvestNow(Date.now());   // a trip that finished since is part of what every view shows
     let kindsSig = "no-kinds";
     try { const st = statSync(itemKindsStore.file); kindsSig = `${st.ino}:${st.mtimeMs}:${st.size}`; } catch { /* no overrides */ }
-    const sig = `${scanStore.signature()}::${currentSettings.shard}::${kindsSig}`;
+    const sig = `${scanStore.signature()}::${appSettings.current().shard}::${kindsSig}`;
     if (foldCache.sig !== sig) {   // sig and value are only ever set together
       const snaps = scanStore.all();
       const fold = foldSnapshots(snaps, itemKindsStore.read());
@@ -755,7 +688,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
     return { fold, config, state, problems, bridges };
   }
   const planOf = (fold: Inventory, config: OrganizeConfig, state: OrganizeState, putAway?: PutAway): Plan =>
-    planOrganize(fold, config, state.moves, { now: Date.now(), rarity: currentRules.rarity, suitPieces: suitsFor(config.rules.map((r) => r.match)), blacklist: blacklistStore.read().map((e) => e.serial), seen: state.seen, putAway });
+    planOrganize(fold, config, state.moves, { now: Date.now(), rarity: appSettings.rules().rarity, suitPieces: suitsFor(config.rules.map((r) => r.match)), blacklist: blacklistStore.read().map((e) => e.serial), seen: state.seen, putAway });
   async function organizeNow(): Promise<{ fold: Inventory; config: OrganizeConfig; state: OrganizeState; plan: Plan; problems: string[]; bridges: Record<string, BridgeView> }> {
     const got = await organizeInputs();
     return { ...got, plan: planOf(got.fold, got.config, got.state) };
@@ -1020,7 +953,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   interface PrunePlan { scans: string[]; runs: string[]; refused: boolean; reason?: "houses" }
   async function planPrune(): Promise<PrunePlan> {
     if (CONFIG.demo) return { scans: [], runs: [], refused: false };
-    const r = retentionOf(savedSettings.retention);
+    const r = retentionOf(appSettings.saved().retention);
     const scans = scansToPrune(scanStore.files(), foldSnapshots, r, Date.now());
     const runs = runsToPrune(runStore.files().map(({ file, run }) => ({ file, character: String(run.character), createdAt: String(run.createdAt), label: String(run.label || "") })), r);
     return { scans: scans.files, runs, refused: scans.refused, ...(scans.reason ? { reason: scans.reason } : {}) };
@@ -1133,7 +1066,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
           if (it.equippedBy) (worn[it.equippedBy] ||= []).push(it);
           if (it.root != null) rootCounts[it.root] = (rootCounts[it.root] || 0) + 1;
         }
-        const facets = facetsOf(itemsArr, { rarity: currentRules.rarity });
+        const facets = facetsOf(itemsArr, { rarity: appSettings.rules().rarity });
         // A blacklisted container is never opened again, so its last two scans are stale: it reports nothing.
         const listed = new Set(blacklistStore.read().map((e) => String(e.serial)));
         const missingCounts = Object.fromEntries(Object.entries(missing).filter(([root]) => !listed.has(root)).map(([root, list]) => [root, list.length]));
@@ -1152,7 +1085,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       if (req.method === "GET" && url.pathname === "/api/items") {
         const { inv } = await getInventory();
         const query = parseItemQuery(url.searchParams);
-        const result = applyItemQuery(Object.values(inv.items), query, { rarity: currentRules.rarity });
+        const result = applyItemQuery(Object.values(inv.items), query, { rarity: appSettings.rules().rarity });
         if (wantsHits(url.searchParams)) return send(res, 200, { ok: true, total: result.total, offset: query.offset, limit: query.limit, rows: (result as ItemQueryRows).rows.map(hitRow) });
         // applyItemQuery returns the ItemQueryRows | ItemQueryGroups union; narrow at each call site
         // by query.group, same as app/item-query.test.mts does — `total` is common to both branches.
@@ -1236,7 +1169,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         uiPrefsStore.write(next);
         return send(res, 200, { ok: true });
       }
-      if (req.method === "GET" && url.pathname === "/api/settings") return send(res, 200, { ok: true, settings: currentSettings });
+      if (req.method === "GET" && url.pathname === "/api/settings") return send(res, 200, { ok: true, settings: appSettings.current() });
       if (req.method === "PUT" && url.pathname === "/api/settings") {
         // Any subset of {shard, setupDone, client} — Task 2 extended this route to carry the setup
         // wizard's own state without disturbing the shard-switch contract above it. Each field present
@@ -1248,7 +1181,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // every page load, hanging the whole single-threaded process on a FIFO and dialling out over
         // SMB for a UNC path). These three are the only fields this route persists.
         const body = asObject(await readBody(req));
-        let nextRules = currentRules, nextFallback = rulesFallback;
+        let nextRules = appSettings.rules(), nextFallback = appSettings.rulesFallback();
         const hasShard = Object.prototype.hasOwnProperty.call(body, "shard");
         if (hasShard) {
           if (!isBoundedString(body.shard, 64)) return send(res, 400, { ok: false, error: "settings.shard must be a string" });
@@ -1319,13 +1252,10 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         if (Object.prototype.hasOwnProperty.call(body, "autoUpdateCheck")) changes.autoUpdateCheck = body.autoUpdateCheck as boolean;
         if (nextClient !== undefined) changes.client = nextClient;
         if (nextUoFolder !== undefined) changes.uoFolder = nextUoFolder;
-        if (hasRetention) changes.retention = { ...retentionOf(savedSettings.retention), ...(body.retention as object) };
-        saveSettings(changes);
-        currentRules = nextRules;
-        setRules(currentRules);
-        rulesFallback = nextFallback;
-        currentSettings = effectiveSettings();
-        return send(res, 200, { ok: true, settings: currentSettings });
+        if (hasRetention) changes.retention = { ...retentionOf(appSettings.saved().retention), ...(body.retention as object) };
+        appSettings.save(changes);
+        appSettings.applyRules(nextRules, nextFallback);
+        return send(res, 200, { ok: true, settings: appSettings.current() });
       }
       if (req.method === "GET" && url.pathname === "/api/tazuo-panel") {
         return send(res, 200, { ok: true, prefs: readPanelPrefs(PANEL_PREFS) });
@@ -1349,7 +1279,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         return send(res, 200, { ok: true, ...await pruneData("clean up now") });
       }
       if (req.method === "GET" && url.pathname === "/api/rules") {
-        return send(res, 200, { ok: true, shard: currentSettings.shard, rules: currentRules, available: listRules({ userRulesDir: USER_RULES_DIR }), fallback: rulesFallback });
+        return send(res, 200, { ok: true, shard: appSettings.current().shard, rules: appSettings.rules(), available: listRules({ userRulesDir: USER_RULES_DIR }), fallback: appSettings.rulesFallback() });
       }
       // ---- Setup wizard (Task 2): adapter discovery, client-folder install, scan import, update check.
       if (req.method === "GET" && url.pathname === "/api/setup") {
@@ -1363,23 +1293,24 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // render. PUT /api/settings and POST /api/setup/install both validate that path now, and
         // installer.mts opens only regular files there (never following a symlink, never blocking on a
         // FIFO, bounded read) — so a hand-edited settings.json can no longer hang or over-read here.
-        const installed = currentSettings.client ? installedVersion(currentSettings.client.scriptsDir, currentSettings.client.adapter) : null;
-        // The id bridgeAdapter() is ACTUALLY routing POST /api/bridge / GET /api/bridge/status to right
+        const client = appSettings.current().client;
+        const installed = client ? installedVersion(client.scriptsDir, client.adapter) : null;
+        // The id appSettings.bridgeAdapter() is ACTUALLY routing POST /api/bridge / GET /api/bridge/status to right
         // now — reused, not restated, so this can never drift from the real routing decision. Guarded
         // to null when that id doesn't name a real discovered adapter (a test's throwaway --adapters
         // dir with no "tazuo" in it, say): reporting an id nothing can resolve would just move the
         // "buttons for an adapter that doesn't exist" bug onto the page instead of fixing it.
-        const resolvedBridgeAdapter = bridgeAdapter();
+        const resolvedBridgeAdapter = appSettings.bridgeAdapter();
         const bridgeAdapterField = adapters.some((a) => a.id === resolvedBridgeAdapter) ? resolvedBridgeAdapter : null;
         return send(res, 200, {
-          ok: true, firstRun: !currentSettings.setupDone, settings: currentSettings, adapters,
+          ok: true, firstRun: !appSettings.current().setupDone, settings: appSettings.current(), adapters,
           // platform: this machine's process.platform — on this desktop app, always the same machine
           // the player's game client runs on. Lets the wizard/Import tab (app/ui/adapters.mts's
           // availableAdapters) hide a platform-restricted adapter (Razor Enhanced, Windows-only)
           // instead of offering a choice that can never work (Phase 6 final review, deferred minor).
           candidates, installed, available, dataDir: CONFIG.dataDir, platform: process.platform,
           // app/ui/bridge.mts's currentAdapter() falls back to this when settings.client is unset (a
-          // hand-installed or Skip-through-the-wizard player) — see the bridgeAdapter() comment above.
+          // hand-installed or Skip-through-the-wizard player) — see the appSettings.bridgeAdapter() comment above.
           bridgeAdapter: bridgeAdapterField,
           dataDirCheck: dataDirCheck(),
           // Settings › Updates names the running version ("Pack Rat 0.1.0") before any update check.
@@ -1435,7 +1366,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         if (!located.ok) return send(res, 400, { ok: false, error: NO_CLIENT_FOLDER, code: "badDir" });
         const destDir = located.scriptsDir;
         // bridgeStatusPath is THIS adapter's own bridge status (the one whose scripts are about to be
-        // overwritten on disk), not necessarily the currently-configured client's (bridgeAdapter()) —
+        // overwritten on disk), not necessarily the currently-configured client's (appSettings.bridgeAdapter()) —
         // those can differ, e.g. installing razor-enhanced for the first time while tazuo is still the
         // configured client from an earlier setup. Guarding against the wrong adapter's running-script
         // state would both miss a real conflict (razor-enhanced's own bridge actually running) and
@@ -1449,7 +1380,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         if (!result.ok) {
           return send(res, result.code === "running" ? 409 : 400, { ok: false, error: result.error, code: result.code, installed: result.installed });
         }
-        saveSettings({ client: { adapter: adapter as string, scriptsDir: destDir } });
+        appSettings.save({ client: { adapter: adapter as string, scriptsDir: destDir } });
         // The wizard sends its panel options; either install puts the panel in TazUO's autostart list, which
         // it can only do while TazUO is closed (app/tazuo-panel.mts's addPanelAutostart).
         if (panel !== undefined && !CONFIG.demo) savePanel(panel as object);
@@ -1800,14 +1731,14 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // deliverable, and it was unenforced at the only place the app writes it.
         const { ok, errors } = validate(BRIDGE_SCHEMA.command, line);
         if (!ok) return send(res, 400, { ok: false, error: `${errors[0]!.path} ${errors[0]!.msg}`, errors });
-        // Queue into the CONFIGURED client's own bridge directory (bridgeAdapter(), above) — not a
+        // Queue into the CONFIGURED client's own bridge directory (appSettings.bridgeAdapter(), above) — not a
         // fixed "tazuo" — so a Razor Enhanced player's Highlight/Grab/Go-to buttons reach the bridge
         // script that's actually reading commands (Phase 6 final review follow-up).
         // pos is `object|null` in the contract with no shape of its own, so the assembled line is
         // size-checked once at the end — the only bound the field-level checks above can't give.
         const text = JSON.stringify(line) + "\n";
         if (text.length > 4096) return send(res, 400, { ok: false, error: "bridge command too large" });
-        const adapter = bridgeAdapter();
+        const adapter = appSettings.bridgeAdapter();
         mkdirSync(CONFIG.paths.bridgeFor(adapter), { recursive: true, mode: DATA_DIR_MODE });
         appendFileSync(CONFIG.paths.bridgeQueueFor(adapter), text, { mode: DATA_FILE_MODE });
         // A Grab is remembered like a trip (issue #148), so when it reports back the item reads as in the backpack
@@ -1827,7 +1758,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
       }
       if (req.method === "GET" && url.pathname === "/api/bridge/status") {
         harvestNow(Date.now());
-        const f = CONFIG.paths.bridgeStatusFor(bridgeAdapter());
+        const f = CONFIG.paths.bridgeStatusFor(appSettings.bridgeAdapter());
         if (!existsSync(f)) return send(res, 200, { ok: true, online: false });
         try {
           const parsed: unknown = JSON.parse(readFileSync(f, "utf8"));
@@ -1873,7 +1804,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         const label = name.slice(0, 64).trim() || "forgotten";   // a display label, and the schema wants a non-empty one
         mkdirSync(SCANS, { recursive: true, mode: DATA_DIR_MODE });
         const stamp = new Date().toISOString();
-        const snap = tombstone(stamp, currentSettings.shard, [{ serial, kind: "ground", name: label, opened: true }]);
+        const snap = tombstone(stamp, appSettings.current().shard, [{ serial, kind: "ground", name: label, opened: true }]);
         // Nothing this route writes may be a file the fold then skips — check the assembled document
         // against the same contract scanStore.all() checks every file against. A failure here is this
         // app's own bug, so it takes the 500-with-a-ref path and no file is written.
@@ -2003,7 +1934,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         const problem = matchProblem(match);
         if (problem) return send(res, 400, { ok: false, error: problem });
         const { inv } = await getInventory();
-        const counted = matchCount(inv, organizeStore.read().config, match as RuleMatch, { now: Date.now(), rarity: currentRules.rarity, suitPieces: suitsFor([match as RuleMatch]), blacklist: blacklistStore.read().map((e) => e.serial) });
+        const counted = matchCount(inv, organizeStore.read().config, match as RuleMatch, { now: Date.now(), rarity: appSettings.rules().rarity, suitPieces: suitsFor([match as RuleMatch]), blacklist: blacklistStore.read().map((e) => e.serial) });
         return send(res, 200, { ok: true, ...counted });
       }
       if (req.method === "POST" && url.pathname === "/api/organize/propose") {
@@ -2017,7 +1948,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         }
         const { fold, config, state, problems } = await organizeNow();
         if (problems.length) return send(res, 409, { ok: false, error: `organize.json was hand-edited and parts of it were dropped (${problems[0]}); open Organize and save the setup first` });
-        const r = proposeOrganize(fold, config, state.moves, { strategy: strategy as StrategyId, containers: containers as number[] | undefined, now: Date.now(), rarity: currentRules.rarity, suitPieces: suitsFor(config.rules.map((r) => r.match)), blacklist: blacklistStore.read().map((e) => e.serial), seen: state.seen });
+        const r = proposeOrganize(fold, config, state.moves, { strategy: strategy as StrategyId, containers: containers as number[] | undefined, now: Date.now(), rarity: appSettings.rules().rarity, suitPieces: suitsFor(config.rules.map((r) => r.match)), blacklist: blacklistStore.read().map((e) => e.serial), seen: state.seen });
         return send(res, r.ok ? 200 : 409, r satisfies ProposeResult);
       }
       if (req.method === "GET" && url.pathname === "/api/organize/plan") {
@@ -2033,7 +1964,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // count on room an earlier trip makes.
         const { index, stamp } = asObject(await readBody(req, { limit: 8e3 }));
         if (!isBoundedInt(index, 1, 10000) || !isBoundedString(stamp, 64)) return send(res, 400, { ok: false, error: "index (a trip number) and stamp (the plan's) are required" });
-        const adapter = bridgeAdapter();
+        const adapter = appSettings.bridgeAdapter();
         if (!runsTrips(adapter)) return send(res, 409, { ok: false, error: `the ${adapter} bridge cannot run Organize trips` });
         const { fold, state, plan, problems } = await organizeNow();
         // A salvaged setup lost rules or targets, and their items may now fall through to another rule or the
@@ -2060,7 +1991,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
         // Only a character the inventory has: a tombstone per arbitrary name would pile up in scans/.
         if (!Object.hasOwn((await getInventory()).inv.characters, character)) return send(res, 404, { ok: false, error: `no scanned character named ${short(character)}` });
         mkdirSync(SCANS, { recursive: true, mode: DATA_DIR_MODE });
-        const snap = tombstone(new Date().toISOString(), currentSettings.shard, [], character);
+        const snap = tombstone(new Date().toISOString(), appSettings.current().shard, [], character);
         const { ok: snapOk, errors: snapErrors } = validateScan(snap);
         if (!snapOk) throw new Error(`refusing to write an invalid tombstone: ${snapErrors.map((e) => `${e.path} ${e.msg}`).join("; ")}`);
         // One file per forgotten character (hex of the name: any name is a safe file name that way),
