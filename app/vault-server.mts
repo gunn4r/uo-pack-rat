@@ -233,7 +233,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   const inventoryService = createInventoryService({ scanStore, itemKindsStore, organizeStateStore, shard: () => appSettings.current().shard, harvest: (now) => organizeService.harvestNow(now) });
   const getInventory = inventoryService.getInventory;
   const profilesStore = createProfilesStore({ file: PROFILES, defaults: DEFAULT_PROFILES, templatesDir: CONFIG.paths.builtinTemplates, shard: () => appSettings.current().shard,
-    log: (line) => safeAppendLog(CONFIG.paths.log, line), uiPrefs: uiPrefsStore });
+    log: (line) => safeAppendLog(CONFIG.paths.log, line), uiPrefs: uiPrefsStore, scanned: async () => Object.keys((await getInventory()).inv.characters) });
   const timers = new Set<NodeJS.Timeout>();   // the host-call timeouts and stream pings the routes own, so close() can stop them all; the jobs service clears its own
 
   // ---- retention (issue #28): old scans and saved runs, per settings.json's `retention` ----------------

@@ -11,8 +11,8 @@ import { validate, type ValidatorSchema } from "./schema/validate.mts";
 import type { RulesV1 } from "./schema/types.d.mts";
 import { upgradeScan } from "./scan-schema.mts";
 import { buffPlanOf, buffSkillValues, manualBase, manualPlan, plannedProfile, runBuffs } from "./buffs.mts";
-import { RUN_DEFAULTS, defaultStrLimit } from "./run-settings.mts";
-import { buildSpec, buildSpecError, characterBuffs, characterProfile, findTemplate, migrateProfilesV3, planBuild, profileFromSpec, profilesSpecError, specFromProfile, templateLabel, templateRefs, templateSettings,
+import { RACES, RUN_DEFAULTS, defaultStrLimit } from "./run-settings.mts";
+import { buildSpec, buildSpecError, type BuildSpecSource, type CharacterEntry, characterBuffs, characterProfile, findTemplate, migrateProfilesV3, planBuild, profileFromSpec, profilesSpecError, specFromProfile, templateLabel, templateRefs, templateSettings,
   type BuildSpec, type FlatProfile, type ProfilesV3, type TemplateMap } from "./build-spec.mts";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
@@ -153,6 +153,41 @@ const GOLD = join(HERE, "fixtures", "profiles-v2");
 const gold = (n: string): unknown => JSON.parse(readFileSync(join(GOLD, n), "utf8"));
 const V3_SCHEMA = JSON.parse(readFileSync(join(HERE, "schema", "profiles.v3.schema.json"), "utf8")) as ValidatorSchema;
 
+test("[fast] build spec: a hand-edited spec whose lists or maps are the wrong type still reads, as defaults", () => {
+  const odd = { intent: { floors: [1], softFloors: "hci", weights: "x", resistCaps: 5 }, pool: { lockedSlots: 5, excludeTags: { a: 1 }, excludeRoots: "bank" }, buffs: { on: "bless", skills: [] } };
+  const got = buildSpec(odd as unknown as BuildSpecSource);
+  assert.deepEqual([got.intent.floors, got.intent.softFloors, got.intent.weights, got.intent.resistCaps], [{}, [], {}, {}]);
+  assert.deepEqual([got.pool.lockedSlots, got.pool.excludeTags, got.pool.excludeRoots, got.buffs.on, got.buffs.skills], [[], [], [], [], {}]);
+  const v3: ProfilesV3 = { schemaVersion: 3, characters: { A: { spec: odd } as unknown as CharacterEntry, B: {} as CharacterEntry }, templates: {} };
+  assert.deepEqual(characterProfile(v3, "A").lockedSlots, [], "the panel opens");
+  assert.deepEqual(characterBuffs(v3, "B"), { on: [], skills: {} }, "an entry with no spec");
+  const schema = (JSON.parse(readFileSync(join(HERE, "schema", "profiles.v3.schema.json"), "utf8")) as { $defs: { character: { properties: { race: { enum: string[] } } } } });
+  assert.deepEqual(schema.$defs.character.properties.race.enum, [...RACES], "the schema names the same races");
+});
+
+test("[fast] profiles v3: a bad v2 value is healed key by key and said; empty buff entries and unscanned names make no profile", () => {
+  const { profiles, healed } = migrateProfilesV3(gold("profiles.json") as ProfilesFile, gold("ui-prefs.json") as Record<string, unknown>);
+  assert.deepEqual(healed, [
+    "characters.Aldric: weights.someProp \"3\" left out",
+    "characters.Aldric: excludeWeapons item \"bows\" left out",
+    "characters.Brena: softFloors \"lrc\" set to its default",
+    "characters.Brena: lockedSlots 5 set to its default",
+    "characters.Brena: medOnly \"yes\" read as true",
+    "characters.Brena: strLimit 5000 set to its default",
+  ]);
+  assert.deepEqual(profiles.characters.Aldric!.spec.intent.weights, { dci: 10, ssi: 5, tagPenalty: -25 }, "only the bad weight goes");
+  assert.deepEqual(profiles.characters.Aldric!.spec.pool.excludeWeapons, ["archery", "throwing"]);
+  assert.equal(profiles.characters.Brena!.spec.pool.medOnly, true, "read as v2 read it");
+  assert.deepEqual(Object.keys(profiles.characters), ["Aldric", "Brena", "Corwin"], "Dara's empty list and Eli's empty edits make no profile");
+  const only = migrateProfilesV3(gold("profiles.json") as ProfilesFile, gold("ui-prefs.json") as Record<string, unknown>, { scanned: (n) => n !== "Corwin" });
+  assert.deepEqual(Object.keys(only.profiles.characters), ["Aldric", "Brena"], "a forgotten character's leftover buffs bring no profile back");
+  assert.equal(only.healed.at(-1), "characters.Corwin: not scanned, so its buffs were not moved (they stay in the ui-prefs backup)");
+  // leftover keys beside a v3 file go; No character's numbers carry over when ui-prefs has none of its own
+  const left = migrateProfilesV3(profiles, { theme: "default", buffSkills: { "": { Chivalry: 80 } } } as Record<string, unknown>);
+  assert.deepEqual([left.changed, left.prefsChanged, left.prefs], [false, true, { theme: "default", manualBuffSkills: { Chivalry: 80 } }]);
+  assert.deepEqual(migrateProfilesV3(profiles, { manualBuffSkills: { Chivalry: 90 }, buffSkills: { "": { Chivalry: 80 } } } as Record<string, unknown>).prefs, { manualBuffSkills: { Chivalry: 90 } });
+});
+
 test("[fast] profiles v3: the migration is idempotent, its result passes PUT /api/profiles' checks, and a newer file is left alone", () => {
   const once = migrateProfilesV3(gold("profiles.json") as ProfilesFile, gold("ui-prefs.json") as Record<string, unknown>);
   assert.deepEqual(once.profiles, gold("expected.profiles.json"));
@@ -164,7 +199,7 @@ test("[fast] profiles v3: the migration is idempotent, its result passes PUT /ap
   assert.deepEqual(validate(V3_SCHEMA, once.profiles).errors, []);
   assert.equal(profilesSpecError(once.profiles), null);
   const newer = { schemaVersion: 4, characters: { A: { whatever: 1 } }, templates: {} };
-  assert.deepEqual(migrateProfilesV3(newer as never, {}), { profiles: newer, prefs: {}, changed: false, prefsChanged: false });
+  assert.deepEqual(migrateProfilesV3(newer as never, {}), { profiles: newer, prefs: {}, changed: false, prefsChanged: false, healed: [] });
   assert.deepEqual(migrateProfilesV3({}, {}).profiles, { schemaVersion: 3, characters: {}, templates: {} }, "an empty file");
 });
 

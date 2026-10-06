@@ -13,7 +13,7 @@ import { sse } from "../../services/events.mts";
 import type { Job } from "../../services/jobs.mts";
 import { isManualSuit } from "../../store/ui-prefs.mts";
 import { GEAR_SLOTS, buildPools, toOptItem, type Character, type Inventory, type Item, type OptItem, type Profile, type RunBuffs } from "../../vault-lib.mts";
-import { characterProfile, planBuild, specFromRunSettings } from "../../build-spec.mts";
+import { characterProfile, poolFromSpec, specFromRunSettings } from "../../build-spec.mts";
 import { send, asObject, SSE_HEADERS } from "../respond.mts";
 import { NEXT, type Route } from "../router.mts";
 import type { ServerContext } from "../context.mts";
@@ -173,8 +173,8 @@ export function routes(ctx: ServerContext): Route[] {
         // under a name the inventory has never seen.
         if (character && !Object.hasOwn(inv.characters, character)) return send(res, 404, { ok: false, error: `no scans for character ${JSON.stringify(character)}` });
         // runSettingsError checked every field of `s` above. What it leaves out takes the build spec's default
-        // (app/build-spec.mts planBuild), as the page and build_suit do: a missing strLimit is the character's STR, else 125.
-        const { pool } = planBuild(specFromRunSettings(s as RunSettings), { character: character ? inv.characters[character] as Character : null, worn: [] });
+        // (app/build-spec.mts poolFromSpec, as planBuild), as the page and build_suit do: a missing strLimit is the character's STR, else 125.
+        const pool = poolFromSpec(specFromRunSettings(s as RunSettings), character ? inv.characters[character] as Character : null);
         const { allowOthersWorn, strLimit, excludeTags, excludeRoots, allowGargoyle, medOnly, excludeWeapons, ubwsAnyWeapon, excludeSkills, lockedSlots } = pool;
         const pins = (pinned || {}) as Record<string, number>;
         const badPin = manualSuitError(inv, pins, "pinned");

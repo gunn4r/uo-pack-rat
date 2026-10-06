@@ -1,7 +1,7 @@
 // profiles.mts — <data>/profiles.json: the Suit Builder's characters and templates (GET/PUT /api/profiles).
 import { copyFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { buildSpecError, migrateProfilesV3, type ProfilesV3, type TemplateEntry, type TemplateMap } from "../build-spec.mts";
+import { PROFILES_VERSION, buildSpecError, migrateProfilesV3, type ProfilesV3, type TemplateEntry, type TemplateMap } from "../build-spec.mts";
 import { writeFileAtomic } from "../atomic-write.mts";
 import { DATA_DIR_MODE, DATA_FILE_MODE } from "../config.mts";
 import { jsonErrorReason } from "../paste-scan.mts";
@@ -25,9 +25,11 @@ function backup(file: string, day: string): void {
 // is now moved aside the same way the settings store moves an unreadable settings.json, and the
 // defaults are seeded in its place, with a log line naming where the old file went.
 // `log` appends one line to the server log. `templatesDir` holds the built-in templates, one <shard>.json per shard, and
-// `shard` names the one in use.
-export function createProfilesStore({ file, defaults, templatesDir, shard, log, uiPrefs }: {
+// `shard` names the one in use. `scanned` names the characters the scans have, asked only when a v2 file is migrated:
+// a forgotten character's leftover buffs are not moved (app/build-spec.mts migrateProfilesV3).
+export function createProfilesStore({ file, defaults, templatesDir, shard, log, uiPrefs, scanned }: {
   file: string; defaults: string; templatesDir: string; shard: () => string; log: (line: string) => void; uiPrefs: { file: string; read(): UiPrefsFile; write(prefs: UiPrefsFile): void };
+  scanned?: (() => Promise<string[]>) | undefined;
 }) {
   async function read(): Promise<ProfilesV3> {
     const seed = (): void => {
@@ -49,7 +51,14 @@ export function createProfilesStore({ file, defaults, templatesDir, shard, log, 
     // profiles.json is trusted, unvalidated file content at this point (the same trust readRules'
     // loadFile and readScans' upgradeScan extend to their own on-disk inputs) — the migration's own
     // loose input shape (every field optional) is what actually tolerates a malformed file.
-    const { profiles, prefs, changed, prefsChanged } = migrateProfilesV3(doc as ProfilesV3, uiPrefs.read());
+    const raw = uiPrefs.read();
+    let names: Set<string> | null = null;
+    if (scanned && ((doc as ProfilesV3).schemaVersion ?? 0) < PROFILES_VERSION && ("autoBuffs" in raw || "buffSkills" in raw)) {
+      try { names = new Set(await scanned()); }
+      catch (e) { log(`${new Date().toISOString()} profiles.json migration: the scanned characters could not be read (${(e as Error).message}); every character's buffs are moved\n`); }
+    }
+    const { profiles, prefs, changed, prefsChanged, healed } = migrateProfilesV3(doc as ProfilesV3, raw, { scanned: names ? (n) => names!.has(n) : undefined });
+    for (const line of healed) log(`${new Date().toISOString()} profiles.json migration: ${line}\n`);
     const day = new Date().toISOString().slice(0, 10);
     if (changed) {
       backup(file, day);

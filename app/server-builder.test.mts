@@ -633,7 +633,10 @@ test("[fast] GET/PUT /api/profiles v3: a v2 folder migrates on the first read, b
   const put = (body: unknown): Promise<Response> => fetch(s2.url + "/api/profiles", { method: "PUT", headers: JSON_HEADERS, body: JSON.stringify(body) });
   try {
     const got = asJson<ProfilesResponse>(await (await fetch(s2.url + "/api/profiles")).json());
-    assert.deepEqual(got.profiles, JSON.parse(readFileSync(join(gold, "expected.profiles.json"), "utf8")));
+    // the demo scans have none of the golden characters: Corwin, who had only buffs, gets no profile (its buffs stay in the ui-prefs backup)
+    const { Corwin: _corwin, ...rest } = (JSON.parse(readFileSync(join(gold, "expected.profiles.json"), "utf8")) as ProfilesV3).characters;
+    assert.deepEqual(got.profiles, { ...JSON.parse(readFileSync(join(gold, "expected.profiles.json"), "utf8")), characters: rest });
+    assert.match(logText(dir), /characters\.Corwin: not scanned/);
     assert.deepEqual(Object.keys(got.builtinTemplates), ["melee", "caster", "archer", "tank"]);
     assert.deepEqual(Object.keys(got.profiles.templates), ["melee", "my caster"], "never copied into the file");
     assert.equal(asJson<{ prefs: Record<string, unknown> }>(await (await fetch(s2.url + "/api/ui-prefs")).json()).prefs.autoBuffs, undefined);

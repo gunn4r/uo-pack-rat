@@ -8,7 +8,7 @@
       "strLimit": 95,
       "floors": { "hci": 45, "physResist": 60 },
       "softFloors": ["hci"],
-      "weights": { "dci": 10, "ssi": 5, "tagPenalty": -25 },
+      "weights": { "dci": 10, "ssi": 5, "tagPenalty": -25, "someProp": "3" },
       "floorBonus": 1000,
       "lockedSlots": ["twoHanded"],
       "excludeTags": ["Cursed"],
@@ -17,7 +17,7 @@
       "allowOthersWorn": true,
       "allowGargoyle": false,
       "medOnly": false,
-      "excludeWeapons": ["archery", "throwing"],
+      "excludeWeapons": ["archery", "throwing", "bows"],
       "ubwsAnyWeapon": false,
       "resistCaps": { "fireResist": 75 },
       "caps": { "hci": 45 },
@@ -29,6 +29,8 @@
       "strLimit": 5000,
       "floors": { "lrc": 100 },
       "weights": { "fc": 60 },
+      "softFloors": "lrc",
+      "lockedSlots": 5,
       "medOnly": "yes"
     }
   },
