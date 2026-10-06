@@ -20,6 +20,7 @@ import { initShell, applyShellPrefs, setCurrentNav } from "./shell.mts";
 import { segmented, clearToasts, closePopover } from "./components.mts";
 import { openRunsDrawer, closeRunsDrawer } from "./runs.mts";
 import "./organize.mts";   // registers its route and its inventorychange listener; nothing else imports it
+import "./scrolls.mts";    // the same for the Scrolls view
 import { applyMapPrefs } from "./house-map.mts";
 import { parseRoute, routeFor, showRoute } from "./nav.mts";
 import { get, reload, setPageLoad } from "./inventory-data.mts";
