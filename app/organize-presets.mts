@@ -6,7 +6,7 @@
 // first; they skip every piece of a saved suit, and Auto organize never uses them.
 import { emptyRuleQuery, SCHOOLS, type OrganizeRule, type RuleMatch } from "./organize-config.mts";
 import type { RuleQuery } from "./item-query.mts";
-import { INSTRUMENTS } from "./vault-lib.mts";
+import { INSTRUMENTS, NECK_ARMOR_WORDS } from "./vault-lib.mts";
 
 export interface OrganizePreset { id: string; name: string; match: RuleMatch }
 
@@ -49,8 +49,8 @@ export const PRESETS: readonly OrganizePreset[] = [
   { id: "shields", name: "Shields", match: slots(["twoHanded"], ["shield", "buckler"]) },
   { id: "weapons", name: "Weapons", match: slots(["oneHanded", "twoHanded"]) },
   { id: "armour-head", name: "Armor: head", match: slots(["helmet"]) },
-  // The neck slot holds necklaces too: armour is a gorget, a mempo, or a set piece named Armor (Armor Of Initiation).
-  { id: "armour-neck", name: "Armor: neck", match: slots(["neck"], ["gorget", "mempo", "armor", "armour"]) },
+  // The neck slot holds necklaces too: armour is a piece named by vault-lib's NECK_ARMOR_WORDS.
+  { id: "armour-neck", name: "Armor: neck", match: slots(["neck"], [...NECK_ARMOR_WORDS]) },
   { id: "armour-chest", name: "Armor: chest", match: slots(["chest"]) },
   { id: "armour-arms", name: "Armor: arms", match: slots(["arms"]) },
   { id: "armour-hands", name: "Armor: hands", match: slots(["hands"]) },

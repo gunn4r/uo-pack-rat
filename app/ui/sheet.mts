@@ -5,7 +5,7 @@
 // Built as DOM nodes, never an HTML string (Phase 7 security review, Area 2, Important 1): a scan file
 // is attacker-controlled text, and a pasted "here's my suit" scan once turned into persistent
 // HTML/CSS injection inside the app window through this builder.
-import { totalsOf, resistSkillBonus, PROP_FULL } from "../vault-lib.mts";
+import { totalsOf, resistSkillBonus, PROP_FULL, SLOTS_IN_GROUP } from "../vault-lib.mts";
 import type { ExtrasMap, OptItem, ResistCap } from "../vault-lib.mts";
 import { state } from "./store.mts";
 import { el, itemTip, label, slotLabel, toast } from "./dom.mts";
@@ -165,10 +165,11 @@ function openPropsPicker(anchor: HTMLElement, redraw: () => void): void {
 }
 // The worn-gear tiles, in fixed groups so every row has equal height and nothing is orphaned. A kilt or skirt (issue
 // #202) is a Clothing tile only when one is worn, so the usual 3 × 2 groups stay whole.
+// The slots in each come from vault-lib's GEAR_SLOT_GROUPS, weapons and jewelry sharing one tile.
 export const SLOT_GROUPS: Array<[string, string[]]> = [
-  ["Armor", ["helmet", "neck", "chest", "arms", "hands", "legs"]],
-  ["Weapons and jewelry", ["oneHanded", "twoHanded", "ring", "bracelet", "earrings", "talisman"]],
-  ["Clothing", ["cloak", "robe", "tunic", "shirt", "waist", "feet", "outerLegs"]],
+  ["Armor", [...SLOTS_IN_GROUP.Armor]],
+  ["Weapons and jewelry", [...SLOTS_IN_GROUP.Weapons, ...SLOTS_IN_GROUP.Jewelry]],
+  ["Clothing", [...SLOTS_IN_GROUP.Clothing]],
 ];
 const FIXED_SLOTS = new Set(SLOT_GROUPS.flatMap(([, s]) => s));
 const WORN_ONLY = new Set(["outerLegs"]);

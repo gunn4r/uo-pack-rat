@@ -241,11 +241,12 @@ test("[fast] Simple and Detailed: neck armour goes with the armour, necklaces wi
     { serial: ITEM + 1, name: "Leather Gorget", in: A }, { serial: ITEM + 2, name: "Studded Gorget", in: A },
     { serial: ITEM + 3, name: "Armor Of Initiation", in: A, graphic: 5063, lines: ["Physical Resist 7%"] },
     { serial: ITEM + 4, name: "Gold Necklace", in: A }, { serial: ITEM + 5, name: "Gold Beads", in: A },
+    { serial: ITEM + 6, name: "Leather Collar", in: A },
   ];
   const items = Object.values(fold([{ serial: A }], neck).items);
   const of = (id: keyof typeof STRATEGIES) => groupItems(STRATEGIES[id], items).map((g) => [g.key, g.items.map((it) => it.name)]);
-  assert.deepEqual(of("simple"), [["armour", ["Leather Gorget", "Studded Gorget", "Armor Of Initiation"]], ["jewelry", ["Gold Necklace", "Gold Beads"]]]);
-  assert.deepEqual(of("detailed"), [["armour-neck", ["Leather Gorget", "Studded Gorget", "Armor Of Initiation"]], ["necklaces", ["Gold Necklace", "Gold Beads"]]]);
+  assert.deepEqual(of("simple"), [["armour", ["Leather Gorget", "Studded Gorget", "Armor Of Initiation", "Leather Collar"]], ["jewelry", ["Gold Necklace", "Gold Beads"]]]);
+  assert.deepEqual(of("detailed"), [["armour-neck", ["Leather Gorget", "Studded Gorget", "Armor Of Initiation", "Leather Collar"]], ["necklaces", ["Gold Necklace", "Gold Beads"]]]);
 });
 
 // Issue #202: a shirt is no chest piece and a cloth kilt no legs piece, so both leave the armor for Other gear; a
