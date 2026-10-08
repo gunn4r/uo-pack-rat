@@ -37,7 +37,9 @@ const { pools: fixturePools, current: fixtureCurrent } = buildPools(inv, "Fixtur
 // The shipped built-in templates (app/data/templates/uoalive.json), as the panel's settings.
 const builtins = (JSON.parse(readFileSync(join(HERE, "data", "templates", "uoalive.json"), "utf8")) as { templates: TemplateMap }).templates;
 export const defaultProfiles: { templates: Record<string, Template> } = { templates: Object.fromEntries(Object.entries(builtins).map(([id, t]) => [id, templateSettings(t)])) };
-export const templateNames = Object.keys(defaultProfiles.templates!);
+// The four generic starters only: the build templates (#212) have their own test (solver-builtins.test.mts), so the
+// equivalence and buff-plan tests and their hashes stay on these.
+export const templateNames = ["melee", "caster", "archer", "tank"];
 
 // cell(profileName, {soft, overrides}) — the fixture's pools/current, plus a profile built from one
 // of the shipped default templates: `overrides` land on the template (before effectiveProfile), so
