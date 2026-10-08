@@ -3,7 +3,7 @@
 // page's Advanced fields share, and the defaults. Pure and browser-safe: the page imports the ranges and defaults.
 import { isRunBuffs } from "./buffs.mts";
 import { isBoundedInt, isBoundedString, MAX_SERIAL, short } from "./guards.mts";
-import { excludeWeaponsError, resistCapsError } from "./vault-lib.mts";
+import { excludeWeaponsError, resistCapsError, weaponMustHaveError } from "./vault-lib.mts";
 export type { RunSettings } from "./vault-lib.mts";
 
 // The search options POST /api/optimize takes in `opts`, and the range each may sit in.
@@ -64,6 +64,7 @@ export function runSettingsError(settings: unknown, label: string): string | nul
       if (!Array.isArray(v) || v.length > 200 || v.some((x) => !(isBoundedString(x, 64) || (k === "excludeRoots" && isBoundedInt(x, 0, MAX_SERIAL))))) return `${label}.${k} must be a list of names`;
     } else if (k === "race") { if (!RACES.includes(v as string)) return `${label}.race must be human, elf or gargoyle`; }
     else if (k === "excludeWeapons") { const e = excludeWeaponsError(v, `${label}.excludeWeapons`); if (e) return e; }
+    else if (k === "weaponMustHave") { const e = weaponMustHaveError(v, `${label}.weaponMustHave`); if (e) return e; }
     else if (k === "resistCaps") { const e = resistCapsError(v, `${label}.resistCaps`); if (e) return e; }
     else if (k === "buffs") { if (!isRunBuffs(v)) return `${label}.buffs must list known buffs, each once and one form at most, with their numbers in range`; }
     else return `${label}.${short(k)} is not a run setting`;

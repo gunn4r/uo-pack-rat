@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import http from "node:http";
 import { isBoundedInt, isBoundedString, short } from "../../guards.mts";
 import { optionalSlotsFor } from "../../mip.mts";
-import { preBuildDiagnostics, type DiagnosticsProfile } from "../../diagnostics.mts";
+import { preBuildDiagnostics, weaponFlagDiagnostics, type Diagnostic, type DiagnosticsProfile } from "../../diagnostics.mts";
 import { readBody } from "../../read-body.mts";
 import { runKey, reusableRun, runSummary, manualRun, type RunOpts, type SavedRun } from "../../runs-lib.mts";
 import { OPTS_LIMITS, RUN_DEFAULTS, runSettingsError, type RunSettings } from "../../run-settings.mts";
@@ -148,7 +148,7 @@ export function routes(ctx: ServerContext): Route[] {
       // pool settings: held to the one rule a manual run's settings are (app/run-settings.mts).
       const badSettings = runSettingsError(meta.settings, "meta.settings") || runSettingsError(settings, "settings");
       if (badSettings) return send(res, 400, { ok: false, error: badSettings });
-      let skipped: Record<string, number> = {}, blocked: string[] = [];
+      let skipped: Record<string, number> = {}, blocked: string[] = [], poolDiagnostics: Diagnostic[] = [];
       // The by-character form: the caller sends {character, settings} instead of building pools/current
       // itself, and the server runs buildPools() against the cached inventory — the same function and
       // the same defaults the page's own optimizerProfile() uses (ui/builder.mts), so a request built
@@ -176,14 +176,19 @@ export function routes(ctx: ServerContext): Route[] {
         // runSettingsError checked every field of `s` above. What it leaves out takes the build spec's default
         // (app/build-spec.mts poolFromSpec, as planBuild), as the page and build_suit do: a missing strLimit is the character's STR, else 125.
         const pool = poolFromSpec(specFromRunSettings(s as RunSettings), character ? inv.characters[character] as Character : null);
-        const { allowOthersWorn, strLimit, excludeTags, excludeRoots, allowGargoyle, medOnly, excludeWeapons, ubwsAnyWeapon, excludeSkills, lockedSlots } = pool;
+        const { allowOthersWorn, strLimit, excludeTags, excludeRoots, allowGargoyle, medOnly, excludeWeapons, ubwsAnyWeapon, excludeSkills, lockedSlots, weaponMustHave } = pool;
         const pins = (pinned || {}) as Record<string, number>;
         const badPin = manualSuitError(inv, pins, "pinned");
         if (badPin) return send(res, 400, { ok: false, error: badPin });
         // a fill keeps the placed pieces in place of the locked slots: they are the only slots that keep their piece
         const keep = fill ? Object.keys(pins) : lockedSlots;
-        const built = buildPools(inv, (character as string) || null, { allowOthersWorn: allowOthersWorn && !!character, strength: strLimit, excludeTags, excludeRoots, excludeGargoyle: !allowGargoyle, medOnly, excludeWeapons, ubwsAnyWeapon, excludeSkills, ...(fill ? { pinned: pins } : {}) });
+        const built = buildPools(inv, (character as string) || null, { allowOthersWorn: allowOthersWorn && !!character, strength: strLimit, excludeTags, excludeRoots, excludeGargoyle: !allowGargoyle, medOnly, excludeWeapons, ubwsAnyWeapon, excludeSkills, weaponMustHave, lockedSlots: fill ? [] : lockedSlots, ...(fill ? { pinned: pins } : {}) });
         pools = built.pools; current = built.current; blocked = built.blocked;
+        // the weapon properties the build requires: a locked weapon without them, or no weapon with them (app/diagnostics.mts)
+        if (built.weaponFlags && weaponMustHave) {
+          const kept = built.weaponFlags.kept.map((slot) => { const it = inv.items[built.current[slot]!.serial]!; return { slot, name: it.name, missing: weaponMustHave.filter((f) => !it.flags.includes(f)) }; });
+          poolDiagnostics = weaponFlagDiagnostics(weaponMustHave, kept, built.weaponFlags.none);
+        }
         skipped = Object.fromEntries(Object.entries(built.skipped).map(([k, v]) => [k, v.length]));
         for (const slot of blocked) delete current[slot];       // a worn piece the filters now rule out must not stay "current"
         if (!fill) for (const slot of lockedSlots) pools[slot] = [];   // a locked slot offers no alternatives — it always keeps current
@@ -216,8 +221,8 @@ export function routes(ctx: ServerContext): Route[] {
       // run started this way (the jobs service's saveRun() reads job.meta) carries the same figures the response does.
       if (character) { meta.poolSize = poolSize; meta.skipped = skipped; }
       // The requirements no suit in the pool can reach, said before the search starts (app/diagnostics.mts); the result repeats them.
-      const diagnostics = preBuildDiagnostics({ pools: pools as Partial<Record<string, OptItem[]>>, current: current as Partial<Record<string, OptItem | null>>,
-        optionalSlots: fullOpts.optionalSlots as string[] | undefined, profile: profile as DiagnosticsProfile });
+      const diagnostics = [...poolDiagnostics, ...preBuildDiagnostics({ pools: pools as Partial<Record<string, OptItem[]>>, current: current as Partial<Record<string, OptItem | null>>,
+        optionalSlots: fullOpts.optionalSlots as string[] | undefined, profile: profile as DiagnosticsProfile })];
       if (hit) return send(res, 200, { ok: true, cached: true, run: hit, poolSize, skipped, current, blocked, diagnostics });
       // warm start: this character's newest saved suit, re-scored under the new settings
       const last = fill ? null : runs.find((r) => r.character === meta.character && r.result && r.result.best);
@@ -226,7 +231,7 @@ export function routes(ctx: ServerContext): Route[] {
       // own declared fields (an index-signature read, same trust as everywhere else in this route).
       if (last) fullOpts.warmStart = Object.fromEntries(Object.entries(last.result!.best as Record<string, { serial: number } | null>).map(([slot, it]) => [slot, it ? it.serial : null]));
       // One running build per client, behind a server-wide ceiling (app/services/jobs.mts submit).
-      const started = jobService.submit({ pools, current, profile, opts: fullOpts }, key, meta, headerClientId, !fill);
+      const started = jobService.submit({ pools, current, profile, opts: fullOpts, ...(poolDiagnostics.length ? { diagnostics: poolDiagnostics } : {}) }, key, meta, headerClientId, !fill);
       if (!started) return send(res, 429, { ok: false, error: "too many builds are already running; try again in a moment" });
       const { job, superseded } = started;
       if (poolSize > 50000) job.meta.warning = "over 50,000 candidates; the exact solver may take a while";

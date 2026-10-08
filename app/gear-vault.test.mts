@@ -1,6 +1,6 @@
 // gear-vault.test.mts — `app/vault-lib.mts` (parser, classifier, fold, pools) and the optimizer core through the same loader the server uses.
 //
-// `app/vault-lib.mts`: tooltip parsing (property keys, tags, STR requirement, rarity, extras/flags, a set piece's full-set block kept out of its own props, a power scroll's level as `psLevel`, a Scroll of Transcendence's skill and points as `sotSkill` and `sotPoints` and its `displayName`), the shipped corpus (every `adapters/*/fixture.scan.json` plus both demo scans, parsed and classified the way the fold does it: no prop-carrying gear without a slot, every "... Arms" piece in the arms slot, every set piece's props equal to its lines above the set header, a worn piece taken off landing in its layer's slot, and named TazUO fixture pieces checked by slot and resist), graphic- and name-to-slot classification (with the golden table of issue #202: every layer case the research found, each checked by graphic and by name alone, and a spell scroll's graphic never gear whatever its name), snapshot folding (newest scan of a root wins, skipped roots keep their last contents, tombstones, character tombstones and the scans that outrank them, distinct location text for same-named containers, each container's `capacity` from its Contents line (`capacityOf`: a weight cap, no weight, separators, markup, singular words; null without a maximum or a line), null for a ground root scanned before root tooltips, and an engraved root named by its engraving), optimizer pool building (other characters' worn gear, STR gate, tag filter), requirement reports, the weapon exclusion filter and its migration, `settingsDiff`, profile templates (`migrateProfiles` old → new shape and idempotence, `templateFrom` leaving race/STR out, drift via `settingsDiff`), saved-run keys and reuse (`runs-lib.mts`), plus the optimizer core through the same loader the server uses: exact search against brute force (a hand-built case and 150 random suits), the other-suits list against every brute-force score (80 random suits), progress reporting, and warm starts, every layer name an adapter's `capabilities.json` declares resolving to a slot, and Razor Enhanced's layer names (`LAYER_ALIASES`) classifying exactly as their TazUO equivalents (issue #219). Fixtures: `app/fixtures/demo-*.json` (synthetic fixtures, see `app/fixtures/README.md`).
+// `app/vault-lib.mts`: tooltip parsing (property keys, tags, STR requirement, rarity, extras/flags, a set piece's full-set block kept out of its own props, a power scroll's level as `psLevel`, a Scroll of Transcendence's skill and points as `sotSkill` and `sotPoints` and its `displayName`), the shipped corpus (every `adapters/*/fixture.scan.json` plus both demo scans, parsed and classified the way the fold does it: no prop-carrying gear without a slot, every "... Arms" piece in the arms slot, every set piece's props equal to its lines above the set header, a worn piece taken off landing in its layer's slot, and named TazUO fixture pieces checked by slot and resist), graphic- and name-to-slot classification (with the golden table of issue #202: every layer case the research found, each checked by graphic and by name alone, and a spell scroll's graphic never gear whatever its name), snapshot folding (newest scan of a root wins, skipped roots keep their last contents, tombstones, character tombstones and the scans that outrank them, distinct location text for same-named containers, each container's `capacity` from its Contents line (`capacityOf`: a weight cap, no weight, separators, markup, singular words; null without a maximum or a line), null for a ground root scanned before root tooltips, and an engraved root named by its engraving), optimizer pool building (other characters' worn gear, STR gate, tag filter), requirement reports, the weapon exclusion filter and its migration, the weapon properties filter (`weaponMustHave`), `settingsDiff`, profile templates (`migrateProfiles` old → new shape and idempotence, `templateFrom` leaving race/STR out, drift via `settingsDiff`), saved-run keys and reuse (`runs-lib.mts`), plus the optimizer core through the same loader the server uses: exact search against brute force (a hand-built case and 150 random suits), the other-suits list against every brute-force score (80 random suits), progress reporting, and warm starts, every layer name an adapter's `capabilities.json` declares resolving to a slot, and Razor Enhanced's layer names (`LAYER_ALIASES`) classifying exactly as their TazUO equivalents (issue #219). Fixtures: `app/fixtures/demo-*.json` (synthetic fixtures, see `app/fixtures/README.md`).
 //
 // Tests that use the fixtures must sit below the `const kestrel = …` / `const dorran = …` lines that load them from app/fixtures/. The [slow] cases here are the 150/80-random-suit brute-force comparisons and the demo-inventory exact and warm-start checks.
 import { test } from "node:test";
@@ -11,7 +11,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 import {
   parseTooltip, displayName, gameName, compareNames, classify, foldSnapshots, spellSchoolOf, buildPools, requirementReport, totalsOf, propertyKeys, bagLabel, capacityOf, NOT_BUILDER_KEYS, kindOf, groupByName, slayersOf, medableOf, weaponAllowed, settingsDiff, PROP_LABELS, LAYER_TO_SLOT, LAYER_ALIASES, effectiveProfile, resistSkillBonus, toOptItem, labelOf, builderKeys, migrateProfiles, templateFrom, TEMPLATE_KEYS, setRules, getRules, tagUnits, tagInfo,
-  WEAPON_SKILLS, migrateWeaponSetting, excludeWeaponsError, weaponSkillsOf,
+  WEAPON_SKILLS, migrateWeaponSetting, excludeWeaponsError, weaponSkillsOf, weaponHasFlags, weaponMustHaveError, BOOLEAN_FLAGS,
   shardResistCap, resistCapsFor, resistCapsError, profileResistCaps, RESIST_CAP_LIMITS,
 } from "./vault-lib.mts";
 import type { Item, Inventory, ItemLocation, ProfilesFile, CharacterEntryRaw } from "./vault-lib.mts";
@@ -980,6 +980,50 @@ test("[fast] profiles: ubwsAnyWeapon is on unless set false, and the schema take
   assert.deepEqual(settingsDiff({}, { ubwsAnyWeapon: false }), ["Use Best Weapon Skill weapons held to their own skill"]);
   assert.deepEqual(settingsDiff({ ubwsAnyWeapon: false }, { ubwsAnyWeapon: true }), ["Use Best Weapon Skill weapons allowed"]);
   assert.deepEqual(settingsDiff({}, { ubwsAnyWeapon: true }), [], "absent means on");
+});
+
+// Issue #214: a build may require yes/no properties on its weapon (pool weaponMustHave). Both hands are filtered; shields
+// and spellbooks are not weapons; a locked worn weapon without them stays (the lock wins) and is named in weaponFlags.kept.
+test("[fast] weapon properties filter: both hands, shields and spellbooks untouched, the lock wins, an empty pool said", () => {
+  const mk = (serial: number, slot: string, extra: Record<string, unknown> = {}): Item => ({ serial, name: `i${serial}`, slot, gear: true, props: { hci: 1 }, flags: [], extras: {}, tags: [], strReq: 0, root: 1, equippedBy: null, gargoyle: false, medable: true, ...extra } as unknown as Item);
+  const inv = { items: {
+    1: mk(1, "twoHanded", { twoHanded: true, skillReq: "archery", flags: ["balanced"] }),
+    2: mk(2, "oneHanded", { skillReq: "swordsmanship", flags: ["spell channeling"] }),
+    3: mk(3, "twoHanded", {}),                                                                   // a shield
+    4: mk(4, "oneHanded", { name: "Spellbook" }),                                                // a spellbook
+    5: mk(5, "oneHanded", { skillReq: "fencing", equippedBy: "Kestrel", root: null }),
+    6: mk(6, "twoHanded", { twoHanded: true, skillReq: "swordsmanship", flags: ["spell channeling", "balanced"] }),
+    7: mk(7, "oneHanded", { extras: { "weapon speed": 2.5 } }),                                 // a weapon with no Skill Required line
+  } } as unknown as Inventory;
+  const hands = (r: ReturnType<typeof buildPools>): number[] => [...(r.pools.oneHanded || []), ...(r.pools.twoHanded || [])].map((i) => i.serial).sort((a, b) => a - b);
+  const sc = buildPools(inv, "Kestrel", { weaponMustHave: ["spell channeling"] });
+  assert.deepEqual(hands(sc), [2, 3, 4, 6], "a one-hander and a two-hander with it, the shield and the spellbook");
+  assert.deepEqual(sc.blocked, ["oneHanded"], "the worn kryss without it may not stay");
+  assert.deepEqual(sc.skipped.weapon.map((i) => i.serial).sort(), [1, 5, 7]);
+  assert.deepEqual(sc.weaponFlags, { kept: [], none: false });
+  assert.deepEqual(hands(buildPools(inv, "Kestrel", { weaponMustHave: ["balanced"] })), [1, 3, 4, 6], "the two-handers with it, not the one-hander without");
+  assert.deepEqual(hands(buildPools(inv, "Kestrel", { weaponMustHave: ["spell channeling", "balanced"] })), [3, 4, 6], "every listed property");
+  assert.equal(buildPools(inv, "Kestrel", {}).weaponFlags, undefined, "nothing required: no report");
+  const locked = buildPools(inv, "Kestrel", { weaponMustHave: ["spell channeling"], lockedSlots: ["oneHanded"] });
+  assert.deepEqual(locked.blocked, [], "the lock wins: the worn kryss stays current");
+  assert.equal(locked.current.oneHanded?.serial, 5);
+  assert.deepEqual(locked.weaponFlags, { kept: ["oneHanded"], none: false });
+  const none = buildPools(inv, "Kestrel", { weaponMustHave: ["night sight"] });
+  assert.deepEqual(hands(none), [3, 4], "no weapon left, the shield and spellbook stay");
+  assert.deepEqual(none.weaponFlags, { kept: [], none: true });
+  assert.deepEqual(buildPools(inv, "Kestrel", { weaponMustHave: ["night sight"], lockedSlots: ["oneHanded"] }).weaponFlags, { kept: ["oneHanded"], none: false }, "the locked weapon is the suit's, so the pool is not called empty");
+  assert.ok(weaponHasFlags(mk(9, "ring"), ["balanced"]), "a ring is no weapon");
+  assert.equal(weaponMustHaveError(undefined), null);
+  assert.equal(weaponMustHaveError(["spell channeling", "balanced"]), null);
+  assert.equal(weaponMustHaveError("balanced"), "weaponMustHave must be an array");
+  assert.match(weaponMustHaveError(["balanced", "balanced"], "settings.weaponMustHave")!, /^settings\.weaponMustHave\[1\] is not a yes\/no property, or is listed twice/);
+  assert.match(weaponMustHaveError(["sharp"])!, /^weaponMustHave\[0\]/);
+  const schema = JSON.parse(readFileSync(join(HERE, "schema", "profiles.v3.schema.json"), "utf8")) as { $defs: { pool: { properties: { weaponMustHave: { items: { enum: string[] } } } } } };
+  assert.deepEqual(schema.$defs.pool.properties.weaponMustHave.items.enum, [...BOOLEAN_FLAGS], "the schema knows the same properties");
+  assert.deepEqual(settingsDiff({}, { weaponMustHave: ["spell channeling"] }), ["weapon must have spell channeling"]);
+  assert.deepEqual(settingsDiff({ weaponMustHave: ["balanced"] }, {}), ["weapon need not have balanced"]);
+  assert.deepEqual(templateFrom({ weaponMustHave: ["balanced"] }).weaponMustHave, ["balanced"], "templates carry it");
+  assert.deepEqual(templateFrom({}).weaponMustHave, []);
 });
 
 // Issue #188: the weapon skills a weapon counts under in the Inventory's Weapon skill filter. Use Best Weapon Skill swings

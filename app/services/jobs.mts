@@ -6,6 +6,7 @@ import { runRecord, stripOpts, type RunOpts, type RunSettingsRaw } from "../runs
 import type { WorkerMessage, WorkerDoneMessage } from "../optimize-worker.mts";
 import type { OptResult, ExactSolveResult, SolveProgress } from "../exact-solver.mts";
 import { sse } from "./events.mts";
+import type { Diagnostic } from "../runs-types.mts";
 
 // A job keeps its last progress snapshot and its final result, so a page that reconnects (or
 // reloads) can catch up. Cancel = terminate the worker. Finished jobs are dropped after a while.
@@ -24,6 +25,7 @@ export interface JobInput {
   current: unknown;
   profile: unknown;
   opts: RunOpts;
+  diagnostics?: Diagnostic[] | undefined;   // what the pool settings say before the search (the weapon properties, app/diagnostics.mts), put ahead of the result's own
 }
 export type JobState = "running" | "done" | "cancelled" | "error";
 // What a job needs of its worker thread: node:worker_threads' Worker, or a test's stand-in.
@@ -137,7 +139,8 @@ export function createJobsService({ coreUrl, timings = {}, runStore, log, create
     const { pools, current, profile, opts } = job.input;
     const t0 = Date.now();
     const onWarn = (message: string) => log(`${new Date().toISOString()} job ${job.id} warn: ${message}\n`);
-    const { result } = await spawnWorker(job, { pools, current, profile, opts }, (p) => emitProgress(job, p), onWarn);
+    const { result: found } = await spawnWorker(job, { pools, current, profile, opts }, (p) => emitProgress(job, p), onWarn);
+    const pre = job.input.diagnostics, result = pre?.length ? { ...found, diagnostics: [...pre, ...(found.diagnostics || [])] } : found;
     if (job.state !== "running") return;
     job.state = "done"; job.result = result; job.ms = Date.now() - t0;
     if (job.save) try { job.runId = saveRun(job).id; } catch (e) { console.error(`could not save run ${job.id}: ${(e as Error).message}`); }

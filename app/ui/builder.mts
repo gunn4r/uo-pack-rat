@@ -5,7 +5,7 @@
 // is ui/runs.mts; they share the builder's state and call each other through ui/builder-session.mts. The panel is drawn
 // from the session's profile plus its Advanced knobs, so what a build sends, what a profile saves and what a run
 // snapshots are read from state, never from the DOM.
-import { PROP_LABELS, NOT_BUILDER_KEYS, playerCaps, GEAR_SLOTS, tagUnits, WEAPON_SKILLS, MELEE_SKILLS, resistSkillBonus, getRules, RESIST_KEYS, RESIST_CAP_LIMITS, resistCapsFor, templateFrom, settingsDiff, bagLabel, toOptItem, totalsOf } from "../vault-lib.mts";
+import { PROP_LABELS, NOT_BUILDER_KEYS, playerCaps, GEAR_SLOTS, tagUnits, WEAPON_SKILLS, MELEE_SKILLS, WEAPON_MUST_HAVE, weaponPropName, resistSkillBonus, getRules, RESIST_KEYS, RESIST_CAP_LIMITS, resistCapsFor, templateFrom, settingsDiff, bagLabel, toOptItem, totalsOf } from "../vault-lib.mts";
 import { heldWeapon, ssiShareOf, swingOf, type SwingResult } from "../swing.mts";
 import { BUILTIN_PREFIX, characterBuffs, characterEntry, characterProfile, findTemplate, planBuild, specFromProfile, templateLabel, templateRefs, templateSettings, templateSpecFrom, type PlannedBuild } from "../build-spec.mts";
 import type { ResistCap, RunBuffs, Character } from "../vault-lib.mts";
@@ -25,7 +25,7 @@ import { setNavBusy } from "./shell.mts";
 import { putProfiles, setCharacterBuffs } from "./profiles.mts";
 import { session, commands, provide, readControls, type BuilderChange } from "./builder-session.mts";
 import { followJob, progressText, settingsCheck } from "./builder-parts.mts";
-import { nextSwingStep, speedText, swingLines, paperdoll, propName, weightsSummary, requirementsSummary, poolSummary, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistCapsSummary, gearCapsText, pruneResistCaps, floorCapWarning, weaponsChipText, weaponName, toggleWeapon, weightWorth, type KnobField } from "./builder-model.mts";
+import { nextSwingStep, speedText, swingLines, paperdoll, propName, weightsSummary, requirementsSummary, poolSummary, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistCapsSummary, gearCapsText, pruneResistCaps, floorCapWarning, weaponsChipText, weaponMustHaveChipText, weaponName, toggleWeapon, weightWorth, type KnobField } from "./builder-model.mts";
 import type { OptimizeResult, SavedRunLike, OptimizeStartApiResponse, OptimizeCancelApiResponse } from "./api-types.mts";
 
 // ---------------------------------------------------------------- panel state
@@ -553,7 +553,7 @@ function poolSection(): HTMLElement {
       switchControl({ label: text, checked: !!p[key], attrs: { id }, onChange: (v) => { p[key] = v; updateTemplateBadge(); } }).root;
     return [
       box("div", { class: "b-switches" }, sw("b-others", "Allow gear worn by other characters", "allowOthersWorn"), sw("b-garg", "Allow gargoyle-only gear", "allowGargoyle"), sw("b-med", "Meditation-safe gear only", "medOnly")),
-      box("div", { class: "b-chips" }, weaponChip(), listChip("b-locked", "Locked slots", () => p.lockedSlots!, (v) => { p.lockedSlots = v; }, () => GEAR_SLOTS.map((s) => ({ value: s, label: slotLabel(s) })), false),
+      box("div", { class: "b-chips" }, weaponChip(), mustHaveChip(), listChip("b-locked", "Locked slots", () => p.lockedSlots!, (v) => { p.lockedSlots = v; }, () => GEAR_SLOTS.map((s) => ({ value: s, label: slotLabel(s) })), false),
         tagsChip(), listChip("b-exskills", "Forbid skill bonuses", () => p.excludeSkills!, (v) => { p.excludeSkills = v; },
           () => [...new Set([...(state.facets?.gearSkills || []), ...p.excludeSkills!])].sort().map((sk) => ({ value: sk, label: sk[0]!.toUpperCase() + sk.slice(1) })), true),
         listChip("b-exroots", "Skip containers", () => p.excludeRoots!.map(String), (v) => { p.excludeRoots = v.map((x) => (Number.isFinite(Number(x)) ? Number(x) : x)); }, rootOptions, true)),
@@ -598,6 +598,22 @@ function weaponChip(): HTMLButtonElement {
     popover(chip, [el("p", { class: "help" }, txt("Exclude weapon skills: a checked skill's weapons never enter the pool.")),
       box("div", { class: "b-checks", role: "group", "aria-label": "Exclude weapon skills" }, ...checks),
       ubws.root, el("p", { class: "help" }, txt("It swings with your best of Swordsmanship, Fencing or Mace Fighting."))], { label: "Exclude weapon skills" });
+  };
+  return chip;
+}
+// The Weapon must have chip (issue #214): a checklist of yes/no properties every weapon in the pool must carry (profile
+// `weaponMustHave`, kept only when it lists any). Shields and spellbooks are never held to it.
+function mustHaveChip(): HTMLButtonElement {
+  const p = session.profile!;
+  const chip = filterChip({ label: weaponMustHaveChipText(p.weaponMustHave), set: !!p.weaponMustHave?.length, attrs: { id: "b-wflags" } });
+  chip.onclick = () => {
+    const checks = WEAPON_MUST_HAVE.map((f) => check({ label: weaponPropName(f), checked: !!p.weaponMustHave?.includes(f), attrs: { value: f }, onChange: (on) => {
+      const next = WEAPON_MUST_HAVE.filter((x) => (x === f ? on : p.weaponMustHave?.includes(x)));
+      if (next.length) p.weaponMustHave = next; else delete p.weaponMustHave;
+      paintChip(chip, weaponMustHaveChipText(p.weaponMustHave), !!next.length); updateTemplateBadge();
+    } }).root);
+    popover(chip, [el("p", { class: "help" }, txt("Only weapons with every checked property enter the pool. A locked weapon stays either way.")),
+      box("div", { class: "b-checks", role: "group", "aria-label": "Weapon must have" }, ...checks)], { label: "Weapon must have" });
   };
   return chip;
 }
