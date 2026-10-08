@@ -303,7 +303,7 @@ test("[fast] search_items: property rules the route cannot parse are refused, an
   } finally { await sv.s.close(); }
 });
 
-test("[fast] score_suit keeps the hands legal around a named weapon, and plans with Manual's buffs; build_suit with the character's saved Automatic ones; a built-in template by its id", async () => {
+test("[fast] score_suit keeps the hands legal around a named weapon, and plans with Manual's buffs; build_suit with the character's saved Automatic ones; a built-in template by its id; a template's own buffs", async () => {
   const sv = await serve();
   try {
     const port = await mcpPort(sv);
@@ -328,6 +328,18 @@ test("[fast] score_suit keeps the hands legal around a named weapon, and plans w
     assert.deepEqual((await call(port, "build_suit", { character: "Kestrel", timeBudgetSeconds: 2 })).data.buffs, ["bless"], "the character's saved Automatic buffs (its profile's spec)");
     assert.doesNotMatch((await call(port, "score_suit", { character: "Kestrel", template: "tank" })).text, /no template/, "a built-in template by its id");
     assert.match((await call(port, "score_suit", { character: "Kestrel", template: "nope" })).text, /no template named "nope"; the templates are builtin:melee, builtin:caster, builtin:archer, builtin:tank/);
+    // Issue #212: a template that carries buffs plans with them when none are named, as the builder's Apply turns them on.
+    const vamp = { spec: { ...profiles.templates.melee?.spec ?? builtinTemplates.melee!.spec, buffs: { on: ["consecrateWeapon"], skills: {} } } };
+    assert.equal((await app(sv, "/api/profiles", "PUT", { ...profiles, characters: { ...profiles.characters, Kestrel: kestrel }, templates: { ...profiles.templates, vamp } })).status, 200);
+    assert.deepEqual((await call(port, "score_suit", { character: "Kestrel", template: "vamp" })).data.buffs, ["consecrateWeapon"], "the template's buffs over Manual's");
+    assert.deepEqual((await call(port, "build_suit", { character: "Kestrel", template: "vamp", timeBudgetSeconds: 2 })).data.buffs, ["consecrateWeapon"], "the template's buffs over the character's");
+    assert.deepEqual((await call(port, "score_suit", { character: "Kestrel", template: "vamp", buffs: [] })).data.buffs, [], "buffs named win");
+    // the template's buff numbers over the character's, as the page's Apply merges them: Divine Fury's top tier or not
+    const fury = (skills: Record<string, number>): { spec: unknown } => ({ spec: { ...vamp.spec, buffs: { on: ["divineFury"], skills } } });
+    assert.equal((await app(sv, "/api/profiles", "PUT", { ...profiles, characters: { ...profiles.characters, Kestrel: kestrel }, templates: { ...profiles.templates, top: fury({ Chivalry: 120, Karma: 10000 }), low: fury({ Chivalry: 0, Karma: 0 }) } })).status, 200);
+    const furyTotals = async (template: string): Promise<Record<string, number>> => (await call(port, "score_suit", { character: "Kestrel", template })).data.effectiveTotals;
+    const [top, low] = [await furyTotals("top"), await furyTotals("low")];
+    assert.ok(["hci", "di", "ssi", "dci"].some((k) => top[k] !== low[k]), `the template's numbers are planned with: ${JSON.stringify({ top, low })}`);
     assert.equal((await app(sv, "/api/ui-prefs", "PUT", { buffsCount: "off" })).status, 200);
     assert.deepEqual((await call(port, "score_suit", { character: "Kestrel" })).data.buffs, []);
   } finally { await sv.s.close(); }

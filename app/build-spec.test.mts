@@ -12,7 +12,7 @@ import type { RulesV1 } from "./schema/types.d.mts";
 import { upgradeScan } from "./scan-schema.mts";
 import { buffPlanOf, buffSkillValues, manualBase, manualPlan, plannedProfile, runBuffs } from "./buffs.mts";
 import { RACES, RUN_DEFAULTS, defaultStrLimit } from "./run-settings.mts";
-import { buildSpec, buildSpecError, type BuildSpecSource, type CharacterEntry, characterBuffs, characterProfile, findTemplate, migrateProfilesV3, planBuild, profileFromSpec, profilesSpecError, specFromProfile, templateLabel, templateRefs, templateSettings,
+import { buildSpec, buildSpecError, type BuildSpecSource, type CharacterEntry, characterBuffs, characterProfile, findTemplate, migrateProfilesV3, planBuild, profileFromSpec, profilesSpecError, specFromProfile, templateLabel, templateRefs, templateSettings, templateSpecFrom,
   type BuildSpec, type FlatProfile, type ProfilesV3, type TemplateMap } from "./build-spec.mts";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
@@ -72,6 +72,17 @@ test("[fast] build spec: the panel's flat profile goes to a spec and back; absen
   assert.equal(empty.intent.floorBonus, 1000);
   const { swingSteps: _off, castingSchool: _school, weaponMustHave: _none, ...defaults } = templateFrom();   // a spec carries the swing-step switch only when on, the casting school only when one is named, and weaponMustHave only when it lists any
   assert.deepEqual(profileFromSpec(empty), { ...defaults, excludeRoots: [] }, "the same defaults templateFrom fills in");
+});
+
+// Issue #212: Save as and Update keep the buffs on with the template, without their numbers (the character's); none
+// given is a template without buffs, as before, which leaves a character's buffs alone when applied.
+test("[fast] build spec: templateSpecFrom keeps the buffs it is given, without their numbers", () => {
+  const spec = templateSpecFrom(PANEL, ["divineFury", "bless"]);
+  assert.deepEqual(spec.buffs, { on: ["divineFury", "bless"], skills: {} });
+  assert.equal(buildSpecError(spec, "t", { template: true }), null);
+  assert.deepEqual(templateSettings({ spec }), templateSettings({ spec: templateSpecFrom(PANEL) }), "the same settings either way");
+  assert.equal("buffs" in templateSpecFrom(PANEL), false);
+  assert.deepEqual(templateSpecFrom(PANEL, []).buffs, { on: [], skills: {} }, "none on is a list too");
 });
 
 // Issue #214: pool weaponMustHave is stored only when it lists any, checked like the other pool fields, round-trips through
