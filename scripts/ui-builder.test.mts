@@ -832,13 +832,15 @@ test("[slow] templates: built-ins first with their description, Apply sets Manua
   try {
     await openBuilder(page);
     assert.equal(await page.evaluate(() => fetch("/api/ui-prefs", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ manualBuffs: ["bless"], buffsCount: "off" }) }).then((r) => r.ok)), true, "Manual's buffs seeded");
+    // The real answer is read by the page itself ("?real" skips this route): route.fetch() would go around Electron's
+    // session, which adds the server's token, and get a 401.
     await page.route(/\/api\/profiles$/, async (r) => {
       if (r.request().method() !== "GET") { await r.continue(); return; }
-      const res = await r.fetch(), body = await res.json() as { builtinTemplates: Record<string, { spec: Record<string, unknown> }> };
+      const body = await page.evaluate(() => fetch("/api/profiles?real").then((res) => res.json())) as { builtinTemplates: Record<string, { spec: Record<string, unknown> }> };
       const melee = body.builtinTemplates.melee!;
       body.builtinTemplates.melee = { ...melee, description: "A test build.", sources: [SOURCE], spec: { ...melee.spec, buffs: { on: ["divineFury"], skills: {} } } } as typeof melee;
       body.builtinTemplates.caster = { ...body.builtinTemplates.caster!, spec: { ...body.builtinTemplates.caster!.spec, buffs: { on: [], skills: {} } } };
-      await r.fulfill({ response: res, json: body });
+      await r.fulfill({ json: body });
     });
     await page.reload();
     await page.waitForSelector("#tab-builder:not([hidden]) #b-tpl", { timeout: 30_000 });
@@ -893,6 +895,7 @@ test("[slow] templates: built-ins first with their description, Apply sets Manua
     assert.equal(await page.locator("#bf-count").isChecked(), false);
     assert.deepEqual(errors, []);
   } finally {
+    await page.unrouteAll({ behavior: "ignoreErrors" });
     await app.close();
     rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }
