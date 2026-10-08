@@ -34,7 +34,8 @@ test("[fast] fc cap: each school named, the skills' choice, the Chivalry drop at
   assert.deepEqual(fcCapFor(skills({ Chivalry: 90, Magery: 70 })), { cap: 2, reason: "Magery 70+" }, "Magery 70 drops a Chivalry caster");
   assert.deepEqual(fcCapFor(skills({ Chivalry: 90, Mysticism: 69.9 })), { cap: 4, reason: "Chivalry" }, "Mysticism 69.9 does not");
   assert.deepEqual(fcCapFor(skills({ Chivalry: 90, Mysticism: 70 })), { cap: 2, reason: "Mysticism 70+" }, "Mysticism 70 does");
-  assert.deepEqual(fcCapFor(skills({ Spellweaving: 120, Magery: 120 })), { cap: 2, reason: "Magery 70+" }, "from skills, a mage-weaver gears for Magery");
+  assert.deepEqual(fcCapFor(skills({ Spellweaving: 120, Magery: 120 })), { cap: 4, reason: "Spellweaving" }, "from skills, Magery 70 does not drop Spellweaving (ServUO drops only Chivalry)");
+  assert.deepEqual(fcCapFor(skills({ Bushido: 100, Mysticism: 100 })), { cap: 4, reason: "Bushido" }, "nor Bushido");
   // a named school wins over the skills; only Chivalry drops at 70
   assert.deepEqual(fcCapFor(skills({ Spellweaving: 120, Magery: 120 }), "Spellweaving"), { cap: 4, reason: "Spellweaving (chosen)" });
   assert.deepEqual(fcCapFor(skills({ Chivalry: 120, Magery: 80 }), "Chivalry"), { cap: 2, reason: "Magery 70+" });
