@@ -1,17 +1,19 @@
-// diagnostics.mts — settings that work against a build, each with the change that would fix it (issue #217): a requirement no suit in the pool can reach, and hard requirements the suit could reach one at a time but not together. Pure and browser-safe. The server sends the floor ones with POST /api/optimize before the search starts; the worker attaches the full list to every result, on both solver paths, so a saved run keeps it.
+// diagnostics.mts — settings that work against a build, each with the change that would fix it (issue #217): a requirement no suit in the pool can reach, hard requirements the suit could reach one at a time but not together, and a weight that swamps the rest. Pure and browser-safe. The server sends the floor ones with POST /api/optimize before the search starts; the worker attaches the full list to every result, on both solver paths, so a saved run keeps it.
 import { propertyReach, DEFAULT_OPTIONAL_SLOTS, DEFAULT_SLOTS } from "./mip.mts";
-import { RESIST_KEYS, propName, type OptItem } from "./vault-lib.mts";
+import { RESIST_KEYS, labelOf, playerCaps, propName, typicalRange, type OptItem, type ResistCap } from "./vault-lib.mts";
 import type { Diagnostic, DiagnosticAction } from "./runs-types.mts";
 
 export type { Diagnostic, DiagnosticAction, DiagnosticCode } from "./runs-types.mts";
 
 // The fields of the effective profile (vault-lib.mts EffectiveProfile) these read, all optional so a hand-built request's profile is read as far as it goes. Floors and caps are in item terms; `resistBonus` and the buffs' floors before them turn a number back into the player's terms.
 export interface DiagnosticsProfile {
+  weights?: Record<string, number> | undefined;
   floors?: Record<string, number> | undefined;
   caps?: Record<string, number> | undefined;
   hardFloors?: string[] | undefined;
   resistBonus?: number | undefined;
-  buffs?: { floors?: Record<string, number> | undefined } | undefined;
+  resistCapOverrides?: Record<string, ResistCap> | undefined;
+  buffs?: { floors?: Record<string, number> | undefined; caps?: Record<string, number> | undefined } | undefined;
 }
 export interface DiagnosticsInput {
   pools?: Partial<Record<string, OptItem[]>> | undefined;
@@ -75,7 +77,38 @@ export function resultDiagnostics(input: ResultDiagnosticsInput): Diagnostic[] {
         : `${propName(k)} ${floor} can be reached, but no suit meeting it together with your other hard requirements was found within the time limit: this suit has ${value}.`,
       values: { floor, value }, actions: [{ kind: "makeSoft", property: k }, ...lower(k, value)] });
   }
+  out.push(...weightDiagnostics(profile, after, reachOf(input, Object.keys(obj(profile.weights)))));
   return [...out.filter((d) => d.level === "warn"), ...out.filter((d) => d.level !== "warn")];
+}
+
+// weight_dominates: a property whose weight swamps the others. A property's worth is its weight times its typical range (vault-lib.mts typicalRange, in the player's terms), so "= 1,500 per 500 Luck"; its share is |w × min(total, cap)| over the sum of those terms for every weighted property, on the suit found (floor bonuses and the tag penalty left out). It dominates when its worth is at least DOMINANT_WORTH times the median worth of the OTHER positively weighted properties with a typical range (none other: no check), and its share at least DOMINANT_SHARE. A thin suit (a new character, a small or narrowed pool) makes any big weight look dominant, so nothing is raised when the suit's score from the positive weights is below THIN_SUIT of what the pool could give them, Σ w × min(reach, cap) with `reach` the per-slot bound (propertyReach). The suggested weight makes its worth the others' median, to one significant figure.
+export const DOMINANT_WORTH = 3;
+export const DOMINANT_SHARE = 0.25;
+export const THIN_SUIT = 0.5;
+const median = (xs: number[]): number => { const s = [...xs].sort((a, b) => a - b), m = s.length >> 1; return s.length % 2 ? s[m]! : (s[m - 1]! + s[m]!) / 2; };
+export const suggestedWeight = (medianWorth: number, typical: number): number => Number((medianWorth / typical).toPrecision(1));
+const oneDecimal = (n: number): string => n.toLocaleString("en-US", { maximumFractionDigits: 1 });
+export function weightDiagnostics(profile: DiagnosticsProfile, after: Record<string, unknown>, reach: Record<string, { max: number }>): Diagnostic[] {
+  const weights = Object.entries(obj(profile.weights)).flatMap(([k, v]): Array<[string, number]> => { const w = num(v); return w != null && w !== 0 && k !== "tagPenalty" ? [[k, w]] : []; });
+  const caps = obj(profile.caps) as Record<string, number>, spans = playerCaps({ ...profile, caps });
+  const capped = (k: string, t: number): number => { const c = num(caps[k]); return c != null && c < t ? c : t; };
+  const term = (k: string, w: number): number => Math.abs(w * capped(k, num(after[k]) ?? 0));
+  const positive = weights.filter(([, w]) => w > 0);
+  const score = positive.reduce((n, [k, w]) => n + w * capped(k, num(after[k]) ?? 0), 0);
+  const potential = positive.reduce((n, [k, w]) => n + w * Math.max(0, capped(k, reach[k]?.max ?? 0)), 0);
+  const total = weights.reduce((n, [k, w]) => n + term(k, w), 0);
+  if (total <= 0 || score < THIN_SUIT * potential) return [];
+  const worths = positive.flatMap(([k, w]) => { const typical = typicalRange(k, spans); return typical != null ? [{ k, w, typical, worth: w * typical }] : []; });
+  return worths.flatMap(({ k, w, typical, worth }): Diagnostic[] => {
+    const others = worths.filter((x) => x.k !== k).map((x) => x.worth);
+    if (!others.length) return [];
+    const mid = median(others), ratio = worth / mid, share = term(k, w) / total;
+    if (ratio < DOMINANT_WORTH || share < DOMINANT_SHARE) return [];
+    const suggested = suggestedWeight(mid, typical), pct = Math.round(share * 100);
+    return [{ code: "weight_dominates", level: "warn", property: k,
+      message: `${propName(k)} makes up ${pct}% of this suit's score: at weight ${oneDecimal(w)}, ${typical.toLocaleString("en-US")} ${labelOf(k)} is worth as much as ${oneDecimal(ratio)} times the median of your other weights. Try ${suggested}.`,
+      values: { weight: w, typical, share: pct, ratio: Math.round(ratio * 10) / 10, median: mid, suggested }, actions: [{ kind: "setWeight", property: k, value: suggested }] }];
+  });
 }
 
 // A result with its diagnostics, as the worker sends it. If computing them throws, the result goes out as it is, with no `diagnostics` field (so the page falls back to `unreachableFloors`, as for an old run), and `onError` hears why: a diagnostics bug never costs a finished search.
