@@ -67,8 +67,8 @@ try {
   const items = pools as unknown as Partial<Record<string, OptItem[]>>, worn = current as unknown as Partial<Record<string, OptItem | null>>, prof = profile as unknown as EffectiveProfile;
   // SSI by swing step: the step table both solvers score with, resolved once here, where the pool is known (app/swing.mts).
   const optional = opts.optionalSlots ?? DEFAULT_OPTIONAL_SLOTS;
-  const stamRange = propertyReach(items, worn, optional, opts.slots ?? DEFAULT_SLOTS, ["stamPool"]).stamPool!;
-  const { ssiSteps, note } = stepsFor(prof, items, worn, stamRange, optional);
+  const reach = propertyReach(items, worn, optional, opts.slots ?? DEFAULT_SLOTS, ["stamPool", "ssi"]);
+  const { ssiSteps, note } = stepsFor(prof, items, worn, reach.stamPool!, optional, reach.ssi!.max);
   const solveProfile: OptProfile = ssiSteps ? { ...profile, ssiSteps } : profile;
   const result: OptResult | ExactSolveResult = opts.exact
     ? await solveExact({ core, pools, current, profile: solveProfile, opts, onProgress, onWarn: (m) => port.postMessage({ type: "warn", message: m } satisfies WorkerWarnMessage) })

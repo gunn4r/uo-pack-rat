@@ -139,8 +139,8 @@ function stepInstance(rnd: () => number, serialBase: number): Instance & { swing
   }
   const swing = { speed: [2.5, 3.25, 3.5, 4][int(0, 3)]!, stamBase: int(40, 130), refStamina: 0, share: [-10, 0, 0, 10, 15][int(0, 4)]! };
   swing.refStamina = swing.stamBase + int(0, 30);
-  const stamRange = propertyReach(inst.pools as Partial<Record<string, OptItem[]>>, inst.current as Partial<Record<string, OptItem | null>>, inst.optionalSlots, inst.slots, ["stamPool"]).stamPool!;
-  const profile = { ...inst.profile, weights: { ...inst.profile.weights, ssi: int(1, 8) }, ssiSteps: stepTable({ speedS: swing.speed, stamBase: swing.stamBase, refStamina: swing.refStamina, share: swing.share, stamRange }) };
+  const reach = propertyReach(inst.pools as Partial<Record<string, OptItem[]>>, inst.current as Partial<Record<string, OptItem | null>>, inst.optionalSlots, inst.slots, ["stamPool", "ssi"]);
+  const profile = { ...inst.profile, weights: { ...inst.profile.weights, ssi: int(1, 8) }, ssiSteps: stepTable({ speedS: swing.speed, stamBase: swing.stamBase, refStamina: swing.refStamina, share: swing.share, stamRange: reach.stamPool!, ssiMax: reach.ssi!.max }) };
   if (rnd() < 0.3) profile.caps = { ...profile.caps, ssi: int(10, 60) };   // a cap plays no part once SSI is scored by step
   if (rnd() < 0.3) { profile.floors = { ...profile.floors, ssi: int(5, 30) }; if (rnd() < 0.5) profile.hardFloors = [...(profile.hardFloors || []), "ssi"]; }
   return { ...inst, profile, swing };

@@ -1,4 +1,4 @@
-// swing.test.mts — swing speed (`app/swing.mts`, issue #217): the formula on the worked examples (a 3.5 s weapon at stamina 88 needs SSI 51 for 1.75 s and swings at 2.0 s with 45; at 95, 38 for 1.75 s and 58 for 1.5 s), the 1.25 s floor, the 60 cap, the least-SSI closed form against a scan of the formula (exact-integer edges included), stamina with a Bless share, the weapon speed a pool shares (one speed, two, a shield only, a two-hander and a one-hander alike), the step list a person reads, and the solvers' step table: its best reached credit equals the credit worked out from the swing itself for every SSI and stamina (negative buff shares, reference bands below and above, a share large enough that a step needs no gear SSI), with no point another one beats. All `[fast]`.
+// swing.test.mts — swing speed (`app/swing.mts`, issue #217): the formula on the worked examples (a 3.5 s weapon at stamina 88 needs SSI 51 for 1.75 s and swings at 2.0 s with 45; at 95, 38 for 1.75 s and 58 for 1.5 s), the 1.25 s floor, the 60 cap, the least-SSI closed form against a scan of the formula (exact-integer edges included), stamina with a Bless share, the weapon speed a pool shares (one speed, two, a shield only, a two-hander and a one-hander alike), the step list a person reads (with the one-handed pool set aside while a worn two-hander is locked), and the solvers' step table (points above the pool's SSI reach left out): its best reached credit equals the credit worked out from the swing itself for every SSI and stamina (negative buff shares, reference bands below and above, a share large enough that a step needs no gear SSI), with no point another one beats. All `[fast]`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { delayText, heldWeapon, ssiForTicks, ssiShareOf, staminaOf, stepsFor, stepTable, swingOf, swingSeconds, swingSteps, swingTicks, weaponSpeedOf, type SsiStepPoint } from "./swing.mts";
@@ -59,6 +59,10 @@ test("[fast] the weapon speed a pool shares: one speed, two speeds, a shield onl
   // with the one-handed slot locked to its worn weapon, a two-hander is no candidate (it would leave that hand empty)
   assert.deepEqual(weaponSpeedOf({ oneHanded: [], twoHanded: [{ speed: 3.75, twoHanded: true }, shield] }, { oneHanded: sword }, ["twoHanded"]), { speed: 3.5, reason: null });
   assert.equal(weaponSpeedOf({ oneHanded: [], twoHanded: [{ speed: 3.75, twoHanded: true }] }, { oneHanded: sword }, ["oneHanded", "twoHanded"]).speed, null, "an optional one-hand slot leaves room for it");
+  // and the reverse: the two-handed slot locked to a worn two-hander leaves the other hand empty, so the one-handed pool doesn't count
+  const staff = { speed: 2.25, twoHanded: true };
+  assert.deepEqual(weaponSpeedOf({ oneHanded: [sword, dagger], twoHanded: [] }, { twoHanded: staff }, ["oneHanded"]), { speed: 2.25, reason: null });
+  assert.equal(weaponSpeedOf({ oneHanded: [sword], twoHanded: [] }, { twoHanded: shield }, ["oneHanded"]).speed, 3.5, "a locked shield leaves the one-hander free");
   assert.equal(heldWeapon({ oneHanded: sword, twoHanded: shield }), sword);
   assert.equal(heldWeapon({ oneHanded: null, twoHanded: axe }), axe);
   assert.equal(heldWeapon({ oneHanded: book }), null);
@@ -100,6 +104,10 @@ test("[fast] the step table on the issue's numbers: credits are SSI at the refer
   // a share of 30 with the reference in band 2: band 3's 2.0 s needs 23, which the share alone gives, and is worth 4 (34 at stamina 89, less 30)
   const big = stepTable({ speedS: 3.5, stamBase: 80, refStamina: 89, share: 30, stamRange: { min: 0, max: 30 } });
   assert.ok(big.some((p) => p.ssi === -7 && p.stam === 10 && p.credit === 4), JSON.stringify(big));
+  // a point needing more item SSI than any suit reaches is left out
+  const capped = stepTable({ speedS: 3.5, stamBase: 80, refStamina: 100, share: 0, stamRange: { min: 0, max: 30 }, ssiMax: 40 });
+  assert.deepEqual(capped, t.filter((p) => p.ssi <= 40));
+  assert.ok(capped.length < t.length);
 });
 
 test("[fast] stepsFor: steps only with a character's swing switched on, a positive SSI weight and one weapon speed", () => {

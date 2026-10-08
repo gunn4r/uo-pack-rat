@@ -10,6 +10,7 @@ export const SSI_CAP = 60;       // the formula's own cap on SSI, buffs included
 export const MIN_TICKS = 5;      // the fastest swing: one every 1.25 s
 const TICK_S = 0.25;
 
+// Every stock weapon speed is a whole number of quarter seconds, which keeps the formula in integers. A speed that isn't (a shard's own weapon, a misread tooltip) is rounded to the nearest quarter second, where ServUO would keep the fraction inside its floor: off by at most one tick.
 const baseTicks = (speedS: number, stamina: number): number => Math.round(4 * speedS) - Math.floor(Math.max(0, stamina) / 30);
 // The ticks between swings at `ssi` effective SSI (gear and buffs, capped at 60 here).
 export function swingTicks(speedS: number, stamina: number, ssi: number): number {
@@ -53,9 +54,10 @@ export interface StepTableInput {
   refStamina: number;                        // the worn suit's stamina, which prices each delay
   share: number;                             // the buffs' SSI
   stamRange: { min: number; max: number };   // the lowest and highest gear Stamina pool any suit reaches
+  ssiMax?: number | undefined;               // the most item SSI any suit reaches: a point that needs more is left out
 }
 // The table both solvers score SSI with: one point per delay reachable in each stamina band any suit can be in. `ssi` is in item terms (the step's SSI less the buffs'), `stam` the gear Stamina pool the band needs, and `credit` what the delay costs in gear SSI at the reference stamina, at least 0 (a delay reached only by raising stamina keeps that price, so 1.5 s one band up can credit more than 60). Points worth nothing and points another beats (no less credit for no more SSI and stamina) are left out.
-export function stepTable({ speedS, stamBase, refStamina, share, stamRange }: StepTableInput): SsiStepPoint[] {
+export function stepTable({ speedS, stamBase, refStamina, share, stamRange, ssiMax = Infinity }: StepTableInput): SsiStepPoint[] {
   const band = (stam: number): number => Math.floor(Math.max(0, stam) / 30);
   const nRef = baseTicks(speedS, refStamina), all: SsiStepPoint[] = [];
   // the slowest delay with a credit above 0: ssiAtLeast(nRef, t) > share
@@ -68,7 +70,7 @@ export function stepTable({ speedS, stamBase, refStamina, share, stamRange }: St
       const s = ssiAtLeast(n, t);
       if (s > SSI_CAP) break;
       const credit = Math.max(0, ssiAtLeast(nRef, t) - share);
-      if (credit > 0) all.push({ ssi: s - share, stam: 30 * b - stamBase, credit });
+      if (credit > 0 && s - share <= ssiMax) all.push({ ssi: s - share, stam: 30 * b - stamBase, credit });
     }
   }
   const beats = (q: SsiStepPoint, p: SsiStepPoint): boolean => q.credit >= p.credit && q.ssi <= p.ssi && q.stam <= p.stam;
@@ -82,11 +84,12 @@ export function stepCredit(points: readonly SsiStepPoint[], ssi: number, stam: n
   return best;
 }
 
-// The one base speed every weapon a suit can hold shares: the hand slots' candidates (the pool and the worn piece) that carry a speed. A two-handed weapon is no candidate while the one-handed slot must keep its worn piece (locked: not among `optionalSlots`), as in the solvers. Null, with the reason, when there is none or they differ.
+// The one base speed every weapon a suit can hold shares: the hand slots' candidates (the pool and the worn piece) that carry a speed. A two-handed weapon is no candidate while the one-handed slot must keep its worn piece (locked: not among `optionalSlots`), and a one-handed one none while the two-handed slot must keep a worn two-hander (the hand rule leaves the other hand empty), as in the solvers. Null, with the reason, when there is none or they differ.
 export function weaponSpeedOf(pools: Partial<Record<string, Held[]>>, current: Partial<Record<string, Held | null | undefined>>, optionalSlots?: readonly string[]): { speed: number | null; reason: string | null } {
-  const oneKept = !!optionalSlots && !optionalSlots.includes("oneHanded") && !!current.oneHanded;
+  const kept = (slot: string): boolean => !!optionalSlots && !optionalSlots.includes(slot) && !!current[slot];
+  const oneKept = kept("oneHanded"), twoKept = kept("twoHanded") && !!current.twoHanded?.twoHanded;
   const speeds = new Set<number>();
-  for (const slot of ["oneHanded", "twoHanded"]) for (const it of [...(pools[slot] || []), current[slot]]) {
+  for (const slot of twoKept ? ["twoHanded"] : ["oneHanded", "twoHanded"]) for (const it of [...(pools[slot] || []), current[slot]]) {
     if (it && typeof it.speed === "number" && it.speed > 0 && !(oneKept && slot === "twoHanded" && it.twoHanded)) speeds.add(it.speed);
   }
   if (speeds.size === 1) return { speed: [...speeds][0]!, reason: null };
@@ -114,10 +117,10 @@ export function swingOf(speedS: number, stamBase: number, totals: Readonly<Recor
 }
 
 // The step table a build scores SSI with, or why it scores SSI per point though steps were asked for (`note`, a reason for a sentence). Steps need the character's swing with steps on, a positive SSI weight (a negative one stays per point, unsaid) and one weapon speed across the hand slots' candidates. `stamRange` is the gear Stamina pool's range over every suit (app/mip.mts propertyReach).
-export function stepsFor(profile: Pick<EffectiveProfile, "swing" | "weights" | "caps" | "buffs">, pools: Parameters<typeof weaponSpeedOf>[0], current: Parameters<typeof weaponSpeedOf>[1], stamRange: { min: number; max: number }, optionalSlots?: readonly string[]): { ssiSteps: SsiStepPoint[] | null; note: string | null } {
+export function stepsFor(profile: Pick<EffectiveProfile, "swing" | "weights" | "caps" | "buffs">, pools: Parameters<typeof weaponSpeedOf>[0], current: Parameters<typeof weaponSpeedOf>[1], stamRange: { min: number; max: number }, optionalSlots?: readonly string[], ssiMax?: number): { ssiSteps: SsiStepPoint[] | null; note: string | null } {
   const sw = profile.swing;
   if (!sw?.steps || !((profile.weights?.ssi ?? 0) > 0)) return { ssiSteps: null, note: null };
   const { speed, reason } = weaponSpeedOf(pools, current, optionalSlots);
   if (speed == null) return { ssiSteps: null, note: reason };
-  return { ssiSteps: stepTable({ speedS: speed, stamBase: sw.stamBase, refStamina: sw.refStamina, share: ssiShareOf(profile), stamRange }), note: null };
+  return { ssiSteps: stepTable({ speedS: speed, stamBase: sw.stamBase, refStamina: sw.refStamina, share: ssiShareOf(profile), stamRange, ssiMax }), note: null };
 }

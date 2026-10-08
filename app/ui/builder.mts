@@ -23,9 +23,9 @@ import { optimizeErrorMessage } from "./messages.mts";
 import { parseRoute, registerScreen, routeFor } from "./nav.mts";
 import { setNavBusy } from "./shell.mts";
 import { putProfiles, setCharacterBuffs } from "./profiles.mts";
-import { session, commands, provide, readControls } from "./builder-session.mts";
+import { session, commands, provide, readControls, type BuilderChange } from "./builder-session.mts";
 import { followJob, progressText, settingsCheck } from "./builder-parts.mts";
-import { nextSwingStep, swingLines, paperdoll, propName, weightsSummary, requirementsSummary, poolSummary, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistCapsSummary, gearCapsText, pruneResistCaps, floorCapWarning, weaponsChipText, weaponName, toggleWeapon, weightWorth, type KnobField } from "./builder-model.mts";
+import { nextSwingStep, speedText, swingLines, paperdoll, propName, weightsSummary, requirementsSummary, poolSummary, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistCapsSummary, gearCapsText, pruneResistCaps, floorCapWarning, weaponsChipText, weaponName, toggleWeapon, weightWorth, type KnobField } from "./builder-model.mts";
 import type { OptimizeResult, SavedRunLike, OptimizeStartApiResponse, OptimizeCancelApiResponse } from "./api-types.mts";
 
 // ---------------------------------------------------------------- panel state
@@ -310,7 +310,7 @@ function setBuffs(next: string[], n: typeof note): void {
   const row = document.getElementById("b-buff-chips"), add = document.getElementById("b-buff-add"), v = buffView();
   if (row && add) row.replaceChildren(...v.on.map((id) => buffChip(id, v, buffActions)), add);
   setCount("buffs", v.on.length);
-  redraw("req");
+  redraw("req"); redraw("weights");   // the switch's step line counts the buffs' stamina and SSI
   picker?.paint(v);
 }
 const buffActions: PickerActions = {
@@ -395,7 +395,7 @@ function requirementsSection(): HTMLElement {
       const ignored = prof.buffs?.overridesIgnored?.[k];
       const said = r ? [ignored != null ? overrideNote(k, ignored, r) : null, gearNeedsText(k, prof.floors[k]!, prof.caps[k], r)].filter(Boolean).join(". ") : "";
       if (said) row.append(el("span", { class: "t-sm b-buff-note" }, said));
-      if (k === "ssi") { const next = nextStepButton(); if (next) row.append(next); }
+      if (k === "ssi") { const next = nextStepButton(); if (next) row.append(next); }   // repainted as the shown result changes (paintNextStep)
       return row;
     });
     const add = filterChip({ label: "Add requirement", add: true, attrs: { class: "fchip add b-add", id: "b-addfloor" } });
@@ -494,7 +494,7 @@ function swingStepsSetting(): HTMLElement {
   const sw = switchControl({ label: "Score swing speed by step", checked: !!p.swingSteps, attrs: { id: "b-swing-steps" }, onChange: (v) => { p.swingSteps = v; updateTemplateBadge(); } });
   const steps = worn ? swingLines(worn.sw, worn.weapon).steps.map((s) => s.text).join(" · ") : "";
   return box("div", { class: "b-swing-set" }, sw.root,
-    el("p", { class: "help" }, txt(`Counts SSI only where the swing gets faster.${worn && steps ? ` ${worn.weapon} ${worn.sw.speed} s at stamina ${worn.sw.stamina}: ${steps}.` : ""}`)));
+    el("p", { class: "help" }, txt(`Counts SSI only where the swing gets faster.${worn && steps ? ` ${worn.weapon} ${speedText(worn.sw.speed)} at stamina ${worn.sw.stamina}: ${steps}.` : ""}`)));
 }
 // "Next step: 58" fills the SSI requirement with the next step faster than the last result's swing, else the worn suit's.
 function nextStepButton(): HTMLElement | null {
@@ -503,6 +503,15 @@ function nextStepButton(): HTMLElement | null {
   const b = button({ label: `Next step: ${next.value}`, size: "sm", variant: "ghost", cls: "b-next-step", onClick: () => { p.floors!.ssi = next.value; redraw("req"); focusIn("req", `.rule-row[data-key="ssi"] input`, true); } });
   return tooltip(b, next.tip);
 }
+// The shown result changed (a build finished, a saved run opened, the result cleared): Next step follows its swing.
+function paintNextStep(): void {
+  const row = document.querySelector<HTMLElement>('#b-sec-req .rule-row[data-key="ssi"]');
+  if (!row || !session.profile) return;
+  row.querySelector(".b-next-step")?.remove();
+  const next = nextStepButton();
+  if (next) row.append(next);
+}
+document.addEventListener("builderchange", (e) => { if ((e as BuilderChange).detail.key === "result") paintNextStep(); });
 function focusIn(sec: string, sel: string, selectText = false): void {
   const e = document.querySelector<HTMLInputElement>(`#b-sec-${sec} ${sel}`);
   e?.focus();

@@ -359,7 +359,7 @@ export function actionWords(a: PanelAction, code?: DiagnosticCode): { label: str
   }
   if (a.kind === "lockSlot") { const sl = SLOT_LABELS[a.slot] || a.slot; return { label: `Lock ${sl}`, done: "Locked ✓", toast: `${sl} is locked to what is worn now. Build again to use it.`, stale: `${sl} was locked since this build, so this no longer applies.` }; }
   const req = `${propName(a.property)} requirement`, stale = "The requirement changed since this build, so this no longer applies.";
-  if (a.kind === "setFloor" && raises(code)) return { label: `${labelOf(a.property)} floor ${a.value}`, done: "Set ✓", toast: `${req} set to ${a.value}. Build again to use it.`, stale };
+  if (a.kind === "setFloor" && raises(code)) return { label: `${labelOf(a.property)} floor ${a.value} (soft)`, done: "Set ✓", toast: `${req} set to ${a.value}, soft. Build again to use it.`, stale };
   return a.kind === "setFloor"
     ? { label: `Lower to ${a.value}`, done: "Lowered ✓", toast: `${req} lowered to ${a.value}. Build again to use it.`, stale }
     : { label: "Make soft", done: "Made soft ✓", toast: `${req} is soft now. Build again to use it.`, stale };
@@ -379,8 +379,11 @@ export function applyAction(p: PanelProfile, a: PanelAction, from?: number, code
   if (a.kind === "setWeight") p.weights![a.property] = a.value;
   else if (a.kind === "swingSteps") p.swingSteps = a.on;
   else if (a.kind === "lockSlot") (p.lockedSlots ||= []).push(a.slot);
-  else if (a.kind === "setFloor") (p.floors ||= {})[a.property] = a.value;
-  else (p.softFloors ||= []).push(a.property);
+  else if (a.kind === "setFloor") {
+    (p.floors ||= {})[a.property] = a.value;
+    // a swing step's requirement goes in soft: a hard one could conflict with the other hard requirements
+    if (raises(code) && !(p.softFloors ||= []).includes(a.property)) p.softFloors.push(a.property);
+  } else (p.softFloors ||= []).push(a.property);
 }
 // A weight row's worth hint: what the weight makes a typical range of the property worth ("= 1,500 per 500 Luck"), with `caps` in the player's terms (vault-lib.mts playerCaps); null for a property with no typical range or a weight that isn't a number.
 export function weightWorth(key: string, weight: number, caps: Record<string, number>): string | null {
@@ -401,11 +404,13 @@ export function resultChecks(res: { diagnostics?: Diagnostic[] | undefined; unre
 // A result's swing line and its steps: "Longsword 3.5 s · stamina 95 · SSI 45 (+10 Divine Fury) → swings every 1.75 s", then the last few steps at that stamina with the reached ones marked, and the next faster delay when the cap keeps it out of reach. `buffs` names what gave the share.
 export function swingLines(sw: SwingResult, weapon: string | null, buffs: string[] = [], shown = 4): { head: string; steps: Array<{ text: string; reached: boolean }>; out: string | null } {
   const share = sw.share ? ` (${signed(sw.share)} ${buffs.length ? buffs.join(", ") : "buffs"})` : "";
-  const head = `${weapon ?? "Weapon"} ${num(sw.speed)} s · stamina ${sw.stamina} · SSI ${sw.ssi}${share} → swings every ${delayText(sw.seconds)}`;
+  const head = `${weapon ?? "Weapon"} ${speedText(sw.speed)} · stamina ${sw.stamina} · SSI ${sw.ssi}${share} → swings every ${delayText(sw.seconds)}`;
   const steps = sw.steps.slice(-shown).map((st) => ({ text: `${delayText(st.seconds)} ≥ ${st.ssi}`, reached: sw.ssi >= st.ssi }));
   const fastest = sw.steps.length ? sw.steps[sw.steps.length - 1]!.seconds : sw.seconds;
   return { head, steps, out: fastest > MIN_TICKS * 0.25 ? `${delayText(fastest - 0.25)} out of reach` : null };
 }
+// A weapon's base speed as the page writes it: "3.5 s", "2.25 s".
+export const speedText = (speedS: number): string => `${num(speedS)} s`;
 // The SSI requirement a "Next step" button fills in: the effective SSI of the first step faster than `sw` reaches, or null when there is none within the cap. Its tooltip names the stamina it assumed.
 export function nextSwingStep(sw: SwingResult | null | undefined): { value: number; seconds: number; tip: string } | null {
   const next = sw?.steps.find((st) => st.ssi > sw.ssi);

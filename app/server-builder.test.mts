@@ -15,6 +15,7 @@ import { manualBase, manualPlan } from "./buffs.mts";
 import { evaluateSuit, type SuitEvaluation } from "./evaluate.mts";
 import { DEFAULT_OPTIONAL_SLOTS } from "./mip.mts";
 import { swingSeconds } from "./swing.mts";
+import * as core from "../scripts/optimizer-core.mts";
 import { buildUi } from "../scripts/build-ui.mts";
 import { buildSchemaTypes } from "../scripts/build-schema-types.mts";
 import { asJson, HERE, UOALIVE, foldFixtures, rawReq, JSON_HEADERS, logText, type InventoryResponse, type ProfilesResponse, firstTemplate, type RulesResponse, type ItemsPageResponse, type OptimizeJobResponse, type ErrorBody } from "./server-routes-fixture.mts";
@@ -263,9 +264,9 @@ test("[fast] POST /api/optimize scores SSI by swing step once the weapon is fixe
     const profiles = asJson<ProfilesResponse>(await (await fetch(s2.url + "/api/profiles")).json());
     const rules = asJson<RulesResponse>(await (await fetch(s2.url + "/api/rules")).json());
     const tpl = firstTemplate(profiles), swing = { stamBase: 80, refStamina: 95, steps: true };
-    const build = async (profile: object, lockedSlots: string[]): Promise<Record<string, unknown>> => {
+    const build = async (profile: object, lockedSlots: string[], character = "Kestrel"): Promise<Record<string, unknown>> => {
       const r = await fetch(s2.url + "/api/optimize", { method: "POST", headers: JSON_HEADERS,
-        body: JSON.stringify({ character: "Kestrel", settings: { lockedSlots }, profile, opts: { exact: true, timeBudgetMs: 5000, restarts: 5, seed: 2026 } }) });
+        body: JSON.stringify({ character, settings: { lockedSlots }, profile, opts: { exact: true, timeBudgetMs: 5000, restarts: 5, seed: 2026 } }) });
       const { id } = asJson<OptimizeJobResponse>(await r.json());
       let status: OptimizeJobResponse | undefined;
       for (let i = 0; i < 300; i++) {
@@ -277,7 +278,7 @@ test("[fast] POST /api/optimize scores SSI by swing step once the weapon is fixe
       return status!.result as unknown as Record<string, unknown>;
     };
     const base = { ...tpl, caps: rules.rules.caps, weights: { ...tpl.weights, ssi: 8 } };
-    type Res = { score: number; proven: boolean; diagnostics: Array<{ code: string; actions: unknown[] }>; swing?: { speed: number; stamina: number; ssi: number; seconds: number }; totals: { after: Record<string, number> } };
+    type Res = { score: number; proven: boolean; best: Record<string, { serial: number; name: string; slot: string; props: Record<string, number> } | null>; diagnostics: Array<{ code: string; actions: unknown[] }>; swing?: { speed: number; stamina: number; ssi: number; seconds: number }; totals: { after: Record<string, number> } };
     const loose = await build({ ...base, swing }, []) as unknown as Res;
     const linear = loose.diagnostics.find((d) => d.code === "swing_linear");
     assert.ok(linear, JSON.stringify(loose.diagnostics));
@@ -288,6 +289,14 @@ test("[fast] POST /api/optimize scores SSI by swing step once the weapon is fixe
     assert.equal(fixed.swing!.speed, 3, "the worn War Axe");
     const after = fixed.totals.after, stamina = 80 + (after.stamPool || 0), ssi = Math.min(60, after.ssi || 0);
     assert.deepEqual([fixed.swing!.stamina, fixed.swing!.ssi, fixed.swing!.seconds], [stamina, ssi, swingSeconds(3, stamina, ssi)]);
+    // the steps were scored: the suit's score less its per-point score is the weight times (the gear SSI its delay costs at the reference stamina 95, less its SSI), worked out from the formula here
+    const nRef = 12 - Math.floor(95 / 30), ticks = fixed.swing!.seconds * 4, credit = Math.max(0, Math.floor((100 * nRef) / (ticks + 1)) - 99);
+    assert.notEqual(credit, Math.min(60, after.ssi || 0), "a suit whose SSI sits exactly on a step would not tell the two apart");
+    assert.ok(Math.abs(fixed.score - core.scoreSet(fixed.best as Parameters<typeof core.scoreSet>[0], base as unknown as Parameters<typeof core.scoreSet>[1]) - 8 * (credit - Math.min(60, after.ssi || 0))) < 1e-6, `score ${fixed.score}, credit ${credit}, SSI ${after.ssi}`);
+    // a two-hander locked in its slot fixes the weapon too: the one-handed pool can't be held beside it
+    const staff = await build({ ...base, swing }, ["twoHanded"], "Dorran") as unknown as Res;
+    assert.equal(staff.diagnostics.find((d) => d.code === "swing_linear"), undefined, JSON.stringify(staff.diagnostics));
+    assert.equal(staff.swing!.speed, 2.25, "the worn Double Bladed Staff");
   } finally {
     await s2.close();
   }
