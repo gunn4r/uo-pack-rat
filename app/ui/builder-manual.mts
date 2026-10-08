@@ -217,7 +217,7 @@ const suitItems = (): Record<string, Item> => Object.fromEntries(Object.entries(
 function evaluated(suit: Record<string, Item> = suitItems(), all = false): SuitEvaluation {
   const name = manualCharacter(), c = name ? (state.inv!.characters[name] as Character | undefined) ?? null : null, own = !!name && !!session.profile;
   const opt = Object.fromEntries(Object.entries(suit).map(([s, it]) => [s, toOptItem(it)]));
-  return evaluateSuit({ profile: own ? session.profile! : {}, character: own ? c : null, suit: opt,
+  return evaluateSuit({ profile: own ? session.profile! : { castingSchool: session.profile?.castingSchool }, character: own ? c : null, suit: opt,
     buffs: manualPlan(c, name ? state.inv!.worn[name] || [] : [], suit, buffInputs().race, countBuffs || all ? buffs : [], editsFor()) });
 }
 // Every change to the suit or its buffs is one undo step, named by `label` ("Ring → Arcane Ring", "Divine Fury on");

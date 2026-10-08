@@ -55,6 +55,9 @@ test("[fast] fc cap: effectiveProfile and evaluateSuit take the cap", () => {
   // Manual with No character plans with a named school's cap, as its totals strip shows it; none named stays at 2
   assert.equal(manualProfile({ castingSchool: "Chivalry" }, null, [], {}, null, [], {}).caps.fc, 4);
   assert.equal(manualProfile({}, null, [], {}, null, [], {}).caps.fc, 2);
+  // and its totals strip: the cap a named school sets with no character, the same before and after buffs (no raised-cap mark)
+  const strip = evaluateSuit({ profile: { castingSchool: "Chivalry" }, character: null, suit: { ring: { props: { fc: 3 } } }, buffs: null });
+  assert.deepEqual([strip.caps.fc, strip.baseCaps.fc, strip.wasted.fc], [4, 4, undefined]);
   assert.equal(manualProfile({ castingSchool: "Chivalry" }, pal, [], {}, "human", [], {}).caps.fc, 4);
 });
 
