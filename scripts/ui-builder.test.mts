@@ -844,7 +844,7 @@ test("[slow] templates: built-ins first with their description, Apply sets Manua
     await page.waitForSelector("#tab-builder:not([hidden]) #b-tpl", { timeout: 30_000 });
     await page.selectOption("#b-char", "Kestrel");
     assert.deepEqual(await page.$$eval("#b-tpl optgroup", (els) => els.map((e) => (e as HTMLOptGroupElement).label)), ["Built-in"]);
-    assert.deepEqual(await page.$$eval("#b-tpl optgroup option", (els) => els.map((e) => e.textContent)), ["Melee", "Caster", "Archer", "Tank"]);
+    assert.deepEqual(await page.$$eval("#b-tpl optgroup option", (els) => els.map((e) => e.textContent)), ["Melee", "Caster", "Archer", "Tank", "Sampire", "Paladin (Lazy Pally)", "Summoner", "Tamer (Archer)", "Archer (Chivalry)", "Archer-Bard", "Necro-Mage", "Mystic-Mage", "Spellweaver (Necroweaver)", "Thrower (Gargoyle)", "Tank (Mystic)", "Horrific Beast Wrestler", "Hemomancer"]);
     await page.selectOption("#b-tpl", "builtin:melee");
     await page.waitForFunction(() => /Loads: Divine Fury/.test(document.querySelector("#b-tpl-info")?.textContent || ""));
     assert.match(await page.locator("#b-tpl-info").innerText(), /Built-in\s+A test build\.\s+Loads: Divine Fury\s+Source: Lazy Pally/);
