@@ -108,13 +108,14 @@ async function planProfile(ctx: ToolContext, inv: InventoryDoc, name: string | n
   const [{ profiles, builtinTemplates: builtins = {} }, { prefs }] = await Promise.all([ctx.api<{ profiles: ProfilesV3; builtinTemplates?: TemplateMap }>("/api/profiles"), ctx.api<{ prefs: Prefs }>("/api/ui-prefs")]);
   const c = name ? scannedCharacter(inv, name) : null;
   const p = characterProfile(profiles, name ?? "", builtins);
+  const t = typeof args.template === "string" ? findTemplate(profiles, builtins, args.template) ?? findTemplate(profiles, builtins, BUILTIN_PREFIX + args.template) : undefined;
   if (typeof args.template === "string") {
-    const t = findTemplate(profiles, builtins, args.template) ?? findTemplate(profiles, builtins, BUILTIN_PREFIX + args.template);
     if (!t) throw new ToolError(`no template named ${JSON.stringify(args.template)}; the templates are ${templateRefs(profiles, builtins).join(", ") || "none"}`);
     Object.assign(p, templateSettings(t), { template: args.template });
   }
   const saved = name ? characterBuffs(profiles, name) : { on: [], skills: prefs.manualBuffSkills || {} };
-  const preset = suit ? (prefs.buffsCount !== "off" ? prefs.manualBuffs : []) : saved.on;
+  // a template that carries buffs plans with them, as the builder's Apply turns them on
+  const preset = t?.spec.buffs ? t.spec.buffs.on : suit ? (prefs.buffsCount !== "off" ? prefs.manualBuffs : []) : saved.on;
   const on = args.buffs !== undefined ? normalizeBuffs(args.buffs) : normalizeBuffs(preset ?? []) ?? [];
   if (!on) throw new ToolError("buffs must be known buff ids");
   const budgetMs = ((args.timeBudgetSeconds as number | undefined) ?? RUN_DEFAULTS.mcpBudgetMs / 1000) * 1000, altCount = (args.otherSuits as number | undefined) ?? 0;
@@ -452,7 +453,7 @@ export const TOOLS: Tool[] = [
       character: CHARACTER,
       noCharacter: { type: "boolean", description: "Build from pieces nobody wears, on raw item totals (no Resisting Spells bonus, race or stats), as Manual's No character does. Leave character out." },
       template: { type: "string", minLength: 1, maxLength: 120, description: "A template's name, applied over the character's profile (the Suit Builder's templates)." },
-      buffs: { ...BUFF_LIST, description: "Buffs, forms and abilities counted as always on, by id. With none named: the character's Automatic buffs, or with pinned pieces or no character, Manual's buffs (while its totals count them)." },
+      buffs: { ...BUFF_LIST, description: "Buffs, forms and abilities counted as always on, by id. With none named: the template's buffs when it carries some, else the character's Automatic buffs, or with pinned pieces or no character, Manual's buffs (while its totals count them)." },
       pinned: { type: "object", additionalProperties: SERIAL, description: `Pieces kept in place, slot → serial (slots: ${GEAR_SLOTS.join(", ")}); only the other slots are searched.` },
       timeBudgetSeconds: { type: "integer", minimum: 1, maximum: 3600, description: "How long the exact search may take, 60 by default." },
       otherSuits: { type: "integer", minimum: 0, maximum: 20, description: "Also list this many next-best suits (0 by default)." },
@@ -509,7 +510,7 @@ export const TOOLS: Tool[] = [
       noCharacter: { type: "boolean", description: "Score on raw item totals with no character (leave character out)." },
       pieces: { type: "array", maxItems: 20, items: SERIAL, description: "The serials of the pieces, one per slot; none scores what the character wears." },
       keepWorn: { type: "boolean", description: "Fill the slots not named with what the character wears (true by default)." },
-      template: { type: "string", minLength: 1, maxLength: 120, description: "A template's name, applied over the character's profile." },
+      template: { type: "string", minLength: 1, maxLength: 120, description: "A template's name, applied over the character's profile; its buffs count when it carries some and none are named." },
       buffs: BUFF_LIST,
     } },
     annotations: { title: "Score a suit", ...READ },

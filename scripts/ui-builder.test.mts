@@ -1,6 +1,6 @@
 // ui-builder.test.mts — [slow]: the Suit Builder's keyboard, hover and panel behavior in the real Electron window.
 //
-// `[slow]`: the Suit Builder's keyboard and hover behaviour in the real Electron window, on a writable `--data` directory seeded with the demo scans: a raised resist cap (Fire 95) marked in the Resist caps section, built with, shown on the result's Fire tile and the saved run's badge, kept by Save profile across a reload, refused out of range with the error under the field, and reset to the shard's cap; ⌘↵ (Ctrl+Enter) builds with focus on the page body and while typing in a panel field, and does nothing behind the Saved runs drawer; the current suit's and the Fetch list's pieces show the item tooltip on hover and after Tab focus, and so do both names in a Plan row, each its own piece's (issue #75; the row itself and its Slot cell show none, a kept row's worn name still does); a Fetch list row shows a deep bag path in full (nothing cut or ellipsised) and its copy button puts the container serial on the clipboard; STR limit is beside Race with Advanced closed, and a bad value there is focused without opening Advanced; a switch's on track is at least 3:1 against its off track, with the knob moved right, in Default and Britannia, light and dark; two excluded weapon skills show on the Weapons chip and survive Save profile and a reload; Check your settings (issue #217): a hard Luck requirement no suit reaches is named with the best possible above the progress panel and in the result, and Lower and Make soft edit the panel's floor and the template badge without starting a build; a weight row's worth hint follows the typed weight and hides on a bad value, and Set weight (a Luck weight that swamps the rest) edits the panel and the template badge, but not once the weight was changed since the build. Swing steps (issue #217), with Kestrel's worn weapon made the pool's best: the SSI weight's switch shows the worn weapon's steps and marks the template changed; the result says SSI was scored per point with Lock Weapon (1H) and shows the swing line, Next step follows the result's swing (none before the build); Lock starts no build and the next build scores by step; the switch is kept in the saved run's settings and by Save profile across a reload. Casting school (issue #213): the Faster Casting cap and its source beside the select, raised to 4 by naming Chivalry, which marks the template changed, and on a new FC requirement row that starts at the cap. Manual mode (issue #12): a slot opens the picker on its pieces, a row picked with the keyboard (focus, Enter) fills the slot, moves the totals and says so in the status line, the picker stays on that slot with the picked row marked "In this slot", the undo key empties the slot again (the status line saying what was undone) and redo puts the piece back, Esc closes it with focus back on the slot card, and the mode and the suit are in `ui-prefs.json`; and the hand-offs: another character picked mid-fill cancels the fill and leaves the suit alone, Fill the rest automatically fills empty slots around a placed ring in one undo step and shows the fetch list, Save as run puts a Manual run in the drawer that opens in the result view with Open in Manual, and an Automatic result's Start from this result loads it into Manual as one undo step.
+// `[slow]`: the Suit Builder's keyboard and hover behaviour in the real Electron window, on a writable `--data` directory seeded with the demo scans: a raised resist cap (Fire 95) marked in the Resist caps section, built with, shown on the result's Fire tile and the saved run's badge, kept by Save profile across a reload, refused out of range with the error under the field, and reset to the shard's cap; ⌘↵ (Ctrl+Enter) builds with focus on the page body and while typing in a panel field, and does nothing behind the Saved runs drawer; the current suit's and the Fetch list's pieces show the item tooltip on hover and after Tab focus, and so do both names in a Plan row, each its own piece's (issue #75; the row itself and its Slot cell show none, a kept row's worn name still does); a Fetch list row shows a deep bag path in full (nothing cut or ellipsised) and its copy button puts the container serial on the clipboard; STR limit is beside Race with Advanced closed, and a bad value there is focused without opening Advanced; a switch's on track is at least 3:1 against its off track, with the knob moved right, in Default and Britannia, light and dark; two excluded weapon skills show on the Weapons chip and survive Save profile and a reload; Check your settings (issue #217): a hard Luck requirement no suit reaches is named with the best possible above the progress panel and in the result, and Lower and Make soft edit the panel's floor and the template badge without starting a build; a weight row's worth hint follows the typed weight and hides on a bad value, and Set weight (a Luck weight that swamps the rest) edits the panel and the template badge, but not once the weight was changed since the build. Swing steps (issue #217), with Kestrel's worn weapon made the pool's best: the SSI weight's switch shows the worn weapon's steps and marks the template changed; the result says SSI was scored per point with Lock Weapon (1H) and shows the swing line, Next step follows the result's swing (none before the build); Lock starts no build and the next build scores by step; the switch is kept in the saved run's settings and by Save profile across a reload. Casting school (issue #213): the Faster Casting cap and its source beside the select, raised to 4 by naming Chivalry, which marks the template changed, and on a new FC requirement row that starts at the cap. Templates (issue #212): the built-ins listed first under their own names, a built-in's badge, description, buffs and source under the picker; Apply sets Manual's buffs as one undo step that Undo takes back; the badge counts a buff changed since; Save as keeps the buffs. Manual mode (issue #12): a slot opens the picker on its pieces, a row picked with the keyboard (focus, Enter) fills the slot, moves the totals and says so in the status line, the picker stays on that slot with the picked row marked "In this slot", the undo key empties the slot again (the status line saying what was undone) and redo puts the piece back, Esc closes it with focus back on the slot card, and the mode and the suit are in `ui-prefs.json`; and the hand-offs: another character picked mid-fill cancels the fill and leaves the suit alone, Fill the rest automatically fills empty slots around a placed ring in one undo step and shows the fetch list, Save as run puts a Manual run in the drawer that opens in the result view with Open in Manual, and an Automatic result's Start from this result loads it into Manual as one undo step.
 //
 // Each of the older cases is maintainer feedback on the redesign (PR #43), plus the resist cap overrides (issue #44), the weapon exclusions (issue #45) and the Weapon must have chip (issue #214). Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
 import test from "node:test";
@@ -811,6 +811,76 @@ test("[slow] Manual hand-offs: fill the rest, save as run, reopen it, and start 
     assert.equal(await fury.count(), 0, "the result's buffs (none) replace Manual's");
     await page.click("#mb-undo");
     await fury.waitFor();
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+});
+
+// Issue #212, with the built-in Melee given a description, a source and Divine Fury (the page's GET /api/profiles
+// answer edited) and Manual holding Bless with its totals not counting buffs: the picker lists the built-ins first
+// under their own names and shows Melee's badge, description, buffs and source; Apply turns Divine Fury on in Manual
+// (counted) as one undo step, and Undo puts Bless and the switch back; a buff turned on since marks the template
+// changed; Save as stores the buffs with the copy, listed under "Your templates".
+test("[slow] templates: built-ins first with their description, Apply sets Manual's buffs in one undo step, the badge and Save as count buffs", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = seedDataDir("packrat-ui-templates-");
+  const { app, page, errors } = await launch(dataDir);
+  const SOURCE = "https://uoalive.com/wiki/PlayerGuide:Lazy_Pally";
+  try {
+    await openBuilder(page);
+    await page.evaluate(() => fetch("/api/ui-prefs", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ manualBuffs: ["bless"], buffsCount: "off" }) }));
+    await page.route(/\/api\/profiles$/, async (r) => {
+      if (r.request().method() !== "GET") { await r.continue(); return; }
+      const res = await r.fetch(), body = await res.json() as { builtinTemplates: Record<string, { spec: Record<string, unknown> }> };
+      const melee = body.builtinTemplates.melee!;
+      body.builtinTemplates.melee = { ...melee, description: "A test build.", sources: [SOURCE], spec: { ...melee.spec, buffs: { on: ["divineFury"], skills: {} } } } as typeof melee;
+      await r.fulfill({ response: res, json: body });
+    });
+    await page.reload();
+    await page.waitForSelector("#tab-builder:not([hidden]) #b-tpl", { timeout: 30_000 });
+    await page.selectOption("#b-char", "Kestrel");
+    assert.deepEqual(await page.$$eval("#b-tpl optgroup", (els) => els.map((e) => (e as HTMLOptGroupElement).label)), ["Built-in"]);
+    assert.deepEqual(await page.$$eval("#b-tpl optgroup option", (els) => els.map((e) => e.textContent)), ["Melee", "Caster", "Archer", "Tank"]);
+    await page.selectOption("#b-tpl", "builtin:melee");
+    await page.waitForFunction(() => /Loads: Divine Fury/.test(document.querySelector("#b-tpl-info")?.textContent || ""));
+    assert.match(await page.locator("#b-tpl-info").innerText(), /Built-in\s+A test build\.\s+Loads: Divine Fury\s+Source: Lazy Pally/);
+    assert.equal(await page.locator("#b-tpl-info a").getAttribute("href"), SOURCE);
+    await page.selectOption("#b-tpl", "builtin:caster");
+    await page.waitForFunction(() => document.querySelector("#b-tpl-info")?.hasAttribute("hidden"));
+    await page.selectOption("#b-tpl", "builtin:melee");
+    // Apply: Divine Fury on in Automatic and in Manual, counted, as one undo step
+    await page.click("#b-tpl-menu");
+    await page.getByRole("menuitem", { name: "Apply to these settings" }).click();
+    await page.waitForFunction(() => /^matches/.test(document.querySelector("#b-tpl-state")?.textContent || ""));
+    assert.match(await page.locator('#b-buff-chips .token[data-buff="divineFury"]').innerText(), /Divine Fury/);
+    // a buff turned on since marks the template changed
+    await page.click("#b-buff-add");
+    await page.locator("#abf-cb-bless").check();
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => /^modified[\s\S]*Buffs: \+Bless/.test(document.querySelector("#b-tpl-state")?.textContent || ""));
+    // Save as keeps the buffs with the copy
+    await page.click("#b-tpl-menu");
+    await page.getByRole("menuitem", { name: "Save as…" }).click();
+    const dialog = page.locator(".prompt-dialog[open]");
+    await dialog.locator("input[type=text]").fill("Mine");
+    await dialog.getByRole("button", { name: "Save" }).click();
+    await page.waitForFunction(() => /Template Mine saved/.test(document.body.textContent || ""), undefined, { timeout: 10_000 });
+    const saved = JSON.parse(readFileSync(join(dataDir, "profiles.json"), "utf8")) as { templates: Record<string, { spec: { buffs?: { on: string[]; skills: object } } }> };
+    const mine = saved.templates.Mine!.spec.buffs!;
+    assert.deepEqual([[...mine.on].sort(), mine.skills], [["bless", "divineFury"], {}]);
+    assert.deepEqual(await page.$$eval("#b-tpl optgroup", (els) => els.map((e) => (e as HTMLOptGroupElement).label)), ["Built-in", "Your templates"]);
+    // Manual: the template's buffs, counted, one undo step; Undo puts Bless and the switch back
+    await page.click('#b-mode [data-value="manual"]');
+    await page.waitForSelector("#b-manual:not([hidden]) #mb-suit .mb-slot");
+    await page.waitForFunction(() => /^Undo: Melee \(built-in\) buffs/.test(document.querySelector("#mb-undo")?.getAttribute("aria-label") || ""));
+    assert.deepEqual(await page.$$eval("#mb-totals .bf-strip .token[data-buff]", (els) => els.map((e) => (e as HTMLElement).dataset.buff)), ["divineFury"]);
+    assert.equal(await page.locator("#bf-count").isChecked(), true);
+    await page.click("#mb-undo");
+    await page.waitForFunction(() => [...document.querySelectorAll<HTMLElement>("#mb-totals .bf-strip .token[data-buff]")].map((e) => e.dataset.buff).join() === "bless");
+    assert.equal(await page.locator("#bf-count").isChecked(), false);
     assert.deepEqual(errors, []);
   } finally {
     await app.close();

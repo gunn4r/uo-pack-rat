@@ -25,7 +25,7 @@ import { setNavBusy } from "./shell.mts";
 import { putProfiles, setCharacterBuffs } from "./profiles.mts";
 import { session, commands, provide, readControls, type BuilderChange } from "./builder-session.mts";
 import { followJob, progressText, settingsCheck } from "./builder-parts.mts";
-import { nextSwingStep, speedText, swingLines, paperdoll, propName, weightsSummary, requirementsSummary, poolSummary, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistCapsSummary, gearCapsText, pruneResistCaps, floorCapWarning, weaponsChipText, weaponMustHaveChipText, weaponName, toggleWeapon, weightWorth, fcCapText, type KnobField } from "./builder-model.mts";
+import { nextSwingStep, speedText, swingLines, paperdoll, propName, weightsSummary, requirementsSummary, poolSummary, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistCapsSummary, gearCapsText, pruneResistCaps, floorCapWarning, weaponsChipText, weaponMustHaveChipText, weaponName, toggleWeapon, weightWorth, fcCapText, templateBuffsLine, sourceTitle, type KnobField } from "./builder-model.mts";
 import type { OptimizeResult, SavedRunLike, OptimizeStartApiResponse, OptimizeCancelApiResponse } from "./api-types.mts";
 
 // ---------------------------------------------------------------- panel state
@@ -175,9 +175,12 @@ function section(id: string, title: string, { count, summary, body, inline = fal
 // ---- template and race
 function templateSection(): HTMLElement {
   const p = session.profile!;
-  const names = templateRefs(state.profiles!, state.builtinTemplates);
-  const tpl = select(names.map((n) => ({ value: n, label: templateLabel(state.builtinTemplates, n) })), names.includes(p.template as string) ? p.template as string : names[0] || "", { attrs: { id: "b-tpl" } });
-  tpl.addEventListener("change", updateTemplateBadge);
+  const names = templateRefs(state.profiles!, state.builtinTemplates), builtin = (n: string): boolean => n.startsWith(BUILTIN_PREFIX);
+  // built-ins first, each under its own name; the player's own after
+  const group = (label: string, refs: string[]): HTMLElement | null => refs.length ? el("optgroup", { label }, ...refs.map((n) => el("option", { value: n }, builtin(n) ? state.builtinTemplates[n.slice(BUILTIN_PREFIX.length)]?.name || n.slice(BUILTIN_PREFIX.length) : n))) : null;
+  const tpl = el("select", { class: "select", id: "b-tpl" }, group("Built-in", names.filter(builtin)), group("Your templates", names.filter((n) => !builtin(n))));
+  tpl.value = names.includes(p.template as string) ? p.template as string : names[0] || "";
+  tpl.addEventListener("change", () => { $<HTMLElement>("#b-tpl-info")!.replaceWith(templateInfo(tpl.value)); updateTemplateBadge(); });
   const menuBtn = button({ label: "Template actions: apply, save as, update, delete", icon: "more", iconOnly: true, variant: "ghost", attrs: { id: "b-tpl-menu", "aria-haspopup": "menu", "aria-expanded": "false" } });
   menuBtn.onclick = () => templateMenu(menuBtn);
   const race = segmented({ label: "Race", options: [{ value: "human", label: "Human" }, { value: "elf", label: "Elf" }, { value: "gargoyle", label: "Gargoyle" }], value: p.race || "human",
@@ -188,8 +191,19 @@ function templateSection(): HTMLElement {
   const str = knobField("strLimit", "STR limit");
   str.classList.add("b-str");
   return box("section", { class: "b-sec b-sec-top", "aria-label": "Template" },
-    box("div", { class: "field" }, el("label", { class: "label", for: "b-tpl" }, "Template"), box("div", { class: "b-tpl-row" }, tpl, el("span", { id: "b-tpl-state", class: "badge" }), menuBtn)),
+    box("div", { class: "field" }, el("label", { class: "label", for: "b-tpl" }, "Template"), box("div", { class: "b-tpl-row" }, tpl, el("span", { id: "b-tpl-state", class: "badge" }), menuBtn), templateInfo(tpl.value)),
     box("div", { class: "b-race-row" }, box("div", { class: "field" }, el("span", { class: "label", id: "b-race-l" }, "Race"), race), str));
+}
+// Under the picker, for a template with a description: a built-in's badge, the description, the buffs it loads and its
+// source pages (a built-in with none is the shard's defaults).
+function templateInfo(ref: string): HTMLElement {
+  const t = findTemplate(state.profiles!, state.builtinTemplates, ref), builtin = ref.startsWith(BUILTIN_PREFIX), on = t?.spec.buffs?.on ?? [];
+  if (!t?.description) return el("div", { id: "b-tpl-info", hidden: "" });
+  const sources = t.sources ?? [];
+  return box("div", { id: "b-tpl-info", class: "help b-tpl-info" },
+    el("p", {}, builtin ? badge("Built-in") : null, builtin ? " " : null, t.description),
+    on.length ? el("p", {}, `Loads: ${on.map((id) => buffById(id)?.name ?? id).join(" · ")}`) : null,
+    builtin ? el("p", {}, "Source: ", ...(sources.length ? sources.flatMap((u, i) => [i ? " · " : "", el("a", { href: u, target: "_blank", rel: "noopener noreferrer" }, sourceTitle(u))]) : ["UO Alive defaults"])) : null);
 }
 // A template is a saved set of builder settings with no character in it; the badge says whether the panel
 // still matches the one it was applied from.
@@ -197,7 +211,8 @@ function templateDrift(): { tone: "ok" | "warn" | "bad" | ""; text: string; deta
   const ref = session.profile!.template, tpl = findTemplate(state.profiles!, state.builtinTemplates, ref), name = ref && templateLabel(state.builtinTemplates, ref);
   if (!name) return { tone: "", text: "none", detail: "Save as… stores these settings as a template." };
   if (!tpl) return { tone: "bad", text: "missing", detail: `These settings came from a template named ${name}, which no longer exists.` };
-  const lines = settingsDiff(templateSettings(tpl), templateFrom(readControls()));
+  const buffs = tpl.spec.buffs && templateBuffsLine(tpl.spec.buffs.on, buffsOn());
+  const lines = [...settingsDiff(templateSettings(tpl), templateFrom(readControls())), ...(buffs ? [buffs] : [])];
   return lines.length ? { tone: "warn", text: "modified", detail: `Changed from ${name}: ${lines.join(" · ")}` } : { tone: "ok", text: "matches", detail: `These settings equal the ${name} template.` };
 }
 // Redrawn after every edit; the reason ("Changed from melee: DI floor 20 → 30") is its tooltip and, for a
@@ -223,12 +238,16 @@ async function saveTemplates(done: string): Promise<void> {
   // putProfiles()'s only `ok: false` path is its own catch, which always sets `error`.
   toast(r.ok ? done : r.error!, r.ok ? "good" : "bad");
 }
-// A template with buffs (a built-in one may carry them) also sets the character's buffs, which are saved at once.
+// A template with buffs also sets the character's buffs, which are saved at once, and Manual's when Manual is for the
+// same character (one undo step there).
 function applyTemplate(): void {
   const ref = selectedTemplate(), t = findTemplate(state.profiles!, state.builtinTemplates, ref), name = templateLabel(state.builtinTemplates, ref);
   if (!t) return;
   Object.assign(session.profile!, templateSettings(t), { template: ref });
-  if (t.spec.buffs) setCharacterBuffs(session.character!, { on: t.spec.buffs.on, skills: { ...commands.buffEditsOf(session.character!), ...t.spec.buffs.skills } });
+  if (t.spec.buffs) {
+    setCharacterBuffs(session.character!, { on: t.spec.buffs.on, skills: { ...commands.buffEditsOf(session.character!), ...t.spec.buffs.skills } });
+    commands.templateBuffs(t.spec.buffs.on, `${name} buffs`);
+  }
   clearCapDrafts();
   renderPanel();
   toast(`${name} applied. Save profile to keep it.`, "good");
@@ -238,7 +257,7 @@ async function saveTemplateAs(): Promise<void> {
   const name = await promptText({ title: "Template name", value: was.startsWith(BUILTIN_PREFIX) ? "" : was });
   if (name?.startsWith(BUILTIN_PREFIX)) { toast(`A template's name can't start with "${BUILTIN_PREFIX}".`, "bad"); return; }
   if (!name || (state.profiles!.templates[name] && !await confirmDialog({ title: `Overwrite the ${name} template?`, body: `The ${name} template is replaced with these settings.`, confirmLabel: `Overwrite ${name}` }))) return;
-  state.profiles!.templates[name] = { spec: templateSpecFrom(readControls()) };
+  state.profiles!.templates[name] = { spec: templateSpecFrom(readControls(), buffsOn()) };
   session.profile!.template = name;
   renderPanel();
   await saveTemplates(`Template ${name} saved.`);
@@ -246,7 +265,7 @@ async function saveTemplateAs(): Promise<void> {
 async function updateTemplate(): Promise<void> {
   const name = selectedTemplate();
   if (!Object.hasOwn(state.profiles!.templates, name) || !await confirmDialog({ title: `Update the ${name} template?`, body: `The ${name} template is overwritten with these settings.`, confirmLabel: `Update ${name}` })) return;
-  state.profiles!.templates[name] = { ...state.profiles!.templates[name], spec: templateSpecFrom(readControls()) };
+  state.profiles!.templates[name] = { ...state.profiles!.templates[name], spec: templateSpecFrom(readControls(), buffsOn()) };
   session.profile!.template = name;
   updateTemplateBadge();
   await saveTemplates(`Template ${name} updated.`);

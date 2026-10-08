@@ -627,6 +627,12 @@ async function openInManual(suit: OptSuit, covered: readonly string[], runB: Run
   toast(`Opened in Manual.${keptText} ${KEY_NAMES.undo} puts back the suit you had.`);
 }
 
+// A template applied in Automatic with buffs: Manual's list becomes the template's, counted, as one undo step named
+// `label`, when Manual is for the same character; with No character it is left alone.
+function templateBuffs(on: readonly string[], label: string): void {
+  if (!noCharacter) commit({ buffs: [...on], count: true }, label);
+}
+
 // The fetch list for the suit's pieces the character doesn't wear (the result's, builder-parts.mts fetchCard).
 function fetchList(): HTMLElement {
   const name = manualCharacter(), pieces = fetchPieces(Object.values(suitItems()), name), card = fetchCard(pieces, name, grabAllButton(pieces, name, { id: "mb-grab-all", size: "sm" }));
@@ -634,4 +640,4 @@ function fetchList(): HTMLElement {
   card.id = "mb-fetch";
   return card;
 }
-provide({ openInManual, showAutomatic, paintCharSelect, setManualFor, renderManual, syncManual, buffEditsOf, buffInputsOf, editBuffInputs, applyRunInputs, filling });
+provide({ openInManual, templateBuffs, showAutomatic, paintCharSelect, setManualFor, renderManual, syncManual, buffEditsOf, buffInputsOf, editBuffInputs, applyRunInputs, filling });
