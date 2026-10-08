@@ -7,7 +7,7 @@
 // resolves shows as a missing card. The numbers come from ui/manual-model.mts. Buffs, abilities and forms (app/buffs.mts,
 // drawn by ui/builder-buffs.mts) can be counted in the totals: the ones that are on, the numbers the player edited and
 // the switch are ui-prefs fields too, and turning one on or off is a step in the suit's undo history. The mode is the builder session's (ui/builder-session.mts), and Manual provides its commands there.
-import { GEAR_SLOTS, RESIST_KEYS, effectiveProfile, profileResistCaps, requirementReport, toOptItem, totalsOf } from "../vault-lib.mts";
+import { GEAR_SLOTS, RESIST_KEYS, effectiveProfile, fcCapFor, profileResistCaps, requirementReport, toOptItem, totalsOf } from "../vault-lib.mts";
 import type { Character, EffectiveProfile, Item, OptItem, RunBuffs, RunSettings } from "../vault-lib.mts";
 import { buffById, buffSkillValues, isBuffSkills, manualPlan, manualProfile, normalizeBuffs, ownEntry, rawStats, runBuffs, toggleBuff, weaponFlags, NO_CHARACTER, signed } from "../buffs.mts";
 import { characterBuffs } from "../build-spec.mts";
@@ -21,7 +21,7 @@ import { prefs } from "./prefs.mts";
 import { setCharacterBuffs } from "./profiles.mts";
 import { resolveItems, rarityToken } from "./items.mts";
 import { fetchCard, followJob, grabAllButton, keyProps, progressText, verdict, RESIST_NAMES } from "./builder-parts.mts";
-import { capNote, knobError, paperdoll, paperdollCaps, plural, type KnobField } from "./builder-model.mts";
+import { capNote, fcCapSource, knobError, paperdoll, paperdollCaps, plural, type KnobField } from "./builder-model.mts";
 import { session, commands, provide, readControls, type BuffInputs, type BuilderMode } from "./builder-session.mts";
 import { optimizeErrorMessage } from "./messages.mts";
 import { itemActions } from "./item-parts.mts";
@@ -312,7 +312,7 @@ function draw(): void {
   if (cancelFocused) $<HTMLElement>("#mb-fill-cancel")?.focus();   // a change made during a fill redraws the row
 }
 function totalsCard(): HTMLElement {
-  const name = manualCharacter(), prof = profile(), resists = profileResistCaps(prof), base = paperdollCaps(resists);
+  const name = manualCharacter(), prof = profile(), resists = profileResistCaps(prof), base = paperdollCaps(resists, prof.caps.fc);
   const suit = suitOpt(), ev = evaluated(), r = ev.buffs, t = ev.effectiveTotals, caps = ev.caps;
   // One compact row: each total as "value / cap", in the ok tone at its cap, with "+N" (warn) for what is wasted past
   // it; the line a fuller tile would show ("23 to cap") is its tooltip and, for a screen reader, part of its text.
@@ -328,7 +328,7 @@ function totalsCard(): HTMLElement {
   };
   const row = [
     ...RESIST_KEYS.map((k) => { const [nm, color] = RESIST_NAMES[k]!; return cell(k, caps[k], el("span", { class: "t-sm resist-name", style: `color:var(${color})` }, nm), capNote(resists[k]!), false); }),
-    ...[...TOTAL_KEYS, ...STAT_KEYS].map((k) => cell(k, caps[k], txt(label(k), "t-sm muted"), null, k === TOTAL_KEYS[0] || k === STAT_KEYS[0])),
+    ...[...TOTAL_KEYS, ...STAT_KEYS].map((k) => cell(k, caps[k], txt(label(k), "t-sm muted"), k === "fc" ? fcCapSource(fcCapFor(name ? state.inv!.characters[name]?.skills : null, name ? session.profile?.castingSchool : undefined)) : null, k === TOTAL_KEYS[0] || k === STAT_KEYS[0])),
   ];
   const rsb = prof.resistBonus || 0, counted = countBuffs ? buffs.length : 0, withBuffs = counted ? ` with ${counted} ${counted === 1 ? "buff" : "buffs"}` : "";
   const note = name ? `${name}'s paperdoll values${withBuffs}: +${rsb} to each resist from Resisting Spells, against ${name}'s resist caps` : `Raw item totals${withBuffs}: with no character there is no Resisting Spells or race bonus`;
@@ -465,7 +465,7 @@ function closeBuffs(): void {
   $<HTMLElement>("#bf-add")?.focus();
 }
 function buffView(): BuffView {
-  const { values, planned, stats, race } = buffInputs(), prof = profile(), t = paperdoll(totalsOf(suitOpt()), prof.resistBonus), caps = paperdollCaps(profileResistCaps(prof));
+  const { values, planned, stats, race } = buffInputs(), prof = profile(), t = paperdoll(totalsOf(suitOpt()), prof.resistBonus), caps = paperdollCaps(profileResistCaps(prof), prof.caps.fc);
   return { name: manualCharacter(), on: buffs, values, planned, edits: editsFor(), stats, who: { race, weaponFlags: weaponFlags(suitItems()) }, totals: t, caps, all: evaluated(suitItems(), true).buffs, replaced, count: countBuffs, open: buffsOpen };
 }
 const buffActions: BuffActions = {

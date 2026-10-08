@@ -142,10 +142,10 @@ test("[fast] buffs plan: Enemy of One never changes the plan, alone or beside ot
 // solvers get the same input, a run keys the same and reuses the runs saved before buffs.
 test("[fast] buffs plan: no buffs give main's profile for every default template, soft floors and cap overrides included", () => {
   const MAIN: Record<string, string> = {
-    melee: "e43232d50aa003e4391fb1c51d2b6f5015c9c5c8", "melee+soft": "eaa54b0b4b3bdc5b975760633ffa57e73c626bec",
-    caster: "5ab58f3ee5c95e2bd1635fd44c685bf2ee7f3754", "caster+soft": "2635d64634dd19394cd5c1133377fabd320fba1c",
-    archer: "2d10d10debdd19c35c210cf3bc5566454853e9a1", "archer+soft": "38ccfc0aad5a88649467060a42018866f3373ffd",
-    tank: "081f653b3d2e5202026d8089a553e9d0b17345cb", "tank+soft": "4f13d70495c490308bf368bea3c2df0c191cafa5",
+    melee: "fee523b37328bfe4c304145dd7ca14b59880b171", "melee+soft": "113027db8458aeb6e81b87bd7043659d78076f4b",
+    caster: "79d3e11a3b80a82a4691fc3b3ff74a39a6d0e2f2", "caster+soft": "839806e9d519b8ec5c0f28aaf2564457fb681025",
+    archer: "a87996ee726fc38bbb5de16775e73fe57f90dc55", "archer+soft": "00d7edc37ccdbfaff68d5363cb9d5675e1187b6d",
+    tank: "4587136b1e65cd075ef4f93292c4afb43ec118a7", "tank+soft": "916801b68a8d8cf7b11c670c56456eb3ffc367ee",
   };
   assert.deepEqual(templateNames, ["melee", "caster", "archer", "tank"]);
   for (const n of templateNames) for (const soft of [[], ["luck"]]) {
@@ -211,7 +211,7 @@ test("[fast] buffs plan: a requirement's note: its article, a full cap, no cap a
 test("[fast] buffs plan: the run key follows the plan: Enemy of One alone keys as none, numbers no buff reads change nothing", () => {
   const c = cell("melee"), key = (pl: BuffPlan | null): string => runKey({ pools: c.pools, current: c.current, profile: plannedProfile(defaultTemplate("melee"), FIXTURE, pl), opts: { seed: 2026, restarts: 200 } });
   const none = key(null);
-  assert.equal(none, "ad809043547f24166c0e3d7d5f2606efac50b746", "the key for the melee template at SOLVER_VERSION 7 (was 51a4b93c… at 6, a18a559b… at 5, 2c90c9b1… at 4, ac4629c8… at 3): a change here means every saved run stops being reused");
+  assert.equal(none, "9429d42878d9b905b4b2de73408227ae9c709241", "the key for the melee template at SOLVER_VERSION 7, the fixture's Faster Casting cap 4 from Bushido (was ad809043… at a flat cap of 2, 51a4b93c… at 6, a18a559b… at 5, 2c90c9b1… at 4, ac4629c8… at 3): a change here means every saved run stops being reused");
   assert.equal(key(plan(["enemyOfOne"])), none, "Enemy of One plans like none");
   assert.notEqual(key(plan(["divineFury"], { Chivalry: 105 })), key(plan(["divineFury"], { Chivalry: 120 })), "another tier, another plan");
   assert.equal(key(plan(["divineFury"], { Chivalry: 105 })), key(plan(["divineFury"], { Chivalry: 105, Necromancy: 40, Bushido: 3 })), "an edit no buff on reads");

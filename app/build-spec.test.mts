@@ -70,7 +70,7 @@ test("[fast] build spec: the panel's flat profile goes to a spec and back; absen
   assert.equal(empty.pool.strLimit, "character");
   assert.equal(empty.pool.ubwsAnyWeapon, true);
   assert.equal(empty.intent.floorBonus, 1000);
-  const { swingSteps: _off, ...defaults } = templateFrom();   // a spec carries the swing-step switch only when it is on
+  const { swingSteps: _off, castingSchool: _school, ...defaults } = templateFrom();   // a spec carries the swing-step switch only when it is on, and the casting school only when one is named
   assert.deepEqual(profileFromSpec(empty), { ...defaults, excludeRoots: [] }, "the same defaults templateFrom fills in");
 });
 
