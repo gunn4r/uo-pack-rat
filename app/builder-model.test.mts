@@ -1,19 +1,19 @@
 // builder-model.test.mts — `app/ui/builder-model.mts`, the Suit Builder's pure logic.
 //
-// `app/ui/builder-model.mts`, the Suit Builder's pure logic: the one-line summaries collapsed panel sections show (weights heaviest first with equal resists folded into "each resist", requirements with soft ones marked, the candidate pool, the Advanced knobs), the Advanced fields' validation messages with the allowed range ("Enter a whole number from 1 to 10,000.") and that the page's limits equal the server's `OPTS_LIMITS`, which field a server refusal names, a resist tile's outcome line (short, meets, at cap, over cap), the result's other-changes badges (gains first, missed requirements as losses), "after the change" values and pool estimates, the compare table's differing piece cells, best totals (past the cap counts as the cap) and hidden-rows note, the three-run compare limit, and a saved run's automatic label and badges, and the Weapons chip and summary wording. All `[fast]`.
+// `app/ui/builder-model.mts`, the Suit Builder's pure logic: the one-line summaries collapsed panel sections show (weights heaviest first with equal resists folded into "each resist", requirements with soft ones marked, the candidate pool, the Advanced knobs), the Advanced fields' validation messages with the allowed range ("Enter a whole number from 1 to 10,000.") and that the page's limits equal the server's `OPTS_LIMITS`, which field a server refusal names, a resist tile's outcome line (short, meets, at cap, over cap), the result's other-changes badges (gains first, missed requirements as losses), "after the change" values and pool estimates, the compare table's differing piece cells, best totals (past the cap counts as the cap) and hidden-rows note, the three-run compare limit, and a saved run's automatic label and badges, and the Weapons chip and summary wording, and a weight row's worth hint (issue #217). All `[fast]`.
 //
 // Lives in app/ for the reason app/ui-render.test.mts gives.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { setRules, resistCapsFor } from "./vault-lib.mts";
+import { setRules, resistCapsFor, playerCaps } from "./vault-lib.mts";
 import { buffSkillValues, runBuffs } from "./buffs.mts";
 import type { RulesV1 } from "./schema/types.d.mts";
 import {
   propName, weightsSummary, requirementsSummary, poolSummary, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError,
   resistOutcome, locationCrumbs, otherChanges, afterChange, compareModel, hiddenRowsNote, toggleCompare, runAutoLabel, runBadges, plural, KNOB_RANGES,
   resistCapError, withResistCap, capNote, resistCapsSummary, gearCapsText, capsLine, anyOverridden, effectiveFloor, floorCapWarning, pruneResistCaps,
-  weaponsSummary, weaponsChipText, toggleWeapon, withBuffs, paperdollFloors, pastCapBadges, runSettingsDiff,
+  weaponsSummary, weaponsChipText, toggleWeapon, withBuffs, paperdollFloors, pastCapBadges, runSettingsDiff, weightWorth,
   type Knobs,
 } from "./ui/builder-model.mts";
 import { OPTS_LIMITS } from "./vault-server.mts";
@@ -269,4 +269,17 @@ test("[fast] resist caps: a floor above its cap counts only up to it, warns, and
   assert.deepEqual(pruneResistCaps({ energyResist: 75, fireResist: 95 }, "elf"), { fireResist: 95 });
   assert.deepEqual(pruneResistCaps({ energyResist: 75 }, "human"), { energyResist: 75 });
   assert.deepEqual(pruneResistCaps(undefined, "elf"), {});
+});
+
+test("[fast] builder model: a weight row's worth hint names what the weight makes a typical range worth", () => {
+  // A melee main's caps: Resisting Spells +20 leaves item resist caps of 50, 70 on the paperdoll
+  const caps = playerCaps({ caps: { physResist: 50, dci: 45, hpRegen: 18 }, resistBonus: 20 });
+  assert.equal(weightWorth("luck", 3, caps), "= 1,500 per 500 Luck");
+  assert.equal(weightWorth("dci", 10, caps), "= 450 per 45 DCI");
+  assert.equal(weightWorth("physResist", 6, caps), "= 420 per 70 Phys");
+  assert.equal(weightWorth("luck", 0.8, caps), "= 400 per 500 Luck");
+  assert.equal(weightWorth("stamPool", 2, caps), "= 90 per 45 Stam pool");
+  assert.equal(weightWorth("sk:magery", 2, caps), "= 30 per 15 +Magery");
+  assert.equal(weightWorth("castingFocus", 2, caps), null, "no typical range");
+  assert.equal(weightWorth("luck", Number.NaN, caps), null, "no number, no hint");
 });
