@@ -312,6 +312,25 @@ export function toggleCompare(selected: ReadonlySet<string>, id: string, on: boo
   return { next, refused: null };
 }
 
+// ---------------------------------------------------------------- templates
+// The template badge's buffs line, for a template that carries buffs: how the character's list differs from it as a set
+// ("Buffs: +Enemy of One, −Consecrate Weapon"); null when they match.
+export function templateBuffsLine(template: readonly string[], now: readonly string[]): string | null {
+  const d = buffsDiff({ on: [...template], skills: {} }, { on: [...now], skills: {} });
+  return d.length ? `Buffs: ${d.join(", ")}` : null;
+}
+// A source page's title from its URL: a wiki page's name ("PlayerGuide:Lazy_Pally" → "Lazy Pally", a slash in it kept),
+// else the last path part (a forum thread's "archer-chiv-build.267" → "archer chiv build").
+export function sourceTitle(url: string): string {
+  let last = "";
+  try {
+    const path = decodeURIComponent(new URL(url).pathname), wiki = path.indexOf("/wiki/");
+    last = wiki >= 0 ? path.slice(wiki + 6).replace(/\/$/, "") : path.split("/").filter(Boolean).pop() ?? "";
+  } catch { /* an unparsable URL shows as itself */ }
+  const words = last.replace(/^PlayerGuide:/, "").replace(/\.\d+$/, "");
+  return (words.includes("_") ? words.replace(/_/g, " ") : words.replace(/-/g, " ")).trim() || url;
+}
+
 // ---------------------------------------------------------------- saved runs
 // What changed between two runs' settings, their buffs included ("+Divine Fury").
 export const runSettingsDiff = (a: RunSettings, b: RunSettings): string[] => [...settingsDiff(a, b), ...buffsDiff(a.buffs, b.buffs)];

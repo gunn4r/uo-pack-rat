@@ -32,7 +32,8 @@ export type TemplateSpec = Omit<BuildSpec, "buffs"> & { buffs?: BuildBuffs | und
 // profiles.json v3: a character is its race, the template it came from and its spec; a template is its spec and a
 // display name (the id when absent). Any other field round-trips untouched.
 export interface CharacterEntry { race?: string | null | undefined; template?: string | undefined; spec: BuildSpec; [key: string]: unknown }
-export interface TemplateEntry { name?: string | undefined; spec: TemplateSpec; [key: string]: unknown }
+// A built-in's description and source pages show under the template picker; Save as copies neither.
+export interface TemplateEntry { name?: string | undefined; description?: string | undefined; sources?: string[] | undefined; spec: TemplateSpec; [key: string]: unknown }
 export interface ProfilesV3 { schemaVersion: 3; characters: Record<string, CharacterEntry>; templates: Record<string, TemplateEntry>; [key: string]: unknown }
 export const PROFILES_VERSION = 3;
 
@@ -128,8 +129,12 @@ export function profileFromSpec(spec: BuildSpecSource): FlatProfile {
   const { intent, pool } = buildSpec(spec), { strLimit, ...rest } = pool;
   return { ...intent, ...rest, ...(strLimit === "character" ? {} : { strLimit }) };
 }
-// A template's spec from the panel's settings: the template fields only (no skipped containers or STR limit).
-export const templateSpecFrom = (p: FlatProfile): TemplateSpec => { const { buffs: _none, ...spec } = specFromProfile(templateFrom(p)); return spec; };
+// A template's spec from the panel's settings: the template fields only (no skipped containers or STR limit), and the
+// buffs on when given (their numbers are the character's, not the build's, so none are kept).
+export function templateSpecFrom(p: FlatProfile, buffs?: readonly string[]): TemplateSpec {
+  const { buffs: _none, ...spec } = specFromProfile(templateFrom(p));
+  return buffs ? { ...spec, buffs: { on: [...buffs], skills: {} } } : spec;
+}
 // A saved character entry from the panel's settings and the character's buffs.
 export function characterEntry(p: FlatProfile, buffs: BuildBuffs): CharacterEntry {
   const { race, template } = p;

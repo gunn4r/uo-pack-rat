@@ -32,6 +32,8 @@
 .b-sec-body { display: flex; flex-direction: column; gap: var(--space-2); }
 .b-tpl-row { display: flex; align-items: center; gap: var(--space-1-5); min-width: 0; }
 .b-tpl-row .select { flex: 1 1 auto; }
+.b-tpl-info { display: grid; gap: var(--space-1); }
+.b-tpl-info p { margin: 0; }
 .b-race-row { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--space-3) var(--space-4); }
 .b-race-row .b-str { flex: 0 0 96px; }
 .pr .b-race-row .b-str .input { width: 100%; }
