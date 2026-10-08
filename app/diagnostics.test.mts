@@ -1,8 +1,8 @@
-// diagnostics.test.mts — `app/diagnostics.mts` and the per-slot bound it shares with the MIP (`app/mip.mts` propertyReach, issue #217): propertyReach gives the numbers the bound inside buildSuitMip used to compute (a copy of that code is the reference, over fuzzed pools with two-handers, required slots and negative values) and BuiltMip.reach is the same, plus one bound written out by hand (a duplicated serial, a worn piece missing from the pool, a required slot with only negative pieces); `floor_unreachable` for a floor one above the bound (hard: Lower and Make soft; soft: info, Lower only), none for a floor exactly at it (which keeps its hard row); best possible in the player's terms (Resisting Spells, a buff's share, the cap), a buff that lifts reach over a floor; `floors_conflict` on the floors the suit misses, on the heuristic path ("not found within the time limit") and on HiGHS's (a proven conflict); an empty inventory; a malformed profile (non-list `hardFloors`) read as far as it goes; a resist floor clipped to its cap saying so; and the page's side (`ui/builder-model.mts`): an action's words and edit, an action that no longer fits the panel (lowered by hand, removed, already soft) doing nothing, an alternative suit's card without `floors_conflict`, and a saved run without `diagnostics` drawn from `unreachableFloors`. All `[fast]`.
+// diagnostics.test.mts — `app/diagnostics.mts` and the per-slot bound it shares with the MIP (`app/mip.mts` propertyReach, issue #217): propertyReach gives the numbers the bound inside buildSuitMip used to compute (a copy of that code is the reference, over fuzzed pools with two-handers, required slots and negative values) and BuiltMip.reach is the same, plus one bound written out by hand (a duplicated serial, a worn piece missing from the pool, a required slot with only negative pieces); `floor_unreachable` for a floor one above the bound (hard: Lower and Make soft; soft: info, Lower only), none for a floor exactly at it (which keeps its hard row); best possible in the player's terms (Resisting Spells, a buff's share, the cap), a buff that lifts reach over a floor; `floors_conflict` on the floors the suit misses, on the heuristic path ("not found within the time limit") and on HiGHS's (a proven conflict); an empty inventory; a malformed profile (non-list `hardFloors`) read as far as it goes; a resist floor clipped to its cap saying so; and the page's side (`ui/builder-model.mts`): an action's words and edit, an action that no longer fits the panel (lowered by hand, removed, already soft) doing nothing, an alternative suit's card without `floors_conflict`, `withDiagnostics` leaving the field off when computing them fails, and a saved run without `diagnostics` drawn from `unreachableFloors`. All `[fast]`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { propertyReach, buildSuitMip, type BuiltMip } from "./mip.mts";
-import { preBuildDiagnostics, resultDiagnostics, type DiagnosticsProfile } from "./diagnostics.mts";
+import { preBuildDiagnostics, resultDiagnostics, withDiagnostics, type DiagnosticsProfile } from "./diagnostics.mts";
 import { solveExact, type OptPools } from "./exact-solver.mts";
 import { core, type OptOptions } from "./solver-fixture.mts";
 import { actionApplies, actionWords, applyAction, handledAction, resultChecks } from "./ui/builder-model.mts";
@@ -195,4 +195,15 @@ test("[fast] propertyReach's candidate rule against a bound written out: a seria
   const pools = { ring: [mk(1, "ring", { luck: 10 }), mk(1, "ring", { luck: 99 }), mk(2, "ring", { luck: 5 })], neck: [mk(4, "neck", { luck: -4 }), mk(5, "neck", { luck: -2 })] };
   const current = { ring: mk(3, "ring", { luck: 40 }), neck: pools.neck[0]! };
   assert.deepEqual(propertyReach(pools, current, ["ring"], ["ring", "neck"], ["luck"]), { luck: { max: 38, min: -4 } });
+});
+
+test("[fast] withDiagnostics: the result carries them; a failure leaves the field off (the page then reads unreachableFloors) and is reported, the suit kept", () => {
+  const result = { score: 7, unreachableFloors: ["luck"] };
+  assert.deepEqual(withDiagnostics(result, () => [], () => assert.fail("no error")), { ...result, diagnostics: [] });
+  const errors: unknown[] = [];
+  const failed = withDiagnostics(result, () => { throw new Error("boom"); }, (e) => errors.push(e));
+  assert.deepEqual(failed, result);
+  assert.equal("diagnostics" in failed, false);
+  assert.equal(String(errors[0]), "Error: boom");
+  assert.equal(resultChecks(failed, false)[0]!.message, "No suit in the pool can reach these requirements: Luck.");
 });
