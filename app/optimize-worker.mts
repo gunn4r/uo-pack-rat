@@ -12,7 +12,7 @@
 // rather than trusting `workerData`'s ambient `any`.
 import { parentPort, workerData } from "node:worker_threads";
 import { solveExact, type OptPools, type OptAssignment, type OptProfile, type ExactSolveResult, type SolveProgress } from "./exact-solver.mts";
-import { resultDiagnostics, type Diagnostic, type DiagnosticsProfile } from "./diagnostics.mts";
+import { resultDiagnostics, withDiagnostics, type Diagnostic, type DiagnosticsProfile } from "./diagnostics.mts";
 import { propertyReach, DEFAULT_OPTIONAL_SLOTS, DEFAULT_SLOTS } from "./mip.mts";
 import { heldWeapon, ssiShareOf, stepsFor, swingOf, type SwingResult } from "./swing.mts";
 import type { EffectiveProfile, OptItem } from "./vault-lib.mts";
@@ -39,8 +39,8 @@ export interface WorkerWarnMessage {
   type: "warn";
   message: string;
 }
-// Either path's result, with the settings that worked against it (app/diagnostics.mts) and the suit's swing (app/swing.mts).
-export type WorkerResult = (OptResult | ExactSolveResult) & { diagnostics: Diagnostic[]; swing?: SwingResult | undefined };
+// Either path's result, with the settings that worked against it (app/diagnostics.mts; no `diagnostics` when computing them failed) and the suit's swing (app/swing.mts).
+export type WorkerResult = (OptResult | ExactSolveResult) & { diagnostics?: Diagnostic[]; swing?: SwingResult | undefined };
 export interface WorkerDoneMessage {
   type: "done";
   result: WorkerResult;
@@ -76,14 +76,11 @@ try {
   // the suit's swing, whether steps were on or not, when it holds a weapon with a speed and the build has a character
   const weapon = heldWeapon(result.best), sw = prof.swing;
   const swing = weapon && sw ? swingOf(weapon.speed!, sw.stamBase, result.totals?.after || {}, ssiShareOf(prof)) : undefined;
-  // A failure here never costs the suit: the result goes out without diagnostics and the server logs why.
-  let diagnostics: Diagnostic[] = [];
-  try {
-    diagnostics = resultDiagnostics({ pools: items, current: worn, optionalSlots: opts.optionalSlots, slots: opts.slots, profile: profile as DiagnosticsProfile, result: { ...result, swing }, swingNote: note });
-  } catch (e) {
-    port.postMessage({ type: "warn", message: `diagnostics failed, the result goes out without them: ${String((e as Error)?.stack || e)}` } satisfies WorkerWarnMessage);
-  }
-  port.postMessage({ type: "done", result: { ...result, ...(swing ? { swing } : {}), diagnostics }, ms: Date.now() - t0 } satisfies WorkerDoneMessage);
+  const withSwing = { ...result, ...(swing ? { swing } : {}) };
+  // A failure here never costs the suit (withDiagnostics): the result goes out without diagnostics and the server logs why.
+  const withDiags = withDiagnostics(withSwing, () => resultDiagnostics({ pools: items, current: worn, optionalSlots: opts.optionalSlots, slots: opts.slots, profile: profile as DiagnosticsProfile, result: withSwing, swingNote: note }),
+    (e) => port.postMessage({ type: "warn", message: `diagnostics failed, the result goes out without them: ${String((e as Error)?.stack || e)}` } satisfies WorkerWarnMessage));
+  port.postMessage({ type: "done", result: withDiags, ms: Date.now() - t0 } satisfies WorkerDoneMessage);
 } catch (e) {
   const errObj = e as Error;
   port.postMessage({ type: "error", error: String((e && errObj.stack) || e) } satisfies WorkerErrorMessage);

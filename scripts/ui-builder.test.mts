@@ -251,9 +251,9 @@ test("[slow] Check your settings: the block shows before and after the build, an
     page.on("request", (r) => { if (r.method() === "POST" && new URL(r.url()).pathname === "/api/optimize") starts++; });
     await page.click("#b-run");
     // before the search ends: the block sits right above the progress card
-    const pre = page.locator("#b-msg .b-check:has(+ .b-progress)");
-    await pre.waitFor({ timeout: 15_000 });
-    assert.match(await pre.innerText(), /Check your settings[\s\S]*Luck 100000 can't be reached with your inventory \(best possible: \d+\)\./);
+    // read in the same poll that finds it, so a quick build can't replace it between the wait and the read
+    const preText = await (await page.waitForFunction(() => document.querySelector("#b-msg .b-check:has(+ .b-progress)")?.textContent || null, undefined, { timeout: 15_000 })).jsonValue();
+    assert.match(String(preText), /Check your settings[\s\S]*Luck 100000 can't be reached with your inventory \(best possible: \d+\)\./);
     await built(page);
     assert.equal(await page.locator("#b-msg .b-check").count(), 0, "the pre-build block goes with the progress card");
     const block = page.locator(".b-head-card .b-check");
