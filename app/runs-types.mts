@@ -1,5 +1,22 @@
 // runs-types.mts — a saved suit-builder run and its list summary (app/runs-lib.mts), and the GET /api/runs and /api/runs/<id> responses built from them. Types only, with no imports, so the page's browser build can use them: the server annotates its responses with these and ui/api-types.mts narrows them to what the page reads.
 
+// A setting that works against the build (app/diagnostics.mts): a requirement out of reach, a weight that swamps the rest, swing speed. Each names the change that would fix it; the first action is the suggestion.
+export type DiagnosticCode = "floor_unreachable" | "floors_conflict" | "weight_dominates" | "swing_linear" | "swing_next_step";
+export type DiagnosticAction =
+  | { kind: "setFloor"; property: string; value: number }   // value in the player's terms, as intent.floors stores it
+  | { kind: "makeSoft"; property: string }
+  | { kind: "setWeight"; property: string; value: number }
+  | { kind: "swingSteps"; on: boolean }
+  | { kind: "lockSlot"; slot: string };
+export interface Diagnostic {
+  code: DiagnosticCode;
+  level: "warn" | "info";
+  property?: string | undefined;
+  message: string;                                  // the sentence, in the page's words
+  values?: Record<string, number> | undefined;      // the numbers in the sentence (floor, best, value, ...), for MCP and tests
+  actions: DiagnosticAction[];
+}
+
 export interface RunResult {
   proven?: boolean | undefined;
   method?: string | undefined;
@@ -7,6 +24,7 @@ export interface RunResult {
   currentScore?: number | undefined;
   delta?: number | undefined;
   nodes?: number | undefined;
+  diagnostics?: Diagnostic[] | undefined;      // absent on runs saved before SOLVER_VERSION 6: unreachableFloors says what they knew
   [key: string]: unknown;
 }
 // A run's settings snapshot as saved to disk, possibly still in its pre-2026-09-13 shape (see

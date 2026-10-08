@@ -23,7 +23,7 @@ import { parseRoute, registerScreen, routeFor } from "./nav.mts";
 import { setNavBusy } from "./shell.mts";
 import { putProfiles, setCharacterBuffs } from "./profiles.mts";
 import { session, commands, provide, readControls } from "./builder-session.mts";
-import { followJob, progressText } from "./builder-parts.mts";
+import { followJob, progressText, settingsCheck } from "./builder-parts.mts";
 import { paperdoll, propName, weightsSummary, requirementsSummary, poolSummary, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistCapsSummary, gearCapsText, pruneResistCaps, floorCapWarning, weaponsChipText, weaponName, toggleWeapon, type KnobField } from "./builder-model.mts";
 import type { OptimizeResult, SavedRunLike, OptimizeStartApiResponse, OptimizeCancelApiResponse } from "./api-types.mts";
 
@@ -682,6 +682,9 @@ async function runBuild(): Promise<void> {
   if (session.job !== job) { if (r.ok) api(`/api/optimize/${r.id}/cancel`, { method: "POST" }).catch(() => {}); return; }   // cancelled while the request was in flight
   if (!r.ok) { failJob(job, r.error); return; }
   job.poolSize = r.poolSize; job.skipped = r.skipped; job.current = r.current; job.warning = r.warning || null;
+  // the requirements no suit can reach, said above the progress panel while the search runs
+  const checks = r.cached ? null : settingsCheck(r.diagnostics || [], name!);
+  if (checks) job.ui!.root.before(checks);
   // r.run.ms is `number | null` (a saved run's on-disk shape); a genuinely null one has never been guarded here.
   if (r.cached) { finishJob(job, { result: r.run!.result, ms: r.run!.ms!, runId: r.run!.id, reused: r.run! }); return; }
   job.id = r.id!;

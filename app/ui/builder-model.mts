@@ -8,6 +8,7 @@ import type { PlannedBuffs, PropMap, ResistCap, RunSettings } from "../vault-lib
 import { applyBuffs, buffById, buffsDiff, capWord, signed, type BuffResult } from "../buffs.mts";
 import { RUN_SETTING_LIMITS, type Range } from "../run-settings.mts";
 import { paperdoll, paperdollCaps } from "../evaluate.mts";
+import type { Diagnostic, DiagnosticAction } from "../runs-types.mts";
 
 export const plural = (n: number, word: string, many = `${word}s`): string => `${n.toLocaleString("en-US")} ${n === 1 ? word : many}`;
 const num = (n: number): string => n.toLocaleString("en-US", { maximumFractionDigits: 2 });
@@ -344,4 +345,25 @@ export function runBadges(changes: number | null | undefined, totals: PropMap | 
     out.push({ text: `${labelOf(k)} ${Math.min(cap, pd(k, totals[k] || 0))}${cap !== (shardCaps[k] ?? cap) ? ` · cap ${cap}` : ""}` });
   }
   return out;
+}
+
+// ---------------------------------------------------------------- "Check your settings" (app/diagnostics.mts)
+// The actions the page carries out on the panel's profile: the button's words, its done state, the toast once applied, and the edit itself. An action of another kind gets no button.
+type FloorAction = Extract<DiagnosticAction, { kind: "setFloor" | "makeSoft" }>;
+export const handledAction = (a: DiagnosticAction): a is FloorAction => a.kind === "setFloor" || a.kind === "makeSoft";
+export function actionWords(a: FloorAction): { label: string; done: string; toast: string } {
+  const req = `${labelOf(a.property)} requirement`;
+  return a.kind === "setFloor"
+    ? { label: `Lower to ${a.value}`, done: "Lowered ✓", toast: `${req} lowered to ${a.value}. Build again to use it.` }
+    : { label: "Make soft", done: "Made soft ✓", toast: `${req} is soft now. Build again to use it.` };
+}
+export function applyAction(p: { floors?: Record<string, number> | undefined; softFloors?: string[] | undefined }, a: FloorAction): void {
+  if (a.kind === "setFloor") (p.floors ||= {})[a.property] = a.value;
+  else if (!(p.softFloors ||= []).includes(a.property)) p.softFloors.push(a.property);
+}
+// What a result's "Check your settings" lists: its diagnostics, warnings first; a run saved before them (no `diagnostics`) says what it knew, its unreachable hard floors, as one warning with no actions.
+export function resultChecks(res: { diagnostics?: Diagnostic[] | undefined; unreachableFloors?: string[] | undefined }, withBuffs: boolean): Diagnostic[] {
+  if (res.diagnostics) return [...res.diagnostics.filter((d) => d.level === "warn"), ...res.diagnostics.filter((d) => d.level !== "warn")];
+  const keys = res.unreachableFloors || [];
+  return keys.length ? [{ code: "floor_unreachable", level: "warn", message: `No suit in the pool can reach these requirements${withBuffs ? ", even with the buffs" : ""}: ${keys.map((k) => propName(k)).join(", ")}.`, actions: [] }] : [];
 }

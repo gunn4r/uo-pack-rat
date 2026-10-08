@@ -41,7 +41,7 @@ export interface Tool {
 export const INSTRUCTIONS = [
   "Pack Rat holds a player's Ultima Online inventory: every item on every character, in every bank, backpack and scanned house container, folded from scans the game client wrote. Tools read it, run its Suit Builder and, when the player allows it, act in game.",
   "Start with inventory_facets for the property keys, slots, kinds and characters a search can name, then search_items (the Inventory screen's filters; `props` takes \"lrc:20\" for at least 20, \"lrc:le:20\" for at most, \"lrc:eq:20\" for exactly). Rows are compact, with the serials of the container an item sits in and of its root (for container_contents); get_item has the full tooltip. Paged lists take `limit` (25 by default, 100 at most) and `offset` and answer with `total`.",
-  "character_sheet, list_runs, get_run, compare_runs and scan_status read characters, saved Suit Builder runs and how fresh the scans are. build_suit runs the Suit Builder for a character with its saved profile (or a template), buffs and pinned pieces, waits up to waitSeconds (45 by default, 50 at most, inside a client's usual 60-second timeout) and returns the suit, or a job id: then poll get_suit_build. One build_suit runs at a time; a new call replaces one still running. score_suit totals a hand-picked suit against a profile. A suit's `totals` are item totals; `effectiveTotals` are what the character has in it (resists as on the paperdoll, the buffs counted, not clipped at the caps); a requirement's floor and value are in item terms with the buffs already taken off the floor, so compare them with each other. `unreachableFloors` names hard requirements no suit could reach, scored as plain weights. organize_proposal and organize_plan show what Auto organize would set up and the trips the current setup would run; neither changes anything.",
+  "character_sheet, list_runs, get_run, compare_runs and scan_status read characters, saved Suit Builder runs and how fresh the scans are. build_suit runs the Suit Builder for a character with its saved profile (or a template), buffs and pinned pieces, waits up to waitSeconds (45 by default, 50 at most, inside a client's usual 60-second timeout) and returns the suit, or a job id: then poll get_suit_build. One build_suit runs at a time; a new call replaces one still running. score_suit totals a hand-picked suit against a profile. A suit's `totals` are item totals; `effectiveTotals` are what the character has in it (resists as on the paperdoll, the buffs counted, not clipped at the caps); a requirement's floor and value are in item terms with the buffs already taken off the floor, so compare them with each other. `unreachableFloors` names hard requirements no suit could reach, scored as plain weights. `diagnostics` lists settings that work against the build (a requirement out of reach, a weight that swamps the rest, swing speed); each names the change that would fix it. organize_proposal and organize_plan show what Auto organize would set up and the trips the current setup would run; neither changes anything.",
   "In-game tools (highlight_item, go_to_item, grab_item, organize_trip) need \"Allow in-game actions\" on in Pack Rat's Settings and the bridge script running in the game client. They queue one command or one trip through the same bridge the app's buttons use and report what the bridge did within waitSeconds (45 by default, 50 at most); after that, poll get_action_status with the id. stop_actions stops a trip after its current step.",
 ].join("\n\n");
 
@@ -138,6 +138,7 @@ function resultSummary(result: Record<string, unknown> | null | undefined, ev: E
     totals: nonZero((result.totals as { after?: Record<string, number> } | undefined)?.after),
     ...(ev && best ? { effectiveTotals: nonZero(evaluateSuit({ profile: ev.base, character: ev.character, suit: best, buffs: ev.plan }).effectiveTotals) } : {}),
     ...(Array.isArray(result.unreachableFloors) && result.unreachableFloors.length ? { unreachableFloors: result.unreachableFloors } : {}),
+    ...(Array.isArray(result.diagnostics) && result.diagnostics.length ? { diagnostics: result.diagnostics } : {}),
     ...(Array.isArray(result.alternatives) && result.alternatives.length ? { otherSuits: (result.alternatives as Array<{ best: Record<string, { serial: number; name: string } | null>; score: number }>).map((a) => ({ score: a.score, suit: suitRows(a.best) })) } : {}),
   };
 }
@@ -402,7 +403,7 @@ export const TOOLS: Tool[] = [
   },
   {
     name: "get_run",
-    description: "One saved run: the suit it found, what changes from what was worn, its property totals (and effectiveTotals: with its buffs, for its character as scanned now), any unreachableFloors, and the settings it ran with (floors, weights, buffs).",
+    description: "One saved run: the suit it found, what changes from what was worn, its property totals (and effectiveTotals: with its buffs, for its character as scanned now), any unreachableFloors and diagnostics, and the settings it ran with (floors, weights, buffs).",
     inputSchema: { type: "object", additionalProperties: false, required: ["id"], properties: { id: ID } },
     annotations: { title: "Saved run", ...READ },
     async handler(a, ctx) {
@@ -445,7 +446,7 @@ export const TOOLS: Tool[] = [
   },
   {
     name: "build_suit",
-    description: "Run the Suit Builder (its exact search) for a character with their saved Suit Builder profile, optionally a template applied over it, buffs counted as on, and pinned pieces kept in their slots. Waits up to waitSeconds and returns the suit, the changes from what they wear, the totals, effectiveTotals (with the buffs) and any unreachableFloors; a longer build answers with an id: poll get_suit_build. A finished build is saved as a run (list_runs), except one with pinned pieces or no character, which fills only the empty slots like Manual's \"Fill the rest automatically\" and is planned as Manual plans. One build_suit runs at a time: a new call replaces one still running from this tool (never the app's own), and the replaced one says so.",
+    description: "Run the Suit Builder (its exact search) for a character with their saved Suit Builder profile, optionally a template applied over it, buffs counted as on, and pinned pieces kept in their slots. Waits up to waitSeconds and returns the suit, the changes from what they wear, the totals, effectiveTotals (with the buffs) and any unreachableFloors and diagnostics; a longer build answers with an id: poll get_suit_build. A finished build is saved as a run (list_runs), except one with pinned pieces or no character, which fills only the empty slots like Manual's \"Fill the rest automatically\" and is planned as Manual plans. One build_suit runs at a time: a new call replaces one still running from this tool (never the app's own), and the replaced one says so.",
     inputSchema: { type: "object", additionalProperties: false, properties: {
       character: CHARACTER,
       noCharacter: { type: "boolean", description: "Build from pieces nobody wears, on raw item totals (no Resisting Spells bonus, race or stats), as Manual's No character does. Leave character out." },
@@ -489,7 +490,7 @@ export const TOOLS: Tool[] = [
   },
   {
     name: "get_suit_build",
-    description: "A build's progress, or its result once done (the suit, changes, totals, effectiveTotals and any unreachableFloors), by the id build_suit answered with. Results are kept 10 minutes after a build ends.",
+    description: "A build's progress, or its result once done (the suit, changes, totals, effectiveTotals and any unreachableFloors and diagnostics), by the id build_suit answered with. Results are kept 10 minutes after a build ends.",
     inputSchema: { type: "object", additionalProperties: false, required: ["id"], properties: { id: ID } },
     annotations: { title: "Build status", ...READ },
     async handler(a, ctx) {

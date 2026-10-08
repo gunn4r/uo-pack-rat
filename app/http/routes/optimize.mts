@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import http from "node:http";
 import { isBoundedInt, isBoundedString, short } from "../../guards.mts";
 import { optionalSlotsFor } from "../../mip.mts";
+import { preBuildDiagnostics, type DiagnosticsProfile } from "../../diagnostics.mts";
 import { readBody } from "../../read-body.mts";
 import { runKey, reusableRun, runSummary, manualRun, type RunOpts, type SavedRun } from "../../runs-lib.mts";
 import { OPTS_LIMITS, RUN_DEFAULTS, runSettingsError, type RunSettings } from "../../run-settings.mts";
@@ -212,7 +213,10 @@ export function routes(ctx: ServerContext): Route[] {
       // old form, whose client computes them itself — ui/builder.mts) — fill them in now so a saved
       // run started this way (the jobs service's saveRun() reads job.meta) carries the same figures the response does.
       if (character) { meta.poolSize = poolSize; meta.skipped = skipped; }
-      if (hit) return send(res, 200, { ok: true, cached: true, run: hit, poolSize, skipped, current, blocked });
+      // The requirements no suit in the pool can reach, said before the search starts (app/diagnostics.mts); the result repeats them.
+      const diagnostics = preBuildDiagnostics({ pools: pools as Partial<Record<string, OptItem[]>>, current: current as Partial<Record<string, OptItem | null>>,
+        optionalSlots: fullOpts.optionalSlots as string[] | undefined, profile: profile as DiagnosticsProfile });
+      if (hit) return send(res, 200, { ok: true, cached: true, run: hit, poolSize, skipped, current, blocked, diagnostics });
       // warm start: this character's newest saved suit, re-scored under the new settings
       const last = fill ? null : runs.find((r) => r.character === meta.character && r.result && r.result.best);
       // last.result/.best were both truthy-checked by the .find() predicate just above; `.best`'s
@@ -224,7 +228,7 @@ export function routes(ctx: ServerContext): Route[] {
       if (!started) return send(res, 429, { ok: false, error: "too many builds are already running; try again in a moment" });
       const { job, superseded } = started;
       if (poolSize > 50000) job.meta.warning = "over 50,000 candidates; the exact solver may take a while";
-      return send(res, 200, { ok: true, id: job.id, warmFrom: last ? last.id : null, superseded, warning: job.meta.warning, poolSize, skipped, current, blocked });
+      return send(res, 200, { ok: true, id: job.id, warmFrom: last ? last.id : null, superseded, warning: job.meta.warning, poolSize, skipped, current, blocked, diagnostics });
     } },
     { method: "POST", path: "/api/runs", handle: async (req, res) => {
       // Save Manual's suit as a run (issue #12): {character, suit: {slot: serial}, settings, inventoryStamp}. The

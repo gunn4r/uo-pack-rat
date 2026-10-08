@@ -14,10 +14,10 @@ import { sheetNode } from "./sheet.mts";
 import { bridgeActionReason, runBridgeAction } from "./bridge.mts";
 import { resolveItems } from "./items.mts";
 import { session, commands, provide } from "./builder-session.mts";
-import { RESIST_NAMES, keyProps, tipTarget, verdict, grabAllButton, fetchCard } from "./builder-parts.mts";
+import { RESIST_NAMES, keyProps, tipTarget, verdict, grabAllButton, fetchCard, settingsCheck } from "./builder-parts.mts";
 import { savedBuffs, plannedFromWorn, buffById, buffsDiff, runBuffs } from "../buffs.mts";
 import type { RunBuffs } from "../vault-lib.mts";
-import { slotsOf, paperdollCaps, paperdollFloors, pastCapBadges, runSettingsDiff, withBuffs, afterChange, compareModel, hiddenRowsNote, otherChanges, plural, resistOutcome, toggleCompare, propName, capNote, capsLine, anyOverridden, effectiveFloor, type CompareMember } from "./builder-model.mts";
+import { slotsOf, paperdollCaps, paperdollFloors, pastCapBadges, runSettingsDiff, withBuffs, afterChange, compareModel, hiddenRowsNote, otherChanges, plural, resistOutcome, toggleCompare, propName, capNote, capsLine, anyOverridden, effectiveFloor, resultChecks, type CompareMember } from "./builder-model.mts";
 import type { OptSuit, OptimizeResult, SavedRunLike } from "./api-types.mts";
 
 // One resist tile: its name in its resist colour, the value (before → after when there is a before) against
@@ -135,13 +135,13 @@ function headlineCard(res: OptimizeResult, current: OptSuit, suit: OptSuit, prof
     onClick: () => { void commands.openInManual(suit, slotsOf(res.best), buffsUsed, manual ? "Open the manual run" : "Start from the result"); } });
   const tiles = RESIST_KEYS.map((k) => resistTile(k, now.totals[k]!, pdFloors[k] ?? null, { cap: now.caps[k]!, shard: caps[k]!.shard }, was.totals[k]!));
   const other = [...otherChanges([...Object.keys(prof.floors), ...Object.keys(prof.weights)], was.totals, now.totals, now.caps, pdFloors), ...pastCapBadges(now).map((text) => ({ text, tone: "ok" as const }))];
-  const unreachable = (res.unreachableFloors || []).length ? message({ tone: "warn", text: `No suit in the pool can reach these requirements${prof.buffs ? ", even with the buffs" : ""}: ${res.unreachableFloors!.map((k) => propName(k)).join(", ")}.` }) : null;
+  const checks = settingsCheck(resultChecks(res, !!prof.buffs), name);
   return box("section", { class: "card b-head-card", "aria-label": view == null ? "Best suit" : `Suit ${view + 2}` },
     box("div", { class: "b-headline" },
       box("div", { class: "b-headline-text" }, box("div", { class: "b-row" }, el("h2", { class: "t-xl" }, manual ? `Manual suit for ${name}` : view == null ? `Best suit for ${name}` : `Suit #${view + 2} for ${name}`), vb), el("p", { class: "muted" }, txt(line)), plannedWith(prof, name)),
       box("div", { class: "b-head-acts" }, start, grabAllButton(fetchItems, name, { id: "b-grab-all" }))),
     v.detail ? message({ tone: v.tone === "bad" ? "bad" : "warn", text: v.detail }) : null,
-    unreachable,
+    checks,
     box("div", { class: "b-resists" }, ...tiles),
     other.length ? box("div", { class: "b-badges", role: "list", "aria-label": "Other changes" }, ...other.map((o) => box("span", { class: `badge ${o.tone}`, role: "listitem" }, txt(o.text)))) : null);
 }
