@@ -405,13 +405,13 @@ test("[slow] casting school: the FC cap's source beside the select and on the FC
     await note.waitFor({ timeout: 10_000 });
     assert.equal(await note.innerText(), "cap 2: no Chivalry, Spellweaving or Bushido");
     await page.selectOption("#b-school", "Chivalry");
-    assert.equal(await note.innerText(), "cap 4: Chivalry");
+    assert.equal(await note.innerText(), "cap 4: Chivalry (chosen)");
     assert.match(await page.locator("#b-tpl-state").innerText(), /casting school Chivalry/);
     await page.click("#b-addfloor");
     await page.click(".b-pick-list button[data-key=fc]");
     const row = page.locator('#b-sec-req .rule-row[data-key="fc"]');
     assert.equal(await row.locator("input").inputValue(), "4");
-    assert.equal(await row.locator(".b-fc-cap").innerText(), "cap 4: Chivalry");
+    assert.equal(await row.locator(".b-fc-cap").innerText(), "cap 4: Chivalry (chosen)");
     assert.deepEqual(errors, []);
   } finally {
     await app.close();

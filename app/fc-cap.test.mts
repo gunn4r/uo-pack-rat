@@ -1,6 +1,6 @@
 // fc-cap.test.mts — the Faster Casting cap by casting school (issue #213): `fcCapFor` in `app/vault-lib.mts` and where the cap goes.
 //
-// `[fast]`: the rule's matrix (each school named, the skills' choice at the 30 base mark, the Chivalry caster's drop at Magery or Mysticism 70 and Mysticism 69.9 against 70, Spellweaving kept at 4 when named, No character, a named school over the skills); `effectiveProfile`'s and `evaluateSuit`'s caps follow it, and Manual with No character sets a named school aside; a build where FC 3-4 is reachable scores it with cap 4 in both solvers and stops at 2 without; and in a saved run: the casting school in `planBuild`'s snapshot only when named, `runSettingsError` and the profiles schema naming the same schools, `settingsDiff`'s line, and the run key following the cap.
+// `[fast]`: the rule's matrix (each school named, the skills' choice at the 30 base mark, the Chivalry caster's drop at Magery or Mysticism 70 and Mysticism 69.9 against 70, Spellweaving kept at 4 when named, No character, a named school over the skills); `effectiveProfile`'s and `evaluateSuit`'s caps follow it, and Manual with No character takes a named school's cap; a build where FC 3-4 is reachable scores it with cap 4 in both solvers and stops at 2 without; and in a saved run: the casting school in `planBuild`'s snapshot only when named, `runSettingsError` and the profiles schema naming the same schools, `settingsDiff`'s line, and the run key following the cap.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -25,7 +25,7 @@ test("[fast] fc cap: each school named, the skills' choice, the Chivalry drop at
   const named = Object.fromEntries(CASTING_SCHOOLS.map((s) => [s, fcCapFor(null, s).cap]));
   assert.deepEqual(named, { Magery: 2, Necromancy: 2, Mysticism: 2, Chivalry: 4, Spellweaving: 4, Bushido: 4 });
   assert.deepEqual(fcCapFor(null), { cap: 2, reason: "no character" });
-  assert.deepEqual(fcCapFor(null, "Chivalry"), { cap: 4, reason: "Chivalry" }, "No character with a named school");
+  assert.deepEqual(fcCapFor(null, "Chivalry"), { cap: 4, reason: "Chivalry (chosen)" }, "No character with a named school");
   assert.deepEqual(fcCapFor(skills({ Chivalry: 90 })), { cap: 4, reason: "Chivalry" });
   assert.deepEqual(fcCapFor(skills({ Spellweaving: 30 })), { cap: 4, reason: "Spellweaving" }, "30 base counts");
   assert.deepEqual(fcCapFor(skills({ Spellweaving: 29.9 })), { cap: 2, reason: "no Chivalry, Spellweaving or Bushido" }, "under 30 does not");
@@ -36,9 +36,9 @@ test("[fast] fc cap: each school named, the skills' choice, the Chivalry drop at
   assert.deepEqual(fcCapFor(skills({ Chivalry: 90, Mysticism: 70 })), { cap: 2, reason: "Mysticism 70+" }, "Mysticism 70 does");
   assert.deepEqual(fcCapFor(skills({ Spellweaving: 120, Magery: 120 })), { cap: 2, reason: "Magery 70+" }, "from skills, a mage-weaver gears for Magery");
   // a named school wins over the skills; only Chivalry drops at 70
-  assert.deepEqual(fcCapFor(skills({ Spellweaving: 120, Magery: 120 }), "Spellweaving"), { cap: 4, reason: "Spellweaving" });
+  assert.deepEqual(fcCapFor(skills({ Spellweaving: 120, Magery: 120 }), "Spellweaving"), { cap: 4, reason: "Spellweaving (chosen)" });
   assert.deepEqual(fcCapFor(skills({ Chivalry: 120, Magery: 80 }), "Chivalry"), { cap: 2, reason: "Magery 70+" });
-  assert.deepEqual(fcCapFor(skills({ Chivalry: 120 }), "Magery"), { cap: 2, reason: "Magery" });
+  assert.deepEqual(fcCapFor(skills({ Chivalry: 120 }), "Magery"), { cap: 2, reason: "Magery (chosen)" });
   assert.deepEqual(fcCapFor(skills({ Chivalry: 120 }), "nonsense"), { cap: 4, reason: "Chivalry" }, "an unknown school reads as none");
 });
 
@@ -52,8 +52,9 @@ test("[fast] fc cap: effectiveProfile and evaluateSuit take the cap", () => {
   assert.equal(ev.caps.fc, 4);
   assert.equal(ev.wasted.fc, undefined, "FC 3 is under a cap of 4");
   assert.equal(evaluateSuit({ profile: {}, character: null, suit: { ring: { props: { fc: 3 } } }, buffs: null }).wasted.fc, 1);
-  // Manual with No character plans on the shard's caps, a named school set aside, as its totals strip shows them
-  assert.equal(manualProfile({ castingSchool: "Chivalry" }, null, [], {}, null, [], {}).caps.fc, 2);
+  // Manual with No character plans with a named school's cap, as its totals strip shows it; none named stays at 2
+  assert.equal(manualProfile({ castingSchool: "Chivalry" }, null, [], {}, null, [], {}).caps.fc, 4);
+  assert.equal(manualProfile({}, null, [], {}, null, [], {}).caps.fc, 2);
   assert.equal(manualProfile({ castingSchool: "Chivalry" }, pal, [], {}, "human", [], {}).caps.fc, 4);
 });
 

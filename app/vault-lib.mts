@@ -372,7 +372,7 @@ export function resistCapsError(v: unknown, path = "resistCaps"): string | null 
 // Mysticism reaches 70. A profile may name its school (`castingSchool`); else it follows the character's skills: 4 when
 // it has Chivalry, Spellweaving or Bushido at 30 base or more (starting points and stray gains stay under it, any build
 // that casts from the school trains past it) and neither Magery nor Mysticism at 70, else the shard's cap. No character
-// and no school: the shard's cap. `reason` is what the panel shows beside the cap ("Chivalry", "Magery 70+").
+// and no school: the shard's cap. `reason` is what the panel shows beside the cap ("Chivalry", "Chivalry (chosen)" for a named school, "Magery 70+").
 export const CASTING_SCHOOLS: readonly string[] = ["Magery", "Necromancy", "Mysticism", "Chivalry", "Spellweaving", "Bushido"];
 const FC_FAST_SCHOOLS = ["Chivalry", "Spellweaving", "Bushido"], FC_FAST_CAP = 4, FC_SCHOOL_MIN = 30;
 const FC_SLOW_SKILLS = ["Magery", "Mysticism"], FC_SLOW_AT = 70;
@@ -383,8 +383,9 @@ export function fcCapFor(skills: Record<string, unknown> | null | undefined, sch
   const slow = FC_SLOW_SKILLS.filter((n) => sk(n, "value") >= FC_SLOW_AT).sort((a, b) => sk(b, "value") - sk(a, "value"))[0];
   const named = school && CASTING_SCHOOLS.includes(school) ? school : null;
   if (named) {
-    if (!FC_FAST_SCHOOLS.includes(named)) return { cap: low, reason: named };
-    return named === "Chivalry" && slow ? { cap: low, reason: `${slow} ${FC_SLOW_AT}+` } : { cap: FC_FAST_CAP, reason: named };
+    const chosen = `${named} (chosen)`;
+    if (!FC_FAST_SCHOOLS.includes(named)) return { cap: low, reason: chosen };
+    return named === "Chivalry" && slow ? { cap: low, reason: `${slow} ${FC_SLOW_AT}+` } : { cap: FC_FAST_CAP, reason: chosen };
   }
   if (!skills) return { cap: low, reason: "no character" };
   const fast = FC_FAST_SCHOOLS.filter((n) => sk(n, "base") >= FC_SCHOOL_MIN).sort((a, b) => sk(b, "base") - sk(a, "base"))[0];

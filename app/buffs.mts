@@ -405,13 +405,13 @@ const itemTotals = (items: Item[]): PropMap => totalsOf(Object.fromEntries(items
 // What Manual plans a hand-picked suit with (its "Fill the rest automatically"; the MCP tools' score_suit and pinned
 // build_suit): the buffs `on`, whose Enhance Potions and Spell Channeling are read from `suit` (slot → piece) itself,
 // the raw stats from what the character wears now (`wornNow`) and `race` (null with no character); with no character
-// the profile's race, resist caps, caps and casting school are left out, so it plans on raw item totals at the shard's caps.
+// the profile's race, resist caps and caps are left out, so it plans on raw item totals (a named casting school still sets the FC cap).
 export function manualProfile(p: Profile, character: Character | null, wornNow: Item[], suit: Record<string, Item>, race: string | null, on: string[], edits: Readonly<Record<string, number>>): EffectiveProfile {
   return plannedProfile(manualBase(p, character), character, manualPlan(character, wornNow, suit, race, on, edits));
 }
 // manualProfile's two halves, which evaluate.mts's evaluateSuit takes: the profile (with no character, without its
-// race, resist caps, caps and casting school) and the plan.
-export const manualBase = (p: Profile, character: Character | null): Profile => (character ? p : { ...p, race: undefined, resistCaps: undefined, caps: undefined, castingSchool: undefined });
+// race, resist caps and caps) and the plan.
+export const manualBase = (p: Profile, character: Character | null): Profile => (character ? p : { ...p, race: undefined, resistCaps: undefined, caps: undefined });
 export function manualPlan(character: Character | null, wornNow: Item[], suit: Record<string, Item>, race: string | null, on: string[], edits: Readonly<Record<string, number>>): BuffPlan {
   const { values } = buffSkillValues(character ? character.skills || {} : null, edits);
   return { on, skills: values, stats: character ? rawStats(character, itemTotals(wornNow)) : null, who: { race, weaponFlags: weaponFlags(suit) },

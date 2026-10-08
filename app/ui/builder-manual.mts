@@ -168,7 +168,7 @@ const held = (suit = slots): Record<string, Item | Record<string, never>> => Obj
 const suitOpt = (): Record<string, OptItem> => Object.fromEntries(Object.entries(slots).flatMap(([s, serial]) => (items[serial] ? [[s, toOptItem(items[serial]!)]] : [])));
 function profile(): EffectiveProfile {
   const name = manualCharacter();
-  return name && session.profile ? effectiveProfile(session.profile, state.inv!.characters[name] as Character) : effectiveProfile({}, null);
+  return name && session.profile ? effectiveProfile(session.profile, state.inv!.characters[name] as Character) : effectiveProfile({ castingSchool: session.profile?.castingSchool }, null);
 }
 // A character's buff numbers (or No character's, for null) with its edits, which inputs are planned, the raw stats
 // Bless takes a share of (the scanned stats less what the character wears) and the race. Automatic reads them too:
@@ -328,7 +328,7 @@ function totalsCard(): HTMLElement {
   };
   const row = [
     ...RESIST_KEYS.map((k) => { const [nm, color] = RESIST_NAMES[k]!; return cell(k, caps[k], el("span", { class: "t-sm resist-name", style: `color:var(${color})` }, nm), capNote(resists[k]!), false); }),
-    ...[...TOTAL_KEYS, ...STAT_KEYS].map((k) => cell(k, caps[k], txt(label(k), "t-sm muted"), k === "fc" ? fcCapSource(fcCapFor(name ? state.inv!.characters[name]?.skills : null, name ? session.profile?.castingSchool : undefined)) : null, k === TOTAL_KEYS[0] || k === STAT_KEYS[0])),
+    ...[...TOTAL_KEYS, ...STAT_KEYS].map((k) => cell(k, caps[k], txt(label(k), "t-sm muted"), k === "fc" ? fcCapSource(fcCapFor(name ? state.inv!.characters[name]?.skills : null, session.profile?.castingSchool)) : null, k === TOTAL_KEYS[0] || k === STAT_KEYS[0])),
   ];
   const rsb = prof.resistBonus || 0, counted = countBuffs ? buffs.length : 0, withBuffs = counted ? ` with ${counted} ${counted === 1 ? "buff" : "buffs"}` : "";
   const note = name ? `${name}'s paperdoll values${withBuffs}: +${rsb} to each resist from Resisting Spells, against ${name}'s resist caps` : `Raw item totals${withBuffs}: with no character there is no Resisting Spells or race bonus`;
