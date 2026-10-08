@@ -214,13 +214,15 @@ export function getRules(): RulesV1 {
 // sheet's "Other" group list them in it). A parsed property has the
 // tooltip pattern that reads it; the rest are set by parseTooltip itself (psLevel, sotPoints, tagPenalty), by the
 // fold (the pools) or read off the item (the "extra" columns). `builder` is whether the Suit Builder's weight and
-// requirement rows offer it. The exports below are derived from it.
+// requirement rows offer it. `typical` is the span a good suit covers in a property the shard rules give no cap
+// (typicalRange, the weight rows' worth hint and the weight_dominates diagnostic read it). The exports below are derived from it.
 type PropKind = "number" | "extra";
-interface PropDef<K extends string = string> { key: K; pattern?: RegExp; label: string; full: string; builder: boolean; kind: PropKind }
+interface PropDef<K extends string = string> { key: K; pattern?: RegExp; label: string; full: string; builder: boolean; kind: PropKind; typical?: number }
 const tip = (text: string): RegExp => new RegExp(`${text}[^-\\d]*(-?\\d+)`);
 const parsed = <K extends string>(key: K, text: string, label: string, full: string, builder = true): PropDef<K> => ({ key, pattern: tip(text), label, full, builder, kind: "number" });
 const derived = <K extends string>(key: K, label: string, full: string, builder = true): PropDef<K> => ({ key, label, full, builder, kind: "number" });
 const extra = <K extends string>(key: K, label: string, full: string): PropDef<K> => ({ key, label, full, builder: false, kind: "extra" });
+const typ = <K extends string>(def: PropDef<K>, typical: number): PropDef<K> => ({ ...def, typical });
 export const PROPERTIES = [
   parsed("physResist", "physical resist", "Phys", "Physical Resist"), parsed("fireResist", "fire resist", "Fire", "Fire Resist"),
   parsed("coldResist", "cold resist", "Cold", "Cold Resist"), parsed("poisonResist", "poison resist", "Poison", "Poison Resist"),
@@ -231,21 +233,21 @@ export const PROPERTIES = [
   parsed("fc", "faster casting", "FC", "Faster Casting"), parsed("fcr", "faster cast recovery", "FCR", "Faster Cast Recovery"),
   parsed("sdi", "spell damage increase", "SDI", "Spell Damage Increase"),
   parsed("hpi", "hit point increase", "HP+", "Hit Point Increase"), parsed("hpRegen", "hit point regeneration", "HPR", "Hit Point Regeneration"),
-  parsed("stamInc", "stamina increase", "Stam+", "Stamina Increase"), parsed("stamRegen", "stamina regeneration", "SR", "Stamina Regeneration"),
-  parsed("manaInc", "mana increase", "Mana+", "Mana Increase"), parsed("manaRegen", "mana regeneration", "MR", "Mana Regeneration"),
-  parsed("strBonus", "strength bonus", "STR", "Strength Bonus"), parsed("dexBonus", "dexterity bonus", "DEX", "Dexterity Bonus"),
-  parsed("intBonus", "intelligence bonus", "INT", "Intelligence Bonus"),
-  parsed("reflectPhys", "reflect physical damage", "RPD", "Reflect Physical Damage"),
-  parsed("castingFocus", "casting focus", "CF", "Casting Focus"), parsed("luck", "^luck", "Luck", "Luck"),
-  parsed("hitLifeLeech", "hit life leech", "HLL", "Hit Life Leech"), parsed("hitStamLeech", "hit stamina leech", "HSL", "Hit Stamina Leech"),
-  parsed("hitManaLeech", "hit mana leech", "HML", "Hit Mana Leech"), parsed("hitLowerDef", "hit lower defense", "HLD", "Hit Lower Defense"),
-  parsed("hitLowerAttack", "hit lower attack", "HLA", "Hit Lower Attack"),
-  parsed("enhancePotions", "enhance potions", "EP", "Enhance Potions"), parsed("selfRepair", "self repair", "Self Rep", "Self Repair"),
-  parsed("hitFireball", "hit fireball", "Hit Fireball", "Hit Fireball"), parsed("hitLightning", "hit lightning", "Hit Lightning", "Hit Lightning"),
-  parsed("hitHarm", "hit harm", "Hit Harm", "Hit Harm"), parsed("hitMagicArrow", "hit magic arrow", "Hit MA", "Hit Magic Arrow"),
-  parsed("hitDispel", "hit dispel", "Hit Dispel", "Hit Dispel"), parsed("hitPoisonArea", "hit poison area", "Poison Area", "Hit Poison Area"),
-  parsed("hitFireArea", "hit fire area", "Fire Area", "Hit Fire Area"), parsed("hitColdArea", "hit cold area", "Cold Area", "Hit Cold Area"),
-  parsed("hitEnergyArea", "hit energy area", "Energy Area", "Hit Energy Area"), parsed("hitPhysArea", "hit physical area", "Phys Area", "Hit Physical Area"),
+  typ(parsed("stamInc", "stamina increase", "Stam+", "Stamina Increase"), 20), parsed("stamRegen", "stamina regeneration", "SR", "Stamina Regeneration"),
+  typ(parsed("manaInc", "mana increase", "Mana+", "Mana Increase"), 20), parsed("manaRegen", "mana regeneration", "MR", "Mana Regeneration"),
+  typ(parsed("strBonus", "strength bonus", "STR", "Strength Bonus"), 25), typ(parsed("dexBonus", "dexterity bonus", "DEX", "Dexterity Bonus"), 25),
+  typ(parsed("intBonus", "intelligence bonus", "INT", "Intelligence Bonus"), 25),
+  typ(parsed("reflectPhys", "reflect physical damage", "RPD", "Reflect Physical Damage"), 50),
+  parsed("castingFocus", "casting focus", "CF", "Casting Focus"), typ(parsed("luck", "^luck", "Luck", "Luck"), 500),
+  typ(parsed("hitLifeLeech", "hit life leech", "HLL", "Hit Life Leech"), 100), typ(parsed("hitStamLeech", "hit stamina leech", "HSL", "Hit Stamina Leech"), 100),
+  typ(parsed("hitManaLeech", "hit mana leech", "HML", "Hit Mana Leech"), 100), typ(parsed("hitLowerDef", "hit lower defense", "HLD", "Hit Lower Defense"), 50),
+  typ(parsed("hitLowerAttack", "hit lower attack", "HLA", "Hit Lower Attack"), 50),
+  typ(parsed("enhancePotions", "enhance potions", "EP", "Enhance Potions"), 25), typ(parsed("selfRepair", "self repair", "Self Rep", "Self Repair"), 5),
+  typ(parsed("hitFireball", "hit fireball", "Hit Fireball", "Hit Fireball"), 50), typ(parsed("hitLightning", "hit lightning", "Hit Lightning", "Hit Lightning"), 50),
+  typ(parsed("hitHarm", "hit harm", "Hit Harm", "Hit Harm"), 50), typ(parsed("hitMagicArrow", "hit magic arrow", "Hit MA", "Hit Magic Arrow"), 50),
+  typ(parsed("hitDispel", "hit dispel", "Hit Dispel", "Hit Dispel"), 50), typ(parsed("hitPoisonArea", "hit poison area", "Poison Area", "Hit Poison Area"), 50),
+  typ(parsed("hitFireArea", "hit fire area", "Fire Area", "Hit Fire Area"), 50), typ(parsed("hitColdArea", "hit cold area", "Cold Area", "Hit Cold Area"), 50),
+  typ(parsed("hitEnergyArea", "hit energy area", "Energy Area", "Hit Energy Area"), 50), typ(parsed("hitPhysArea", "hit physical area", "Phys Area", "Hit Physical Area"), 50),
   // Not offered by the builder: an item without a Mage Weapon line reads mageWeapon 0, which beats every mage weapon's
   // negative, so weighting it would reward not being one; psLevel and sotPoints are scrolls', never gear's; tagPenalty
   // carries a fixed weight from the profile. All stay filterable in the Inventory.
@@ -253,9 +255,9 @@ export const PROPERTIES = [
   derived("psLevel", "PS level", "Power scroll level (the skill cap it raises to)", false),
   derived("sotPoints", "SoT pts", "Scroll of Transcendence skill points", false),
   derived("tagPenalty", "Tag penalty", "Penalty for Cursed / Brittle / Antique / Prized tags", false),
-  derived("stamPool", "Stam pool", "Stamina from gear: DEX bonus + Stamina Increase"),
-  derived("manaPool", "Mana pool", "Mana from gear: INT bonus + Mana Increase"),
-  derived("hitsPool", "Hits pool", "Hit points from gear: STR bonus ÷ 2 + Hit Point Increase"),
+  typ(derived("stamPool", "Stam pool", "Stamina from gear: DEX bonus + Stamina Increase"), 30),
+  typ(derived("manaPool", "Mana pool", "Mana from gear: INT bonus + Mana Increase"), 30),
+  typ(derived("hitsPool", "Hits pool", "Hit points from gear: STR bonus ÷ 2 + Hit Point Increase"), 30),
   // Columns computed from an item but not stored under item.props (item-query.mts's EXTRA_COLS).
   extra("strReq", "STR req", "Strength Requirement"), extra("weight", "Wt", "Weight (stones)"),
 ] as const;
@@ -275,6 +277,18 @@ export const PROP_LABELS: Record<string, string> = Object.fromEntries(NUMBER_PRO
 export const NOT_BUILDER_KEYS = new Set(NUMBER_PROPS.filter((p) => !p.builder).map((p): string => p.key));
 // Full names for the abbreviations, shown as hover tooltips in the app.
 export const PROP_FULL: Record<string, string> = Object.fromEntries(NUMBER_PROPS.map((p) => [p.key, p.full]));
+// The span a good suit covers in a property, in the player's terms (issue #217): the registry's typical where it has
+// one (only properties the shard rules give no cap, so a cap the build carries there is a character's limit, such as
+// the stat ceiling less the raw stat, not a span), else the build's cap before buffs (`caps` from playerCaps), else 15
+// for a skill bonus; null for a property with none of these, which gets no worth hint and is left out of the
+// weight_dominates check.
+const TYPICAL: Record<string, number> = Object.fromEntries(NUMBER_PROPS.flatMap((p): Array<[string, number]> => (p.typical != null ? [[p.key, p.typical]] : [])));
+export function typicalRange(key: string, caps: Record<string, number>): number | null {
+  if (TYPICAL[key] != null) return TYPICAL[key];
+  const cap = caps[key];
+  if (typeof cap === "number" && Number.isFinite(cap)) return cap > 0 ? cap : null;
+  return key.startsWith("sk:") ? 15 : null;
+}
 
 // Skill names as they appear in tooltips (lower-cased). A "+10 Magery" line on an item becomes the builder property
 // "sk:magery", so skill bonuses can be weighted, floored or forbidden like any other property.
@@ -416,15 +430,30 @@ export function effectiveProfile(p: Profile = {}, character: Character | null = 
   return { weights: { ...(p.weights || {}) }, caps, floors, floorBonus: p.floorBonus ?? 1000, hardFloors, resistBonus: rsb,
     ...(Object.keys(overrides).length ? { resistCapOverrides: overrides } : {}) };
 }
+// The fields of a built profile its caps are read from (profileResistCaps, playerCaps).
+export interface CapsView {
+  caps: Record<string, number>;
+  resistBonus?: number | undefined;
+  resistCapOverrides?: Record<string, ResistCap> | undefined;
+  buffs?: { caps?: Record<string, number> | undefined } | undefined;
+}
 // A built profile's resist caps in paperdoll terms, before any planned buff, what a result is shown against: the
 // override where there is one, else the item-total cap plus the Resisting Spells bonus.
-export function profileResistCaps(prof: EffectiveProfile): Record<string, ResistCap> {
+export function profileResistCaps(prof: CapsView): Record<string, ResistCap> {
   return Object.fromEntries(RESIST_KEYS.map((k) => {
     const o = prof.resistCapOverrides?.[k];
     if (o) return [k, o];
     const cap = ((prof.buffs?.caps ?? prof.caps)[k] ?? 70) + (prof.resistBonus || 0);
     return [k, { cap, shard: cap }];
   }));
+}
+
+// A built profile's caps in the player's terms, before any planned buff (typicalRange's `caps`): the item-total caps
+// with each resist's paperdoll cap (profileResistCaps) in place of its item-total one.
+export function playerCaps(prof: CapsView): Record<string, number> {
+  const caps = { ...(prof.buffs?.caps ?? prof.caps) };
+  for (const [k, c] of Object.entries(profileResistCaps(prof))) caps[k] = c.cap;
+  return caps;
 }
 
 // Cursed/Brittle/Antique/Prized (/Massive/Unwieldy on shards that use them) tag-penalty units, from

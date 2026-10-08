@@ -5,10 +5,10 @@
 // is ui/runs.mts; they share the builder's state and call each other through ui/builder-session.mts. The panel is drawn
 // from the session's profile plus its Advanced knobs, so what a build sends, what a profile saves and what a run
 // snapshots are read from state, never from the DOM.
-import { PROP_LABELS, NOT_BUILDER_KEYS, GEAR_SLOTS, tagUnits, WEAPON_SKILLS, MELEE_SKILLS, resistSkillBonus, getRules, RESIST_KEYS, RESIST_CAP_LIMITS, resistCapsFor, templateFrom, settingsDiff, bagLabel } from "../vault-lib.mts";
+import { PROP_LABELS, NOT_BUILDER_KEYS, playerCaps, GEAR_SLOTS, tagUnits, WEAPON_SKILLS, MELEE_SKILLS, resistSkillBonus, getRules, RESIST_KEYS, RESIST_CAP_LIMITS, resistCapsFor, templateFrom, settingsDiff, bagLabel } from "../vault-lib.mts";
 import { BUILTIN_PREFIX, characterBuffs, characterEntry, characterProfile, findTemplate, planBuild, specFromProfile, templateLabel, templateRefs, templateSettings, templateSpecFrom, type PlannedBuild } from "../build-spec.mts";
 import type { ResistCap, RunBuffs, Character } from "../vault-lib.mts";
-import { buffById, gearNeedsText, overrideNote, planBuffs, normalizeBuffs, runBuffs, toggleBuff, buffPlanOf, type BuffPlan } from "../buffs.mts";
+import { buffById, gearNeedsText, overrideNote, planBuffs, plannedProfile, normalizeBuffs, runBuffs, toggleBuff, buffPlanOf, type BuffPlan } from "../buffs.mts";
 import { defaultStrLimit } from "../run-settings.mts";
 import { evaluateSuit } from "../evaluate.mts";
 import { state, invStamp } from "./store.mts";
@@ -24,7 +24,7 @@ import { setNavBusy } from "./shell.mts";
 import { putProfiles, setCharacterBuffs } from "./profiles.mts";
 import { session, commands, provide, readControls } from "./builder-session.mts";
 import { followJob, progressText, settingsCheck } from "./builder-parts.mts";
-import { paperdoll, propName, weightsSummary, requirementsSummary, poolSummary, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistCapsSummary, gearCapsText, pruneResistCaps, floorCapWarning, weaponsChipText, weaponName, toggleWeapon, type KnobField } from "./builder-model.mts";
+import { paperdoll, propName, weightsSummary, requirementsSummary, poolSummary, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistCapsSummary, gearCapsText, pruneResistCaps, floorCapWarning, weaponsChipText, weaponName, toggleWeapon, weightWorth, type KnobField } from "./builder-model.mts";
 import type { OptimizeResult, SavedRunLike, OptimizeStartApiResponse, OptimizeCancelApiResponse } from "./api-types.mts";
 
 // ---------------------------------------------------------------- panel state
@@ -439,7 +439,7 @@ function capRow(p: NonNullable<typeof session.profile>, k: string): HTMLElement 
       ? [badge(note, "accent"), button({ label: `Reset ${nm} cap to the shard's ${now.shard}`, icon: "undo", iconOnly: true, variant: "ghost", size: "sm", onClick: () => {
         p.resistCaps = withResistCap(p.resistCaps, k, now.shard, now.shard);
         delete capDrafts[k];
-        redraw("caps"); redraw("req");
+        redraw("caps"); redraw("req"); redraw("weights");
         focusIn("caps", `.rule-row[data-key="${CSS.escape(k)}"] input`, true);
       } })]
       : [txt("shard cap", "t-sm muted cap-shard"), el("span")];
@@ -452,7 +452,7 @@ function capRow(p: NonNullable<typeof session.profile>, k: string): HTMLElement 
     if (err) { capDrafts[k] = i.value; return; }
     delete capDrafts[k];
     p.resistCaps = withResistCap(p.resistCaps, k, Number(i.value), c.shard);
-    paint(); redraw("req");   // its note names what gear supplies under each cap; redraw() also updates the template badge
+    paint(); redraw("req"); redraw("weights");   // their notes name what gear supplies under each cap, and the worth of a resist weight; redraw() also updates the template badge
   });
   paint();
   if (capDrafts[k] != null) setInlineError(i, resistCapError(capDrafts[k]!));
@@ -462,10 +462,15 @@ function weightsSection(): HTMLElement {
   const p = session.profile!;
   const keys = Object.keys(p.weights!).filter((k) => !NOT_BUILDER_KEYS.has(k));
   return section("weights", "Weights", { count: keys.length, summary: () => weightsSummary(p.weights), body: () => {
+    // each row says what its weight makes a typical range worth, in the player's terms with the panel's buffs
+    const name = session.character!, caps = playerCaps(plannedProfile(p, state.inv!.characters[name] as Character | null, buffPlan(name, p.race, panelBuffs())));
     const rows = keys.map((k) => {
-      const nm = propName(k);
-      return box("div", { class: "rule-row weight", "data-key": k }, ruleName(nm), boundNumber(p.weights!, k, `${nm} weight`, k),
-        button({ label: `Remove weight: ${nm}`, icon: "close", iconOnly: true, variant: "ghost", size: "sm", onClick: () => { delete p.weights![k]; redraw("weights"); focusIn("weights", ".b-add"); } }));
+      const nm = propName(k), num = boundNumber(p.weights!, k, `${nm} weight`, k), worth = el("span", { class: "t-sm muted b-worth" });
+      const paint = (): void => { worth.textContent = weightWorth(k, p.weights![k]!, caps) ?? ""; worth.hidden = !worth.textContent; };
+      num.addEventListener("input", paint);
+      paint();
+      return box("div", { class: "rule-row weight", "data-key": k }, ruleName(nm), num,
+        button({ label: `Remove weight: ${nm}`, icon: "close", iconOnly: true, variant: "ghost", size: "sm", onClick: () => { delete p.weights![k]; redraw("weights"); focusIn("weights", ".b-add"); } }), worth);
     });
     const add = filterChip({ label: "Add weight", add: true, attrs: { class: "fchip add b-add", id: "b-addweight" } });
     add.onclick = () => propertyPicker(add, "Add weight", Object.keys(p.weights!), (k) => { p.weights![k] = 1; redraw("weights"); focusIn("weights", `.rule-row[data-key="${CSS.escape(k)}"] input`, true); });
