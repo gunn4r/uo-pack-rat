@@ -1011,6 +1011,7 @@ test("[fast] weapon properties filter: both hands, shields and spellbooks untouc
   const none = buildPools(inv, "Kestrel", { weaponMustHave: ["night sight"] });
   assert.deepEqual(hands(none), [3, 4], "no weapon left, the shield and spellbook stay");
   assert.deepEqual(none.weaponFlags, { kept: [], none: true });
+  assert.deepEqual(buildPools(inv, "Kestrel", { weaponMustHave: ["night sight"], excludeRoots: [1], excludeWeapons: ["fencing"] }).weaponFlags, { kept: [], none: false }, "other settings emptied the pool: the requirement is not why");
   assert.deepEqual(buildPools(inv, "Kestrel", { weaponMustHave: ["night sight"], lockedSlots: ["oneHanded"] }).weaponFlags, { kept: ["oneHanded"], none: false }, "the locked weapon is the suit's, so the pool is not called empty");
   assert.ok(weaponHasFlags(mk(9, "ring"), ["balanced"]), "a ring is no weapon");
   assert.equal(weaponMustHaveError(undefined), null);

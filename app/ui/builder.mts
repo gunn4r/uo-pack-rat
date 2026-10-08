@@ -5,7 +5,7 @@
 // is ui/runs.mts; they share the builder's state and call each other through ui/builder-session.mts. The panel is drawn
 // from the session's profile plus its Advanced knobs, so what a build sends, what a profile saves and what a run
 // snapshots are read from state, never from the DOM.
-import { PROP_LABELS, NOT_BUILDER_KEYS, playerCaps, GEAR_SLOTS, tagUnits, WEAPON_SKILLS, MELEE_SKILLS, WEAPON_MUST_HAVE, weaponPropName, resistSkillBonus, getRules, RESIST_KEYS, RESIST_CAP_LIMITS, resistCapsFor, templateFrom, settingsDiff, bagLabel, toOptItem, totalsOf } from "../vault-lib.mts";
+import { PROP_LABELS, NOT_BUILDER_KEYS, playerCaps, GEAR_SLOTS, tagUnits, WEAPON_SKILLS, MELEE_SKILLS, WEAPON_MUST_HAVE, flagLabel, resistSkillBonus, getRules, RESIST_KEYS, RESIST_CAP_LIMITS, resistCapsFor, templateFrom, settingsDiff, bagLabel, toOptItem, totalsOf } from "../vault-lib.mts";
 import { heldWeapon, ssiShareOf, swingOf, type SwingResult } from "../swing.mts";
 import { BUILTIN_PREFIX, characterBuffs, characterEntry, characterProfile, findTemplate, planBuild, specFromProfile, templateLabel, templateRefs, templateSettings, templateSpecFrom, type PlannedBuild } from "../build-spec.mts";
 import type { ResistCap, RunBuffs, Character } from "../vault-lib.mts";
@@ -607,7 +607,7 @@ function mustHaveChip(): HTMLButtonElement {
   const p = session.profile!;
   const chip = filterChip({ label: weaponMustHaveChipText(p.weaponMustHave), set: !!p.weaponMustHave?.length, attrs: { id: "b-wflags" } });
   chip.onclick = () => {
-    const checks = WEAPON_MUST_HAVE.map((f) => check({ label: weaponPropName(f), checked: !!p.weaponMustHave?.includes(f), attrs: { value: f }, onChange: (on) => {
+    const checks = WEAPON_MUST_HAVE.map((f) => check({ label: flagLabel(f), checked: !!p.weaponMustHave?.includes(f), attrs: { value: f }, onChange: (on) => {
       const next = WEAPON_MUST_HAVE.filter((x) => (x === f ? on : p.weaponMustHave?.includes(x)));
       if (next.length) p.weaponMustHave = next; else delete p.weaponMustHave;
       paintChip(chip, weaponMustHaveChipText(p.weaponMustHave), !!next.length); updateTemplateBadge();

@@ -1161,7 +1161,8 @@ export interface BuildPoolsResult {
   skipped: SkippedLists;
   blocked: string[];
   // With weaponMustHave: the locked slots whose worn weapon lacks a required property (kept, the lock wins), and whether
-  // no weapon in either hand's pool carries them all (the suit is then built without one).
+  // the requirement itself emptied both hands' pools of weapons (the suit is then built without one). A pool the other
+  // settings left weaponless is not `none`: the requirement is not why.
   weaponFlags?: { kept: string[]; none: boolean } | undefined;
 }
 // `character` null: nobody's suit (Manual's No character), so every worn piece is another character's.
@@ -1169,6 +1170,7 @@ export function buildPools(inv: Inventory, character: string | null, opts: Build
   const { allowOthersWorn = false, strength = Infinity, excludeTags = [], excludeRoots = [], excludeGargoyle = getRules().raceLock.gargoyleOnly, medOnly = false, excludeWeapons = [], ubwsAnyWeapon = true, excludeSkills = [], weaponMustHave = [], lockedSlots = [], pinned } = opts;
   const pools: Partial<Record<string, PooledOptItem[]>> = {}, current: Partial<Record<string, PooledOptItem>> = {}, skipped: SkippedLists = { str: [], tags: [], worn: [], roots: [], gargoyle: [], nonMed: [], weapon: [], skill: [] };
   const exRoots = new Set(excludeRoots.map(Number));
+  let flagless = 0;   // weapons the required properties left out (weaponMustHave)
   for (const it of Object.values(inv.items)) {
     if (!it.gear || !it.slot || !GEAR_SLOTS.includes(it.slot)) continue;
     // toOptItem's own return type is the plain OptItem (slot: string | null) — this cast is the one
@@ -1179,11 +1181,13 @@ export function buildPools(inv: Inventory, character: string | null, opts: Build
     if (it.equippedBy && it.equippedBy !== character && !allowOthersWorn) { skipped.worn.push(it); continue; }
     if (excludeGargoyle && it.gargoyle) { skipped.gargoyle.push(it); continue; }
     if (medOnly && !it.medable) { skipped.nonMed.push(it); continue; }
-    if (!weaponAllowed(it, excludeWeapons, ubwsAnyWeapon) || !weaponHasFlags(it, weaponMustHave)) { skipped.weapon.push(it); continue; }
+    if (!weaponAllowed(it, excludeWeapons, ubwsAnyWeapon)) { skipped.weapon.push(it); continue; }
     if (hasSkillBonus(it, excludeSkills)) { skipped.skill.push(it); continue; }
     if (it.strReq > strength) { skipped.str.push(it); continue; }
     if (it.tags.some((t) => excludeTags.includes(t))) { skipped.tags.push(it); continue; }
     if (it.root != null && exRoots.has(+it.root)) { skipped.roots.push(it); continue; }
+    // last, so `flagless` counts only weapons every other filter let through
+    if (!weaponHasFlags(it, weaponMustHave)) { skipped.weapon.push(it); flagless++; continue; }
     // a piece with no properties (a tag penalty aside, as classify reads it) never beats an empty slot, so where a slot
     // may stay empty it is no candidate: the search would otherwise send the player for a plain robe or shirt that
     // changes nothing. A plain weapon or shield stays one: what a weapon is for is not in its properties.
@@ -1208,7 +1212,7 @@ export function buildPools(inv: Inventory, character: string | null, opts: Build
     return it && (!weaponAllowed(it, excludeWeapons, ubwsAnyWeapon) || hasSkillBonus(it, excludeSkills) || (!weaponHasFlags(it, weaponMustHave) && !kept.includes(sl)));
   });
   if (!weaponMustHave.length) return { pools, current, skipped, blocked };
-  const none = !kept.length && !HAND_SLOTS.some((sl) => (pools[sl] || []).some((o) => isWeapon(inv.items[o.serial] || ({} as Item))));
+  const none = flagless > 0 && !kept.length && !HAND_SLOTS.some((sl) => (pools[sl] || []).some((o) => isWeapon(inv.items[o.serial] || ({} as Item))));
   return { pools, current, skipped, blocked, weaponFlags: { kept, none } };
 }
 // True when the item carries a bonus to any of the listed skills (e.g. the Summoner's forbidden Necromancy).
@@ -1255,14 +1259,15 @@ export function weaponSkillsOf(it: Pick<Item, "slot" | "skillReq" | "flags">): s
 // is accepted, and the page offers WEAPON_MUST_HAVE. A weapon is a held piece with a Skill Required or Weapon Speed
 // line, so shields and spellbooks are never held to it.
 export const WEAPON_MUST_HAVE: string[] = ["spell channeling", "balanced"];
-export const weaponPropName = (f: string): string => f.replace(/\b[a-z]/g, (c) => c.toUpperCase());
 export const isWeapon = (it: Pick<Item, "slot" | "skillReq" | "extras">): boolean =>
   (it.slot === "oneHanded" || it.slot === "twoHanded") && (!!it.skillReq || typeof it.extras?.["weapon speed"] === "number");
-export function weaponHasFlags(it: Item, required: string[] = []): boolean {
-  if (!required.length || !isWeapon(it)) return true;
+// The required properties a piece lacks, its flags read through flagKey; none for a piece that is no weapon.
+export function missingFlags(it: Item, required: string[] = []): string[] {
+  if (!required.length || !isWeapon(it)) return [];
   const own = (it.flags || []).map(flagKey);
-  return required.every((f) => own.includes(f));
+  return required.filter((f) => !own.includes(f));
 }
+export const weaponHasFlags = (it: Item, required: string[] = []): boolean => !missingFlags(it, required).length;
 // The rule weaponMustHave is held to (profiles.v3.schema.json says the same): known yes/no properties, each once.
 export function weaponMustHaveError(v: unknown, path = "weaponMustHave"): string | null {
   if (v == null) return null;

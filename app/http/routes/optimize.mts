@@ -13,7 +13,7 @@ import type { RunBody, RunsListBody, RunSummary } from "../../runs-types.mts";
 import { sse } from "../../services/events.mts";
 import type { Job } from "../../services/jobs.mts";
 import { isManualSuit } from "../../store/ui-prefs.mts";
-import { GEAR_SLOTS, buildPools, toOptItem, type Character, type Inventory, type Item, type OptItem, type Profile, type RunBuffs } from "../../vault-lib.mts";
+import { GEAR_SLOTS, buildPools, missingFlags, toOptItem, type Character, type Inventory, type Item, type OptItem, type Profile, type RunBuffs } from "../../vault-lib.mts";
 import { characterProfile, poolFromSpec, specFromRunSettings } from "../../build-spec.mts";
 import { send, asObject, SSE_HEADERS } from "../respond.mts";
 import { NEXT, type Route } from "../router.mts";
@@ -148,7 +148,7 @@ export function routes(ctx: ServerContext): Route[] {
       // pool settings: held to the one rule a manual run's settings are (app/run-settings.mts).
       const badSettings = runSettingsError(meta.settings, "meta.settings") || runSettingsError(settings, "settings");
       if (badSettings) return send(res, 400, { ok: false, error: badSettings });
-      let skipped: Record<string, number> = {}, blocked: string[] = [], poolDiagnostics: Diagnostic[] = [];
+      let skipped: Record<string, number> = {}, blocked: string[] = [], poolDiagnostics: Diagnostic[] = [], mustHave: string[] | undefined;
       // The by-character form: the caller sends {character, settings} instead of building pools/current
       // itself, and the server runs buildPools() against the cached inventory — the same function and
       // the same defaults the page's own optimizerProfile() uses (ui/builder.mts), so a request built
@@ -185,8 +185,9 @@ export function routes(ctx: ServerContext): Route[] {
         const built = buildPools(inv, (character as string) || null, { allowOthersWorn: allowOthersWorn && !!character, strength: strLimit, excludeTags, excludeRoots, excludeGargoyle: !allowGargoyle, medOnly, excludeWeapons, ubwsAnyWeapon, excludeSkills, weaponMustHave, lockedSlots: fill ? [] : lockedSlots, ...(fill ? { pinned: pins } : {}) });
         pools = built.pools; current = built.current; blocked = built.blocked;
         // the weapon properties the build requires: a locked weapon without them, or no weapon with them (app/diagnostics.mts)
+        mustHave = weaponMustHave;
         if (built.weaponFlags && weaponMustHave) {
-          const kept = built.weaponFlags.kept.map((slot) => { const it = inv.items[built.current[slot]!.serial]!; return { slot, name: it.name, missing: weaponMustHave.filter((f) => !it.flags.includes(f)) }; });
+          const kept = built.weaponFlags.kept.map((slot) => { const it = inv.items[built.current[slot]!.serial]!; return { slot, name: it.name, missing: missingFlags(it, weaponMustHave) }; });
           poolDiagnostics = weaponFlagDiagnostics(weaponMustHave, kept, built.weaponFlags.none);
         }
         skipped = Object.fromEntries(Object.entries(built.skipped).map(([k, v]) => [k, v.length]));
@@ -210,7 +211,7 @@ export function routes(ctx: ServerContext): Route[] {
       const { hardFloors } = profile as { hardFloors?: unknown };
       if (hardFloors != null && (!Array.isArray(hardFloors) || hardFloors.some((k) => !isBoundedString(k, 64)))) return send(res, 400, { ok: false, error: "profile.hardFloors must be an array of property names" });
       const fullOpts = Object.assign({ seed: RUN_DEFAULTS.seed, restarts: RUN_DEFAULTS.restarts }, opts as RunOpts);
-      const key = runKey({ pools, current, profile, opts: fullOpts });
+      const key = runKey({ pools, current, profile, opts: fullOpts, weaponMustHave: mustHave });
       const runs = runStore.all();
       const hit = fill ? null : reusableRun(runs, key, fullOpts as { timeBudgetMs?: number });
       // §11c: warn (not block) once the candidate pool is large enough that the exact solver can
