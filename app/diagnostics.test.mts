@@ -324,6 +324,8 @@ test("[fast] the page: Set weight's words, and it applies only while the panel h
   assert.deepEqual([actionApplies(changed, setLuck, 3), actionApplies(removed, setLuck, 3), actionApplies({ weights: { luck: 3 } }, setLuck)], [false, false, false]);
   applyAction(changed, setLuck, 3); applyAction(removed, setLuck, 3);
   assert.deepEqual([changed, removed], [{ weights: { luck: 0.5 } }, { weights: {} }]);
+});
+
 test("[fast] withDiagnostics: the result carries them; a failure leaves the field off (the page then reads unreachableFloors) and is reported, the suit kept", () => {
   const result = { score: 7, unreachableFloors: ["luck"] };
   assert.deepEqual(withDiagnostics(result, () => [], () => assert.fail("no error")), { ...result, diagnostics: [] });
