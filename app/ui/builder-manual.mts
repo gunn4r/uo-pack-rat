@@ -627,10 +627,10 @@ async function openInManual(suit: OptSuit, covered: readonly string[], runB: Run
   toast(`Opened in Manual.${keptText} ${KEY_NAMES.undo} puts back the suit you had.`);
 }
 
-// A template applied in Automatic with buffs: Manual's list becomes the template's, counted, as one undo step named
-// `label`, when Manual is for the same character; with No character it is left alone.
+// A template applied in Automatic with buffs: Manual's list becomes the template's, counted (an empty list leaves the
+// switch as it is), as one undo step named `label`, when Manual is for the same character; with No character it is left alone.
 function templateBuffs(on: readonly string[], label: string): void {
-  if (!noCharacter) commit({ buffs: [...on], count: true }, label);
+  if (!noCharacter) commit({ buffs: [...on], ...(on.length ? { count: true } : {}) }, label);
 }
 
 // The fetch list for the suit's pieces the character doesn't wear (the result's, builder-parts.mts fetchCard).

@@ -177,7 +177,7 @@ function templateSection(): HTMLElement {
   const p = session.profile!;
   const names = templateRefs(state.profiles!, state.builtinTemplates), builtin = (n: string): boolean => n.startsWith(BUILTIN_PREFIX);
   // built-ins first, each under its own name; the player's own after
-  const group = (label: string, refs: string[]): HTMLElement | null => refs.length ? el("optgroup", { label }, ...refs.map((n) => el("option", { value: n }, builtin(n) ? state.builtinTemplates[n.slice(BUILTIN_PREFIX.length)]?.name || n.slice(BUILTIN_PREFIX.length) : n))) : null;
+  const group = (label: string, refs: string[]): HTMLElement | null => refs.length ? el("optgroup", { label }, ...refs.map((n) => el("option", { value: n }, plainName(n)))) : null;
   const tpl = el("select", { class: "select", id: "b-tpl" }, group("Built-in", names.filter(builtin)), group("Your templates", names.filter((n) => !builtin(n))));
   tpl.value = names.includes(p.template as string) ? p.template as string : names[0] || "";
   tpl.addEventListener("change", () => { $<HTMLElement>("#b-tpl-info")!.replaceWith(templateInfo(tpl.value)); updateTemplateBadge(); });
@@ -194,6 +194,8 @@ function templateSection(): HTMLElement {
     box("div", { class: "field" }, el("label", { class: "label", for: "b-tpl" }, "Template"), box("div", { class: "b-tpl-row" }, tpl, el("span", { id: "b-tpl-state", class: "badge" }), menuBtn), templateInfo(tpl.value)),
     box("div", { class: "b-race-row" }, box("div", { class: "field" }, el("span", { class: "label", id: "b-race-l" }, "Race"), race), str));
 }
+// A template's name as the picker shows it: a built-in's own name, without templateLabel's "(built-in)".
+const plainName = (ref: string): string => { const id = ref.slice(BUILTIN_PREFIX.length); return ref.startsWith(BUILTIN_PREFIX) ? state.builtinTemplates[id]?.name || id : ref; };
 // Under the picker, for a template with a description: a built-in's badge, the description, the buffs it loads and its
 // source pages (a built-in with none is the shard's defaults).
 function templateInfo(ref: string): HTMLElement {
@@ -241,7 +243,7 @@ async function saveTemplates(done: string): Promise<void> {
 // A template with buffs also sets the character's buffs, which are saved at once, and Manual's when Manual is for the
 // same character (one undo step there).
 function applyTemplate(): void {
-  const ref = selectedTemplate(), t = findTemplate(state.profiles!, state.builtinTemplates, ref), name = templateLabel(state.builtinTemplates, ref);
+  const ref = selectedTemplate(), t = findTemplate(state.profiles!, state.builtinTemplates, ref), name = plainName(ref);
   if (!t) return;
   Object.assign(session.profile!, templateSettings(t), { template: ref });
   if (t.spec.buffs) {

@@ -119,7 +119,9 @@ async function planProfile(ctx: ToolContext, inv: InventoryDoc, name: string | n
   const on = args.buffs !== undefined ? normalizeBuffs(args.buffs) : normalizeBuffs(preset ?? []) ?? [];
   if (!on) throw new ToolError("buffs must be known buff ids");
   const budgetMs = ((args.timeBudgetSeconds as number | undefined) ?? RUN_DEFAULTS.mcpBudgetMs / 1000) * 1000, altCount = (args.otherSuits as number | undefined) ?? 0;
-  const spec = { ...specFromProfile(p, { on, skills: saved.skills }), search: { exact: true, budgetMs, altCount } };
+  // the template's numbers over the character's, as the builder's Apply merges them
+  const skills = t?.spec.buffs ? { ...saved.skills, ...t.spec.buffs.skills } : saved.skills;
+  const spec = { ...specFromProfile(p, { on, skills }), search: { exact: true, budgetMs, altCount } };
   return { ...planBuild(spec, { character: c, worn: name ? inv.worn[name] || [] : [], race: p.race, ...(suit ? { suit } : {}) }), buffsOn: on, character: c };
 }
 

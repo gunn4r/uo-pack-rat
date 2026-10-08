@@ -831,12 +831,13 @@ test("[slow] templates: built-ins first with their description, Apply sets Manua
   const SOURCE = "https://uoalive.com/wiki/PlayerGuide:Lazy_Pally";
   try {
     await openBuilder(page);
-    await page.evaluate(() => fetch("/api/ui-prefs", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ manualBuffs: ["bless"], buffsCount: "off" }) }));
+    assert.equal(await page.evaluate(() => fetch("/api/ui-prefs", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ manualBuffs: ["bless"], buffsCount: "off" }) }).then((r) => r.ok)), true, "Manual's buffs seeded");
     await page.route(/\/api\/profiles$/, async (r) => {
       if (r.request().method() !== "GET") { await r.continue(); return; }
       const res = await r.fetch(), body = await res.json() as { builtinTemplates: Record<string, { spec: Record<string, unknown> }> };
       const melee = body.builtinTemplates.melee!;
       body.builtinTemplates.melee = { ...melee, description: "A test build.", sources: [SOURCE], spec: { ...melee.spec, buffs: { on: ["divineFury"], skills: {} } } } as typeof melee;
+      body.builtinTemplates.caster = { ...body.builtinTemplates.caster!, spec: { ...body.builtinTemplates.caster!.spec, buffs: { on: [], skills: {} } } };
       await r.fulfill({ response: res, json: body });
     });
     await page.reload();
@@ -875,11 +876,20 @@ test("[slow] templates: built-ins first with their description, Apply sets Manua
     // Manual: the template's buffs, counted, one undo step; Undo puts Bless and the switch back
     await page.click('#b-mode [data-value="manual"]');
     await page.waitForSelector("#b-manual:not([hidden]) #mb-suit .mb-slot");
-    await page.waitForFunction(() => /^Undo: Melee \(built-in\) buffs/.test(document.querySelector("#mb-undo")?.getAttribute("aria-label") || ""));
+    await page.waitForFunction(() => /^Undo: Melee buffs/.test(document.querySelector("#mb-undo")?.getAttribute("aria-label") || ""));
     assert.deepEqual(await page.$$eval("#mb-totals .bf-strip .token[data-buff]", (els) => els.map((e) => (e as HTMLElement).dataset.buff)), ["divineFury"]);
     assert.equal(await page.locator("#bf-count").isChecked(), true);
     await page.click("#mb-undo");
     await page.waitForFunction(() => [...document.querySelectorAll<HTMLElement>("#mb-totals .bf-strip .token[data-buff]")].map((e) => e.dataset.buff).join() === "bless");
+    assert.equal(await page.locator("#bf-count").isChecked(), false);
+    // a template with no buffs empties Manual's list in one undo step and leaves the count switch off
+    await page.click('#b-mode [data-value="automatic"]');
+    await page.selectOption("#b-tpl", "builtin:caster");
+    await page.click("#b-tpl-menu");
+    await page.getByRole("menuitem", { name: "Apply to these settings" }).click();
+    await page.click('#b-mode [data-value="manual"]');
+    await page.waitForFunction(() => /^Undo: Caster buffs/.test(document.querySelector("#mb-undo")?.getAttribute("aria-label") || ""));
+    assert.equal(await page.locator("#mb-totals .bf-strip .token[data-buff]").count(), 0);
     assert.equal(await page.locator("#bf-count").isChecked(), false);
     assert.deepEqual(errors, []);
   } finally {
