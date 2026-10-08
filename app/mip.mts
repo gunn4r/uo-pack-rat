@@ -29,7 +29,7 @@ type Term = [number, number];
 // each kind means.
 export interface MipCol {
   name: string;
-  kind: "x" | "c" | "z" | "y" | "s" | "u";
+  kind: "x" | "c" | "z" | "y" | "s" | "u" | "a";
   slot?: string | undefined;
   item?: OptItem | undefined;
   dim?: string | undefined;
@@ -46,6 +46,7 @@ export interface MipProfile {
   hardFloors?: string[] | undefined;
   floorBonus?: number | undefined;
   floorPartial?: number | undefined;
+  ssiSteps?: Array<{ ssi: number; stam: number; credit: number }> | undefined;   // SSI by swing step (scripts/optimizer-core.mts OptProfile)
 }
 
 export interface BuildSuitMipOptions {
@@ -108,8 +109,10 @@ export interface BuiltMip {
   scoreOffset: number;
   capCols: Record<string, CapCol>;
   floorCols: Record<string, FloorCol>;
+  stepCols: StepCol[];   // SSI by step: one binary per point, empty when steps are off
   model: MipModel;
 }
+export interface StepCol { col: number; ssi: number; stam: number }
 
 // Each slot's candidates, as the model's x columns take them: the pool's pieces for that slot, each serial once (as optCandidatesFor), and the worn piece always (keep what you wear). Slots with none are left out.
 function slotCandidates(pools: Partial<Record<string, OptItem[]>>, current: Partial<Record<string, OptItem | null | undefined>>, slots: string[]): Record<string, OptItem[]> {
@@ -156,7 +159,9 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
   const hard = new Set(profile.hardFloors || []);
   const FB = typeof profile.floorBonus === "number" ? profile.floorBonus : 1000;
   const PARTIAL = typeof profile.floorPartial === "number" ? profile.floorPartial : 0.5;
-  const dims = [...new Set([...Object.keys(W), ...Object.keys(CAPS), ...Object.keys(FL)])];
+  // SSI by step (scripts/optimizer-core.mts optScoreVector): with a positive SSI weight, the SSI term is w × the best credit among the points the suit reaches, in place of w·min(t, cap). It needs the Stamina pool's total too.
+  const steps = Array.isArray(profile.ssiSteps) && (W.ssi || 0) > 0 ? profile.ssiSteps : null;
+  const dims = [...new Set([...Object.keys(W), ...Object.keys(CAPS), ...Object.keys(FL), ...(steps ? ["ssi", "stamPool"] : [])])];
 
   // ---- columns ----
   const cols: MipCol[] = [], colCost: number[] = [], colLower: number[] = [], colUpper: number[] = [], integrality: number[] = [];
@@ -180,7 +185,7 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
   const addRow = (entries: Term[], lo: number, hi: number): number => { for (const [j, v] of entries) { indices.push(j); values.push(v); } starts.push(indices.length); rowLower.push(lo); rowUpper.push(hi); return rowLower.length - 1; };
   let scoreOffset = 0;
   const reach = propertyReach(pools, current, optionalSlots, slots, dims);
-  const unreachableFloors: string[] = [], hardRows: Record<string, number> = {}, capCols: Record<string, CapCol> = {}, floorCols: Record<string, FloorCol> = {};
+  const unreachableFloors: string[] = [], hardRows: Record<string, number> = {}, capCols: Record<string, CapCol> = {}, floorCols: Record<string, FloorCol> = {}, stepCols: StepCol[] = [];
   for (const d of dims) {
     const w = W[d] || 0, cap = CAPS[d], f = FL[d] || 0;
     // Every j in allX is an x column, which always carries `item` (set in the loop above) — the two
@@ -188,7 +193,18 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
     const xs: Term[] = allX.map((j): Term => [j, cols[j]!.item!.props[d] || 0]).filter(([, v]) => v !== 0);
     // The range any suit's total can take (propertyReach): the floors below test against `max`, and the big-M rows use both.
     const { max: reachD, min: minReach } = reach[d]!;
-    if (w !== 0) {
+    if (steps && d === "ssi") {
+      // one binary a_p per point, worth w·credit_p; at most one pays (the maximum picks the best the suit reaches), and a_p = 1 forces t_ssi ≥ ssi_p and t_stam ≥ stam_p, each in the floor rows' form t − (v − minReach)·a ≥ minReach. A requirement at or below the lowest total any suit reaches needs no row.
+      const stamXs: Term[] = allX.map((j): Term => [j, cols[j]!.item!.props.stamPool || 0]).filter(([, v]) => v !== 0);
+      const stamMin = reach.stamPool!.min;
+      for (const [i, pt] of steps.entries()) {
+        const a = addCol({ name: `a_${i}`, kind: "a", dim: d }, w * pt.credit, 0, 1, true);
+        stepCols.push({ col: a, ssi: pt.ssi, stam: pt.stam });
+        if (pt.ssi > minReach) addRow([...xs, [a, -(pt.ssi - minReach)]], minReach, INF);
+        if (pt.stam > stamMin) addRow([...stamXs, [a, -(pt.stam - stamMin)]], stamMin, INF);
+      }
+      if (stepCols.length) addRow(stepCols.map(({ col }): Term => [col, 1]), -INF, 1);
+    } else if (w !== 0) {
       if (Number.isFinite(cap)) {                                 // w·min(t, cap): c ≤ t, c ≤ cap, objective w·c; c may go negative like t
         // Number.isFinite(number: unknown) is not a type predicate, so TS can't narrow `cap` itself
         // from the check just above — re-reading the same CAPS[d] (never mutated in between) into a
@@ -248,7 +264,7 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
 
   const model: MipModel = { numCols: cols.length, numRows: rowLower.length, sense: "maximize", offset: 0, colCost, colLower, colUpper, rowLower, rowUpper,
     matrix: { format: "csr", numRows: rowLower.length, numCols: cols.length, starts, indices, values }, integrality };
-  return { cols, xIndex, dims, unreachableFloors, reach, hardRows, scoreOffset, capCols, floorCols, model };
+  return { cols, xIndex, dims, unreachableFloors, reach, hardRows, scoreOffset, capCols, floorCols, stepCols, model };
 }
 
 // ---- MIP start, extraction, and no-good cut ----
@@ -259,7 +275,7 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
 // function of (built, assignment).
 
 export function startVector(built: BuiltMip, assignment: Partial<Record<string, OptItem>> = {}): Float64Array {
-  const { cols, xIndex, dims, capCols, floorCols, model } = built;
+  const { cols, xIndex, dims, capCols, floorCols, stepCols, model } = built;
   const vec = new Float64Array(model.numCols);
   const totals = Object.fromEntries(dims.map((d) => [d, 0]));
   for (const s of Object.keys(xIndex)) {
@@ -285,6 +301,12 @@ export function startVector(built: BuiltMip, assignment: Partial<Record<string, 
     vec[fc.s] = met ? 0 : fc.k * Math.max(0, t);
     if (fc.u != null) vec[fc.u] = t < 0 ? 1 : 0;
   }
+  // the best-paying point the start suit reaches
+  let bestStep: StepCol | null = null;
+  for (const p of stepCols) {
+    if (totals.ssi! >= p.ssi - 1e-9 && totals.stamPool! >= p.stam - 1e-9 && (!bestStep || model.colCost[p.col]! > model.colCost[bestStep.col]!)) bestStep = p;
+  }
+  if (bestStep) vec[bestStep.col] = 1;
   return vec;
 }
 

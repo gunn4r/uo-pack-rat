@@ -1,6 +1,7 @@
 // diagnostics.mts — settings that work against a build, each with the change that would fix it (issue #217): a requirement no suit in the pool can reach, hard requirements the suit could reach one at a time but not together, and a weight that swamps the rest. Pure and browser-safe. The server sends the floor ones with POST /api/optimize before the search starts; the worker attaches the full list to every result, on both solver paths, so a saved run keeps it.
 import { propertyReach, DEFAULT_OPTIONAL_SLOTS, DEFAULT_SLOTS } from "./mip.mts";
 import { RESIST_KEYS, labelOf, playerCaps, propName, typicalRange, type OptItem, type ResistCap } from "./vault-lib.mts";
+import { delayText, heldWeapon, stepCredit, swingSeconds, type Held, type SsiStepPoint, type SwingResult } from "./swing.mts";
 import type { Diagnostic, DiagnosticAction } from "./runs-types.mts";
 
 export type { Diagnostic, DiagnosticAction, DiagnosticCode } from "./runs-types.mts";
@@ -14,6 +15,8 @@ export interface DiagnosticsProfile {
   resistBonus?: number | undefined;
   resistCapOverrides?: Record<string, ResistCap> | undefined;
   buffs?: { floors?: Record<string, number> | undefined; caps?: Record<string, number> | undefined } | undefined;
+  swing?: { steps?: boolean | undefined } | undefined;
+  ssiSteps?: SsiStepPoint[] | undefined;   // the step table the solvers scored SSI with (app/swing.mts stepTable), when they did
 }
 export interface DiagnosticsInput {
   pools?: Partial<Record<string, OptItem[]>> | undefined;
@@ -23,8 +26,11 @@ export interface DiagnosticsInput {
   profile: DiagnosticsProfile;
 }
 export interface ResultDiagnosticsInput extends DiagnosticsInput {
-  result: { totals?: { after?: Record<string, number> | undefined } | undefined; floorsConflict?: boolean | undefined };
+  result: { totals?: { after?: Record<string, number> | undefined } | undefined; floorsConflict?: boolean | undefined; best?: Partial<Record<string, Held | null>> | undefined; swing?: SwingResult | undefined };
+  swingNote?: string | null | undefined;   // why SSI was scored per point though steps were asked for (app/swing.mts stepsFor)
 }
+// How close the next swing step has to be for swing_next_step to mention it, in SSI points.
+export const NEXT_STEP_WITHIN = 10;
 
 const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
 const obj = (v: unknown): Record<string, unknown> => (v && typeof v === "object" && !Array.isArray(v) ? v as Record<string, unknown> : {});
@@ -77,7 +83,8 @@ export function resultDiagnostics(input: ResultDiagnosticsInput): Diagnostic[] {
         : `${propName(k)} ${floor} can be reached, but no suit meeting it together with your other hard requirements was found within the time limit: this suit has ${value}.`,
       values: { floor, value }, actions: [{ kind: "makeSoft", property: k }, ...lower(k, value)] });
   }
-  out.push(...weightDiagnostics(profile, after, reachOf(input, Object.keys(obj(profile.weights)))));
+  out.push(...weightDiagnostics(profile, after, reachOf(input, [...Object.keys(obj(profile.weights)), "stamPool"])));
+  out.push(...swingDiagnostics(input));
   return [...out.filter((d) => d.level === "warn"), ...out.filter((d) => d.level !== "warn")];
 }
 
@@ -92,10 +99,14 @@ export function weightDiagnostics(profile: DiagnosticsProfile, after: Record<str
   const weights = Object.entries(obj(profile.weights)).flatMap(([k, v]): Array<[string, number]> => { const w = num(v); return w != null && w !== 0 && k !== "tagPenalty" ? [[k, w]] : []; });
   const caps = obj(profile.caps) as Record<string, number>, spans = playerCaps({ ...profile, caps });
   const capped = (k: string, t: number): number => { const c = num(caps[k]); return c != null && c < t ? c : t; };
-  const term = (k: string, w: number): number => Math.abs(w * capped(k, num(after[k]) ?? 0));
+  // with SSI scored by swing step (`ssiSteps`), its term is the step credit the totals reach, as the solvers scored it
+  const steps = Array.isArray(profile.ssiSteps) ? profile.ssiSteps : null;
+  const valueAt = (k: string, at: (key: string) => number): number => (steps && k === "ssi" ? stepCredit(steps, at("ssi"), at("stamPool")) : capped(k, at(k)));
+  const got = (key: string): number => num(after[key]) ?? 0, top = (key: string): number => reach[key]?.max ?? 0;
+  const term = (k: string, w: number): number => Math.abs(w * valueAt(k, got));
   const positive = weights.filter(([, w]) => w > 0);
-  const score = positive.reduce((n, [k, w]) => n + w * capped(k, num(after[k]) ?? 0), 0);
-  const potential = positive.reduce((n, [k, w]) => n + w * Math.max(0, capped(k, reach[k]?.max ?? 0)), 0);
+  const score = positive.reduce((n, [k, w]) => n + w * valueAt(k, got), 0);
+  const potential = positive.reduce((n, [k, w]) => n + w * Math.max(0, valueAt(k, top)), 0);
   const total = weights.reduce((n, [k, w]) => n + term(k, w), 0);
   if (total <= 0 || score < THIN_SUIT * potential) return [];
   const worths = positive.flatMap(([k, w]) => { const typical = typicalRange(k, spans); return typical != null ? [{ k, w, typical, worth: w * typical }] : []; });
@@ -109,6 +120,31 @@ export function weightDiagnostics(profile: DiagnosticsProfile, after: Record<str
       message: `${propName(k)} makes up ${pct}% of this suit's score: at weight ${oneDecimal(w)}, ${typical.toLocaleString("en-US")} ${labelOf(k)} is worth as much as ${oneDecimal(ratio)} times the median of your other weights. Try ${suggested}.`,
       values: { weight: w, typical, share: pct, ratio: Math.round(ratio * 10) / 10, median: mid, suggested }, actions: [{ kind: "setWeight", property: k, value: suggested }] }];
   });
+}
+
+// swing_linear: steps were asked for but SSI was scored per point (the weapon is not fixed). A lock keeps the worn piece, so Lock is offered for the suit's weapon's hand only when that weapon is the one worn there; otherwise the sentence says to equip it first. swing_next_step (info): steps are off, and the next faster step is within NEXT_STEP_WITHIN SSI of the suit's; it offers steps on and an SSI requirement at that step, and says when one more stamina band would reach it as well.
+export function swingDiagnostics({ profile, result, swingNote, current = {} }: ResultDiagnosticsInput): Diagnostic[] {
+  const out: Diagnostic[] = [];
+  if (swingNote) {
+    const w = heldWeapon(result.best), slot = w ? (w.twoHanded ? "twoHanded" : "oneHanded") : null;
+    const worn = !!slot && !!w && (current[slot] as { serial?: unknown } | null | undefined)?.serial === (w as { serial?: unknown }).serial;
+    out.push({ code: "swing_linear", level: "warn", property: "ssi",
+      message: `SSI was scored per point: ${swingNote}. ${worn ? "Lock the weapon slot to score swing speed by step." : "Equip the weapon you want and lock its slot to score swing speed by step."}`,
+      actions: worn ? [{ kind: "lockSlot", slot: slot! }] : [] });
+  }
+  const sw = result.swing;
+  if (sw && !profile.swing?.steps) {
+    const next = sw.steps.find((st) => st.ssi > sw.ssi);
+    if (next && next.ssi - sw.ssi <= NEXT_STEP_WITHIN) {
+      const more = 30 * (Math.floor(sw.stamina / 30) + 1) - sw.stamina;
+      const byStamina = swingSeconds(sw.speed, sw.stamina + more, sw.ssi) <= next.seconds;
+      out.push({ code: "swing_next_step", level: "info", property: "ssi",
+        message: `SSI ${sw.ssi} swings every ${delayText(sw.seconds)} at this suit's stamina (${sw.stamina}). ${next.ssi} would make it ${delayText(next.seconds)}${byStamina ? `, and so would ${more} more stamina` : ""}.`,
+        values: { ssi: sw.ssi, seconds: sw.seconds, stamina: sw.stamina, next: next.ssi, nextSeconds: next.seconds, ...(byStamina ? { moreStamina: more } : {}) },
+        actions: [{ kind: "swingSteps", on: true }, { kind: "setFloor", property: "ssi", value: next.ssi }] });
+    }
+  }
+  return out;
 }
 
 // A result with its diagnostics, as the worker sends it. If computing them throws, the result goes out as it is, with no `diagnostics` field (so the page falls back to `unreachableFloors`, as for an old run), and `onError` hears why: a diagnostics bug never costs a finished search.

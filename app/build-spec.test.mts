@@ -1,6 +1,6 @@
 // build-spec.test.mts — `app/build-spec.mts`, a build's intent as one document (issue #218, BuildSpec).
 //
-// `[fast]`: `app/build-spec.mts`: a full spec, a template's (no buffs) and one filled from nothing pass `buildSpecError`, and one refused field of each kind says where; the panel's flat profile goes to a spec and back unchanged; and `planBuild` equals the assemblies it replaced, kept in the test as they were written: the page's build (its profile, pool settings, search options and saved-run snapshot, ui/builder.mts and ui/runs.mts) and the MCP tools' `planProfile` (mcp-tools.mts), for the demo characters with and without buffs and edited numbers, No character, and a hand-picked suit planned as Manual plans it.
+// `[fast]`: `app/build-spec.mts`: a full spec, a template's (no buffs) and one filled from nothing pass `buildSpecError`, and one refused field of each kind says where; the panel's flat profile goes to a spec and back unchanged; and `planBuild` equals the assemblies it replaced, kept in the test as they were written: the page's build (its profile, pool settings, search options and saved-run snapshot, ui/builder.mts and ui/runs.mts) and the MCP tools' `planProfile` (mcp-tools.mts), for the demo characters with and without buffs and edited numbers, No character, and a hand-picked suit planned as Manual plans it; and a character's swing on the planned profile (raw DEX plus the buffs' DEX and stamina shares, the worn suit's stamina, the step switch, none with No character), the switch in a spec only when on and checked as a boolean.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
@@ -70,7 +70,8 @@ test("[fast] build spec: the panel's flat profile goes to a spec and back; absen
   assert.equal(empty.pool.strLimit, "character");
   assert.equal(empty.pool.ubwsAnyWeapon, true);
   assert.equal(empty.intent.floorBonus, 1000);
-  assert.deepEqual(profileFromSpec(empty), { ...templateFrom(), excludeRoots: [] }, "the same defaults templateFrom fills in");
+  const { swingSteps: _off, ...defaults } = templateFrom();   // a spec carries the swing-step switch only when it is on
+  assert.deepEqual(profileFromSpec(empty), { ...defaults, excludeRoots: [] }, "the same defaults templateFrom fills in");
 });
 
 // ---- planBuild against the assemblies it replaced
@@ -118,7 +119,9 @@ test("[fast] planBuild: the page's build, profile, pool, search options and run 
           search: { restarts: Number(knobs.restarts), exact: knobs.exact, budgetMs: 1000 * Number(knobs.budgetS), altCount: Number(knobs.altCount), altTol: Number(knobs.altTol) } };
         const got = planBuild(spec, { character: c, worn: wornBy[name] || [], race: PANEL.race });
         const label = `${name} ${on.join("+") || "no buffs"} ${JSON.stringify(knobs)}`;
-        assert.deepEqual(got.profile, want.profile, `${label}: profile`);
+        const { swing, ...profile } = got.profile;   // new with swing steps (issue #217): checked on its own below
+        assert.deepEqual(profile, want.profile, `${label}: profile`);
+        assert.ok(swing, `${label}: a character's build carries its swing`);
         assert.deepEqual(json(got.pool), json(want.settings), `${label}: pool settings`);
         assert.deepEqual(got.opts, want.opts, `${label}: opts`);
         assert.deepEqual(json(got.snapshot), json(want.snapshot), `${label}: snapshot`);
@@ -138,7 +141,9 @@ test("[fast] planBuild: the MCP tools' plan, for a character, No character and a
         const spec: BuildSpec = { ...specFromProfile(p, { on, skills: edits }), search: { budgetMs: budget, exact: true, altCount: alt } };
         const got = planBuild(spec, { character: c, worn, race: p.race, ...(suit ? { suit } : {}) });
         const label = `${name ?? "No character"} strLimit ${p.strLimit ?? "character"} ${suit ? "suit" : "auto"} ${on.join("+") || "no buffs"} ${budget}/${alt}`;
-        assert.deepEqual(got.profile, want.profile, `${label}: profile`);
+        const { swing, ...profile } = got.profile;
+        assert.deepEqual(profile, want.profile, `${label}: profile`);
+        assert.equal(!!swing, !!c, `${label}: the swing comes with a character only`);
         assert.deepEqual(got.plan, want.plan, `${label}: plan`);
         assert.deepEqual(json(got.pool), json(want.settings), `${label}: pool settings`);
         assert.deepEqual(got.opts, want.opts, `${label}: opts`);
@@ -146,6 +151,26 @@ test("[fast] planBuild: the MCP tools' plan, for a character, No character and a
       }
     }
   }
+});
+
+test("[fast] planBuild: a character's swing is raw DEX plus the buffs' DEX and stamina shares, its worn suit's stamina on top, and the step switch", () => {
+  const c = inv.characters.Kestrel!, worn = wornBy.Kestrel || [];
+  const wornPool = worn.reduce((n, it) => n + (it.props.dexBonus || 0) + (it.props.stamInc || 0), 0);
+  const rawDex = Number(c.stats!.dex) - worn.reduce((n, it) => n + (it.props.dexBonus || 0), 0);
+  const plain = planBuild(specFromProfile(PANEL), { character: c, worn, race: PANEL.race });
+  assert.deepEqual(plain.profile.swing, { stamBase: rawDex, refStamina: rawDex + wornPool, steps: false });
+  assert.equal(plain.snapshot.swingSteps, undefined, "a run snapshot names the switch only when it is on");
+  const on = planBuild(specFromProfile({ ...PANEL, swingSteps: true }), { character: c, worn, race: PANEL.race });
+  assert.equal(on.profile.swing!.steps, true);
+  assert.equal(on.snapshot.swingSteps, true);
+  // Bless's DEX share adds to the stamina before gear
+  const bless = planBuild(specFromProfile(PANEL, { on: ["bless"], skills: {} }), { character: c, worn, race: PANEL.race });
+  assert.ok(bless.profile.swing!.stamBase > rawDex, JSON.stringify(bless.profile.swing));
+  assert.equal(planBuild(specFromProfile(PANEL), { character: null, worn: [], race: PANEL.race }).profile.swing, undefined);
+  // the switch round-trips through a spec, and a spec carries it only when on
+  assert.equal(profileFromSpec(specFromProfile({ ...PANEL, swingSteps: true })).swingSteps, true);
+  assert.equal("swingSteps" in specFromProfile(PANEL).intent, false);
+  assert.equal(buildSpecError({ ...specFromProfile(PANEL), intent: { ...specFromProfile(PANEL).intent, swingSteps: "yes" } }, "spec"), "spec.intent.swingSteps must be a boolean");
 });
 
 // ---- profiles.json v3

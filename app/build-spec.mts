@@ -4,12 +4,13 @@
 // into a build through planBuild. Also the one check a spec is held to, its defaults, the v2 → v3 migration of
 // profiles.json (Automatic's buffs and their numbers move in from ui-prefs.json), and the flat working profile the
 // Suit Builder's panel edits. Pure and browser-safe, like run-settings.mts and evaluate.mts.
-import { buffPlanOf, buffSkillValues, isBuffList, isBuffSkills, isBuffSkillsByCharacter, manualBase, manualPlan, normalizeBuffListsByCharacter, NO_CHARACTER, plannedProfile, runBuffs, type BuffPlan } from "./buffs.mts";
+import { buffPlanOf, buffSkillValues, isBuffList, isBuffSkills, isBuffSkillsByCharacter, manualBase, manualPlan, normalizeBuffListsByCharacter, NO_CHARACTER, planBuffs, runBuffs, type BuffPlan } from "./buffs.mts";
 import { RACES, RUN_DEFAULTS, RUN_SETTING_LIMITS, defaultStrLimit, runSettingsError } from "./run-settings.mts";
-import { migrateProfiles, templateFrom, TEMPLATE_KEYS, type Character, type EffectiveProfile, type Item, type Profile, type ProfilesFile, type RunBuffs, type RunSettings, type Template, type TemplateSource } from "./vault-lib.mts";
+import { migrateProfiles, templateFrom, TEMPLATE_KEYS, toOptItem, totalsOf, type Character, type EffectiveProfile, type Item, type Profile, type ProfilesFile, type RunBuffs, type RunSettings, type Template, type TemplateSource } from "./vault-lib.mts";
 
 // ---------------------------------------------------------------- the document
-export interface BuildIntent { floors: Record<string, number>; softFloors: string[]; weights: Record<string, number>; floorBonus: number; resistCaps: Record<string, number> }
+// swingSteps: score SSI by swing step (app/swing.mts) rather than per point; absent means off, and a spec carries it only when on.
+export interface BuildIntent { floors: Record<string, number>; softFloors: string[]; weights: Record<string, number>; floorBonus: number; resistCaps: Record<string, number>; swingSteps?: boolean | undefined }
 // The buffs counted as always on, and the numbers edited for them (app/buffs.mts's inputs; the rest are the character's own).
 export interface BuildBuffs { on: string[]; skills: Record<string, number> }
 // "character": the character's STR, else 125 (run-settings.mts defaultStrLimit).
@@ -33,7 +34,7 @@ export interface TemplateEntry { name?: string | undefined; spec: TemplateSpec; 
 export interface ProfilesV3 { schemaVersion: 3; characters: Record<string, CharacterEntry>; templates: Record<string, TemplateEntry>; [key: string]: unknown }
 export const PROFILES_VERSION = 3;
 
-const INTENT_KEYS = ["floors", "softFloors", "weights", "floorBonus", "resistCaps"] as const;
+const INTENT_KEYS = ["floors", "softFloors", "weights", "floorBonus", "resistCaps", "swingSteps"] as const;
 const POOL_KEYS = ["lockedSlots", "excludeTags", "excludeSkills", "excludeRoots", "excludeWeapons", "ubwsAnyWeapon", "allowOthersWorn", "allowGargoyle", "medOnly", "strLimit"] as const;
 const SEARCH_KEYS = ["budgetMs", "exact", "restarts", "altCount", "altTol"] as const;
 const GOAL_KINDS = ["best", "cheapest"];
@@ -50,7 +51,7 @@ const map = <T,>(x: Record<string, T> | null | undefined): Record<string, T> => 
 export function buildSpec(s: BuildSpecSource = {}): BuildSpec {
   const i = s.intent || {}, p = s.pool || {}, b = s.buffs || {};
   return {
-    intent: { floors: map(i.floors), softFloors: list(i.softFloors), weights: map(i.weights), floorBonus: i.floorBonus ?? SPEC_DEFAULTS.floorBonus, resistCaps: map(i.resistCaps) },
+    intent: { floors: map(i.floors), softFloors: list(i.softFloors), weights: map(i.weights), floorBonus: i.floorBonus ?? SPEC_DEFAULTS.floorBonus, resistCaps: map(i.resistCaps), ...(i.swingSteps ? { swingSteps: true } : {}) },
     buffs: { on: list(b.on), skills: map(b.skills) },
     pool: { lockedSlots: list(p.lockedSlots), excludeTags: list(p.excludeTags), excludeSkills: list(p.excludeSkills), excludeRoots: list(p.excludeRoots),
       excludeWeapons: list(p.excludeWeapons), ubwsAnyWeapon: p.ubwsAnyWeapon ?? SPEC_DEFAULTS.ubwsAnyWeapon, allowOthersWorn: !!p.allowOthersWorn, allowGargoyle: !!p.allowGargoyle, medOnly: !!p.medOnly,
@@ -196,7 +197,7 @@ export function poolFromSpec({ pool: sp }: BuildSpec, character: Character | nul
 export interface PlannedBuild {
   base: Profile;               // the profile before any buff (Manual's for a hand-picked suit): evaluate.mts's `profile`
   plan: BuffPlan;              // what the buffs plan with: evaluate.mts's `buffs`
-  profile: EffectiveProfile;   // what the solvers score with (buffs.mts plannedProfile)
+  profile: EffectiveProfile;   // what the solvers score with (buffs.mts plannedProfile), with the character's `swing`
   buffs: RunBuffs | undefined; // the buffs a run keeps, absent with none on
   pool: PoolSettings;          // the candidate pool settings, as POST /api/optimize's by-character form takes them
   opts: { restarts: number; exact: boolean; timeBudgetMs?: number; alternatives?: { count: number; tolerance: number } };
@@ -204,6 +205,7 @@ export interface PlannedBuild {
 }
 // A spec turned into a build for a character: the profile the solvers score with and its buff plan, the pool settings,
 // the search options and the saved run's settings snapshot. The shard's rules are the ones vault-lib holds (setRules).
+// With a character the profile carries `swing`: stamina before gear (raw DEX and the buffs' in-cap shares on DEX and the Stamina pool), the worn suit's stamina, and whether SSI is scored by step (app/swing.mts).
 export function planBuild(spec: BuildSpec, { character, worn, race, suit }: PlanContext): PlannedBuild {
   const flat = profileFromSpec(spec), edits = spec.buffs.skills, on = spec.buffs.on;
   const p: Profile = { ...flat, race: race || "human" };
@@ -214,8 +216,13 @@ export function planBuild(spec: BuildSpec, { character, worn, race, suit }: Plan
   const exact = s.exact ?? RUN_DEFAULTS.exact, budgetMs = s.budgetMs ?? RUN_DEFAULTS.budgetMs, altCount = s.altCount ?? 0, altTol = s.altTol ?? 0;
   const opts = { restarts: s.restarts ?? RUN_DEFAULTS.restarts, exact, ...(exact ? { timeBudgetMs: budgetMs } : {}), ...(exact && altCount > 0 ? { alternatives: { count: altCount, tolerance: altTol } } : {}) };
   const snapshot: RunSettings = { ...pool, floors: intent.floors, softFloors: intent.softFloors, weights: intent.weights, race: p.race!, resistCaps: intent.resistCaps,
-    restarts: s.restarts || RUN_DEFAULTS.restarts, exact, budgetMs: budgetMs || RUN_DEFAULTS.budgetMs, altCount, altTol, ...(buffs ? { buffs } : {}) };
-  return { base, plan, profile: plannedProfile(base, character, plan), buffs, pool, opts, snapshot };
+    restarts: s.restarts || RUN_DEFAULTS.restarts, exact, budgetMs: budgetMs || RUN_DEFAULTS.budgetMs, altCount, altTol, ...(buffs ? { buffs } : {}), ...(intent.swingSteps ? { swingSteps: true } : {}) };
+  const { prof, r } = planBuffs(base, character, plan);
+  if (!plan.stats || !r) return { base, plan, profile: prof, buffs, pool, opts, snapshot };
+  const share = (k: string): number => (r.shares[k] || []).filter((x) => !x.outside).reduce((n, x) => n + x.value, 0);
+  const stamBase = plan.stats.dex + share("dexBonus") + share("stamPool");
+  const wornStam = totalsOf(Object.fromEntries(worn.map((it) => [String(it.serial), toOptItem(it)]))).stamPool || 0;
+  return { base, plan, profile: { ...prof, swing: { stamBase, refStamina: stamBase + wornStam, steps: !!intent.swingSteps } }, buffs, pool, opts, snapshot };
 }
 
 // ---------------------------------------------------------------- v2 → v3
