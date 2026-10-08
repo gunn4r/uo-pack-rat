@@ -1,12 +1,17 @@
-// diagnostics.test.mts — `app/diagnostics.mts` and the per-slot bound it shares with the MIP (`app/mip.mts` propertyReach, issue #217): propertyReach gives the numbers the bound inside buildSuitMip used to compute (a copy of that code is the reference, over fuzzed pools with two-handers, required slots and negative values) and BuiltMip.reach is the same; `floor_unreachable` for a floor one above the bound (hard: Lower and Make soft; soft: info, Lower only), none for a floor exactly at it (which keeps its hard row); best possible in the player's terms (Resisting Spells, a buff's share, the cap), a buff that lifts reach over a floor; `floors_conflict` on the floors the suit misses, on the heuristic path and on HiGHS's; an empty inventory; the weight scale: `typicalRange` (registry, cap, Resisting Spells, skill bonuses), `weight_dominates` on a Fury-like suit (luck at weight 3, suggested 0.8) and quiet on a balanced profile, a one-property profile, zero and negative weights, each threshold alone, the suggested weight's rounding; and the page's side (`ui/builder-model.mts`): an action's words and edit (Set weight included), the weight rows' worth hint, and a saved run without `diagnostics` drawn from `unreachableFloors`. All `[fast]`.
+// diagnostics.test.mts — `app/diagnostics.mts` and the per-slot bound it shares with the MIP (`app/mip.mts` propertyReach, issue #217): propertyReach gives the numbers the bound inside buildSuitMip used to compute (a copy of that code is the reference, over fuzzed pools with two-handers, required slots and negative values) and BuiltMip.reach is the same, plus one bound written out by hand (a duplicated serial, a worn piece missing from the pool, a required slot with only negative pieces); `floor_unreachable` for a floor one above the bound (hard: Lower and Make soft; soft: info, Lower only), none for a floor exactly at it (which keeps its hard row); best possible in the player's terms (Resisting Spells, a buff's share, the cap), a buff that lifts reach over a floor; `floors_conflict` on the floors the suit misses, on the heuristic path ("not found within the time limit") and on HiGHS's (a proven conflict); an empty inventory; a malformed profile (non-list `hardFloors`) read as far as it goes; a resist floor clipped to its cap saying so; and the page's side (`ui/builder-model.mts`): an action's words and edit, an action that no longer fits the panel (lowered by hand, removed, already soft) doing nothing, an alternative suit's card without `floors_conflict`, a saved run without `diagnostics` drawn from `unreachableFloors`, and Set weight (its words, and doing nothing once the weight changed or was removed since the build); and the weight scale: `typicalRange` (registry, cap, Resisting Spells, override, pools, skill bonuses), `weight_dominates` on a melee main's suit (luck at weight 3, suggested 0.8) measured against the OTHER weights (two properties can flag, one can't), quiet on a balanced profile, zero and negative weights, each threshold and the thin-suit guard alone, the suggested weight's rounding, the archer template on a weapon-only and a low-resist suit of the demo inventory (quiet, by the guard), and every shipped template on the demo characters' full suits (quiet). All `[fast]`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { propertyReach, buildSuitMip, type BuiltMip } from "./mip.mts";
-import { preBuildDiagnostics, resultDiagnostics, weightDiagnostics, suggestedWeight, DOMINANT_SHARE, DOMINANT_WORTH, type DiagnosticsProfile } from "./diagnostics.mts";
+import { preBuildDiagnostics, resultDiagnostics, weightDiagnostics, suggestedWeight, DOMINANT_SHARE, DOMINANT_WORTH, THIN_SUIT, type DiagnosticsProfile } from "./diagnostics.mts";
 import { solveExact, type OptPools } from "./exact-solver.mts";
-import { core, type OptOptions } from "./solver-fixture.mts";
-import { actionWords, applyAction, handledAction, resultChecks, weightWorth } from "./ui/builder-model.mts";
-import { playerCaps, typicalRange, type OptItem } from "./vault-lib.mts";
+import { core, defaultProfiles, templateNames, type OptOptions } from "./solver-fixture.mts";
+import { actionApplies, actionWords, applyAction, handledAction, resultChecks } from "./ui/builder-model.mts";
+import { readFileSync } from "node:fs";
+import { buildPools, foldSnapshots, playerCaps, typicalRange, type OptItem } from "./vault-lib.mts";
+import { upgradeScan } from "./scan-schema.mts";
+import { plannedProfile } from "./buffs.mts";
+import { optionalSlotsFor } from "./mip.mts";
+import type { ScanV2 } from "./schema/types.d.mts";
 
 const mk = (serial: number, slot: string, props: Record<string, number>, twoHanded = false): OptItem => ({ serial, name: `item${serial}`, slot, props, ...(twoHanded ? { twoHanded: true as const } : {}) });
 
@@ -63,7 +68,7 @@ test("[fast] a floor exactly at the bound is reachable: no diagnostic, and the M
 
 test("[fast] a floor one above the bound: floor_unreachable with the best possible; hard offers Lower and Make soft, soft only Lower", () => {
   const [hard] = preBuildDiagnostics({ pools: ssiPools, ...ssiSlots, profile: ssiProfile(36) });
-  assert.deepEqual(hard, { code: "floor_unreachable", level: "warn", property: "ssi", message: "SSI 36 can't be reached with your inventory (best possible: 35).",
+  assert.deepEqual(hard, { code: "floor_unreachable", level: "warn", property: "ssi", message: "Swing speed increase 36 can't be reached with your inventory (best possible: 35).",
     values: { floor: 36, best: 35 }, actions: [{ kind: "setFloor", property: "ssi", value: 35 }, { kind: "makeSoft", property: "ssi" }] });
   const soft = preBuildDiagnostics({ pools: ssiPools, ...ssiSlots, profile: ssiProfile(36, { hardFloors: [] }) });
   assert.deepEqual(soft.map((d) => [d.level, d.actions]), [["info", [{ kind: "setFloor", property: "ssi", value: 35 }]]]);
@@ -81,7 +86,7 @@ test("[fast] best possible is in the player's terms: the cap, the Resisting Spel
   assert.deepEqual(phys!.values, { floor: 50, best: 45 });
   // Divine Fury's +10 SSI: the player's floor of 60 is 50 from gear; the pool's 35 is 45 with the buff
   const [ssi] = preBuildDiagnostics({ pools: ssiPools, ...ssiSlots, profile: ssiProfile(50, { caps: { ssi: 50 }, buffs: { floors: { ssi: 60 } } }) });
-  assert.deepEqual([ssi!.values, ssi!.message], [{ floor: 60, best: 45 }, "SSI 60 can't be reached with your inventory (best possible: 45)."]);
+  assert.deepEqual([ssi!.values, ssi!.message], [{ floor: 60, best: 45 }, "Swing speed increase 60 can't be reached with your inventory (best possible: 45)."]);
 });
 
 test("[fast] a buff whose share lifts the reach over the floor: no diagnostic", () => {
@@ -116,7 +121,9 @@ test("[fast] floors_conflict names each hard floor the suit misses with its valu
     const missed = ["physResist", "fireResist"].filter((k) => (after[k] || 0) < 10);
     assert.ok(missed.length > 0, "no suit meets both");
     assert.deepEqual(d.map((x) => [x.code, x.property, x.values]), missed.map((k) => ["floors_conflict", k, { floor: 10, value: after[k] || 0 }]));
-    assert.match(d[0]!.message, /can be reached, but not together with your other hard requirements: this suit has -?\d+\./);
+    // HiGHS proved the conflict; the heuristic only ran out of time, and the sentence says no more than that
+    assert.match(d[0]!.message, result === exact ? /can be reached, but not together with your other hard requirements: this suit has -?\d+\./
+      : /can be reached, but no suit meeting it together with your other hard requirements was found within the time limit: this suit has -?\d+\./);
     assert.equal(d[0]!.actions[0]!.kind, "makeSoft");
   }
 });
@@ -135,12 +142,29 @@ test("[fast] floor_unreachable comes out of both solver paths, and a met floor r
 
 test("[fast] the page: an action's words and its edit to the panel's profile", () => {
   const lowerTo = { kind: "setFloor", property: "ssi", value: 55 } as const, soft = { kind: "makeSoft", property: "ssi" } as const;
-  assert.deepEqual(actionWords(lowerTo), { label: "Lower to 55", done: "Lowered ✓", toast: "SSI requirement lowered to 55. Build again to use it." });
-  assert.deepEqual(actionWords(soft), { label: "Make soft", done: "Made soft ✓", toast: "SSI requirement is soft now. Build again to use it." });
+  assert.deepEqual(actionWords(lowerTo), { label: "Lower to 55", done: "Lowered ✓", toast: "Swing speed increase requirement lowered to 55. Build again to use it.", stale: "The requirement changed since this build, so this no longer applies." });
+  assert.deepEqual(actionWords(soft), { label: "Make soft", done: "Made soft ✓", toast: "Swing speed increase requirement is soft now. Build again to use it.", stale: "The requirement changed since this build, so this no longer applies." });
   const p: { floors?: Record<string, number>; softFloors?: string[] } = { floors: { ssi: 60 } };
   applyAction(p, lowerTo); applyAction(p, soft); applyAction(p, soft);
   assert.deepEqual(p, { floors: { ssi: 55 }, softFloors: ["ssi"] });
   assert.equal(handledAction({ kind: "swingSteps", on: true }), false, "later PRs' actions get no button yet");
+});
+
+test("[fast] the page: an action applies only while the panel still holds what it changes", () => {
+  const lowerTo = { kind: "setFloor", property: "ssi", value: 55 } as const, soft = { kind: "makeSoft", property: "ssi" } as const;
+  // lowered by hand below the suggestion since the build: Lower would raise it, so it does nothing
+  const lowered = { floors: { ssi: 40 } };
+  assert.equal(actionApplies(lowered, lowerTo), false);
+  applyAction(lowered, lowerTo);
+  assert.deepEqual(lowered, { floors: { ssi: 40 } });
+  // removed since: neither action puts it back or marks a missing floor soft
+  const removed: { floors: Record<string, number>; softFloors?: string[] } = { floors: {} };
+  assert.deepEqual([actionApplies(removed, lowerTo), actionApplies(removed, soft)], [false, false]);
+  applyAction(removed, lowerTo); applyAction(removed, soft);
+  assert.deepEqual(removed, { floors: {} });
+  // already soft: Make soft no longer fits; Lower still does
+  const already = { floors: { ssi: 60 }, softFloors: ["ssi"] };
+  assert.deepEqual([actionApplies(already, soft), actionApplies(already, lowerTo)], [false, true]);
 });
 
 test("[fast] the page: a result's checks, warnings first; a saved run without diagnostics is drawn from unreachableFloors", () => {
@@ -153,7 +177,32 @@ test("[fast] the page: a result's checks, warnings first; a saved run without di
   assert.deepEqual(resultChecks({}, false), []);
 });
 
-// ---- the weight scale
+test("[fast] the page: an alternative suit's card leaves out floors_conflict, whose values are the best suit's", () => {
+  const unreachable = { code: "floor_unreachable" as const, level: "warn" as const, property: "ssi", message: "u", actions: [] };
+  const conflict = { code: "floors_conflict" as const, level: "warn" as const, property: "dci", message: "c", actions: [] };
+  assert.deepEqual(resultChecks({ diagnostics: [unreachable, conflict] }, false).map((d) => d.message), ["u", "c"]);
+  assert.deepEqual(resultChecks({ diagnostics: [unreachable, conflict] }, false, true).map((d) => d.message), ["u"]);
+});
+
+test("[fast] a malformed profile is read as far as it goes, and a resist floor at its cap says so", () => {
+  // hardFloors that is not a list counts as none: soft diagnostics, no throw
+  const odd = { floors: { ssi: 36 }, caps: { ssi: 60 }, hardFloors: 5 as unknown as string[] };
+  assert.deepEqual(preBuildDiagnostics({ pools: ssiPools, ...ssiSlots, profile: odd }).map((d) => d.level), ["info"]);
+  assert.deepEqual(resultDiagnostics({ pools: ssiPools, ...ssiSlots, profile: { ...odd, hardFloors: {} as unknown as string[] }, result: { totals: { after: "x" as unknown as Record<string, number> } } }).map((d) => d.code), ["floor_unreachable"]);
+  // a Physical floor of 75 clipped to the cap: item floor 60 under an item cap of 60 with Resisting Spells' +10, so the paperdoll's 70
+  const res = { ring: [mk(1, "ring", { physResist: 20 })] };
+  const [phys] = preBuildDiagnostics({ pools: res, ...ssiSlots, profile: { floors: { physResist: 60 }, caps: { physResist: 60 }, hardFloors: ["physResist"], resistBonus: 10 } });
+  assert.equal(phys!.message, "Physical resist 70 (its cap) can't be reached with your inventory (best possible: 30).");
+});
+
+test("[fast] propertyReach's candidate rule against a bound written out: a serial listed twice counts once, and a worn piece missing from the pool is a candidate", () => {
+  // ring: the pool lists serial 1 twice (luck 10 and, under the same serial, 99: the first copy wins) and serial 2 (luck 5); the worn ring (serial 3, luck 40) is not in the pool. Neck: required (worn, not optional), its only pieces luck −4 and −2. Expected 40 + (−2) = 38.
+  const pools = { ring: [mk(1, "ring", { luck: 10 }), mk(1, "ring", { luck: 99 }), mk(2, "ring", { luck: 5 })], neck: [mk(4, "neck", { luck: -4 }), mk(5, "neck", { luck: -2 })] };
+  const current = { ring: mk(3, "ring", { luck: 40 }), neck: pools.neck[0]! };
+  assert.deepEqual(propertyReach(pools, current, ["ring"], ["ring", "neck"], ["luck"]), { luck: { max: 38, min: -4 } });
+});
+
+// ---- the weight scale (weight_dominates)
 
 test("[fast] typicalRange: the registry's typical, else the build's cap in the player's terms, else 15 for a skill bonus, else null", () => {
   // a Resisting Spells bonus of 20 leaves an item-total resist cap of 50, which is 70 on the paperdoll
@@ -163,6 +212,7 @@ test("[fast] typicalRange: the registry's typical, else the build's cap in the p
   assert.equal(typicalRange("fc", caps), 2);
   assert.equal(typicalRange("luck", caps), 500);
   assert.equal(typicalRange("dexBonus", caps), 25, "the stat ceiling less the raw stat is a character's limit, not a span");
+  assert.deepEqual(["stamPool", "manaPool", "hitsPool"].map((k) => typicalRange(k, caps)), [45, 45, 35], "a pool's span follows its parts");
   assert.equal(typicalRange("sk:magery", caps), 15);
   assert.equal(typicalRange("ssi", caps), null, "a cap of 0 has no span");
   assert.equal(typicalRange("castingFocus", caps), null, "no cap in this build and no typical");
@@ -171,49 +221,61 @@ test("[fast] typicalRange: the registry's typical, else the build's cap in the p
   assert.equal(typicalRange("dci", playerCaps({ caps: { dci: 30 }, buffs: { caps: { dci: 45 } } })), 45);
 });
 
-// Fury before tuning: Resisting Spells +20 (item resist caps 50), luck weight 3, the totals of a suit like the one found.
-const furyWeights = { physResist: 6, fireResist: 6, coldResist: 6, poisonResist: 6, energyResist: 6, dci: 10, hci: 10, ssi: 8, di: 6, hpRegen: 4, dexBonus: 4, strBonus: 3, hpi: 3, stamRegen: 3, stamInc: 2, lmc: 1, luck: 3, tagPenalty: -25 };
-const furyCaps = { physResist: 50, fireResist: 50, coldResist: 50, poisonResist: 50, energyResist: 50, hci: 45, dci: 45, ssi: 60, di: 100, lmc: 40, hpRegen: 18, stamRegen: 24, hpi: 25 };
-const furyAfter = { physResist: 45, fireResist: 45, coldResist: 50, poisonResist: 50, energyResist: 50, dci: 47, hci: 45, ssi: 45, di: 100, hpRegen: 10, dexBonus: 14, strBonus: 10, hpi: 10, stamRegen: 6, stamInc: 1, lmc: 5, luck: 655, tagPenalty: 3 };
-const fury = (weights: Record<string, number> = furyWeights): DiagnosticsProfile => ({ weights, caps: furyCaps, resistBonus: 20 });
+// A melee main: Resisting Spells +20 (item resist caps 50), luck weight 3, the totals of a suit like the one found. `full` is a pool that reaches no more than the suit has, so the thin-suit guard passes.
+const meleeWeights = { physResist: 6, fireResist: 6, coldResist: 6, poisonResist: 6, energyResist: 6, dci: 10, hci: 10, ssi: 8, di: 6, hpRegen: 4, dexBonus: 4, strBonus: 3, hpi: 3, stamRegen: 3, stamInc: 2, lmc: 1, luck: 3, tagPenalty: -25 };
+const meleeCaps = { physResist: 50, fireResist: 50, coldResist: 50, poisonResist: 50, energyResist: 50, hci: 45, dci: 45, ssi: 60, di: 100, lmc: 40, hpRegen: 18, stamRegen: 24, hpi: 25 };
+const meleeAfter: Record<string, number> = { physResist: 45, fireResist: 45, coldResist: 50, poisonResist: 50, energyResist: 50, dci: 47, hci: 45, ssi: 45, di: 100, hpRegen: 10, dexBonus: 14, strBonus: 10, hpi: 10, stamRegen: 6, stamInc: 1, lmc: 5, luck: 655, tagPenalty: 3 };
+const meleeMain = (weights: Record<string, number> = meleeWeights): DiagnosticsProfile => ({ weights, caps: meleeCaps, resistBonus: 20 });
+const full = (after: Record<string, number>): Record<string, { max: number }> => Object.fromEntries(Object.entries(after).map(([k, v]) => [k, { max: v }]));
 
-test("[fast] weight_dominates: luck at weight 3 on a Fury-like suit, and nothing else; Set weight to the median's 0.8", () => {
-  const d = weightDiagnostics(fury(), furyAfter);
+test("[fast] weight_dominates: luck at weight 3 on a melee main's suit, and nothing else; Set weight to the others' median, 0.8", () => {
+  const d = weightDiagnostics(meleeMain(), meleeAfter, full(meleeAfter));
   assert.deepEqual(d.map((x) => [x.code, x.level, x.property, x.actions]), [["weight_dominates", "warn", "luck", [{ kind: "setWeight", property: "luck", value: 0.8 }]]]);
-  // worths: resists 6 × 70 = 420 (five of them), DCI and HCI 450, SSI 480, DI 600, luck 1,500 ... median 420
+  // the others' worths: resists 6 × 70 = 420 (five of them), DCI and HCI 450, SSI 480, DI 600 ... median 420
   assert.deepEqual(d[0]!.values, { weight: 3, typical: 500, share: 36, ratio: 3.6, median: 420, suggested: 0.8 });
-  assert.equal(d[0]!.message, "Luck makes up 36% of this suit's score: at weight 3, 500 Luck is worth as much as 3.6 times a typical property. Try 0.8.");
-  // the result's list carries it, after the floor ones
-  const res = resultDiagnostics({ pools: {}, current: {}, profile: fury(), result: { totals: { after: furyAfter } } });
-  assert.deepEqual(res.map((x) => x.code), ["weight_dominates"]);
+  assert.equal(d[0]!.message, "Luck makes up 36% of this suit's score: at weight 3, 500 Luck is worth as much as 3.6 times the median of your other weights. Try 0.8.");
+  // the result's list carries it, with the pool's per-slot bound as the reach
+  const pools = { ring: [mk(1, "ring", meleeAfter)] }, slots = { slots: ["ring"], optionalSlots: ["ring"] };
+  assert.deepEqual(resultDiagnostics({ pools, ...slots, profile: meleeMain(), result: { totals: { after: meleeAfter } } }).map((x) => x.code), ["weight_dominates"]);
   // at the suggested weight it no longer dominates
-  assert.deepEqual(weightDiagnostics(fury({ ...furyWeights, luck: 0.8 }), furyAfter), []);
+  assert.deepEqual(weightDiagnostics(meleeMain({ ...meleeWeights, luck: 0.8 }), meleeAfter, full(meleeAfter)), []);
 });
 
-test("[fast] weight_dominates stays quiet on a balanced profile, a one-property profile, zero weights and negative weights", () => {
-  assert.deepEqual(weightDiagnostics(fury({ ...furyWeights, luck: 1 }), furyAfter), [], "balanced");
-  assert.deepEqual(weightDiagnostics(fury({ luck: 3 }), furyAfter), [], "alone, a property is its own median");
-  assert.deepEqual(weightDiagnostics(fury({ ...furyWeights, luck: 0 }), furyAfter), [], "a zero weight is no weight");
-  assert.deepEqual(weightDiagnostics(fury(Object.fromEntries(Object.keys(furyWeights).map((k) => [k, 0]))), furyAfter), [], "all zero");
-  assert.deepEqual(weightDiagnostics(fury({ ...furyWeights, luck: -3 }), furyAfter), [], "a negative weight never dominates");
+test("[fast] weight_dominates compares with the OTHER weights: two properties can flag, one can't", () => {
+  const after = { luck: 500, dci: 40 };
+  const d = weightDiagnostics({ weights: { luck: 3, dci: 1 }, caps: { dci: 45 } }, after, full(after));
+  assert.deepEqual(d.map((x) => [x.property, x.values!.ratio, x.values!.suggested]), [["luck", 33.3, 0.09]]);
+  assert.deepEqual(weightDiagnostics({ weights: { luck: 3 } }, { luck: 500 }, full({ luck: 500 })), [], "alone, there is nothing to compare it with");
+});
+
+test("[fast] weight_dominates stays quiet on a balanced profile, zero weights and negative weights", () => {
+  const r = full(meleeAfter);
+  assert.deepEqual(weightDiagnostics(meleeMain({ ...meleeWeights, luck: 1 }), meleeAfter, r), [], "balanced");
+  assert.deepEqual(weightDiagnostics(meleeMain({ ...meleeWeights, luck: 0 }), meleeAfter, r), [], "a zero weight is no weight");
+  assert.deepEqual(weightDiagnostics(meleeMain(Object.fromEntries(Object.keys(meleeWeights).map((k) => [k, 0]))), meleeAfter, r), [], "all zero");
+  assert.deepEqual(weightDiagnostics(meleeMain({ ...meleeWeights, luck: -3 }), meleeAfter, r), [], "a negative weight never dominates");
   // a negative weight is left out of the median but its term still counts toward the score: a big one dilutes luck's share
-  assert.equal(weightDiagnostics(fury({ ...furyWeights, intBonus: -1000 }), { ...furyAfter, intBonus: 5 }).length, 0);
-  assert.equal(weightDiagnostics(fury({ ...furyWeights, intBonus: -1000 }), furyAfter).length, 1, "an intBonus of 0 adds nothing");
-  assert.deepEqual(weightDiagnostics({ weights: { luck: 3 } }, {}), [], "an empty suit scores 0: nothing to share");
+  assert.equal(weightDiagnostics(meleeMain({ ...meleeWeights, intBonus: -1000 }), { ...meleeAfter, intBonus: 5 }, r).length, 0);
+  assert.equal(weightDiagnostics(meleeMain({ ...meleeWeights, intBonus: -1000 }), meleeAfter, r).length, 1, "an intBonus of 0 adds nothing");
+  assert.deepEqual(weightDiagnostics({ weights: { luck: 3, dci: 1 } }, {}, {}), [], "an empty suit scores 0: nothing to share");
 });
 
-test("[fast] weight_dominates needs both thresholds: the worth ratio and the share of the score", () => {
-  assert.deepEqual([DOMINANT_WORTH, DOMINANT_SHARE], [3, 0.25]);
+test("[fast] weight_dominates needs both thresholds, and a suit that isn't thin", () => {
+  assert.deepEqual([DOMINANT_WORTH, DOMINANT_SHARE, THIN_SUIT], [3, 0.25, 0.5]);
+  const r = full(meleeAfter);
   // worth 3.6 times the median, but little luck on the suit: under a quarter of the score
-  assert.deepEqual(weightDiagnostics(fury(), { ...furyAfter, luck: 100 }), []);
+  assert.deepEqual(weightDiagnostics(meleeMain(), { ...meleeAfter, luck: 100 }, r), []);
   // most of the score, but worth under 3 times the median (weight 2: 1,000 is 2.4 times 420)
-  const d = weightDiagnostics(fury({ ...furyWeights, luck: 2 }), { ...furyAfter, luck: 2000 });
-  assert.deepEqual(d, []);
+  assert.deepEqual(weightDiagnostics(meleeMain({ ...meleeWeights, luck: 2 }), { ...meleeAfter, luck: 2000 }, full({ ...meleeAfter, luck: 2000 })), []);
   // exactly 3 times the median counts: weight 2.52 is worth 1,260
-  assert.equal(weightDiagnostics(fury({ ...furyWeights, luck: 2.52 }), furyAfter)[0]!.values!.ratio, 3);
+  assert.equal(weightDiagnostics(meleeMain({ ...meleeWeights, luck: 2.52 }), meleeAfter, r)[0]!.values!.ratio, 3);
+  // a suit of luck alone, from a pool that reaches the melee main's whole suit: it scores 37% of what the pool could give, so it is thin and quiet; from a pool that reaches only that suit, luck is flagged
+  const luckOnly = { luck: 655 };
+  assert.deepEqual(weightDiagnostics(meleeMain(), luckOnly, r), []);
+  assert.equal(weightDiagnostics(meleeMain(), luckOnly, full(luckOnly))[0]!.property, "luck");
 });
 
-test("[fast] the suggested weight is the median worth over the typical range, to one significant figure", () => {
+test("[fast] the suggested weight is the others' median worth over the typical range, to one significant figure", () => {
   assert.equal(suggestedWeight(420, 500), 0.8);
   assert.equal(suggestedWeight(100, 300), 0.3);
   assert.equal(suggestedWeight(1234, 100), 10);
@@ -222,18 +284,44 @@ test("[fast] the suggested weight is the median worth over the typical range, to
   assert.equal(suggestedWeight(420, 15), 30);
 });
 
-test("[fast] the page: the weight rows' worth hint, and Set weight's words and edit", () => {
-  const caps = playerCaps({ caps: furyCaps, resistBonus: 20 });
-  assert.equal(weightWorth("luck", 3, caps), "= 1,500 per 500 Luck");
-  assert.equal(weightWorth("dci", 10, caps), "= 450 per 45 DCI");
-  assert.equal(weightWorth("physResist", 6, caps), "= 420 per 70 Phys");
-  assert.equal(weightWorth("luck", 0.8, caps), "= 400 per 500 Luck");
-  assert.equal(weightWorth("sk:magery", 2, caps), "= 30 per 15 +Magery");
-  assert.equal(weightWorth("castingFocus", 2, caps), null, "no typical range");
+// The demo data (app/fixtures/demo-*.json) folded, and a shipped template planned for one of its characters with that character's own pools.
+const demoScan = (name: string): ScanV2 => upgradeScan(JSON.parse(readFileSync(new URL(`./fixtures/demo-${name}.json`, import.meta.url), "utf8")), { shard: "uoalive" }) as ScanV2;
+const demoInv = foldSnapshots([demoScan("Kestrel"), demoScan("Dorran")]);
+function demoCell(who: string, template: string) {
+  const c = demoInv.characters[who]!;
+  const { pools, current } = buildPools(demoInv, who, { excludeGargoyle: true, strength: Number(c.stats?.str ?? 125) });
+  return { pools, current, optionalSlots: optionalSlotsFor(current, []), profile: plannedProfile({ ...defaultProfiles.templates[template]!, race: "human" }, c, null) };
+}
+
+test("[fast] weight_dominates: the archer template on a thin suit (a weapon only, low resists) is quiet, though its median is low", () => {
+  const c = demoCell("Kestrel", "archer");
+  const weaponOnly = { di: 40, ssi: 10, hci: 5, luck: 100 };
+  const lowResists = { physResist: 30, fireResist: 10, coldResist: 10, poisonResist: 10, energyResist: 10, di: 100, ssi: 30, hci: 15 };
+  for (const after of [weaponOnly, lowResists]) {
+    assert.deepEqual(resultDiagnostics({ ...c, result: { totals: { after } } }).filter((d) => d.code === "weight_dominates"), []);
+    // it is the thin-suit guard that keeps it quiet: against a pool that reaches only this suit, DI would be flagged
+    assert.ok(weightDiagnostics(c.profile, after, full(after)).some((d) => d.property === "di"));
+  }
+});
+
+test("[fast] weight_dominates: every shipped template on the demo characters' full suits flags nothing", () => {
+  for (const who of ["Kestrel", "Dorran"]) for (const template of templateNames) {
+    const c = demoCell(who, template);
+    const result = core.optimizeSuit(c.pools as unknown as OptPools, c.current as never, c.profile, { seed: 1, restarts: 20, optionalSlots: c.optionalSlots });
+    assert.deepEqual(resultDiagnostics({ ...c, result }).filter((d) => d.code === "weight_dominates").map((d) => d.message), [], `${who} ${template}`);
+  }
+});
+
+test("[fast] the page: Set weight's words, and it applies only while the panel holds the weight the build ran with", () => {
   const setLuck = { kind: "setWeight", property: "luck", value: 0.8 } as const;
   assert.equal(handledAction(setLuck), true);
-  assert.deepEqual(actionWords(setLuck), { label: "Set Luck to 0.8", done: "Set ✓", toast: "Luck weight set to 0.8. Build again to use it." });
+  assert.deepEqual(actionWords(setLuck), { label: "Set Luck to 0.8", done: "Set ✓", toast: "Luck weight set to 0.8. Build again to use it.", stale: "The weight changed since this build, so this no longer applies." });
   const p: { weights?: Record<string, number> } = { weights: { luck: 3, dci: 10 } };
-  applyAction(p, setLuck);
+  applyAction(p, setLuck, 3);
   assert.deepEqual(p, { weights: { luck: 0.8, dci: 10 } });
+  // changed since the build (0.5): left alone; removed since: not put back; no build weight known: no button
+  const changed = { weights: { luck: 0.5 } }, removed: { weights: Record<string, number> } = { weights: {} };
+  assert.deepEqual([actionApplies(changed, setLuck, 3), actionApplies(removed, setLuck, 3), actionApplies({ weights: { luck: 3 } }, setLuck)], [false, false, false]);
+  applyAction(changed, setLuck, 3); applyAction(removed, setLuck, 3);
+  assert.deepEqual([changed, removed], [{ weights: { luck: 0.5 } }, { weights: {} }]);
 });

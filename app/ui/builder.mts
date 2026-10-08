@@ -466,7 +466,8 @@ function weightsSection(): HTMLElement {
     const name = session.character!, caps = playerCaps(plannedProfile(p, state.inv!.characters[name] as Character | null, buffPlan(name, p.race, panelBuffs())));
     const rows = keys.map((k) => {
       const nm = propName(k), num = boundNumber(p.weights!, k, `${nm} weight`, k), worth = el("span", { class: "t-sm muted b-worth" });
-      const paint = (): void => { worth.textContent = weightWorth(k, p.weights![k]!, caps) ?? ""; worth.hidden = !worth.textContent; };
+      // hidden while the field holds no number (its error shows instead), so it never names a weight the profile doesn't hold
+      const paint = (): void => { worth.textContent = (ruleValueError(num.value) ? null : weightWorth(k, p.weights![k]!, caps)) ?? ""; worth.hidden = !worth.textContent; };
       num.addEventListener("input", paint);
       paint();
       return box("div", { class: "rule-row weight", "data-key": k }, ruleName(nm), num,

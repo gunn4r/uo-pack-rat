@@ -255,9 +255,9 @@ export const PROPERTIES = [
   derived("psLevel", "PS level", "Power scroll level (the skill cap it raises to)", false),
   derived("sotPoints", "SoT pts", "Scroll of Transcendence skill points", false),
   derived("tagPenalty", "Tag penalty", "Penalty for Cursed / Brittle / Antique / Prized tags", false),
-  typ(derived("stamPool", "Stam pool", "Stamina from gear: DEX bonus + Stamina Increase"), 30),
-  typ(derived("manaPool", "Mana pool", "Mana from gear: INT bonus + Mana Increase"), 30),
-  typ(derived("hitsPool", "Hits pool", "Hit points from gear: STR bonus ÷ 2 + Hit Point Increase"), 30),
+  typ(derived("stamPool", "Stam pool", "Stamina from gear: DEX bonus + Stamina Increase"), 45),
+  typ(derived("manaPool", "Mana pool", "Mana from gear: INT bonus + Mana Increase"), 45),
+  typ(derived("hitsPool", "Hits pool", "Hit points from gear: STR bonus ÷ 2 + Hit Point Increase"), 35),
   // Columns computed from an item but not stored under item.props (item-query.mts's EXTRA_COLS).
   extra("strReq", "STR req", "Strength Requirement"), extra("weight", "Wt", "Weight (stones)"),
 ] as const;
@@ -302,6 +302,13 @@ const SKILL_SET = new Set(SKILL_NAMES);
 const titleCase = (x: string): string => x.replace(/\b\w/g, (c) => c.toUpperCase());
 export const labelOf = (k: string): string => (k.startsWith("sk:") ? "+" + titleCase(k.slice(3)) : PROP_LABELS[k] || k);
 export const fullOf = (k: string): string => (k.startsWith("sk:") ? `${titleCase(k.slice(3))} skill bonus from items` : PROP_FULL[k] || k);
+// A property in words, as a Suit Builder rule row and a diagnostic name it ("Physical resist", "Hit chance increase"); a summary or badge uses the short label ("Phys", "HCI"). The pools and skill bonuses read better short.
+const POOL_KEYS = new Set(["stamPool", "manaPool", "hitsPool"]);
+export function propName(k: string): string {
+  if (POOL_KEYS.has(k)) return labelOf(k);
+  if (k.startsWith("sk:")) return `${labelOf(k).slice(1)} skill bonus`;
+  return fullOf(k).replace(/(?!^)\b([A-Z])([a-z]+)/g, (_m, a: string, b: string) => a.toLowerCase() + b);
+}
 
 // The five resists in paperdoll order, with the names the page shows: the long one ("Physical"), the short one
 // ("Phys") and the colour token (--res-phys).
