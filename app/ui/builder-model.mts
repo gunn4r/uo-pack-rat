@@ -4,7 +4,7 @@
 // and a saved run's label and badges. No DOM and no page state, so app/builder-model.test.mts can check it
 // all directly; ui/builder.mts, ui/builder-result.mts and ui/runs.mts draw what it returns.
 import { labelOf, propName, typicalRange, GEAR_SLOTS, NOT_BUILDER_KEYS, RESIST_KEYS, RESIST_CAP_LIMITS, SLOT_LABELS, settingsDiff, shardResistCap, WEAPON_SKILLS, MELEE_SKILLS, ubwsLetsIn, flagLabel } from "../vault-lib.mts";
-import type { PlannedBuffs, PropMap, ResistCap, RunSettings } from "../vault-lib.mts";
+import type { FcCap, PlannedBuffs, PropMap, ResistCap, RunSettings } from "../vault-lib.mts";
 import { applyBuffs, buffById, buffsDiff, capWord, signed, type BuffResult } from "../buffs.mts";
 import { RUN_SETTING_LIMITS, type Range } from "../run-settings.mts";
 import { paperdoll, paperdollCaps } from "../evaluate.mts";
@@ -124,6 +124,9 @@ export function effectiveFloor(k: string, floor: number, caps: Record<string, nu
 export function floorCapWarning(k: string, floor: number, cap: number | null): string | null {
   return RESIST_KEYS.includes(k) && cap != null && floor > cap ? `Counts only up to the ${labelOf(k)} cap, ${cap}` : null;
 }
+// The Faster Casting cap and where it comes from (vault-lib.mts fcCapFor): "cap 4: Chivalry", "cap 2: Magery 70+".
+export const fcCapText = (fc: FcCap): string => `cap ${fcCapSource(fc)}`;
+export const fcCapSource = (fc: FcCap): string => `${fc.cap}: ${fc.reason}`;
 // "raised from 70" / "lowered from 70", or null when the cap is the shard's.
 export function capNote(c: ResistCap): string | null {
   if (c.cap === c.shard) return null;

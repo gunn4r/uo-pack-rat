@@ -367,6 +367,35 @@ export function resistCapsError(v: unknown, path = "resistCaps"): string | null 
   return null;
 }
 
+// Faster Casting's cap follows the casting school (issue #213): the shard's `fc` cap (2) for Magery, Necromancy and
+// Mysticism, 4 for Chivalry, Spellweaving and Bushido, and a Chivalry caster drops to the shard's cap once Magery or
+// Mysticism reaches 70. A profile may name its school (`castingSchool`); else it follows the character's skills: 4 when
+// it has Chivalry, Spellweaving or Bushido at 30 base or more (starting points and stray gains stay under it, any build
+// that casts from the school trains past it) and neither Magery nor Mysticism at 70, else the shard's cap. No character
+// and no school: the shard's cap. `reason` is what the panel shows beside the cap ("Chivalry", "Chivalry (chosen)" for a named school, "Magery 70+").
+export const CASTING_SCHOOLS: readonly string[] = ["Magery", "Necromancy", "Mysticism", "Chivalry", "Spellweaving", "Bushido"];
+const FC_FAST_SCHOOLS = ["Chivalry", "Spellweaving", "Bushido"], FC_FAST_CAP = 4, FC_SCHOOL_MIN = 30;
+const FC_SLOW_SKILLS = ["Magery", "Mysticism"], FC_SLOW_AT = 70;
+export interface FcCap { cap: number; reason: string }
+export function fcCapFor(skills: Record<string, unknown> | null | undefined, school?: string | null | undefined): FcCap {
+  const low = (getRules().caps as Record<string, number>).fc ?? 2;
+  const sk = (n: string, f: "base" | "value"): number => Number((skills?.[n] as { base?: unknown; value?: unknown } | undefined)?.[f]) || 0;
+  const slow = FC_SLOW_SKILLS.filter((n) => sk(n, "value") >= FC_SLOW_AT).sort((a, b) => sk(b, "value") - sk(a, "value"))[0];
+  const named = school && CASTING_SCHOOLS.includes(school) ? school : null;
+  if (named) {
+    const chosen = `${named} (chosen)`;
+    if (!FC_FAST_SCHOOLS.includes(named)) return { cap: low, reason: chosen };
+    return named === "Chivalry" && slow ? { cap: low, reason: `${slow} ${FC_SLOW_AT}+` } : { cap: FC_FAST_CAP, reason: chosen };
+  }
+  if (!skills) return { cap: low, reason: "no character" };
+  const fast = FC_FAST_SCHOOLS.filter((n) => sk(n, "base") >= FC_SCHOOL_MIN).sort((a, b) => sk(b, "base") - sk(a, "base"))[0];
+  if (!fast) return { cap: low, reason: "no Chivalry, Spellweaving or Bushido" };
+  return slow ? { cap: low, reason: `${slow} ${FC_SLOW_AT}+` } : { cap: FC_FAST_CAP, reason: fast };
+}
+// The `fc` entry effectiveProfile puts over the shard's caps: none when the shard caps no Faster Casting.
+const fcCaps = (character: Character | null, school: string | undefined): Record<string, number> =>
+  (getRules().caps as Record<string, number>).fc == null ? {} : { fc: fcCapFor(character?.skills ?? null, school).cap };
+
 // The optimizer's profile for one character, as given (weights/floors are what the caller chose; caps are not
 // resolved yet — effectiveProfile() below is what turns this into caps a search can use).
 export interface Profile {
@@ -378,6 +407,7 @@ export interface Profile {
   race?: string | null | undefined;
   resistCaps?: Record<string, number> | undefined;
   swingSteps?: boolean | undefined;   // score SSI by swing step (app/swing.mts)
+  castingSchool?: string | undefined; // the school the Faster Casting cap follows (fcCapFor); absent means from the character's skills
 }
 export interface EffectiveProfile {
   weights: Record<string, number>;
@@ -421,7 +451,7 @@ export interface BuffShift { caps: Record<string, number>; shares: Record<string
 export function effectiveProfile(p: Profile = {}, character: Character | null = null, shift: BuffShift | null = null): EffectiveProfile {
   const rules = getRules();
   const rsb = resistSkillBonus(character?.skills);
-  const caps: Record<string, number> = { ...rules.caps as Record<string, number>, ...(p.caps || {}) };
+  const caps: Record<string, number> = { ...rules.caps as Record<string, number>, ...fcCaps(character, p.castingSchool), ...(p.caps || {}) };
   const floors: Record<string, number> = { ...(p.floors || {}) };
   const view = resistCapsFor(p.race, p.resistCaps);
   const overrides: Record<string, ResistCap> = {};
@@ -1294,7 +1324,7 @@ export function excludeWeaponsError(v: unknown, path = "excludeWeapons"): string
 // Templates: a full set of builder settings with no character in them (no race, STR limit or skipped containers).
 // A character's profile keeps its own working copy plus `template`, the name it was applied from; drift between the
 // two is settingsDiff(templateFrom(template), templateFrom(profile)).
-export const TEMPLATE_KEYS: string[] = ["floors", "softFloors", "weights", "floorBonus", "lockedSlots", "excludeTags", "excludeSkills", "allowOthersWorn", "allowGargoyle", "medOnly", "excludeWeapons", "ubwsAnyWeapon", "weaponMustHave", "resistCaps", "swingSteps"];
+export const TEMPLATE_KEYS: string[] = ["floors", "softFloors", "weights", "floorBonus", "lockedSlots", "excludeTags", "excludeSkills", "allowOthersWorn", "allowGargoyle", "medOnly", "excludeWeapons", "ubwsAnyWeapon", "weaponMustHave", "resistCaps", "swingSteps", "castingSchool"];
 export interface TemplateSource {
   floors?: Record<string, number> | undefined;
   softFloors?: string[] | undefined;
@@ -1311,6 +1341,7 @@ export interface TemplateSource {
   weaponMustHave?: string[] | undefined;   // yes/no properties every weapon must carry (weaponHasFlags)
   resistCaps?: Record<string, number> | undefined;   // the player's per-resist cap overrides, paperdoll terms
   swingSteps?: boolean | undefined;        // score SSI by swing step (app/swing.mts); absent means off
+  castingSchool?: string | undefined;      // the school the Faster Casting cap follows (fcCapFor); absent means from the character's skills
 }
 export interface Template {
   floors: Record<string, number>;
@@ -1328,11 +1359,13 @@ export interface Template {
   weaponMustHave: string[];
   resistCaps: Record<string, number>;
   swingSteps: boolean;
+  castingSchool: string;   // "" means from the character's skills
 }
 export function templateFrom(s: TemplateSource = {}): Template {
   return { floors: { ...(s.floors || {}) }, softFloors: [...(s.softFloors || [])], weights: { ...(s.weights || {}) }, floorBonus: s.floorBonus ?? 1000,
     lockedSlots: [...(s.lockedSlots || [])], excludeTags: [...(s.excludeTags || [])], excludeSkills: [...(s.excludeSkills || [])],
-    allowOthersWorn: !!s.allowOthersWorn, allowGargoyle: !!s.allowGargoyle, medOnly: !!s.medOnly, excludeWeapons: [...(s.excludeWeapons || [])], ubwsAnyWeapon: s.ubwsAnyWeapon !== false, weaponMustHave: [...(s.weaponMustHave || [])], resistCaps: { ...(s.resistCaps || {}) }, swingSteps: !!s.swingSteps };
+    allowOthersWorn: !!s.allowOthersWorn, allowGargoyle: !!s.allowGargoyle, medOnly: !!s.medOnly, excludeWeapons: [...(s.excludeWeapons || [])], ubwsAnyWeapon: s.ubwsAnyWeapon !== false, weaponMustHave: [...(s.weaponMustHave || [])], resistCaps: { ...(s.resistCaps || {}) }, swingSteps: !!s.swingSteps,
+    castingSchool: s.castingSchool || "" };
 }
 
 // A profiles.json character entry, loosely — every field optional, TemplateSource's builder settings
@@ -1417,6 +1450,7 @@ export interface RunSettings {
   resistCaps?: Record<string, number> | undefined;
   buffs?: RunBuffs | undefined;   // the buffs planned with (app/buffs.mts); absent with none, and in a run saved before them
   swingSteps?: boolean | undefined;
+  castingSchool?: string | undefined;
 }
 // A run's buffs: which were on, and the numbers they scale with (app/buffs.mts's inputs, Resisting Spells aside).
 export interface RunBuffs { on: string[]; skills: Record<string, number> }
@@ -1462,6 +1496,7 @@ export function settingsDiff(a: RunSettings = {}, b: RunSettings = {}): string[]
   if (others(a) !== others(b)) out.push(others(b) ? "others' worn gear allowed" : "others' worn gear excluded");
   flag("exact", "exact search on", "exact search off");
   flag("swingSteps", "+SSI by step", "SSI by point");
+  if ((a.castingSchool || "") !== (b.castingSchool || "")) out.push(b.castingSchool ? `casting school ${b.castingSchool}` : "casting school from skills");
   const [wOn, wOff] = setDiff(a.excludeWeapons, b.excludeWeapons);
   if (wOn.length) out.push(`excluding ${wOn.join(", ")} weapons`);
   if (wOff.length) out.push(`allowing ${wOff.join(", ")} weapons`);
