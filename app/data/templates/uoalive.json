@@ -53,6 +53,219 @@
         },
         "pool": { "lockedSlots": [], "excludeTags": [], "excludeSkills": [], "excludeRoots": [], "excludeWeapons": [], "ubwsAnyWeapon": true, "allowOthersWorn": false, "allowGargoyle": false, "medOnly": false, "strLimit": "character" }
       }
+    },
+    "sampire": {
+      "name": "Sampire",
+      "description": "Vampiric Embrace melee with Bushido and Chivalry that heals by dealing damage. Floors count VE, Divine Fury and Consecrate: Fire needs about 95 from gear, so Fire, HCI, DCI and DI are soft.",
+      "sources": ["https://uoalive.com/wiki/Sampire", "https://uoalive.com/wiki/PlayerGuide:DCI_Sampire_Bushido_Paladin"],
+      "spec": {
+        "intent": {
+          "floors": { "physResist": 70, "fireResist": 70, "coldResist": 70, "poisonResist": 70, "energyResist": 70, "hci": 45, "dci": 45, "di": 100 },
+          "softFloors": ["fireResist", "hci", "dci", "di"],
+          "weights": { "physResist": 6, "fireResist": 6, "coldResist": 6, "poisonResist": 6, "energyResist": 6, "hci": 10, "dci": 8, "di": 4, "ssi": 6, "hitManaLeech": 3, "hitStamLeech": 2, "hitLifeLeech": 2, "hitLowerDef": 4, "lmc": 5, "stamPool": 5, "hpi": 8, "dexBonus": 6, "strBonus": 6, "tagPenalty": -25 },
+          "floorBonus": 1000,
+          "resistCaps": {}
+        },
+        "buffs": { "on": ["vampiricEmbrace", "divineFury", "consecrateWeapon"], "skills": {} },
+        "pool": { "lockedSlots": [], "excludeTags": [], "excludeSkills": [], "excludeRoots": [], "excludeWeapons": ["archery", "throwing"], "ubwsAnyWeapon": true, "allowOthersWorn": false, "allowGargoyle": false, "medOnly": false, "strLimit": "character" }
+      }
+    },
+    "lazyPally": {
+      "name": "Paladin (Lazy Pally)",
+      "description": "Weapon, Tactics, Anatomy, Healing, Parry and Chivalry at 120 with a shield. Self-bandages are fast on UO Alive, so DEX and HP regeneration are weighted high; Divine Fury and Consecrate load.",
+      "sources": ["https://uoalive.com/wiki/PlayerGuide:Lazy_Pally", "https://uoalive.com/wiki/The_Crusade_Milestone_(Healing/Paladin_Update)"],
+      "spec": {
+        "intent": {
+          "floors": { "physResist": 70, "fireResist": 70, "coldResist": 70, "poisonResist": 70, "energyResist": 70, "hci": 45, "dci": 45 },
+          "softFloors": ["hci", "dci"],
+          "weights": { "physResist": 6, "fireResist": 6, "coldResist": 6, "poisonResist": 6, "energyResist": 6, "hci": 10, "dci": 10, "ssi": 6, "di": 4, "dexBonus": 10, "strBonus": 6, "stamInc": 8, "manaInc": 6, "hpRegen": 12, "hpi": 8, "lmc": 5, "tagPenalty": -25 },
+          "floorBonus": 1000,
+          "resistCaps": {}
+        },
+        "buffs": { "on": ["divineFury", "consecrateWeapon"], "skills": {} },
+        "pool": { "lockedSlots": [], "excludeTags": [], "excludeSkills": [], "excludeRoots": [], "excludeWeapons": ["archery", "throwing"], "ubwsAnyWeapon": true, "allowOthersWorn": false, "allowGargoyle": false, "medOnly": false, "strLimit": "character" }
+      }
+    },
+    "summoner": {
+      "name": "Summoner",
+      "description": "UO Alive's custom class: Magery, Eval, Mysticism, Focus, Meditation and Spellweaving at 120 in Ethereal Form. Necromancy and Spirit Speak must stay 0, item bonuses included; resists are soft (the guide accepts a glass cannon). Turn Ethereal Form off until all six skills are 120.",
+      "sources": ["https://uoalive.com/wiki/The_Summoner", "https://uoalive.com/forum/threads/the-summoner-breakdown-unique-to-uoalive.1330/"],
+      "spec": {
+        "intent": {
+          "floors": { "lrc": 100, "lmc": 40, "fc": 2, "fcr": 6, "physResist": 60, "fireResist": 60, "coldResist": 60, "poisonResist": 60, "energyResist": 60 },
+          "softFloors": ["physResist", "fireResist", "coldResist", "poisonResist", "energyResist"],
+          "weights": { "sdi": 5, "fc": 150, "fcr": 50, "lrc": 3, "lmc": 8, "manaRegen": 10, "intBonus": 10, "manaInc": 10, "castingFocus": 20, "physResist": 4, "fireResist": 4, "coldResist": 4, "poisonResist": 4, "energyResist": 4, "dci": 4, "hpi": 6, "tagPenalty": -25 },
+          "floorBonus": 1000,
+          "resistCaps": {},
+          "castingSchool": "Magery"
+        },
+        "buffs": { "on": ["etherealForm"], "skills": {} },
+        "pool": { "lockedSlots": [], "excludeTags": [], "excludeSkills": ["necromancy", "spirit speak"], "excludeRoots": [], "excludeWeapons": [], "ubwsAnyWeapon": true, "allowOthersWorn": false, "allowGargoyle": false, "medOnly": true, "strLimit": "character" }
+      }
+    },
+    "tamerArcher": {
+      "name": "Tamer (Archer)",
+      "description": "Archery, Bushido and Chivalry archer with a 4-5 slot pet; Taming and Lore 115, Veterinary 80. Pet-skill jewellery is weighted; Divine Fury and Consecrate load.",
+      "sources": ["https://uoalive.com/wiki/PlayerGuide:ABC_Tamer_-_Hunter", "https://uoalive.com/wiki/PlayerGuide:_Samurai_Archer/Tamer"],
+      "spec": {
+        "intent": {
+          "floors": { "physResist": 70, "fireResist": 70, "coldResist": 70, "poisonResist": 70, "energyResist": 70, "hci": 45, "di": 100, "lmc": 40, "stamPool": 55 },
+          "softFloors": ["hci", "di", "lmc", "stamPool"],
+          "weights": { "physResist": 5, "fireResist": 5, "coldResist": 5, "poisonResist": 5, "energyResist": 5, "hci": 8, "di": 3, "ssi": 6, "stamPool": 6, "lmc": 6, "manaRegen": 8, "manaInc": 8, "dci": 5, "hitManaLeech": 2, "sk:veterinary": 15, "sk:animal taming": 12, "sk:animal lore": 12, "tagPenalty": -25 },
+          "floorBonus": 1000,
+          "resistCaps": {}
+        },
+        "buffs": { "on": ["divineFury", "consecrateWeapon"], "skills": {} },
+        "pool": { "lockedSlots": [], "excludeTags": [], "excludeSkills": [], "excludeRoots": [], "excludeWeapons": ["swordsmanship", "fencing", "mace fighting", "throwing"], "ubwsAnyWeapon": true, "allowOthersWorn": false, "allowGargoyle": false, "medOnly": false, "strLimit": "character" }
+      }
+    },
+    "chivArcher": {
+      "name": "Archer (Chivalry)",
+      "description": "Archery, Tactics, Anatomy, Healing and Chivalry archer; SSI, stamina and HCI first. Divine Fury and Consecrate load.",
+      "sources": ["https://uoalive.com/wiki/Popular_Character_Starter_Templates", "https://uoalive.com/forum/threads/archer-chiv-build.267/"],
+      "spec": {
+        "intent": {
+          "floors": { "physResist": 70, "fireResist": 70, "coldResist": 70, "poisonResist": 70, "energyResist": 70, "hci": 45, "di": 100 },
+          "softFloors": ["hci", "di"],
+          "weights": { "physResist": 6, "fireResist": 6, "coldResist": 6, "poisonResist": 6, "energyResist": 6, "hci": 10, "ssi": 7, "di": 4, "dci": 7, "stamPool": 7, "dexBonus": 8, "hpRegen": 10, "lmc": 5, "manaInc": 6, "hitManaLeech": 3, "tagPenalty": -25 },
+          "floorBonus": 1000,
+          "resistCaps": {}
+        },
+        "buffs": { "on": ["divineFury", "consecrateWeapon"], "skills": {} },
+        "pool": { "lockedSlots": [], "excludeTags": [], "excludeSkills": [], "excludeRoots": [], "excludeWeapons": ["swordsmanship", "fencing", "mace fighting", "throwing"], "ubwsAnyWeapon": true, "allowOthersWorn": false, "allowGargoyle": false, "medOnly": false, "strLimit": "character" }
+      }
+    },
+    "archerBard": {
+      "name": "Archer-Bard",
+      "description": "Archery, Tactics, Musicianship, Provocation, Discordance and Chivalry: an anti-caster archer with the Provocation mastery songs Inspire and Invigorate up.",
+      "sources": ["https://uoalive.com/wiki/Popular_Character_Starter_Templates", "https://uoalive.com/wiki/The_Bard"],
+      "spec": {
+        "intent": {
+          "floors": { "physResist": 70, "fireResist": 70, "coldResist": 70, "poisonResist": 70, "energyResist": 70, "hci": 45, "di": 100 },
+          "softFloors": ["hci", "di"],
+          "weights": { "physResist": 6, "fireResist": 6, "coldResist": 6, "poisonResist": 6, "energyResist": 6, "hci": 9, "ssi": 6, "di": 3, "dci": 6, "stamPool": 6, "lmc": 8, "manaRegen": 10, "manaInc": 10, "sk:musicianship": 15, "sk:provocation": 15, "sk:discordance": 15, "hitManaLeech": 3, "tagPenalty": -25 },
+          "floorBonus": 1000,
+          "resistCaps": {}
+        },
+        "buffs": { "on": ["divineFury", "consecrateWeapon", "inspire", "invigorate"], "skills": {} },
+        "pool": { "lockedSlots": [], "excludeTags": [], "excludeSkills": [], "excludeRoots": [], "excludeWeapons": ["swordsmanship", "fencing", "mace fighting", "throwing"], "ubwsAnyWeapon": true, "allowOthersWorn": false, "allowGargoyle": false, "medOnly": false, "strLimit": "character" }
+      }
+    },
+    "necroMage": {
+      "name": "Necro-Mage",
+      "description": "Necromancy, Spirit Speak, Magery, Eval, Meditation, Resisting Spells and Wrestling caster in Wraith Form for mana drain. Full caster core, meditation-safe gear.",
+      "sources": ["https://uoalive.com/wiki/Popular_Character_Starter_Templates"],
+      "spec": {
+        "intent": {
+          "floors": { "lrc": 100, "lmc": 40, "fc": 2, "fcr": 6, "physResist": 70, "fireResist": 70, "coldResist": 70, "poisonResist": 70, "energyResist": 70 },
+          "softFloors": [],
+          "weights": { "fc": 150, "fcr": 50, "lrc": 3, "lmc": 8, "sdi": 4, "manaRegen": 10, "intBonus": 10, "manaInc": 10, "castingFocus": 20, "dci": 6, "physResist": 4, "fireResist": 4, "coldResist": 4, "poisonResist": 4, "energyResist": 4, "hpi": 6, "tagPenalty": -25 },
+          "floorBonus": 1000,
+          "resistCaps": {},
+          "castingSchool": "Necromancy"
+        },
+        "buffs": { "on": ["wraithForm"], "skills": {} },
+        "pool": { "lockedSlots": [], "excludeTags": [], "excludeSkills": [], "excludeRoots": [], "excludeWeapons": ["archery", "swordsmanship", "fencing", "mace fighting", "throwing"], "ubwsAnyWeapon": true, "allowOthersWorn": false, "allowGargoyle": false, "medOnly": true, "strLimit": "character" }
+      }
+    },
+    "mysticMage": {
+      "name": "Mystic-Mage",
+      "description": "Magery and Mysticism caster with Focus, Eval and Meditation. The shard has no guide for it: a plain caster core with Casting Focus weighted for Mysticism.",
+      "sources": [],
+      "spec": {
+        "intent": {
+          "floors": { "lrc": 100, "lmc": 40, "fc": 2, "fcr": 6, "physResist": 70, "fireResist": 70, "coldResist": 70, "poisonResist": 70, "energyResist": 70 },
+          "softFloors": ["physResist", "fireResist", "coldResist", "poisonResist", "energyResist"],
+          "weights": { "fc": 150, "fcr": 50, "lrc": 3, "lmc": 8, "sdi": 4, "manaRegen": 10, "intBonus": 10, "manaInc": 10, "castingFocus": 25, "dci": 6, "physResist": 4, "fireResist": 4, "coldResist": 4, "poisonResist": 4, "energyResist": 4, "hpi": 6, "tagPenalty": -25 },
+          "floorBonus": 1000,
+          "resistCaps": {},
+          "castingSchool": "Mysticism"
+        },
+        "buffs": { "on": [], "skills": {} },
+        "pool": { "lockedSlots": [], "excludeTags": [], "excludeSkills": [], "excludeRoots": [], "excludeWeapons": ["archery", "swordsmanship", "fencing", "mace fighting", "throwing"], "ubwsAnyWeapon": true, "allowOthersWorn": false, "allowGargoyle": false, "medOnly": true, "strLimit": "character" }
+      }
+    },
+    "necroweaver": {
+      "name": "Spellweaver (Necroweaver)",
+      "description": "UO Alive's Undead Commander caster: Magery, Eval, Necromancy, Spirit Speak, Spellweaving and Meditation at 120, Wraith Form and Protection up, SDI above all. Resists are soft (the guide says 'preferably 70').",
+      "sources": ["https://uoalive.com/wiki/Necroweaver", "https://uoalive.com/wiki/Undead_Commander"],
+      "spec": {
+        "intent": {
+          "floors": { "lrc": 100, "lmc": 40, "fc": 2, "fcr": 6, "physResist": 70, "fireResist": 70, "coldResist": 70, "poisonResist": 70, "energyResist": 70 },
+          "softFloors": ["physResist", "fireResist", "coldResist", "poisonResist", "energyResist"],
+          "weights": { "sdi": 5, "fc": 150, "fcr": 50, "lrc": 3, "lmc": 8, "manaRegen": 10, "intBonus": 10, "manaInc": 10, "castingFocus": 20, "physResist": 4, "fireResist": 4, "coldResist": 4, "poisonResist": 4, "energyResist": 4, "hpi": 6, "tagPenalty": -25 },
+          "floorBonus": 1000,
+          "resistCaps": {},
+          "castingSchool": "Magery"
+        },
+        "buffs": { "on": ["wraithForm", "protection"], "skills": {} },
+        "pool": { "lockedSlots": [], "excludeTags": [], "excludeSkills": [], "excludeRoots": [], "excludeWeapons": [], "ubwsAnyWeapon": true, "allowOthersWorn": false, "allowGargoyle": false, "medOnly": true, "strLimit": "character" }
+      }
+    },
+    "throwingGargoyle": {
+      "name": "Thrower (Gargoyle)",
+      "description": "Gargoyle-only Throwing (Boomerang, Cyclone, Soul Glaive) with gargoyle gear allowed; the racial passive is counted, so the HCI floor is its raised cap of 50. Pick race Gargoyle.",
+      "sources": ["https://uoalive.com/wiki/Throwing", "https://uoalive.com/wiki/Hemomancer"],
+      "spec": {
+        "intent": {
+          "floors": { "physResist": 70, "fireResist": 70, "coldResist": 70, "poisonResist": 70, "energyResist": 70, "hci": 50, "di": 100 },
+          "softFloors": ["hci", "di"],
+          "weights": { "physResist": 6, "fireResist": 6, "coldResist": 6, "poisonResist": 6, "energyResist": 6, "hci": 10, "ssi": 7, "di": 4, "dci": 8, "stamPool": 7, "dexBonus": 8, "hitManaLeech": 3, "hitLifeLeech": 2, "lmc": 5, "tagPenalty": -25 },
+          "floorBonus": 1000,
+          "resistCaps": {}
+        },
+        "buffs": { "on": ["gargoyle"], "skills": {} },
+        "pool": { "lockedSlots": [], "excludeTags": [], "excludeSkills": [], "excludeRoots": [], "excludeWeapons": ["archery", "swordsmanship", "fencing", "mace fighting"], "ubwsAnyWeapon": true, "allowOthersWorn": false, "allowGargoyle": true, "medOnly": false, "strLimit": "character" }
+      }
+    },
+    "mysticTank": {
+      "name": "Tank (Mystic)",
+      "description": "Weapon, Anatomy, Tactics, Parry, Healing, Mysticism and Focus melee in Stone Form, which raises the resist caps and the resists. Resists are weighted past 70.",
+      "sources": ["https://uoalive.com/wiki/Odd_Builds_-_Mystic_Tank", "https://uoalive.com/forum/threads/odd-builds-mystic-tank.1254/"],
+      "spec": {
+        "intent": {
+          "floors": { "physResist": 70, "fireResist": 70, "coldResist": 70, "poisonResist": 70, "energyResist": 70 },
+          "softFloors": [],
+          "weights": { "physResist": 7, "fireResist": 7, "coldResist": 7, "poisonResist": 7, "energyResist": 7, "hci": 8, "dci": 8, "di": 3, "ssi": 5, "stamInc": 10, "reflectPhys": 4, "lmc": 6, "lrc": 2, "strBonus": 8, "dexBonus": 8, "hpRegen": 12, "hitLifeLeech": 2, "hitManaLeech": 2, "tagPenalty": -25 },
+          "floorBonus": 1000,
+          "resistCaps": {},
+          "castingSchool": "Mysticism"
+        },
+        "buffs": { "on": ["stoneForm"], "skills": {} },
+        "pool": { "lockedSlots": [], "excludeTags": [], "excludeSkills": [], "excludeRoots": [], "excludeWeapons": ["archery", "throwing"], "ubwsAnyWeapon": true, "allowOthersWorn": false, "allowGargoyle": false, "medOnly": false, "strLimit": "character" }
+      }
+    },
+    "horrificBeastWrestler": {
+      "name": "Horrific Beast Wrestler",
+      "description": "Wrestling, Anatomy, Tactics and Healing with Necromancy 40+ in Horrific Beast, which adds DI and HP regeneration past the cap (so gear HPR is weighted 0) and blocks every non-form spell.",
+      "sources": ["https://uoalive.com/wiki/Odd_Builds_-_Horrific_Beast_Wrestler", "https://uoalive.com/forum/threads/odd-builds-horrific-beast-wrestler.1063/"],
+      "spec": {
+        "intent": {
+          "floors": { "physResist": 70, "fireResist": 70, "coldResist": 70, "poisonResist": 70, "energyResist": 70, "hci": 45, "dci": 45, "di": 100 },
+          "softFloors": ["hci", "dci", "di"],
+          "weights": { "physResist": 6, "fireResist": 6, "coldResist": 6, "poisonResist": 6, "energyResist": 6, "hci": 10, "dci": 10, "di": 4, "ssi": 6, "hpi": 10, "stamInc": 10, "dexBonus": 10, "strBonus": 6, "lmc": 5, "reflectPhys": 3, "hpRegen": 0, "tagPenalty": -25 },
+          "floorBonus": 1000,
+          "resistCaps": {}
+        },
+        "buffs": { "on": ["horrificBeast"], "skills": {} },
+        "pool": { "lockedSlots": [], "excludeTags": [], "excludeSkills": [], "excludeRoots": [], "excludeWeapons": ["archery", "swordsmanship", "fencing", "mace fighting", "throwing"], "ubwsAnyWeapon": true, "allowOthersWorn": false, "allowGargoyle": false, "medOnly": false, "strLimit": "character" }
+      }
+    },
+    "hemomancer": {
+      "name": "Hemomancer",
+      "description": "UO Alive's Undead Commander fighter: weapon, Tactics, Necromancy (Vampiric Embrace), Spirit Speak, Lore and Veterinary with commanded undead. The guide's own numbers: HCI 45, DI 100, DCI 20+, LMC 36+, Phys and Fire 75 through refinements.",
+      "sources": ["https://uoalive.com/wiki/Hemomancer", "https://uoalive.com/wiki/Undead_Commander"],
+      "spec": {
+        "intent": {
+          "floors": { "physResist": 75, "fireResist": 75, "coldResist": 70, "poisonResist": 70, "energyResist": 70, "hci": 45, "di": 100, "dci": 20, "lmc": 36 },
+          "softFloors": ["fireResist", "hci", "di", "dci", "lmc"],
+          "weights": { "physResist": 6, "fireResist": 6, "coldResist": 6, "poisonResist": 6, "energyResist": 6, "hci": 10, "di": 4, "dci": 6, "ssi": 6, "lmc": 6, "strBonus": 6, "dexBonus": 6, "stamPool": 6, "hitLifeLeech": 3, "hitManaLeech": 3, "hitStamLeech": 2, "sk:veterinary": 15, "tagPenalty": -25 },
+          "floorBonus": 1000,
+          "resistCaps": { "physResist": 75, "fireResist": 75 }
+        },
+        "buffs": { "on": ["vampiricEmbrace", "divineFury", "consecrateWeapon"], "skills": {} },
+        "pool": { "lockedSlots": [], "excludeTags": [], "excludeSkills": [], "excludeRoots": [], "excludeWeapons": [], "ubwsAnyWeapon": true, "allowOthersWorn": false, "allowGargoyle": false, "medOnly": false, "strLimit": "character" }
+      }
     }
   }
 }
