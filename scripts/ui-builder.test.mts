@@ -1,6 +1,6 @@
 // ui-builder.test.mts — [slow]: the Suit Builder's keyboard, hover and panel behavior in the real Electron window.
 //
-// `[slow]`: the Suit Builder's keyboard and hover behaviour in the real Electron window, on a writable `--data` directory seeded with the demo scans: a raised resist cap (Fire 95) marked in the Resist caps section, built with, shown on the result's Fire tile and the saved run's badge, kept by Save profile across a reload, refused out of range with the error under the field, and reset to the shard's cap; ⌘↵ (Ctrl+Enter) builds with focus on the page body and while typing in a panel field, and does nothing behind the Saved runs drawer; the current suit's and the Fetch list's pieces show the item tooltip on hover and after Tab focus, and so do both names in a Plan row, each its own piece's (issue #75; the row itself and its Slot cell show none, a kept row's worn name still does); a Fetch list row shows a deep bag path in full (nothing cut or ellipsised) and its copy button puts the container serial on the clipboard; STR limit is beside Race with Advanced closed, and a bad value there is focused without opening Advanced; a switch's on track is at least 3:1 against its off track, with the knob moved right, in Default and Britannia, light and dark; two excluded weapon skills show on the Weapons chip and survive Save profile and a reload. Manual mode (issue #12): a slot opens the picker on its pieces, a row picked with the keyboard (focus, Enter) fills the slot, moves the totals and says so in the status line, the picker stays on that slot with the picked row marked "In this slot", the undo key empties the slot again (the status line saying what was undone) and redo puts the piece back, Esc closes it with focus back on the slot card, and the mode and the suit are in `ui-prefs.json`; and the hand-offs: another character picked mid-fill cancels the fill and leaves the suit alone, Fill the rest automatically fills empty slots around a placed ring in one undo step and shows the fetch list, Save as run puts a Manual run in the drawer that opens in the result view with Open in Manual, and an Automatic result's Start from this result loads it into Manual as one undo step.
+// `[slow]`: the Suit Builder's keyboard and hover behaviour in the real Electron window, on a writable `--data` directory seeded with the demo scans: a raised resist cap (Fire 95) marked in the Resist caps section, built with, shown on the result's Fire tile and the saved run's badge, kept by Save profile across a reload, refused out of range with the error under the field, and reset to the shard's cap; ⌘↵ (Ctrl+Enter) builds with focus on the page body and while typing in a panel field, and does nothing behind the Saved runs drawer; the current suit's and the Fetch list's pieces show the item tooltip on hover and after Tab focus, and so do both names in a Plan row, each its own piece's (issue #75; the row itself and its Slot cell show none, a kept row's worn name still does); a Fetch list row shows a deep bag path in full (nothing cut or ellipsised) and its copy button puts the container serial on the clipboard; STR limit is beside Race with Advanced closed, and a bad value there is focused without opening Advanced; a switch's on track is at least 3:1 against its off track, with the knob moved right, in Default and Britannia, light and dark; two excluded weapon skills show on the Weapons chip and survive Save profile and a reload; Check your settings (issue #217): a hard Luck requirement no suit reaches is named with the best possible above the progress panel and in the result, and Lower and Make soft edit the panel's floor and the template badge without starting a build. Manual mode (issue #12): a slot opens the picker on its pieces, a row picked with the keyboard (focus, Enter) fills the slot, moves the totals and says so in the status line, the picker stays on that slot with the picked row marked "In this slot", the undo key empties the slot again (the status line saying what was undone) and redo puts the piece back, Esc closes it with focus back on the slot card, and the mode and the suit are in `ui-prefs.json`; and the hand-offs: another character picked mid-fill cancels the fill and leaves the suit alone, Fill the rest automatically fills empty slots around a placed ring in one undo step and shows the fetch list, Save as run puts a Manual run in the drawer that opens in the result view with Open in Manual, and an Automatic result's Start from this result loads it into Manual as one undo step.
 //
 // Each of the older cases is maintainer feedback on the redesign (PR #43), plus the resist cap overrides (issue #44) and the weapon exclusions (issue #45). Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
 import test from "node:test";
@@ -226,6 +226,50 @@ test("[slow] a Fetch list row shows its whole place, wrapped not cut, and copies
     await copy.click();
     await page.waitForFunction(() => /Copied 0x/.test(document.body.textContent || ""));
     assert.equal(await app.evaluate(({ clipboard }) => clipboard.readText()), hex);
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+});
+
+// Issue #217: a hard requirement no suit reaches (Luck 100000) is named with the best possible above the progress panel while the build runs, then in the result's "Check your settings"; Lower and Make soft edit the panel and the template badge, turn into their done state and never start a build.
+test("[slow] Check your settings: the block shows before and after the build, and Lower and Make soft edit the panel", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = seedDataDir("packrat-ui-checks-");
+  const { app, page, errors } = await launch(dataDir);
+  try {
+    await openBuilder(page);
+    const luckRow = page.locator("#b-sec-req .rule-row[data-key=luck]");
+    if (!(await luckRow.count())) {
+      await page.click("#b-addfloor");
+      await page.click(".b-pick-list button[data-key=luck]");
+    }
+    await luckRow.locator("input").fill("100000");
+    let starts = 0;
+    page.on("request", (r) => { if (r.method() === "POST" && new URL(r.url()).pathname === "/api/optimize") starts++; });
+    await page.click("#b-run");
+    // before the search ends: the block sits right above the progress card
+    // read in the same poll that finds it, so a quick build can't replace it between the wait and the read
+    const preText = await (await page.waitForFunction(() => document.querySelector("#b-msg .b-check:has(+ .b-progress)")?.textContent || null, undefined, { timeout: 15_000 })).jsonValue();
+    assert.match(String(preText), /Check your settings[\s\S]*Luck 100000 can't be reached with your inventory \(best possible: \d+\)\./);
+    await built(page);
+    assert.equal(await page.locator("#b-msg .b-check").count(), 0, "the pre-build block goes with the progress card");
+    const block = page.locator(".b-head-card .b-check");
+    const text = await block.innerText();
+    const best = Number(/Luck 100000 can't be reached with your inventory \(best possible: (\d+)\)\./.exec(text)?.[1]);
+    assert.ok(best > 0 && best < 100000, text);
+    const lower = block.getByRole("button", { name: `Lower to ${best}` }), soft = block.getByRole("button", { name: "Make soft" });
+    await lower.click();
+    assert.equal(await luckRow.locator("input").inputValue(), String(best), "the panel's floor is lowered");
+    assert.match(await page.locator("#b-tpl-state").innerText(), new RegExp(`Luck floor[^.]*${best}`), "the template badge names the change");
+    assert.equal(await block.getByRole("button", { name: "Lowered ✓" }).isDisabled(), true);
+    await soft.click();
+    assert.match(await page.locator("#b-tpl-state").innerText(), /Luck floor made soft/);
+    assert.equal(await block.getByRole("button", { name: "Made soft ✓" }).isDisabled(), true);
+    assert.equal(await page.locator("#b-run").isDisabled(), false, "no build started");
+    assert.equal(starts, 1, "only the one build that was asked for");
     assert.deepEqual(errors, []);
   } finally {
     await app.close();

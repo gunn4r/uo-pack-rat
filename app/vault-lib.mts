@@ -288,6 +288,13 @@ const SKILL_SET = new Set(SKILL_NAMES);
 const titleCase = (x: string): string => x.replace(/\b\w/g, (c) => c.toUpperCase());
 export const labelOf = (k: string): string => (k.startsWith("sk:") ? "+" + titleCase(k.slice(3)) : PROP_LABELS[k] || k);
 export const fullOf = (k: string): string => (k.startsWith("sk:") ? `${titleCase(k.slice(3))} skill bonus from items` : PROP_FULL[k] || k);
+// A property in words, as a Suit Builder rule row and a diagnostic name it ("Physical resist", "Hit chance increase"); a summary or badge uses the short label ("Phys", "HCI"). The pools and skill bonuses read better short.
+const POOL_KEYS = new Set(["stamPool", "manaPool", "hitsPool"]);
+export function propName(k: string): string {
+  if (POOL_KEYS.has(k)) return labelOf(k);
+  if (k.startsWith("sk:")) return `${labelOf(k).slice(1)} skill bonus`;
+  return fullOf(k).replace(/(?!^)\b([A-Z])([a-z]+)/g, (_m, a: string, b: string) => a.toLowerCase() + b);
+}
 
 // The five resists in paperdoll order, with the names the page shows: the long one ("Physical"), the short one
 // ("Phys") and the colour token (--res-phys).

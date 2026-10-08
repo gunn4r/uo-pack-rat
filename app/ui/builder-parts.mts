@@ -5,11 +5,13 @@ import { RESIST_META } from "../vault-lib.mts";
 import type { Item, PropMap } from "../vault-lib.mts";
 import { state } from "./store.mts";
 import { el, label, fmtN, itemTip, toast, whereText } from "./dom.mts";
-import { box, txt, button, tipWrap, tooltip, copyText } from "./components.mts";
+import { box, txt, button, message, tipWrap, tooltip, copyText } from "./components.mts";
 import { CLIENT_ID } from "./api.mts";
 import { bridgeActionReason, runBridgeAction, grabAll, grabbable } from "./bridge.mts";
 import { splitSerial } from "./item-parts.mts";
-import { locationCrumbs, plural } from "./builder-model.mts";
+import { locationCrumbs, plural, handledAction, actionWords, actionApplies, applyAction } from "./builder-model.mts";
+import { session, commands } from "./builder-session.mts";
+import type { Diagnostic } from "../runs-types.mts";
 import type { OptimizeResult, OptimizeProgress, JobSnapshotEvent, JobDoneEvent, JobFailedEvent, JobCancelledEvent } from "./api-types.mts";
 
 export const RESIST_NAMES: Record<string, [string, string]> = Object.fromEntries(RESIST_META.map((r) => [r.key, [r.long, r.token]]));
@@ -34,6 +36,31 @@ export function verdict(res: OptimizeResult): { text: string; tone?: "ok" | "war
   if (res.method === "exact" && res.proven == null) return { text: "" };
   if (res.method === "exact") return { text: "Best within budget", tone: "warn", detail: res.gapPoints == null ? "No bound was established: raise the time budget to finish the proof." : `At most ${fmtN(res.gapPoints)} points from the bound: raise the time budget to finish the proof.` };
   return { text: "Heuristic" };
+}
+
+// ---- "Check your settings": the settings that work against a build (app/diagnostics.mts), warnings under one heading, then the notes. Each action edits the panel's profile for `name` (never starts a build), says so in a toast and turns into its done state. It is offered only while `name` is the panel's character and the panel still holds what the action changes (builder-model.mts actionApplies); one that no longer fits when clicked says so and turns off.
+export function settingsCheck(diags: Diagnostic[], name: string): HTMLElement | null {
+  if (!diags.length) return null;
+  const p0 = session.character === name ? session.profile : null;
+  const row = (d: Diagnostic): HTMLElement => {
+    const acts = p0 ? d.actions.filter(handledAction).filter((a) => actionApplies(p0, a)).map((a) => {
+      const words = actionWords(a);
+      const b = button({ label: words.label, size: "sm", onClick: () => {
+        const p = session.profile;
+        if (!p || session.character !== name || !actionApplies(p, a)) { toast("The requirement changed since this build, so this no longer applies."); b.disabled = true; return; }
+        applyAction(p, a);
+        commands.renderPanel();
+        toast(words.toast, "good");
+        b.replaceChildren(txt(words.done)); b.disabled = true;
+      } });
+      return b;
+    }) : [];
+    return box("div", { class: "b-check-row" }, el("p", {}, d.message), acts.length ? box("span", { class: "b-check-acts" }, ...acts) : null);
+  };
+  const warn = diags.filter((d) => d.level === "warn"), info = diags.filter((d) => d.level !== "warn");
+  return box("div", { class: "b-check" },
+    warn.length ? message({ tone: "warn", title: "Check your settings", text: box("div", { class: "b-check-rows" }, ...warn.map(row)) }) : null,
+    info.length ? message({ tone: "info", text: box("div", { class: "b-check-rows" }, ...info.map(row)) }) : null);
 }
 
 // ---- the fetch list: one row per container, walk to each once

@@ -13,7 +13,7 @@ import type { RulesV1 } from "../schema/types.d.mts";
 import type { AutostartOutcome, Hotkey as PanelHotkey, PanelPrefs } from "../tazuo-panel-prefs.mts";
 import type { OrganizeConfig, RuleMatch } from "../organize-config.mts";
 import type { MissingItem } from "../missing.mts";
-import type { RunBody, RunsListBody, RunSummary, SavedRun } from "../runs-types.mts";
+import type { Diagnostic, RunBody, RunsListBody, RunSummary, SavedRun } from "../runs-types.mts";
 import type { HouseApiResponse } from "../house-model-types.mts";
 import type { DataDirCheckInfo } from "../data-dir-notice.mts";
 
@@ -309,6 +309,7 @@ export interface OptimizeResult {
   unreachableFloors?: string[] | undefined;
   fallbackReason?: string | undefined;
   floorsConflict?: boolean | undefined;
+  diagnostics?: Diagnostic[] | undefined;   // absent on a run saved before SOLVER_VERSION 6: unreachableFloors is drawn instead
 }
 // SolveProgress (app/exact-solver.mts) as reported over the job's SSE stream and read by
 // builder.mts's runPanel(). Every field but `phase` is optional — not every phase reports every one.
@@ -345,6 +346,7 @@ export interface OptimizeStartApiResponse {
   blocked: string[];
   cached?: boolean | undefined;
   run?: SavedRunLike | undefined;
+  diagnostics?: Diagnostic[] | undefined;   // the requirements no suit in the pool can reach, before the search starts
 }
 export interface OptimizeCancelApiResponse {
   ok: boolean;
