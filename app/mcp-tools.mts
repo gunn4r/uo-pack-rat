@@ -139,6 +139,7 @@ function resultSummary(result: Record<string, unknown> | null | undefined, ev: E
     ...(ev && best ? { effectiveTotals: nonZero(evaluateSuit({ profile: ev.base, character: ev.character, suit: best, buffs: ev.plan }).effectiveTotals) } : {}),
     ...(Array.isArray(result.unreachableFloors) && result.unreachableFloors.length ? { unreachableFloors: result.unreachableFloors } : {}),
     ...(Array.isArray(result.diagnostics) && result.diagnostics.length ? { diagnostics: result.diagnostics } : {}),
+    ...(result.swing ? { swing: result.swing } : {}),
     ...(Array.isArray(result.alternatives) && result.alternatives.length ? { otherSuits: (result.alternatives as Array<{ best: Record<string, { serial: number; name: string } | null>; score: number }>).map((a) => ({ score: a.score, suit: suitRows(a.best) })) } : {}),
   };
 }

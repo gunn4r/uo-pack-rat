@@ -1,11 +1,11 @@
-// diagnostics.test.mts — `app/diagnostics.mts` and the per-slot bound it shares with the MIP (`app/mip.mts` propertyReach, issue #217): propertyReach gives the numbers the bound inside buildSuitMip used to compute (a copy of that code is the reference, over fuzzed pools with two-handers, required slots and negative values) and BuiltMip.reach is the same, plus one bound written out by hand (a duplicated serial, a worn piece missing from the pool, a required slot with only negative pieces); `floor_unreachable` for a floor one above the bound (hard: Lower and Make soft; soft: info, Lower only), none for a floor exactly at it (which keeps its hard row); best possible in the player's terms (Resisting Spells, a buff's share, the cap), a buff that lifts reach over a floor; `floors_conflict` on the floors the suit misses, on the heuristic path ("not found within the time limit") and on HiGHS's (a proven conflict); an empty inventory; a malformed profile (non-list `hardFloors`) read as far as it goes; a resist floor clipped to its cap saying so; and the page's side (`ui/builder-model.mts`): an action's words and edit, an action that no longer fits the panel (lowered by hand, removed, already soft) doing nothing, an alternative suit's card without `floors_conflict`, and a saved run without `diagnostics` drawn from `unreachableFloors`. All `[fast]`.
+// diagnostics.test.mts — `app/diagnostics.mts` and the per-slot bound it shares with the MIP (`app/mip.mts` propertyReach, issue #217): propertyReach gives the numbers the bound inside buildSuitMip used to compute (a copy of that code is the reference, over fuzzed pools with two-handers, required slots and negative values) and BuiltMip.reach is the same, plus one bound written out by hand (a duplicated serial, a worn piece missing from the pool, a required slot with only negative pieces); `floor_unreachable` for a floor one above the bound (hard: Lower and Make soft; soft: info, Lower only), none for a floor exactly at it (which keeps its hard row); best possible in the player's terms (Resisting Spells, a buff's share, the cap), a buff that lifts reach over a floor; `floors_conflict` on the floors the suit misses, on the heuristic path ("not found within the time limit") and on HiGHS's (a proven conflict); an empty inventory; a malformed profile (non-list `hardFloors`) read as far as it goes; a resist floor clipped to its cap saying so; and the page's side (`ui/builder-model.mts`): an action's words and edit, an action that no longer fits the panel (lowered by hand, removed, already soft) doing nothing, an alternative suit's card without `floors_conflict`, and a saved run without `diagnostics` drawn from `unreachableFloors`; the swing ones (PR 3): `swing_linear` with Lock for the weapon's hand when the suit's weapon is the worn one (else the sentence says to equip it; none without a weapon), `swing_next_step` within 10 SSI with its stamina half only when a band up reaches the step, quiet with steps on, too far, at the cap or with no swing, and the page's side of both (the switch, Lock, a step's requirement that raises or adds where Lower never does, Next step and the swing line). All `[fast]`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { propertyReach, buildSuitMip, type BuiltMip } from "./mip.mts";
 import { preBuildDiagnostics, resultDiagnostics, type DiagnosticsProfile } from "./diagnostics.mts";
 import { solveExact, type OptPools } from "./exact-solver.mts";
 import { core, type OptOptions } from "./solver-fixture.mts";
-import { actionApplies, actionWords, applyAction, handledAction, resultChecks } from "./ui/builder-model.mts";
+import { actionApplies, actionWords, applyAction, handledAction, nextSwingStep, resultChecks, swingLines } from "./ui/builder-model.mts";
 import type { OptItem } from "./vault-lib.mts";
 
 const mk = (serial: number, slot: string, props: Record<string, number>, twoHanded = false): OptItem => ({ serial, name: `item${serial}`, slot, props, ...(twoHanded ? { twoHanded: true as const } : {}) });
@@ -195,4 +195,71 @@ test("[fast] propertyReach's candidate rule against a bound written out: a seria
   const pools = { ring: [mk(1, "ring", { luck: 10 }), mk(1, "ring", { luck: 99 }), mk(2, "ring", { luck: 5 })], neck: [mk(4, "neck", { luck: -4 }), mk(5, "neck", { luck: -2 })] };
   const current = { ring: mk(3, "ring", { luck: 40 }), neck: pools.neck[0]! };
   assert.deepEqual(propertyReach(pools, current, ["ring"], ["ring", "neck"], ["luck"]), { luck: { max: 38, min: -4 } });
+});
+
+// ---- swing (issue #217 PR 3)
+const SWING = { speed: 3.5, stamina: 89, ssi: 45, share: 0, seconds: 2, steps: [{ seconds: 2.5, ssi: 1 }, { seconds: 2.25, ssi: 12 }, { seconds: 2, ssi: 24 }, { seconds: 1.75, ssi: 51 }] };
+
+test("[fast] swing_linear: steps asked for but the weapon is not fixed, with Lock for the hand the suit's weapon is in when it is the worn one", () => {
+  const axe = { ...mk(1, "twoHanded", { ssi: 20 }, true), speed: 3.25 }, sword = { ...mk(2, "oneHanded", { ssi: 20 }), speed: 3.5 };
+  const profile: DiagnosticsProfile = { swing: { steps: true } };
+  const two = resultDiagnostics({ profile, current: { twoHanded: axe }, result: { best: { twoHanded: axe } }, swingNote: "the pool holds weapons with 2 different speeds" });
+  assert.deepEqual(two.map((d) => [d.code, d.level, d.actions]), [["swing_linear", "warn", [{ kind: "lockSlot", slot: "twoHanded" }]]]);
+  assert.equal(two[0]!.message, "SSI was scored per point: the pool holds weapons with 2 different speeds. Lock the weapon slot to score swing speed by step.");
+  assert.deepEqual(resultDiagnostics({ profile, current: { oneHanded: sword }, result: { best: { oneHanded: sword } }, swingNote: "x" })[0]!.actions, [{ kind: "lockSlot", slot: "oneHanded" }]);
+  // a lock keeps what is worn: with another weapon worn there, the sentence says to equip the suit's first
+  const other = resultDiagnostics({ profile, current: { oneHanded: { ...sword, serial: 9 } }, result: { best: { oneHanded: sword } }, swingNote: "x" })[0]!;
+  assert.deepEqual([other.message, other.actions], ["SSI was scored per point: x. Equip the weapon you want and lock its slot to score swing speed by step.", []]);
+  const none = resultDiagnostics({ profile, result: { best: {} }, swingNote: "no weapon in the pool has a known speed" });
+  assert.deepEqual(none[0]!.actions, [], "no weapon to lock");
+  assert.deepEqual(resultDiagnostics({ profile, result: { best: { oneHanded: sword } } }), [], "steps were used: nothing to say");
+});
+
+test("[fast] swing_next_step: steps off and the next faster step within 10 SSI, with the stamina half only when a band up reaches it", () => {
+  const off: DiagnosticsProfile = { swing: { steps: false } };
+  const [d] = resultDiagnostics({ profile: off, result: { swing: SWING } });
+  assert.equal(d!.code, "swing_next_step");
+  assert.equal(d!.level, "info");
+  assert.equal(d!.message, "SSI 45 swings every 2.0 s at this suit's stamina (89). 51 would make it 1.75 s, and so would 1 more stamina.");
+  assert.deepEqual(d!.actions, [{ kind: "swingSteps", on: true }, { kind: "setFloor", property: "ssi", value: 51 }]);
+  assert.deepEqual(d!.values, { ssi: 45, seconds: 2, stamina: 89, next: 51, nextSeconds: 1.75, moreStamina: 1 });
+  // at stamina 50 the next band (60) still swings at 2.0 s with 45: no stamina half
+  const low = { ...SWING, stamina: 50 };
+  assert.equal(resultDiagnostics({ profile: off, result: { swing: low } })[0]!.message, "SSI 45 swings every 2.0 s at this suit's stamina (50). 51 would make it 1.75 s.");
+  assert.deepEqual(resultDiagnostics({ profile: { swing: { steps: true } }, result: { swing: SWING } }), [], "steps on: quiet");
+  assert.deepEqual(resultDiagnostics({ profile: off, result: { swing: { ...SWING, ssi: 40 } } }), [], "11 away: quiet");
+  assert.deepEqual(resultDiagnostics({ profile: off, result: { swing: { ...SWING, ssi: 60, seconds: 1.75 } } }), [], "no faster step within the cap: quiet");
+  assert.deepEqual(resultDiagnostics({ profile: {}, result: {} }), [], "no swing (no character or no weapon): quiet");
+});
+
+test("[fast] the page: the swing actions' words, when they apply and their edits; Next step and the swing line", () => {
+  const p: { floors: Record<string, number>; softFloors: string[]; swingSteps?: boolean; lockedSlots?: string[] } = { floors: { ssi: 40 }, softFloors: [] };
+  const on = { kind: "swingSteps", on: true } as const, lock = { kind: "lockSlot", slot: "oneHanded" } as const, step = { kind: "setFloor", property: "ssi", value: 51 } as const;
+  assert.ok([on, lock, step].every(handledAction));
+  assert.equal(actionWords(on).label, "Score swing speed by step");
+  assert.equal(actionWords(lock).label, "Lock Weapon (1H)");
+  assert.equal(actionWords(step, "swing_next_step").label, "SSI floor 51");
+  assert.equal(actionWords(step, "floor_unreachable").label, "Lower to 51");
+  // a step's floor raises the requirement, or adds it; Lower never raises one
+  assert.equal(actionApplies(p, step, "swing_next_step"), true);
+  assert.equal(actionApplies(p, step, "floor_unreachable"), false);
+  applyAction(p, step, "swing_next_step");
+  assert.equal(p.floors.ssi, 51);
+  assert.equal(actionApplies(p, step, "swing_next_step"), false, "already there");
+  const bare: { floors?: Record<string, number> } = {};
+  applyAction(bare, step, "swing_next_step");
+  assert.deepEqual(bare.floors, { ssi: 51 });
+  applyAction(p, on);
+  assert.equal(p.swingSteps, true);
+  assert.equal(actionApplies(p, on), false);
+  applyAction(p, lock);
+  assert.deepEqual(p.lockedSlots, ["oneHanded"]);
+  assert.equal(actionApplies(p, lock), false);
+  assert.deepEqual(nextSwingStep(SWING), { value: 51, seconds: 1.75, tip: "1.75 s at stamina 89; another suit's stamina can move the step." });
+  assert.equal(nextSwingStep({ ...SWING, ssi: 51, seconds: 1.75 }), null);
+  const line = swingLines({ ...SWING, ssi: 45, share: 10 }, "Longsword", ["Divine Fury"]);
+  assert.equal(line.head, "Longsword 3.5 s · stamina 89 · SSI 45 (+10 Divine Fury) → swings every 2.0 s");
+  assert.deepEqual(line.steps, [{ text: "2.5 s ≥ 1", reached: true }, { text: "2.25 s ≥ 12", reached: true }, { text: "2.0 s ≥ 24", reached: true }, { text: "1.75 s ≥ 51", reached: false }]);
+  assert.equal(line.out, "1.5 s out of reach");
+  assert.equal(swingLines({ ...SWING, steps: [{ seconds: 1.25, ssi: 40 }] }, null).out, null, "1.25 s is the floor");
 });

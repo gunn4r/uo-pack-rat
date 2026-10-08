@@ -1,6 +1,7 @@
 // diagnostics.mts — settings that work against a build, each with the change that would fix it (issue #217): a requirement no suit in the pool can reach, and hard requirements the suit could reach one at a time but not together. Pure and browser-safe. The server sends the floor ones with POST /api/optimize before the search starts; the worker attaches the full list to every result, on both solver paths, so a saved run keeps it.
 import { propertyReach, DEFAULT_OPTIONAL_SLOTS, DEFAULT_SLOTS } from "./mip.mts";
 import { RESIST_KEYS, propName, type OptItem } from "./vault-lib.mts";
+import { delayText, heldWeapon, swingSeconds, type Held, type SwingResult } from "./swing.mts";
 import type { Diagnostic, DiagnosticAction } from "./runs-types.mts";
 
 export type { Diagnostic, DiagnosticAction, DiagnosticCode } from "./runs-types.mts";
@@ -12,6 +13,7 @@ export interface DiagnosticsProfile {
   hardFloors?: string[] | undefined;
   resistBonus?: number | undefined;
   buffs?: { floors?: Record<string, number> | undefined } | undefined;
+  swing?: { steps?: boolean | undefined } | undefined;
 }
 export interface DiagnosticsInput {
   pools?: Partial<Record<string, OptItem[]>> | undefined;
@@ -21,8 +23,11 @@ export interface DiagnosticsInput {
   profile: DiagnosticsProfile;
 }
 export interface ResultDiagnosticsInput extends DiagnosticsInput {
-  result: { totals?: { after?: Record<string, number> | undefined } | undefined; floorsConflict?: boolean | undefined };
+  result: { totals?: { after?: Record<string, number> | undefined } | undefined; floorsConflict?: boolean | undefined; best?: Partial<Record<string, Held | null>> | undefined; swing?: SwingResult | undefined };
+  swingNote?: string | null | undefined;   // why SSI was scored per point though steps were asked for (app/swing.mts stepsFor)
 }
+// How close the next swing step has to be for swing_next_step to mention it, in SSI points.
+export const NEXT_STEP_WITHIN = 10;
 
 const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
 const obj = (v: unknown): Record<string, unknown> => (v && typeof v === "object" && !Array.isArray(v) ? v as Record<string, unknown> : {});
@@ -75,5 +80,31 @@ export function resultDiagnostics(input: ResultDiagnosticsInput): Diagnostic[] {
         : `${propName(k)} ${floor} can be reached, but no suit meeting it together with your other hard requirements was found within the time limit: this suit has ${value}.`,
       values: { floor, value }, actions: [{ kind: "makeSoft", property: k }, ...lower(k, value)] });
   }
+  out.push(...swingDiagnostics(input));
   return [...out.filter((d) => d.level === "warn"), ...out.filter((d) => d.level !== "warn")];
+}
+
+// swing_linear: steps were asked for but SSI was scored per point (the weapon is not fixed). A lock keeps the worn piece, so Lock is offered for the suit's weapon's hand only when that weapon is the one worn there; otherwise the sentence says to equip it first. swing_next_step (info): steps are off, and the next faster step is within NEXT_STEP_WITHIN SSI of the suit's; it offers steps on and an SSI requirement at that step, and says when one more stamina band would reach it as well.
+export function swingDiagnostics({ profile, result, swingNote, current = {} }: ResultDiagnosticsInput): Diagnostic[] {
+  const out: Diagnostic[] = [];
+  if (swingNote) {
+    const w = heldWeapon(result.best), slot = w ? (w.twoHanded ? "twoHanded" : "oneHanded") : null;
+    const worn = !!slot && !!w && (current[slot] as { serial?: unknown } | null | undefined)?.serial === (w as { serial?: unknown }).serial;
+    out.push({ code: "swing_linear", level: "warn", property: "ssi",
+      message: `SSI was scored per point: ${swingNote}. ${worn ? "Lock the weapon slot to score swing speed by step." : "Equip the weapon you want and lock its slot to score swing speed by step."}`,
+      actions: worn ? [{ kind: "lockSlot", slot: slot! }] : [] });
+  }
+  const sw = result.swing;
+  if (sw && !profile.swing?.steps) {
+    const next = sw.steps.find((st) => st.ssi > sw.ssi);
+    if (next && next.ssi - sw.ssi <= NEXT_STEP_WITHIN) {
+      const more = 30 * (Math.floor(sw.stamina / 30) + 1) - sw.stamina;
+      const byStamina = swingSeconds(sw.speed, sw.stamina + more, sw.ssi) <= next.seconds;
+      out.push({ code: "swing_next_step", level: "info", property: "ssi",
+        message: `SSI ${sw.ssi} swings every ${delayText(sw.seconds)} at this suit's stamina (${sw.stamina}). ${next.ssi} would make it ${delayText(next.seconds)}${byStamina ? `, and so would ${more} more stamina` : ""}.`,
+        values: { ssi: sw.ssi, seconds: sw.seconds, stamina: sw.stamina, next: next.ssi, nextSeconds: next.seconds, ...(byStamina ? { moreStamina: more } : {}) },
+        actions: [{ kind: "swingSteps", on: true }, { kind: "setFloor", property: "ssi", value: next.ssi }] });
+    }
+  }
+  return out;
 }

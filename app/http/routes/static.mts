@@ -33,6 +33,8 @@ export function routes(_ctx: ServerContext): Route[] {
     { method: "GET", path: "/run-settings.mjs", handle: (_req, res) => send(res, 200, readFileSync(join(WEB, "run-settings.mjs"), "utf8"), "text/javascript") },
     // The Suit Builder plans a build, and reads and writes the profiles, through the server's own BuildSpec (app/build-spec.mts).
     { method: "GET", path: "/build-spec.mjs", handle: (_req, res) => send(res, 200, readFileSync(join(WEB, "build-spec.mjs"), "utf8"), "text/javascript") },
+    // The Suit Builder's swing line and step hints use the solvers' own swing formula (app/swing.mts).
+    { method: "GET", path: "/swing.mjs", handle: (_req, res) => send(res, 200, readFileSync(join(WEB, "swing.mjs"), "utf8"), "text/javascript") },
     { method: "GET", path: "/guards.mjs", handle: (_req, res) => send(res, 200, readFileSync(join(WEB, "guards.mjs"), "utf8"), "text/javascript") },
     { method: "GET", path: "/data-dir-notice.mjs", handle: (_req, res) => send(res, 200, readFileSync(join(WEB, "data-dir-notice.mjs"), "utf8"), "text/javascript") },
     { method: "GET", path: "/scan-schema.mjs", handle: (_req, res) => send(res, 200, readFileSync(join(WEB, "scan-schema.mjs"), "utf8"), "text/javascript") },

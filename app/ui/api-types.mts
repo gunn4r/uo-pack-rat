@@ -13,7 +13,7 @@ import type { RulesV1 } from "../schema/types.d.mts";
 import type { AutostartOutcome, Hotkey as PanelHotkey, PanelPrefs } from "../tazuo-panel-prefs.mts";
 import type { OrganizeConfig, RuleMatch } from "../organize-config.mts";
 import type { MissingItem } from "../missing.mts";
-import type { Diagnostic, RunBody, RunsListBody, RunSummary, SavedRun } from "../runs-types.mts";
+import type { Diagnostic, RunBody, RunsListBody, RunSummary, SavedRun, SwingResult } from "../runs-types.mts";
 import type { HouseApiResponse } from "../house-model-types.mts";
 import type { DataDirCheckInfo } from "../data-dir-notice.mts";
 
@@ -310,6 +310,7 @@ export interface OptimizeResult {
   fallbackReason?: string | undefined;
   floorsConflict?: boolean | undefined;
   diagnostics?: Diagnostic[] | undefined;   // absent on a run saved before SOLVER_VERSION 6: unreachableFloors is drawn instead
+  swing?: SwingResult | undefined;          // the suit's swing (app/swing.mts), when it holds a weapon with a known speed and the build has a character
 }
 // SolveProgress (app/exact-solver.mts) as reported over the job's SSE stream and read by
 // builder.mts's runPanel(). Every field but `phase` is optional — not every phase reports every one.

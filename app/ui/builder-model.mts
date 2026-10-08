@@ -8,7 +8,8 @@ import type { PlannedBuffs, PropMap, ResistCap, RunSettings } from "../vault-lib
 import { applyBuffs, buffById, buffsDiff, capWord, signed, type BuffResult } from "../buffs.mts";
 import { RUN_SETTING_LIMITS, type Range } from "../run-settings.mts";
 import { paperdoll, paperdollCaps } from "../evaluate.mts";
-import type { Diagnostic, DiagnosticAction } from "../runs-types.mts";
+import type { Diagnostic, DiagnosticAction, DiagnosticCode, SwingResult } from "../runs-types.mts";
+import { delayText, MIN_TICKS } from "../swing.mts";
 
 export const plural = (n: number, word: string, many = `${word}s`): string => `${n.toLocaleString("en-US")} ${n === 1 ? word : many}`;
 const num = (n: number): string => n.toLocaleString("en-US", { maximumFractionDigits: 2 });
@@ -341,25 +342,36 @@ export function runBadges(changes: number | null | undefined, totals: PropMap | 
 }
 
 // ---------------------------------------------------------------- "Check your settings" (app/diagnostics.mts)
-// The actions the page carries out on the panel's profile: the button's words, its done state, the toast once applied, and the edit itself. An action of another kind gets no button.
-type FloorAction = Extract<DiagnosticAction, { kind: "setFloor" | "makeSoft" }>;
-type PanelFloors = { floors?: Record<string, number> | undefined; softFloors?: string[] | undefined };
-export const handledAction = (a: DiagnosticAction): a is FloorAction => a.kind === "setFloor" || a.kind === "makeSoft";
-export function actionWords(a: FloorAction): { label: string; done: string; toast: string } {
+// The actions the page carries out on the panel's profile: the button's words, its done state, the toast once applied, and the edit itself. An action of another kind gets no button. `code` is the diagnostic's: a swing_next_step's setFloor sets the SSI requirement at a step, where every other setFloor lowers one.
+type FloorAction = Extract<DiagnosticAction, { kind: "setFloor" | "makeSoft" | "swingSteps" | "lockSlot" }>;
+type PanelFloors = { floors?: Record<string, number> | undefined; softFloors?: string[] | undefined; swingSteps?: boolean | undefined; lockedSlots?: string[] | undefined };
+export const handledAction = (a: DiagnosticAction): a is FloorAction => a.kind === "setFloor" || a.kind === "makeSoft" || a.kind === "swingSteps" || a.kind === "lockSlot";
+const raises = (code: DiagnosticCode | undefined): boolean => code === "swing_next_step";
+export function actionWords(a: FloorAction, code?: DiagnosticCode): { label: string; done: string; toast: string } {
+  if (a.kind === "swingSteps") return a.on
+    ? { label: "Score swing speed by step", done: "Scoring by step ✓", toast: "SSI is scored by swing step now. Build again to use it." }
+    : { label: "Score SSI per point", done: "Per point ✓", toast: "SSI is scored per point now. Build again to use it." };
+  if (a.kind === "lockSlot") { const s = SLOT_LABELS[a.slot] || a.slot; return { label: `Lock ${s}`, done: "Locked ✓", toast: `${s} is locked to what is worn now. Build again to use it.` }; }
   const req = `${propName(a.property)} requirement`;
+  if (a.kind === "setFloor" && raises(code)) return { label: `${labelOf(a.property)} floor ${a.value}`, done: "Set ✓", toast: `${req} set to ${a.value}. Build again to use it.` };
   return a.kind === "setFloor"
     ? { label: `Lower to ${a.value}`, done: "Lowered ✓", toast: `${req} lowered to ${a.value}. Build again to use it.` }
     : { label: "Make soft", done: "Made soft ✓", toast: `${req} is soft now. Build again to use it.` };
 }
-// Whether the action still fits the panel as it is now: the requirement is still there, Lower would lower it, and Make soft finds it hard. A build's numbers never put back a requirement the player removed or raise one they lowered since.
-export function actionApplies(p: PanelFloors, a: FloorAction): boolean {
+// Whether the action still fits the panel as it is now: the requirement is still there, Lower would lower it, and Make soft finds it hard. A build's numbers never put back a requirement the player removed or raise one they lowered since. A step's requirement applies while the panel asks for less; the switch while it is the other way; a lock while the slot is unlocked.
+export function actionApplies(p: PanelFloors, a: FloorAction, code?: DiagnosticCode): boolean {
+  if (a.kind === "swingSteps") return !!p.swingSteps !== a.on;
+  if (a.kind === "lockSlot") return !(p.lockedSlots || []).includes(a.slot);
   const f = p.floors?.[a.property];
+  if (a.kind === "setFloor" && raises(code)) return f == null || f < a.value;
   if (f == null) return false;
   return a.kind === "setFloor" ? f > a.value : !(p.softFloors || []).includes(a.property);
 }
-export function applyAction(p: PanelFloors, a: FloorAction): void {
-  if (!actionApplies(p, a)) return;
-  if (a.kind === "setFloor") p.floors![a.property] = a.value;
+export function applyAction(p: PanelFloors, a: FloorAction, code?: DiagnosticCode): void {
+  if (!actionApplies(p, a, code)) return;
+  if (a.kind === "swingSteps") p.swingSteps = a.on;
+  else if (a.kind === "lockSlot") (p.lockedSlots ||= []).push(a.slot);
+  else if (a.kind === "setFloor") (p.floors ||= {})[a.property] = a.value;
   else (p.softFloors ||= []).push(a.property);
 }
 // What a result's "Check your settings" lists: its diagnostics, warnings first; a run saved before them (no `diagnostics`) says what it knew, its unreachable hard floors, as one warning with no actions. On another suit's card (`alternative`) the floors_conflict rows are left out: their values are the best suit's.
@@ -370,4 +382,18 @@ export function resultChecks(res: { diagnostics?: Diagnostic[] | undefined; unre
   }
   const keys = res.unreachableFloors || [];
   return keys.length ? [{ code: "floor_unreachable", level: "warn", message: `No suit in the pool can reach these requirements${withBuffs ? ", even with the buffs" : ""}: ${keys.map((k) => propName(k)).join(", ")}.`, actions: [] }] : [];
+}
+
+// ---------------------------------------------------------------- swing (app/swing.mts) A result's swing line and its steps: "Longsword 3.5 s · stamina 95 · SSI 45 (+10 Divine Fury) → swings every 1.75 s", then the last few steps at that stamina with the reached ones marked, and the next faster delay when the cap keeps it out of reach. `buffs` names what gave the share.
+export function swingLines(sw: SwingResult, weapon: string | null, buffs: string[] = [], shown = 4): { head: string; steps: Array<{ text: string; reached: boolean }>; out: string | null } {
+  const share = sw.share ? ` (${signed(sw.share)} ${buffs.length ? buffs.join(", ") : "buffs"})` : "";
+  const head = `${weapon ?? "Weapon"} ${num(sw.speed)} s · stamina ${sw.stamina} · SSI ${sw.ssi}${share} → swings every ${delayText(sw.seconds)}`;
+  const steps = sw.steps.slice(-shown).map((st) => ({ text: `${delayText(st.seconds)} ≥ ${st.ssi}`, reached: sw.ssi >= st.ssi }));
+  const fastest = sw.steps.length ? sw.steps[sw.steps.length - 1]!.seconds : sw.seconds;
+  return { head, steps, out: fastest > MIN_TICKS * 0.25 ? `${delayText(fastest - 0.25)} out of reach` : null };
+}
+// The SSI requirement a "Next step" button fills in: the effective SSI of the first step faster than `sw` reaches, or null when there is none within the cap. Its tooltip names the stamina it assumed.
+export function nextSwingStep(sw: SwingResult | null | undefined): { value: number; seconds: number; tip: string } | null {
+  const next = sw?.steps.find((st) => st.ssi > sw.ssi);
+  return sw && next ? { value: next.ssi, seconds: next.seconds, tip: `${delayText(next.seconds)} at stamina ${sw.stamina}; another suit's stamina can move the step.` } : null;
 }

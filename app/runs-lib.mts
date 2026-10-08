@@ -42,7 +42,8 @@ export interface RunKeyInput {
 // 4: a warm start keeps a slot that may not be empty filled (a locked slot's piece was dropped, and the search stuck).
 // 5: both solvers search every gear slot, feet, shirt, middle torso, robe, waist, earrings and kilt included (#202).
 // 6: every result carries `diagnostics` (app/diagnostics.mts), so a run saved before it is not reused without them.
-export const SOLVER_VERSION = 6;
+// 7: SSI can be scored by swing step (app/swing.mts), weapons carry their speed, and a result carries its `swing`.
+export const SOLVER_VERSION = 7;
 // The first SOLVER_VERSION whose "proven optimal" holds: before 2 a soft floor ruled out every suit with a
 // negative total, so HiGHS could prove a worse suit optimal.
 export const PROOF_SOUND_SINCE = 2;

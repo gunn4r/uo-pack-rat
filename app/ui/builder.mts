@@ -5,7 +5,8 @@
 // is ui/runs.mts; they share the builder's state and call each other through ui/builder-session.mts. The panel is drawn
 // from the session's profile plus its Advanced knobs, so what a build sends, what a profile saves and what a run
 // snapshots are read from state, never from the DOM.
-import { PROP_LABELS, NOT_BUILDER_KEYS, GEAR_SLOTS, tagUnits, WEAPON_SKILLS, MELEE_SKILLS, resistSkillBonus, getRules, RESIST_KEYS, RESIST_CAP_LIMITS, resistCapsFor, templateFrom, settingsDiff, bagLabel } from "../vault-lib.mts";
+import { PROP_LABELS, NOT_BUILDER_KEYS, GEAR_SLOTS, tagUnits, WEAPON_SKILLS, MELEE_SKILLS, resistSkillBonus, getRules, RESIST_KEYS, RESIST_CAP_LIMITS, resistCapsFor, templateFrom, settingsDiff, bagLabel, toOptItem, totalsOf } from "../vault-lib.mts";
+import { heldWeapon, ssiShareOf, swingOf, type SwingResult } from "../swing.mts";
 import { BUILTIN_PREFIX, characterBuffs, characterEntry, characterProfile, findTemplate, planBuild, specFromProfile, templateLabel, templateRefs, templateSettings, templateSpecFrom, type PlannedBuild } from "../build-spec.mts";
 import type { ResistCap, RunBuffs, Character } from "../vault-lib.mts";
 import { buffById, gearNeedsText, overrideNote, planBuffs, normalizeBuffs, runBuffs, toggleBuff, buffPlanOf, type BuffPlan } from "../buffs.mts";
@@ -24,7 +25,7 @@ import { setNavBusy } from "./shell.mts";
 import { putProfiles, setCharacterBuffs } from "./profiles.mts";
 import { session, commands, provide, readControls } from "./builder-session.mts";
 import { followJob, progressText, settingsCheck } from "./builder-parts.mts";
-import { paperdoll, propName, weightsSummary, requirementsSummary, poolSummary, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistCapsSummary, gearCapsText, pruneResistCaps, floorCapWarning, weaponsChipText, weaponName, toggleWeapon, type KnobField } from "./builder-model.mts";
+import { nextSwingStep, swingLines, paperdoll, propName, weightsSummary, requirementsSummary, poolSummary, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistCapsSummary, gearCapsText, pruneResistCaps, floorCapWarning, weaponsChipText, weaponName, toggleWeapon, type KnobField } from "./builder-model.mts";
 import type { OptimizeResult, SavedRunLike, OptimizeStartApiResponse, OptimizeCancelApiResponse } from "./api-types.mts";
 
 // ---------------------------------------------------------------- panel state
@@ -394,6 +395,7 @@ function requirementsSection(): HTMLElement {
       const ignored = prof.buffs?.overridesIgnored?.[k];
       const said = r ? [ignored != null ? overrideNote(k, ignored, r) : null, gearNeedsText(k, prof.floors[k]!, prof.caps[k], r)].filter(Boolean).join(". ") : "";
       if (said) row.append(el("span", { class: "t-sm b-buff-note" }, said));
+      if (k === "ssi") { const next = nextStepButton(); if (next) row.append(next); }
       return row;
     });
     const add = filterChip({ label: "Add requirement", add: true, attrs: { class: "fchip add b-add", id: "b-addfloor" } });
@@ -465,12 +467,35 @@ function weightsSection(): HTMLElement {
     const rows = keys.map((k) => {
       const nm = propName(k);
       return box("div", { class: "rule-row weight", "data-key": k }, ruleName(nm), boundNumber(p.weights!, k, `${nm} weight`, k),
-        button({ label: `Remove weight: ${nm}`, icon: "close", iconOnly: true, variant: "ghost", size: "sm", onClick: () => { delete p.weights![k]; redraw("weights"); focusIn("weights", ".b-add"); } }));
+        button({ label: `Remove weight: ${nm}`, icon: "close", iconOnly: true, variant: "ghost", size: "sm", onClick: () => { delete p.weights![k]; redraw("weights"); focusIn("weights", ".b-add"); } }),
+        k === "ssi" ? swingStepsSetting() : null);
     });
     const add = filterChip({ label: "Add weight", add: true, attrs: { class: "fchip add b-add", id: "b-addweight" } });
     add.onclick = () => propertyPicker(add, "Add weight", Object.keys(p.weights!), (k) => { p.weights![k] = 1; redraw("weights"); focusIn("weights", `.rule-row[data-key="${CSS.escape(k)}"] input`, true); });
     return [el("p", { class: "help" }, txt("How much each point of a property is worth to the score. Higher counts more.")), rows.length ? box("div", { class: "b-rules" }, ...rows) : null, add];
   } });
+}
+// ---- swing steps (app/swing.mts): the switch on the SSI weight row, and the requirement row's "Next step" The worn suit's swing with the panel's buffs, the weapon a build is known to hold before it runs (a locked hand keeps the worn piece); null when it holds no weapon of known speed.
+function wornSwing(): { sw: SwingResult; weapon: string } | null {
+  const name = session.character!, p = session.profile!, worn = state.inv!.worn[name] || [];
+  const prof = planBuild(specFromProfile(p, { on: buffsOn(), skills: commands.buffEditsOf(name) }), { character: (state.inv!.characters[name] as Character | undefined) ?? null, worn, race: p.race }).profile;
+  const items = worn.filter((it) => it.slot).map(toOptItem), w = heldWeapon(Object.fromEntries(items.map((it) => [it.slot!, it])));
+  if (!w || !prof.swing) return null;
+  return { sw: swingOf(w.speed!, prof.swing.stamBase, totalsOf(Object.fromEntries(items.map((it) => [String(it.serial), it]))), ssiShareOf(prof)), weapon: w.name };
+}
+function swingStepsSetting(): HTMLElement {
+  const p = session.profile!, worn = wornSwing();
+  const sw = switchControl({ label: "Score swing speed by step", checked: !!p.swingSteps, attrs: { id: "b-swing-steps" }, onChange: (v) => { p.swingSteps = v; updateTemplateBadge(); } });
+  const steps = worn ? swingLines(worn.sw, worn.weapon).steps.map((s) => s.text).join(" · ") : "";
+  return box("div", { class: "b-swing-set" }, sw.root,
+    el("p", { class: "help" }, txt(`Counts SSI only where the swing gets faster.${worn && steps ? ` ${worn.weapon} ${worn.sw.speed} s at stamina ${worn.sw.stamina}: ${steps}.` : ""}`)));
+}
+// "Next step: 58" fills the SSI requirement with the next step faster than the last result's swing, else the worn suit's.
+function nextStepButton(): HTMLElement | null {
+  const p = session.profile!, next = nextSwingStep(session.result?.swing ?? wornSwing()?.sw);
+  if (!next || (p.floors!.ssi ?? 0) >= next.value) return null;
+  const b = button({ label: `Next step: ${next.value}`, size: "sm", variant: "ghost", cls: "b-next-step", onClick: () => { p.floors!.ssi = next.value; redraw("req"); focusIn("req", `.rule-row[data-key="ssi"] input`, true); } });
+  return tooltip(b, next.tip);
 }
 function focusIn(sec: string, sel: string, selectText = false): void {
   const e = document.querySelector<HTMLInputElement>(`#b-sec-${sec} ${sel}`);
