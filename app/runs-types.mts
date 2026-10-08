@@ -17,6 +17,10 @@ export interface Diagnostic {
   actions: DiagnosticAction[];
 }
 
+// A suit's swing (app/swing.mts swingOf): its weapon's base speed, its full stamina, its effective SSI (gear and buffs, capped at 60) and the buffs' share of it, the delay between swings, and every step SSI can reach at that stamina, slowest first.
+export interface SwingStep { seconds: number; ssi: number }
+export interface SwingResult { speed: number; stamina: number; ssi: number; share: number; seconds: number; steps: SwingStep[] }
+
 export interface RunResult {
   proven?: boolean | undefined;
   method?: string | undefined;
@@ -25,6 +29,7 @@ export interface RunResult {
   delta?: number | undefined;
   nodes?: number | undefined;
   diagnostics?: Diagnostic[] | undefined;      // absent on runs saved before SOLVER_VERSION 6: unreachableFloors says what they knew
+  swing?: SwingResult | undefined;             // the suit's swing, when it holds a weapon with a known speed and the build has a character
   [key: string]: unknown;
 }
 // A run's settings snapshot as saved to disk, possibly still in its pre-2026-09-13 shape (see

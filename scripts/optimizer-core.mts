@@ -36,6 +36,7 @@ interface OptItem {
   slot: string;
   twoHanded?: boolean;
   props: Record<string, number>;
+  speed?: number | undefined;   // a weapon's base speed in seconds; the core never reads it (app/swing.mts does)
 }
 
 // A full suit: slot name -> item, or null for "nothing equipped there".
@@ -56,6 +57,8 @@ interface OptProfile {
   floorBonus?: number;
   floorPartial?: number;
   hardFloors?: string[] | undefined;    // floors that act as requirements: their bonus is HARD_FLOOR_BONUS, so no mix of other gains can buy a miss
+  // SSI scored by swing step (app/swing.mts stepTable): with a positive SSI weight, SSI is worth weights.ssi × the largest `credit` among the points the suit reaches (ssi total >= ssi and stamPool total >= stam; 0 when it reaches none) in place of weights.ssi × min(ssi, cap). SSI floors still read the plain total.
+  ssiSteps?: Array<{ ssi: number; stam: number; credit: number }> | undefined;
 }
 const HARD_FLOOR_BONUS = 1e7;
 
@@ -137,6 +140,10 @@ interface OptSpace {
   zero: number[];
   vecCache: Map<OptItem, number[]>;
   evals: number;
+  // SSI by step (OptProfile.ssiSteps): the ssi and stamPool dimensions (-1 when steps are off) and the points.
+  stepSsi: number;
+  stepStam: number;
+  steps: { ssi: number[]; stam: number[]; credit: number[] };
 }
 
 // ---------------------------------------------------------------------------
@@ -227,6 +234,7 @@ function optCollectKeys(pools: Record<string, OptItem[]>, current: OptAssignment
 }
 
 function optBuildSpace(keys: string[], profile: OptProfile): OptSpace {
+  const steps = { ssi: [] as number[], stam: [] as number[], credit: [] as number[] };
   const index: Record<string, number> = {};
   const w: number[] = [];
   const cap: number[] = [];
@@ -240,6 +248,9 @@ function optBuildSpace(keys: string[], profile: OptProfile): OptSpace {
   for (let i = 0; i < hardList.length; i++) hard[hardList[i]!] = true;
   const baseBonus = typeof profile.floorBonus === "number" ? profile.floorBonus : 1000;
   const floorBonusArr: number[] = [];
+  // Steps need both dimensions in the space, even when no candidate carries them.
+  const stepped = Array.isArray(profile.ssiSteps) && typeof weights["ssi"] === "number" && weights["ssi"] > 0;
+  if (stepped) for (const k of ["ssi", "stamPool"]) if (keys.indexOf(k) < 0) keys = keys.concat([k]);
   for (let i = 0; i < keys.length; i++) {
     const k = keys[i]!;
     index[k] = i;
@@ -260,8 +271,19 @@ function optBuildSpace(keys: string[], profile: OptProfile): OptSpace {
     floorPartial: typeof profile.floorPartial === "number" ? profile.floorPartial : 0.5,
     zero: zero,
     vecCache: new Map(),
-    evals: 0
+    evals: 0,
+    stepSsi: stepped ? index["ssi"]! : -1,
+    stepStam: stepped ? index["stamPool"]! : -1,
+    steps: stepped ? { ssi: profile.ssiSteps!.map((p) => p.ssi), stam: profile.ssiSteps!.map((p) => p.stam), credit: profile.ssiSteps!.map((p) => p.credit) } : steps
   };
+}
+
+// The largest step credit a suit with `ssi` SSI and `stam` Stamina pool reaches (0 when it reaches none). It never falls as either total rises, so its value at the top of a reachable range bounds every suit below it.
+function optStepCredit(space: OptSpace, ssi: number, stam: number): number {
+  const st = space.steps;
+  let best = 0;
+  for (let i = 0; i < st.credit.length; i++) if (ssi >= st.ssi[i]! - 1e-9 && stam >= st.stam[i]! - 1e-9 && st.credit[i]! > best) best = st.credit[i]!;
+  return best;
 }
 
 function optVec(it: OptItem | null, space: OptSpace): number[] {
@@ -288,7 +310,7 @@ function optScoreVector(totals: number[], space: OptSpace): number {
   for (let i = 0; i < totals.length; i++) {
     const t = totals[i]!;
     const c = space.cap[i]!;
-    s += space.w[i]! * (t < c ? t : c);
+    s += i === space.stepSsi ? space.w[i]! * optStepCredit(space, t, totals[space.stepStam]!) : space.w[i]! * (t < c ? t : c);
     const f = space.floor[i]!;
     if (f > 0) {
       const fb = space.floorBonusArr[i]!;
@@ -359,7 +381,8 @@ function optGradientProfile(profile: OptProfile): OptProfile {
     floors: profile.floors,
     floorBonus: typeof profile.floorBonus === "number" ? profile.floorBonus : 1000,
     floorPartial: 1,
-    hardFloors: profile.hardFloors
+    hardFloors: profile.hardFloors,
+    ssiSteps: profile.ssiSteps
   };
 }
 
@@ -569,6 +592,8 @@ function optSanitize(a: OptAssignment, slots: string[]): OptAssignment {
 // ---------------------------------------------------------------------------
 // +1 more is better, -1 less is better, 0 irrelevant, 2 neither (negative weight with a floor).
 function optDimSign(space: OptSpace, i: number): number {
+  // with SSI by step, more stamina can reach a faster step: it counts as good unless its own weight is negative
+  if (i === space.stepStam) return space.w[i]! < 0 ? 2 : 1;
   if (space.w[i]! < 0 && space.floor[i]! > 0) return 2;
   if (space.w[i]! > 0 || space.floor[i]! > 0) return 1;
   if (space.w[i]! < 0) return -1;
@@ -655,7 +680,7 @@ function optBranchAndBound(slots: string[], cands: Record<string, (OptItem | nul
   // best of every property at once. Both are valid upper bounds; the search takes the smaller one.
   const concave: boolean[] = new Array(dims);
   for (let d = 0; d < dims; d++) {
-    let ok = space.w[d]! >= 0;
+    let ok = space.w[d]! >= 0 && d !== space.stepSsi;   // a step credit is not concave
     for (let k = 0; k < n && ok; k++) for (let j = 0; j < lists[k]!.length && ok; j++) if (optVec(lists[k]![j] as OptItem | null, space)[d]! < 0) ok = false;
     concave[d] = ok;
   }
@@ -673,7 +698,11 @@ function optBranchAndBound(slots: string[], cands: Record<string, (OptItem | nul
   };
   // The weight term's best over the reachable range [t + sufLo, t + sufHi] (w·min(t, cap) is monotone,
   // so it is one of the two ends), and the floor term's best (always the top end).
-  const weightBest = function (d: number, k: number): number { const t = totals[d]!; return space.w[d]! < 0 ? capped(d, t + sufLo[k]![d]!) : capped(d, t + sufHi[k]![d]!); };
+  const weightBest = function (d: number, k: number): number {
+    const t = totals[d]!;
+    if (d === space.stepSsi) { const m = space.stepStam; return space.w[d]! * optStepCredit(space, t + sufHi[k]![d]!, totals[m]! + sufHi[k]![m]!); }
+    return space.w[d]! < 0 ? capped(d, t + sufLo[k]![d]!) : capped(d, t + sufHi[k]![d]!);
+  };
   const looseBound = function (k: number): number {
     space.evals++;
     let s = 0;

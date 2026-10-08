@@ -32,7 +32,7 @@ export const defaultStrLimit = (character: { stats?: unknown } | null | undefine
 
 // The races a build may name (profiles.v3.schema.json's race enum lists the same three; a test checks).
 export const RACES: readonly string[] = ["human", "elf", "gargoyle"];
-const FLAGS = ["allowGargoyle", "medOnly", "allowOthersWorn", "ubwsAnyWeapon", "exact"];
+const FLAGS = ["allowGargoyle", "medOnly", "allowOthersWorn", "ubwsAnyWeapon", "exact", "swingSteps"];
 const LISTS = ["softFloors", "lockedSlots", "excludeTags", "excludeRoots", "excludeSkills"];
 // Read only by an exact search: without one the page leaves these fields unchecked (builder-model.mts firstKnobError),
 // so a run with `exact: false` may carry any number in them.

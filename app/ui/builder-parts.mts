@@ -44,12 +44,12 @@ export function settingsCheck(diags: Diagnostic[], name: string): HTMLElement | 
   const p0 = session.character === name ? session.profile : null;
   const row = (d: Diagnostic): HTMLElement => {
     const from = d.values?.weight;
-    const acts = p0 ? d.actions.filter(handledAction).filter((a) => actionApplies(p0, a, from)).map((a) => {
-      const words = actionWords(a);
+    const acts = p0 ? d.actions.filter(handledAction).filter((a) => actionApplies(p0, a, from, d.code)).map((a) => {
+      const words = actionWords(a, d.code);
       const b = button({ label: words.label, size: "sm", onClick: () => {
         const p = session.profile;
-        if (!p || session.character !== name || !actionApplies(p, a, from)) { toast(words.stale); b.disabled = true; return; }
-        applyAction(p, a, from);
+        if (!p || session.character !== name || !actionApplies(p, a, from, d.code)) { toast(words.stale); b.disabled = true; return; }
+        applyAction(p, a, from, d.code);
         commands.renderPanel();
         toast(words.toast, "good");
         b.replaceChildren(txt(words.done)); b.disabled = true;

@@ -1,4 +1,4 @@
-// migrate.test.mts — `app/migrate.mts`, the one registry of data-file migrations: every golden file in `app/fixtures/golden/<kind>/<version>.json` loads through `migrate` to its kind's current version and passes that kind's own check, and migrating it again changes nothing; every kind has a golden file at its current version; a document newer than the build comes back untouched and marked `newer`, with the "made by a newer Pack Rat" notice; `version` and `schemaVersion` read as one field, written as the file writes it; a document with no version its kind accepts comes back untouched for its reader to refuse; and each kind's steps are in order and end at its current version.
+// migrate.test.mts — `app/migrate.mts`, the one registry of data-file migrations: every golden file in `app/fixtures/golden/<kind>/<version>.json` loads through `migrate` to its kind's current version and passes that kind's own check, and migrating it again changes nothing; every kind has a golden file at its current version; a document newer than the build comes back untouched and marked `newer`; a v3 profiles.json with `intent.swingSteps` (issue #217) reads as it is, with no step, with the "made by a newer Pack Rat" notice; `version` and `schemaVersion` read as one field, written as the file writes it; a document with no version its kind accepts comes back untouched for its reader to refuse; and each kind's steps are in order and end at its current version.
 import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
@@ -103,5 +103,20 @@ test("[fast] migrate: each kind's steps are in order and end at its current vers
       assert.ok(s.from <= s.to && s.to <= current, `${kind} step ${i}`);
       if (i) assert.ok(steps[i - 1]!.from <= s.from, `${kind} step ${i} is out of order`);
     }
+  }
+});
+
+// Issue #217: swing steps add an optional intent field, not a version: a v3 file with `intent.swingSteps` reads the same as one without, passes the v3 check, and no step runs.
+test("[fast] migrate: a v3 profiles.json with intent.swingSteps reads as it is, with no step and no version change", () => {
+  const raw = JSON.parse(readFileSync(join(GOLDEN, "profiles", "3.json"), "utf8")) as ProfilesV3;
+  const [name] = Object.keys(raw.characters);
+  assert.ok(name, "the golden v3 file has a character");
+  const withFlag = JSON.parse(JSON.stringify(raw)) as ProfilesV3;
+  withFlag.characters[name!]!.spec.intent.swingSteps = true;
+  for (const doc of [raw, withFlag]) {
+    const m = migrate("profiles", doc, { shard: "uoalive" });
+    assert.deepEqual([m.fromVersion, m.changed, m.newer], [3, false, false]);
+    assert.deepEqual(m.doc, doc);
+    CHECKS.profiles(m.doc, "", doc);
   }
 });

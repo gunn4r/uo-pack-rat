@@ -17,7 +17,9 @@ import { session, commands, provide } from "./builder-session.mts";
 import { RESIST_NAMES, keyProps, tipTarget, verdict, grabAllButton, fetchCard, settingsCheck } from "./builder-parts.mts";
 import { savedBuffs, plannedFromWorn, buffById, buffsDiff, runBuffs } from "../buffs.mts";
 import type { RunBuffs } from "../vault-lib.mts";
-import { slotsOf, paperdollCaps, paperdollFloors, pastCapBadges, runSettingsDiff, withBuffs, afterChange, compareModel, hiddenRowsNote, otherChanges, plural, resistOutcome, toggleCompare, propName, capNote, capsLine, anyOverridden, effectiveFloor, resultChecks, type CompareMember } from "./builder-model.mts";
+import { slotsOf, paperdollCaps, paperdollFloors, pastCapBadges, runSettingsDiff, withBuffs, afterChange, compareModel, hiddenRowsNote, otherChanges, plural, resistOutcome, toggleCompare, propName, capNote, capsLine, anyOverridden, effectiveFloor, resultChecks, swingLines, type CompareMember } from "./builder-model.mts";
+import { heldWeapon } from "../swing.mts";
+import type { SwingResult } from "../runs-types.mts";
 import type { OptSuit, OptimizeResult, SavedRunLike } from "./api-types.mts";
 
 // One resist tile: its name in its resist colour, the value (before → after when there is a before) against
@@ -136,6 +138,9 @@ function headlineCard(res: OptimizeResult, current: OptSuit, suit: OptSuit, prof
   const tiles = RESIST_KEYS.map((k) => resistTile(k, now.totals[k]!, pdFloors[k] ?? null, { cap: now.caps[k]!, shard: caps[k]!.shard }, was.totals[k]!));
   const other = [...otherChanges([...Object.keys(prof.floors), ...Object.keys(prof.weights)], was.totals, now.totals, now.caps, pdFloors), ...pastCapBadges(now).map((text) => ({ text, tone: "ok" as const }))];
   const checks = settingsCheck(resultChecks(res, !!prof.buffs, view != null), name);
+  // the best suit's swing (an alternative's would need its own stamina), with the buffs that gave its share named
+  const ssiBuffs = res.swing?.share ? (withBuffs(after, rsb, base, prof.buffs).shares.ssi || []).filter((x) => !x.outside).map((x) => buffById(x.id)?.name || x.id) : [];
+  const swing = view == null && res.swing ? swingLine(res.swing, heldWeapon(suit)?.name ?? null, ssiBuffs) : null;
   return box("section", { class: "card b-head-card", "aria-label": view == null ? "Best suit" : `Suit ${view + 2}` },
     box("div", { class: "b-headline" },
       box("div", { class: "b-headline-text" }, box("div", { class: "b-row" }, el("h2", { class: "t-xl" }, manual ? `Manual suit for ${name}` : view == null ? `Best suit for ${name}` : `Suit #${view + 2} for ${name}`), vb), el("p", { class: "muted" }, txt(line)), plannedWith(prof, name)),
@@ -143,7 +148,16 @@ function headlineCard(res: OptimizeResult, current: OptSuit, suit: OptSuit, prof
     v.detail ? message({ tone: v.tone === "bad" ? "bad" : "warn", text: v.detail }) : null,
     checks,
     box("div", { class: "b-resists" }, ...tiles),
+    swing,
     other.length ? box("div", { class: "b-badges", role: "list", "aria-label": "Other changes" }, ...other.map((o) => box("span", { class: `badge ${o.tone}`, role: "listitem" }, txt(o.text)))) : null);
+}
+
+// The swing line under the resists: the weapon, stamina and SSI and the delay they give, then the steps at that stamina with the reached ones in the ok tone.
+function swingLine(sw: SwingResult, weapon: string | null, buffs: string[]): HTMLElement {
+  const m = swingLines(sw, weapon, buffs);
+  const steps = m.steps.flatMap((st, i) => [i ? txt(" · ", "faint") : null, st.reached ? txt(`${st.text} ✓`, "tone-ok") : txt(st.text)]).filter((x): x is HTMLElement => !!x);
+  return box("div", { class: "b-swing", "aria-label": "Swing speed" }, el("p", {}, txt(m.head)),
+    m.steps.length || m.out ? el("p", { class: "t-sm muted" }, txt(`Steps at stamina ${sw.stamina}: `), ...steps, m.out ? txt(`${m.steps.length ? " · " : ""}${m.out}`) : null) : null);
 }
 
 // "Planned with [Divine Fury] [Bless] · Show without buffs", and which numbers were taken from the suit worn now. The

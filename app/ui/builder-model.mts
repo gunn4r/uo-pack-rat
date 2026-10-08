@@ -8,7 +8,8 @@ import type { PlannedBuffs, PropMap, ResistCap, RunSettings } from "../vault-lib
 import { applyBuffs, buffById, buffsDiff, capWord, signed, type BuffResult } from "../buffs.mts";
 import { RUN_SETTING_LIMITS, type Range } from "../run-settings.mts";
 import { paperdoll, paperdollCaps } from "../evaluate.mts";
-import type { Diagnostic, DiagnosticAction } from "../runs-types.mts";
+import type { Diagnostic, DiagnosticAction, DiagnosticCode, SwingResult } from "../runs-types.mts";
+import { delayText, MIN_TICKS } from "../swing.mts";
 
 export const plural = (n: number, word: string, many = `${word}s`): string => `${n.toLocaleString("en-US")} ${n === 1 ? word : many}`;
 const num = (n: number): string => n.toLocaleString("en-US", { maximumFractionDigits: 2 });
@@ -341,32 +342,48 @@ export function runBadges(changes: number | null | undefined, totals: PropMap | 
 }
 
 // ---------------------------------------------------------------- "Check your settings" (app/diagnostics.mts)
-// The actions the page carries out on the panel's profile: the button's words, its done state, the toast once applied, and the edit itself. An action of another kind gets no button.
-type PanelAction = Extract<DiagnosticAction, { kind: "setFloor" | "makeSoft" | "setWeight" }>;
-type PanelProfile = { floors?: Record<string, number> | undefined; softFloors?: string[] | undefined; weights?: Record<string, number> | undefined };
-export const handledAction = (a: DiagnosticAction): a is PanelAction => a.kind === "setFloor" || a.kind === "makeSoft" || a.kind === "setWeight";
-export function actionWords(a: PanelAction): { label: string; done: string; toast: string; stale: string } {
+// The actions the page carries out on the panel's profile: the button's words, its done state, the toast once applied, its words when it no longer fits, and the edit itself. An action of another kind gets no button. `code` is the diagnostic's: a swing_next_step's setFloor sets the SSI requirement at a step, where every other setFloor lowers one.
+type PanelAction = Extract<DiagnosticAction, { kind: "setFloor" | "makeSoft" | "setWeight" | "swingSteps" | "lockSlot" }>;
+type PanelProfile = { floors?: Record<string, number> | undefined; softFloors?: string[] | undefined; weights?: Record<string, number> | undefined; swingSteps?: boolean | undefined; lockedSlots?: string[] | undefined };
+export const handledAction = (a: DiagnosticAction): a is PanelAction => a.kind === "setFloor" || a.kind === "makeSoft" || a.kind === "setWeight" || a.kind === "swingSteps" || a.kind === "lockSlot";
+const raises = (code: DiagnosticCode | undefined): boolean => code === "swing_next_step";
+export function actionWords(a: PanelAction, code?: DiagnosticCode): { label: string; done: string; toast: string; stale: string } {
   if (a.kind === "setWeight") {
     const nm = propName(a.property);
     return { label: `Set ${nm} to ${a.value}`, done: "Set ✓", toast: `${nm} weight set to ${a.value}. Build again to use it.`, stale: "The weight changed since this build, so this no longer applies." };
   }
+  if (a.kind === "swingSteps") {
+    const stale = "The swing step switch changed since this build, so this no longer applies.";
+    return a.on ? { label: "Score swing speed by step", done: "Scoring by step ✓", toast: "SSI is scored by swing step now. Build again to use it.", stale }
+      : { label: "Score SSI per point", done: "Per point ✓", toast: "SSI is scored per point now. Build again to use it.", stale };
+  }
+  if (a.kind === "lockSlot") { const sl = SLOT_LABELS[a.slot] || a.slot; return { label: `Lock ${sl}`, done: "Locked ✓", toast: `${sl} is locked to what is worn now. Build again to use it.`, stale: `${sl} was locked since this build, so this no longer applies.` }; }
   const req = `${propName(a.property)} requirement`, stale = "The requirement changed since this build, so this no longer applies.";
+  if (a.kind === "setFloor" && raises(code)) return { label: `${labelOf(a.property)} floor ${a.value} (soft)`, done: "Set ✓", toast: `${req} set to ${a.value}, soft. Build again to use it.`, stale };
   return a.kind === "setFloor"
     ? { label: `Lower to ${a.value}`, done: "Lowered ✓", toast: `${req} lowered to ${a.value}. Build again to use it.`, stale }
     : { label: "Make soft", done: "Made soft ✓", toast: `${req} is soft now. Build again to use it.`, stale };
 }
-// Whether the action still fits the panel as it is now: the requirement is still there, Lower would lower it, and Make soft finds it hard; Set weight finds the weight the build ran with (`from`, the diagnostic's values.weight). A build's numbers never put back a requirement or weight the player removed, or undo one they changed since.
-export function actionApplies(p: PanelProfile, a: PanelAction, from?: number): boolean {
+// Whether the action still fits the panel as it is now: the requirement is still there, Lower would lower it, and Make soft finds it hard; Set weight finds the weight the build ran with (`from`, the diagnostic's values.weight); a step's requirement finds the panel asking for less, the switch the other way, a lock the slot unlocked. A build's numbers never put back a requirement or weight the player removed, or undo one they changed since.
+export function actionApplies(p: PanelProfile, a: PanelAction, from?: number, code?: DiagnosticCode): boolean {
   if (a.kind === "setWeight") return from != null && p.weights?.[a.property] === from;
+  if (a.kind === "swingSteps") return !!p.swingSteps !== a.on;
+  if (a.kind === "lockSlot") return !(p.lockedSlots || []).includes(a.slot);
   const f = p.floors?.[a.property];
+  if (a.kind === "setFloor" && raises(code)) return f == null || f < a.value;
   if (f == null) return false;
   return a.kind === "setFloor" ? f > a.value : !(p.softFloors || []).includes(a.property);
 }
-export function applyAction(p: PanelProfile, a: PanelAction, from?: number): void {
-  if (!actionApplies(p, a, from)) return;
-  if (a.kind === "setFloor") p.floors![a.property] = a.value;
-  else if (a.kind === "setWeight") p.weights![a.property] = a.value;
-  else (p.softFloors ||= []).push(a.property);
+export function applyAction(p: PanelProfile, a: PanelAction, from?: number, code?: DiagnosticCode): void {
+  if (!actionApplies(p, a, from, code)) return;
+  if (a.kind === "setWeight") p.weights![a.property] = a.value;
+  else if (a.kind === "swingSteps") p.swingSteps = a.on;
+  else if (a.kind === "lockSlot") (p.lockedSlots ||= []).push(a.slot);
+  else if (a.kind === "setFloor") {
+    (p.floors ||= {})[a.property] = a.value;
+    // a swing step's requirement goes in soft: a hard one could conflict with the other hard requirements
+    if (raises(code) && !(p.softFloors ||= []).includes(a.property)) p.softFloors.push(a.property);
+  } else (p.softFloors ||= []).push(a.property);
 }
 // A weight row's worth hint: what the weight makes a typical range of the property worth ("= 1,500 per 500 Luck"), with `caps` in the player's terms (vault-lib.mts playerCaps); null for a property with no typical range or a weight that isn't a number.
 export function weightWorth(key: string, weight: number, caps: Record<string, number>): string | null {
@@ -381,4 +398,21 @@ export function resultChecks(res: { diagnostics?: Diagnostic[] | undefined; unre
   }
   const keys = res.unreachableFloors || [];
   return keys.length ? [{ code: "floor_unreachable", level: "warn", message: `No suit in the pool can reach these requirements${withBuffs ? ", even with the buffs" : ""}: ${keys.map((k) => propName(k)).join(", ")}.`, actions: [] }] : [];
+}
+
+// ---------------------------------------------------------------- swing (app/swing.mts)
+// A result's swing line and its steps: "Longsword 3.5 s · stamina 95 · SSI 45 (+10 Divine Fury) → swings every 1.75 s", then the last few steps at that stamina with the reached ones marked, and the next faster delay when the cap keeps it out of reach. `buffs` names what gave the share.
+export function swingLines(sw: SwingResult, weapon: string | null, buffs: string[] = [], shown = 4): { head: string; steps: Array<{ text: string; reached: boolean }>; out: string | null } {
+  const share = sw.share ? ` (${signed(sw.share)} ${buffs.length ? buffs.join(", ") : "buffs"})` : "";
+  const head = `${weapon ?? "Weapon"} ${speedText(sw.speed)} · stamina ${sw.stamina} · SSI ${sw.ssi}${share} → swings every ${delayText(sw.seconds)}`;
+  const steps = sw.steps.slice(-shown).map((st) => ({ text: `${delayText(st.seconds)} ≥ ${st.ssi}`, reached: sw.ssi >= st.ssi }));
+  const fastest = sw.steps.length ? sw.steps[sw.steps.length - 1]!.seconds : sw.seconds;
+  return { head, steps, out: fastest > MIN_TICKS * 0.25 ? `${delayText(fastest - 0.25)} out of reach` : null };
+}
+// A weapon's base speed as the page writes it: "3.5 s", "2.25 s".
+export const speedText = (speedS: number): string => `${num(speedS)} s`;
+// The SSI requirement a "Next step" button fills in: the effective SSI of the first step faster than `sw` reaches, or null when there is none within the cap. Its tooltip names the stamina it assumed.
+export function nextSwingStep(sw: SwingResult | null | undefined): { value: number; seconds: number; tip: string } | null {
+  const next = sw?.steps.find((st) => st.ssi > sw.ssi);
+  return sw && next ? { value: next.ssi, seconds: next.seconds, tip: `${delayText(next.seconds)} at stamina ${sw.stamina}; another suit's stamina can move the step.` } : null;
 }

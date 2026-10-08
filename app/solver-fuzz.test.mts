@@ -1,12 +1,15 @@
 // solver-fuzz.test.mts — a seeded brute-force equivalence check of all three searches over small generated inventories.
 //
-// a seeded brute-force equivalence check: five fixed seeds × 400 generated inventories of two to six of the nineteen gear slots (`solver-fixture.mts`'s `fuzzSlots`, the hand pair together in about half; 1–4 candidates each, negative property values, negative weights on capped and floored properties, soft and hard floors, worn and locked slots, a random warm start (which must never empty a locked slot), shields and two-handers), each enumerated outright so the maximum of the core's `scoreSet` is the oracle. The heuristic must return a valid suit scoring its own re-score and never above the oracle; the core's exact search and `solveExact` (HiGHS) must both prove and equal the oracle, with HiGHS's bound never below its score. All `[fast]` (about 5 s); it is what caught the soft-floor met row forbidding negative totals and the core's pruning on negatively weighted floors.
+// a seeded brute-force equivalence check: five fixed seeds × 400 generated inventories of two to six of the nineteen gear slots (`solver-fixture.mts`'s `fuzzSlots`, the hand pair together in about half; 1–4 candidates each, negative property values, negative weights on capped and floored properties, soft and hard floors, worn and locked slots, a random warm start (which must never empty a locked slot), shields and two-handers), each enumerated outright so the maximum of the core's `scoreSet` is the oracle. The heuristic must return a valid suit scoring its own re-score and never above the oracle; the core's exact search and `solveExact` (HiGHS) must both prove and equal the oracle, with HiGHS's bound never below its score. A second loop does the same with SSI scored by swing step (a step table from `app/swing.mts` over random weapon speeds, stamina, reference stamina and buff shares, on pools carrying SSI and the Stamina pool), with an oracle that prices each suit's own swing from the formula rather than the table, and checks the core's `scoreSet` against it suit by suit. All `[fast]` (about 10 s); the first loop is what caught the soft-floor met row forbidding negative totals and the core's pruning on negatively weighted floors.
 //
 // The three searches are the core's heuristic (a valid suit, never above the oracle), the core's exact branch-and-bound (proven, equal to the oracle), and `solveExact` through HiGHS (proven, equal to the oracle, bound never below its own score). The generator leans on the cases that broke before.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { solveExact, type OptPools, type OptAssignment, type OptProfile } from "./exact-solver.mts";
 import { core, fuzzSlots } from "./solver-fixture.mts";
+import { propertyReach } from "./mip.mts";
+import { stepTable, swingTicks } from "./swing.mts";
+import type { OptItem } from "./vault-lib.mts";
 
 type OptOptions = Parameters<typeof solveExact>[0]["opts"];
 type Item = NonNullable<OptPools[string]>[number];
@@ -119,6 +122,68 @@ for (const seed of SEEDS) {
       assert.equal(r.solver === "highs" || r.solver === "none", true, `${label}: solver ${r.solver} (${r.fallbackReason})`);
       assert.ok(Math.abs(r.score - core.scoreSet(r.best, inst.profile)) < EPS, `${label}: HiGHS score is not the core's re-score`);
       assert.equal(r.proven, true, `${label}: HiGHS did not prove a tiny instance (score ${r.score}, brute force ${oracle}, bound ${r.bound})`);
+      assert.ok(Math.abs(r.score - oracle) < 1e-3, `${label}: HiGHS ${r.score} != brute force ${oracle}`);
+      if (r.bound != null) assert.ok(r.bound >= r.score - 1e-3, `${label}: bound ${r.bound} below the returned score ${r.score}`);
+    }
+  });
+}
+
+// SSI by swing step. The oracle does not read the step table: it scores the suit with SSI's weight taken off (its floor stays) and adds the weight times what the suit's own swing costs in gear SSI at the reference stamina.
+interface SwingCase { speed: number; stamBase: number; refStamina: number; share: number }
+function stepInstance(rnd: () => number, serialBase: number): Instance & { swing: SwingCase } {
+  const inst = generate(rnd, serialBase);
+  const int = (lo: number, hi: number): number => lo + Math.floor(rnd() * (hi - lo + 1));
+  for (const s of inst.slots) for (const it of [...(inst.pools[s] || []), inst.current[s]].filter((x): x is Item => !!x)) {
+    if (rnd() < 0.6) it.props.ssi = int(-5, 25);
+    if (rnd() < 0.5) it.props.stamPool = int(-3, 20);
+  }
+  const swing = { speed: [2.5, 3.25, 3.5, 4][int(0, 3)]!, stamBase: int(40, 130), refStamina: 0, share: [-10, 0, 0, 10, 15][int(0, 4)]! };
+  swing.refStamina = swing.stamBase + int(0, 30);
+  const reach = propertyReach(inst.pools as Partial<Record<string, OptItem[]>>, inst.current as Partial<Record<string, OptItem | null>>, inst.optionalSlots, inst.slots, ["stamPool", "ssi"]);
+  const profile = { ...inst.profile, weights: { ...inst.profile.weights, ssi: int(1, 8) }, ssiSteps: stepTable({ speedS: swing.speed, stamBase: swing.stamBase, refStamina: swing.refStamina, share: swing.share, stamRange: reach.stamPool!, ssiMax: reach.ssi!.max }) };
+  if (rnd() < 0.3) profile.caps = { ...profile.caps, ssi: int(10, 60) };   // a cap plays no part once SSI is scored by step
+  if (rnd() < 0.3) { profile.floors = { ...profile.floors, ssi: int(5, 30) }; if (rnd() < 0.5) profile.hardFloors = [...(profile.hardFloors || []), "ssi"]; }
+  return { ...inst, profile, swing };
+}
+function stepOracleScore(inst: Instance & { swing: SwingCase }, pick: OptAssignment): number {
+  const { weights = {}, ssiSteps: _table, ...rest } = inst.profile;
+  const plain = core.scoreSet(pick, { ...rest, weights: { ...weights, ssi: 0 } });
+  const t = { ssi: 0, stamPool: 0 };
+  for (const it of Object.values(pick)) if (it) { t.ssi += it.props.ssi || 0; t.stamPool += it.props.stamPool || 0; }
+  const { speed, stamBase, refStamina, share } = inst.swing;
+  const ticks = swingTicks(speed, stamBase + t.stamPool, Math.min(60, t.ssi + share));
+  const nRef = Math.round(4 * speed) - Math.floor(refStamina / 30);
+  return plain + (weights.ssi || 0) * Math.max(0, Math.floor((100 * nRef) / (ticks + 1)) - 99 - share);
+}
+
+for (const seed of [5, 41, 777]) {
+  test(`[fast] SSI by swing step: brute force agrees with the core's scoreSet, its exact search and HiGHS (seed ${seed})`, async () => {
+    const rnd = core.optMulberry32(seed);
+    for (let i = 0; i < 200; i++) {
+      const inst = stepInstance(rnd, seed * 100000 + i * 100);
+      const label = `seed ${seed} instance ${i}`;
+      const cands = candidates(inst);
+      let oracle = -Infinity;
+      const pick: OptAssignment = {};
+      const rec = (k: number): void => {
+        if (k === inst.slots.length) {
+          if (pick.twoHanded?.twoHanded === true && pick.oneHanded) return;
+          const want = stepOracleScore(inst, pick), got = core.scoreSet(pick, inst.profile);
+          assert.ok(Math.abs(want - got) < EPS, `${label}: scoreSet ${got} != the swing's own ${want} for ${JSON.stringify(Object.values(pick).map((x) => x && x.props))}`);
+          oracle = Math.max(oracle, want);
+          return;
+        }
+        const s = inst.slots[k]!;
+        for (const it of cands[s]!) { pick[s] = it; rec(k + 1); }
+      };
+      rec(0);
+      const base: OptOptions = { seed: 1, restarts: 2, slots: inst.slots, optionalSlots: inst.optionalSlots };
+      const exact = core.optimizeSuit(inst.pools, inst.current, inst.profile, { ...base, exact: true, timeBudgetMs: 5000 });
+      assert.equal(exact.proven, true, `${label}: the core's exact search did not prove`);
+      assert.ok(Math.abs(exact.score - oracle) < EPS, `${label}: core exact ${exact.score} != brute force ${oracle}`);
+      const r = await solveExact({ core, ...inst, opts: { ...base, exact: true, timeBudgetMs: 10000 }, onProgress: () => {} });
+      assertValidSuit(inst, cands, r.best, `${label} HiGHS`);
+      assert.equal(r.proven, true, `${label}: HiGHS did not prove (score ${r.score}, brute force ${oracle})`);
       assert.ok(Math.abs(r.score - oracle) < 1e-3, `${label}: HiGHS ${r.score} != brute force ${oracle}`);
       if (r.bound != null) assert.ok(r.bound >= r.score - 1e-3, `${label}: bound ${r.bound} below the returned score ${r.score}`);
     }

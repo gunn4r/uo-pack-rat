@@ -1,11 +1,11 @@
 // ui-builder.test.mts — [slow]: the Suit Builder's keyboard, hover and panel behavior in the real Electron window.
 //
-// `[slow]`: the Suit Builder's keyboard and hover behaviour in the real Electron window, on a writable `--data` directory seeded with the demo scans: a raised resist cap (Fire 95) marked in the Resist caps section, built with, shown on the result's Fire tile and the saved run's badge, kept by Save profile across a reload, refused out of range with the error under the field, and reset to the shard's cap; ⌘↵ (Ctrl+Enter) builds with focus on the page body and while typing in a panel field, and does nothing behind the Saved runs drawer; the current suit's and the Fetch list's pieces show the item tooltip on hover and after Tab focus, and so do both names in a Plan row, each its own piece's (issue #75; the row itself and its Slot cell show none, a kept row's worn name still does); a Fetch list row shows a deep bag path in full (nothing cut or ellipsised) and its copy button puts the container serial on the clipboard; STR limit is beside Race with Advanced closed, and a bad value there is focused without opening Advanced; a switch's on track is at least 3:1 against its off track, with the knob moved right, in Default and Britannia, light and dark; two excluded weapon skills show on the Weapons chip and survive Save profile and a reload; Check your settings (issue #217): a hard Luck requirement no suit reaches is named with the best possible above the progress panel and in the result, and Lower and Make soft edit the panel's floor and the template badge without starting a build; a weight row's worth hint follows the typed weight and hides on a bad value, and Set weight (a Luck weight that swamps the rest) edits the panel and the template badge, but not once the weight was changed since the build. Manual mode (issue #12): a slot opens the picker on its pieces, a row picked with the keyboard (focus, Enter) fills the slot, moves the totals and says so in the status line, the picker stays on that slot with the picked row marked "In this slot", the undo key empties the slot again (the status line saying what was undone) and redo puts the piece back, Esc closes it with focus back on the slot card, and the mode and the suit are in `ui-prefs.json`; and the hand-offs: another character picked mid-fill cancels the fill and leaves the suit alone, Fill the rest automatically fills empty slots around a placed ring in one undo step and shows the fetch list, Save as run puts a Manual run in the drawer that opens in the result view with Open in Manual, and an Automatic result's Start from this result loads it into Manual as one undo step.
+// `[slow]`: the Suit Builder's keyboard and hover behaviour in the real Electron window, on a writable `--data` directory seeded with the demo scans: a raised resist cap (Fire 95) marked in the Resist caps section, built with, shown on the result's Fire tile and the saved run's badge, kept by Save profile across a reload, refused out of range with the error under the field, and reset to the shard's cap; ⌘↵ (Ctrl+Enter) builds with focus on the page body and while typing in a panel field, and does nothing behind the Saved runs drawer; the current suit's and the Fetch list's pieces show the item tooltip on hover and after Tab focus, and so do both names in a Plan row, each its own piece's (issue #75; the row itself and its Slot cell show none, a kept row's worn name still does); a Fetch list row shows a deep bag path in full (nothing cut or ellipsised) and its copy button puts the container serial on the clipboard; STR limit is beside Race with Advanced closed, and a bad value there is focused without opening Advanced; a switch's on track is at least 3:1 against its off track, with the knob moved right, in Default and Britannia, light and dark; two excluded weapon skills show on the Weapons chip and survive Save profile and a reload; Check your settings (issue #217): a hard Luck requirement no suit reaches is named with the best possible above the progress panel and in the result, and Lower and Make soft edit the panel's floor and the template badge without starting a build; a weight row's worth hint follows the typed weight and hides on a bad value, and Set weight (a Luck weight that swamps the rest) edits the panel and the template badge, but not once the weight was changed since the build. Swing steps (issue #217), with Kestrel's worn weapon made the pool's best: the SSI weight's switch shows the worn weapon's steps and marks the template changed; the result says SSI was scored per point with Lock Weapon (1H) and shows the swing line, Next step follows the result's swing (none before the build); Lock starts no build and the next build scores by step; the switch is kept in the saved run's settings and by Save profile across a reload. Manual mode (issue #12): a slot opens the picker on its pieces, a row picked with the keyboard (focus, Enter) fills the slot, moves the totals and says so in the status line, the picker stays on that slot with the picked row marked "In this slot", the undo key empties the slot again (the status line saying what was undone) and redo puts the piece back, Esc closes it with focus back on the slot card, and the mode and the suit are in `ui-prefs.json`; and the hand-offs: another character picked mid-fill cancels the fill and leaves the suit alone, Fill the rest automatically fills empty slots around a placed ring in one undo step and shows the fetch list, Save as run puts a Manual run in the drawer that opens in the result view with Open in Manual, and an Automatic result's Start from this result loads it into Manual as one undo step.
 //
 // Each of the older cases is maintainer feedback on the redesign (PR #43), plus the resist cap overrides (issue #44) and the weapon exclusions (issue #45). Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, copyFileSync, readFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, copyFileSync, readFileSync, readdirSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -320,6 +320,72 @@ test("[slow] weight scale: the worth hint follows the weight, and Set weight edi
     await hint(`= ${(Number(to) * 500).toLocaleString("en-US")} per 500 Luck`);
     assert.match(await page.locator("#b-tpl-state").innerText(), new RegExp(`Luck weight [\\d.]+ → ${to.replace(".", "\\.")}`), "the template badge names the change");
     assert.equal(await block.getByRole("button", { name: "Set ✓" }).isDisabled(), true);
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+});
+
+// Issue #217 (swing steps), on Kestrel with her worn War Axe made the best weapon in the pool (strong properties, Swordsmanship), so the result holds the worn weapon: the SSI weight row's switch, with the worn weapon's steps under it, marks the template changed; the build says SSI was scored per point (the pool holds weapons of several speeds) and offers Lock Weapon (1H), shows the swing line, and Next step follows the result's swing (none before the build); Lock edits the panel without a build, and the next build scores by step with no warning; the switch is kept in the saved run's settings and by Save profile across a reload.
+test("[slow] swing steps: the switch, the swing line, Next step from the result, Lock, and the switch saved with the run and the profile", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = seedDataDir("packrat-ui-swing-");
+  const scanFile = join(dataDir, "scans", "demo-Kestrel.json"), scan = JSON.parse(readFileSync(scanFile, "utf8")) as { equipped: Array<{ name: string; tooltip: string[] }> };
+  const axe = scan.equipped.find((i) => i.name === "War Axe")!;
+  axe.tooltip = [...axe.tooltip.filter((l) => !/^(Antique|Defense Chance Increase|Swing Speed Increase|Skill Required)/.test(l)), "Skill Required: Swordsmanship", "Hit Chance Increase 45%", "Defense Chance Increase 45%",
+    "Damage Increase 100%", "Hit Point Increase 25", "Dexterity Bonus 25", "Strength Bonus 25", "Physical Resist 20%", "Fire Resist 20%", "Cold Resist 20%", "Poison Resist 20%", "Energy Resist 20%"];
+  writeFileSync(scanFile, JSON.stringify(scan));
+  const { app, page, errors } = await launch(dataDir);
+  try {
+    await openBuilder(page);
+    await page.selectOption("#b-char", "Kestrel");
+    await page.waitForFunction(() => (document.querySelector("#b-tpl") as HTMLSelectElement | null)?.value === "builtin:melee", undefined, { timeout: 10_000 });
+    await page.click("#b-sec-weights .b-sec-head button");
+    const sw = page.locator("#b-swing-steps");
+    await sw.waitFor({ timeout: 10_000 });
+    assert.equal(await sw.isChecked(), false);
+    assert.match(String(await page.locator("#b-sec-weights .b-swing-set").textContent()), /Counts SSI only where the swing gets faster\. War Axe 3 s at stamina \d+: .+ ≥ \d+/);
+    await sw.check();
+    assert.match(await page.locator("#b-tpl-state").innerText(), /SSI by step/);
+    await page.click("#b-addfloor");
+    await page.click(".b-pick-list button[data-key=ssi]");
+    await page.locator('#b-sec-req .rule-row[data-key="ssi"] input').fill("1");
+    assert.equal(await page.locator("#b-sec-req .b-next-step").count(), 0, "the worn suit is at its fastest step: no Next step before the build");
+    let starts = 0;
+    page.on("request", (r) => { if (r.method() === "POST" && new URL(r.url()).pathname === "/api/optimize") starts++; });
+    await page.click("#b-run");
+    await built(page);
+    // read in the same poll that finds them, so a redraw can't land between the wait and the read
+    const read = async (sel: string): Promise<string> => String(await (await page.waitForFunction((s) => document.querySelector(s)?.textContent || null, sel, { timeout: 10_000 })).jsonValue());
+    assert.match(await read(".b-head-card .b-check"), /SSI was scored per point: the pool holds weapons with \d+ different speeds\. Lock the weapon slot to score swing speed by step\./);
+    const line = await read(".b-head-card .b-swing");
+    assert.match(line, /^War Axe 3 s · stamina \d+ · SSI \d+ → swings every [\d.]+ s/);
+    // Next step is the first step the result's swing has not reached
+    const unreached = /(?:: |· )[\d.]+ s ≥ (\d+)(?! ✓)(?: ·|$)/.exec(line.split("Steps at stamina")[1] || "")?.[1];
+    assert.ok(unreached, line);
+    assert.equal(await read("#b-sec-req .b-next-step"), `Next step: ${unreached}`);
+    await page.locator(".b-head-card .b-check").getByRole("button", { name: "Lock Weapon (1H)" }).click();
+    assert.equal(await page.locator(".b-head-card .b-check").getByRole("button", { name: "Locked ✓" }).isDisabled(), true);
+    assert.equal(starts, 1, "Lock starts no build");
+    // the next build scores by step: no warning, the swing line still there
+    await page.click("#b-run");
+    await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>("#b-run")?.disabled && /Best suit for/.test(document.querySelector("#b-result h2")?.textContent || "")
+      && !/scored per point/.test(document.querySelector("#b-result")?.textContent || ""), undefined, { timeout: 60_000 });
+    assert.match(await read(".b-head-card .b-swing"), /^War Axe 3 s · stamina \d+ · SSI \d+ → swings every [\d.]+ s/);
+    // the saved run keeps the switch (the server writes it as the build finishes: wait for the file)
+    const kept = (): boolean => existsSync(join(dataDir, "runs")) && readdirSync(join(dataDir, "runs")).filter((f: string) => f.endsWith(".json"))
+      .some((f: string) => (JSON.parse(readFileSync(join(dataDir, "runs", f), "utf8")) as { settings?: { swingSteps?: boolean } }).settings?.swingSteps === true);
+    for (let i = 0; i < 50 && !kept(); i++) await page.waitForTimeout(100);
+    assert.ok(kept(), "the saved run keeps the switch");
+    await page.click("#b-save");
+    await page.waitForFunction(() => /Profile for .* saved/.test(document.body.textContent || ""), undefined, { timeout: 10_000 });
+    await page.reload();
+    await page.waitForSelector("#tab-builder:not([hidden]) #b-weapon", { timeout: 30_000 });
+    await page.selectOption("#b-char", "Kestrel");
+    await page.click("#b-sec-weights .b-sec-head button");
+    assert.equal(await page.locator("#b-swing-steps").isChecked(), true, "Save profile kept the switch");
     assert.deepEqual(errors, []);
   } finally {
     await app.close();

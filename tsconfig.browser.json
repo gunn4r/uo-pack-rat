@@ -17,6 +17,7 @@
     "app/evaluate.*",
     "app/run-settings.*",
     "app/build-spec.*",
+    "app/swing.*",
     "app/guards.*",
     "app/data-dir-notice.*",
     "app/schema/validate.*",

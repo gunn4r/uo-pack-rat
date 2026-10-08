@@ -377,6 +377,7 @@ export interface Profile {
   floorBonus?: number | undefined;
   race?: string | null | undefined;
   resistCaps?: Record<string, number> | undefined;
+  swingSteps?: boolean | undefined;   // score SSI by swing step (app/swing.mts)
 }
 export interface EffectiveProfile {
   weights: Record<string, number>;
@@ -391,6 +392,10 @@ export interface EffectiveProfile {
   // The buffs the search planned with (app/buffs.mts plannedProfile), absent with none: which, the numbers they took
   // (so a result can show them, and runs with other buffs key apart), and the caps and floors before them.
   buffs?: PlannedBuffs | undefined;
+  // What the build knows of the character's swing (app/build-spec.mts planBuild), absent with no character: stamina before gear (raw DEX and the buffs' shares), the worn suit's stamina, and whether SSI is scored by step.
+  swing?: { stamBase: number; refStamina: number; steps: boolean } | undefined;
+  // The step table both solvers score SSI with (app/swing.mts stepTable), put on by the optimize worker.
+  ssiSteps?: Array<{ ssi: number; stam: number; credit: number }> | undefined;
 }
 export interface PlannedBuffs {
   on: string[];
@@ -1121,6 +1126,7 @@ export interface OptItem {
   slot: string | null;
   props: PropMap;
   twoHanded?: true | undefined;
+  speed?: number | undefined;   // a weapon's base speed in seconds (its tooltip's Weapon Speed), for swing steps (app/swing.mts)
 }
 // buildPools() only ever stores an item after `!it.slot` has already sent it to `continue` — every
 // item it hands the solver has passed that filter, so its slot is honestly a string, not the plain
@@ -1254,7 +1260,7 @@ export function excludeWeaponsError(v: unknown, path = "excludeWeapons"): string
 // Templates: a full set of builder settings with no character in them (no race, STR limit or skipped containers).
 // A character's profile keeps its own working copy plus `template`, the name it was applied from; drift between the
 // two is settingsDiff(templateFrom(template), templateFrom(profile)).
-export const TEMPLATE_KEYS: string[] = ["floors", "softFloors", "weights", "floorBonus", "lockedSlots", "excludeTags", "excludeSkills", "allowOthersWorn", "allowGargoyle", "medOnly", "excludeWeapons", "ubwsAnyWeapon", "resistCaps"];
+export const TEMPLATE_KEYS: string[] = ["floors", "softFloors", "weights", "floorBonus", "lockedSlots", "excludeTags", "excludeSkills", "allowOthersWorn", "allowGargoyle", "medOnly", "excludeWeapons", "ubwsAnyWeapon", "resistCaps", "swingSteps"];
 export interface TemplateSource {
   floors?: Record<string, number> | undefined;
   softFloors?: string[] | undefined;
@@ -1269,6 +1275,7 @@ export interface TemplateSource {
   excludeWeapons?: string[] | undefined;   // weapon skills left out of the pool
   ubwsAnyWeapon?: boolean | undefined;     // absent means true (weaponAllowed)
   resistCaps?: Record<string, number> | undefined;   // the player's per-resist cap overrides, paperdoll terms
+  swingSteps?: boolean | undefined;        // score SSI by swing step (app/swing.mts); absent means off
 }
 export interface Template {
   floors: Record<string, number>;
@@ -1284,11 +1291,12 @@ export interface Template {
   excludeWeapons: string[];
   ubwsAnyWeapon: boolean;
   resistCaps: Record<string, number>;
+  swingSteps: boolean;
 }
 export function templateFrom(s: TemplateSource = {}): Template {
   return { floors: { ...(s.floors || {}) }, softFloors: [...(s.softFloors || [])], weights: { ...(s.weights || {}) }, floorBonus: s.floorBonus ?? 1000,
     lockedSlots: [...(s.lockedSlots || [])], excludeTags: [...(s.excludeTags || [])], excludeSkills: [...(s.excludeSkills || [])],
-    allowOthersWorn: !!s.allowOthersWorn, allowGargoyle: !!s.allowGargoyle, medOnly: !!s.medOnly, excludeWeapons: [...(s.excludeWeapons || [])], ubwsAnyWeapon: s.ubwsAnyWeapon !== false, resistCaps: { ...(s.resistCaps || {}) } };
+    allowOthersWorn: !!s.allowOthersWorn, allowGargoyle: !!s.allowGargoyle, medOnly: !!s.medOnly, excludeWeapons: [...(s.excludeWeapons || [])], ubwsAnyWeapon: s.ubwsAnyWeapon !== false, resistCaps: { ...(s.resistCaps || {}) }, swingSteps: !!s.swingSteps };
 }
 
 // A profiles.json character entry, loosely — every field optional, TemplateSource's builder settings
@@ -1371,6 +1379,7 @@ export interface RunSettings {
   altTol?: number | undefined;
   resistCaps?: Record<string, number> | undefined;
   buffs?: RunBuffs | undefined;   // the buffs planned with (app/buffs.mts); absent with none, and in a run saved before them
+  swingSteps?: boolean | undefined;
 }
 // A run's buffs: which were on, and the numbers they scale with (app/buffs.mts's inputs, Resisting Spells aside).
 export interface RunBuffs { on: string[]; skills: Record<string, number> }
@@ -1409,12 +1418,13 @@ export function settingsDiff(a: RunSettings = {}, b: RunSettings = {}): string[]
   const [skOn, skOff] = setDiff(a.excludeSkills, b.excludeSkills);
   if (skOn.length) out.push(`forbidding ${skOn.join(", ")} bonuses`);
   if (skOff.length) out.push(`allowing ${skOff.join(", ")} bonuses`);
-  const flag = (k: "allowGargoyle" | "medOnly" | "exact", on: string, off: string) => { if (!!a[k] !== !!b[k]) out.push(b[k] ? on : off); };
+  const flag = (k: "allowGargoyle" | "medOnly" | "exact" | "swingSteps", on: string, off: string) => { if (!!a[k] !== !!b[k]) out.push(b[k] ? on : off); };
   flag("allowGargoyle", "gargoyle gear allowed", "gargoyle gear excluded");
   flag("medOnly", "meditation-safe only", "meditation-safe off");
   const others = (s: RunSettings) => !!s.allowOthersWorn;   // a saved run is normalized to allowOthersWorn before it ever reaches here
   if (others(a) !== others(b)) out.push(others(b) ? "others' worn gear allowed" : "others' worn gear excluded");
   flag("exact", "exact search on", "exact search off");
+  flag("swingSteps", "+SSI by step", "SSI by point");
   const [wOn, wOff] = setDiff(a.excludeWeapons, b.excludeWeapons);
   if (wOn.length) out.push(`excluding ${wOn.join(", ")} weapons`);
   if (wOff.length) out.push(`allowing ${wOff.join(", ")} weapons`);
@@ -1438,6 +1448,8 @@ export function toOptItem(it: Item): OptItem {
   for (const [k, v] of Object.entries(it.extras || {})) if (SKILL_SET.has(k) && typeof v === "number" && v) props[`sk:${k}`] = v;
   const o: OptItem = { serial: it.serial, name: it.name, slot: it.slot, props };
   if (it.twoHanded) o.twoHanded = true;
+  const speed = it.extras?.["weapon speed"];
+  if (typeof speed === "number" && speed > 0) o.speed = speed;
   return o;
 }
 
