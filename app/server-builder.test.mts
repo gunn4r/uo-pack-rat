@@ -219,6 +219,41 @@ test("[fast] POST /api/optimize exact: the job finishes with solver \"highs\", p
   }
 });
 
+test("[fast] POST /api/optimize answers the unreachable floors before the search, and the result and its saved run carry them, on both solver paths (issue #217)", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-"));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {})));
+  try {
+    const inv = asJson<InventoryResponse>(await (await fetch(s2.url + "/api/inventory")).json());
+    const profiles = asJson<ProfilesResponse>(await (await fetch(s2.url + "/api/profiles")).json());
+    const rules = asJson<RulesResponse>(await (await fetch(s2.url + "/api/rules")).json());
+    const character = Object.keys(inv.inventory.characters)[0]!;
+    const { pools, current } = buildPools(foldFixtures(join(HERE, "fixtures")), character, {});
+    const tpl = firstTemplate(profiles);
+    const profile = { ...tpl, caps: rules.rules.caps, floors: { ...tpl.floors, luck: 100000 }, hardFloors: ["luck"] };
+    for (const exact of [true, false]) {
+      const r = await fetch(s2.url + "/api/optimize", { method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ pools, current, profile, opts: { exact, timeBudgetMs: 3000, restarts: 5, seed: 2026 } }) });
+      const start = asJson<OptimizeJobResponse & { diagnostics: Array<{ code: string; property: string; values: Record<string, number> }> }>(await r.json());
+      const luck = start.diagnostics.find((d) => d.property === "luck");
+      assert.equal(luck?.code, "floor_unreachable", JSON.stringify(start.diagnostics));
+      assert.equal(luck!.values.floor, 100000);
+      let status: OptimizeJobResponse | undefined;
+      for (let i = 0; i < 300; i++) {
+        status = asJson<OptimizeJobResponse>(await (await fetch(s2.url + `/api/optimize/${start.id}/status`)).json());
+        if (status.state !== "running") break;
+        await new Promise((res) => setTimeout(res, 100));
+      }
+      assert.equal(status!.state, "done", JSON.stringify(status));
+      const diags = (status!.result as unknown as { diagnostics: unknown[] }).diagnostics;
+      assert.deepEqual(diags.find((d) => (d as { property: string }).property === "luck"), luck, `exact ${exact}: the result repeats the pre-build diagnostic`);
+      const run = asJson<RunResponse>(await (await fetch(s2.url + `/api/runs/${status!.runId}`)).json());
+      assert.deepEqual((run.run.result as unknown as { diagnostics: unknown[] }).diagnostics, diags, "the saved run keeps them");
+    }
+  } finally {
+    await s2.close();
+  }
+});
+
 test("[fast] /api/optimize by character builds the same pools as the client did", async () => {
   const dir = mkdtempSync(join(tmpdir(), "qm-"));
   const s2 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {})));
@@ -492,7 +527,7 @@ test("[fast] /api/optimize by character: null settings fields behave like absent
 // Important 5, first half: pools/current/profile/opts were unvalidated. {pools:{helmet:[null]}} started
 // a real worker thread that died with a TypeError, and an unbounded opts.restarts/timeBudgetMs went
 // straight into the search.
-test("[fast] POST /api/optimize rejects a malformed pools/current/profile and an out-of-range opts instead of starting a job", async () => {
+test("[fast] POST /api/optimize rejects a malformed pools/current/profile (hardFloors included) and an out-of-range opts instead of starting a job", async () => {
   const dir = mkdtempSync(join(tmpdir(), "qm-optimize-validate-"));
   const s2 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {})));
   const profile = { caps: { physResist: 70 }, weights: {} };
@@ -513,6 +548,9 @@ test("[fast] POST /api/optimize rejects a malformed pools/current/profile and an
       { pools: {}, current: {}, profile, opts: [] },
       { pools: {}, current: {}, profile, opts: {}, meta: [] },
       { pools: {}, current: {}, profile, opts: {}, character: 5 },
+      { pools: {}, current: {}, profile: { ...profile, hardFloors: 5 }, opts: {} },
+      { pools: {}, current: {}, profile: { ...profile, hardFloors: { luck: true } }, opts: {} },
+      { pools: {}, current: {}, profile: { ...profile, hardFloors: [7] }, opts: {} },
     ];
     for (const body of bad) {
       const r = await post(body);

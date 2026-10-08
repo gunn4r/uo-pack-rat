@@ -12,6 +12,8 @@
 // rather than trusting `workerData`'s ambient `any`.
 import { parentPort, workerData } from "node:worker_threads";
 import { solveExact, type OptPools, type OptAssignment, type OptProfile, type ExactSolveResult, type SolveProgress } from "./exact-solver.mts";
+import { resultDiagnostics, withDiagnostics, type Diagnostic, type DiagnosticsProfile } from "./diagnostics.mts";
+import type { OptItem } from "./vault-lib.mts";
 import type * as Core from "../scripts/optimizer-core.mts";
 
 type OptOptionsFull = NonNullable<Parameters<typeof Core.optimizeSuit>[3]>;
@@ -35,9 +37,11 @@ export interface WorkerWarnMessage {
   type: "warn";
   message: string;
 }
+// Either path's result, with the settings that worked against it (app/diagnostics.mts); no `diagnostics` when computing them failed.
+export type WorkerResult = (OptResult | ExactSolveResult) & { diagnostics?: Diagnostic[] };
 export interface WorkerDoneMessage {
   type: "done";
-  result: OptResult | ExactSolveResult;
+  result: WorkerResult;
   ms: number;
 }
 export interface WorkerErrorMessage {
@@ -60,7 +64,11 @@ try {
   const result: OptResult | ExactSolveResult = opts.exact
     ? await solveExact({ core, pools, current, profile, opts, onProgress, onWarn: (m) => port.postMessage({ type: "warn", message: m } satisfies WorkerWarnMessage) })
     : core.optimizeSuit(pools, current, profile, { ...opts, heuristicBudgetMs: opts.timeBudgetMs ?? 15000, onProgress });   // the same default budget as solveExact and the server's job timer
-  port.postMessage({ type: "done", result, ms: Date.now() - t0 } satisfies WorkerDoneMessage);
+  // The core's item and profile shapes are the same runtime objects as vault-lib's (see exact-solver.mts's header). A failure here never costs the suit (withDiagnostics): the result goes out without diagnostics and the server logs why.
+  const withDiags = withDiagnostics(result, () => resultDiagnostics({ pools: pools as unknown as Partial<Record<string, OptItem[]>>, current: current as unknown as Partial<Record<string, OptItem | null>>,
+    optionalSlots: opts.optionalSlots, slots: opts.slots, profile: profile as DiagnosticsProfile, result }),
+  (e) => port.postMessage({ type: "warn", message: `diagnostics failed, the result goes out without them: ${String((e as Error)?.stack || e)}` } satisfies WorkerWarnMessage));
+  port.postMessage({ type: "done", result: withDiags, ms: Date.now() - t0 } satisfies WorkerDoneMessage);
 } catch (e) {
   const errObj = e as Error;
   port.postMessage({ type: "error", error: String((e && errObj.stack) || e) } satisfies WorkerErrorMessage);

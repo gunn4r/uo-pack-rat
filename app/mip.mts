@@ -103,11 +103,51 @@ export interface BuiltMip {
   xIndex: Record<string, number[]>;
   dims: string[];
   unreachableFloors: string[];
+  reach: Record<string, { max: number; min: number }>;   // propertyReach for every dimension: what the floors were tested against
   hardRows: Record<string, number>;
   scoreOffset: number;
   capCols: Record<string, CapCol>;
   floorCols: Record<string, FloorCol>;
   model: MipModel;
+}
+
+// Each slot's candidates, as the model's x columns take them: the pool's pieces for that slot, each serial once (as optCandidatesFor), and the worn piece always (keep what you wear). Slots with none are left out.
+function slotCandidates(pools: Partial<Record<string, OptItem[]>>, current: Partial<Record<string, OptItem | null | undefined>>, slots: string[]): Record<string, OptItem[]> {
+  const out: Record<string, OptItem[]> = {};
+  for (const s of slots) {
+    const seen = new Set<number>(), list: OptItem[] = [];
+    for (const it of pools[s] || []) { if (it.slot === s && !seen.has(it.serial)) { seen.add(it.serial); list.push(it); } }
+    const curItem = current[s];
+    const cur = curItem && curItem.slot === s ? curItem : null;
+    if (cur && !seen.has(cur.serial)) list.push(cur);
+    if (list.length) out[s] = list;
+  }
+  return out;
+}
+
+// The range any suit's total can take in each key: `max` is the per-slot maxima summed, `min` the per-slot minima summed. For one property with no other constraint `max` is the exact optimum, since slots are independent apart from the hands rule, which it models: the two hand slots add up to the better of "a two-hander, one hand empty" and "no two-hander in twoHanded, plus the best one-hander" (summing both maxima would count a suit the hands row forbids). "Contribute 0" (leave the slot empty) is only a real option for an optional slot: a slot that is not optional and holds its worn piece takes the max over its own candidates, with no phantom 0 (mirrors scripts/optimizer-core.mts's suf/ext bound). `min` folds 0 in everywhere and ignores the two-hander rule; both only loosen it, and it is only ever used as a lower bound.
+export function propertyReach(pools: Partial<Record<string, OptItem[]>>, current: Partial<Record<string, OptItem | null | undefined>>, optionalSlots: string[], slots: string[], keys: string[]): Record<string, { max: number; min: number }> {
+  const cands = slotCandidates(pools, current, slots), optional = new Set(optionalSlots);
+  const isRequired = (s: string): boolean => { const curItem = current[s]; return !optional.has(s) && !!curItem && curItem.slot === s; };
+  const twoH = (cands.twoHanded || []).filter((it) => it.twoHanded === true), oneH = cands.oneHanded || [];
+  const hands = twoH.length > 0 && oneH.length > 0;
+  const out: Record<string, { max: number; min: number }> = {};
+  for (const d of keys) {
+    const val = (it: OptItem): number => it.props[d] || 0;
+    const best = (s: string, its: OptItem[]): number => isRequired(s) ? Math.max(...its.map(val)) : Math.max(0, ...its.map(val));
+    let max = 0, min = 0;
+    for (const s of Object.keys(cands)) {
+      if (!hands || (s !== "oneHanded" && s !== "twoHanded")) max += best(s, cands[s]!);
+      min += Math.min(0, ...cands[s]!.map(val));
+    }
+    if (hands) {
+      const noTwoHander = best("twoHanded", cands.twoHanded!.filter((it) => !twoH.includes(it))) + best("oneHanded", oneH);
+      const twoHander = Math.max(...twoH.map(val)) + (isRequired("oneHanded") ? -INF : 0);
+      max += Math.max(noTwoHander, twoHander);
+    }
+    out[d] = { max, min };
+  }
+  return out;
 }
 
 export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots = DEFAULT_OPTIONAL_SLOTS, slots = DEFAULT_SLOTS, hardAsSoft = false }: BuildSuitMipOptions): BuiltMip {
@@ -122,20 +162,11 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
   const cols: MipCol[] = [], colCost: number[] = [], colLower: number[] = [], colUpper: number[] = [], integrality: number[] = [];
   const addCol = (col: MipCol, cost: number, lo: number, hi: number, integer: boolean): number => { cols.push(col); colCost.push(cost); colLower.push(lo); colUpper.push(hi); integrality.push(integer ? 1 : 0); return cols.length - 1; };
   const xIndex: Record<string, number[]> = {};
-  for (const s of slots) {
-    const seen = new Set<number>(), list: OptItem[] = [];
-    for (const it of pools[s] || []) { if (it.slot === s && !seen.has(it.serial)) { seen.add(it.serial); list.push(it); } }   // as optCandidatesFor
-    const curItem = current[s];
-    const cur = curItem && curItem.slot === s ? curItem : null;
-    if (cur && !seen.has(cur.serial)) list.push(cur);                                     // keep what you wear: always a candidate
-    if (!list.length) continue;
-    xIndex[s] = list.map((it, i) => addCol({ name: `x_${s}_${i}`, kind: "x", slot: s, item: it }, 0, 0, 1, true));
-  }
+  for (const [s, list] of Object.entries(slotCandidates(pools, current, slots))) xIndex[s] = list.map((it, i) => addCol({ name: `x_${s}_${i}`, kind: "x", slot: s, item: it }, 0, 0, 1, true));
   const allX: number[] = Object.values(xIndex).flat();
   // A slot's x-columns are forced to exactly 1 (never "leave it empty") exactly when it is not
   // optional and its currently-worn item is one of its own candidates — the same predicate the
-  // "one per slot" row below builds from. `reach` (just below) needs this same distinction: "the
-  // slot could contribute 0" is only a real option for a slot this predicate says is NOT required.
+  // "one per slot" row below builds from, and propertyReach's.
   const isRequired = (s: string): boolean => {
     const curItem = current[s];
     return !optional.has(s) && !!curItem && curItem.slot === s;
@@ -148,30 +179,15 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
   const rowLower: number[] = [], rowUpper: number[] = [], starts: number[] = [0], indices: number[] = [], values: number[] = [];
   const addRow = (entries: Term[], lo: number, hi: number): number => { for (const [j, v] of entries) { indices.push(j); values.push(v); } starts.push(indices.length); rowLower.push(lo); rowUpper.push(hi); return rowLower.length - 1; };
   let scoreOffset = 0;
+  const reach = propertyReach(pools, current, optionalSlots, slots, dims);
   const unreachableFloors: string[] = [], hardRows: Record<string, number> = {}, capCols: Record<string, CapCol> = {}, floorCols: Record<string, FloorCol> = {};
   for (const d of dims) {
     const w = W[d] || 0, cap = CAPS[d], f = FL[d] || 0;
     // Every j in allX is an x column, which always carries `item` (set in the loop above) — the two
     // `!` below are in range by construction, not an unchecked assumption about caller input.
     const xs: Term[] = allX.map((j): Term => [j, cols[j]!.item!.props[d] || 0]).filter(([, v]) => v !== 0);
-    // The range any suit's total can take: per-slot maxima summed (see "per-slot maxima" below for
-    // why a required slot folds in no phantom 0) and per-slot minima summed (a valid lower bound,
-    // with 0 folded in everywhere, and the two-hander rule ignored — both only loosen it). The maxima
-    // respect the hands row: the two hand slots add up to the better of "a two-hander, one hand empty"
-    // and "no two-hander in twoHanded, plus the best one-hander" (summing both maxima would count a
-    // suit the hands row forbids, and a hard floor only that suit reaches would cost an infeasible solve).
-    const val = (j: number): number => cols[j]!.item!.props[d] || 0;
-    const best = (s: string, js: number[]): number => isRequired(s) ? Math.max(...js.map(val)) : Math.max(0, ...js.map(val));
-    let reach = 0, minReach = 0;
-    for (const s of Object.keys(xIndex)) {
-      if (!hands || (s !== "oneHanded" && s !== "twoHanded")) reach += best(s, xIndex[s]!);
-      minReach += Math.min(0, ...xIndex[s]!.map(val));
-    }
-    if (hands) {
-      const noTwoHander = best("twoHanded", xIndex.twoHanded!.filter((j) => !twoH.includes(j))) + best("oneHanded", oneH);
-      const twoHander = Math.max(...twoH.map(val)) + (isRequired("oneHanded") ? -INF : 0);
-      reach += Math.max(noTwoHander, twoHander);
-    }
+    // The range any suit's total can take (propertyReach): the floors below test against `max`, and the big-M rows use both.
+    const { max: reachD, min: minReach } = reach[d]!;
     if (w !== 0) {
       if (Number.isFinite(cap)) {                                 // w·min(t, cap): c ≤ t, c ≤ cap, objective w·c; c may go negative like t
         // Number.isFinite(number: unknown) is not a type predicate, so TS can't narrow `cap` itself
@@ -188,7 +204,7 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
         // forces c = cap (so t ≥ cap).
         let z: number | null = null;
         if (w < 0) {
-          const M1 = Math.max(0, reach - cap), M2 = Math.max(0, cap - minReach);
+          const M1 = Math.max(0, reachD - cap), M2 = Math.max(0, cap - minReach);
           z = addCol({ name: `z_${d}`, kind: "z", dim: d }, 0, 0, 1, true);
           addRow([[c, 1], ...xs.map(([j, v]): Term => [j, -v]), [z, M1]], 0, INF);
           addRow([[c, 1], [z, -M2]], cap - M2, INF);
@@ -199,11 +215,8 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
       }
     }
     if (f <= 0) continue;
-    // per-slot maxima (`reach`, above): a floor above them can never be met, so its met-indicator is
-    // 0 for every suit. "Contribute 0" (leave the slot empty) is only ever a real option for an
-    // OPTIONAL slot — a required slot's true best is the max over its own real candidates, with no
-    // phantom 0 folded in (mirrors scripts/optimizer-core.mts's suf/ext bound, which never injects one either).
-    const isHard = hard.has(d), unreachable = reach < f;
+    // a floor above the per-slot maxima can never be met, so its met-indicator is 0 for every suit
+    const isHard = hard.has(d), unreachable = reachD < f;
     if (isHard && !hardAsSoft && !unreachable) { hardRows[d] = addRow(xs, f, INF); scoreOffset += HARD_FLOOR_BONUS; continue; }
     if (unreachable && isHard) unreachableFloors.push(d);
     // soft floor (or an unreachable / hardAsSoft hard floor): bonus·y + s with t ≥ f·y, s ≤ k·t, s ≤ bonus·partial·(1 − y)
@@ -235,7 +248,7 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
 
   const model: MipModel = { numCols: cols.length, numRows: rowLower.length, sense: "maximize", offset: 0, colCost, colLower, colUpper, rowLower, rowUpper,
     matrix: { format: "csr", numRows: rowLower.length, numCols: cols.length, starts, indices, values }, integrality };
-  return { cols, xIndex, dims, unreachableFloors, hardRows, scoreOffset, capCols, floorCols, model };
+  return { cols, xIndex, dims, unreachableFloors, reach, hardRows, scoreOffset, capCols, floorCols, model };
 }
 
 // ---- MIP start, extraction, and no-good cut ----

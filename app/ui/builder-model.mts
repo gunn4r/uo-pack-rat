@@ -3,25 +3,19 @@
 // "other changes" badges and "after the change" values, the compare table's differing rows and best values,
 // and a saved run's label and badges. No DOM and no page state, so app/builder-model.test.mts can check it
 // all directly; ui/builder.mts, ui/builder-result.mts and ui/runs.mts draw what it returns.
-import { labelOf, fullOf, GEAR_SLOTS, NOT_BUILDER_KEYS, RESIST_KEYS, RESIST_CAP_LIMITS, SLOT_LABELS, settingsDiff, shardResistCap, WEAPON_SKILLS, MELEE_SKILLS, ubwsLetsIn } from "../vault-lib.mts";
+import { labelOf, propName, GEAR_SLOTS, NOT_BUILDER_KEYS, RESIST_KEYS, RESIST_CAP_LIMITS, SLOT_LABELS, settingsDiff, shardResistCap, WEAPON_SKILLS, MELEE_SKILLS, ubwsLetsIn } from "../vault-lib.mts";
 import type { PlannedBuffs, PropMap, ResistCap, RunSettings } from "../vault-lib.mts";
 import { applyBuffs, buffById, buffsDiff, capWord, signed, type BuffResult } from "../buffs.mts";
 import { RUN_SETTING_LIMITS, type Range } from "../run-settings.mts";
 import { paperdoll, paperdollCaps } from "../evaluate.mts";
+import type { Diagnostic, DiagnosticAction } from "../runs-types.mts";
 
 export const plural = (n: number, word: string, many = `${word}s`): string => `${n.toLocaleString("en-US")} ${n === 1 ? word : many}`;
 const num = (n: number): string => n.toLocaleString("en-US", { maximumFractionDigits: 2 });
 
 // ---------------------------------------------------------------- property names
-// A rule row names its property in words ("Physical resist", "Hit chance increase"); a summary or badge
-// uses the short label ("Phys", "HCI"). The pools and skill bonuses read better short.
-const POOLS = new Set(["stamPool", "manaPool", "hitsPool"]);
-export function propName(k: string): string {
-  if (POOLS.has(k)) return labelOf(k);
-  if (k.startsWith("sk:")) return `${labelOf(k).slice(1)} skill bonus`;
-  const f = fullOf(k);
-  return f.replace(/(?!^)\b([A-Z])([a-z]+)/g, (_m, a: string, b: string) => a.toLowerCase() + b);
-}
+// A rule row's name for its property (vault-lib.mts propName), re-exported for the builder's modules.
+export { propName };
 
 // ---------------------------------------------------------------- paperdoll terms
 // paperdoll and paperdollCaps live with the suit evaluation (app/evaluate.mts).
@@ -344,4 +338,36 @@ export function runBadges(changes: number | null | undefined, totals: PropMap | 
     out.push({ text: `${labelOf(k)} ${Math.min(cap, pd(k, totals[k] || 0))}${cap !== (shardCaps[k] ?? cap) ? ` · cap ${cap}` : ""}` });
   }
   return out;
+}
+
+// ---------------------------------------------------------------- "Check your settings" (app/diagnostics.mts)
+// The actions the page carries out on the panel's profile: the button's words, its done state, the toast once applied, and the edit itself. An action of another kind gets no button.
+type FloorAction = Extract<DiagnosticAction, { kind: "setFloor" | "makeSoft" }>;
+type PanelFloors = { floors?: Record<string, number> | undefined; softFloors?: string[] | undefined };
+export const handledAction = (a: DiagnosticAction): a is FloorAction => a.kind === "setFloor" || a.kind === "makeSoft";
+export function actionWords(a: FloorAction): { label: string; done: string; toast: string } {
+  const req = `${propName(a.property)} requirement`;
+  return a.kind === "setFloor"
+    ? { label: `Lower to ${a.value}`, done: "Lowered ✓", toast: `${req} lowered to ${a.value}. Build again to use it.` }
+    : { label: "Make soft", done: "Made soft ✓", toast: `${req} is soft now. Build again to use it.` };
+}
+// Whether the action still fits the panel as it is now: the requirement is still there, Lower would lower it, and Make soft finds it hard. A build's numbers never put back a requirement the player removed or raise one they lowered since.
+export function actionApplies(p: PanelFloors, a: FloorAction): boolean {
+  const f = p.floors?.[a.property];
+  if (f == null) return false;
+  return a.kind === "setFloor" ? f > a.value : !(p.softFloors || []).includes(a.property);
+}
+export function applyAction(p: PanelFloors, a: FloorAction): void {
+  if (!actionApplies(p, a)) return;
+  if (a.kind === "setFloor") p.floors![a.property] = a.value;
+  else (p.softFloors ||= []).push(a.property);
+}
+// What a result's "Check your settings" lists: its diagnostics, warnings first; a run saved before them (no `diagnostics`) says what it knew, its unreachable hard floors, as one warning with no actions. On another suit's card (`alternative`) the floors_conflict rows are left out: their values are the best suit's.
+export function resultChecks(res: { diagnostics?: Diagnostic[] | undefined; unreachableFloors?: string[] | undefined }, withBuffs: boolean, alternative = false): Diagnostic[] {
+  if (res.diagnostics) {
+    const list = res.diagnostics.filter((d) => !alternative || d.code !== "floors_conflict");
+    return [...list.filter((d) => d.level === "warn"), ...list.filter((d) => d.level !== "warn")];
+  }
+  const keys = res.unreachableFloors || [];
+  return keys.length ? [{ code: "floor_unreachable", level: "warn", message: `No suit in the pool can reach these requirements${withBuffs ? ", even with the buffs" : ""}: ${keys.map((k) => propName(k)).join(", ")}.`, actions: [] }] : [];
 }
