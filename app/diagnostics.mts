@@ -110,3 +110,8 @@ export function weightDiagnostics(profile: DiagnosticsProfile, after: Record<str
       values: { weight: w, typical, share: pct, ratio: Math.round(ratio * 10) / 10, median: mid, suggested }, actions: [{ kind: "setWeight", property: k, value: suggested }] }];
   });
 }
+
+// A result with its diagnostics, as the worker sends it. If computing them throws, the result goes out as it is, with no `diagnostics` field (so the page falls back to `unreachableFloors`, as for an old run), and `onError` hears why: a diagnostics bug never costs a finished search.
+export function withDiagnostics<R extends object>(result: R, compute: () => Diagnostic[], onError: (e: unknown) => void): R & { diagnostics?: Diagnostic[] } {
+  try { return { ...result, diagnostics: compute() }; } catch (e) { onError(e); return result; }
+}
