@@ -13,7 +13,7 @@ import {
   propName, weightsSummary, requirementsSummary, poolSummary, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError,
   resistOutcome, locationCrumbs, otherChanges, afterChange, compareModel, hiddenRowsNote, toggleCompare, runAutoLabel, runBadges, plural, KNOB_RANGES,
   resistCapError, withResistCap, capNote, resistCapsSummary, gearCapsText, capsLine, anyOverridden, effectiveFloor, floorCapWarning, pruneResistCaps,
-  weaponsSummary, weaponsChipText, weaponMustHaveChipText, toggleWeapon, withBuffs, paperdollFloors, pastCapBadges, runSettingsDiff, weightWorth,
+  weaponsSummary, weaponsChipText, weaponMustHaveChipText, toggleWeapon, withBuffs, paperdollFloors, pastCapBadges, runSettingsDiff, weightWorth, templateBuffsLine, sourceTitle,
   type Knobs,
 } from "./ui/builder-model.mts";
 import { OPTS_LIMITS } from "./vault-server.mts";
@@ -290,4 +290,16 @@ test("[fast] builder model: a weight row's worth hint names what the weight make
   assert.equal(weightWorth("sk:magery", 2, caps), "= 30 per 15 +Magery");
   assert.equal(weightWorth("castingFocus", 2, caps), null, "no typical range");
   assert.equal(weightWorth("luck", Number.NaN, caps), null, "no number, no hint");
+});
+
+// Issue #212: the template badge's buffs line compares the lists as sets, and a source link is named by its page.
+test("[fast] builder model: the template badge's buffs line and a source page's title", () => {
+  assert.equal(templateBuffsLine(["divineFury", "consecrateWeapon"], ["consecrateWeapon", "divineFury"]), null, "order does not matter");
+  assert.equal(templateBuffsLine(["divineFury", "consecrateWeapon"], ["divineFury", "enemyOfOne"]), "Buffs: +Enemy of One, −Consecrate Weapon");
+  assert.equal(templateBuffsLine([], ["bless"]), "Buffs: +Bless");
+  assert.equal(sourceTitle("https://uoalive.com/wiki/PlayerGuide:Lazy_Pally"), "Lazy Pally");
+  assert.equal(sourceTitle("https://uoalive.com/wiki/The_Crusade_Milestone_(Healing/Paladin_Update)"), "The Crusade Milestone (Healing/Paladin Update)");
+  assert.equal(sourceTitle("https://uoalive.com/forum/threads/archer-chiv-build.267/"), "archer chiv build");
+  assert.equal(sourceTitle("https://uoalive.com/wiki/PlayerGuide:ABC_Tamer_-_Hunter"), "ABC Tamer - Hunter");
+  assert.equal(sourceTitle("not a url"), "not a url");
 });

@@ -89,6 +89,7 @@ export interface BuilderCommands {
   openRunCompare(runs: SavedRunLike[], titleOf: (r: SavedRunLike) => string, open: (id: string) => void, onRemove: (id: string) => void): void;
   // builder-manual.mts: Manual, and the buff numbers both modes share
   openInManual(suit: OptSuit, covered: readonly string[], runB: RunBuffs | undefined, label: string): Promise<void>;
+  templateBuffs(on: readonly string[], label: string): void;
   showAutomatic(): void;
   paintCharSelect(): void;
   setManualFor(character: string | null): void;
