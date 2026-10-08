@@ -1,6 +1,6 @@
 // buffs-plan.test.mts — Automatic's buffs in the optimizer's profile (issue #12, `app/buffs.mts` `plannedProfile`), across the combinations.
 //
-// `[fast]`: the buff plan's edge cases, checked against the plan's meaning rather than its code (`checkPlan`): every form alone and with Magic Reflection, Curse, Corpse Skin and the Gargoyle's cap changes, for No character and Resisting Spells 100; Corpse Skin, Stone Form and Curse together; resist shares past a cap, and a resist cap under the Resisting Spells bonus; a character lacking a buff's skill and an edited one; Bless and a potion sharing the STR slot; the 150 stat headroom with and without buffs; potions with Enhance Potions and Alchemy; a resist override set aside while a buff lowers that resist; the race locks; Enemy of One changing nothing; the requirement notes' wording; the run key (Enemy of One alone keys as none, a number no buff reads changes nothing, main's key with no buffs); every default template's profile with no buffs byte-equal to main's (02b052e), and with raw stats equal to it but for the stat caps, as a regression guard; and, through both solvers, a negative share pushing a hard floor out of reach (kept, reported unreachable), a share covering a floor, a share past a weighted cap, a potion filling DEX to 150, and Curse lowering a cap under the worn total.
+// `[fast]`: the buff plan's edge cases, checked against the plan's meaning rather than its code (`checkPlan`): every form alone and with Magic Reflection, Curse, Corpse Skin and the Gargoyle's cap changes, for No character and Resisting Spells 100; Corpse Skin, Stone Form and Curse together; resist shares past a cap, and a resist cap under the Resisting Spells bonus; a character lacking a buff's skill and an edited one; Bless and a potion sharing the STR slot; the 150 stat headroom with and without buffs; potions with Enhance Potions and Alchemy; a resist override set aside while a buff lowers that resist; the race locks; Enemy of One changing nothing; the requirement notes' wording; the run key (Enemy of One alone keys as none, a number no buff reads changes nothing, main's key with no buffs); every default template's profile with no buffs byte-equal to main's (02b052e), and with raw stats equal to it but for the stat caps, as a regression guard (pinned to a cap-2 casting school, each also hashes as before issue #213's Faster Casting cap); and, through both solvers, a negative share pushing a hard floor out of reach (kept, reported unreachable), a share covering a floor, a share past a weighted cap, a potion filling DEX to 150, and Curse lowering a cap under the worn total.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
@@ -153,6 +153,21 @@ test("[fast] buffs plan: no buffs give main's profile for every default template
     assert.equal(createHash("sha1").update(JSON.stringify(c.profile)).digest("hex"), MAIN[`${n}${soft.length ? "+soft" : ""}`], `${n}${soft.length ? " with a soft floor and Fire 95" : ""}`);
   }
   assert.deepEqual(plannedProfile(ALL, RS100, plan([])), effectiveProfile(ALL, RS100), "an empty set is no set");
+});
+
+// Issue #213: the fixture character (Bushido 74, no Magery) gets a Faster Casting cap of 4, which is the only thing that
+// moved the hashes above. Pinned to Magery (cap 2), every default template hashes exactly as before the casting school.
+test("[fast] buffs plan: pinned to a cap-2 casting school, every default template keeps the profile it had before the casting school", () => {
+  const BEFORE: Record<string, string> = {
+    melee: "e43232d50aa003e4391fb1c51d2b6f5015c9c5c8", "melee+soft": "eaa54b0b4b3bdc5b975760633ffa57e73c626bec",
+    caster: "5ab58f3ee5c95e2bd1635fd44c685bf2ee7f3754", "caster+soft": "2635d64634dd19394cd5c1133377fabd320fba1c",
+    archer: "2d10d10debdd19c35c210cf3bc5566454853e9a1", "archer+soft": "38ccfc0aad5a88649467060a42018866f3373ffd",
+    tank: "081f653b3d2e5202026d8089a553e9d0b17345cb", "tank+soft": "4f13d70495c490308bf368bea3c2df0c191cafa5",
+  };
+  for (const n of templateNames) for (const soft of [[], ["luck"]]) {
+    const c = cell(n, { soft, overrides: { castingSchool: "Magery", ...(soft.length ? { resistCaps: { fireResist: 95 } } : {}) } });
+    assert.equal(createHash("sha1").update(JSON.stringify(c.profile)).digest("hex"), BEFORE[`${n}${soft.length ? "+soft" : ""}`], `${n}${soft.length ? " with a soft floor and Fire 95" : ""}`);
+  }
 });
 
 test("[fast] buffs plan: gear STR, DEX and INT are capped at what raw stats and the buffs leave to 150, with or without buffs", () => {

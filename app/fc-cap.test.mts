@@ -1,6 +1,6 @@
 // fc-cap.test.mts — the Faster Casting cap by casting school (issue #213): `fcCapFor` in `app/vault-lib.mts` and where the cap goes.
 //
-// `[fast]`: the rule's matrix (each school named, the skills' choice at the 30 base mark, the Chivalry caster's drop at Magery or Mysticism 70 and Mysticism 69.9 against 70, Spellweaving kept at 4 when named, No character, a named school over the skills); `effectiveProfile`'s and `evaluateSuit`'s caps follow it; a build where FC 3-4 is reachable scores it with cap 4 in both solvers and stops at 2 without; and in a saved run: the casting school in `planBuild`'s snapshot only when named, `runSettingsError` and the profiles schema naming the same schools, `settingsDiff`'s line, and the run key following the cap.
+// `[fast]`: the rule's matrix (each school named, the skills' choice at the 30 base mark, the Chivalry caster's drop at Magery or Mysticism 70 and Mysticism 69.9 against 70, Spellweaving kept at 4 when named, No character, a named school over the skills); `effectiveProfile`'s and `evaluateSuit`'s caps follow it, and Manual with No character sets a named school aside; a build where FC 3-4 is reachable scores it with cap 4 in both solvers and stops at 2 without; and in a saved run: the casting school in `planBuild`'s snapshot only when named, `runSettingsError` and the profiles schema naming the same schools, `settingsDiff`'s line, and the run key following the cap.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import { CASTING_SCHOOLS, effectiveProfile, fcCapFor, settingsDiff, setRules, type Character } from "./vault-lib.mts";
 import type { RulesV1 } from "./schema/types.d.mts";
 import { evaluateSuit } from "./evaluate.mts";
+import { manualProfile } from "./buffs.mts";
 import { planBuild, specFromProfile } from "./build-spec.mts";
 import { runSettingsError } from "./run-settings.mts";
 import { runKey } from "./runs-lib.mts";
@@ -51,6 +52,9 @@ test("[fast] fc cap: effectiveProfile and evaluateSuit take the cap", () => {
   assert.equal(ev.caps.fc, 4);
   assert.equal(ev.wasted.fc, undefined, "FC 3 is under a cap of 4");
   assert.equal(evaluateSuit({ profile: {}, character: null, suit: { ring: { props: { fc: 3 } } }, buffs: null }).wasted.fc, 1);
+  // Manual with No character plans on the shard's caps, a named school set aside, as its totals strip shows them
+  assert.equal(manualProfile({ castingSchool: "Chivalry" }, null, [], {}, null, [], {}).caps.fc, 2);
+  assert.equal(manualProfile({ castingSchool: "Chivalry" }, pal, [], {}, "human", [], {}).caps.fc, 4);
 });
 
 test("[fast] fc cap: FC 3-4 is reachable and scored with cap 4, in both solvers, and stops at 2 without", async () => {
