@@ -807,7 +807,7 @@ test("[fast] GET/PUT /api/profiles v3: a v2 folder migrates on the first read, b
     const { Corwin: _corwin, ...rest } = (JSON.parse(readFileSync(join(gold, "expected.profiles.json"), "utf8")) as ProfilesV3).characters;
     assert.deepEqual(got.profiles, { ...JSON.parse(readFileSync(join(gold, "expected.profiles.json"), "utf8")), characters: rest });
     assert.match(logText(dir), /characters\.Corwin: not scanned/);
-    assert.deepEqual(Object.keys(got.builtinTemplates), ["melee", "caster", "archer", "tank"]);
+    assert.deepEqual(Object.keys(got.builtinTemplates), ["melee", "caster", "archer", "tank", "sampire", "lazyPally", "summoner", "tamerArcher", "chivArcher", "archerBard", "necroMage", "mysticMage", "necroweaver", "throwingGargoyle", "mysticTank", "horrificBeastWrestler", "hemomancer"]);
     assert.deepEqual(Object.keys(got.profiles.templates), ["melee", "my caster"], "never copied into the file");
     assert.equal(asJson<{ prefs: Record<string, unknown> }>(await (await fetch(s2.url + "/api/ui-prefs")).json()).prefs.autoBuffs, undefined);
     const aldric = got.profiles.characters.Aldric!;

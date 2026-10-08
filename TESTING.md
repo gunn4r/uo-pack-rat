@@ -62,6 +62,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `app/buffs.test.mts` — `app/buffs.mts`, the Suit Builder's buffs, abilities and forms (issue #12).
 - `app/build-spec.test.mts` — `app/build-spec.mts`, a build's intent as one document (issue #218, BuildSpec).
 - `app/builder-model.test.mts` — `app/ui/builder-model.mts`, the Suit Builder's pure logic.
+- `app/builtin-templates.test.mts` — the shipped built-in templates (`app/data/templates/<shard>.json`, issue #212) as data.
 - `app/classicuo-web-adapter.test.mts` — stands in for app/contracts.test.mts for the ClassicUO web client adapter, which ships no fixture.scan.json yet.
 - `app/config.test.mts` — `app/config.mts`'s `resolveConfig` and the per-adapter bridge paths.
 - `app/contracts.test.mts` — folds every adapter's fixture.scan.json against its own capabilities.json, checking the two agree with each other and with the shared scan and bridge schemas.
@@ -123,6 +124,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `app/services/setup.test.mts` — `app/services/setup.mts` on its own, over copies of the repo's adapters.
 - `app/slot-groups.test.mts` — `app/vault-lib.mts`'s gear slot groups (issue #218) and the one neck-armor rule.
 - `app/solver-buffs-fuzz.test.mts` — Automatic's buffs (issue #12) under a seeded fuzz, the pattern of solver-fuzz.test.mts.
+- `app/solver-builtins.test.mts` — every UO Alive build template (issue #212) builds on the fixture with both solvers.
 - `app/solver-fuzz.test.mts` — a seeded brute-force equivalence check of all three searches over small generated inventories.
 - `app/solver-large.test.mts` — app/solver.test.mts's one real-sized case, a 3,000-item generated cell, in a file of its own.
 - `app/solver-templates.test.mts` — HiGHS and the core agree on the fixture for every shipped default template, and with soft floors.
@@ -204,7 +206,7 @@ Tags are prefixes on the test's own name, not a separate parameter: `test("[smok
 - `--fast` → `[smoke]` and `[fast]` (cheap; no brute-force or generated-cell proof, though `[fast]` now includes a handful of short real HiGHS solves — a few seconds each, not the exhaustive kind `[slow]` marks).
 - full (no flag) → everything, `[slow]` included.
 
-`[slow]` marks the exhaustive/exact-search proofs that run `optimizeSuit` with `exact: true` and a real `timeBudgetMs`, or the equivalent HiGHS proof on a large generated cell — the 150/80-random-suit brute-force comparisons and the demo-inventory exact/warm-start checks in `app/gear-vault.test.mts`, `app/solver-large.test.mts`'s 3,000-item generated cell (HiGHS proves it; the core is checked against it wherever the core also proves it in budget), and `app/solver.test.mts`'s k-best alternatives case (the core's exact search on the fixture's melee cell, 10-20 s). Set `TEST_SKIP_SLOW=1` to skip them (they register as `node:test` `skip` results, which the runner counts under `skipped`, not `passed`):
+`[slow]` marks the exhaustive/exact-search proofs that run `optimizeSuit` with `exact: true` and a real `timeBudgetMs`, or the equivalent HiGHS proof on a large generated cell — the 150/80-random-suit brute-force comparisons and the demo-inventory exact/warm-start checks in `app/gear-vault.test.mts`, `app/solver-large.test.mts`'s 3,000-item generated cell (HiGHS proves it; the core is checked against it wherever the core also proves it in budget), `app/solver.test.mts`'s k-best alternatives case (the core's exact search on the fixture's melee cell, 10-20 s), and `app/solver-builtins.test.mts`'s thirteen UO Alive build templates through both solvers on the fixture (about 45 s). Set `TEST_SKIP_SLOW=1` to skip them (they register as `node:test` `skip` results, which the runner counts under `skipped`, not `passed`):
 
 ```
 TEST_SKIP_SLOW=1 npm test

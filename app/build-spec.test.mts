@@ -293,7 +293,7 @@ test("[fast] profiles v3: characterProfile and the templates, the player's own f
   const fresh: ProfilesV3 = { schemaVersion: 3, characters: {}, templates: {} };
   assert.deepEqual(characterProfile(fresh, "Nobody", builtins), { ...templateSettings(builtins.melee!), template: "builtin:melee", race: "human" }, "with none of the player's own, the first built-in");
   assert.deepEqual(characterProfile(fresh, "Nobody"), { ...templateFrom(), template: undefined, race: "human" });
-  assert.deepEqual(templateRefs(v3, builtins), ["melee", "my caster", "builtin:melee", "builtin:caster", "builtin:archer", "builtin:tank"]);
+  assert.deepEqual(templateRefs(v3, builtins), ["melee", "my caster", ...Object.keys(builtins).map((id) => `builtin:${id}`)]);
   assert.equal(findTemplate(v3, builtins, "melee"), v3.templates.melee);
   assert.equal(findTemplate(v3, builtins, "builtin:melee"), builtins.melee);
   assert.equal(findTemplate(v3, builtins, "builtin:nope"), undefined);
@@ -317,5 +317,5 @@ test("[fast] built-in templates: every shipped file's templates pass the spec ch
   }
   // The four templates new data folders used to be seeded with, kept as uoalive's built-ins setting for setting.
   const shipped = (JSON.parse(readFileSync(join(dir, "uoalive.json"), "utf8")) as { templates: TemplateMap }).templates;
-  assert.deepEqual(Object.keys(shipped), ["melee", "caster", "archer", "tank"]);
+  assert.deepEqual(Object.keys(shipped).slice(0, 4), ["melee", "caster", "archer", "tank"], "first, before the build templates (#212)");
 });
