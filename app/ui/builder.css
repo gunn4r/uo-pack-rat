@@ -43,6 +43,7 @@
 .rule-row .field-error, .rule-row .field-warn { grid-column: 1 / -1; }
 /* with buffs on: what gear still has to supply, under the requirement it changes */
 .rule-row .b-buff-note { grid-column: 1 / -1; color: var(--color-accent); }
+.rule-row .b-worth { grid-column: 1 / -1; }
 .rule-row .b-swing-set { grid-column: 1 / -1; display: flex; flex-direction: column; gap: var(--space-1); }
 .rule-row .b-next-step { grid-column: 1 / -1; justify-self: start; }
 /* a resist cap: name · number · "shard cap" or the override's note · reset; an overridden number is outlined in

@@ -75,6 +75,13 @@ export function stepTable({ speedS, stamBase, refStamina, share, stamRange }: St
   return all.filter((p, i) => !all.some((q, j) => j !== i && beats(q, p) && (!beats(p, q) || j < i)));
 }
 
+// The largest credit among the points a suit with `ssi` item SSI and `stam` gear Stamina pool reaches, 0 when it reaches none: what SSI by step scores (scripts/optimizer-core.mts optStepCredit, which keeps its own copy: the core imports nothing).
+export function stepCredit(points: readonly SsiStepPoint[], ssi: number, stam: number): number {
+  let best = 0;
+  for (const p of points) if (ssi >= p.ssi - 1e-9 && stam >= p.stam - 1e-9 && p.credit > best) best = p.credit;
+  return best;
+}
+
 // The one base speed every weapon a suit can hold shares: the hand slots' candidates (the pool and the worn piece) that carry a speed. A two-handed weapon is no candidate while the one-handed slot must keep its worn piece (locked: not among `optionalSlots`), as in the solvers. Null, with the reason, when there is none or they differ.
 export function weaponSpeedOf(pools: Partial<Record<string, Held[]>>, current: Partial<Record<string, Held | null | undefined>>, optionalSlots?: readonly string[]): { speed: number | null; reason: string | null } {
   const oneKept = !!optionalSlots && !optionalSlots.includes("oneHanded") && !!current.oneHanded;

@@ -78,7 +78,7 @@ try {
   const swing = weapon && sw ? swingOf(weapon.speed!, sw.stamBase, result.totals?.after || {}, ssiShareOf(prof)) : undefined;
   const withSwing = { ...result, ...(swing ? { swing } : {}) };
   // A failure here never costs the suit (withDiagnostics): the result goes out without diagnostics and the server logs why.
-  const withDiags = withDiagnostics(withSwing, () => resultDiagnostics({ pools: items, current: worn, optionalSlots: opts.optionalSlots, slots: opts.slots, profile: profile as DiagnosticsProfile, result: withSwing, swingNote: note }),
+  const withDiags = withDiagnostics(withSwing, () => resultDiagnostics({ pools: items, current: worn, optionalSlots: opts.optionalSlots, slots: opts.slots, profile: solveProfile as DiagnosticsProfile, result: withSwing, swingNote: note }),
     (e) => port.postMessage({ type: "warn", message: `diagnostics failed, the result goes out without them: ${String((e as Error)?.stack || e)}` } satisfies WorkerWarnMessage));
   port.postMessage({ type: "done", result: withDiags, ms: Date.now() - t0 } satisfies WorkerDoneMessage);
 } catch (e) {

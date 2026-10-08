@@ -43,12 +43,13 @@ export function settingsCheck(diags: Diagnostic[], name: string): HTMLElement | 
   if (!diags.length) return null;
   const p0 = session.character === name ? session.profile : null;
   const row = (d: Diagnostic): HTMLElement => {
-    const acts = p0 ? d.actions.filter(handledAction).filter((a) => actionApplies(p0, a, d.code)).map((a) => {
+    const from = d.values?.weight;
+    const acts = p0 ? d.actions.filter(handledAction).filter((a) => actionApplies(p0, a, from, d.code)).map((a) => {
       const words = actionWords(a, d.code);
       const b = button({ label: words.label, size: "sm", onClick: () => {
         const p = session.profile;
-        if (!p || session.character !== name || !actionApplies(p, a, d.code)) { toast("The settings changed since this build, so this no longer applies."); b.disabled = true; return; }
-        applyAction(p, a, d.code);
+        if (!p || session.character !== name || !actionApplies(p, a, from, d.code)) { toast(words.stale); b.disabled = true; return; }
+        applyAction(p, a, from, d.code);
         commands.renderPanel();
         toast(words.toast, "good");
         b.replaceChildren(txt(words.done)); b.disabled = true;
