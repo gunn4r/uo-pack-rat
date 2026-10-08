@@ -153,12 +153,12 @@
     },
     "necroMage": {
       "name": "Necro-Mage",
-      "description": "Necromancy, Spirit Speak, Magery, Eval, Meditation, Resisting Spells and Wrestling caster in Wraith Form for mana drain. Full caster core, meditation-safe gear.",
+      "description": "Necromancy, Spirit Speak, Magery, Eval, Meditation, Resisting Spells and Wrestling caster in Wraith Form for mana drain. Full caster core, meditation-safe gear; Wraith Form lowers Fire and Energy, so those two are soft.",
       "sources": ["https://uoalive.com/wiki/Popular_Character_Starter_Templates"],
       "spec": {
         "intent": {
           "floors": { "lrc": 100, "lmc": 40, "fc": 2, "fcr": 6, "physResist": 70, "fireResist": 70, "coldResist": 70, "poisonResist": 70, "energyResist": 70 },
-          "softFloors": [],
+          "softFloors": ["fireResist", "energyResist"],
           "weights": { "fc": 150, "fcr": 50, "lrc": 3, "lmc": 8, "sdi": 4, "manaRegen": 10, "intBonus": 10, "manaInc": 10, "castingFocus": 20, "dci": 6, "physResist": 4, "fireResist": 4, "coldResist": 4, "poisonResist": 4, "energyResist": 4, "hpi": 6, "tagPenalty": -25 },
           "floorBonus": 1000,
           "resistCaps": {},
@@ -187,7 +187,7 @@
     },
     "necroweaver": {
       "name": "Spellweaver (Necroweaver)",
-      "description": "UO Alive's Undead Commander caster: Magery, Eval, Necromancy, Spirit Speak, Spellweaving and Meditation at 120, Wraith Form and Protection up, SDI above all. Resists are soft (the guide says 'preferably 70').",
+      "description": "UO Alive's Undead Commander caster: Magery, Eval, Necromancy, Spirit Speak, Spellweaving and Meditation at 120, Wraith Form and Protection up, SDI above all. Faster Casting follows Spellweaving's cap of 4: Protection takes 2 off, so gear needs 4 to keep 2 (the guide's number), and Magery spells stop at 2. Resists are soft (the guide says 'preferably 70').",
       "sources": ["https://uoalive.com/wiki/Necroweaver", "https://uoalive.com/wiki/Undead_Commander"],
       "spec": {
         "intent": {
@@ -196,7 +196,7 @@
           "weights": { "sdi": 5, "fc": 150, "fcr": 50, "lrc": 3, "lmc": 8, "manaRegen": 10, "intBonus": 10, "manaInc": 10, "castingFocus": 20, "physResist": 4, "fireResist": 4, "coldResist": 4, "poisonResist": 4, "energyResist": 4, "hpi": 6, "tagPenalty": -25 },
           "floorBonus": 1000,
           "resistCaps": {},
-          "castingSchool": "Magery"
+          "castingSchool": "Spellweaving"
         },
         "buffs": { "on": ["wraithForm", "protection"], "skills": {} },
         "pool": { "lockedSlots": [], "excludeTags": [], "excludeSkills": [], "excludeRoots": [], "excludeWeapons": [], "ubwsAnyWeapon": true, "allowOthersWorn": false, "allowGargoyle": false, "medOnly": true, "strLimit": "character" }
@@ -228,8 +228,7 @@
           "softFloors": [],
           "weights": { "physResist": 7, "fireResist": 7, "coldResist": 7, "poisonResist": 7, "energyResist": 7, "hci": 8, "dci": 8, "di": 3, "ssi": 5, "stamInc": 10, "reflectPhys": 4, "lmc": 6, "lrc": 2, "strBonus": 8, "dexBonus": 8, "hpRegen": 12, "hitLifeLeech": 2, "hitManaLeech": 2, "tagPenalty": -25 },
           "floorBonus": 1000,
-          "resistCaps": {},
-          "castingSchool": "Mysticism"
+          "resistCaps": {}
         },
         "buffs": { "on": ["stoneForm"], "skills": {} },
         "pool": { "lockedSlots": [], "excludeTags": [], "excludeSkills": [], "excludeRoots": [], "excludeWeapons": ["archery", "throwing"], "ubwsAnyWeapon": true, "allowOthersWorn": false, "allowGargoyle": false, "medOnly": false, "strLimit": "character" }
@@ -253,7 +252,7 @@
     },
     "hemomancer": {
       "name": "Hemomancer",
-      "description": "UO Alive's Undead Commander fighter: weapon, Tactics, Necromancy (Vampiric Embrace), Spirit Speak, Lore and Veterinary with commanded undead. The guide's own numbers: HCI 45, DI 100, DCI 20+, LMC 36+, Phys and Fire 75 through refinements.",
+      "description": "UO Alive's Undead Commander fighter: weapon, Tactics, Necromancy (Vampiric Embrace), Spirit Speak, Animal Lore and Veterinary with commanded undead. The guide's own numbers: HCI 45, DI 100, DCI 20+, LMC 36+, Phys and Fire 75 through refinements. Two more skills are your pick (Chivalry, Bushido, Parry, Anatomy or Healing), so only Vampiric Embrace loads.",
       "sources": ["https://uoalive.com/wiki/Hemomancer", "https://uoalive.com/wiki/Undead_Commander"],
       "spec": {
         "intent": {
@@ -263,7 +262,7 @@
           "floorBonus": 1000,
           "resistCaps": { "physResist": 75, "fireResist": 75 }
         },
-        "buffs": { "on": ["vampiricEmbrace", "divineFury", "consecrateWeapon"], "skills": {} },
+        "buffs": { "on": ["vampiricEmbrace"], "skills": {} },
         "pool": { "lockedSlots": [], "excludeTags": [], "excludeSkills": [], "excludeRoots": [], "excludeWeapons": [], "ubwsAnyWeapon": true, "allowOthersWorn": false, "allowGargoyle": false, "medOnly": false, "strLimit": "character" }
       }
     }

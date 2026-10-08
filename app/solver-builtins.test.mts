@@ -12,7 +12,7 @@ import type { TemplateMap } from "./build-spec.mts";
 const shipped = (JSON.parse(readFileSync(new URL("./data/templates/uoalive.json", import.meta.url), "utf8")) as { templates: TemplateMap }).templates;
 const builds = Object.keys(defaultProfiles.templates).filter((id) => !templateNames.includes(id));
 
-test("[slow] each build template: both solvers build it on the fixture and no weight dominates the result", async (t) => {
+test("[slow] each build template: both solvers build it on the fixture and no weight dominates the result", { skip: process.env.TEST_SKIP_SLOW === "1" }, async (t) => {
   assert.equal(builds.length, 13);
   for (const name of builds) {
     await t.test(name, async (t2) => {
