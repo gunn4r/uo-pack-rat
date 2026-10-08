@@ -1176,6 +1176,8 @@ export interface BuildPoolsOptions {
   excludeWeapons?: string[] | undefined;   // weapon skills left out (weaponAllowed)
   ubwsAnyWeapon?: boolean | undefined;     // a Use Best Weapon Skill weapon passes while a melee skill is allowed (default on)
   excludeSkills?: string[] | undefined;
+  weaponMustHave?: string[] | undefined;   // yes/no properties every weapon must carry (weaponHasFlags, issue #214)
+  lockedSlots?: string[] | undefined;      // a locked slot keeps its worn weapon whatever weaponMustHave says (`weaponFlags.kept`)
   // Manual's placed pieces by slot (issue #12, "Fill the rest automatically"): each is its slot's only candidate and
   // the suit's current piece there, and nothing else is current.
   pinned?: Partial<Record<string, number>> | undefined;
@@ -1188,12 +1190,17 @@ export interface BuildPoolsResult {
   current: Partial<Record<string, PooledOptItem>>;
   skipped: SkippedLists;
   blocked: string[];
+  // With weaponMustHave: the locked slots whose worn weapon lacks a required property (kept, the lock wins), and whether
+  // the requirement itself emptied both hands' pools of weapons (the suit is then built without one). A pool the other
+  // settings left weaponless is not `none`: the requirement is not why.
+  weaponFlags?: { kept: string[]; none: boolean } | undefined;
 }
 // `character` null: nobody's suit (Manual's No character), so every worn piece is another character's.
 export function buildPools(inv: Inventory, character: string | null, opts: BuildPoolsOptions = {}): BuildPoolsResult {
-  const { allowOthersWorn = false, strength = Infinity, excludeTags = [], excludeRoots = [], excludeGargoyle = getRules().raceLock.gargoyleOnly, medOnly = false, excludeWeapons = [], ubwsAnyWeapon = true, excludeSkills = [], pinned } = opts;
+  const { allowOthersWorn = false, strength = Infinity, excludeTags = [], excludeRoots = [], excludeGargoyle = getRules().raceLock.gargoyleOnly, medOnly = false, excludeWeapons = [], ubwsAnyWeapon = true, excludeSkills = [], weaponMustHave = [], lockedSlots = [], pinned } = opts;
   const pools: Partial<Record<string, PooledOptItem[]>> = {}, current: Partial<Record<string, PooledOptItem>> = {}, skipped: SkippedLists = { str: [], tags: [], worn: [], roots: [], gargoyle: [], nonMed: [], weapon: [], skill: [] };
   const exRoots = new Set(excludeRoots.map(Number));
+  let flagless = 0;   // weapons the required properties left out (weaponMustHave)
   for (const it of Object.values(inv.items)) {
     if (!it.gear || !it.slot || !GEAR_SLOTS.includes(it.slot)) continue;
     // toOptItem's own return type is the plain OptItem (slot: string | null) — this cast is the one
@@ -1209,6 +1216,8 @@ export function buildPools(inv: Inventory, character: string | null, opts: Build
     if (it.strReq > strength) { skipped.str.push(it); continue; }
     if (it.tags.some((t) => excludeTags.includes(t))) { skipped.tags.push(it); continue; }
     if (it.root != null && exRoots.has(+it.root)) { skipped.roots.push(it); continue; }
+    // last, so `flagless` counts only weapons every other filter let through
+    if (!weaponHasFlags(it, weaponMustHave)) { skipped.weapon.push(it); flagless++; continue; }
     // a piece with no properties (a tag penalty aside, as classify reads it) never beats an empty slot, so where a slot
     // may stay empty it is no candidate: the search would otherwise send the player for a plain robe or shirt that
     // changes nothing. A plain weapon or shield stays one: what a weapon is for is not in its properties.
@@ -1223,13 +1232,18 @@ export function buildPools(inv: Inventory, character: string | null, opts: Build
   }
   if (current.twoHanded?.twoHanded && pinned?.twoHanded != null) pools.oneHanded = [];
   if (current.oneHanded && pinned?.oneHanded != null) pools.twoHanded = (pools.twoHanded || []).filter((it) => !it.twoHanded);
-  // A worn piece the filters rule out (wrong weapon type, a forbidden skill bonus) must not stay a candidate through
-  // the "keep what you wear" rule. A pinned piece is never blocked.
+  // A worn piece the filters rule out (wrong weapon type, a forbidden skill bonus, a missing weapon property) must not
+  // stay a candidate through the "keep what you wear" rule. A pinned piece is never blocked, and a locked slot keeps a
+  // weapon that lacks a required property: the player chose it.
+  const wornAt = (sl: string): Item | null => (current[sl] && pinned?.[sl] == null ? inv.items[current[sl]!.serial] || ({} as Item) : null);
+  const kept = weaponMustHave.length ? HAND_SLOTS.filter((sl) => lockedSlots.includes(sl) && wornAt(sl) && !weaponHasFlags(wornAt(sl)!, weaponMustHave)) : [];
   const blocked = GEAR_SLOTS.filter((sl) => {
-    const it = current[sl] && pinned?.[sl] == null ? inv.items[current[sl]!.serial] || ({} as Item) : null;
-    return it && (!weaponAllowed(it, excludeWeapons, ubwsAnyWeapon) || hasSkillBonus(it, excludeSkills));
+    const it = wornAt(sl);
+    return it && (!weaponAllowed(it, excludeWeapons, ubwsAnyWeapon) || hasSkillBonus(it, excludeSkills) || (!weaponHasFlags(it, weaponMustHave) && !kept.includes(sl)));
   });
-  return { pools, current, skipped, blocked };
+  if (!weaponMustHave.length) return { pools, current, skipped, blocked };
+  const none = flagless > 0 && !kept.length && !HAND_SLOTS.some((sl) => (pools[sl] || []).some((o) => isWeapon(inv.items[o.serial] || ({} as Item))));
+  return { pools, current, skipped, blocked, weaponFlags: { kept, none } };
 }
 // True when the item carries a bonus to any of the listed skills (e.g. the Summoner's forbidden Necromancy).
 export function hasSkillBonus(it: Item, skills: string[] = []): boolean {
@@ -1271,6 +1285,26 @@ export function weaponSkillsOf(it: Pick<Item, "slot" | "skillReq" | "flags">): s
   const own = String(it.skillReq || "").toLowerCase(), best = (it.flags || []).includes("use best weapon skill");
   return WEAPON_SKILLS.filter((w) => w === own || (best && MELEE_SKILLS.includes(w)));
 }
+// Issue #214: the yes/no properties a build may require on its weapon (profile `weaponMustHave`): any of BOOLEAN_FLAGS
+// is accepted, and the page offers WEAPON_MUST_HAVE. A weapon is a held piece with a Skill Required or Weapon Speed
+// line, so shields and spellbooks are never held to it.
+export const WEAPON_MUST_HAVE: string[] = ["spell channeling", "balanced"];
+export const isWeapon = (it: Pick<Item, "slot" | "skillReq" | "extras">): boolean =>
+  (it.slot === "oneHanded" || it.slot === "twoHanded") && (!!it.skillReq || typeof it.extras?.["weapon speed"] === "number");
+// The required properties a piece lacks, its flags read through flagKey; none for a piece that is no weapon.
+export function missingFlags(it: Item, required: string[] = []): string[] {
+  if (!required.length || !isWeapon(it)) return [];
+  const own = (it.flags || []).map(flagKey);
+  return required.filter((f) => !own.includes(f));
+}
+export const weaponHasFlags = (it: Item, required: string[] = []): boolean => !missingFlags(it, required).length;
+// The rule weaponMustHave is held to (profiles.v3.schema.json says the same): known yes/no properties, each once.
+export function weaponMustHaveError(v: unknown, path = "weaponMustHave"): string | null {
+  if (v == null) return null;
+  if (!Array.isArray(v)) return `${path} must be an array`;
+  const i = v.findIndex((f, j) => typeof f !== "string" || !BOOLEAN_FLAGS.has(f) || v.indexOf(f) !== j);
+  return i < 0 ? null : `${path}[${i}] is not a yes/no property, or is listed twice (${[...BOOLEAN_FLAGS].join(", ")})`;
+}
 // Profiles, templates and runs saved before the exclusion list held one choice, `weaponSkill` ("archery", or null/""
 // for any weapon), which means "exclude every other weapon skill". Returns `s` itself when there is nothing to convert.
 export function migrateWeaponSetting<T extends object>(s: T): T {
@@ -1290,7 +1324,7 @@ export function excludeWeaponsError(v: unknown, path = "excludeWeapons"): string
 // Templates: a full set of builder settings with no character in them (no race, STR limit or skipped containers).
 // A character's profile keeps its own working copy plus `template`, the name it was applied from; drift between the
 // two is settingsDiff(templateFrom(template), templateFrom(profile)).
-export const TEMPLATE_KEYS: string[] = ["floors", "softFloors", "weights", "floorBonus", "lockedSlots", "excludeTags", "excludeSkills", "allowOthersWorn", "allowGargoyle", "medOnly", "excludeWeapons", "ubwsAnyWeapon", "resistCaps", "swingSteps", "castingSchool"];
+export const TEMPLATE_KEYS: string[] = ["floors", "softFloors", "weights", "floorBonus", "lockedSlots", "excludeTags", "excludeSkills", "allowOthersWorn", "allowGargoyle", "medOnly", "excludeWeapons", "ubwsAnyWeapon", "weaponMustHave", "resistCaps", "swingSteps", "castingSchool"];
 export interface TemplateSource {
   floors?: Record<string, number> | undefined;
   softFloors?: string[] | undefined;
@@ -1304,6 +1338,7 @@ export interface TemplateSource {
   medOnly?: boolean | undefined;
   excludeWeapons?: string[] | undefined;   // weapon skills left out of the pool
   ubwsAnyWeapon?: boolean | undefined;     // absent means true (weaponAllowed)
+  weaponMustHave?: string[] | undefined;   // yes/no properties every weapon must carry (weaponHasFlags)
   resistCaps?: Record<string, number> | undefined;   // the player's per-resist cap overrides, paperdoll terms
   swingSteps?: boolean | undefined;        // score SSI by swing step (app/swing.mts); absent means off
   castingSchool?: string | undefined;      // the school the Faster Casting cap follows (fcCapFor); absent means from the character's skills
@@ -1321,6 +1356,7 @@ export interface Template {
   medOnly: boolean;
   excludeWeapons: string[];
   ubwsAnyWeapon: boolean;
+  weaponMustHave: string[];
   resistCaps: Record<string, number>;
   swingSteps: boolean;
   castingSchool: string;   // "" means from the character's skills
@@ -1328,7 +1364,7 @@ export interface Template {
 export function templateFrom(s: TemplateSource = {}): Template {
   return { floors: { ...(s.floors || {}) }, softFloors: [...(s.softFloors || [])], weights: { ...(s.weights || {}) }, floorBonus: s.floorBonus ?? 1000,
     lockedSlots: [...(s.lockedSlots || [])], excludeTags: [...(s.excludeTags || [])], excludeSkills: [...(s.excludeSkills || [])],
-    allowOthersWorn: !!s.allowOthersWorn, allowGargoyle: !!s.allowGargoyle, medOnly: !!s.medOnly, excludeWeapons: [...(s.excludeWeapons || [])], ubwsAnyWeapon: s.ubwsAnyWeapon !== false, resistCaps: { ...(s.resistCaps || {}) }, swingSteps: !!s.swingSteps,
+    allowOthersWorn: !!s.allowOthersWorn, allowGargoyle: !!s.allowGargoyle, medOnly: !!s.medOnly, excludeWeapons: [...(s.excludeWeapons || [])], ubwsAnyWeapon: s.ubwsAnyWeapon !== false, weaponMustHave: [...(s.weaponMustHave || [])], resistCaps: { ...(s.resistCaps || {}) }, swingSteps: !!s.swingSteps,
     castingSchool: s.castingSchool || "" };
 }
 
@@ -1405,6 +1441,7 @@ export interface RunSettings {
   exact?: boolean | undefined;
   excludeWeapons?: string[] | undefined;
   ubwsAnyWeapon?: boolean | undefined;
+  weaponMustHave?: string[] | undefined;
   strLimit?: number | undefined;
   restarts?: number | undefined;
   budgetMs?: number | undefined;
@@ -1465,6 +1502,9 @@ export function settingsDiff(a: RunSettings = {}, b: RunSettings = {}): string[]
   if (wOff.length) out.push(`allowing ${wOff.join(", ")} weapons`);
   const ubws = (s: RunSettings) => s.ubwsAnyWeapon !== false;   // absent means on
   if (ubws(a) !== ubws(b)) out.push(ubws(b) ? "Use Best Weapon Skill weapons allowed" : "Use Best Weapon Skill weapons held to their own skill");
+  const [fOn, fOff] = setDiff(a.weaponMustHave, b.weaponMustHave);
+  if (fOn.length) out.push(`weapon must have ${fOn.join(", ")}`);
+  if (fOff.length) out.push(`weapon need not have ${fOff.join(", ")}`);
   if (a.strLimit !== b.strLimit && b.strLimit != null) out.push(`STR limit ${a.strLimit ?? "?"} → ${b.strLimit}`);
   if (a.restarts !== b.restarts && b.restarts != null) out.push(`restarts ${a.restarts ?? "?"} → ${b.restarts}`);
   if (a.budgetMs !== b.budgetMs && b.budgetMs != null && b.exact) out.push(`budget ${(a.budgetMs ?? 0) / 1000} s → ${b.budgetMs / 1000} s`);
@@ -1548,7 +1588,7 @@ export function extraKeys(inv: ItemsLike): string[] {
 // gargoyle switch covers). Gear only, because a resource's lines are its material ("valorite", "barbed leather"), never
 // a property. Slayers have the Slayer filter, and tags (cursed, antique …) never reach the flags: parseTooltip files
 // them under tags.
-const BOOLEAN_FLAGS = new Set(["spell channeling", "mage armor", "night sight", "balanced", "use best weapon skill", "blessed", "insured", "exceptional", "reactive paralyze", "battle lust", "(imbued)", "part of an armor set"]);
+export const BOOLEAN_FLAGS: ReadonlySet<string> = new Set(["spell channeling", "mage armor", "night sight", "balanced", "use best weapon skill", "blessed", "insured", "exceptional", "reactive paralyze", "battle lust", "(imbued)", "part of an armor set"]);
 const FLAG_LIKE_RE = /^[a-z]+(?: [a-z]+){0,3}$/;
 const FREE_TEXT_RE = /\b(by|for|of|from|to|in|on|only)\b/;
 const ARMOR_SET_RE = /^part of an armor set\b/;
