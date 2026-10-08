@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { propertyReach, buildSuitMip, type BuiltMip } from "./mip.mts";
-import { preBuildDiagnostics, resultDiagnostics, withDiagnostics, weightDiagnostics, suggestedWeight, DOMINANT_SHARE, DOMINANT_WORTH, THIN_SUIT, type DiagnosticsProfile } from "./diagnostics.mts";
+import { preBuildDiagnostics, resultDiagnostics, withDiagnostics, weightDiagnostics, weaponFlagDiagnostics, suggestedWeight, DOMINANT_SHARE, DOMINANT_WORTH, THIN_SUIT, type DiagnosticsProfile } from "./diagnostics.mts";
 import { solveExact, type OptPools } from "./exact-solver.mts";
 import { core, defaultProfiles, templateNames, type OptOptions } from "./solver-fixture.mts";
 import { actionApplies, actionWords, applyAction, handledAction, nextSwingStep, resultChecks, swingLines } from "./ui/builder-model.mts";
@@ -412,4 +412,15 @@ test("[fast] weight_dominates with SSI scored by step: SSI's share is the step c
   assert.equal(share(profile), 93, "per point: 370 of 400");
   // the step at 23 SSI is the best 37 reaches: worth 23 points, so 230 of 260
   assert.equal(share({ ...profile, ssiSteps: [{ ssi: 23, stam: -100, credit: 23 }, { ssi: 38, stam: -100, credit: 38 }] }), 88);
+});
+
+// Issue #214: the weapon properties a build requires. A locked weapon without them stays (no action unlocks a slot), and no
+// weapon with them builds the suit without one; both are warnings with no action.
+test("[fast] weaponFlagDiagnostics: a locked weapon that lacks them, and no weapon that has them", () => {
+  assert.deepEqual(weaponFlagDiagnostics(["spell channeling"], [], false), []);
+  const [kept] = weaponFlagDiagnostics(["spell channeling", "balanced"], [{ slot: "oneHanded", name: "War Axe", missing: ["spell channeling", "balanced"] }], false);
+  assert.deepEqual(kept, { code: "weapon_missing_flag", level: "warn", message: "War Axe lacks Spell Channeling and Balanced, but Weapon (1H) is locked, so it stays in the suit.", actions: [] });
+  const [none] = weaponFlagDiagnostics(["spell channeling", "balanced"], [], true);
+  assert.deepEqual(none, { code: "no_weapon_with_flag", level: "warn", message: "No weapon in your candidate pool has Spell Channeling and Balanced, so the suit is built without one.", actions: [] });
+  assert.deepEqual(resultChecks({ diagnostics: [none!] }, false), [none], "the result's Check your settings lists it");
 });

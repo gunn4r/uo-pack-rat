@@ -1,6 +1,6 @@
-// diagnostics.mts — settings that work against a build, each with the change that would fix it (issue #217): a requirement no suit in the pool can reach, hard requirements the suit could reach one at a time but not together, and a weight that swamps the rest. Pure and browser-safe. The server sends the floor ones with POST /api/optimize before the search starts; the worker attaches the full list to every result, on both solver paths, so a saved run keeps it.
+// diagnostics.mts — settings that work against a build, each with the change that would fix it (issue #217): a requirement no suit in the pool can reach, hard requirements the suit could reach one at a time but not together, a weight that swamps the rest, and a required weapon property no weapon has. Pure and browser-safe. The server sends the floor ones with POST /api/optimize before the search starts; the worker attaches the full list to every result, on both solver paths, so a saved run keeps it.
 import { propertyReach, DEFAULT_OPTIONAL_SLOTS, DEFAULT_SLOTS } from "./mip.mts";
-import { RESIST_KEYS, labelOf, playerCaps, propName, typicalRange, type OptItem, type ResistCap } from "./vault-lib.mts";
+import { RESIST_KEYS, SLOT_LABELS, labelOf, flagLabel, playerCaps, propName, typicalRange, type OptItem, type ResistCap } from "./vault-lib.mts";
 import { delayText, heldWeapon, stepCredit, swingSeconds, type Held, type SsiStepPoint, type SwingResult } from "./swing.mts";
 import type { Diagnostic, DiagnosticAction } from "./runs-types.mts";
 
@@ -65,6 +65,15 @@ export function preBuildDiagnostics(input: DiagnosticsInput): Diagnostic[] {
       message: `${propName(k)} ${floor}${atCap ? " (its cap)" : ""} can't be reached with your inventory (best possible: ${best}).`,
       values: { floor, best }, actions: [...lower(k, best), ...(isHard ? [{ kind: "makeSoft", property: k } as const] : [])] });
   }
+  return out;
+}
+
+// The weapon properties a build requires (pool `weaponMustHave`, issue #214), said before the search and kept on the result: weapon_missing_flag for each locked slot whose worn weapon lacks one (the lock wins, so it stays; no action, since none unlocks a slot), and no_weapon_with_flag when no weapon in the pool carries them all (the suit is built without one). `kept` lists each such slot with its weapon and the properties it lacks.
+const andList = (xs: string[]): string => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}`);
+export function weaponFlagDiagnostics(required: string[], kept: Array<{ slot: string; name: string; missing: string[] }>, none: boolean): Diagnostic[] {
+  const out: Diagnostic[] = kept.map(({ slot, name, missing }) => ({ code: "weapon_missing_flag", level: "warn",
+    message: `${name} lacks ${andList(missing.map(flagLabel))}, but ${SLOT_LABELS[slot] || slot} is locked, so it stays in the suit.`, actions: [] }));
+  if (none) out.push({ code: "no_weapon_with_flag", level: "warn", message: `No weapon in your candidate pool has ${andList(required.map(flagLabel))}, so the suit is built without one.`, actions: [] });
   return out;
 }
 

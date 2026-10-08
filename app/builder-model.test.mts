@@ -13,7 +13,7 @@ import {
   propName, weightsSummary, requirementsSummary, poolSummary, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError,
   resistOutcome, locationCrumbs, otherChanges, afterChange, compareModel, hiddenRowsNote, toggleCompare, runAutoLabel, runBadges, plural, KNOB_RANGES,
   resistCapError, withResistCap, capNote, resistCapsSummary, gearCapsText, capsLine, anyOverridden, effectiveFloor, floorCapWarning, pruneResistCaps,
-  weaponsSummary, weaponsChipText, toggleWeapon, withBuffs, paperdollFloors, pastCapBadges, runSettingsDiff, weightWorth,
+  weaponsSummary, weaponsChipText, weaponMustHaveChipText, toggleWeapon, withBuffs, paperdollFloors, pastCapBadges, runSettingsDiff, weightWorth,
   type Knobs,
 } from "./ui/builder-model.mts";
 import { OPTS_LIMITS } from "./vault-server.mts";
@@ -69,6 +69,14 @@ test("[fast] builder model: the Weapons chip and summary say the exclusions in w
   assert.equal(poolSummary({ excludeWeapons: ["archery", "fencing", "mace fighting", "throwing"], ubwsAnyWeapon: false }), "Own gear and unworn gear · no gargoyle-only · swordsmanship weapons only");
   assert.deepEqual(toggleWeapon(["throwing"], "archery", true), ["archery", "throwing"], "kept in the skills' order");
   assert.deepEqual(toggleWeapon(["archery", "throwing"], "archery", false), ["throwing"]);
+});
+
+test("[fast] builder model: the Weapon must have chip and the pool summary name the required properties", () => {
+  assert.equal(weaponMustHaveChipText(), "Weapon must have");
+  assert.equal(weaponMustHaveChipText(["spell channeling"]), "Weapon must have: Spell Channeling");
+  assert.equal(weaponMustHaveChipText(["spell channeling", "balanced"]), "Weapon must have: Spell Channeling, Balanced");
+  assert.equal(poolSummary({ weaponMustHave: ["balanced"] }), "Own gear and unworn gear · no gargoyle-only · any weapon · weapon must have Balanced");
+  assert.equal(poolSummary({ weaponMustHave: [] }), "Own gear and unworn gear · no gargoyle-only · any weapon");
 });
 
 const knobs = (over: Partial<Knobs> = {}): Knobs => ({ strLimit: "110", restarts: "10000", exact: true, budgetS: "300", altCount: "5", altTol: "40", ...over });

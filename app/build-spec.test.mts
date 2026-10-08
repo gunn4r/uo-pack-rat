@@ -1,6 +1,6 @@
 // build-spec.test.mts — `app/build-spec.mts`, a build's intent as one document (issue #218, BuildSpec).
 //
-// `[fast]`: `app/build-spec.mts`: a full spec, a template's (no buffs) and one filled from nothing pass `buildSpecError`, and one refused field of each kind says where; the panel's flat profile goes to a spec and back unchanged; and `planBuild` equals the assemblies it replaced, kept in the test as they were written: the page's build (its profile, pool settings, search options and saved-run snapshot, ui/builder.mts and ui/runs.mts) and the MCP tools' `planProfile` (mcp-tools.mts), for the demo characters with and without buffs and edited numbers, No character, and a hand-picked suit planned as Manual plans it; and a character's swing on the planned profile (raw DEX plus the buffs' DEX and stamina shares, the worn suit's stamina, the step switch, none with No character), the switch in a spec only when on and checked as a boolean.
+// `[fast]`: `app/build-spec.mts`: a full spec, a template's (no buffs) and one filled from nothing pass `buildSpecError`, and one refused field of each kind says where; the panel's flat profile goes to a spec and back unchanged; and `planBuild` equals the assemblies it replaced, kept in the test as they were written: the page's build (its profile, pool settings, search options and saved-run snapshot, ui/builder.mts and ui/runs.mts) and the MCP tools' `planProfile` (mcp-tools.mts), for the demo characters with and without buffs and edited numbers, No character, and a hand-picked suit planned as Manual plans it; and a character's swing on the planned profile (raw DEX plus the buffs' DEX and stamina shares, the worn suit's stamina, the step switch, none with No character), the switch in a spec only when on and checked as a boolean; and `weaponMustHave` stored only when non-empty, checked, round-tripped and planned with.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
@@ -70,8 +70,30 @@ test("[fast] build spec: the panel's flat profile goes to a spec and back; absen
   assert.equal(empty.pool.strLimit, "character");
   assert.equal(empty.pool.ubwsAnyWeapon, true);
   assert.equal(empty.intent.floorBonus, 1000);
-  const { swingSteps: _off, ...defaults } = templateFrom();   // a spec carries the swing-step switch only when it is on
+  const { swingSteps: _off, weaponMustHave: _none, ...defaults } = templateFrom();   // a spec carries the swing-step switch only when on, and weaponMustHave only when it lists any
   assert.deepEqual(profileFromSpec(empty), { ...defaults, excludeRoots: [] }, "the same defaults templateFrom fills in");
+});
+
+// Issue #214: pool weaponMustHave is stored only when it lists any, checked like the other pool fields, round-trips through
+// the panel's flat profile and a template, and reaches planBuild's pool settings and saved-run snapshot.
+test("[fast] build spec: weaponMustHave is stored only when non-empty, checked, and planned with", () => {
+  const spec = specFromProfile({ ...PANEL, weaponMustHave: ["spell channeling"] });
+  assert.deepEqual(spec.pool.weaponMustHave, ["spell channeling"]);
+  assert.equal(buildSpecError(spec, "spec"), null);
+  assert.ok(!("weaponMustHave" in specFromProfile({ ...PANEL, weaponMustHave: [] }).pool), "an empty list is not stored");
+  assert.ok(!("weaponMustHave" in buildSpec().pool), "nor a missing one");
+  assert.deepEqual(profileFromSpec(spec).weaponMustHave, ["spell channeling"], "back to the panel");
+  assert.deepEqual(specFromProfile(profileFromSpec(spec)), spec, "a round trip changes nothing");
+  assert.match(buildSpecError({ ...spec, pool: { ...spec.pool, weaponMustHave: ["sharp"] } }, "spec")!, /^spec\.pool\.weaponMustHave\[0\] is not a yes\/no property/);
+  assert.match(buildSpecError({ ...spec, pool: { ...spec.pool, weaponMustHave: "balanced" } }, "spec")!, /^spec\.pool\.weaponMustHave must be an array$/);
+  const schema = JSON.parse(readFileSync(join(HERE, "schema", "profiles.v3.schema.json"), "utf8")) as ValidatorSchema;
+  assert.ok(validate(schema, { schemaVersion: 3, characters: { A: { spec } }, templates: {} }).ok, "the schema takes it");
+  const c = withSkills(inv.characters.Kestrel as Character);
+  const planned = planBuild(spec, { character: c, worn: wornBy.Kestrel || [] });
+  assert.deepEqual(planned.pool.weaponMustHave, ["spell channeling"], "the pool settings POST /api/optimize takes");
+  assert.deepEqual(planned.snapshot.weaponMustHave, ["spell channeling"], "and the saved run's settings");
+  assert.ok(!("weaponMustHave" in planBuild(specFromProfile(PANEL), { character: c, worn: [] }).pool), "absent when nothing is required");
+  assert.deepEqual(templateFrom(profileFromSpec(spec)).weaponMustHave, ["spell channeling"], "a template made from the panel keeps it");
 });
 
 // ---- planBuild against the assemblies it replaced

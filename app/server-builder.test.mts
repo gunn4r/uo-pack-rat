@@ -1,6 +1,6 @@
 // server-builder.test.mts — HTTP tests of the Suit Builder: `POST /api/optimize`, the saved runs and `GET|PUT /api/profiles`.
 //
-// `POST /api/optimize`: one running job per client (a second `POST` supersedes the first) and none between callers with no client id, the events route's `?client=` check, the server-wide ceiling, a job that throws logging its stack under the ref the client sees, an exact build proven by HiGHS with the saved run's score, the by-character form building the client's pools, keeping the page's settings snapshot, treating null fields as absent and refusing a bad settings type, the time budget capping restarts, resist cap overrides and weapon exclusions, malformed pools, current, profile or opts refused, only known meta fields saved, a character with no scans a 404, and Manual's hand-offs (issue #12: `pinned` keeping the placed pieces, no run saved, and with no character only pieces nobody wears); SSI scored by swing step through the real worker (issue #217: per point with the reason while the weapon is not fixed, scoring what steps off scores, and the result's swing once the one-handed slot is locked); the job lifecycle (`jobTimings`, a parked core: a build past the retention kept, one past its budget cancelled, closing mid-build logging no failure); `GET|PUT|DELETE /api/runs/<id>` (a label type-checked, a truncated run a 404 that can still be deleted) and `POST /api/runs` saving a manual run with its checks; `POST /api/evaluate` answering what `evaluateSuit` computes from the same fixtures (the saved profile, a given profile with Divine Fury, a run's settings bringing their buffs, No character) and its checks; `PUT /api/profiles` (413 by bytes, 400 naming the schema path) and a truncated `profiles.json` moved aside and reseeded.
+// `POST /api/optimize`: one running job per client (a second `POST` supersedes the first) and none between callers with no client id, the events route's `?client=` check, the server-wide ceiling, a job that throws logging its stack under the ref the client sees, an exact build proven by HiGHS with the saved run's score, the by-character form building the client's pools, keeping the page's settings snapshot, treating null fields as absent and refusing a bad settings type, the time budget capping restarts, resist cap overrides, weapon exclusions and required weapon properties (the lock wins, an empty pool said), malformed pools, current, profile or opts refused, only known meta fields saved, a character with no scans a 404, and Manual's hand-offs (issue #12: `pinned` keeping the placed pieces, no run saved, and with no character only pieces nobody wears); SSI scored by swing step through the real worker (issue #217: per point with the reason while the weapon is not fixed, scoring what steps off scores, and the result's swing once the one-handed slot is locked); the job lifecycle (`jobTimings`, a parked core: a build past the retention kept, one past its budget cancelled, closing mid-build logging no failure); `GET|PUT|DELETE /api/runs/<id>` (a label type-checked, a truncated run a 404 that can still be deleted) and `POST /api/runs` saving a manual run with its checks; `POST /api/evaluate` answering what `evaluateSuit` computes from the same fixtures (the saved profile, a given profile with Divine Fury, a run's settings bringing their buffs, No character) and its checks; `PUT /api/profiles` (413 by bytes, 400 naming the schema path) and a truncated `profiles.json` moved aside and reseeded.
 import { test, before, after, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, rmSync } from "node:fs";
@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { resolveConfig, ensureLayout } from "./config.mts";
 import type { ServerHandle } from "./vault-server.mts";
 import { startTestServer as startServer } from "./server-fixture.mts";
-import { buildPools, setRules, toOptItem, type Item, type Profile } from "./vault-lib.mts";
+import { buildPools, isWeapon, setRules, toOptItem, type Item, type Profile } from "./vault-lib.mts";
 import { characterProfile, specFromProfile, templateSpecFrom, type ProfilesV3 } from "./build-spec.mts";
 import { manualBase, manualPlan } from "./buffs.mts";
 import { evaluateSuit, type SuitEvaluation } from "./evaluate.mts";
@@ -542,6 +542,90 @@ test("[fast] weapon exclusions: a bad list is 400, excluded weapons stay out of 
     await s2.close();
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+// Weapon properties (issue #214): a bad list is refused; the build keeps only weapons with the required properties, in both
+// hands, and blocks the worn one; a locked worn weapon without them stays with weapon_missing_flag; no weapon with them is
+// no_weapon_with_flag, said before the search, repeated on the result and kept by the saved run, and the suit has no weapon.
+test("[fast] weapon properties: a bad list is 400, only weapons with them are built with, the lock wins, an empty pool is said", async () => {
+  const character = "Kestrel";
+  const profiles = asJson<ProfilesResponse>(await (await get("/api/profiles")).json());
+  const rules = asJson<RulesResponse>(await (await get("/api/rules")).json());
+  const profile = { ...firstTemplate(profiles), caps: rules.rules.caps };
+  type Diag = { code: string; message: string; actions: unknown[] };
+  type Start = OptimizeJobResponse & { diagnostics: Diag[] };
+  const post = async (settings: Record<string, unknown>, prof: Record<string, unknown> = profile): Promise<{ status: number; body: Start & ErrorBody }> => {
+    const r = await fetch(srv.url + "/api/optimize", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ character, settings, profile: prof, opts: { exact: false, restarts: 3 }, meta: { character, settings } }) });
+    return { status: r.status, body: asJson<Start & ErrorBody>(await r.json()) };
+  };
+  // a fresh build's result: a reused run would carry what an earlier build said, so it fails the test
+  const done = async (j: Start): Promise<{ best: Record<string, { serial: number } | null>; diagnostics: Diag[] }> => {
+    assert.ok(!j.cached, "a fresh build, not a reused run");
+    let status: OptimizeJobResponse = j;
+    for (let i = 0; i < 300 && status.state !== "done"; i++) {
+      await new Promise((res) => setTimeout(res, 20));
+      status = asJson<OptimizeJobResponse>(await (await fetch(srv.url + `/api/optimize/${j.id}/status`)).json());
+    }
+    assert.equal(status.state, "done", JSON.stringify(status));
+    return status.result as unknown as { best: Record<string, { serial: number } | null>; diagnostics: Diag[] };
+  };
+  const bad = await post({ weaponMustHave: ["sharp"] });
+  assert.equal(bad.status, 400);
+  assert.match(bad.body.error, /settings\.weaponMustHave\[0\] is not a yes\/no property/);
+
+  const inv = foldFixtures(join(HERE, "fixtures"));
+  const heldWeapons = (best: Record<string, { serial: number } | null>): Item[] => ["oneHanded", "twoHanded"].flatMap((sl) => (best[sl] && isWeapon(inv.items[best[sl]!.serial]!) ? [inv.items[best[sl]!.serial]!] : []));
+  // Hit Mana Leech weighted: only the Balanced Halberds Of The Vampire carry it, so the build holds one
+  const balanced = await post({ weaponMustHave: ["balanced"], strLimit: 125 }, { ...profile, weights: { ...profile.weights, hitManaLeech: 50 } });
+  assert.equal(balanced.status, 200);
+  assert.ok(balanced.body.blocked!.includes("oneHanded"), "the worn War Axe has no Balanced");
+  assert.deepEqual(balanced.body.diagnostics.filter((d) => d.code.startsWith("weapon") || d.code.startsWith("no_weapon")), []);
+  const held = heldWeapons((await done(balanced.body)).best);
+  assert.ok(held.length > 0, "the build holds a weapon");
+  for (const w of held) assert.ok(w.flags.includes("balanced"), `${w.name} has no Balanced`);
+
+  const locked = await post({ weaponMustHave: ["balanced"], lockedSlots: ["oneHanded"] });
+  assert.ok(!locked.body.blocked!.includes("oneHanded"), "the lock wins");
+  const miss = locked.body.diagnostics.find((d) => d.code === "weapon_missing_flag");
+  assert.match(miss?.message || "", /^War Axe lacks Balanced, but .* is locked, so it stays in the suit\.$/, JSON.stringify(locked.body.diagnostics));
+  assert.deepEqual(miss!.actions, []);
+  const lockedResult = await done(locked.body);
+  assert.equal(lockedResult.best.oneHanded?.serial, (locked.body.current as Record<string, { serial: number }>).oneHanded!.serial, "the locked weapon stays in the suit");
+  assert.deepEqual(lockedResult.diagnostics.find((d) => d.code === "weapon_missing_flag"), miss, "the result repeats it");
+
+  const none = await post({ weaponMustHave: ["night sight"] });
+  const empty = none.body.diagnostics.find((d) => d.code === "no_weapon_with_flag");
+  assert.equal(empty?.message, "No weapon in your candidate pool has Night Sight, so the suit is built without one.", JSON.stringify(none.body.diagnostics));
+  const r = await done(none.body);
+  assert.deepEqual(heldWeapons(r.best), [], "no weapon in either hand");
+  assert.deepEqual(r.diagnostics.find((d) => d.code === "no_weapon_with_flag"), empty, "the result repeats it");
+  const noWeapons = await post({ weaponMustHave: ["night sight"], medOnly: true });
+  assert.equal(noWeapons.body.diagnostics.find((d) => d.code === "no_weapon_with_flag"), undefined, "Meditation-safe gear only and the STR limit emptied the pool, not the requirement");
+});
+
+// Issue #214 review: when the other settings already leave out the same weapons and the worn one is locked, the pools are the same with or without the requirement, so the run key holds
+// weaponMustHave itself: a build with it never reuses one without, and says the locked weapon lacks the property.
+test("[fast] weapon properties: a build with a requirement never reuses one without it, though the pools match", async () => {
+  const character = "Kestrel";
+  const profiles = asJson<ProfilesResponse>(await (await get("/api/profiles")).json());
+  const rules = asJson<RulesResponse>(await (await get("/api/rules")).json());
+  const profile = { ...firstTemplate(profiles), caps: rules.rules.caps, weights: { ...firstTemplate(profiles).weights, luck: 0.0214 } };
+  type Start = OptimizeJobResponse & { diagnostics: Array<{ code: string }> };
+  const post = async (settings: Record<string, unknown>): Promise<Start> => asJson<Start>(await (await fetch(srv.url + "/api/optimize", { method: "POST", headers: JSON_HEADERS,
+    body: JSON.stringify({ character, settings, profile, opts: { exact: false, restarts: 3 }, meta: { character, settings } }) })).json());
+  // Meditation-safe gear only already leaves out every weapon without Spell Channeling (and the STR limit the Animated
+  // Katana), and the locked one-hand keeps the worn War Axe: the pools and the worn suit are the same either way.
+  const lockedSlots = ["oneHanded"], medOnly = true;
+  const first = await post({ lockedSlots, medOnly });
+  for (let i = 0; i < 300 && !first.cached; i++) {
+    const st = asJson<OptimizeJobResponse>(await (await fetch(srv.url + `/api/optimize/${first.id}/status`)).json());
+    if (st.state === "done") break;
+    await new Promise((res) => setTimeout(res, 20));
+  }
+  assert.ok((await post({ lockedSlots, medOnly })).cached, "the same build again is reused, so the next check means something");
+  const withFlag = await post({ lockedSlots, medOnly, weaponMustHave: ["spell channeling"] });
+  assert.ok(!withFlag.cached, "a build with the requirement is not answered by one without it");
+  assert.ok(withFlag.diagnostics.some((d) => d.code === "weapon_missing_flag"), JSON.stringify(withFlag.diagnostics));
 });
 
 // Post-review fix: `null` in an optional settings field (strLimit/excludeTags/excludeRoots/
