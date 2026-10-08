@@ -5,10 +5,10 @@
 // is ui/runs.mts; they share the builder's state and call each other through ui/builder-session.mts. The panel is drawn
 // from the session's profile plus its Advanced knobs, so what a build sends, what a profile saves and what a run
 // snapshots are read from state, never from the DOM.
-import { PROP_LABELS, NOT_BUILDER_KEYS, playerCaps, GEAR_SLOTS, tagUnits, WEAPON_SKILLS, MELEE_SKILLS, WEAPON_MUST_HAVE, flagLabel, resistSkillBonus, getRules, RESIST_KEYS, RESIST_CAP_LIMITS, resistCapsFor, templateFrom, settingsDiff, bagLabel, toOptItem, totalsOf } from "../vault-lib.mts";
+import { PROP_LABELS, NOT_BUILDER_KEYS, playerCaps, GEAR_SLOTS, tagUnits, WEAPON_SKILLS, MELEE_SKILLS, WEAPON_MUST_HAVE, flagLabel, resistSkillBonus, getRules, RESIST_KEYS, RESIST_CAP_LIMITS, resistCapsFor, templateFrom, settingsDiff, bagLabel, toOptItem, totalsOf, fcCapFor, CASTING_SCHOOLS } from "../vault-lib.mts";
 import { heldWeapon, ssiShareOf, swingOf, type SwingResult } from "../swing.mts";
 import { BUILTIN_PREFIX, characterBuffs, characterEntry, characterProfile, findTemplate, planBuild, specFromProfile, templateLabel, templateRefs, templateSettings, templateSpecFrom, type PlannedBuild } from "../build-spec.mts";
-import type { ResistCap, RunBuffs, Character } from "../vault-lib.mts";
+import type { FcCap, ResistCap, RunBuffs, Character } from "../vault-lib.mts";
 import { buffById, gearNeedsText, overrideNote, planBuffs, plannedProfile, normalizeBuffs, runBuffs, toggleBuff, buffPlanOf, type BuffPlan } from "../buffs.mts";
 import { defaultStrLimit } from "../run-settings.mts";
 import { evaluateSuit } from "../evaluate.mts";
@@ -25,7 +25,7 @@ import { setNavBusy } from "./shell.mts";
 import { putProfiles, setCharacterBuffs } from "./profiles.mts";
 import { session, commands, provide, readControls, type BuilderChange } from "./builder-session.mts";
 import { followJob, progressText, settingsCheck } from "./builder-parts.mts";
-import { nextSwingStep, speedText, swingLines, paperdoll, propName, weightsSummary, requirementsSummary, poolSummary, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistCapsSummary, gearCapsText, pruneResistCaps, floorCapWarning, weaponsChipText, weaponMustHaveChipText, weaponName, toggleWeapon, weightWorth, type KnobField } from "./builder-model.mts";
+import { nextSwingStep, speedText, swingLines, paperdoll, propName, weightsSummary, requirementsSummary, poolSummary, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistCapsSummary, gearCapsText, pruneResistCaps, floorCapWarning, weaponsChipText, weaponMustHaveChipText, weaponName, toggleWeapon, weightWorth, fcCapText, type KnobField } from "./builder-model.mts";
 import type { OptimizeResult, SavedRunLike, OptimizeStartApiResponse, OptimizeCancelApiResponse } from "./api-types.mts";
 
 // ---------------------------------------------------------------- panel state
@@ -348,9 +348,15 @@ function allPropKeys(): string[] {
 // The panel's resist caps: the player's override, else the shard's cap for this character's race (an Elf's
 // Energy is 75 on uoalive).
 const panelResistCaps = (): Record<string, ResistCap> => resistCapsFor(session.profile!.race, session.profile!.resistCaps);
-// A property's cap for this build: a resist's from the panel's resist caps, anything else the shard's.
+// The panel's Faster Casting cap: the casting school's, from the profile's choice or the character's skills.
+const panelFcCap = (): FcCap => fcCapFor(state.inv!.characters[session.character!]?.skills, session.profile!.castingSchool);
+// The FC row's note: its cap and where that comes from.
+const fcCapNote = (): HTMLElement => el("span", { class: "t-sm muted b-fc-cap" }, fcCapText(panelFcCap()));
+// A property's cap for this build: a resist's from the panel's resist caps, Faster Casting's from the casting school,
+// anything else the shard's.
 function capFor(k: string): number | null {
   if (RESIST_KEYS.includes(k)) return panelResistCaps()[k]!.cap;
+  if (k === "fc") return panelFcCap().cap;
   return (getRules().caps as Record<string, number>)[k] ?? null;
 }
 // A number input bound to obj[k]: a value that isn't a number keeps its field marked with the reason, and the
@@ -395,6 +401,7 @@ function requirementsSection(): HTMLElement {
       const ignored = prof.buffs?.overridesIgnored?.[k];
       const said = r ? [ignored != null ? overrideNote(k, ignored, r) : null, gearNeedsText(k, prof.floors[k]!, prof.caps[k], r)].filter(Boolean).join(". ") : "";
       if (said) row.append(el("span", { class: "t-sm b-buff-note" }, said));
+      if (k === "fc") row.append(fcCapNote());
       if (k === "ssi") { const next = nextStepButton(); if (next) row.append(next); }   // repainted as the shown result changes (paintNextStep)
       return row;
     });
@@ -474,7 +481,7 @@ function weightsSection(): HTMLElement {
       paint();
       return box("div", { class: "rule-row weight", "data-key": k }, ruleName(nm), num,
         button({ label: `Remove weight: ${nm}`, icon: "close", iconOnly: true, variant: "ghost", size: "sm", onClick: () => { delete p.weights![k]; redraw("weights"); focusIn("weights", ".b-add"); } }), worth,
-        k === "ssi" ? swingStepsSetting() : null);
+        k === "ssi" ? swingStepsSetting() : k === "fc" ? fcCapNote() : null);
     });
     const add = filterChip({ label: "Add weight", add: true, attrs: { class: "fchip add b-add", id: "b-addweight" } });
     add.onclick = () => propertyPicker(add, "Add weight", Object.keys(p.weights!), (k) => { p.weights![k] = 1; redraw("weights"); focusIn("weights", `.rule-row[data-key="${CSS.escape(k)}"] input`, true); });
@@ -553,12 +560,25 @@ function poolSection(): HTMLElement {
       switchControl({ label: text, checked: !!p[key], attrs: { id }, onChange: (v) => { p[key] = v; updateTemplateBadge(); } }).root;
     return [
       box("div", { class: "b-switches" }, sw("b-others", "Allow gear worn by other characters", "allowOthersWorn"), sw("b-garg", "Allow gargoyle-only gear", "allowGargoyle"), sw("b-med", "Meditation-safe gear only", "medOnly")),
+      castingSchoolField(),
       box("div", { class: "b-chips" }, weaponChip(), mustHaveChip(), listChip("b-locked", "Locked slots", () => p.lockedSlots!, (v) => { p.lockedSlots = v; }, () => GEAR_SLOTS.map((s) => ({ value: s, label: slotLabel(s) })), false),
         tagsChip(), listChip("b-exskills", "Forbid skill bonuses", () => p.excludeSkills!, (v) => { p.excludeSkills = v; },
           () => [...new Set([...(state.facets?.gearSkills || []), ...p.excludeSkills!])].sort().map((sk) => ({ value: sk, label: sk[0]!.toUpperCase() + sk.slice(1) })), true),
         listChip("b-exroots", "Skip containers", () => p.excludeRoots!.map(String), (v) => { p.excludeRoots = v.map((x) => (Number.isFinite(Number(x)) ? Number(x) : x)); }, rootOptions, true)),
     ];
   } });
+}
+// The casting school the Faster Casting cap follows: "From skills" (the default, stored as no choice) or a school.
+function castingSchoolField(): HTMLElement {
+  const p = session.profile!;
+  const sel = select([{ value: "", label: "From skills" }, ...CASTING_SCHOOLS.map((s) => ({ value: s, label: s }))], p.castingSchool || "", { size: "sm", attrs: { id: "b-school" } });
+  const note = fcCapNote();
+  sel.addEventListener("change", () => {
+    if (sel.value) p.castingSchool = sel.value; else delete p.castingSchool;
+    note.textContent = fcCapText(panelFcCap());
+    updateTemplateBadge(); redraw("req"); redraw("weights");
+  });
+  return box("div", { class: "b-school" }, field({ label: "Casting school (Faster Casting cap)", control: sel }), note);
 }
 function rootOptions(): Array<{ value: string; label: string }> {
   return Object.values(state.inv!.containers).filter((c) => c.parent == null)

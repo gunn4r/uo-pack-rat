@@ -12,9 +12,10 @@ export function paperdoll(totals: PropMap, rsb: number): PropMap {
   for (const k of RESIST_KEYS) t[k] = (t[k] || 0) + rsb;
   return t;
 }
-// The shard's caps with the build's resist caps (overrides included) in place of its resist ones.
-export function paperdollCaps(resists: Record<string, ResistCap>): Record<string, number> {
-  const caps = { ...(getRules().caps as Record<string, number>) };
+// The shard's caps with the build's resist caps (overrides included) in place of its resist ones, and the build's
+// Faster Casting cap (vault-lib.mts fcCapFor: a built profile's `caps.fc`) when given.
+export function paperdollCaps(resists: Record<string, ResistCap>, fc?: number | undefined): Record<string, number> {
+  const caps: Record<string, number> = { ...(getRules().caps as Record<string, number>), ...(fc != null ? { fc } : {}) };
   for (const k of RESIST_KEYS) caps[k] = resists[k]!.cap;
   return caps;
 }
@@ -39,7 +40,7 @@ export interface SuitEvaluation {
 // the buffs that count and the numbers they take. With no plan, nothing is counted.
 export function evaluateSuit({ profile, character, suit, buffs }: EvaluateInput): SuitEvaluation {
   const gearTotals = totalsOf(suit as Partial<Record<string, OptItem>>);
-  const base = effectiveProfile(profile, character), baseCaps = paperdollCaps(profileResistCaps(base));
+  const base = effectiveProfile(profile, character), baseCaps = paperdollCaps(profileResistCaps(base), base.caps.fc);
   const r = applyBuffs(paperdoll(gearTotals, base.resistBonus), baseCaps, buffs?.on || [], buffs?.skills || {}, buffs?.stats ?? null, buffs?.who);
   const wasted: PropMap = {};
   for (const [k, v] of Object.entries(r.totals)) if (r.caps[k] != null && v > r.caps[k]!) wasted[k] = v - r.caps[k]!;

@@ -4,7 +4,7 @@
 // Solver details), and the compare view for 2-3 suits or saved runs. The numbers come from
 // ui/builder-model.mts; the bridge actions are gated by ui/bridge.mts's bridgeActionReason(). It shares the builder's
 // state through ui/builder-session.mts and provides the result and compare commands there.
-import { GEAR_SLOTS, RESIST_KEYS, resistSkillBonus, toOptItem, totalsOf, requirementReport, resistCapsFor, profileResistCaps } from "../vault-lib.mts";
+import { GEAR_SLOTS, RESIST_KEYS, resistSkillBonus, toOptItem, totalsOf, requirementReport, resistCapsFor, profileResistCaps, fcCapFor } from "../vault-lib.mts";
 import type { EffectiveProfile, Item, OptItem, PropMap, ResistCap } from "../vault-lib.mts";
 import { state } from "./store.mts";
 import type { BuildMeta } from "./store.mts";
@@ -116,12 +116,15 @@ async function renderResult(res: OptimizeResult, current: OptSuit, prof: Effecti
   out.replaceChildren(...nodes);
 }
 
+// A built profile's Faster Casting cap before any planned buff (vault-lib.mts fcCapFor), for paperdollCaps.
+const fcCapOf = (prof: EffectiveProfile): number | undefined => (prof.buffs?.caps ?? prof.caps).fc;
+
 // ---- 1. headline: the answer, its verdict (ui/builder-parts.mts), the resists and every other change
 function headlineCard(res: OptimizeResult, current: OptSuit, suit: OptSuit, prof: EffectiveProfile, name: string, view: number | null, nChanges: number, fetchItems: Item[], meta: BuildMeta | undefined): HTMLElement {
   const before = totalsOf(current), after = totalsOf(suit);
   const rsb = prof.resistBonus || 0;
   // in paperdoll terms, with the buffs it was planned with unless "Show without buffs" is on, against the caps they leave
-  const caps = profileResistCaps(prof), base = paperdollCaps(caps), shown = withoutBuffs ? null : prof.buffs;
+  const caps = profileResistCaps(prof), base = paperdollCaps(caps, fcCapOf(prof)), shown = withoutBuffs ? null : prof.buffs;
   const was = withBuffs(before, rsb, base, shown), now = withBuffs(after, rsb, base, shown), pdFloors = paperdollFloors(prof.buffs?.floors ?? prof.floors, rsb);
   // with buffs planned, a requirement is met or not by the totals shown, with or without them
   const floorKeys = Object.keys(pdFloors).filter((k) => k !== "tagPenalty");
@@ -361,13 +364,13 @@ function openSuitCompare(indices: number[]): void {
       const sub = i === 0 ? (res.proven ? "the proven best" : "the best found") : Math.abs(d) < 1e-6 ? "ties the best" : `${fmtN(Math.abs(Math.round(d)))} points ${d < 0 ? "below" : "above"}`;
       const head = box("span", { class: "b-cmp-col" }, i === 0 ? box("span", { class: "b-row" }, badge("Best", "best"), res.proven ? badge("Proven optimal", "ok") : null) : txt(`#${i + 1}`, "strong"), txt(sub, "t-sm"));
       const action = i === shownIdx ? txt("Showing in the result", "t-sm muted") : button({ label: "Show this suit", size: "sm", onClick: () => { session.altView = i === 0 ? null : i - 1; closeCompare(); rerender(); } });
-      return { assignment: s.best, totals: withBuffs(totalsOf(s.best), prof.resistBonus || 0, paperdollCaps(profileResistCaps(prof)), withoutBuffs ? null : prof.buffs).totals, head, token: i === 0 ? "Best" : `#${i + 1} · ${Math.abs(d) < 1e-6 ? "ties" : `${d < 0 ? "−" : "+"}${fmtN(Math.abs(Math.round(d)))}`}`,
+      return { assignment: s.best, totals: withBuffs(totalsOf(s.best), prof.resistBonus || 0, paperdollCaps(profileResistCaps(prof), fcCapOf(prof)), withoutBuffs ? null : prof.buffs).totals, head, token: i === 0 ? "Best" : `#${i + 1} · ${Math.abs(d) < 1e-6 ? "ties" : `${d < 0 ? "−" : "+"}${fmtN(Math.abs(Math.round(d)))}`}`,
         removeLabel: i === 0 ? "Remove Best from comparison" : `Remove suit ${i + 1} from comparison`, outcome: [i === 0 ? "—" : Math.abs(d) < 1e-6 ? "0" : `${d < 0 ? "−" : "+"}${fmtN(Math.abs(Math.round(d)))}`], action };
     });
     // Every suit of one result was built with the same caps; an override is named on each column's outcome.
     const resists = profileResistCaps(prof), capped = anyOverridden(resists);
     if (capped) for (const c of columns) c.outcome.push(capsLine(resists));
-    return { title: "Compare suits", noun: "suits", columns, outcomeRows: ["Points vs best", ...(capped ? ["Resist caps"] : [])], keys: compareKeys(columns, prof), caps: paperdollCaps(resists),
+    return { title: "Compare suits", noun: "suits", columns, outcomeRows: ["Points vs best", ...(capped ? ["Resist caps"] : [])], keys: compareKeys(columns, prof), caps: paperdollCaps(resists, fcCapOf(prof)),
       onRemove: (i) => { idx = idx.filter((_, j) => j !== i); picked = new Set(idx.map(String)); if (idx.length < 2) { closeCompare(); rerender(); } else showCompare(openSpec!); } };
   });
   void name;
@@ -381,12 +384,14 @@ function openRunCompare(runs: SavedRunLike[], titleOf: (r: SavedRunLike) => stri
     // Each run is judged by the resist caps it was built with (its best values, and a "Resist caps" outcome row
     // when any of them overrode one).
     const views = list.map((r) => resistCapsFor(r.settings.race, r.settings.resistCaps));
+    // and by the Faster Casting cap of its casting school, for the character as scanned now
+    const runFc = (r: SavedRunLike): number => fcCapFor(state.inv!.characters[name]?.skills, r.settings.castingSchool).cap;
     const capped = views.some(anyOverridden);
     const columns: CompareColumn[] = list.map((r, i) => {
       const floors = r.settings.floors || {};
       // a run saved with twelve slots, with what the character wears in the others: like for like with a run of every slot
       const planned = slotsOf(r.result.best), rest = worn.filter((it) => it.slot && !planned.includes(it.slot));
-      const { totals, caps } = withBuffs(totalsOf({ ...r.result.best, ...Object.fromEntries(rest.map((it) => [`_w${it.serial}`, toOptItem(it)])) }), rsb, paperdollCaps(views[i]!), commands.buffPlan(name, r.settings.race, savedBuffs(r.settings)));
+      const { totals, caps } = withBuffs(totalsOf({ ...r.result.best, ...Object.fromEntries(rest.map((it) => [`_w${it.serial}`, toOptItem(it)])) }), rsb, paperdollCaps(views[i]!, runFc(r)), commands.buffPlan(name, r.settings.race, savedBuffs(r.settings)));
       const met = Object.keys(floors).filter((k) => (totals[k] || 0) >= effectiveFloor(k, floors[k]!, caps)).length;
       const v = verdict(r.result);
       const head = box("span", { class: "b-cmp-col" }, box("span", { class: "b-row" }, el("span", { class: "strong ellip", title: titleOf(r) }, titleOf(r)), v.text ? badge(v.text, v.tone === "bad" ? "bad" : v.tone) : null), txt(`${fmtRunTime(r.createdAt)} · ${r.result.method === "manual" ? "built by hand" : fmtSecs(r.ms || 0)}`, "t-sm"));
@@ -397,7 +402,7 @@ function openRunCompare(runs: SavedRunLike[], titleOf: (r: SavedRunLike) => stri
     const first = list[0]!;
     const settingsRow = list.map((r, i) => (i === 0 ? "—" : runSettingsDiff(first.settings, r.settings).join(" · ") || "same settings"));
     const keys = compareKeys(columns, { floors: Object.assign({}, ...list.map((r) => r.settings.floors || {})), weights: Object.assign({}, ...list.map((r) => r.settings.weights || {})) });
-    return { title: "Compare runs", noun: "runs", columns, outcomeRows: ["Changes", "Requirements met", "Verdict", ...(capped ? ["Resist caps"] : [])], settingsRow, keys, caps: paperdollCaps(views[0]!),
+    return { title: "Compare runs", noun: "runs", columns, outcomeRows: ["Changes", "Requirements met", "Verdict", ...(capped ? ["Resist caps"] : [])], settingsRow, keys, caps: paperdollCaps(views[0]!, runFc(list[0]!)),
       onRemove: (i) => { const gone = list[i]!; list = list.filter((_, j) => j !== i); onRemove(gone.id); if (list.length < 2) closeCompare(); else showCompare(openSpec!); } };
   });
 }

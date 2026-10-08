@@ -405,7 +405,7 @@ const itemTotals = (items: Item[]): PropMap => totalsOf(Object.fromEntries(items
 // What Manual plans a hand-picked suit with (its "Fill the rest automatically"; the MCP tools' score_suit and pinned
 // build_suit): the buffs `on`, whose Enhance Potions and Spell Channeling are read from `suit` (slot → piece) itself,
 // the raw stats from what the character wears now (`wornNow`) and `race` (null with no character); with no character
-// the profile's race, resist caps and caps are left out, so it plans on raw item totals.
+// the profile's race, resist caps and caps are left out, so it plans on raw item totals (a named casting school still sets the FC cap).
 export function manualProfile(p: Profile, character: Character | null, wornNow: Item[], suit: Record<string, Item>, race: string | null, on: string[], edits: Readonly<Record<string, number>>): EffectiveProfile {
   return plannedProfile(manualBase(p, character), character, manualPlan(character, wornNow, suit, race, on, edits));
 }

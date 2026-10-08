@@ -2,7 +2,7 @@
 // meta line and summary badges, a ⋯ menu (Open, Rename inline, Delete with a confirm dialog), a filter, and a
 // footer that ticks up to three runs for the compare view (ui/builder-result.mts's openRunCompare). Also the
 // settings snapshot a run is saved with, and putting a saved run's settings back into the panel.
-import { RESIST_KEYS, resistSkillBonus, totalsOf, resistCapsFor } from "../vault-lib.mts";
+import { RESIST_KEYS, resistSkillBonus, totalsOf, resistCapsFor, fcCapFor } from "../vault-lib.mts";
 import { buffById, plannedProfile, savedBuffs } from "../buffs.mts";
 import type { RunSettings, OptItem, PropMap, Character, EffectiveProfile } from "../vault-lib.mts";
 import { state, invStamp } from "./store.mts";
@@ -23,7 +23,7 @@ export function applySettings(st: RunSettings): void {
   const p = session.profile!;
   Object.assign(p, { floors: { ...(st.floors || {}) }, softFloors: [...(st.softFloors || [])], weights: { ...(st.weights || {}) }, lockedSlots: [...(st.lockedSlots || [])],
     excludeTags: [...(st.excludeTags || [])], excludeRoots: [...(st.excludeRoots || [])], strLimit: st.strLimit, allowGargoyle: !!st.allowGargoyle, medOnly: !!st.medOnly, excludeWeapons: [...(st.excludeWeapons || [])], ubwsAnyWeapon: st.ubwsAnyWeapon !== false, weaponMustHave: [...(st.weaponMustHave || [])],
-    race: st.race || p.race || "human", excludeSkills: [...(st.excludeSkills || [])], allowOthersWorn: !!st.allowOthersWorn, resistCaps: { ...(st.resistCaps || {}) }, swingSteps: !!st.swingSteps });
+    race: st.race || p.race || "human", excludeSkills: [...(st.excludeSkills || [])], allowOthersWorn: !!st.allowOthersWorn, resistCaps: { ...(st.resistCaps || {}) }, swingSteps: !!st.swingSteps, castingSchool: st.castingSchool || undefined });
   applyKnobs(st);
   commands.loadRunBuffs(savedBuffs(st));
   commands.clearCapDrafts();
@@ -100,7 +100,7 @@ export function renderRuns(): void {
     // with the buffs it was planned with: their shares in its totals, the caps they leave, and their names
     const view = resistCapsFor(run.settings.race, run.settings.resistCaps), buffs = savedBuffs(run.settings);
     const pick = (f: "cap" | "shard"): Record<string, number> => Object.fromEntries(RESIST_KEYS.map((k) => [k, view[k]![f]]));
-    const b = run.totalsAfter && buffs ? withBuffs(run.totalsAfter, rsb, paperdollCaps(view), commands.buffPlan(name, run.settings.race, buffs)) : null;
+    const b = run.totalsAfter && buffs ? withBuffs(run.totalsAfter, rsb, paperdollCaps(view, fcCapFor(state.inv!.characters[name]?.skills, run.settings.castingSchool).cap), commands.buffPlan(name, run.settings.race, buffs)) : null;
     const badges = b ? runBadges(run.changes, b.totals, run.settings.floors || {}, 0, b.caps, pick("shard")) : runBadges(run.changes, run.totalsAfter, run.settings.floors || {}, rsb, pick("cap"), pick("shard"));
     if (buffs) badges.push({ text: buffs.on.length === 1 ? `with ${buffById(buffs.on[0]!)!.name}` : `with ${plural(buffs.on.length, "buff")}` });
     return runCard(run, title, auto.diff, badges, run.inventoryStamp != null && run.inventoryStamp !== "" && run.inventoryStamp !== stamp);
