@@ -202,6 +202,8 @@ export function routes(ctx: ServerContext): Route[] {
       }
       // profile is scored against in the worker; a string or a number would fail there, not here.
       if (!profile || typeof profile !== "object" || Array.isArray(profile)) return send(res, 400, { ok: false, error: "profile required" });
+      const { hardFloors } = profile as { hardFloors?: unknown };
+      if (hardFloors != null && (!Array.isArray(hardFloors) || hardFloors.some((k) => !isBoundedString(k, 64)))) return send(res, 400, { ok: false, error: "profile.hardFloors must be an array of property names" });
       const fullOpts = Object.assign({ seed: RUN_DEFAULTS.seed, restarts: RUN_DEFAULTS.restarts }, opts as RunOpts);
       const key = runKey({ pools, current, profile, opts: fullOpts });
       const runs = runStore.all();

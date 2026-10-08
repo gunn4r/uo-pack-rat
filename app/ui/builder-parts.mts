@@ -9,7 +9,7 @@ import { box, txt, button, message, tipWrap, tooltip, copyText } from "./compone
 import { CLIENT_ID } from "./api.mts";
 import { bridgeActionReason, runBridgeAction, grabAll, grabbable } from "./bridge.mts";
 import { splitSerial } from "./item-parts.mts";
-import { locationCrumbs, plural, handledAction, actionWords, applyAction } from "./builder-model.mts";
+import { locationCrumbs, plural, handledAction, actionWords, actionApplies, applyAction } from "./builder-model.mts";
 import { session, commands } from "./builder-session.mts";
 import type { Diagnostic } from "../runs-types.mts";
 import type { OptimizeResult, OptimizeProgress, JobSnapshotEvent, JobDoneEvent, JobFailedEvent, JobCancelledEvent } from "./api-types.mts";
@@ -38,23 +38,24 @@ export function verdict(res: OptimizeResult): { text: string; tone?: "ok" | "war
   return { text: "Heuristic" };
 }
 
-// ---- "Check your settings": the settings that work against a build (app/diagnostics.mts), warnings under one heading, then the notes. Each action edits the panel's profile for `name` (never starts a build), says so in a toast and turns into its done state; it is offered only while `name` is the panel's character.
+// ---- "Check your settings": the settings that work against a build (app/diagnostics.mts), warnings under one heading, then the notes. Each action edits the panel's profile for `name` (never starts a build), says so in a toast and turns into its done state. It is offered only while `name` is the panel's character and the panel still holds what the action changes (builder-model.mts actionApplies); one that no longer fits when clicked says so and turns off.
 export function settingsCheck(diags: Diagnostic[], name: string): HTMLElement | null {
   if (!diags.length) return null;
+  const p0 = session.character === name ? session.profile : null;
   const row = (d: Diagnostic): HTMLElement => {
-    const acts = d.actions.filter(handledAction).map((a) => {
+    const acts = p0 ? d.actions.filter(handledAction).filter((a) => actionApplies(p0, a)).map((a) => {
       const words = actionWords(a);
       const b = button({ label: words.label, size: "sm", onClick: () => {
         const p = session.profile;
-        if (!p || session.character !== name) return;
+        if (!p || session.character !== name || !actionApplies(p, a)) { toast("The requirement changed since this build, so this no longer applies."); b.disabled = true; return; }
         applyAction(p, a);
         commands.renderPanel();
         toast(words.toast, "good");
         b.replaceChildren(txt(words.done)); b.disabled = true;
       } });
       return b;
-    });
-    return box("div", { class: "b-check-row" }, el("p", {}, d.message), acts.length && session.character === name ? box("span", { class: "b-check-acts" }, ...acts) : null);
+    }) : [];
+    return box("div", { class: "b-check-row" }, el("p", {}, d.message), acts.length ? box("span", { class: "b-check-acts" }, ...acts) : null);
   };
   const warn = diags.filter((d) => d.level === "warn"), info = diags.filter((d) => d.level !== "warn");
   return box("div", { class: "b-check" },

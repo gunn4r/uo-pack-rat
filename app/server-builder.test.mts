@@ -527,7 +527,7 @@ test("[fast] /api/optimize by character: null settings fields behave like absent
 // Important 5, first half: pools/current/profile/opts were unvalidated. {pools:{helmet:[null]}} started
 // a real worker thread that died with a TypeError, and an unbounded opts.restarts/timeBudgetMs went
 // straight into the search.
-test("[fast] POST /api/optimize rejects a malformed pools/current/profile and an out-of-range opts instead of starting a job", async () => {
+test("[fast] POST /api/optimize rejects a malformed pools/current/profile (hardFloors included) and an out-of-range opts instead of starting a job", async () => {
   const dir = mkdtempSync(join(tmpdir(), "qm-optimize-validate-"));
   const s2 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {})));
   const profile = { caps: { physResist: 70 }, weights: {} };
@@ -548,6 +548,9 @@ test("[fast] POST /api/optimize rejects a malformed pools/current/profile and an
       { pools: {}, current: {}, profile, opts: [] },
       { pools: {}, current: {}, profile, opts: {}, meta: [] },
       { pools: {}, current: {}, profile, opts: {}, character: 5 },
+      { pools: {}, current: {}, profile: { ...profile, hardFloors: 5 }, opts: {} },
+      { pools: {}, current: {}, profile: { ...profile, hardFloors: { luck: true } }, opts: {} },
+      { pools: {}, current: {}, profile: { ...profile, hardFloors: [7] }, opts: {} },
     ];
     for (const body of bad) {
       const r = await post(body);
