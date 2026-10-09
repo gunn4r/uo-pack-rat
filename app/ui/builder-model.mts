@@ -10,6 +10,7 @@ import { RUN_SETTING_LIMITS, type Range } from "../run-settings.mts";
 import { paperdollCaps, suitResist } from "../evaluate.mts";
 import type { Diagnostic, DiagnosticAction, DiagnosticCode, SwingResult } from "../runs-types.mts";
 import { delayText, MIN_TICKS } from "../swing.mts";
+import type { TieBreakResult } from "./api-types.mts";
 
 export const plural = (n: number, word: string, many = `${word}s`): string => `${n.toLocaleString("en-US")} ${n === 1 ? word : many}`;
 // A Suit Builder character key as the page prints it: No character's pseudo name in words, a character's name as it is.
@@ -63,7 +64,27 @@ export function requirementsSummary(floors: Record<string, number> = {}, soft: s
   }).join(" · ");
 }
 export interface PoolSettings { allowOthersWorn?: boolean | undefined; allowGargoyle?: boolean | undefined; medOnly?: boolean | undefined; excludeWeapons?: string[] | undefined; ubwsAnyWeapon?: boolean | undefined; weaponMustHave?: string[] | undefined;
-  lockedSlots?: string[] | undefined; excludeTags?: string[] | undefined; excludeSkills?: string[] | undefined; excludeRoots?: unknown[] | undefined }
+  lockedSlots?: string[] | undefined; excludeTags?: string[] | undefined; excludeSkills?: string[] | undefined; excludeRoots?: unknown[] | undefined; rarity?: string | undefined }
+// The Rarity setting's help line, with "Within points" (`tolerance`) as it reads now: none for "any".
+export function rarityHelp(rarity: string | undefined, tolerance: number): string {
+  if (!rarity) return "";
+  const pieces = rarity === "higher" ? "highest" : "lowest";
+  return `Among suits within ${plural(tolerance, "point")} of the best, use the ${pieces}-rarity pieces. Requirements come first.`;
+}
+// A result's best suit as the other-suits card and the compare view name it: "the proven best" or "the best found",
+// and with a rarity preference whose suit scores under the best, "lowest rarity within 5 points of the proven best".
+export function bestSuitLabel(res: { proven?: boolean | undefined; score: number; tieBreak?: TieBreakResult | undefined }): string {
+  const best = res.proven ? "the proven best" : "the best found", tb = res.tieBreak;
+  if (!tb || res.score >= tb.topScore - 1e-6) return best;
+  return `${tb.rarity === "higher" ? "highest" : "lowest"} rarity within ${plural(tb.tolerance ?? 0, "point")} of ${best}`;
+}
+// Solver details' Rarity row: "Lowest-rarity pieces among equal suits · rarity points 6", "(lowest found)" when the
+// points are not proven the lowest.
+export function rarityDetail(tb: TieBreakResult): string {
+  const pieces = `${tb.rarity === "higher" ? "Highest" : "Lowest"}-rarity pieces`, t = tb.tolerance ?? 0;
+  const among = t > 0 ? `among suits within ${plural(t, "point")} of the best` : "among equal suits";
+  return `${pieces} ${among} · rarity points ${tb.cost.toLocaleString("en-US")}${tb.costProven ? "" : " (lowest found)"}`;
+}
 // "Own gear and unworn gear · no gargoyle-only · any weapon"
 export function poolSummary(p: PoolSettings): string {
   return [
@@ -76,6 +97,7 @@ export function poolSummary(p: PoolSettings): string {
     p.excludeTags?.length ? `no ${p.excludeTags.join(", ")}` : "",
     p.excludeSkills?.length ? `${plural(p.excludeSkills.length, "skill bonus", "skill bonuses")} forbidden` : "",
     p.excludeRoots?.length ? `${plural(p.excludeRoots.length, "container")} skipped` : "",
+    p.rarity ? `prefer ${p.rarity} rarity` : "",
   ].filter(Boolean).join(" · ");
 }
 

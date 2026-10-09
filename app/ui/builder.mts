@@ -26,7 +26,7 @@ import { putProfiles, setCharacterBuffs } from "./profiles.mts";
 import { session, commands, provide, readControls, type BuilderChange } from "./builder-session.mts";
 import { followJob, progressText, settingsCheck } from "./builder-parts.mts";
 import { characterNames } from "./roster.mts";
-import { nextSwingStep, speedText, swingLines, propName, weightsSummary, requirementsSummary, poolSummary, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistCapsSummary, resistMinimumText, pruneResistCaps, floorCapWarning, weaponsChipText, weaponMustHaveChipText, weaponName, toggleWeapon, weightWorth, fcCapText, templateBuffsLine, sourceTitle, who, type KnobField } from "./builder-model.mts";
+import { nextSwingStep, speedText, swingLines, propName, weightsSummary, requirementsSummary, poolSummary, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistCapsSummary, resistMinimumText, pruneResistCaps, floorCapWarning, weaponsChipText, weaponMustHaveChipText, weaponName, toggleWeapon, weightWorth, fcCapText, rarityHelp, templateBuffsLine, sourceTitle, who, type KnobField } from "./builder-model.mts";
 import type { OptimizeResult, SavedRunLike, OptimizeStartApiResponse, OptimizeCancelApiResponse } from "./api-types.mts";
 
 // ---------------------------------------------------------------- panel state
@@ -591,6 +591,7 @@ function poolSection(): HTMLElement {
     return [
       box("div", { class: "b-switches" }, sw("b-others", "Allow gear worn by other characters", "allowOthersWorn"), sw("b-garg", "Allow gargoyle-only gear", "allowGargoyle"), sw("b-med", "Meditation-safe gear only", "medOnly")),
       castingSchoolField(),
+      rarityField(),
       box("div", { class: "b-chips" }, weaponChip(), mustHaveChip(), listChip("b-locked", "Locked slots", () => p.lockedSlots!, (v) => { p.lockedSlots = v; }, () => GEAR_SLOTS.map((s) => ({ value: s, label: slotLabel(s) })), false),
         tagsChip(), listChip("b-exskills", "Forbid skill bonuses", () => p.excludeSkills!, (v) => { p.excludeSkills = v; },
           () => [...new Set([...(state.facets?.gearSkills || []), ...p.excludeSkills!])].sort().map((sk) => ({ value: sk, label: sk[0]!.toUpperCase() + sk.slice(1) })), true),
@@ -610,6 +611,18 @@ function castingSchoolField(): HTMLElement {
   });
   return box("div", { class: "b-school" }, field({ label: "Casting school (Faster Casting cap)", control: sel }), note);
 }
+// The rarity preference (issue #262): Higher, Any (the default, stored as no choice) or Lower, with a help line naming
+// "Within points" (Advanced) when one is set.
+function rarityField(): HTMLElement {
+  const p = session.profile!;
+  const help = el("p", { class: "help", id: "b-rarity-help" }, rarityHelpText());
+  const seg = segmented({ label: "Rarity", size: "sm", options: [{ value: "higher", label: "Higher" }, { value: "", label: "Any" }, { value: "lower", label: "Lower" }], value: p.rarity || "",
+    onChange: (v) => { if (v === "higher" || v === "lower") p.rarity = v; else delete p.rarity; help.textContent = rarityHelpText(); help.hidden = !p.rarity; updateTemplateBadge(); } });
+  seg.id = "b-rarity";
+  help.hidden = !p.rarity;
+  return box("div", { class: "b-rarity" }, box("div", { class: "field" }, el("span", { class: "label" }, "Rarity"), seg), help);
+}
+const rarityHelpText = (): string => rarityHelp(session.profile!.rarity, Number(knobs.altTol) || 0);
 function rootOptions(): Array<{ value: string; label: string }> {
   return Object.values(state.inv!.containers).filter((c) => c.parent == null)
     .map((r) => ({ value: String(r.serial), label: `${r.kind === "ground" ? "" : r.scannedBy + "'s "}${(r as { label?: string }).label || bagLabel(r)}` }))
@@ -708,7 +721,11 @@ function knobField(f: KnobField, text: string): HTMLDivElement {
   if (!knobs.exact && (f === "budgetS" || f === "altCount" || f === "altTol")) i.disabled = true;
   const err = knobError(f, knobs[f]);
   const fl = field({ label: text, control: i, error: err && !i.disabled ? err : undefined });
-  i.addEventListener("input", () => { knobs[f] = i.value; setFieldError(i, knobError(f, i.value)); if (f === "strLimit") updateTemplateBadge(); });
+  i.addEventListener("input", () => {
+    knobs[f] = i.value; setFieldError(i, knobError(f, i.value)); if (f === "strLimit") updateTemplateBadge();
+    const help = f === "altTol" ? document.getElementById("b-rarity-help") : null;
+    if (help && session.profile) help.textContent = rarityHelpText();
+  });
   return fl;
 }
 function advancedSection(): HTMLElement {
@@ -716,7 +733,8 @@ function advancedSection(): HTMLElement {
     const exact = switchControl({ label: "Exact search (prove the best)", checked: knobs.exact, attrs: { id: "b-exact" }, onChange: (v) => { knobs.exact = v; redraw("adv"); document.getElementById("b-exact")?.focus(); } });
     return [box("div", { class: "b-adv" }, box("div", { class: "b-adv-wide" }, exact.root),
       knobField("restarts", "Restarts"), knobField("budgetS", "Time budget (s)"), knobField("altCount", "Other suits"), knobField("altTol", "Within points"),
-      el("p", { class: "help b-adv-wide" }, txt(knobs.exact ? "Other suits lists the next best suits scoring within that many points of the best." : "Time budget and other suits need exact search.")))];
+      el("p", { class: "help b-adv-wide" }, txt(knobs.exact ? "Other suits lists the next best suits scoring within that many points of the best." : "Time budget and other suits need exact search."),
+        txt(" Within points also sets how far a rarity preference may give up score.")))];
   } });
 }
 // field()'s error line, updated in place as the value changes.
@@ -893,7 +911,8 @@ function runPanel(job: BuilderJob): BuilderJobUi {
     box("div", { class: "b-stats" }, sBest, sReq, sCand, sTime, sBeat), live);
   root.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); cancelJob(job); } });
   let shownPhase = 0;
-  const phaseIdx = (p: string): number => (p === "done" ? phases.length : Math.max(0, phases.findIndex(([k]) => k === p)));
+  // a rarity preference's second stage (tie-break) is part of the exact phase's step
+  const phaseIdx = (p: string): number => (p === "done" ? phases.length : Math.max(0, phases.findIndex(([k]) => k === (p === "tie-break" ? "exact" : p))));
   const ui: BuilderJobUi = {
     root,
     update(j: BuilderJob) {

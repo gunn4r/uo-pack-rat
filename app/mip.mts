@@ -298,6 +298,36 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
   return { cols, xIndex, dims, unreachableFloors, reach, hardRows, scoreOffset, capCols, minCols, floorCols, stepCols, model };
 }
 
+// ---- the tie-break's second stage (issue #262) ----
+// The model the second stage solves, from the first stage's model and solution: minimize the summed tie cost of the
+// picked pieces (each x column's item.tieCost) over the suits that score at least the first stage's suit less
+// `tolerance` and meet every floor it meets. Three changes to a copy of `built.model`: (1) the objective is the tie
+// costs, minimized; (2) each floor-met indicator (y) at 1 in the solution is fixed at 1, hard floors in the hardAsSoft
+// model included; (3) one score row, Σ c_j·v_j ≥ S − tolerance − slack over every column but the y's, with c the first
+// stage's objective and S its value at the solution (the slack: TIE_SLACK below). The y terms stay out of it: their bonuses (up to 1e7) are carried
+// by the fixed bounds, and a y going from 0 to 1 only raises the score. When every such c is 0 (a floors-only build)
+// there is no row. The solution itself is feasible here, so it is the stage's MIP start. The row's slack is the
+// solvers' score precision (HiGHS's mip_abs_gap): with 1e-6 HiGHS's presolve called a row the solution meets exactly
+// infeasible, and scores closer than this count as equal in the core's tie-break too.
+export const TIE_SLACK = 1e-3;
+export function tieBreakModel(built: BuiltMip, colValue: ArrayLike<number>, tolerance: number): BuiltMip {
+  const m = built.model, cost = m.colCost, isY = (j: number): boolean => built.cols[j]!.kind === "y";
+  const colCost = built.cols.map((c) => (c.kind === "x" ? c.item!.tieCost || 0 : 0));
+  const colLower = m.colLower.map((lo, j) => (isY(j) && colValue[j]! > 0.5 ? 1 : lo));
+  const terms: Term[] = [];
+  let score = 0, mag = 0;
+  for (let j = 0; j < m.numCols; j++) if (!isY(j) && cost[j] !== 0) { terms.push([j, cost[j]!]); score += cost[j]! * colValue[j]!; mag += Math.abs(cost[j]!); }
+  const rowLower = [...m.rowLower], rowUpper = [...m.rowUpper], starts = [...m.matrix.starts], indices = [...m.matrix.indices], values = [...m.matrix.values];
+  if (terms.length) {
+    for (const [j, v] of terms) { indices.push(j); values.push(v); }
+    starts.push(indices.length);
+    rowLower.push(score - Math.max(0, tolerance) - Math.max(TIE_SLACK, 1e-9 * mag));
+    rowUpper.push(INF);
+  }
+  const numRows = rowLower.length;
+  return { ...built, model: { ...m, sense: "minimize", offset: 0, colCost, colLower, numRows, rowLower, rowUpper, matrix: { format: "csr", numRows, numCols: m.numCols, starts, indices, values } } };
+}
+
 // ---- MIP start, extraction, and no-good cut ----
 //
 // startVector, pickedOf and noGoodRow all work only off the built model (no profile access):

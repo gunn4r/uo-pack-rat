@@ -1,9 +1,9 @@
 // mip.test.mts — `app/mip.mts`, the pure MIP builder, and `app/mip-solve.mts`, the HiGHS solve.
 //
-// `app/mip.mts` (the pure MIP builder: columns, rows, hard/soft floors incl. the negative-total `u` column, the two-hander row, `startVector`/`pickedOf`/`noGoodRow`) and `app/mip-solve.mts` (HiGHS solving a toy model exactly, the no-good cut finding the runner-up, `loadHighs` honoring `PACKRAT_NO_HIGHS`, and `gapFromEvents` — a pure unit test of the absolute-gap formula, plus an integration test on a deliberately large model that accepts either an `"optimal"` or a `"timeLimit"` outcome from a short time limit rather than assuming which way the clock falls). All `[fast]`, including the short real HiGHS solves.
+// `app/mip.mts` (the pure MIP builder: columns, rows, hard/soft floors incl. the negative-total `u` column, the two-hander row, `startVector`/`pickedOf`/`noGoodRow`, the tie-break's `tieBreakModel`) and `app/mip-solve.mts` (HiGHS solving a toy model exactly, the no-good cut finding the runner-up, `loadHighs` honoring `PACKRAT_NO_HIGHS`, and `gapFromEvents` — a pure unit test of the absolute-gap formula, plus an integration test on a deliberately large model that accepts either an `"optimal"` or a `"timeLimit"` outcome from a short time limit rather than assuming which way the clock falls). All `[fast]`, including the short real HiGHS solves.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildSuitMip, startVector, pickedOf, noGoodRow, HARD_FLOOR_BONUS, type BuiltMip } from "./mip.mts";
+import { buildSuitMip, startVector, pickedOf, noGoodRow, tieBreakModel, HARD_FLOOR_BONUS, TIE_SLACK, type BuiltMip } from "./mip.mts";
 import type { OptItem } from "./vault-lib.mts";
 
 // ---------------------------------------------------------------------------
@@ -573,4 +573,26 @@ test("[fast] mip-solve: a short time limit on a large model reports a status-con
   } finally {
     closeModel(handle);
   }
+});
+
+test("[fast] mip: tieBreakModel minimizes tie costs, fixes the met floors and keeps the score within the tolerance without the y terms (issue #262)", () => {
+  const rings = [{ serial: 1, name: "A", slot: "ring", props: { hci: 10, luck: 30 }, tieCost: 8 }, { serial: 2, name: "B", slot: "ring", props: { hci: 4 }, tieCost: 1 }] as OptItem[];
+  const built = buildSuitMip({ pools: { ring: rings }, current: {}, profile: { weights: { hci: 2 }, caps: { hci: 45 }, floors: { luck: 20 } }, slots: ["ring"], optionalSlots: ["ring"] });
+  const picked = { ring: rings[0]! }, start = startVector(built, picked);
+  const m = tieBreakModel(built, start, 5).model, kind = (k: string) => built.cols.map((c, j) => [c, j] as const).filter(([c]) => c.kind === k).map(([, j]) => j);
+  assert.equal(m.sense, "minimize");
+  assert.deepEqual(kind("x").map((j) => m.colCost[j]), [8, 1]);
+  assert.ok([...kind("c"), ...kind("y"), ...kind("s")].every((j) => m.colCost[j] === 0), "only x columns cost");
+  const y = kind("y")[0]!;
+  assert.equal(m.colLower[y], 1, "the met floor stays met");
+  assert.equal(m.numRows, built.model.numRows + 1);
+  const at = m.matrix.starts[m.numRows - 1]!, cols = m.matrix.indices.slice(at), vals = m.matrix.values.slice(at);
+  assert.ok(!cols.includes(y), "no y term in the score row");
+  const scoreAt = cols.reduce((n, j, i) => n + vals[i]! * start[j]!, 0);
+  assert.equal(scoreAt, 20, "hci 10 at weight 2, the s column at 0");
+  assert.ok(Math.abs(m.rowLower[m.numRows - 1]! - (20 - 5 - TIE_SLACK)) < 1e-9);
+  assert.equal(built.model.sense, "maximize", "the stage-1 model is left as it was");
+  // a floors-only build: nothing to hold but the floors, so no score row
+  const floorsOnly = buildSuitMip({ pools: { ring: rings }, current: {}, profile: { weights: {}, caps: {}, floors: { luck: 20 }, hardFloors: ["luck"] }, slots: ["ring"], optionalSlots: ["ring"] });
+  assert.equal(tieBreakModel(floorsOnly, startVector(floorsOnly, picked), 0).model.numRows, floorsOnly.model.numRows);
 });

@@ -162,6 +162,7 @@ export function progressText(p: OptimizeProgress): { frac: number; text: string;
   const clamp = (f: number): number => Math.max(0, Math.min(1, f));
   if (p.phase === "heuristic") return { frac: clamp(p.restarts ? p.restartsDone! / p.restarts : 0), text: `Restart ${fmtN(p.restartsDone)} of ${fmtN(p.restarts)}`, detail: `${fmtN(p.candidates)} candidate items` };
   if (p.phase === "exact") return { frac: clamp(p.budgetMs ? p.elapsedMs! / p.budgetMs : 0), text: p.gapPoints == null ? "Proving: no bound yet" : `Proving: at most ${fmtN(p.gapPoints)} points from the bound`, detail: `${fmtN(p.nodes)} search nodes · ${fmtN(p.candidates)} candidates` };
+  if (p.phase === "tie-break") return { frac: clamp(p.budgetMs ? p.elapsedMs! / p.budgetMs : 0), text: "Choosing pieces by rarity among equally good suits", detail: "" };
   if (p.phase === "alternatives") return { frac: clamp(p.wanted ? p.found! / p.wanted : 1), text: `${fmtN(p.found)} of ${fmtN(p.wanted)} other suits found`, detail: "" };
   return { frac: 1, text: "Finishing…", detail: "" };
 }

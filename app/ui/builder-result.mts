@@ -17,7 +17,7 @@ import { session, commands, provide } from "./builder-session.mts";
 import { RESIST_NAMES, keyProps, tipTarget, verdict, grabAllButton, fetchCard, settingsCheck } from "./builder-parts.mts";
 import { savedBuffs, plannedFromWorn, buffById, buffsDiff, runBuffs } from "../buffs.mts";
 import type { RunBuffs } from "../vault-lib.mts";
-import { slotsOf, paperdollCaps, pastCapBadges, runSettingsDiff, withBuffs, afterChange, compareModel, hiddenRowsNote, otherChanges, plural, resistOutcome, toggleCompare, propName, capNote, capsLine, anyOverridden, effectiveFloor, resultChecks, swingLines, who, type CompareMember } from "./builder-model.mts";
+import { slotsOf, paperdollCaps, pastCapBadges, runSettingsDiff, withBuffs, afterChange, compareModel, hiddenRowsNote, otherChanges, plural, resistOutcome, toggleCompare, propName, capNote, capsLine, anyOverridden, effectiveFloor, resultChecks, swingLines, who, bestSuitLabel, rarityDetail, type CompareMember } from "./builder-model.mts";
 import { heldWeapon } from "../swing.mts";
 import type { SwingResult } from "../runs-types.mts";
 import type { OptSuit, OptimizeResult, SavedRunLike } from "./api-types.mts";
@@ -244,7 +244,7 @@ function otherSuitsCard(res: OptimizeResult, view: number | null): HTMLElement {
       rerender();
     } });
     return { cells: [tick.input, i === 0 ? badge("Best", "best") : txt(`#${i + 1}`), i === 0 ? txt("—", "muted") : txt(Math.abs(d) < 1e-6 ? "ties" : `${d > 0 ? "+" : "−"}${fmtN(Math.abs(Math.round(d)))}`),
-      i === 0 ? txt(res.proven ? "the proven best" : "the best found", "muted") : txt(slotsDiff.map((sl) => `${slotLabel(sl)}: ${s.best[sl] ? s.best[sl]!.name : "nothing"}`).join(" · ")),
+      i === 0 ? txt(bestSuitLabel(res), "muted") : txt(slotsDiff.map((sl) => `${slotLabel(sl)}: ${s.best[sl] ? s.best[sl]!.name : "nothing"}`).join(" · ")),
       i === 0 ? txt("") : txt(propDiff.join(" · ") || "same totals", "muted"),
       i === shownIdx ? txt("Showing", "t-sm muted") : button({ label: "Show", size: "sm", onClick: () => { session.altView = i === 0 ? null : i - 1; rerender(); } })],
       attrs: picked.has(String(i)) ? { class: "sel" } : {} };
@@ -298,6 +298,7 @@ function detailsCard(res: OptimizeResult, meta: BuildMeta | undefined, view: num
   if (time) pairs.push(["Time", time]);
   if (skips) pairs.push(["Left out", skips]);
   if (res.method !== "manual") pairs.push(["Score", `${fmtN(Math.round(res.currentScore))} → ${fmtN(Math.round(score))}`]);
+  if (res.tieBreak && res.method !== "manual") pairs.push(["Rarity", rarityDetail(res.tieBreak)]);
   if (res.gapPoints != null) pairs.push(["Gap to the bound", `${fmtN(res.gapPoints)} points`]);
   if (res.altTolerance != null) pairs.push(["Other suits", `${fmtN((res.alternatives || []).length)} within ${fmtN(res.altTolerance)} points${res.altShortfall === "budget" ? " · the time budget ran out before more were found" : ""}`]);
   // A run is reused when the solvers' input is the same (runs-lib.mts's runKey): its buffs may differ where they plan alike.
@@ -373,7 +374,7 @@ function openSuitCompare(indices: number[]): void {
     const shownIdx = session.altView == null ? 0 : session.altView + 1;
     const columns: CompareColumn[] = idx.map((i) => {
       const s = all[i]!, d = s.score - res.score;
-      const sub = i === 0 ? (res.proven ? "the proven best" : "the best found") : Math.abs(d) < 1e-6 ? "ties the best" : `${fmtN(Math.abs(Math.round(d)))} points ${d < 0 ? "below" : "above"}`;
+      const sub = i === 0 ? bestSuitLabel(res) : Math.abs(d) < 1e-6 ? "ties the best" : `${fmtN(Math.abs(Math.round(d)))} points ${d < 0 ? "below" : "above"}`;
       const head = box("span", { class: "b-cmp-col" }, i === 0 ? box("span", { class: "b-row" }, badge("Best", "best"), res.proven ? badge("Proven optimal", "ok") : null) : txt(`#${i + 1}`, "strong"), txt(sub, "t-sm"));
       const action = i === shownIdx ? txt("Showing in the result", "t-sm muted") : button({ label: "Show this suit", size: "sm", onClick: () => { session.altView = i === 0 ? null : i - 1; closeCompare(); rerender(); } });
       return { assignment: s.best, totals: withBuffs(totalsOf(s.best), prof.resistSkill, paperdollCaps(profileResistCaps(prof), fcCapOf(prof)), withoutBuffs ? null : prof.buffs).totals, head, token: i === 0 ? "Best" : `#${i + 1} · ${Math.abs(d) < 1e-6 ? "ties" : `${d < 0 ? "−" : "+"}${fmtN(Math.abs(Math.round(d)))}`}`,

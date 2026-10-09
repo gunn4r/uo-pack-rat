@@ -1,6 +1,6 @@
 // solver-fuzz.test.mts — a seeded brute-force equivalence check of all three searches over small generated inventories.
 //
-// a seeded brute-force equivalence check: five fixed seeds × 400 generated inventories of two to six of the nineteen gear slots (`solver-fixture.mts`'s `fuzzSlots`, the hand pair together in about half; 1–4 candidates each, negative property values, negative weights on capped and floored properties, soft and hard floors, worn and locked slots, a random warm start (which must never empty a locked slot), shields and two-handers), each enumerated outright so the maximum of the core's `scoreSet` is the oracle. The heuristic must return a valid suit scoring its own re-score and never above the oracle; the core's exact search and `solveExact` (HiGHS) must both prove and equal the oracle, with HiGHS's bound never below its score. A second loop does the same with SSI scored by swing step (a step table from `app/swing.mts` over random weapon speeds, stamina, reference stamina and buff shares, on pools carrying SSI and the Stamina pool), with an oracle that prices each suit's own swing from the formula rather than the table, and checks the core's `scoreSet` against it suit by suit. All `[fast]` (about 10 s); the first loop is what caught the soft-floor met row forbidding negative totals and the core's pruning on negatively weighted floors.
+// a seeded brute-force equivalence check: five fixed seeds × 400 generated inventories of two to six of the nineteen gear slots (`solver-fixture.mts`'s `fuzzSlots`, the hand pair together in about half; 1–4 candidates each, negative property values, negative weights on capped and floored properties, soft and hard floors, worn and locked slots, a random warm start (which must never empty a locked slot), shields and two-handers), each enumerated outright so the maximum of the core's `scoreSet` is the oracle. The heuristic must return a valid suit scoring its own re-score and never above the oracle; the core's exact search and `solveExact` (HiGHS) must both prove and equal the oracle, with HiGHS's bound never below its score. A second loop does the same with SSI scored by swing step (a step table from `app/swing.mts` over random weapon speeds, stamina, reference stamina and buff shares, on pools carrying SSI and the Stamina pool), with an oracle that prices each suit's own swing from the formula rather than the table, and checks the core's `scoreSet` against it suit by suit. A third loop (issue #262) gives every piece a tie cost 0-8, leans the generator toward ties (capped properties, copies of a piece at another cost) and takes tolerances 0, 3 and 1500: its oracle is the best score, then the lowest summed cost among suits within the tolerance that meet every floor a best suit meets; the core's exact search and `solveExact` must prove and equal it, and the heuristic must return a valid suit within the tolerance of its own best, never cheaper than the oracle when its best is the true one. The first two loops are `[fast]` (about 10 s), the third `[slow]`; the first loop is what caught the soft-floor met row forbidding negative totals and the core's pruning on negatively weighted floors.
 //
 // The three searches are the core's heuristic (a valid suit, never above the oracle), the core's exact branch-and-bound (proven, equal to the oracle), and `solveExact` through HiGHS (proven, equal to the oracle, bound never below its own score). The generator leans on the cases that broke before.
 import { test } from "node:test";
@@ -186,6 +186,93 @@ for (const seed of [5, 41, 777]) {
       assert.equal(r.proven, true, `${label}: HiGHS did not prove (score ${r.score}, brute force ${oracle})`);
       assert.ok(Math.abs(r.score - oracle) < 1e-3, `${label}: HiGHS ${r.score} != brute force ${oracle}`);
       if (r.bound != null) assert.ok(r.bound >= r.score - 1e-3, `${label}: bound ${r.bound} below the returned score ${r.score}`);
+    }
+  });
+}
+
+// A tie-break (issue #262): every piece carries a tie cost 0-8, and the oracle enumerates every suit: the best score,
+// then, per set of floors a best-scoring suit meets, the lowest summed cost among the suits within the tolerance of it
+// that meet those floors. The generator leans toward ties: capped properties and copies of a piece at another cost.
+function tieInstance(rnd: () => number, serialBase: number): Instance {
+  const inst = generate(rnd, serialBase);
+  const int = (lo: number, hi: number): number => lo + Math.floor(rnd() * (hi - lo + 1));
+  let serial = serialBase + 50;
+  for (const s of inst.slots) {
+    const pool = inst.pools[s]!;
+    if (rnd() < 0.6) pool.push({ ...pool[int(0, pool.length - 1)]!, serial: ++serial, name: `copy${serial}` });
+    for (const it of pool) it.tieCost = int(0, 8);
+    const cur = inst.current[s];
+    if (cur && !pool.includes(cur)) cur.tieCost = int(0, 8);
+  }
+  for (const d of DIMS) if (rnd() < 0.3) inst.profile.caps = { ...inst.profile.caps, [d]: int(0, 15) };
+  return inst;
+}
+interface TieOracle { top: number; byMet: { met: string[]; cost: number }[] }
+function tieOracle(inst: Instance, cands: Record<string, (Item | null)[]>, tolerance: number): TieOracle {
+  const suits: { score: number; cost: number; totals: Record<string, number> }[] = [];
+  const pick: OptAssignment = {};
+  const rec = (i: number): void => {
+    if (i === inst.slots.length) {
+      if (pick.twoHanded?.twoHanded === true && pick.oneHanded) return;
+      const totals: Record<string, number> = {};
+      let cost = 0;
+      for (const it of Object.values(pick)) if (it) { cost += it.tieCost || 0; for (const [k, v] of Object.entries(it.props)) totals[k] = (totals[k] || 0) + v; }
+      suits.push({ score: core.scoreSet(pick, inst.profile), cost, totals });
+      return;
+    }
+    const s = inst.slots[i]!;
+    for (const it of cands[s]!) { pick[s] = it; rec(i + 1); }
+  };
+  rec(0);
+  const top = Math.max(...suits.map((x) => x.score)), floors = Object.entries(inst.profile.floors || {}).filter(([, f]) => f > 0);
+  const metOf = (t: Record<string, number>): string[] => floors.filter(([k, f]) => (t[k] || 0) >= f).map(([k]) => k);
+  const byMet: { met: string[]; cost: number }[] = [];
+  for (const s of suits.filter((x) => x.score >= top - EPS)) {
+    const met = metOf(s.totals);
+    if (byMet.some((b) => b.met.join() === met.join())) continue;
+    const ok = suits.filter((x) => x.score >= top - tolerance - 1e-3 && met.every((k) => (x.totals[k] || 0) >= inst.profile.floors![k]!));
+    byMet.push({ met, cost: Math.min(...ok.map((x) => x.cost)) });
+  }
+  return { top, byMet };
+}
+function assertTieResult(inst: Instance, cands: Record<string, (Item | null)[]>, r: { best: OptAssignment; score: number; tieBreak?: { topScore: number; cost: number } | undefined }, o: TieOracle, tolerance: number, label: string): void {
+  assertValidSuit(inst, cands, r.best, label);
+  assert.ok(r.tieBreak, `${label}: no tieBreak in the result`);
+  const cost = Object.values(r.best).reduce((n, it) => n + (it?.tieCost || 0), 0);
+  assert.equal(r.tieBreak!.cost, cost, `${label}: reported cost ${r.tieBreak!.cost} is not the suit's ${cost}`);
+  assert.ok(Math.abs(r.tieBreak!.topScore - o.top) < 1e-3, `${label}: top ${r.tieBreak!.topScore} != brute force ${o.top}`);
+  assert.ok(r.score >= o.top - tolerance - 1e-3, `${label}: score ${r.score} more than ${tolerance} under the top ${o.top}`);
+  const totals: Record<string, number> = {};
+  for (const it of Object.values(r.best)) if (it) for (const [k, v] of Object.entries(it.props)) totals[k] = (totals[k] || 0) + v;
+  const match = o.byMet.find((b) => b.met.every((k) => (totals[k] || 0) >= inst.profile.floors![k]!));
+  assert.ok(match, `${label}: the suit gave up a floor every best suit meets`);
+  assert.ok(o.byMet.some((b) => b.cost === cost && b.met.every((k) => (totals[k] || 0) >= inst.profile.floors![k]!)), `${label}: cost ${cost}, brute force ${JSON.stringify(o.byMet)}`);
+}
+
+for (const seed of [11, 59, 2027]) {
+  test(`[slow] tie-break: brute force agrees with the core's exact search and HiGHS, the heuristic stays valid (seed ${seed})`, async () => {
+    const rnd = core.optMulberry32(seed);
+    for (let i = 0; i < 300; i++) {
+      const inst = tieInstance(rnd, seed * 100000 + i * 100);
+      const tolerance = [0, 0, 3, 1500][i % 4]!;
+      const label = `seed ${seed} instance ${i} tolerance ${tolerance}`;
+      const cands = candidates(inst);
+      const o = tieOracle(inst, cands, tolerance);
+      const base: OptOptions = { seed: 1, restarts: 2, slots: inst.slots, optionalSlots: inst.optionalSlots, tieBreak: { rarity: "lower", tolerance } };
+
+      const heur = core.optimizeSuit(inst.pools, inst.current, inst.profile, { ...base, exact: false });
+      assertValidSuit(inst, cands, heur.best, `${label} heuristic`);
+      assert.ok(heur.tieBreak && heur.score >= heur.tieBreak.topScore - tolerance - EPS, `${label}: heuristic suit outside the tolerance of its own top`);
+      assert.ok(heur.tieBreak!.topScore <= o.top + EPS, `${label}: heuristic top above the brute-force maximum`);
+      if (Math.abs(heur.tieBreak!.topScore - o.top) < EPS && o.byMet.length === 1) assert.ok(heur.tieBreak!.cost >= o.byMet[0]!.cost, `${label}: heuristic cost under the brute-force minimum`);
+
+      const exact = core.optimizeSuit(inst.pools, inst.current, inst.profile, { ...base, exact: true, timeBudgetMs: 5000 });
+      assert.equal(exact.proven, true, `${label}: the core's exact search did not prove`);
+      assertTieResult(inst, cands, exact, o, tolerance, `${label} core exact`);
+
+      const r = await solveExact({ core, ...inst, opts: { ...base, exact: true, timeBudgetMs: 10000 }, onProgress: () => {} });
+      assert.equal(r.proven, true, `${label}: HiGHS did not prove (score ${r.score}, ${JSON.stringify(r.tieBreak)})`);
+      assertTieResult(inst, cands, r, o, tolerance, `${label} HiGHS`);
     }
   });
 }

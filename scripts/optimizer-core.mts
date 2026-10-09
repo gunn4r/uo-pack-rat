@@ -37,6 +37,7 @@ interface OptItem {
   twoHanded?: boolean;
   props: Record<string, number>;
   speed?: number | undefined;   // a weapon's base speed in seconds; the core never reads it (app/swing.mts does)
+  tieCost?: number | undefined; // a tie-break cost (a rarity preference's, issue #262), never negative: with opts.tieBreak the search takes the lowest summed cost among suits within the tolerance of the best
 }
 
 // A full suit: slot name -> item, or null for "nothing equipped there".
@@ -79,6 +80,10 @@ interface OptOptions {
   progressEveryMs?: number;
   warmStart?: Record<string, number | null>;  // slot -> serial of an earlier best suit; mapped onto this run's candidates and used as one more search start
   alternatives?: { count: number; tolerance: number };  // exact phase: also list up to `count` other suits scoring within `tolerance` of the best (0 = exact ties)
+  // A second stage: among suits scoring at least (best - tolerance) that meet every floor the best suit meets, return the one with the lowest summed
+  // OptItem.tieCost, the higher score on equal cost. `rarity` is the caller's label for where the costs came from; the core never reads it.
+  // `topStart` (slot -> serial): the best-scoring suit an exact search found, one more search start, so the best score here matches it.
+  tieBreak?: { tolerance: number; rarity?: string | undefined; topStart?: Record<string, number | null> | undefined } | undefined;
 }
 
 // Progress snapshot handed to onProgress. `explored` is the fraction of the exact search tree
@@ -127,6 +132,7 @@ interface OptResult {
   pruned?: { before: number; after: number } | undefined;   // candidate counts before/after dominance pruning
   alternatives?: { best: OptAssignment; score: number }[] | undefined;   // other suits within altTolerance of the best, best first (never the best itself)
   altTolerance?: number | undefined;
+  tieBreak?: { topScore: number; cost: number } | undefined;   // with opts.tieBreak: the best score found, and the returned suit's summed tie cost
 }
 
 // Internal: a flattened property space so scoring is an array loop instead of object churn.
@@ -653,7 +659,18 @@ function optDominancePrune(list: (OptItem | null)[], space: OptSpace, keepNull: 
   return out;
 }
 
-function optBranchAndBound(slots: string[], cands: Record<string, (OptItem | null)[]>, space: OptSpace, incumbent: OptAssignment, incumbentScore: number, budgetMs: number, tick?: (nodes: number, bestScore: number, improvements: number, explored: number) => void, tickEveryMs?: number, alt?: { count: number; tolerance: number }): { best: OptAssignment; score: number; proven: boolean; nodes: number; improvements: number; alts: { a: OptAssignment; score: number }[] } {
+// A suit's summed tie cost (OptItem.tieCost; an empty slot costs 0).
+function optTieCost(a: OptAssignment, slots: string[]): number {
+  let c = 0;
+  for (let i = 0; i < slots.length; i++) { const it = a[slots[i]!]; if (it) c += it.tieCost || 0; }
+  return c;
+}
+
+// `tie`: the tie-break pass (OptOptions.tieBreak). A leaf counts when it scores at least `min` and meets the floors on
+// the dimensions in `met`, and wins on a lower summed tie cost (the higher score on an equal one); the incumbent's cost
+// is `cost`. A subtree is dropped when its score bound is under `min`, a floor in `met` is out of reach, or its cost so
+// far plus the cheapest piece of each remaining slot passes the incumbent's.
+function optBranchAndBound(slots: string[], cands: Record<string, (OptItem | null)[]>, space: OptSpace, incumbent: OptAssignment, incumbentScore: number, budgetMs: number, tick?: (nodes: number, bestScore: number, improvements: number, explored: number) => void, tickEveryMs?: number, alt?: { count: number; tolerance: number }, tie?: { min: number; met: number[]; cost: number }): { best: OptAssignment; score: number; proven: boolean; nodes: number; improvements: number; alts: { a: OptAssignment; score: number }[] } {
   // slot order: most constrained (fewest candidates) first; the weapon pair goes last so the
   // two-hander rule is a cheap local check (twoHanded is enumerated before oneHanded).
   const order = slots.filter((x) => x !== "oneHanded" && x !== "twoHanded").sort((a, b) => cands[a]!.length - cands[b]!.length);
@@ -661,11 +678,17 @@ function optBranchAndBound(slots: string[], cands: Record<string, (OptItem | nul
   if (slots.indexOf("oneHanded") >= 0) order.push("oneHanded");
   const n = order.length, dims = space.keys.length;
   // candidates sorted by their own capped contribution, best first, so good incumbents appear early
+  const costOf = function (it: OptItem | null): number { return it ? it.tieCost || 0 : 0; };
   const lists: (OptItem | null)[][] = order.map((s) => {
     const l = (cands[s] || [null]).slice();
-    l.sort((a, b) => optScoreVector(optVec(b, space), space) - optScoreVector(optVec(a, space), space));
+    // the tie pass looks at cheap pieces first, so a low-cost incumbent appears early
+    l.sort((a, b) => (tie ? costOf(a) - costOf(b) : 0) || optScoreVector(optVec(b, space), space) - optScoreVector(optVec(a, space), space));
     return l;
   });
+  // the least tie cost the remaining slots can add (each slot's cheapest candidate)
+  const sufCost: number[] = new Array(n + 1).fill(0);
+  for (let k = n - 1; k >= 0; k--) { let mn = Infinity; for (let j = 0; j < lists[k]!.length; j++) mn = Math.min(mn, costOf(lists[k]![j] as OptItem | null)); sufCost[k] = sufCost[k + 1]! + mn; }
+  let costSoFar = 0, bestCost = tie ? tie.cost : 0;
   // suffix range of what the remaining slots can still add, per dimension: sufHi the most, sufLo the least
   const sufHi: number[][] = new Array(n + 1), sufLo: number[][] = new Array(n + 1);
   sufHi[n] = space.zero.slice(); sufLo[n] = space.zero.slice();
@@ -769,8 +792,22 @@ function optBranchAndBound(slots: string[], cands: Record<string, (OptItem | nul
   const altList: { a: OptAssignment; score: number }[] = [];
   let altMin = -Infinity;
   const altThr = function (): number { const base = cut - altTol; return altList.length >= altMax && altMin > base ? altMin : base; };
-  const pruneAt = function (b: number): boolean { return alt ? b < altThr() - EPS : b <= cut + EPS; };
+  const pruneAt = function (b: number): boolean { return tie ? b < tie.min - EPS : alt ? b < altThr() - EPS : b <= cut + EPS; };
   const rec = function (k: number): boolean {   // returns false when the budget is exhausted
+    if (k === n && tie) {
+      const sc = optScoreVector(totals, space);
+      let ok = sc >= tie.min - EPS;
+      for (let i = 0; i < tie.met.length && ok; i++) if (totals[tie.met[i]!]! < space.floor[tie.met[i]!]!) ok = false;
+      if (ok && (costSoFar < bestCost - EPS || (costSoFar <= bestCost + EPS && sc > bestScore + EPS))) {
+        bestScore = sc;
+        bestCost = costSoFar;
+        improvements++;
+        const a: OptAssignment = {};
+        for (let i = 0; i < n; i++) a[order[i]!] = pick[i] as OptItem | null;
+        best = a;
+      }
+      return true;
+    }
     if (k === n) {
       const sc = optScoreVector(totals, space);
       if (sc > cut + EPS) {
@@ -795,6 +832,10 @@ function optBranchAndBound(slots: string[], cands: Record<string, (OptItem | nul
       if (tick && now >= nextTick) { nextTick = now + every; tick(nodes, cut, improvements, explored()); }
       if (now - t0 > budgetMs) return false;
     }
+    if (tie) {
+      if (costSoFar + sufCost[k]! > bestCost + EPS) return true;   // cannot get as cheap as the incumbent
+      for (let i = 0; i < tie.met.length; i++) { const d = tie.met[i]!; if (totals[d]! + sufHi[k]![d]! < space.floor[d]!) return true; }   // a floor out of reach
+    }
     if (pruneAt(looseBound(k))) return true;                   // subtree cannot beat the incumbent (or reach the alternatives list)
     if (n - k >= 2 && pruneAt(tightBound(k))) return true;     // ... nor under the tighter, item-coupled bound
     const slot = order[k], list = lists[k]!;
@@ -806,7 +847,9 @@ function optBranchAndBound(slots: string[], cands: Record<string, (OptItem | nul
       const v = optVec(it, space);
       for (let d = 0; d < dims; d++) totals[d]! += v[d]!;
       pick[k] = it;
+      costSoFar += costOf(it);
       const ok = rec(k + 1);
+      costSoFar -= costOf(it);
       for (let d = 0; d < dims; d++) totals[d]! -= v[d]!;
       pick[k] = null;
       if (!ok) { proven = false; return false; }
@@ -886,23 +929,27 @@ function optimizeSuit(pools: Record<string, OptItem[]>, current: OptAssignment, 
   };
   noteBest(cur, currentScore);   // the starting suit is the first incumbent
 
+  // With a tie-break, every start's climbed suit (and the warm start as given) is a candidate for the second stage.
+  const tb = opts.tieBreak ? { tolerance: Math.max(0, opts.tieBreak.tolerance || 0) } : null;
+  const tieCands: OptAssignment[] = [];
   const consider = function (start: OptAssignment): void {
     if (yieldFn && ++sinceYield >= yieldEvery) { sinceYield = 0; yieldFn(); }
     const r = optLocalSearch(start, slots, cands, space, maxPasses);
+    if (tb) tieCands.push(r.assignment);
     if (r.score > bestScore) { bestScore = r.score; best = r.assignment; prog.improvements++; noteBest(best, bestScore); }
   };
   emit(true);
   consider(cur);
   consider(greedy);
   consider(gradSeed);
-  if (opts.warmStart) {
-    // An earlier run's best suit, re-scored under this run's profile. Pieces no longer in the pool become
-    // empty slots; the local search repairs the rest. Only a starting point: it can never lower the result.
-    // A slot that may not be empty (a locked slot, or Manual's pinned piece) keeps its current piece, else its
-    // first candidate: an empty one there would be a suit no search may return, and the incumbent would stick.
+  // An earlier run's best suit, re-scored under this run's profile. Pieces no longer in the pool become
+  // empty slots; the local search repairs the rest. Only a starting point: it can never lower the result.
+  // A slot that may not be empty (a locked slot, or Manual's pinned piece) keeps its current piece, else its
+  // first candidate: an empty one there would be a suit no search may return, and the incumbent would stick.
+  const fromSerials = function (serials: Record<string, number | null>): OptAssignment {
     const warm: OptAssignment = {};
     for (let i = 0; i < slots.length; i++) {
-      const want = opts.warmStart[slots[i]!];
+      const want = serials[slots[i]!];
       let hit: OptItem | null = null;
       const list = cands[slots[i]!]!;
       for (let j = 0; j < list.length && want; j++) { const c = list[j] as OptItem | null; if (c && c.serial === want) { hit = c; break; } }
@@ -913,8 +960,14 @@ function optimizeSuit(pools: Record<string, OptItem[]>, current: OptAssignment, 
       }
       warm[slots[i]!] = hit;
     }
-    consider(optSanitize(warm, slots));
+    return optSanitize(warm, slots);
+  };
+  if (opts.warmStart) {
+    const warm = fromSerials(opts.warmStart);
+    if (tb) tieCands.push(warm);
+    consider(warm);
   }
+  if (tb && opts.tieBreak!.topStart) consider(fromSerials(opts.tieBreak!.topStart));
   const rnd = optMulberry32(seed);
   const heuristicBudgetMs = typeof opts.heuristicBudgetMs === "number" ? opts.heuristicBudgetMs : Infinity;
   for (let i = 0; i < restarts && Date.now() - t0 < heuristicBudgetMs; i++) { consider(optRandomSeed(slots, cands, rnd)); prog.restartsDone = i + 1; emit(); }
@@ -928,6 +981,8 @@ function optimizeSuit(pools: Record<string, OptItem[]>, current: OptAssignment, 
   const alt = opts.exact && opts.alternatives && opts.alternatives.count > 0 ? opts.alternatives : null;
   const altTol = alt ? Math.max(0, alt.tolerance || 0) : 0;
   let alternatives: { best: OptAssignment; score: number }[] | undefined = undefined;
+  let bbAlts: { a: OptAssignment; score: number }[] = [];
+  const exactStart = Date.now();
   if (opts.exact) {
     prog.phase = "prune"; emit(true);
     let before = 0, after = 0;
@@ -947,26 +1002,126 @@ function optimizeSuit(pools: Record<string, OptItem[]>, current: OptAssignment, 
       prog.improvements = heuristicImprovements + bbImprovements;
       emit(true);
     };
-    const bb = optBranchAndBound(slots, pcands, space, best, bestScore, budgetMs, opts.onProgress ? tick : undefined, progressEvery, alt || undefined);
+    // with a tie-break, the score pass keeps a quarter of the budget for the tie pass below
+    const bb = optBranchAndBound(slots, pcands, space, best, bestScore, tb ? budgetMs * 0.75 : budgetMs, opts.onProgress ? tick : undefined, progressEvery, alt || undefined);
     if (bb.score > bestScore) { best = optSanitize(bb.best, slots); bestScore = bb.score; noteBest(best, bestScore); }
     method = "exact"; proven = bb.proven; nodes = bb.nodes; pruned = { before: before, after: after };
-    if (alt) {
-      const sigOf = function (a: OptAssignment): string { const parts: string[] = []; for (let i = 0; i < slots.length; i++) { const it = a[slots[i]!]; parts.push(it ? String(it.serial) : "0"); } return parts.join(","); };
-      const seen: Record<string, boolean> = {};
-      seen[sigOf(best)] = true;
-      const list = bb.alts.map(function (e) { const a = optSanitize(e.a, slots); return { best: a, score: optScoreVector(optTotalsOf(a, slots, space), space) }; });
-      list.sort(function (x, y) { return y.score - x.score; });
-      alternatives = [];
-      for (let i = 0; i < list.length && alternatives.length < alt.count; i++) {
-        const e = list[i]!;
-        if (e.score < bestScore - altTol - 1e-9) break;
-        const k = sigOf(e.best);
-        if (seen[k]) continue;
-        seen[k] = true;
-        alternatives.push(e);
-      }
-    }
+    bbAlts = bb.alts;
     prog.improvements = heuristicImprovements + bb.improvements;
+  }
+
+  // The tie-break's second stage. `top` is the best score found; a suit qualifies when it scores at least top - tolerance
+  // and meets every floor the best suit meets. Among the candidates (every start's climbed suit, the warm start as given,
+  // the best suit), take the lowest tie cost, then the higher score, then the first; then descend: each pass takes the
+  // single-slot swap or weapon pair that lowers the cost most and keeps the suit qualifying (ties to the higher score),
+  // until none does. The exact phase then proves it with a tie pass of the branch-and-bound over every candidate.
+  const topScore = bestScore;
+  let tieInfo: { topScore: number; cost: number } | undefined = undefined;
+  let tieKeeps: ((a: OptAssignment) => boolean) | null = null;   // the trim below must not give up a floor the best suit meets
+  if (tb) {
+    const topTv = optTotalsOf(best, slots, space), met: number[] = [];
+    for (let i = 0; i < space.keys.length; i++) if (space.floor[i]! > 0 && topTv[i]! >= space.floor[i]!) met.push(i);
+    // scores within 1e-3 count as equal, the exact solver's precision (app/mip.mts TIE_SLACK)
+    const min = topScore - tb.tolerance, EPS = 1e-3;
+    const qualifies = function (tv: number[], sc: number): boolean {
+      if (sc < min - EPS) return false;
+      for (let i = 0; i < met.length; i++) if (tv[met[i]!]! < space.floor[met[i]!]!) return false;
+      return true;
+    };
+    const costOf = function (it: OptItem | null): number { return it ? it.tieCost || 0 : 0; };
+    tieKeeps = function (a: OptAssignment): boolean { const tv = optTotalsOf(a, slots, space); for (let i = 0; i < met.length; i++) if (tv[met[i]!]! < space.floor[met[i]!]!) return false; return true; };
+    let pick = best, pickScore = bestScore, pickCost = optTieCost(best, slots);
+    tieCands.push(best);
+    for (let i = 0; i < tieCands.length; i++) {
+      const a = optSanitize(tieCands[i]!, slots), tv = optTotalsOf(a, slots, space), sc = optScoreVector(tv, space), c = optTieCost(a, slots);
+      if (!qualifies(tv, sc)) continue;
+      if (c < pickCost - 1e-9 || (c <= pickCost + 1e-9 && sc > pickScore + EPS)) { pick = a; pickScore = sc; pickCost = c; }
+    }
+    const cur2: OptAssignment = { ...pick }, totals = optTotalsOf(cur2, slots, space);
+    const oneCands = cands["oneHanded"] || [null], twoCands = cands["twoHanded"] || [null];
+    for (let pass = 0; pass < maxPasses; pass++) {
+      let bestDrop = 1e-9, moveScore = -Infinity, moveSlot = "", moveItem: OptItem | null = null, movePair: { one: OptItem | null; two: OptItem | null } | null = null;
+      const consider2 = function (drop: number, sc: number): boolean {
+        if (drop > bestDrop + 1e-9 || (drop >= bestDrop - 1e-9 && moveScore > -Infinity && sc > moveScore + EPS)) { bestDrop = drop; moveScore = sc; return true; }
+        return false;
+      };
+      for (let i = 0; i < slots.length; i++) {
+        const slot = slots[i]!;
+        if (slot === "oneHanded" || slot === "twoHanded") continue;
+        const have = cur2[slot] || null, vHave = optVec(have, space);
+        optAddVec(totals, vHave, -1);
+        const list = cands[slot]!;
+        for (let j = 0; j < list.length; j++) {
+          const cand = list[j] as OptItem | null;
+          if (cand === have) continue;
+          const drop = costOf(have) - costOf(cand);
+          if (drop < bestDrop - 1e-9) continue;
+          const vC = optVec(cand, space);
+          optAddVec(totals, vC, 1);
+          const sc = optScoreVector(totals, space);
+          if (qualifies(totals, sc) && consider2(drop, sc)) { moveSlot = slot; moveItem = cand; movePair = null; }
+          optAddVec(totals, vC, -1);
+        }
+        optAddVec(totals, vHave, 1);
+      }
+      if (slots.indexOf("oneHanded") >= 0 && slots.indexOf("twoHanded") >= 0) {
+        const haveOne = cur2["oneHanded"] || null, haveTwo = cur2["twoHanded"] || null;
+        optAddVec(totals, optVec(haveOne, space), -1);
+        optAddVec(totals, optVec(haveTwo, space), -1);
+        for (let i = 0; i < twoCands.length; i++) {
+          const two = twoCands[i] as OptItem | null, ones = optIsTwoHandedWeapon(two) ? [null] : oneCands;
+          for (let j = 0; j < ones.length; j++) {
+            const one = ones[j] as OptItem | null;
+            if (one === haveOne && two === haveTwo) continue;
+            const drop = costOf(haveOne) + costOf(haveTwo) - costOf(one) - costOf(two);
+            if (drop < bestDrop - 1e-9) continue;
+            const v1 = optVec(one, space), v2 = optVec(two, space);
+            optAddVec(totals, v1, 1); optAddVec(totals, v2, 1);
+            const sc = optScoreVector(totals, space);
+            if (qualifies(totals, sc) && consider2(drop, sc)) { movePair = { one: one, two: two }; moveSlot = ""; moveItem = null; }
+            optAddVec(totals, v1, -1); optAddVec(totals, v2, -1);
+          }
+        }
+        optAddVec(totals, optVec(haveOne, space), 1);
+        optAddVec(totals, optVec(haveTwo, space), 1);
+      }
+      if (movePair) {
+        optAddVec(totals, optVec(cur2["oneHanded"] || null, space), -1);
+        optAddVec(totals, optVec(cur2["twoHanded"] || null, space), -1);
+        cur2["oneHanded"] = movePair.one; cur2["twoHanded"] = movePair.two;
+        optAddVec(totals, optVec(movePair.one, space), 1);
+        optAddVec(totals, optVec(movePair.two, space), 1);
+      } else if (moveSlot) {
+        optAddVec(totals, optVec(cur2[moveSlot] || null, space), -1);
+        cur2[moveSlot] = moveItem;
+        optAddVec(totals, optVec(moveItem, space), 1);
+      } else break;
+    }
+    best = optSanitize(cur2, slots);
+    bestScore = optScoreVector(optTotalsOf(best, slots, space), space);
+    if (opts.exact) {
+      const bb2 = optBranchAndBound(slots, cands, space, best, bestScore, Math.max(0, budgetMs - (Date.now() - exactStart)), undefined, undefined, undefined, { min: min - EPS, met: met, cost: optTieCost(best, slots) });
+      best = optSanitize(bb2.best, slots);
+      bestScore = optScoreVector(optTotalsOf(best, slots, space), space);
+      proven = proven && bb2.proven;
+      nodes = (nodes || 0) + bb2.nodes;
+    }
+  }
+  if (alt) {
+    const sigOf = function (a: OptAssignment): string { const parts: string[] = []; for (let i = 0; i < slots.length; i++) { const it = a[slots[i]!]; parts.push(it ? String(it.serial) : "0"); } return parts.join(","); };
+    const seen: Record<string, boolean> = {};
+    seen[sigOf(best)] = true;
+    const list = bbAlts.map(function (e) { const a = optSanitize(e.a, slots); return { best: a, score: optScoreVector(optTotalsOf(a, slots, space), space) }; });
+    list.sort(function (x, y) { return y.score - x.score; });
+    alternatives = [];
+    for (let i = 0; i < list.length && alternatives.length < alt.count; i++) {
+      const e = list[i]!;
+      if (e.score < topScore - altTol - 1e-9) break;   // ranked against the best score, which a tie-break's suit may sit under
+      const k = sigOf(e.best);
+      if (seen[k]) continue;
+      seen[k] = true;
+      alternatives.push(e);
+    }
   }
   prog.phase = "done"; emit(true);
 
@@ -978,9 +1133,10 @@ function optimizeSuit(pools: Record<string, OptItem[]>, current: OptAssignment, 
     const s = slots[i]!, it = best[s] || null;
     if (!it || !optional[s] || s === "oneHanded" || s === "twoHanded" || (cur[s] && cur[s]!.serial === it.serial)) continue;
     const without: OptAssignment = { ...best, [s]: null }, sc = scoreSet(without, profile);
-    if (sc >= tied - 1e-9) { best = without; tied = sc; }
+    if (sc >= tied - 1e-9 && (!tieKeeps || tieKeeps(without))) { best = without; tied = sc; }
   }
   bestScore += tied - untrimmed;
+  if (tb) tieInfo = { topScore: Math.max(topScore, bestScore), cost: optTieCost(best, slots) };
 
   // Per-slot diff report.
   const changes: OptSlotChange[] = [];
@@ -1032,7 +1188,8 @@ function optimizeSuit(pools: Record<string, OptItem[]>, current: OptAssignment, 
     nodes: nodes,
     pruned: pruned,
     alternatives: alternatives,
-    altTolerance: alt ? altTol : undefined
+    altTolerance: alt ? altTol : undefined,
+    ...(tieInfo ? { tieBreak: tieInfo } : {})
   };
 }
 

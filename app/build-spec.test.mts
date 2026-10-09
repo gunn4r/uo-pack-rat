@@ -1,6 +1,6 @@
 // build-spec.test.mts — `app/build-spec.mts`, a build's intent as one document (issue #218, BuildSpec).
 //
-// `[fast]`: `app/build-spec.mts`: a full spec, a template's (no buffs) and one filled from nothing pass `buildSpecError`, and one refused field of each kind says where; the panel's flat profile goes to a spec and back unchanged; and `planBuild` equals the assemblies it replaced, kept in the test as they were written: the page's build (its profile, pool settings, search options and saved-run snapshot, ui/builder.mts and ui/runs.mts) and the MCP tools' `planProfile` (mcp-tools.mts), for the demo characters with and without buffs and edited numbers, No character, and a hand-picked suit planned as Manual plans it; with no character (issue #12) the shard's caps, no Resisting Spells minimum, no swing and the named school's FC cap; and a character's swing on the planned profile (raw DEX plus the buffs' DEX and stamina shares, the worn suit's stamina, the step switch, none with No character), the switch in a spec only when on and checked as a boolean; and `weaponMustHave` stored only when non-empty, checked, round-tripped and planned with.
+// `[fast]`: `app/build-spec.mts`: a full spec, a template's (no buffs) and one filled from nothing pass `buildSpecError`, and one refused field of each kind says where; the panel's flat profile goes to a spec and back unchanged; and `planBuild` equals the assemblies it replaced, kept in the test as they were written: the page's build (its profile, pool settings, search options and saved-run snapshot, ui/builder.mts and ui/runs.mts) and the MCP tools' `planProfile` (mcp-tools.mts), for the demo characters with and without buffs and edited numbers, No character, and a hand-picked suit planned as Manual plans it; with no character (issue #12) the shard's caps, no Resisting Spells minimum, no swing and the named school's FC cap; and a character's swing on the planned profile (raw DEX plus the buffs' DEX and stamina shares, the worn suit's stamina, the step switch, none with No character), the switch in a spec only when on and checked as a boolean; `weaponMustHave` stored only when non-empty, checked, round-tripped and planned with; and the rarity preference (issue #262) likewise, planned as the tie-break with Within points as its tolerance.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
@@ -12,7 +12,7 @@ import type { RulesV1 } from "./schema/types.d.mts";
 import { upgradeScan } from "./scan-schema.mts";
 import { buffPlanOf, buffSkillValues, manualBase, manualPlan, plannedProfile, runBuffs } from "./buffs.mts";
 import { RACES, RUN_DEFAULTS, defaultStrLimit } from "./run-settings.mts";
-import { buildSpec, buildSpecError, type BuildSpecSource, type CharacterEntry, characterBuffs, characterProfile, findTemplate, migrateProfilesV3, planBuild, profileFromSpec, profilesSpecError, specFromProfile, templateLabel, templateRefs, templateSettings, templateSpecFrom,
+import { buildSpec, buildSpecError, type BuildSpecSource, type CharacterEntry, characterBuffs, characterProfile, findTemplate, migrateProfilesV3, planBuild, profileFromSpec, profilesSpecError, specFromProfile, specFromRunSettings, templateLabel, templateRefs, templateSettings, templateSpecFrom,
   type BuildSpec, type FlatProfile, type ProfilesV3, type TemplateMap } from "./build-spec.mts";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
@@ -70,7 +70,7 @@ test("[fast] build spec: the panel's flat profile goes to a spec and back; absen
   assert.equal(empty.pool.strLimit, "character");
   assert.equal(empty.pool.ubwsAnyWeapon, true);
   assert.equal(empty.intent.floorBonus, 1000);
-  const { swingSteps: _off, castingSchool: _school, weaponMustHave: _none, ...defaults } = templateFrom();   // a spec carries the swing-step switch only when on, the casting school only when one is named, and weaponMustHave only when it lists any
+  const { swingSteps: _off, castingSchool: _school, weaponMustHave: _none, rarity: _any, ...defaults } = templateFrom();   // a spec carries the swing-step switch only when on, the casting school only when one is named, weaponMustHave only when it lists any, and the rarity preference only when set
   assert.deepEqual(profileFromSpec(empty), { ...defaults, excludeRoots: [] }, "the same defaults templateFrom fills in");
 });
 
@@ -94,6 +94,28 @@ test("[fast] build spec: a spellbook exclusion is a known excludeWeapons value a
   assert.ok(buildSpecError({ ...spec, pool: { ...spec.pool, excludeWeapons: ["spellbooks"] } }, "spec"), "an unknown name is still refused");
   const schema = JSON.parse(readFileSync(join(HERE, "schema", "profiles.v3.schema.json"), "utf8")) as ValidatorSchema;
   assert.ok(validate(schema, { schemaVersion: 3, characters: { A: { spec } }, templates: {} }).ok, "the schema takes it");
+});
+
+// Issue #262: intent rarity is stored only when set, checked, round-trips through the panel, a template and a run's
+// settings, and planBuild turns it into the tie-break with "Within points" as its tolerance.
+test("[fast] build spec: a rarity preference is stored only when set, checked, round-trips and is planned with", () => {
+  assert.equal("rarity" in specFromProfile(PANEL).intent, false, "any: absent");
+  const spec = specFromProfile({ ...PANEL, rarity: "lower" });
+  assert.equal(spec.intent.rarity, "lower");
+  assert.equal(buildSpecError(spec, "spec"), null);
+  assert.equal(buildSpecError({ ...spec, intent: { ...spec.intent, rarity: "rarest" } }, "spec"), "spec.intent.rarity must be one of higher, lower");
+  assert.equal(profileFromSpec(spec).rarity, "lower", "back to the panel");
+  assert.deepEqual(specFromProfile(profileFromSpec(spec)), spec, "a round trip changes nothing");
+  assert.equal(templateSettings({ spec: templateSpecFrom({ ...PANEL, rarity: "higher" }) }).rarity, "higher", "a template carries it");
+  assert.equal(templateFrom(PANEL).rarity, undefined);
+  const plan = planBuild({ ...spec, search: { altTol: 3 } }, { character: null, worn: [], race: "human" });
+  assert.deepEqual(plan.opts.tieBreak, { rarity: "lower", tolerance: 3 });
+  assert.equal(plan.snapshot.rarity, "lower", "a run's settings keep it");
+  assert.equal(specFromRunSettings(plan.snapshot).intent.rarity, "lower", "and give it back");
+  assert.equal(planBuild(specFromProfile(PANEL), { character: null, worn: [], race: "human" }).opts.tieBreak, undefined, "none without one");
+  const schema = JSON.parse(readFileSync(join(HERE, "schema", "profiles.v3.schema.json"), "utf8")) as ValidatorSchema;
+  assert.ok(validate(schema, { schemaVersion: 3, characters: { A: { spec } }, templates: {} }).ok, "the schema takes it");
+  assert.equal(validate(schema, { schemaVersion: 3, characters: { A: { spec: { ...spec, intent: { ...spec.intent, rarity: "any" } } } }, templates: {} }).ok, false, "and only higher or lower");
 });
 
 // Issue #214: pool weaponMustHave is stored only when it lists any, checked like the other pool fields, round-trips through

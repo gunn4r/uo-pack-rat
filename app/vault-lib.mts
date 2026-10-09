@@ -399,6 +399,9 @@ export function resistCapsError(v: unknown, path = "resistCaps"): string | null 
 // that casts from the school trains past it), unless that school is Chivalry and Magery or Mysticism is at 70 (ServUO
 // Spell.GetCastDelay drops only Chivalry's cap), else the shard's cap. No character and no school: the shard's cap. `reason` is what the panel shows beside the cap ("Chivalry", "Chivalry (chosen)" for a named school, "Magery 70+").
 export const CASTING_SCHOOLS: readonly string[] = ["Magery", "Necromancy", "Mysticism", "Chivalry", "Spellweaving", "Bushido"];
+// A build's rarity preference (issue #262): among suits within "Within points" of the best, use the highest- or lowest-rarity pieces. Absent means any.
+export type RarityPreference = "higher" | "lower";
+export const RARITY_PREFERENCES: readonly RarityPreference[] = ["higher", "lower"];
 const FC_FAST_SCHOOLS = ["Chivalry", "Spellweaving", "Bushido"], FC_FAST_CAP = 4, FC_SCHOOL_MIN = 30;
 const FC_SLOW_SKILLS = ["Magery", "Mysticism"], FC_SLOW_AT = 70;
 export interface FcCap { cap: number; reason: string }
@@ -1191,6 +1194,7 @@ export interface OptItem {
   props: PropMap;
   twoHanded?: true | undefined;
   speed?: number | undefined;   // a weapon's base speed in seconds (its tooltip's Weapon Speed), for swing steps (app/swing.mts)
+  tieCost?: number | undefined; // a rarity preference's per-piece cost (POST /api/optimize stamps it): among equally good suits the solvers take the lowest sum
 }
 // buildPools() only ever stores an item after `!it.slot` has already sent it to `continue` — every
 // item it hands the solver has passed that filter, so its slot is honestly a string, not the plain
@@ -1364,7 +1368,7 @@ export function excludeWeaponsError(v: unknown, path = "excludeWeapons"): string
 // Templates: a full set of builder settings with no character in them (no race, STR limit or skipped containers).
 // A character's profile keeps its own working copy plus `template`, the name it was applied from; drift between the
 // two is settingsDiff(templateFrom(template), templateFrom(profile)).
-export const TEMPLATE_KEYS: string[] = ["floors", "softFloors", "weights", "floorBonus", "lockedSlots", "excludeTags", "excludeSkills", "allowOthersWorn", "allowGargoyle", "medOnly", "excludeWeapons", "ubwsAnyWeapon", "weaponMustHave", "resistCaps", "swingSteps", "castingSchool"];
+export const TEMPLATE_KEYS: string[] = ["floors", "softFloors", "weights", "floorBonus", "lockedSlots", "excludeTags", "excludeSkills", "allowOthersWorn", "allowGargoyle", "medOnly", "excludeWeapons", "ubwsAnyWeapon", "weaponMustHave", "resistCaps", "swingSteps", "castingSchool", "rarity"];
 export interface TemplateSource {
   floors?: Record<string, number> | undefined;
   softFloors?: string[] | undefined;
@@ -1382,6 +1386,7 @@ export interface TemplateSource {
   resistCaps?: Record<string, number> | undefined;   // the player's per-resist cap overrides, paperdoll terms
   swingSteps?: boolean | undefined;        // score SSI by swing step (app/swing.mts); absent means off
   castingSchool?: string | undefined;      // the school the Faster Casting cap follows (fcCapFor); absent means from the character's skills
+  rarity?: RarityPreference | undefined;   // among equally good suits, prefer higher- or lower-rarity pieces; absent means any
 }
 export interface Template {
   floors: Record<string, number>;
@@ -1400,12 +1405,13 @@ export interface Template {
   resistCaps: Record<string, number>;
   swingSteps: boolean;
   castingSchool: string;   // "" means from the character's skills
+  rarity: RarityPreference | undefined;   // undefined means any (a key either way, so applying a template clears a preference it lacks)
 }
 export function templateFrom(s: TemplateSource = {}): Template {
   return { floors: { ...(s.floors || {}) }, softFloors: [...(s.softFloors || [])], weights: { ...(s.weights || {}) }, floorBonus: s.floorBonus ?? 1000,
     lockedSlots: [...(s.lockedSlots || [])], excludeTags: [...(s.excludeTags || [])], excludeSkills: [...(s.excludeSkills || [])],
     allowOthersWorn: !!s.allowOthersWorn, allowGargoyle: !!s.allowGargoyle, medOnly: !!s.medOnly, excludeWeapons: [...(s.excludeWeapons || [])], ubwsAnyWeapon: s.ubwsAnyWeapon !== false, weaponMustHave: [...(s.weaponMustHave || [])], resistCaps: { ...(s.resistCaps || {}) }, swingSteps: !!s.swingSteps,
-    castingSchool: s.castingSchool || "" };
+    castingSchool: s.castingSchool || "", rarity: s.rarity || undefined };
 }
 
 // A profiles.json character entry, loosely — every field optional, TemplateSource's builder settings
@@ -1491,6 +1497,7 @@ export interface RunSettings {
   buffs?: RunBuffs | undefined;   // the buffs planned with (app/buffs.mts); absent with none, and in a run saved before them
   swingSteps?: boolean | undefined;
   castingSchool?: string | undefined;
+  rarity?: RarityPreference | undefined;
 }
 // A run's buffs: which were on, and the numbers they scale with (app/buffs.mts's inputs, Resisting Spells aside).
 export interface RunBuffs { on: string[]; skills: Record<string, number> }
@@ -1537,6 +1544,7 @@ export function settingsDiff(a: RunSettings = {}, b: RunSettings = {}): string[]
   flag("exact", "exact search on", "exact search off");
   flag("swingSteps", "+SSI by step", "SSI by point");
   if ((a.castingSchool || "") !== (b.castingSchool || "")) out.push(b.castingSchool ? `casting school ${b.castingSchool}` : "casting school from skills");
+  if ((a.rarity || "") !== (b.rarity || "")) out.push(b.rarity ? `rarity: prefer ${b.rarity}` : "rarity: any");
   const [wOn, wOff] = setDiff(a.excludeWeapons, b.excludeWeapons);
   const weaponWords = (ws: string[]): string => [ws.some((w) => w !== SPELLBOOKS) ? `${ws.filter((w) => w !== SPELLBOOKS).join(", ")} weapons` : "", ws.includes(SPELLBOOKS) ? "spellbooks" : ""].filter(Boolean).join(" and ");
   if (wOn.length) out.push(`excluding ${weaponWords(wOn)}`);
