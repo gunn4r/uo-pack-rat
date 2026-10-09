@@ -82,23 +82,21 @@ export function poolSummary(p: PoolSettings): string {
 // The Weapons control holds the weapon skills left out of the pool. The summary says them ("no archery or throwing
 // weapons", "fencing weapons only"); the chip counts them ("Weapons: 2 excluded"). Either adds ", plus Use Best Weapon
 // Skill" when that switch is on, some melee skill is excluded and some is not: only then does it matter in practice.
-// Spellbooks (issue #259) count like a skill on the chip ("Weapons: 3 excluded"); the summary ends in "no spellbooks".
+// Spellbooks (issue #259) add ", no spellbooks" to either ("Weapons: Fencing only, no spellbooks").
 const orList = (xs: string[]): string => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} or ${xs[xs.length - 1]}`);
 export const weaponName = (w: string): string => (w === SPELLBOOKS ? "Spellbooks" : w[0]!.toUpperCase() + w.slice(1));
-interface WeaponWords { any: string; none: string; only: (w: string) => string; some: (excluded: string[]) => string; books: (text: string, skillsOut: number, named: boolean) => string }
+interface WeaponWords { any: string; none: string; only: (w: string) => string; some: (excluded: string[]) => string; noBooks: string }
 function weaponsText(excluded: string[], ubws: boolean, t: WeaponWords): string {
   const skills = excluded.filter((w) => w !== SPELLBOOKS), allowed = WEAPON_SKILLS.filter((w) => !skills.includes(w));
   const text = !skills.length ? t.any : !allowed.length ? t.none : allowed.length === 1 ? t.only(allowed[0]!) : t.some(WEAPON_SKILLS.filter((w) => skills.includes(w)));
   const named = ubwsLetsIn(excluded, ubws) && MELEE_SKILLS.some((w) => excluded.includes(w));
   const out = named ? `${text}, plus Use Best Weapon Skill` : text;
-  return skills.length < excluded.length ? t.books(out, skills.length, named) : out;
+  return skills.length === excluded.length ? out : skills.length ? `${out}, no spellbooks` : t.noBooks;
 }
 export const weaponsSummary = (excluded: string[] = [], ubws = false): string =>
-  weaponsText(excluded, ubws, { any: "any weapon", none: "no weapons", only: (w) => `${w} weapons only`, some: (ex) => `no ${orList(ex)} weapons`,
-    books: (text, skillsOut) => (skillsOut ? `${text}, no spellbooks` : "no spellbooks") });
+  weaponsText(excluded, ubws, { any: "any weapon", none: "no weapons", only: (w) => `${w} weapons only`, some: (ex) => `no ${orList(ex)} weapons`, noBooks: "any weapon, no spellbooks" });
 export const weaponsChipText = (excluded: string[] = [], ubws = false): string =>
-  weaponsText(excluded, ubws, { any: "Weapons: any", none: "Weapons: none", only: (w) => `Weapons: ${weaponName(w)} only`, some: (ex) => `Weapons: ${ex.length} excluded`,
-    books: (_text, skillsOut, named) => `Weapons: ${skillsOut + 1} excluded${named ? ", plus Use Best Weapon Skill" : ""}` });
+  weaponsText(excluded, ubws, { any: "Weapons: any", none: "Weapons: none", only: (w) => `Weapons: ${weaponName(w)} only`, some: (ex) => `Weapons: ${ex.length} excluded`, noBooks: "Weapons: any, no spellbooks" });
 // The Weapon must have chip (issue #214): "Weapon must have: Spell Channeling" when it holds any.
 export const weaponMustHaveChipText = (flags: string[] = []): string => (flags.length ? `Weapon must have: ${flags.map(flagLabel).join(", ")}` : "Weapon must have");
 // Ticking or unticking a skill; the list stays in WEAPON_EXCLUDES order, so the same exclusions always read the same.

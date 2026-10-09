@@ -284,6 +284,8 @@ test("[fast] classify: the golden table, by graphic and by name alone", () => {
     ["Leather Tunic Of Defense", "chest"], ["Elven Plate Belt", "waist"], ["Sorcerer's Skirt", "legs"], ["Malabelle's Dress", "outerLegs"],
     ["Kobakama", "legs"], ["Tabard", "robe"], ["Beads", null]];
   for (const [name, slot] of byName) assert.equal(classify(name).slot, slot, name);
+  // Issue #259: the named spellbooks a spellbook exclusion must also catch
+  for (const name of ["Scrapper's Compendium", "Juo'nar's Grimoire"]) assert.deepEqual([classify(name).slot, classify(name).gear], ["oneHanded", true], name);
   assert.equal(classify("Beads").gear, false, "beads are not worn");
   // a light is a tool in the pack (never a suit candidate) and fills the two-handed slot only while held
   assert.equal(classify("Lantern", null, null, 0xa25).gear, false);
@@ -969,7 +971,7 @@ test("[fast] weapon filter: a Use Best Weapon Skill weapon passes while any mele
 
 // Issue #259: "spellbook" in the list keeps every spellbook out; weapons are judged by their skills as before.
 test("[fast] weapon filter: an excluded Spellbooks row keeps spellbooks out and nothing else", () => {
-  const book = { slot: "oneHanded", name: "Scrapper's Compendium Spellbook", skillReq: null, flags: [] } as unknown as Item;
+  const book = { slot: "oneHanded", name: "Scrapper's Compendium", skillReq: null, flags: [] } as unknown as Item;
   assert.ok(!weaponAllowed(book, ["spellbook"]), "a spellbook out");
   assert.ok(!weaponAllowed({ ...book, name: "Book of Chivalry" }, ["archery", "spellbook"]));
   assert.ok(weaponAllowed(book, ["archery"]), "not excluded: it stays");
@@ -1073,9 +1075,9 @@ test("[fast] weapon exclusions: the old single choice converts to every other sk
   assert.equal(excludeWeaponsError(undefined), null);
   assert.equal(excludeWeaponsError(["archery", "mace fighting"]), null);
   assert.equal(excludeWeaponsError("archery"), "excludeWeapons must be an array");
-  assert.match(excludeWeaponsError(["archery", "wrestling"], "settings.excludeWeapons")!, /^settings\.excludeWeapons\[1\] is not a weapon skill/);
+  assert.match(excludeWeaponsError(["archery", "wrestling"], "settings.excludeWeapons")!, /^settings\.excludeWeapons\[1\] must be a weapon skill or spellbook/);
   assert.equal(excludeWeaponsError(["archery", "spellbook"]), null, "spellbooks too");
-  assert.match(excludeWeaponsError(["spellbooks"])!, /^excludeWeapons\[0\] is not a weapon skill/);
+  assert.match(excludeWeaponsError(["spellbooks"])!, /^excludeWeapons\[0\] must be a weapon skill or spellbook/);
   const schema = JSON.parse(readFileSync(join(HERE, "schema", "profiles.v3.schema.json"), "utf8")) as { $defs: { pool: { properties: { excludeWeapons: { items: { enum: string[] } } } } } };
   assert.deepEqual(schema.$defs.pool.properties.excludeWeapons.items.enum, WEAPON_EXCLUDES, "the schema knows the same skills and spellbooks");
 });

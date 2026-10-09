@@ -676,7 +676,7 @@ const SHIELD_RE = /\b(shield|buckler)\b/i;
 // weapon word, so it is decided before anything else and is never gear.
 const PRIMER_RE = /\bprimer on\b.*\bmastery\b/i;
 const HELD_TOOL_RE = /\b(fishing pole|candle|candelabra|torch|lantern|light source)\b/i;
-const SPELLBOOK_RE = /\b(spellbook|book of (chivalry|bushido|ninjitsu|magery|necromancy|mysticism|spellweaving)|necromancer spellbook|mysticism book|tome)\b/i;   // NOT bare "mystic": "Mystic Ring" is a ring
+const SPELLBOOK_RE = /\b(spellbook|book of (chivalry|bushido|ninjitsu|magery|necromancy|mysticism|spellweaving)|necromancer spellbook|mysticism book|tome|compendium|grimoire)\b/i;   // NOT bare "mystic": "Mystic Ring" is a ring
 const JEWEL_SLOTS: Array<[string, RegExp]> = [["ring", /\bring\b/i], ["bracelet", /\bbracelet\b/i], ["talisman", /\btalisman\b/i], ["neck", /\bnecklace\b/i], ["earrings", /\bearrings\b/i]];
 // First match wins, and the order settles the names two slots share (issue #202, from the layers in ServUO's item
 // classes): gargish glasses are earrings and elven glasses a helm; a gargish kilt sits on the gloves layer; wing armor
@@ -1324,7 +1324,7 @@ export function excludeWeaponsError(v: unknown, path = "excludeWeapons"): string
   if (v == null) return null;
   if (!Array.isArray(v)) return `${path} must be an array`;
   const i = v.findIndex((w) => typeof w !== "string" || !WEAPON_EXCLUDES.includes(w));
-  return i < 0 ? null : `${path}[${i}] is not a weapon skill (${WEAPON_EXCLUDES.join(", ")})`;
+  return i < 0 ? null : `${path}[${i}] must be a weapon skill or spellbook (${WEAPON_EXCLUDES.join(", ")})`;
 }
 
 // Templates: a full set of builder settings with no character in them (no race, STR limit or skipped containers).

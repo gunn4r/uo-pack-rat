@@ -602,7 +602,7 @@ test("[slow] excluded weapon skills and the Use Best Weapon Skill check show on 
   }
 });
 
-// Spellbooks (issue #259): the Weapons popover ends in a Spellbooks row that counts like a skill on the chip and is saved
+// Spellbooks (issue #259): the Weapons popover ends in a Spellbooks row that adds ", no spellbooks" to the chip and is saved
 // with the profile.
 test("[slow] the Weapons popover's Spellbooks row excludes spellbooks and is saved with the profile", async (t) => {
   const why = unavailable();
@@ -615,15 +615,15 @@ test("[slow] the Weapons popover's Spellbooks row excludes spellbooks and is sav
     await chip.click();
     await page.waitForFunction(() => [...document.querySelectorAll(".pop .b-checks label")].map((l) => (l.textContent || "").trim()).join("|") === "Archery|Swordsmanship|Fencing|Mace fighting|Throwing|Spellbooks", undefined, { timeout: 10_000 });
     await page.locator('.pop input[value="spellbook"]').check();
-    await page.waitForFunction(() => document.querySelector("#b-weapon")?.textContent?.trim() === "Weapons: 1 excluded", undefined, { timeout: 10_000 });
+    await page.waitForFunction(() => document.querySelector("#b-weapon")?.textContent?.trim() === "Weapons: any, no spellbooks", undefined, { timeout: 10_000 });
     await page.locator('.pop input[value="throwing"]').check();
-    await page.waitForFunction(() => document.querySelector("#b-weapon")?.textContent?.trim() === "Weapons: 2 excluded", undefined, { timeout: 10_000 });
+    await page.waitForFunction(() => document.querySelector("#b-weapon")?.textContent?.trim() === "Weapons: 1 excluded, no spellbooks", undefined, { timeout: 10_000 });
     await page.keyboard.press("Escape");
     await page.click("#b-save");
     await page.waitForFunction(() => /Profile for .* saved/.test(document.body.textContent || ""), undefined, { timeout: 10_000 });
     await page.reload();
     await page.waitForSelector("#tab-builder:not([hidden]) #b-weapon", { timeout: 30_000 });
-    await page.waitForFunction(() => document.querySelector("#b-weapon")?.textContent?.trim() === "Weapons: 2 excluded", undefined, { timeout: 10_000 });
+    await page.waitForFunction(() => document.querySelector("#b-weapon")?.textContent?.trim() === "Weapons: 1 excluded, no spellbooks", undefined, { timeout: 10_000 });
     await chip.click();
     assert.deepEqual(await page.locator(".pop .b-checks input:checked").evaluateAll((is) => is.map((i) => (i as HTMLInputElement).value)), ["throwing", "spellbook"]);
     assert.deepEqual(errors, []);

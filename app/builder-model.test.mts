@@ -69,12 +69,13 @@ test("[fast] builder model: the Weapons chip and summary say the exclusions in w
   assert.equal(poolSummary({ excludeWeapons: ["archery", "fencing", "mace fighting", "throwing"], ubwsAnyWeapon: false }), "Own gear and unworn gear · no gargoyle-only · swordsmanship weapons only");
   assert.deepEqual(toggleWeapon(["throwing"], "archery", true), ["archery", "throwing"], "kept in the skills' order");
   assert.deepEqual(toggleWeapon(["archery", "throwing"], "archery", false), ["throwing"]);
-  // Issue #259: Spellbooks count like a skill on the chip, last in the list.
-  assert.equal(weaponsChipText(["spellbook"]), "Weapons: 1 excluded");
-  assert.equal(weaponsChipText(["archery", "throwing", "spellbook"]), "Weapons: 3 excluded");
-  assert.equal(weaponsChipText(["archery", "swordsmanship", "mace fighting", "throwing", "spellbook"]), "Weapons: 5 excluded");
-  assert.equal(weaponsChipText(["fencing", "mace fighting", "spellbook"], true), "Weapons: 3 excluded, plus Use Best Weapon Skill");
-  assert.equal(weaponsSummary(["spellbook"]), "no spellbooks");
+  // Issue #259: Spellbooks add ", no spellbooks" to the chip and summary, last in the list.
+  assert.equal(weaponsChipText(["spellbook"]), "Weapons: any, no spellbooks");
+  assert.equal(weaponsChipText(["archery", "throwing", "spellbook"]), "Weapons: 2 excluded, no spellbooks");
+  assert.equal(weaponsChipText(["archery", "swordsmanship", "mace fighting", "throwing", "spellbook"]), "Weapons: Fencing only, no spellbooks");
+  assert.equal(weaponsChipText(["archery", "swordsmanship", "fencing", "mace fighting", "throwing", "spellbook"]), "Weapons: none, no spellbooks");
+  assert.equal(weaponsChipText(["fencing", "mace fighting", "spellbook"], true), "Weapons: 2 excluded, plus Use Best Weapon Skill, no spellbooks");
+  assert.equal(weaponsSummary(["spellbook"]), "any weapon, no spellbooks");
   assert.equal(weaponsSummary(["archery", "throwing", "spellbook"]), "no archery or throwing weapons, no spellbooks");
   assert.deepEqual(toggleWeapon(["throwing"], "spellbook", true), ["throwing", "spellbook"]);
   assert.deepEqual(toggleWeapon(["spellbook"], "archery", true), ["archery", "spellbook"], "spellbooks last");
