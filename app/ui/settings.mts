@@ -26,7 +26,7 @@ import { exportKinds, importKinds } from "./kinds.mts";
 import { tiledataNote } from "./house-map-model.mts";
 import { registerScreen } from "./nav.mts";
 import type { SetupApiResponse, InstallApiResponse, UpdateCheckApiResponse, BlacklistApiResponse, CleanupApiResponse, RetentionSetting, SettingsApiResponse, PanelPrefs, TazuoPanelApiResponse, McpApiResponse, HousesApiResponse, TiledataFrom, HostPickFolderApiResponse, ApiError, UiPrefs } from "./api-types.mts";
-import { isPseudoCharacter, type BlacklistEntry } from "../vault-lib.mts";
+import { isPseudoCharacter, rulesUpgradeNote, type BlacklistEntry } from "../vault-lib.mts";
 
 // Reinstall's own confirmation and result — separate from the wizard's, since this row acts on the client
 // that is already set up (no need to re-walk shard/client/folder).
@@ -96,7 +96,8 @@ function generalSection(): HTMLElement {
     row({ title: "Theme", label: "set-theme", control: theme,
       help: isBuilt("britannia") ? "Default is the clean look. Britannia dresses Pack Rat in parchment and brass frames." : "Default is the clean look. A Britannia theme with parchment and brass frames comes in a later release." }),
     row({ title: "Appearance", control: appearance, help: "System follows your computer's light or dark setting." }),
-    row({ title: "Shard rules", label: "shard", control: shard, help: "Property caps, the Resisting Spells bonus, rarity colors and the gargoyle race lock." })));
+    row({ title: "Shard rules", label: "shard", control: shard, help: "Property caps, the Resisting Spells minimum, rarity colors and the gargoyle race lock.",
+      below: [state.rules && rulesUpgradeNote(state.rules) ? message({ tone: "warn", text: rulesUpgradeNote(state.rules)! }) : null] })));
 }
 
 // ---------------------------------------------------------------- Game client: status, setup, reinstall

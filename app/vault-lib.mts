@@ -2,7 +2,7 @@
 // optimizer pool building and requirement reports. Used by index.html (browser, via the
 // server) and gear-vault.test.mts (Node). No dependencies, no DOM.
 //
-// Shard rules (property caps, the Resisting Spells resist-bonus formula, race cap overrides, tag-
+// Shard rules (property caps, the Resisting Spells resist minimum, race cap overrides, tag-
 // penalty units, the rarity ladder, the gargoyle race-lock policy) live in app/rules/<shard>.json,
 // loaded (Node-only, by app/rules.mts) and handed in here with setRules() — this module never reads
 // a rules file itself, so it stays usable in the browser. getRules() throws until setRules() has run:
@@ -321,19 +321,44 @@ export const RESIST_META: ResistMeta[] = [
   { key: "energyResist", long: "Energy", short: "Energy", token: "--res-energy" },
 ];
 export const RESIST_KEYS: string[] = RESIST_META.map((r) => r.key);
-// A shard's Resisting Spells bonus, from its rules file's resistSkillBonus.breakpoints (uoalive: +0.4/pt
-// to 100, +0.2/pt 100-120; a shard with no such bonus ships an empty breakpoints array).  Each
-// breakpoint is [to, rate]: rate applies to the slice of skill between the previous breakpoint and
-// `to`. Breakpoints must be given in ascending `to` order.
-export function resistSkillBonus(skills: Record<string, unknown> | null | undefined): number {
+// The Resisting Spells minimum at one skill value: no resist falls below it, and it does not add to gear (ServUO
+// PlayerMobile.GetMinResistance, the shard's rules `resistMinimum`). With fixed = the skill × 10: 40 + (fixed − 1000) / 50
+// from 1000, (fixed − 400) / 15 from 400, integer division, so 55 → 10, 100 → 40, 120 → 44. Null below 40 skill, or on a
+// shard whose rules give no minimum: nothing holds a resist up then, not even at 0.
+export function minResistAt(value: number): number | null {
+  if (!getRules().resistMinimum) return null;
+  const fixed = Math.floor(value * 10 + 1e-6);
+  if (fixed >= 1000) return 40 + Math.floor((fixed - 1000) / 50);
+  return fixed >= 400 ? Math.floor((fixed - 400) / 15) : null;
+}
+// The property an item's Resisting Spells skill bonus is read into ("Resisting Spells +10" on a bracelet).
+export const RESIST_SKILL_KEY = "sk:resisting spells";
+// A character's own Resisting Spells, without what its worn suit adds: the scan's base (its value when the scan has no
+// base), null when the scan has no such skill. A suit's own bonus (RESIST_SKILL_KEY) goes on top of it, so a minimum
+// is never taken from pieces the suit may not keep.
+export function resistSkillOf(skills: Record<string, unknown> | null | undefined): number | null {
   // skills is Record<string, unknown> (the scan schema leaves per-skill shape loose); every skill
   // entry this repo ever reads or writes is {base, value, cap} (see the CLAUDE.md note on
   // player.getSkill), so this narrows once at the read instead of scattering `as` down the line.
-  const v = (skills?.["Resisting Spells"] as { value?: number } | undefined)?.value || 0;
-  let prev = 0, bonus = 0;
-  for (const [to, rate] of getRules().resistSkillBonus.breakpoints as Array<[number, number]>) { bonus += rate * Math.max(0, Math.min(v, to) - prev); prev = to; }
-  return Math.floor(bonus);
+  const e = skills?.["Resisting Spells"] as { base?: number; value?: number } | undefined;
+  if (!e) return null;
+  return typeof e.base === "number" && Number.isFinite(e.base) ? e.base : Number(e.value) || 0;
 }
+// A character's Resisting Spells minimum in a suit carrying `bonus` Resisting Spells (0: the character's own).
+export function resistMinimum(skills: Record<string, unknown> | null | undefined, bonus = 0): number | null {
+  const skill = resistSkillOf(skills);
+  return skill == null ? null : minResistAt(skill + bonus);
+}
+// What a rules file written before issue #261 must change, or null: it still carries the old additive
+// `resistSkillBonus`, which nothing reads, and no `resistMinimum`, so its characters get no minimum at all.
+export function rulesUpgradeNote(rules: RulesV1): string | null {
+  const r = rules as RulesV1 & { resistSkillBonus?: unknown };
+  return r.resistSkillBonus != null && r.resistMinimum == null
+    ? `The "${rules.name}" rules file still has "resistSkillBonus", which Pack Rat no longer reads: Resisting Spells is a minimum under each resist now. Add "resistMinimum": { "kind": "servuo" } to it, or each resist goes without a minimum.`
+    : null;
+}
+// A paperdoll resist: the total held to its cap, and never below the Resisting Spells minimum (null: none).
+export const paperdollResist = (total: number, cap: number, min: number | null | undefined): number => Math.max(Math.min(total, cap), min ?? -Infinity);
 
 // A resist's paperdoll cap on this shard for a race (an Elf's Energy is 75 on uoalive), else the shard's cap.
 export function shardResistCap(k: string, race: string | null | undefined): number {
@@ -415,7 +440,14 @@ export interface EffectiveProfile {
   floors: Record<string, number>;
   floorBonus: number;
   hardFloors: string[];
-  resistBonus: number;
+  // The character's own Resisting Spells (resistSkillOf: no item bonus; null with no character or no such skill), and
+  // its minimum before any buff, in paperdoll terms (null: none).
+  resistSkill: number | null;
+  resistMinimum: number | null;
+  // What the solvers hold each resist up to, in item terms: the minimum the planned buffs leave (Protection lowers the
+  // skill), less each resist's in-cap share. A resist scores max(min, min(total, cap)), and a floor at or under its
+  // min is met by any suit. Absent with no minimum.
+  mins?: Record<string, number> | undefined;
   // Only the resists whose cap the player overrode, in paperdoll terms; absent when none is, so a profile with no
   // override keeps the exact shape (and so the run key, runs-lib.mts) it had before overrides existed.
   resistCapOverrides?: Record<string, ResistCap> | undefined;
@@ -435,32 +467,35 @@ export interface PlannedBuffs {
   caps: Record<string, number>;
   floors: Record<string, number>;
   overridesIgnored?: Record<string, number> | undefined;   // resist overrides set aside: the buffs count that resist's loss
+  minimum: number | null;   // the Resisting Spells minimum with these buffs (Protection lowers it), what the solvers held each resist at
 }
 // What the buffs that are on change, in paperdoll terms: the caps once they changed them, and each key's in-cap share.
-export interface BuffShift { caps: Record<string, number>; shares: Record<string, number> }
+// `minimum` is the Resisting Spells minimum with the buffs on (Protection lowers the skill), when the plan worked it out.
+export interface BuffShift { caps: Record<string, number>; shares: Record<string, number>; minimum?: number | null | undefined }
 // The optimizer's profile for one character. Resist floors and caps are written in paperdoll terms (what the
-// character sheet shows): the character's Resisting Spells bonus is subtracted so the search works on item totals,
-// and a race can raise a resist's cap (rules.raceCaps, e.g. an Elf's Energy cap). The player's own resistCaps
-// replace the shard's per resist, and a resist floor counts up to its resist's cap. Every floor not marked soft is hard.
-// `shift` is what planned buffs change (app/buffs.mts plannedProfile): their caps replace these, and a buff's in-cap
-// share is a base the gear needn't supply, so it comes off the cap and the floor the way the Resisting Spells bonus
-// does (a negative share, Divine Fury's DCI −20, adds to both). A cap the shift sets may go below 0, which keeps it
-// exact: min(gear, cap − share) + share = min(gear + share, cap) for any gear, a negative total included; a resist
-// the shift leaves alone keeps the gear's cap at 0 or more, as before buffs. A floor stops at 0, which the solvers
-// read as no requirement: the buff alone meets it. The shift also carries the stat caps (STR, DEX, INT past raw).
+// character sheet shows), which are item totals: Resisting Spells adds nothing to gear, it holds each resist at its
+// minimum (`mins`, resistMinimum). A race can raise a resist's cap (rules.raceCaps, e.g. an Elf's Energy cap). The
+// player's own resistCaps replace the shard's per resist, and a resist floor counts up to its resist's cap. Every floor
+// not marked soft is hard. `shift` is what planned buffs change (app/buffs.mts plannedProfile): their caps replace
+// these, and a buff's in-cap share is a base the gear needn't supply, so it comes off the cap, the floor and the
+// minimum (a negative share, Divine Fury's DCI −20, adds to them). A cap the shift sets may go below 0, which keeps it
+// exact: min(gear, cap − share) + share = min(gear + share, cap) for any gear, a negative total included. A floor
+// stops at 0, which the solvers read as no requirement: the buff alone meets it. The shift also carries the stat caps
+// (STR, DEX, INT past raw) and the minimum the buffs leave.
 export function effectiveProfile(p: Profile = {}, character: Character | null = null, shift: BuffShift | null = null): EffectiveProfile {
   const rules = getRules();
-  const rsb = resistSkillBonus(character?.skills);
+  const skill = resistSkillOf(character?.skills), own = skill == null ? null : minResistAt(skill), min = shift && shift.minimum !== undefined ? shift.minimum : own;
   const caps: Record<string, number> = { ...rules.caps as Record<string, number>, ...fcCaps(character, p.castingSchool), ...(p.caps || {}) };
   const floors: Record<string, number> = { ...(p.floors || {}) };
   const view = resistCapsFor(p.race, p.resistCaps);
-  const overrides: Record<string, ResistCap> = {};
+  const overrides: Record<string, ResistCap> = {}, mins: Record<string, number> = {};
   const share = (k: string): number => shift?.shares[k] || 0;
   for (const k of RESIST_KEYS) {
     const { cap: own, shard } = view[k]!, cap = shift?.caps[k] ?? own;
     if (own !== shard) overrides[k] = { cap: own, shard };
-    caps[k] = shift?.caps[k] != null ? cap - rsb - share(k) : Math.max(0, cap - rsb);
-    if (floors[k] != null) floors[k] = Math.max(0, Math.min(floors[k], cap) - rsb - share(k));
+    caps[k] = cap - share(k);
+    if (floors[k] != null) floors[k] = Math.max(0, Math.min(floors[k], cap) - share(k));
+    if (min != null) mins[k] = min - share(k);
   }
   for (const k of new Set([...Object.keys(shift?.caps || {}), ...Object.keys(shift?.shares || {})])) {
     if (RESIST_KEYS.includes(k)) continue;
@@ -469,23 +504,22 @@ export function effectiveProfile(p: Profile = {}, character: Character | null = 
     if (floors[k] != null) floors[k] = Math.max(0, floors[k] - share(k));
   }
   const hardFloors = Object.keys(floors).filter((k) => !(p.softFloors || []).includes(k));
-  return { weights: { ...(p.weights || {}) }, caps, floors, floorBonus: p.floorBonus ?? 1000, hardFloors, resistBonus: rsb,
-    ...(Object.keys(overrides).length ? { resistCapOverrides: overrides } : {}) };
+  return { weights: { ...(p.weights || {}) }, caps, floors, floorBonus: p.floorBonus ?? 1000, hardFloors, resistSkill: skill, resistMinimum: own,
+    ...(min != null ? { mins } : {}), ...(Object.keys(overrides).length ? { resistCapOverrides: overrides } : {}) };
 }
 // The fields of a built profile its caps are read from (profileResistCaps, playerCaps).
 export interface CapsView {
   caps: Record<string, number>;
-  resistBonus?: number | undefined;
   resistCapOverrides?: Record<string, ResistCap> | undefined;
   buffs?: { caps?: Record<string, number> | undefined } | undefined;
 }
 // A built profile's resist caps in paperdoll terms, before any planned buff, what a result is shown against: the
-// override where there is one, else the item-total cap plus the Resisting Spells bonus.
+// override where there is one, else the profile's cap.
 export function profileResistCaps(prof: CapsView): Record<string, ResistCap> {
   return Object.fromEntries(RESIST_KEYS.map((k) => {
     const o = prof.resistCapOverrides?.[k];
     if (o) return [k, o];
-    const cap = ((prof.buffs?.caps ?? prof.caps)[k] ?? 70) + (prof.resistBonus || 0);
+    const cap = (prof.buffs?.caps ?? prof.caps)[k] ?? 70;
     return [k, { cap, shard: cap }];
   }));
 }
@@ -1545,6 +1579,7 @@ export interface RequirementProfileInput {
   floors?: Record<string, number> | undefined;
   caps?: Record<string, number> | undefined;
   weights?: Record<string, number> | undefined;
+  mins?: Record<string, number> | undefined;   // EffectiveProfile.mins: a resist under its minimum counts as the minimum
 }
 export interface RequirementRow {
   key: string;
@@ -1556,16 +1591,17 @@ export interface RequirementRow {
   capped: boolean;
   over: number;
 }
-// Requirement report: for every floor and every cap, what the suit reaches.
+// Requirement report: for every floor and every cap, what the suit reaches (a resist held at its minimum, `mins`).
 export function requirementReport(totals: PropMap, profile: RequirementProfileInput): RequirementRow[] {
   const rows: RequirementRow[] = [];
   const floors = profile.floors || {}, caps = profile.caps || {};
   const keys = new Set([...Object.keys(floors), ...Object.keys(profile.weights || {})]);
   keys.delete("tagPenalty");
   for (const k of [...keys].sort((a, b) => (floors[b] ? 1 : 0) - (floors[a] ? 1 : 0) || a.localeCompare(b))) {
-    const v = totals[k] || 0, floor = floors[k], cap = caps[k];
-    rows.push({ key: k, label: labelOf(k), value: v, floor: floor ?? null, cap: cap ?? null,
-      met: floor == null ? null : v >= floor, capped: cap != null && v >= cap, over: cap != null ? Math.max(0, v - cap) : 0 });
+    // a resist under its minimum reaches the minimum, so its value says that, and `met` agrees with it
+    const v = totals[k] || 0, floor = floors[k], cap = caps[k], min = profile.mins?.[k], held = min != null && min > v ? min : v;
+    rows.push({ key: k, label: labelOf(k), value: held, floor: floor ?? null, cap: cap ?? null,
+      met: floor == null ? null : held >= floor, capped: cap != null && v >= cap, over: cap != null ? Math.max(0, v - cap) : 0 });
   }
   return rows;
 }

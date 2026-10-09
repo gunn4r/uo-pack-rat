@@ -303,7 +303,7 @@ Every request goes through this order, before any route runs:
 - Tiledata also files fishing poles, candles and light sources under the hand layers: a held graphic with no weapon name and no weapon lines becomes a shield or off-hand candidate only when it carries item properties and is not one of those tools.
 - Rarity line carries the client's colour as `<BASEFONT COLOR=#…>`; the shard's `rules.rarity` list (`app/rules/<shard>.json`) mirrors those in the same ascending order (uoalive: Major Artifact #FF8000, Greater Artifact #C9A800, Lesser Artifact #A335EE, Major Magic #0070FF, Greater Magic #1CB5B7, Lesser Magic #20E31C, Minor #A0A0A0).
 - Worn totals on the character sheet include every worn piece (sandals etc.). Unexplained diffs vs the in-game sheet (small HP regen / LMC amounts that don't match any equipped item) come from non-item sources; not a parser bug.
-- Resisting Spells adds a resist bonus toward the shard's resist cap, from the shard's rules file (`resistSkillBonus.breakpoints`, e.g. uoalive: `+0.4/pt to 100, +0.2/pt 100-120`; a shard with no such bonus ships an empty `breakpoints` array — see Shard rules below); the sheet applies it.
+- Resisting Spells holds each resist at a minimum (40 at 100 skill, 44 at 120) and adds nothing to gear, from the shard's rules file (`resistMinimum`, ServUO's formula — see `docs/shard-rules.md`); the sheet applies it, and a scan's paperdoll resists equal the worn items' totals wherever they are over it.
 
 ## Open ideas
 

@@ -6,13 +6,13 @@ import type { Diagnostic, DiagnosticAction } from "./runs-types.mts";
 
 export type { Diagnostic, DiagnosticAction, DiagnosticCode } from "./runs-types.mts";
 
-// The fields of the effective profile (vault-lib.mts EffectiveProfile) these read, all optional so a hand-built request's profile is read as far as it goes. Floors and caps are in item terms; `resistBonus` and the buffs' floors before them turn a number back into the player's terms.
+// The fields of the effective profile (vault-lib.mts EffectiveProfile) these read, all optional so a hand-built request's profile is read as far as it goes. Floors, caps and `mins` (the Resisting Spells minimum each resist is held at) are in item terms; the buffs' floors before them turn a number back into the player's terms.
 export interface DiagnosticsProfile {
   weights?: Record<string, number> | undefined;
   floors?: Record<string, number> | undefined;
   caps?: Record<string, number> | undefined;
   hardFloors?: string[] | undefined;
-  resistBonus?: number | undefined;
+  mins?: Record<string, number> | undefined;
   resistCapOverrides?: Record<string, ResistCap> | undefined;
   buffs?: { floors?: Record<string, number> | undefined; caps?: Record<string, number> | undefined } | undefined;
   swing?: { steps?: boolean | undefined } | undefined;
@@ -35,14 +35,17 @@ export const NEXT_STEP_WITHIN = 10;
 const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
 const obj = (v: unknown): Record<string, unknown> => (v && typeof v === "object" && !Array.isArray(v) ? v as Record<string, unknown> : {});
 const hardOf = (profile: DiagnosticsProfile): Set<unknown> => new Set(Array.isArray(profile.hardFloors) ? profile.hardFloors : []);
-// The floors that ask for something, in the order the profile lists them.
+// The floors that ask for something, in the order the profile lists them; a floor at or under its min is met by every suit, so it asks for nothing.
 function floorsOf(profile: DiagnosticsProfile): Array<[string, number]> {
-  return Object.entries(obj(profile.floors)).flatMap(([k, v]): Array<[string, number]> => { const f = num(v); return f != null && f > 0 ? [[k, f]] : []; });
+  return Object.entries(obj(profile.floors)).flatMap(([k, v]): Array<[string, number]> => { const f = num(v), m = minOf(profile, k); return f != null && f > 0 && !(m != null && f <= m) ? [[k, f]] : []; });
 }
-// What turns an item total into the player's terms: the Resisting Spells bonus on a resist, and a planned buff's share (the floor before the buffs less the floor after them).
+const minOf = (profile: DiagnosticsProfile, k: string): number | null => num(obj(profile.mins)[k]);
+// A total as the suit has it: held at its min, where it has one.
+const heldAt = (profile: DiagnosticsProfile, k: string, t: number): number => { const m = minOf(profile, k); return m != null && t < m ? m : t; };
+// What turns an item total into the player's terms: a planned buff's share (the floor before the buffs less the floor after them).
 function offsetOf(profile: DiagnosticsProfile, k: string, f: number): number {
   const before = num(obj(obj(profile.buffs).floors)[k]);
-  return (RESIST_KEYS.includes(k) ? num(profile.resistBonus) ?? 0 : 0) + (before != null ? before - f : 0);
+  return before != null ? before - f : 0;
 }
 function reachOf({ pools = {}, current = {}, optionalSlots = DEFAULT_OPTIONAL_SLOTS, slots = DEFAULT_SLOTS }: DiagnosticsInput, keys: string[]): Record<string, { max: number; min: number }> {
   return propertyReach(pools, current, optionalSlots, slots, keys);
@@ -58,7 +61,7 @@ export function preBuildDiagnostics(input: DiagnosticsInput): Diagnostic[] {
     const max = reach[k]!.max;
     if (max >= f) continue;
     const off = offsetOf(profile, k, f), cap = num(caps[k]);
-    const floor = Math.round(f + off), best = Math.floor(Math.min(cap ?? Infinity, max) + off), isHard = hard.has(k);
+    const floor = Math.round(f + off), best = Math.floor(heldAt(profile, k, Math.min(cap ?? Infinity, max)) + off), isHard = hard.has(k);
     // a resist floor set above its cap counts only up to the cap (vault-lib.mts effectiveProfile), so the sentence says which number it is
     const atCap = RESIST_KEYS.includes(k) && cap != null && floor >= Math.round(cap + off);
     out.push({ code: "floor_unreachable", level: isHard ? "warn" : "info", property: k,
@@ -85,7 +88,7 @@ export function resultDiagnostics(input: ResultDiagnosticsInput): Diagnostic[] {
   for (const [k, f] of floors) {
     const t = num(after[k]) ?? 0;
     if (reach[k]!.max < f || t >= f) continue;
-    const off = offsetOf(profile, k, f), floor = Math.round(f + off), value = Math.floor(t + off);
+    const off = offsetOf(profile, k, f), floor = Math.round(f + off), value = Math.floor(heldAt(profile, k, t) + off);
     out.push({ code: "floors_conflict", level: "warn", property: k,
       message: result.floorsConflict
         ? `${propName(k)} ${floor} can be reached, but not together with your other hard requirements: this suit has ${value}.`
@@ -107,7 +110,7 @@ const oneDecimal = (n: number): string => n.toLocaleString("en-US", { maximumFra
 export function weightDiagnostics(profile: DiagnosticsProfile, after: Record<string, unknown>, reach: Record<string, { max: number }>): Diagnostic[] {
   const weights = Object.entries(obj(profile.weights)).flatMap(([k, v]): Array<[string, number]> => { const w = num(v); return w != null && w !== 0 && k !== "tagPenalty" ? [[k, w]] : []; });
   const caps = obj(profile.caps) as Record<string, number>, spans = playerCaps({ ...profile, caps });
-  const capped = (k: string, t: number): number => { const c = num(caps[k]); return c != null && c < t ? c : t; };
+  const capped = (k: string, t: number): number => { const c = num(caps[k]); return heldAt(profile, k, c != null && c < t ? c : t); };
   // with SSI scored by swing step (`ssiSteps`), its term is the step credit the totals reach, as the solvers scored it
   const steps = Array.isArray(profile.ssiSteps) ? profile.ssiSteps : null;
   const valueAt = (k: string, at: (key: string) => number): number => (steps && k === "ssi" ? stepCredit(steps, at("ssi"), at("stamPool")) : capped(k, at(k)));

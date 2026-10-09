@@ -6,7 +6,7 @@
 // page does (buffs.mts, vault-lib.mts). One entry per tool: its name, description, JSON Schema for its arguments
 // (the subset app/schema/validate.mts checks, which mcp.mts runs before the handler), annotations and handler.
 // `action: true` marks a tool that acts in game: refused while Settings' "Allow in-game actions" is off.
-import { BRIDGE_ACTION_LABELS, BRIDGE_OFFLINE, GEAR_SLOTS, bridgeFeatures, bridgeRefusal, containerChain, newestScanAdapter, fullOf, isPseudoCharacter, NOBODY, resistSkillBonus, toOptItem, totalsOf } from "./vault-lib.mts";
+import { BRIDGE_ACTION_LABELS, BRIDGE_OFFLINE, GEAR_SLOTS, bridgeFeatures, bridgeRefusal, containerChain, newestScanAdapter, fullOf, isPseudoCharacter, NOBODY, RESIST_SKILL_KEY, resistMinimum, toOptItem, totalsOf } from "./vault-lib.mts";
 import type { BridgeAction, Character, Container, Item, OptItem, Profile, PropMap } from "./vault-lib.mts";
 import { buffPlanOf, normalizeBuffs, savedBuffs, BUFFS } from "./buffs.mts";
 import { BUILTIN_PREFIX, characterBuffs, characterProfile, findTemplate, planBuild, specFromProfile, templateRefs, templateSettings, type PlannedBuild, type ProfilesV3, type TemplateMap } from "./build-spec.mts";
@@ -364,16 +364,16 @@ export const TOOLS: Tool[] = [
   },
   {
     name: "character_sheet",
-    description: "One character's sheet: stats, maximum pools, resists as scanned, skills (non-zero, highest first), the Resisting Spells resist bonus, every worn piece with its properties, and the worn suit's property totals.",
+    description: "One character's sheet: stats, maximum pools, resists as scanned, skills (non-zero, highest first), the Resisting Spells resist minimum in the worn suit (resistMinimum: no resist falls below it, and it adds nothing to gear; null for none), every worn piece with its properties, and the worn suit's property totals.",
     inputSchema: { type: "object", additionalProperties: false, required: ["character"], properties: { character: CHARACTER } },
     annotations: { title: "Character sheet", ...READ },
     async handler(a, ctx) {
       const inv = await inventory(ctx);
       const c = scannedCharacter(inv, a.character as string);
-      const worn = inv.worn[c.name] || [];
+      const worn = inv.worn[c.name] || [], wornTotals = totalsOf(Object.fromEntries(worn.map((i) => [String(i.serial), toOptItem(i)])));
       const skills = Object.entries(c.skills || {}).map(([k, v]) => [k, Number((v as { value?: unknown })?.value) || 0] as const).filter(([, v]) => v > 0).sort((x, y) => y[1] - x[1]);
-      return { name: c.name, scannedAt: c.scannedAt, stats: c.stats, maxes: c.maxes, resists: c.resists, resistBonus: resistSkillBonus(c.skills), skills: Object.fromEntries(skills),
-        worn: worn.map((i) => ({ slot: i.slot, serial: i.serial, name: i.name, props: i.props })), wornTotals: nonZero(totalsOf(Object.fromEntries(worn.map((i) => [String(i.serial), toOptItem(i)])))) };
+      return { name: c.name, scannedAt: c.scannedAt, stats: c.stats, maxes: c.maxes, resists: c.resists, resistMinimum: resistMinimum(c.skills, wornTotals[RESIST_SKILL_KEY]), skills: Object.fromEntries(skills),
+        worn: worn.map((i) => ({ slot: i.slot, serial: i.serial, name: i.name, props: i.props })), wornTotals: nonZero(wornTotals) };
     },
   },
   {
@@ -460,7 +460,7 @@ export const TOOLS: Tool[] = [
     description: "Run the Suit Builder (its exact search) for a character with their saved Suit Builder profile, optionally a template applied over it, buffs counted as on, and pinned pieces kept in their slots. Waits up to waitSeconds and returns the suit, the changes from what they wear, the totals, effectiveTotals (with the buffs) and any unreachableFloors and diagnostics; a longer build answers with an id: poll get_suit_build. A finished build is saved as a run (list_runs), No character's too, except one with pinned pieces, which fills only the empty slots like Manual's \"Fill the rest automatically\" and is planned as Manual plans. One build_suit runs at a time: a new call replaces one still running from this tool (never the app's own), and the replaced one says so.",
     inputSchema: { type: "object", additionalProperties: false, properties: {
       character: CHARACTER,
-      noCharacter: { type: "boolean", description: "Build from pieces nobody wears, on raw item totals (no Resisting Spells bonus, race or stats), with the Suit Builder's No character profile. Leave character out." },
+      noCharacter: { type: "boolean", description: "Build from pieces nobody wears, on raw item totals (no Resisting Spells minimum, race or stats), with the Suit Builder's No character profile. Leave character out." },
       template: { type: "string", minLength: 1, maxLength: 120, description: "A template's name, applied over the character's profile (the Suit Builder's templates)." },
       buffs: { ...BUFF_LIST, description: "Buffs, forms and abilities counted as always on, by id. With none named: the template's buffs when it carries some, else the character's (or No character's) Automatic buffs, or with pinned pieces, Manual's buffs (while its totals count them)." },
       pinned: { type: "object", additionalProperties: SERIAL, description: `Pieces kept in place, slot → serial (slots: ${GEAR_SLOTS.join(", ")}); only the other slots are searched.` },
@@ -515,7 +515,7 @@ export const TOOLS: Tool[] = [
   },
   {
     name: "score_suit",
-    description: "Total a hand-picked suit the way Manual does: its property totals and every floor and weighted property of the character's profile (or a template) against them, planned with the buffs Manual counts (or those named), Enhance Potions and Spell Channeling read from this suit. Unnamed slots keep what the character wears unless keepWorn is false. totals and the requirements are item totals (add resistBonus for a resist's paperdoll value); effectiveTotals are paperdoll values with the buffs counted.",
+    description: "Total a hand-picked suit the way Manual does: its property totals and every floor and weighted property of the character's profile (or a template) against them, planned with the buffs Manual counts (or those named), Enhance Potions and Spell Channeling read from this suit. Unnamed slots keep what the character wears unless keepWorn is false. totals and the requirements are item totals (a requirement's resist value held at the Resisting Spells minimum, so met is value ≥ floor); effectiveTotals are paperdoll values with the buffs counted, each resist held at resistMinimum (the Resisting Spells minimum with these buffs, null for none).",
     inputSchema: { type: "object", additionalProperties: false, properties: {
       character: CHARACTER,
       noCharacter: { type: "boolean", description: "Score on raw item totals with no character (leave character out)." },
@@ -548,7 +548,7 @@ export const TOOLS: Tool[] = [
       }
       const plan = await planProfile(ctx, inv, name, a, suit);
       const ev = evaluateSuit({ profile: plan.base, character: plan.character, suit: Object.fromEntries(Object.entries(suit).map(([slot, it]) => [slot, toOptItem(it)])), buffs: plan.plan });
-      return { character: name, buffs: plan.buffsOn, resistBonus: ev.planned.resistBonus, suit: Object.fromEntries(Object.entries(suit).map(([slot, it]) => [slot, { serial: it.serial, name: it.name }])),
+      return { character: name, buffs: plan.buffsOn, resistMinimum: ev.buffs.minimum, suit: Object.fromEntries(Object.entries(suit).map(([slot, it]) => [slot, { serial: it.serial, name: it.name }])),
         totals: nonZero(ev.gearTotals), effectiveTotals: nonZero(ev.effectiveTotals), requirements: ev.requirements.map(({ key, label, value, floor, cap, met }) => ({ key, label, value, floor, cap, met })) };
     },
   },
