@@ -77,7 +77,7 @@ try {
   const weapon = heldWeapon(result.best), sw = prof.swing;
   const swing = weapon && sw ? swingOf(weapon.speed!, sw.stamBase, result.totals?.after || {}, ssiShareOf(prof)) : undefined;
   // a tie-break's outcome names the preference and tolerance it ran with (the exact search's already does)
-  const tieBreak = result.tieBreak && opts.tieBreak ? { tieBreak: { rarity: opts.tieBreak.rarity, tolerance: Math.max(0, opts.tieBreak.tolerance || 0), ...result.tieBreak } } : {};
+  const tieBreak = result.tieBreak && opts.tieBreak ? { tieBreak: { rarity: opts.tieBreak.rarity, tolerance: Math.max(0, opts.tieBreak.tolerance || 0), topScore: result.tieBreak.topScore, cost: result.tieBreak.cost, ...("costProven" in result.tieBreak ? { costProven: result.tieBreak.costProven } : {}) } } : {};
   const withSwing = { ...result, ...(swing ? { swing } : {}), ...tieBreak };
   // A failure here never costs the suit (withDiagnostics): the result goes out without diagnostics and the server logs why.
   const withDiags = withDiagnostics(withSwing, () => resultDiagnostics({ pools: items, current: worn, optionalSlots: opts.optionalSlots, slots: opts.slots, profile: solveProfile as DiagnosticsProfile, result: withSwing, swingNote: note }),

@@ -399,7 +399,7 @@ export function resistCapsError(v: unknown, path = "resistCaps"): string | null 
 // that casts from the school trains past it), unless that school is Chivalry and Magery or Mysticism is at 70 (ServUO
 // Spell.GetCastDelay drops only Chivalry's cap), else the shard's cap. No character and no school: the shard's cap. `reason` is what the panel shows beside the cap ("Chivalry", "Chivalry (chosen)" for a named school, "Magery 70+").
 export const CASTING_SCHOOLS: readonly string[] = ["Magery", "Necromancy", "Mysticism", "Chivalry", "Spellweaving", "Bushido"];
-// A build's rarity preference (issue #262): among suits within "Within points" of the best, use the highest- or lowest-rarity pieces. Absent means any.
+// A build's rarity preference (issue #262): among equally good suits, use the highest- or lowest-rarity pieces. Absent means any.
 export type RarityPreference = "higher" | "lower";
 export const RARITY_PREFERENCES: readonly RarityPreference[] = ["higher", "lower"];
 const FC_FAST_SCHOOLS = ["Chivalry", "Spellweaving", "Bushido"], FC_FAST_CAP = 4, FC_SCHOOL_MIN = 30;
@@ -1544,7 +1544,7 @@ export function settingsDiff(a: RunSettings = {}, b: RunSettings = {}): string[]
   flag("exact", "exact search on", "exact search off");
   flag("swingSteps", "+SSI by step", "SSI by point");
   if ((a.castingSchool || "") !== (b.castingSchool || "")) out.push(b.castingSchool ? `casting school ${b.castingSchool}` : "casting school from skills");
-  if ((a.rarity || "") !== (b.rarity || "")) out.push(b.rarity ? `rarity: prefer ${b.rarity}` : "rarity: any");
+  if ((a.rarity || "") !== (b.rarity || "")) out.push(b.rarity ? `prefer ${b.rarity} rarity` : "any rarity");
   const [wOn, wOff] = setDiff(a.excludeWeapons, b.excludeWeapons);
   const weaponWords = (ws: string[]): string => [ws.some((w) => w !== SPELLBOOKS) ? `${ws.filter((w) => w !== SPELLBOOKS).join(", ")} weapons` : "", ws.includes(SPELLBOOKS) ? "spellbooks" : ""].filter(Boolean).join(" and ");
   if (wOn.length) out.push(`excluding ${weaponWords(wOn)}`);

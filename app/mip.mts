@@ -299,29 +299,35 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
 }
 
 // ---- the tie-break's second stage (issue #262) ----
-// The model the second stage solves, from the first stage's model and solution: minimize the summed tie cost of the
-// picked pieces (each x column's item.tieCost) over the suits that score at least the first stage's suit less
-// `tolerance` and meet every floor it meets. Three changes to a copy of `built.model`: (1) the objective is the tie
-// costs, minimized; (2) each floor-met indicator (y) at 1 in the solution is fixed at 1, hard floors in the hardAsSoft
-// model included; (3) one score row, Σ c_j·v_j ≥ S − tolerance − slack over every column but the y's, with c the first
-// stage's objective and S its value at the solution (the slack: TIE_SLACK below). The y terms stay out of it: their bonuses (up to 1e7) are carried
-// by the fixed bounds, and a y going from 0 to 1 only raises the score. When every such c is 0 (a floors-only build)
-// there is no row. The solution itself is feasible here, so it is the stage's MIP start. The row's slack is the
-// solvers' score precision (HiGHS's mip_abs_gap): with 1e-6 HiGHS's presolve called a row the solution meets exactly
-// infeasible, and scores closer than this count as equal in the core's tie-break too.
+// The model the second stage solves, from the first stage's model and its suit as `startVector` gives it (every column
+// worked out from the suit's own totals, so a floor the suit meets has its indicator at 1 even when an unproven
+// incumbent left it at 0): minimize the summed tie cost of the picked pieces (each x column's item.tieCost) over the
+// suits that score at least that suit less `tolerance` and meet every floor it meets. Three changes to a copy of
+// `built.model`: (1) the objective is the tie costs, minimized; (2) each floor-met indicator (y) at 1 is fixed at 1, hard
+// floors in the hardAsSoft model included; (3) one score row, Σ c_j·v_j ≥ S − tolerance − TIE_SLACK, with c the first
+// stage's objective and S its value at the suit. The row leaves out the fixed y's (constant on both sides) and an unfixed
+// hardAsSoft y (worth 1e7: a suit meeting one more hard floor would outscore the best), but keeps an unfixed soft floor's
+// y: a suit that meets one more soft floor gains its bonus, and without it the row would cut that suit. When no column
+// is left (a floors-only build) there is no row. The suit itself is feasible here, so it is the stage's MIP start.
+// TIE_SLACK is the solvers' score precision (HiGHS's mip_abs_gap): scores closer than this are equal suits, in this row,
+// in the core's tie-break (scripts/optimizer-core.mts keeps its own copy) and in the exact solver's guards. With 1e-6
+// HiGHS's presolve called a row the suit meets exactly infeasible.
 export const TIE_SLACK = 1e-3;
-export function tieBreakModel(built: BuiltMip, colValue: ArrayLike<number>, tolerance: number): BuiltMip {
+export function tieBreakModel(built: BuiltMip, start: ArrayLike<number>, tolerance: number): BuiltMip {
   const m = built.model, cost = m.colCost, isY = (j: number): boolean => built.cols[j]!.kind === "y";
   const colCost = built.cols.map((c) => (c.kind === "x" ? c.item!.tieCost || 0 : 0));
-  const colLower = m.colLower.map((lo, j) => (isY(j) && colValue[j]! > 0.5 ? 1 : lo));
+  const colLower = m.colLower.map((lo, j) => (isY(j) && start[j]! > 0.5 ? 1 : lo));
   const terms: Term[] = [];
-  let score = 0, mag = 0;
-  for (let j = 0; j < m.numCols; j++) if (!isY(j) && cost[j] !== 0) { terms.push([j, cost[j]!]); score += cost[j]! * colValue[j]!; mag += Math.abs(cost[j]!); }
+  let score = 0;
+  for (let j = 0; j < m.numCols; j++) {
+    if (cost[j] === 0 || (isY(j) && (colLower[j]! >= 1 || cost[j]! >= HARD_FLOOR_BONUS))) continue;
+    terms.push([j, cost[j]!]); score += cost[j]! * start[j]!;
+  }
   const rowLower = [...m.rowLower], rowUpper = [...m.rowUpper], starts = [...m.matrix.starts], indices = [...m.matrix.indices], values = [...m.matrix.values];
   if (terms.length) {
     for (const [j, v] of terms) { indices.push(j); values.push(v); }
     starts.push(indices.length);
-    rowLower.push(score - Math.max(0, tolerance) - Math.max(TIE_SLACK, 1e-9 * mag));
+    rowLower.push(score - Math.max(0, tolerance) - TIE_SLACK);
     rowUpper.push(INF);
   }
   const numRows = rowLower.length;

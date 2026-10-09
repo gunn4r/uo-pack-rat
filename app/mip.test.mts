@@ -575,7 +575,7 @@ test("[fast] mip-solve: a short time limit on a large model reports a status-con
   }
 });
 
-test("[fast] mip: tieBreakModel minimizes tie costs, fixes the met floors and keeps the score within the tolerance without the y terms (issue #262)", () => {
+test("[fast] mip: tieBreakModel minimizes tie costs, fixes the met floors and keeps the score within the tolerance, an unmet soft floor's bonus counted (issue #262)", () => {
   const rings = [{ serial: 1, name: "A", slot: "ring", props: { hci: 10, luck: 30 }, tieCost: 8 }, { serial: 2, name: "B", slot: "ring", props: { hci: 4 }, tieCost: 1 }] as OptItem[];
   const built = buildSuitMip({ pools: { ring: rings }, current: {}, profile: { weights: { hci: 2 }, caps: { hci: 45 }, floors: { luck: 20 } }, slots: ["ring"], optionalSlots: ["ring"] });
   const picked = { ring: rings[0]! }, start = startVector(built, picked);
@@ -587,11 +587,15 @@ test("[fast] mip: tieBreakModel minimizes tie costs, fixes the met floors and ke
   assert.equal(m.colLower[y], 1, "the met floor stays met");
   assert.equal(m.numRows, built.model.numRows + 1);
   const at = m.matrix.starts[m.numRows - 1]!, cols = m.matrix.indices.slice(at), vals = m.matrix.values.slice(at);
-  assert.ok(!cols.includes(y), "no y term in the score row");
+  assert.ok(!cols.includes(y), "no term for a fixed y");
   const scoreAt = cols.reduce((n, j, i) => n + vals[i]! * start[j]!, 0);
   assert.equal(scoreAt, 20, "hci 10 at weight 2, the s column at 0");
   assert.ok(Math.abs(m.rowLower[m.numRows - 1]! - (20 - 5 - TIE_SLACK)) < 1e-9);
   assert.equal(built.model.sense, "maximize", "the stage-1 model is left as it was");
+  // from B, which misses the Luck floor: its y stays free and is in the row at its bonus, so a suit meeting it is kept
+  const fromB = tieBreakModel(built, startVector(built, { ring: rings[1]! }), 0).model, atB = fromB.matrix.starts[fromB.numRows - 1]!;
+  assert.equal(fromB.colLower[y], 0);
+  assert.equal(fromB.matrix.values[fromB.matrix.indices.indexOf(y, atB)], built.model.colCost[y]);
   // a floors-only build: nothing to hold but the floors, so no score row
   const floorsOnly = buildSuitMip({ pools: { ring: rings }, current: {}, profile: { weights: {}, caps: {}, floors: { luck: 20 }, hardFloors: ["luck"] }, slots: ["ring"], optionalSlots: ["ring"] });
   assert.equal(tieBreakModel(floorsOnly, startVector(floorsOnly, picked), 0).model.numRows, floorsOnly.model.numRows);

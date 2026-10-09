@@ -82,7 +82,8 @@ interface OptOptions {
   alternatives?: { count: number; tolerance: number };  // exact phase: also list up to `count` other suits scoring within `tolerance` of the best (0 = exact ties)
   // A second stage: among suits scoring at least (best - tolerance) that meet every floor the best suit meets, return the one with the lowest summed
   // OptItem.tieCost, the higher score on equal cost. `rarity` is the caller's label for where the costs came from; the core never reads it.
-  // `topStart` (slot -> serial): the best-scoring suit an exact search found, one more search start, so the best score here matches it.
+  // `topStart` (slot -> serial): the best-scoring suit an exact search found, one more search start, so the best score here matches it; when it scores
+  // as well as the best found here (within 1e-3), the floors it meets are the ones held, so both searches hold the same set when equal tops differ.
   tieBreak?: { tolerance: number; rarity?: string | undefined; topStart?: Record<string, number | null> | undefined } | undefined;
 }
 
@@ -132,7 +133,8 @@ interface OptResult {
   pruned?: { before: number; after: number } | undefined;   // candidate counts before/after dominance pruning
   alternatives?: { best: OptAssignment; score: number }[] | undefined;   // other suits within altTolerance of the best, best first (never the best itself)
   altTolerance?: number | undefined;
-  tieBreak?: { topScore: number; cost: number } | undefined;   // with opts.tieBreak: the best score found, and the returned suit's summed tie cost
+  // with opts.tieBreak: the best score found, the returned suit's summed tie cost, the best suit whose floors were held (slot -> serial) and those floors
+  tieBreak?: { topScore: number; cost: number; top?: Record<string, number | null> | undefined; floors?: string[] | undefined } | undefined;
 }
 
 // Internal: a flattened property space so scoring is an array loop instead of object churn.
@@ -1011,18 +1013,23 @@ function optimizeSuit(pools: Record<string, OptItem[]>, current: OptAssignment, 
   }
 
   // The tie-break's second stage. `top` is the best score found; a suit qualifies when it scores at least top - tolerance
-  // and meets every floor the best suit meets. Among the candidates (every start's climbed suit, the warm start as given,
+  // and meets every floor the best suit (`ref`: opts.tieBreak.topStart when it scores as well, else the best found) meets. Among the candidates (every start's climbed suit, the warm start as given,
   // the best suit), take the lowest tie cost, then the higher score, then the first; then descend: each pass takes the
   // single-slot swap or weapon pair that lowers the cost most and keeps the suit qualifying (ties to the higher score),
   // until none does. The exact phase then proves it with a tie pass of the branch-and-bound over every candidate.
   const topScore = bestScore;
-  let tieInfo: { topScore: number; cost: number } | undefined = undefined;
+  let tieInfo: { topScore: number; cost: number; top: Record<string, number | null>; floors: string[] } | undefined = undefined;
+  let tieRef: OptAssignment = best, tieMet: number[] = [];
   let tieKeeps: ((a: OptAssignment) => boolean) | null = null;   // the trim below must not give up a floor the best suit meets
   if (tb) {
-    const topTv = optTotalsOf(best, slots, space), met: number[] = [];
-    for (let i = 0; i < space.keys.length; i++) if (space.floor[i]! > 0 && topTv[i]! >= space.floor[i]!) met.push(i);
     // scores within 1e-3 count as equal, the exact solver's precision (app/mip.mts TIE_SLACK)
     const min = topScore - tb.tolerance, EPS = 1e-3;
+    if (opts.tieBreak!.topStart) {
+      const ts = fromSerials(opts.tieBreak!.topStart);
+      if (optScoreVector(optTotalsOf(ts, slots, space), space) >= topScore - EPS) tieRef = ts;
+    }
+    const topTv = optTotalsOf(tieRef, slots, space), met: number[] = tieMet;
+    for (let i = 0; i < space.keys.length; i++) if (space.floor[i]! > 0 && topTv[i]! >= space.floor[i]!) met.push(i);
     const qualifies = function (tv: number[], sc: number): boolean {
       if (sc < min - EPS) return false;
       for (let i = 0; i < met.length; i++) if (tv[met[i]!]! < space.floor[met[i]!]!) return false;
@@ -1030,7 +1037,7 @@ function optimizeSuit(pools: Record<string, OptItem[]>, current: OptAssignment, 
     };
     const costOf = function (it: OptItem | null): number { return it ? it.tieCost || 0 : 0; };
     tieKeeps = function (a: OptAssignment): boolean { const tv = optTotalsOf(a, slots, space); for (let i = 0; i < met.length; i++) if (tv[met[i]!]! < space.floor[met[i]!]!) return false; return true; };
-    let pick = best, pickScore = bestScore, pickCost = optTieCost(best, slots);
+    let pick = tieRef, pickScore = optScoreVector(topTv, space), pickCost = optTieCost(tieRef, slots);
     tieCands.push(best);
     for (let i = 0; i < tieCands.length; i++) {
       const a = optSanitize(tieCands[i]!, slots), tv = optTotalsOf(a, slots, space), sc = optScoreVector(tv, space), c = optTieCost(a, slots);
@@ -1136,7 +1143,11 @@ function optimizeSuit(pools: Record<string, OptItem[]>, current: OptAssignment, 
     if (sc >= tied - 1e-9 && (!tieKeeps || tieKeeps(without))) { best = without; tied = sc; }
   }
   bestScore += tied - untrimmed;
-  if (tb) tieInfo = { topScore: Math.max(topScore, bestScore), cost: optTieCost(best, slots) };
+  if (tb) {
+    const top: Record<string, number | null> = {};
+    for (let i = 0; i < slots.length; i++) { const it = tieRef[slots[i]!]; top[slots[i]!] = it ? it.serial : null; }
+    tieInfo = { topScore: Math.max(topScore, bestScore), cost: optTieCost(best, slots), top: top, floors: tieMet.map(function (i) { return space.keys[i]!; }).sort() };
+  }
 
   // Per-slot diff report.
   const changes: OptSlotChange[] = [];

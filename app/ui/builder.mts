@@ -611,8 +611,7 @@ function castingSchoolField(): HTMLElement {
   });
   return box("div", { class: "b-school" }, field({ label: "Casting school (Faster Casting cap)", control: sel }), note);
 }
-// The rarity preference (issue #262): Higher, Any (the default, stored as no choice) or Lower, with a help line naming
-// "Within points" (Advanced) when one is set.
+// The rarity preference (issue #262): Higher, Any (the default, stored as no choice) or Lower, with a help line when one is set.
 function rarityField(): HTMLElement {
   const p = session.profile!;
   const help = el("p", { class: "help", id: "b-rarity-help" }, rarityHelpText());
@@ -622,7 +621,7 @@ function rarityField(): HTMLElement {
   help.hidden = !p.rarity;
   return box("div", { class: "b-rarity" }, box("div", { class: "field" }, el("span", { class: "label" }, "Rarity"), seg), help);
 }
-const rarityHelpText = (): string => rarityHelp(session.profile!.rarity, Number(knobs.altTol) || 0);
+const rarityHelpText = (): string => rarityHelp(session.profile!.rarity);
 function rootOptions(): Array<{ value: string; label: string }> {
   return Object.values(state.inv!.containers).filter((c) => c.parent == null)
     .map((r) => ({ value: String(r.serial), label: `${r.kind === "ground" ? "" : r.scannedBy + "'s "}${(r as { label?: string }).label || bagLabel(r)}` }))
@@ -721,11 +720,7 @@ function knobField(f: KnobField, text: string): HTMLDivElement {
   if (!knobs.exact && (f === "budgetS" || f === "altCount" || f === "altTol")) i.disabled = true;
   const err = knobError(f, knobs[f]);
   const fl = field({ label: text, control: i, error: err && !i.disabled ? err : undefined });
-  i.addEventListener("input", () => {
-    knobs[f] = i.value; setFieldError(i, knobError(f, i.value)); if (f === "strLimit") updateTemplateBadge();
-    const help = f === "altTol" ? document.getElementById("b-rarity-help") : null;
-    if (help && session.profile) help.textContent = rarityHelpText();
-  });
+  i.addEventListener("input", () => { knobs[f] = i.value; setFieldError(i, knobError(f, i.value)); if (f === "strLimit") updateTemplateBadge(); });
   return fl;
 }
 function advancedSection(): HTMLElement {
@@ -733,8 +728,7 @@ function advancedSection(): HTMLElement {
     const exact = switchControl({ label: "Exact search (prove the best)", checked: knobs.exact, attrs: { id: "b-exact" }, onChange: (v) => { knobs.exact = v; redraw("adv"); document.getElementById("b-exact")?.focus(); } });
     return [box("div", { class: "b-adv" }, box("div", { class: "b-adv-wide" }, exact.root),
       knobField("restarts", "Restarts"), knobField("budgetS", "Time budget (s)"), knobField("altCount", "Other suits"), knobField("altTol", "Within points"),
-      el("p", { class: "help b-adv-wide" }, txt(knobs.exact ? "Other suits lists the next best suits scoring within that many points of the best." : "Time budget and other suits need exact search."),
-        txt(" Within points also sets how far a rarity preference may give up score.")))];
+      el("p", { class: "help b-adv-wide" }, txt(knobs.exact ? "Other suits lists the next best suits scoring within that many points of the best." : "Time budget and other suits need exact search.")))];
   } });
 }
 // field()'s error line, updated in place as the value changes.

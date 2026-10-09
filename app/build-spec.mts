@@ -11,7 +11,7 @@ import { migrateProfiles, templateFrom, TEMPLATE_KEYS, toOptItem, totalsOf, type
 // ---------------------------------------------------------------- the document
 // swingSteps: score SSI by swing step (app/swing.mts) rather than per point; absent means off, and a spec carries it only when on.
 // castingSchool: the school the Faster Casting cap follows (vault-lib.mts fcCapFor); absent means from the character's skills.
-// rarity: among suits within "Within points" (search.altTol) of the best, prefer higher- or lower-rarity pieces (issue #262); absent means any.
+// rarity: among equally good suits, prefer higher- or lower-rarity pieces (issue #262); absent means any. It breaks exact ties only (the solvers' tolerance 0).
 export interface BuildIntent { floors: Record<string, number>; softFloors: string[]; weights: Record<string, number>; floorBonus: number; resistCaps: Record<string, number>; swingSteps?: boolean | undefined; castingSchool?: string | undefined; rarity?: RarityPreference | undefined }
 // The buffs counted as always on, and the numbers edited for them (app/buffs.mts's inputs; the rest are the character's own).
 export interface BuildBuffs { on: string[]; skills: Record<string, number> }
@@ -222,7 +222,7 @@ export function planBuild(spec: BuildSpec, { character, worn, race, suit }: Plan
   const plan = suit ? manualPlan(character, worn, suit, character ? p.race! : null, on, edits) : buffPlanOf(character, worn, p.race, buffs, edits);
   const { intent } = spec, s = spec.search || {}, pool = poolFromSpec(spec, character);
   const exact = s.exact ?? RUN_DEFAULTS.exact, budgetMs = s.budgetMs ?? RUN_DEFAULTS.budgetMs, altCount = s.altCount ?? 0, altTol = s.altTol ?? 0;
-  const opts = { restarts: s.restarts ?? RUN_DEFAULTS.restarts, exact, ...(exact ? { timeBudgetMs: budgetMs } : {}), ...(exact && altCount > 0 ? { alternatives: { count: altCount, tolerance: altTol } } : {}), ...(intent.rarity ? { tieBreak: { rarity: intent.rarity, tolerance: altTol } } : {}) };
+  const opts = { restarts: s.restarts ?? RUN_DEFAULTS.restarts, exact, ...(exact ? { timeBudgetMs: budgetMs } : {}), ...(exact && altCount > 0 ? { alternatives: { count: altCount, tolerance: altTol } } : {}), ...(intent.rarity ? { tieBreak: { rarity: intent.rarity, tolerance: 0 } } : {}) };
   const snapshot: RunSettings = { ...pool, floors: intent.floors, softFloors: intent.softFloors, weights: intent.weights, race: p.race!, resistCaps: intent.resistCaps,
     restarts: s.restarts || RUN_DEFAULTS.restarts, exact, budgetMs: budgetMs || RUN_DEFAULTS.budgetMs, altCount, altTol, ...(buffs ? { buffs } : {}), ...(intent.swingSteps ? { swingSteps: true } : {}), ...(intent.castingSchool ? { castingSchool: intent.castingSchool } : {}), ...(intent.rarity ? { rarity: intent.rarity } : {}) };
   const { prof, r } = planBuffs(base, character, plan);

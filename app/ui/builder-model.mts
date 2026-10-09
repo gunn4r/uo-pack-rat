@@ -65,25 +65,20 @@ export function requirementsSummary(floors: Record<string, number> = {}, soft: s
 }
 export interface PoolSettings { allowOthersWorn?: boolean | undefined; allowGargoyle?: boolean | undefined; medOnly?: boolean | undefined; excludeWeapons?: string[] | undefined; ubwsAnyWeapon?: boolean | undefined; weaponMustHave?: string[] | undefined;
   lockedSlots?: string[] | undefined; excludeTags?: string[] | undefined; excludeSkills?: string[] | undefined; excludeRoots?: unknown[] | undefined; rarity?: string | undefined }
-// The Rarity setting's help line, with "Within points" (`tolerance`) as it reads now: none for "any".
-export function rarityHelp(rarity: string | undefined, tolerance: number): string {
-  if (!rarity) return "";
-  const pieces = rarity === "higher" ? "highest" : "lowest";
-  return `Among suits within ${plural(tolerance, "point")} of the best, use the ${pieces}-rarity pieces. Requirements come first.`;
+// The Rarity setting's help line: none for "any".
+export function rarityHelp(rarity: string | undefined): string {
+  return rarity ? `Among equally good suits, use the ${rarity === "higher" ? "highest" : "lowest"}-rarity pieces. Requirements come first.` : "";
 }
-// A result's best suit as the other-suits card and the compare view name it: "the proven best" or "the best found",
-// and with a rarity preference whose suit scores under the best, "lowest rarity within 5 points of the proven best".
-export function bestSuitLabel(res: { proven?: boolean | undefined; score: number; tieBreak?: TieBreakResult | undefined }): string {
-  const best = res.proven ? "the proven best" : "the best found", tb = res.tieBreak;
-  if (!tb || res.score >= tb.topScore - 1e-6) return best;
-  return `${tb.rarity === "higher" ? "highest" : "lowest"} rarity within ${plural(tb.tolerance ?? 0, "point")} of ${best}`;
+// A suit's rarity total, the summed rank of its pieces on the shard's ladder (Minor Magic Item 1 … Legendary Artifact 8,
+// no tier 0), from the tie costs the server stamped on them: a piece's rank for "lower", the ranks above it for "higher".
+export function rarityTotal(best: Record<string, { tieCost?: number | undefined } | null | undefined>, rarity: string | undefined, ladderLength: number): number {
+  return Object.values(best).reduce((n, it) => (it && it.tieCost != null ? n + (rarity === "higher" ? ladderLength - it.tieCost : it.tieCost) : n), 0);
 }
-// Solver details' Rarity row: "Lowest-rarity pieces among equal suits · rarity points 6", "(lowest found)" when the
-// points are not proven the lowest.
-export function rarityDetail(tb: TieBreakResult): string {
-  const pieces = `${tb.rarity === "higher" ? "Highest" : "Lowest"}-rarity pieces`, t = tb.tolerance ?? 0;
-  const among = t > 0 ? `among suits within ${plural(t, "point")} of the best` : "among equal suits";
-  return `${pieces} ${among} · rarity points ${tb.cost.toLocaleString("en-US")}${tb.costProven ? "" : " (lowest found)"}`;
+// Solver details' Rarity row: "Lowest-rarity pieces among equal suits · rarity total 16", and when the second stage ran
+// out of time, that the rarity choice is not proven.
+export function rarityDetail(tb: TieBreakResult, total: number): string {
+  const most = tb.rarity === "higher" ? "highest" : "lowest";
+  return `${most[0]!.toUpperCase()}${most.slice(1)}-rarity pieces among equal suits · rarity total ${total.toLocaleString("en-US")}${tb.costProven ? "" : ` (the ${most} found, not proven)`}`;
 }
 // "Own gear and unworn gear · no gargoyle-only · any weapon"
 export function poolSummary(p: PoolSettings): string {

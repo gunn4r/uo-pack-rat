@@ -1,6 +1,6 @@
 // build-spec.test.mts — `app/build-spec.mts`, a build's intent as one document (issue #218, BuildSpec).
 //
-// `[fast]`: `app/build-spec.mts`: a full spec, a template's (no buffs) and one filled from nothing pass `buildSpecError`, and one refused field of each kind says where; the panel's flat profile goes to a spec and back unchanged; and `planBuild` equals the assemblies it replaced, kept in the test as they were written: the page's build (its profile, pool settings, search options and saved-run snapshot, ui/builder.mts and ui/runs.mts) and the MCP tools' `planProfile` (mcp-tools.mts), for the demo characters with and without buffs and edited numbers, No character, and a hand-picked suit planned as Manual plans it; with no character (issue #12) the shard's caps, no Resisting Spells minimum, no swing and the named school's FC cap; and a character's swing on the planned profile (raw DEX plus the buffs' DEX and stamina shares, the worn suit's stamina, the step switch, none with No character), the switch in a spec only when on and checked as a boolean; `weaponMustHave` stored only when non-empty, checked, round-tripped and planned with; and the rarity preference (issue #262) likewise, planned as the tie-break with Within points as its tolerance.
+// `[fast]`: `app/build-spec.mts`: a full spec, a template's (no buffs) and one filled from nothing pass `buildSpecError`, and one refused field of each kind says where; the panel's flat profile goes to a spec and back unchanged; and `planBuild` equals the assemblies it replaced, kept in the test as they were written: the page's build (its profile, pool settings, search options and saved-run snapshot, ui/builder.mts and ui/runs.mts) and the MCP tools' `planProfile` (mcp-tools.mts), for the demo characters with and without buffs and edited numbers, No character, and a hand-picked suit planned as Manual plans it; with no character (issue #12) the shard's caps, no Resisting Spells minimum, no swing and the named school's FC cap; and a character's swing on the planned profile (raw DEX plus the buffs' DEX and stamina shares, the worn suit's stamina, the step switch, none with No character), the switch in a spec only when on and checked as a boolean; `weaponMustHave` stored only when non-empty, checked, round-tripped and planned with; and the rarity preference (issue #262) likewise, planned as the tie-break on exact ties (tolerance 0, whatever Within points says).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
@@ -97,7 +97,7 @@ test("[fast] build spec: a spellbook exclusion is a known excludeWeapons value a
 });
 
 // Issue #262: intent rarity is stored only when set, checked, round-trips through the panel, a template and a run's
-// settings, and planBuild turns it into the tie-break with "Within points" as its tolerance.
+// settings, and planBuild turns it into the tie-break on exact ties.
 test("[fast] build spec: a rarity preference is stored only when set, checked, round-trips and is planned with", () => {
   assert.equal("rarity" in specFromProfile(PANEL).intent, false, "any: absent");
   const spec = specFromProfile({ ...PANEL, rarity: "lower" });
@@ -109,7 +109,7 @@ test("[fast] build spec: a rarity preference is stored only when set, checked, r
   assert.equal(templateSettings({ spec: templateSpecFrom({ ...PANEL, rarity: "higher" }) }).rarity, "higher", "a template carries it");
   assert.equal(templateFrom(PANEL).rarity, undefined);
   const plan = planBuild({ ...spec, search: { altTol: 3 } }, { character: null, worn: [], race: "human" });
-  assert.deepEqual(plan.opts.tieBreak, { rarity: "lower", tolerance: 3 });
+  assert.deepEqual(plan.opts.tieBreak, { rarity: "lower", tolerance: 0 }, "exact ties only, whatever Within points says");
   assert.equal(plan.snapshot.rarity, "lower", "a run's settings keep it");
   assert.equal(specFromRunSettings(plan.snapshot).intent.rarity, "lower", "and give it back");
   assert.equal(planBuild(specFromProfile(PANEL), { character: null, worn: [], race: "human" }).opts.tieBreak, undefined, "none without one");

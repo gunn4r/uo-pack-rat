@@ -1,6 +1,6 @@
 // solver.test.mts — solver equivalence: HiGHS must never disagree with the core's own exact branch-and-bound about what the best suit is worth.
 //
-// `app/exact-solver.mts`: a resist capped under its Resisting Spells minimum scored as the same constant by both (issue #261), k-best alternatives agree with the core, an unreachable hard floor gets the core's partial credit, jointly-unreachable hard floors fall back honestly (`floorsConflict`), a negative soft-floor total scores zero credit like the core, HiGHS-unavailable (`PACKRAT_NO_HIGHS`) reports the heuristic result flagged `solver: "fallback"`, a plain timeout with and without an incumbent is reported honestly (never invented), a reachable soft floor with a negative-total optimum and a negative weight on a capped property both prove the brute-force best, `opts.slots` narrows the MIP, both solvers' slot lists come from `GEAR_SLOTS` with only the five armor pieces required, a piece in each new slot (boots, shirt, tunic, sash, earrings, kilt) wins in both solvers when it helps while a worn robe that costs comes off and the hand rule holds (issue #202), a HiGHS objective the core cannot reproduce is reported unproven with a warning, `timeBudgetMs` bounds the heuristic's restarts and every HiGHS call and alternative (a fake clock checks the limits), and progress carries a bound during the exact phase. A rarity preference (issue #262) in both solvers: floors-only and all-zero builds take the lowest or highest pieces, a met soft floor is never traded at a huge tolerance, a suit under the best comes back with the best as the first other suit, a pool carrying tie costs with no preference builds exactly as one without, and with HiGHS stubbed the 3:1 time split, a second-stage timeout and each guard on a doctored core. The k-best alternatives case is `[slow]` (the core's exact search on the fixture's melee cell takes 10-20 s) and compares scores exactly only when both solvers proved, as `runBoth` does — everything else is `[fast]`.
+// `app/exact-solver.mts`: a resist capped under its Resisting Spells minimum scored as the same constant by both (issue #261), k-best alternatives agree with the core, an unreachable hard floor gets the core's partial credit, jointly-unreachable hard floors fall back honestly (`floorsConflict`), a negative soft-floor total scores zero credit like the core, HiGHS-unavailable (`PACKRAT_NO_HIGHS`) reports the heuristic result flagged `solver: "fallback"`, a plain timeout with and without an incumbent is reported honestly (never invented), a reachable soft floor with a negative-total optimum and a negative weight on a capped property both prove the brute-force best, `opts.slots` narrows the MIP, both solvers' slot lists come from `GEAR_SLOTS` with only the five armor pieces required, a piece in each new slot (boots, shirt, tunic, sash, earrings, kilt) wins in both solvers when it helps while a worn robe that costs comes off and the hand rule holds (issue #202), a HiGHS objective the core cannot reproduce is reported unproven with a warning, `timeBudgetMs` bounds the heuristic's restarts and every HiGHS call and alternative (a fake clock checks the limits), and progress carries a bound during the exact phase. A rarity preference (issue #262) in both solvers: floors-only and all-zero builds take the lowest or highest pieces, a met soft floor is never traded at a huge tolerance, a suit under the best comes back with the best as the first other suit, a pool carrying tie costs with no preference builds exactly as one without, a suit within the tolerance meeting one more soft floor kept by HiGHS, equal best suits meeting different floors holding one floor set without a false warning, the floors of an unproven first stage's suit still held, and with HiGHS stubbed the 3:1 time split, half of the rest kept for other suits, a second-stage timeout keeping the score's proof, and each guard on a doctored core. The k-best alternatives case is `[slow]` (the core's exact search on the fixture's melee cell takes 10-20 s) and compares scores exactly only when both solvers proved, as `runBoth` does — everything else is `[fast]`.
 //
 // HiGHS (app/exact-solver.mts, app/mip.mts, app/mip-solve.mts) must only ever get there faster than the core (scripts/optimizer-core.mts), or, on a real-sized inventory where neither proves in budget, no worse. Every "equal" assertion in this file compares HiGHS's re-scored result against the CORE's OWN numbers — never against the MIP's internal objective, which is on a different (offset) scale. The shared fixture and helpers are app/solver-fixture.mts; the default-template checks (app/solver-templates.test.mts) and the 3,000-item generated cell (app/solver-large.test.mts) have files of their own, so the runner runs them in parallel.
 import { test } from "node:test";
@@ -531,11 +531,74 @@ test("[fast] rarity: the first stage gets three quarters of what is left of the 
   assert.deepEqual([serials(r.best), r.tieBreak!.cost, r.proven], [{ ring: 42, neck: 43 }, 4, true]);
 });
 
-test("[fast] rarity: a second stage that times out is reported unproven, its cost not proven the lowest", async () => {
+test("[fast] rarity: with other suits asked for, the second stage takes only half of what is left, and the other suits still come back", async () => {
+  let clock = 0;
+  const limits: number[] = [];
+  const timed = (handle: Handle, o: SolveModelOptions) => { limits.push(o.timeLimitS!); const r = realSolveModel(handle, o); clock += 100; return r; };
+  const r = await solveExact({ core, pools: tiePools(), current: {}, profile: tieProfile, opts: { ...tieOpts, alternatives: { count: 2, tolerance: 1e9 } }, onProgress: () => {}, solveModel: timed, now: () => clock });
+  assert.ok(Math.abs(limits[1]! - 0.45) < 1e-9, `stage 2 got ${limits[1]} s with 0.9 s left`);
+  assert.equal(r.alternatives!.length, 2, "the other suits are not starved");
+  assert.equal(r.altShortfall, undefined);
+  assert.deepEqual([serials(r.best), r.tieBreak!.cost], [{ ring: 42, neck: 43 }, 4]);
+});
+
+// Review F1: a suit within the tolerance that meets a soft floor the best suit misses gains that floor's bonus. The
+// stage-2 score row must count it, or HiGHS cuts the suit (and proves a dearer one) while the core keeps it.
+test("[fast] rarity: HiGHS keeps a suit within the tolerance that meets one more soft floor, as the core does", async () => {
+  const pools = { ring: [{ serial: 51, name: "A1", slot: "ring", props: { str: 1000 }, tieCost: 8 }, { serial: 52, name: "B1", slot: "ring", props: { str: 480, dex: 5 }, tieCost: 0 }],
+    bracelet: [{ serial: 53, name: "A2", slot: "bracelet", props: { str: 1000 }, tieCost: 8 }, { serial: 54, name: "B2", slot: "bracelet", props: { str: 480, dex: 5 }, tieCost: 0 }] };
+  const opts: OptOptions = { restarts: 0, seed: 1, slots: ["ring", "bracelet"], optionalSlots: ["ring", "bracelet"], tieBreak: { rarity: "lower", tolerance: 50 } };
+  const warnings: string[] = [];
+  const profile: OptProfile = { weights: { str: 1 }, caps: {}, floors: { dex: 10 }, floorBonus: 1000 };
+  const c = core.optimizeSuit(pools, {}, profile, { ...opts, exact: true, timeBudgetMs: 5000 });
+  const h = await solveExact({ core, pools, current: {}, profile, opts: { ...opts, exact: true, timeBudgetMs: 5000 }, onProgress: () => {}, onWarn: (m) => warnings.push(m) });
+  for (const r of [c, h]) assert.deepEqual([serials(r.best), r.score, r.tieBreak!.cost, r.proven], [{ ring: 52, bracelet: 54 }, 1960, 0, true]);
+  assert.deepEqual(warnings, []);
+});
+
+// Review F3: two suits tie for the best score but meet different soft floors. Both searches hold the floors of the same
+// suit (stage 1's, handed to the core as topStart), so neither guard fires and the proof stands, whichever the order.
+// One ring: A and B score 160 each, A meeting the Dex floor and B the Int floor; their cheap copies sit within 50 points.
+test("[fast] rarity: equal best suits meeting different floors hold one floor set in both searches, with no false warning", async () => {
+  const items = [{ serial: 61, name: "A", slot: "ring", props: { dex: 10, str: 60 }, tieCost: 8 }, { serial: 62, name: "B", slot: "ring", props: { int: 10, str: 60 }, tieCost: 8 },
+    { serial: 63, name: "A cheap", slot: "ring", props: { dex: 10, str: 20 }, tieCost: 0 }, { serial: 64, name: "B cheap", slot: "ring", props: { int: 10, str: 30 }, tieCost: 1 }];
+  const profile: OptProfile = { weights: { str: 1 }, caps: {}, floors: { dex: 10, int: 10 }, floorBonus: 100 };
+  const [a, b, ac, bc] = items as [typeof items[0], typeof items[0], typeof items[0], typeof items[0]];
+  for (const order of [[a, b, ac, bc], [b, a, bc, ac], [b, a, ac, bc], [a, b, bc, ac]]) for (const restarts of [0, 3]) {
+    const warnings: string[] = [];
+    const r = await solveExact({ core, pools: { ring: order }, current: {}, profile, opts: { restarts, seed: 1, exact: true, timeBudgetMs: 5000, slots: ["ring"], optionalSlots: ["ring"], tieBreak: { rarity: "lower", tolerance: 50 } }, onProgress: () => {}, onWarn: (m) => warnings.push(m) });
+    assert.deepEqual(warnings, [], `order ${order.map((x) => x.serial)}`);
+    assert.deepEqual([r.proven, r.tieBreak!.costProven, r.tieBreak!.topScore], [true, true, 160]);
+    assert.ok([63, 64].includes(r.best.ring!.serial), "the cheap piece for whichever floor was held");
+  }
+  // the core holds the floors of the suit it is handed as topStart, whatever its own search found first
+  for (const [top, floors, cheap] of [[61, ["dex"], 63], [62, ["int"], 64]] as const) {
+    const c = core.optimizeSuit({ ring: [a, b, ac, bc] }, {}, profile, { restarts: 0, seed: 1, slots: ["ring"], optionalSlots: ["ring"], tieBreak: { rarity: "lower", tolerance: 50, topStart: { ring: top } } });
+    assert.deepEqual([c.tieBreak!.floors, c.best.ring!.serial, c.tieBreak!.top], [floors, cheap, { ring: top }]);
+  }
+});
+
+// Review F8: an unproven stage 1 can hand back an incumbent whose suit meets a floor with that floor's indicator at 0. The
+// second stage works the floors out from the suit's own totals, so it still holds the floor.
+test("[fast] rarity: after an unproven first stage, the floors its suit meets are still held", async () => {
+  const pools = ranked("lower", [{ serial: 71, slot: "ring", rank: 8, props: { luck: 10, hci: 1 } }, { serial: 72, slot: "ring", rank: 1, props: { hci: 5 } }]);
+  let calls = 0;
+  const sloppy = (handle: Handle, o: SolveModelOptions) => {
+    const r = realSolveModel(handle, o);
+    if (++calls > 1 || !r.colValue) return r;
+    const colValue = Float64Array.from(r.colValue);
+    handle.built.cols.forEach((c, j) => { if (c.kind === "y") colValue[j] = 0; });
+    return { ...r, status: "timeLimit" as const, colValue };
+  };
+  const r = await solveExact({ core, pools, current: {}, profile: { weights: { hci: 1 }, caps: {}, floors: { luck: 10 }, floorBonus: 100 }, opts: { restarts: 0, seed: 1, exact: true, timeBudgetMs: 5000, slots: ["ring"], optionalSlots: ["ring"], tieBreak: { rarity: "lower", tolerance: 0 } }, onProgress: () => {}, solveModel: sloppy });
+  assert.deepEqual([serials(r.best), r.score], [{ ring: 71 }, 101]);
+});
+
+test("[fast] rarity: a second stage that times out keeps the score's proof and leaves the rarity choice unproven", async () => {
   let calls = 0;
   const second = (handle: Handle, o: SolveModelOptions) => (++calls === 2 ? { status: "timeLimit" as const, statusText: "timeLimit", objective: null, primal: null, dual: null, gapAbs: null, nodes: 1, colValue: null, ms: 1 } : realSolveModel(handle, o));
   const r = await solveExact({ core, pools: tiePools(), current: {}, profile: tieProfile, opts: { ...tieOpts, timeBudgetMs: 5000 }, onProgress: () => {}, solveModel: second });
-  assert.deepEqual([r.proven, r.tieBreak!.costProven, r.score], [false, false, 15]);
+  assert.deepEqual([r.proven, r.tieBreak!.costProven, r.score], [true, false, 15], "the score's proof stands; the rarity choice is unproven");
 });
 
 test("[fast] rarity: each guard fires on a doctored core and withdraws the proof", async () => {
