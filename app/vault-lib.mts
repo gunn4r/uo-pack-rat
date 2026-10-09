@@ -1504,8 +1504,9 @@ export function settingsDiff(a: RunSettings = {}, b: RunSettings = {}): string[]
   flag("swingSteps", "+SSI by step", "SSI by point");
   if ((a.castingSchool || "") !== (b.castingSchool || "")) out.push(b.castingSchool ? `casting school ${b.castingSchool}` : "casting school from skills");
   const [wOn, wOff] = setDiff(a.excludeWeapons, b.excludeWeapons);
-  if (wOn.length) out.push(`excluding ${wOn.join(", ")} weapons`);
-  if (wOff.length) out.push(`allowing ${wOff.join(", ")} weapons`);
+  const weaponWords = (ws: string[]): string => [ws.some((w) => w !== SPELLBOOKS) ? `${ws.filter((w) => w !== SPELLBOOKS).join(", ")} weapons` : "", ws.includes(SPELLBOOKS) ? "spellbooks" : ""].filter(Boolean).join(" and ");
+  if (wOn.length) out.push(`excluding ${weaponWords(wOn)}`);
+  if (wOff.length) out.push(`allowing ${weaponWords(wOff)}`);
   const ubws = (s: RunSettings) => s.ubwsAnyWeapon !== false;   // absent means on
   if (ubws(a) !== ubws(b)) out.push(ubws(b) ? "Use Best Weapon Skill weapons allowed" : "Use Best Weapon Skill weapons held to their own skill");
   const [fOn, fOff] = setDiff(a.weaponMustHave, b.weaponMustHave);

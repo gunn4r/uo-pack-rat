@@ -1090,6 +1090,9 @@ test("[fast] settingsDiff names what changed between two runs", () => {
   assert.ok(d.some((x) => x.startsWith("locked ")));
   assert.deepEqual(settingsDiff(a, a), []);
   assert.deepEqual(settingsDiff({ excludeWeapons: ["archery", "throwing"] }, { excludeWeapons: ["throwing", "fencing"] }), ["excluding fencing weapons", "allowing archery weapons"]);
+  assert.deepEqual(settingsDiff({ excludeWeapons: [] }, { excludeWeapons: ["spellbook"] }), ["excluding spellbooks"], "issue #259: spellbooks are not weapons");
+  assert.deepEqual(settingsDiff({ excludeWeapons: ["spellbook"] }, { excludeWeapons: ["archery"] }), ["excluding archery weapons", "allowing spellbooks"]);
+  assert.deepEqual(settingsDiff({ excludeWeapons: [] }, { excludeWeapons: ["throwing", "spellbook"] }), ["excluding throwing weapons and spellbooks"]);
 });
 
 // ---- templates ----------------------------------------------------------------------------
