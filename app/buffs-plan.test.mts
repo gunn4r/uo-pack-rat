@@ -9,6 +9,7 @@ import type { Character, EffectiveProfile, Profile, PropMap } from "./vault-lib.
 import { BUFFS, STAT_MAX, applyBuffs, article, buffSkillValues, gearNeedsText, minimumWith, overrideNote, planBuffs, plannedProfile, toggleBuff } from "./buffs.mts";
 import type { BuffPlan, BuffResult, Skills, Stats } from "./buffs.mts";
 import { solveExact, type OptPools, type OptProfile } from "./exact-solver.mts";
+import { resistMinimumText } from "./ui/builder-model.mts";
 import { cell, core, defaultProfiles, fixture, templateNames } from "./solver-fixture.mts";   // also loads the uoalive rules
 import { runKey } from "./runs-lib.mts";
 
@@ -39,7 +40,7 @@ function checkPlan(p: Profile, ch: Character | null, pl: BuffPlan, label: string
   for (const k of RESIST_KEYS) caps[k] = view[k]!.cap;
   if (pl.stats) Object.assign(caps, { strBonus: STAT_MAX - pl.stats.str, dexBonus: STAT_MAX - pl.stats.dex, intBonus: STAT_MAX - pl.stats.int });
   const r = applyBuffs(pl.worn, caps, pl.on, pl.skills, pl.stats, pl.who);
-  const m = minimumWith(base.resistMinimum, pl.on.filter((id) => !r.blocked.includes(id)), pl.skills);
+  const m = minimumWith(base.resistSkill, pl.on.filter((id) => !r.blocked.includes(id)), pl.skills);
   const held = (k: string, v: number): number => (RESIST_KEYS.includes(k) && m != null && v < m ? m : v);
   const solverMin = (k: string): number => planned.mins?.[k] ?? -Infinity;
   for (const [k, cap] of Object.entries(planned.caps)) {
@@ -144,13 +145,13 @@ test("[fast] buffs plan: Enemy of One never changes the plan, alone or beside ot
 
 // The regression guard: with no buffs, every default template's profile is byte for byte main's (02b052e), so the
 // solvers get the same input, a run keys the same and reuses the runs saved before buffs. Issue #261 moved every hash
-// once: the profile carries resistMinimum (and mins) in place of resistBonus.
+// once: the profile carries resistSkill and resistMinimum (and mins) in place of resistBonus.
 test("[fast] buffs plan: no buffs give main's profile for every default template, soft floors and cap overrides included", () => {
   const MAIN: Record<string, string> = {
-    melee: "e70f45fb95b7686d555daacd8ff5f68a39d5ed3a", "melee+soft": "c588418a810796db457fed7ce505762820cc1220",
-    caster: "d94d6d153048f6cb84db24cb44d75a6b79080780", "caster+soft": "c5b05a09f2ced96e223a86e3e6e09bb4db00fed1",
-    archer: "059d793b32558239733afd16b139aff4f1e8afe3", "archer+soft": "db31d4ef4e8be2d6e74eaf3a64c2d620341b5aa5",
-    tank: "66c79368b0dfb5a9adea3e37939cc2d158bddd02", "tank+soft": "bc0e7e7bbdf918f8b4f6eb46836695a413279d54",
+    melee: "dd14ef1c4c5271debeed511364273a271bc3a0fc", "melee+soft": "bcc1185e25ef87fc454ed64e72a93e768b704b5b",
+    caster: "e4fd7320e8e89a0110efc4eeaf457aaa9e57b85f", "caster+soft": "2b17519b8f8793269f25371150f33e845d61fe4b",
+    archer: "c055d6e0894c9f0985950e86e8328c20199d7d79", "archer+soft": "b06e03f8bc72927a067be5c172f7eb49fbc17f8f",
+    tank: "9ed149173b9c2c4f0f32f782eb86bb1cc456306d", "tank+soft": "67adb54b84308b3c6bf1a6ba7c303085de3b6c25",
   };
   assert.deepEqual(templateNames, ["melee", "caster", "archer", "tank"]);
   for (const n of templateNames) for (const soft of [[], ["luck"]]) {
@@ -162,13 +163,13 @@ test("[fast] buffs plan: no buffs give main's profile for every default template
 
 // Issue #213: the fixture character (Bushido 74, no Magery) gets a Faster Casting cap of 4, which is the only thing that
 // moved the hashes above. Pinned to Magery (cap 2), every default template hashes exactly as before the casting school
-// (and, since issue #261, with resistMinimum in place of resistBonus).
+// (and, since issue #261, with resistSkill and resistMinimum in place of resistBonus).
 test("[fast] buffs plan: pinned to a cap-2 casting school, every default template keeps the profile it had before the casting school", () => {
   const BEFORE: Record<string, string> = {
-    melee: "e3d8a33d04b0daf5ad49c02fc897ae0d7364a53d", "melee+soft": "49a34b591840801b8bc74a5dc2761c667170d6b7",
-    caster: "8129bb87aa88da2d0a1cbca03136c327c3db5a4d", "caster+soft": "b06014c7f367dc377105d0d97804c67051c7de85",
-    archer: "bf57b107b51f41c6bf68f1f71aac54cc056c66f9", "archer+soft": "bb561af1a6cf785dfccf466eba706d534817219c",
-    tank: "7c7c701173408421ee35472fbae813c31760901a", "tank+soft": "e6f5b83269f5f496f7cab50b7fd2f417ec0c41b7",
+    melee: "a404fd441a60a1e1124503678d13fe9ace209339", "melee+soft": "fba8ae69c54d76b1a333f652b699f87f26424911",
+    caster: "e77ee441dad27743e666d03a6ccc910789274d7a", "caster+soft": "5665a2e72dd3610c470ad5a32faffa87b038923e",
+    archer: "b50cd9de6b00ed04eea47f4cf67161ecc61e6bdb", "archer+soft": "b644d26b6eb2f41067701635798b3eff61336ce8",
+    tank: "7c14b89fc25b3455a26ae851430224d71fbae01c", "tank+soft": "7aba65777fca0964e64f51a540bacc042d0288d1",
   };
   for (const n of templateNames) for (const soft of [[], ["luck"]]) {
     const c = cell(n, { soft, overrides: { castingSchool: "Magery", ...(soft.length ? { resistCaps: { fireResist: 95 } } : {}) } });
@@ -234,7 +235,7 @@ test("[fast] buffs plan: a requirement's note: its article, a full cap, no cap a
 test("[fast] buffs plan: the run key follows the plan: Enemy of One alone keys as none, numbers no buff reads change nothing", () => {
   const c = cell("melee"), key = (pl: BuffPlan | null): string => runKey({ pools: c.pools, current: c.current, profile: plannedProfile(defaultTemplate("melee"), FIXTURE, pl), opts: { seed: 2026, restarts: 200 } });
   const none = key(null);
-  assert.equal(none, "944c54b0b40af39521819ea04e5867bb6e4adccd", "the key for the melee template at SOLVER_VERSION 8, the Resisting Spells minimum in place of the bonus (was 9429d428… at 7 with the fixture's Faster Casting cap 4 from Bushido, ad809043… at a flat cap of 2, 51a4b93c… at 6, a18a559b… at 5, 2c90c9b1… at 4, ac4629c8… at 3): a change here means every saved run stops being reused");
+  assert.equal(none, "d2ef309784ae11e2454ad1cfd428fb9884ce8700", "the key for the melee template at SOLVER_VERSION 8, the Resisting Spells minimum and the base skill it is taken from in place of the bonus (was 9429d428… at 7 with the fixture's Faster Casting cap 4 from Bushido, ad809043… at a flat cap of 2, 51a4b93c… at 6, a18a559b… at 5, 2c90c9b1… at 4, ac4629c8… at 3): a change here means every saved run stops being reused");
   assert.equal(key(plan(["enemyOfOne"])), none, "Enemy of One plans like none");
   assert.notEqual(key(plan(["divineFury"], { Chivalry: 105 })), key(plan(["divineFury"], { Chivalry: 120 })), "another tier, another plan");
   assert.equal(key(plan(["divineFury"], { Chivalry: 105 })), key(plan(["divineFury"], { Chivalry: 105, Necromancy: 40, Bushido: 3 })), "an edit no buff on reads");
@@ -333,10 +334,12 @@ test("[fast] buffs plan: Protection lowers the Resisting Spells minimum, and Vam
   const prot = withRS(plan(["protection"], { Inscription: 0 }));
   const pp = checkPlan(p, RS100, prot, "Protection").planned;
   assert.deepEqual([pp.mins!.fireResist, pp.resistMinimum, pp.floors.fireResist], [16, 40, 30], "the profile keeps the character's own minimum; the solvers read the lower one");
-  assert.equal(applyBuffs({ fireResist: 0 }, { fireResist: 70 }, prot.on, prot.skills, null, {}, 40).totals.fireResist, 16);
+  assert.equal(pp.buffs!.minimum, 16, "and the plan names it, for the Requirements help (resistMinimumText)");
+  assert.equal(resistMinimumText("Ana", pp.buffs ? pp.buffs.minimum : pp.resistMinimum), "Resisting Spells keeps each of Ana's resists at 16 or more: a resist requirement of 16 or less is met by any suit.");
+  assert.equal(applyBuffs({ fireResist: 0 }, { fireResist: 70 }, prot.on, prot.skills, null, {}, 100).totals.fireResist, 16);
   // Vampiric Embrace: gear Fire 50, −25, is 25 on the paperdoll's own sum, under the minimum: it reads 40
   const ve = withRS(plan(["vampiricEmbrace"], { Necromancy: 120 }));
-  const r = applyBuffs({ fireResist: 50 }, { fireResist: 70 }, ve.on, ve.skills, null, {}, 40);
+  const r = applyBuffs({ fireResist: 50 }, { fireResist: 70 }, ve.on, ve.skills, null, {}, 100);
   assert.deepEqual([r.totals.fireResist, r.lifted.includes("fireResist"), r.minimum], [40, true, 40]);
   const vp = checkPlan(p, RS100, ve, "Vampiric Embrace").planned;
   assert.deepEqual([vp.caps.fireResist, vp.floors.fireResist, vp.mins!.fireResist], [95, 55, 65]);

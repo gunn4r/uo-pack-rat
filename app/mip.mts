@@ -215,9 +215,10 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
       }
       if (stepCols.length) addRow(stepCols.map(({ col }): Term => [col, 1]), -INF, 1);
     } else if (w !== 0) {
-      // A min some suit could fall under: w·max(m, min(t, cap)). It is the constant w·m when no suit gets past m.
+      // A min some suit could fall under: w·max(m, min(t, cap)). It is the constant w·m when no suit gets past m, which
+      // includes a cap at or under m whatever the totals (min(t, cap) never passes it).
       const lift = m != null && minReach < m, top = Math.min(cap ?? INF, reachD), mm = m ?? 0;
-      if (lift && top <= mm) scoreOffset += w * mm;
+      if (m != null && top <= mm) scoreOffset += w * mm;
       else if (lift && w > 0) {
         // maximising a max needs a binary b: b = 1 lets v reach min(t, cap) (v ≤ t, v ≤ top), b = 0 holds v ≤ m; the
         // better of the two is max(m, min(t, cap)). Written v ≤ m + (top − m)·b and v − t ≤ (m − minReach)·(1 − b).

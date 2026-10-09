@@ -7,7 +7,7 @@ import { NOBODY, labelOf, paperdollResist, propName, typicalRange, GEAR_SLOTS, N
 import type { FcCap, PlannedBuffs, PropMap, ResistCap, RunSettings } from "../vault-lib.mts";
 import { applyBuffs, buffById, buffsDiff, capWord, signed, type BuffResult } from "../buffs.mts";
 import { RUN_SETTING_LIMITS, type Range } from "../run-settings.mts";
-import { paperdollCaps } from "../evaluate.mts";
+import { paperdollCaps, suitResist } from "../evaluate.mts";
 import type { Diagnostic, DiagnosticAction, DiagnosticCode, SwingResult } from "../runs-types.mts";
 import { delayText, MIN_TICKS } from "../swing.mts";
 
@@ -24,9 +24,10 @@ export { propName };
 // paperdollCaps lives with the suit evaluation (app/evaluate.mts).
 export { paperdollCaps };
 // A suit's item totals in paperdoll terms with the buffs a build planned with (none: `b` null), against `caps`, each
-// resist held at `min`, the character's Resisting Spells minimum (EffectiveProfile.resistMinimum; null for none).
-export function withBuffs(t: PropMap, min: number | null, caps: Record<string, number>, b: Pick<PlannedBuffs, "on" | "skills" | "stats" | "who"> | null | undefined): BuffResult {
-  return applyBuffs(t, caps, b?.on || [], b?.skills || {}, b?.stats ?? null, b?.who, min);
+// resist held at the Resisting Spells minimum of `skill` (the character's own, EffectiveProfile.resistSkill; null for
+// none) with the suit's own Resisting Spells bonus.
+export function withBuffs(t: PropMap, skill: number | null, caps: Record<string, number>, b: Pick<PlannedBuffs, "on" | "skills" | "stats" | "who"> | null | undefined): BuffResult {
+  return applyBuffs(t, caps, b?.on || [], b?.skills || {}, b?.stats ?? null, b?.who, suitResist(skill, t));
 }
 // What the buffs add past the cap, as badges: "DI +68 past the cap (Enemy of One)"; a penalty applied after it, such
 // as Protection's casting delay, "FC −2 after the cap (Protection)".
@@ -153,10 +154,10 @@ function commonAndOdd(pairs: Array<[string, number]>): { common: number; odd: st
   const common = [...count.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0]![0];
   return { common, odd: pairs.filter(([, v]) => v !== common).map(([k, v]) => `${labelOf(k)} ${v}`) };
 }
-// The Requirements section's note on Resisting Spells, null with no minimum: "Resisting Spells keeps each of Ana's
+// The Requirements section's note on Resisting Spells, null with no minimum (or one of 0, which meets nothing): "Resisting Spells keeps each of Ana's
 // resists at 40 or more: a resist requirement of 40 or less is met by any suit."
 export function resistMinimumText(name: string, min: number | null): string | null {
-  return min == null ? null : `Resisting Spells keeps each of ${name}'s resists at ${min} or more: a resist requirement of ${min} or less is met by any suit.`;
+  return min == null || min <= 0 ? null : `Resisting Spells keeps each of ${name}'s resists at ${min} or more: a resist requirement of ${min} or less is met by any suit.`;
 }
 // A result's line about its caps, for the compare view: "Fire 95 (raised from 70)", or "Shard caps".
 export function capsLine(view: Record<string, ResistCap>): string {

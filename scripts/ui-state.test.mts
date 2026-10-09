@@ -574,7 +574,9 @@ test("[slow] the character sheet holds each resist at the Resisting Spells minim
   if (why) return t.skip(why);
   const dataDir = seedDataDir("packrat-ui-resistmin-");
   const scan = join(dataDir, "scans", "demo-Dorran.json");
-  writeFileSync(scan, readFileSync(scan, "utf8").replace('"skills": {},', '"skills": { "Resisting Spells": { "value": 100, "cap": 100 } },'));
+  const raw = readFileSync(scan, "utf8"), edited = raw.replace('"skills": {},', '"skills": { "Resisting Spells": { "base": 100, "value": 100, "cap": 100 } },');
+  assert.notEqual(edited, raw, "the demo scan's empty skills were found and given Resisting Spells 100");
+  writeFileSync(scan, edited);
   const { app, page, errors } = await launch(dataDir);
   try {
     await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });

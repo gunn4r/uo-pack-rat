@@ -100,13 +100,13 @@ test("[fast] buffs: Magic Reflection by the shard wiki: Phys −(20 − Inscript
 
 test("[fast] buffs: Protection lowers Resisting Spells, and so the minimum it holds each resist at", () => {
   // Resisting Spells 100 holds every resist at 40; 35 less (Inscription 0) is 65, a minimum of 16. Gear over it is untouched.
-  const r = applyBuffs({ physResist: 70, fireResist: 70 }, CAPS, ["protection"], { Inscription: 0, "Resisting Spells": 100 }, null, {}, 40);
+  const r = applyBuffs({ physResist: 70, fireResist: 70 }, CAPS, ["protection"], { Inscription: 0, "Resisting Spells": 100 }, null, {}, 100);
   assert.equal(r.totals.fireResist, 70);
   assert.equal(r.totals.physResist, 70 - 15);
   assert.deepEqual([r.totals.coldResist, r.minimum, r.lifted], [16, 16, ["coldResist", "poisonResist", "energyResist"]], "nothing worn: the lower minimum");
-  assert.deepEqual(applyBuffs({}, CAPS, [], { "Resisting Spells": 100 }, null, {}, 40).totals.coldResist, 40, "without Protection, the character's own");
+  assert.deepEqual(applyBuffs({}, CAPS, [], { "Resisting Spells": 100 }, null, {}, 100).totals.coldResist, 40, "without Protection, the character's own");
   // Inscription 100 takes 5 off the loss: Resisting Spells 70, a minimum of 20
-  assert.equal(applyBuffs({}, CAPS, ["protection"], { Inscription: 100, "Resisting Spells": 100 }, null, {}, 40).totals.fireResist, 20);
+  assert.equal(applyBuffs({}, CAPS, ["protection"], { Inscription: 100, "Resisting Spells": 100 }, null, {}, 100).totals.fireResist, 20);
   // FC −2 after the cap: a mage at the FC 2 cap casts at FC 0, and FC 3 is still 0 (min(cap − 2, fc − 2))
   for (const fc of [2, 3]) {
     const p = applyBuffs({ fc }, CAPS, ["protection"], {}, null);
@@ -395,7 +395,7 @@ test("[fast] buffs: a planned buff's in-cap share comes off the cap and the floo
   assert.deepEqual([p.caps.hci, p.caps.di], [35, 90]);
   assert.equal(p.floors.hci, undefined, "no floor is invented for a key the profile has none on");
   assert.deepEqual(p.weights, base.weights);
-  assert.deepEqual(p.buffs, { on: ["divineFury"], skills: plan([], { Chivalry: 105 }).skills, stats: null, who: {}, caps: base.caps, floors: base.floors }, "the profile carries the plan, and the caps and floors before it");
+  assert.deepEqual(p.buffs, { on: ["divineFury"], skills: plan([], { Chivalry: 105 }).skills, stats: null, who: {}, caps: base.caps, floors: base.floors, minimum: null }, "the profile carries the plan, and the caps and floors before it");
   assert.deepEqual(profileResistCaps(p), profileResistCaps(base), "a result is shown against the caps before the buffs");
   // a share past the cap: never below 0
   const big = plannedProfile({ floors: { ssi: 5 } }, null, plan(["playingTheOdds"]));   // SSI +30

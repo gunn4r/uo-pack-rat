@@ -415,7 +415,8 @@ function requirementsSection(): HTMLElement {
   return section("req", "Requirements", { count: keys.length, summary: () => requirementsSummary(p.floors, p.softFloors), body: () => {
     // with buffs on, each requirement they touch says what gear still has to supply
     const { prof, r } = planBuffs(p, state.inv!.characters[name] as Character | null, buffPlan(name, p.race, panelBuffs()));
-    const minText = resistMinimumText(name, prof.resistMinimum);
+    // the minimum the search holds resists at: the character's own, or what the planned buffs leave (Protection)
+    const minText = resistMinimumText(name, prof.buffs ? prof.buffs.minimum : prof.resistMinimum);
     const help = el("p", { class: "help" }, txt(`The suit must reach every hard requirement. Soft ones are preferences.${minText ? ` ${minText}` : ""}`));
     const rows = keys.map((k) => {
       const nm = propName(k);
@@ -426,7 +427,9 @@ function requirementsSection(): HTMLElement {
         button({ label: `Remove requirement: ${nm}`, icon: "close", iconOnly: true, variant: "ghost", size: "sm", onClick: () => { delete p.floors![k]; p.softFloors = p.softFloors!.filter((x) => x !== k); redraw("req"); focusIn("req", ".b-add"); } }));
       floorWarning(row, num, k);
       const ignored = prof.buffs?.overridesIgnored?.[k];
-      const said = r ? [ignored != null ? overrideNote(k, ignored, r) : null, gearNeedsText(k, prof.floors[k]!, prof.caps[k], r)].filter(Boolean).join(". ") : "";
+      // a requirement at or under the minimum the buffs leave asks nothing of gear
+      const byMinimum = prof.mins?.[k] != null && prof.floors[k]! <= prof.mins[k]!;
+      const said = r ? [ignored != null ? overrideNote(k, ignored, r) : null, byMinimum ? "Met by any suit: the Resisting Spells minimum" : gearNeedsText(k, prof.floors[k]!, prof.caps[k], r)].filter(Boolean).join(". ") : "";
       if (said) row.append(el("span", { class: "t-sm b-buff-note" }, said));
       if (k === "fc") row.append(fcCapNote());
       if (k === "ssi") { const next = nextStepButton(); if (next) row.append(next); }   // repainted as the shown result changes (paintNextStep)

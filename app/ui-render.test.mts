@@ -174,7 +174,7 @@ test("[fast] sheetNode: resists held at the Resisting Spells minimum, the lifted
   withCharacter("Kestrel", { skills: { "Resisting Spells": { value: 50, cap: 100 } } });
   (state.inv as unknown as { worn: Record<string, unknown[]> }).worn.Kestrel = [tunic];
   const low = (sheetNode("Kestrel", { chest: tunic as never }, null) as unknown as Node).textContent;
-  assert.ok(low.includes("Resisting Spells keeps each at 6 or more.") && !low.includes("the Resisting Spells minimum."), "nothing lifted: no list");
+  assert.ok(low.includes("Resists are capped at 70.") && !low.includes("keeps each"), "a minimum of 6 lifts nothing: nothing said");
   withCharacter("Kestrel", {});
   assert.ok((sheetNode("Kestrel", {}, null) as unknown as Node).textContent.includes("Resists are capped at 70."), "no skill, no minimum");
 });

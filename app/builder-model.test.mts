@@ -227,10 +227,10 @@ test("[fast] builder model: a run's buffs show in its label and diff, and a run 
 test("[fast] builder model: a result's totals with the buffs it planned with, in paperdoll terms, and what they add past the cap", () => {
   const caps = { physResist: 70, fireResist: 70, coldResist: 70, poisonResist: 70, energyResist: 70, ssi: 60, dci: 45, di: 100 };
   const plan = { on: ["divineFury", "enemyOfOne"], skills: { ...buffSkillValues(null, {}).values, Chivalry: 105 }, stats: null, who: {} };
-  const r = withBuffs({ ssi: 45, dci: 30, di: 90, fireResist: 30 }, 20, caps, plan);
+  const r = withBuffs({ ssi: 45, dci: 30, di: 90, fireResist: 30 }, 70, caps, plan);
   assert.deepEqual([r.totals.ssi, r.totals.dci, r.totals.fireResist, r.totals.di], [55, 10, 30, 100], "Fire 30 over the minimum of 20: gear's own");
   assert.deepEqual(pastCapBadges(r), ["DI +68 past the cap (Enemy of One)"]);
-  const none = withBuffs({ ssi: 45 }, 20, caps, null);
+  const none = withBuffs({ ssi: 45 }, 70, caps, null);
   assert.deepEqual([none.totals.ssi, none.totals.fireResist, none.lifted.length, pastCapBadges(none)], [45, 20, 5, []], "without buffs: the paperdoll totals alone, every resist held at the minimum");
   assert.equal(withBuffs({ ssi: 45 }, null, caps, null).totals.fireResist, undefined, "no minimum: nothing added");
 });
@@ -261,6 +261,7 @@ test("[fast] resist caps: notes, the collapsed summary, the Requirements note, t
     "Phys 80 (raised from 70) · Fire 95 (raised from 70) · Cold 60 (lowered from 70) · Poison 90 (raised from 70) · the other one at the shard's cap");
   assert.equal(resistMinimumText("Ana", 40), "Resisting Spells keeps each of Ana's resists at 40 or more: a resist requirement of 40 or less is met by any suit.");
   assert.equal(resistMinimumText("Ana", null), null, "no minimum, nothing said");
+  assert.equal(resistMinimumText("Ana", 0), null, "a minimum of 0 meets no requirement: nothing said");
   assert.equal(capsLine(human), "Shard caps");
   assert.equal(capsLine(resistCapsFor("human", { fireResist: 95 })), "Fire 95 (raised from 70)");
   assert.equal(anyOverridden(elf), false, "an Elf's Energy 75 is the shard's own");

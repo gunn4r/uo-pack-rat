@@ -1,6 +1,6 @@
 // solver.test.mts — solver equivalence: HiGHS must never disagree with the core's own exact branch-and-bound about what the best suit is worth.
 //
-// `app/exact-solver.mts`: k-best alternatives agree with the core, an unreachable hard floor gets the core's partial credit, jointly-unreachable hard floors fall back honestly (`floorsConflict`), a negative soft-floor total scores zero credit like the core, HiGHS-unavailable (`PACKRAT_NO_HIGHS`) reports the heuristic result flagged `solver: "fallback"`, a plain timeout with and without an incumbent is reported honestly (never invented), a reachable soft floor with a negative-total optimum and a negative weight on a capped property both prove the brute-force best, `opts.slots` narrows the MIP, both solvers' slot lists come from `GEAR_SLOTS` with only the five armor pieces required, a piece in each new slot (boots, shirt, tunic, sash, earrings, kilt) wins in both solvers when it helps while a worn robe that costs comes off and the hand rule holds (issue #202), a HiGHS objective the core cannot reproduce is reported unproven with a warning, `timeBudgetMs` bounds the heuristic's restarts and every HiGHS call and alternative (a fake clock checks the limits), and progress carries a bound during the exact phase. The k-best alternatives case is `[slow]` (the core's exact search on the fixture's melee cell takes 10-20 s) and compares scores exactly only when both solvers proved, as `runBoth` does — everything else is `[fast]`.
+// `app/exact-solver.mts`: a resist capped under its Resisting Spells minimum scored as the same constant by both (issue #261), k-best alternatives agree with the core, an unreachable hard floor gets the core's partial credit, jointly-unreachable hard floors fall back honestly (`floorsConflict`), a negative soft-floor total scores zero credit like the core, HiGHS-unavailable (`PACKRAT_NO_HIGHS`) reports the heuristic result flagged `solver: "fallback"`, a plain timeout with and without an incumbent is reported honestly (never invented), a reachable soft floor with a negative-total optimum and a negative weight on a capped property both prove the brute-force best, `opts.slots` narrows the MIP, both solvers' slot lists come from `GEAR_SLOTS` with only the five armor pieces required, a piece in each new slot (boots, shirt, tunic, sash, earrings, kilt) wins in both solvers when it helps while a worn robe that costs comes off and the hand rule holds (issue #202), a HiGHS objective the core cannot reproduce is reported unproven with a warning, `timeBudgetMs` bounds the heuristic's restarts and every HiGHS call and alternative (a fake clock checks the limits), and progress carries a bound during the exact phase. The k-best alternatives case is `[slow]` (the core's exact search on the fixture's melee cell takes 10-20 s) and compares scores exactly only when both solvers proved, as `runBoth` does — everything else is `[fast]`.
 //
 // HiGHS (app/exact-solver.mts, app/mip.mts, app/mip-solve.mts) must only ever get there faster than the core (scripts/optimizer-core.mts), or, on a real-sized inventory where neither proves in budget, no worse. Every "equal" assertion in this file compares HiGHS's re-scored result against the CORE's OWN numbers — never against the MIP's internal objective, which is on a different (offset) scale. The shared fixture and helpers are app/solver-fixture.mts; the default-template checks (app/solver-templates.test.mts) and the 3,000-item generated cell (app/solver-large.test.mts) have files of their own, so the runner runs them in parallel.
 import { test } from "node:test";
@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { effectiveProfile, GEAR_SLOTS } from "./vault-lib.mts";
 import { buffSkillValues, plannedProfile } from "./buffs.mts";
 import { solveExact, type OptPools, type OptAssignment, type OptProfile } from "./exact-solver.mts";
-import { DEFAULT_SLOTS, DEFAULT_OPTIONAL_SLOTS } from "./mip.mts";
+import { DEFAULT_SLOTS, DEFAULT_OPTIONAL_SLOTS, buildSuitMip } from "./mip.mts";
 import { solveModel as realSolveModel, type Handle, type SolveModelOptions } from "./mip-solve.mts";
 import { BASE_OPTS, cell, core, defaultProfiles, runBoth, sig, templateNames, type OptOptions } from "./solver-fixture.mts";
 
@@ -240,6 +240,22 @@ test("[fast] buffs: HiGHS equals the core's proven optimum with buffs planned on
       assert.equal(r.proven && ref.proven, true, "both proven, so runBoth held them to one score");
     });
   }
+});
+
+// Issue #261 review: a resist whose cap is under its Resisting Spells minimum always reads the minimum, so its term is the
+// constant w·min, even where no suit can fall under the minimum (a required worn piece at 45 over a minimum of 40). The
+// MIP left the constant out there and scored w·cap, so its suit came in under the core's and was reported unproven.
+test("[fast] a resist capped under its minimum is the constant w·min in both solvers, wherever the totals lie", async () => {
+  const worn = { serial: 90501, name: "Fire Tunic", slot: "chest", props: { fireResist: 45 } };
+  const lucky = { serial: 90502, name: "Lucky Tunic", slot: "chest", props: { fireResist: 50, luck: 3 } };
+  const profile = { weights: { fireResist: 2, luck: 1 }, caps: { fireResist: 30 }, mins: { fireResist: 40 } };
+  const opts = { exact: true, timeBudgetMs: 5000, restarts: 2, seed: 1, slots: ["chest"], optionalSlots: [] };
+  assert.equal(buildSuitMip({ pools: { chest: [worn, lucky] }, current: { chest: worn }, profile, slots: ["chest"], optionalSlots: [] }).scoreOffset, 80, "2 × 40, no column");
+  const r = await solveExact({ core, pools: { chest: [worn, lucky] } as unknown as OptPools, current: { chest: worn } as unknown as OptAssignment, profile, opts, onProgress: () => {} });
+  assert.equal(r.solver, "highs");
+  assert.equal(r.proven, true);
+  assert.equal(r.score, 83);
+  assert.equal(r.best.chest?.serial, 90502);
 });
 
 // Review M1: opts.slots narrowed the heuristic but not the MIP, which modelled every default slot —

@@ -452,18 +452,18 @@ export interface BuffResult {
   minimum: number | null;                  // the Resisting Spells minimum with these buffs (minimumWith), null for none
   lifted: string[];                        // the resists the minimum holds up: their totals are the minimum, not the suit's
 }
-// The Resisting Spells minimum with `buffs` on: the character's own `minimum` (vault-lib.mts resistMinimum), or, with
-// Protection on, the minimum at the skill Protection leaves (`skills` carries the character's Resisting Spells).
-export function minimumWith(minimum: number | null, buffs: readonly string[], skills: Skills): number | null {
-  const rs = skills["Resisting Spells"];
-  if (!buffs.includes("protection") || rs == null) return minimum;
-  return minResistAt(Math.max(0, rs + protectionLoss((id) => skills[id] ?? BUFF_INPUTS[id]?.def ?? 0)));
+// The Resisting Spells minimum with `buffs` on, at the skill `resist` (null: no character, no minimum): with Protection
+// on, at the skill Protection leaves (its Inscription read from `skills`).
+export function minimumWith(resist: number | null, buffs: readonly string[], skills: Skills): number | null {
+  if (resist == null) return null;
+  return minResistAt(buffs.includes("protection") ? Math.max(0, resist + protectionLoss((id) => skills[id] ?? BUFF_INPUTS[id]?.def ?? 0)) : resist);
 }
 // The suit's totals with the `buffs` that are on. `totals` and `caps` are in the page's terms (resists as on the
 // paperdoll). The order is the game's: the caps change first, the in-cap shares are added (a stat slot takes its
-// largest share only) and clamped, and the outside shares come after the cap. Last, `minimum` (the character's
-// Resisting Spells minimum, null for none) holds each resist up: a resist under it reads the minimum, its cap too.
-export function applyBuffs(totals: PropMap, caps: Readonly<Record<string, number>>, buffs: readonly string[], skills: Skills, stats: Stats | null, who: BuffWho = {}, minimum: number | null = null): BuffResult {
+// largest share only) and clamped, and the outside shares come after the cap. Last, the Resisting Spells minimum at
+// `resist` (the character's skill with this suit's own Resisting Spells bonus, null for none; minimumWith) holds each
+// resist up: a resist under it reads the minimum, its cap too.
+export function applyBuffs(totals: PropMap, caps: Readonly<Record<string, number>>, buffs: readonly string[], skills: Skills, stats: Stats | null, who: BuffWho = {}, resist: number | null = null): BuffResult {
   const c = buffContext(skills, stats, totals, who, caps);
   const r: BuffResult = { totals: { ...totals }, caps: { ...caps }, outside: {}, effective: {}, shares: {}, capShares: {}, beaten: [], unsure: [], blocked: [], minimum: null, lifted: [] };
   const live = BUFFS.filter((b) => buffs.includes(b.id) && (buffNeeds(b, skills, who) ? (r.blocked.push(b.id), false) : true));
@@ -493,7 +493,7 @@ export function applyBuffs(totals: PropMap, caps: Readonly<Record<string, number
     map[e.key] = (map[e.key] || 0) + e.value;
     add(r.shares, e.key, { id: b.id, value: e.value, ...(e.outside ? { outside: true } : {}), ...(e.pct != null && !stats ? { pct: e.pct } : {}) });
   }
-  r.minimum = minimumWith(minimum, live.map((b) => b.id), skills);
+  r.minimum = minimumWith(resist, live.map((b) => b.id), skills);
   if (r.minimum != null) for (const k of RESIST_KEYS) {
     if (r.caps[k] != null && r.caps[k]! < r.minimum) r.caps[k] = r.minimum;
     if ((r.totals[k] || 0) < r.minimum) { r.totals[k] = r.minimum; r.lifted.push(k); }
@@ -538,7 +538,7 @@ export function planBuffs(p: Profile, character: Character | null, plan: BuffPla
   }
   const prof = effectiveProfile(p, character, shift);
   if (!plan.on.length) return { prof, r };
-  return { prof: { ...prof, buffs: { on: plan.on, skills: plan.skills, stats: plan.stats, who: plan.who, caps: base.caps, floors: base.floors, ...(Object.keys(ignored).length ? { overridesIgnored: ignored } : {}) } }, r };
+  return { prof: { ...prof, buffs: { on: plan.on, skills: plan.skills, stats: plan.stats, who: plan.who, caps: base.caps, floors: base.floors, ...(Object.keys(ignored).length ? { overridesIgnored: ignored } : {}), minimum: shift.minimum ?? null } }, r };
 }
 const STAT_KEYS: Array<[keyof Stats, string]> = [["str", "strBonus"], ["dex", "dexBonus"], ["int", "intBonus"]];
 // The buffs applied to a profile's caps (in paperdoll terms, the stats' 150 less the raw stats) and the worn suit, and
@@ -554,7 +554,7 @@ export function buffShift(base: EffectiveProfile, plan: BuffPlan): { shift: Buff
   const shares = Object.fromEntries(Object.entries(r.shares).map(([k, list]) => [k, list.filter((x) => !x.outside).reduce((n, x) => n + x.value, 0)]));
   const touched = (k: string, v: number): boolean => v !== caps[k] || Object.hasOwn(shares, k) || (!!plan.stats && STAT_KEYS.some(([, sk]) => sk === k));
   const kept = Object.entries(r.caps).filter(([k, v]) => touched(k, v));
-  const minimum = minimumWith(base.resistMinimum, plan.on.filter((id) => !r.blocked.includes(id)), plan.skills);
+  const minimum = minimumWith(base.resistSkill, plan.on.filter((id) => !r.blocked.includes(id)), plan.skills);
   return { shift: { caps: Object.fromEntries(kept), shares, minimum }, r };
 }
 // The buffs among `on` whose numbers Automatic takes from the suit worn now: the potions (its Enhance Potions) and an

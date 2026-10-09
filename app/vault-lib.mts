@@ -331,12 +331,31 @@ export function minResistAt(value: number): number | null {
   if (fixed >= 1000) return 40 + Math.floor((fixed - 1000) / 50);
   return fixed >= 400 ? Math.floor((fixed - 400) / 15) : null;
 }
-// A character's Resisting Spells minimum, from the skill's value (gear bonuses included, as ServUO's Skills[].Value).
-export function resistMinimum(skills: Record<string, unknown> | null | undefined): number | null {
+// The property an item's Resisting Spells skill bonus is read into ("Resisting Spells +10" on a bracelet).
+export const RESIST_SKILL_KEY = "sk:resisting spells";
+// A character's own Resisting Spells, without what its worn suit adds: the scan's base (its value when the scan has no
+// base), null when the scan has no such skill. A suit's own bonus (RESIST_SKILL_KEY) goes on top of it, so a minimum
+// is never taken from pieces the suit may not keep.
+export function resistSkillOf(skills: Record<string, unknown> | null | undefined): number | null {
   // skills is Record<string, unknown> (the scan schema leaves per-skill shape loose); every skill
   // entry this repo ever reads or writes is {base, value, cap} (see the CLAUDE.md note on
   // player.getSkill), so this narrows once at the read instead of scattering `as` down the line.
-  return minResistAt((skills?.["Resisting Spells"] as { value?: number } | undefined)?.value || 0);
+  const e = skills?.["Resisting Spells"] as { base?: number; value?: number } | undefined;
+  if (!e) return null;
+  return typeof e.base === "number" && Number.isFinite(e.base) ? e.base : Number(e.value) || 0;
+}
+// A character's Resisting Spells minimum in a suit carrying `bonus` Resisting Spells (0: the character's own).
+export function resistMinimum(skills: Record<string, unknown> | null | undefined, bonus = 0): number | null {
+  const skill = resistSkillOf(skills);
+  return skill == null ? null : minResistAt(skill + bonus);
+}
+// What a rules file written before issue #261 must change, or null: it still carries the old additive
+// `resistSkillBonus`, which nothing reads, and no `resistMinimum`, so its characters get no minimum at all.
+export function rulesUpgradeNote(rules: RulesV1): string | null {
+  const r = rules as RulesV1 & { resistSkillBonus?: unknown };
+  return r.resistSkillBonus != null && r.resistMinimum == null
+    ? `The "${rules.name}" rules file still has "resistSkillBonus", which Pack Rat no longer reads: Resisting Spells is a minimum under each resist now. Add "resistMinimum": { "kind": "servuo" } to it, or each resist goes without a minimum.`
+    : null;
 }
 // A paperdoll resist: the total held to its cap, and never below the Resisting Spells minimum (null: none).
 export const paperdollResist = (total: number, cap: number, min: number | null | undefined): number => Math.max(Math.min(total, cap), min ?? -Infinity);
@@ -421,7 +440,9 @@ export interface EffectiveProfile {
   floors: Record<string, number>;
   floorBonus: number;
   hardFloors: string[];
-  // The character's Resisting Spells minimum before any buff, in paperdoll terms (null: none, as with no character).
+  // The character's own Resisting Spells (resistSkillOf: no item bonus; null with no character or no such skill), and
+  // its minimum before any buff, in paperdoll terms (null: none).
+  resistSkill: number | null;
   resistMinimum: number | null;
   // What the solvers hold each resist up to, in item terms: the minimum the planned buffs leave (Protection lowers the
   // skill), less each resist's in-cap share. A resist scores max(min, min(total, cap)), and a floor at or under its
@@ -446,6 +467,7 @@ export interface PlannedBuffs {
   caps: Record<string, number>;
   floors: Record<string, number>;
   overridesIgnored?: Record<string, number> | undefined;   // resist overrides set aside: the buffs count that resist's loss
+  minimum: number | null;   // the Resisting Spells minimum with these buffs (Protection lowers it), what the solvers held each resist at
 }
 // What the buffs that are on change, in paperdoll terms: the caps once they changed them, and each key's in-cap share.
 // `minimum` is the Resisting Spells minimum with the buffs on (Protection lowers the skill), when the plan worked it out.
@@ -462,7 +484,7 @@ export interface BuffShift { caps: Record<string, number>; shares: Record<string
 // (STR, DEX, INT past raw) and the minimum the buffs leave.
 export function effectiveProfile(p: Profile = {}, character: Character | null = null, shift: BuffShift | null = null): EffectiveProfile {
   const rules = getRules();
-  const own = resistMinimum(character?.skills), min = shift && shift.minimum !== undefined ? shift.minimum : own;
+  const skill = resistSkillOf(character?.skills), own = skill == null ? null : minResistAt(skill), min = shift && shift.minimum !== undefined ? shift.minimum : own;
   const caps: Record<string, number> = { ...rules.caps as Record<string, number>, ...fcCaps(character, p.castingSchool), ...(p.caps || {}) };
   const floors: Record<string, number> = { ...(p.floors || {}) };
   const view = resistCapsFor(p.race, p.resistCaps);
@@ -482,7 +504,7 @@ export function effectiveProfile(p: Profile = {}, character: Character | null = 
     if (floors[k] != null) floors[k] = Math.max(0, floors[k] - share(k));
   }
   const hardFloors = Object.keys(floors).filter((k) => !(p.softFloors || []).includes(k));
-  return { weights: { ...(p.weights || {}) }, caps, floors, floorBonus: p.floorBonus ?? 1000, hardFloors, resistMinimum: own,
+  return { weights: { ...(p.weights || {}) }, caps, floors, floorBonus: p.floorBonus ?? 1000, hardFloors, resistSkill: skill, resistMinimum: own,
     ...(min != null ? { mins } : {}), ...(Object.keys(overrides).length ? { resistCapOverrides: overrides } : {}) };
 }
 // The fields of a built profile its caps are read from (profileResistCaps, playerCaps).
@@ -1569,16 +1591,17 @@ export interface RequirementRow {
   capped: boolean;
   over: number;
 }
-// Requirement report: for every floor and every cap, what the suit reaches.
+// Requirement report: for every floor and every cap, what the suit reaches (a resist held at its minimum, `mins`).
 export function requirementReport(totals: PropMap, profile: RequirementProfileInput): RequirementRow[] {
   const rows: RequirementRow[] = [];
   const floors = profile.floors || {}, caps = profile.caps || {};
   const keys = new Set([...Object.keys(floors), ...Object.keys(profile.weights || {})]);
   keys.delete("tagPenalty");
   for (const k of [...keys].sort((a, b) => (floors[b] ? 1 : 0) - (floors[a] ? 1 : 0) || a.localeCompare(b))) {
-    const v = totals[k] || 0, floor = floors[k], cap = caps[k], min = profile.mins?.[k];
-    rows.push({ key: k, label: labelOf(k), value: v, floor: floor ?? null, cap: cap ?? null,
-      met: floor == null ? null : (min != null && min > v ? min : v) >= floor, capped: cap != null && v >= cap, over: cap != null ? Math.max(0, v - cap) : 0 });
+    // a resist under its minimum reaches the minimum, so its value says that, and `met` agrees with it
+    const v = totals[k] || 0, floor = floors[k], cap = caps[k], min = profile.mins?.[k], held = min != null && min > v ? min : v;
+    rows.push({ key: k, label: labelOf(k), value: held, floor: floor ?? null, cap: cap ?? null,
+      met: floor == null ? null : held >= floor, capped: cap != null && v >= cap, over: cap != null ? Math.max(0, v - cap) : 0 });
   }
   return rows;
 }

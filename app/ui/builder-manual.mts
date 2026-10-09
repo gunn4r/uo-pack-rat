@@ -331,7 +331,7 @@ function totalsCard(): HTMLElement {
     ...[...TOTAL_KEYS, ...STAT_KEYS].map((k) => cell(k, caps[k], txt(label(k), "t-sm muted"), k === "fc" ? fcCapSource(fcCapFor(name ? state.inv!.characters[name]?.skills : null, session.profile?.castingSchool)) : null, k === TOTAL_KEYS[0] || k === STAT_KEYS[0])),
   ];
   const counted = countBuffs ? buffs.length : 0, withBuffs = counted ? ` with ${counted} ${counted === 1 ? "buff" : "buffs"}` : "";
-  const held = r.minimum != null ? `, each resist held at ${r.minimum} or more by Resisting Spells` : "";
+  const held = r.lifted.length ? `, each resist held at ${r.minimum} or more by Resisting Spells` : "";
   const note = name ? `${name}'s paperdoll values${withBuffs}, against ${name}'s resist caps${held}` : `Raw item totals${withBuffs}: with no character there is no Resisting Spells minimum or race cap`;
   const filled = Object.keys(suit).length;   // a missing piece counts for nothing
   return el("section", { class: "card mb-totals", id: "mb-totals", "aria-label": "Suit totals" },

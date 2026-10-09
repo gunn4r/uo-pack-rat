@@ -2,10 +2,12 @@
 // that count, the caps they leave, and the build's requirements against it. Manual's totals and deltas, Automatic's buff
 // picker, the MCP tools and POST /api/evaluate all call evaluateSuit, so the page and a model read the same numbers.
 // Pure and browser-safe, like vault-lib.mts and buffs.mts.
-import { RESIST_KEYS, effectiveProfile, getRules, profileResistCaps, requirementReport, totalsOf } from "./vault-lib.mts";
+import { RESIST_KEYS, RESIST_SKILL_KEY, effectiveProfile, getRules, profileResistCaps, requirementReport, totalsOf } from "./vault-lib.mts";
 import type { Character, EffectiveProfile, OptItem, Profile, PropMap, RequirementRow, ResistCap } from "./vault-lib.mts";
 import { applyBuffs, planBuffs, type BuffPlan, type BuffResult } from "./buffs.mts";
 
+// The Resisting Spells skill in a suit: the character's own (null: none) and the suit's own Resisting Spells bonus.
+export const suitResist = (skill: number | null, totals: PropMap): number | null => (skill == null ? null : skill + (totals[RESIST_SKILL_KEY] || 0));
 // The shard's caps with the build's resist caps (overrides included) in place of its resist ones, and the build's
 // Faster Casting cap (vault-lib.mts fcCapFor: a built profile's `caps.fc`) when given.
 export function paperdollCaps(resists: Record<string, ResistCap>, fc?: number | undefined): Record<string, number> {
@@ -35,7 +37,7 @@ export interface SuitEvaluation {
 export function evaluateSuit({ profile, character, suit, buffs }: EvaluateInput): SuitEvaluation {
   const gearTotals = totalsOf(suit as Partial<Record<string, OptItem>>);
   const base = effectiveProfile(profile, character), baseCaps = paperdollCaps(profileResistCaps(base), base.caps.fc);
-  const r = applyBuffs(gearTotals, baseCaps, buffs?.on || [], buffs?.skills || {}, buffs?.stats ?? null, buffs?.who, base.resistMinimum);
+  const r = applyBuffs(gearTotals, baseCaps, buffs?.on || [], buffs?.skills || {}, buffs?.stats ?? null, buffs?.who, suitResist(base.resistSkill, gearTotals));
   const wasted: PropMap = {};
   for (const [k, v] of Object.entries(r.totals)) if (r.caps[k] != null && v > r.caps[k]!) wasted[k] = v - r.caps[k]!;
   const planned = planBuffs(profile, character, buffs).prof;

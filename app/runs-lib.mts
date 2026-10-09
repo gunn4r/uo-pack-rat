@@ -46,6 +46,10 @@ export interface RunKeyInput {
 // 7: SSI can be scored by swing step (app/swing.mts), weapons carry their speed, and a result carries its `swing`.
 // 8: Resisting Spells is a minimum under each resist (`mins`), not a bonus taken off the resist caps and floors (#261).
 export const SOLVER_VERSION = 8;
+// The first SOLVER_VERSION whose saved diagnostics are in the player's terms as the page shows them now: before 8 a
+// resist's numbers counted the Resisting Spells bonus (#261), so an older run's are dropped when read and it falls back
+// as a run saved before diagnostics does.
+export const DIAGNOSTICS_SOUND_SINCE = 8;
 // The first SOLVER_VERSION whose "proven optimal" holds: before 2 a soft floor ruled out every suit with a
 // negative total, so HiGHS could prove a worse suit optimal.
 export const PROOF_SOUND_SINCE = 2;

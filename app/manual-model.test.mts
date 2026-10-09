@@ -28,7 +28,7 @@ test("[fast] manual model: a total over its cap shows the cap and what is wasted
 
 test("[fast] manual model: resists count in paperdoll terms, the character's Resisting Spells minimum and race caps included", () => {
   const manualCaps = (prof: ReturnType<typeof effectiveProfile>): Record<string, number> => paperdollCaps(profileResistCaps(prof));
-  assert.deepEqual(withBuffs({ fireResist: 50, coldResist: 30, lrc: 20 }, 40, manualCaps(effectiveProfile({}, null)), null).totals,
+  assert.deepEqual(withBuffs({ fireResist: 50, coldResist: 30, lrc: 20 }, 100, manualCaps(effectiveProfile({}, null)), null).totals,
     { physResist: 40, fireResist: 50, coldResist: 40, poisonResist: 40, energyResist: 40, lrc: 20 }, "held at the minimum of 40, gear over it its own");
   const raw = manualCaps(effectiveProfile({}, null));
   assert.equal(raw.energyResist, 70, "no character: the shard's caps");

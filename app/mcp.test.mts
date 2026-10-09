@@ -480,7 +480,7 @@ test("[fast] character_sheet reports the Resisting Spells minimum in place of a 
     assert.ok(!("resistBonus" in sheet));
     const run = (await call(port, "get_run", { id: "before-261" })).data;
     assert.deepEqual([run.totals.fireResist, run.effectiveTotals.fireResist, run.effectiveTotals.coldResist, run.effectiveTotals.physResist], [30, 40, 55, 40], "Fire 30 under the minimum reads 40; Cold 55 is gear's own");
-    assert.equal(run.diagnostics.length, 1, "its saved diagnostics come back as saved");
+    assert.equal(run.diagnostics, undefined, "its saved diagnostics counted the old bonus: dropped, as for a run saved before diagnostics");
     assert.equal((await app<{ run: { id: string } }>(sv, "/api/runs/before-261")).body.run.id, "before-261");
   } finally { await sv.s.close(); }
 });
