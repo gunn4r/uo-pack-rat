@@ -7,10 +7,11 @@
 // resolves shows as a missing card. The numbers come from ui/manual-model.mts. Buffs, abilities and forms (app/buffs.mts,
 // drawn by ui/builder-buffs.mts) can be counted in the totals: the ones that are on, the numbers the player edited and
 // the switch are ui-prefs fields too, and turning one on or off is a step in the suit's undo history. The mode is the builder session's (ui/builder-session.mts), and Manual provides its commands there.
-import { GEAR_SLOTS, RESIST_KEYS, effectiveProfile, fcCapFor, profileResistCaps, requirementReport, toOptItem, totalsOf } from "../vault-lib.mts";
+import { GEAR_SLOTS, NOBODY, RESIST_KEYS, effectiveProfile, isPseudoCharacter, fcCapFor, profileResistCaps, requirementReport, toOptItem, totalsOf } from "../vault-lib.mts";
 import type { Character, EffectiveProfile, Item, OptItem, RunBuffs, RunSettings } from "../vault-lib.mts";
 import { buffById, buffSkillValues, isBuffSkills, manualPlan, manualProfile, normalizeBuffs, ownEntry, rawStats, runBuffs, toggleBuff, weaponFlags, NO_CHARACTER, signed } from "../buffs.mts";
-import { characterBuffs } from "../build-spec.mts";
+import { characterBuffs, characterProfile } from "../build-spec.mts";
+import { defaultStrLimit } from "../run-settings.mts";
 import { evaluateSuit, type SuitEvaluation } from "../evaluate.mts";
 import type { ItemQuery } from "../item-query.mts";
 import { state, invStamp } from "./store.mts";
@@ -21,7 +22,7 @@ import { prefs } from "./prefs.mts";
 import { setCharacterBuffs } from "./profiles.mts";
 import { resolveItems, rarityToken } from "./items.mts";
 import { fetchCard, followJob, grabAllButton, keyProps, progressText, verdict, RESIST_NAMES } from "./builder-parts.mts";
-import { capNote, fcCapSource, knobError, paperdoll, paperdollCaps, plural, type KnobField } from "./builder-model.mts";
+import { capNote, fcCapSource, knobError, paperdoll, paperdollCaps, plural, who, type KnobField } from "./builder-model.mts";
 import { session, commands, provide, readControls, type BuffInputs, type BuilderMode } from "./builder-session.mts";
 import { optimizeErrorMessage } from "./messages.mts";
 import { itemActions } from "./item-parts.mts";
@@ -29,7 +30,7 @@ import { sheetParts, wornSet } from "./sheet.mts";
 import { createItemBrowser } from "./item-browser.mts";
 import type { ItemBrowser } from "./item-browser.mts";
 import type { UiPrefs, OptimizeResult, OptimizeStartApiResponse, OptSuit } from "./api-types.mts";
-import { MANUAL_GROUPS, emptyHistory, record, undoStep, redoStep, historyKey, historyKeyNames, type History, type Suit, TOTAL_KEYS, STAT_KEYS, STRIP_KEYS, capped, capLine, slotQuery, handConflict, handNote, suitFrom, fillableSlots, fetchPieces, fillPicks, keptSlots, listWords, applyEditStep, type FillStart, type EditStep, type Reslot, savedSlots, missingSlots, reslotted, reslotNote, deltaKeys, slotDelta } from "./manual-model.mts";
+import { MANUAL_GROUPS, emptyHistory, record, undoStep, redoStep, historyKey, historyKeyNames, type History, type Suit, TOTAL_KEYS, STAT_KEYS, STRIP_KEYS, capped, capLine, slotQuery, handConflict, handNote, suitFrom, fillableSlots, fetchPieces, fillPicks, keptSlots, noCharacterRunSettings, listWords, applyEditStep, type FillStart, type EditStep, type Reslot, savedSlots, missingSlots, reslotted, reslotNote, deltaKeys, slotDelta } from "./manual-model.mts";
 import { buffMarker, buffStrip, createBuffPicker, keepChipFocus, type BuffActions, type BuffPicker, type BuffView } from "./builder-buffs.mts";
 
 let noCharacter = false;
@@ -74,8 +75,8 @@ export function applyBuilderPrefs(prefs: UiPrefs | null): void {
 // The Suit Builder's choices into ui-prefs, for both modes.
 export const savePrefs = (body: UiPrefs): void => prefs.set(body);
 const isManual = (): boolean => session.mode === "manual";
-// The character whose bonuses Manual's totals take: the builder's own, unless "No character" is picked.
-const manualCharacter = (): string | null => (noCharacter ? null : session.character);
+// The character whose bonuses Manual's totals take: the builder's own, unless "No character" is picked (in Manual, or in Automatic).
+const manualCharacter = (): string | null => (noCharacter || session.character === NOBODY ? null : session.character);
 
 // Once, from initBuilder(): the mode switch beside the title, and Manual's screen.
 export function initManual(): void {
@@ -125,16 +126,15 @@ function setMode(m: BuilderMode): void {
 }
 // A saved run opened or compared from Manual's runs drawer is shown in Automatic's result view.
 const showAutomatic = (): void => setMode("automatic");
-// The character select: Manual adds "No character" (raw item totals) at its top.
+// The character select ("No character", raw item totals, at its top in both modes): Manual's own choice in Manual.
 function paintCharSelect(): void {
-  const sel = $<HTMLSelectElement>("#b-char")!, none = sel.querySelector('option[value=""]');
-  if (isManual() && !none) sel.prepend(el("option", { value: "" }, "No character"));
-  if (!isManual()) none?.remove();
-  sel.value = isManual() && !manualCharacter() ? "" : session.character || "";
+  const sel = $<HTMLSelectElement>("#b-char")!;
+  sel.value = isManual() && !manualCharacter() ? NOBODY : session.character || "";
 }
-// The select changed in Manual: "No character", or a character (which the caller selects when it is another one).
+// The select changed: "No character" (in either mode: Automatic's No character is Manual's too), or a character in
+// Manual (which the caller selects when it is another one).
 function setManualFor(character: string | null): void {
-  if (!isManual()) return;
+  if (!isManual() && character) return;
   noCharacter = !character;
   savePrefs({ manualFor: noCharacter ? "none" : "character" });
   renderManual();
@@ -176,14 +176,14 @@ function profile(): EffectiveProfile {
 // Change cell reads them.
 let inputsMemo: BuffInputs | null = null;
 const buffEditsOf = (name: string | null): Record<string, number> =>
-  (name && name !== NO_CHARACTER ? (state.profiles ? characterBuffs(state.profiles, name).skills : {}) : noCharacterEdits);
+  (name && name !== NO_CHARACTER && name !== NOBODY ? (state.profiles ? characterBuffs(state.profiles, name).skills : {}) : noCharacterEdits);
 // Every set of edits by who they are for (NO_CHARACTER for No character), as manual-model.mts's undo steps take them.
 const allEdits = (): Record<string, Record<string, number>> =>
-  ({ ...Object.fromEntries(Object.keys(state.profiles?.characters || {}).map((n) => [n, buffEditsOf(n)])), [NO_CHARACTER]: noCharacterEdits });
+  ({ ...Object.fromEntries(Object.keys(state.profiles?.characters || {}).filter((n) => !isPseudoCharacter(n)).map((n) => [n, buffEditsOf(n)])), [NO_CHARACTER]: noCharacterEdits });
 // One set of edits saved: No character's as a view choice, a character's in its profile.
-function saveEdits(who: string, edits: Record<string, number>): void {
-  if (who === NO_CHARACTER) { noCharacterEdits = edits; savePrefs({ manualBuffSkills: edits }); }
-  else setCharacterBuffs(who, { skills: edits });
+function saveEdits(name: string, edits: Record<string, number>): void {
+  if (name === NO_CHARACTER || name === NOBODY) { noCharacterEdits = edits; savePrefs({ manualBuffSkills: edits }); }
+  else setCharacterBuffs(name, { skills: edits });
 }
 const editsFor = (): Record<string, number> => buffEditsOf(manualCharacter());
 function buffInputsOf(name: string | null): BuffInputs {
@@ -585,8 +585,8 @@ function paintFill(): void {
 // "Save as run": the suit as a run in the character's Saved runs (POST /api/runs, method "manual"), with the panel's
 // settings and the buffs the totals count.
 function saveButton(missing: number): HTMLElement {
-  const name = manualCharacter();
-  const why = !name ? "Choose a character to save a run for" : missing ? "Clear the missing pieces first" : !Object.keys(slots).length ? "Place a piece first" : null;
+  const name = manualCharacter() ?? NOBODY;
+  const why = missing ? "Clear the missing pieces first" : !Object.keys(slots).length ? "Place a piece first" : null;
   const b = button({ label: "Save as run", size: "sm", disabled: !!why, attrs: { id: "mb-save-run" }, onClick: () => { void saveAsRun(name!); } });
   return why ? tipWrap(b, why) : b;
 }
@@ -596,10 +596,12 @@ async function saveAsRun(name: string): Promise<void> {
   // a knob typed out of range in Automatic would be saved with the run, so it is said here rather than refused there
   const knobs = session.knobs, bad = RUN_KNOBS.find(([f]) => knobError(f, knobs[f]));
   if (bad) { toast(`Automatic's ${bad[1]} field reads "${knobs[bad[0]]}": ${knobError(bad[0], knobs[bad[0]])} Fix it under Advanced to save a run.`, "bad"); return; }
-  const settings = { ...commands.panelBuild().snapshot, buffs: runBuffs(countBuffs ? buffs : [], buffInputs().values) };
+  const snap = commands.panelBuild().snapshot;
+  const own = name === NOBODY && session.character !== NOBODY ? noCharacterRunSettings(snap, characterProfile(state.profiles!, NOBODY, state.builtinTemplates).strLimit ?? defaultStrLimit(null)) : snap;
+  const settings = { ...own, buffs: runBuffs(countBuffs ? buffs : [], buffInputs().values) };
   try { await api("/api/runs", { method: "POST", body: { character: name, suit: slots, settings, inventoryStamp: invStamp() } }); }
   catch (e) { toast(`Could not save the run: ${(e as Error).message}`, "bad"); return; }
-  toast(`Saved to ${name}'s runs as a manual suit.`, "good");
+  toast(`Saved to ${who(name)}'s runs as a manual suit.`, "good");
   void commands.loadRuns();
 }
 
@@ -613,7 +615,9 @@ async function openInManual(suit: OptSuit, covered: readonly string[], runB: Run
   // a run saved before the classifier moved one of its pieces: the piece in its slot now
   const moved = reslotted(planned, items), next = moved.slots, kept = keptSlots(next, covered);
   sayDropped(moved);
-  if (noCharacter) { noCharacter = false; savePrefs({ manualFor: "character" }); }
+  // a No character result opens in Manual's No character
+  const none = session.character === NOBODY;
+  if (noCharacter !== none) { noCharacter = none; savePrefs({ manualFor: none ? "none" : "character" }); }
   // the run's buffs (none for a run without), counted, with the numbers they took: all in the same undo step
   const name = manualCharacter(), runEdits = runInputEdits(name, runB);
   const edits: EditStep | undefined = Object.keys(runEdits).length ? { who: name ?? NO_CHARACTER, values: runEdits } : undefined;
@@ -633,6 +637,8 @@ function templateBuffs(on: readonly string[], label: string): void {
   if (!noCharacter) commit({ buffs: [...on], ...(on.length ? { count: true } : {}) }, label);
 }
 
+// With No character, Grab goes to the bridge's character: the fetch list follows the bridge, as the result's does.
+document.addEventListener("bridgechange", () => { const f = document.getElementById("mb-fetch"); if (f && isManual() && !manualCharacter()) f.replaceWith(fetchList()); });
 // The fetch list for the suit's pieces the character doesn't wear (the result's, builder-parts.mts fetchCard).
 function fetchList(): HTMLElement {
   const name = manualCharacter(), pieces = fetchPieces(Object.values(suitItems()), name), card = fetchCard(pieces, name, grabAllButton(pieces, name, { id: "mb-grab-all", size: "sm" }));

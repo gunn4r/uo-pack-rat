@@ -346,7 +346,7 @@ const SCENES: Scene[] = [
     await p.unroute("**/api/optimize");
   } },
   { name: "builder current suit", enter: async (p) => {
-    const names = await p.locator("#b-char option").allInnerTexts();
+    const names = (await p.locator("#b-char option").allInnerTexts()).filter((n) => n !== "No character");
     await p.selectOption("#b-char", names[1]!);
     await p.waitForSelector("#b-current");
   } },

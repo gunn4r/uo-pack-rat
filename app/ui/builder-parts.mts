@@ -3,7 +3,7 @@
 // an optimize job's event stream and progress words (the Automatic build's and Manual's fill).
 import { RESIST_META } from "../vault-lib.mts";
 import type { Item, PropMap } from "../vault-lib.mts";
-import { state } from "./store.mts";
+import { state, bridge } from "./store.mts";
 import { el, label, fmtN, itemTip, toast, whereText } from "./dom.mts";
 import { box, txt, button, message, tipWrap, tooltip, copyText } from "./components.mts";
 import { CLIENT_ID } from "./api.mts";
@@ -85,16 +85,21 @@ function copyButton(text: string, what: string): HTMLButtonElement {
   tooltip(b, `Copy ${what}`, { side: "right" });   // beside it, never over the place's path above
   return b;
 }
+// Who a Grab puts the pieces with: `name`, or with no character (`name` null) whichever character the bridge runs on, so
+// the pieces land in that backpack (grabAll's toast names it); null while no bridge is online.
+const NO_GRABBER = "Log a character in to grab";
+const grabberFor = (name: string | null): string | null => name ?? (bridge.online ? bridge.character : null);
 // Grab all the pieces to fetch into `name`'s backpack (the result's headline, Manual's fetch list), disabled with its
-// reason; with no character (`name` null, Manual) a plain "Grab", disabled: there is no backpack to grab into.
-export function grabAllButton(items: Item[], name: string | null, { id, size }: { id: string; size?: "sm" | undefined }): HTMLElement {
+// reason; with no character, into the bridge character's (a plain "Grab", disabled, while no bridge is online).
+export function grabAllButton(items: Item[], character: string | null, { id, size }: { id: string; size?: "sm" | undefined }): HTMLElement {
+  const name = grabberFor(character);
   const todo = name ? grabbable(items, name) : [];
-  const gate = !name ? "Choose a character to grab for" : todo.length ? bridgeActionReason("grab", todo[0]!) : `Nothing to grab: every piece is already with ${name} or worn.`;
+  const gate = !name ? NO_GRABBER : todo.length ? bridgeActionReason("grab", todo[0]!) : `Nothing to grab: every piece is already with ${name} or worn.`;
   const grab = button({ label: !name ? "Grab" : todo.length ? `Grab all ${todo.length}` : "Grab all", icon: "grab", variant: "primary", size, disabled: !!gate, onClick: () => grabAll(items, name!), attrs: { id } });
   return gate ? tipWrap(grab, gate) : grab;
 }
 // The result's, and Manual's (issue #12), for the manual suit's pieces the character doesn't wear, with `head` (its Grab
-// all) in the card's head; with no character (`name` null) there is no backpack to grab into, and Go to still works.
+// all) in the card's head; with no character (`name` null) Grab puts them in the bridge character's backpack.
 export function fetchCard(items: Item[], name: string | null, head: HTMLElement | null = null): HTMLElement | null {
   if (!items.length) return null;
   const groups = new Map<string, Item[]>();
@@ -102,11 +107,11 @@ export function fetchCard(items: Item[], name: string | null, head: HTMLElement 
   const rows = [...groups.values()].map((list) => {
     const first = list[0]!, cont = first.container != null ? state.inv!.containers[first.container] : null;
     const where = first.equippedBy ? `Worn by ${first.equippedBy}` : whereText(first.location?.text) || "Unknown place";
-    const mine = name ? grabbable(list, name) : [];
+    const grabber = grabberFor(name), mine = grabber ? grabbable(list, grabber) : [];
     const goGate = bridgeActionReason("goto", first);
-    const grabGate = !name ? "Choose a character to grab for" : mine.length ? bridgeActionReason("grab", mine[0]!) : `Nothing to grab here: it is already with ${name} or worn.`;
+    const grabGate = !grabber ? NO_GRABBER : mine.length ? bridgeActionReason("grab", mine[0]!) : `Nothing to grab here: it is already with ${grabber} or worn.`;
     const go = button({ label: "Go to", size: "sm", icon: "goto", disabled: !!goGate, onClick: () => runBridgeAction("goto", first) });
-    const grab = button({ label: `Grab ${mine.length || list.length}`, size: "sm", icon: "grab", disabled: !!grabGate, onClick: () => grabAll(list, name!) });
+    const grab = button({ label: `Grab ${mine.length || list.length}`, size: "sm", icon: "grab", disabled: !!grabGate, onClick: () => grabAll(list, grabber!) });
     const pieces = el("ul", { class: "b-fetch-pieces", "aria-label": `${plural(list.length, "piece")} to fetch` },
       ...list.map((it) => el("li", {}, tipTarget(txt(it.name, "b-fetch-piece"), it))));
     const contHex = cont ? serialHex(+cont.serial) : "";

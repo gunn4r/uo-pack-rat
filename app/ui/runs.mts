@@ -12,7 +12,7 @@ import { bindDrawer, box, txt, button, badge, message, input, confirmDialog, men
 import { renderNavCounts } from "./shell.mts";
 import { resolveItems } from "./items.mts";
 import { session, commands, provide, applyKnobs } from "./builder-session.mts";
-import { paperdollCaps, slotsOf, runAutoLabel, runBadges, runSettingsDiff, toggleCompare, plural, withBuffs } from "./builder-model.mts";
+import { paperdollCaps, slotsOf, runAutoLabel, runBadges, runSettingsDiff, toggleCompare, plural, who, withBuffs } from "./builder-model.mts";
 import type { RunsListApiResponse, RunApiResponse, RunPutApiResponse, RunSummaryLike, SavedRunLike } from "./api-types.mts";
 
 // ---------------------------------------------------------------- settings snapshot / apply
@@ -86,7 +86,7 @@ export function renderRuns(): void {
   if (ticked.length !== session.compare.size) session.compare = new Set(ticked);
   const name = session.character || "";
   $<HTMLElement>("#b-runs-count")!.textContent = String(runs.length);
-  $<HTMLElement>("#b-runs-who")!.textContent = name ? `${name} · ${plural(runs.length, "run")} · newest first` : "";
+  $<HTMLElement>("#b-runs-who")!.textContent = name ? `${who(name)} · ${plural(runs.length, "run")} · newest first` : "";
   renderNavCounts();
   paintFooter();
   if (!runs.length) { box_.replaceChildren(el("li", { class: "runs-empty" }, message({ tone: "info", text: "No saved runs yet. Every build is saved here." }))); return; }
