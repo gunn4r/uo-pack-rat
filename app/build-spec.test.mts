@@ -49,7 +49,7 @@ test("[fast] build spec: a full spec, a template's and an empty one pass; each k
     [{ ...spec, intent: { ...spec.intent, resistCaps: { fireResist: 200 } } }, /^spec\.intent\.resistCaps/],
     [{ ...spec, pool: { ...spec.pool, strLimit: 0 } }, /^spec\.pool\.strLimit must be "character" or a whole number from 1 to 1000$/],
     [{ ...spec, pool: { ...spec.pool, strLimit: "mine" } }, /^spec\.pool\.strLimit must be "character"/],
-    [{ ...spec, pool: { ...spec.pool, excludeWeapons: ["wrestling"] } }, /^spec\.pool\.excludeWeapons\[0\] is not a weapon skill/],
+    [{ ...spec, pool: { ...spec.pool, excludeWeapons: ["wrestling"] } }, /^spec\.pool\.excludeWeapons\[0\] must be a weapon skill or spellbook/],
     [{ ...spec, pool: { ...spec.pool, medOnly: "yes" } }, /^spec\.pool\.medOnly must be a boolean$/],
     [{ ...spec, pool: { ...spec.pool, floors: {} } }, /^spec\.pool\.floors is not a pool setting$/],
     [{ ...spec, buffs: { on: ["noSuchBuff"], skills: {} } }, /^spec\.buffs must list known buffs/],
@@ -83,6 +83,17 @@ test("[fast] build spec: templateSpecFrom keeps the buffs it is given, without t
   assert.deepEqual(templateSettings({ spec }), templateSettings({ spec: templateSpecFrom(PANEL) }), "the same settings either way");
   assert.equal("buffs" in templateSpecFrom(PANEL), false);
   assert.deepEqual(templateSpecFrom(PANEL, []).buffs, { on: [], skills: {} }, "none on is a list too");
+});
+
+// Issue #259: "spellbook" in excludeWeapons is checked, round-trips through the panel's flat profile, and the schema takes it.
+test("[fast] build spec: a spellbook exclusion is a known excludeWeapons value and round-trips", () => {
+  const spec = specFromProfile({ ...PANEL, excludeWeapons: ["archery", "spellbook"] });
+  assert.equal(buildSpecError(spec, "spec"), null);
+  assert.deepEqual(profileFromSpec(spec).excludeWeapons, ["archery", "spellbook"], "back to the panel");
+  assert.deepEqual(specFromProfile(profileFromSpec(spec)), spec, "a round trip changes nothing");
+  assert.ok(buildSpecError({ ...spec, pool: { ...spec.pool, excludeWeapons: ["spellbooks"] } }, "spec"), "an unknown name is still refused");
+  const schema = JSON.parse(readFileSync(join(HERE, "schema", "profiles.v3.schema.json"), "utf8")) as ValidatorSchema;
+  assert.ok(validate(schema, { schemaVersion: 3, characters: { A: { spec } }, templates: {} }).ok, "the schema takes it");
 });
 
 // Issue #214: pool weaponMustHave is stored only when it lists any, checked like the other pool fields, round-trips through

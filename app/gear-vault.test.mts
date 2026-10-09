@@ -11,7 +11,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 import {
   parseTooltip, displayName, gameName, compareNames, classify, foldSnapshots, spellSchoolOf, buildPools, requirementReport, totalsOf, propertyKeys, bagLabel, capacityOf, NOT_BUILDER_KEYS, kindOf, groupByName, slayersOf, medableOf, weaponAllowed, settingsDiff, PROP_LABELS, LAYER_TO_SLOT, LAYER_ALIASES, effectiveProfile, resistSkillBonus, toOptItem, labelOf, builderKeys, migrateProfiles, templateFrom, TEMPLATE_KEYS, setRules, getRules, tagUnits, tagInfo,
-  WEAPON_SKILLS, migrateWeaponSetting, excludeWeaponsError, weaponSkillsOf, weaponHasFlags, weaponMustHaveError, BOOLEAN_FLAGS,
+  WEAPON_SKILLS, WEAPON_EXCLUDES, migrateWeaponSetting, excludeWeaponsError, weaponSkillsOf, weaponHasFlags, weaponMustHaveError, BOOLEAN_FLAGS,
   shardResistCap, resistCapsFor, resistCapsError, profileResistCaps, RESIST_CAP_LIMITS,
 } from "./vault-lib.mts";
 import type { Item, Inventory, ItemLocation, ProfilesFile, CharacterEntryRaw } from "./vault-lib.mts";
@@ -284,6 +284,8 @@ test("[fast] classify: the golden table, by graphic and by name alone", () => {
     ["Leather Tunic Of Defense", "chest"], ["Elven Plate Belt", "waist"], ["Sorcerer's Skirt", "legs"], ["Malabelle's Dress", "outerLegs"],
     ["Kobakama", "legs"], ["Tabard", "robe"], ["Beads", null]];
   for (const [name, slot] of byName) assert.equal(classify(name).slot, slot, name);
+  // Issue #259: the named spellbooks a spellbook exclusion must also catch
+  for (const name of ["Scrapper's Compendium", "Juo'nar's Grimoire"]) assert.deepEqual([classify(name).slot, classify(name).gear], ["oneHanded", true], name);
   assert.equal(classify("Beads").gear, false, "beads are not worn");
   // a light is a tool in the pack (never a suit candidate) and fills the two-handed slot only while held
   assert.equal(classify("Lantern", null, null, 0xa25).gear, false);
@@ -967,6 +969,27 @@ test("[fast] weapon filter: a Use Best Weapon Skill weapon passes while any mele
   assert.equal(buildPools(inv, "Kestrel", { excludeWeapons: swordsOnly, ubwsAnyWeapon: false }).skipped.weapon.length, 1);
 });
 
+// Issue #259: "spellbook" in the list keeps every spellbook out; weapons are judged by their skills as before.
+test("[fast] weapon filter: an excluded Spellbooks row keeps spellbooks out and nothing else", () => {
+  const book = { slot: "oneHanded", name: "Scrapper's Compendium", skillReq: null, flags: [] } as unknown as Item;
+  assert.ok(!weaponAllowed(book, ["spellbook"]), "a spellbook out");
+  assert.ok(!weaponAllowed({ ...book, name: "Book of Chivalry" }, ["archery", "spellbook"]));
+  assert.ok(weaponAllowed(book, ["archery"]), "not excluded: it stays");
+  assert.ok(weaponAllowed({ slot: "oneHanded", name: "Katana", skillReq: "swordsmanship", flags: [] } as unknown as Item, ["spellbook"]), "a weapon of an allowed skill in");
+  assert.ok(weaponAllowed({ slot: "oneHanded", name: "Kryss", skillReq: "fencing", flags: ["use best weapon skill"] } as unknown as Item, ["fencing", "spellbook"]), "a UBWS weapon unaffected");
+  assert.ok(weaponAllowed({ slot: "oneHanded", name: "Sledge Hammer", skillReq: null, flags: ["use best weapon skill"] } as unknown as Item, ["spellbook"], false), "no weapon skill excluded: a UBWS weapon with no Skill Required line stays");
+  assert.ok(weaponAllowed({ slot: "twoHanded", name: "Order Shield", skillReq: null, flags: [] } as unknown as Item, ["spellbook"]), "a shield stays");
+  const mk = (serial: number, name: string, extra: Record<string, unknown> = {}): Item => ({ serial, name, slot: "oneHanded", gear: true, props: { hci: 1 }, tags: [], strReq: 0, root: 1, equippedBy: null, gargoyle: false, medable: true, ...extra } as unknown as Item);
+  const inv = { items: { 1: mk(1, "Spellbook"), 2: mk(2, "Katana", { skillReq: "swordsmanship" }), 3: mk(3, "Necromancer Spellbook", { equippedBy: "Kestrel", root: null }) } } as unknown as Inventory;
+  const r = buildPools(inv, "Kestrel", { excludeWeapons: ["spellbook"] });
+  assert.deepEqual(r.pools.oneHanded!.map((i) => i.serial), [2], "only the katana");
+  assert.equal(r.skipped.weapon.length, 2);
+  assert.deepEqual(r.blocked, ["oneHanded"], "the worn spellbook may not stay a candidate, as a worn weapon of an excluded skill");
+  assert.deepEqual(buildPools(inv, "Kestrel", { excludeWeapons: ["spellbook"], lockedSlots: ["oneHanded"] }).blocked, ["oneHanded"], "a lock does not keep it, as it does not keep an excluded weapon");
+  assert.deepEqual(buildPools(inv, "Kestrel", { excludeWeapons: ["spellbook"], pinned: { oneHanded: 3 } }).pools.oneHanded!.map((i) => i.serial), [3], "a pinned one is kept");
+  assert.deepEqual(buildPools(inv, "Kestrel", {}).pools.oneHanded!.map((i) => i.serial).sort(), [1, 2, 3], "unchecked: today's pool");
+});
+
 test("[fast] profiles: ubwsAnyWeapon is on unless set false, and the schema takes it", () => {
   assert.equal(templateFrom({}).ubwsAnyWeapon, true, "an old profile or template without the field");
   assert.equal(templateFrom({ ubwsAnyWeapon: false }).ubwsAnyWeapon, false);
@@ -1052,9 +1075,11 @@ test("[fast] weapon exclusions: the old single choice converts to every other sk
   assert.equal(excludeWeaponsError(undefined), null);
   assert.equal(excludeWeaponsError(["archery", "mace fighting"]), null);
   assert.equal(excludeWeaponsError("archery"), "excludeWeapons must be an array");
-  assert.match(excludeWeaponsError(["archery", "wrestling"], "settings.excludeWeapons")!, /^settings\.excludeWeapons\[1\] is not a weapon skill/);
+  assert.match(excludeWeaponsError(["archery", "wrestling"], "settings.excludeWeapons")!, /^settings\.excludeWeapons\[1\] must be a weapon skill or spellbook/);
+  assert.equal(excludeWeaponsError(["archery", "spellbook"]), null, "spellbooks too");
+  assert.match(excludeWeaponsError(["spellbooks"])!, /^excludeWeapons\[0\] must be a weapon skill or spellbook/);
   const schema = JSON.parse(readFileSync(join(HERE, "schema", "profiles.v3.schema.json"), "utf8")) as { $defs: { pool: { properties: { excludeWeapons: { items: { enum: string[] } } } } } };
-  assert.deepEqual(schema.$defs.pool.properties.excludeWeapons.items.enum, WEAPON_SKILLS, "the schema knows the same skills");
+  assert.deepEqual(schema.$defs.pool.properties.excludeWeapons.items.enum, WEAPON_EXCLUDES, "the schema knows the same skills and spellbooks");
 });
 
 test("[fast] settingsDiff names what changed between two runs", () => {
@@ -1067,6 +1092,9 @@ test("[fast] settingsDiff names what changed between two runs", () => {
   assert.ok(d.some((x) => x.startsWith("locked ")));
   assert.deepEqual(settingsDiff(a, a), []);
   assert.deepEqual(settingsDiff({ excludeWeapons: ["archery", "throwing"] }, { excludeWeapons: ["throwing", "fencing"] }), ["excluding fencing weapons", "allowing archery weapons"]);
+  assert.deepEqual(settingsDiff({ excludeWeapons: [] }, { excludeWeapons: ["spellbook"] }), ["excluding spellbooks"], "issue #259: spellbooks are not weapons");
+  assert.deepEqual(settingsDiff({ excludeWeapons: ["spellbook"] }, { excludeWeapons: ["archery"] }), ["excluding archery weapons", "allowing spellbooks"]);
+  assert.deepEqual(settingsDiff({ excludeWeapons: [] }, { excludeWeapons: ["throwing", "spellbook"] }), ["excluding throwing weapons and spellbooks"]);
 });
 
 // ---- templates ----------------------------------------------------------------------------

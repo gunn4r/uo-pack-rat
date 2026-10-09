@@ -3,7 +3,7 @@
 // "other changes" badges and "after the change" values, the compare table's differing rows and best values,
 // and a saved run's label and badges. No DOM and no page state, so app/builder-model.test.mts can check it
 // all directly; ui/builder.mts, ui/builder-result.mts and ui/runs.mts draw what it returns.
-import { labelOf, propName, typicalRange, GEAR_SLOTS, NOT_BUILDER_KEYS, RESIST_KEYS, RESIST_CAP_LIMITS, SLOT_LABELS, settingsDiff, shardResistCap, WEAPON_SKILLS, MELEE_SKILLS, ubwsLetsIn, flagLabel } from "../vault-lib.mts";
+import { labelOf, propName, typicalRange, GEAR_SLOTS, NOT_BUILDER_KEYS, RESIST_KEYS, RESIST_CAP_LIMITS, SLOT_LABELS, settingsDiff, shardResistCap, WEAPON_SKILLS, WEAPON_EXCLUDES, SPELLBOOKS, MELEE_SKILLS, ubwsLetsIn, flagLabel } from "../vault-lib.mts";
 import type { FcCap, PlannedBuffs, PropMap, ResistCap, RunSettings } from "../vault-lib.mts";
 import { applyBuffs, buffById, buffsDiff, capWord, signed, type BuffResult } from "../buffs.mts";
 import { RUN_SETTING_LIMITS, type Range } from "../run-settings.mts";
@@ -82,23 +82,25 @@ export function poolSummary(p: PoolSettings): string {
 // The Weapons control holds the weapon skills left out of the pool. The summary says them ("no archery or throwing
 // weapons", "fencing weapons only"); the chip counts them ("Weapons: 2 excluded"). Either adds ", plus Use Best Weapon
 // Skill" when that switch is on, some melee skill is excluded and some is not: only then does it matter in practice.
+// Spellbooks (issue #259) add ", no spellbooks" to either ("Weapons: Fencing only, no spellbooks").
 const orList = (xs: string[]): string => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} or ${xs[xs.length - 1]}`);
-export const weaponName = (w: string): string => w[0]!.toUpperCase() + w.slice(1);
-interface WeaponWords { any: string; none: string; only: (w: string) => string; some: (excluded: string[]) => string }
+export const weaponName = (w: string): string => (w === SPELLBOOKS ? "Spellbooks" : w[0]!.toUpperCase() + w.slice(1));
+interface WeaponWords { any: string; none: string; only: (w: string) => string; some: (excluded: string[]) => string; noBooks: string }
 function weaponsText(excluded: string[], ubws: boolean, t: WeaponWords): string {
-  const allowed = WEAPON_SKILLS.filter((w) => !excluded.includes(w));
-  const text = !excluded.length ? t.any : !allowed.length ? t.none : allowed.length === 1 ? t.only(allowed[0]!) : t.some(WEAPON_SKILLS.filter((w) => excluded.includes(w)));
+  const skills = excluded.filter((w) => w !== SPELLBOOKS), allowed = WEAPON_SKILLS.filter((w) => !skills.includes(w));
+  const text = !skills.length ? t.any : !allowed.length ? t.none : allowed.length === 1 ? t.only(allowed[0]!) : t.some(WEAPON_SKILLS.filter((w) => skills.includes(w)));
   const named = ubwsLetsIn(excluded, ubws) && MELEE_SKILLS.some((w) => excluded.includes(w));
-  return named ? `${text}, plus Use Best Weapon Skill` : text;
+  const out = named ? `${text}, plus Use Best Weapon Skill` : text;
+  return skills.length === excluded.length ? out : skills.length ? `${out}, no spellbooks` : t.noBooks;
 }
 export const weaponsSummary = (excluded: string[] = [], ubws = false): string =>
-  weaponsText(excluded, ubws, { any: "any weapon", none: "no weapons", only: (w) => `${w} weapons only`, some: (ex) => `no ${orList(ex)} weapons` });
+  weaponsText(excluded, ubws, { any: "any weapon", none: "no weapons", only: (w) => `${w} weapons only`, some: (ex) => `no ${orList(ex)} weapons`, noBooks: "any weapon, no spellbooks" });
 export const weaponsChipText = (excluded: string[] = [], ubws = false): string =>
-  weaponsText(excluded, ubws, { any: "Weapons: any", none: "Weapons: none", only: (w) => `Weapons: ${weaponName(w)} only`, some: (ex) => `Weapons: ${ex.length} excluded` });
+  weaponsText(excluded, ubws, { any: "Weapons: any", none: "Weapons: none", only: (w) => `Weapons: ${weaponName(w)} only`, some: (ex) => `Weapons: ${ex.length} excluded`, noBooks: "Weapons: any, no spellbooks" });
 // The Weapon must have chip (issue #214): "Weapon must have: Spell Channeling" when it holds any.
 export const weaponMustHaveChipText = (flags: string[] = []): string => (flags.length ? `Weapon must have: ${flags.map(flagLabel).join(", ")}` : "Weapon must have");
-// Ticking or unticking a skill; the list stays in WEAPON_SKILLS order, so the same exclusions always read the same.
-export const toggleWeapon = (excluded: string[], w: string, on: boolean): string[] => WEAPON_SKILLS.filter((x) => (x === w ? on : excluded.includes(x)));
+// Ticking or unticking a skill; the list stays in WEAPON_EXCLUDES order, so the same exclusions always read the same.
+export const toggleWeapon = (excluded: string[], w: string, on: boolean): string[] => WEAPON_EXCLUDES.filter((x) => (x === w ? on : excluded.includes(x)));
 
 // ---------------------------------------------------------------- resist caps
 // A resist's cap for a build is the shard's (race-aware) unless the player overrode it. The field takes a whole

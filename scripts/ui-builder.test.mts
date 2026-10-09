@@ -602,6 +602,37 @@ test("[slow] excluded weapon skills and the Use Best Weapon Skill check show on 
   }
 });
 
+// Spellbooks (issue #259): the Weapons popover ends in a Spellbooks row that adds ", no spellbooks" to the chip and is saved
+// with the profile.
+test("[slow] the Weapons popover's Spellbooks row excludes spellbooks and is saved with the profile", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = seedDataDir("packrat-ui-books-");
+  const { app, page, errors } = await launch(dataDir);
+  try {
+    await openBuilder(page);
+    const chip = page.locator("#b-weapon");
+    await chip.click();
+    await page.waitForFunction(() => [...document.querySelectorAll(".pop .b-checks label")].map((l) => (l.textContent || "").trim()).join("|") === "Archery|Swordsmanship|Fencing|Mace fighting|Throwing|Spellbooks", undefined, { timeout: 10_000 });
+    await page.locator('.pop input[value="spellbook"]').check();
+    await page.waitForFunction(() => document.querySelector("#b-weapon")?.textContent?.trim() === "Weapons: any, no spellbooks", undefined, { timeout: 10_000 });
+    await page.locator('.pop input[value="throwing"]').check();
+    await page.waitForFunction(() => document.querySelector("#b-weapon")?.textContent?.trim() === "Weapons: 1 excluded, no spellbooks", undefined, { timeout: 10_000 });
+    await page.keyboard.press("Escape");
+    await page.click("#b-save");
+    await page.waitForFunction(() => /Profile for .* saved/.test(document.body.textContent || ""), undefined, { timeout: 10_000 });
+    await page.reload();
+    await page.waitForSelector("#tab-builder:not([hidden]) #b-weapon", { timeout: 30_000 });
+    await page.waitForFunction(() => document.querySelector("#b-weapon")?.textContent?.trim() === "Weapons: 1 excluded, no spellbooks", undefined, { timeout: 10_000 });
+    await chip.click();
+    assert.deepEqual(await page.locator(".pop .b-checks input:checked").evaluateAll((is) => is.map((i) => (i as HTMLInputElement).value)), ["throwing", "spellbook"]);
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+});
+
 // Weapon properties (issue #214): the Weapon must have chip beside Weapons says what is checked, and Save profile keeps it
 // across a reload; unchecking everything leaves the chip plain again.
 test("[slow] the Weapon must have chip shows the checked properties and is saved with the profile", async (t) => {

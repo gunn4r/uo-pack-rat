@@ -676,7 +676,7 @@ const SHIELD_RE = /\b(shield|buckler)\b/i;
 // weapon word, so it is decided before anything else and is never gear.
 const PRIMER_RE = /\bprimer on\b.*\bmastery\b/i;
 const HELD_TOOL_RE = /\b(fishing pole|candle|candelabra|torch|lantern|light source)\b/i;
-const SPELLBOOK_RE = /\b(spellbook|book of (chivalry|bushido|ninjitsu|magery|necromancy|mysticism|spellweaving)|necromancer spellbook|mysticism book|tome)\b/i;   // NOT bare "mystic": "Mystic Ring" is a ring
+const SPELLBOOK_RE = /\b(spellbook|book of (chivalry|bushido|ninjitsu|magery|necromancy|mysticism|spellweaving)|necromancer spellbook|mysticism book|tome|compendium|grimoire)\b/i;   // NOT bare "mystic": "Mystic Ring" is a ring
 const JEWEL_SLOTS: Array<[string, RegExp]> = [["ring", /\bring\b/i], ["bracelet", /\bbracelet\b/i], ["talisman", /\btalisman\b/i], ["neck", /\bnecklace\b/i], ["earrings", /\bearrings\b/i]];
 // First match wins, and the order settles the names two slots share (issue #202, from the layers in ServUO's item
 // classes): gargish glasses are earrings and elven glasses a helm; a gargish kilt sits on the gloves layer; wing armor
@@ -1266,9 +1266,14 @@ export function builderKeys(inv: ItemsLike): string[] {
 // Throwing (ServUO BaseWeapon.GetUsedSkill), so with `ubws` on it passes while any of those three is allowed.
 export const WEAPON_SKILLS: string[] = ["archery", "swordsmanship", "fencing", "mace fighting", "throwing"];
 export const MELEE_SKILLS: string[] = ["swordsmanship", "fencing", "mace fighting"];
+// Issue #259: the list may also hold SPELLBOOKS ("spellbook"), which keeps every spellbook (a one-handed piece whose name
+// SPELLBOOK_RE matches) out of the pool. WEAPON_EXCLUDES is everything the list accepts, in the order the page shows it.
+export const SPELLBOOKS = "spellbook";
+export const WEAPON_EXCLUDES: string[] = [...WEAPON_SKILLS, SPELLBOOKS];
 export const ubwsLetsIn = (excluded: string[], ubws = true): boolean => ubws && MELEE_SKILLS.some((w) => !excluded.includes(w));
 export function weaponAllowed(it: Item, excluded: string[] = [], ubws = true): boolean {
-  if (!excluded.length || (it.slot !== "oneHanded" && it.slot !== "twoHanded")) return true;
+  if (it.slot === "oneHanded" && excluded.includes(SPELLBOOKS) && SPELLBOOK_RE.test(it.name || "")) return false;
+  if (!excluded.some((w) => w !== SPELLBOOKS) || (it.slot !== "oneHanded" && it.slot !== "twoHanded")) return true;
   const own = String(it.skillReq || "").toLowerCase();
   if ((it.flags || []).includes("use best weapon skill")) {
     if (ubwsLetsIn(excluded, ubws)) return true;
@@ -1313,12 +1318,13 @@ export function migrateWeaponSetting<T extends object>(s: T): T {
   const skill = typeof weaponSkill === "string" ? weaponSkill.toLowerCase() : "";
   return { ...rest, excludeWeapons: rest.excludeWeapons || (skill ? WEAPON_SKILLS.filter((w) => w !== skill) : []) } as T;
 }
-// The rule excludeWeapons is held to at POST /api/optimize (profiles.v3.schema.json says the same): known weapon skills.
+// The rule excludeWeapons is held to at POST /api/optimize (profiles.v3.schema.json says the same): known weapon skills,
+// or "spellbook".
 export function excludeWeaponsError(v: unknown, path = "excludeWeapons"): string | null {
   if (v == null) return null;
   if (!Array.isArray(v)) return `${path} must be an array`;
-  const i = v.findIndex((w) => typeof w !== "string" || !WEAPON_SKILLS.includes(w));
-  return i < 0 ? null : `${path}[${i}] is not a weapon skill (${WEAPON_SKILLS.join(", ")})`;
+  const i = v.findIndex((w) => typeof w !== "string" || !WEAPON_EXCLUDES.includes(w));
+  return i < 0 ? null : `${path}[${i}] must be a weapon skill or spellbook (${WEAPON_EXCLUDES.join(", ")})`;
 }
 
 // Templates: a full set of builder settings with no character in them (no race, STR limit or skipped containers).
@@ -1498,8 +1504,9 @@ export function settingsDiff(a: RunSettings = {}, b: RunSettings = {}): string[]
   flag("swingSteps", "+SSI by step", "SSI by point");
   if ((a.castingSchool || "") !== (b.castingSchool || "")) out.push(b.castingSchool ? `casting school ${b.castingSchool}` : "casting school from skills");
   const [wOn, wOff] = setDiff(a.excludeWeapons, b.excludeWeapons);
-  if (wOn.length) out.push(`excluding ${wOn.join(", ")} weapons`);
-  if (wOff.length) out.push(`allowing ${wOff.join(", ")} weapons`);
+  const weaponWords = (ws: string[]): string => [ws.some((w) => w !== SPELLBOOKS) ? `${ws.filter((w) => w !== SPELLBOOKS).join(", ")} weapons` : "", ws.includes(SPELLBOOKS) ? "spellbooks" : ""].filter(Boolean).join(" and ");
+  if (wOn.length) out.push(`excluding ${weaponWords(wOn)}`);
+  if (wOff.length) out.push(`allowing ${weaponWords(wOff)}`);
   const ubws = (s: RunSettings) => s.ubwsAnyWeapon !== false;   // absent means on
   if (ubws(a) !== ubws(b)) out.push(ubws(b) ? "Use Best Weapon Skill weapons allowed" : "Use Best Weapon Skill weapons held to their own skill");
   const [fOn, fOff] = setDiff(a.weaponMustHave, b.weaponMustHave);

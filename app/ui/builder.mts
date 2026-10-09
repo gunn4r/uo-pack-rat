@@ -5,7 +5,7 @@
 // is ui/runs.mts; they share the builder's state and call each other through ui/builder-session.mts. The panel is drawn
 // from the session's profile plus its Advanced knobs, so what a build sends, what a profile saves and what a run
 // snapshots are read from state, never from the DOM.
-import { PROP_LABELS, NOT_BUILDER_KEYS, playerCaps, GEAR_SLOTS, tagUnits, WEAPON_SKILLS, MELEE_SKILLS, WEAPON_MUST_HAVE, flagLabel, resistSkillBonus, getRules, RESIST_KEYS, RESIST_CAP_LIMITS, resistCapsFor, templateFrom, settingsDiff, bagLabel, toOptItem, totalsOf, fcCapFor, CASTING_SCHOOLS } from "../vault-lib.mts";
+import { PROP_LABELS, NOT_BUILDER_KEYS, playerCaps, GEAR_SLOTS, tagUnits, WEAPON_EXCLUDES, MELEE_SKILLS, WEAPON_MUST_HAVE, flagLabel, resistSkillBonus, getRules, RESIST_KEYS, RESIST_CAP_LIMITS, resistCapsFor, templateFrom, settingsDiff, bagLabel, toOptItem, totalsOf, fcCapFor, CASTING_SCHOOLS } from "../vault-lib.mts";
 import { heldWeapon, ssiShareOf, swingOf, type SwingResult } from "../swing.mts";
 import { BUILTIN_PREFIX, characterBuffs, characterEntry, characterProfile, findTemplate, planBuild, specFromProfile, templateLabel, templateRefs, templateSettings, templateSpecFrom, type PlannedBuild } from "../build-spec.mts";
 import type { FcCap, ResistCap, RunBuffs, Character } from "../vault-lib.mts";
@@ -611,14 +611,14 @@ function paintChip(chip: HTMLButtonElement, text: string, set: boolean): void {
   chip.classList.toggle("set", set);
   chip.querySelector("span")!.textContent = text;
 }
-// The Weapons chip: a checklist of the weapon skills, where a tick EXCLUDES that skill's weapons from the pool, and
-// under it the Use Best Weapon Skill switch (profile `ubwsAnyWeapon`, absent means on).
+// The Weapons chip: a checklist of the weapon skills and Spellbooks, where a tick EXCLUDES that skill's weapons (or every
+// spellbook) from the pool, and under it the Use Best Weapon Skill switch (profile `ubwsAnyWeapon`, absent means on).
 function weaponChip(): HTMLButtonElement {
   const p = session.profile!;
   const text = (): string => weaponsChipText(p.excludeWeapons, p.ubwsAnyWeapon !== false);
   const chip = filterChip({ label: text(), set: !!p.excludeWeapons?.length, attrs: { id: "b-weapon" } });
   chip.onclick = () => {
-    const checks = WEAPON_SKILLS.map((w) => check({ label: weaponName(w), checked: !!p.excludeWeapons?.includes(w), attrs: { value: w }, onChange: (on) => {
+    const checks = WEAPON_EXCLUDES.map((w) => check({ label: weaponName(w), checked: !!p.excludeWeapons?.includes(w), attrs: { value: w }, onChange: (on) => {
       p.excludeWeapons = toggleWeapon(p.excludeWeapons || [], w, on);
       paintChip(chip, text(), !!p.excludeWeapons.length); updateTemplateBadge(); paintUbws();
     } }).root);
