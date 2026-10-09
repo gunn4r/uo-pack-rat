@@ -3,7 +3,7 @@
 // page's Advanced fields share, and the defaults. Pure and browser-safe: the page imports the ranges and defaults.
 import { isRunBuffs } from "./buffs.mts";
 import { isBoundedInt, isBoundedString, MAX_SERIAL, short } from "./guards.mts";
-import { CASTING_SCHOOLS, excludeWeaponsError, resistCapsError, weaponMustHaveError } from "./vault-lib.mts";
+import { CASTING_SCHOOLS, RARITY_PREFERENCES, excludeWeaponsError, resistCapsError, weaponMustHaveError, type RarityPreference } from "./vault-lib.mts";
 export type { RunSettings } from "./vault-lib.mts";
 
 // The search options POST /api/optimize takes in `opts`, and the range each may sit in.
@@ -67,6 +67,7 @@ export function runSettingsError(settings: unknown, label: string): string | nul
     else if (k === "weaponMustHave") { const e = weaponMustHaveError(v, `${label}.weaponMustHave`); if (e) return e; }
     else if (k === "resistCaps") { const e = resistCapsError(v, `${label}.resistCaps`); if (e) return e; }
     else if (k === "castingSchool") { if (!CASTING_SCHOOLS.includes(v as string)) return `${label}.castingSchool must be one of ${CASTING_SCHOOLS.join(", ")}`; }
+    else if (k === "rarity") { if (!RARITY_PREFERENCES.includes(v as RarityPreference)) return `${label}.rarity must be one of ${RARITY_PREFERENCES.join(", ")}`; }
     else if (k === "buffs") { if (!isRunBuffs(v)) return `${label}.buffs must list known buffs, each once and one form at most, with their numbers in range`; }
     else return `${label}.${short(k)} is not a run setting`;
   }

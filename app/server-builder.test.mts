@@ -1,6 +1,6 @@
 // server-builder.test.mts — HTTP tests of the Suit Builder: `POST /api/optimize`, the saved runs and `GET|PUT /api/profiles`.
 //
-// `POST /api/optimize`: one running job per client (a second `POST` supersedes the first) and none between callers with no client id, the events route's `?client=` check, the server-wide ceiling, a job that throws logging its stack under the ref the client sees, an exact build proven by HiGHS with the saved run's score, the by-character form building the client's pools, keeping the page's settings snapshot, treating null fields as absent and refusing a bad settings type, the time budget capping restarts, resist cap overrides, weapon exclusions and required weapon properties (the lock wins, an empty pool said), malformed pools, current, profile or opts refused, only known meta fields saved, a character with no scans a 404, and Manual's hand-offs (issue #12: `pinned` keeping the placed pieces, no run saved, and with no character only pieces nobody wears; No character's `_nobody` build from pieces nobody wears, saved, reused and listed under its name, others' worn gear on request, another pseudo name a 404, and its manual run); SSI scored by swing step through the real worker (issue #217: per point with the reason while the weapon is not fixed, scoring what steps off scores, and the result's swing once the one-handed slot is locked); the job lifecycle (`jobTimings`, a parked core: a build past the retention kept, one past its budget cancelled, closing mid-build logging no failure); `GET|PUT|DELETE /api/runs/<id>` (a label type-checked, a truncated run a 404 that can still be deleted) and `POST /api/runs` saving a manual run with its checks; `POST /api/evaluate` answering what `evaluateSuit` computes from the same fixtures (the saved profile, a given profile with Divine Fury, a run's settings bringing their buffs, No character) and its checks; `PUT /api/profiles` (413 by bytes, 400 naming the schema path) and a truncated `profiles.json` moved aside and reseeded.
+// `POST /api/optimize`: one running job per client (a second `POST` supersedes the first) and none between callers with no client id, the events route's `?client=` check, the server-wide ceiling, a job that throws logging its stack under the ref the client sees, an exact build proven by HiGHS with the saved run's score, the by-character form building the client's pools, keeping the page's settings snapshot, treating null fields as absent and refusing a bad settings type, the time budget capping restarts, resist cap overrides, weapon exclusions and required weapon properties (the lock wins, an empty pool said), malformed pools, current, profile or opts refused, only known meta fields saved, a character with no scans a 404, and Manual's hand-offs (issue #12: `pinned` keeping the placed pieces, no run saved, and with no character only pieces nobody wears; No character's `_nobody` build from pieces nobody wears, saved, reused and listed under its name, others' worn gear on request, another pseudo name a 404, and its manual run); SSI scored by swing step through the real worker (issue #217: per point with the reason while the weapon is not fixed, scoring what steps off scores, and the result's swing once the one-handed slot is locked); the job lifecycle (`jobTimings`, a parked core: a build past the retention kept, one past its budget cancelled, closing mid-build logging no failure); `GET|PUT|DELETE /api/runs/<id>` (a label type-checked, a truncated run a 404 that can still be deleted) and `POST /api/runs` saving a manual run with its checks; `POST /api/evaluate` answering what `evaluateSuit` computes from the same fixtures (the saved profile, a given profile with Divine Fury, a run's settings bringing their buffs, No character) and its checks; `PUT /api/profiles` (413 by bytes, 400 naming the schema path) and a truncated `profiles.json` moved aside and reseeded. A rarity preference (issue #262): `POST /api/optimize` stamps tie costs on pooled and worn pieces in both forms (an unknown serial ranking 0), keys each preference apart from none, and refuses a bad `opts.tieBreak`.
 import { test, before, after, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, rmSync } from "node:fs";
@@ -1088,4 +1088,61 @@ test("[fast] POST /api/evaluate answers evaluateSuit's evaluation of a hand-pick
   assert.equal(asJson<ErrorBody>(await (await post({ character, suit, buffs: { on: ["noSuchBuff"], skills: {} } })).json()).error, "body.buffs must list known buffs, each once and one form at most, with their numbers in range");
   const twoH = [...loose, ...worn].find((it) => it.slot === "twoHanded" && it.twoHanded), oneH = [...loose, ...worn].find((it) => it.slot === "oneHanded");
   if (twoH && oneH) assert.equal((await post({ character, suit: { twoHanded: twoH.serial, oneHanded: oneH.serial } })).status, 400);
+});
+
+// Issue #262: a rarity preference. The route stamps each pooled and worn piece's tie cost from its rarity line (the
+// ladder's rank for "lower", the ranks above it for "higher", an unknown serial ranking 0), only when opts.tieBreak is
+// set: a build with none keys and builds as before, and each preference keys apart.
+test("[fast] /api/optimize: a rarity preference stamps tie costs, keys apart from no preference, and is checked", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-"));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {})));
+  try {
+    const invFull = asJson<InventoryResponse>(await (await fetch(s2.url + "/api/inventory")).json());
+    const profiles = asJson<ProfilesResponse>(await (await fetch(s2.url + "/api/profiles")).json());
+    const rules = asJson<RulesResponse>(await (await fetch(s2.url + "/api/rules")).json());
+    const ladder = rules.rules.rarity!, items = foldFixtures(join(HERE, "fixtures")).items;
+    const character = Object.keys(invFull.inventory.characters)[0]!;
+    const profile = { ...firstTemplate(profiles), caps: rules.rules.caps };
+    const post = async (body: Record<string, unknown>): Promise<{ status: number; json: OptimizeJobResponse }> => {
+      const r = await fetch(s2.url + "/api/optimize", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+      return { status: r.status, json: asJson<OptimizeJobResponse>(await r.json()) };
+    };
+    const build = async (body: Record<string, unknown>): Promise<{ result: NonNullable<OptimizeJobResponse["result"]>; key: string }> => {
+      const { status, json } = await post(body);
+      assert.equal(status, 200, JSON.stringify(json));
+      let st: OptimizeJobResponse = json;
+      for (let i = 0; i < 300 && st.state !== "done"; i++) { await new Promise((res) => setTimeout(res, 20)); st = asJson<OptimizeJobResponse>(await (await fetch(s2.url + `/api/optimize/${json.id}/status`)).json()); }
+      assert.equal(st.state, "done", JSON.stringify(st));
+      const run = asJson<RunResponse>(await (await fetch(s2.url + `/api/runs/${st.runId}`)).json());
+      return { result: st.result!, key: run.run.key as string };
+    };
+    const rank = (serial: number): number => { const r = items[serial]?.rarity; const i = ladder.findIndex((t) => t.name.toLowerCase() === String(r || "").replace(/^reforged\s+/i, "").toLowerCase()); return i + 1; };
+    const pieces = (res: NonNullable<OptimizeJobResponse["result"]>) => Object.values(res.best as Record<string, { serial: number; tieCost?: number } | null>).filter((x): x is { serial: number; tieCost?: number } => !!x);
+    const plain = await build({ character, settings: {}, profile, opts: { exact: false } });
+    assert.ok(pieces(plain.result).every((it) => it.tieCost === undefined), "no preference, no tie cost");
+    assert.equal(plain.result.tieBreak, undefined);
+    const lower = await build({ character, settings: {}, profile, opts: { exact: false, tieBreak: { rarity: "lower", tolerance: 0 } } });
+    const higher = await build({ character, settings: {}, profile, opts: { exact: false, tieBreak: { rarity: "higher", tolerance: 0 } } });
+    assert.equal(new Set([plain.key, lower.key, higher.key]).size, 3, "each preference keys apart");
+    assert.ok(pieces(lower.result).length > 0);
+    for (const it of pieces(lower.result)) assert.equal(it.tieCost, rank(it.serial), `lower: 0x${it.serial.toString(16)}`);
+    for (const it of pieces(higher.result)) assert.equal(it.tieCost, ladder.length - rank(it.serial), `higher: 0x${it.serial.toString(16)}`);
+    const tb = lower.result.tieBreak as { rarity: string; tolerance: number; cost: number };
+    assert.deepEqual([tb.rarity, tb.tolerance, tb.cost], ["lower", 0, pieces(lower.result).reduce((n, it) => n + it.tieCost!, 0)]);
+    // the hand-built form: a worn piece the scans do not have ranks 0
+    const odd = { serial: 0x7fff0001, name: "Odd Ring", slot: "ring", props: { hci: 100 } };
+    for (const [rarity, cost] of [["lower", 0], ["higher", ladder.length]] as const) {
+      const r = await build({ pools: { ring: [] }, current: { ring: odd }, profile: { weights: { hci: 1 }, caps: {} }, opts: { exact: false, tieBreak: { rarity, tolerance: 0 } } });
+      assert.equal((r.result.best as Record<string, { tieCost?: number }>).ring!.tieCost, cost, rarity);
+    }
+    // the check
+    for (const [tieBreak, error] of [[{ rarity: "rarest", tolerance: 0 }, /tieBreak.rarity must be one of higher, lower/], [{ rarity: "lower", tolerance: -1 }, /tolerance must be a non-negative number/],
+      [{ rarity: "lower", tolerance: 0, extra: 1 }, /not a tie-break setting/], ["lower", /tieBreak must be an object/]] as const) {
+      const { status, json } = await post({ character, settings: {}, profile, opts: { exact: false, tieBreak } });
+      assert.equal(status, 400);
+      assert.match(json.error!, error);
+    }
+  } finally {
+    await s2.close();
+  }
 });

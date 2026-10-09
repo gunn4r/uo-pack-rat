@@ -13,7 +13,9 @@ import type { RunBody, RunsListBody, RunSummary } from "../../runs-types.mts";
 import { sse } from "../../services/events.mts";
 import type { Job } from "../../services/jobs.mts";
 import { isManualSuit } from "../../store/ui-prefs.mts";
-import { GEAR_SLOTS, NOBODY, buildPools, missingFlags, toOptItem, type Character, type Inventory, type Item, type OptItem, type Profile, type RunBuffs } from "../../vault-lib.mts";
+import { rarityRank } from "../../item-query.mts";
+import type { RulesV1RarityItem } from "../../schema/types.d.mts";
+import { GEAR_SLOTS, NOBODY, RARITY_PREFERENCES, buildPools, getRules, missingFlags, toOptItem, type Character, type Inventory, type Item, type OptItem, type Profile, type RarityPreference, type RunBuffs } from "../../vault-lib.mts";
 import { characterProfile, poolFromSpec, specFromRunSettings } from "../../build-spec.mts";
 import { send, asObject, SSE_HEADERS } from "../respond.mts";
 import { NEXT, type Route } from "../router.mts";
@@ -86,10 +88,25 @@ function optsError(opts: Record<string, unknown>): string | null {
         if (typeof tolerance !== "number" || !Number.isFinite(tolerance) || tolerance < 0) return "opts.alternatives.tolerance must be a non-negative number";
         break;
       }
+      case "tieBreak": {
+        if (!v || typeof v !== "object" || Array.isArray(v)) return "opts.tieBreak must be an object";
+        const { rarity, tolerance, ...extra } = v as Record<string, unknown>;
+        if (!RARITY_PREFERENCES.includes(rarity as RarityPreference)) return `opts.tieBreak.rarity must be one of ${RARITY_PREFERENCES.join(", ")}`;
+        if (typeof tolerance !== "number" || !Number.isFinite(tolerance) || tolerance < 0) return "opts.tieBreak.tolerance must be a non-negative number";
+        if (Object.keys(extra).length) return `opts.tieBreak.${short(Object.keys(extra)[0]!)} is not a tie-break setting`;
+        break;
+      }
       default: return `opts.${short(k)} is not a supported search option`;
     }
   }
   return null;
+}
+// A rarity preference's per-piece cost (issue #262), stamped on each candidate and worn piece: the solvers minimize its
+// sum among suits within the tolerance. "lower" costs a piece its rank on the shard's ladder, "higher" the ranks above
+// it (an empty slot costs 0 either way); a serial the scans do not have ranks 0, below every tier.
+function stampTieCost<T extends { serial: number }>(it: T, inv: Inventory, rarity: RarityPreference, ladder: RulesV1RarityItem[]): T & { tieCost: number } {
+  const rank = rarityRank(ladder, inv.items[it.serial]?.rarity);
+  return { ...it, tieCost: rarity === "lower" ? rank : ladder.length - rank };
 }
 // meta is the caller's own bookkeeping, and saveRun() used to persist it verbatim into
 // <data>/runs/<uuid>.json — a megabyte of padding in meta.settings became a megabyte on disk that
@@ -208,6 +225,13 @@ export function routes(ctx: ServerContext): Route[] {
         // form above builds both itself, so it needs no element check.
         const badPools = poolsError(pools) || currentError(current);
         if (badPools) return send(res, 400, { ok: false, error: badPools });
+      }
+      const tieBreak = (opts as RunOpts).tieBreak as { rarity: RarityPreference } | undefined;
+      if (tieBreak) {
+        const { inv } = await getInventory(), ladder = getRules().rarity || [];
+        const stamp = (it: unknown): unknown => (it && typeof it === "object" ? stampTieCost(it as { serial: number }, inv, tieBreak.rarity, ladder) : it);
+        pools = Object.fromEntries(Object.entries(pools).map(([slot, list]) => [slot, (list as unknown[]).map(stamp)]));
+        current = Object.fromEntries(Object.entries(current).map(([slot, it]) => [slot, stamp(it)]));
       }
       // profile is scored against in the worker; a string or a number would fail there, not here.
       if (!profile || typeof profile !== "object" || Array.isArray(profile)) return send(res, 400, { ok: false, error: "profile required" });

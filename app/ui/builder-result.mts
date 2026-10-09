@@ -17,7 +17,7 @@ import { session, commands, provide } from "./builder-session.mts";
 import { RESIST_NAMES, keyProps, tipTarget, verdict, grabAllButton, fetchCard, settingsCheck } from "./builder-parts.mts";
 import { savedBuffs, plannedFromWorn, buffById, buffsDiff, runBuffs } from "../buffs.mts";
 import type { RunBuffs } from "../vault-lib.mts";
-import { slotsOf, paperdollCaps, pastCapBadges, runSettingsDiff, withBuffs, afterChange, compareModel, hiddenRowsNote, otherChanges, plural, resistOutcome, toggleCompare, propName, capNote, capsLine, anyOverridden, effectiveFloor, resultChecks, swingLines, who, type CompareMember } from "./builder-model.mts";
+import { slotsOf, paperdollCaps, pastCapBadges, runSettingsDiff, withBuffs, afterChange, compareModel, hiddenRowsNote, otherChanges, plural, resistOutcome, toggleCompare, propName, capNote, capsLine, anyOverridden, effectiveFloor, resultChecks, swingLines, who, rarityDetail, rarityTotal, type CompareMember } from "./builder-model.mts";
 import { heldWeapon } from "../swing.mts";
 import type { SwingResult } from "../runs-types.mts";
 import type { OptSuit, OptimizeResult, SavedRunLike } from "./api-types.mts";
@@ -298,6 +298,7 @@ function detailsCard(res: OptimizeResult, meta: BuildMeta | undefined, view: num
   if (time) pairs.push(["Time", time]);
   if (skips) pairs.push(["Left out", skips]);
   if (res.method !== "manual") pairs.push(["Score", `${fmtN(Math.round(res.currentScore))} → ${fmtN(Math.round(score))}`]);
+  if (res.tieBreak && res.method !== "manual") pairs.push(["Rarity", rarityDetail(res.tieBreak, rarityTotal(res.best, res.tieBreak.rarity, state.rules?.rarity?.length ?? 0))]);
   if (res.gapPoints != null) pairs.push(["Gap to the bound", `${fmtN(res.gapPoints)} points`]);
   if (res.altTolerance != null) pairs.push(["Other suits", `${fmtN((res.alternatives || []).length)} within ${fmtN(res.altTolerance)} points${res.altShortfall === "budget" ? " · the time budget ran out before more were found" : ""}`]);
   // A run is reused when the solvers' input is the same (runs-lib.mts's runKey): its buffs may differ where they plan alike.

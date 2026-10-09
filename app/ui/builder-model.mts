@@ -10,6 +10,7 @@ import { RUN_SETTING_LIMITS, type Range } from "../run-settings.mts";
 import { paperdollCaps, suitResist } from "../evaluate.mts";
 import type { Diagnostic, DiagnosticAction, DiagnosticCode, SwingResult } from "../runs-types.mts";
 import { delayText, MIN_TICKS } from "../swing.mts";
+import type { TieBreakResult } from "./api-types.mts";
 
 export const plural = (n: number, word: string, many = `${word}s`): string => `${n.toLocaleString("en-US")} ${n === 1 ? word : many}`;
 // A Suit Builder character key as the page prints it: No character's pseudo name in words, a character's name as it is.
@@ -63,7 +64,22 @@ export function requirementsSummary(floors: Record<string, number> = {}, soft: s
   }).join(" · ");
 }
 export interface PoolSettings { allowOthersWorn?: boolean | undefined; allowGargoyle?: boolean | undefined; medOnly?: boolean | undefined; excludeWeapons?: string[] | undefined; ubwsAnyWeapon?: boolean | undefined; weaponMustHave?: string[] | undefined;
-  lockedSlots?: string[] | undefined; excludeTags?: string[] | undefined; excludeSkills?: string[] | undefined; excludeRoots?: unknown[] | undefined }
+  lockedSlots?: string[] | undefined; excludeTags?: string[] | undefined; excludeSkills?: string[] | undefined; excludeRoots?: unknown[] | undefined; rarity?: string | undefined }
+// The Rarity setting's help line: none for "any".
+export function rarityHelp(rarity: string | undefined): string {
+  return rarity ? `Among equally good suits, use the ${rarity === "higher" ? "highest" : "lowest"}-rarity pieces. Requirements come first.` : "";
+}
+// A suit's rarity total, the summed rank of its pieces on the shard's ladder (Minor Magic Item 1 … Legendary Artifact 8,
+// no tier 0), from the tie costs the server stamped on them: a piece's rank for "lower", the ranks above it for "higher".
+export function rarityTotal(best: Record<string, { tieCost?: number | undefined } | null | undefined>, rarity: string | undefined, ladderLength: number): number {
+  return Object.values(best).reduce((n, it) => (it && it.tieCost != null ? n + (rarity === "higher" ? ladderLength - it.tieCost : it.tieCost) : n), 0);
+}
+// Solver details' Rarity row: "Lowest-rarity pieces among equal suits · rarity total 16", and when the second stage ran
+// out of time, that the rarity choice is not proven.
+export function rarityDetail(tb: TieBreakResult, total: number): string {
+  const most = tb.rarity === "higher" ? "highest" : "lowest";
+  return `${most[0]!.toUpperCase()}${most.slice(1)}-rarity pieces among equal suits · rarity total ${total.toLocaleString("en-US")}${tb.costProven ? "" : ` (the ${most} found, not proven)`}`;
+}
 // "Own gear and unworn gear · no gargoyle-only · any weapon"
 export function poolSummary(p: PoolSettings): string {
   return [
@@ -76,6 +92,7 @@ export function poolSummary(p: PoolSettings): string {
     p.excludeTags?.length ? `no ${p.excludeTags.join(", ")}` : "",
     p.excludeSkills?.length ? `${plural(p.excludeSkills.length, "skill bonus", "skill bonuses")} forbidden` : "",
     p.excludeRoots?.length ? `${plural(p.excludeRoots.length, "container")} skipped` : "",
+    p.rarity ? `prefer ${p.rarity} rarity` : "",
   ].filter(Boolean).join(" · ");
 }
 
