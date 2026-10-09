@@ -513,7 +513,7 @@ test("[fast] weapon exclusions: a bad list is 400, excluded weapons stay out of 
     method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ character, settings, profile, opts: { exact: false, restarts: 3 }, meta: { character, settings } }) });
   const bad = await post({ excludeWeapons: ["bows"] });
   assert.equal(bad.status, 400);
-  assert.match(asJson<ErrorBody>(await bad.json()).error, /settings\.excludeWeapons\[0\] is not a weapon skill/);
+  assert.match(asJson<ErrorBody>(await bad.json()).error, /settings\.excludeWeapons\[0\] must be a weapon skill or spellbook/);
   const badUbws = await post({ ubwsAnyWeapon: "yes" });
   assert.equal(badUbws.status, 400);
   assert.match(asJson<ErrorBody>(await badUbws.json()).error, /settings\.ubwsAnyWeapon must be a boolean/);
