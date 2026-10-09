@@ -311,7 +311,10 @@ export interface OptimizeResult {
   floorsConflict?: boolean | undefined;
   diagnostics?: Diagnostic[] | undefined;   // absent on a run saved before SOLVER_VERSION 6: unreachableFloors is drawn instead
   swing?: SwingResult | undefined;          // the suit's swing (app/swing.mts), when it holds a weapon with a known speed and the build has a character
+  tieBreak?: TieBreakResult | undefined;    // a rarity preference's outcome (app/exact-solver.mts TieBreakResult)
 }
+// A rarity preference's outcome: the best score found, the returned suit's rarity points, the preference and tolerance, and whether the points are proven the lowest (exact search only).
+export interface TieBreakResult { topScore: number; cost: number; rarity?: string | undefined; tolerance?: number | undefined; costProven?: boolean | undefined }
 // SolveProgress (app/exact-solver.mts) as reported over the job's SSE stream and read by
 // builder.mts's runPanel(). Every field but `phase` is optional — not every phase reports every one.
 export interface OptimizeProgress {

@@ -27,10 +27,11 @@ export const colVal = (it: Item, c: string): number => {
 };
 
 // 1-based position of `name` in the shard's rarity ladder (ascending, lowest tier first), or 0 if the
-// name isn't on the ladder (including no rarity at all). `ladder` is state.rules.rarity in the browser,
+// name isn't on the ladder (including no rarity at all). A "Reforged" tier ranks with its base tier. `ladder` is state.rules.rarity in the browser,
 // currentRules.rarity on the server — always passed in explicitly; this module has no rules of its own.
 export function rarityRank(ladder: RulesV1RarityItem[] | null | undefined, name: string | null | undefined): number {
-  const i = (ladder || []).findIndex((r) => r.name.toLowerCase() === String(name || "").toLowerCase());
+  const base = String(name || "").replace(/^reforged\s+/i, "").toLowerCase();
+  const i = (ladder || []).findIndex((r) => r.name.toLowerCase() === base);
   return i >= 0 ? i + 1 : 0;
 }
 

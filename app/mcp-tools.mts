@@ -114,6 +114,9 @@ async function planProfile(ctx: ToolContext, inv: InventoryDoc, name: string | n
     if (!t) throw new ToolError(`no template named ${JSON.stringify(args.template)}; the templates are ${templateRefs(profiles, builtins).join(", ") || "none"}`);
     Object.assign(p, templateSettings(t), { template: args.template });
   }
+  // a rarity preference: "any" clears the profile's (or template's), and none named keeps it
+  if (args.rarity === "any") delete p.rarity;
+  else if (args.rarity === "higher" || args.rarity === "lower") p.rarity = args.rarity;
   const saved = name ? characterBuffs(profiles, name) : { on: characterBuffs(profiles, NOBODY).on, skills: prefs.manualBuffSkills || {} };
   // a template that carries buffs plans with them, as the builder's Apply turns them on
   const preset = t?.spec.buffs ? t.spec.buffs.on : suit ? (prefs.buffsCount !== "off" ? prefs.manualBuffs : []) : saved.on;
@@ -144,6 +147,7 @@ function resultSummary(result: Record<string, unknown> | null | undefined, ev: E
     ...(Array.isArray(result.unreachableFloors) && result.unreachableFloors.length ? { unreachableFloors: result.unreachableFloors } : {}),
     ...(Array.isArray(result.diagnostics) && result.diagnostics.length ? { diagnostics: result.diagnostics } : {}),
     ...(result.swing ? { swing: result.swing } : {}),
+    ...(result.tieBreak ? { tieBreak: result.tieBreak } : {}),
     ...(Array.isArray(result.alternatives) && result.alternatives.length ? { otherSuits: (result.alternatives as Array<{ best: Record<string, { serial: number; name: string } | null>; score: number }>).map((a) => ({ score: a.score, suit: suitRows(a.best) })) } : {}),
   };
 }
@@ -466,6 +470,7 @@ export const TOOLS: Tool[] = [
       pinned: { type: "object", additionalProperties: SERIAL, description: `Pieces kept in place, slot → serial (slots: ${GEAR_SLOTS.join(", ")}); only the other slots are searched.` },
       timeBudgetSeconds: { type: "integer", minimum: 1, maximum: 3600, description: "How long the exact search may take, 60 by default." },
       otherSuits: { type: "integer", minimum: 0, maximum: 20, description: "Also list this many next-best suits (0 by default)." },
+      rarity: { type: "string", enum: ["higher", "any", "lower"], description: "Among equally good suits, prefer higher- or lower-rarity pieces; requirements always come first. \"any\" clears the profile's or template's preference; left out, it is kept." },
       waitSeconds: { type: "integer", minimum: 0, maximum: WAIT_MAX, description: `How long to wait for the result, ${WAIT_DEFAULT} seconds by default, ${WAIT_MAX} at most; then poll get_suit_build.` },
     } },
     annotations: { title: "Build a suit", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
