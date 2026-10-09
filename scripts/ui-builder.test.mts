@@ -1,6 +1,6 @@
 // ui-builder.test.mts — [slow]: the Suit Builder's keyboard, hover and panel behavior in the real Electron window.
 //
-// `[slow]`: the Suit Builder's keyboard and hover behaviour in the real Electron window, on a writable `--data` directory seeded with the demo scans: a raised resist cap (Fire 95) marked in the Resist caps section, built with, shown on the result's Fire tile and the saved run's badge, kept by Save profile across a reload, refused out of range with the error under the field, and reset to the shard's cap; ⌘↵ (Ctrl+Enter) builds with focus on the page body and while typing in a panel field, and does nothing behind the Saved runs drawer; the current suit's and the Fetch list's pieces show the item tooltip on hover and after Tab focus, and so do both names in a Plan row, each its own piece's (issue #75; the row itself and its Slot cell show none, a kept row's worn name still does); a Fetch list row shows a deep bag path in full (nothing cut or ellipsised) and its copy button puts the container serial on the clipboard; STR limit is beside Race with Advanced closed, and a bad value there is focused without opening Advanced; a switch's on track is at least 3:1 against its off track, with the knob moved right, in Default and Britannia, light and dark; two excluded weapon skills show on the Weapons chip and survive Save profile and a reload; Check your settings (issue #217): a hard Luck requirement no suit reaches is named with the best possible above the progress panel and in the result, and Lower and Make soft edit the panel's floor and the template badge without starting a build; a weight row's worth hint follows the typed weight and hides on a bad value, and Set weight (a Luck weight that swamps the rest) edits the panel and the template badge, but not once the weight was changed since the build. Swing steps (issue #217), with Kestrel's worn weapon made the pool's best: the SSI weight's switch shows the worn weapon's steps and marks the template changed; the result says SSI was scored per point with Lock Weapon (1H) and shows the swing line, Next step follows the result's swing (none before the build); Lock starts no build and the next build scores by step; the switch is kept in the saved run's settings and by Save profile across a reload. Casting school (issue #213): the Faster Casting cap and its source beside the select, raised to 4 by naming Chivalry, which marks the template changed, and on a new FC requirement row that starts at the cap. Templates (issue #212): the built-ins listed first under their own names, a built-in's badge, description, buffs and source under the picker; Apply sets Manual's buffs as one undo step that Undo takes back; the badge counts a buff changed since; Save as keeps the buffs. Manual mode (issue #12): a slot opens the picker on its pieces, a row picked with the keyboard (focus, Enter) fills the slot, moves the totals and says so in the status line, the picker stays on that slot with the picked row marked "In this slot", the undo key empties the slot again (the status line saying what was undone) and redo puts the piece back, Esc closes it with focus back on the slot card, and the mode and the suit are in `ui-prefs.json`; and the hand-offs: another character picked mid-fill cancels the fill and leaves the suit alone, Fill the rest automatically fills empty slots around a placed ring in one undo step and shows the fetch list, Save as run puts a Manual run in the drawer that opens in the result view with Open in Manual, and an Automatic result's Start from this result loads it into Manual as one undo step.
+// `[slow]`: the Suit Builder's keyboard and hover behaviour in the real Electron window, on a writable `--data` directory seeded with the demo scans: a raised resist cap (Fire 95) marked in the Resist caps section, built with, shown on the result's Fire tile and the saved run's badge, kept by Save profile across a reload, refused out of range with the error under the field, and reset to the shard's cap; ⌘↵ (Ctrl+Enter) builds with focus on the page body and while typing in a panel field, and does nothing behind the Saved runs drawer; the current suit's and the Fetch list's pieces show the item tooltip on hover and after Tab focus, and so do both names in a Plan row, each its own piece's (issue #75; the row itself and its Slot cell show none, a kept row's worn name still does); a Fetch list row shows a deep bag path in full (nothing cut or ellipsised) and its copy button puts the container serial on the clipboard; STR limit is beside Race with Advanced closed, and a bad value there is focused without opening Advanced; a switch's on track is at least 3:1 against its off track, with the knob moved right, in Default and Britannia, light and dark; two excluded weapon skills show on the Weapons chip and survive Save profile and a reload; Check your settings (issue #217): a hard Luck requirement no suit reaches is named with the best possible above the progress panel and in the result, and Lower and Make soft edit the panel's floor and the template badge without starting a build; a weight row's worth hint follows the typed weight and hides on a bad value, and Set weight (a Luck weight that swamps the rest) edits the panel and the template badge, but not once the weight was changed since the build. Swing steps (issue #217), with Kestrel's worn weapon made the pool's best: the SSI weight's switch shows the worn weapon's steps and marks the template changed; the result says SSI was scored per point with Lock Weapon (1H) and shows the swing line, Next step follows the result's swing (none before the build); Lock starts no build and the next build scores by step; the switch is kept in the saved run's settings and by Save profile across a reload. Casting school (issue #213): the Faster Casting cap and its source beside the select, raised to 4 by naming Chivalry, which marks the template changed, and on a new FC requirement row that starts at the cap. Templates (issue #212): the built-ins listed first under their own names, a built-in's badge, description, buffs and source under the picker; Apply sets Manual's buffs as one undo step that Undo takes back; the badge counts a buff changed since; Save as keeps the buffs. Manual mode (issue #12): a slot opens the picker on its pieces, a row picked with the keyboard (focus, Enter) fills the slot, moves the totals and says so in the status line, the picker stays on that slot with the picked row marked "In this slot", the undo key empties the slot again (the status line saying what was undone) and redo puts the piece back, Esc closes it with focus back on the slot card, and the mode and the suit are in `ui-prefs.json`; and the hand-offs: another character picked mid-fill cancels the fill and leaves the suit alone, Fill the rest automatically fills empty slots around a placed ring in one undo step and shows the fetch list, Save as run puts a Manual run in the drawer that opens in the result view with Open in Manual, and an Automatic result's Start from this result loads it into Manual as one undo step. No character in Automatic (issue #12): no Race row, the Caster template's requirements, a build headed "Best suit · No character" with Grab disabled and its reason while no bridge is online and a Suit totals card, its run in its own drawer, Save profile kept across a reload, Manual on its No character, and Kestrel picked back with her own panel.
 //
 // Each of the older cases is maintainer feedback on the redesign (PR #43), plus the resist cap overrides (issue #44), the weapon exclusions (issue #45) and the Weapon must have chip (issue #214). Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
 import test from "node:test";
@@ -803,7 +803,7 @@ test("[slow] Manual hand-offs: fill the rest, save as run, reopen it, and start 
     // another character picked while a fill runs: the fill is canceled, and nothing lands in the shared suit
     await page.evaluate(() => {
       document.querySelector<HTMLButtonElement>("#mb-fill")!.click();
-      const sel = document.querySelector<HTMLSelectElement>("#b-char")!, other = [...sel.options].find((o) => o.value && o.value !== sel.value)!;
+      const sel = document.querySelector<HTMLSelectElement>("#b-char")!, other = [...sel.options].find((o) => o.value !== "_nobody" && o.value !== sel.value)!;
       sel.value = other.value; sel.dispatchEvent(new Event("change"));
     });
     await page.waitForFunction(() => document.querySelector(".mb-fill")?.textContent === "Fill canceled: the character changed");
@@ -927,6 +927,62 @@ test("[slow] templates: built-ins first with their description, Apply sets Manua
     assert.deepEqual(errors, []);
   } finally {
     await page.unrouteAll({ behavior: "ignoreErrors" });
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+});
+
+// Issue #12, No character in Automatic: its own panel (no Race row), its build headed "Best suit · No character" with Grab
+// disabled while no bridge is online, its run in the drawer, Save profile kept across a reload, Manual on its No
+// character, and a character picked again showing that character's own panel.
+test("[slow] No character: built in Automatic from its own profile, saved as a run, kept by Save profile, shared with Manual (issue #12)", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = seedDataDir("packrat-ui-nobody-");
+  const { app, page, errors } = await launch(dataDir);
+  try {
+    await openBuilder(page);
+    await page.selectOption("#b-char", "_nobody");
+    await page.waitForFunction(() => document.querySelector("#b-current h2")?.textContent === "No character");
+    assert.equal(await page.locator("#b-race").count(), 0, "no Race row");
+    assert.ok(await page.locator("#b-str").isVisible(), "STR limit stays");
+    await page.selectOption("#b-tpl", "builtin:caster");
+    await page.click("#b-tpl-menu");
+    await page.getByRole("menuitem", { name: "Apply to these settings" }).click();
+    await page.locator("#b-sec-req .rule-row[data-key=lrc]").waitFor();
+    assert.equal(await page.locator("#b-sec-req .rule-row[data-key=lrc] input[type=number]").inputValue(), "100");
+    assert.equal(await page.locator("#b-sec-req .rule-row[data-key=lmc] input[type=number]").inputValue(), "40");
+    await page.click("#b-run");
+    await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>("#b-run")?.disabled && document.querySelector("#b-result h2")?.textContent === "Best suit · No character", undefined, { timeout: 60_000 });
+    assert.equal(await page.locator("#b-grab-all").isDisabled(), true);
+    await page.hover("#b-result .tipwrap:has(#b-grab-all)");
+    await page.waitForFunction(() => [...document.querySelectorAll(".tip")].some((e) => e.textContent === "Log a character in to grab"));
+    assert.equal(await page.locator("#b-result [aria-label='Suit totals'] h2").innerText(), "Suit totals");
+    await page.waitForFunction(() => Number(document.querySelector("#b-runs-count")?.textContent) >= 1);
+    await page.click("#b-runs-open");
+    await page.waitForSelector("#runs-drawer:not([hidden]) .run-card");
+    assert.match(await page.locator("#b-runs-who").innerText(), /^No character · 1 run/);
+    await page.keyboard.press("Escape");
+    // Save profile, then a reload comes back to No character with its requirements
+    await page.click("#b-save");
+    await page.waitForFunction(() => /Profile for No character saved/.test(document.body.textContent || ""), undefined, { timeout: 10_000 });
+    const saved = JSON.parse(readFileSync(join(dataDir, "profiles.json"), "utf8")) as { characters: Record<string, { spec: { intent: { floors: Record<string, number> } } }> };
+    assert.equal(saved.characters._nobody!.spec.intent.floors.lrc, 100);
+    await page.reload();
+    await page.waitForSelector("#tab-builder:not([hidden]) #b-sec-req .rule-row[data-key=lrc]", { timeout: 30_000 });
+    assert.equal(await page.locator("#b-char").inputValue(), "_nobody");
+    assert.equal(await page.locator("#b-race").count(), 0);
+    // Manual shows its No character; a character picked back in Automatic has its own panel
+    await page.click('#b-mode [data-value="manual"]');
+    await page.waitForSelector("#b-manual:not([hidden]) #mb-suit .mb-slot");
+    assert.equal(await page.locator("#b-char").inputValue(), "_nobody");
+    assert.equal(await page.locator("#mb-worn").count(), 0, "no worn suit to start from");
+    await page.click('#b-mode [data-value="automatic"]');
+    await page.selectOption("#b-char", "Kestrel");
+    await page.waitForFunction(() => document.querySelector("#b-current h2")?.textContent === "Current suit");
+    assert.equal(await page.locator("#b-race").count(), 1);
+    assert.deepEqual(errors, []);
+  } finally {
     await app.close();
     rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   }

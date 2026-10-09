@@ -15,13 +15,13 @@ import { relativeWhen } from "./messages.mts";
 import { sheetNode, wornSet, resistFigures, atCap, plural, lowDurabilityCount, lowDurabilitySummary, type ResistFigure, type SheetItem } from "./sheet.mts";
 import type { Item } from "../vault-lib.mts";
 import type { RunsListApiResponse } from "./api-types.mts";
-import { rosterView, triple, sheetMeta, type RosterRow, type RosterSort } from "./roster.mts";
+import { characterNames, rosterView, triple, sheetMeta, type RosterRow, type RosterSort } from "./roster.mts";
 
 
 const num = (v: unknown): number | null => (v != null && Number.isFinite(Number(v)) ? Number(v) : null);
 // Every character the page knows of: scanned ones, and ones with only a saved Suit Builder profile.
 function names(): string[] {
-  return [...new Set([...Object.keys(state.inv!.characters), ...Object.keys(state.profiles?.characters || {})])].sort((a, b) => a.localeCompare(b));
+  return characterNames(state.inv!.characters, state.profiles?.characters).sort((a, b) => a.localeCompare(b));
 }
 function rosterRows(): RosterRow[] {
   return names().map((name) => {

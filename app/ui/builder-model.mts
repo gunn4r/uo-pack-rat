@@ -3,7 +3,7 @@
 // "other changes" badges and "after the change" values, the compare table's differing rows and best values,
 // and a saved run's label and badges. No DOM and no page state, so app/builder-model.test.mts can check it
 // all directly; ui/builder.mts, ui/builder-result.mts and ui/runs.mts draw what it returns.
-import { labelOf, propName, typicalRange, GEAR_SLOTS, NOT_BUILDER_KEYS, RESIST_KEYS, RESIST_CAP_LIMITS, SLOT_LABELS, settingsDiff, shardResistCap, WEAPON_SKILLS, WEAPON_EXCLUDES, SPELLBOOKS, MELEE_SKILLS, ubwsLetsIn, flagLabel } from "../vault-lib.mts";
+import { NOBODY, labelOf, propName, typicalRange, GEAR_SLOTS, NOT_BUILDER_KEYS, RESIST_KEYS, RESIST_CAP_LIMITS, SLOT_LABELS, settingsDiff, shardResistCap, WEAPON_SKILLS, WEAPON_EXCLUDES, SPELLBOOKS, MELEE_SKILLS, ubwsLetsIn, flagLabel } from "../vault-lib.mts";
 import type { FcCap, PlannedBuffs, PropMap, ResistCap, RunSettings } from "../vault-lib.mts";
 import { applyBuffs, buffById, buffsDiff, capWord, signed, type BuffResult } from "../buffs.mts";
 import { RUN_SETTING_LIMITS, type Range } from "../run-settings.mts";
@@ -12,6 +12,8 @@ import type { Diagnostic, DiagnosticAction, DiagnosticCode, SwingResult } from "
 import { delayText, MIN_TICKS } from "../swing.mts";
 
 export const plural = (n: number, word: string, many = `${word}s`): string => `${n.toLocaleString("en-US")} ${n === 1 ? word : many}`;
+// A Suit Builder character key as the page prints it: No character's pseudo name in words, a character's name as it is.
+export const who = (name: string): string => (name === NOBODY ? "No character" : name);
 const num = (n: number): string => n.toLocaleString("en-US", { maximumFractionDigits: 2 });
 
 // ---------------------------------------------------------------- property names

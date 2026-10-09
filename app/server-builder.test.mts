@@ -1,6 +1,6 @@
 // server-builder.test.mts — HTTP tests of the Suit Builder: `POST /api/optimize`, the saved runs and `GET|PUT /api/profiles`.
 //
-// `POST /api/optimize`: one running job per client (a second `POST` supersedes the first) and none between callers with no client id, the events route's `?client=` check, the server-wide ceiling, a job that throws logging its stack under the ref the client sees, an exact build proven by HiGHS with the saved run's score, the by-character form building the client's pools, keeping the page's settings snapshot, treating null fields as absent and refusing a bad settings type, the time budget capping restarts, resist cap overrides, weapon exclusions and required weapon properties (the lock wins, an empty pool said), malformed pools, current, profile or opts refused, only known meta fields saved, a character with no scans a 404, and Manual's hand-offs (issue #12: `pinned` keeping the placed pieces, no run saved, and with no character only pieces nobody wears); SSI scored by swing step through the real worker (issue #217: per point with the reason while the weapon is not fixed, scoring what steps off scores, and the result's swing once the one-handed slot is locked); the job lifecycle (`jobTimings`, a parked core: a build past the retention kept, one past its budget cancelled, closing mid-build logging no failure); `GET|PUT|DELETE /api/runs/<id>` (a label type-checked, a truncated run a 404 that can still be deleted) and `POST /api/runs` saving a manual run with its checks; `POST /api/evaluate` answering what `evaluateSuit` computes from the same fixtures (the saved profile, a given profile with Divine Fury, a run's settings bringing their buffs, No character) and its checks; `PUT /api/profiles` (413 by bytes, 400 naming the schema path) and a truncated `profiles.json` moved aside and reseeded.
+// `POST /api/optimize`: one running job per client (a second `POST` supersedes the first) and none between callers with no client id, the events route's `?client=` check, the server-wide ceiling, a job that throws logging its stack under the ref the client sees, an exact build proven by HiGHS with the saved run's score, the by-character form building the client's pools, keeping the page's settings snapshot, treating null fields as absent and refusing a bad settings type, the time budget capping restarts, resist cap overrides, weapon exclusions and required weapon properties (the lock wins, an empty pool said), malformed pools, current, profile or opts refused, only known meta fields saved, a character with no scans a 404, and Manual's hand-offs (issue #12: `pinned` keeping the placed pieces, no run saved, and with no character only pieces nobody wears; No character's `_nobody` build from pieces nobody wears, saved, reused and listed under its name, others' worn gear on request, another pseudo name a 404, and its manual run); SSI scored by swing step through the real worker (issue #217: per point with the reason while the weapon is not fixed, scoring what steps off scores, and the result's swing once the one-handed slot is locked); the job lifecycle (`jobTimings`, a parked core: a build past the retention kept, one past its budget cancelled, closing mid-build logging no failure); `GET|PUT|DELETE /api/runs/<id>` (a label type-checked, a truncated run a 404 that can still be deleted) and `POST /api/runs` saving a manual run with its checks; `POST /api/evaluate` answering what `evaluateSuit` computes from the same fixtures (the saved profile, a given profile with Divine Fury, a run's settings bringing their buffs, No character) and its checks; `PUT /api/profiles` (413 by bytes, 400 naming the schema path) and a truncated `profiles.json` moved aside and reseeded.
 import { test, before, after, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, rmSync } from "node:fs";
@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { resolveConfig, ensureLayout } from "./config.mts";
 import type { ServerHandle } from "./vault-server.mts";
 import { startTestServer as startServer } from "./server-fixture.mts";
-import { buildPools, isWeapon, setRules, toOptItem, type Item, type Profile } from "./vault-lib.mts";
+import { NOBODY, buildPools, isWeapon, setRules, toOptItem, type Item, type Profile } from "./vault-lib.mts";
 import { characterProfile, specFromProfile, templateSpecFrom, type ProfilesV3 } from "./build-spec.mts";
 import { manualBase, manualPlan } from "./buffs.mts";
 import { evaluateSuit, type SuitEvaluation } from "./evaluate.mts";
@@ -973,6 +973,44 @@ test("[fast] /api/optimize with pinned and no character: the pool is the pieces 
     if (slot === pin.slot) assert.equal(it.serial, pin.serial);
     else assert.ok(!wearer.get(it.serial), `${slot}: ${it.serial} is worn by ${wearer.get(it.serial)}`);
   }
+});
+
+test("[fast] /api/optimize for No character (_nobody): built from pieces nobody wears, saved and reused under _nobody, others' worn gear on request; POST /api/runs saves its manual run (issue #12)", async () => {
+  const profile = { weights: { luck: 1, hci: 3, physResist: 2 }, caps: { physResist: 70 } };
+  const body = (character: string | null, settings: Record<string, unknown> = {}) => ({ method: "POST", headers: JSON_HEADERS,
+    body: JSON.stringify({ character, settings, profile, opts: { exact: true, timeBudgetMs: 20000 }, meta: { character, settings } }) });
+  const r = await fetch(srv.url + "/api/optimize", body(NOBODY));
+  const j = asJson<OptimizeJobResponse>(await r.json());
+  assert.equal(r.status, 200, JSON.stringify(j));
+  assert.deepEqual(j.current, {}, "No character wears nothing");
+  const done = await pollJob(srv.url, j.id!, (s) => s.state === "done", 20000);
+  assert.equal(done.state, "done", JSON.stringify(done));
+  const rows = asJson<ItemsPageResponse>(await (await get("/api/items?limit=2000")).json()).rows!;
+  const wearer = new Map(rows.map((it) => [it.serial, it.equippedBy]));
+  for (const [slot, it] of Object.entries(done.result!.best as Record<string, { serial: number } | null>)) assert.ok(!it || !wearer.get(it.serial), `${slot}: ${it?.serial} is worn`);
+  assert.ok(done.runId, "the build is saved as a run");
+  const listed = asJson<{ runs: Array<{ id: string; character: string }> }>(await (await get(`/api/runs?character=${NOBODY}`)).json()).runs;
+  assert.deepEqual(listed.map((x) => [x.id, x.character]), [[done.runId, NOBODY]]);
+  const again = asJson<OptimizeJobResponse & { run: { id: string } }>(await (await fetch(srv.url + "/api/optimize", body(NOBODY))).json());
+  assert.equal(again.cached, true);
+  assert.equal(again.run.id, done.runId, "the same build is answered by its saved run");
+  // gear worn by characters joins the pool only when asked for
+  const others = asJson<OptimizeJobResponse>(await (await fetch(srv.url + "/api/optimize", body(NOBODY, { allowOthersWorn: true }))).json());
+  assert.ok(others.poolSize! > j.poolSize!, `${others.poolSize} > ${j.poolSize}`);
+  await fetch(`${srv.url}/api/optimize/${others.id}/cancel`, { method: "POST" });
+  // Manual's fill with no character keeps others' worn gear out whatever the settings say, and is not saved
+  const fill = asJson<OptimizeJobResponse>(await (await fetch(srv.url + "/api/optimize", { method: "POST", headers: JSON_HEADERS,
+    body: JSON.stringify({ character: null, settings: { allowOthersWorn: true }, profile, opts: { exact: true, timeBudgetMs: 20000 }, pinned: {} }) })).json());
+  assert.equal(fill.poolSize, j.poolSize);
+  assert.equal((await pollJob(srv.url, fill.id!, (s) => s.state === "done", 20000)).runId ?? null, null, "a fill is not saved");
+  // another pseudo name is still nobody's scans
+  assert.equal((await fetch(srv.url + "/api/optimize", body("_other"))).status, 404);
+  // Manual's Save as run for No character
+  const piece = rows.find((it) => it.gear && it.slot === "ring" && !it.equippedBy) ?? rows.find((it) => it.gear && it.slot && !it.equippedBy)!;
+  const saved = await fetch(srv.url + "/api/runs", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ character: NOBODY, suit: { [piece.slot!]: piece.serial }, settings: {} }) });
+  const sj = asJson<{ run: { id: string; character: string; method: string; changes: number } }>(await saved.json());
+  assert.equal(saved.status, 200, JSON.stringify(sj));
+  assert.deepEqual([sj.run.character, sj.run.method, sj.run.changes], [NOBODY, "manual", 1]);
 });
 
 test("[fast] POST /api/runs saves Manual's suit as a manual run: its shape, its key and the checks (issue #12)", async () => {
