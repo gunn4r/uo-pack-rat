@@ -21,7 +21,7 @@ import { prefs } from "./prefs.mts";
 import { setCharacterBuffs } from "./profiles.mts";
 import { resolveItems, rarityToken } from "./items.mts";
 import { fetchCard, followJob, grabAllButton, keyProps, progressText, verdict, RESIST_NAMES } from "./builder-parts.mts";
-import { capNote, fcCapSource, knobError, paperdoll, paperdollCaps, plural, type KnobField } from "./builder-model.mts";
+import { capNote, fcCapSource, knobError, paperdollCaps, plural, type KnobField } from "./builder-model.mts";
 import { session, commands, provide, readControls, type BuffInputs, type BuilderMode } from "./builder-session.mts";
 import { optimizeErrorMessage } from "./messages.mts";
 import { itemActions } from "./item-parts.mts";
@@ -330,8 +330,9 @@ function totalsCard(): HTMLElement {
     ...RESIST_KEYS.map((k) => { const [nm, color] = RESIST_NAMES[k]!; return cell(k, caps[k], el("span", { class: "t-sm resist-name", style: `color:var(${color})` }, nm), capNote(resists[k]!), false); }),
     ...[...TOTAL_KEYS, ...STAT_KEYS].map((k) => cell(k, caps[k], txt(label(k), "t-sm muted"), k === "fc" ? fcCapSource(fcCapFor(name ? state.inv!.characters[name]?.skills : null, session.profile?.castingSchool)) : null, k === TOTAL_KEYS[0] || k === STAT_KEYS[0])),
   ];
-  const rsb = prof.resistBonus || 0, counted = countBuffs ? buffs.length : 0, withBuffs = counted ? ` with ${counted} ${counted === 1 ? "buff" : "buffs"}` : "";
-  const note = name ? `${name}'s paperdoll values${withBuffs}: +${rsb} to each resist from Resisting Spells, against ${name}'s resist caps` : `Raw item totals${withBuffs}: with no character there is no Resisting Spells or race bonus`;
+  const counted = countBuffs ? buffs.length : 0, withBuffs = counted ? ` with ${counted} ${counted === 1 ? "buff" : "buffs"}` : "";
+  const held = r.minimum != null ? `, each resist held at ${r.minimum} or more by Resisting Spells` : "";
+  const note = name ? `${name}'s paperdoll values${withBuffs}, against ${name}'s resist caps${held}` : `Raw item totals${withBuffs}: with no character there is no Resisting Spells minimum or race cap`;
   const filled = Object.keys(suit).length;   // a missing piece counts for nothing
   return el("section", { class: "card mb-totals", id: "mb-totals", "aria-label": "Suit totals" },
     box("div", { class: "mb-totals-head" }, el("h2", { class: "t-md" }, "Suit totals"), txt(note, "t-sm muted"), el("span", { class: "spacer" }), txt(`${filled} of ${GEAR_SLOTS.length} slots`, "t-sm muted")),
@@ -465,7 +466,7 @@ function closeBuffs(): void {
   $<HTMLElement>("#bf-add")?.focus();
 }
 function buffView(): BuffView {
-  const { values, planned, stats, race } = buffInputs(), prof = profile(), t = paperdoll(totalsOf(suitOpt()), prof.resistBonus), caps = paperdollCaps(profileResistCaps(prof), prof.caps.fc);
+  const { values, planned, stats, race } = buffInputs(), prof = profile(), t = totalsOf(suitOpt()), caps = paperdollCaps(profileResistCaps(prof), prof.caps.fc);
   return { name: manualCharacter(), on: buffs, values, planned, edits: editsFor(), stats, who: { race, weaponFlags: weaponFlags(suitItems()) }, totals: t, caps, all: evaluated(suitItems(), true).buffs, replaced, count: countBuffs, open: buffsOpen };
 }
 const buffActions: BuffActions = {

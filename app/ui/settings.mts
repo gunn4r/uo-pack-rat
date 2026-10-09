@@ -96,7 +96,7 @@ function generalSection(): HTMLElement {
     row({ title: "Theme", label: "set-theme", control: theme,
       help: isBuilt("britannia") ? "Default is the clean look. Britannia dresses Pack Rat in parchment and brass frames." : "Default is the clean look. A Britannia theme with parchment and brass frames comes in a later release." }),
     row({ title: "Appearance", control: appearance, help: "System follows your computer's light or dark setting." }),
-    row({ title: "Shard rules", label: "shard", control: shard, help: "Property caps, the Resisting Spells bonus, rarity colors and the gargoyle race lock." })));
+    row({ title: "Shard rules", label: "shard", control: shard, help: "Property caps, the Resisting Spells minimum, rarity colors and the gargoyle race lock." })));
 }
 
 // ---------------------------------------------------------------- Game client: status, setup, reinstall

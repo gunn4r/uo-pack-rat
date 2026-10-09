@@ -44,7 +44,8 @@ export interface RunKeyInput {
 // 5: both solvers search every gear slot, feet, shirt, middle torso, robe, waist, earrings and kilt included (#202).
 // 6: every result carries `diagnostics` (app/diagnostics.mts), so a run saved before it is not reused without them.
 // 7: SSI can be scored by swing step (app/swing.mts), weapons carry their speed, and a result carries its `swing`.
-export const SOLVER_VERSION = 7;
+// 8: Resisting Spells is a minimum under each resist (`mins`), not a bonus taken off the resist caps and floors (#261).
+export const SOLVER_VERSION = 8;
 // The first SOLVER_VERSION whose "proven optimal" holds: before 2 a soft floor ruled out every suit with a
 // negative total, so HiGHS could prove a worse suit optimal.
 export const PROOF_SOUND_SINCE = 2;

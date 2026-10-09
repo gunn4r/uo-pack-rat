@@ -2,14 +2,14 @@
 //
 // Automatic's buffs (issue #12) fuzzed the same way: three seeds × 400 instances of random buff sets (forms one at a time), random input values, raw stats, race, worn Enhance Potions and Resisting Spells, random requirements, weights and resist cap overrides over the whole 0-150 range, and small pools with negative values in two to four of the nineteen gear slots. For `plannedProfile`'s profile the core's exact search must prove the brute-force maximum and HiGHS must reach it; over every suit, what the solver is paid for weighted properties must differ by one constant from what the character really has with the buffs (`applyBuffs`' buffed caps and shares, the 150 stat headroom included, a resist override above the shard's cap set aside where a buff has a negative in-cap share, derived on its own), and a requirement must be met by gear exactly when gear plus bonus plus share reaches it. HiGHS may report a few instances unproven (a MIP issue with several hard floors out of reach, buffs or none: `solveExact` then returns the core's suit with a warning); each is named in a diagnostic and capped at 2% of a seed. `[fast]` (about 3 s).
 //
-// What is checked, in detail: the core's exact search and HiGHS both prove the brute-force maximum of the core's own scoreSet; over every suit, what the solver is paid for weighted properties differs from what the character really has with the buffs (min(gear + Resisting Spells bonus + in-cap share, buffed cap), applyBuffs' numbers) by one constant, so no suit is ever paid for points past a real cap, and the best suit's paid totals stay within the real caps; a requirement is met by a suit's gear exactly when gear + bonus + share reaches it (a resist's up to its buffed cap), for every gear total the solvers can tell apart (a floor at 0 reads as none, which a negative gear total below it would really miss: no real suit carries one).
+// What is checked, in detail: the core's exact search and HiGHS both prove the brute-force maximum of the core's own scoreSet; over every suit, what the solver is paid for weighted properties differs from what the character really has with the buffs (max(the Resisting Spells minimum, min(gear + in-cap share, buffed cap)), applyBuffs' numbers) by one constant, so no suit is ever paid for points past a real cap, and the best suit's paid totals stay within the real caps; a requirement is met by a suit's gear exactly when gear + bonus + share reaches it (a resist's up to its buffed cap), for every gear total the solvers can tell apart (a floor at 0 reads as none, which a negative gear total below it would really miss: no real suit carries one).
 //
-// Random buff sets go through toggleBuff. Resist cap overrides run the whole 0-150 range, under the Resisting Spells bonus included (a resist no buff touches keeps main's cap there, stopped at 0, and is held to that), and raw stats leave gear what is left to 150 of STR, DEX and INT.
+// Random buff sets go through toggleBuff. Resist cap overrides run the whole 0-150 range, under the Resisting Spells minimum included, and raw stats leave gear what is left to 150 of STR, DEX and INT.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { effectiveProfile, profileResistCaps, RESIST_KEYS } from "./vault-lib.mts";
 import type { Character, EffectiveProfile, Profile } from "./vault-lib.mts";
-import { BUFF_IDS, BUFF_INPUTS, STAT_MAX, applyBuffs, plannedProfile, toggleBuff } from "./buffs.mts";
+import { BUFF_IDS, BUFF_INPUTS, STAT_MAX, applyBuffs, minimumWith, plannedProfile, toggleBuff } from "./buffs.mts";
 import type { BuffPlan, BuffResult, Skills } from "./buffs.mts";
 import { solveExact, type OptPools, type OptAssignment, type OptProfile } from "./exact-solver.mts";
 import { core, fuzzSlots } from "./solver-fixture.mts";   // also loads the uoalive rules
@@ -90,13 +90,12 @@ for (const seed of SEEDS) {
       const ignored = RESIST_KEYS.filter((k) => { const o = unfiltered.resistCapOverrides?.[k]; return !!o && o.cap > o.shard && (r0.shares[k] || []).some((x) => !x.outside && x.value < 0); });
       const base = effectiveProfile({ ...inst.p, resistCaps: Object.fromEntries(Object.entries(inst.p.resistCaps || {}).filter(([k]) => !ignored.includes(k))) }, inst.ch);
       if (JSON.stringify(planned.caps) !== JSON.stringify(base.caps) || JSON.stringify(planned.floors) !== JSON.stringify(base.floors)) shifted++;
-      const { caps0, r } = buffed(base);
+      const { r } = buffed(base);
       const share = (k: string): number => (r.shares[k] || []).filter((x) => !x.outside).reduce((n, x) => n + x.value, 0);
-      const bonus = (k: string): number => (RESIST_KEYS.includes(k) ? base.resistBonus : 0);
-      // a resist no buff touches keeps main's cap, stopped at 0 when an override puts it under the Resisting Spells
-      // bonus: that corner is main's own (docs/solver.md), so it is held to main's numbers rather than the real ones
-      const mains = (k: string): boolean => RESIST_KEYS.includes(k) && !(r.shares[k] || []).some((x) => !x.outside) && !(r.capShares[k] || []).length && caps0[k]! < bonus(k);
-      const real = (k: string, g: number): number => (mains(k) ? Math.min(g, 0) + bonus(k) : Math.min(g + bonus(k) + share(k), r.caps[k] ?? Infinity));
+      // a resist is held at the Resisting Spells minimum the buffs leave (Protection lowers it), after the cap
+      const m = minimumWith(base.resistMinimum, inst.plan.on.filter((id) => !r.blocked.includes(id)), inst.plan.skills);
+      const held = (k: string, v: number): number => (RESIST_KEYS.includes(k) && m != null && v < m ? m : v);
+      const real = (k: string, g: number): number => held(k, Math.min(g + share(k), r.caps[k] ?? Infinity));
       const weightsOnly = { ...prof, floors: {}, hardFloors: [] };
       const w = planned.weights;
 
@@ -111,7 +110,9 @@ for (const seed of SEEDS) {
         for (const [k, f] of Object.entries(inst.p.floors || {})) {
           const g = gear(a, k), gearFloor = planned.floors[k]!, want = RESIST_KEYS.includes(k) ? Math.min(f, r.caps[k]!) : f;
           if (gearFloor <= 0 && g < 0) continue;   // a floor at 0 reads as none: only a negative gear total could tell
-          assert.equal(gearFloor > 0 ? g >= gearFloor : true, g + bonus(k) + share(k) >= want, `${label}: ${k} ≥ ${f} at gear ${g}`);
+          const dropped = gearFloor <= (planned.mins?.[k] ?? -Infinity);   // at or under the solvers' min: met by any suit
+          const have = RESIST_KEYS.includes(k) ? real(k, g) : g + share(k);
+          assert.equal(gearFloor > 0 && !dropped ? g >= gearFloor : true, have >= want, `${label}: ${k} ≥ ${f} at gear ${g}`);
         }
       }
 
@@ -127,10 +128,10 @@ for (const seed of SEEDS) {
       // none). Either way the score is the brute-force best.
       if (!h.proven) { unproven.push(label); assert.ok(warned.length > 0, `${label}: HiGHS unproven with no warning`); }
       assert.ok(Math.abs(h.score - oracle) < 1e-3, `${label}: HiGHS ${h.score} != brute force ${oracle}`);
-      // the best suit's paid totals, with the bonus and the shares, never pass a real cap
+      // the best suit's paid totals, with the shares, never pass a real cap
       for (const [k, c] of Object.entries(planned.caps)) {
         if (!w[k]) continue;
-        if (!mains(k)) assert.ok(Math.min(gear(h.best, k), c) + bonus(k) + share(k) <= r.caps[k]! + EPS, `${label}: ${k} paid past its real cap ${r.caps[k]}`);
+        assert.ok(Math.min(gear(h.best, k), c) + share(k) <= r.caps[k]! + EPS, `${label}: ${k} paid past its real cap ${r.caps[k]}`);
       }
     }
     assert.ok(shifted > PER_SEED / 3, `the buffs moved the profile in ${shifted} of ${PER_SEED} instances`);

@@ -22,7 +22,7 @@ import type { DataDirCheckInfo } from "../data-dir-notice.mts";
 // A scanned character's skills map (Character.skills, vault-lib.mts) is declared as a loose
 // Record<string, unknown> there on purpose (the scan schema leaves per-skill shape open) — this is
 // what a real entry actually holds, read at the boundary by sheet.mts/characters.mts the same way
-// vault-lib.mts's own resistSkillBonus() already casts one skill entry (`as { value?: number }`).
+// vault-lib.mts's own resistMinimum() already casts one skill entry (`as { value?: number }`).
 export interface SkillEntry {
   value: number;
   cap: number;

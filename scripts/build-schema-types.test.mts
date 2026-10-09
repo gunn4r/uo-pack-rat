@@ -204,7 +204,7 @@ test("[fast] buildSchemaTypes against the real six schema files exports the 34 e
     "ScanV2SkillsValue", "ScanV2ContainersValue",
     "BridgeV1Command", "BridgeV1Result", "BridgeV1ResultStepsItem", "BridgeV1Status", "BridgeV1StatusCounts",
     "BridgeTripV1", "BridgeTripV1RootsValue", "BridgeTripV1TakesItem", "BridgeTripV1PutsItem",
-    "RulesV1", "RulesV1ResistSkillBonus", "RulesV1RarityItem", "RulesV1RaceLock",
+    "RulesV1", "RulesV1ResistMinimum", "RulesV1RarityItem", "RulesV1RaceLock",
     "ProfilesV3", "ProfilesV3Character", "ProfilesV3Template", "ProfilesV3Spec", "ProfilesV3Intent", "ProfilesV3IntentResistCaps", "ProfilesV3Buffs",
     "ProfilesV3Pool", "ProfilesV3Goal", "ProfilesV3Search",
     "AdapterManifestV1", "AdapterManifestV1Install", "AdapterManifestV1InstallRetiredItem",

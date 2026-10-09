@@ -2,7 +2,7 @@
 //
 // the page's two builders that used to assemble markup as a string out of scan-supplied values, now DOM builders: `app/ui/sheet.mts`'s `sheetNode` (a character's `stats`/`maxes`, their name and their skill names all render as text, never markup; a skill entry that isn't a `{value, cap}` pair renders instead of throwing and taking the Characters tab and the Suit Builder down with it) and `app/ui/dom.mts`'s `tipNode`/`safeColor` (tooltip lines, item name and location as text; a line's own `<BASEFONT COLOR>` only ever reaches a `style` through the strict `#rgb`/`#rrggbb` check; the tooltip's layout: the name in its tier's colour with the item's tags, resist lines in their element's colour class, durability muted, the tier and place in the footer, the tag and tier lines not repeated), `sheet.mts`'s `sheetParts` for the Suit Builder's Manual stats card (the suit's own figures with a character's base, no "now → after", and with no character no attributes, pools or skills; issue #12), the result sheet counting worn boots once when the result replaces them and on both sides of an old twelve-slot run, and a worn piece a filter kept out of the search replaced, not added to, by the result's piece in its slot (issue #202), `app/ui/peek.mts`'s `propertyLines` (the item peek's Properties: name/value pairs, requirements muted, a set piece's full-set block kept whole and muted), and `app/ui/dom.mts`'s `tipHostOf` (a row's cells ask for its item tooltip, its `data-no-tip` actions cell does not, issue #69). It lives in `app/` rather than `app/ui/`, the same as `app/import-children.test.mts` and `app/wizard-default-adapter.test.mts`, because `tsconfig.browser.json` compiles `app/ui/**` for the browser. It carries its own small DOM stub (`createElement`/`createTextNode`/`append`/`setAttribute` plus an escaping serializer) rather than adding a jsdom dependency — enough surface for `el()` and the two builders, and the serializer is what makes "the output contains no `<img`" a statement about markup rather than about the characters in a text node. All `[fast]`.
 //
-// Nothing a scan file carries can reach the parser as markup: Phase 7 security review, Area 2, Important 1/2 and Note 3. A node:test file has no business in the browser build, hence app/.
+// Nothing a scan file carries can reach the parser as markup: Phase 7 security review, Area 2, Important 1/2 and Note 3. A node:test file has no business in the browser build, hence app/. The sheet's resists are held at the Resisting Spells minimum, the lifted ones named in its footnote (issue #261).
 import "../scripts/localstorage-shim-for-tests.mts";   // a localStorage stub for the page modules below; none reads it at module scope today (app/ui/store.mts no longer does), so it is a safety net, kept first so it would be in place before any import evaluates
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -163,6 +163,22 @@ test("[fast] sheetParts: Manual's figures are the suit's own, with a character's
   assert.ok((sheetNode("Kestrel", { helmet: worn as never }, null) as unknown as Node).textContent.includes("105"));
 });
 
+// Issue #261: the sheet's resists are the worn items' totals held at the Resisting Spells minimum, never the two added,
+// and the footnote names each resist the minimum holds up.
+test("[fast] sheetNode: resists held at the Resisting Spells minimum, the lifted ones named in the footnote", () => {
+  const tunic = { serial: 7, name: "Tunic", slot: "chest", props: { physResist: 55, fireResist: 30, coldResist: 45, poisonResist: 41, energyResist: 80 } };
+  withCharacter("Kestrel", { skills: { "Resisting Spells": { value: 100, cap: 100 } } });
+  (state.inv as unknown as { worn: Record<string, unknown[]> }).worn.Kestrel = [tunic];
+  const text = (sheetNode("Kestrel", { chest: tunic as never }, null) as unknown as Node).textContent;
+  assert.ok(text.includes("Resists are capped at 70, and Resisting Spells keeps each at 40 or more. Fire 40: the Resisting Spells minimum."), text.slice(-400));
+  withCharacter("Kestrel", { skills: { "Resisting Spells": { value: 50, cap: 100 } } });
+  (state.inv as unknown as { worn: Record<string, unknown[]> }).worn.Kestrel = [tunic];
+  const low = (sheetNode("Kestrel", { chest: tunic as never }, null) as unknown as Node).textContent;
+  assert.ok(low.includes("Resisting Spells keeps each at 6 or more.") && !low.includes("the Resisting Spells minimum."), "nothing lifted: no list");
+  withCharacter("Kestrel", {});
+  assert.ok((sheetNode("Kestrel", {}, null) as unknown as Node).textContent.includes("Resists are capped at 70."), "no skill, no minimum");
+});
+
 // Manual's card takes every worn piece as its base, keyed by serial, so nothing worn rides along on the suit's side:
 // a worn spellbook's LMC is not the suit's, and of two worn legs pieces the one put in the suit counts once.
 test("[fast] sheetParts: Manual's stats count the manual suit alone, whatever else the character wears", () => {
@@ -179,7 +195,7 @@ test("[fast] sheetParts: Manual's stats count the manual suit alone, whatever el
   assert.ok(card({ legs: leggings }).includes("STR102"), "the leggings put in the suit count once, the kilt not at all");
   const parts = sheetParts("Kestrel", base, {}, { compare: false, statsOnly: true });
   assert.equal(parts.resists.length, 0); assert.equal(parts.gear, null, "nothing built that Manual throws away");
-  assert.ok(!parts.props.textContent.includes("Resists include"), "no resist footnote where no resist is drawn");
+  assert.ok(!parts.props.textContent.includes("Resists are capped"), "no resist footnote where no resist is drawn");
 });
 
 // Issue #202: a result plans the feet too, so worn boots are in its `before` and count once, on the side that keeps

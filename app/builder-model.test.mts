@@ -12,8 +12,8 @@ import type { RulesV1 } from "./schema/types.d.mts";
 import {
   propName, weightsSummary, requirementsSummary, poolSummary, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError,
   resistOutcome, locationCrumbs, otherChanges, afterChange, compareModel, hiddenRowsNote, toggleCompare, runAutoLabel, runBadges, plural, KNOB_RANGES,
-  resistCapError, withResistCap, capNote, resistCapsSummary, gearCapsText, capsLine, anyOverridden, effectiveFloor, floorCapWarning, pruneResistCaps,
-  weaponsSummary, weaponsChipText, weaponMustHaveChipText, toggleWeapon, weaponName, withBuffs, paperdollFloors, pastCapBadges, runSettingsDiff, weightWorth, templateBuffsLine, sourceTitle,
+  resistCapError, withResistCap, capNote, resistCapsSummary, resistMinimumText, capsLine, anyOverridden, effectiveFloor, floorCapWarning, pruneResistCaps,
+  weaponsSummary, weaponsChipText, weaponMustHaveChipText, toggleWeapon, weaponName, withBuffs, pastCapBadges, runSettingsDiff, weightWorth, templateBuffsLine, sourceTitle,
   type Knobs,
 } from "./ui/builder-model.mts";
 import { OPTS_LIMITS } from "./vault-server.mts";
@@ -197,10 +197,14 @@ test("[fast] builder model: a run's automatic label and its badges", () => {
   assert.equal(runAutoLabel(null, {}).text, "First saved run");
   assert.equal(runAutoLabel({ floors: { di: 20 } }, { floors: { di: 20 } }).text, "Same settings as the run before");
   assert.equal(runAutoLabel({ floors: { di: 20 } }, { floors: { di: 30 } }).text, "DI floor 20 → 30");
-  const badges = runBadges(8, { physResist: 29, fireResist: 40, coldResist: 30, poisonResist: 30, energyResist: 30 }, { physResist: 65, fireResist: 65, coldResist: 65, poisonResist: 65, energyResist: 65 }, 40, { physResist: 70, fireResist: 70, coldResist: 70, poisonResist: 70, energyResist: 70 });
-  assert.deepEqual(badges.map((b) => b.text), ["8 changes", "5 of 5 met", "Phys 69", "Fire 70", "Cold 70", "Poison 70", "Energy 70"]);
-  assert.equal(badges[1]!.tone, "ok");
-  assert.deepEqual(runBadges(null, null, {}, 0, {}), [], "an old run with no summary data gets no badges");
+  // Resisting Spells' minimum of 40: Cold's 10 reads 40, which meets its requirement of 40; Poison's 50 misses 65
+  const badges = runBadges(8, { physResist: 69, fireResist: 80, coldResist: 10, poisonResist: 50, energyResist: 65 }, { physResist: 65, fireResist: 65, coldResist: 40, poisonResist: 65, energyResist: 65 }, 40, { physResist: 70, fireResist: 70, coldResist: 70, poisonResist: 70, energyResist: 70 });
+  assert.deepEqual(badges.map((b) => b.text), ["8 changes", "4 of 5 met", "Phys 69", "Fire 70", "Cold 40", "Poison 50", "Energy 65"]);
+  assert.equal(badges[1]!.tone, "warn");
+  const met = runBadges(8, { physResist: 69, fireResist: 80, coldResist: 10, poisonResist: 65, energyResist: 65 }, { coldResist: 40 }, 40, { physResist: 70, fireResist: 70, coldResist: 70, poisonResist: 70, energyResist: 70 });
+  assert.deepEqual([met[1]!.text, met[1]!.tone], ["1 of 1 met", "ok"]);
+  assert.ok(runBadges(1, { coldResist: 10 }, {}, null, { coldResist: 70 }).some((b) => b.text === "Cold 10"), "no minimum: the item total");
+  assert.deepEqual(runBadges(null, null, {}, null, {}), [], "an old run with no summary data gets no badges");
   assert.equal(plural(1, "change"), "1 change");
   assert.equal(plural(2, "skill bonus", "skill bonuses"), "2 skill bonuses");
 });
@@ -219,11 +223,11 @@ test("[fast] builder model: a result's totals with the buffs it planned with, in
   const caps = { physResist: 70, fireResist: 70, coldResist: 70, poisonResist: 70, energyResist: 70, ssi: 60, dci: 45, di: 100 };
   const plan = { on: ["divineFury", "enemyOfOne"], skills: { ...buffSkillValues(null, {}).values, Chivalry: 105 }, stats: null, who: {} };
   const r = withBuffs({ ssi: 45, dci: 30, di: 90, fireResist: 30 }, 20, caps, plan);
-  assert.deepEqual([r.totals.ssi, r.totals.dci, r.totals.fireResist, r.totals.di], [55, 10, 50, 100]);
+  assert.deepEqual([r.totals.ssi, r.totals.dci, r.totals.fireResist, r.totals.di], [55, 10, 30, 100], "Fire 30 over the minimum of 20: gear's own");
   assert.deepEqual(pastCapBadges(r), ["DI +68 past the cap (Enemy of One)"]);
   const none = withBuffs({ ssi: 45 }, 20, caps, null);
-  assert.deepEqual([none.totals.ssi, none.totals.fireResist, pastCapBadges(none)], [45, 20, []], "without buffs: the paperdoll totals alone");
-  assert.deepEqual(paperdollFloors({ fireResist: 50, ssi: 60 }, 20), { fireResist: 70, ssi: 60 }, "only the floors set, resists with the bonus back");
+  assert.deepEqual([none.totals.ssi, none.totals.fireResist, none.lifted.length, pastCapBadges(none)], [45, 20, 5, []], "without buffs: the paperdoll totals alone, every resist held at the minimum");
+  assert.equal(withBuffs({ ssi: 45 }, null, caps, null).totals.fireResist, undefined, "no minimum: nothing added");
 });
 
 // ---- resist cap overrides (issue #44)
@@ -250,10 +254,8 @@ test("[fast] resist caps: notes, the collapsed summary, the Requirements note, t
   assert.equal(resistCapsSummary(resistCapsFor("human", { fireResist: 95 })), "Fire 95 (raised from 70) · the rest at the shard's cap");
   assert.equal(resistCapsSummary(resistCapsFor("human", { fireResist: 95, coldResist: 60, physResist: 80, poisonResist: 90 })),
     "Phys 80 (raised from 70) · Fire 95 (raised from 70) · Cold 60 (lowered from 70) · Poison 90 (raised from 70) · the other one at the shard's cap");
-  assert.equal(gearCapsText(human, 40), "so gear supplies up to 30");
-  assert.equal(gearCapsText(elf, 40), "so gear supplies up to 30 (Energy 35)");
-  assert.equal(gearCapsText(resistCapsFor("elf", { fireResist: 95 }), 40), "so gear supplies up to 30 (Fire 55, Energy 35)");
-  assert.equal(gearCapsText(resistCapsFor("human", { fireResist: 10 }), 40), "so gear supplies up to 30 (Fire 0)", "never below nothing");
+  assert.equal(resistMinimumText("Ana", 40), "Resisting Spells keeps each of Ana's resists at 40 or more: a resist requirement of 40 or less is met by any suit.");
+  assert.equal(resistMinimumText("Ana", null), null, "no minimum, nothing said");
   assert.equal(capsLine(human), "Shard caps");
   assert.equal(capsLine(resistCapsFor("human", { fireResist: 95 })), "Fire 95 (raised from 70)");
   assert.equal(anyOverridden(elf), false, "an Elf's Energy 75 is the shard's own");
@@ -263,10 +265,10 @@ test("[fast] resist caps: notes, the collapsed summary, the Requirements note, t
 test("[fast] resist caps: a run's badges say its overridden cap, and compare judges each run by its own caps", () => {
   const caps = { physResist: 70, fireResist: 95, coldResist: 70, poisonResist: 70, energyResist: 70 };
   const shard = { ...caps, fireResist: 70 };
-  const badges = runBadges(3, { physResist: 30, fireResist: 50, coldResist: 30, poisonResist: 30, energyResist: 30 }, {}, 40, caps, shard).map((b) => b.text);
+  const badges = runBadges(3, { physResist: 70, fireResist: 90, coldResist: 30, poisonResist: 30, energyResist: 30 }, {}, 40, caps, shard).map((b) => b.text);
   assert.ok(badges.includes("Fire 90 · cap 95"), JSON.stringify(badges));
   assert.ok(badges.includes("Phys 70"), "an untouched resist reads as before");
-  assert.ok(runBadges(3, { fireResist: 50 }, {}, 40, shard).map((b) => b.text).includes("Fire 70"), "no shard caps given: nothing is marked");
+  assert.ok(runBadges(3, { fireResist: 90 }, {}, 40, shard).map((b) => b.text).includes("Fire 70"), "no shard caps given: nothing is marked");
   // Fire 90 in a run built for a cap of 95 beats Fire 86 in one built for 70 (worth 70 there).
   const m = compareModel([{ assignment: {}, totals: { fireResist: 86 } }, { assignment: {}, totals: { fireResist: 90 }, caps: { fireResist: 95 } }], [], ["fireResist"], { fireResist: 70 });
   assert.deepEqual(m.totals[0]!.best, [false, true]);
@@ -283,7 +285,7 @@ test("[fast] resist caps: a floor above its cap counts only up to it, warns, and
   assert.equal(floorCapWarning("fireResist", 70, 70), null);
   assert.equal(floorCapWarning("hci", 90, 45), null);
   // Fire 90 required, cap back at 70, suit Fire 86: met, as the headline and the solver say.
-  const badges = runBadges(1, { physResist: 70, fireResist: 86, coldResist: 70, poisonResist: 70, energyResist: 70 }, { physResist: 65, fireResist: 90, coldResist: 65, poisonResist: 65, energyResist: 65 }, 0, caps).map((b) => b.text);
+  const badges = runBadges(1, { physResist: 70, fireResist: 86, coldResist: 70, poisonResist: 70, energyResist: 70 }, { physResist: 65, fireResist: 90, coldResist: 65, poisonResist: 65, energyResist: 65 }, null, caps).map((b) => b.text);
   assert.ok(badges.includes("5 of 5 met"), JSON.stringify(badges));
   assert.deepEqual(pruneResistCaps({ energyResist: 75, fireResist: 95 }, "elf"), { fireResist: 95 });
   assert.deepEqual(pruneResistCaps({ energyResist: 75 }, "human"), { energyResist: 75 });
@@ -291,8 +293,8 @@ test("[fast] resist caps: a floor above its cap counts only up to it, warns, and
 });
 
 test("[fast] builder model: a weight row's worth hint names what the weight makes a typical range worth", () => {
-  // A melee main's caps: Resisting Spells +20 leaves item resist caps of 50, 70 on the paperdoll
-  const caps = playerCaps({ caps: { physResist: 50, dci: 45, hpRegen: 18 }, resistBonus: 20 });
+  // A melee main's caps: resist caps of 70 on the paperdoll
+  const caps = playerCaps({ caps: { physResist: 70, dci: 45, hpRegen: 18 } });
   assert.equal(weightWorth("luck", 3, caps), "= 1,500 per 500 Luck");
   assert.equal(weightWorth("dci", 10, caps), "= 450 per 45 DCI");
   assert.equal(weightWorth("physResist", 6, caps), "= 420 per 70 Phys");
