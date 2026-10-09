@@ -689,7 +689,7 @@ function optBranchAndBound(slots: string[], cands: Record<string, (OptItem | nul
   // best of every property at once. Both are valid upper bounds; the search takes the smaller one.
   const concave: boolean[] = new Array(dims);
   for (let d = 0; d < dims; d++) {
-    let ok = space.w[d]! >= 0 && d !== space.stepSsi && space.min[d]! === -Infinity;   // a step credit is not concave, nor a min's max(min, …)
+    let ok = space.w[d]! >= 0 && d !== space.stepSsi;   // a step credit is not concave
     for (let k = 0; k < n && ok; k++) for (let j = 0; j < lists[k]!.length && ok; j++) if (optVec(lists[k]![j] as OptItem | null, space)[d]! < 0) ok = false;
     concave[d] = ok;
   }
@@ -699,6 +699,9 @@ function optBranchAndBound(slots: string[], cands: Record<string, (OptItem | nul
     return out;
   }));
   const capped = function (d: number, t: number): number { const c = space.cap[d]!, m = space.min[d]!, v = t < c ? t : c; return space.w[d]! * (v < m ? m : v); };
+  // w·min(t, cap) without the min. With a min the term is not concave, but its gain from any t never passes this one's
+  // (under the min it is 0 until the total reaches it, then the same), which is concave: the sparse bound takes it.
+  const cappedRaw = function (d: number, t: number): number { const c = space.cap[d]!; return space.w[d]! * (t < c ? t : c); };
   const floorTerm = function (d: number, t: number): number {
     const f = space.floor[d]!;
     if (!(f > 0)) return 0;
@@ -733,7 +736,7 @@ function optBranchAndBound(slots: string[], cands: Record<string, (OptItem | nul
       for (let j = 0; j < sp.length; j++) {
         const e = sp[j]!;
         let gain = 0;
-        for (let q = 0; q < e.length; q += 2) { const d = e[q]!, t = totals[d]!; gain += capped(d, t + e[q + 1]!) - capped(d, t); }
+        for (let q = 0; q < e.length; q += 2) { const d = e[q]!, t = totals[d]!; gain += cappedRaw(d, t + e[q + 1]!) - cappedRaw(d, t); }
         if (gain > best) best = gain;
       }
       gainB += best;
