@@ -82,7 +82,7 @@ document.addEventListener("inventorychange", () => syncBuilderCharacters());
 // #/builder/<Name>: the route's character once the inventory is in; with no name, the route takes the selected one.
 registerScreen({ name: "builder", show: (r) => {
   if (!state.inv) return;
-  if (r.character && r.character !== session.character && (state.inv.characters[r.character] || r.character === NOBODY)) selectCharacter(r.character);
+  if (r.character && r.character !== session.character && (state.inv.characters[r.character] || (r.character === NOBODY && Object.keys(state.inv.characters).length > 0))) selectCharacter(r.character);
   else if (!r.character && session.character) history.replaceState(null, "", routeFor("builder"));
 } });
 export function syncBuilderCharacters(): void {
@@ -325,7 +325,7 @@ function buffView(): BuffView {
   const name = session.character!, p = session.profile!, inputs = commands.buffInputsOf(name), plan = buffPlan(name, p.race, { on: buffsOn(), skills: {} });
   // what the character wears now, evaluated with the panel's buffs (app/evaluate.mts)
   const ev = evaluateSuit({ profile: p, character: state.inv!.characters[name] as Character | null, suit: Object.fromEntries((state.inv!.worn[name] || []).map((i) => [String(i.serial), i])), buffs: plan });
-  return { name, on: plan.on, values: plan.skills, planned: inputs.planned, edits: commands.buffEditsOf(name), stats: plan.stats, who: plan.who,
+  return { name: name === NOBODY ? null : name, on: plan.on, values: plan.skills, planned: inputs.planned, edits: commands.buffEditsOf(name), stats: plan.stats, who: plan.who,
     totals: paperdoll(ev.gearTotals, ev.planned.resistBonus), caps: ev.baseCaps, all: ev.buffs, replaced: note && "replaced" in note ? note.replaced : null,
     cleared: note && "cleared" in note ? note.cleared : null, count: true, open: !!picker };
 }

@@ -174,7 +174,12 @@ function plannedWith(prof: EffectiveProfile, name: string): HTMLElement | null {
     withoutBuffs = !withoutBuffs; void rerender().then(() => document.getElementById("b-buffs-shown")?.focus());
   } });
   // each buff whose numbers came from the suit worn now, with what they came from
-  const worn = plannedFromWorn(prof.buffs.on).map((id) => `${buffById(id)!.name} is worked out from the suit ${who(name)} wears now (${buffById(id)!.excl === "enchant" ? "its weapon's Spell Channeling" : "its Enhance Potions"})`);
+  // (No character wears nothing, so it has none of either)
+  const worn = plannedFromWorn(prof.buffs.on).map((id) => {
+    const b = buffById(id)!, enchant = b.excl === "enchant";
+    return name === NOBODY ? `${b.name} is worked out with no worn suit, so with no ${enchant ? "Spell Channeling" : "Enhance Potions"}`
+      : `${b.name} is worked out from the suit ${name} wears now (${enchant ? "its weapon's Spell Channeling" : "its Enhance Potions"})`;
+  });
   return box("div", { class: "b-planned" }, txt("Planned with", "t-sm muted"), ...prof.buffs.on.map((id) => badge(buffById(id)!.name, "accent")), txt("·", "faint"),
     tooltip(flip, "Redraws the totals without the buffs. The suit stays the one found with them: nothing is searched again."),
     worn.length ? el("p", { class: "t-sm muted b-planned-note" }, txt(`${worn.join(". ")}.`)) : null);

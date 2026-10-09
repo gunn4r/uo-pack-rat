@@ -10,7 +10,8 @@
 import { GEAR_SLOTS, NOBODY, RESIST_KEYS, effectiveProfile, isPseudoCharacter, fcCapFor, profileResistCaps, requirementReport, toOptItem, totalsOf } from "../vault-lib.mts";
 import type { Character, EffectiveProfile, Item, OptItem, RunBuffs, RunSettings } from "../vault-lib.mts";
 import { buffById, buffSkillValues, isBuffSkills, manualPlan, manualProfile, normalizeBuffs, ownEntry, rawStats, runBuffs, toggleBuff, weaponFlags, NO_CHARACTER, signed } from "../buffs.mts";
-import { characterBuffs } from "../build-spec.mts";
+import { characterBuffs, characterProfile } from "../build-spec.mts";
+import { defaultStrLimit } from "../run-settings.mts";
 import { evaluateSuit, type SuitEvaluation } from "../evaluate.mts";
 import type { ItemQuery } from "../item-query.mts";
 import { state, invStamp } from "./store.mts";
@@ -29,7 +30,7 @@ import { sheetParts, wornSet } from "./sheet.mts";
 import { createItemBrowser } from "./item-browser.mts";
 import type { ItemBrowser } from "./item-browser.mts";
 import type { UiPrefs, OptimizeResult, OptimizeStartApiResponse, OptSuit } from "./api-types.mts";
-import { MANUAL_GROUPS, emptyHistory, record, undoStep, redoStep, historyKey, historyKeyNames, type History, type Suit, TOTAL_KEYS, STAT_KEYS, STRIP_KEYS, capped, capLine, slotQuery, handConflict, handNote, suitFrom, fillableSlots, fetchPieces, fillPicks, keptSlots, listWords, applyEditStep, type FillStart, type EditStep, type Reslot, savedSlots, missingSlots, reslotted, reslotNote, deltaKeys, slotDelta } from "./manual-model.mts";
+import { MANUAL_GROUPS, emptyHistory, record, undoStep, redoStep, historyKey, historyKeyNames, type History, type Suit, TOTAL_KEYS, STAT_KEYS, STRIP_KEYS, capped, capLine, slotQuery, handConflict, handNote, suitFrom, fillableSlots, fetchPieces, fillPicks, keptSlots, noCharacterRunSettings, listWords, applyEditStep, type FillStart, type EditStep, type Reslot, savedSlots, missingSlots, reslotted, reslotNote, deltaKeys, slotDelta } from "./manual-model.mts";
 import { buffMarker, buffStrip, createBuffPicker, keepChipFocus, type BuffActions, type BuffPicker, type BuffView } from "./builder-buffs.mts";
 
 let noCharacter = false;
@@ -595,7 +596,9 @@ async function saveAsRun(name: string): Promise<void> {
   // a knob typed out of range in Automatic would be saved with the run, so it is said here rather than refused there
   const knobs = session.knobs, bad = RUN_KNOBS.find(([f]) => knobError(f, knobs[f]));
   if (bad) { toast(`Automatic's ${bad[1]} field reads "${knobs[bad[0]]}": ${knobError(bad[0], knobs[bad[0]])} Fix it under Advanced to save a run.`, "bad"); return; }
-  const settings = { ...commands.panelBuild().snapshot, buffs: runBuffs(countBuffs ? buffs : [], buffInputs().values) };
+  const snap = commands.panelBuild().snapshot;
+  const own = name === NOBODY && session.character !== NOBODY ? noCharacterRunSettings(snap, characterProfile(state.profiles!, NOBODY, state.builtinTemplates).strLimit ?? defaultStrLimit(null)) : snap;
+  const settings = { ...own, buffs: runBuffs(countBuffs ? buffs : [], buffInputs().values) };
   try { await api("/api/runs", { method: "POST", body: { character: name, suit: slots, settings, inventoryStamp: invStamp() } }); }
   catch (e) { toast(`Could not save the run: ${(e as Error).message}`, "bad"); return; }
   toast(`Saved to ${who(name)}'s runs as a manual suit.`, "good");
@@ -634,6 +637,8 @@ function templateBuffs(on: readonly string[], label: string): void {
   if (!noCharacter) commit({ buffs: [...on], ...(on.length ? { count: true } : {}) }, label);
 }
 
+// With No character, Grab goes to the bridge's character: the fetch list follows the bridge, as the result's does.
+document.addEventListener("bridgechange", () => { const f = document.getElementById("mb-fetch"); if (f && isManual() && !manualCharacter()) f.replaceWith(fetchList()); });
 // The fetch list for the suit's pieces the character doesn't wear (the result's, builder-parts.mts fetchCard).
 function fetchList(): HTMLElement {
   const name = manualCharacter(), pieces = fetchPieces(Object.values(suitItems()), name), card = fetchCard(pieces, name, grabAllButton(pieces, name, { id: "mb-grab-all", size: "sm" }));
