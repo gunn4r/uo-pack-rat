@@ -13,7 +13,7 @@ import {
   propName, weightsSummary, requirementsSummary, poolSummary, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError,
   resistOutcome, locationCrumbs, otherChanges, afterChange, compareModel, hiddenRowsNote, toggleCompare, runAutoLabel, runBadges, plural, KNOB_RANGES,
   resistCapError, withResistCap, capNote, resistCapsSummary, gearCapsText, capsLine, anyOverridden, effectiveFloor, floorCapWarning, pruneResistCaps,
-  weaponsSummary, weaponsChipText, weaponMustHaveChipText, toggleWeapon, withBuffs, paperdollFloors, pastCapBadges, runSettingsDiff, weightWorth, templateBuffsLine, sourceTitle,
+  weaponsSummary, weaponsChipText, weaponMustHaveChipText, toggleWeapon, weaponName, withBuffs, paperdollFloors, pastCapBadges, runSettingsDiff, weightWorth, templateBuffsLine, sourceTitle,
   type Knobs,
 } from "./ui/builder-model.mts";
 import { OPTS_LIMITS } from "./vault-server.mts";
@@ -69,6 +69,16 @@ test("[fast] builder model: the Weapons chip and summary say the exclusions in w
   assert.equal(poolSummary({ excludeWeapons: ["archery", "fencing", "mace fighting", "throwing"], ubwsAnyWeapon: false }), "Own gear and unworn gear · no gargoyle-only · swordsmanship weapons only");
   assert.deepEqual(toggleWeapon(["throwing"], "archery", true), ["archery", "throwing"], "kept in the skills' order");
   assert.deepEqual(toggleWeapon(["archery", "throwing"], "archery", false), ["throwing"]);
+  // Issue #259: Spellbooks count like a skill on the chip, last in the list.
+  assert.equal(weaponsChipText(["spellbook"]), "Weapons: 1 excluded");
+  assert.equal(weaponsChipText(["archery", "throwing", "spellbook"]), "Weapons: 3 excluded");
+  assert.equal(weaponsChipText(["archery", "swordsmanship", "mace fighting", "throwing", "spellbook"]), "Weapons: 5 excluded");
+  assert.equal(weaponsChipText(["fencing", "mace fighting", "spellbook"], true), "Weapons: 3 excluded, plus Use Best Weapon Skill");
+  assert.equal(weaponsSummary(["spellbook"]), "no spellbooks");
+  assert.equal(weaponsSummary(["archery", "throwing", "spellbook"]), "no archery or throwing weapons, no spellbooks");
+  assert.deepEqual(toggleWeapon(["throwing"], "spellbook", true), ["throwing", "spellbook"]);
+  assert.deepEqual(toggleWeapon(["spellbook"], "archery", true), ["archery", "spellbook"], "spellbooks last");
+  assert.equal(weaponName("spellbook"), "Spellbooks");
 });
 
 test("[fast] builder model: the Weapon must have chip and the pool summary name the required properties", () => {

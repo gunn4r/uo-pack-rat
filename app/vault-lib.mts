@@ -1266,9 +1266,14 @@ export function builderKeys(inv: ItemsLike): string[] {
 // Throwing (ServUO BaseWeapon.GetUsedSkill), so with `ubws` on it passes while any of those three is allowed.
 export const WEAPON_SKILLS: string[] = ["archery", "swordsmanship", "fencing", "mace fighting", "throwing"];
 export const MELEE_SKILLS: string[] = ["swordsmanship", "fencing", "mace fighting"];
+// Issue #259: the list may also hold SPELLBOOKS ("spellbook"), which keeps every spellbook (a one-handed piece whose name
+// SPELLBOOK_RE matches) out of the pool. WEAPON_EXCLUDES is everything the list accepts, in the order the page shows it.
+export const SPELLBOOKS = "spellbook";
+export const WEAPON_EXCLUDES: string[] = [...WEAPON_SKILLS, SPELLBOOKS];
 export const ubwsLetsIn = (excluded: string[], ubws = true): boolean => ubws && MELEE_SKILLS.some((w) => !excluded.includes(w));
 export function weaponAllowed(it: Item, excluded: string[] = [], ubws = true): boolean {
-  if (!excluded.length || (it.slot !== "oneHanded" && it.slot !== "twoHanded")) return true;
+  if (it.slot === "oneHanded" && excluded.includes(SPELLBOOKS) && SPELLBOOK_RE.test(it.name || "")) return false;
+  if (!excluded.some((w) => w !== SPELLBOOKS) || (it.slot !== "oneHanded" && it.slot !== "twoHanded")) return true;
   const own = String(it.skillReq || "").toLowerCase();
   if ((it.flags || []).includes("use best weapon skill")) {
     if (ubwsLetsIn(excluded, ubws)) return true;
@@ -1313,12 +1318,13 @@ export function migrateWeaponSetting<T extends object>(s: T): T {
   const skill = typeof weaponSkill === "string" ? weaponSkill.toLowerCase() : "";
   return { ...rest, excludeWeapons: rest.excludeWeapons || (skill ? WEAPON_SKILLS.filter((w) => w !== skill) : []) } as T;
 }
-// The rule excludeWeapons is held to at POST /api/optimize (profiles.v3.schema.json says the same): known weapon skills.
+// The rule excludeWeapons is held to at POST /api/optimize (profiles.v3.schema.json says the same): known weapon skills,
+// or "spellbook".
 export function excludeWeaponsError(v: unknown, path = "excludeWeapons"): string | null {
   if (v == null) return null;
   if (!Array.isArray(v)) return `${path} must be an array`;
-  const i = v.findIndex((w) => typeof w !== "string" || !WEAPON_SKILLS.includes(w));
-  return i < 0 ? null : `${path}[${i}] is not a weapon skill (${WEAPON_SKILLS.join(", ")})`;
+  const i = v.findIndex((w) => typeof w !== "string" || !WEAPON_EXCLUDES.includes(w));
+  return i < 0 ? null : `${path}[${i}] is not a weapon skill (${WEAPON_EXCLUDES.join(", ")})`;
 }
 
 // Templates: a full set of builder settings with no character in them (no race, STR limit or skipped containers).

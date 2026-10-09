@@ -85,6 +85,17 @@ test("[fast] build spec: templateSpecFrom keeps the buffs it is given, without t
   assert.deepEqual(templateSpecFrom(PANEL, []).buffs, { on: [], skills: {} }, "none on is a list too");
 });
 
+// Issue #259: "spellbook" in excludeWeapons is checked, round-trips through the panel's flat profile, and the schema takes it.
+test("[fast] build spec: a spellbook exclusion is a known excludeWeapons value and round-trips", () => {
+  const spec = specFromProfile({ ...PANEL, excludeWeapons: ["archery", "spellbook"] });
+  assert.equal(buildSpecError(spec, "spec"), null);
+  assert.deepEqual(profileFromSpec(spec).excludeWeapons, ["archery", "spellbook"], "back to the panel");
+  assert.deepEqual(specFromProfile(profileFromSpec(spec)), spec, "a round trip changes nothing");
+  assert.ok(buildSpecError({ ...spec, pool: { ...spec.pool, excludeWeapons: ["spellbooks"] } }, "spec"), "an unknown name is still refused");
+  const schema = JSON.parse(readFileSync(join(HERE, "schema", "profiles.v3.schema.json"), "utf8")) as ValidatorSchema;
+  assert.ok(validate(schema, { schemaVersion: 3, characters: { A: { spec } }, templates: {} }).ok, "the schema takes it");
+});
+
 // Issue #214: pool weaponMustHave is stored only when it lists any, checked like the other pool fields, round-trips through
 // the panel's flat profile and a template, and reaches planBuild's pool settings and saved-run snapshot.
 test("[fast] build spec: weaponMustHave is stored only when non-empty, checked, and planned with", () => {
