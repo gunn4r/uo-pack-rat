@@ -957,7 +957,7 @@ test("[slow] No character: built in Automatic from its own profile, saved as a r
     assert.equal(await page.locator("#b-grab-all").isDisabled(), true);
     await page.hover("#b-result .tipwrap:has(#b-grab-all)");
     await page.waitForFunction(() => [...document.querySelectorAll(".tip")].some((e) => e.textContent === "Log a character in to grab"));
-    assert.equal(await page.locator("#b-result [aria-label='Suit totals'] h2").innerText(), "Suit totals");
+    assert.equal(await page.locator("#b-result [aria-label='Suit totals'] .card-head h2").innerText(), "Suit totals");
     await page.waitForFunction(() => Number(document.querySelector("#b-runs-count")?.textContent) >= 1);
     await page.click("#b-runs-open");
     await page.waitForSelector("#runs-drawer:not([hidden]) .run-card");
