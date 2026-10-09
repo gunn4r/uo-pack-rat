@@ -1,6 +1,6 @@
 // build-spec.test.mts — `app/build-spec.mts`, a build's intent as one document (issue #218, BuildSpec).
 //
-// `[fast]`: `app/build-spec.mts`: a full spec, a template's (no buffs) and one filled from nothing pass `buildSpecError`, and one refused field of each kind says where; the panel's flat profile goes to a spec and back unchanged; and `planBuild` equals the assemblies it replaced, kept in the test as they were written: the page's build (its profile, pool settings, search options and saved-run snapshot, ui/builder.mts and ui/runs.mts) and the MCP tools' `planProfile` (mcp-tools.mts), for the demo characters with and without buffs and edited numbers, No character, and a hand-picked suit planned as Manual plans it; with no character (issue #12) the shard's caps, no Resisting Spells bonus, no swing and the named school's FC cap; and a character's swing on the planned profile (raw DEX plus the buffs' DEX and stamina shares, the worn suit's stamina, the step switch, none with No character), the switch in a spec only when on and checked as a boolean; and `weaponMustHave` stored only when non-empty, checked, round-tripped and planned with.
+// `[fast]`: `app/build-spec.mts`: a full spec, a template's (no buffs) and one filled from nothing pass `buildSpecError`, and one refused field of each kind says where; the panel's flat profile goes to a spec and back unchanged; and `planBuild` equals the assemblies it replaced, kept in the test as they were written: the page's build (its profile, pool settings, search options and saved-run snapshot, ui/builder.mts and ui/runs.mts) and the MCP tools' `planProfile` (mcp-tools.mts), for the demo characters with and without buffs and edited numbers, No character, and a hand-picked suit planned as Manual plans it; with no character (issue #12) the shard's caps, no Resisting Spells minimum, no swing and the named school's FC cap; and a character's swing on the planned profile (raw DEX plus the buffs' DEX and stamina shares, the worn suit's stamina, the step switch, none with No character), the switch in a spec only when on and checked as a boolean; and `weaponMustHave` stored only when non-empty, checked, round-tripped and planned with.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
@@ -217,10 +217,11 @@ test("[fast] planBuild: a character's swing is raw DEX plus the buffs' DEX and s
   assert.equal(buildSpecError({ ...specFromProfile(PANEL), intent: { ...specFromProfile(PANEL).intent, swingSteps: "yes" } }, "spec"), "spec.intent.swingSteps must be a boolean");
 });
 
-test("[fast] planBuild with no character (the builder's No character, issue #12): the shard's caps, no Resisting Spells bonus, no swing, the FC cap from the named school", () => {
+test("[fast] planBuild with no character (the builder's No character, issue #12): the shard's caps, no Resisting Spells minimum, no swing, the FC cap from the named school", () => {
   const plan = (castingSchool?: string) => planBuild(specFromProfile({ ...PANEL, race: "human", castingSchool, resistCaps: {} }), { character: null, worn: [], race: "human" }).profile;
   const p = plan();
-  assert.equal(p.resistBonus ?? 0, 0);
+  assert.equal(p.resistMinimum, null);
+  assert.equal(p.mins, undefined);
   assert.equal(p.swing, undefined);
   assert.equal(p.caps.physResist, 70);
   assert.equal(p.caps.fc, 2, "no school named: the shard's cap");

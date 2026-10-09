@@ -1077,7 +1077,7 @@ test("[fast] POST /api/evaluate answers evaluateSuit's evaluation of a hand-pick
   assert.equal(df.effectiveTotals.dci, (df.gearTotals.dci || 0) - 20, "Divine Fury's DCI −20 in the effective totals, not the gear's");
   assert.deepEqual(await answer({ character, suit, profile: { ...profile, buffs: { on: ["divineFury"], skills: { Chivalry: 100, Karma: 0 } } } }), df, "a run's settings bring their buffs");
   const none = await answer({ character: null, suit: { [piece.slot!]: piece.serial } });
-  assert.equal(none.planned.resistBonus, 0, "No character: raw item totals");
+  assert.equal(none.planned.resistMinimum, null, "No character: raw item totals");
   // the checks
   assert.equal((await post({ character: "Nobody", suit })).status, 404);
   assert.equal((await post({ suit })).status, 400, "a character, or null");

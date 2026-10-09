@@ -3,11 +3,11 @@
 // "other changes" badges and "after the change" values, the compare table's differing rows and best values,
 // and a saved run's label and badges. No DOM and no page state, so app/builder-model.test.mts can check it
 // all directly; ui/builder.mts, ui/builder-result.mts and ui/runs.mts draw what it returns.
-import { NOBODY, labelOf, propName, typicalRange, GEAR_SLOTS, NOT_BUILDER_KEYS, RESIST_KEYS, RESIST_CAP_LIMITS, SLOT_LABELS, settingsDiff, shardResistCap, WEAPON_SKILLS, WEAPON_EXCLUDES, SPELLBOOKS, MELEE_SKILLS, ubwsLetsIn, flagLabel } from "../vault-lib.mts";
+import { NOBODY, labelOf, paperdollResist, propName, typicalRange, GEAR_SLOTS, NOT_BUILDER_KEYS, RESIST_KEYS, RESIST_CAP_LIMITS, SLOT_LABELS, settingsDiff, shardResistCap, WEAPON_SKILLS, WEAPON_EXCLUDES, SPELLBOOKS, MELEE_SKILLS, ubwsLetsIn, flagLabel } from "../vault-lib.mts";
 import type { FcCap, PlannedBuffs, PropMap, ResistCap, RunSettings } from "../vault-lib.mts";
 import { applyBuffs, buffById, buffsDiff, capWord, signed, type BuffResult } from "../buffs.mts";
 import { RUN_SETTING_LIMITS, type Range } from "../run-settings.mts";
-import { paperdoll, paperdollCaps } from "../evaluate.mts";
+import { paperdollCaps, suitResist } from "../evaluate.mts";
 import type { Diagnostic, DiagnosticAction, DiagnosticCode, SwingResult } from "../runs-types.mts";
 import { delayText, MIN_TICKS } from "../swing.mts";
 
@@ -21,15 +21,14 @@ const num = (n: number): string => n.toLocaleString("en-US", { maximumFractionDi
 export { propName };
 
 // ---------------------------------------------------------------- paperdoll terms
-// paperdoll and paperdollCaps live with the suit evaluation (app/evaluate.mts).
-export { paperdoll, paperdollCaps };
-// A suit's item totals in paperdoll terms with the buffs a build planned with (none: `b` null), against `caps`.
-export function withBuffs(t: PropMap, rsb: number, caps: Record<string, number>, b: Pick<PlannedBuffs, "on" | "skills" | "stats" | "who"> | null | undefined): BuffResult {
-  return applyBuffs(paperdoll(t, rsb), caps, b?.on || [], b?.skills || {}, b?.stats ?? null, b?.who);
+// paperdollCaps lives with the suit evaluation (app/evaluate.mts).
+export { paperdollCaps };
+// A suit's item totals in paperdoll terms with the buffs a build planned with (none: `b` null), against `caps`, each
+// resist held at the Resisting Spells minimum of `skill` (the character's own, EffectiveProfile.resistSkill; null for
+// none) with the suit's own Resisting Spells bonus.
+export function withBuffs(t: PropMap, skill: number | null, caps: Record<string, number>, b: Pick<PlannedBuffs, "on" | "skills" | "stats" | "who"> | null | undefined): BuffResult {
+  return applyBuffs(t, caps, b?.on || [], b?.skills || {}, b?.stats ?? null, b?.who, suitResist(skill, t));
 }
-// Floors in paperdoll terms: a resist's with the Resisting Spells bonus added back.
-export const paperdollFloors = (floors: Record<string, number>, rsb: number): Record<string, number> =>
-  Object.fromEntries(Object.entries(floors).map(([k, v]) => [k, RESIST_KEYS.includes(k) ? v + rsb : v]));
 // What the buffs add past the cap, as badges: "DI +68 past the cap (Enemy of One)"; a penalty applied after it, such
 // as Protection's casting delay, "FC −2 after the cap (Protection)".
 export const pastCapBadges = (r: BuffResult): string[] =>
@@ -155,11 +154,10 @@ function commonAndOdd(pairs: Array<[string, number]>): { common: number; odd: st
   const common = [...count.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0]![0];
   return { common, odd: pairs.filter(([, v]) => v !== common).map(([k, v]) => `${labelOf(k)} ${v}`) };
 }
-// The Requirements section's note, in item terms: what gear has to supply under each cap once Resisting Spells
-// has given its bonus. "so gear supplies up to 30 (Fire 55, Energy 35)".
-export function gearCapsText(view: Record<string, ResistCap>, rsb: number): string {
-  const { common, odd } = commonAndOdd(RESIST_KEYS.map((k): [string, number] => [k, Math.max(0, view[k]!.cap - rsb)]));
-  return `so gear supplies up to ${common}${odd.length ? ` (${odd.join(", ")})` : ""}`;
+// The Requirements section's note on Resisting Spells, null with no minimum (or one of 0, which meets nothing): "Resisting Spells keeps each of Ana's
+// resists at 40 or more: a resist requirement of 40 or less is met by any suit."
+export function resistMinimumText(name: string, min: number | null): string | null {
+  return min == null || min <= 0 ? null : `Resisting Spells keeps each of ${name}'s resists at ${min} or more: a resist requirement of ${min} or less is met by any suit.`;
 }
 // A result's line about its caps, for the compare view: "Fire 95 (raised from 70)", or "Shard caps".
 export function capsLine(view: Record<string, ResistCap>): string {
@@ -350,14 +348,14 @@ export function runAutoLabel(prev: RunSettings | null, settings: RunSettings): {
   return { text: head[0]!.toUpperCase() + head.slice(1), diff };
 }
 // A run's badges: its change count, how many requirements its suit meets, and the five resists in
-// paperdoll values (item totals + the character's Resisting Spells bonus, clipped at each cap); a resist requirement
-// is met at its cap when set above it, as the solver scored it. A resist whose cap
+// paperdoll values (item totals clipped at each cap, held at the character's Resisting Spells minimum `min`); a resist
+// requirement is met at its cap when set above it, as the solver scored it. A resist whose cap
 // the run overrode says so: "Fire 90 · cap 95".
-export function runBadges(changes: number | null | undefined, totals: PropMap | null | undefined, floors: Record<string, number>, rsb: number, caps: Record<string, number>, shardCaps: Record<string, number> = caps): Array<{ text: string; tone?: "ok" | "warn" | undefined }> {
+export function runBadges(changes: number | null | undefined, totals: PropMap | null | undefined, floors: Record<string, number>, min: number | null, caps: Record<string, number>, shardCaps: Record<string, number> = caps): Array<{ text: string; tone?: "ok" | "warn" | undefined }> {
   const out: Array<{ text: string; tone?: "ok" | "warn" | undefined }> = [];
   if (changes != null) out.push({ text: plural(changes, "change") });
   if (!totals) return out;
-  const pd = (k: string, v: number): number => (RESIST_KEYS.includes(k) ? v + rsb : v);
+  const pd = (k: string, v: number): number => (RESIST_KEYS.includes(k) && min != null && v < min ? min : v);
   const floorKeys = Object.keys(floors);
   if (floorKeys.length) {
     const met = floorKeys.filter((k) => pd(k, totals[k] || 0) >= effectiveFloor(k, floors[k]!, caps)).length;
@@ -365,7 +363,7 @@ export function runBadges(changes: number | null | undefined, totals: PropMap | 
   }
   for (const k of RESIST_KEYS) {
     const cap = caps[k] ?? 70;
-    out.push({ text: `${labelOf(k)} ${Math.min(cap, pd(k, totals[k] || 0))}${cap !== (shardCaps[k] ?? cap) ? ` · cap ${cap}` : ""}` });
+    out.push({ text: `${labelOf(k)} ${paperdollResist(totals[k] || 0, cap, min)}${cap !== (shardCaps[k] ?? cap) ? ` · cap ${cap}` : ""}` });
   }
   return out;
 }

@@ -29,7 +29,7 @@ type Term = [number, number];
 // each kind means.
 export interface MipCol {
   name: string;
-  kind: "x" | "c" | "z" | "y" | "s" | "u" | "a";
+  kind: "x" | "c" | "z" | "y" | "s" | "u" | "a" | "v" | "b";
   slot?: string | undefined;
   item?: OptItem | undefined;
   dim?: string | undefined;
@@ -46,6 +46,7 @@ export interface MipProfile {
   hardFloors?: string[] | undefined;
   floorBonus?: number | undefined;
   floorPartial?: number | undefined;
+  mins?: Record<string, number> | undefined;   // a value the property never falls below (scripts/optimizer-core.mts OptProfile.mins)
   ssiSteps?: Array<{ ssi: number; stam: number; credit: number }> | undefined;   // SSI by swing step (scripts/optimizer-core.mts OptProfile)
 }
 
@@ -90,6 +91,13 @@ export interface CapCol {
   cap: number;
   z: number | null;
 }
+// A property held up to a min (MipProfile.mins): v is what it scores, max(min, min(t, cap)); b, with a positive weight, is 1 when the suit's own total counts, 0 when the min does.
+export interface MinCol {
+  col: number;
+  b: number | null;
+  min: number;
+  cap: number;
+}
 export interface FloorCol {
   f: number;
   k: number;
@@ -108,6 +116,7 @@ export interface BuiltMip {
   hardRows: Record<string, number>;
   scoreOffset: number;
   capCols: Record<string, CapCol>;
+  minCols: Record<string, MinCol>;
   floorCols: Record<string, FloorCol>;
   stepCols: StepCol[];   // SSI by step: one binary per point, empty when steps are off
   model: MipModel;
@@ -155,7 +164,7 @@ export function propertyReach(pools: Partial<Record<string, OptItem[]>>, current
 
 export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots = DEFAULT_OPTIONAL_SLOTS, slots = DEFAULT_SLOTS, hardAsSoft = false }: BuildSuitMipOptions): BuiltMip {
   const optional = new Set(optionalSlots);
-  const W = profile.weights || {}, CAPS = profile.caps || {}, FL = profile.floors || {};
+  const W = profile.weights || {}, CAPS = profile.caps || {}, FL = profile.floors || {}, MINS = profile.mins || {};
   const hard = new Set(profile.hardFloors || []);
   const FB = typeof profile.floorBonus === "number" ? profile.floorBonus : 1000;
   const PARTIAL = typeof profile.floorPartial === "number" ? profile.floorPartial : 0.5;
@@ -185,9 +194,10 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
   const addRow = (entries: Term[], lo: number, hi: number): number => { for (const [j, v] of entries) { indices.push(j); values.push(v); } starts.push(indices.length); rowLower.push(lo); rowUpper.push(hi); return rowLower.length - 1; };
   let scoreOffset = 0;
   const reach = propertyReach(pools, current, optionalSlots, slots, dims);
-  const unreachableFloors: string[] = [], hardRows: Record<string, number> = {}, capCols: Record<string, CapCol> = {}, floorCols: Record<string, FloorCol> = {}, stepCols: StepCol[] = [];
+  const unreachableFloors: string[] = [], hardRows: Record<string, number> = {}, capCols: Record<string, CapCol> = {}, minCols: Record<string, MinCol> = {}, floorCols: Record<string, FloorCol> = {}, stepCols: StepCol[] = [];
   for (const d of dims) {
-    const w = W[d] || 0, cap = CAPS[d], f = FL[d] || 0;
+    // a floor at or under the property's min is met by every suit: dropped, as the core drops it
+    const w = W[d] || 0, cap = CAPS[d], m = MINS[d], f = m != null && (FL[d] || 0) <= m ? 0 : FL[d] || 0;
     // Every j in allX is an x column, which always carries `item` (set in the loop above) — the two
     // `!` below are in range by construction, not an unchecked assumption about caller input.
     const xs: Term[] = allX.map((j): Term => [j, cols[j]!.item!.props[d] || 0]).filter(([, v]) => v !== 0);
@@ -205,29 +215,50 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
       }
       if (stepCols.length) addRow(stepCols.map(({ col }): Term => [col, 1]), -INF, 1);
     } else if (w !== 0) {
-      if (Number.isFinite(cap)) {                                 // w·min(t, cap): c ≤ t, c ≤ cap, objective w·c; c may go negative like t
-        // Number.isFinite(number: unknown) is not a type predicate, so TS can't narrow `cap` itself
-        // from the check just above — re-reading the same CAPS[d] (never mutated in between) into a
-        // shadowed, honestly-typed `cap` restores plain `cap` use (incl. the `capCols` shorthand)
-        // for the rest of this block, in range by construction rather than asserted.
-        const cap = CAPS[d] as number;
-        const c = addCol({ name: `c_${d}`, kind: "c", dim: d }, w, -INF, cap, false);
-        addRow([[c, 1], ...xs.map(([j, v]): Term => [j, -v])], -INF, 0);
-        // A positive weight drives c up to min(t, cap) on its own (min is concave, and we maximise).
-        // A negative one would drive c down without limit, so a binary z pins c to min(t, cap) from
-        // below as well: c ≥ t − M1·z and c ≥ cap − M2·(1 − z), with M1 = reach − cap and
-        // M2 = cap − minReach the widest either gap can be. z = 0 forces c = t (so t ≤ cap), z = 1
-        // forces c = cap (so t ≥ cap).
-        let z: number | null = null;
-        if (w < 0) {
-          const M1 = Math.max(0, reachD - cap), M2 = Math.max(0, cap - minReach);
-          z = addCol({ name: `z_${d}`, kind: "z", dim: d }, 0, 0, 1, true);
-          addRow([[c, 1], ...xs.map(([j, v]): Term => [j, -v]), [z, M1]], 0, INF);
-          addRow([[c, 1], [z, -M2]], cap - M2, INF);
+      // A min some suit could fall under: w·max(m, min(t, cap)). It is the constant w·m when no suit gets past m, which
+      // includes a cap at or under m whatever the totals (min(t, cap) never passes it).
+      const lift = m != null && minReach < m, top = Math.min(cap ?? INF, reachD), mm = m ?? 0;
+      if (m != null && top <= mm) scoreOffset += w * mm;
+      else if (lift && w > 0) {
+        // maximising a max needs a binary b: b = 1 lets v reach min(t, cap) (v ≤ t, v ≤ top), b = 0 holds v ≤ m; the
+        // better of the two is max(m, min(t, cap)). Written v ≤ m + (top − m)·b and v − t ≤ (m − minReach)·(1 − b).
+        const v = addCol({ name: `v_${d}`, kind: "v", dim: d }, w, -INF, INF, false);
+        const b = addCol({ name: `b_${d}`, kind: "b", dim: d }, 0, 0, 1, true);
+        addRow([[v, 1], [b, -(top - mm)]], -INF, mm);
+        addRow([[v, 1], ...xs.map(([j, val]): Term => [j, -val]), [b, mm - minReach]], -INF, mm - minReach);
+        minCols[d] = { col: v, b, min: mm, cap: cap ?? INF };
+      } else {
+        // a negative weight drives v down to max(m, ·) on its own: v ≥ m (its lower bound) and v ≥ min(t, cap), the
+        // c column below (pinned to min(t, cap) by z) or t itself when uncapped
+        const v = lift ? addCol({ name: `v_${d}`, kind: "v", dim: d }, w, mm, INF, false) : null;
+        if (v != null) minCols[d] = { col: v, b: null, min: mm, cap: cap ?? INF };
+        if (Number.isFinite(cap)) {                                 // w·min(t, cap): c ≤ t, c ≤ cap, objective w·c; c may go negative like t
+          // Number.isFinite(number: unknown) is not a type predicate, so TS can't narrow `cap` itself
+          // from the check just above — re-reading the same CAPS[d] (never mutated in between) into a
+          // shadowed, honestly-typed `cap` restores plain `cap` use (incl. the `capCols` shorthand)
+          // for the rest of this block, in range by construction rather than asserted.
+          const cap = CAPS[d] as number;
+          const c = addCol({ name: `c_${d}`, kind: "c", dim: d }, v != null ? 0 : w, -INF, cap, false);
+          addRow([[c, 1], ...xs.map(([j, v]): Term => [j, -v])], -INF, 0);
+          // A positive weight drives c up to min(t, cap) on its own (min is concave, and we maximise).
+          // A negative one would drive c down without limit, so a binary z pins c to min(t, cap) from
+          // below as well: c ≥ t − M1·z and c ≥ cap − M2·(1 − z), with M1 = reach − cap and
+          // M2 = cap − minReach the widest either gap can be. z = 0 forces c = t (so t ≤ cap), z = 1
+          // forces c = cap (so t ≥ cap).
+          let z: number | null = null;
+          if (w < 0) {
+            const M1 = Math.max(0, reachD - cap), M2 = Math.max(0, cap - minReach);
+            z = addCol({ name: `z_${d}`, kind: "z", dim: d }, 0, 0, 1, true);
+            addRow([[c, 1], ...xs.map(([j, v]): Term => [j, -v]), [z, M1]], 0, INF);
+            addRow([[c, 1], [z, -M2]], cap - M2, INF);
+          }
+          capCols[d] = { col: c, cap, z };
+          if (v != null) addRow([[v, 1], [c, -1]], 0, INF);
+        } else if (v != null) {
+          addRow([[v, 1], ...xs.map(([j, val]): Term => [j, -val])], 0, INF);
+        } else {                                                    // uncapped: linear, aggregated per column
+          for (const [j, v] of xs) colCost[j]! += w * v;
         }
-        capCols[d] = { col: c, cap, z };
-      } else {                                                    // uncapped: linear, aggregated per column
-        for (const [j, v] of xs) colCost[j]! += w * v;
       }
     }
     if (f <= 0) continue;
@@ -264,7 +295,7 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
 
   const model: MipModel = { numCols: cols.length, numRows: rowLower.length, sense: "maximize", offset: 0, colCost, colLower, colUpper, rowLower, rowUpper,
     matrix: { format: "csr", numRows: rowLower.length, numCols: cols.length, starts, indices, values }, integrality };
-  return { cols, xIndex, dims, unreachableFloors, reach, hardRows, scoreOffset, capCols, floorCols, stepCols, model };
+  return { cols, xIndex, dims, unreachableFloors, reach, hardRows, scoreOffset, capCols, minCols, floorCols, stepCols, model };
 }
 
 // ---- MIP start, extraction, and no-good cut ----
@@ -275,7 +306,7 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
 // function of (built, assignment).
 
 export function startVector(built: BuiltMip, assignment: Partial<Record<string, OptItem>> = {}): Float64Array {
-  const { cols, xIndex, dims, capCols, floorCols, stepCols, model } = built;
+  const { cols, xIndex, dims, capCols, minCols, floorCols, stepCols, model } = built;
   const vec = new Float64Array(model.numCols);
   const totals = Object.fromEntries(dims.map((d) => [d, 0]));
   for (const s of Object.keys(xIndex)) {
@@ -294,6 +325,8 @@ export function startVector(built: BuiltMip, assignment: Partial<Record<string, 
     const cc = capCols[d];
     if (cc) vec[cc.col] = Math.min(t, cc.cap);
     if (cc && cc.z != null) vec[cc.z] = t >= cc.cap ? 1 : 0;
+    const mc = minCols[d];
+    if (mc) { const own = Math.min(t, mc.cap); vec[mc.col] = Math.max(mc.min, own); if (mc.b != null) vec[mc.b] = own > mc.min ? 1 : 0; }
     const fc = floorCols[d];
     if (!fc) continue;
     const met = fc.y != null && t >= fc.f;

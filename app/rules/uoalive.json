@@ -26,9 +26,7 @@
   "raceCaps": {
     "elf": { "energyResist": 75 }
   },
-  "resistSkillBonus": {
-    "breakpoints": [[100, 0.4], [120, 0.2]]
-  },
+  "resistMinimum": { "kind": "servuo" },
   "tagUnits": {
     "cursed": 10.0,
     "brittle": 4.0,

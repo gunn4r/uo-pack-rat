@@ -1,6 +1,6 @@
 // evaluate.test.mts — `evaluateSuit` (`app/evaluate.mts`, issue #216) against the three assemblies it replaced.
 //
-// `[fast]`: `evaluateSuit` (`app/evaluate.mts`) against the three assemblies it replaced, kept in the test as they were written: MCP `score_suit`'s totals, requirements and planned profile, Manual's totals strip, picker deltas and stats card, and Automatic's buff picker, on the demo characters with and without skills and No character, three templates (one with an Elf race and a resist override a form's loss sets aside), no buffs, Divine Fury and mixed sets, the worn suit and suits with a piece swapped; and Divine Fury's DCI −20 shown in the effective totals beside the gear's, with what is wasted past a cap.
+// `[fast]`: `evaluateSuit` (`app/evaluate.mts`) against the three assemblies it replaced, kept in the test as they were written: MCP `score_suit`'s totals, requirements and planned profile, Manual's totals strip, picker deltas and stats card, and Automatic's buff picker, on the demo characters with and without skills and No character, three templates (one with an Elf race and a resist override a form's loss sets aside), no buffs, Divine Fury and mixed sets, the worn suit and suits with a piece swapped; and Divine Fury's DCI −20 shown in the effective totals beside the gear's, with what is wasted past a cap; and the Resisting Spells minimum (issue #261): the paperdoll is the item totals over it, never the two added.
 //
 // The replaced assemblies are Manual's totals strip, deltas and stats card (ui/builder-manual.mts), Automatic's buff picker (ui/builder.mts buffView) and the MCP tools' score_suit (mcp-tools.mts). The demo characters carry skills that open every buff below; the mixed sets hold a form, a stat slot and a potion. For each case the old numbers and evaluateSuit's must be equal.
 import { test } from "node:test";
@@ -12,7 +12,7 @@ import { effectiveProfile, foldSnapshots, profileResistCaps, requirementReport, 
 import type { RulesV1 } from "./schema/types.d.mts";
 import { upgradeScan } from "./scan-schema.mts";
 import { applyBuffs, buffPlanOf, buffSkillValues, manualBase, manualPlan, manualProfile, rawStats, weaponFlags } from "./buffs.mts";
-import { evaluateSuit, paperdoll, paperdollCaps } from "./evaluate.mts";
+import { evaluateSuit, paperdollCaps, suitResist } from "./evaluate.mts";
 import { templateSettings, type TemplateMap } from "./build-spec.mts";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
@@ -75,15 +75,15 @@ test("[fast] evaluateSuit: Manual's totals strip, picker deltas and stats card, 
     const { values } = buffSkillValues(c ? c.skills || {} : null, edits);
     const stats = name && c ? rawStats(c, totalsOf(Object.fromEntries((wornBy[name] || []).map((i) => [String(i.serial), i as unknown as OptItem])))) : null;
     const race = name && c ? p.race || "human" : null;
-    const buffed = (t: Record<string, number>, s: Record<string, Item>): ReturnType<typeof applyBuffs> => applyBuffs(t, base, on, values, stats, { race, weaponFlags: weaponFlags(s) });
-    const strip = buffed(paperdoll(totalsOf(opt(suit)), prof.resistBonus), suit);
+    const buffed = (t: Record<string, number>, s: Record<string, Item>, resist: number | null = null): ReturnType<typeof applyBuffs> => applyBuffs(t, base, on, values, stats, { race, weaponFlags: weaponFlags(s) }, resist);
+    const strip = buffed(totalsOf(opt(suit)), suit, suitResist(prof.resistSkill, totalsOf(opt(suit))));
     const card = buffed(totalsOf(opt(suit)), suit);
     const ev = evaluateSuit({ profile: mp, character: c, suit: opt(suit), buffs: manualPlan(c, name ? wornBy[name] || [] : [], suit, race, on, edits) });
     assert.deepEqual(ev.buffs, strip, label);
     assert.deepEqual([ev.effectiveTotals, ev.caps, ev.baseCaps], [strip.totals, strip.caps, base], label);
-    // the stats card read item totals (no Resisting Spells bonus) and only its non-resist keys
+    // the stats card read item totals (no Resisting Spells minimum) and only its non-resist keys
     const added = (r: typeof card, t: Record<string, number>): Record<string, number> => Object.fromEntries(Object.keys(r.shares).filter((k) => !RESIST_KEYS.includes(k)).map((k) => [k, (r.totals[k] || 0) - (t[k] || 0)]));
-    assert.deepEqual(added(ev.buffs, paperdoll(ev.gearTotals, ev.planned.resistBonus)), added(card, totalsOf(opt(suit))), label);
+    assert.deepEqual(added(ev.buffs, ev.gearTotals), added(card, totalsOf(opt(suit))), label);
     const nonResist = (m: Record<string, unknown>): Record<string, unknown> => Object.fromEntries(Object.entries(m).filter(([k]) => !RESIST_KEYS.includes(k)));
     assert.deepEqual([nonResist(ev.buffs.outside), nonResist(ev.buffs.shares), ev.caps], [nonResist(card.outside), nonResist(card.shares), card.caps], label);
   }
@@ -97,10 +97,10 @@ test("[fast] evaluateSuit: Automatic's buff picker on the worn suit, as it assem
       const label = `${cl} / ${pl} / [${on.join(",")}] / ${JSON.stringify(edits)}`, worn = wornBy[name] || [];
       // the old assembly (ui/builder.mts buffPlan + buffView)
       const plan = buffPlanOf(c, worn, p.race, { on, skills: {} }, edits);
-      const prof = effectiveProfile(p, c), totals = paperdoll(plan.worn, prof.resistBonus), caps = paperdollCaps(profileResistCaps(prof));
-      const all = applyBuffs(totals, caps, plan.on, plan.skills, plan.stats, plan.who);
+      const prof = effectiveProfile(p, c), totals = plan.worn, caps = paperdollCaps(profileResistCaps(prof));
+      const all = applyBuffs(totals, caps, plan.on, plan.skills, plan.stats, plan.who, suitResist(prof.resistSkill, totals));
       const ev = evaluateSuit({ profile: p, character: c, suit: Object.fromEntries(worn.map((i) => [String(i.serial), i])), buffs: plan });
-      assert.deepEqual([paperdoll(ev.gearTotals, ev.planned.resistBonus), ev.baseCaps, ev.buffs], [totals, caps, all], label);
+      assert.deepEqual([ev.gearTotals, ev.baseCaps, ev.buffs], [totals, caps, all], label);
     }
   }
 });
@@ -116,4 +116,39 @@ test("[fast] evaluateSuit: Divine Fury's DCI −20 shows in the effective totals
   assert.equal(ev.wasted.dci, 46 - ev.caps.dci!);
   const none = evaluateSuit({ profile: p, character: c, suit, buffs: null });
   assert.deepEqual([none.effectiveTotals.dci, none.requirements.find((r) => r.key === "dci")!.floor], [66, 45]);
+});
+
+// Issue #261: Resisting Spells holds each resist at its minimum and adds nothing to gear.
+test("[fast] evaluateSuit: the paperdoll is the item totals over the Resisting Spells minimum, never the two added", () => {
+  const rs = (v: number): Character => ({ ...inv.characters.Kestrel!, skills: { "Resisting Spells": { value: v } } } as Character);
+  // the scan from the issue: Resisting Spells 50 (a minimum of 6) and worn items of 56 / 57 / 51 / 68 / 63, as the client's paperdoll read them
+  const scanned = { physResist: 56, fireResist: 57, coldResist: 51, poisonResist: 68, energyResist: 63 };
+  const ev = evaluateSuit({ profile: {}, character: rs(50), suit: { chest: { props: scanned } }, buffs: null });
+  assert.deepEqual(RESIST_KEYS.map((k) => ev.effectiveTotals[k]), RESIST_KEYS.map((k) => scanned[k as keyof typeof scanned]));
+  assert.deepEqual([ev.buffs.minimum, ev.buffs.lifted], [6, []]);
+  // Resisting Spells 100: gear 30 reads 40, gear 45 reads 45
+  const r100 = evaluateSuit({ profile: {}, character: rs(100), suit: { chest: { props: { fireResist: 30, coldResist: 45 } } }, buffs: null });
+  assert.deepEqual([r100.effectiveTotals.fireResist, r100.effectiveTotals.coldResist, r100.buffs.lifted], [40, 45, ["physResist", "fireResist", "poisonResist", "energyResist"]]);
+  assert.equal(r100.wasted.fireResist, undefined, "a lifted resist wastes nothing");
+  // a requirement at the minimum is met with no gear on it
+  const met = evaluateSuit({ profile: { floors: { fireResist: 40 } }, character: rs(100), suit: {}, buffs: null });
+  assert.equal(met.requirements.find((r) => r.key === "fireResist")!.met, true);
+  const none = evaluateSuit({ profile: {}, character: null, suit: { chest: { props: { fireResist: 30 } } }, buffs: null });
+  assert.deepEqual([none.effectiveTotals.fireResist, none.buffs.minimum], [30, null], "No character: raw item totals");
+});
+
+// Issue #261 review: the scan's Resisting Spells value carries the worn suit's own skill bonus. A suit is shown with the
+// character's base and that suit's bonus; the solvers plan at the base, so they never count on a bonus a suit may drop.
+test("[fast] evaluateSuit: a +10 Resisting Spells bracelet counts toward the minimum only in the suit that holds it; the solvers plan at the base", () => {
+  const c = { ...inv.characters.Kestrel!, skills: { "Resisting Spells": { base: 90, value: 100, cap: 120 } } } as Character;   // wearing the bracelet at scan time
+  const bracelet = { props: { "sk:resisting spells": 10 } }, tunic = { props: { fireResist: 20 } };
+  const p: Profile = { floors: { fireResist: 40 }, weights: { fireResist: 1 } };
+  const withIt = evaluateSuit({ profile: p, character: c, suit: { chest: tunic, bracelet }, buffs: null });
+  const without = evaluateSuit({ profile: p, character: c, suit: { chest: tunic }, buffs: null });
+  assert.deepEqual([withIt.buffs.minimum, withIt.effectiveTotals.fireResist], [40, 40], "base 90 + 10: a minimum of 40, as the scan's paperdoll reads it");
+  assert.deepEqual([without.buffs.minimum, without.effectiveTotals.fireResist], [33, 33], "base 90: (900 − 400) / 15");
+  const prof = effectiveProfile(p, c);
+  assert.deepEqual([prof.resistSkill, prof.resistMinimum, prof.mins!.fireResist], [90, 33, 33], "planned at the base, whatever is worn");
+  assert.equal(withIt.requirements.find((r) => r.key === "fireResist")!.met, false, "the requirement of 40 is not dropped as met by any suit");
+  assert.deepEqual(evaluateSuit({ profile: p, character: { ...c, skills: { "Resisting Spells": { value: 100, cap: 120 } } } as Character, suit: { chest: tunic }, buffs: null }).buffs.minimum, 40, "a scan with no base: its value");
 });

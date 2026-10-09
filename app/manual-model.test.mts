@@ -1,6 +1,6 @@
 // manual-model.test.mts — `app/ui/manual-model.mts`, the Suit Builder Manual mode's pure logic (issue #12).
 //
-// `app/ui/manual-model.mts`, the Suit Builder Manual mode's pure logic (issue #12): a No character run's settings (race human, No character's STR limit), the slot groups holding every slot the classifier knows (`GEAR_SLOTS`) exactly once and in its order, the undo history (undo, redo, 40 steps kept, a new change dropping the redo branch, a change that changes nothing not recorded) and the undo and redo keys per platform, a total past its cap shown at the cap with "+N wasted" and the line under each total, resists in paperdoll terms with the Resisting Spells bonus, a race's cap and the player's override, the picker's slot filter (the slot itself, so the two-handed slot lists two-handers and shields), the one-hand/two-hand rule checked against the optimizer's own `optIsValidAssignment` (it clears exactly what the optimizer would refuse), a saved suit read back (known slots, whole serials), the slots whose serial no longer resolves and a saved piece the classifier has since moved going to its slot now (`reslotted`, with the notice for one dropped because its slot is taken), `LAYER_TO_SLOT` against the paperdoll layer table (issue #202), and a picker row's delta (gains and losses apart, counted up to the cap, a change wholly past the cap muted, the profile's floor and weight properties after the strip's). All `[fast]`.
+// `app/ui/manual-model.mts`, the Suit Builder Manual mode's pure logic (issue #12): a No character run's settings (race human, No character's STR limit), the slot groups holding every slot the classifier knows (`GEAR_SLOTS`) exactly once and in its order, the undo history (undo, redo, 40 steps kept, a new change dropping the redo branch, a change that changes nothing not recorded) and the undo and redo keys per platform, a total past its cap shown at the cap with "+N wasted" and the line under each total, resists in paperdoll terms held at the Resisting Spells minimum, a race's cap and the player's override, the picker's slot filter (the slot itself, so the two-handed slot lists two-handers and shields), the one-hand/two-hand rule checked against the optimizer's own `optIsValidAssignment` (it clears exactly what the optimizer would refuse), a saved suit read back (known slots, whole serials), the slots whose serial no longer resolves and a saved piece the classifier has since moved going to its slot now (`reslotted`, with the notice for one dropped because its slot is taken), `LAYER_TO_SLOT` against the paperdoll layer table (issue #202), and a picker row's delta (gains and losses apart, counted up to the cap, a change wholly past the cap muted, the profile's floor and weight properties after the strip's). All `[fast]`.
 //
 // Lives in app/ for the reason app/ui-render.test.mts gives.
 import { test } from "node:test";
@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 import { setRules, effectiveProfile, profileResistCaps, GEAR_SLOTS, LAYER_TO_SLOT, SLOT_LABELS } from "./vault-lib.mts";
 import type { RulesV1 } from "./schema/types.d.mts";
 import { optIsValidAssignment } from "../scripts/optimizer-core.mts";
-import { paperdoll, paperdollCaps } from "./ui/builder-model.mts";
+import { paperdollCaps, withBuffs } from "./ui/builder-model.mts";
 import { MANUAL_GROUPS, emptyHistory, record, undoStep, redoStep, historyKey, historyKeyNames, HISTORY_MAX, capped, capLine, slotQuery, handConflict, handNote, savedSlots, missingSlots, reslotted, reslotNote, deltaKeys, slotDelta, STRIP_KEYS, noCharacterRunSettings } from "./ui/manual-model.mts";
 
 setRules(JSON.parse(readFileSync(new URL("./rules/uoalive.json", import.meta.url), "utf8")) as RulesV1);
@@ -26,16 +26,17 @@ test("[fast] manual model: a total over its cap shows the cap and what is wasted
   assert.deepEqual(capLine(0, 40), { text: "Nothing yet", tone: "muted" });
 });
 
-test("[fast] manual model: resists count in paperdoll terms, the character's Resisting Spells and race caps included", () => {
+test("[fast] manual model: resists count in paperdoll terms, the character's Resisting Spells minimum and race caps included", () => {
   const manualCaps = (prof: ReturnType<typeof effectiveProfile>): Record<string, number> => paperdollCaps(profileResistCaps(prof));
-  assert.deepEqual(paperdoll({ fireResist: 30, lrc: 20 }, 40), { physResist: 40, fireResist: 70, coldResist: 40, poisonResist: 40, energyResist: 40, lrc: 20 });
+  assert.deepEqual(withBuffs({ fireResist: 50, coldResist: 30, lrc: 20 }, 100, manualCaps(effectiveProfile({}, null)), null).totals,
+    { physResist: 40, fireResist: 50, coldResist: 40, poisonResist: 40, energyResist: 40, lrc: 20 }, "held at the minimum of 40, gear over it its own");
   const raw = manualCaps(effectiveProfile({}, null));
   assert.equal(raw.energyResist, 70, "no character: the shard's caps");
   assert.equal(raw.lrc, 100); assert.equal(raw.lmc, 40);
   const elf = manualCaps(effectiveProfile({ race: "elf", resistCaps: { fireResist: 95 } }, { skills: { "Resisting Spells": { value: 100 } } } as never));
   assert.equal(elf.energyResist, 75, "an Elf's Energy cap");
   assert.equal(elf.fireResist, 95, "the player's override");
-  assert.equal(elf.physResist, 70, "the cap stays in paperdoll terms, whatever the Resisting Spells bonus");
+  assert.equal(elf.physResist, 70, "the cap stays in paperdoll terms, whatever the Resisting Spells minimum");
 });
 
 test("[fast] manual model: the picker's filter is the slot itself, so the two-handed slot lists two-handers and shields", () => {
@@ -118,8 +119,8 @@ test("[fast] manual model: a row's delta says what moves, up to the cap, gains a
   const caps = paperdollCaps(profileResistCaps(effectiveProfile({}, null)));
   const keys = deltaKeys({});
   assert.deepEqual(keys, STRIP_KEYS, "no profile: the strip's properties");
-  const before = paperdoll({ lrc: 57, lmc: 27, fireResist: 60, dexBonus: 2 }, 0);
-  const after = paperdoll({ lrc: 77, lmc: 35, fireResist: 52, dexBonus: 2 }, 0);
+  const before = { lrc: 57, lmc: 27, fireResist: 60, dexBonus: 2 };
+  const after = { lrc: 77, lmc: 35, fireResist: 52, dexBonus: 2 };
   const parts = slotDelta(before, after, keys, caps);
   assert.deepEqual(parts.map((p) => p.text), ["Fire −8 → 52", "LRC +20 → 77", "LMC +8 → 35"]);
   assert.deepEqual(parts.map((p) => p.tone), ["bad", "ok", "ok"]);

@@ -1,17 +1,23 @@
 // runs.mts — <data>/runs/: one JSON file per saved run (finished builds and Manual suits; /api/runs).
 import { existsSync, readdirSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
-import type { SavedRun } from "../runs-lib.mts";
+import { DIAGNOSTICS_SOUND_SINCE, type SavedRun } from "../runs-lib.mts";
 import { migrate } from "../migrate.mts";
 import { readJsonFile, writeJsonFile } from "./json-file.mts";
 
 // `id` is a route's [\w-]+ match or a run's own uuid, so it never leaves the folder. Every run is read through
-// migrate() (app/migrate.mts), so each one the server hands out has the current shape; it is not written back.
+// migrate() (app/migrate.mts), so each one the server hands out has the current shape; it is not written back. A run
+// saved before DIAGNOSTICS_SOUND_SINCE comes without its diagnostics, whose numbers no longer match what the page shows.
 class NotARun extends Error {}
 function runOf(raw: unknown): SavedRun {
   const m = migrate("runs", raw);
   if (m.fromVersion === null) throw new NotARun("it is not a saved run");
-  return m.doc as SavedRun;
+  const run = m.doc as SavedRun;
+  if ((run.solverVersion ?? 0) < DIAGNOSTICS_SOUND_SINCE && run.result?.diagnostics) {
+    const { diagnostics: _old, ...result } = run.result;
+    return { ...run, result };
+  }
+  return run;
 }
 export function createRunsStore(dir: string) {
   const fileOf = (id: string): string => join(dir, `${id}.json`);

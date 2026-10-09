@@ -5,7 +5,7 @@
 // Built as DOM nodes, never an HTML string (Phase 7 security review, Area 2, Important 1): a scan file
 // is attacker-controlled text, and a pasted "here's my suit" scan once turned into persistent
 // HTML/CSS injection inside the app window through this builder.
-import { totalsOf, resistSkillBonus, PROP_FULL, SLOTS_IN_GROUP, RESIST_META } from "../vault-lib.mts";
+import { totalsOf, resistMinimum, paperdollResist, RESIST_SKILL_KEY, PROP_FULL, SLOTS_IN_GROUP, RESIST_META } from "../vault-lib.mts";
 import type { ExtrasMap, OptItem, ResistCap } from "../vault-lib.mts";
 import { state } from "./store.mts";
 import { el, itemTip, label, slotLabel } from "./dom.mts";
@@ -202,13 +202,13 @@ function withExtras(name: string, before: SheetAssignment): (set: SheetAssignmen
   };
 }
 export interface ResistFigure { key: string; label: string; cls: string; cap: number; raw: number; value: number }
-// A character's paperdoll resists in one suit: gear totals plus the Resisting Spells bonus, capped per
-// resist (raw keeps the uncapped sum for the "cap +N" badge). The roster and the sheet both read these.
+// A character's paperdoll resists in one suit: gear totals capped per resist and held at the Resisting Spells
+// minimum (raw keeps the uncapped sum for the "cap +N" badge). The roster and the sheet both read these.
 export function resistFigures(name: string, set: SheetAssignment): ResistFigure[] {
   const { resistCap } = capsFor(name);
   const t = totalsOf(withExtras(name, set)(set));
-  const rsb = resistSkillBonus(state.inv!.characters[name]?.skills);
-  return RESISTS.map(([key, lbl, cls]) => { const cap = resistCap(key), raw = (t[key] || 0) + rsb; return { key, label: lbl, cls, cap, raw, value: Math.min(cap, raw) }; });
+  const min = resistMinimum(state.inv!.characters[name]?.skills, t[RESIST_SKILL_KEY]);
+  return RESISTS.map(([key, lbl, cls]) => { const cap = resistCap(key), raw = t[key] || 0; return { key, label: lbl, cls, cap, raw, value: paperdollResist(raw, cap, min) }; });
 }
 // The character's worn set keyed by serial — the one-suit sheet's `before`.
 export function wornSet(name: string): SheetAssignment {
@@ -245,15 +245,16 @@ export function sheetParts(name: string | null, before: SheetAssignment, after: 
   const a: Record<string, number> = { ...gear };
   for (const [k, v] of Object.entries(bf)) a[k] = (a[k] || 0) + v;
   const d = (k: string): number => (a[k] || 0) - (b[k] || 0);
-  const rsb = resistSkillBonus(c?.skills);
+  // each suit's own Resisting Spells bonus counts toward its minimum
+  const minB = resistMinimum(c?.skills, b[RESIST_SKILL_KEY]), min = resistMinimum(c?.skills, a[RESIST_SKILL_KEY]);
   // the after number's colour is never the only signal: the arrow and both numbers say it too
   const dirCls = (n: number): string => (!diff || n === 0 ? "" : n > 0 ? "up" : "down");
   const mv = (bv: number | string, av: number | string, suffix = ""): string => (diff ? moveText(bv as number, av as number, suffix) : `${av}${suffix}`);
 
   // KPI row: five resists, then attributes and pools
   const resistTiles = opts.statsOnly ? [] : RESISTS.map(([k, lbl, cls]) => {
-    const cap = resistCap(k), rawB = (b[k] || 0) + rsb, rawA = (a[k] || 0) + rsb;
-    const vb = Math.min(cap, rawB), va = Math.min(cap, rawA), full = atCap(va, cap), over = capBadgeText(rawA, cap);
+    const cap = resistCap(k), rawB = b[k] || 0, rawA = a[k] || 0;
+    const vb = paperdollResist(rawB, cap, minB), va = paperdollResist(rawA, cap, min), full = atCap(va, cap), over = capBadgeText(rawA, cap);
     return box("div", { class: `resist kpi tint tint-${cls}${full ? " at-cap" : ""}` },
       txt(lbl, `t-sm resist-name res-${cls}`),
       box("span", { class: "kpi-value" }, vb === va || !diff ? null : txt(`${vb} →`, "muted"), txt(va, `t-2xl ${dirCls(va - vb)}`.trim()), txt(`/ ${cap}`, "muted"), over ? badge(over, "ok") : null),
@@ -342,7 +343,11 @@ export function sheetParts(name: string | null, before: SheetAssignment, after: 
     : message({ tone: "info", text: `Skills weren't in this scan. Rescan ${name} in game to record them.` });
   const raceNote = race !== "human" ? ` (${race[0]!.toUpperCase()}${race.slice(1)} racial caps may raise this for some resists)` : "";
   const moved = RESISTS.filter(([k]) => override(k)).map(([k, lbl]) => `${lbl} at ${override(k)!.cap} (the shard's is ${override(k)!.shard})`);
-  const note = (opts.statsOnly && name ? "" : name ? `Resists include the Resisting Spells bonus (+${rsb}) and are capped at ${capsFor(name).resistCap("physResist")}${raceNote}.` : "Item totals only: with no character there are no attributes, pools, skills or Resisting Spells bonus.") +
+  // the resists the minimum holds up in the suit shown: "Fire 44, Cold 44: the Resisting Spells minimum."
+  const lifted = min == null ? [] : RESISTS.filter(([k]) => paperdollResist(a[k] || 0, resistCap(k), min) > Math.min(a[k] || 0, resistCap(k))).map(([, lbl]) => `${lbl} ${min}`);
+  // said only when the minimum holds a resist up
+  const held = lifted.length ? `, and Resisting Spells keeps each at ${min} or more` : "";
+  const note = (opts.statsOnly && name ? "" : name ? `Resists are capped at ${capsFor(name).resistCap("physResist")}${raceNote}${held}.${lifted.length ? ` ${lifted.join(", ")}: the Resisting Spells minimum.` : ""}` : "Item totals only: with no character there are no attributes, pools, skills or Resisting Spells minimum.") +
     (moved.length ? ` This build caps ${moved.join(", ")}.` : "") +
     (!diff ? "" : " Hits, Stamina and Mana after = the current max plus the change in STR/2, DEX, INT and the HP, Stamina and Mana Increase properties (an estimate).");
   const props = el("section", { class: "card", "aria-label": "Properties" },

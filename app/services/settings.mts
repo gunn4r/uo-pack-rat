@@ -1,7 +1,7 @@
 // settings.mts — the settings this run uses and the shard's rules: settings.json as saved, with the two startup fallbacks laid over it, and the rules that settings.json names, handed to vault-lib.
 import { loadRules, DEFAULT_SHARD } from "../rules.mts";
 import { retentionOf } from "../retention.mts";
-import { setRules } from "../vault-lib.mts";
+import { rulesUpgradeNote, setRules } from "../vault-lib.mts";
 import type { RulesV1 } from "../schema/types.d.mts";
 import type { SettingsDoc } from "../store/settings.mts";
 import { short } from "../guards.mts";
@@ -60,6 +60,8 @@ export function createSettingsService({ store, rulesDir, isKnownAdapter, warn }:
   // vault-lib is one module instance for the whole process (the server, organize, buffs, missing, the MCP tools…), and
   // it holds the shard's rules: hand them over here and again wherever currentRules changes (PUT /api/settings).
   setRules(currentRules);
+  const upgradeWarning = (rules: RulesV1): void => { const note = rulesUpgradeNote(rules); if (note) warn(note); };
+  upgradeWarning(currentRules);
 
   // Merges only the fields a request changed into what settings.json holds, and writes it.
   function save(changes: Partial<SettingsDoc>): void {
@@ -73,6 +75,7 @@ export function createSettingsService({ store, rulesDir, isKnownAdapter, warn }:
   function applyRules(rules: RulesV1, fallback: boolean): void {
     currentRules = rules;
     setRules(currentRules);
+    upgradeWarning(rules);
     rulesFallback = fallback;
     currentSettings = effectiveSettings();
   }

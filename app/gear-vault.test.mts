@@ -10,7 +10,7 @@ import { createHash } from "node:crypto";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 import {
-  parseTooltip, displayName, gameName, compareNames, classify, foldSnapshots, spellSchoolOf, buildPools, requirementReport, totalsOf, propertyKeys, bagLabel, capacityOf, NOT_BUILDER_KEYS, kindOf, groupByName, slayersOf, medableOf, weaponAllowed, settingsDiff, PROP_LABELS, LAYER_TO_SLOT, LAYER_ALIASES, effectiveProfile, resistSkillBonus, toOptItem, labelOf, builderKeys, migrateProfiles, templateFrom, TEMPLATE_KEYS, setRules, getRules, tagUnits, tagInfo,
+  parseTooltip, displayName, gameName, compareNames, classify, foldSnapshots, spellSchoolOf, buildPools, requirementReport, totalsOf, propertyKeys, bagLabel, capacityOf, NOT_BUILDER_KEYS, kindOf, groupByName, slayersOf, medableOf, weaponAllowed, settingsDiff, PROP_LABELS, LAYER_TO_SLOT, LAYER_ALIASES, effectiveProfile, resistMinimum, minResistAt, paperdollResist, toOptItem, labelOf, builderKeys, migrateProfiles, templateFrom, TEMPLATE_KEYS, setRules, getRules, tagUnits, tagInfo,
   WEAPON_SKILLS, WEAPON_EXCLUDES, migrateWeaponSetting, excludeWeaponsError, weaponSkillsOf, weaponHasFlags, weaponMustHaveError, BOOLEAN_FLAGS,
   shardResistCap, resistCapsFor, resistCapsError, profileResistCaps, RESIST_CAP_LIMITS,
 } from "./vault-lib.mts";
@@ -1191,27 +1191,55 @@ test("[fast] template drift: settingsDiff between a template and a profile ignor
   assert.ok(drift.some((x) => x.startsWith("unlocked ")));
 });
 
-test("[fast] effectiveProfile: resist floors and caps are paperdoll values, less the Resisting Spells bonus; an Elf's energy cap is 75 (uoalive rules)", () => {
-  const e = effectiveProfile({ floors: { physResist: 70, energyResist: 75, hci: 40 }, softFloors: ["hci"], weights: { hci: 1 }, race: "elf" }, { skills: { "Resisting Spells": { value: 41.5 } } } as never);
-  assert.equal(e.resistBonus, 16);
-  assert.equal(e.caps.physResist, 54); assert.equal(e.caps.energyResist, 59);
-  assert.equal(e.floors.physResist, 54); assert.equal(e.floors.energyResist, 59); assert.equal(e.floors.hci, 40);
+test("[fast] effectiveProfile: resist floors and caps are paperdoll values, unshifted by Resisting Spells, which sets each resist's minimum; an Elf's energy cap is 75 (uoalive rules)", () => {
+  const e = effectiveProfile({ floors: { physResist: 70, energyResist: 75, hci: 40 }, softFloors: ["hci"], weights: { hci: 1 }, race: "elf" }, { skills: { "Resisting Spells": { value: 100 } } } as never);
+  assert.equal(e.resistMinimum, 40);
+  assert.deepEqual(e.mins, { physResist: 40, fireResist: 40, coldResist: 40, poisonResist: 40, energyResist: 40 });
+  assert.equal(e.caps.physResist, 70); assert.equal(e.caps.energyResist, 75);
+  assert.equal(e.floors.physResist, 70); assert.equal(e.floors.energyResist, 75); assert.equal(e.floors.hci, 40);
   assert.deepEqual(e.hardFloors.sort(), ["energyResist", "physResist"]);
   const h = effectiveProfile({ floors: { energyResist: 75 } }, null);
   assert.equal(h.caps.energyResist, 70); assert.equal(h.floors.energyResist, 70, "a human's energy floor is clamped to the 70 cap");
-  assert.equal(resistSkillBonus({ "Resisting Spells": { value: 120 } }), 44);
-  assert.equal(resistSkillBonus({ "Resisting Spells": { value: 100 } }), 40);
-  assert.equal(resistSkillBonus({ "Resisting Spells": { value: 50 } }), 20);
+  assert.equal(h.resistMinimum, null, "no character, no minimum");
+  assert.ok(!("mins" in h));
   assert.ok(settingsDiff({ race: "human" }, { race: "elf", excludeSkills: ["necromancy"] }).includes("race human → elf"));
 });
 
+// Issue #261: Resisting Spells is a minimum under each resist (ServUO PlayerMobile.GetMinResistance), not a bonus on
+// top of gear. The wiki's table agrees with the formula everywhere but 44.5, where it says 5 and the formula gives 3.
+test("[fast] the Resisting Spells minimum: the ServUO formula against the shard wiki's table", () => {
+  const at = (v: number): number | null => resistMinimum({ "Resisting Spells": { value: v } });
+  for (const [v, m] of [[40, 0], [55, 10], [70, 20], [85, 30], [100, 40], [110, 42], [120, 44]] as const) assert.equal(at(v), m, `skill ${v}`);
+  assert.equal(at(44.5), 3, "(445 − 400) / 15, integer division; the wiki's table says 5");
+  assert.equal(at(39.9), null, "below 40 nothing holds a resist up, not even at 0");
+  assert.equal(at(0), null);
+  assert.equal(resistMinimum(undefined), null);
+  assert.equal(at(50), 6);
+  assert.equal(at(52.3), 8, "a value in tenths: 523, not 522.99…");
+  assert.equal(minResistAt(104.9), 40); assert.equal(minResistAt(105), 41);
+  // paperdoll = max(min(total, cap), minimum)
+  assert.equal(paperdollResist(30, 70, 40), 40, "the minimum wins over gear 30");
+  assert.equal(paperdollResist(45, 70, 40), 45, "gear 45 wins over the minimum");
+  assert.equal(paperdollResist(80, 70, 40), 70, "capped");
+  assert.equal(paperdollResist(-15, 70, 0), 0, "a negative total held at 0 from skill 40");
+  assert.equal(paperdollResist(-15, 70, null), -15);
+  assert.equal(paperdollResist(50, 30, 40), 40, "a cap under the minimum: the minimum");
+  // the scan from the issue: Resisting Spells 50 (a minimum of 6), worn items 56 / 57 / 51 / 68 / 63, and the paperdoll the same
+  const items = [56, 57, 51, 68, 63];
+  assert.deepEqual(items.map((t) => paperdollResist(t, 70, at(50))), items);
+  // a requirement at or under the minimum is met with no gear on that resist
+  const [row] = requirementReport({ fireResist: 0 }, { floors: { fireResist: 40 }, mins: { fireResist: 40 } });
+  assert.equal(row!.met, true);
+  assert.equal(requirementReport({ fireResist: 39 }, { floors: { fireResist: 41 }, mins: { fireResist: 40 } })[0]!.met, false);
+});
+
 test("[fast] resist cap overrides: effectiveProfile values a resist up to the player's cap, paperdoll terms, and a floor counts up to it", () => {
-  const skills = { skills: { "Resisting Spells": { value: 41.5 } } } as never;   // +16
+  const skills = { skills: { "Resisting Spells": { value: 41.5 } } } as never;   // a minimum of 1
   const e = effectiveProfile({ floors: { fireResist: 90, coldResist: 90 }, resistCaps: { fireResist: 95 } }, skills);
-  assert.equal(e.caps.fireResist, 79, "95 on the paperdoll less the Resisting Spells bonus");
-  assert.equal(e.caps.coldResist, 54, "an untouched resist keeps the shard's 70");
-  assert.equal(e.floors.fireResist, 74, "a Fire floor of 90 is no longer clamped to 70");
-  assert.equal(e.floors.coldResist, 54, "Cold's floor still is");
+  assert.equal(e.caps.fireResist, 95, "95 on the paperdoll");
+  assert.equal(e.caps.coldResist, 70, "an untouched resist keeps the shard's 70");
+  assert.equal(e.floors.fireResist, 90, "a Fire floor of 90 is no longer clamped to 70");
+  assert.equal(e.floors.coldResist, 70, "Cold's floor still is");
   assert.deepEqual(e.resistCapOverrides, { fireResist: { cap: 95, shard: 70 } });
   assert.deepEqual(profileResistCaps(e).fireResist, { cap: 95, shard: 70 });
   assert.deepEqual(profileResistCaps(e).coldResist, { cap: 70, shard: 70 });
@@ -1249,14 +1277,19 @@ test("[fast] resist cap overrides: resistCapsError holds the five resist keys to
   assert.deepEqual(settingsDiff({ resistCaps: {} }, {}), [], "no overrides on either side is no change");
 });
 
-test("[fast] getRules()/setRules() and resistSkillBonus() are shard-swappable: generic-osi has no flat Resisting Spells bonus", () => {
+test("[fast] getRules()/setRules() and resistMinimum() are shard-swappable: a rules file without resistMinimum gives none", () => {
   const uoalive = getRules();
   try {
     assert.throws(() => { setRules(null as unknown as RulesV1); getRules(); }, /rules not loaded/);
     const genericOsi = JSON.parse(readFileSync(join(HERE, "rules", "generic-osi.json"), "utf8")) as RulesV1;
     setRules(genericOsi);
-    assert.equal(resistSkillBonus({ "Resisting Spells": { value: 120 } }), 0);
+    assert.equal(resistMinimum({ "Resisting Spells": { value: 120 } }), 44, "generic-osi has the stock minimum");
     assert.ok(!("massive" in tagUnits()));
+    const { resistMinimum: _none, ...noMinimum } = genericOsi;
+    setRules(noMinimum);
+    assert.equal(resistMinimum({ "Resisting Spells": { value: 120 } }), null);
+    assert.ok(!("mins" in effectiveProfile({}, { skills: { "Resisting Spells": { value: 120 } } } as never)));
+    setRules(genericOsi);
     const eGeneric = effectiveProfile({ race: "elf", floors: { energyResist: 75 } }, null);
     assert.equal(eGeneric.caps.energyResist, 75, "raceCaps.elf.energyResist is the same 75 on generic-osi");
   } finally {

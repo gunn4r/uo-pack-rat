@@ -98,14 +98,15 @@ test("[fast] buffs: Magic Reflection by the shard wiki: Phys −(20 − Inscript
   assert.equal(buffText("magicReflection", { Inscription: 0 }, null, {}), "Phys −20 · Fire, Cold, Poison, Energy +10 · Phys cap −5");
 });
 
-test("[fast] buffs: Protection lowers Resisting Spells, and so the free resists it gives on UO Alive", () => {
-  // Resisting Spells 100 gives +40; 35 less (Inscription 0) is 65, +26: every resist 14 lower, Phys 15 more on top
-  const r = applyBuffs({ physResist: 70, fireResist: 70 }, CAPS, ["protection"], { Inscription: 0, "Resisting Spells": 100 }, null);
-  assert.equal(r.totals.fireResist, 56);
-  assert.equal(r.totals.physResist, 70 - 15 - 14);
-  assert.equal(r.totals.coldResist, -14);
-  // Inscription 100 takes 5 off the loss: Resisting Spells 70, +28
-  assert.equal(applyBuffs({ fireResist: 70 }, CAPS, ["protection"], { Inscription: 100, "Resisting Spells": 100 }, null).totals.fireResist, 58);
+test("[fast] buffs: Protection lowers Resisting Spells, and so the minimum it holds each resist at", () => {
+  // Resisting Spells 100 holds every resist at 40; 35 less (Inscription 0) is 65, a minimum of 16. Gear over it is untouched.
+  const r = applyBuffs({ physResist: 70, fireResist: 70 }, CAPS, ["protection"], { Inscription: 0, "Resisting Spells": 100 }, null, {}, 100);
+  assert.equal(r.totals.fireResist, 70);
+  assert.equal(r.totals.physResist, 70 - 15);
+  assert.deepEqual([r.totals.coldResist, r.minimum, r.lifted], [16, 16, ["coldResist", "poisonResist", "energyResist"]], "nothing worn: the lower minimum");
+  assert.deepEqual(applyBuffs({}, CAPS, [], { "Resisting Spells": 100 }, null, {}, 100).totals.coldResist, 40, "without Protection, the character's own");
+  // Inscription 100 takes 5 off the loss: Resisting Spells 70, a minimum of 20
+  assert.equal(applyBuffs({}, CAPS, ["protection"], { Inscription: 100, "Resisting Spells": 100 }, null, {}, 100).totals.fireResist, 20);
   // FC −2 after the cap: a mage at the FC 2 cap casts at FC 0, and FC 3 is still 0 (min(cap − 2, fc − 2))
   for (const fc of [2, 3]) {
     const p = applyBuffs({ fc }, CAPS, ["protection"], {}, null);
@@ -394,7 +395,7 @@ test("[fast] buffs: a planned buff's in-cap share comes off the cap and the floo
   assert.deepEqual([p.caps.hci, p.caps.di], [35, 90]);
   assert.equal(p.floors.hci, undefined, "no floor is invented for a key the profile has none on");
   assert.deepEqual(p.weights, base.weights);
-  assert.deepEqual(p.buffs, { on: ["divineFury"], skills: plan([], { Chivalry: 105 }).skills, stats: null, who: {}, caps: base.caps, floors: base.floors }, "the profile carries the plan, and the caps and floors before it");
+  assert.deepEqual(p.buffs, { on: ["divineFury"], skills: plan([], { Chivalry: 105 }).skills, stats: null, who: {}, caps: base.caps, floors: base.floors, minimum: null }, "the profile carries the plan, and the caps and floors before it");
   assert.deepEqual(profileResistCaps(p), profileResistCaps(base), "a result is shown against the caps before the buffs");
   // a share past the cap: never below 0
   const big = plannedProfile({ floors: { ssi: 5 } }, null, plan(["playingTheOdds"]));   // SSI +30
@@ -421,13 +422,13 @@ test("[fast] buffs: a cap change lands before the share is taken off, in applyBu
   assert.deepEqual([sf.caps.coldResist, sf.floors.coldResist], [65, 65], "cap 75, share +10: gear needs 65 of 65");
 });
 
-test("[fast] buffs: with a character, the Resisting Spells bonus and the shares both come off; Protection lowers that bonus", () => {
-  const ch = { skills: { "Resisting Spells": { value: 100 } } } as unknown as Character;   // +40 on uoalive
+test("[fast] buffs: with a character, the shares come off the caps, floors and minimum; Protection lowers the minimum", () => {
+  const ch = { skills: { "Resisting Spells": { value: 100 } } } as unknown as Character;   // a minimum of 40 on uoalive
   const values = buffSkillValues({ "Resisting Spells": { value: 100 } }, {}).values;
   const p = plannedProfile(PROFILE, ch, { on: ["protection"], skills: { ...values, Inscription: 0 }, stats: null, who: {}, worn: {} });
-  // Resisting Spells 100 → 65: its bonus 40 → 26, so every resist −14, and Phys −15 more
-  assert.deepEqual([p.caps.physResist, p.floors.physResist, p.caps.fireResist, p.floors.fireResist], [59, 59, 44, 34]);
-  assert.equal(p.resistBonus, 40);
+  // Resisting Spells 100 → 65: its minimum 40 → 16; Phys −15 more on gear, so its minimum is 31 in item terms
+  assert.deepEqual([p.caps.physResist, p.floors.physResist, p.caps.fireResist, p.floors.fireResist], [85, 85, 70, 60]);
+  assert.deepEqual([p.mins!.physResist, p.mins!.fireResist, p.resistMinimum], [31, 16, 40]);
 });
 
 test("[fast] buffs: what a buff adds past the cap never shapes the plan, so Enemy of One changes nothing", () => {

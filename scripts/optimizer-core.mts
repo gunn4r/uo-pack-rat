@@ -57,6 +57,8 @@ interface OptProfile {
   floorBonus?: number;
   floorPartial?: number;
   hardFloors?: string[] | undefined;    // floors that act as requirements: their bonus is HARD_FLOOR_BONUS, so no mix of other gains can buy a miss
+  // `mins[p]`: a value the property never falls below (a resist's Resisting Spells minimum): it scores weights[p] × max(min, min(total, cap)), and a floor at or under it is met by every suit, so it is dropped.
+  mins?: Record<string, number> | undefined;
   // SSI scored by swing step (app/swing.mts stepTable): with a positive SSI weight, SSI is worth weights.ssi × the largest `credit` among the points the suit reaches (ssi total >= ssi and stamPool total >= stam; 0 when it reaches none) in place of weights.ssi × min(ssi, cap). SSI floors still read the plain total.
   ssiSteps?: Array<{ ssi: number; stam: number; credit: number }> | undefined;
 }
@@ -133,6 +135,7 @@ interface OptSpace {
   index: Record<string, number>;
   w: number[];
   cap: number[];
+  min: number[];            // OptProfile.mins, -Infinity where there is none
   floor: number[];
   floorBonusArr: number[];  // per-dimension bonus (floorBonus, or HARD_FLOOR_BONUS for hard floors)
   floorBonus: number;
@@ -238,9 +241,11 @@ function optBuildSpace(keys: string[], profile: OptProfile): OptSpace {
   const index: Record<string, number> = {};
   const w: number[] = [];
   const cap: number[] = [];
+  const min: number[] = [];
   const floor: number[] = [];
   const zero: number[] = [];
   const caps = profile.caps || {};
+  const mins = profile.mins || {};
   const floors = profile.floors || {};
   const weights = profile.weights || {};
   const hard: Record<string, boolean> = {};
@@ -256,7 +261,8 @@ function optBuildSpace(keys: string[], profile: OptProfile): OptSpace {
     index[k] = i;
     w.push(typeof weights[k] === "number" ? weights[k] : 0);
     cap.push(typeof caps[k] === "number" ? caps[k] : Infinity);
-    floor.push(typeof floors[k] === "number" ? floors[k] : 0);
+    min.push(typeof mins[k] === "number" ? mins[k] : -Infinity);
+    floor.push(typeof floors[k] === "number" && !(floors[k] <= min[i]!) ? floors[k] : 0);
     floorBonusArr.push(hard[k] ? HARD_FLOOR_BONUS : baseBonus);
     zero.push(0);
   }
@@ -265,6 +271,7 @@ function optBuildSpace(keys: string[], profile: OptProfile): OptSpace {
     index: index,
     w: w,
     cap: cap,
+    min: min,
     floor: floor,
     floorBonusArr: floorBonusArr,
     floorBonus: baseBonus,
@@ -303,14 +310,15 @@ function optVec(it: OptItem | null, space: OptSpace): number[] {
 }
 
 // Score a totals VECTOR. Over-cap points are worth exactly zero — that is the whole reason
-// this is a set-level problem.
+// this is a set-level problem. A total under its min counts as the min.
 function optScoreVector(totals: number[], space: OptSpace): number {
   space.evals++;
   let s = 0;
   for (let i = 0; i < totals.length; i++) {
     const t = totals[i]!;
-    const c = space.cap[i]!;
-    s += i === space.stepSsi ? space.w[i]! * optStepCredit(space, t, totals[space.stepStam]!) : space.w[i]! * (t < c ? t : c);
+    const c = space.cap[i]!, m = space.min[i]!;
+    const v = t < c ? t : c;
+    s += i === space.stepSsi ? space.w[i]! * optStepCredit(space, t, totals[space.stepStam]!) : space.w[i]! * (v < m ? m : v);
     const f = space.floor[i]!;
     if (f > 0) {
       const fb = space.floorBonusArr[i]!;
@@ -382,6 +390,7 @@ function optGradientProfile(profile: OptProfile): OptProfile {
     floorBonus: typeof profile.floorBonus === "number" ? profile.floorBonus : 1000,
     floorPartial: 1,
     hardFloors: profile.hardFloors,
+    mins: profile.mins,
     ssiSteps: profile.ssiSteps
   };
 }
@@ -689,14 +698,17 @@ function optBranchAndBound(slots: string[], cands: Record<string, (OptItem | nul
     for (let d = 0; d < dims; d++) if (concave[d] && space.w[d]! > 0 && v[d]! > 0) out.push(d, v[d]!);
     return out;
   }));
-  const capped = function (d: number, t: number): number { const c = space.cap[d]!; return space.w[d]! * (t < c ? t : c); };
+  const capped = function (d: number, t: number): number { const c = space.cap[d]!, m = space.min[d]!, v = t < c ? t : c; return space.w[d]! * (v < m ? m : v); };
+  // w·min(t, cap) without the min. With a min the term is not concave, but its gain from any t never passes this one's
+  // (under the min it is 0 until the total reaches it, then the same), which is concave: the sparse bound takes it.
+  const cappedRaw = function (d: number, t: number): number { const c = space.cap[d]!; return space.w[d]! * (t < c ? t : c); };
   const floorTerm = function (d: number, t: number): number {
     const f = space.floor[d]!;
     if (!(f > 0)) return 0;
     const fb = space.floorBonusArr[d]!;
     return t >= f ? fb : fb * space.floorPartial * (t > 0 ? t / f : 0);
   };
-  // The weight term's best over the reachable range [t + sufLo, t + sufHi] (w·min(t, cap) is monotone,
+  // The weight term's best over the reachable range [t + sufLo, t + sufHi] (w·max(min, min(t, cap)) is monotone,
   // so it is one of the two ends), and the floor term's best (always the top end).
   const weightBest = function (d: number, k: number): number {
     const t = totals[d]!;
@@ -724,7 +736,7 @@ function optBranchAndBound(slots: string[], cands: Record<string, (OptItem | nul
       for (let j = 0; j < sp.length; j++) {
         const e = sp[j]!;
         let gain = 0;
-        for (let q = 0; q < e.length; q += 2) { const d = e[q]!, t = totals[d]!; gain += capped(d, t + e[q + 1]!) - capped(d, t); }
+        for (let q = 0; q < e.length; q += 2) { const d = e[q]!, t = totals[d]!; gain += cappedRaw(d, t + e[q + 1]!) - cappedRaw(d, t); }
         if (gain > best) best = gain;
       }
       gainB += best;

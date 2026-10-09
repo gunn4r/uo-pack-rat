@@ -1,4 +1,4 @@
-// diagnostics.test.mts — `app/diagnostics.mts` and the per-slot bound it shares with the MIP (`app/mip.mts` propertyReach, issue #217): propertyReach gives the numbers the bound inside buildSuitMip used to compute (a copy of that code is the reference, over fuzzed pools with two-handers, required slots and negative values) and BuiltMip.reach is the same, plus one bound written out by hand (a duplicated serial, a worn piece missing from the pool, a required slot with only negative pieces); `floor_unreachable` for a floor one above the bound (hard: Lower and Make soft; soft: info, Lower only), none for a floor exactly at it (which keeps its hard row); best possible in the player's terms (Resisting Spells, a buff's share, the cap), a buff that lifts reach over a floor; `floors_conflict` on the floors the suit misses, on the heuristic path ("not found within the time limit") and on HiGHS's (a proven conflict); an empty inventory; a malformed profile (non-list `hardFloors`) read as far as it goes; a resist floor clipped to its cap saying so; and the page's side (`ui/builder-model.mts`): an action's words and edit, an action that no longer fits the panel (lowered by hand, removed, already soft) doing nothing, an alternative suit's card without `floors_conflict`, `withDiagnostics` leaving the field off when computing them fails, a saved run without `diagnostics` drawn from `unreachableFloors`, and Set weight (its words, and doing nothing once the weight changed or was removed since the build); and the weight scale: `typicalRange` (registry, cap, Resisting Spells, override, pools, skill bonuses), `weight_dominates` on a melee main's suit (luck at weight 3, suggested 0.8) measured against the OTHER weights (two properties can flag, one can't), quiet on a balanced profile, zero and negative weights, each threshold and the thin-suit guard alone, the suggested weight's rounding, the archer template on a weapon-only and a low-resist suit of the demo inventory (quiet, by the guard), and every shipped template on the demo characters' full suits (quiet); and swing (PR 3): `swing_linear` with Lock for the weapon's hand when the suit's weapon is the worn one (else the sentence says to equip it; none without a weapon), `swing_next_step` within 10 SSI with its stamina half only when a band up reaches the step, quiet with steps on, too far, at the cap or with no swing, the page's side of both (the switch, Lock, a step's requirement that raises or adds, soft, where Lower never raises, Next step and the swing line), and a weight's share with SSI scored by step counting the step credit. All `[fast]`.
+// diagnostics.test.mts — `app/diagnostics.mts` and the per-slot bound it shares with the MIP (`app/mip.mts` propertyReach, issue #217): propertyReach gives the numbers the bound inside buildSuitMip used to compute (a copy of that code is the reference, over fuzzed pools with two-handers, required slots and negative values) and BuiltMip.reach is the same, plus one bound written out by hand (a duplicated serial, a worn piece missing from the pool, a required slot with only negative pieces); `floor_unreachable` for a floor one above the bound (hard: Lower and Make soft; soft: info, Lower only), none for a floor exactly at it (which keeps its hard row); best possible in the player's terms (the Resisting Spells minimum, a floor at it met by any suit, a buff's share, the cap), a buff that lifts reach over a floor; `floors_conflict` on the floors the suit misses, on the heuristic path ("not found within the time limit") and on HiGHS's (a proven conflict); an empty inventory; a malformed profile (non-list `hardFloors`) read as far as it goes; a resist floor clipped to its cap saying so; and the page's side (`ui/builder-model.mts`): an action's words and edit, an action that no longer fits the panel (lowered by hand, removed, already soft) doing nothing, an alternative suit's card without `floors_conflict`, `withDiagnostics` leaving the field off when computing them fails, a saved run without `diagnostics` drawn from `unreachableFloors`, and Set weight (its words, and doing nothing once the weight changed or was removed since the build); and the weight scale: `typicalRange` (registry, cap, override, pools, skill bonuses), `weight_dominates` on a melee main's suit (luck at weight 3, suggested 0.8) measured against the OTHER weights (two properties can flag, one can't), quiet on a balanced profile, zero and negative weights, each threshold and the thin-suit guard alone, the suggested weight's rounding, the archer template on a weapon-only and a low-resist suit of the demo inventory (quiet, by the guard), and every shipped template on the demo characters' full suits (quiet); and swing (PR 3): `swing_linear` with Lock for the weapon's hand when the suit's weapon is the worn one (else the sentence says to equip it; none without a weapon), `swing_next_step` within 10 SSI with its stamina half only when a band up reaches the step, quiet with steps on, too far, at the cap or with no swing, the page's side of both (the switch, Lock, a step's requirement that raises or adds, soft, where Lower never raises, Next step and the swing line), and a weight's share with SSI scored by step counting the step credit. All `[fast]`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { propertyReach, buildSuitMip, type BuiltMip } from "./mip.mts";
@@ -77,13 +77,16 @@ test("[fast] a floor one above the bound: floor_unreachable with the best possib
   assert.deepEqual(res, [hard]);
 });
 
-test("[fast] best possible is in the player's terms: the cap, the Resisting Spells bonus, a buff's share", () => {
+test("[fast] best possible is in the player's terms: the cap, the Resisting Spells minimum, a buff's share", () => {
   // the cap bounds it: a bound of 35 under a cap of 30
   assert.equal(preBuildDiagnostics({ pools: ssiPools, ...ssiSlots, profile: ssiProfile(40, { caps: { ssi: 30 } }) })[0]!.values!.best, 30);
-  // a resist: item floor 40 is a paperdoll floor of 50 with Resisting Spells' +10; the pool reaches 35, so 45 on the paperdoll
+  // a resist held at Resisting Spells' minimum of 40: the pool reaches 35, so the best is the minimum, 40, short of a floor of 50
   const res = { ring: [mk(1, "ring", { physResist: 20 })], neck: [mk(2, "neck", { physResist: 15 })] };
-  const [phys] = preBuildDiagnostics({ pools: res, ...ssiSlots, profile: { floors: { physResist: 40 }, caps: { physResist: 60 }, hardFloors: ["physResist"], resistBonus: 10 } });
-  assert.deepEqual(phys!.values, { floor: 50, best: 45 });
+  const resist = (floor: number): DiagnosticsProfile => ({ floors: { physResist: floor }, caps: { physResist: 70 }, hardFloors: ["physResist"], mins: { physResist: 40 } });
+  const [phys] = preBuildDiagnostics({ pools: res, ...ssiSlots, profile: resist(50) });
+  assert.deepEqual(phys!.values, { floor: 50, best: 40 });
+  assert.deepEqual(preBuildDiagnostics({ pools: res, ...ssiSlots, profile: resist(40) }), [], "a floor at the minimum is met by any suit");
+  assert.deepEqual(resultDiagnostics({ pools: res, ...ssiSlots, profile: resist(40), result: { totals: { after: { physResist: 0 } } } }), []);
   // Divine Fury's +10 SSI: the player's floor of 60 is 50 from gear; the pool's 35 is 45 with the buff
   const [ssi] = preBuildDiagnostics({ pools: ssiPools, ...ssiSlots, profile: ssiProfile(50, { caps: { ssi: 50 }, buffs: { floors: { ssi: 60 } } }) });
   assert.deepEqual([ssi!.values, ssi!.message], [{ floor: 60, best: 45 }, "Swing speed increase 60 can't be reached with your inventory (best possible: 45)."]);
@@ -189,10 +192,10 @@ test("[fast] a malformed profile is read as far as it goes, and a resist floor a
   const odd = { floors: { ssi: 36 }, caps: { ssi: 60 }, hardFloors: 5 as unknown as string[] };
   assert.deepEqual(preBuildDiagnostics({ pools: ssiPools, ...ssiSlots, profile: odd }).map((d) => d.level), ["info"]);
   assert.deepEqual(resultDiagnostics({ pools: ssiPools, ...ssiSlots, profile: { ...odd, hardFloors: {} as unknown as string[] }, result: { totals: { after: "x" as unknown as Record<string, number> } } }).map((d) => d.code), ["floor_unreachable"]);
-  // a Physical floor of 75 clipped to the cap: item floor 60 under an item cap of 60 with Resisting Spells' +10, so the paperdoll's 70
+  // a Physical floor of 75 clipped to the cap of 70
   const res = { ring: [mk(1, "ring", { physResist: 20 })] };
-  const [phys] = preBuildDiagnostics({ pools: res, ...ssiSlots, profile: { floors: { physResist: 60 }, caps: { physResist: 60 }, hardFloors: ["physResist"], resistBonus: 10 } });
-  assert.equal(phys!.message, "Physical resist 70 (its cap) can't be reached with your inventory (best possible: 30).");
+  const [phys] = preBuildDiagnostics({ pools: res, ...ssiSlots, profile: { floors: { physResist: 70 }, caps: { physResist: 70 }, hardFloors: ["physResist"] } });
+  assert.equal(phys!.message, "Physical resist 70 (its cap) can't be reached with your inventory (best possible: 20).");
 });
 
 test("[fast] propertyReach's candidate rule against a bound written out: a serial listed twice counts once, and a worn piece missing from the pool is a candidate", () => {
@@ -205,8 +208,7 @@ test("[fast] propertyReach's candidate rule against a bound written out: a seria
 // ---- the weight scale (weight_dominates)
 
 test("[fast] typicalRange: the registry's typical, else the build's cap in the player's terms, else 15 for a skill bonus, else null", () => {
-  // a Resisting Spells bonus of 20 leaves an item-total resist cap of 50, which is 70 on the paperdoll
-  const caps = playerCaps({ caps: { physResist: 50, dci: 45, fc: 2, dexBonus: 70, ssi: 0 }, resistBonus: 20 });
+  const caps = playerCaps({ caps: { physResist: 70, dci: 45, fc: 2, dexBonus: 70, ssi: 0 } });
   assert.equal(typicalRange("physResist", caps), 70);
   assert.equal(typicalRange("dci", caps), 45);
   assert.equal(typicalRange("fc", caps), 2);
@@ -217,23 +219,23 @@ test("[fast] typicalRange: the registry's typical, else the build's cap in the p
   assert.equal(typicalRange("ssi", caps), null, "a cap of 0 has no span");
   assert.equal(typicalRange("castingFocus", caps), null, "no cap in this build and no typical");
   // a resist cap override, and caps before the buffs rather than after
-  assert.equal(typicalRange("fireResist", playerCaps({ caps: { fireResist: 0 }, resistBonus: 20, resistCapOverrides: { fireResist: { cap: 95, shard: 70 } } })), 95);
+  assert.equal(typicalRange("fireResist", playerCaps({ caps: { fireResist: 0 }, resistCapOverrides: { fireResist: { cap: 95, shard: 70 } } })), 95);
   assert.equal(typicalRange("dci", playerCaps({ caps: { dci: 30 }, buffs: { caps: { dci: 45 } } })), 45);
 });
 
-// A melee main: Resisting Spells +20 (item resist caps 50), luck weight 3, the totals of a suit like the one found. `full` is a pool that reaches no more than the suit has, so the thin-suit guard passes.
+// A melee main: Resisting Spells 100 (a minimum of 40), luck weight 3, the totals of a suit like the one found. `full` is a pool that reaches no more than the suit has, so the thin-suit guard passes.
 const meleeWeights = { physResist: 6, fireResist: 6, coldResist: 6, poisonResist: 6, energyResist: 6, dci: 10, hci: 10, ssi: 8, di: 6, hpRegen: 4, dexBonus: 4, strBonus: 3, hpi: 3, stamRegen: 3, stamInc: 2, lmc: 1, luck: 3, tagPenalty: -25 };
-const meleeCaps = { physResist: 50, fireResist: 50, coldResist: 50, poisonResist: 50, energyResist: 50, hci: 45, dci: 45, ssi: 60, di: 100, lmc: 40, hpRegen: 18, stamRegen: 24, hpi: 25 };
-const meleeAfter: Record<string, number> = { physResist: 45, fireResist: 45, coldResist: 50, poisonResist: 50, energyResist: 50, dci: 47, hci: 45, ssi: 45, di: 100, hpRegen: 10, dexBonus: 14, strBonus: 10, hpi: 10, stamRegen: 6, stamInc: 1, lmc: 5, luck: 655, tagPenalty: 3 };
-const meleeMain = (weights: Record<string, number> = meleeWeights): DiagnosticsProfile => ({ weights, caps: meleeCaps, resistBonus: 20 });
+const meleeCaps = { physResist: 70, fireResist: 70, coldResist: 70, poisonResist: 70, energyResist: 70, hci: 45, dci: 45, ssi: 60, di: 100, lmc: 40, hpRegen: 18, stamRegen: 24, hpi: 25 };
+const meleeAfter: Record<string, number> = { physResist: 65, fireResist: 65, coldResist: 70, poisonResist: 70, energyResist: 70, dci: 47, hci: 45, ssi: 45, di: 100, hpRegen: 10, dexBonus: 14, strBonus: 10, hpi: 10, stamRegen: 6, stamInc: 1, lmc: 5, luck: 655, tagPenalty: 3 };
+const meleeMain = (weights: Record<string, number> = meleeWeights): DiagnosticsProfile => ({ weights, caps: meleeCaps, mins: { physResist: 40, fireResist: 40, coldResist: 40, poisonResist: 40, energyResist: 40 } });
 const full = (after: Record<string, number>): Record<string, { max: number }> => Object.fromEntries(Object.entries(after).map(([k, v]) => [k, { max: v }]));
 
 test("[fast] weight_dominates: luck at weight 3 on a melee main's suit, and nothing else; Set weight to the others' median, 0.8", () => {
   const d = weightDiagnostics(meleeMain(), meleeAfter, full(meleeAfter));
   assert.deepEqual(d.map((x) => [x.code, x.level, x.property, x.actions]), [["weight_dominates", "warn", "luck", [{ kind: "setWeight", property: "luck", value: 0.8 }]]]);
   // the others' worths: resists 6 × 70 = 420 (five of them), DCI and HCI 450, SSI 480, DI 600 ... median 420
-  assert.deepEqual(d[0]!.values, { weight: 3, typical: 500, share: 36, ratio: 3.6, median: 420, suggested: 0.8 });
-  assert.equal(d[0]!.message, "Luck makes up 36% of this suit's score: at weight 3, 500 Luck is worth as much as 3.6 times the median of your other weights. Try 0.8.");
+  assert.deepEqual(d[0]!.values, { weight: 3, typical: 500, share: 33, ratio: 3.6, median: 420, suggested: 0.8 });
+  assert.equal(d[0]!.message, "Luck makes up 33% of this suit's score: at weight 3, 500 Luck is worth as much as 3.6 times the median of your other weights. Try 0.8.");
   // the result's list carries it, with the pool's per-slot bound as the reach
   const pools = { ring: [mk(1, "ring", meleeAfter)] }, slots = { slots: ["ring"], optionalSlots: ["ring"] };
   assert.deepEqual(resultDiagnostics({ pools, ...slots, profile: meleeMain(), result: { totals: { after: meleeAfter } } }).map((x) => x.code), ["weight_dominates"]);
@@ -269,10 +271,12 @@ test("[fast] weight_dominates needs both thresholds, and a suit that isn't thin"
   assert.deepEqual(weightDiagnostics(meleeMain({ ...meleeWeights, luck: 2 }), { ...meleeAfter, luck: 2000 }, full({ ...meleeAfter, luck: 2000 })), []);
   // exactly 3 times the median counts: weight 2.52 is worth 1,260
   assert.equal(weightDiagnostics(meleeMain({ ...meleeWeights, luck: 2.52 }), meleeAfter, r)[0]!.values!.ratio, 3);
-  // a suit of luck alone, from a pool that reaches the melee main's whole suit: it scores 37% of what the pool could give, so it is thin and quiet; from a pool that reaches only that suit, luck is flagged
-  const luckOnly = { luck: 655 };
-  assert.deepEqual(weightDiagnostics(meleeMain(), luckOnly, r), []);
-  assert.equal(weightDiagnostics(meleeMain(), luckOnly, full(luckOnly))[0]!.property, "luck");
+  // a suit of luck alone, from a pool that reaches the melee main's whole suit: with no Resisting Spells minimum it scores 37% of what the pool could give, so it is thin and quiet; from a pool that reaches only that suit, luck is flagged
+  const luckOnly = { luck: 655 }, noMinimum: DiagnosticsProfile = { weights: meleeWeights, caps: meleeCaps };
+  assert.deepEqual(weightDiagnostics(noMinimum, luckOnly, r), []);
+  assert.equal(weightDiagnostics(noMinimum, luckOnly, full(luckOnly))[0]!.property, "luck");
+  // the minimum's 40 on every resist counts toward the suit's score, so the same suit is no longer thin
+  assert.equal(weightDiagnostics(meleeMain(), luckOnly, r)[0]!.property, "luck");
 });
 
 test("[fast] the suggested weight is the others' median worth over the typical range, to one significant figure", () => {
