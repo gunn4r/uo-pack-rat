@@ -13,7 +13,7 @@ import type { RunBody, RunsListBody, RunSummary } from "../../runs-types.mts";
 import { sse } from "../../services/events.mts";
 import type { Job } from "../../services/jobs.mts";
 import { isManualSuit } from "../../store/ui-prefs.mts";
-import { GEAR_SLOTS, buildPools, missingFlags, toOptItem, type Character, type Inventory, type Item, type OptItem, type Profile, type RunBuffs } from "../../vault-lib.mts";
+import { GEAR_SLOTS, NOBODY, buildPools, missingFlags, toOptItem, type Character, type Inventory, type Item, type OptItem, type Profile, type RunBuffs } from "../../vault-lib.mts";
 import { characterProfile, poolFromSpec, specFromRunSettings } from "../../build-spec.mts";
 import { send, asObject, SSE_HEADERS } from "../respond.mts";
 import { NEXT, type Route } from "../router.mts";
@@ -170,19 +170,22 @@ export function routes(ctx: ServerContext): Route[] {
         // literal `strLimit: null` or throw when an array field's null hit code expecting an array).
         const s = Object.fromEntries(Object.entries(settings || {}).filter(([, v]) => v != null));
         const { inv } = await getInventory();
+        // No character (NOBODY) builds as a fill with no character does, from the pieces nobody wears, but is saved and
+        // reused under its own name like a character's build: `who` is the scanned character, `character` the run's key.
+        const who = character === NOBODY ? null : character as string | null;
         // buildPools would happily build pools from every other character's gear and save the run
         // under a name the inventory has never seen.
-        if (character && !Object.hasOwn(inv.characters, character)) return send(res, 404, { ok: false, error: `no scans for character ${JSON.stringify(character)}` });
+        if (who && !Object.hasOwn(inv.characters, who)) return send(res, 404, { ok: false, error: `no scans for character ${JSON.stringify(character)}` });
         // runSettingsError checked every field of `s` above. What it leaves out takes the build spec's default
         // (app/build-spec.mts poolFromSpec, as planBuild), as the page and build_suit do: a missing strLimit is the character's STR, else 125.
-        const pool = poolFromSpec(specFromRunSettings(s as RunSettings), character ? inv.characters[character] as Character : null);
+        const pool = poolFromSpec(specFromRunSettings(s as RunSettings), who ? inv.characters[who] as Character : null);
         const { allowOthersWorn, strLimit, excludeTags, excludeRoots, allowGargoyle, medOnly, excludeWeapons, ubwsAnyWeapon, excludeSkills, lockedSlots, weaponMustHave } = pool;
         const pins = (pinned || {}) as Record<string, number>;
         const badPin = manualSuitError(inv, pins, "pinned");
         if (badPin) return send(res, 400, { ok: false, error: badPin });
         // a fill keeps the placed pieces in place of the locked slots: they are the only slots that keep their piece
         const keep = fill ? Object.keys(pins) : lockedSlots;
-        const built = buildPools(inv, (character as string) || null, { allowOthersWorn: allowOthersWorn && !!character, strength: strLimit, excludeTags, excludeRoots, excludeGargoyle: !allowGargoyle, medOnly, excludeWeapons, ubwsAnyWeapon, excludeSkills, weaponMustHave, lockedSlots: fill ? [] : lockedSlots, ...(fill ? { pinned: pins } : {}) });
+        const built = buildPools(inv, who || null, { allowOthersWorn: allowOthersWorn && !!character, strength: strLimit, excludeTags, excludeRoots, excludeGargoyle: !allowGargoyle, medOnly, excludeWeapons, ubwsAnyWeapon, excludeSkills, weaponMustHave, lockedSlots: fill ? [] : lockedSlots, ...(fill ? { pinned: pins } : {}) });
         pools = built.pools; current = built.current; blocked = built.blocked;
         // the weapon properties the build requires: a locked weapon without them, or no weapon with them (app/diagnostics.mts)
         mustHave = weaponMustHave;
@@ -249,7 +252,8 @@ export function routes(ctx: ServerContext): Route[] {
       const badSettings = runSettingsError(settings, "settings");
       if (badSettings) return send(res, 400, { ok: false, error: badSettings });
       const { inv } = await getInventory();
-      if (!Object.hasOwn(inv.characters, character)) return send(res, 404, { ok: false, error: `no scans for character ${JSON.stringify(character)}` });
+      // No character's run (NOBODY) wears nothing
+      if (character !== NOBODY && !Object.hasOwn(inv.characters, character)) return send(res, 404, { ok: false, error: `no scans for character ${JSON.stringify(character)}` });
       const badSuit = manualSuitError(inv, suit, "suit");
       if (badSuit) return send(res, 400, { ok: false, error: badSuit });
       const pieces = Object.fromEntries(Object.entries(suit).map(([slot, serial]) => [slot, toOptItem(inv.items[serial]!)]));
@@ -265,7 +269,8 @@ export function routes(ctx: ServerContext): Route[] {
       // serial}, profile?, buffs?}. `profile` is a run's settings snapshot (floors, softFloors, weights, race,
       // resistCaps), checked like one; without it, the character's saved profile. `buffs` is a run's {on, skills}, else
       // the profile's; Enhance Potions and Spell Channeling are read from the suit.
-      const { character, suit, profile, buffs } = asObject(await readBody(req, { limit: 64e3 }));
+      const { character: asked, suit, profile, buffs } = asObject(await readBody(req, { limit: 64e3 }));
+      const character = asked === NOBODY ? null : asked;   // No character's pseudo name evaluates as null does
       if (character !== null && (!isBoundedString(character, 64) || !character)) return send(res, 400, { ok: false, error: "character must be a string, or null for No character" });
       if (!isManualSuit(suit)) return send(res, 400, { ok: false, error: "suit must map gear slots to serials" });
       const bad = runSettingsError(profile, "profile") || runSettingsError(buffs == null ? null : { buffs }, "body");

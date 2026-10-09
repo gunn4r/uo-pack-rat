@@ -1,14 +1,14 @@
 // ui-characters.test.mts — the Characters screen's pure logic (`app/ui/sheet.mts`'s formatters, `app/ui/roster.mts`).
 //
-// the Characters screen's pure logic: `app/ui/sheet.mts`'s formatters (the "cap +N" badge from a raw value past its cap, the at-cap meter, an attribute's "(own + gear)" split including a negative bonus, "now → after", a slot tile's two key numbers — nearest their shard cap, uncapped properties against 100, skill bonuses as "Magery +20", bookkeeping keys never shown and a power scroll's `psLevel` never offered on the Properties card — the tag tones, pluralising, and the durability watch: a piece low at 20% of its max or 10 points, never with a max of 0, at or past its max, or with no durability line, the count and its summary sentence) and `app/ui/roster.mts`'s search and sort (by name either way, by a resist's capped value or scan time with an unscanned character last, ties by name) and the sheet's scan summary (`sheetMeta`: the count of root containers the character's scans opened, backpack, bank and the containers inside others left out, its `#/containers/<Name>` link, and no count at none), and the worn-gear tiles holding every gear slot exactly once (issue #218). No DOM. All `[fast]`.
+// the Characters screen's pure logic: `app/ui/sheet.mts`'s formatters (the "cap +N" badge from a raw value past its cap, the at-cap meter, an attribute's "(own + gear)" split including a negative bonus, "now → after", a slot tile's two key numbers — nearest their shard cap, uncapped properties against 100, skill bonuses as "Magery +20", bookkeeping keys never shown and a power scroll's `psLevel` never offered on the Properties card — the tag tones, pluralising, and the durability watch: a piece low at 20% of its max or 10 points, never with a max of 0, at or past its max, or with no durability line, the count and its summary sentence) and `app/ui/roster.mts`'s search and sort (by name either way, by a resist's capped value or scan time with an unscanned character last, ties by name) and the sheet's scan summary (`sheetMeta`: the count of root containers the character's scans opened, backpack, bank and the containers inside others left out, its `#/containers/<Name>` link, and no count at none), and the worn-gear tiles holding every gear slot exactly once (issue #218), and the character list (`characterNames`: scanned, then profiled, once each, never No character's pseudo name, issue #12). No DOM. All `[fast]`.
 //
 // Lives in app/ rather than app/ui/ for the reason app/ui-render.test.mts gives.
 import "../scripts/localstorage-shim-for-tests.mts";   // a localStorage stub for the page modules below; none reads it at module scope today (app/ui/store.mts no longer does)
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { capOver, capBadgeText, atCap, bonusBreakdown, poolChanges, moveText, keyNumbers, tagTone, plural, lowDurability, lowDurabilityCount, lowDurabilitySummary, SHEET_CATALOGUE, DEFAULT_SHEET_PROPS, SLOT_GROUPS } from "./ui/sheet.mts";
-import { GEAR_SLOTS } from "./vault-lib.mts";
-import { rosterView, triple, sheetMeta, openedRoots, type RosterRow } from "./ui/roster.mts";
+import { GEAR_SLOTS, NOBODY } from "./vault-lib.mts";
+import { characterNames, rosterView, triple, sheetMeta, openedRoots, type RosterRow } from "./ui/roster.mts";
 
 test("[fast] sheet: the cap badge says how far the raw value is past the cap, and nothing at or under it", () => {
   assert.equal(capOver(72, 70), 2);
@@ -168,4 +168,9 @@ test("[fast] sheet: the worn-gear tiles list every gear slot exactly once", () =
   assert.deepEqual([...listed].sort(), [...GEAR_SLOTS].sort());
   assert.equal(new Set(listed).size, listed.length);
   assert.deepEqual(SLOT_GROUPS.map(([title]) => title), ["Armor", "Weapons and jewelry", "Clothing"]);
+});
+
+test("[fast] roster: the characters are the scanned ones then the profiled ones, once each, and No character's profile is not one (issue #12)", () => {
+  assert.deepEqual(characterNames({ Kestrel: {}, Dorran: {} }, { Dorran: {}, Ash: {}, [NOBODY]: {} }), ["Kestrel", "Dorran", "Ash"]);
+  assert.deepEqual(characterNames({ Kestrel: {}, _vault: {} }, undefined), ["Kestrel"]);
 });

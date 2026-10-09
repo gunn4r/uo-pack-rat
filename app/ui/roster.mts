@@ -1,8 +1,13 @@
 // ui/roster.mts — the Characters roster's rows, filter and sort, and the sheet's scan summary, kept free of the
 // DOM and of app.mts so app/ui-characters.test.mts can import them.
 import type { ResistFigure } from "./sheet.mts";
-import type { Container } from "../vault-lib.mts";
+import { isPseudoCharacter, type Container } from "../vault-lib.mts";
 import { plural } from "./inv-model.mts";
+
+// Every character the page knows of, scanned ones first, then ones with only a saved Suit Builder profile; a pseudo
+// name (the Suit Builder's No character's profile, issue #12) is none of them.
+export const characterNames = (scanned: Record<string, unknown>, profiled: Record<string, unknown> | undefined): string[] =>
+  [...new Set([...Object.keys(scanned), ...Object.keys(profiled || {})])].filter((n) => !isPseudoCharacter(n));
 
 export interface RosterRow {
   name: string;

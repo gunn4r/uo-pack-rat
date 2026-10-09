@@ -7,8 +7,8 @@
 // loaded (Node-only, by app/rules.mts) and handed in here with setRules() — this module never reads
 // a rules file itself, so it stays usable in the browser. getRules() throws until setRules() has run:
 // a forgotten call must be loud, not a silent wrong answer.
-import { isPseudoCharacter, parseStamp, V1_ADAPTER_VERSION } from "./scan-schema.mts";
-export { isPseudoCharacter };
+import { isPseudoCharacter, NOBODY, parseStamp, V1_ADAPTER_VERSION } from "./scan-schema.mts";
+export { isPseudoCharacter, NOBODY };
 import type { RulesV1, ScanV2, ScanV2Adapter } from "./schema/types.d.mts";
 
 // ---------------------------------------------------------------------------

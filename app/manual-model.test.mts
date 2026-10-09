@@ -1,6 +1,6 @@
 // manual-model.test.mts — `app/ui/manual-model.mts`, the Suit Builder Manual mode's pure logic (issue #12).
 //
-// `app/ui/manual-model.mts`, the Suit Builder Manual mode's pure logic (issue #12): the slot groups holding every slot the classifier knows (`GEAR_SLOTS`) exactly once and in its order, the undo history (undo, redo, 40 steps kept, a new change dropping the redo branch, a change that changes nothing not recorded) and the undo and redo keys per platform, a total past its cap shown at the cap with "+N wasted" and the line under each total, resists in paperdoll terms with the Resisting Spells bonus, a race's cap and the player's override, the picker's slot filter (the slot itself, so the two-handed slot lists two-handers and shields), the one-hand/two-hand rule checked against the optimizer's own `optIsValidAssignment` (it clears exactly what the optimizer would refuse), a saved suit read back (known slots, whole serials), the slots whose serial no longer resolves and a saved piece the classifier has since moved going to its slot now (`reslotted`, with the notice for one dropped because its slot is taken), `LAYER_TO_SLOT` against the paperdoll layer table (issue #202), and a picker row's delta (gains and losses apart, counted up to the cap, a change wholly past the cap muted, the profile's floor and weight properties after the strip's). All `[fast]`.
+// `app/ui/manual-model.mts`, the Suit Builder Manual mode's pure logic (issue #12): a No character run's settings (race human, No character's STR limit), the slot groups holding every slot the classifier knows (`GEAR_SLOTS`) exactly once and in its order, the undo history (undo, redo, 40 steps kept, a new change dropping the redo branch, a change that changes nothing not recorded) and the undo and redo keys per platform, a total past its cap shown at the cap with "+N wasted" and the line under each total, resists in paperdoll terms with the Resisting Spells bonus, a race's cap and the player's override, the picker's slot filter (the slot itself, so the two-handed slot lists two-handers and shields), the one-hand/two-hand rule checked against the optimizer's own `optIsValidAssignment` (it clears exactly what the optimizer would refuse), a saved suit read back (known slots, whole serials), the slots whose serial no longer resolves and a saved piece the classifier has since moved going to its slot now (`reslotted`, with the notice for one dropped because its slot is taken), `LAYER_TO_SLOT` against the paperdoll layer table (issue #202), and a picker row's delta (gains and losses apart, counted up to the cap, a change wholly past the cap muted, the profile's floor and weight properties after the strip's). All `[fast]`.
 //
 // Lives in app/ for the reason app/ui-render.test.mts gives.
 import { test } from "node:test";
@@ -10,7 +10,7 @@ import { setRules, effectiveProfile, profileResistCaps, GEAR_SLOTS, LAYER_TO_SLO
 import type { RulesV1 } from "./schema/types.d.mts";
 import { optIsValidAssignment } from "../scripts/optimizer-core.mts";
 import { paperdoll, paperdollCaps } from "./ui/builder-model.mts";
-import { MANUAL_GROUPS, emptyHistory, record, undoStep, redoStep, historyKey, historyKeyNames, HISTORY_MAX, capped, capLine, slotQuery, handConflict, handNote, savedSlots, missingSlots, reslotted, reslotNote, deltaKeys, slotDelta, STRIP_KEYS } from "./ui/manual-model.mts";
+import { MANUAL_GROUPS, emptyHistory, record, undoStep, redoStep, historyKey, historyKeyNames, HISTORY_MAX, capped, capLine, slotQuery, handConflict, handNote, savedSlots, missingSlots, reslotted, reslotNote, deltaKeys, slotDelta, STRIP_KEYS, noCharacterRunSettings } from "./ui/manual-model.mts";
 
 setRules(JSON.parse(readFileSync(new URL("./rules/uoalive.json", import.meta.url), "utf8")) as RulesV1);
 
@@ -177,4 +177,10 @@ test("[fast] manual model: the undo and redo keys per platform", () => {
   assert.equal(historyKey(k("z"), false), null);
   assert.deepEqual(historyKeyNames(true), { undo: "⌘Z", redo: "⇧⌘Z" });
   assert.deepEqual(historyKeyNames(false), { undo: "Ctrl+Z", redo: "Ctrl+Y" });
+});
+
+test("[fast] manual model: a No character run keeps the panel's requirements but builds on the shard's caps with No character's STR limit (issue #12)", () => {
+  const snap = { floors: { lrc: 100 }, weights: { luck: 1 }, race: "elf", strLimit: 140 };
+  assert.deepEqual(noCharacterRunSettings(snap, 125), { floors: { lrc: 100 }, weights: { luck: 1 }, race: "human", strLimit: 125 });
+  assert.equal(snap.race, "elf", "the panel's snapshot is left as it is");
 });

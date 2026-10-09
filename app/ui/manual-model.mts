@@ -11,6 +11,10 @@ const num = (n: number): string => n.toLocaleString("en-US", { maximumFractionDi
 
 // ---------------------------------------------------------------- the totals strip
 // The five resists, then the casting and combat totals, then the stats.
+// A Manual run's settings for No character: the panel's snapshot (its requirements and weights, as a fill plans with), on
+// the shard's caps (race human, as No character always builds) with No character's own STR limit, not the settings of the
+// character Automatic happens to show.
+export const noCharacterRunSettings = <T extends object>(snapshot: T, strLimit: number): T & { race: string; strLimit: number } => ({ ...snapshot, race: "human", strLimit });
 export const TOTAL_KEYS = ["lrc", "lmc", "fc", "fcr", "ssi", "dci", "hci", "di"];
 export const STAT_KEYS = ["strBonus", "dexBonus", "intBonus"];
 export const STRIP_KEYS = [...RESIST_KEYS, ...TOTAL_KEYS, ...STAT_KEYS];
