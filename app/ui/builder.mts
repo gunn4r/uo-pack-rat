@@ -5,7 +5,7 @@
 // is ui/runs.mts; they share the builder's state and call each other through ui/builder-session.mts. The panel is drawn
 // from the session's profile plus its Advanced knobs, so what a build sends, what a profile saves and what a run
 // snapshots are read from state, never from the DOM.
-import { PROP_LABELS, NOT_BUILDER_KEYS, playerCaps, GEAR_SLOTS, tagUnits, WEAPON_EXCLUDES, MELEE_SKILLS, WEAPON_MUST_HAVE, flagLabel, getRules, RESIST_KEYS, RESIST_CAP_LIMITS, resistCapsFor, templateFrom, settingsDiff, bagLabel, toOptItem, totalsOf, fcCapFor, CASTING_SCHOOLS } from "../vault-lib.mts";
+import { NOBODY, PROP_LABELS, NOT_BUILDER_KEYS, playerCaps, GEAR_SLOTS, tagUnits, WEAPON_EXCLUDES, MELEE_SKILLS, WEAPON_MUST_HAVE, flagLabel, getRules, RESIST_KEYS, RESIST_CAP_LIMITS, resistCapsFor, templateFrom, settingsDiff, bagLabel, toOptItem, totalsOf, fcCapFor, CASTING_SCHOOLS } from "../vault-lib.mts";
 import { heldWeapon, ssiShareOf, swingOf, type SwingResult } from "../swing.mts";
 import { BUILTIN_PREFIX, characterBuffs, characterEntry, characterProfile, findTemplate, planBuild, specFromProfile, templateLabel, templateRefs, templateSettings, templateSpecFrom, type PlannedBuild } from "../build-spec.mts";
 import type { FcCap, ResistCap, RunBuffs, Character } from "../vault-lib.mts";
@@ -25,7 +25,8 @@ import { setNavBusy } from "./shell.mts";
 import { putProfiles, setCharacterBuffs } from "./profiles.mts";
 import { session, commands, provide, readControls, type BuilderChange } from "./builder-session.mts";
 import { followJob, progressText, settingsCheck } from "./builder-parts.mts";
-import { nextSwingStep, speedText, swingLines, propName, weightsSummary, requirementsSummary, poolSummary, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistCapsSummary, resistMinimumText, pruneResistCaps, floorCapWarning, weaponsChipText, weaponMustHaveChipText, weaponName, toggleWeapon, weightWorth, fcCapText, templateBuffsLine, sourceTitle, type KnobField } from "./builder-model.mts";
+import { characterNames } from "./roster.mts";
+import { nextSwingStep, speedText, swingLines, propName, weightsSummary, requirementsSummary, poolSummary, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistCapsSummary, resistMinimumText, pruneResistCaps, floorCapWarning, weaponsChipText, weaponMustHaveChipText, weaponName, toggleWeapon, weightWorth, fcCapText, templateBuffsLine, sourceTitle, who, type KnobField } from "./builder-model.mts";
 import type { OptimizeResult, SavedRunLike, OptimizeStartApiResponse, OptimizeCancelApiResponse } from "./api-types.mts";
 
 // ---------------------------------------------------------------- panel state
@@ -45,11 +46,12 @@ const KNOB_IDS: Record<KnobField, string> = { strLimit: "b-str", restarts: "b-re
 // The builder's listeners, attached once for the page's life (app.mts's load()). Everything that depends on
 // the inventory is syncBuilderCharacters()'s job, which runs on every load and refresh.
 export function initBuilder(): void {
-  // Manual's "No character" is the empty value; a character is selected for both modes.
+  // A character is selected for both modes. "No character" (NOBODY) is Manual's in both, and Automatic's own when picked
+  // there; picked in Manual it leaves Automatic's character as it is.
   $<HTMLSelectElement>("#b-char")!.onchange = () => {
-    const v = $<HTMLSelectElement>("#b-char")!.value;
-    commands.setManualFor(v || null);
-    if (v && v !== session.character) selectCharacter(v);   // back from "No character" to the same one keeps its panel and result
+    const v = $<HTMLSelectElement>("#b-char")!.value, none = v === NOBODY;
+    commands.setManualFor(none ? null : v);
+    if (v !== session.character && (!none || session.mode !== "manual")) selectCharacter(v);   // back from Manual's "No character" to the same one keeps its panel and result
   };
   $<HTMLButtonElement>("#b-run")!.onclick = runBuild;
   $<HTMLButtonElement>("#b-save")!.onclick = saveProfile;
@@ -80,20 +82,21 @@ document.addEventListener("inventorychange", () => syncBuilderCharacters());
 // #/builder/<Name>: the route's character once the inventory is in; with no name, the route takes the selected one.
 registerScreen({ name: "builder", show: (r) => {
   if (!state.inv) return;
-  if (r.character && r.character !== session.character && state.inv.characters[r.character]) selectCharacter(r.character);
+  if (r.character && r.character !== session.character && (state.inv.characters[r.character] || (r.character === NOBODY && Object.keys(state.inv.characters).length > 0))) selectCharacter(r.character);
   else if (!r.character && session.character) history.replaceState(null, "", routeFor("builder"));
 } });
 export function syncBuilderCharacters(): void {
-  const names = [...new Set([...Object.keys(state.inv!.characters), ...Object.keys(state.profiles!.characters || {})])];
+  const names = characterNames(state.inv!.characters, state.profiles!.characters);
   const keep = session.character;
-  $<HTMLSelectElement>("#b-char")!.replaceChildren(...names.map((n) => el("option", { value: n }, n)));
-  if (keep && names.includes(keep) && session.profile) {
+  // No character first, once there is a character at all
+  $<HTMLSelectElement>("#b-char")!.replaceChildren(...(names.length ? [NOBODY, ...names] : []).map((n) => el("option", { value: n }, who(n))));
+  if (keep && (names.includes(keep) || (keep === NOBODY && names.length)) && session.profile) {
     $<HTMLSelectElement>("#b-char")!.value = keep;
     renderPanel();
     if (!session.result && !session.job) commands.renderCurrentSuit(keep);
   } else if (names.length) {
     const want = parseRoute().character;
-    selectCharacter(names.includes(want as string) ? want as string : names[0]!);
+    selectCharacter(names.includes(want as string) || want === NOBODY ? want as string : names[0]!);
   } else {
     session.character = null; session.profile = null;
     $<HTMLElement>("#b-panel-body")!.replaceChildren(el("p", { class: "muted b-no-char", id: "b-no-char" }, txt(NO_CHARACTER)));
@@ -141,6 +144,7 @@ export function selectCharacter(name: string): void {
 function renderPanel(): void {
   const p = session.profile;
   if (!p) return;
+  if (session.character === NOBODY) p.race = "human";   // No character has no race: the shard's caps (its Race control is hidden)
   p.floors ||= {}; p.softFloors ||= []; p.weights ||= {}; p.lockedSlots ||= []; p.excludeTags ||= []; p.excludeSkills ||= []; p.excludeRoots ||= [];
   $<HTMLElement>("#b-panel-body")!.replaceChildren(templateSection(), buffsSection(), requirementsSection(), capsSection(), weightsSection(), poolSection(), advancedSection());
   updateTemplateBadge();
@@ -192,7 +196,7 @@ function templateSection(): HTMLElement {
   str.classList.add("b-str");
   return box("section", { class: "b-sec b-sec-top", "aria-label": "Template" },
     box("div", { class: "field" }, el("label", { class: "label", for: "b-tpl" }, "Template"), box("div", { class: "b-tpl-row" }, tpl, el("span", { id: "b-tpl-state", class: "badge" }), menuBtn), templateInfo(tpl.value)),
-    box("div", { class: "b-race-row" }, box("div", { class: "field" }, el("span", { class: "label", id: "b-race-l" }, "Race"), race), str));
+    box("div", { class: "b-race-row" }, session.character === NOBODY ? null : box("div", { class: "field" }, el("span", { class: "label", id: "b-race-l" }, "Race"), race), str));
 }
 // A template's name as the picker shows it: a built-in's own name, without templateLabel's "(built-in)".
 const plainName = (ref: string): string => { const id = ref.slice(BUILTIN_PREFIX.length); return ref.startsWith(BUILTIN_PREFIX) ? state.builtinTemplates[id]?.name || id : ref; };
@@ -247,7 +251,9 @@ function applyTemplate(): void {
   if (!t) return;
   Object.assign(session.profile!, templateSettings(t), { template: ref });
   if (t.spec.buffs) {
-    setCharacterBuffs(session.character!, { on: t.spec.buffs.on, skills: { ...commands.buffEditsOf(session.character!), ...t.spec.buffs.skills } });
+    // No character's numbers are Manual's (ui-prefs), not its entry's
+    if (session.character === NOBODY) { setCharacterBuffs(NOBODY, { on: t.spec.buffs.on }); commands.editBuffInputs(NOBODY, t.spec.buffs.skills); }
+    else setCharacterBuffs(session.character!, { on: t.spec.buffs.on, skills: { ...commands.buffEditsOf(session.character!), ...t.spec.buffs.skills } });
     commands.templateBuffs(t.spec.buffs.on, `${name} buffs`);
   }
   clearCapDrafts();
@@ -319,7 +325,7 @@ function buffView(): BuffView {
   const name = session.character!, p = session.profile!, inputs = commands.buffInputsOf(name), plan = buffPlan(name, p.race, { on: buffsOn(), skills: {} });
   // what the character wears now, evaluated with the panel's buffs (app/evaluate.mts)
   const ev = evaluateSuit({ profile: p, character: state.inv!.characters[name] as Character | null, suit: Object.fromEntries((state.inv!.worn[name] || []).map((i) => [String(i.serial), i])), buffs: plan });
-  return { name, on: plan.on, values: plan.skills, planned: inputs.planned, edits: commands.buffEditsOf(name), stats: plan.stats, who: plan.who,
+  return { name: name === NOBODY ? null : name, on: plan.on, values: plan.skills, planned: inputs.planned, edits: commands.buffEditsOf(name), stats: plan.stats, who: plan.who,
     totals: ev.gearTotals, caps: ev.baseCaps, all: ev.buffs, replaced: note && "replaced" in note ? note.replaced : null,
     cleared: note && "cleared" in note ? note.cleared : null, count: true, open: !!picker };
 }
@@ -354,7 +360,7 @@ function openBuffPicker(anchor: HTMLElement): void {
   if (picker) { closePopover(); return; }
   const host = box("div", { class: "bf-pick" });
   picker = createBuffPicker(host, "abf", buffActions, () => "Counted as always on: the search plans around them. A bonus past the cap, like Enemy of One's damage, never changes the plan.");
-  popover(anchor, [host], { label: `Buffs for ${session.character}`, width: 480, beside: $<HTMLElement>("#b-panel")!, onClose: () => { picker = null; note = null; } });
+  popover(anchor, [host], { label: `Buffs for ${who(session.character!)}`, width: 480, beside: $<HTMLElement>("#b-panel")!, onClose: () => { picker = null; note = null; } });
   picker.paint(buffView());
   picker.focusSearch();
 }
@@ -737,7 +743,8 @@ function panelBuild(): PlannedBuild {
   const name = session.character!, p = readControls();
   const spec = { ...specFromProfile(p, { on: buffsOn(), skills: commands.buffEditsOf(name) }),
     search: { restarts: Number(knobs.restarts), exact: knobs.exact, budgetMs: 1000 * Number(knobs.budgetS), altCount: Number(knobs.altCount), altTol: Number(knobs.altTol) } };
-  return planBuild(spec, { character: (state.inv!.characters[name] as Character | undefined) ?? null, worn: state.inv!.worn[name] || [], race: p.race });
+  // No character builds on the shard's caps: human, whatever race a saved entry says
+  return planBuild(spec, { character: (state.inv!.characters[name] as Character | undefined) ?? null, worn: state.inv!.worn[name] || [], race: name === NOBODY ? "human" : p.race });
 }
 async function runBuild(): Promise<void> {
   if (session.job) return;
@@ -837,7 +844,7 @@ function finishJob(job: BuilderJob, r: JobFinishInfo): void {
   // Switched to another character while it ran: never draw this suit (or its Plan and Grab all) under that
   // character. It waits until its own character is selected again.
   const away = job.name !== session.character;
-  const notes = [away ? message({ tone: "info", text: `${job.name}'s build finished. Switch back to ${job.name} to see it.`, attrs: { class: "msg info parked-note" } }) : null,
+  const notes = [away ? message({ tone: "info", text: `${who(job.name)}'s build finished. Switch back to ${who(job.name)} to see it.`, attrs: { class: "msg info parked-note" } }) : null,
     job.warning ? message({ tone: "warn", text: job.warning }) : null].filter((x): x is HTMLDivElement => x !== null);
   const hadFocus = endJob(job, null);
   $<HTMLElement>("#b-msg")!.replaceChildren(...notes);
@@ -877,7 +884,7 @@ function runPanel(job: BuilderJob): BuilderJobUi {
   const stat = (lbl: string): [HTMLElement, HTMLSpanElement] => { const v = txt("—", "v"); return [box("div", { class: "b-stat" }, txt(lbl, "t-sm muted"), v), v]; };
   const [sBest, vBest] = stat("Best so far"), [sReq, vReq] = stat("Requirements met"), [sCand, vCand] = stat("Candidates"), [sTime, vTime] = stat("Elapsed"), [sBeat, vBeat] = stat("Solver");
   const root = box("section", { class: "card b-progress", "aria-label": "Build progress", tabindex: "-1" },
-    box("div", { class: "b-row" }, dot, el("h2", { class: "t-lg" }, `Building ${job.name}'s suit`), txt(job.exact ? `exact search · budget ${job.budgetMs / 1000} s` : "heuristic search", "muted"), el("span", { class: "spacer" }), cancel),
+    box("div", { class: "b-row" }, dot, el("h2", { class: "t-lg" }, job.name === NOBODY ? "Building a suit for No character" : `Building ${job.name}'s suit`), txt(job.exact ? `exact search · budget ${job.budgetMs / 1000} s` : "heuristic search", "muted"), el("span", { class: "spacer" }), cancel),
     step,
     box("div", { class: "b-prog" }, bar, box("div", { class: "b-prog-line" }, main, txt("·", "faint"), cand, el("span", { class: "spacer" }), txt("You can keep using Pack Rat while this runs", "muted"))),
     box("div", { class: "b-stats" }, sBest, sReq, sCand, sTime, sBeat), live);
@@ -929,6 +936,6 @@ async function saveProfile(): Promise<void> {
   const { race: _race, template: _template, spec: was, ...rest } = Object.hasOwn(chars, name) ? chars[name]! : { spec: undefined };
   chars[name] = { ...rest, ...entry, spec: { ...was, ...entry.spec } };
   const r = await putProfiles();
-  toast(r.ok ? `Profile for ${session.character} saved.` : r.error!, r.ok ? "good" : "bad");
+  toast(r.ok ? `Profile for ${who(name)} saved.` : r.error!, r.ok ? "good" : "bad");
 }
 provide({ renderPanel, clearCapDrafts, panelBuild, buffPlan, loadRunBuffs });

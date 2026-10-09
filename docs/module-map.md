@@ -10,7 +10,7 @@ Three files keep names from before the project became Pack Rat: `app/vault-serve
 
 | Module | Role | Owns |
 |---|---|---|
-| `app/scan-schema.mts` | The scan v2 schema inline (deep-equal to the JSON copy, a test checks), the v1→v2 upgrade (`app/migrate.mts`'s scan step, and the watcher's and a paste's read), scan ordering by time. Browser-safe. | `SCAN_V2_SCHEMA`, `TAZUO_V1_CAPS`, `validateScan`, `upgradeScan`, `parseStamp`, `isRealStamp`, `isPseudoCharacter` |
+| `app/scan-schema.mts` | The scan v2 schema inline (deep-equal to the JSON copy, a test checks), the v1→v2 upgrade (`app/migrate.mts`'s scan step, and the watcher's and a paste's read), scan ordering by time, the pseudo character names (a name starting with `_`, and `NOBODY`, the Suit Builder's No character, re-exported by `app/vault-lib.mts`). Browser-safe. | `SCAN_V2_SCHEMA`, `TAZUO_V1_CAPS`, `validateScan`, `upgradeScan`, `parseStamp`, `isRealStamp`, `isPseudoCharacter`, `NOBODY` |
 | `app/schema/scan.v2.schema.json` | The scan contract as JSON Schema (`docs/scan-schema.md`). | the scan shape |
 | `app/schema/validate.mts` | The hand-written JSON Schema subset validator every schema here is checked with. Browser-safe. | `validate`, the supported keyword subset |
 | `app/paste-scan.mts` | Finds, parses, upgrades and validates a pasted scan. Browser-safe, so the Import drawer's preview and `POST /api/import/paste` apply one rule. | `parsePastedScan`, `PASTE_BEGIN`/`PASTE_END`, `jsonErrorReason` |
@@ -79,7 +79,7 @@ Profiles, buffs, pools, solvers, saved runs and Manual. `docs/solver.md` describ
 | `app/ui/builder-result.mts` | The result beside the panel and the compare view. Provides the result commands. | — |
 | `app/ui/builder-manual.mts` | Manual mode: slot cards, picker, totals, undo, Fill the rest, Save as run; the builder's ui-prefs. Provides the Manual and buff-number commands. | `initManual`, `applyBuilderPrefs`, `savePrefs` |
 | `app/ui/builder-buffs.mts` | The buff chips, Manual's Buffs row and the buff picker. | `buffChip`, `createBuffPicker` |
-| `app/ui/builder-model.mts` | Pure: summaries, Advanced-field checks, resist-cap lines, badges, compare rows, run labels. | `KNOB_RANGES`, `compareModel`, `runAutoLabel` |
+| `app/ui/builder-model.mts` | Pure: summaries, Advanced-field checks, resist-cap lines, badges, compare rows, run labels, a character key in words (`who`: No character). | `KNOB_RANGES`, `compareModel`, `runAutoLabel`, `who` |
 | `app/ui/manual-model.mts` | Pure: Manual's totals keys, slot groups, hand rule, deltas, undo history, hand-offs. | `TOTAL_KEYS`, `STAT_KEYS`, `MANUAL_GROUPS`, `handConflict`, `slotDelta`, `fillableSlots` |
 | `app/ui/runs.mts` | The Saved runs drawer, and the settings snapshot a run is saved with. Provides the runs commands. | `applySettings`, `openRunsDrawer`, `loadRuns` |
 
@@ -302,7 +302,7 @@ The page is `app/index.html` plus `app/ui/`, compiled by `scripts/build-ui.mts` 
 | Module | Role | Owns |
 |---|---|---|
 | `app/ui/inv-model.mts` | The Inventory's query string, filter tokens, counts, row window and keyboard model. | `DEFAULT_COLS`, `ITEM_COLS`, `COL_GROUPS`, `queryParams`, `activeFilters` |
-| `app/ui/roster.mts` | The Characters roster's filter and sort, and the sheet's scan summary. | `rosterView`, `sheetMeta` |
+| `app/ui/roster.mts` | The Characters roster's filter and sort, the sheet's scan summary, and the page's character list (no pseudo names). | `rosterView`, `sheetMeta`, `characterNames` |
 | `app/ui/import-preview.mts` | The Import drawer's preview card as data. | `scanPreview` |
 
 Stylesheets (`app/ui/tokens.css`, `app/ui/britannia.css`, `app/ui/components.css`, `app/ui/styles.css`, `app/ui/shell.css` and one per screen) and the bundled fonts under `app/ui/fonts/` are served straight from source. CSS classes are global across every stylesheet. Icons are `app/assets/icon.png`, `app/assets/favicon.png` and `app/assets/logo-mark.png`; the installers' master is `build/icon.png`.

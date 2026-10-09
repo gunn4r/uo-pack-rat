@@ -136,7 +136,7 @@ test("[slow] refresh, Clear all, the virtual table and Forget keep the page's st
     // the builder back to the first character) shows up.
     await openTab(page, "builder");
     await page.waitForFunction(() => document.querySelector<HTMLSelectElement>("#b-char")?.value, { timeout: 10_000 });
-    const names = await page.locator("#b-char option").allInnerTexts();
+    const names = (await page.locator("#b-char option").allInnerTexts()).filter((n) => n !== "No character");
     await page.selectOption("#b-char", names[1]!);
     // The Weapons chip's choices, counted in its popover: wiring the panel twice would draw a second chip.
     const weaponChoices = async (): Promise<number> => {
@@ -261,7 +261,7 @@ test("[slow] a build finished for one character is never shown under another", a
     await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
     await openTab(page, "builder");
     await page.waitForFunction(() => document.querySelector<HTMLSelectElement>("#b-char")?.value, { timeout: 10_000 });
-    const [builtFor, other] = await page.locator("#b-char option").allInnerTexts() as [string, string];
+    const [builtFor, other] = (await page.locator("#b-char option").allInnerTexts()).filter((n) => n !== "No character") as [string, string];
     await page.selectOption("#b-char", builtFor);
     await page.click("#b-sec-adv .b-sec-head button");   // the time budget is under Advanced, collapsed by default
     await page.fill("#b-budget", "3");
@@ -634,7 +634,7 @@ test("[slow] a saved run or run list that lands after a character switch is not 
     await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
     await openTab(page, "builder");
     await page.waitForFunction(() => document.querySelector<HTMLSelectElement>("#b-char")?.value, { timeout: 10_000 });
-    const [builtFor, other] = await page.locator("#b-char option").allInnerTexts() as [string, string];
+    const [builtFor, other] = (await page.locator("#b-char option").allInnerTexts()).filter((n) => n !== "No character") as [string, string];
     await page.selectOption("#b-char", builtFor);
     await page.click("#b-sec-adv .b-sec-head button");   // the time budget is under Advanced, collapsed by default
     await page.fill("#b-budget", "3");

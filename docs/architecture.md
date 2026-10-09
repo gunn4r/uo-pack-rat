@@ -171,15 +171,15 @@ Every route lives in `app/http/routes/`, one module per area, each exporting `ro
 
 ### `app/http/routes/optimize.mts`
 
-- `POST /api/optimize` {pools,current,profile,opts} -> {id}, or {character,settings,profile,opts} to have the server build the pools itself (buildPools, per-slot lockedSlots/blocked handling — see the route below; with `pinned`, Manual's suit {slot: serial}, it fills only the empty slots, for a character or none, and is never saved as a run); either form's response carries poolSize/skipped/current/blocked/warning?
+- `POST /api/optimize` {pools,current,profile,opts} -> {id}, or {character,settings,profile,opts} to have the server build the pools itself (buildPools, per-slot lockedSlots/blocked handling — see the route below; with `pinned`, Manual's suit {slot: serial}, it fills only the empty slots, for a character or none, and is never saved as a run; `character: "_nobody"`, the Suit Builder's No character, builds from the pieces nobody wears like a fill with no character, but is saved and reused as a run under `_nobody`); either form's response carries poolSize/skipped/current/blocked/warning?
 - `GET /api/optimize/<id>/events` (SSE: hello, progress, done|failed|cancelled)
 - `POST /api/optimize/<id>/cancel`
 - `GET /api/optimize/<id>/status`
 - A POST /api/optimize whose inputs match a saved run that cannot be bettered returns {cached: true, run} at once.
-- `GET /api/runs?character=` (saved runs, newest first)
+- `GET /api/runs?character=` (saved runs, newest first; `?character=_nobody` lists No character's)
 - `GET|PUT {label}|DELETE /api/runs/<id>`
-- `POST /api/runs` {character, suit, settings, inventoryStamp} (save Manual's suit as a run, method "manual")
-- `POST /api/evaluate` {character (null: No character), suit, profile?, buffs?} (a hand-picked suit evaluated as Manual evaluates it, `app/evaluate.mts`: gear totals, effective totals with the buffs, caps, waste and requirements; `profile` is a run's settings snapshot, the character's saved profile without it)
+- `POST /api/runs` {character, suit, settings, inventoryStamp} (save Manual's suit as a run, method "manual"; `_nobody` saves No character's, with nothing worn)
+- `POST /api/evaluate` {character (null or `"_nobody"`: No character), suit, profile?, buffs?} (a hand-picked suit evaluated as Manual evaluates it, `app/evaluate.mts`: gear totals, effective totals with the buffs, caps, waste and requirements; `profile` is a run's settings snapshot, the character's saved profile without it)
 
 ### `app/http/routes/mcp.mts`
 
