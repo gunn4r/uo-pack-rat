@@ -80,6 +80,12 @@ export function rarityDetail(tb: TieBreakResult, total: number): string {
   const most = tb.rarity === "higher" ? "highest" : "lowest";
   return `${most[0]!.toUpperCase()}${most.slice(1)}-rarity pieces among equal suits · rarity total ${total.toLocaleString("en-US")}${tb.costProven ? "" : ` (the ${most} found, not proven)`}`;
 }
+// The Only containers chip's options (issue #12): the root containers, then any listed serial that is no longer one (gone from
+// the scans, or set by hand), so it can still be unchecked.
+export function withStoredRoots(options: Array<{ value: string; label: string }>, stored: readonly number[] = []): Array<{ value: string; label: string }> {
+  const gone = stored.filter((v) => !options.some((o) => o.value === String(v)));
+  return [...options, ...gone.map((v) => ({ value: String(v), label: `Unknown container 0x${v.toString(16).toUpperCase()} (not in the scans)` }))];
+}
 // "Own gear and unworn gear · no gargoyle-only · any weapon"
 export function poolSummary(p: PoolSettings): string {
   return [

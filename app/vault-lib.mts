@@ -1209,7 +1209,7 @@ export interface BuildPoolsOptions {
   strength?: number | undefined;
   excludeTags?: string[] | undefined;
   excludeRoots?: Array<number | string> | undefined;
-  onlyRoots?: number[] | undefined;        // issue #12: when it lists any, a piece in a container is a candidate only under one of these roots (worn pieces follow their own rule)
+  onlyRoots?: number[] | undefined;        // issue #12: when it lists any, an unworn piece is a candidate only under one of these roots (worn pieces follow their own rule)
   excludeGargoyle?: boolean | undefined;
   medOnly?: boolean | undefined;
   excludeWeapons?: string[] | undefined;   // weapon skills left out (weaponAllowed)
@@ -1254,7 +1254,9 @@ export function buildPools(inv: Inventory, character: string | null, opts: Build
     if (hasSkillBonus(it, excludeSkills)) { skipped.skill.push(it); continue; }
     if (it.strReq > strength) { skipped.str.push(it); continue; }
     if (it.tags.some((t) => excludeTags.includes(t))) { skipped.tags.push(it); continue; }
-    if (it.root != null && ((only.size && !only.has(+it.root)) || exRoots.has(+it.root))) { skipped.roots.push(it); continue; }
+    // with an Only containers list, an unworn piece in no container (carried by a trip with no backpack to put it in) is outside it
+    const outside = it.root == null ? only.size > 0 && !it.equippedBy : (only.size > 0 && !only.has(+it.root)) || exRoots.has(+it.root);
+    if (outside) { skipped.roots.push(it); continue; }
     // last, so `flagless` counts only weapons every other filter let through
     if (!weaponHasFlags(it, weaponMustHave)) { skipped.weapon.push(it); flagless++; continue; }
     // a piece with no properties (a tag penalty aside, as classify reads it) never beats an empty slot, so where a slot

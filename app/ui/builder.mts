@@ -26,7 +26,7 @@ import { putProfiles, setCharacterBuffs } from "./profiles.mts";
 import { session, commands, provide, readControls, type BuilderChange } from "./builder-session.mts";
 import { followJob, progressText, settingsCheck } from "./builder-parts.mts";
 import { characterNames } from "./roster.mts";
-import { nextSwingStep, speedText, swingLines, propName, weightsSummary, requirementsSummary, poolSummary, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistCapsSummary, resistMinimumText, pruneResistCaps, floorCapWarning, weaponsChipText, weaponMustHaveChipText, weaponName, toggleWeapon, weightWorth, fcCapText, rarityHelp, templateBuffsLine, sourceTitle, who, type KnobField } from "./builder-model.mts";
+import { nextSwingStep, speedText, swingLines, propName, weightsSummary, requirementsSummary, poolSummary, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistCapsSummary, resistMinimumText, pruneResistCaps, floorCapWarning, weaponsChipText, weaponMustHaveChipText, withStoredRoots, weaponName, toggleWeapon, weightWorth, fcCapText, rarityHelp, templateBuffsLine, sourceTitle, who, type KnobField } from "./builder-model.mts";
 import type { OptimizeResult, SavedRunLike, OptimizeStartApiResponse, OptimizeCancelApiResponse } from "./api-types.mts";
 
 // ---------------------------------------------------------------- panel state
@@ -597,7 +597,7 @@ function poolSection(): HTMLElement {
           () => [...new Set([...(state.facets?.gearSkills || []), ...p.excludeSkills!])].sort().map((sk) => ({ value: sk, label: sk[0]!.toUpperCase() + sk.slice(1) })), true),
         listChip("b-exroots", "Skip containers", () => p.excludeRoots!.map(String), (v) => { p.excludeRoots = v.map((x) => (Number.isFinite(Number(x)) ? Number(x) : x)); }, rootOptions, true),
         // issue #12: only pieces under these root containers (kept only when it lists any); Skip containers still applies
-        listChip("b-onlyroots", "Only containers", () => (p.onlyRoots || []).map(String), (v) => { if (v.length) p.onlyRoots = v.map(Number); else delete p.onlyRoots; }, rootOptions, true)),
+        listChip("b-onlyroots", "Only containers", () => (p.onlyRoots || []).map(String), (v) => { if (v.length) p.onlyRoots = v.map(Number); else delete p.onlyRoots; }, () => withStoredRoots(rootOptions(), p.onlyRoots), true)),
     ];
   } });
 }

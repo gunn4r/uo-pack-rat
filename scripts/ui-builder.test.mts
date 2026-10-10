@@ -714,7 +714,7 @@ test("[slow] the Only containers chip narrows the pool, says so in the summary, 
   try {
     await openBuilder(page);
     const who = await page.locator("#b-char").inputValue(), chip = page.locator("#b-onlyroots");
-    assert.equal(await chip.innerText(), "Only containers");
+    await page.waitForFunction(() => document.querySelector<HTMLElement>("#b-onlyroots")?.innerText === "Only containers");
     await chip.click();
     const values = await page.locator(".pop .b-checks input").evaluateAll((is) => is.map((i) => (i as HTMLInputElement).value));
     assert.equal(values.length, 2, "the two demo containers, as Skip containers offers them");

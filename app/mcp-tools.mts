@@ -114,9 +114,17 @@ async function planProfile(ctx: ToolContext, inv: InventoryDoc, name: string | n
     if (!t) throw new ToolError(`no template named ${JSON.stringify(args.template)}; the templates are ${templateRefs(profiles, builtins).join(", ") || "none"}`);
     Object.assign(p, templateSettings(t), { template: args.template });
   }
+  // Only containers (issue #12): a list of root containers replaces the profile's, an empty one clears it, none named keeps it
+  if (Array.isArray(args.onlyContainers)) {
+    for (const serial of args.onlyContainers as number[]) {
+      const c = inv.containers[serial];
+      if (c && c.parent == null) continue;
+      const root = c ? inv.containers[c.root] : undefined;
+      throw new ToolError(c ? `${hex(serial)} is a bag inside ${hex(c.root)}${root ? ` (${root.label || root.name || "a container"})` : ""}; onlyContainers takes root containers` : `${hex(serial)} is not a container in the scans; onlyContainers takes root containers`);
+    }
+    if (args.onlyContainers.length) p.onlyRoots = [...args.onlyContainers as number[]]; else delete p.onlyRoots;
+  }
   // a rarity preference: "any" clears the profile's (or template's), and none named keeps it
-  // Only containers (issue #12): a list replaces the profile's, an empty one clears it, none named keeps it
-  if (Array.isArray(args.onlyContainers)) { if (args.onlyContainers.length) p.onlyRoots = [...args.onlyContainers as number[]]; else delete p.onlyRoots; }
   if (args.rarity === "any") delete p.rarity;
   else if (args.rarity === "higher" || args.rarity === "lower") p.rarity = args.rarity;
   const saved = name ? characterBuffs(profiles, name) : { on: characterBuffs(profiles, NOBODY).on, skills: prefs.manualBuffSkills || {} };
