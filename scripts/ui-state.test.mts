@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
-import { fitWindow, openFacet, testEnv, noUpdateCheck } from "./electron-window.mts";
+import { fitWindow, openFacet, testEnv, noUpdateCheck, completeLines } from "./electron-window.mts";
 import type { ElectronApplication, Page } from "playwright";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -839,7 +839,7 @@ test("[slow] Highlight in game queues a highlight for a ground container, and is
     let lines: string[] = [];
     while (!lines.length && Date.now() < end) {
       await page.waitForTimeout(100);
-      try { lines = readFileSync(queue, "utf8").trim().split("\n").filter(Boolean); } catch { /* not written yet */ }
+      lines = completeLines(queue);
     }
     assert.equal(lines.length, 1, "one command queued");
     const cmd = JSON.parse(lines[0]!) as { action: string; serial: number; name: string; chain: number[]; pos: { x: number; y: number } | null };

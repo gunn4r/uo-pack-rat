@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
-import { fitWindow, openFacet, type RealSize, testEnv, noUpdateCheck } from "./electron-window.mts";
+import { fitWindow, openFacet, type RealSize, testEnv, noUpdateCheck, completeLines } from "./electron-window.mts";
 import type { ElectronApplication, Page } from "playwright";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -418,7 +418,7 @@ test("[slow] Run trip queues one trip; Stop writes the stop flag; a failed put l
     await page.waitForSelector("#org-run:not([disabled])", { timeout: 15_000 });
     await page.click("#org-run");
     const queue = join(bridgeDir, "queue.jsonl");
-    const lines = await until(() => (existsSync(queue) ? readFileSync(queue, "utf8").trim().split("\n") : []), (l) => l.length === 1, "one queued trip");
+    const lines = await until(() => completeLines(queue), (l) => l.length === 1, "one queued trip");
     const cmd = JSON.parse(lines[0]!) as { id: string; action: string; index: number; takes: { serial: number }[] };
     assert.deepEqual([cmd.action, cmd.index], ["trip", 1]);
     await page.waitForSelector("#org-stop");
@@ -469,7 +469,7 @@ test("[slow] a page reloaded mid-trip picks the trip back up: shown as running, 
     await page.waitForSelector("#org-run:not([disabled])", { timeout: 15_000 });
     await page.click("#org-run");
     const queue = join(bridgeDir, "queue.jsonl");
-    const [line] = await until(() => (existsSync(queue) ? readFileSync(queue, "utf8").trim().split("\n") : []), (l) => l.length === 1, "one queued trip");
+    const [line] = await until(() => completeLines(queue), (l) => l.length === 1, "one queued trip");
     const cmd = JSON.parse(line!) as { id: string };
     current = { id: cmd.id, action: "trip" };
     writeStatus();
