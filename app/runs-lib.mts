@@ -34,6 +34,7 @@ export interface RunKeyInput {
   profile?: unknown;
   opts?: RunOpts;
   weaponMustHave?: string[] | undefined;   // the weapon properties required (issue #214): keyed only when it lists any, so other keys are unchanged
+  onlyRoots?: number[] | undefined;        // the containers the pool is narrowed to (issue #12): keyed only when it lists any, likewise
 }
 // The version of the search code a saved run's answer came from. Bump it on any change to the MIP
 // model (app/mip.mts), the orchestration (app/exact-solver.mts) or the core's scoring and search
@@ -60,10 +61,11 @@ export const PROOF_SOUND_SINCE = 2;
 // with and their numbers) is left out: the caps and floors they shifted are what the solvers read, so buff sets that
 // plan alike (Enemy of One alone, or none; an edit to a number no buff on reads) share a run. The required weapon
 // properties are keyed too, though the pools usually show them: with both hands locked, or no weapon at all, the pools
-// match a build without them, and the warnings they raise would not.
-export function runKey({ pools = {}, current = {}, profile = {}, opts = {}, weaponMustHave }: RunKeyInput): string {
+// match a build without them, and the warnings they raise would not. Only containers is keyed for the same reason: two
+// lists can give the same pools and differ in the slots they leave empty.
+export function runKey({ pools = {}, current = {}, profile = {}, opts = {}, weaponMustHave, onlyRoots }: RunKeyInput): string {
   const { buffs: _planned, ...solved } = (profile || {}) as Record<string, unknown>;
-  return createHash("sha1").update(JSON.stringify({ solver: SOLVER_VERSION, pools, current, profile: solved, opts: stripOpts(opts), ...(weaponMustHave?.length ? { weaponMustHave } : {}) })).digest("hex");
+  return createHash("sha1").update(JSON.stringify({ solver: SOLVER_VERSION, pools, current, profile: solved, opts: stripOpts(opts), ...(weaponMustHave?.length ? { weaponMustHave } : {}), ...(onlyRoots?.length ? { onlyRoots } : {}) })).digest("hex");
 }
 
 // A saved run answers a new request when its inputs match and running again is not expected to do

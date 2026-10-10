@@ -10,7 +10,7 @@ import { NOBODY, setRules, resistCapsFor, playerCaps, settingsDiff } from "./vau
 import { buffSkillValues, runBuffs } from "./buffs.mts";
 import type { RulesV1 } from "./schema/types.d.mts";
 import {
-  propName, weightsSummary, requirementsSummary, poolSummary, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError,
+  propName, weightsSummary, requirementsSummary, poolSummary, withStoredRoots, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError,
   resistOutcome, locationCrumbs, otherChanges, afterChange, compareModel, hiddenRowsNote, toggleCompare, runAutoLabel, runBadges, plural, KNOB_RANGES,
   resistCapError, withResistCap, capNote, resistCapsSummary, resistMinimumText, capsLine, anyOverridden, effectiveFloor, floorCapWarning, pruneResistCaps,
   weaponsSummary, weaponsChipText, weaponMustHaveChipText, toggleWeapon, weaponName, withBuffs, pastCapBadges, runSettingsDiff, weightWorth, templateBuffsLine, sourceTitle, who, rarityHelp, rarityTotal, rarityDetail,
@@ -52,6 +52,9 @@ test("[fast] builder model: the candidate pool summary says what is in and out",
   assert.equal(poolSummary({}), "Own gear and unworn gear · no gargoyle-only · any weapon");
   assert.equal(poolSummary({ allowOthersWorn: true, allowGargoyle: true, medOnly: true, excludeWeapons: ["swordsmanship", "fencing", "mace fighting", "throwing"], lockedSlots: ["ring"], excludeTags: ["cursed"], excludeSkills: ["necromancy", "spirit speak"], excludeRoots: [1, 2] }),
     "Includes gear worn by others · gargoyle-only allowed · meditation-safe only · archery weapons only · 1 slot locked · no cursed · 2 skill bonuses forbidden · 2 containers skipped");
+  assert.deepEqual(withStoredRoots([{ value: "10", label: "Chest" }], [10, 0x4000abcd]), [{ value: "10", label: "Chest" }, { value: String(0x4000abcd), label: "Unknown container 0x4000ABCD (not in the scans)" }], "a listed serial that is no longer a root can still be unchecked");
+  assert.deepEqual(withStoredRoots([{ value: "10", label: "Chest" }]), [{ value: "10", label: "Chest" }]);
+  assert.equal(poolSummary({ onlyRoots: [1, 2], excludeRoots: [3] }), "Own gear and unworn gear · no gargoyle-only · any weapon · 2 containers only · 1 container skipped");
 });
 
 test("[fast] builder model: the Weapons chip and summary say the exclusions in words", () => {

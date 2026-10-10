@@ -1259,6 +1259,7 @@ export interface BuildPoolsOptions {
   strength?: number | undefined;
   excludeTags?: string[] | undefined;
   excludeRoots?: Array<number | string> | undefined;
+  onlyRoots?: number[] | undefined;        // issue #12: when it lists any, an unworn piece is a candidate only under one of these roots (worn pieces follow their own rule)
   excludeGargoyle?: boolean | undefined;
   medOnly?: boolean | undefined;
   excludeWeapons?: string[] | undefined;   // weapon skills left out (weaponAllowed)
@@ -1285,9 +1286,9 @@ export interface BuildPoolsResult {
 }
 // `character` null: nobody's suit (Manual's No character), so every worn piece is another character's.
 export function buildPools(inv: Inventory, character: string | null, opts: BuildPoolsOptions = {}): BuildPoolsResult {
-  const { allowOthersWorn = false, strength = Infinity, excludeTags = [], excludeRoots = [], excludeGargoyle = getRules().raceLock.gargoyleOnly, medOnly = false, excludeWeapons = [], ubwsAnyWeapon = true, excludeSkills = [], weaponMustHave = [], lockedSlots = [], pinned } = opts;
+  const { allowOthersWorn = false, strength = Infinity, excludeTags = [], excludeRoots = [], onlyRoots = [], excludeGargoyle = getRules().raceLock.gargoyleOnly, medOnly = false, excludeWeapons = [], ubwsAnyWeapon = true, excludeSkills = [], weaponMustHave = [], lockedSlots = [], pinned } = opts;
   const pools: Partial<Record<string, PooledOptItem[]>> = {}, current: Partial<Record<string, PooledOptItem>> = {}, skipped: SkippedLists = { str: [], tags: [], worn: [], roots: [], gargoyle: [], nonMed: [], weapon: [], skill: [] };
-  const exRoots = new Set(excludeRoots.map(Number));
+  const exRoots = new Set(excludeRoots.map(Number)), only = new Set(onlyRoots.map(Number));
   let flagless = 0;   // weapons the required properties left out (weaponMustHave)
   for (const it of Object.values(inv.items)) {
     if (!it.gear || !it.slot || !GEAR_SLOTS.includes(it.slot)) continue;
@@ -1303,7 +1304,9 @@ export function buildPools(inv: Inventory, character: string | null, opts: Build
     if (hasSkillBonus(it, excludeSkills)) { skipped.skill.push(it); continue; }
     if (it.strReq > strength) { skipped.str.push(it); continue; }
     if (it.tags.some((t) => excludeTags.includes(t))) { skipped.tags.push(it); continue; }
-    if (it.root != null && exRoots.has(+it.root)) { skipped.roots.push(it); continue; }
+    // with an Only containers list, an unworn piece in no container (carried by a trip with no backpack to put it in) is outside it
+    const outside = it.root == null ? only.size > 0 && !it.equippedBy : (only.size > 0 && !only.has(+it.root)) || exRoots.has(+it.root);
+    if (outside) { skipped.roots.push(it); continue; }
     // last, so `flagless` counts only weapons every other filter let through
     if (!weaponHasFlags(it, weaponMustHave)) { skipped.weapon.push(it); flagless++; continue; }
     // a piece with no properties (a tag penalty aside, as classify reads it) never beats an empty slot, so where a slot
@@ -1529,6 +1532,7 @@ export interface RunSettings {
   lockedSlots?: string[] | undefined;
   excludeTags?: string[] | undefined;
   excludeRoots?: Array<number | string> | undefined;
+  onlyRoots?: number[] | undefined;
   race?: string | undefined;
   excludeSkills?: string[] | undefined;
   allowGargoyle?: boolean | undefined;
@@ -1582,6 +1586,8 @@ export function settingsDiff(a: RunSettings = {}, b: RunSettings = {}): string[]
   if (tagOff.length) out.push(`allowing ${tagOff.join(", ")}`);
   const [rootOn, rootOff] = setDiff(a.excludeRoots, b.excludeRoots);
   if (rootOn.length || rootOff.length) out.push("skipped containers changed");
+  const [onlyOn, onlyOff] = setDiff(a.onlyRoots, b.onlyRoots);
+  if (onlyOn.length || onlyOff.length) out.push(b.onlyRoots?.length ? (a.onlyRoots?.length ? "only containers changed" : `only ${b.onlyRoots.length} container${b.onlyRoots.length === 1 ? "" : "s"}`) : "any container");
   if ((a.race || "human") !== (b.race || "human")) out.push(`race ${a.race || "human"} → ${b.race || "human"}`);
   const [skOn, skOff] = setDiff(a.excludeSkills, b.excludeSkills);
   if (skOn.length) out.push(`forbidding ${skOn.join(", ")} bonuses`);

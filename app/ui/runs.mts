@@ -24,6 +24,7 @@ export function applySettings(st: RunSettings): void {
   Object.assign(p, { floors: { ...(st.floors || {}) }, softFloors: [...(st.softFloors || [])], weights: { ...(st.weights || {}) }, lockedSlots: [...(st.lockedSlots || [])],
     excludeTags: [...(st.excludeTags || [])], excludeRoots: [...(st.excludeRoots || [])], strLimit: st.strLimit, allowGargoyle: !!st.allowGargoyle, medOnly: !!st.medOnly, excludeWeapons: [...(st.excludeWeapons || [])], ubwsAnyWeapon: st.ubwsAnyWeapon !== false, weaponMustHave: [...(st.weaponMustHave || [])],
     race: st.race || p.race || "human", excludeSkills: [...(st.excludeSkills || [])], allowOthersWorn: !!st.allowOthersWorn, resistCaps: { ...(st.resistCaps || {}) }, swingSteps: !!st.swingSteps, castingSchool: st.castingSchool || undefined, rarity: st.rarity || undefined });
+  if (st.onlyRoots?.length) p.onlyRoots = [...st.onlyRoots]; else delete p.onlyRoots;
   applyKnobs(st);
   commands.loadRunBuffs(savedBuffs(st));
   commands.clearCapDrafts();

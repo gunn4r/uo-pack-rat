@@ -1,6 +1,6 @@
 // server-builder.test.mts — HTTP tests of the Suit Builder: `POST /api/optimize`, the saved runs and `GET|PUT /api/profiles`.
 //
-// `POST /api/optimize`: one running job per client (a second `POST` supersedes the first) and none between callers with no client id, the events route's `?client=` check, the server-wide ceiling, a job that throws logging its stack under the ref the client sees, an exact build proven by HiGHS with the saved run's score, the by-character form building the client's pools, keeping the page's settings snapshot, treating null fields as absent and refusing a bad settings type, the time budget capping restarts, resist cap overrides, weapon exclusions and required weapon properties (the lock wins, an empty pool said), malformed pools, current, profile or opts refused, only known meta fields saved, a character with no scans a 404, and Manual's hand-offs (issue #12: `pinned` keeping the placed pieces, no run saved, and with no character only pieces nobody wears; No character's `_nobody` build from pieces nobody wears, saved, reused and listed under its name, others' worn gear on request, another pseudo name a 404, and its manual run); SSI scored by swing step through the real worker (issue #217: per point with the reason while the weapon is not fixed, scoring what steps off scores, and the result's swing once the one-handed slot is locked); the job lifecycle (`jobTimings`, a parked core: a build past the retention kept, one past its budget cancelled, closing mid-build logging no failure); `GET|PUT|DELETE /api/runs/<id>` (a label type-checked, a truncated run a 404 that can still be deleted) and `POST /api/runs` saving a manual run with its checks; `POST /api/evaluate` answering what `evaluateSuit` computes from the same fixtures (the saved profile, a given profile with Divine Fury, a run's settings bringing their buffs, No character) and its checks; `PUT /api/profiles` (413 by bytes, 400 naming the schema path) and a truncated `profiles.json` moved aside and reseeded. A rarity preference (issue #262): `POST /api/optimize` stamps tie costs on pooled and worn pieces in both forms (an unknown serial ranking 0), keys each preference apart from none, and refuses a bad `opts.tieBreak`.
+// `POST /api/optimize`: one running job per client (a second `POST` supersedes the first) and none between callers with no client id, the events route's `?client=` check, the server-wide ceiling, a job that throws logging its stack under the ref the client sees, an exact build proven by HiGHS with the saved run's score, the by-character form building the client's pools, keeping the page's settings snapshot, treating null fields as absent and refusing a bad settings type, the time budget capping restarts, resist cap overrides, weapon exclusions and required weapon properties (the lock wins, an empty pool said), malformed pools, current, profile or opts refused, only known meta fields saved, a character with no scans a 404, and Manual's hand-offs (issue #12: `pinned` keeping the placed pieces, no run saved, and with no character only pieces nobody wears; No character's `_nobody` build from pieces nobody wears, saved, reused and listed under its name, others' worn gear on request, another pseudo name a 404, and its manual run; Only containers, `settings.onlyRoots`: a bad list 400, the pool narrowed to the listed container, the slots it leaves with nothing from a container and a hard floor it puts out of reach said before the search, and a No character build saved with the list and never answering one without it); SSI scored by swing step through the real worker (issue #217: per point with the reason while the weapon is not fixed, scoring what steps off scores, and the result's swing once the one-handed slot is locked); the job lifecycle (`jobTimings`, a parked core: a build past the retention kept, one past its budget cancelled, closing mid-build logging no failure); `GET|PUT|DELETE /api/runs/<id>` (a label type-checked, a truncated run a 404 that can still be deleted) and `POST /api/runs` saving a manual run with its checks; `POST /api/evaluate` answering what `evaluateSuit` computes from the same fixtures (the saved profile, a given profile with Divine Fury, a run's settings bringing their buffs, No character) and its checks; `PUT /api/profiles` (413 by bytes, 400 naming the schema path) and a truncated `profiles.json` moved aside and reseeded. A rarity preference (issue #262): `POST /api/optimize` stamps tie costs on pooled and worn pieces in both forms (an unknown serial ranking 0), keys each preference apart from none, and refuses a bad `opts.tieBreak`.
 import { test, before, after, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, rmSync } from "node:fs";
@@ -1035,6 +1035,55 @@ test("[fast] /api/optimize for No character (_nobody): built from pieces nobody 
   const sj = asJson<{ run: { id: string; character: string; method: string; changes: number } }>(await saved.json());
   assert.equal(saved.status, 200, JSON.stringify(sj));
   assert.deepEqual([sj.run.character, sj.run.method, sj.run.changes], [NOBODY, "manual", 1]);
+});
+
+// Issue #12, Only containers: settings.onlyRoots narrows the pool to pieces under those root containers (worn pieces keep their own rule), is checked,
+// keyed and kept by the saved run, and says before the search which slots it leaves with nothing from a container and which hard floors it puts out of reach.
+test("[fast] /api/optimize with onlyRoots: the pool narrowed to the listed containers, a bad list 400, the empty slots and an unreachable floor said, the run keyed and saved with it", async () => {
+  const character = "Kestrel";
+  const profiles = asJson<ProfilesResponse>(await (await get("/api/profiles")).json());
+  const rules = asJson<RulesResponse>(await (await get("/api/rules")).json());
+  const inv = foldFixtures(join(HERE, "fixtures"));
+  const [kRoot, dRoot] = ["Kestrel", "Dorran"].map((who) => Object.values(inv.containers).find((c) => c.parent == null && c.scannedBy === who)!.serial) as [number, number];
+  const pooled = (r: ReturnType<typeof buildPools>): Item[] => Object.values(r.pools).flat().map((o) => inv.items[o!.serial]!);
+  // a property only Kestrel's own container offers: a hard floor on it is reachable from every container, and out of reach from Dorran's alone
+  const narrow = pooled(buildPools(inv, character, { onlyRoots: [dRoot], strength: 125 })), wide = pooled(buildPools(inv, character, { strength: 125 }));
+  const prop = Object.keys(Object.assign({}, ...wide.filter((it) => it.root === kRoot).map((it) => it.props))).find((k) => !narrow.some((it) => it.props[k]))!;
+  assert.ok(prop, "the fixtures have a property only Kestrel's container offers");
+  const tpl = firstTemplate(profiles), profile = { ...tpl, caps: rules.rules.caps, floors: { [prop]: 1 }, hardFloors: [prop] };
+  type Start = OptimizeJobResponse & { diagnostics: Array<{ code: string; property?: string; message: string }> };
+  const post = async (who: string, settings: Record<string, unknown>): Promise<{ status: number; body: Start & ErrorBody }> => {
+    const r = await fetch(srv.url + "/api/optimize", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ character: who, settings, profile, opts: { exact: false, restarts: 3 }, meta: { character: who, settings } }) });
+    return { status: r.status, body: asJson<Start & ErrorBody>(await r.json()) };
+  };
+  const bad = await post(character, { onlyRoots: ["bank"] });
+  assert.equal(bad.status, 400);
+  assert.match(bad.body.error, /settings\.onlyRoots must be a list of container serials$/);
+
+  const all = await post(character, { strLimit: 125 });
+  const only = await post(character, { strLimit: 125, onlyRoots: [dRoot] });
+  assert.equal(only.status, 200, JSON.stringify(only.body));
+  assert.equal(only.body.poolSize, narrow.length);
+  assert.ok(only.body.poolSize! < all.body.poolSize!, `${only.body.poolSize} < ${all.body.poolSize}`);
+  assert.ok(Number(only.body.skipped!.roots) > 0, "the other containers' pieces are counted as skipped");
+  assert.equal(all.body.diagnostics.find((d) => d.code === "floor_unreachable" && d.property === prop), undefined, "reachable from every container");
+  assert.ok(only.body.diagnostics.some((d) => d.code === "floor_unreachable" && d.property === prop), JSON.stringify(only.body.diagnostics));
+  assert.equal(all.body.diagnostics.find((d) => d.code === "only_containers_empty"), undefined);
+  const empty = only.body.diagnostics.find((d) => d.code === "only_containers_empty");
+  assert.match(empty?.message || "", /^Your Only containers hold nothing for .+, so the suit takes nothing from them there\.$/, JSON.stringify(only.body.diagnostics));
+  for (const id of [all.body.id, only.body.id]) await fetch(`${srv.url}/api/optimize/${id}/cancel`, { method: "POST" });
+
+  // No character: exactly the pieces nobody wears in the listed container; the finished build is saved with the list and never answers a build without it
+  const nobody = await post(NOBODY, { onlyRoots: [dRoot] });
+  assert.equal(nobody.body.poolSize, pooled(buildPools(inv, null, { onlyRoots: [dRoot], strength: 125 })).length);
+  const done = await pollJob(srv.url, nobody.body.id!, (s) => s.state === "done", 20000);
+  for (const it of Object.values(done.result!.best as Record<string, { serial: number } | null>)) if (it) assert.equal(inv.items[it.serial]!.root, dRoot);
+  const run = asJson<{ run: { settings: { onlyRoots?: number[] } } }>(await (await get(`/api/runs/${done.runId}`)).json()).run;
+  assert.deepEqual(run.settings.onlyRoots, [dRoot], "the saved run keeps the list");
+  assert.equal((await post(NOBODY, { onlyRoots: [dRoot] })).body.cached, true, "the same list is answered by the saved run");
+  const wider = await post(NOBODY, {});
+  assert.ok(!wider.body.cached, "a build without the list is not");
+  await fetch(`${srv.url}/api/optimize/${wider.body.id}/cancel`, { method: "POST" });
 });
 
 test("[fast] POST /api/runs saves Manual's suit as a manual run: its shape, its key and the checks (issue #12)", async () => {

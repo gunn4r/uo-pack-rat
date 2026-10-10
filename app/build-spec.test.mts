@@ -1,6 +1,6 @@
 // build-spec.test.mts — `app/build-spec.mts`, a build's intent as one document (issue #218, BuildSpec).
 //
-// `[fast]`: `app/build-spec.mts`: a full spec, a template's (no buffs) and one filled from nothing pass `buildSpecError`, and one refused field of each kind says where; the panel's flat profile goes to a spec and back unchanged; and `planBuild` equals the assemblies it replaced, kept in the test as they were written: the page's build (its profile, pool settings, search options and saved-run snapshot, ui/builder.mts and ui/runs.mts) and the MCP tools' `planProfile` (mcp-tools.mts), for the demo characters with and without buffs and edited numbers, No character, and a hand-picked suit planned as Manual plans it; with no character (issue #12) the shard's caps, no Resisting Spells minimum, no swing and the named school's FC cap; and a character's swing on the planned profile (raw DEX plus the buffs' DEX and stamina shares, the worn suit's stamina, the step switch, none with No character), the switch in a spec only when on and checked as a boolean; `weaponMustHave` stored only when non-empty, checked, round-tripped and planned with; and the rarity preference (issue #262) likewise, planned as the tie-break on exact ties (tolerance 0, whatever Within points says).
+// `[fast]`: `app/build-spec.mts`: a full spec, a template's (no buffs) and one filled from nothing pass `buildSpecError`, and one refused field of each kind says where; the panel's flat profile goes to a spec and back unchanged; and `planBuild` equals the assemblies it replaced, kept in the test as they were written: the page's build (its profile, pool settings, search options and saved-run snapshot, ui/builder.mts and ui/runs.mts) and the MCP tools' `planProfile` (mcp-tools.mts), for the demo characters with and without buffs and edited numbers, No character, and a hand-picked suit planned as Manual plans it; with no character (issue #12) the shard's caps, no Resisting Spells minimum, no swing and the named school's FC cap; and a character's swing on the planned profile (raw DEX plus the buffs' DEX and stamina shares, the worn suit's stamina, the step switch, none with No character), the switch in a spec only when on and checked as a boolean; `weaponMustHave` stored only when non-empty, checked, round-tripped and planned with; `onlyRoots` (issue #12) likewise, and kept out of templates; and the rarity preference (issue #262) likewise, planned as the tie-break on exact ties (tolerance 0, whatever Within points says).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
@@ -138,6 +138,27 @@ test("[fast] build spec: weaponMustHave is stored only when non-empty, checked, 
   assert.deepEqual(planned.snapshot.weaponMustHave, ["spell channeling"], "and the saved run's settings");
   assert.ok(!("weaponMustHave" in planBuild(specFromProfile(PANEL), { character: c, worn: [] }).pool), "absent when nothing is required");
   assert.deepEqual(templateFrom(profileFromSpec(spec)).weaponMustHave, ["spell channeling"], "a template made from the panel keeps it");
+});
+
+// Issue #12: pool onlyRoots (Only containers) is stored only when it lists any, checked as container serials, round-trips
+// through the panel's flat profile, stays out of templates, and reaches planBuild's pool settings and saved-run snapshot.
+test("[fast] build spec: onlyRoots is stored only when non-empty, checked, kept out of templates, and planned with", () => {
+  const spec = specFromProfile({ ...PANEL, onlyRoots: [0x70001234] });
+  assert.deepEqual(spec.pool.onlyRoots, [0x70001234]);
+  assert.equal(buildSpecError(spec, "spec"), null);
+  assert.ok(!("onlyRoots" in specFromProfile({ ...PANEL, onlyRoots: [] }).pool), "an empty list is not stored");
+  assert.ok(!("onlyRoots" in buildSpec().pool), "nor a missing one");
+  assert.deepEqual(specFromProfile(profileFromSpec(spec)), spec, "a round trip changes nothing");
+  assert.match(buildSpecError({ ...spec, pool: { ...spec.pool, onlyRoots: ["bank"] } }, "spec")!, /^spec\.pool\.onlyRoots must be a list of container serials$/);
+  assert.match(buildSpecError({ ...spec, pool: { ...spec.pool, onlyRoots: [-1] } }, "spec")!, /onlyRoots/);
+  const schema = JSON.parse(readFileSync(join(HERE, "schema", "profiles.v3.schema.json"), "utf8")) as ValidatorSchema;
+  assert.ok(validate(schema, { schemaVersion: 3, characters: { A: { spec } }, templates: {} }).ok, "the schema takes it");
+  assert.equal(validate(schema, { schemaVersion: 3, characters: { A: { spec: { ...spec, pool: { ...spec.pool, onlyRoots: ["bank"] } } } }, templates: {} }).ok, false, "and only serials");
+  assert.ok(!("onlyRoots" in templateSpecFrom(profileFromSpec(spec)).pool), "a template made from the panel leaves it out");
+  const planned = planBuild(spec, { character: null, worn: [], race: "human" });
+  assert.deepEqual(planned.pool.onlyRoots, [0x70001234], "the pool settings POST /api/optimize takes");
+  assert.deepEqual(planned.snapshot.onlyRoots, [0x70001234], "and the saved run's settings");
+  assert.ok(!("onlyRoots" in planBuild(specFromProfile(PANEL), { character: null, worn: [] }).pool), "absent when none is listed");
 });
 
 // ---- planBuild against the assemblies it replaced
