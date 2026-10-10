@@ -1,6 +1,6 @@
 // build-spec.test.mts — `app/build-spec.mts`, a build's intent as one document (issue #218, BuildSpec).
 //
-// `[fast]`: `app/build-spec.mts`: a full spec, a template's (no buffs) and one filled from nothing pass `buildSpecError`, and one refused field of each kind says where; the panel's flat profile goes to a spec and back unchanged; and `planBuild` equals the assemblies it replaced, kept in the test as they were written: the page's build (its profile, pool settings, search options and saved-run snapshot, ui/builder.mts and ui/runs.mts) and the MCP tools' `planProfile` (mcp-tools.mts), for the demo characters with and without buffs and edited numbers, No character, and a hand-picked suit planned as Manual plans it.
+// `[fast]`: `app/build-spec.mts`: a full spec, a template's (no buffs) and one filled from nothing pass `buildSpecError`, and one refused field of each kind says where; the panel's flat profile goes to a spec and back unchanged; and `planBuild` equals the assemblies it replaced, kept in the test as they were written: the page's build (its profile, pool settings, search options and saved-run snapshot, ui/builder.mts and ui/runs.mts) and the MCP tools' `planProfile` (mcp-tools.mts), for the demo characters with and without buffs and edited numbers, No character, and a hand-picked suit planned as Manual plans it; with no character (issue #12) the shard's caps, no Resisting Spells minimum, no swing and the named school's FC cap; and a character's swing on the planned profile (raw DEX plus the buffs' DEX and stamina shares, the worn suit's stamina, the step switch, none with No character), the switch in a spec only when on and checked as a boolean; `weaponMustHave` stored only when non-empty, checked, round-tripped and planned with; `onlyRoots` (issue #12) likewise, and kept out of templates; and the rarity preference (issue #262) likewise, planned as the tie-break on exact ties (tolerance 0, whatever Within points says).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
@@ -12,7 +12,7 @@ import type { RulesV1 } from "./schema/types.d.mts";
 import { upgradeScan } from "./scan-schema.mts";
 import { buffPlanOf, buffSkillValues, manualBase, manualPlan, plannedProfile, runBuffs } from "./buffs.mts";
 import { RACES, RUN_DEFAULTS, defaultStrLimit } from "./run-settings.mts";
-import { buildSpec, buildSpecError, type BuildSpecSource, type CharacterEntry, characterBuffs, characterProfile, findTemplate, migrateProfilesV3, planBuild, profileFromSpec, profilesSpecError, specFromProfile, templateLabel, templateRefs, templateSettings,
+import { buildSpec, buildSpecError, type BuildSpecSource, type CharacterEntry, characterBuffs, characterProfile, findTemplate, migrateProfilesV3, planBuild, profileFromSpec, profilesSpecError, specFromProfile, specFromRunSettings, templateLabel, templateRefs, templateSettings, templateSpecFrom,
   type BuildSpec, type FlatProfile, type ProfilesV3, type TemplateMap } from "./build-spec.mts";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
@@ -49,7 +49,7 @@ test("[fast] build spec: a full spec, a template's and an empty one pass; each k
     [{ ...spec, intent: { ...spec.intent, resistCaps: { fireResist: 200 } } }, /^spec\.intent\.resistCaps/],
     [{ ...spec, pool: { ...spec.pool, strLimit: 0 } }, /^spec\.pool\.strLimit must be "character" or a whole number from 1 to 1000$/],
     [{ ...spec, pool: { ...spec.pool, strLimit: "mine" } }, /^spec\.pool\.strLimit must be "character"/],
-    [{ ...spec, pool: { ...spec.pool, excludeWeapons: ["wrestling"] } }, /^spec\.pool\.excludeWeapons\[0\] is not a weapon skill/],
+    [{ ...spec, pool: { ...spec.pool, excludeWeapons: ["wrestling"] } }, /^spec\.pool\.excludeWeapons\[0\] must be a weapon skill or spellbook/],
     [{ ...spec, pool: { ...spec.pool, medOnly: "yes" } }, /^spec\.pool\.medOnly must be a boolean$/],
     [{ ...spec, pool: { ...spec.pool, floors: {} } }, /^spec\.pool\.floors is not a pool setting$/],
     [{ ...spec, buffs: { on: ["noSuchBuff"], skills: {} } }, /^spec\.buffs must list known buffs/],
@@ -70,7 +70,95 @@ test("[fast] build spec: the panel's flat profile goes to a spec and back; absen
   assert.equal(empty.pool.strLimit, "character");
   assert.equal(empty.pool.ubwsAnyWeapon, true);
   assert.equal(empty.intent.floorBonus, 1000);
-  assert.deepEqual(profileFromSpec(empty), { ...templateFrom(), excludeRoots: [] }, "the same defaults templateFrom fills in");
+  const { swingSteps: _off, castingSchool: _school, weaponMustHave: _none, rarity: _any, ...defaults } = templateFrom();   // a spec carries the swing-step switch only when on, the casting school only when one is named, weaponMustHave only when it lists any, and the rarity preference only when set
+  assert.deepEqual(profileFromSpec(empty), { ...defaults, excludeRoots: [] }, "the same defaults templateFrom fills in");
+});
+
+// Issue #212: Save as and Update keep the buffs on with the template, without their numbers (the character's); none
+// given is a template without buffs, as before, which leaves a character's buffs alone when applied.
+test("[fast] build spec: templateSpecFrom keeps the buffs it is given, without their numbers", () => {
+  const spec = templateSpecFrom(PANEL, ["divineFury", "bless"]);
+  assert.deepEqual(spec.buffs, { on: ["divineFury", "bless"], skills: {} });
+  assert.equal(buildSpecError(spec, "t", { template: true }), null);
+  assert.deepEqual(templateSettings({ spec }), templateSettings({ spec: templateSpecFrom(PANEL) }), "the same settings either way");
+  assert.equal("buffs" in templateSpecFrom(PANEL), false);
+  assert.deepEqual(templateSpecFrom(PANEL, []).buffs, { on: [], skills: {} }, "none on is a list too");
+});
+
+// Issue #259: "spellbook" in excludeWeapons is checked, round-trips through the panel's flat profile, and the schema takes it.
+test("[fast] build spec: a spellbook exclusion is a known excludeWeapons value and round-trips", () => {
+  const spec = specFromProfile({ ...PANEL, excludeWeapons: ["archery", "spellbook"] });
+  assert.equal(buildSpecError(spec, "spec"), null);
+  assert.deepEqual(profileFromSpec(spec).excludeWeapons, ["archery", "spellbook"], "back to the panel");
+  assert.deepEqual(specFromProfile(profileFromSpec(spec)), spec, "a round trip changes nothing");
+  assert.ok(buildSpecError({ ...spec, pool: { ...spec.pool, excludeWeapons: ["spellbooks"] } }, "spec"), "an unknown name is still refused");
+  const schema = JSON.parse(readFileSync(join(HERE, "schema", "profiles.v3.schema.json"), "utf8")) as ValidatorSchema;
+  assert.ok(validate(schema, { schemaVersion: 3, characters: { A: { spec } }, templates: {} }).ok, "the schema takes it");
+});
+
+// Issue #262: intent rarity is stored only when set, checked, round-trips through the panel, a template and a run's
+// settings, and planBuild turns it into the tie-break on exact ties.
+test("[fast] build spec: a rarity preference is stored only when set, checked, round-trips and is planned with", () => {
+  assert.equal("rarity" in specFromProfile(PANEL).intent, false, "any: absent");
+  const spec = specFromProfile({ ...PANEL, rarity: "lower" });
+  assert.equal(spec.intent.rarity, "lower");
+  assert.equal(buildSpecError(spec, "spec"), null);
+  assert.equal(buildSpecError({ ...spec, intent: { ...spec.intent, rarity: "rarest" } }, "spec"), "spec.intent.rarity must be one of higher, lower");
+  assert.equal(profileFromSpec(spec).rarity, "lower", "back to the panel");
+  assert.deepEqual(specFromProfile(profileFromSpec(spec)), spec, "a round trip changes nothing");
+  assert.equal(templateSettings({ spec: templateSpecFrom({ ...PANEL, rarity: "higher" }) }).rarity, "higher", "a template carries it");
+  assert.equal(templateFrom(PANEL).rarity, undefined);
+  const plan = planBuild({ ...spec, search: { altTol: 3 } }, { character: null, worn: [], race: "human" });
+  assert.deepEqual(plan.opts.tieBreak, { rarity: "lower", tolerance: 0 }, "exact ties only, whatever Within points says");
+  assert.equal(plan.snapshot.rarity, "lower", "a run's settings keep it");
+  assert.equal(specFromRunSettings(plan.snapshot).intent.rarity, "lower", "and give it back");
+  assert.equal(planBuild(specFromProfile(PANEL), { character: null, worn: [], race: "human" }).opts.tieBreak, undefined, "none without one");
+  const schema = JSON.parse(readFileSync(join(HERE, "schema", "profiles.v3.schema.json"), "utf8")) as ValidatorSchema;
+  assert.ok(validate(schema, { schemaVersion: 3, characters: { A: { spec } }, templates: {} }).ok, "the schema takes it");
+  assert.equal(validate(schema, { schemaVersion: 3, characters: { A: { spec: { ...spec, intent: { ...spec.intent, rarity: "any" } } } }, templates: {} }).ok, false, "and only higher or lower");
+});
+
+// Issue #214: pool weaponMustHave is stored only when it lists any, checked like the other pool fields, round-trips through
+// the panel's flat profile and a template, and reaches planBuild's pool settings and saved-run snapshot.
+test("[fast] build spec: weaponMustHave is stored only when non-empty, checked, and planned with", () => {
+  const spec = specFromProfile({ ...PANEL, weaponMustHave: ["spell channeling"] });
+  assert.deepEqual(spec.pool.weaponMustHave, ["spell channeling"]);
+  assert.equal(buildSpecError(spec, "spec"), null);
+  assert.ok(!("weaponMustHave" in specFromProfile({ ...PANEL, weaponMustHave: [] }).pool), "an empty list is not stored");
+  assert.ok(!("weaponMustHave" in buildSpec().pool), "nor a missing one");
+  assert.deepEqual(profileFromSpec(spec).weaponMustHave, ["spell channeling"], "back to the panel");
+  assert.deepEqual(specFromProfile(profileFromSpec(spec)), spec, "a round trip changes nothing");
+  assert.match(buildSpecError({ ...spec, pool: { ...spec.pool, weaponMustHave: ["sharp"] } }, "spec")!, /^spec\.pool\.weaponMustHave\[0\] is not a yes\/no property/);
+  assert.match(buildSpecError({ ...spec, pool: { ...spec.pool, weaponMustHave: "balanced" } }, "spec")!, /^spec\.pool\.weaponMustHave must be an array$/);
+  const schema = JSON.parse(readFileSync(join(HERE, "schema", "profiles.v3.schema.json"), "utf8")) as ValidatorSchema;
+  assert.ok(validate(schema, { schemaVersion: 3, characters: { A: { spec } }, templates: {} }).ok, "the schema takes it");
+  const c = withSkills(inv.characters.Kestrel as Character);
+  const planned = planBuild(spec, { character: c, worn: wornBy.Kestrel || [] });
+  assert.deepEqual(planned.pool.weaponMustHave, ["spell channeling"], "the pool settings POST /api/optimize takes");
+  assert.deepEqual(planned.snapshot.weaponMustHave, ["spell channeling"], "and the saved run's settings");
+  assert.ok(!("weaponMustHave" in planBuild(specFromProfile(PANEL), { character: c, worn: [] }).pool), "absent when nothing is required");
+  assert.deepEqual(templateFrom(profileFromSpec(spec)).weaponMustHave, ["spell channeling"], "a template made from the panel keeps it");
+});
+
+// Issue #12: pool onlyRoots (Only containers) is stored only when it lists any, checked as container serials, round-trips
+// through the panel's flat profile, stays out of templates, and reaches planBuild's pool settings and saved-run snapshot.
+test("[fast] build spec: onlyRoots is stored only when non-empty, checked, kept out of templates, and planned with", () => {
+  const spec = specFromProfile({ ...PANEL, onlyRoots: [0x70001234] });
+  assert.deepEqual(spec.pool.onlyRoots, [0x70001234]);
+  assert.equal(buildSpecError(spec, "spec"), null);
+  assert.ok(!("onlyRoots" in specFromProfile({ ...PANEL, onlyRoots: [] }).pool), "an empty list is not stored");
+  assert.ok(!("onlyRoots" in buildSpec().pool), "nor a missing one");
+  assert.deepEqual(specFromProfile(profileFromSpec(spec)), spec, "a round trip changes nothing");
+  assert.match(buildSpecError({ ...spec, pool: { ...spec.pool, onlyRoots: ["bank"] } }, "spec")!, /^spec\.pool\.onlyRoots must be a list of container serials$/);
+  assert.match(buildSpecError({ ...spec, pool: { ...spec.pool, onlyRoots: [-1] } }, "spec")!, /onlyRoots/);
+  const schema = JSON.parse(readFileSync(join(HERE, "schema", "profiles.v3.schema.json"), "utf8")) as ValidatorSchema;
+  assert.ok(validate(schema, { schemaVersion: 3, characters: { A: { spec } }, templates: {} }).ok, "the schema takes it");
+  assert.equal(validate(schema, { schemaVersion: 3, characters: { A: { spec: { ...spec, pool: { ...spec.pool, onlyRoots: ["bank"] } } } }, templates: {} }).ok, false, "and only serials");
+  assert.ok(!("onlyRoots" in templateSpecFrom(profileFromSpec(spec)).pool), "a template made from the panel leaves it out");
+  const planned = planBuild(spec, { character: null, worn: [], race: "human" });
+  assert.deepEqual(planned.pool.onlyRoots, [0x70001234], "the pool settings POST /api/optimize takes");
+  assert.deepEqual(planned.snapshot.onlyRoots, [0x70001234], "and the saved run's settings");
+  assert.ok(!("onlyRoots" in planBuild(specFromProfile(PANEL), { character: null, worn: [] }).pool), "absent when none is listed");
 });
 
 // ---- planBuild against the assemblies it replaced
@@ -118,7 +206,9 @@ test("[fast] planBuild: the page's build, profile, pool, search options and run 
           search: { restarts: Number(knobs.restarts), exact: knobs.exact, budgetMs: 1000 * Number(knobs.budgetS), altCount: Number(knobs.altCount), altTol: Number(knobs.altTol) } };
         const got = planBuild(spec, { character: c, worn: wornBy[name] || [], race: PANEL.race });
         const label = `${name} ${on.join("+") || "no buffs"} ${JSON.stringify(knobs)}`;
-        assert.deepEqual(got.profile, want.profile, `${label}: profile`);
+        const { swing, ...profile } = got.profile;   // new with swing steps (issue #217): checked on its own below
+        assert.deepEqual(profile, want.profile, `${label}: profile`);
+        assert.ok(swing, `${label}: a character's build carries its swing`);
         assert.deepEqual(json(got.pool), json(want.settings), `${label}: pool settings`);
         assert.deepEqual(got.opts, want.opts, `${label}: opts`);
         assert.deepEqual(json(got.snapshot), json(want.snapshot), `${label}: snapshot`);
@@ -138,7 +228,9 @@ test("[fast] planBuild: the MCP tools' plan, for a character, No character and a
         const spec: BuildSpec = { ...specFromProfile(p, { on, skills: edits }), search: { budgetMs: budget, exact: true, altCount: alt } };
         const got = planBuild(spec, { character: c, worn, race: p.race, ...(suit ? { suit } : {}) });
         const label = `${name ?? "No character"} strLimit ${p.strLimit ?? "character"} ${suit ? "suit" : "auto"} ${on.join("+") || "no buffs"} ${budget}/${alt}`;
-        assert.deepEqual(got.profile, want.profile, `${label}: profile`);
+        const { swing, ...profile } = got.profile;
+        assert.deepEqual(profile, want.profile, `${label}: profile`);
+        assert.equal(!!swing, !!c, `${label}: the swing comes with a character only`);
         assert.deepEqual(got.plan, want.plan, `${label}: plan`);
         assert.deepEqual(json(got.pool), json(want.settings), `${label}: pool settings`);
         assert.deepEqual(got.opts, want.opts, `${label}: opts`);
@@ -146,6 +238,37 @@ test("[fast] planBuild: the MCP tools' plan, for a character, No character and a
       }
     }
   }
+});
+
+test("[fast] planBuild: a character's swing is raw DEX plus the buffs' DEX and stamina shares, its worn suit's stamina on top, and the step switch", () => {
+  const c = inv.characters.Kestrel!, worn = wornBy.Kestrel || [];
+  const wornPool = worn.reduce((n, it) => n + (it.props.dexBonus || 0) + (it.props.stamInc || 0), 0);
+  const rawDex = Number(c.stats!.dex) - worn.reduce((n, it) => n + (it.props.dexBonus || 0), 0);
+  const plain = planBuild(specFromProfile(PANEL), { character: c, worn, race: PANEL.race });
+  assert.deepEqual(plain.profile.swing, { stamBase: rawDex, refStamina: rawDex + wornPool, steps: false });
+  assert.equal(plain.snapshot.swingSteps, undefined, "a run snapshot names the switch only when it is on");
+  const on = planBuild(specFromProfile({ ...PANEL, swingSteps: true }), { character: c, worn, race: PANEL.race });
+  assert.equal(on.profile.swing!.steps, true);
+  assert.equal(on.snapshot.swingSteps, true);
+  // Bless's DEX share adds to the stamina before gear
+  const bless = planBuild(specFromProfile(PANEL, { on: ["bless"], skills: {} }), { character: c, worn, race: PANEL.race });
+  assert.ok(bless.profile.swing!.stamBase > rawDex, JSON.stringify(bless.profile.swing));
+  assert.equal(planBuild(specFromProfile(PANEL), { character: null, worn: [], race: PANEL.race }).profile.swing, undefined);
+  // the switch round-trips through a spec, and a spec carries it only when on
+  assert.equal(profileFromSpec(specFromProfile({ ...PANEL, swingSteps: true })).swingSteps, true);
+  assert.equal("swingSteps" in specFromProfile(PANEL).intent, false);
+  assert.equal(buildSpecError({ ...specFromProfile(PANEL), intent: { ...specFromProfile(PANEL).intent, swingSteps: "yes" } }, "spec"), "spec.intent.swingSteps must be a boolean");
+});
+
+test("[fast] planBuild with no character (the builder's No character, issue #12): the shard's caps, no Resisting Spells minimum, no swing, the FC cap from the named school", () => {
+  const plan = (castingSchool?: string) => planBuild(specFromProfile({ ...PANEL, race: "human", castingSchool, resistCaps: {} }), { character: null, worn: [], race: "human" }).profile;
+  const p = plan();
+  assert.equal(p.resistMinimum, null);
+  assert.equal(p.mins, undefined);
+  assert.equal(p.swing, undefined);
+  assert.equal(p.caps.physResist, 70);
+  assert.equal(p.caps.fc, 2, "no school named: the shard's cap");
+  assert.equal(plan("Chivalry").caps.fc, 4, "Chivalry named: its cap");
 });
 
 // ---- profiles.json v3
@@ -235,7 +358,7 @@ test("[fast] profiles v3: characterProfile and the templates, the player's own f
   const fresh: ProfilesV3 = { schemaVersion: 3, characters: {}, templates: {} };
   assert.deepEqual(characterProfile(fresh, "Nobody", builtins), { ...templateSettings(builtins.melee!), template: "builtin:melee", race: "human" }, "with none of the player's own, the first built-in");
   assert.deepEqual(characterProfile(fresh, "Nobody"), { ...templateFrom(), template: undefined, race: "human" });
-  assert.deepEqual(templateRefs(v3, builtins), ["melee", "my caster", "builtin:melee", "builtin:caster", "builtin:archer", "builtin:tank"]);
+  assert.deepEqual(templateRefs(v3, builtins), ["melee", "my caster", ...Object.keys(builtins).map((id) => `builtin:${id}`)]);
   assert.equal(findTemplate(v3, builtins, "melee"), v3.templates.melee);
   assert.equal(findTemplate(v3, builtins, "builtin:melee"), builtins.melee);
   assert.equal(findTemplate(v3, builtins, "builtin:nope"), undefined);
@@ -259,5 +382,5 @@ test("[fast] built-in templates: every shipped file's templates pass the spec ch
   }
   // The four templates new data folders used to be seeded with, kept as uoalive's built-ins setting for setting.
   const shipped = (JSON.parse(readFileSync(join(dir, "uoalive.json"), "utf8")) as { templates: TemplateMap }).templates;
-  assert.deepEqual(Object.keys(shipped), ["melee", "caster", "archer", "tank"]);
+  assert.deepEqual(Object.keys(shipped).slice(0, 4), ["melee", "caster", "archer", "tank"], "first, before the build templates (#212)");
 });

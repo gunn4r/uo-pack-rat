@@ -33,6 +33,8 @@ export interface RunKeyInput {
   current?: unknown;
   profile?: unknown;
   opts?: RunOpts;
+  weaponMustHave?: string[] | undefined;   // the weapon properties required (issue #214): keyed only when it lists any, so other keys are unchanged
+  onlyRoots?: number[] | undefined;        // the containers the pool is narrowed to (issue #12): keyed only when it lists any, likewise
 }
 // The version of the search code a saved run's answer came from. Bump it on any change to the MIP
 // model (app/mip.mts), the orchestration (app/exact-solver.mts) or the core's scoring and search
@@ -41,7 +43,14 @@ export interface RunKeyInput {
 // 3: the reach estimate respects the hands row; heuristic-only runs honour the time budget.
 // 4: a warm start keeps a slot that may not be empty filled (a locked slot's piece was dropped, and the search stuck).
 // 5: both solvers search every gear slot, feet, shirt, middle torso, robe, waist, earrings and kilt included (#202).
-export const SOLVER_VERSION = 5;
+// 6: every result carries `diagnostics` (app/diagnostics.mts), so a run saved before it is not reused without them.
+// 7: SSI can be scored by swing step (app/swing.mts), weapons carry their speed, and a result carries its `swing`.
+// 8: Resisting Spells is a minimum under each resist (`mins`), not a bonus taken off the resist caps and floors (#261).
+export const SOLVER_VERSION = 8;
+// The first SOLVER_VERSION whose saved diagnostics are in the player's terms as the page shows them now: before 8 a
+// resist's numbers counted the Resisting Spells bonus (#261), so an older run's are dropped when read and it falls back
+// as a run saved before diagnostics does.
+export const DIAGNOSTICS_SOUND_SINCE = 8;
 // The first SOLVER_VERSION whose "proven optimal" holds: before 2 a soft floor ruled out every suit with a
 // negative total, so HiGHS could prove a worse suit optimal.
 export const PROOF_SOUND_SINCE = 2;
@@ -49,10 +58,13 @@ export const PROOF_SOUND_SINCE = 2;
 // Everything that shapes the answer: the candidate pools, the worn suit, the scoring profile, the
 // search options, and the solver version. A profile's `buffs` (app/buffs.mts plannedProfile: which buffs were planned
 // with and their numbers) is left out: the caps and floors they shifted are what the solvers read, so buff sets that
-// plan alike (Enemy of One alone, or none; an edit to a number no buff on reads) share a run.
-export function runKey({ pools = {}, current = {}, profile = {}, opts = {} }: RunKeyInput): string {
+// plan alike (Enemy of One alone, or none; an edit to a number no buff on reads) share a run. The required weapon
+// properties are keyed too, though the pools usually show them: with both hands locked, or no weapon at all, the pools
+// match a build without them, and the warnings they raise would not. Only containers is keyed for the same reason: two
+// lists can give the same pools and differ in the slots they leave empty.
+export function runKey({ pools = {}, current = {}, profile = {}, opts = {}, weaponMustHave, onlyRoots }: RunKeyInput): string {
   const { buffs: _planned, ...solved } = (profile || {}) as Record<string, unknown>;
-  return createHash("sha1").update(JSON.stringify({ solver: SOLVER_VERSION, pools, current, profile: solved, opts: stripOpts(opts) })).digest("hex");
+  return createHash("sha1").update(JSON.stringify({ solver: SOLVER_VERSION, pools, current, profile: solved, opts: stripOpts(opts), ...(weaponMustHave?.length ? { weaponMustHave } : {}), ...(onlyRoots?.length ? { onlyRoots } : {}) })).digest("hex");
 }
 
 // A saved run answers a new request when its inputs match and running again is not expected to do

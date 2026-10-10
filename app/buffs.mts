@@ -4,7 +4,7 @@
 // Scripts/) or the UO Alive wiki, which wins where the two disagree (the other's number is said in the entry's note),
 // and carries how sure those numbers are. No DOM: Manual (ui/builder-manual.mts) and Automatic read the same model,
 // and app/buffs.test.mts checks it.
-import { RESIST_KEYS, resistSkillBonus, labelOf, effectiveProfile, profileResistCaps, toOptItem, totalsOf } from "./vault-lib.mts";
+import { RESIST_KEYS, minResistAt, labelOf, effectiveProfile, profileResistCaps, toOptItem, totalsOf } from "./vault-lib.mts";
 import type { BuffShift, Character, EffectiveProfile, Item, Profile, PropMap, RunBuffs } from "./vault-lib.mts";
 
 // ---------------------------------------------------------------- the numbers a buff scales with
@@ -80,9 +80,8 @@ export interface BuffContext { s: (input: string) => number; stats: Stats | null
 // One effect. `outside`: added after the cap (Enemy of One's damage), so it never counts toward it. `slot`: a stat
 // buff that shares its stat with others, the largest counting (Bless, the potions; and the FC −2 Protection and the
 // Urali potion share). `pct`: a share of the raw stat (negative for Curse), kept so the page can say "+13%" when there
-// is no character to take it of. `why`: how a share comes about when its buff's name doesn't say (Protection's resist
-// loss through a lower Resisting Spells).
-export interface BuffEffect { key: string; value: number; outside?: boolean | undefined; slot?: boolean | undefined; pct?: number | undefined; why?: string | undefined }
+// is no character to take it of.
+export interface BuffEffect { key: string; value: number; outside?: boolean | undefined; slot?: boolean | undefined; pct?: number | undefined }
 export interface Buff {
   id: string;
   name: string;
@@ -107,6 +106,8 @@ export interface Buff {
 const tr = Math.trunc;
 const fx = (v: number): number => tr(v * 10);   // ServUO's Skills[x].Fixed
 const resists = (value: number, keys = RESIST_KEYS): BuffEffect[] => keys.map((key) => ({ key, value }));
+// What Protection takes off Resisting Spells: 35, less Inscription / 20.
+const protectionLoss = (s: (input: string) => number): number => -35 + Math.min(tr(s("Inscription") / 20), 35);
 // Bless and its kin: ceil(raw stat × (1 + EvalFixed / 100)%), in ServUO's own double math (SpellHelper.GetOffset).
 function statShare(key: string, raw: number | undefined, pct: number): BuffEffect {
   return { key, slot: true, pct, value: raw == null ? 0 : Math.ceil(raw * (pct * 0.01)) };
@@ -180,16 +181,10 @@ export const BUFFS: Buff[] = [
   { id: "agility", name: "Agility", group: "Magery", inputs: ["Evaluating Intelligence"], effects: (c) => [statShare("dexBonus", c.stats?.dex, blessPct(c))] },
   { id: "cunning", name: "Cunning", group: "Magery", inputs: ["Evaluating Intelligence"], effects: (c) => [statShare("intBonus", c.stats?.int, blessPct(c))] },
   // Protection: Spells/Second/Protection.cs (Phys and Resisting Spells by Inscription / 20); FC −2 after the cap
-  // (Spell.cs GetCastDelay). Resisting Spells lower means a smaller resist bonus on UO Alive (rules resistSkillBonus).
+  // (Spell.cs GetCastDelay). Resisting Spells lower means a lower resist minimum (minimumWith).
   { id: "protection", name: "Protection", group: "Magery", inputs: ["Inscription"],
-    effects: (c) => {
-      const i = tr(c.s("Inscription") / 20), rs = c.resist, loss = -35 + Math.min(i, 35);
-      const bonus = (v: number): number => resistSkillBonus({ "Resisting Spells": { value: v } });
-      const drop = rs == null ? 0 : bonus(Math.max(0, rs + loss)) - bonus(rs);
-      const all = drop ? resists(drop).map((e) => ({ ...e, why: "lower Resisting Spells" })) : [];
-      return [{ key: "physResist", value: -15 + Math.min(i, 15) }, ...all, { key: "fc", value: -2, outside: true, slot: true }];
-    },
-    extra: (c) => [`Resisting Spells ${signed(-35 + Math.min(tr(c.s("Inscription") / 20), 35))}`] },
+    effects: (c) => [{ key: "physResist", value: -15 + Math.min(tr(c.s("Inscription") / 20), 15) }, { key: "fc", value: -2, outside: true, slot: true }],
+    extra: (c) => [`Resisting Spells ${signed(protectionLoss(c.s))}`] },
   // Reactive Armor: Spells/First/ReactiveArmor.cs.
   { id: "reactiveArmor", name: "Reactive Armor", group: "Magery", inputs: ["Inscription"],
     effects: (c) => [{ key: "physResist", value: 15 + tr(c.s("Inscription") / 20) }, ...resists(-5, RESIST_KEYS.filter((k) => k !== "physResist"))] },
@@ -405,7 +400,7 @@ const itemTotals = (items: Item[]): PropMap => totalsOf(Object.fromEntries(items
 // What Manual plans a hand-picked suit with (its "Fill the rest automatically"; the MCP tools' score_suit and pinned
 // build_suit): the buffs `on`, whose Enhance Potions and Spell Channeling are read from `suit` (slot → piece) itself,
 // the raw stats from what the character wears now (`wornNow`) and `race` (null with no character); with no character
-// the profile's race, resist caps and caps are left out, so it plans on raw item totals.
+// the profile's race, resist caps and caps are left out, so it plans on raw item totals (a named casting school still sets the FC cap).
 export function manualProfile(p: Profile, character: Character | null, wornNow: Item[], suit: Record<string, Item>, race: string | null, on: string[], edits: Readonly<Record<string, number>>): EffectiveProfile {
   return plannedProfile(manualBase(p, character), character, manualPlan(character, wornNow, suit, race, on, edits));
 }
@@ -441,7 +436,7 @@ export function toggleBuff(active: readonly string[], id: string): { next: strin
 }
 
 // ---------------------------------------------------------------- the evaluator
-export interface BuffShare { id: string; value: number; outside?: boolean | undefined; pct?: number | undefined; why?: string | undefined }
+export interface BuffShare { id: string; value: number; outside?: boolean | undefined; pct?: number | undefined }
 export interface BuffResult {
   totals: PropMap;                         // the in-cap sums, the buffs' in-cap shares added: not clamped, so what is wasted shows
   caps: Record<string, number>;            // the caps, the buffs' changes applied
@@ -454,13 +449,23 @@ export interface BuffResult {
   // larger depends on the stat, so the flat one is counted and neither is said to be beaten
   unsure: Array<{ id: string; key: string; with: string }>;
   blocked: string[];                       // on, but it can't count (below the skill it needs, another race's): nothing
+  minimum: number | null;                  // the Resisting Spells minimum with these buffs (minimumWith), null for none
+  lifted: string[];                        // the resists the minimum holds up: their totals are the minimum, not the suit's
+}
+// The Resisting Spells minimum with `buffs` on, at the skill `resist` (null: no character, no minimum): with Protection
+// on, at the skill Protection leaves (its Inscription read from `skills`).
+export function minimumWith(resist: number | null, buffs: readonly string[], skills: Skills): number | null {
+  if (resist == null) return null;
+  return minResistAt(buffs.includes("protection") ? Math.max(0, resist + protectionLoss((id) => skills[id] ?? BUFF_INPUTS[id]?.def ?? 0)) : resist);
 }
 // The suit's totals with the `buffs` that are on. `totals` and `caps` are in the page's terms (resists as on the
-// paperdoll, Resisting Spells' bonus included). The order is the game's: the caps change first, the in-cap shares are
-// added (a stat slot takes its largest share only) and clamped, and the outside shares come after the cap.
-export function applyBuffs(totals: PropMap, caps: Readonly<Record<string, number>>, buffs: readonly string[], skills: Skills, stats: Stats | null, who: BuffWho = {}): BuffResult {
+// paperdoll). The order is the game's: the caps change first, the in-cap shares are added (a stat slot takes its
+// largest share only) and clamped, and the outside shares come after the cap. Last, the Resisting Spells minimum at
+// `resist` (the character's skill with this suit's own Resisting Spells bonus, null for none; minimumWith) holds each
+// resist up: a resist under it reads the minimum, its cap too.
+export function applyBuffs(totals: PropMap, caps: Readonly<Record<string, number>>, buffs: readonly string[], skills: Skills, stats: Stats | null, who: BuffWho = {}, resist: number | null = null): BuffResult {
   const c = buffContext(skills, stats, totals, who, caps);
-  const r: BuffResult = { totals: { ...totals }, caps: { ...caps }, outside: {}, effective: {}, shares: {}, capShares: {}, beaten: [], unsure: [], blocked: [] };
+  const r: BuffResult = { totals: { ...totals }, caps: { ...caps }, outside: {}, effective: {}, shares: {}, capShares: {}, beaten: [], unsure: [], blocked: [], minimum: null, lifted: [] };
   const live = BUFFS.filter((b) => buffs.includes(b.id) && (buffNeeds(b, skills, who) ? (r.blocked.push(b.id), false) : true));
   const add = (map: Record<string, BuffShare[]>, key: string, s: BuffShare): void => { (map[key] ||= []).push(s); };
   // the caps in ServUO's order: every addition, then the late ones on the running caps, then the absolute ones
@@ -486,7 +491,12 @@ export function applyBuffs(totals: PropMap, caps: Readonly<Record<string, number
     }
     const map = e.outside ? r.outside : r.totals;
     map[e.key] = (map[e.key] || 0) + e.value;
-    add(r.shares, e.key, { id: b.id, value: e.value, ...(e.outside ? { outside: true } : {}), ...(e.pct != null && !stats ? { pct: e.pct } : {}), ...(e.why ? { why: e.why } : {}) });
+    add(r.shares, e.key, { id: b.id, value: e.value, ...(e.outside ? { outside: true } : {}), ...(e.pct != null && !stats ? { pct: e.pct } : {}) });
+  }
+  r.minimum = minimumWith(resist, live.map((b) => b.id), skills);
+  if (r.minimum != null) for (const k of RESIST_KEYS) {
+    if (r.caps[k] != null && r.caps[k]! < r.minimum) r.caps[k] = r.minimum;
+    if ((r.totals[k] || 0) < r.minimum) { r.totals[k] = r.minimum; r.lifted.push(k); }
   }
   for (const k of new Set([...Object.keys(r.shares), ...Object.keys(r.capShares)])) {
     const v = r.totals[k] || 0;
@@ -528,13 +538,13 @@ export function planBuffs(p: Profile, character: Character | null, plan: BuffPla
   }
   const prof = effectiveProfile(p, character, shift);
   if (!plan.on.length) return { prof, r };
-  return { prof: { ...prof, buffs: { on: plan.on, skills: plan.skills, stats: plan.stats, who: plan.who, caps: base.caps, floors: base.floors, ...(Object.keys(ignored).length ? { overridesIgnored: ignored } : {}) } }, r };
+  return { prof: { ...prof, buffs: { on: plan.on, skills: plan.skills, stats: plan.stats, who: plan.who, caps: base.caps, floors: base.floors, ...(Object.keys(ignored).length ? { overridesIgnored: ignored } : {}), minimum: shift.minimum ?? null } }, r };
 }
 const STAT_KEYS: Array<[keyof Stats, string]> = [["str", "strBonus"], ["dex", "dexBonus"], ["int", "intBonus"]];
 // The buffs applied to a profile's caps (in paperdoll terms, the stats' 150 less the raw stats) and the worn suit, and
 // what that shifts: every cap a buff changed or has an in-cap share on, and the stat caps; and each key's in-cap
-// share. A resist no buff touches is left out, so it keeps effectiveProfile's own cap (main's, stopped at 0 under the
-// Resisting Spells bonus), and buffs that touch nothing (Enemy of One) plan and key exactly as none. `r` says which
+// share; and the Resisting Spells minimum the buffs leave. A resist no buff touches is left out, so it keeps
+// effectiveProfile's own cap, and buffs that touch nothing (Enemy of One) plan and key exactly as none. `r` says which
 // buff gave what (a requirement's note).
 export function buffShift(base: EffectiveProfile, plan: BuffPlan): { shift: BuffShift; r: BuffResult } {
   const view = profileResistCaps(base), caps = { ...base.caps };
@@ -544,7 +554,8 @@ export function buffShift(base: EffectiveProfile, plan: BuffPlan): { shift: Buff
   const shares = Object.fromEntries(Object.entries(r.shares).map(([k, list]) => [k, list.filter((x) => !x.outside).reduce((n, x) => n + x.value, 0)]));
   const touched = (k: string, v: number): boolean => v !== caps[k] || Object.hasOwn(shares, k) || (!!plan.stats && STAT_KEYS.some(([, sk]) => sk === k));
   const kept = Object.entries(r.caps).filter(([k, v]) => touched(k, v));
-  return { shift: { caps: Object.fromEntries(kept), shares }, r };
+  const minimum = minimumWith(base.resistSkill, plan.on.filter((id) => !r.blocked.includes(id)), plan.skills);
+  return { shift: { caps: Object.fromEntries(kept), shares, minimum }, r };
 }
 // The buffs among `on` whose numbers Automatic takes from the suit worn now: the potions (its Enhance Potions) and an
 // Enchant (the held weapon's Spell Channeling).
@@ -583,16 +594,16 @@ export const capWord = (n: number): string => (n < 0 ? "after" : "past");
 export const article = (n: number): string => (/^(8|1[18]$|1[18]\d\d$)/.test(String(n)) ? "an" : "a");
 // A requirement's note with buffs planned: what gear still has to supply (`need`, against its cap `gearCap`), and which
 // buff gave what. "Gear needs 35: Divine Fury gives 10", "Gear needs 45 of a 50 cap: Divine Fury −20, White Tiger Form
-// +20, White Tiger Form cap +5", "Gear needs its full 65 cap: …", "Protection −14 (lower Resisting Spells)". The cap is
+// +20, White Tiger Form cap +5", "Gear needs its full 65 cap: …". The cap is
 // named only when a buff changed it and gear can still earn something under it. Null when no buff counts toward `k`
 // (a bonus past the cap never does).
 export function gearNeedsText(k: string, need: number, gearCap: number | undefined, r: BuffResult): string | null {
   const shares = (r.shares[k] || []).filter((x) => !x.outside), caps = r.capShares[k] || [];
   if (!shares.length && !caps.length) return null;
-  const name = (x: BuffShare): string => BY_ID.get(x.id)!.name, why = (x: BuffShare): string => (x.why ? ` (${x.why})` : "");
+  const name = (x: BuffShare): string => BY_ID.get(x.id)!.name;
   const one = shares.length === 1 && !caps.length ? shares[0]! : null;
-  const parts = one ? [`${name(one)} ${one.value < 0 ? "takes" : "gives"} ${Math.abs(one.value)}${why(one)}`]
-    : [...shares.map((x) => `${name(x)} ${signed(x.value)}${why(x)}`), ...caps.map((x) => `${name(x)} cap ${signed(x.value)}`)];
+  const parts = one ? [`${name(one)} ${one.value < 0 ? "takes" : "gives"} ${Math.abs(one.value)}`]
+    : [...shares.map((x) => `${name(x)} ${signed(x.value)}`), ...caps.map((x) => `${name(x)} cap ${signed(x.value)}`)];
   const capped = gearCap != null && gearCap > 0;
   const head = capped && need === gearCap ? `Gear needs its full ${need} cap` : `Gear needs ${need}${caps.length && capped ? ` of ${article(gearCap!)} ${gearCap} cap` : ""}`;
   return `${head}: ${parts.join(", ")}`;

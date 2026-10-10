@@ -12,6 +12,10 @@
 // rather than trusting `workerData`'s ambient `any`.
 import { parentPort, workerData } from "node:worker_threads";
 import { solveExact, type OptPools, type OptAssignment, type OptProfile, type ExactSolveResult, type SolveProgress } from "./exact-solver.mts";
+import { resultDiagnostics, withDiagnostics, type Diagnostic, type DiagnosticsProfile } from "./diagnostics.mts";
+import { propertyReach, DEFAULT_OPTIONAL_SLOTS, DEFAULT_SLOTS } from "./mip.mts";
+import { heldWeapon, ssiShareOf, stepsFor, swingOf, type SwingResult } from "./swing.mts";
+import type { EffectiveProfile, OptItem } from "./vault-lib.mts";
 import type * as Core from "../scripts/optimizer-core.mts";
 
 type OptOptionsFull = NonNullable<Parameters<typeof Core.optimizeSuit>[3]>;
@@ -35,9 +39,11 @@ export interface WorkerWarnMessage {
   type: "warn";
   message: string;
 }
+// Either path's result, with the settings that worked against it (app/diagnostics.mts; no `diagnostics` when computing them failed) and the suit's swing (app/swing.mts).
+export type WorkerResult = (OptResult | ExactSolveResult) & { diagnostics?: Diagnostic[]; swing?: SwingResult | undefined };
 export interface WorkerDoneMessage {
   type: "done";
-  result: OptResult | ExactSolveResult;
+  result: WorkerResult;
   ms: number;
 }
 export interface WorkerErrorMessage {
@@ -57,10 +63,26 @@ const core = (await import(coreUrl)) as typeof Core;
 try {
   const t0 = Date.now();
   const onProgress = (p: SolveProgress) => port.postMessage({ type: "progress", progress: { ...p, at: p.at ?? Date.now() } } satisfies WorkerProgressMessage);
+  // The core's item and profile shapes are the same runtime objects as vault-lib's (see exact-solver.mts's header).
+  const items = pools as unknown as Partial<Record<string, OptItem[]>>, worn = current as unknown as Partial<Record<string, OptItem | null>>, prof = profile as unknown as EffectiveProfile;
+  // SSI by swing step: the step table both solvers score with, resolved once here, where the pool is known (app/swing.mts).
+  const optional = opts.optionalSlots ?? DEFAULT_OPTIONAL_SLOTS;
+  const reach = propertyReach(items, worn, optional, opts.slots ?? DEFAULT_SLOTS, ["stamPool", "ssi"]);
+  const { ssiSteps, note } = stepsFor(prof, items, worn, reach.stamPool!, optional, reach.ssi!.max);
+  const solveProfile: OptProfile = ssiSteps ? { ...profile, ssiSteps } : profile;
   const result: OptResult | ExactSolveResult = opts.exact
-    ? await solveExact({ core, pools, current, profile, opts, onProgress, onWarn: (m) => port.postMessage({ type: "warn", message: m } satisfies WorkerWarnMessage) })
-    : core.optimizeSuit(pools, current, profile, { ...opts, heuristicBudgetMs: opts.timeBudgetMs ?? 15000, onProgress });   // the same default budget as solveExact and the server's job timer
-  port.postMessage({ type: "done", result, ms: Date.now() - t0 } satisfies WorkerDoneMessage);
+    ? await solveExact({ core, pools, current, profile: solveProfile, opts, onProgress, onWarn: (m) => port.postMessage({ type: "warn", message: m } satisfies WorkerWarnMessage) })
+    : core.optimizeSuit(pools, current, solveProfile, { ...opts, heuristicBudgetMs: opts.timeBudgetMs ?? 15000, onProgress });   // the same default budget as solveExact and the server's job timer
+  // the suit's swing, whether steps were on or not, when it holds a weapon with a speed and the build has a character
+  const weapon = heldWeapon(result.best), sw = prof.swing;
+  const swing = weapon && sw ? swingOf(weapon.speed!, sw.stamBase, result.totals?.after || {}, ssiShareOf(prof)) : undefined;
+  // a tie-break's outcome names the preference and tolerance it ran with (the exact search's already does)
+  const tieBreak = result.tieBreak && opts.tieBreak ? { tieBreak: { rarity: opts.tieBreak.rarity, tolerance: Math.max(0, opts.tieBreak.tolerance || 0), topScore: result.tieBreak.topScore, cost: result.tieBreak.cost, ...("costProven" in result.tieBreak ? { costProven: result.tieBreak.costProven } : {}) } } : {};
+  const withSwing = { ...result, ...(swing ? { swing } : {}), ...tieBreak };
+  // A failure here never costs the suit (withDiagnostics): the result goes out without diagnostics and the server logs why.
+  const withDiags = withDiagnostics(withSwing, () => resultDiagnostics({ pools: items, current: worn, optionalSlots: opts.optionalSlots, slots: opts.slots, profile: solveProfile as DiagnosticsProfile, result: withSwing, swingNote: note }),
+    (e) => port.postMessage({ type: "warn", message: `diagnostics failed, the result goes out without them: ${String((e as Error)?.stack || e)}` } satisfies WorkerWarnMessage));
+  port.postMessage({ type: "done", result: withDiags, ms: Date.now() - t0 } satisfies WorkerDoneMessage);
 } catch (e) {
   const errObj = e as Error;
   port.postMessage({ type: "error", error: String((e && errObj.stack) || e) } satisfies WorkerErrorMessage);

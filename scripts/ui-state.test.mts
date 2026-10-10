@@ -1,6 +1,6 @@
 // ui-state.test.mts — [slow]: the page's state transitions in the real Electron window.
 //
-// `[slow]`: the page's state transitions in the real Electron window (same launch as `scripts/ui-smoke.test.mts`, on a writable `--data` directory seeded with the demo scans, since Forget refuses to write under `--demo`): a refresh keeps the Slot chip on the filter the table uses; Clear all clears the switches behind "+ Filter" and the search too, and hides the active strip; the table is virtual (a screenful of rows drawn, the last reached by scrolling); the item peek opens from a row click with the row selected, follows ↑/↓, closes with Esc (focus back on the row) and its Close button, reopens with Enter, and a row that keeps keyboard focus shows its tooltip after the delay; hovering a row shows its tooltip, hovering its action buttons hides it or keeps a pending one from opening, and hovering the row again brings it back; with the table scrolled to its end, a Forget of the biggest container (from its row's ⋯ menu) still leaves rows on screen, keeps the builder's character and does not add weapon options; a build started for one character and finished while another is selected is not drawn under the other one, says whose build finished, and appears when its character is selected again; a saved run opened (with its fetch held back) just before a character switch is not drawn under the new character, and a slow run list for the old character does not fill the new one's drawer; a character's name in the Characters roster opens their sheet at `#/characters/<Name>`, next/previous and the breadcrumb walk the roster and back, a slot tile opens that piece's tooltip, and Forget, reached from the row's ⋯ menu by keyboard (↑ wraps to it), removes the character's row, its worn set from the Location filter and its builder entry; "Show <name>'s items" sets the Inventory's Character filter rather than the search, and a slot tile's "Open in Inventory" shows that piece in the item peek; a failed `/api/profiles` during load (answered 500 through Playwright's request routing) still opens the first-run wizard, renders Settings and Import, and names the failed route in the Characters and Suit Builder tabs; and the Inventory column choice survives a restart of the app, whose page comes back on a new origin. Skipped the same way as the UI smoke test. Rarity at most (issue #11) leaves only the tier picked and lower ones, named in the active strip and on the chip. Also (issue #99) a container with items missing since its last scan: the "3 missing" badge on its row, none on a chest scanned once, and Show missing items listing them (a shrunk stack as "64 fewer"), a row's item tooltip drawn inside the dialog and the tooltip still on the page (and working) after the dialog is gone. A worn piece scanned low on durability (issue #98) gets its badge inside its own slot tile and the sheet its one-line summary, a character with nothing low gets neither, and the roster badges it beside the character's name, inside the sticky Character cell and on screen without scrolling, with the sentence as the badge's accessible name and tooltip.
+// `[slow]`: the page's state transitions in the real Electron window (same launch as `scripts/ui-smoke.test.mts`, on a writable `--data` directory seeded with the demo scans, since Forget refuses to write under `--demo`): a refresh keeps the Slot chip on the filter the table uses; Clear all clears the switches behind "+ Filter" and the search too, and hides the active strip; the table is virtual (a screenful of rows drawn, the last reached by scrolling); the item peek opens from a row click with the row selected, follows ↑/↓, closes with Esc (focus back on the row) and its Close button, reopens with Enter, and a row that keeps keyboard focus shows its tooltip after the delay; hovering a row shows its tooltip, hovering its action buttons hides it or keeps a pending one from opening, and hovering the row again brings it back; with the table scrolled to its end, a Forget of the biggest container (from its row's ⋯ menu) still leaves rows on screen, keeps the builder's character and does not add weapon options; a build started for one character and finished while another is selected is not drawn under the other one, says whose build finished, and appears when its character is selected again; a saved run opened (with its fetch held back) just before a character switch is not drawn under the new character, and a slow run list for the old character does not fill the new one's drawer; a character's name in the Characters roster opens their sheet at `#/characters/<Name>`, next/previous and the breadcrumb walk the roster and back, a slot tile opens that piece's tooltip, and Forget, reached from the row's ⋯ menu by keyboard (↑ wraps to it), removes the character's row, its worn set from the Location filter and its builder entry; "Show <name>'s items" sets the Inventory's Character filter rather than the search, and a slot tile's "Open in Inventory" shows that piece in the item peek; a failed `/api/profiles` during load (answered 500 through Playwright's request routing) still opens the first-run wizard, renders Settings and Import, and names the failed route in the Characters and Suit Builder tabs; and the Inventory column choice survives a restart of the app, whose page comes back on a new origin. Skipped the same way as the UI smoke test. Rarity at most (issue #11) leaves only the tier picked and lower ones, named in the active strip and on the chip. Also (issue #99) a container with items missing since its last scan: the "3 missing" badge on its row, none on a chest scanned once, and Show missing items listing them (a shrunk stack as "64 fewer"), a row's item tooltip drawn inside the dialog and the tooltip still on the page (and working) after the dialog is gone. A worn piece scanned low on durability (issue #98) gets its badge inside its own slot tile and the sheet its one-line summary, a character with nothing low gets neither, and the roster badges it beside the character's name, inside the sticky Character cell and on screen without scrolling, with the sentence as the badge's accessible name and tooltip. A character scanned with Resisting Spells 100 (issue #261) has each resist held at 40 on the sheet's tiles, and the footnote names the ones the minimum lifts.
 //
 // Each of the first cases is a bug the 2026-09-22 review reproduced in a browser: a refresh resetting the filter while the table stayed filtered, the table showing nothing after a Forget shrank it, Forget re-running the whole page load (duplicated weapon options, the builder jumping to the first character), a build shown under whichever character was selected when it finished, a failed request leaving Settings on "loading…" forever, and no way to forget a character.
 import test from "node:test";
@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
-import { fitWindow, openFacet, testEnv, noUpdateCheck } from "./electron-window.mts";
+import { fitWindow, openFacet, testEnv, noUpdateCheck, completeLines } from "./electron-window.mts";
 import type { ElectronApplication, Page } from "playwright";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -136,7 +136,7 @@ test("[slow] refresh, Clear all, the virtual table and Forget keep the page's st
     // the builder back to the first character) shows up.
     await openTab(page, "builder");
     await page.waitForFunction(() => document.querySelector<HTMLSelectElement>("#b-char")?.value, { timeout: 10_000 });
-    const names = await page.locator("#b-char option").allInnerTexts();
+    const names = (await page.locator("#b-char option").allInnerTexts()).filter((n) => n !== "No character");
     await page.selectOption("#b-char", names[1]!);
     // The Weapons chip's choices, counted in its popover: wiring the panel twice would draw a second chip.
     const weaponChoices = async (): Promise<number> => {
@@ -261,7 +261,7 @@ test("[slow] a build finished for one character is never shown under another", a
     await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
     await openTab(page, "builder");
     await page.waitForFunction(() => document.querySelector<HTMLSelectElement>("#b-char")?.value, { timeout: 10_000 });
-    const [builtFor, other] = await page.locator("#b-char option").allInnerTexts() as [string, string];
+    const [builtFor, other] = (await page.locator("#b-char option").allInnerTexts()).filter((n) => n !== "No character") as [string, string];
     await page.selectOption("#b-char", builtFor);
     await page.click("#b-sec-adv .b-sec-head button");   // the time budget is under Advanced, collapsed by default
     await page.fill("#b-budget", "3");
@@ -566,6 +566,32 @@ test("[slow] a worn piece low on durability is badged on the sheet and beside it
   }
 });
 
+// The Resisting Spells minimum on the sheet (issue #261): Dorran scanned with Resisting Spells 100 wears Physical 18,
+// Fire 72, Cold 41, Poison 32 and Energy 60. The minimum of 40 holds Physical and Poison up, which the tiles show and
+// the footnote names; the others are the gear's own, Fire capped at 70.
+test("[slow] the character sheet holds each resist at the Resisting Spells minimum and says which ones it lifts", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = seedDataDir("packrat-ui-resistmin-");
+  const scan = join(dataDir, "scans", "demo-Dorran.json");
+  const raw = readFileSync(scan, "utf8"), edited = raw.replace('"skills": {},', '"skills": { "Resisting Spells": { "base": 100, "value": 100, "cap": 100 } },');
+  assert.notEqual(edited, raw, "the demo scan's empty skills were found and given Resisting Spells 100");
+  writeFileSync(scan, edited);
+  const { app, page, errors } = await launch(dataDir);
+  try {
+    await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
+    await page.evaluate(() => { location.hash = "#/characters/Dorran"; });
+    await page.waitForSelector('#tab-characters .sheet[data-character="Dorran"]', { timeout: 10_000 });
+    const values = await page.locator("#tab-characters .sheet .resist .kpi-value .t-2xl").allInnerTexts();
+    assert.deepEqual(values, ["40", "70", "41", "40", "60"]);
+    assert.equal(await page.locator("#tab-characters .sheet-foot > p").innerText(), "Resists are capped at 70, and Resisting Spells keeps each at 40 or more. Physical 40, Poison 40: the Resisting Spells minimum.");
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+});
+
 // Inventory columns resize from the keyboard (issue #46): → on a header's resize handle widens the header
 // and the rows' cells with it, and table settings' "Reset column widths" puts the default back.
 test("[slow] an Inventory column is resized with the keyboard and reset in table settings", async (t) => {
@@ -610,7 +636,7 @@ test("[slow] a saved run or run list that lands after a character switch is not 
     await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
     await openTab(page, "builder");
     await page.waitForFunction(() => document.querySelector<HTMLSelectElement>("#b-char")?.value, { timeout: 10_000 });
-    const [builtFor, other] = await page.locator("#b-char option").allInnerTexts() as [string, string];
+    const [builtFor, other] = (await page.locator("#b-char option").allInnerTexts()).filter((n) => n !== "No character") as [string, string];
     await page.selectOption("#b-char", builtFor);
     await page.click("#b-sec-adv .b-sec-head button");   // the time budget is under Advanced, collapsed by default
     await page.fill("#b-budget", "3");
@@ -813,7 +839,7 @@ test("[slow] Highlight in game queues a highlight for a ground container, and is
     let lines: string[] = [];
     while (!lines.length && Date.now() < end) {
       await page.waitForTimeout(100);
-      try { lines = readFileSync(queue, "utf8").trim().split("\n").filter(Boolean); } catch { /* not written yet */ }
+      lines = completeLines(queue);
     }
     assert.equal(lines.length, 1, "one command queued");
     const cmd = JSON.parse(lines[0]!) as { action: string; serial: number; name: string; chain: number[]; pos: { x: number; y: number } | null };

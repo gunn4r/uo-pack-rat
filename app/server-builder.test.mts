@@ -1,6 +1,6 @@
 // server-builder.test.mts — HTTP tests of the Suit Builder: `POST /api/optimize`, the saved runs and `GET|PUT /api/profiles`.
 //
-// `POST /api/optimize`: one running job per client (a second `POST` supersedes the first) and none between callers with no client id, the events route's `?client=` check, the server-wide ceiling, a job that throws logging its stack under the ref the client sees, an exact build proven by HiGHS with the saved run's score, the by-character form building the client's pools, keeping the page's settings snapshot, treating null fields as absent and refusing a bad settings type, the time budget capping restarts, resist cap overrides and weapon exclusions, malformed pools, current, profile or opts refused, only known meta fields saved, a character with no scans a 404, and Manual's hand-offs (issue #12: `pinned` keeping the placed pieces, no run saved, and with no character only pieces nobody wears); the job lifecycle (`jobTimings`, a parked core: a build past the retention kept, one past its budget cancelled, closing mid-build logging no failure); `GET|PUT|DELETE /api/runs/<id>` (a label type-checked, a truncated run a 404 that can still be deleted) and `POST /api/runs` saving a manual run with its checks; `POST /api/evaluate` answering what `evaluateSuit` computes from the same fixtures (the saved profile, a given profile with Divine Fury, a run's settings bringing their buffs, No character) and its checks; `PUT /api/profiles` (413 by bytes, 400 naming the schema path) and a truncated `profiles.json` moved aside and reseeded.
+// `POST /api/optimize`: one running job per client (a second `POST` supersedes the first) and none between callers with no client id, the events route's `?client=` check, the server-wide ceiling, a job that throws logging its stack under the ref the client sees, an exact build proven by HiGHS with the saved run's score, the by-character form building the client's pools, keeping the page's settings snapshot, treating null fields as absent and refusing a bad settings type, the time budget capping restarts, resist cap overrides, weapon exclusions and required weapon properties (the lock wins, an empty pool said), malformed pools, current, profile or opts refused, only known meta fields saved, a character with no scans a 404, and Manual's hand-offs (issue #12: `pinned` keeping the placed pieces, no run saved, and with no character only pieces nobody wears; No character's `_nobody` build from pieces nobody wears, saved, reused and listed under its name, others' worn gear on request, another pseudo name a 404, and its manual run; Only containers, `settings.onlyRoots`: a bad list 400, the pool narrowed to the listed container, the slots it leaves with nothing from a container and a hard floor it puts out of reach said before the search, and a No character build saved with the list and never answering one without it); SSI scored by swing step through the real worker (issue #217: per point with the reason while the weapon is not fixed, scoring what steps off scores, and the result's swing once the one-handed slot is locked); the job lifecycle (`jobTimings`, a parked core: a build past the retention kept, one past its budget cancelled, closing mid-build logging no failure); `GET|PUT|DELETE /api/runs/<id>` (a label type-checked, a truncated run a 404 that can still be deleted) and `POST /api/runs` saving a manual run with its checks; `POST /api/evaluate` answering what `evaluateSuit` computes from the same fixtures (the saved profile, a given profile with Divine Fury, a run's settings bringing their buffs, No character) and its checks; `PUT /api/profiles` (413 by bytes, 400 naming the schema path) and a truncated `profiles.json` moved aside and reseeded. A rarity preference (issue #262): `POST /api/optimize` stamps tie costs on pooled and worn pieces in both forms (an unknown serial ranking 0), keys each preference apart from none, and refuses a bad `opts.tieBreak`.
 import { test, before, after, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, rmSync } from "node:fs";
@@ -9,11 +9,13 @@ import { tmpdir } from "node:os";
 import { resolveConfig, ensureLayout } from "./config.mts";
 import type { ServerHandle } from "./vault-server.mts";
 import { startTestServer as startServer } from "./server-fixture.mts";
-import { buildPools, setRules, toOptItem, type Item, type Profile } from "./vault-lib.mts";
+import { NOBODY, buildPools, isWeapon, setRules, toOptItem, type Item, type Profile } from "./vault-lib.mts";
 import { characterProfile, specFromProfile, templateSpecFrom, type ProfilesV3 } from "./build-spec.mts";
 import { manualBase, manualPlan } from "./buffs.mts";
 import { evaluateSuit, type SuitEvaluation } from "./evaluate.mts";
 import { DEFAULT_OPTIONAL_SLOTS } from "./mip.mts";
+import { swingSeconds } from "./swing.mts";
+import * as core from "../scripts/optimizer-core.mts";
 import { buildUi } from "../scripts/build-ui.mts";
 import { buildSchemaTypes } from "../scripts/build-schema-types.mts";
 import { asJson, HERE, UOALIVE, foldFixtures, rawReq, JSON_HEADERS, logText, type InventoryResponse, type ProfilesResponse, firstTemplate, type RulesResponse, type ItemsPageResponse, type OptimizeJobResponse, type ErrorBody } from "./server-routes-fixture.mts";
@@ -214,6 +216,87 @@ test("[fast] POST /api/optimize exact: the job finishes with solver \"highs\", p
     assert.ok(status!.runId);
     const run = asJson<RunResponse>(await (await fetch(s2.url + `/api/runs/${status!.runId}`)).json());
     assert.equal(run.run.result.score, status!.result!.score);
+  } finally {
+    await s2.close();
+  }
+});
+
+test("[fast] POST /api/optimize answers the unreachable floors before the search, and the result and its saved run carry them, on both solver paths (issue #217)", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-"));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {})));
+  try {
+    const inv = asJson<InventoryResponse>(await (await fetch(s2.url + "/api/inventory")).json());
+    const profiles = asJson<ProfilesResponse>(await (await fetch(s2.url + "/api/profiles")).json());
+    const rules = asJson<RulesResponse>(await (await fetch(s2.url + "/api/rules")).json());
+    const character = Object.keys(inv.inventory.characters)[0]!;
+    const { pools, current } = buildPools(foldFixtures(join(HERE, "fixtures")), character, {});
+    const tpl = firstTemplate(profiles);
+    const profile = { ...tpl, caps: rules.rules.caps, floors: { ...tpl.floors, luck: 100000 }, hardFloors: ["luck"] };
+    for (const exact of [true, false]) {
+      const r = await fetch(s2.url + "/api/optimize", { method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ pools, current, profile, opts: { exact, timeBudgetMs: 3000, restarts: 5, seed: 2026 } }) });
+      const start = asJson<OptimizeJobResponse & { diagnostics: Array<{ code: string; property: string; values: Record<string, number> }> }>(await r.json());
+      const luck = start.diagnostics.find((d) => d.property === "luck");
+      assert.equal(luck?.code, "floor_unreachable", JSON.stringify(start.diagnostics));
+      assert.equal(luck!.values.floor, 100000);
+      let status: OptimizeJobResponse | undefined;
+      for (let i = 0; i < 300; i++) {
+        status = asJson<OptimizeJobResponse>(await (await fetch(s2.url + `/api/optimize/${start.id}/status`)).json());
+        if (status.state !== "running") break;
+        await new Promise((res) => setTimeout(res, 100));
+      }
+      assert.equal(status!.state, "done", JSON.stringify(status));
+      const diags = (status!.result as unknown as { diagnostics: unknown[] }).diagnostics;
+      assert.deepEqual(diags.find((d) => (d as { property: string }).property === "luck"), luck, `exact ${exact}: the result repeats the pre-build diagnostic`);
+      const run = asJson<RunResponse>(await (await fetch(s2.url + `/api/runs/${status!.runId}`)).json());
+      assert.deepEqual((run.run.result as unknown as { diagnostics: unknown[] }).diagnostics, diags, "the saved run keeps them");
+    }
+  } finally {
+    await s2.close();
+  }
+});
+
+// Swing steps through the real worker (issue #217): with the weapon not fixed SSI stays per point and the result says why, scoring what the same build with steps off scores; with the one-handed slot locked to the worn weapon the steps are used and the result's swing is the formula's for the suit.
+test("[fast] POST /api/optimize scores SSI by swing step once the weapon is fixed, and says why not while it is not", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-"));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {})));
+  try {
+    const profiles = asJson<ProfilesResponse>(await (await fetch(s2.url + "/api/profiles")).json());
+    const rules = asJson<RulesResponse>(await (await fetch(s2.url + "/api/rules")).json());
+    const tpl = firstTemplate(profiles), swing = { stamBase: 80, refStamina: 95, steps: true };
+    const build = async (profile: object, lockedSlots: string[], character = "Kestrel"): Promise<Record<string, unknown>> => {
+      const r = await fetch(s2.url + "/api/optimize", { method: "POST", headers: JSON_HEADERS,
+        body: JSON.stringify({ character, settings: { lockedSlots }, profile, opts: { exact: true, timeBudgetMs: 5000, restarts: 5, seed: 2026 } }) });
+      const { id } = asJson<OptimizeJobResponse>(await r.json());
+      let status: OptimizeJobResponse | undefined;
+      for (let i = 0; i < 300; i++) {
+        status = asJson<OptimizeJobResponse>(await (await fetch(s2.url + `/api/optimize/${id}/status`)).json());
+        if (status.state !== "running") break;
+        await new Promise((res) => setTimeout(res, 100));
+      }
+      assert.equal(status!.state, "done", JSON.stringify(status));
+      return status!.result as unknown as Record<string, unknown>;
+    };
+    const base = { ...tpl, caps: rules.rules.caps, weights: { ...tpl.weights, ssi: 8 } };
+    type Res = { score: number; proven: boolean; best: Record<string, { serial: number; name: string; slot: string; props: Record<string, number> } | null>; diagnostics: Array<{ code: string; actions: unknown[] }>; swing?: { speed: number; stamina: number; ssi: number; seconds: number }; totals: { after: Record<string, number> } };
+    const loose = await build({ ...base, swing }, []) as unknown as Res;
+    const linear = loose.diagnostics.find((d) => d.code === "swing_linear");
+    assert.ok(linear, JSON.stringify(loose.diagnostics));
+    const plain = await build({ ...base, swing: { ...swing, steps: false } }, []) as unknown as Res;
+    if (loose.proven && plain.proven) assert.ok(Math.abs(loose.score - plain.score) < 1e-6, `per point with steps asked for ${loose.score} vs steps off ${plain.score}`);
+    const fixed = await build({ ...base, swing }, ["oneHanded"]) as unknown as Res;
+    assert.equal(fixed.diagnostics.find((d) => d.code === "swing_linear"), undefined, JSON.stringify(fixed.diagnostics));
+    assert.equal(fixed.swing!.speed, 3, "the worn War Axe");
+    const after = fixed.totals.after, stamina = 80 + (after.stamPool || 0), ssi = Math.min(60, after.ssi || 0);
+    assert.deepEqual([fixed.swing!.stamina, fixed.swing!.ssi, fixed.swing!.seconds], [stamina, ssi, swingSeconds(3, stamina, ssi)]);
+    // the steps were scored: the suit's score less its per-point score is the weight times (the gear SSI its delay costs at the reference stamina 95, less its SSI), worked out from the formula here
+    const nRef = 12 - Math.floor(95 / 30), ticks = fixed.swing!.seconds * 4, credit = Math.max(0, Math.floor((100 * nRef) / (ticks + 1)) - 99);
+    assert.notEqual(credit, Math.min(60, after.ssi || 0), "a suit whose SSI sits exactly on a step would not tell the two apart");
+    assert.ok(Math.abs(fixed.score - core.scoreSet(fixed.best as Parameters<typeof core.scoreSet>[0], base as unknown as Parameters<typeof core.scoreSet>[1]) - 8 * (credit - Math.min(60, after.ssi || 0))) < 1e-6, `score ${fixed.score}, credit ${credit}, SSI ${after.ssi}`);
+    // a two-hander locked in its slot fixes the weapon too: the one-handed pool can't be held beside it
+    const staff = await build({ ...base, swing }, ["twoHanded"], "Dorran") as unknown as Res;
+    assert.equal(staff.diagnostics.find((d) => d.code === "swing_linear"), undefined, JSON.stringify(staff.diagnostics));
+    assert.equal(staff.swing!.speed, 2.25, "the worn Double Bladed Staff");
   } finally {
     await s2.close();
   }
@@ -430,7 +513,7 @@ test("[fast] weapon exclusions: a bad list is 400, excluded weapons stay out of 
     method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ character, settings, profile, opts: { exact: false, restarts: 3 }, meta: { character, settings } }) });
   const bad = await post({ excludeWeapons: ["bows"] });
   assert.equal(bad.status, 400);
-  assert.match(asJson<ErrorBody>(await bad.json()).error, /settings\.excludeWeapons\[0\] is not a weapon skill/);
+  assert.match(asJson<ErrorBody>(await bad.json()).error, /settings\.excludeWeapons\[0\] must be a weapon skill or spellbook/);
   const badUbws = await post({ ubwsAnyWeapon: "yes" });
   assert.equal(badUbws.status, 400);
   assert.match(asJson<ErrorBody>(await badUbws.json()).error, /settings\.ubwsAnyWeapon must be a boolean/);
@@ -459,6 +542,90 @@ test("[fast] weapon exclusions: a bad list is 400, excluded weapons stay out of 
     await s2.close();
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+// Weapon properties (issue #214): a bad list is refused; the build keeps only weapons with the required properties, in both
+// hands, and blocks the worn one; a locked worn weapon without them stays with weapon_missing_flag; no weapon with them is
+// no_weapon_with_flag, said before the search, repeated on the result and kept by the saved run, and the suit has no weapon.
+test("[fast] weapon properties: a bad list is 400, only weapons with them are built with, the lock wins, an empty pool is said", async () => {
+  const character = "Kestrel";
+  const profiles = asJson<ProfilesResponse>(await (await get("/api/profiles")).json());
+  const rules = asJson<RulesResponse>(await (await get("/api/rules")).json());
+  const profile = { ...firstTemplate(profiles), caps: rules.rules.caps };
+  type Diag = { code: string; message: string; actions: unknown[] };
+  type Start = OptimizeJobResponse & { diagnostics: Diag[] };
+  const post = async (settings: Record<string, unknown>, prof: Record<string, unknown> = profile): Promise<{ status: number; body: Start & ErrorBody }> => {
+    const r = await fetch(srv.url + "/api/optimize", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ character, settings, profile: prof, opts: { exact: false, restarts: 3 }, meta: { character, settings } }) });
+    return { status: r.status, body: asJson<Start & ErrorBody>(await r.json()) };
+  };
+  // a fresh build's result: a reused run would carry what an earlier build said, so it fails the test
+  const done = async (j: Start): Promise<{ best: Record<string, { serial: number } | null>; diagnostics: Diag[] }> => {
+    assert.ok(!j.cached, "a fresh build, not a reused run");
+    let status: OptimizeJobResponse = j;
+    for (let i = 0; i < 300 && status.state !== "done"; i++) {
+      await new Promise((res) => setTimeout(res, 20));
+      status = asJson<OptimizeJobResponse>(await (await fetch(srv.url + `/api/optimize/${j.id}/status`)).json());
+    }
+    assert.equal(status.state, "done", JSON.stringify(status));
+    return status.result as unknown as { best: Record<string, { serial: number } | null>; diagnostics: Diag[] };
+  };
+  const bad = await post({ weaponMustHave: ["sharp"] });
+  assert.equal(bad.status, 400);
+  assert.match(bad.body.error, /settings\.weaponMustHave\[0\] is not a yes\/no property/);
+
+  const inv = foldFixtures(join(HERE, "fixtures"));
+  const heldWeapons = (best: Record<string, { serial: number } | null>): Item[] => ["oneHanded", "twoHanded"].flatMap((sl) => (best[sl] && isWeapon(inv.items[best[sl]!.serial]!) ? [inv.items[best[sl]!.serial]!] : []));
+  // Hit Mana Leech weighted: only the Balanced Halberds Of The Vampire carry it, so the build holds one
+  const balanced = await post({ weaponMustHave: ["balanced"], strLimit: 125 }, { ...profile, weights: { ...profile.weights, hitManaLeech: 50 } });
+  assert.equal(balanced.status, 200);
+  assert.ok(balanced.body.blocked!.includes("oneHanded"), "the worn War Axe has no Balanced");
+  assert.deepEqual(balanced.body.diagnostics.filter((d) => d.code.startsWith("weapon") || d.code.startsWith("no_weapon")), []);
+  const held = heldWeapons((await done(balanced.body)).best);
+  assert.ok(held.length > 0, "the build holds a weapon");
+  for (const w of held) assert.ok(w.flags.includes("balanced"), `${w.name} has no Balanced`);
+
+  const locked = await post({ weaponMustHave: ["balanced"], lockedSlots: ["oneHanded"] });
+  assert.ok(!locked.body.blocked!.includes("oneHanded"), "the lock wins");
+  const miss = locked.body.diagnostics.find((d) => d.code === "weapon_missing_flag");
+  assert.match(miss?.message || "", /^War Axe lacks Balanced, but .* is locked, so it stays in the suit\.$/, JSON.stringify(locked.body.diagnostics));
+  assert.deepEqual(miss!.actions, []);
+  const lockedResult = await done(locked.body);
+  assert.equal(lockedResult.best.oneHanded?.serial, (locked.body.current as Record<string, { serial: number }>).oneHanded!.serial, "the locked weapon stays in the suit");
+  assert.deepEqual(lockedResult.diagnostics.find((d) => d.code === "weapon_missing_flag"), miss, "the result repeats it");
+
+  const none = await post({ weaponMustHave: ["night sight"] });
+  const empty = none.body.diagnostics.find((d) => d.code === "no_weapon_with_flag");
+  assert.equal(empty?.message, "No weapon in your candidate pool has Night Sight, so the suit is built without one.", JSON.stringify(none.body.diagnostics));
+  const r = await done(none.body);
+  assert.deepEqual(heldWeapons(r.best), [], "no weapon in either hand");
+  assert.deepEqual(r.diagnostics.find((d) => d.code === "no_weapon_with_flag"), empty, "the result repeats it");
+  const noWeapons = await post({ weaponMustHave: ["night sight"], medOnly: true });
+  assert.equal(noWeapons.body.diagnostics.find((d) => d.code === "no_weapon_with_flag"), undefined, "Meditation-safe gear only and the STR limit emptied the pool, not the requirement");
+});
+
+// Issue #214 review: when the other settings already leave out the same weapons and the worn one is locked, the pools are the same with or without the requirement, so the run key holds
+// weaponMustHave itself: a build with it never reuses one without, and says the locked weapon lacks the property.
+test("[fast] weapon properties: a build with a requirement never reuses one without it, though the pools match", async () => {
+  const character = "Kestrel";
+  const profiles = asJson<ProfilesResponse>(await (await get("/api/profiles")).json());
+  const rules = asJson<RulesResponse>(await (await get("/api/rules")).json());
+  const profile = { ...firstTemplate(profiles), caps: rules.rules.caps, weights: { ...firstTemplate(profiles).weights, luck: 0.0214 } };
+  type Start = OptimizeJobResponse & { diagnostics: Array<{ code: string }> };
+  const post = async (settings: Record<string, unknown>): Promise<Start> => asJson<Start>(await (await fetch(srv.url + "/api/optimize", { method: "POST", headers: JSON_HEADERS,
+    body: JSON.stringify({ character, settings, profile, opts: { exact: false, restarts: 3 }, meta: { character, settings } }) })).json());
+  // Meditation-safe gear only already leaves out every weapon without Spell Channeling (and the STR limit the Animated
+  // Katana), and the locked one-hand keeps the worn War Axe: the pools and the worn suit are the same either way.
+  const lockedSlots = ["oneHanded"], medOnly = true;
+  const first = await post({ lockedSlots, medOnly });
+  for (let i = 0; i < 300 && !first.cached; i++) {
+    const st = asJson<OptimizeJobResponse>(await (await fetch(srv.url + `/api/optimize/${first.id}/status`)).json());
+    if (st.state === "done") break;
+    await new Promise((res) => setTimeout(res, 20));
+  }
+  assert.ok((await post({ lockedSlots, medOnly })).cached, "the same build again is reused, so the next check means something");
+  const withFlag = await post({ lockedSlots, medOnly, weaponMustHave: ["spell channeling"] });
+  assert.ok(!withFlag.cached, "a build with the requirement is not answered by one without it");
+  assert.ok(withFlag.diagnostics.some((d) => d.code === "weapon_missing_flag"), JSON.stringify(withFlag.diagnostics));
 });
 
 // Post-review fix: `null` in an optional settings field (strLimit/excludeTags/excludeRoots/
@@ -492,7 +659,7 @@ test("[fast] /api/optimize by character: null settings fields behave like absent
 // Important 5, first half: pools/current/profile/opts were unvalidated. {pools:{helmet:[null]}} started
 // a real worker thread that died with a TypeError, and an unbounded opts.restarts/timeBudgetMs went
 // straight into the search.
-test("[fast] POST /api/optimize rejects a malformed pools/current/profile and an out-of-range opts instead of starting a job", async () => {
+test("[fast] POST /api/optimize rejects a malformed pools/current/profile (hardFloors included) and an out-of-range opts instead of starting a job", async () => {
   const dir = mkdtempSync(join(tmpdir(), "qm-optimize-validate-"));
   const s2 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {})));
   const profile = { caps: { physResist: 70 }, weights: {} };
@@ -513,6 +680,9 @@ test("[fast] POST /api/optimize rejects a malformed pools/current/profile and an
       { pools: {}, current: {}, profile, opts: [] },
       { pools: {}, current: {}, profile, opts: {}, meta: [] },
       { pools: {}, current: {}, profile, opts: {}, character: 5 },
+      { pools: {}, current: {}, profile: { ...profile, hardFloors: 5 }, opts: {} },
+      { pools: {}, current: {}, profile: { ...profile, hardFloors: { luck: true } }, opts: {} },
+      { pools: {}, current: {}, profile: { ...profile, hardFloors: [7] }, opts: {} },
     ];
     for (const body of bad) {
       const r = await post(body);
@@ -637,7 +807,7 @@ test("[fast] GET/PUT /api/profiles v3: a v2 folder migrates on the first read, b
     const { Corwin: _corwin, ...rest } = (JSON.parse(readFileSync(join(gold, "expected.profiles.json"), "utf8")) as ProfilesV3).characters;
     assert.deepEqual(got.profiles, { ...JSON.parse(readFileSync(join(gold, "expected.profiles.json"), "utf8")), characters: rest });
     assert.match(logText(dir), /characters\.Corwin: not scanned/);
-    assert.deepEqual(Object.keys(got.builtinTemplates), ["melee", "caster", "archer", "tank"]);
+    assert.deepEqual(Object.keys(got.builtinTemplates), ["melee", "caster", "archer", "tank", "sampire", "lazyPally", "summoner", "tamerArcher", "chivArcher", "archerBard", "necroMage", "mysticMage", "necroweaver", "throwingGargoyle", "mysticTank", "horrificBeastWrestler", "hemomancer"]);
     assert.deepEqual(Object.keys(got.profiles.templates), ["melee", "my caster"], "never copied into the file");
     assert.equal(asJson<{ prefs: Record<string, unknown> }>(await (await fetch(s2.url + "/api/ui-prefs")).json()).prefs.autoBuffs, undefined);
     const aldric = got.profiles.characters.Aldric!;
@@ -805,6 +975,93 @@ test("[fast] /api/optimize with pinned and no character: the pool is the pieces 
   }
 });
 
+test("[fast] /api/optimize for No character (_nobody): built from pieces nobody wears, saved and reused under _nobody, others' worn gear on request; POST /api/runs saves its manual run (issue #12)", async () => {
+  const profile = { weights: { luck: 1, hci: 3, physResist: 2 }, caps: { physResist: 70 } };
+  const body = (character: string | null, settings: Record<string, unknown> = {}) => ({ method: "POST", headers: JSON_HEADERS,
+    body: JSON.stringify({ character, settings, profile, opts: { exact: true, timeBudgetMs: 20000 }, meta: { character, settings } }) });
+  const r = await fetch(srv.url + "/api/optimize", body(NOBODY));
+  const j = asJson<OptimizeJobResponse>(await r.json());
+  assert.equal(r.status, 200, JSON.stringify(j));
+  assert.deepEqual(j.current, {}, "No character wears nothing");
+  const done = await pollJob(srv.url, j.id!, (s) => s.state === "done", 20000);
+  assert.equal(done.state, "done", JSON.stringify(done));
+  const rows = asJson<ItemsPageResponse>(await (await get("/api/items?limit=2000")).json()).rows!;
+  const wearer = new Map(rows.map((it) => [it.serial, it.equippedBy]));
+  for (const [slot, it] of Object.entries(done.result!.best as Record<string, { serial: number } | null>)) assert.ok(!it || !wearer.get(it.serial), `${slot}: ${it?.serial} is worn`);
+  assert.ok(done.runId, "the build is saved as a run");
+  const listed = asJson<{ runs: Array<{ id: string; character: string }> }>(await (await get(`/api/runs?character=${NOBODY}`)).json()).runs;
+  assert.deepEqual(listed.map((x) => [x.id, x.character]), [[done.runId, NOBODY]]);
+  const again = asJson<OptimizeJobResponse & { run: { id: string } }>(await (await fetch(srv.url + "/api/optimize", body(NOBODY))).json());
+  assert.equal(again.cached, true);
+  assert.equal(again.run.id, done.runId, "the same build is answered by its saved run");
+  // gear worn by characters joins the pool only when asked for
+  const others = asJson<OptimizeJobResponse>(await (await fetch(srv.url + "/api/optimize", body(NOBODY, { allowOthersWorn: true }))).json());
+  assert.ok(others.poolSize! > j.poolSize!, `${others.poolSize} > ${j.poolSize}`);
+  await fetch(`${srv.url}/api/optimize/${others.id}/cancel`, { method: "POST" });
+  // Manual's fill with no character keeps others' worn gear out whatever the settings say, and is not saved
+  const fill = asJson<OptimizeJobResponse>(await (await fetch(srv.url + "/api/optimize", { method: "POST", headers: JSON_HEADERS,
+    body: JSON.stringify({ character: null, settings: { allowOthersWorn: true }, profile, opts: { exact: true, timeBudgetMs: 20000 }, pinned: {} }) })).json());
+  assert.equal(fill.poolSize, j.poolSize);
+  assert.equal((await pollJob(srv.url, fill.id!, (s) => s.state === "done", 20000)).runId ?? null, null, "a fill is not saved");
+  // another pseudo name is still nobody's scans
+  assert.equal((await fetch(srv.url + "/api/optimize", body("_other"))).status, 404);
+  // Manual's Save as run for No character
+  const piece = rows.find((it) => it.gear && it.slot === "ring" && !it.equippedBy) ?? rows.find((it) => it.gear && it.slot && !it.equippedBy)!;
+  const saved = await fetch(srv.url + "/api/runs", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ character: NOBODY, suit: { [piece.slot!]: piece.serial }, settings: {} }) });
+  const sj = asJson<{ run: { id: string; character: string; method: string; changes: number } }>(await saved.json());
+  assert.equal(saved.status, 200, JSON.stringify(sj));
+  assert.deepEqual([sj.run.character, sj.run.method, sj.run.changes], [NOBODY, "manual", 1]);
+});
+
+// Issue #12, Only containers: settings.onlyRoots narrows the pool to pieces under those root containers (worn pieces keep their own rule), is checked,
+// keyed and kept by the saved run, and says before the search which slots it leaves with nothing from a container and which hard floors it puts out of reach.
+test("[fast] /api/optimize with onlyRoots: the pool narrowed to the listed containers, a bad list 400, the empty slots and an unreachable floor said, the run keyed and saved with it", async () => {
+  const character = "Kestrel";
+  const profiles = asJson<ProfilesResponse>(await (await get("/api/profiles")).json());
+  const rules = asJson<RulesResponse>(await (await get("/api/rules")).json());
+  const inv = foldFixtures(join(HERE, "fixtures"));
+  const [kRoot, dRoot] = ["Kestrel", "Dorran"].map((who) => Object.values(inv.containers).find((c) => c.parent == null && c.scannedBy === who)!.serial) as [number, number];
+  const pooled = (r: ReturnType<typeof buildPools>): Item[] => Object.values(r.pools).flat().map((o) => inv.items[o!.serial]!);
+  // a property only Kestrel's own container offers: a hard floor on it is reachable from every container, and out of reach from Dorran's alone
+  const narrow = pooled(buildPools(inv, character, { onlyRoots: [dRoot], strength: 125 })), wide = pooled(buildPools(inv, character, { strength: 125 }));
+  const prop = Object.keys(Object.assign({}, ...wide.filter((it) => it.root === kRoot).map((it) => it.props))).find((k) => !narrow.some((it) => it.props[k]))!;
+  assert.ok(prop, "the fixtures have a property only Kestrel's container offers");
+  const tpl = firstTemplate(profiles), profile = { ...tpl, caps: rules.rules.caps, floors: { [prop]: 1 }, hardFloors: [prop] };
+  type Start = OptimizeJobResponse & { diagnostics: Array<{ code: string; property?: string; message: string }> };
+  const post = async (who: string, settings: Record<string, unknown>): Promise<{ status: number; body: Start & ErrorBody }> => {
+    const r = await fetch(srv.url + "/api/optimize", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ character: who, settings, profile, opts: { exact: false, restarts: 3 }, meta: { character: who, settings } }) });
+    return { status: r.status, body: asJson<Start & ErrorBody>(await r.json()) };
+  };
+  const bad = await post(character, { onlyRoots: ["bank"] });
+  assert.equal(bad.status, 400);
+  assert.match(bad.body.error, /settings\.onlyRoots must be a list of container serials$/);
+
+  const all = await post(character, { strLimit: 125 });
+  const only = await post(character, { strLimit: 125, onlyRoots: [dRoot] });
+  assert.equal(only.status, 200, JSON.stringify(only.body));
+  assert.equal(only.body.poolSize, narrow.length);
+  assert.ok(only.body.poolSize! < all.body.poolSize!, `${only.body.poolSize} < ${all.body.poolSize}`);
+  assert.ok(Number(only.body.skipped!.roots) > 0, "the other containers' pieces are counted as skipped");
+  assert.equal(all.body.diagnostics.find((d) => d.code === "floor_unreachable" && d.property === prop), undefined, "reachable from every container");
+  assert.ok(only.body.diagnostics.some((d) => d.code === "floor_unreachable" && d.property === prop), JSON.stringify(only.body.diagnostics));
+  assert.equal(all.body.diagnostics.find((d) => d.code === "only_containers_empty"), undefined);
+  const empty = only.body.diagnostics.find((d) => d.code === "only_containers_empty");
+  assert.match(empty?.message || "", /^Your Only containers hold nothing for .+, so the suit takes nothing from them there\.$/, JSON.stringify(only.body.diagnostics));
+  for (const id of [all.body.id, only.body.id]) await fetch(`${srv.url}/api/optimize/${id}/cancel`, { method: "POST" });
+
+  // No character: exactly the pieces nobody wears in the listed container; the finished build is saved with the list and never answers a build without it
+  const nobody = await post(NOBODY, { onlyRoots: [dRoot] });
+  assert.equal(nobody.body.poolSize, pooled(buildPools(inv, null, { onlyRoots: [dRoot], strength: 125 })).length);
+  const done = await pollJob(srv.url, nobody.body.id!, (s) => s.state === "done", 20000);
+  for (const it of Object.values(done.result!.best as Record<string, { serial: number } | null>)) if (it) assert.equal(inv.items[it.serial]!.root, dRoot);
+  const run = asJson<{ run: { settings: { onlyRoots?: number[] } } }>(await (await get(`/api/runs/${done.runId}`)).json()).run;
+  assert.deepEqual(run.settings.onlyRoots, [dRoot], "the saved run keeps the list");
+  assert.equal((await post(NOBODY, { onlyRoots: [dRoot] })).body.cached, true, "the same list is answered by the saved run");
+  const wider = await post(NOBODY, {});
+  assert.ok(!wider.body.cached, "a build without the list is not");
+  await fetch(`${srv.url}/api/optimize/${wider.body.id}/cancel`, { method: "POST" });
+});
+
 test("[fast] POST /api/runs saves Manual's suit as a manual run: its shape, its key and the checks (issue #12)", async () => {
   const { character, worn, loose } = await demoGear();
   const piece = loose.find((it) => it.slot === "ring") ?? loose[0]!;
@@ -869,7 +1126,7 @@ test("[fast] POST /api/evaluate answers evaluateSuit's evaluation of a hand-pick
   assert.equal(df.effectiveTotals.dci, (df.gearTotals.dci || 0) - 20, "Divine Fury's DCI −20 in the effective totals, not the gear's");
   assert.deepEqual(await answer({ character, suit, profile: { ...profile, buffs: { on: ["divineFury"], skills: { Chivalry: 100, Karma: 0 } } } }), df, "a run's settings bring their buffs");
   const none = await answer({ character: null, suit: { [piece.slot!]: piece.serial } });
-  assert.equal(none.planned.resistBonus, 0, "No character: raw item totals");
+  assert.equal(none.planned.resistMinimum, null, "No character: raw item totals");
   // the checks
   assert.equal((await post({ character: "Nobody", suit })).status, 404);
   assert.equal((await post({ suit })).status, 400, "a character, or null");
@@ -880,4 +1137,61 @@ test("[fast] POST /api/evaluate answers evaluateSuit's evaluation of a hand-pick
   assert.equal(asJson<ErrorBody>(await (await post({ character, suit, buffs: { on: ["noSuchBuff"], skills: {} } })).json()).error, "body.buffs must list known buffs, each once and one form at most, with their numbers in range");
   const twoH = [...loose, ...worn].find((it) => it.slot === "twoHanded" && it.twoHanded), oneH = [...loose, ...worn].find((it) => it.slot === "oneHanded");
   if (twoH && oneH) assert.equal((await post({ character, suit: { twoHanded: twoH.serial, oneHanded: oneH.serial } })).status, 400);
+});
+
+// Issue #262: a rarity preference. The route stamps each pooled and worn piece's tie cost from its rarity line (the
+// ladder's rank for "lower", the ranks above it for "higher", an unknown serial ranking 0), only when opts.tieBreak is
+// set: a build with none keys and builds as before, and each preference keys apart.
+test("[fast] /api/optimize: a rarity preference stamps tie costs, keys apart from no preference, and is checked", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-"));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {})));
+  try {
+    const invFull = asJson<InventoryResponse>(await (await fetch(s2.url + "/api/inventory")).json());
+    const profiles = asJson<ProfilesResponse>(await (await fetch(s2.url + "/api/profiles")).json());
+    const rules = asJson<RulesResponse>(await (await fetch(s2.url + "/api/rules")).json());
+    const ladder = rules.rules.rarity!, items = foldFixtures(join(HERE, "fixtures")).items;
+    const character = Object.keys(invFull.inventory.characters)[0]!;
+    const profile = { ...firstTemplate(profiles), caps: rules.rules.caps };
+    const post = async (body: Record<string, unknown>): Promise<{ status: number; json: OptimizeJobResponse }> => {
+      const r = await fetch(s2.url + "/api/optimize", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+      return { status: r.status, json: asJson<OptimizeJobResponse>(await r.json()) };
+    };
+    const build = async (body: Record<string, unknown>): Promise<{ result: NonNullable<OptimizeJobResponse["result"]>; key: string }> => {
+      const { status, json } = await post(body);
+      assert.equal(status, 200, JSON.stringify(json));
+      let st: OptimizeJobResponse = json;
+      for (let i = 0; i < 300 && st.state !== "done"; i++) { await new Promise((res) => setTimeout(res, 20)); st = asJson<OptimizeJobResponse>(await (await fetch(s2.url + `/api/optimize/${json.id}/status`)).json()); }
+      assert.equal(st.state, "done", JSON.stringify(st));
+      const run = asJson<RunResponse>(await (await fetch(s2.url + `/api/runs/${st.runId}`)).json());
+      return { result: st.result!, key: run.run.key as string };
+    };
+    const rank = (serial: number): number => { const r = items[serial]?.rarity; const i = ladder.findIndex((t) => t.name.toLowerCase() === String(r || "").replace(/^reforged\s+/i, "").toLowerCase()); return i + 1; };
+    const pieces = (res: NonNullable<OptimizeJobResponse["result"]>) => Object.values(res.best as Record<string, { serial: number; tieCost?: number } | null>).filter((x): x is { serial: number; tieCost?: number } => !!x);
+    const plain = await build({ character, settings: {}, profile, opts: { exact: false } });
+    assert.ok(pieces(plain.result).every((it) => it.tieCost === undefined), "no preference, no tie cost");
+    assert.equal(plain.result.tieBreak, undefined);
+    const lower = await build({ character, settings: {}, profile, opts: { exact: false, tieBreak: { rarity: "lower", tolerance: 0 } } });
+    const higher = await build({ character, settings: {}, profile, opts: { exact: false, tieBreak: { rarity: "higher", tolerance: 0 } } });
+    assert.equal(new Set([plain.key, lower.key, higher.key]).size, 3, "each preference keys apart");
+    assert.ok(pieces(lower.result).length > 0);
+    for (const it of pieces(lower.result)) assert.equal(it.tieCost, rank(it.serial), `lower: 0x${it.serial.toString(16)}`);
+    for (const it of pieces(higher.result)) assert.equal(it.tieCost, ladder.length - rank(it.serial), `higher: 0x${it.serial.toString(16)}`);
+    const tb = lower.result.tieBreak as { rarity: string; tolerance: number; cost: number };
+    assert.deepEqual([tb.rarity, tb.tolerance, tb.cost], ["lower", 0, pieces(lower.result).reduce((n, it) => n + it.tieCost!, 0)]);
+    // the hand-built form: a worn piece the scans do not have ranks 0
+    const odd = { serial: 0x7fff0001, name: "Odd Ring", slot: "ring", props: { hci: 100 } };
+    for (const [rarity, cost] of [["lower", 0], ["higher", ladder.length]] as const) {
+      const r = await build({ pools: { ring: [] }, current: { ring: odd }, profile: { weights: { hci: 1 }, caps: {} }, opts: { exact: false, tieBreak: { rarity, tolerance: 0 } } });
+      assert.equal((r.result.best as Record<string, { tieCost?: number }>).ring!.tieCost, cost, rarity);
+    }
+    // the check
+    for (const [tieBreak, error] of [[{ rarity: "rarest", tolerance: 0 }, /tieBreak.rarity must be one of higher, lower/], [{ rarity: "lower", tolerance: -1 }, /tolerance must be a non-negative number/],
+      [{ rarity: "lower", tolerance: 0, extra: 1 }, /not a tie-break setting/], ["lower", /tieBreak must be an object/]] as const) {
+      const { status, json } = await post({ character, settings: {}, profile, opts: { exact: false, tieBreak } });
+      assert.equal(status, 400);
+      assert.match(json.error!, error);
+    }
+  } finally {
+    await s2.close();
+  }
 });

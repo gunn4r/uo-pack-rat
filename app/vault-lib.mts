@@ -2,13 +2,13 @@
 // optimizer pool building and requirement reports. Used by index.html (browser, via the
 // server) and gear-vault.test.mts (Node). No dependencies, no DOM.
 //
-// Shard rules (property caps, the Resisting Spells resist-bonus formula, race cap overrides, tag-
+// Shard rules (property caps, the Resisting Spells resist minimum, race cap overrides, tag-
 // penalty units, the rarity ladder, the gargoyle race-lock policy) live in app/rules/<shard>.json,
 // loaded (Node-only, by app/rules.mts) and handed in here with setRules() — this module never reads
 // a rules file itself, so it stays usable in the browser. getRules() throws until setRules() has run:
 // a forgotten call must be loud, not a silent wrong answer.
-import { isPseudoCharacter, parseStamp, V1_ADAPTER_VERSION } from "./scan-schema.mts";
-export { isPseudoCharacter };
+import { isPseudoCharacter, NOBODY, parseStamp, V1_ADAPTER_VERSION } from "./scan-schema.mts";
+export { isPseudoCharacter, NOBODY };
 import type { RulesV1, ScanV2, ScanV2Adapter } from "./schema/types.d.mts";
 
 // ---------------------------------------------------------------------------
@@ -214,13 +214,15 @@ export function getRules(): RulesV1 {
 // sheet's "Other" group list them in it). A parsed property has the
 // tooltip pattern that reads it; the rest are set by parseTooltip itself (psLevel, sotPoints, tagPenalty), by the
 // fold (the pools) or read off the item (the "extra" columns). `builder` is whether the Suit Builder's weight and
-// requirement rows offer it. The exports below are derived from it.
+// requirement rows offer it. `typical` is the span a good suit covers in a property the shard rules give no cap
+// (typicalRange, the weight rows' worth hint and the weight_dominates diagnostic read it). The exports below are derived from it.
 type PropKind = "number" | "extra";
-interface PropDef<K extends string = string> { key: K; pattern?: RegExp; label: string; full: string; builder: boolean; kind: PropKind }
+interface PropDef<K extends string = string> { key: K; pattern?: RegExp; label: string; full: string; builder: boolean; kind: PropKind; typical?: number }
 const tip = (text: string): RegExp => new RegExp(`${text}[^-\\d]*(-?\\d+)`);
 const parsed = <K extends string>(key: K, text: string, label: string, full: string, builder = true): PropDef<K> => ({ key, pattern: tip(text), label, full, builder, kind: "number" });
 const derived = <K extends string>(key: K, label: string, full: string, builder = true): PropDef<K> => ({ key, label, full, builder, kind: "number" });
 const extra = <K extends string>(key: K, label: string, full: string): PropDef<K> => ({ key, label, full, builder: false, kind: "extra" });
+const typ = <K extends string>(def: PropDef<K>, typical: number): PropDef<K> => ({ ...def, typical });
 export const PROPERTIES = [
   parsed("physResist", "physical resist", "Phys", "Physical Resist"), parsed("fireResist", "fire resist", "Fire", "Fire Resist"),
   parsed("coldResist", "cold resist", "Cold", "Cold Resist"), parsed("poisonResist", "poison resist", "Poison", "Poison Resist"),
@@ -231,21 +233,21 @@ export const PROPERTIES = [
   parsed("fc", "faster casting", "FC", "Faster Casting"), parsed("fcr", "faster cast recovery", "FCR", "Faster Cast Recovery"),
   parsed("sdi", "spell damage increase", "SDI", "Spell Damage Increase"),
   parsed("hpi", "hit point increase", "HP+", "Hit Point Increase"), parsed("hpRegen", "hit point regeneration", "HPR", "Hit Point Regeneration"),
-  parsed("stamInc", "stamina increase", "Stam+", "Stamina Increase"), parsed("stamRegen", "stamina regeneration", "SR", "Stamina Regeneration"),
-  parsed("manaInc", "mana increase", "Mana+", "Mana Increase"), parsed("manaRegen", "mana regeneration", "MR", "Mana Regeneration"),
-  parsed("strBonus", "strength bonus", "STR", "Strength Bonus"), parsed("dexBonus", "dexterity bonus", "DEX", "Dexterity Bonus"),
-  parsed("intBonus", "intelligence bonus", "INT", "Intelligence Bonus"),
-  parsed("reflectPhys", "reflect physical damage", "RPD", "Reflect Physical Damage"),
-  parsed("castingFocus", "casting focus", "CF", "Casting Focus"), parsed("luck", "^luck", "Luck", "Luck"),
-  parsed("hitLifeLeech", "hit life leech", "HLL", "Hit Life Leech"), parsed("hitStamLeech", "hit stamina leech", "HSL", "Hit Stamina Leech"),
-  parsed("hitManaLeech", "hit mana leech", "HML", "Hit Mana Leech"), parsed("hitLowerDef", "hit lower defense", "HLD", "Hit Lower Defense"),
-  parsed("hitLowerAttack", "hit lower attack", "HLA", "Hit Lower Attack"),
-  parsed("enhancePotions", "enhance potions", "EP", "Enhance Potions"), parsed("selfRepair", "self repair", "Self Rep", "Self Repair"),
-  parsed("hitFireball", "hit fireball", "Hit Fireball", "Hit Fireball"), parsed("hitLightning", "hit lightning", "Hit Lightning", "Hit Lightning"),
-  parsed("hitHarm", "hit harm", "Hit Harm", "Hit Harm"), parsed("hitMagicArrow", "hit magic arrow", "Hit MA", "Hit Magic Arrow"),
-  parsed("hitDispel", "hit dispel", "Hit Dispel", "Hit Dispel"), parsed("hitPoisonArea", "hit poison area", "Poison Area", "Hit Poison Area"),
-  parsed("hitFireArea", "hit fire area", "Fire Area", "Hit Fire Area"), parsed("hitColdArea", "hit cold area", "Cold Area", "Hit Cold Area"),
-  parsed("hitEnergyArea", "hit energy area", "Energy Area", "Hit Energy Area"), parsed("hitPhysArea", "hit physical area", "Phys Area", "Hit Physical Area"),
+  typ(parsed("stamInc", "stamina increase", "Stam+", "Stamina Increase"), 20), parsed("stamRegen", "stamina regeneration", "SR", "Stamina Regeneration"),
+  typ(parsed("manaInc", "mana increase", "Mana+", "Mana Increase"), 20), parsed("manaRegen", "mana regeneration", "MR", "Mana Regeneration"),
+  typ(parsed("strBonus", "strength bonus", "STR", "Strength Bonus"), 25), typ(parsed("dexBonus", "dexterity bonus", "DEX", "Dexterity Bonus"), 25),
+  typ(parsed("intBonus", "intelligence bonus", "INT", "Intelligence Bonus"), 25),
+  typ(parsed("reflectPhys", "reflect physical damage", "RPD", "Reflect Physical Damage"), 50),
+  parsed("castingFocus", "casting focus", "CF", "Casting Focus"), typ(parsed("luck", "^luck", "Luck", "Luck"), 500),
+  typ(parsed("hitLifeLeech", "hit life leech", "HLL", "Hit Life Leech"), 100), typ(parsed("hitStamLeech", "hit stamina leech", "HSL", "Hit Stamina Leech"), 100),
+  typ(parsed("hitManaLeech", "hit mana leech", "HML", "Hit Mana Leech"), 100), typ(parsed("hitLowerDef", "hit lower defense", "HLD", "Hit Lower Defense"), 50),
+  typ(parsed("hitLowerAttack", "hit lower attack", "HLA", "Hit Lower Attack"), 50),
+  typ(parsed("enhancePotions", "enhance potions", "EP", "Enhance Potions"), 25), typ(parsed("selfRepair", "self repair", "Self Rep", "Self Repair"), 5),
+  typ(parsed("hitFireball", "hit fireball", "Hit Fireball", "Hit Fireball"), 50), typ(parsed("hitLightning", "hit lightning", "Hit Lightning", "Hit Lightning"), 50),
+  typ(parsed("hitHarm", "hit harm", "Hit Harm", "Hit Harm"), 50), typ(parsed("hitMagicArrow", "hit magic arrow", "Hit MA", "Hit Magic Arrow"), 50),
+  typ(parsed("hitDispel", "hit dispel", "Hit Dispel", "Hit Dispel"), 50), typ(parsed("hitPoisonArea", "hit poison area", "Poison Area", "Hit Poison Area"), 50),
+  typ(parsed("hitFireArea", "hit fire area", "Fire Area", "Hit Fire Area"), 50), typ(parsed("hitColdArea", "hit cold area", "Cold Area", "Hit Cold Area"), 50),
+  typ(parsed("hitEnergyArea", "hit energy area", "Energy Area", "Hit Energy Area"), 50), typ(parsed("hitPhysArea", "hit physical area", "Phys Area", "Hit Physical Area"), 50),
   // Not offered by the builder: an item without a Mage Weapon line reads mageWeapon 0, which beats every mage weapon's
   // negative, so weighting it would reward not being one; psLevel and sotPoints are scrolls', never gear's; tagPenalty
   // carries a fixed weight from the profile. All stay filterable in the Inventory.
@@ -253,9 +255,9 @@ export const PROPERTIES = [
   derived("psLevel", "PS level", "Power scroll level (the skill cap it raises to)", false),
   derived("sotPoints", "SoT pts", "Scroll of Transcendence skill points", false),
   derived("tagPenalty", "Tag penalty", "Penalty for Cursed / Brittle / Antique / Prized tags", false),
-  derived("stamPool", "Stam pool", "Stamina from gear: DEX bonus + Stamina Increase"),
-  derived("manaPool", "Mana pool", "Mana from gear: INT bonus + Mana Increase"),
-  derived("hitsPool", "Hits pool", "Hit points from gear: STR bonus ÷ 2 + Hit Point Increase"),
+  typ(derived("stamPool", "Stam pool", "Stamina from gear: DEX bonus + Stamina Increase"), 45),
+  typ(derived("manaPool", "Mana pool", "Mana from gear: INT bonus + Mana Increase"), 45),
+  typ(derived("hitsPool", "Hits pool", "Hit points from gear: STR bonus ÷ 2 + Hit Point Increase"), 35),
   // Columns computed from an item but not stored under item.props (item-query.mts's EXTRA_COLS).
   extra("strReq", "STR req", "Strength Requirement"), extra("weight", "Wt", "Weight (stones)"),
 ] as const;
@@ -275,6 +277,18 @@ export const PROP_LABELS: Record<string, string> = Object.fromEntries(NUMBER_PRO
 export const NOT_BUILDER_KEYS = new Set(NUMBER_PROPS.filter((p) => !p.builder).map((p): string => p.key));
 // Full names for the abbreviations, shown as hover tooltips in the app.
 export const PROP_FULL: Record<string, string> = Object.fromEntries(NUMBER_PROPS.map((p) => [p.key, p.full]));
+// The span a good suit covers in a property, in the player's terms (issue #217): the registry's typical where it has
+// one (only properties the shard rules give no cap, so a cap the build carries there is a character's limit, such as
+// the stat ceiling less the raw stat, not a span), else the build's cap before buffs (`caps` from playerCaps), else 15
+// for a skill bonus; null for a property with none of these, which gets no worth hint and is left out of the
+// weight_dominates check.
+const TYPICAL: Record<string, number> = Object.fromEntries(NUMBER_PROPS.flatMap((p): Array<[string, number]> => (p.typical != null ? [[p.key, p.typical]] : [])));
+export function typicalRange(key: string, caps: Record<string, number>): number | null {
+  if (TYPICAL[key] != null) return TYPICAL[key];
+  const cap = caps[key];
+  if (typeof cap === "number" && Number.isFinite(cap)) return cap > 0 ? cap : null;
+  return key.startsWith("sk:") ? 15 : null;
+}
 
 // Skill names as they appear in tooltips (lower-cased). A "+10 Magery" line on an item becomes the builder property
 // "sk:magery", so skill bonuses can be weighted, floored or forbidden like any other property.
@@ -288,6 +302,13 @@ const SKILL_SET = new Set(SKILL_NAMES);
 const titleCase = (x: string): string => x.replace(/\b\w/g, (c) => c.toUpperCase());
 export const labelOf = (k: string): string => (k.startsWith("sk:") ? "+" + titleCase(k.slice(3)) : PROP_LABELS[k] || k);
 export const fullOf = (k: string): string => (k.startsWith("sk:") ? `${titleCase(k.slice(3))} skill bonus from items` : PROP_FULL[k] || k);
+// A property in words, as a Suit Builder rule row and a diagnostic name it ("Physical resist", "Hit chance increase"); a summary or badge uses the short label ("Phys", "HCI"). The pools and skill bonuses read better short.
+const POOL_KEYS = new Set(["stamPool", "manaPool", "hitsPool"]);
+export function propName(k: string): string {
+  if (POOL_KEYS.has(k)) return labelOf(k);
+  if (k.startsWith("sk:")) return `${labelOf(k).slice(1)} skill bonus`;
+  return fullOf(k).replace(/(?!^)\b([A-Z])([a-z]+)/g, (_m, a: string, b: string) => a.toLowerCase() + b);
+}
 
 // The five resists in paperdoll order, with the names the page shows: the long one ("Physical"), the short one
 // ("Phys") and the colour token (--res-phys).
@@ -300,19 +321,44 @@ export const RESIST_META: ResistMeta[] = [
   { key: "energyResist", long: "Energy", short: "Energy", token: "--res-energy" },
 ];
 export const RESIST_KEYS: string[] = RESIST_META.map((r) => r.key);
-// A shard's Resisting Spells bonus, from its rules file's resistSkillBonus.breakpoints (uoalive: +0.4/pt
-// to 100, +0.2/pt 100-120; a shard with no such bonus ships an empty breakpoints array).  Each
-// breakpoint is [to, rate]: rate applies to the slice of skill between the previous breakpoint and
-// `to`. Breakpoints must be given in ascending `to` order.
-export function resistSkillBonus(skills: Record<string, unknown> | null | undefined): number {
+// The Resisting Spells minimum at one skill value: no resist falls below it, and it does not add to gear (ServUO
+// PlayerMobile.GetMinResistance, the shard's rules `resistMinimum`). With fixed = the skill × 10: 40 + (fixed − 1000) / 50
+// from 1000, (fixed − 400) / 15 from 400, integer division, so 55 → 10, 100 → 40, 120 → 44. Null below 40 skill, or on a
+// shard whose rules give no minimum: nothing holds a resist up then, not even at 0.
+export function minResistAt(value: number): number | null {
+  if (!getRules().resistMinimum) return null;
+  const fixed = Math.floor(value * 10 + 1e-6);
+  if (fixed >= 1000) return 40 + Math.floor((fixed - 1000) / 50);
+  return fixed >= 400 ? Math.floor((fixed - 400) / 15) : null;
+}
+// The property an item's Resisting Spells skill bonus is read into ("Resisting Spells +10" on a bracelet).
+export const RESIST_SKILL_KEY = "sk:resisting spells";
+// A character's own Resisting Spells, without what its worn suit adds: the scan's base (its value when the scan has no
+// base), null when the scan has no such skill. A suit's own bonus (RESIST_SKILL_KEY) goes on top of it, so a minimum
+// is never taken from pieces the suit may not keep.
+export function resistSkillOf(skills: Record<string, unknown> | null | undefined): number | null {
   // skills is Record<string, unknown> (the scan schema leaves per-skill shape loose); every skill
   // entry this repo ever reads or writes is {base, value, cap} (see the CLAUDE.md note on
   // player.getSkill), so this narrows once at the read instead of scattering `as` down the line.
-  const v = (skills?.["Resisting Spells"] as { value?: number } | undefined)?.value || 0;
-  let prev = 0, bonus = 0;
-  for (const [to, rate] of getRules().resistSkillBonus.breakpoints as Array<[number, number]>) { bonus += rate * Math.max(0, Math.min(v, to) - prev); prev = to; }
-  return Math.floor(bonus);
+  const e = skills?.["Resisting Spells"] as { base?: number; value?: number } | undefined;
+  if (!e) return null;
+  return typeof e.base === "number" && Number.isFinite(e.base) ? e.base : Number(e.value) || 0;
 }
+// A character's Resisting Spells minimum in a suit carrying `bonus` Resisting Spells (0: the character's own).
+export function resistMinimum(skills: Record<string, unknown> | null | undefined, bonus = 0): number | null {
+  const skill = resistSkillOf(skills);
+  return skill == null ? null : minResistAt(skill + bonus);
+}
+// What a rules file written before issue #261 must change, or null: it still carries the old additive
+// `resistSkillBonus`, which nothing reads, and no `resistMinimum`, so its characters get no minimum at all.
+export function rulesUpgradeNote(rules: RulesV1): string | null {
+  const r = rules as RulesV1 & { resistSkillBonus?: unknown };
+  return r.resistSkillBonus != null && r.resistMinimum == null
+    ? `The "${rules.name}" rules file still has "resistSkillBonus", which Pack Rat no longer reads: Resisting Spells is a minimum under each resist now. Add "resistMinimum": { "kind": "servuo" } to it, or each resist goes without a minimum.`
+    : null;
+}
+// A paperdoll resist: the total held to its cap, and never below the Resisting Spells minimum (null: none).
+export const paperdollResist = (total: number, cap: number, min: number | null | undefined): number => Math.max(Math.min(total, cap), min ?? -Infinity);
 
 // A resist's paperdoll cap on this shard for a race (an Elf's Energy is 75 on uoalive), else the shard's cap.
 export function shardResistCap(k: string, race: string | null | undefined): number {
@@ -346,6 +392,38 @@ export function resistCapsError(v: unknown, path = "resistCaps"): string | null 
   return null;
 }
 
+// Faster Casting's cap follows the casting school (issue #213): the shard's `fc` cap (2) for Magery, Necromancy and
+// Mysticism, 4 for Chivalry, Spellweaving and Bushido, and a Chivalry caster drops to the shard's cap once Magery or
+// Mysticism reaches 70. A profile may name its school (`castingSchool`); else it follows the character's skills: 4 when
+// it has Chivalry, Spellweaving or Bushido at 30 base or more (starting points and stray gains stay under it, any build
+// that casts from the school trains past it), unless that school is Chivalry and Magery or Mysticism is at 70 (ServUO
+// Spell.GetCastDelay drops only Chivalry's cap), else the shard's cap. No character and no school: the shard's cap. `reason` is what the panel shows beside the cap ("Chivalry", "Chivalry (chosen)" for a named school, "Magery 70+").
+export const CASTING_SCHOOLS: readonly string[] = ["Magery", "Necromancy", "Mysticism", "Chivalry", "Spellweaving", "Bushido"];
+// A build's rarity preference (issue #262): among equally good suits, use the highest- or lowest-rarity pieces. Absent means any.
+export type RarityPreference = "higher" | "lower";
+export const RARITY_PREFERENCES: readonly RarityPreference[] = ["higher", "lower"];
+const FC_FAST_SCHOOLS = ["Chivalry", "Spellweaving", "Bushido"], FC_FAST_CAP = 4, FC_SCHOOL_MIN = 30;
+const FC_SLOW_SKILLS = ["Magery", "Mysticism"], FC_SLOW_AT = 70;
+export interface FcCap { cap: number; reason: string }
+export function fcCapFor(skills: Record<string, unknown> | null | undefined, school?: string | null | undefined): FcCap {
+  const low = (getRules().caps as Record<string, number>).fc ?? 2;
+  const sk = (n: string, f: "base" | "value"): number => Number((skills?.[n] as { base?: unknown; value?: unknown } | undefined)?.[f]) || 0;
+  const slow = FC_SLOW_SKILLS.filter((n) => sk(n, "value") >= FC_SLOW_AT).sort((a, b) => sk(b, "value") - sk(a, "value"))[0];
+  const named = school && CASTING_SCHOOLS.includes(school) ? school : null;
+  if (named) {
+    const chosen = `${named} (chosen)`;
+    if (!FC_FAST_SCHOOLS.includes(named)) return { cap: low, reason: chosen };
+    return named === "Chivalry" && slow ? { cap: low, reason: `${slow} ${FC_SLOW_AT}+` } : { cap: FC_FAST_CAP, reason: chosen };
+  }
+  if (!skills) return { cap: low, reason: "no character" };
+  const fast = FC_FAST_SCHOOLS.filter((n) => sk(n, "base") >= FC_SCHOOL_MIN).sort((a, b) => sk(b, "base") - sk(a, "base"))[0];
+  if (!fast) return { cap: low, reason: "no Chivalry, Spellweaving or Bushido" };
+  return fast === "Chivalry" && slow ? { cap: low, reason: `${slow} ${FC_SLOW_AT}+` } : { cap: FC_FAST_CAP, reason: fast };
+}
+// The `fc` entry effectiveProfile puts over the shard's caps: none when the shard caps no Faster Casting.
+const fcCaps = (character: Character | null, school: string | undefined): Record<string, number> =>
+  (getRules().caps as Record<string, number>).fc == null ? {} : { fc: fcCapFor(character?.skills ?? null, school).cap };
+
 // The optimizer's profile for one character, as given (weights/floors are what the caller chose; caps are not
 // resolved yet — effectiveProfile() below is what turns this into caps a search can use).
 export interface Profile {
@@ -356,6 +434,8 @@ export interface Profile {
   floorBonus?: number | undefined;
   race?: string | null | undefined;
   resistCaps?: Record<string, number> | undefined;
+  swingSteps?: boolean | undefined;   // score SSI by swing step (app/swing.mts)
+  castingSchool?: string | undefined; // the school the Faster Casting cap follows (fcCapFor); absent means from the character's skills
 }
 export interface EffectiveProfile {
   weights: Record<string, number>;
@@ -363,13 +443,24 @@ export interface EffectiveProfile {
   floors: Record<string, number>;
   floorBonus: number;
   hardFloors: string[];
-  resistBonus: number;
+  // The character's own Resisting Spells (resistSkillOf: no item bonus; null with no character or no such skill), and
+  // its minimum before any buff, in paperdoll terms (null: none).
+  resistSkill: number | null;
+  resistMinimum: number | null;
+  // What the solvers hold each resist up to, in item terms: the minimum the planned buffs leave (Protection lowers the
+  // skill), less each resist's in-cap share. A resist scores max(min, min(total, cap)), and a floor at or under its
+  // min is met by any suit. Absent with no minimum.
+  mins?: Record<string, number> | undefined;
   // Only the resists whose cap the player overrode, in paperdoll terms; absent when none is, so a profile with no
   // override keeps the exact shape (and so the run key, runs-lib.mts) it had before overrides existed.
   resistCapOverrides?: Record<string, ResistCap> | undefined;
   // The buffs the search planned with (app/buffs.mts plannedProfile), absent with none: which, the numbers they took
   // (so a result can show them, and runs with other buffs key apart), and the caps and floors before them.
   buffs?: PlannedBuffs | undefined;
+  // What the build knows of the character's swing (app/build-spec.mts planBuild), absent with no character: stamina before gear (raw DEX and the buffs' shares), the worn suit's stamina, and whether SSI is scored by step.
+  swing?: { stamBase: number; refStamina: number; steps: boolean } | undefined;
+  // The step table both solvers score SSI with (app/swing.mts stepTable), put on by the optimize worker.
+  ssiSteps?: Array<{ ssi: number; stam: number; credit: number }> | undefined;
 }
 export interface PlannedBuffs {
   on: string[];
@@ -379,32 +470,35 @@ export interface PlannedBuffs {
   caps: Record<string, number>;
   floors: Record<string, number>;
   overridesIgnored?: Record<string, number> | undefined;   // resist overrides set aside: the buffs count that resist's loss
+  minimum: number | null;   // the Resisting Spells minimum with these buffs (Protection lowers it), what the solvers held each resist at
 }
 // What the buffs that are on change, in paperdoll terms: the caps once they changed them, and each key's in-cap share.
-export interface BuffShift { caps: Record<string, number>; shares: Record<string, number> }
+// `minimum` is the Resisting Spells minimum with the buffs on (Protection lowers the skill), when the plan worked it out.
+export interface BuffShift { caps: Record<string, number>; shares: Record<string, number>; minimum?: number | null | undefined }
 // The optimizer's profile for one character. Resist floors and caps are written in paperdoll terms (what the
-// character sheet shows): the character's Resisting Spells bonus is subtracted so the search works on item totals,
-// and a race can raise a resist's cap (rules.raceCaps, e.g. an Elf's Energy cap). The player's own resistCaps
-// replace the shard's per resist, and a resist floor counts up to its resist's cap. Every floor not marked soft is hard.
-// `shift` is what planned buffs change (app/buffs.mts plannedProfile): their caps replace these, and a buff's in-cap
-// share is a base the gear needn't supply, so it comes off the cap and the floor the way the Resisting Spells bonus
-// does (a negative share, Divine Fury's DCI −20, adds to both). A cap the shift sets may go below 0, which keeps it
-// exact: min(gear, cap − share) + share = min(gear + share, cap) for any gear, a negative total included; a resist
-// the shift leaves alone keeps the gear's cap at 0 or more, as before buffs. A floor stops at 0, which the solvers
-// read as no requirement: the buff alone meets it. The shift also carries the stat caps (STR, DEX, INT past raw).
+// character sheet shows), which are item totals: Resisting Spells adds nothing to gear, it holds each resist at its
+// minimum (`mins`, resistMinimum). A race can raise a resist's cap (rules.raceCaps, e.g. an Elf's Energy cap). The
+// player's own resistCaps replace the shard's per resist, and a resist floor counts up to its resist's cap. Every floor
+// not marked soft is hard. `shift` is what planned buffs change (app/buffs.mts plannedProfile): their caps replace
+// these, and a buff's in-cap share is a base the gear needn't supply, so it comes off the cap, the floor and the
+// minimum (a negative share, Divine Fury's DCI −20, adds to them). A cap the shift sets may go below 0, which keeps it
+// exact: min(gear, cap − share) + share = min(gear + share, cap) for any gear, a negative total included. A floor
+// stops at 0, which the solvers read as no requirement: the buff alone meets it. The shift also carries the stat caps
+// (STR, DEX, INT past raw) and the minimum the buffs leave.
 export function effectiveProfile(p: Profile = {}, character: Character | null = null, shift: BuffShift | null = null): EffectiveProfile {
   const rules = getRules();
-  const rsb = resistSkillBonus(character?.skills);
-  const caps: Record<string, number> = { ...rules.caps as Record<string, number>, ...(p.caps || {}) };
+  const skill = resistSkillOf(character?.skills), own = skill == null ? null : minResistAt(skill), min = shift && shift.minimum !== undefined ? shift.minimum : own;
+  const caps: Record<string, number> = { ...rules.caps as Record<string, number>, ...fcCaps(character, p.castingSchool), ...(p.caps || {}) };
   const floors: Record<string, number> = { ...(p.floors || {}) };
   const view = resistCapsFor(p.race, p.resistCaps);
-  const overrides: Record<string, ResistCap> = {};
+  const overrides: Record<string, ResistCap> = {}, mins: Record<string, number> = {};
   const share = (k: string): number => shift?.shares[k] || 0;
   for (const k of RESIST_KEYS) {
     const { cap: own, shard } = view[k]!, cap = shift?.caps[k] ?? own;
     if (own !== shard) overrides[k] = { cap: own, shard };
-    caps[k] = shift?.caps[k] != null ? cap - rsb - share(k) : Math.max(0, cap - rsb);
-    if (floors[k] != null) floors[k] = Math.max(0, Math.min(floors[k], cap) - rsb - share(k));
+    caps[k] = cap - share(k);
+    if (floors[k] != null) floors[k] = Math.max(0, Math.min(floors[k], cap) - share(k));
+    if (min != null) mins[k] = min - share(k);
   }
   for (const k of new Set([...Object.keys(shift?.caps || {}), ...Object.keys(shift?.shares || {})])) {
     if (RESIST_KEYS.includes(k)) continue;
@@ -413,18 +507,32 @@ export function effectiveProfile(p: Profile = {}, character: Character | null = 
     if (floors[k] != null) floors[k] = Math.max(0, floors[k] - share(k));
   }
   const hardFloors = Object.keys(floors).filter((k) => !(p.softFloors || []).includes(k));
-  return { weights: { ...(p.weights || {}) }, caps, floors, floorBonus: p.floorBonus ?? 1000, hardFloors, resistBonus: rsb,
-    ...(Object.keys(overrides).length ? { resistCapOverrides: overrides } : {}) };
+  return { weights: { ...(p.weights || {}) }, caps, floors, floorBonus: p.floorBonus ?? 1000, hardFloors, resistSkill: skill, resistMinimum: own,
+    ...(min != null ? { mins } : {}), ...(Object.keys(overrides).length ? { resistCapOverrides: overrides } : {}) };
+}
+// The fields of a built profile its caps are read from (profileResistCaps, playerCaps).
+export interface CapsView {
+  caps: Record<string, number>;
+  resistCapOverrides?: Record<string, ResistCap> | undefined;
+  buffs?: { caps?: Record<string, number> | undefined } | undefined;
 }
 // A built profile's resist caps in paperdoll terms, before any planned buff, what a result is shown against: the
-// override where there is one, else the item-total cap plus the Resisting Spells bonus.
-export function profileResistCaps(prof: EffectiveProfile): Record<string, ResistCap> {
+// override where there is one, else the profile's cap.
+export function profileResistCaps(prof: CapsView): Record<string, ResistCap> {
   return Object.fromEntries(RESIST_KEYS.map((k) => {
     const o = prof.resistCapOverrides?.[k];
     if (o) return [k, o];
-    const cap = ((prof.buffs?.caps ?? prof.caps)[k] ?? 70) + (prof.resistBonus || 0);
+    const cap = (prof.buffs?.caps ?? prof.caps)[k] ?? 70;
     return [k, { cap, shard: cap }];
   }));
+}
+
+// A built profile's caps in the player's terms, before any planned buff (typicalRange's `caps`): the item-total caps
+// with each resist's paperdoll cap (profileResistCaps) in place of its item-total one.
+export function playerCaps(prof: CapsView): Record<string, number> {
+  const caps = { ...(prof.buffs?.caps ?? prof.caps) };
+  for (const [k, c] of Object.entries(profileResistCaps(prof))) caps[k] = c.cap;
+  return caps;
 }
 
 // Cursed/Brittle/Antique/Prized (/Massive/Unwieldy on shards that use them) tag-penalty units, from
@@ -605,7 +713,7 @@ const SHIELD_RE = /\b(shield|buckler)\b/i;
 // weapon word, so it is decided before anything else and is never gear.
 const PRIMER_RE = /\bprimer on\b.*\bmastery\b/i;
 const HELD_TOOL_RE = /\b(fishing pole|candle|candelabra|torch|lantern|light source)\b/i;
-const SPELLBOOK_RE = /\b(spellbook|book of (chivalry|bushido|ninjitsu|magery|necromancy|mysticism|spellweaving)|necromancer spellbook|mysticism book|tome)\b/i;   // NOT bare "mystic": "Mystic Ring" is a ring
+const SPELLBOOK_RE = /\b(spellbook|book of (chivalry|bushido|ninjitsu|magery|necromancy|mysticism|spellweaving)|necromancer spellbook|mysticism book|tome|compendium|grimoire)\b/i;   // NOT bare "mystic": "Mystic Ring" is a ring
 const JEWEL_SLOTS: Array<[string, RegExp]> = [["ring", /\bring\b/i], ["bracelet", /\bbracelet\b/i], ["talisman", /\btalisman\b/i], ["neck", /\bnecklace\b/i], ["earrings", /\bearrings\b/i]];
 // First match wins, and the order settles the names two slots share (issue #202, from the layers in ServUO's item
 // classes): gargish glasses are earrings and elven glasses a helm; a gargish kilt sits on the gloves layer; wing armor
@@ -1085,6 +1193,8 @@ export interface OptItem {
   slot: string | null;
   props: PropMap;
   twoHanded?: true | undefined;
+  speed?: number | undefined;   // a weapon's base speed in seconds (its tooltip's Weapon Speed), for swing steps (app/swing.mts)
+  tieCost?: number | undefined; // a rarity preference's per-piece cost (POST /api/optimize stamps it): among equally good suits the solvers take the lowest sum
 }
 // buildPools() only ever stores an item after `!it.slot` has already sent it to `continue` — every
 // item it hands the solver has passed that filter, so its slot is honestly a string, not the plain
@@ -1099,11 +1209,14 @@ export interface BuildPoolsOptions {
   strength?: number | undefined;
   excludeTags?: string[] | undefined;
   excludeRoots?: Array<number | string> | undefined;
+  onlyRoots?: number[] | undefined;        // issue #12: when it lists any, an unworn piece is a candidate only under one of these roots (worn pieces follow their own rule)
   excludeGargoyle?: boolean | undefined;
   medOnly?: boolean | undefined;
   excludeWeapons?: string[] | undefined;   // weapon skills left out (weaponAllowed)
   ubwsAnyWeapon?: boolean | undefined;     // a Use Best Weapon Skill weapon passes while a melee skill is allowed (default on)
   excludeSkills?: string[] | undefined;
+  weaponMustHave?: string[] | undefined;   // yes/no properties every weapon must carry (weaponHasFlags, issue #214)
+  lockedSlots?: string[] | undefined;      // a locked slot keeps its worn weapon whatever weaponMustHave says (`weaponFlags.kept`)
   // Manual's placed pieces by slot (issue #12, "Fill the rest automatically"): each is its slot's only candidate and
   // the suit's current piece there, and nothing else is current.
   pinned?: Partial<Record<string, number>> | undefined;
@@ -1116,12 +1229,17 @@ export interface BuildPoolsResult {
   current: Partial<Record<string, PooledOptItem>>;
   skipped: SkippedLists;
   blocked: string[];
+  // With weaponMustHave: the locked slots whose worn weapon lacks a required property (kept, the lock wins), and whether
+  // the requirement itself emptied both hands' pools of weapons (the suit is then built without one). A pool the other
+  // settings left weaponless is not `none`: the requirement is not why.
+  weaponFlags?: { kept: string[]; none: boolean } | undefined;
 }
 // `character` null: nobody's suit (Manual's No character), so every worn piece is another character's.
 export function buildPools(inv: Inventory, character: string | null, opts: BuildPoolsOptions = {}): BuildPoolsResult {
-  const { allowOthersWorn = false, strength = Infinity, excludeTags = [], excludeRoots = [], excludeGargoyle = getRules().raceLock.gargoyleOnly, medOnly = false, excludeWeapons = [], ubwsAnyWeapon = true, excludeSkills = [], pinned } = opts;
+  const { allowOthersWorn = false, strength = Infinity, excludeTags = [], excludeRoots = [], onlyRoots = [], excludeGargoyle = getRules().raceLock.gargoyleOnly, medOnly = false, excludeWeapons = [], ubwsAnyWeapon = true, excludeSkills = [], weaponMustHave = [], lockedSlots = [], pinned } = opts;
   const pools: Partial<Record<string, PooledOptItem[]>> = {}, current: Partial<Record<string, PooledOptItem>> = {}, skipped: SkippedLists = { str: [], tags: [], worn: [], roots: [], gargoyle: [], nonMed: [], weapon: [], skill: [] };
-  const exRoots = new Set(excludeRoots.map(Number));
+  const exRoots = new Set(excludeRoots.map(Number)), only = new Set(onlyRoots.map(Number));
+  let flagless = 0;   // weapons the required properties left out (weaponMustHave)
   for (const it of Object.values(inv.items)) {
     if (!it.gear || !it.slot || !GEAR_SLOTS.includes(it.slot)) continue;
     // toOptItem's own return type is the plain OptItem (slot: string | null) — this cast is the one
@@ -1136,7 +1254,11 @@ export function buildPools(inv: Inventory, character: string | null, opts: Build
     if (hasSkillBonus(it, excludeSkills)) { skipped.skill.push(it); continue; }
     if (it.strReq > strength) { skipped.str.push(it); continue; }
     if (it.tags.some((t) => excludeTags.includes(t))) { skipped.tags.push(it); continue; }
-    if (it.root != null && exRoots.has(+it.root)) { skipped.roots.push(it); continue; }
+    // with an Only containers list, an unworn piece in no container (carried by a trip with no backpack to put it in) is outside it
+    const outside = it.root == null ? only.size > 0 && !it.equippedBy : (only.size > 0 && !only.has(+it.root)) || exRoots.has(+it.root);
+    if (outside) { skipped.roots.push(it); continue; }
+    // last, so `flagless` counts only weapons every other filter let through
+    if (!weaponHasFlags(it, weaponMustHave)) { skipped.weapon.push(it); flagless++; continue; }
     // a piece with no properties (a tag penalty aside, as classify reads it) never beats an empty slot, so where a slot
     // may stay empty it is no candidate: the search would otherwise send the player for a plain robe or shirt that
     // changes nothing. A plain weapon or shield stays one: what a weapon is for is not in its properties.
@@ -1151,13 +1273,18 @@ export function buildPools(inv: Inventory, character: string | null, opts: Build
   }
   if (current.twoHanded?.twoHanded && pinned?.twoHanded != null) pools.oneHanded = [];
   if (current.oneHanded && pinned?.oneHanded != null) pools.twoHanded = (pools.twoHanded || []).filter((it) => !it.twoHanded);
-  // A worn piece the filters rule out (wrong weapon type, a forbidden skill bonus) must not stay a candidate through
-  // the "keep what you wear" rule. A pinned piece is never blocked.
+  // A worn piece the filters rule out (wrong weapon type, a forbidden skill bonus, a missing weapon property) must not
+  // stay a candidate through the "keep what you wear" rule. A pinned piece is never blocked, and a locked slot keeps a
+  // weapon that lacks a required property: the player chose it.
+  const wornAt = (sl: string): Item | null => (current[sl] && pinned?.[sl] == null ? inv.items[current[sl]!.serial] || ({} as Item) : null);
+  const kept = weaponMustHave.length ? HAND_SLOTS.filter((sl) => lockedSlots.includes(sl) && wornAt(sl) && !weaponHasFlags(wornAt(sl)!, weaponMustHave)) : [];
   const blocked = GEAR_SLOTS.filter((sl) => {
-    const it = current[sl] && pinned?.[sl] == null ? inv.items[current[sl]!.serial] || ({} as Item) : null;
-    return it && (!weaponAllowed(it, excludeWeapons, ubwsAnyWeapon) || hasSkillBonus(it, excludeSkills));
+    const it = wornAt(sl);
+    return it && (!weaponAllowed(it, excludeWeapons, ubwsAnyWeapon) || hasSkillBonus(it, excludeSkills) || (!weaponHasFlags(it, weaponMustHave) && !kept.includes(sl)));
   });
-  return { pools, current, skipped, blocked };
+  if (!weaponMustHave.length) return { pools, current, skipped, blocked };
+  const none = flagless > 0 && !kept.length && !HAND_SLOTS.some((sl) => (pools[sl] || []).some((o) => isWeapon(inv.items[o.serial] || ({} as Item))));
+  return { pools, current, skipped, blocked, weaponFlags: { kept, none } };
 }
 // True when the item carries a bonus to any of the listed skills (e.g. the Summoner's forbidden Necromancy).
 export function hasSkillBonus(it: Item, skills: string[] = []): boolean {
@@ -1180,9 +1307,14 @@ export function builderKeys(inv: ItemsLike): string[] {
 // Throwing (ServUO BaseWeapon.GetUsedSkill), so with `ubws` on it passes while any of those three is allowed.
 export const WEAPON_SKILLS: string[] = ["archery", "swordsmanship", "fencing", "mace fighting", "throwing"];
 export const MELEE_SKILLS: string[] = ["swordsmanship", "fencing", "mace fighting"];
+// Issue #259: the list may also hold SPELLBOOKS ("spellbook"), which keeps every spellbook (a one-handed piece whose name
+// SPELLBOOK_RE matches) out of the pool. WEAPON_EXCLUDES is everything the list accepts, in the order the page shows it.
+export const SPELLBOOKS = "spellbook";
+export const WEAPON_EXCLUDES: string[] = [...WEAPON_SKILLS, SPELLBOOKS];
 export const ubwsLetsIn = (excluded: string[], ubws = true): boolean => ubws && MELEE_SKILLS.some((w) => !excluded.includes(w));
 export function weaponAllowed(it: Item, excluded: string[] = [], ubws = true): boolean {
-  if (!excluded.length || (it.slot !== "oneHanded" && it.slot !== "twoHanded")) return true;
+  if (it.slot === "oneHanded" && excluded.includes(SPELLBOOKS) && SPELLBOOK_RE.test(it.name || "")) return false;
+  if (!excluded.some((w) => w !== SPELLBOOKS) || (it.slot !== "oneHanded" && it.slot !== "twoHanded")) return true;
   const own = String(it.skillReq || "").toLowerCase();
   if ((it.flags || []).includes("use best weapon skill")) {
     if (ubwsLetsIn(excluded, ubws)) return true;
@@ -1199,6 +1331,26 @@ export function weaponSkillsOf(it: Pick<Item, "slot" | "skillReq" | "flags">): s
   const own = String(it.skillReq || "").toLowerCase(), best = (it.flags || []).includes("use best weapon skill");
   return WEAPON_SKILLS.filter((w) => w === own || (best && MELEE_SKILLS.includes(w)));
 }
+// Issue #214: the yes/no properties a build may require on its weapon (profile `weaponMustHave`): any of BOOLEAN_FLAGS
+// is accepted, and the page offers WEAPON_MUST_HAVE. A weapon is a held piece with a Skill Required or Weapon Speed
+// line, so shields and spellbooks are never held to it.
+export const WEAPON_MUST_HAVE: string[] = ["spell channeling", "balanced"];
+export const isWeapon = (it: Pick<Item, "slot" | "skillReq" | "extras">): boolean =>
+  (it.slot === "oneHanded" || it.slot === "twoHanded") && (!!it.skillReq || typeof it.extras?.["weapon speed"] === "number");
+// The required properties a piece lacks, its flags read through flagKey; none for a piece that is no weapon.
+export function missingFlags(it: Item, required: string[] = []): string[] {
+  if (!required.length || !isWeapon(it)) return [];
+  const own = (it.flags || []).map(flagKey);
+  return required.filter((f) => !own.includes(f));
+}
+export const weaponHasFlags = (it: Item, required: string[] = []): boolean => !missingFlags(it, required).length;
+// The rule weaponMustHave is held to (profiles.v3.schema.json says the same): known yes/no properties, each once.
+export function weaponMustHaveError(v: unknown, path = "weaponMustHave"): string | null {
+  if (v == null) return null;
+  if (!Array.isArray(v)) return `${path} must be an array`;
+  const i = v.findIndex((f, j) => typeof f !== "string" || !BOOLEAN_FLAGS.has(f) || v.indexOf(f) !== j);
+  return i < 0 ? null : `${path}[${i}] is not a yes/no property, or is listed twice (${[...BOOLEAN_FLAGS].join(", ")})`;
+}
 // Profiles, templates and runs saved before the exclusion list held one choice, `weaponSkill` ("archery", or null/""
 // for any weapon), which means "exclude every other weapon skill". Returns `s` itself when there is nothing to convert.
 export function migrateWeaponSetting<T extends object>(s: T): T {
@@ -1207,18 +1359,19 @@ export function migrateWeaponSetting<T extends object>(s: T): T {
   const skill = typeof weaponSkill === "string" ? weaponSkill.toLowerCase() : "";
   return { ...rest, excludeWeapons: rest.excludeWeapons || (skill ? WEAPON_SKILLS.filter((w) => w !== skill) : []) } as T;
 }
-// The rule excludeWeapons is held to at POST /api/optimize (profiles.v3.schema.json says the same): known weapon skills.
+// The rule excludeWeapons is held to at POST /api/optimize (profiles.v3.schema.json says the same): known weapon skills,
+// or "spellbook".
 export function excludeWeaponsError(v: unknown, path = "excludeWeapons"): string | null {
   if (v == null) return null;
   if (!Array.isArray(v)) return `${path} must be an array`;
-  const i = v.findIndex((w) => typeof w !== "string" || !WEAPON_SKILLS.includes(w));
-  return i < 0 ? null : `${path}[${i}] is not a weapon skill (${WEAPON_SKILLS.join(", ")})`;
+  const i = v.findIndex((w) => typeof w !== "string" || !WEAPON_EXCLUDES.includes(w));
+  return i < 0 ? null : `${path}[${i}] must be a weapon skill or spellbook (${WEAPON_EXCLUDES.join(", ")})`;
 }
 
 // Templates: a full set of builder settings with no character in them (no race, STR limit or skipped containers).
 // A character's profile keeps its own working copy plus `template`, the name it was applied from; drift between the
 // two is settingsDiff(templateFrom(template), templateFrom(profile)).
-export const TEMPLATE_KEYS: string[] = ["floors", "softFloors", "weights", "floorBonus", "lockedSlots", "excludeTags", "excludeSkills", "allowOthersWorn", "allowGargoyle", "medOnly", "excludeWeapons", "ubwsAnyWeapon", "resistCaps"];
+export const TEMPLATE_KEYS: string[] = ["floors", "softFloors", "weights", "floorBonus", "lockedSlots", "excludeTags", "excludeSkills", "allowOthersWorn", "allowGargoyle", "medOnly", "excludeWeapons", "ubwsAnyWeapon", "weaponMustHave", "resistCaps", "swingSteps", "castingSchool", "rarity"];
 export interface TemplateSource {
   floors?: Record<string, number> | undefined;
   softFloors?: string[] | undefined;
@@ -1232,7 +1385,11 @@ export interface TemplateSource {
   medOnly?: boolean | undefined;
   excludeWeapons?: string[] | undefined;   // weapon skills left out of the pool
   ubwsAnyWeapon?: boolean | undefined;     // absent means true (weaponAllowed)
+  weaponMustHave?: string[] | undefined;   // yes/no properties every weapon must carry (weaponHasFlags)
   resistCaps?: Record<string, number> | undefined;   // the player's per-resist cap overrides, paperdoll terms
+  swingSteps?: boolean | undefined;        // score SSI by swing step (app/swing.mts); absent means off
+  castingSchool?: string | undefined;      // the school the Faster Casting cap follows (fcCapFor); absent means from the character's skills
+  rarity?: RarityPreference | undefined;   // among equally good suits, prefer higher- or lower-rarity pieces; absent means any
 }
 export interface Template {
   floors: Record<string, number>;
@@ -1247,12 +1404,17 @@ export interface Template {
   medOnly: boolean;
   excludeWeapons: string[];
   ubwsAnyWeapon: boolean;
+  weaponMustHave: string[];
   resistCaps: Record<string, number>;
+  swingSteps: boolean;
+  castingSchool: string;   // "" means from the character's skills
+  rarity: RarityPreference | undefined;   // undefined means any (a key either way, so applying a template clears a preference it lacks)
 }
 export function templateFrom(s: TemplateSource = {}): Template {
   return { floors: { ...(s.floors || {}) }, softFloors: [...(s.softFloors || [])], weights: { ...(s.weights || {}) }, floorBonus: s.floorBonus ?? 1000,
     lockedSlots: [...(s.lockedSlots || [])], excludeTags: [...(s.excludeTags || [])], excludeSkills: [...(s.excludeSkills || [])],
-    allowOthersWorn: !!s.allowOthersWorn, allowGargoyle: !!s.allowGargoyle, medOnly: !!s.medOnly, excludeWeapons: [...(s.excludeWeapons || [])], ubwsAnyWeapon: s.ubwsAnyWeapon !== false, resistCaps: { ...(s.resistCaps || {}) } };
+    allowOthersWorn: !!s.allowOthersWorn, allowGargoyle: !!s.allowGargoyle, medOnly: !!s.medOnly, excludeWeapons: [...(s.excludeWeapons || [])], ubwsAnyWeapon: s.ubwsAnyWeapon !== false, weaponMustHave: [...(s.weaponMustHave || [])], resistCaps: { ...(s.resistCaps || {}) }, swingSteps: !!s.swingSteps,
+    castingSchool: s.castingSchool || "", rarity: s.rarity || undefined };
 }
 
 // A profiles.json character entry, loosely — every field optional, TemplateSource's builder settings
@@ -1320,6 +1482,7 @@ export interface RunSettings {
   lockedSlots?: string[] | undefined;
   excludeTags?: string[] | undefined;
   excludeRoots?: Array<number | string> | undefined;
+  onlyRoots?: number[] | undefined;
   race?: string | undefined;
   excludeSkills?: string[] | undefined;
   allowGargoyle?: boolean | undefined;
@@ -1328,6 +1491,7 @@ export interface RunSettings {
   exact?: boolean | undefined;
   excludeWeapons?: string[] | undefined;
   ubwsAnyWeapon?: boolean | undefined;
+  weaponMustHave?: string[] | undefined;
   strLimit?: number | undefined;
   restarts?: number | undefined;
   budgetMs?: number | undefined;
@@ -1335,6 +1499,9 @@ export interface RunSettings {
   altTol?: number | undefined;
   resistCaps?: Record<string, number> | undefined;
   buffs?: RunBuffs | undefined;   // the buffs planned with (app/buffs.mts); absent with none, and in a run saved before them
+  swingSteps?: boolean | undefined;
+  castingSchool?: string | undefined;
+  rarity?: RarityPreference | undefined;
 }
 // A run's buffs: which were on, and the numbers they scale with (app/buffs.mts's inputs, Resisting Spells aside).
 export interface RunBuffs { on: string[]; skills: Record<string, number> }
@@ -1369,21 +1536,30 @@ export function settingsDiff(a: RunSettings = {}, b: RunSettings = {}): string[]
   if (tagOff.length) out.push(`allowing ${tagOff.join(", ")}`);
   const [rootOn, rootOff] = setDiff(a.excludeRoots, b.excludeRoots);
   if (rootOn.length || rootOff.length) out.push("skipped containers changed");
+  const [onlyOn, onlyOff] = setDiff(a.onlyRoots, b.onlyRoots);
+  if (onlyOn.length || onlyOff.length) out.push(b.onlyRoots?.length ? (a.onlyRoots?.length ? "only containers changed" : `only ${b.onlyRoots.length} container${b.onlyRoots.length === 1 ? "" : "s"}`) : "any container");
   if ((a.race || "human") !== (b.race || "human")) out.push(`race ${a.race || "human"} → ${b.race || "human"}`);
   const [skOn, skOff] = setDiff(a.excludeSkills, b.excludeSkills);
   if (skOn.length) out.push(`forbidding ${skOn.join(", ")} bonuses`);
   if (skOff.length) out.push(`allowing ${skOff.join(", ")} bonuses`);
-  const flag = (k: "allowGargoyle" | "medOnly" | "exact", on: string, off: string) => { if (!!a[k] !== !!b[k]) out.push(b[k] ? on : off); };
+  const flag = (k: "allowGargoyle" | "medOnly" | "exact" | "swingSteps", on: string, off: string) => { if (!!a[k] !== !!b[k]) out.push(b[k] ? on : off); };
   flag("allowGargoyle", "gargoyle gear allowed", "gargoyle gear excluded");
   flag("medOnly", "meditation-safe only", "meditation-safe off");
   const others = (s: RunSettings) => !!s.allowOthersWorn;   // a saved run is normalized to allowOthersWorn before it ever reaches here
   if (others(a) !== others(b)) out.push(others(b) ? "others' worn gear allowed" : "others' worn gear excluded");
   flag("exact", "exact search on", "exact search off");
+  flag("swingSteps", "+SSI by step", "SSI by point");
+  if ((a.castingSchool || "") !== (b.castingSchool || "")) out.push(b.castingSchool ? `casting school ${b.castingSchool}` : "casting school from skills");
+  if ((a.rarity || "") !== (b.rarity || "")) out.push(b.rarity ? `prefer ${b.rarity} rarity` : "any rarity");
   const [wOn, wOff] = setDiff(a.excludeWeapons, b.excludeWeapons);
-  if (wOn.length) out.push(`excluding ${wOn.join(", ")} weapons`);
-  if (wOff.length) out.push(`allowing ${wOff.join(", ")} weapons`);
+  const weaponWords = (ws: string[]): string => [ws.some((w) => w !== SPELLBOOKS) ? `${ws.filter((w) => w !== SPELLBOOKS).join(", ")} weapons` : "", ws.includes(SPELLBOOKS) ? "spellbooks" : ""].filter(Boolean).join(" and ");
+  if (wOn.length) out.push(`excluding ${weaponWords(wOn)}`);
+  if (wOff.length) out.push(`allowing ${weaponWords(wOff)}`);
   const ubws = (s: RunSettings) => s.ubwsAnyWeapon !== false;   // absent means on
   if (ubws(a) !== ubws(b)) out.push(ubws(b) ? "Use Best Weapon Skill weapons allowed" : "Use Best Weapon Skill weapons held to their own skill");
+  const [fOn, fOff] = setDiff(a.weaponMustHave, b.weaponMustHave);
+  if (fOn.length) out.push(`weapon must have ${fOn.join(", ")}`);
+  if (fOff.length) out.push(`weapon need not have ${fOff.join(", ")}`);
   if (a.strLimit !== b.strLimit && b.strLimit != null) out.push(`STR limit ${a.strLimit ?? "?"} → ${b.strLimit}`);
   if (a.restarts !== b.restarts && b.restarts != null) out.push(`restarts ${a.restarts ?? "?"} → ${b.restarts}`);
   if (a.budgetMs !== b.budgetMs && b.budgetMs != null && b.exact) out.push(`budget ${(a.budgetMs ?? 0) / 1000} s → ${b.budgetMs / 1000} s`);
@@ -1402,6 +1578,8 @@ export function toOptItem(it: Item): OptItem {
   for (const [k, v] of Object.entries(it.extras || {})) if (SKILL_SET.has(k) && typeof v === "number" && v) props[`sk:${k}`] = v;
   const o: OptItem = { serial: it.serial, name: it.name, slot: it.slot, props };
   if (it.twoHanded) o.twoHanded = true;
+  const speed = it.extras?.["weapon speed"];
+  if (typeof speed === "number" && speed > 0) o.speed = speed;
   return o;
 }
 
@@ -1415,6 +1593,7 @@ export interface RequirementProfileInput {
   floors?: Record<string, number> | undefined;
   caps?: Record<string, number> | undefined;
   weights?: Record<string, number> | undefined;
+  mins?: Record<string, number> | undefined;   // EffectiveProfile.mins: a resist under its minimum counts as the minimum
 }
 export interface RequirementRow {
   key: string;
@@ -1426,16 +1605,17 @@ export interface RequirementRow {
   capped: boolean;
   over: number;
 }
-// Requirement report: for every floor and every cap, what the suit reaches.
+// Requirement report: for every floor and every cap, what the suit reaches (a resist held at its minimum, `mins`).
 export function requirementReport(totals: PropMap, profile: RequirementProfileInput): RequirementRow[] {
   const rows: RequirementRow[] = [];
   const floors = profile.floors || {}, caps = profile.caps || {};
   const keys = new Set([...Object.keys(floors), ...Object.keys(profile.weights || {})]);
   keys.delete("tagPenalty");
   for (const k of [...keys].sort((a, b) => (floors[b] ? 1 : 0) - (floors[a] ? 1 : 0) || a.localeCompare(b))) {
-    const v = totals[k] || 0, floor = floors[k], cap = caps[k];
-    rows.push({ key: k, label: labelOf(k), value: v, floor: floor ?? null, cap: cap ?? null,
-      met: floor == null ? null : v >= floor, capped: cap != null && v >= cap, over: cap != null ? Math.max(0, v - cap) : 0 });
+    // a resist under its minimum reaches the minimum, so its value says that, and `met` agrees with it
+    const v = totals[k] || 0, floor = floors[k], cap = caps[k], min = profile.mins?.[k], held = min != null && min > v ? min : v;
+    rows.push({ key: k, label: labelOf(k), value: held, floor: floor ?? null, cap: cap ?? null,
+      met: floor == null ? null : held >= floor, capped: cap != null && v >= cap, over: cap != null ? Math.max(0, v - cap) : 0 });
   }
   return rows;
 }
@@ -1465,7 +1645,7 @@ export function extraKeys(inv: ItemsLike): string[] {
 // gargoyle switch covers). Gear only, because a resource's lines are its material ("valorite", "barbed leather"), never
 // a property. Slayers have the Slayer filter, and tags (cursed, antique …) never reach the flags: parseTooltip files
 // them under tags.
-const BOOLEAN_FLAGS = new Set(["spell channeling", "mage armor", "night sight", "balanced", "use best weapon skill", "blessed", "insured", "exceptional", "reactive paralyze", "battle lust", "(imbued)", "part of an armor set"]);
+export const BOOLEAN_FLAGS: ReadonlySet<string> = new Set(["spell channeling", "mage armor", "night sight", "balanced", "use best weapon skill", "blessed", "insured", "exceptional", "reactive paralyze", "battle lust", "(imbued)", "part of an armor set"]);
 const FLAG_LIKE_RE = /^[a-z]+(?: [a-z]+){0,3}$/;
 const FREE_TEXT_RE = /\b(by|for|of|from|to|in|on|only)\b/;
 const ARMOR_SET_RE = /^part of an armor set\b/;

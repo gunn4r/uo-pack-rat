@@ -14,5 +14,12 @@
     "nested": true,
     "tooltips": "opl",
     "bridge": ["highlight", "grab", "goto", "trip", "trip-bags"]
+  },
+  "install": {
+    "scriptsSuffix": [["TazUO", "LegionScripts"], ["LegionScripts"]],
+    "candidateRoot": "TazUO",
+    "retired": [{ "name": "packrat-refresh.py", "header": "# packrat-refresh.py — ATTENDED one-shot: QUICK character refresh for the Pack Rat" }],
+    "stopHint": "type -stopall in game, wait for \"No scripts are currently running\", then retry",
+    "register": "none"
   }
 }

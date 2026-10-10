@@ -13,7 +13,7 @@ import type { RulesV1 } from "../schema/types.d.mts";
 import type { AutostartOutcome, Hotkey as PanelHotkey, PanelPrefs } from "../tazuo-panel-prefs.mts";
 import type { OrganizeConfig, RuleMatch } from "../organize-config.mts";
 import type { MissingItem } from "../missing.mts";
-import type { RunBody, RunsListBody, RunSummary, SavedRun } from "../runs-types.mts";
+import type { Diagnostic, RunBody, RunsListBody, RunSummary, SavedRun, SwingResult } from "../runs-types.mts";
 import type { HouseApiResponse } from "../house-model-types.mts";
 import type { DataDirCheckInfo } from "../data-dir-notice.mts";
 
@@ -22,7 +22,7 @@ import type { DataDirCheckInfo } from "../data-dir-notice.mts";
 // A scanned character's skills map (Character.skills, vault-lib.mts) is declared as a loose
 // Record<string, unknown> there on purpose (the scan schema leaves per-skill shape open) — this is
 // what a real entry actually holds, read at the boundary by sheet.mts/characters.mts the same way
-// vault-lib.mts's own resistSkillBonus() already casts one skill entry (`as { value?: number }`).
+// vault-lib.mts's own resistMinimum() already casts one skill entry (`as { value?: number }`).
 export interface SkillEntry {
   value: number;
   cap: number;
@@ -309,7 +309,12 @@ export interface OptimizeResult {
   unreachableFloors?: string[] | undefined;
   fallbackReason?: string | undefined;
   floorsConflict?: boolean | undefined;
+  diagnostics?: Diagnostic[] | undefined;   // absent on a run saved before SOLVER_VERSION 6: unreachableFloors is drawn instead
+  swing?: SwingResult | undefined;          // the suit's swing (app/swing.mts), when it holds a weapon with a known speed and the build has a character
+  tieBreak?: TieBreakResult | undefined;    // a rarity preference's outcome (app/exact-solver.mts TieBreakResult)
 }
+// A rarity preference's outcome: the best score found, the returned suit's rarity points, the preference and tolerance, and whether the points are proven the lowest (exact search only).
+export interface TieBreakResult { topScore: number; cost: number; rarity?: string | undefined; tolerance?: number | undefined; costProven?: boolean | undefined }
 // SolveProgress (app/exact-solver.mts) as reported over the job's SSE stream and read by
 // builder.mts's runPanel(). Every field but `phase` is optional — not every phase reports every one.
 export interface OptimizeProgress {
@@ -345,6 +350,7 @@ export interface OptimizeStartApiResponse {
   blocked: string[];
   cached?: boolean | undefined;
   run?: SavedRunLike | undefined;
+  diagnostics?: Diagnostic[] | undefined;   // the requirements no suit in the pool can reach, before the search starts
 }
 export interface OptimizeCancelApiResponse {
   ok: boolean;

@@ -26,7 +26,7 @@
 // rather than fighting that structural mismatch at every call site.
 import type * as Core from "../scripts/optimizer-core.mts";
 import type { OptItem } from "./vault-lib.mts";
-import { buildSuitMip, startVector, pickedOf, DEFAULT_SLOTS, DEFAULT_OPTIONAL_SLOTS, type BuiltMip } from "./mip.mts";
+import { buildSuitMip, startVector, pickedOf, tieBreakModel, TIE_SLACK, DEFAULT_SLOTS, DEFAULT_OPTIONAL_SLOTS, type BuiltMip } from "./mip.mts";
 import {
   loadHighs as defaultLoadHighs, openModel, solveModel as defaultSolveModel, addNoGood, closeModel,
   type HighsInstance, type Handle, type SolveModelOptions, type SolveResult,
@@ -85,7 +85,12 @@ export interface ExactSolveResult extends OptResult {
   floorsConflict?: boolean | undefined;
   altShortfall?: AltShortfall | undefined;
   workers?: undefined;
+  tieBreak?: TieBreakResult | undefined;
 }
+// A tie-break's outcome (opts.tieBreak, issue #262): the best score found, the returned suit's summed tie cost, and,
+// from the exact search, the preference and tolerance it ran with and whether that cost is proven the lowest (`proven`
+// is the score's proof alone: a second stage that runs out of time leaves it, and says so here).
+export interface TieBreakResult { topScore: number; cost: number; rarity?: string | undefined; tolerance?: number | undefined; costProven?: boolean | undefined }
 // Why the k-best search returned fewer alternatives than asked: the time budget ran out, the next
 // suit scored outside the tolerance, or no other suit exists.
 export type AltShortfall = "budget" | "tolerance" | "exhausted";
@@ -112,6 +117,9 @@ const assignmentOf = (picked: Partial<Record<string, OptItem>>, slots: string[])
 // a different order, so "one score beats another" needs a margin above that noise (and far below
 // HiGHS's own mip_abs_gap of 1e-3) — else an exact tie reads as the heuristic leading.
 const SCORE_EPS = 1e-6;
+// A result's best score: with a tie-break the returned suit may score under it (OptResult.tieBreak.topScore).
+const topOf = (r: OptResult): number => r.tieBreak ? r.tieBreak.topScore : r.score;
+const tieCostOf = (picked: Partial<Record<string, OptItem>>): number => Object.values(picked).reduce((n, it) => n + (it?.tieCost || 0), 0);
 const serialsOf = (suit: Partial<Record<string, { serial: number } | null>> | null | undefined): Record<string, number | null> =>
   Object.fromEntries(Object.entries(suit || {}).map(([slot, it]): [string, number | null] => [slot, it ? it.serial : null]));
 
@@ -128,6 +136,8 @@ export async function solveExact({
   // Its random restarts get at most half the budget, so HiGHS always keeps the other half.
   const heur = core.optimizeSuit(pools, current, profile, { ...opts, exact: false, restarts, heuristicBudgetMs: budget / 2, onProgress: (p: CoreProgress) => onProgress({ ...p, at: now() }) });
   const heuristicMs = now() - t0;
+  // with a tie-break, the heuristic's best-scoring suit (its tie pick may score under it), for a hand-back from its suit
+  const heurTop = opts.tieBreak && heur.tieBreak?.top ? { tieBreak: { ...opts.tieBreak, topStart: heur.tieBreak.top } } : {};
 
   // ---- step 2: build the MIP ----------------------------------------------------------------
   // mip.mts's own (looser) item/profile shapes accept the core's stricter ones without a cast —
@@ -161,6 +171,11 @@ export async function solveExact({
     // Every HiGHS call (first solve, hardAsSoft retry, each alternative) shares what is left of the
     // one budget. A limit of 0 still returns the MIP start as the incumbent.
     const remaining = () => Math.max(0, (budget - (now() - t0)) / 1000);
+    // With a tie-break the first stage gets three quarters of what is left, so the second always keeps a share.
+    const tb = opts.tieBreak ? { rarity: opts.tieBreak.rarity, tolerance: Math.max(0, opts.tieBreak.tolerance || 0) } : null;
+    const stage1Limit = (): number => (tb ? 0.75 * remaining() : remaining());
+    // equal scores: the solvers' score precision with a tie-break (app/mip.mts TIE_SLACK, as the core and the stage-2 row), else SCORE_EPS
+    const eps = tb ? TIE_SLACK : SCORE_EPS;
     let lastEmit = 0;
     // HiGHS reports ±Infinity for a bound it has not established yet (seen at sub-second budgets): no bound.
     const toScore = (v: number | null | undefined): number | null => (v == null || !Number.isFinite(v) ? null : v + active.scoreOffset);
@@ -177,7 +192,7 @@ export async function solveExact({
       });
     };
 
-    let solve = solveModel(handle, { timeLimitS: remaining(), start: startVector(active, heur.best as unknown as Partial<Record<string, OptItem>>), onEvent });
+    let solve = solveModel(handle, { timeLimitS: stage1Limit(), start: startVector(active, heur.best as unknown as Partial<Record<string, OptItem>>), onEvent });
     let floorsConflict = false;
 
     if (solve.status === "infeasible") {
@@ -189,7 +204,7 @@ export async function solveExact({
       closeModel(handle);
       active = buildSuitMip({ pools: mipPools, current: mipCurrent, profile, optionalSlots, slots, hardAsSoft: true });
       handle = openModel(highs, active);
-      solve = solveModel(handle, { timeLimitS: remaining(), start: startVector(active, heur.best as unknown as Partial<Record<string, OptItem>>), onEvent });
+      solve = solveModel(handle, { timeLimitS: stage1Limit(), start: startVector(active, heur.best as unknown as Partial<Record<string, OptItem>>), onEvent });
     }
 
     // A genuine floors conflict only ever gets HERE by way of the infeasible branch above: the
@@ -211,7 +226,7 @@ export async function solveExact({
     // on a large pool with a tight budget). The heuristic's own suit is the best known, reported
     // through the core exactly like any other result rather than invented here.
     if (solve.colValue == null) {
-      const final = core.optimizeSuit(pools, current, profile, { ...opts, exact: false, restarts: 0, warmStart: serialsOf(heur.best) });
+      const final = core.optimizeSuit(pools, current, profile, { ...opts, exact: false, restarts: 0, warmStart: serialsOf(heur.best), ...heurTop });
       const mipMs = now() - t0 - heuristicMs;
       const bound = toScore(solve.dual);
       return {
@@ -224,11 +239,31 @@ export async function solveExact({
     const picked = pickedOf(active, solve.colValue);
     const mipScore = solve.objective! + active.scoreOffset;
 
-    // ---- step 4: k-best alternatives (optional) --------------------------------------------
+    // ---- step 3b: the tie-break's second stage (optional) -----------------------------------
+    // Among suits within the tolerance of stage 1's that meet every floor it meets, the lowest summed tie cost
+    // (app/mip.mts tieBreakModel), started from stage 1's suit, so a timeout still returns a suit no worse than it.
     const alt = opts.alternatives && opts.alternatives.count > 0 ? opts.alternatives : null;
+    let picked2 = picked, stage2Optimal = true;
+    if (tb) {
+      // stage 1's suit with every column worked out from its own totals: an unproven incumbent may leave a met floor's indicator at 0
+      const start = startVector(active, picked);
+      const h2 = openModel(highs, tieBreakModel(active, start, tb.tolerance));
+      try {
+        onProgress({ phase: "tie-break", elapsedMs: now() - t0, budgetMs: budget, bestScore: mipScore, at: now() });
+        // with other suits asked for, half of what is left stays theirs
+        const s2 = solveModel(h2, { timeLimitS: (alt ? 0.5 : 1) * remaining(), start });
+        if (s2.colValue) picked2 = pickedOf(active, s2.colValue);
+        stage2Optimal = s2.status === "optimal";
+      } finally {
+        closeModel(h2);
+      }
+    }
+
+    // ---- step 4: k-best alternatives (optional) --------------------------------------------
     const altTolerance = alt ? Math.max(0, alt.tolerance || 0) : undefined;
     const alternatives: { best: OptAssignment; score: number }[] = [];
-    let lastPicked = picked;
+    // the first cut is the returned suit, so with a tie-break the top-score suit can come back as the first alternative
+    let lastPicked = picked2;
     // Why fewer alternatives came back than were asked for (unset when the count was met).
     let altShortfall: AltShortfall | undefined;
     if (alt) {
@@ -262,22 +297,34 @@ export async function solveExact({
     // status any of them firing means the model and the core disagree about a suit's score — a
     // modelling bug, not a race — so HiGHS's bound is no bound on the core's scores either.
     const stats = `HiGHS status ${solve.status}, objective ${mipScore}, heuristic ${heur.score}`;
-    const heuristicLeads = heur.score > mipScore + SCORE_EPS;
-    let final = core.optimizeSuit(pools, current, profile, { ...opts, exact: false, restarts: 0, warmStart: serialsOf(heuristicLeads ? heur.best : picked) });
+    // With a tie-break the guards compare best scores (topOf) and, where those agree, tie costs.
+    const heuristicLeads = topOf(heur) > mipScore + eps;
+    // the top-score suit (stage 1's, or the heuristic's when it leads) rides along as one more start, so the core's best
+    // score is that suit's, and the floors it meets are the ones both stages held
+    const topSuit = heuristicLeads ? heur.tieBreak?.top : serialsOf(picked);
+    const topStart = tb && topSuit ? { tieBreak: { ...opts.tieBreak!, topStart: topSuit } } : {};
+    let final = core.optimizeSuit(pools, current, profile, { ...opts, exact: false, restarts: 0, warmStart: serialsOf(heuristicLeads ? heur.best : picked2), ...topStart });
     let coreImproved = false, rescoreMismatch = false;
+    const cost2 = tieCostOf(picked2);
     if (!heuristicLeads) {
-      if (final.score > mipScore + SCORE_EPS) {
-        onWarn(`core improved on HiGHS by ${final.score - mipScore} (${stats})`);
+      if (topOf(final) > mipScore + eps) {
+        onWarn(`core improved on HiGHS by ${topOf(final) - mipScore} (${stats})`);
+        coreImproved = true;
+      } else if (tb && stage2Optimal && final.tieBreak && final.tieBreak.cost < cost2 - 1e-9) {
+        onWarn(`core found a lower tie cost than HiGHS's proven ${cost2}: ${final.tieBreak.cost} (${stats})`);
         coreImproved = true;
       }
-      if (final.score < mipScore - 1e-3) {
-        onWarn(`re-score mismatch: the core scores HiGHS's suit ${final.score} (${stats})`);
+      if (topOf(final) < mipScore - 1e-3) {
+        onWarn(`re-score mismatch: the core scores HiGHS's suit ${topOf(final)} (${stats})`);
         rescoreMismatch = true;
       }
     }
+    // a costlier suit than the heuristic's counts only against the same floors held (equal tops can meet different ones)
+    const sameFloors = (a: OptResult, b: OptResult): boolean => (a.tieBreak?.floors || []).join() === (b.tieBreak?.floors || []).join();
+    const costAbove = (a: OptResult, b: OptResult): boolean => !!(tb && a.tieBreak && b.tieBreak && Math.abs(topOf(a) - topOf(b)) <= eps && sameFloors(a, b) && a.tieBreak.cost > b.tieBreak.cost + 1e-9);
     let belowHeuristic = heuristicLeads;
-    if (!heuristicLeads && final.score < heur.score - SCORE_EPS) {
-      final = core.optimizeSuit(pools, current, profile, { ...opts, exact: false, restarts: 0, warmStart: serialsOf(heur.best) });
+    if (!heuristicLeads && (topOf(final) < topOf(heur) - eps || costAbove(final, heur))) {
+      final = core.optimizeSuit(pools, current, profile, { ...opts, exact: false, restarts: 0, warmStart: serialsOf(heur.best), ...heurTop });
       belowHeuristic = true;
     }
     if (belowHeuristic) onWarn(`exact search's suit scored below the heuristic's ${heur.score} — reporting the heuristic's suit instead of a regression (${stats})`);
@@ -285,10 +332,11 @@ export async function solveExact({
     const mipMs = now() - t0 - heuristicMs;
     const disagree = solve.status === "optimal" && (coreImproved || belowHeuristic || rescoreMismatch);
     const boundRaw = disagree ? null : solve.status === "optimal" ? solve.objective : solve.dual;
+    const proven = solve.status === "optimal" && !coreImproved && !belowHeuristic && !rescoreMismatch;
     return {
       ...final,
       method: "exact",
-      proven: solve.status === "optimal" && !coreImproved && !belowHeuristic && !rescoreMismatch,
+      proven,
       solver: "highs",
       bound: toScore(boundRaw),
       gapPoints: disagree ? null : solve.gapAbs,
@@ -303,6 +351,7 @@ export async function solveExact({
       unreachableFloors: active.unreachableFloors,
       pruned: undefined,
       workers: undefined,
+      ...(tb && final.tieBreak ? { tieBreak: { topScore: Math.max(mipScore, topOf(final)), cost: final.tieBreak.cost, rarity: tb.rarity, tolerance: tb.tolerance, costProven: proven && stage2Optimal } } : {}),
     };
   } finally {
     closeModel(handle);

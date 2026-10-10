@@ -1,6 +1,6 @@
 // mcp.test.mts — the built-in MCP server (issue #211; `app/mcp.mts`, `app/mcp-tools.mts`) on a real server and temp data folder.
 //
-// the built-in MCP server (issue #211; `app/mcp.mts`, `app/mcp-tools.mts`) on a real server and temp data folder, its `mcp.json` asking for port 0 so no test races another or a Pack Rat running on 47615: `initialize` negotiating each supported protocol version and answering the newest to any other, with `serverInfo` and the instructions; a notification's 202, an unknown method (-32601) and tool (-32602), a parse error (-32700), a batch refused, an unsupported `MCP-Protocol-Version` header (400), arguments a tool's schema refuses as an `isError` result; the listener's guards (another Host, any Origin, its own included, no or a wrong token, GET and DELETE, another path, a non-JSON content type, a body over 1 MB); off by default with nothing written, `PUT /api/mcp` refusing anything but the two booleans and opening and closing the listener at once (connection refused once off), `mcp.json` saved `0600`; `POST /api/mcp/token` replacing the token with the old one refused at once, and a file without one getting one; a busy port falling back to a free one without saving it, and a broken `mcp.json` reading as off with a log line; every read tool over the demo fixtures with paging; `build_suit` for two characters (the second build of the same inputs reusing the saved run, buffs named, No character not saved), the run tools and `score_suit` over them; the in-game tools refused with the switch off (and still listed) while `stop_actions` writes the stop flag, and with it on writing the same `queue.jsonl` line the Grab button's `POST /api/bridge` writes (refused while the bridge is offline, a ground chest highlighted by its serial), an Organize trip through the Organize route with its one-at-a-time and stale-stamp refusals, and `get_action_status` reading the bridge's report; the tools reaching a `--token` app server; and the MCP SDK's own `Client` and `StreamableHTTPClientTransport` connecting, listing the tools and calling one. Fix round 1: an id with no method refused, the content type in any case, `POST /api/mcp/token` refusing fields; a hand-edited `mcp.json` (one bad field keeps the token, a BOM, an empty or broken file, a data folder that cannot take a new token leaving MCP off); property rules the route would drop refused with the accepted forms, slots, kinds, slayers and tags in any case, rows carrying their container and root serials; `container_contents` on a bag inside a chest; `score_suit` keeping the hands legal around a named weapon and planning with Manual's buffs (`manualBuffs` while `buffsCount` is on); suit results' `effectiveTotals` (paperdoll resists, Divine Fury's shares) on `score_suit`, `build_suit`, `get_suit_build`, `get_run` and a reused run, and `unreachableFloors` for a hard floor no piece reaches (issue #216); an empty `pinned` as no pins and a fill without `currentScore`; a build replaced by a newer call saying so (a parked core); `get_action_status` on an id nobody queued; and `organize_trip` counting a move only when its put step is reported (a refused trip, a take without its put). All `[fast]`.
+// the built-in MCP server (issue #211; `app/mcp.mts`, `app/mcp-tools.mts`) on a real server and temp data folder, its `mcp.json` asking for port 0 so no test races another or a Pack Rat running on 47615: `initialize` negotiating each supported protocol version and answering the newest to any other, with `serverInfo` and the instructions; a notification's 202, an unknown method (-32601) and tool (-32602), a parse error (-32700), a batch refused, an unsupported `MCP-Protocol-Version` header (400), arguments a tool's schema refuses as an `isError` result; the listener's guards (another Host, any Origin, its own included, no or a wrong token, GET and DELETE, another path, a non-JSON content type, a body over 1 MB); off by default with nothing written, `PUT /api/mcp` refusing anything but the two booleans and opening and closing the listener at once (connection refused once off), `mcp.json` saved `0600`; `POST /api/mcp/token` replacing the token with the old one refused at once, and a file without one getting one; a busy port falling back to a free one without saving it, and a broken `mcp.json` reading as off with a log line; every read tool over the demo fixtures with paging, and `character_sheet`'s Resisting Spells minimum with a run saved before it opening (issue #261); `build_suit` for two characters (the second build of the same inputs reusing the saved run, buffs named, No character saved and reused, listed by `noCharacter` and read back as `character: null` with its effective totals, and a No character fill with pins not saved; `onlyContainers` narrowing the pool into its own run, `[]` as no list, non-serials refused, and a bag or an item named with where it sits), the run tools and `score_suit` over them; the in-game tools refused with the switch off (and still listed) while `stop_actions` writes the stop flag, and with it on writing the same `queue.jsonl` line the Grab button's `POST /api/bridge` writes (refused while the bridge is offline, a ground chest highlighted by its serial), an Organize trip through the Organize route with its one-at-a-time and stale-stamp refusals, and `get_action_status` reading the bridge's report; the tools reaching a `--token` app server; and the MCP SDK's own `Client` and `StreamableHTTPClientTransport` connecting, listing the tools and calling one. Fix round 1: an id with no method refused, the content type in any case, `POST /api/mcp/token` refusing fields; a hand-edited `mcp.json` (one bad field keeps the token, a BOM, an empty or broken file, a data folder that cannot take a new token leaving MCP off); property rules the route would drop refused with the accepted forms, slots, kinds, slayers and tags in any case, rows carrying their container and root serials; `container_contents` on a bag inside a chest; `score_suit` keeping the hands legal around a named weapon and planning with Manual's buffs (`manualBuffs` while `buffsCount` is on); suit results' `effectiveTotals` (paperdoll resists, Divine Fury's shares) on `score_suit`, `build_suit`, `get_suit_build`, `get_run` and a reused run, and `unreachableFloors` and `diagnostics` for a hard floor no piece reaches (issues #216, #217), with the suit's `swing`; an empty `pinned` as no pins and a fill without `currentScore`; a build replaced by a newer call saying so (a parked core); `get_action_status` on an id nobody queued; and `organize_trip` counting a move only when its put step is reported (a refused trip, a take without its put); `build_suit`'s `rarity` (issue #262) set, cleared with `any` or a template without one, and kept when left out. All `[fast]`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, readFileSync, existsSync, statSync, mkdirSync, chmodSync } from "node:fs";
@@ -303,7 +303,7 @@ test("[fast] search_items: property rules the route cannot parse are refused, an
   } finally { await sv.s.close(); }
 });
 
-test("[fast] score_suit keeps the hands legal around a named weapon, and plans with Manual's buffs; build_suit with the character's saved Automatic ones; a built-in template by its id", async () => {
+test("[fast] score_suit keeps the hands legal around a named weapon, and plans with Manual's buffs; build_suit with the character's saved Automatic ones; a built-in template by its id; a template's own buffs", async () => {
   const sv = await serve();
   try {
     const port = await mcpPort(sv);
@@ -328,6 +328,18 @@ test("[fast] score_suit keeps the hands legal around a named weapon, and plans w
     assert.deepEqual((await call(port, "build_suit", { character: "Kestrel", timeBudgetSeconds: 2 })).data.buffs, ["bless"], "the character's saved Automatic buffs (its profile's spec)");
     assert.doesNotMatch((await call(port, "score_suit", { character: "Kestrel", template: "tank" })).text, /no template/, "a built-in template by its id");
     assert.match((await call(port, "score_suit", { character: "Kestrel", template: "nope" })).text, /no template named "nope"; the templates are builtin:melee, builtin:caster, builtin:archer, builtin:tank/);
+    // Issue #212: a template that carries buffs plans with them when none are named, as the builder's Apply turns them on.
+    const vamp = { spec: { ...profiles.templates.melee?.spec ?? builtinTemplates.melee!.spec, buffs: { on: ["consecrateWeapon"], skills: {} } } };
+    assert.equal((await app(sv, "/api/profiles", "PUT", { ...profiles, characters: { ...profiles.characters, Kestrel: kestrel }, templates: { ...profiles.templates, vamp } })).status, 200);
+    assert.deepEqual((await call(port, "score_suit", { character: "Kestrel", template: "vamp" })).data.buffs, ["consecrateWeapon"], "the template's buffs over Manual's");
+    assert.deepEqual((await call(port, "build_suit", { character: "Kestrel", template: "vamp", timeBudgetSeconds: 2 })).data.buffs, ["consecrateWeapon"], "the template's buffs over the character's");
+    assert.deepEqual((await call(port, "score_suit", { character: "Kestrel", template: "vamp", buffs: [] })).data.buffs, [], "buffs named win");
+    // the template's buff numbers over the character's, as the page's Apply merges them: Divine Fury's top tier or not
+    const fury = (skills: Record<string, number>): { spec: unknown } => ({ spec: { ...vamp.spec, buffs: { on: ["divineFury"], skills } } });
+    assert.equal((await app(sv, "/api/profiles", "PUT", { ...profiles, characters: { ...profiles.characters, Kestrel: kestrel }, templates: { ...profiles.templates, top: fury({ Chivalry: 120, Karma: 10000 }), low: fury({ Chivalry: 0, Karma: 0 }) } })).status, 200);
+    const furyTotals = async (template: string): Promise<Record<string, number>> => (await call(port, "score_suit", { character: "Kestrel", template })).data.effectiveTotals;
+    const [top, low] = [await furyTotals("top"), await furyTotals("low")];
+    assert.ok(["hci", "di", "ssi", "dci"].some((k) => top[k] !== low[k]), `the template's numbers are planned with: ${JSON.stringify({ top, low })}`);
     assert.equal((await app(sv, "/api/ui-prefs", "PUT", { buffsCount: "off" })).status, 200);
     assert.deepEqual((await call(port, "score_suit", { character: "Kestrel" })).data.buffs, []);
   } finally { await sv.s.close(); }
@@ -387,9 +399,33 @@ test("[fast] build_suit runs the Suit Builder for a character and saves the run;
       assert.equal(polled.state, "done", JSON.stringify(polled));
       assert.equal(polled.currentScore, undefined);
     }
-    const fill = (await call(port, "build_suit", { noCharacter: true, timeBudgetSeconds: 2 })).data;
+    // No character with no pins is an ordinary build, saved and reused under No character's own name (issue #12)
+    const none = (await call(port, "build_suit", { noCharacter: true, timeBudgetSeconds: 2 })).data;
+    assert.equal(none.state, "done", JSON.stringify(none));
+    assert.ok(none.runId, "a No character build is saved");
+    assert.equal(none.character, null);
+    assert.equal((await call(port, "build_suit", { noCharacter: true, timeBudgetSeconds: 2 })).data.reused, true);
+    const noneRuns = (await call(port, "list_runs", { noCharacter: true })).data;
+    assert.deepEqual(noneRuns.runs.map((r: { id: string; character: unknown }) => [r.id, r.character]), [[none.runId, null]]);
+    assert.equal((await call(port, "list_runs", { character: "Kestrel", noCharacter: true })).ok, false);
+    const noneRun = (await call(port, "get_run", { id: none.runId })).data;
+    assert.equal(noneRun.character, null);
+    assert.ok(noneRun.effectiveTotals, "a No character run is evaluated, with no character");
+    assert.deepEqual((await call(port, "compare_runs", { ids: [k.runId, none.runId] })).data.runs.map((r: { character: unknown }) => r.character), ["Kestrel", null]);
+    // with pins it is still a fill, not saved
+    const fill = (await call(port, "build_suit", { noCharacter: true, pinned: { [pinSlot]: ring!.serial }, timeBudgetSeconds: 2 })).data;
     assert.equal(fill.state, "done", JSON.stringify(fill));
-    assert.equal((await call(port, "list_runs")).data.total, 2, "a No character fill is not saved");
+    assert.equal(fill.runId, null);
+    assert.equal((await call(port, "list_runs")).data.total, 3, "a No character fill is not saved");
+    // onlyContainers (issue #12): a list narrows the pool to those root containers; [] is no list, so the saved build answers it
+    const inSuit = (Object.values(none.suit).find(Boolean) as { serial: number }).serial;
+    const root = (await call(port, "get_item", { serials: [inSuit] })).data.items[0].root as number;
+    const one = (await call(port, "build_suit", { noCharacter: true, onlyContainers: [root], timeBudgetSeconds: 2 })).data;
+    assert.equal(one.state, "done", JSON.stringify(one));
+    assert.ok(one.poolSize > 0 && one.poolSize < none.poolSize, `${one.poolSize} < ${none.poolSize}`);
+    assert.ok(!one.reused && one.runId !== none.runId, "a build with the list is its own run");
+    assert.equal((await call(port, "build_suit", { noCharacter: true, onlyContainers: [], timeBudgetSeconds: 2 })).data.runId, none.runId, "an empty list is no list");
+    assert.equal((await call(port, "build_suit", { noCharacter: true, onlyContainers: ["bank"] })).ok, false, "only serials");
     // No pieces named: what Kestrel wears now.
     const worn = (await call(port, "character_sheet", { character: "Kestrel" })).data.worn as Array<{ serial: number }>;
     const score = (await call(port, "score_suit", { character: "Kestrel" })).data;
@@ -401,7 +437,7 @@ test("[fast] build_suit runs the Suit Builder for a character and saves the run;
   } finally { await sv.s.close(); }
 });
 
-test("[fast] suit results carry effectiveTotals beside the gear totals, and unreachableFloors where a hard floor is out of reach (issue #216)", async () => {
+test("[fast] suit results carry effectiveTotals beside the gear totals, and unreachableFloors and diagnostics where a hard floor is out of reach (issues #216, #217)", async () => {
   const sv = await serve();
   try {
     const port = await mcpPort(sv);
@@ -410,7 +446,8 @@ test("[fast] suit results carry effectiveTotals beside the gear totals, and unre
     const share = (k: string): number => (applyBuffs({}, {}, ["divineFury"], values, null).shares[k] || []).reduce((n, x) => n + x.value, 0);
     const s = (await call(port, "score_suit", { character: "Kestrel", buffs: ["divineFury"] })).data;
     const eff = s.effectiveTotals as Record<string, number>, gear = s.totals as Record<string, number>;
-    for (const k of RESIST_KEYS) assert.equal(eff[k] ?? 0, (gear[k] ?? 0) + s.resistBonus, k);
+    assert.ok(!("resistBonus" in s));
+    for (const k of RESIST_KEYS) assert.equal(eff[k] ?? 0, Math.max(gear[k] ?? 0, s.resistMinimum ?? -Infinity), k);
     for (const k of ["dci", "hci", "ssi"]) assert.equal(eff[k] ?? 0, (gear[k] ?? 0) + share(k), k);
     assert.equal(share("dci") < 0, true, "Divine Fury lowers DCI");
     // a hard floor no piece reaches, on Kestrel's saved profile
@@ -420,14 +457,40 @@ test("[fast] suit results carry effectiveTotals beside the gear totals, and unre
     const b = (await call(port, "build_suit", { character: "Kestrel", buffs: ["divineFury"], timeBudgetSeconds: 2, waitSeconds: 45 })).data;
     assert.equal(b.state, "done", JSON.stringify(b));
     assert.deepEqual(b.unreachableFloors, ["luck"]);
+    assert.deepEqual(b.diagnostics.filter((d: { code: string }) => d.code !== "swing_next_step").map((d: { code: string; property: string }) => [d.code, d.property]), [["floor_unreachable", "luck"]], "diagnostics pass through as the result has them");
+    // the suit's swing passes through too (issue #217), with Divine Fury's SSI as its share
+    if (b.swing) assert.equal(b.swing.share, share("ssi"), JSON.stringify(b.swing));
     assert.ok(b.effectiveTotals && Object.keys(b.effectiveTotals).length, JSON.stringify(b));
     assert.equal(b.effectiveTotals.dci ?? 0, (b.totals.dci ?? 0) + share("dci"));
     const polled = (await call(port, "get_suit_build", { id: b.id })).data;
     assert.deepEqual([polled.effectiveTotals, polled.unreachableFloors], [b.effectiveTotals, ["luck"]]);
     const run = (await call(port, "get_run", { id: b.runId })).data;
-    assert.deepEqual([run.effectiveTotals, run.unreachableFloors], [b.effectiveTotals, ["luck"]], "a saved run, evaluated from its settings, agrees with the build");
+    assert.deepEqual([run.effectiveTotals, run.unreachableFloors, run.swing], [b.effectiveTotals, ["luck"], b.swing], "a saved run, evaluated from its settings, agrees with the build");
     const again = (await call(port, "build_suit", { character: "Kestrel", buffs: ["divineFury"], timeBudgetSeconds: 2 })).data;
     assert.deepEqual([again.reused, again.effectiveTotals, again.unreachableFloors], [true, b.effectiveTotals, ["luck"]]);
+  } finally { await sv.s.close(); }
+});
+
+// Issue #261: character_sheet reports the Resisting Spells minimum, never the old additive bonus, and a run saved before
+// the change (SOLVER_VERSION 7, its numbers worked out with the bonus) opens, its effective totals worked out anew.
+test("[fast] character_sheet reports the Resisting Spells minimum in place of a resist bonus, and a run saved before it opens", async () => {
+  const sv = await serve({ demo: false, before: (dir) => {
+    const scan = houseScan({ scannedAt: new Date(Date.now() - 3600e3).toISOString(), boxes: [{ serial: 0x40000101, pos: { x: 100, y: 100, z: 0, facet: 1 } }] });
+    writeFileSync(join(dir, "scans", "tester.json"), JSON.stringify({ ...scan, skills: { "Resisting Spells": { value: 100, cap: 120 } } }));
+    const chest = { serial: 0x40002001, name: "Plate Tunic", slot: "chest", props: { fireResist: 30, coldResist: 55 } };
+    writeFileSync(join(dir, "runs", "before-261.json"), JSON.stringify({ id: "before-261", key: "0".repeat(40), character: "Tester", createdAt: "2026-10-01T12:00:00.000Z", label: "", solverVersion: 7,
+      settings: { floors: { fireResist: 70 } }, result: { method: "exact", proven: true, score: 1, best: { chest }, perSlotChanges: [], totals: { before: {}, after: chest.props },
+        diagnostics: [{ code: "floor_unreachable", level: "warn", property: "fireResist", message: "Fire resist 70 can't be reached with your inventory (best possible: 70).", values: { floor: 70, best: 70 }, actions: [] }] } }));
+  } });
+  try {
+    const port = await mcpPort(sv);
+    const sheet = (await call(port, "character_sheet", { character: "Tester" })).data;
+    assert.equal(sheet.resistMinimum, 40);
+    assert.ok(!("resistBonus" in sheet));
+    const run = (await call(port, "get_run", { id: "before-261" })).data;
+    assert.deepEqual([run.totals.fireResist, run.effectiveTotals.fireResist, run.effectiveTotals.coldResist, run.effectiveTotals.physResist], [30, 40, 55, 40], "Fire 30 under the minimum reads 40; Cold 55 is gear's own");
+    assert.equal(run.diagnostics, undefined, "its saved diagnostics counted the old bonus: dropped, as for a run saved before diagnostics");
+    assert.equal((await app<{ run: { id: string } }>(sv, "/api/runs/before-261")).body.run.id, "before-261");
   } finally { await sv.s.close(); }
 });
 
@@ -497,6 +560,10 @@ test("[fast] with actions allowed, Grab / Highlight / Go to queue the line the a
     assert.deepEqual([bag.container.root, bag.total, bag.items.map((i: { serial: number }) => i.serial)], [A, 1, [GEM]]);
     assert.deepEqual((await call(port, "container_contents", { serial: A })).data.items.map((i: { serial: number }) => i.serial).sort(), [BAG, GEM, REAG].sort());
     assert.match((await call(port, "grab_item", { serial: 7 })).text, /nothing with serial 7/);
+    // build_suit's onlyContainers takes root containers only, and says where a bag sits (issue #12)
+    const hexOf = (n: number): string => `0x${n.toString(16).toUpperCase()}`;
+    assert.equal((await call(port, "build_suit", { noCharacter: true, onlyContainers: [BAG] })).text, `${hexOf(BAG)} is a bag inside ${hexOf(A)} (Box ${A}); onlyContainers takes root containers`);
+    assert.equal((await call(port, "build_suit", { noCharacter: true, onlyContainers: [GEM] })).text, `${hexOf(GEM)} is not a container in the scans; onlyContainers takes root containers`);
     // The bridge reports back: get_action_status says so.
     bridgeAlive(sv.dir, { [String(grab.data.id)]: { ok: true, msg: "Sapphire moved to your backpack", t: new Date().toISOString() } });
     const done = (await call(port, "get_action_status", { id: grab.data.id })).data;
@@ -584,5 +651,28 @@ test("[fast] the MCP SDK's own client connects, lists the tools and calls one", 
       assert.equal(r.isError, undefined);
       assert.deepEqual((r.structuredContent as { characters: Array<{ name: string }> }).characters.map((c) => c.name), ["Dorran", "Kestrel"]);
     } finally { await client.close(); }
+  } finally { await sv.s.close(); }
+});
+
+// Issue #262: build_suit's rarity sets a preference, "any" clears the profile's, and none named keeps it.
+test("[fast] build_suit's rarity: set, cleared with any or a template without one, kept when left out", async () => {
+  const sv = await serve();
+  try {
+    const port = await mcpPort(sv);
+    const tb = async (args: Record<string, unknown>): Promise<{ rarity?: string; tolerance?: number; cost?: number } | undefined> => {
+      const d = (await call(port, "build_suit", { character: "Kestrel", timeBudgetSeconds: 2, ...args })).data;
+      assert.equal(d.state, "done", JSON.stringify(d));
+      return d.tieBreak;
+    };
+    assert.equal(await tb({}), undefined, "no preference by default");
+    const lower = await tb({ rarity: "lower" });
+    assert.deepEqual([lower?.rarity, lower?.tolerance, typeof lower?.cost], ["lower", 0, "number"]);
+    const { profiles, builtinTemplates } = (await app<{ profiles: ProfilesV3; builtinTemplates: TemplateMap }>(sv, "/api/profiles")).body;
+    const kestrel = characterEntry({ ...characterProfile(profiles, "Kestrel", builtinTemplates), rarity: "higher" }, { on: [], skills: {} });
+    assert.equal((await app(sv, "/api/profiles", "PUT", { ...profiles, characters: { ...profiles.characters, Kestrel: kestrel } })).status, 200);
+    assert.equal((await tb({}))?.rarity, "higher", "the profile's, kept");
+    assert.equal(await tb({ rarity: "any" }), undefined, "any clears it");
+    assert.equal(await tb({ template: "tank" }), undefined, "a template without one clears it, as the builder's Apply does");
+    assert.equal((await call(port, "build_suit", { character: "Kestrel", rarity: "rarest" })).ok, false);
   } finally { await sv.s.close(); }
 });

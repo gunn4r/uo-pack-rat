@@ -32,6 +32,8 @@
 .b-sec-body { display: flex; flex-direction: column; gap: var(--space-2); }
 .b-tpl-row { display: flex; align-items: center; gap: var(--space-1-5); min-width: 0; }
 .b-tpl-row .select { flex: 1 1 auto; }
+.b-tpl-info { display: grid; gap: var(--space-1); }
+.b-tpl-info p { margin: 0; }
 .b-race-row { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--space-3) var(--space-4); }
 .b-race-row .b-str { flex: 0 0 96px; }
 .pr .b-race-row .b-str .input { width: 100%; }
@@ -43,6 +45,10 @@
 .rule-row .field-error, .rule-row .field-warn { grid-column: 1 / -1; }
 /* with buffs on: what gear still has to supply, under the requirement it changes */
 .rule-row .b-buff-note { grid-column: 1 / -1; color: var(--color-accent); }
+.rule-row .b-worth { grid-column: 1 / -1; }
+.rule-row .b-fc-cap { grid-column: 1 / -1; }
+.rule-row .b-swing-set { grid-column: 1 / -1; display: flex; flex-direction: column; gap: var(--space-1); }
+.rule-row .b-next-step { grid-column: 1 / -1; justify-self: start; }
 /* a resist cap: name · number · "shard cap" or the override's note · reset; an overridden number is outlined in
    the accent, and its note says what it was raised or lowered from (the outline is never the only signal) */
 .rule-row.cap { grid-template-columns: minmax(0, 1fr) 56px auto var(--control-sm); }
@@ -55,6 +61,8 @@
 .b-chips { display: flex; flex-wrap: wrap; gap: var(--space-1-5); }
 .b-switches { display: flex; flex-direction: column; gap: var(--space-2); }
 .b-switches .check { align-items: center; }
+/* the casting school select, its cap and source beside it */
+.b-school { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-1-5) var(--space-3); }
 /* Advanced: a two-column grid of labelled number fields */
 .b-adv { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
 .b-adv .b-adv-wide { grid-column: 1 / -1; }
@@ -92,6 +100,7 @@
 .b-resist-val { display: flex; align-items: baseline; gap: var(--space-1-5); min-width: 0; }
 .b-resist-val .i { align-self: center; color: var(--color-text-muted); }
 .b-badges { display: flex; flex-wrap: wrap; gap: var(--space-1-5); }
+.b-swing > p { margin: 0; }
 .b-flush { overflow: hidden; }
 .b-flush > .card-body { padding: 0; }
 .tbl td.b-act { overflow: visible; text-align: right; }
@@ -286,3 +295,9 @@
 /* Automatic's buff picker, in a popover from the Buffs section: the same picker as Manual's side column */
 .pop-body:has(> .bf-pick) { padding: 0; gap: 0; }
 .pop-body > .bf-pick { display: flex; flex-direction: column; height: min(var(--buff-picker-h), calc(100vh - var(--space-8))); }
+/* "Check your settings" (builder-parts.mts settingsCheck): one row per diagnostic, its sentence and its actions, which wrap under it when narrow */
+.b-check { display: flex; flex-direction: column; gap: var(--space-2); }
+.b-check-rows { display: flex; flex-direction: column; gap: var(--space-2); }
+.b-check-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-3); }
+.b-check-row > p { flex: 1 1 16rem; min-width: 0; margin: 0; }
+.b-check-acts { display: flex; flex-wrap: wrap; gap: var(--space-2); }

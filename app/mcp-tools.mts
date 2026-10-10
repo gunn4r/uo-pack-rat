@@ -6,7 +6,7 @@
 // page does (buffs.mts, vault-lib.mts). One entry per tool: its name, description, JSON Schema for its arguments
 // (the subset app/schema/validate.mts checks, which mcp.mts runs before the handler), annotations and handler.
 // `action: true` marks a tool that acts in game: refused while Settings' "Allow in-game actions" is off.
-import { BRIDGE_ACTION_LABELS, BRIDGE_OFFLINE, GEAR_SLOTS, bridgeFeatures, bridgeRefusal, containerChain, newestScanAdapter, fullOf, isPseudoCharacter, resistSkillBonus, toOptItem, totalsOf } from "./vault-lib.mts";
+import { BRIDGE_ACTION_LABELS, BRIDGE_OFFLINE, GEAR_SLOTS, bridgeFeatures, bridgeRefusal, containerChain, newestScanAdapter, fullOf, isPseudoCharacter, NOBODY, RESIST_SKILL_KEY, resistMinimum, toOptItem, totalsOf } from "./vault-lib.mts";
 import type { BridgeAction, Character, Container, Item, OptItem, Profile, PropMap } from "./vault-lib.mts";
 import { buffPlanOf, normalizeBuffs, savedBuffs, BUFFS } from "./buffs.mts";
 import { BUILTIN_PREFIX, characterBuffs, characterProfile, findTemplate, planBuild, specFromProfile, templateRefs, templateSettings, type PlannedBuild, type ProfilesV3, type TemplateMap } from "./build-spec.mts";
@@ -41,7 +41,7 @@ export interface Tool {
 export const INSTRUCTIONS = [
   "Pack Rat holds a player's Ultima Online inventory: every item on every character, in every bank, backpack and scanned house container, folded from scans the game client wrote. Tools read it, run its Suit Builder and, when the player allows it, act in game.",
   "Start with inventory_facets for the property keys, slots, kinds and characters a search can name, then search_items (the Inventory screen's filters; `props` takes \"lrc:20\" for at least 20, \"lrc:le:20\" for at most, \"lrc:eq:20\" for exactly). Rows are compact, with the serials of the container an item sits in and of its root (for container_contents); get_item has the full tooltip. Paged lists take `limit` (25 by default, 100 at most) and `offset` and answer with `total`.",
-  "character_sheet, list_runs, get_run, compare_runs and scan_status read characters, saved Suit Builder runs and how fresh the scans are. build_suit runs the Suit Builder for a character with its saved profile (or a template), buffs and pinned pieces, waits up to waitSeconds (45 by default, 50 at most, inside a client's usual 60-second timeout) and returns the suit, or a job id: then poll get_suit_build. One build_suit runs at a time; a new call replaces one still running. score_suit totals a hand-picked suit against a profile. A suit's `totals` are item totals; `effectiveTotals` are what the character has in it (resists as on the paperdoll, the buffs counted, not clipped at the caps); a requirement's floor and value are in item terms with the buffs already taken off the floor, so compare them with each other. `unreachableFloors` names hard requirements no suit could reach, scored as plain weights. organize_proposal and organize_plan show what Auto organize would set up and the trips the current setup would run; neither changes anything.",
+  "character_sheet, list_runs, get_run, compare_runs and scan_status read characters, saved Suit Builder runs and how fresh the scans are. build_suit runs the Suit Builder for a character with its saved profile (or a template), buffs and pinned pieces, waits up to waitSeconds (45 by default, 50 at most, inside a client's usual 60-second timeout) and returns the suit, or a job id: then poll get_suit_build. One build_suit runs at a time; a new call replaces one still running. score_suit totals a hand-picked suit against a profile. A suit's `totals` are item totals; `effectiveTotals` are what the character has in it (resists as on the paperdoll, the buffs counted, not clipped at the caps); a requirement's floor and value are in item terms with the buffs already taken off the floor, so compare them with each other. `unreachableFloors` names hard requirements no suit could reach, scored as plain weights. `diagnostics` lists settings that work against the build (a requirement out of reach, a weight that swamps the rest, swing speed); each names the change that would fix it. Its numbers and actions are in the player's terms, as the Suit Builder panel shows them (resists on the paperdoll, buffs counted), not in item terms like a requirement's floor and value. organize_proposal and organize_plan show what Auto organize would set up and the trips the current setup would run; neither changes anything.",
   "In-game tools (highlight_item, go_to_item, grab_item, organize_trip) need \"Allow in-game actions\" on in Pack Rat's Settings and the bridge script running in the game client. They queue one command or one trip through the same bridge the app's buttons use and report what the bridge did within waitSeconds (45 by default, 50 at most); after that, poll get_action_status with the id. stop_actions stops a trip after its current step.",
 ].join("\n\n");
 
@@ -107,19 +107,36 @@ interface Prefs { manualBuffs?: string[]; buffsCount?: string; manualBuffSkills?
 async function planProfile(ctx: ToolContext, inv: InventoryDoc, name: string | null, args: Record<string, unknown>, suit: Record<string, Item> | null): Promise<Planned> {
   const [{ profiles, builtinTemplates: builtins = {} }, { prefs }] = await Promise.all([ctx.api<{ profiles: ProfilesV3; builtinTemplates?: TemplateMap }>("/api/profiles"), ctx.api<{ prefs: Prefs }>("/api/ui-prefs")]);
   const c = name ? scannedCharacter(inv, name) : null;
-  const p = characterProfile(profiles, name ?? "", builtins);
+  // no character plans with No character's own profile (the builder's, under NOBODY), on the shard's caps
+  const p = characterProfile(profiles, name ?? NOBODY, builtins);
+  const t = typeof args.template === "string" ? findTemplate(profiles, builtins, args.template) ?? findTemplate(profiles, builtins, BUILTIN_PREFIX + args.template) : undefined;
   if (typeof args.template === "string") {
-    const t = findTemplate(profiles, builtins, args.template) ?? findTemplate(profiles, builtins, BUILTIN_PREFIX + args.template);
     if (!t) throw new ToolError(`no template named ${JSON.stringify(args.template)}; the templates are ${templateRefs(profiles, builtins).join(", ") || "none"}`);
     Object.assign(p, templateSettings(t), { template: args.template });
   }
-  const saved = name ? characterBuffs(profiles, name) : { on: [], skills: prefs.manualBuffSkills || {} };
-  const preset = suit ? (prefs.buffsCount !== "off" ? prefs.manualBuffs : []) : saved.on;
+  // Only containers (issue #12): a list of root containers replaces the profile's, an empty one clears it, none named keeps it
+  if (Array.isArray(args.onlyContainers)) {
+    for (const serial of args.onlyContainers as number[]) {
+      const c = inv.containers[serial];
+      if (c && c.parent == null) continue;
+      const root = c ? inv.containers[c.root] : undefined;
+      throw new ToolError(c ? `${hex(serial)} is a bag inside ${hex(c.root)}${root ? ` (${root.label || root.name || "a container"})` : ""}; onlyContainers takes root containers` : `${hex(serial)} is not a container in the scans; onlyContainers takes root containers`);
+    }
+    if (args.onlyContainers.length) p.onlyRoots = [...args.onlyContainers as number[]]; else delete p.onlyRoots;
+  }
+  // a rarity preference: "any" clears the profile's (or template's), and none named keeps it
+  if (args.rarity === "any") delete p.rarity;
+  else if (args.rarity === "higher" || args.rarity === "lower") p.rarity = args.rarity;
+  const saved = name ? characterBuffs(profiles, name) : { on: characterBuffs(profiles, NOBODY).on, skills: prefs.manualBuffSkills || {} };
+  // a template that carries buffs plans with them, as the builder's Apply turns them on
+  const preset = t?.spec.buffs ? t.spec.buffs.on : suit ? (prefs.buffsCount !== "off" ? prefs.manualBuffs : []) : saved.on;
   const on = args.buffs !== undefined ? normalizeBuffs(args.buffs) : normalizeBuffs(preset ?? []) ?? [];
   if (!on) throw new ToolError("buffs must be known buff ids");
   const budgetMs = ((args.timeBudgetSeconds as number | undefined) ?? RUN_DEFAULTS.mcpBudgetMs / 1000) * 1000, altCount = (args.otherSuits as number | undefined) ?? 0;
-  const spec = { ...specFromProfile(p, { on, skills: saved.skills }), search: { exact: true, budgetMs, altCount } };
-  return { ...planBuild(spec, { character: c, worn: name ? inv.worn[name] || [] : [], race: p.race, ...(suit ? { suit } : {}) }), buffsOn: on, character: c };
+  // the template's numbers over the character's, as the builder's Apply merges them
+  const skills = t?.spec.buffs ? { ...saved.skills, ...t.spec.buffs.skills } : saved.skills;
+  const spec = { ...specFromProfile(p, { on, skills }), search: { exact: true, budgetMs, altCount } };
+  return { ...planBuild(spec, { character: c, worn: name ? inv.worn[name] || [] : [], race: name ? p.race : "human", ...(suit ? { suit } : {}) }), buffsOn: on, character: c };
 }
 
 // A suit (slot → piece) as names and serials.
@@ -138,6 +155,9 @@ function resultSummary(result: Record<string, unknown> | null | undefined, ev: E
     totals: nonZero((result.totals as { after?: Record<string, number> } | undefined)?.after),
     ...(ev && best ? { effectiveTotals: nonZero(evaluateSuit({ profile: ev.base, character: ev.character, suit: best, buffs: ev.plan }).effectiveTotals) } : {}),
     ...(Array.isArray(result.unreachableFloors) && result.unreachableFloors.length ? { unreachableFloors: result.unreachableFloors } : {}),
+    ...(Array.isArray(result.diagnostics) && result.diagnostics.length ? { diagnostics: result.diagnostics } : {}),
+    ...(result.swing ? { swing: result.swing } : {}),
+    ...(result.tieBreak ? { tieBreak: result.tieBreak } : {}),
     ...(Array.isArray(result.alternatives) && result.alternatives.length ? { otherSuits: (result.alternatives as Array<{ best: Record<string, { serial: number; name: string } | null>; score: number }>).map((a) => ({ score: a.score, suit: suitRows(a.best) })) } : {}),
   };
 }
@@ -152,12 +172,16 @@ function jobSummary(j: JobStatus, memory: ToolContext["memory"], ev: EvalInputs 
   return { id: j.id, state: j.state, error: j.error };
 }
 
+// A saved run's character as the tools answer it: null for No character's (NOBODY), never the pseudo name.
+const runCharacter = (c: unknown): unknown => (c === NOBODY ? null : c);
 // What a saved run is evaluated with, as the page's Compare runs does: its settings as the profile, and its buffs
 // planned for its character as scanned now. None for a character no longer scanned.
 async function runInputs(ctx: ToolContext, run: RunDoc): Promise<EvalInputs | null> {
   const inv = await inventory(ctx), name = run.character ?? "";
+  const s = (run.settings || {}) as Profile & { buffs?: unknown };
+  if (name === NOBODY) return { base: s, character: null, plan: buffPlanOf(null, [], s.race, savedBuffs(s), {}) };
   if (!Object.hasOwn(inv.characters, name) || isPseudoCharacter(name)) return null;
-  const c = inv.characters[name]!, s = (run.settings || {}) as Profile & { buffs?: unknown };
+  const c = inv.characters[name]!;
   return { base: s, character: c, plan: buffPlanOf(c, inv.worn[name] || [], s.race, savedBuffs(s), {}) };
 }
 // The latest builds' plans, for get_suit_build: one build_suit runs at a time, so a few are plenty.
@@ -354,16 +378,16 @@ export const TOOLS: Tool[] = [
   },
   {
     name: "character_sheet",
-    description: "One character's sheet: stats, maximum pools, resists as scanned, skills (non-zero, highest first), the Resisting Spells resist bonus, every worn piece with its properties, and the worn suit's property totals.",
+    description: "One character's sheet: stats, maximum pools, resists as scanned, skills (non-zero, highest first), the Resisting Spells resist minimum in the worn suit (resistMinimum: no resist falls below it, and it adds nothing to gear; null for none), every worn piece with its properties, and the worn suit's property totals.",
     inputSchema: { type: "object", additionalProperties: false, required: ["character"], properties: { character: CHARACTER } },
     annotations: { title: "Character sheet", ...READ },
     async handler(a, ctx) {
       const inv = await inventory(ctx);
       const c = scannedCharacter(inv, a.character as string);
-      const worn = inv.worn[c.name] || [];
+      const worn = inv.worn[c.name] || [], wornTotals = totalsOf(Object.fromEntries(worn.map((i) => [String(i.serial), toOptItem(i)])));
       const skills = Object.entries(c.skills || {}).map(([k, v]) => [k, Number((v as { value?: unknown })?.value) || 0] as const).filter(([, v]) => v > 0).sort((x, y) => y[1] - x[1]);
-      return { name: c.name, scannedAt: c.scannedAt, stats: c.stats, maxes: c.maxes, resists: c.resists, resistBonus: resistSkillBonus(c.skills), skills: Object.fromEntries(skills),
-        worn: worn.map((i) => ({ slot: i.slot, serial: i.serial, name: i.name, props: i.props })), wornTotals: nonZero(totalsOf(Object.fromEntries(worn.map((i) => [String(i.serial), toOptItem(i)])))) };
+      return { name: c.name, scannedAt: c.scannedAt, stats: c.stats, maxes: c.maxes, resists: c.resists, resistMinimum: resistMinimum(c.skills, wornTotals[RESIST_SKILL_KEY]), skills: Object.fromEntries(skills),
+        worn: worn.map((i) => ({ slot: i.slot, serial: i.serial, name: i.name, props: i.props })), wornTotals: nonZero(wornTotals) };
     },
   },
   {
@@ -390,25 +414,27 @@ export const TOOLS: Tool[] = [
   },
   {
     name: "list_runs",
-    description: "Saved Suit Builder runs, newest first: id, character, when, name, method, whether the suit is proven best, score and how many slots change. get_run opens one.",
-    inputSchema: { type: "object", additionalProperties: false, properties: { character: CHARACTER, ...PAGE } },
+    description: "Saved Suit Builder runs, newest first: id, character (null for a No character build), when, name, method, whether the suit is proven best, score and how many slots change. get_run opens one.",
+    inputSchema: { type: "object", additionalProperties: false, properties: { character: CHARACTER, noCharacter: { type: "boolean", description: "Only the No character builds (build_suit with noCharacter). Leave character out." }, ...PAGE } },
     annotations: { title: "Saved runs", ...READ },
     async handler(a, ctx) {
       const { limit, offset } = pageOf(a);
-      const { runs } = await ctx.api<{ runs: Array<Record<string, unknown>> }>(`/api/runs${a.character ? `?character=${enc(a.character as string)}` : ""}`);
-      return { total: runs.length, offset, runs: runs.slice(offset, offset + limit).map((r) => ({ id: r.id, character: r.character, createdAt: r.createdAt, label: r.label || null,
+      if (a.character && a.noCharacter) throw new ToolError("name a character, or set noCharacter (not both)");
+      const only = a.noCharacter ? NOBODY : a.character as string | undefined;
+      const { runs } = await ctx.api<{ runs: Array<Record<string, unknown>> }>(`/api/runs${only ? `?character=${enc(only)}` : ""}`);
+      return { total: runs.length, offset, runs: runs.slice(offset, offset + limit).map((r) => ({ id: r.id, character: runCharacter(r.character), createdAt: r.createdAt, label: r.label || null,
         method: r.method, proven: r.proven, score: r.score, delta: r.delta, changes: r.changes })) };
     },
   },
   {
     name: "get_run",
-    description: "One saved run: the suit it found, what changes from what was worn, its property totals (and effectiveTotals: with its buffs, for its character as scanned now), any unreachableFloors, and the settings it ran with (floors, weights, buffs).",
+    description: "One saved run: the suit it found, what changes from what was worn, its property totals (and effectiveTotals: with its buffs, for its character as scanned now), any unreachableFloors and diagnostics, and the settings it ran with (floors, weights, buffs).",
     inputSchema: { type: "object", additionalProperties: false, required: ["id"], properties: { id: ID } },
     annotations: { title: "Saved run", ...READ },
     async handler(a, ctx) {
       const { run } = await ctx.api<{ run: RunDoc }>(`/api/runs/${enc(a.id as string)}`);
       const s = run.settings || {};
-      return { id: run.id, character: run.character, createdAt: run.createdAt, label: run.label || null, ms: run.ms ?? null, inventoryStamp: run.inventoryStamp ?? null,
+      return { id: run.id, character: runCharacter(run.character), createdAt: run.createdAt, label: run.label || null, ms: run.ms ?? null, inventoryStamp: run.inventoryStamp ?? null,
         settings: { floors: s.floors, weights: s.weights, race: s.race, buffs: s.buffs, lockedSlots: s.lockedSlots }, ...resultSummary(run.result, await runInputs(ctx, run)) };
     },
   },
@@ -425,7 +451,7 @@ export const TOOLS: Tool[] = [
       const slots = [...new Set(suits.flatMap((s) => Object.keys(s)))].filter((k) => GEAR_SLOTS.includes(k));
       const keys = [...new Set(totals.flatMap((t) => Object.keys(t)))].sort();
       return {
-        runs: runs.map((r, i) => ({ id: r.id, character: r.character, label: r.label || null, createdAt: r.createdAt, score: sums[i]!.score, method: sums[i]!.method, proven: sums[i]!.proven, floors: (r.settings || {}).floors || {} })),
+        runs: runs.map((r, i) => ({ id: r.id, character: runCharacter(r.character), label: r.label || null, createdAt: r.createdAt, score: sums[i]!.score, method: sums[i]!.method, proven: sums[i]!.proven, floors: (r.settings || {}).floors || {} })),
         slots: Object.fromEntries(slots.map((k) => [k, suits.map((s) => s[k]?.name ?? null)])),
         totals: Object.fromEntries(keys.map((k) => [k, totals.map((t) => t[k] ?? 0)])),
       };
@@ -445,24 +471,28 @@ export const TOOLS: Tool[] = [
   },
   {
     name: "build_suit",
-    description: "Run the Suit Builder (its exact search) for a character with their saved Suit Builder profile, optionally a template applied over it, buffs counted as on, and pinned pieces kept in their slots. Waits up to waitSeconds and returns the suit, the changes from what they wear, the totals, effectiveTotals (with the buffs) and any unreachableFloors; a longer build answers with an id: poll get_suit_build. A finished build is saved as a run (list_runs), except one with pinned pieces or no character, which fills only the empty slots like Manual's \"Fill the rest automatically\" and is planned as Manual plans. One build_suit runs at a time: a new call replaces one still running from this tool (never the app's own), and the replaced one says so.",
+    description: "Run the Suit Builder (its exact search) for a character with their saved Suit Builder profile, optionally a template applied over it, buffs counted as on, and pinned pieces kept in their slots. Waits up to waitSeconds and returns the suit, the changes from what they wear, the totals, effectiveTotals (with the buffs) and any unreachableFloors and diagnostics; a longer build answers with an id: poll get_suit_build. A finished build is saved as a run (list_runs), No character's too, except one with pinned pieces, which fills only the empty slots like Manual's \"Fill the rest automatically\" and is planned as Manual plans. One build_suit runs at a time: a new call replaces one still running from this tool (never the app's own), and the replaced one says so.",
     inputSchema: { type: "object", additionalProperties: false, properties: {
       character: CHARACTER,
-      noCharacter: { type: "boolean", description: "Build from pieces nobody wears, on raw item totals (no Resisting Spells bonus, race or stats), as Manual's No character does. Leave character out." },
+      noCharacter: { type: "boolean", description: "Build from pieces nobody wears, on raw item totals (no Resisting Spells minimum, race or stats), with the Suit Builder's No character profile. Leave character out." },
       template: { type: "string", minLength: 1, maxLength: 120, description: "A template's name, applied over the character's profile (the Suit Builder's templates)." },
-      buffs: { ...BUFF_LIST, description: "Buffs, forms and abilities counted as always on, by id. With none named: the character's Automatic buffs, or with pinned pieces or no character, Manual's buffs (while its totals count them)." },
+      buffs: { ...BUFF_LIST, description: "Buffs, forms and abilities counted as always on, by id. With none named: the template's buffs when it carries some, else the character's (or No character's) Automatic buffs, or with pinned pieces, Manual's buffs (while its totals count them)." },
       pinned: { type: "object", additionalProperties: SERIAL, description: `Pieces kept in place, slot → serial (slots: ${GEAR_SLOTS.join(", ")}); only the other slots are searched.` },
       timeBudgetSeconds: { type: "integer", minimum: 1, maximum: 3600, description: "How long the exact search may take, 60 by default." },
       otherSuits: { type: "integer", minimum: 0, maximum: 20, description: "Also list this many next-best suits (0 by default)." },
+      rarity: { type: "string", enum: ["higher", "any", "lower"], description: "Among equally good suits, prefer higher- or lower-rarity pieces; requirements always come first. \"any\" clears the profile's or template's preference; left out, it is kept." },
+      onlyContainers: { type: "array", maxItems: 200, items: SERIAL, description: "Build only from pieces in these root containers (a house's ground containers, a bank box, a backpack), by serial, and from worn pieces as usual. Replaces the profile's Only containers list; [] clears it; left out, it is kept." },
       waitSeconds: { type: "integer", minimum: 0, maximum: WAIT_MAX, description: `How long to wait for the result, ${WAIT_DEFAULT} seconds by default, ${WAIT_MAX} at most; then poll get_suit_build.` },
     } },
     annotations: { title: "Build a suit", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     async handler(a, ctx) {
       const name = typeof a.character === "string" ? a.character : null;
       if (!name === !a.noCharacter) throw new ToolError("name a character, or set noCharacter (not both)");
-      // No pins at all (an empty map included) is an ordinary build; No character always fills, around no pins.
+      // No pins at all (an empty map included) is an ordinary build, saved under the character (NOBODY for No character);
+      // with pins it fills the empty slots and is not saved.
       const given = a.pinned as Record<string, number> | undefined;
-      const pinned = given && Object.keys(given).length ? given : name ? undefined : {};
+      const pinned = given && Object.keys(given).length ? given : undefined;
+      const key = name ?? (pinned ? null : NOBODY);
       const inv = await inventory(ctx);
       let suit: Record<string, Item> | null = null;
       if (pinned) {
@@ -470,8 +500,8 @@ export const TOOLS: Tool[] = [
         suit = Object.fromEntries(Object.entries(pinned).flatMap(([slot, serial]) => (found[serial] ? [[slot, found[serial]!]] : [])));
       }
       const plan = await planProfile(ctx, inv, name, a, suit);
-      const body = { character: name, settings: plan.pool, profile: plan.profile, opts: plan.opts, ...(pinned ? { pinned } : {}),
-        ...(name ? { meta: { character: name, settings: plan.snapshot, inventoryStamp: newestStamp(inv.scans) } } : {}) };
+      const body = { character: key, settings: plan.pool, profile: plan.profile, opts: plan.opts, ...(pinned ? { pinned } : {}),
+        ...(key ? { meta: { character: key, settings: plan.snapshot, inventoryStamp: newestStamp(inv.scans) } } : {}) };
       const r = await ctx.api<{ id?: string; cached?: boolean; run?: RunDoc; superseded?: string | null; warning?: string; poolSize: number }>("/api/optimize", { method: "POST", body, clientId: "mcp" });
       if (r.superseded) ctx.memory.replaced.add(r.superseded);
       if (pinned && r.id) ctx.memory.filled.add(r.id);
@@ -489,7 +519,7 @@ export const TOOLS: Tool[] = [
   },
   {
     name: "get_suit_build",
-    description: "A build's progress, or its result once done (the suit, changes, totals, effectiveTotals and any unreachableFloors), by the id build_suit answered with. Results are kept 10 minutes after a build ends.",
+    description: "A build's progress, or its result once done (the suit, changes, totals, effectiveTotals and any unreachableFloors and diagnostics), by the id build_suit answered with. Results are kept 10 minutes after a build ends.",
     inputSchema: { type: "object", additionalProperties: false, required: ["id"], properties: { id: ID } },
     annotations: { title: "Build status", ...READ },
     async handler(a, ctx) {
@@ -501,13 +531,13 @@ export const TOOLS: Tool[] = [
   },
   {
     name: "score_suit",
-    description: "Total a hand-picked suit the way Manual does: its property totals and every floor and weighted property of the character's profile (or a template) against them, planned with the buffs Manual counts (or those named), Enhance Potions and Spell Channeling read from this suit. Unnamed slots keep what the character wears unless keepWorn is false. totals and the requirements are item totals (add resistBonus for a resist's paperdoll value); effectiveTotals are paperdoll values with the buffs counted.",
+    description: "Total a hand-picked suit the way Manual does: its property totals and every floor and weighted property of the character's profile (or a template) against them, planned with the buffs Manual counts (or those named), Enhance Potions and Spell Channeling read from this suit. Unnamed slots keep what the character wears unless keepWorn is false. totals and the requirements are item totals (a requirement's resist value held at the Resisting Spells minimum, so met is value ≥ floor); effectiveTotals are paperdoll values with the buffs counted, each resist held at resistMinimum (the Resisting Spells minimum with these buffs, null for none).",
     inputSchema: { type: "object", additionalProperties: false, properties: {
       character: CHARACTER,
       noCharacter: { type: "boolean", description: "Score on raw item totals with no character (leave character out)." },
       pieces: { type: "array", maxItems: 20, items: SERIAL, description: "The serials of the pieces, one per slot; none scores what the character wears." },
       keepWorn: { type: "boolean", description: "Fill the slots not named with what the character wears (true by default)." },
-      template: { type: "string", minLength: 1, maxLength: 120, description: "A template's name, applied over the character's profile." },
+      template: { type: "string", minLength: 1, maxLength: 120, description: "A template's name, applied over the character's profile; its buffs count when it carries some and none are named." },
       buffs: BUFF_LIST,
     } },
     annotations: { title: "Score a suit", ...READ },
@@ -534,7 +564,7 @@ export const TOOLS: Tool[] = [
       }
       const plan = await planProfile(ctx, inv, name, a, suit);
       const ev = evaluateSuit({ profile: plan.base, character: plan.character, suit: Object.fromEntries(Object.entries(suit).map(([slot, it]) => [slot, toOptItem(it)])), buffs: plan.plan });
-      return { character: name, buffs: plan.buffsOn, resistBonus: ev.planned.resistBonus, suit: Object.fromEntries(Object.entries(suit).map(([slot, it]) => [slot, { serial: it.serial, name: it.name }])),
+      return { character: name, buffs: plan.buffsOn, resistMinimum: ev.buffs.minimum, suit: Object.fromEntries(Object.entries(suit).map(([slot, it]) => [slot, { serial: it.serial, name: it.name }])),
         totals: nonZero(ev.gearTotals), effectiveTotals: nonZero(ev.effectiveTotals), requirements: ev.requirements.map(({ key, label, value, floor, cap, met }) => ({ key, label, value, floor, cap, met })) };
     },
   },

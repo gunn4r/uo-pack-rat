@@ -134,7 +134,7 @@ test("[fast] PUT /api/settings keeps autoUpdateCheck (on by default) across a re
 });
 
 const validRulesFile = (id: string, name: string): string => JSON.stringify({
-  schemaVersion: 1, id, name, caps: { physResist: 70 }, raceCaps: {}, resistSkillBonus: { breakpoints: [] },
+  schemaVersion: 1, id, name, caps: { physResist: 70 }, raceCaps: {},
   tagUnits: {}, rarity: [], raceLock: { gargoyleOnly: false }, freeSkills: [],
 });
 

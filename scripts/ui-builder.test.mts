@@ -1,11 +1,11 @@
 // ui-builder.test.mts — [slow]: the Suit Builder's keyboard, hover and panel behavior in the real Electron window.
 //
-// `[slow]`: the Suit Builder's keyboard and hover behaviour in the real Electron window, on a writable `--data` directory seeded with the demo scans: a raised resist cap (Fire 95) marked in the Resist caps section, built with, shown on the result's Fire tile and the saved run's badge, kept by Save profile across a reload, refused out of range with the error under the field, and reset to the shard's cap; ⌘↵ (Ctrl+Enter) builds with focus on the page body and while typing in a panel field, and does nothing behind the Saved runs drawer; the current suit's and the Fetch list's pieces show the item tooltip on hover and after Tab focus, and so do both names in a Plan row, each its own piece's (issue #75; the row itself and its Slot cell show none, a kept row's worn name still does); a Fetch list row shows a deep bag path in full (nothing cut or ellipsised) and its copy button puts the container serial on the clipboard; STR limit is beside Race with Advanced closed, and a bad value there is focused without opening Advanced; a switch's on track is at least 3:1 against its off track, with the knob moved right, in Default and Britannia, light and dark; two excluded weapon skills show on the Weapons chip and survive Save profile and a reload. Manual mode (issue #12): a slot opens the picker on its pieces, a row picked with the keyboard (focus, Enter) fills the slot, moves the totals and says so in the status line, the picker stays on that slot with the picked row marked "In this slot", the undo key empties the slot again (the status line saying what was undone) and redo puts the piece back, Esc closes it with focus back on the slot card, and the mode and the suit are in `ui-prefs.json`; and the hand-offs: another character picked mid-fill cancels the fill and leaves the suit alone, Fill the rest automatically fills empty slots around a placed ring in one undo step and shows the fetch list, Save as run puts a Manual run in the drawer that opens in the result view with Open in Manual, and an Automatic result's Start from this result loads it into Manual as one undo step.
+// `[slow]`: the Suit Builder's keyboard and hover behaviour in the real Electron window, on a writable `--data` directory seeded with the demo scans: a raised resist cap (Fire 95) marked in the Resist caps section, built with, shown on the result's Fire tile and the saved run's badge, kept by Save profile across a reload, refused out of range with the error under the field, and reset to the shard's cap; ⌘↵ (Ctrl+Enter) builds with focus on the page body and while typing in a panel field, and does nothing behind the Saved runs drawer; the current suit's and the Fetch list's pieces show the item tooltip on hover and after Tab focus, and so do both names in a Plan row, each its own piece's (issue #75; the row itself and its Slot cell show none, a kept row's worn name still does); a Fetch list row shows a deep bag path in full (nothing cut or ellipsised) and its copy button puts the container serial on the clipboard; STR limit is beside Race with Advanced closed, and a bad value there is focused without opening Advanced; a switch's on track is at least 3:1 against its off track, with the knob moved right, in Default and Britannia, light and dark; two excluded weapon skills show on the Weapons chip and survive Save profile and a reload; Check your settings (issue #217): a hard Luck requirement no suit reaches is named with the best possible above the progress panel and in the result, and Lower and Make soft edit the panel's floor and the template badge without starting a build; a weight row's worth hint follows the typed weight and hides on a bad value, and Set weight (a Luck weight that swamps the rest) edits the panel and the template badge, but not once the weight was changed since the build. Swing steps (issue #217), with Kestrel's worn weapon made the pool's best: the SSI weight's switch shows the worn weapon's steps and marks the template changed; the result says SSI was scored per point with Lock Weapon (1H) and shows the swing line, Next step follows the result's swing (none before the build); Lock starts no build and the next build scores by step; the switch is kept in the saved run's settings and by Save profile across a reload. Casting school (issue #213): the Faster Casting cap and its source beside the select, raised to 4 by naming Chivalry, which marks the template changed, and on a new FC requirement row that starts at the cap. Rarity (issue #262): Lower marks the template changed and shows a help line, the result's Solver details carry the Rarity row with the rarity total, Save profile keeps it, and applying a template without one clears it. Templates (issue #212): the built-ins listed first under their own names, a built-in's badge, description, buffs and source under the picker; Apply sets Manual's buffs as one undo step that Undo takes back; the badge counts a buff changed since; Save as keeps the buffs. Manual mode (issue #12): a slot opens the picker on its pieces, a row picked with the keyboard (focus, Enter) fills the slot, moves the totals and says so in the status line, the picker stays on that slot with the picked row marked "In this slot", the undo key empties the slot again (the status line saying what was undone) and redo puts the piece back, Esc closes it with focus back on the slot card, and the mode and the suit are in `ui-prefs.json`; and the hand-offs: another character picked mid-fill cancels the fill and leaves the suit alone, Fill the rest automatically fills empty slots around a placed ring in one undo step and shows the fetch list, Save as run puts a Manual run in the drawer that opens in the result view with Open in Manual, and an Automatic result's Start from this result loads it into Manual as one undo step. No character in Automatic (issue #12): no Race row, the buff picker speaking of no character, no "_nobody" anywhere in the page text, the Caster template's requirements, a build headed "Best suit · No character" with Grab disabled and its reason while no bridge is online, and with a bridge online on Kestrel (stubbed) Grab all queueing one grab per piece and the toast naming her, a Suit totals card, its run in its own drawer, Save profile kept across a reload, Manual on its No character, and Kestrel picked back with her own panel. Only containers (issue #12): the chip lists the same containers as Skip containers, counts the one checked, the closed pool section says "1 container only", the build's saved run keeps the list, Save profile keeps it across a reload, and cleared it leaves the saved profile.
 //
-// Each of the older cases is maintainer feedback on the redesign (PR #43), plus the resist cap overrides (issue #44) and the weapon exclusions (issue #45). Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
+// Each of the older cases is maintainer feedback on the redesign (PR #43), plus the resist cap overrides (issue #44), the weapon exclusions (issue #45) and the Weapon must have chip (issue #214). Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, copyFileSync, readFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, copyFileSync, readFileSync, readdirSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -233,6 +233,230 @@ test("[slow] a Fetch list row shows its whole place, wrapped not cut, and copies
   }
 });
 
+// Issue #217: a hard requirement no suit reaches (Luck 100000) is named with the best possible above the progress panel while the build runs, then in the result's "Check your settings"; Lower and Make soft edit the panel and the template badge, turn into their done state and never start a build.
+test("[slow] Check your settings: the block shows before and after the build, and Lower and Make soft edit the panel", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = seedDataDir("packrat-ui-checks-");
+  const { app, page, errors } = await launch(dataDir);
+  try {
+    await openBuilder(page);
+    const luckRow = page.locator("#b-sec-req .rule-row[data-key=luck]");
+    if (!(await luckRow.count())) {
+      await page.click("#b-addfloor");
+      await page.click(".b-pick-list button[data-key=luck]");
+    }
+    await luckRow.locator("input").fill("100000");
+    let starts = 0;
+    page.on("request", (r) => { if (r.method() === "POST" && new URL(r.url()).pathname === "/api/optimize") starts++; });
+    await page.click("#b-run");
+    // before the search ends: the block sits right above the progress card
+    // read in the same poll that finds it, so a quick build can't replace it between the wait and the read
+    const preText = await (await page.waitForFunction(() => document.querySelector("#b-msg .b-check:has(+ .b-progress)")?.textContent || null, undefined, { timeout: 15_000 })).jsonValue();
+    assert.match(String(preText), /Check your settings[\s\S]*Luck 100000 can't be reached with your inventory \(best possible: \d+\)\./);
+    await built(page);
+    assert.equal(await page.locator("#b-msg .b-check").count(), 0, "the pre-build block goes with the progress card");
+    const block = page.locator(".b-head-card .b-check");
+    const text = await block.innerText();
+    const best = Number(/Luck 100000 can't be reached with your inventory \(best possible: (\d+)\)\./.exec(text)?.[1]);
+    assert.ok(best > 0 && best < 100000, text);
+    const lower = block.getByRole("button", { name: `Lower to ${best}` }), soft = block.getByRole("button", { name: "Make soft" });
+    await lower.click();
+    assert.equal(await luckRow.locator("input").inputValue(), String(best), "the panel's floor is lowered");
+    assert.match(await page.locator("#b-tpl-state").innerText(), new RegExp(`Luck floor[^.]*${best}`), "the template badge names the change");
+    assert.equal(await block.getByRole("button", { name: "Lowered ✓" }).isDisabled(), true);
+    await soft.click();
+    assert.match(await page.locator("#b-tpl-state").innerText(), /Luck floor made soft/);
+    assert.equal(await block.getByRole("button", { name: "Made soft ✓" }).isDisabled(), true);
+    assert.equal(await page.locator("#b-run").isDisabled(), false, "no build started");
+    assert.equal(starts, 1, "only the one build that was asked for");
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+});
+
+// Issue #217: Kestrel's Melee weights with Luck at 20. The Luck row's hint follows the typed weight and hides while the field holds no number; the build names Luck in "Check your settings" with Set Luck; a weight changed since the build leaves Set Luck doing nothing, and on a fresh build it sets the panel's weight and marks the template badge.
+test("[slow] weight scale: the worth hint follows the weight, and Set weight edits the panel only while it holds the build's weight", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = seedDataDir("packrat-ui-weights-");
+  const { app, page, errors } = await launch(dataDir);
+  try {
+    await openBuilder(page);
+    await page.selectOption("#b-char", "Kestrel");
+    await page.waitForFunction(() => (document.querySelector("#b-tpl") as HTMLSelectElement | null)?.value === "builtin:melee", undefined, { timeout: 10_000 });
+    await page.click("#b-sec-weights .b-sec-head button");
+    const luck = page.locator("#b-sec-weights .rule-row[data-key=luck]"), field = luck.locator("input");
+    // read the hint inside the wait, so a repaint between the wait and a read can't race it
+    const hint = (want: string | null): Promise<unknown> => page.waitForFunction((w) => {
+      const e = document.querySelector("#b-sec-weights .rule-row[data-key=luck] .b-worth") as HTMLElement | null;
+      return w === null ? !!e?.hidden : !!e && !e.hidden && e.textContent === w;
+    }, want, { timeout: 5_000 });
+    await hint("= 25 per 500 Luck");
+    await field.fill("20");
+    await hint("= 10,000 per 500 Luck");
+    await field.fill("");
+    await hint(null);
+    await field.fill("20");
+    await hint("= 10,000 per 500 Luck");
+    await page.click("#b-run");
+    await built(page);
+    const block = page.locator(".b-head-card .b-check");
+    const to = /Luck makes up \d+% of this suit's score: at weight 20, 500 Luck is worth as much as [\d.]+ times the median of your other weights\. Try ([\d.]+)\./.exec(await block.innerText())?.[1];
+    assert.ok(to && Number(to) < 20, await block.innerText());
+    const setLuck = block.getByRole("button", { name: `Set Luck to ${to}` });
+    // changed since the build: the click says so, turns the button off and leaves the weight alone
+    await field.fill("19");
+    await setLuck.click();
+    assert.equal(await field.inputValue(), "19");
+    assert.equal(await setLuck.isDisabled(), true);
+    await field.fill("20");
+    await page.click("#b-run");
+    await built(page);
+    await block.getByRole("button", { name: `Set Luck to ${to}` }).click();
+    assert.equal(await field.inputValue(), to, "the panel's weight is set");
+    await hint(`= ${(Number(to) * 500).toLocaleString("en-US")} per 500 Luck`);
+    assert.match(await page.locator("#b-tpl-state").innerText(), new RegExp(`Luck weight [\\d.]+ → ${to.replace(".", "\\.")}`), "the template badge names the change");
+    assert.equal(await block.getByRole("button", { name: "Set ✓" }).isDisabled(), true);
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+});
+
+// Issue #217 (swing steps), on Kestrel with her worn War Axe made the best weapon in the pool (strong properties, Swordsmanship), so the result holds the worn weapon: the SSI weight row's switch, with the worn weapon's steps under it, marks the template changed; the build says SSI was scored per point (the pool holds weapons of several speeds) and offers Lock Weapon (1H), shows the swing line, and Next step follows the result's swing (none before the build); Lock edits the panel without a build, and the next build scores by step with no warning; the switch is kept in the saved run's settings and by Save profile across a reload.
+test("[slow] swing steps: the switch, the swing line, Next step from the result, Lock, and the switch saved with the run and the profile", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = seedDataDir("packrat-ui-swing-");
+  const scanFile = join(dataDir, "scans", "demo-Kestrel.json"), scan = JSON.parse(readFileSync(scanFile, "utf8")) as { equipped: Array<{ name: string; tooltip: string[] }> };
+  const axe = scan.equipped.find((i) => i.name === "War Axe")!;
+  axe.tooltip = [...axe.tooltip.filter((l) => !/^(Antique|Defense Chance Increase|Swing Speed Increase|Skill Required)/.test(l)), "Skill Required: Swordsmanship", "Hit Chance Increase 45%", "Defense Chance Increase 45%",
+    "Damage Increase 100%", "Hit Point Increase 25", "Dexterity Bonus 25", "Strength Bonus 25", "Physical Resist 20%", "Fire Resist 20%", "Cold Resist 20%", "Poison Resist 20%", "Energy Resist 20%"];
+  writeFileSync(scanFile, JSON.stringify(scan));
+  const { app, page, errors } = await launch(dataDir);
+  try {
+    await openBuilder(page);
+    await page.selectOption("#b-char", "Kestrel");
+    await page.waitForFunction(() => (document.querySelector("#b-tpl") as HTMLSelectElement | null)?.value === "builtin:melee", undefined, { timeout: 10_000 });
+    await page.click("#b-sec-weights .b-sec-head button");
+    const sw = page.locator("#b-swing-steps");
+    await sw.waitFor({ timeout: 10_000 });
+    assert.equal(await sw.isChecked(), false);
+    assert.match(String(await page.locator("#b-sec-weights .b-swing-set").textContent()), /Counts SSI only where the swing gets faster\. War Axe 3 s at stamina \d+: .+ ≥ \d+/);
+    await sw.check();
+    assert.match(await page.locator("#b-tpl-state").innerText(), /SSI by step/);
+    await page.click("#b-addfloor");
+    await page.click(".b-pick-list button[data-key=ssi]");
+    await page.locator('#b-sec-req .rule-row[data-key="ssi"] input').fill("1");
+    assert.equal(await page.locator("#b-sec-req .b-next-step").count(), 0, "the worn suit is at its fastest step: no Next step before the build");
+    let starts = 0;
+    page.on("request", (r) => { if (r.method() === "POST" && new URL(r.url()).pathname === "/api/optimize") starts++; });
+    await page.click("#b-run");
+    await built(page);
+    // read in the same poll that finds them, so a redraw can't land between the wait and the read
+    const read = async (sel: string): Promise<string> => String(await (await page.waitForFunction((s) => document.querySelector(s)?.textContent || null, sel, { timeout: 10_000 })).jsonValue());
+    assert.match(await read(".b-head-card .b-check"), /SSI was scored per point: the pool holds weapons with \d+ different speeds\. Lock the weapon slot to score swing speed by step\./);
+    const line = await read(".b-head-card .b-swing");
+    assert.match(line, /^War Axe 3 s · stamina \d+ · SSI \d+ → swings every [\d.]+ s/);
+    // Next step is the first step the result's swing has not reached
+    const unreached = /(?:: |· )[\d.]+ s ≥ (\d+)(?! ✓)(?: ·|$)/.exec(line.split("Steps at stamina")[1] || "")?.[1];
+    assert.ok(unreached, line);
+    assert.equal(await read("#b-sec-req .b-next-step"), `Next step: ${unreached}`);
+    await page.locator(".b-head-card .b-check").getByRole("button", { name: "Lock Weapon (1H)" }).click();
+    assert.equal(await page.locator(".b-head-card .b-check").getByRole("button", { name: "Locked ✓" }).isDisabled(), true);
+    assert.equal(starts, 1, "Lock starts no build");
+    // the next build scores by step: no warning, the swing line still there
+    await page.click("#b-run");
+    await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>("#b-run")?.disabled && /Best suit for/.test(document.querySelector("#b-result h2")?.textContent || "")
+      && !/scored per point/.test(document.querySelector("#b-result")?.textContent || ""), undefined, { timeout: 60_000 });
+    assert.match(await read(".b-head-card .b-swing"), /^War Axe 3 s · stamina \d+ · SSI \d+ → swings every [\d.]+ s/);
+    // the saved run keeps the switch (the server writes it as the build finishes: wait for the file)
+    const kept = (): boolean => existsSync(join(dataDir, "runs")) && readdirSync(join(dataDir, "runs")).filter((f: string) => f.endsWith(".json"))
+      .some((f: string) => (JSON.parse(readFileSync(join(dataDir, "runs", f), "utf8")) as { settings?: { swingSteps?: boolean } }).settings?.swingSteps === true);
+    for (let i = 0; i < 50 && !kept(); i++) await page.waitForTimeout(100);
+    assert.ok(kept(), "the saved run keeps the switch");
+    await page.click("#b-save");
+    await page.waitForFunction(() => /Profile for .* saved/.test(document.body.textContent || ""), undefined, { timeout: 10_000 });
+    await page.reload();
+    await page.waitForSelector("#tab-builder:not([hidden]) #b-weapon", { timeout: 30_000 });
+    await page.selectOption("#b-char", "Kestrel");
+    await page.click("#b-sec-weights .b-sec-head button");
+    assert.equal(await page.locator("#b-swing-steps").isChecked(), true, "Save profile kept the switch");
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+});
+
+// Issue #213: the demo characters have no casting skills, so the Faster Casting cap starts at 2 and says why; naming Chivalry in the Candidate pool section raises it to 4, marks the template changed, and an FC requirement added then starts at 4 with the cap's source on its row.
+test("[slow] casting school: the FC cap's source beside the select and on the FC requirement row", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = seedDataDir("packrat-ui-fccap-");
+  const { app, page, errors } = await launch(dataDir);
+  try {
+    await openBuilder(page);
+    const note = page.locator("#b-sec-pool .b-school .b-fc-cap");
+    await note.waitFor({ timeout: 10_000 });
+    assert.equal(await note.innerText(), "cap 2: no Chivalry, Spellweaving or Bushido");
+    await page.selectOption("#b-school", "Chivalry");
+    assert.equal(await note.innerText(), "cap 4: Chivalry (chosen)");
+    assert.match(await page.locator("#b-tpl-state").innerText(), /casting school Chivalry/);
+    await page.click("#b-addfloor");
+    await page.click(".b-pick-list button[data-key=fc]");
+    const row = page.locator('#b-sec-req .rule-row[data-key="fc"]');
+    assert.equal(await row.locator("input").inputValue(), "4");
+    assert.equal(await row.locator(".b-fc-cap").innerText(), "cap 4: Chivalry (chosen)");
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+});
+
+// Issue #262: Rarity in the Candidate pool section: Lower marks the template changed and shows a help line; the build's
+// Solver details carry the Rarity row with the rarity total; Save profile keeps it across a reload; and applying a
+// template that has no preference clears it. Every read polls, so a later redraw cannot race it.
+test("[slow] rarity preference: the segmented control, its help line, the result's Rarity row, Save profile and template Apply", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = seedDataDir("packrat-ui-rarity-");
+  const { app, page, errors } = await launch(dataDir);
+  const text = (sel: string, re: RegExp): Promise<unknown> => page.waitForFunction(([q, src]) => new RegExp(src!).test(document.querySelector(q!)?.textContent || ""), [sel, re.source], { timeout: 10_000 });
+  const lowerOn = (on: boolean): Promise<unknown> => page.waitForFunction((want) => document.querySelector('#b-rarity [data-value="lower"]')?.getAttribute("aria-checked") === String(want), on, { timeout: 10_000 });
+  try {
+    await openBuilder(page);
+    await page.waitForFunction(() => (document.querySelector("#b-rarity-help") as HTMLElement | null)?.hidden === true);
+    await page.click('#b-rarity [data-value="lower"]');
+    await text("#b-rarity-help", /^Among equally good suits, use the lowest-rarity pieces\. Requirements come first\.$/);
+    await text("#b-tpl-state", /prefer lower rarity/);
+    await page.click("#b-run");
+    await built(page);
+    await page.click("#b-result .b-disclose");
+    await text("#b-details", /Rarity\s*Lowest-rarity pieces among equal suits · rarity total \d+/);
+    await page.click("#b-save");
+    await page.waitForFunction(() => /Profile for .* saved/.test(document.body.textContent || ""), undefined, { timeout: 10_000 });
+    await page.reload();
+    await page.waitForSelector("#tab-builder:not([hidden]) #b-rarity", { timeout: 30_000 });
+    await lowerOn(true);
+    // a template is a full set of settings: applying one with no preference clears it
+    await page.click("#b-tpl-menu");
+    await page.getByRole("menuitem", { name: "Apply to these settings" }).click();
+    await page.waitForFunction(() => document.querySelector('#b-rarity [data-value=""]')?.getAttribute("aria-checked") === "true", undefined, { timeout: 10_000 });
+    await lowerOn(false);
+    await page.waitForFunction(() => (document.querySelector("#b-rarity-help") as HTMLElement | null)?.hidden === true);
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+});
+
 test("[slow] STR limit sits beside Race, in view with Advanced closed, and a bad value is shown there", async (t) => {
   const why = unavailable();
   if (why) return t.skip(why);
@@ -416,6 +640,121 @@ test("[slow] excluded weapon skills and the Use Best Weapon Skill check show on 
   }
 });
 
+// Spellbooks (issue #259): the Weapons popover ends in a Spellbooks row that adds ", no spellbooks" to the chip and is saved
+// with the profile.
+test("[slow] the Weapons popover's Spellbooks row excludes spellbooks and is saved with the profile", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = seedDataDir("packrat-ui-books-");
+  const { app, page, errors } = await launch(dataDir);
+  try {
+    await openBuilder(page);
+    const chip = page.locator("#b-weapon");
+    await chip.click();
+    await page.waitForFunction(() => [...document.querySelectorAll(".pop .b-checks label")].map((l) => (l.textContent || "").trim()).join("|") === "Archery|Swordsmanship|Fencing|Mace fighting|Throwing|Spellbooks", undefined, { timeout: 10_000 });
+    await page.locator('.pop input[value="spellbook"]').check();
+    await page.waitForFunction(() => document.querySelector("#b-weapon")?.textContent?.trim() === "Weapons: any, no spellbooks", undefined, { timeout: 10_000 });
+    await page.locator('.pop input[value="throwing"]').check();
+    await page.waitForFunction(() => document.querySelector("#b-weapon")?.textContent?.trim() === "Weapons: 1 excluded, no spellbooks", undefined, { timeout: 10_000 });
+    await page.keyboard.press("Escape");
+    await page.click("#b-save");
+    await page.waitForFunction(() => /Profile for .* saved/.test(document.body.textContent || ""), undefined, { timeout: 10_000 });
+    await page.reload();
+    await page.waitForSelector("#tab-builder:not([hidden]) #b-weapon", { timeout: 30_000 });
+    await page.waitForFunction(() => document.querySelector("#b-weapon")?.textContent?.trim() === "Weapons: 1 excluded, no spellbooks", undefined, { timeout: 10_000 });
+    await chip.click();
+    assert.deepEqual(await page.locator(".pop .b-checks input:checked").evaluateAll((is) => is.map((i) => (i as HTMLInputElement).value)), ["throwing", "spellbook"]);
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+});
+
+// Weapon properties (issue #214): the Weapon must have chip beside Weapons says what is checked, and Save profile keeps it
+// across a reload; unchecking everything leaves the chip plain again.
+test("[slow] the Weapon must have chip shows the checked properties and is saved with the profile", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = seedDataDir("packrat-ui-wflags-");
+  const { app, page, errors } = await launch(dataDir);
+  try {
+    await openBuilder(page);
+    const chip = page.locator("#b-wflags");
+    assert.equal(await chip.innerText(), "Weapon must have");
+    await chip.click();
+    assert.deepEqual(await page.locator(".pop .b-checks input").evaluateAll((is) => is.map((i) => (i as HTMLInputElement).value)), ["spell channeling", "balanced"]);
+    await page.locator('.pop input[value="spell channeling"]').check();
+    assert.equal(await chip.innerText(), "Weapon must have: Spell Channeling");
+    await page.locator('.pop input[value="balanced"]').check();
+    assert.equal(await chip.innerText(), "Weapon must have: Spell Channeling, Balanced");
+    await page.locator('.pop input[value="balanced"]').uncheck();
+    await page.keyboard.press("Escape");
+    await page.click("#b-save");
+    await page.waitForFunction(() => /Profile for .* saved/.test(document.body.textContent || ""), undefined, { timeout: 10_000 });
+    await page.reload();
+    await page.waitForSelector("#tab-builder:not([hidden]) #b-wflags", { timeout: 30_000 });
+    assert.equal(await chip.innerText(), "Weapon must have: Spell Channeling");
+    await chip.click();
+    assert.deepEqual(await page.locator(".pop .b-checks input:checked").evaluateAll((is) => is.map((i) => (i as HTMLInputElement).value)), ["spell channeling"]);
+    await page.locator('.pop input[value="spell channeling"]').uncheck();
+    assert.equal(await chip.innerText(), "Weapon must have");
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+});
+
+test("[slow] the Only containers chip narrows the pool, says so in the summary, is built with, kept by the run and saved with the profile (issue #12)", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = seedDataDir("packrat-ui-onlyroots-");
+  const { app, page, errors } = await launch(dataDir);
+  try {
+    await openBuilder(page);
+    const who = await page.locator("#b-char").inputValue(), chip = page.locator("#b-onlyroots");
+    await page.waitForFunction(() => document.querySelector<HTMLElement>("#b-onlyroots")?.innerText === "Only containers");
+    await chip.click();
+    const values = await page.locator(".pop .b-checks input").evaluateAll((is) => is.map((i) => (i as HTMLInputElement).value));
+    assert.equal(values.length, 2, "the two demo containers, as Skip containers offers them");
+    const picked = Number(values[0]);
+    await page.locator(`.pop input[value="${picked}"]`).check();
+    await page.waitForFunction(() => document.querySelector<HTMLElement>("#b-onlyroots")?.innerText === "Only containers: 1");
+    await page.keyboard.press("Escape");
+    // the closed section's summary says it
+    await page.click("#b-sec-pool .b-sec-head button");
+    await page.waitForFunction(() => /1 container only/.test(document.querySelector("#b-sec-pool")?.textContent || ""));
+    await page.click("#b-sec-pool .b-sec-head button");
+    await page.click("#b-run");
+    await built(page);
+    // the saved run keeps the list (the server writes it as the build finishes: wait for the file)
+    const kept = (): boolean => existsSync(join(dataDir, "runs")) && readdirSync(join(dataDir, "runs")).filter((f: string) => f.endsWith(".json"))
+      .some((f: string) => JSON.stringify((JSON.parse(readFileSync(join(dataDir, "runs", f), "utf8")) as { settings?: { onlyRoots?: number[] } }).settings?.onlyRoots) === JSON.stringify([picked]));
+    for (let i = 0; i < 50 && !kept(); i++) await page.waitForTimeout(100);
+    assert.ok(kept(), "the saved run keeps the list");
+    await page.click("#b-save");
+    await page.waitForFunction(() => /Profile for .* saved/.test(document.body.textContent || ""), undefined, { timeout: 10_000 });
+    const pool = (): { onlyRoots?: number[] } => (JSON.parse(readFileSync(join(dataDir, "profiles.json"), "utf8")) as { characters: Record<string, { spec: { pool: { onlyRoots?: number[] } } }> }).characters[who]!.spec.pool;
+    assert.deepEqual(pool().onlyRoots, [picked]);
+    await page.reload();
+    await page.waitForSelector("#tab-builder:not([hidden]) #b-onlyroots", { timeout: 30_000 });
+    await page.waitForFunction(() => document.querySelector<HTMLElement>("#b-onlyroots")?.innerText === "Only containers: 1");
+    // cleared, it is no filter and leaves the saved profile
+    await chip.click();
+    await page.locator(`.pop input[value="${picked}"]`).uncheck();
+    await page.waitForFunction(() => document.querySelector<HTMLElement>("#b-onlyroots")?.innerText === "Only containers");
+    await page.keyboard.press("Escape");
+    await page.click("#b-save");
+    for (let i = 0; i < 50 && pool().onlyRoots; i++) await page.waitForTimeout(100);
+    assert.equal(pool().onlyRoots, undefined, "an empty list is not stored");
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+});
+
 // A switch's off and on states read apart at a glance: the on track's fill is at least 3:1 against the off
 // track's (hollow, the surface's own colour), and the knob moves from left to right.
 test("[slow] a switch's on state stands apart from its off state in each theme and mode", async (t) => {
@@ -551,7 +890,7 @@ test("[slow] Manual hand-offs: fill the rest, save as run, reopen it, and start 
     // another character picked while a fill runs: the fill is canceled, and nothing lands in the shared suit
     await page.evaluate(() => {
       document.querySelector<HTMLButtonElement>("#mb-fill")!.click();
-      const sel = document.querySelector<HTMLSelectElement>("#b-char")!, other = [...sel.options].find((o) => o.value && o.value !== sel.value)!;
+      const sel = document.querySelector<HTMLSelectElement>("#b-char")!, other = [...sel.options].find((o) => o.value !== "_nobody" && o.value !== sel.value)!;
       sel.value = other.value; sel.dispatchEvent(new Event("change"));
     });
     await page.waitForFunction(() => document.querySelector(".mb-fill")?.textContent === "Fill canceled: the character changed");
@@ -590,6 +929,167 @@ test("[slow] Manual hand-offs: fill the rest, save as run, reopen it, and start 
     assert.equal(await fury.count(), 0, "the result's buffs (none) replace Manual's");
     await page.click("#mb-undo");
     await fury.waitFor();
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+});
+
+// Issue #212, with the built-in Melee given a description, a source and Divine Fury (the page's GET /api/profiles
+// answer edited) and Manual holding Bless with its totals not counting buffs: the picker lists the built-ins first
+// under their own names and shows Melee's badge, description, buffs and source; Apply turns Divine Fury on in Manual
+// (counted) as one undo step, and Undo puts Bless and the switch back; a buff turned on since marks the template
+// changed; Save as stores the buffs with the copy, listed under "Your templates".
+test("[slow] templates: built-ins first with their description, Apply sets Manual's buffs in one undo step, the badge and Save as count buffs", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = seedDataDir("packrat-ui-templates-");
+  const { app, page, errors } = await launch(dataDir);
+  const SOURCE = "https://uoalive.com/wiki/PlayerGuide:Lazy_Pally";
+  try {
+    await openBuilder(page);
+    assert.equal(await page.evaluate(() => fetch("/api/ui-prefs", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ manualBuffs: ["bless"], buffsCount: "off" }) }).then((r) => r.ok)), true, "Manual's buffs seeded");
+    // The real answer is read by the page itself ("?real" skips this route): route.fetch() would go around Electron's
+    // session, which adds the server's token, and get a 401.
+    await page.route(/\/api\/profiles$/, async (r) => {
+      if (r.request().method() !== "GET") { await r.continue(); return; }
+      const body = await page.evaluate(() => fetch("/api/profiles?real").then((res) => res.json())) as { builtinTemplates: Record<string, { spec: Record<string, unknown> }> };
+      const melee = body.builtinTemplates.melee!;
+      body.builtinTemplates.melee = { ...melee, description: "A test build.", sources: [SOURCE], spec: { ...melee.spec, buffs: { on: ["divineFury"], skills: {} } } } as typeof melee;
+      body.builtinTemplates.caster = { ...body.builtinTemplates.caster!, spec: { ...body.builtinTemplates.caster!.spec, buffs: { on: [], skills: {} } } };
+      await r.fulfill({ json: body });
+    });
+    await page.reload();
+    await page.waitForSelector("#tab-builder:not([hidden]) #b-tpl", { timeout: 30_000 });
+    await page.selectOption("#b-char", "Kestrel");
+    assert.deepEqual(await page.$$eval("#b-tpl optgroup", (els) => els.map((e) => (e as HTMLOptGroupElement).label)), ["Built-in"]);
+    assert.deepEqual(await page.$$eval("#b-tpl optgroup option", (els) => els.map((e) => e.textContent)), ["Melee", "Caster", "Archer", "Tank", "Sampire", "Paladin (Lazy Pally)", "Summoner", "Tamer (Archer)", "Archer (Chivalry)", "Archer-Bard", "Necro-Mage", "Mystic-Mage", "Spellweaver (Necroweaver)", "Thrower (Gargoyle)", "Tank (Mystic)", "Horrific Beast Wrestler", "Hemomancer"]);
+    await page.selectOption("#b-tpl", "builtin:melee");
+    await page.waitForFunction(() => /Loads: Divine Fury/.test(document.querySelector("#b-tpl-info")?.textContent || ""));
+    assert.match(await page.locator("#b-tpl-info").innerText(), /Built-in\s+A test build\.\s+Loads: Divine Fury\s+Source: Lazy Pally/);
+    assert.equal(await page.locator("#b-tpl-info a").getAttribute("href"), SOURCE);
+    await page.selectOption("#b-tpl", "builtin:caster");
+    await page.waitForFunction(() => document.querySelector("#b-tpl-info")?.hasAttribute("hidden"));
+    await page.selectOption("#b-tpl", "builtin:melee");
+    // Apply: Divine Fury on in Automatic and in Manual, counted, as one undo step
+    await page.click("#b-tpl-menu");
+    await page.getByRole("menuitem", { name: "Apply to these settings" }).click();
+    await page.waitForFunction(() => /^matches/.test(document.querySelector("#b-tpl-state")?.textContent || ""));
+    assert.match(await page.locator('#b-buff-chips .token[data-buff="divineFury"]').innerText(), /Divine Fury/);
+    // a buff turned on since marks the template changed
+    await page.click("#b-buff-add");
+    await page.locator("#abf-cb-bless").check();
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => /^modified[\s\S]*Buffs: \+Bless/.test(document.querySelector("#b-tpl-state")?.textContent || ""));
+    // Save as keeps the buffs with the copy
+    await page.click("#b-tpl-menu");
+    await page.getByRole("menuitem", { name: "Save as…" }).click();
+    const dialog = page.locator(".prompt-dialog[open]");
+    await dialog.locator("input[type=text]").fill("Mine");
+    await dialog.getByRole("button", { name: "Save" }).click();
+    await page.waitForFunction(() => /Template Mine saved/.test(document.body.textContent || ""), undefined, { timeout: 10_000 });
+    const saved = JSON.parse(readFileSync(join(dataDir, "profiles.json"), "utf8")) as { templates: Record<string, { spec: { buffs?: { on: string[]; skills: object } } }> };
+    const mine = saved.templates.Mine!.spec.buffs!;
+    assert.deepEqual([[...mine.on].sort(), mine.skills], [["bless", "divineFury"], {}]);
+    assert.deepEqual(await page.$$eval("#b-tpl optgroup", (els) => els.map((e) => (e as HTMLOptGroupElement).label)), ["Built-in", "Your templates"]);
+    // Manual: the template's buffs, counted, one undo step; Undo puts Bless and the switch back
+    await page.click('#b-mode [data-value="manual"]');
+    await page.waitForSelector("#b-manual:not([hidden]) #mb-suit .mb-slot");
+    await page.waitForFunction(() => /^Undo: Melee buffs/.test(document.querySelector("#mb-undo")?.getAttribute("aria-label") || ""));
+    assert.deepEqual(await page.$$eval("#mb-totals .bf-strip .token[data-buff]", (els) => els.map((e) => (e as HTMLElement).dataset.buff)), ["divineFury"]);
+    assert.equal(await page.locator("#bf-count").isChecked(), true);
+    await page.click("#mb-undo");
+    await page.waitForFunction(() => [...document.querySelectorAll<HTMLElement>("#mb-totals .bf-strip .token[data-buff]")].map((e) => e.dataset.buff).join() === "bless");
+    assert.equal(await page.locator("#bf-count").isChecked(), false);
+    // a template with no buffs empties Manual's list in one undo step and leaves the count switch off
+    await page.click('#b-mode [data-value="automatic"]');
+    await page.selectOption("#b-tpl", "builtin:caster");
+    await page.click("#b-tpl-menu");
+    await page.getByRole("menuitem", { name: "Apply to these settings" }).click();
+    await page.click('#b-mode [data-value="manual"]');
+    await page.waitForFunction(() => /^Undo: Caster buffs/.test(document.querySelector("#mb-undo")?.getAttribute("aria-label") || ""));
+    assert.equal(await page.locator("#mb-totals .bf-strip .token[data-buff]").count(), 0);
+    assert.equal(await page.locator("#bf-count").isChecked(), false);
+    assert.deepEqual(errors, []);
+  } finally {
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+});
+
+// Issue #12, No character in Automatic: its own panel (no Race row), its build headed "Best suit · No character" with Grab
+// disabled while no bridge is online, its run in the drawer, Save profile kept across a reload, Manual on its No
+// character, and a character picked again showing that character's own panel.
+test("[slow] No character: built in Automatic from its own profile, saved as a run, kept by Save profile, shared with Manual (issue #12)", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = seedDataDir("packrat-ui-nobody-");
+  const { app, page, errors } = await launch(dataDir);
+  try {
+    await openBuilder(page);
+    await page.selectOption("#b-char", "_nobody");
+    await page.waitForFunction(() => document.querySelector("#b-current h2")?.textContent === "No character");
+    assert.equal(await page.locator("#b-race").count(), 0, "no Race row");
+    const noPseudo = async (where: string): Promise<void> => assert.doesNotMatch(await page.evaluate(() => document.body.innerText), /_nobody/, `no "_nobody" in the page text (${where})`);
+    // the buff picker speaks of no character, not of "_nobody"
+    await page.click("#b-buff-add");
+    await page.locator("#abf-h").waitFor();
+    assert.equal(await page.locator("#abf-h").innerText(), "Buffs");
+    assert.match(await page.locator(".pop .bf-status").innerText(), /no character: every skill at 120/);
+    await noPseudo("buff picker");
+    await page.keyboard.press("Escape");
+    assert.ok(await page.locator("#b-str").isVisible(), "STR limit stays");
+    await page.selectOption("#b-tpl", "builtin:caster");
+    await page.click("#b-tpl-menu");
+    await page.getByRole("menuitem", { name: "Apply to these settings" }).click();
+    await page.locator("#b-sec-req .rule-row[data-key=lrc]").waitFor();
+    assert.equal(await page.locator("#b-sec-req .rule-row[data-key=lrc] input[type=number]").inputValue(), "100");
+    assert.equal(await page.locator("#b-sec-req .rule-row[data-key=lmc] input[type=number]").inputValue(), "40");
+    await page.click("#b-run");
+    await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>("#b-run")?.disabled && document.querySelector("#b-result h2")?.textContent === "Best suit · No character", undefined, { timeout: 60_000 });
+    assert.equal(await page.locator("#b-grab-all").isDisabled(), true);
+    await page.hover("#b-result .tipwrap:has(#b-grab-all)");
+    await page.waitForFunction(() => [...document.querySelectorAll(".tip")].some((e) => e.textContent === "Log a character in to grab"));
+    assert.equal(await page.locator("#b-result section[aria-label='Suit totals'] > .card-head h2").innerText(), "Suit totals");
+    await noPseudo("result");
+    // with a bridge online on Kestrel, Grab puts the pieces in her backpack and the toast names her
+    const queued: Array<{ action: string; serial: number }> = [];
+    await page.route("**/api/bridge/status", (r) => r.fulfill({ json: { ok: true, online: true, character: "Kestrel", results: {} } }));
+    await page.route((u) => u.pathname === "/api/bridge", (r) => { queued.push(r.request().postDataJSON()); return r.fulfill({ json: { ok: true, id: `t${queued.length}` } }); });
+    await page.waitForFunction(() => /^Grab all \d+$/.test(document.querySelector("#b-grab-all")?.textContent || ""), undefined, { timeout: 10_000 });
+    const n = Number((await page.locator("#b-grab-all").innerText()).replace(/\D/g, ""));
+    await page.click("#b-grab-all");
+    await page.waitForFunction((k) => new RegExp(`${k} grabs? queued for Kestrel`).test(document.body.textContent || ""), n, { timeout: 15_000 });
+    assert.equal(queued.length, n);
+    assert.ok(queued.every((q) => q.action === "grab"), JSON.stringify(queued));
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+    await page.waitForFunction(() => document.querySelector<HTMLButtonElement>("#b-grab-all")?.disabled === true, undefined, { timeout: 10_000 });
+    await page.waitForFunction(() => Number(document.querySelector("#b-runs-count")?.textContent) >= 1);
+    await page.click("#b-runs-open");
+    await page.waitForSelector("#runs-drawer:not([hidden]) .run-card");
+    assert.match(await page.locator("#b-runs-who").innerText(), /^No character · 1 run/);
+    await page.keyboard.press("Escape");
+    // Save profile, then a reload comes back to No character with its requirements
+    await page.click("#b-save");
+    await page.waitForFunction(() => /Profile for No character saved/.test(document.body.textContent || ""), undefined, { timeout: 10_000 });
+    const saved = JSON.parse(readFileSync(join(dataDir, "profiles.json"), "utf8")) as { characters: Record<string, { spec: { intent: { floors: Record<string, number> } } }> };
+    assert.equal(saved.characters._nobody!.spec.intent.floors.lrc, 100);
+    await page.reload();
+    await page.waitForSelector("#tab-builder:not([hidden]) #b-sec-req .rule-row[data-key=lrc]", { timeout: 30_000 });
+    assert.equal(await page.locator("#b-char").inputValue(), "_nobody");
+    assert.equal(await page.locator("#b-race").count(), 0);
+    // Manual shows its No character; a character picked back in Automatic has its own panel
+    await page.click('#b-mode [data-value="manual"]');
+    await page.waitForSelector("#b-manual:not([hidden]) #mb-suit .mb-slot");
+    assert.equal(await page.locator("#b-char").inputValue(), "_nobody");
+    assert.equal(await page.locator("#mb-worn").count(), 0, "no worn suit to start from");
+    await noPseudo("Manual");
+    await page.click('#b-mode [data-value="automatic"]');
+    await page.selectOption("#b-char", "Kestrel");
+    await page.waitForFunction(() => document.querySelector("#b-current h2")?.textContent === "Current suit");
+    assert.equal(await page.locator("#b-race").count(), 1);
     assert.deepEqual(errors, []);
   } finally {
     await app.close();

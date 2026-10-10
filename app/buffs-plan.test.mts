@@ -1,14 +1,15 @@
 // buffs-plan.test.mts — Automatic's buffs in the optimizer's profile (issue #12, `app/buffs.mts` `plannedProfile`), across the combinations.
 //
-// `[fast]`: the buff plan's edge cases, checked against the plan's meaning rather than its code (`checkPlan`): every form alone and with Magic Reflection, Curse, Corpse Skin and the Gargoyle's cap changes, for No character and Resisting Spells 100; Corpse Skin, Stone Form and Curse together; resist shares past a cap, and a resist cap under the Resisting Spells bonus; a character lacking a buff's skill and an edited one; Bless and a potion sharing the STR slot; the 150 stat headroom with and without buffs; potions with Enhance Potions and Alchemy; a resist override set aside while a buff lowers that resist; the race locks; Enemy of One changing nothing; the requirement notes' wording; the run key (Enemy of One alone keys as none, a number no buff reads changes nothing, main's key with no buffs); every default template's profile with no buffs byte-equal to main's (02b052e), and with raw stats equal to it but for the stat caps, as a regression guard; and, through both solvers, a negative share pushing a hard floor out of reach (kept, reported unreachable), a share covering a floor, a share past a weighted cap, a potion filling DEX to 150, and Curse lowering a cap under the worn total.
+// `[fast]`: the buff plan's edge cases, checked against the plan's meaning rather than its code (`checkPlan`): every form alone and with Magic Reflection, Curse, Corpse Skin and the Gargoyle's cap changes, for No character and Resisting Spells 100; Corpse Skin, Stone Form and Curse together; resist shares past a cap, and a resist cap under the Resisting Spells minimum; a character lacking a buff's skill and an edited one; Bless and a potion sharing the STR slot; the 150 stat headroom with and without buffs; potions with Enhance Potions and Alchemy; a resist override set aside while a buff lowers that resist; the race locks; Enemy of One changing nothing; the requirement notes' wording; the run key (Enemy of One alone keys as none, a number no buff reads changes nothing, main's key with no buffs); every default template's profile with no buffs byte-equal to main's (02b052e), and with raw stats equal to it but for the stat caps, as a regression guard (pinned to a cap-2 casting school, each also hashes as before issue #213's Faster Casting cap); and, through both solvers, a negative share pushing a hard floor out of reach (kept, reported unreachable), a share covering a floor, a share past a weighted cap, a potion filling DEX to 150, Curse lowering a cap under the worn total, and Protection lowering the Resisting Spells minimum and Vampiric Embrace's Fire loss held at it.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { effectiveProfile, foldSnapshots, profileResistCaps, RESIST_KEYS } from "./vault-lib.mts";
 import type { Character, EffectiveProfile, Profile, PropMap } from "./vault-lib.mts";
-import { BUFFS, STAT_MAX, applyBuffs, article, buffSkillValues, gearNeedsText, overrideNote, planBuffs, plannedProfile, toggleBuff } from "./buffs.mts";
+import { BUFFS, STAT_MAX, applyBuffs, article, buffSkillValues, gearNeedsText, minimumWith, overrideNote, planBuffs, plannedProfile, toggleBuff } from "./buffs.mts";
 import type { BuffPlan, BuffResult, Skills, Stats } from "./buffs.mts";
 import { solveExact, type OptPools, type OptProfile } from "./exact-solver.mts";
+import { resistMinimumText } from "./ui/builder-model.mts";
 import { cell, core, defaultProfiles, fixture, templateNames } from "./solver-fixture.mts";   // also loads the uoalive rules
 import { runKey } from "./runs-lib.mts";
 
@@ -18,7 +19,7 @@ const defaultTemplate = (n: string): Profile => ({ ...defaultProfiles.templates!
 const FIXTURE = foldSnapshots([fixture]).characters.Fixture!;
 const plan = (on: string[], skills: Skills = {}, { stats = null, race, worn = {} }: { stats?: Stats | null; race?: string; worn?: PropMap } = {}): BuffPlan =>
   ({ on, skills: { ...DEFAULTS, ...skills }, stats, who: race ? { race } : {}, worn });
-// A character with Resisting Spells 100: +40 to each resist on uoalive.
+// A character with Resisting Spells 100: no resist below 40 on uoalive.
 const RS100 = { skills: { "Resisting Spells": { value: 100 } } } as unknown as Character;
 const withRS = (p: BuffPlan): BuffPlan => ({ ...p, skills: { ...p.skills, "Resisting Spells": 100 } });
 // A requirement and a weight on every key a buff moves.
@@ -28,31 +29,35 @@ const ALL: Profile = {
 };
 const sum = (r: BuffResult, k: string): number => (r.shares[k] || []).filter((x) => !x.outside).reduce((n, x) => n + x.value, 0);
 
-// The plan against its meaning: for any gear total g, what the solver is paid for a capped key, min(g, cap), plus the
-// constant the character brings (the Resisting Spells bonus and the buffs' in-cap share) is what the character has,
-// min(g + bonus + share, the buffed cap); and a floor is met by gear exactly when gear + bonus + share reaches it (a
-// resist's up to its buffed cap). The buffed caps and shares are applyBuffs' (part A's evaluator), from the caps the
-// profile had before the buffs.
+// The plan against its meaning: for any gear total g, what the solver is paid for a capped key, max(min, min(g, cap)),
+// plus the buffs' in-cap share is what the character has, max(minimum, min(g + share, the buffed cap)), the minimum
+// being the Resisting Spells one with these buffs (Protection lowers it) on a resist; and a floor is met by gear
+// exactly when that reaches it (a resist's up to its buffed cap), a floor at or under the solver's min by any suit.
+// The buffed caps and shares are applyBuffs' (part A's evaluator), from the caps the profile had before the buffs.
 function checkPlan(p: Profile, ch: Character | null, pl: BuffPlan, label: string): { planned: EffectiveProfile; r: BuffResult } {
-  const base = effectiveProfile(p, ch), planned = plannedProfile(p, ch, pl), rsb = base.resistBonus, view = profileResistCaps(base);
+  const base = effectiveProfile(p, ch), planned = plannedProfile(p, ch, pl), view = profileResistCaps(base);
   const caps = { ...base.caps };
   for (const k of RESIST_KEYS) caps[k] = view[k]!.cap;
   if (pl.stats) Object.assign(caps, { strBonus: STAT_MAX - pl.stats.str, dexBonus: STAT_MAX - pl.stats.dex, intBonus: STAT_MAX - pl.stats.int });
   const r = applyBuffs(pl.worn, caps, pl.on, pl.skills, pl.stats, pl.who);
-  const bonus = (k: string): number => (RESIST_KEYS.includes(k) ? rsb : 0);
+  const m = minimumWith(base.resistSkill, pl.on.filter((id) => !r.blocked.includes(id)), pl.skills);
+  const held = (k: string, v: number): number => (RESIST_KEYS.includes(k) && m != null && v < m ? m : v);
+  const solverMin = (k: string): number => planned.mins?.[k] ?? -Infinity;
   for (const [k, cap] of Object.entries(planned.caps)) {
     for (const g of [-30, -5, 0, 7, 20, 45, 64, 70, 90, 140]) {
-      assert.equal(Math.min(g, cap) + bonus(k) + sum(r, k), Math.min(g + bonus(k) + sum(r, k), r.caps[k]!), `${label}: ${k} cap at gear ${g}`);
+      assert.equal(Math.max(solverMin(k), Math.min(g, cap)) + sum(r, k), held(k, Math.min(g + sum(r, k), r.caps[k]!)), `${label}: ${k} cap at gear ${g}`);
     }
   }
   for (const [k, f] of Object.entries(p.floors || {})) {
     const want = RESIST_KEYS.includes(k) ? Math.min(f, r.caps[k]!) : f, gearFloor = planned.floors[k]!;
     for (const g of [0, 3, 7, 20, 45, 64, 70, 90, 140]) {
-      assert.equal(gearFloor > 0 ? g >= gearFloor : true, g + bonus(k) + sum(r, k) >= want, `${label}: ${k} floor at gear ${g}`);
+      const paid = gearFloor > 0 && gearFloor > solverMin(k) ? g >= gearFloor : true;
+      const have = RESIST_KEYS.includes(k) ? held(k, Math.min(g + sum(r, k), r.caps[k]!)) : g + sum(r, k);
+      assert.equal(paid, have >= want, `${label}: ${k} floor at gear ${g}`);
     }
   }
   assert.deepEqual(planned.weights, base.weights, `${label}: the weights are the player's`);
-  assert.deepEqual([planned.hardFloors, planned.resistBonus, planned.floorBonus], [base.hardFloors, base.resistBonus, base.floorBonus], label);
+  assert.deepEqual([planned.hardFloors, planned.resistMinimum, planned.floorBonus], [base.hardFloors, base.resistMinimum, base.floorBonus], label);
   return { planned, r };
 }
 
@@ -139,13 +144,14 @@ test("[fast] buffs plan: Enemy of One never changes the plan, alone or beside ot
 });
 
 // The regression guard: with no buffs, every default template's profile is byte for byte main's (02b052e), so the
-// solvers get the same input, a run keys the same and reuses the runs saved before buffs.
+// solvers get the same input, a run keys the same and reuses the runs saved before buffs. Issue #261 moved every hash
+// once: the profile carries resistSkill and resistMinimum (and mins) in place of resistBonus.
 test("[fast] buffs plan: no buffs give main's profile for every default template, soft floors and cap overrides included", () => {
   const MAIN: Record<string, string> = {
-    melee: "e43232d50aa003e4391fb1c51d2b6f5015c9c5c8", "melee+soft": "eaa54b0b4b3bdc5b975760633ffa57e73c626bec",
-    caster: "5ab58f3ee5c95e2bd1635fd44c685bf2ee7f3754", "caster+soft": "2635d64634dd19394cd5c1133377fabd320fba1c",
-    archer: "2d10d10debdd19c35c210cf3bc5566454853e9a1", "archer+soft": "38ccfc0aad5a88649467060a42018866f3373ffd",
-    tank: "081f653b3d2e5202026d8089a553e9d0b17345cb", "tank+soft": "4f13d70495c490308bf368bea3c2df0c191cafa5",
+    melee: "dd14ef1c4c5271debeed511364273a271bc3a0fc", "melee+soft": "bcc1185e25ef87fc454ed64e72a93e768b704b5b",
+    caster: "e4fd7320e8e89a0110efc4eeaf457aaa9e57b85f", "caster+soft": "2b17519b8f8793269f25371150f33e845d61fe4b",
+    archer: "c055d6e0894c9f0985950e86e8328c20199d7d79", "archer+soft": "b06e03f8bc72927a067be5c172f7eb49fbc17f8f",
+    tank: "9ed149173b9c2c4f0f32f782eb86bb1cc456306d", "tank+soft": "67adb54b84308b3c6bf1a6ba7c303085de3b6c25",
   };
   assert.deepEqual(templateNames, ["melee", "caster", "archer", "tank"]);
   for (const n of templateNames) for (const soft of [[], ["luck"]]) {
@@ -153,6 +159,22 @@ test("[fast] buffs plan: no buffs give main's profile for every default template
     assert.equal(createHash("sha1").update(JSON.stringify(c.profile)).digest("hex"), MAIN[`${n}${soft.length ? "+soft" : ""}`], `${n}${soft.length ? " with a soft floor and Fire 95" : ""}`);
   }
   assert.deepEqual(plannedProfile(ALL, RS100, plan([])), effectiveProfile(ALL, RS100), "an empty set is no set");
+});
+
+// Issue #213: the fixture character (Bushido 74, no Magery) gets a Faster Casting cap of 4, which is the only thing that
+// moved the hashes above. Pinned to Magery (cap 2), every default template hashes exactly as before the casting school
+// (and, since issue #261, with resistSkill and resistMinimum in place of resistBonus).
+test("[fast] buffs plan: pinned to a cap-2 casting school, every default template keeps the profile it had before the casting school", () => {
+  const BEFORE: Record<string, string> = {
+    melee: "a404fd441a60a1e1124503678d13fe9ace209339", "melee+soft": "fba8ae69c54d76b1a333f652b699f87f26424911",
+    caster: "e77ee441dad27743e666d03a6ccc910789274d7a", "caster+soft": "5665a2e72dd3610c470ad5a32faffa87b038923e",
+    archer: "b50cd9de6b00ed04eea47f4cf67161ecc61e6bdb", "archer+soft": "b644d26b6eb2f41067701635798b3eff61336ce8",
+    tank: "7c14b89fc25b3455a26ae851430224d71fbae01c", "tank+soft": "7aba65777fca0964e64f51a540bacc042d0288d1",
+  };
+  for (const n of templateNames) for (const soft of [[], ["luck"]]) {
+    const c = cell(n, { soft, overrides: { castingSchool: "Magery", ...(soft.length ? { resistCaps: { fireResist: 95 } } : {}) } });
+    assert.equal(createHash("sha1").update(JSON.stringify(c.profile)).digest("hex"), BEFORE[`${n}${soft.length ? "+soft" : ""}`], `${n}${soft.length ? " with a soft floor and Fire 95" : ""}`);
+  }
 });
 
 test("[fast] buffs plan: gear STR, DEX and INT are capped at what raw stats and the buffs leave to 150, with or without buffs", () => {
@@ -179,21 +201,23 @@ test("[fast] buffs plan: a resist override above the shard's cap is set aside wh
   const reaper = withRS(plan(["reaperForm"], { Spellweaving: 120, "Arcane Focus": 0 }));
   const { prof, r } = planBuffs(p, RS100, reaper);
   assert.deepEqual(prof.buffs!.overridesIgnored, { fireResist: 95 }, "Fire's 95 would count Reaper's −25 twice; Cold's 60 is below the shard's cap and stays");
-  assert.deepEqual([prof.caps.fireResist, prof.floors.fireResist], [55, 55], "planned at the shard's 70: gear supplies 70 − 40 + 25");
-  assert.deepEqual([prof.caps.coldResist, prof.floors.coldResist], [15, 15], "Cold at its own 60, less 40 and Reaper's +5");
+  assert.deepEqual([prof.caps.fireResist, prof.floors.fireResist], [95, 95], "planned at the shard's 70: gear supplies 70 + 25");
+  assert.deepEqual([prof.caps.coldResist, prof.floors.coldResist], [55, 55], "Cold at its own 60, less Reaper's +5");
+  assert.deepEqual([prof.mins!.fireResist, prof.mins!.coldResist], [65, 35], "the minimum of 40, less each share");
   assert.equal(overrideNote("fireResist", 95, r!), "Fire 95 override ignored: Reaper Form's −25 is counted");
   assert.equal(plannedProfile(p, RS100, withRS(plan(["divineFury"]))).buffs!.overridesIgnored, undefined, "no buff lowers Fire: the override counts");
   checkPlan({ ...p, resistCaps: { coldResist: 60 } }, RS100, reaper, "Reaper with Cold at 60");
 });
 
-test("[fast] buffs plan: a resist cap under the Resisting Spells bonus is exact once a buff touches it, and main's with none", () => {
+test("[fast] buffs plan: a resist cap under the Resisting Spells minimum: the resist reads the minimum, with or without a buff", () => {
   const p: Profile = { weights: { coldResist: 2, luck: 1 }, resistCaps: { coldResist: 20 } };
-  assert.equal(plannedProfile(p, RS100, withRS(plan([]))).caps.coldResist, 0, "no buff on Cold: stopped at 0, as main does");
+  const none = plannedProfile(p, RS100, withRS(plan([])));
+  assert.deepEqual([none.caps.coldResist, none.mins!.coldResist], [20, 40], "no buff on Cold: its own cap, under the minimum");
   const mr = checkPlan(p, RS100, withRS(plan(["magicReflection"], { Inscription: 0 })), "Magic Reflection with Cold at 20").planned;
-  assert.equal(mr.caps.coldResist, -30, "20 − 40 − 10");
+  assert.deepEqual([mr.caps.coldResist, mr.mins!.coldResist], [10, 30], "20 − 10 and 40 − 10");
 });
 
-test("[fast] buffs plan: a requirement's note: its article, a full cap, no cap at or under 0, Protection's lower Resisting Spells", () => {
+test("[fast] buffs plan: a requirement's note: its article, a full cap, no cap at or under 0, Protection's Physical only", () => {
   const notes = (p: Profile, ch: Character | null, pl: BuffPlan, k: string): string | null => { const { prof, r } = planBuffs(p, ch, pl); return gearNeedsText(k, prof.floors[k]!, prof.caps[k], r!); };
   assert.equal(notes(ALL, null, plan(["divineFury"], { Chivalry: 105 }), "dci"), "Gear needs 50: Divine Fury takes 20");
   assert.equal(notes({ floors: { dci: 45 } }, null, plan(["divineFury"], { Chivalry: 105 }), "dci"), "Gear needs its full 65 cap: Divine Fury takes 20");
@@ -203,25 +227,25 @@ test("[fast] buffs plan: a requirement's note: its article, a full cap, no cap a
   assert.equal(notes({ floors: { physResist: 60 } }, null, plan(["magicReflection"], { Inscription: 100 }), "physResist"), "Gear needs 75 of an 80 cap: Magic Reflection −15, Magic Reflection cap −5");
   assert.deepEqual([1, 7, 8, 11, 18, 80, 88, 110, 180, 800, 1100, 1800].map(article), ["a", "a", "an", "an", "an", "an", "an", "a", "a", "an", "an", "an"]);
   assert.equal(notes({ floors: { dci: 45 } }, null, plan(["whiteTiger", "perseverance", "savingThrow"], { "Mastery level": 3 }), "dci"), "Gear needs 0: White Tiger Form +20, Perseverance +30, Saving Throw (passive) +5, White Tiger Form cap +5", "a cap at or under 0 (50 − 55) is not named");
-  assert.equal(notes({ floors: { fireResist: 70 } }, RS100, withRS(plan(["protection"], { Inscription: 0 })), "fireResist"), "Gear needs its full 44 cap: Protection takes 14 (lower Resisting Spells)");
-  assert.equal(notes({ floors: { physResist: 70 } }, RS100, withRS(plan(["protection"], { Inscription: 0 })), "physResist"), "Gear needs its full 59 cap: Protection −15, Protection −14 (lower Resisting Spells)");
+  assert.equal(notes({ floors: { fireResist: 70 } }, RS100, withRS(plan(["protection"], { Inscription: 0 })), "fireResist"), null, "a lower Resisting Spells lowers the minimum, not the resist");
+  assert.equal(notes({ floors: { physResist: 70 } }, RS100, withRS(plan(["protection"], { Inscription: 0 })), "physResist"), "Gear needs its full 85 cap: Protection takes 15");
 });
 
 // The run key leaves out the plan's own bookkeeping, so it follows what the solvers read and nothing else.
 test("[fast] buffs plan: the run key follows the plan: Enemy of One alone keys as none, numbers no buff reads change nothing", () => {
   const c = cell("melee"), key = (pl: BuffPlan | null): string => runKey({ pools: c.pools, current: c.current, profile: plannedProfile(defaultTemplate("melee"), FIXTURE, pl), opts: { seed: 2026, restarts: 200 } });
   const none = key(null);
-  assert.equal(none, "a18a559be8b0aaa2cabeb6ece8597df529049f68", "the key for the melee template at SOLVER_VERSION 5 (was 2c90c9b1… at 4, ac4629c8… at 3): a change here means every saved run stops being reused");
+  assert.equal(none, "d2ef309784ae11e2454ad1cfd428fb9884ce8700", "the key for the melee template at SOLVER_VERSION 8, the Resisting Spells minimum and the base skill it is taken from in place of the bonus (was 9429d428… at 7 with the fixture's Faster Casting cap 4 from Bushido, ad809043… at a flat cap of 2, 51a4b93c… at 6, a18a559b… at 5, 2c90c9b1… at 4, ac4629c8… at 3): a change here means every saved run stops being reused");
   assert.equal(key(plan(["enemyOfOne"])), none, "Enemy of One plans like none");
   assert.notEqual(key(plan(["divineFury"], { Chivalry: 105 })), key(plan(["divineFury"], { Chivalry: 120 })), "another tier, another plan");
   assert.equal(key(plan(["divineFury"], { Chivalry: 105 })), key(plan(["divineFury"], { Chivalry: 105, Necromancy: 40, Bushido: 3 })), "an edit no buff on reads");
   assert.notEqual(key(plan(["divineFury"], { Chivalry: 105 })), none);
 });
 
-test("[fast] buffs plan: Enemy of One keys as none with a resist override under the Resisting Spells bonus too", () => {
+test("[fast] buffs plan: Enemy of One keys as none with a resist override under the Resisting Spells minimum too", () => {
   const p: Profile = { weights: { coldResist: 1 }, resistCaps: { coldResist: 20 } }, stats = { str: 80, dex: 80, int: 80 };
   const none = plannedProfile(p, RS100, withRS(plan([], {}, { stats }))), eoo = plannedProfile(p, RS100, withRS(plan(["enemyOfOne"], {}, { stats })));
-  assert.deepEqual([none.caps.coldResist, eoo.caps.coldResist], [0, 0], "a resist no buff touches keeps main's cap, stopped at 0");
+  assert.deepEqual([none.caps.coldResist, eoo.caps.coldResist], [20, 20], "a resist no buff touches keeps its cap");
   const k = (x: EffectiveProfile): string => runKey({ pools: {}, current: {}, profile: x, opts: {} });
   assert.equal(k(eoo), k(none));
 });
@@ -275,11 +299,11 @@ test("[fast] buffs plan: a share past a weighted property's cap leaves gear noth
 });
 
 test("[fast] buffs plan: resist shares past a resist's cap with Resisting Spells: the gear's cap goes below 0 and stays exact", async () => {
-  // Reactive Armor (Phys +21 at 120 Inscription), Wraith Form (+15), Corpse Skin (+10) and Barako (+10): 56, and 40 more
-  // from Resisting Spells, against a cap of 70
+  // Reactive Armor (Phys +21 at 120 Inscription), Wraith Form (+15), Corpse Skin (+10) and Barako (+10): 56, against a
+  // cap of 50, with Resisting Spells' minimum of 40 under it
   const pl = withRS(plan(["reactiveArmor", "wraithForm", "corpseSkin", "barako"], { Inscription: 120, "Enemy Necro + SS": 240 }));
-  const { planned } = checkPlan({ weights: { physResist: 3, luck: 1 }, floors: { physResist: 70 } }, RS100, pl, "Phys past its cap");
-  assert.deepEqual([planned.caps.physResist, planned.floors.physResist], [-26, 0]);
+  const { planned } = checkPlan({ weights: { physResist: 3, luck: 1 }, floors: { physResist: 70 }, resistCaps: { physResist: 50 } }, RS100, pl, "Phys past its cap");
+  assert.deepEqual([planned.caps.physResist, planned.floors.physResist, planned.mins!.physResist], [-6, 0, -16]);
   const pools = { helmet: [{ serial: 92401, name: "Plate Helm", slot: "helmet", props: { physResist: 12 } }, { serial: 92402, name: "Lucky Helm", slot: "helmet", props: { luck: 5 } }] };
   assert.equal((await both(pools, planned)).best.helmet?.serial, 92402, "Physical from gear is worth nothing more");
 });
@@ -300,4 +324,27 @@ test("[fast] buffs plan: a buff that lowers a cap under the worn total makes the
   const cursed = plannedProfile(p, null, plan(["curse"], { "Enemy Eval Int": 120 }));
   assert.equal(cursed.caps.fireResist, 60, "Curse: the Fire cap 70 → 60");
   assert.equal((await both(pools, cursed, { chest: worn })).best.chest?.serial, 92302, "Fire past 60 is worth nothing, so Luck wins");
+});
+
+test("[fast] buffs plan: Protection lowers the Resisting Spells minimum, and Vampiric Embrace's Fire −25 is held at it", async () => {
+  const p: Profile = { floors: { fireResist: 30 }, weights: { fireResist: 1, luck: 1 } };
+  const none = plannedProfile(p, RS100, withRS(plan([])));
+  assert.deepEqual([none.mins!.fireResist, none.resistMinimum], [40, 40], "Resisting Spells 100: a Fire requirement of 30 is met by any suit");
+  // Protection at Inscription 0: Resisting Spells 100 − 35 = 65, a minimum of 16, so the requirement needs gear again
+  const prot = withRS(plan(["protection"], { Inscription: 0 }));
+  const pp = checkPlan(p, RS100, prot, "Protection").planned;
+  assert.deepEqual([pp.mins!.fireResist, pp.resistMinimum, pp.floors.fireResist], [16, 40, 30], "the profile keeps the character's own minimum; the solvers read the lower one");
+  assert.equal(pp.buffs!.minimum, 16, "and the plan names it, for the Requirements help (resistMinimumText)");
+  assert.equal(resistMinimumText("Ana", pp.buffs ? pp.buffs.minimum : pp.resistMinimum), "Resisting Spells keeps each of Ana's resists at 16 or more: a resist requirement of 16 or less is met by any suit.");
+  assert.equal(applyBuffs({ fireResist: 0 }, { fireResist: 70 }, prot.on, prot.skills, null, {}, 100).totals.fireResist, 16);
+  // Vampiric Embrace: gear Fire 50, −25, is 25 on the paperdoll's own sum, under the minimum: it reads 40
+  const ve = withRS(plan(["vampiricEmbrace"], { Necromancy: 120 }));
+  const r = applyBuffs({ fireResist: 50 }, { fireResist: 70 }, ve.on, ve.skills, null, {}, 100);
+  assert.deepEqual([r.totals.fireResist, r.lifted.includes("fireResist"), r.minimum], [40, true, 40]);
+  const vp = checkPlan(p, RS100, ve, "Vampiric Embrace").planned;
+  assert.deepEqual([vp.caps.fireResist, vp.floors.fireResist, vp.mins!.fireResist], [95, 55, 65]);
+  // through both solvers: Fire 50 from gear is 10 over the minimum without the form, and nothing in it, where Luck wins
+  const pools = { helmet: [{ serial: 92601, name: "Fire Helm", slot: "helmet", props: { fireResist: 50 } }, { serial: 92602, name: "Lucky Helm", slot: "helmet", props: { luck: 5 } }] };
+  assert.equal((await both(pools, none)).best.helmet?.serial, 92601);
+  assert.equal((await both(pools, vp)).best.helmet?.serial, 92602);
 });

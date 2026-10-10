@@ -3,36 +3,33 @@
 // "other changes" badges and "after the change" values, the compare table's differing rows and best values,
 // and a saved run's label and badges. No DOM and no page state, so app/builder-model.test.mts can check it
 // all directly; ui/builder.mts, ui/builder-result.mts and ui/runs.mts draw what it returns.
-import { labelOf, fullOf, GEAR_SLOTS, NOT_BUILDER_KEYS, RESIST_KEYS, RESIST_CAP_LIMITS, SLOT_LABELS, settingsDiff, shardResistCap, WEAPON_SKILLS, MELEE_SKILLS, ubwsLetsIn } from "../vault-lib.mts";
-import type { PlannedBuffs, PropMap, ResistCap, RunSettings } from "../vault-lib.mts";
+import { NOBODY, labelOf, paperdollResist, propName, typicalRange, GEAR_SLOTS, NOT_BUILDER_KEYS, RESIST_KEYS, RESIST_CAP_LIMITS, SLOT_LABELS, settingsDiff, shardResistCap, WEAPON_SKILLS, WEAPON_EXCLUDES, SPELLBOOKS, MELEE_SKILLS, ubwsLetsIn, flagLabel } from "../vault-lib.mts";
+import type { FcCap, PlannedBuffs, PropMap, ResistCap, RunSettings } from "../vault-lib.mts";
 import { applyBuffs, buffById, buffsDiff, capWord, signed, type BuffResult } from "../buffs.mts";
 import { RUN_SETTING_LIMITS, type Range } from "../run-settings.mts";
-import { paperdoll, paperdollCaps } from "../evaluate.mts";
+import { paperdollCaps, suitResist } from "../evaluate.mts";
+import type { Diagnostic, DiagnosticAction, DiagnosticCode, SwingResult } from "../runs-types.mts";
+import { delayText, MIN_TICKS } from "../swing.mts";
+import type { TieBreakResult } from "./api-types.mts";
 
 export const plural = (n: number, word: string, many = `${word}s`): string => `${n.toLocaleString("en-US")} ${n === 1 ? word : many}`;
+// A Suit Builder character key as the page prints it: No character's pseudo name in words, a character's name as it is.
+export const who = (name: string): string => (name === NOBODY ? "No character" : name);
 const num = (n: number): string => n.toLocaleString("en-US", { maximumFractionDigits: 2 });
 
 // ---------------------------------------------------------------- property names
-// A rule row names its property in words ("Physical resist", "Hit chance increase"); a summary or badge
-// uses the short label ("Phys", "HCI"). The pools and skill bonuses read better short.
-const POOLS = new Set(["stamPool", "manaPool", "hitsPool"]);
-export function propName(k: string): string {
-  if (POOLS.has(k)) return labelOf(k);
-  if (k.startsWith("sk:")) return `${labelOf(k).slice(1)} skill bonus`;
-  const f = fullOf(k);
-  return f.replace(/(?!^)\b([A-Z])([a-z]+)/g, (_m, a: string, b: string) => a.toLowerCase() + b);
-}
+// A rule row's name for its property (vault-lib.mts propName), re-exported for the builder's modules.
+export { propName };
 
 // ---------------------------------------------------------------- paperdoll terms
-// paperdoll and paperdollCaps live with the suit evaluation (app/evaluate.mts).
-export { paperdoll, paperdollCaps };
-// A suit's item totals in paperdoll terms with the buffs a build planned with (none: `b` null), against `caps`.
-export function withBuffs(t: PropMap, rsb: number, caps: Record<string, number>, b: Pick<PlannedBuffs, "on" | "skills" | "stats" | "who"> | null | undefined): BuffResult {
-  return applyBuffs(paperdoll(t, rsb), caps, b?.on || [], b?.skills || {}, b?.stats ?? null, b?.who);
+// paperdollCaps lives with the suit evaluation (app/evaluate.mts).
+export { paperdollCaps };
+// A suit's item totals in paperdoll terms with the buffs a build planned with (none: `b` null), against `caps`, each
+// resist held at the Resisting Spells minimum of `skill` (the character's own, EffectiveProfile.resistSkill; null for
+// none) with the suit's own Resisting Spells bonus.
+export function withBuffs(t: PropMap, skill: number | null, caps: Record<string, number>, b: Pick<PlannedBuffs, "on" | "skills" | "stats" | "who"> | null | undefined): BuffResult {
+  return applyBuffs(t, caps, b?.on || [], b?.skills || {}, b?.stats ?? null, b?.who, suitResist(skill, t));
 }
-// Floors in paperdoll terms: a resist's with the Resisting Spells bonus added back.
-export const paperdollFloors = (floors: Record<string, number>, rsb: number): Record<string, number> =>
-  Object.fromEntries(Object.entries(floors).map(([k, v]) => [k, RESIST_KEYS.includes(k) ? v + rsb : v]));
 // What the buffs add past the cap, as badges: "DI +68 past the cap (Enemy of One)"; a penalty applied after it, such
 // as Protection's casting delay, "FC −2 after the cap (Protection)".
 export const pastCapBadges = (r: BuffResult): string[] =>
@@ -66,8 +63,29 @@ export function requirementsSummary(floors: Record<string, number> = {}, soft: s
     return `${l} ${num(v)}${isSoft ? " soft" : ""}`;
   }).join(" · ");
 }
-export interface PoolSettings { allowOthersWorn?: boolean | undefined; allowGargoyle?: boolean | undefined; medOnly?: boolean | undefined; excludeWeapons?: string[] | undefined; ubwsAnyWeapon?: boolean | undefined;
-  lockedSlots?: string[] | undefined; excludeTags?: string[] | undefined; excludeSkills?: string[] | undefined; excludeRoots?: unknown[] | undefined }
+export interface PoolSettings { allowOthersWorn?: boolean | undefined; allowGargoyle?: boolean | undefined; medOnly?: boolean | undefined; excludeWeapons?: string[] | undefined; ubwsAnyWeapon?: boolean | undefined; weaponMustHave?: string[] | undefined;
+  lockedSlots?: string[] | undefined; excludeTags?: string[] | undefined; excludeSkills?: string[] | undefined; excludeRoots?: unknown[] | undefined; onlyRoots?: unknown[] | undefined; rarity?: string | undefined }
+// The Rarity setting's help line: none for "any".
+export function rarityHelp(rarity: string | undefined): string {
+  return rarity ? `Among equally good suits, use the ${rarity === "higher" ? "highest" : "lowest"}-rarity pieces. Requirements come first.` : "";
+}
+// A suit's rarity total, the summed rank of its pieces on the shard's ladder (Minor Magic Item 1 … Legendary Artifact 8,
+// no tier 0), from the tie costs the server stamped on them: a piece's rank for "lower", the ranks above it for "higher".
+export function rarityTotal(best: Record<string, { tieCost?: number | undefined } | null | undefined>, rarity: string | undefined, ladderLength: number): number {
+  return Object.values(best).reduce((n, it) => (it && it.tieCost != null ? n + (rarity === "higher" ? ladderLength - it.tieCost : it.tieCost) : n), 0);
+}
+// Solver details' Rarity row: "Lowest-rarity pieces among equal suits · rarity total 16", and when the second stage ran
+// out of time, that the rarity choice is not proven.
+export function rarityDetail(tb: TieBreakResult, total: number): string {
+  const most = tb.rarity === "higher" ? "highest" : "lowest";
+  return `${most[0]!.toUpperCase()}${most.slice(1)}-rarity pieces among equal suits · rarity total ${total.toLocaleString("en-US")}${tb.costProven ? "" : ` (the ${most} found, not proven)`}`;
+}
+// The Only containers chip's options (issue #12): the root containers, then any listed serial that is no longer one (gone from
+// the scans, or set by hand), so it can still be unchecked.
+export function withStoredRoots(options: Array<{ value: string; label: string }>, stored: readonly number[] = []): Array<{ value: string; label: string }> {
+  const gone = stored.filter((v) => !options.some((o) => o.value === String(v)));
+  return [...options, ...gone.map((v) => ({ value: String(v), label: `Unknown container 0x${v.toString(16).toUpperCase()} (not in the scans)` }))];
+}
 // "Own gear and unworn gear · no gargoyle-only · any weapon"
 export function poolSummary(p: PoolSettings): string {
   return [
@@ -75,10 +93,13 @@ export function poolSummary(p: PoolSettings): string {
     p.allowGargoyle ? "gargoyle-only allowed" : "no gargoyle-only",
     p.medOnly ? "meditation-safe only" : "",
     weaponsSummary(p.excludeWeapons, p.ubwsAnyWeapon !== false),
+    p.weaponMustHave?.length ? `weapon must have ${p.weaponMustHave.map(flagLabel).join(", ")}` : "",
     p.lockedSlots?.length ? `${plural(p.lockedSlots.length, "slot")} locked` : "",
     p.excludeTags?.length ? `no ${p.excludeTags.join(", ")}` : "",
     p.excludeSkills?.length ? `${plural(p.excludeSkills.length, "skill bonus", "skill bonuses")} forbidden` : "",
+    p.onlyRoots?.length ? `${plural(p.onlyRoots.length, "container")} only` : "",
     p.excludeRoots?.length ? `${plural(p.excludeRoots.length, "container")} skipped` : "",
+    p.rarity ? `prefer ${p.rarity} rarity` : "",
   ].filter(Boolean).join(" · ");
 }
 
@@ -86,21 +107,25 @@ export function poolSummary(p: PoolSettings): string {
 // The Weapons control holds the weapon skills left out of the pool. The summary says them ("no archery or throwing
 // weapons", "fencing weapons only"); the chip counts them ("Weapons: 2 excluded"). Either adds ", plus Use Best Weapon
 // Skill" when that switch is on, some melee skill is excluded and some is not: only then does it matter in practice.
+// Spellbooks (issue #259) add ", no spellbooks" to either ("Weapons: Fencing only, no spellbooks").
 const orList = (xs: string[]): string => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} or ${xs[xs.length - 1]}`);
-export const weaponName = (w: string): string => w[0]!.toUpperCase() + w.slice(1);
-interface WeaponWords { any: string; none: string; only: (w: string) => string; some: (excluded: string[]) => string }
+export const weaponName = (w: string): string => (w === SPELLBOOKS ? "Spellbooks" : w[0]!.toUpperCase() + w.slice(1));
+interface WeaponWords { any: string; none: string; only: (w: string) => string; some: (excluded: string[]) => string; noBooks: string }
 function weaponsText(excluded: string[], ubws: boolean, t: WeaponWords): string {
-  const allowed = WEAPON_SKILLS.filter((w) => !excluded.includes(w));
-  const text = !excluded.length ? t.any : !allowed.length ? t.none : allowed.length === 1 ? t.only(allowed[0]!) : t.some(WEAPON_SKILLS.filter((w) => excluded.includes(w)));
+  const skills = excluded.filter((w) => w !== SPELLBOOKS), allowed = WEAPON_SKILLS.filter((w) => !skills.includes(w));
+  const text = !skills.length ? t.any : !allowed.length ? t.none : allowed.length === 1 ? t.only(allowed[0]!) : t.some(WEAPON_SKILLS.filter((w) => skills.includes(w)));
   const named = ubwsLetsIn(excluded, ubws) && MELEE_SKILLS.some((w) => excluded.includes(w));
-  return named ? `${text}, plus Use Best Weapon Skill` : text;
+  const out = named ? `${text}, plus Use Best Weapon Skill` : text;
+  return skills.length === excluded.length ? out : skills.length ? `${out}, no spellbooks` : t.noBooks;
 }
 export const weaponsSummary = (excluded: string[] = [], ubws = false): string =>
-  weaponsText(excluded, ubws, { any: "any weapon", none: "no weapons", only: (w) => `${w} weapons only`, some: (ex) => `no ${orList(ex)} weapons` });
+  weaponsText(excluded, ubws, { any: "any weapon", none: "no weapons", only: (w) => `${w} weapons only`, some: (ex) => `no ${orList(ex)} weapons`, noBooks: "any weapon, no spellbooks" });
 export const weaponsChipText = (excluded: string[] = [], ubws = false): string =>
-  weaponsText(excluded, ubws, { any: "Weapons: any", none: "Weapons: none", only: (w) => `Weapons: ${weaponName(w)} only`, some: (ex) => `Weapons: ${ex.length} excluded` });
-// Ticking or unticking a skill; the list stays in WEAPON_SKILLS order, so the same exclusions always read the same.
-export const toggleWeapon = (excluded: string[], w: string, on: boolean): string[] => WEAPON_SKILLS.filter((x) => (x === w ? on : excluded.includes(x)));
+  weaponsText(excluded, ubws, { any: "Weapons: any", none: "Weapons: none", only: (w) => `Weapons: ${weaponName(w)} only`, some: (ex) => `Weapons: ${ex.length} excluded`, noBooks: "Weapons: any, no spellbooks" });
+// The Weapon must have chip (issue #214): "Weapon must have: Spell Channeling" when it holds any.
+export const weaponMustHaveChipText = (flags: string[] = []): string => (flags.length ? `Weapon must have: ${flags.map(flagLabel).join(", ")}` : "Weapon must have");
+// Ticking or unticking a skill; the list stays in WEAPON_EXCLUDES order, so the same exclusions always read the same.
+export const toggleWeapon = (excluded: string[], w: string, on: boolean): string[] => WEAPON_EXCLUDES.filter((x) => (x === w ? on : excluded.includes(x)));
 
 // ---------------------------------------------------------------- resist caps
 // A resist's cap for a build is the shard's (race-aware) unless the player overrode it. The field takes a whole
@@ -126,6 +151,9 @@ export function effectiveFloor(k: string, floor: number, caps: Record<string, nu
 export function floorCapWarning(k: string, floor: number, cap: number | null): string | null {
   return RESIST_KEYS.includes(k) && cap != null && floor > cap ? `Counts only up to the ${labelOf(k)} cap, ${cap}` : null;
 }
+// The Faster Casting cap and where it comes from (vault-lib.mts fcCapFor): "cap 4: Chivalry", "cap 2: Magery 70+".
+export const fcCapText = (fc: FcCap): string => `cap ${fcCapSource(fc)}`;
+export const fcCapSource = (fc: FcCap): string => `${fc.cap}: ${fc.reason}`;
 // "raised from 70" / "lowered from 70", or null when the cap is the shard's.
 export function capNote(c: ResistCap): string | null {
   if (c.cap === c.shard) return null;
@@ -150,11 +178,10 @@ function commonAndOdd(pairs: Array<[string, number]>): { common: number; odd: st
   const common = [...count.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0]![0];
   return { common, odd: pairs.filter(([, v]) => v !== common).map(([k, v]) => `${labelOf(k)} ${v}`) };
 }
-// The Requirements section's note, in item terms: what gear has to supply under each cap once Resisting Spells
-// has given its bonus. "so gear supplies up to 30 (Fire 55, Energy 35)".
-export function gearCapsText(view: Record<string, ResistCap>, rsb: number): string {
-  const { common, odd } = commonAndOdd(RESIST_KEYS.map((k): [string, number] => [k, Math.max(0, view[k]!.cap - rsb)]));
-  return `so gear supplies up to ${common}${odd.length ? ` (${odd.join(", ")})` : ""}`;
+// The Requirements section's note on Resisting Spells, null with no minimum (or one of 0, which meets nothing): "Resisting Spells keeps each of Ana's
+// resists at 40 or more: a resist requirement of 40 or less is met by any suit."
+export function resistMinimumText(name: string, min: number | null): string | null {
+  return min == null || min <= 0 ? null : `Resisting Spells keeps each of ${name}'s resists at ${min} or more: a resist requirement of ${min} or less is met by any suit.`;
 }
 // A result's line about its caps, for the compare view: "Fire 95 (raised from 70)", or "Shard caps".
 export function capsLine(view: Record<string, ResistCap>): string {
@@ -311,6 +338,25 @@ export function toggleCompare(selected: ReadonlySet<string>, id: string, on: boo
   return { next, refused: null };
 }
 
+// ---------------------------------------------------------------- templates
+// The template badge's buffs line, for a template that carries buffs: how the character's list differs from it as a set
+// ("Buffs: +Enemy of One, −Consecrate Weapon"); null when they match.
+export function templateBuffsLine(template: readonly string[], now: readonly string[]): string | null {
+  const d = buffsDiff({ on: [...template], skills: {} }, { on: [...now], skills: {} });
+  return d.length ? `Buffs: ${d.join(", ")}` : null;
+}
+// A source page's title from its URL: a wiki page's name ("PlayerGuide:Lazy_Pally" → "Lazy Pally", a slash in it kept),
+// else the last path part (a forum thread's "archer-chiv-build.267" → "archer chiv build").
+export function sourceTitle(url: string): string {
+  let last = "";
+  try {
+    const path = decodeURIComponent(new URL(url).pathname), wiki = path.indexOf("/wiki/");
+    last = wiki >= 0 ? path.slice(wiki + 6).replace(/\/$/, "") : path.split("/").filter(Boolean).pop() ?? "";
+  } catch { /* an unparsable URL shows as itself */ }
+  const words = last.replace(/^PlayerGuide:/, "").replace(/\.\d+$/, "");
+  return (words.includes("_") ? words.replace(/_/g, " ") : words.replace(/-/g, " ")).trim() || url;
+}
+
 // ---------------------------------------------------------------- saved runs
 // What changed between two runs' settings, their buffs included ("+Divine Fury").
 export const runSettingsDiff = (a: RunSettings, b: RunSettings): string[] => [...settingsDiff(a, b), ...buffsDiff(a.buffs, b.buffs)];
@@ -326,14 +372,14 @@ export function runAutoLabel(prev: RunSettings | null, settings: RunSettings): {
   return { text: head[0]!.toUpperCase() + head.slice(1), diff };
 }
 // A run's badges: its change count, how many requirements its suit meets, and the five resists in
-// paperdoll values (item totals + the character's Resisting Spells bonus, clipped at each cap); a resist requirement
-// is met at its cap when set above it, as the solver scored it. A resist whose cap
+// paperdoll values (item totals clipped at each cap, held at the character's Resisting Spells minimum `min`); a resist
+// requirement is met at its cap when set above it, as the solver scored it. A resist whose cap
 // the run overrode says so: "Fire 90 · cap 95".
-export function runBadges(changes: number | null | undefined, totals: PropMap | null | undefined, floors: Record<string, number>, rsb: number, caps: Record<string, number>, shardCaps: Record<string, number> = caps): Array<{ text: string; tone?: "ok" | "warn" | undefined }> {
+export function runBadges(changes: number | null | undefined, totals: PropMap | null | undefined, floors: Record<string, number>, min: number | null, caps: Record<string, number>, shardCaps: Record<string, number> = caps): Array<{ text: string; tone?: "ok" | "warn" | undefined }> {
   const out: Array<{ text: string; tone?: "ok" | "warn" | undefined }> = [];
   if (changes != null) out.push({ text: plural(changes, "change") });
   if (!totals) return out;
-  const pd = (k: string, v: number): number => (RESIST_KEYS.includes(k) ? v + rsb : v);
+  const pd = (k: string, v: number): number => (RESIST_KEYS.includes(k) && min != null && v < min ? min : v);
   const floorKeys = Object.keys(floors);
   if (floorKeys.length) {
     const met = floorKeys.filter((k) => pd(k, totals[k] || 0) >= effectiveFloor(k, floors[k]!, caps)).length;
@@ -341,7 +387,83 @@ export function runBadges(changes: number | null | undefined, totals: PropMap | 
   }
   for (const k of RESIST_KEYS) {
     const cap = caps[k] ?? 70;
-    out.push({ text: `${labelOf(k)} ${Math.min(cap, pd(k, totals[k] || 0))}${cap !== (shardCaps[k] ?? cap) ? ` · cap ${cap}` : ""}` });
+    out.push({ text: `${labelOf(k)} ${paperdollResist(totals[k] || 0, cap, min)}${cap !== (shardCaps[k] ?? cap) ? ` · cap ${cap}` : ""}` });
   }
   return out;
+}
+
+// ---------------------------------------------------------------- "Check your settings" (app/diagnostics.mts)
+// The actions the page carries out on the panel's profile: the button's words, its done state, the toast once applied, its words when it no longer fits, and the edit itself. An action of another kind gets no button. `code` is the diagnostic's: a swing_next_step's setFloor sets the SSI requirement at a step, where every other setFloor lowers one.
+type PanelAction = Extract<DiagnosticAction, { kind: "setFloor" | "makeSoft" | "setWeight" | "swingSteps" | "lockSlot" }>;
+type PanelProfile = { floors?: Record<string, number> | undefined; softFloors?: string[] | undefined; weights?: Record<string, number> | undefined; swingSteps?: boolean | undefined; lockedSlots?: string[] | undefined };
+export const handledAction = (a: DiagnosticAction): a is PanelAction => a.kind === "setFloor" || a.kind === "makeSoft" || a.kind === "setWeight" || a.kind === "swingSteps" || a.kind === "lockSlot";
+const raises = (code: DiagnosticCode | undefined): boolean => code === "swing_next_step";
+export function actionWords(a: PanelAction, code?: DiagnosticCode): { label: string; done: string; toast: string; stale: string } {
+  if (a.kind === "setWeight") {
+    const nm = propName(a.property);
+    return { label: `Set ${nm} to ${a.value}`, done: "Set ✓", toast: `${nm} weight set to ${a.value}. Build again to use it.`, stale: "The weight changed since this build, so this no longer applies." };
+  }
+  if (a.kind === "swingSteps") {
+    const stale = "The swing step switch changed since this build, so this no longer applies.";
+    return a.on ? { label: "Score swing speed by step", done: "Scoring by step ✓", toast: "SSI is scored by swing step now. Build again to use it.", stale }
+      : { label: "Score SSI per point", done: "Per point ✓", toast: "SSI is scored per point now. Build again to use it.", stale };
+  }
+  if (a.kind === "lockSlot") { const sl = SLOT_LABELS[a.slot] || a.slot; return { label: `Lock ${sl}`, done: "Locked ✓", toast: `${sl} is locked to what is worn now. Build again to use it.`, stale: `${sl} was locked since this build, so this no longer applies.` }; }
+  const req = `${propName(a.property)} requirement`, stale = "The requirement changed since this build, so this no longer applies.";
+  if (a.kind === "setFloor" && raises(code)) return { label: `${labelOf(a.property)} floor ${a.value} (soft)`, done: "Set ✓", toast: `${req} set to ${a.value}, soft. Build again to use it.`, stale };
+  return a.kind === "setFloor"
+    ? { label: `Lower to ${a.value}`, done: "Lowered ✓", toast: `${req} lowered to ${a.value}. Build again to use it.`, stale }
+    : { label: "Make soft", done: "Made soft ✓", toast: `${req} is soft now. Build again to use it.`, stale };
+}
+// Whether the action still fits the panel as it is now: the requirement is still there, Lower would lower it, and Make soft finds it hard; Set weight finds the weight the build ran with (`from`, the diagnostic's values.weight); a step's requirement finds the panel asking for less, the switch the other way, a lock the slot unlocked. A build's numbers never put back a requirement or weight the player removed, or undo one they changed since.
+export function actionApplies(p: PanelProfile, a: PanelAction, from?: number, code?: DiagnosticCode): boolean {
+  if (a.kind === "setWeight") return from != null && p.weights?.[a.property] === from;
+  if (a.kind === "swingSteps") return !!p.swingSteps !== a.on;
+  if (a.kind === "lockSlot") return !(p.lockedSlots || []).includes(a.slot);
+  const f = p.floors?.[a.property];
+  if (a.kind === "setFloor" && raises(code)) return f == null || f < a.value;
+  if (f == null) return false;
+  return a.kind === "setFloor" ? f > a.value : !(p.softFloors || []).includes(a.property);
+}
+export function applyAction(p: PanelProfile, a: PanelAction, from?: number, code?: DiagnosticCode): void {
+  if (!actionApplies(p, a, from, code)) return;
+  if (a.kind === "setWeight") p.weights![a.property] = a.value;
+  else if (a.kind === "swingSteps") p.swingSteps = a.on;
+  else if (a.kind === "lockSlot") (p.lockedSlots ||= []).push(a.slot);
+  else if (a.kind === "setFloor") {
+    (p.floors ||= {})[a.property] = a.value;
+    // a swing step's requirement goes in soft: a hard one could conflict with the other hard requirements
+    if (raises(code) && !(p.softFloors ||= []).includes(a.property)) p.softFloors.push(a.property);
+  } else (p.softFloors ||= []).push(a.property);
+}
+// A weight row's worth hint: what the weight makes a typical range of the property worth ("= 1,500 per 500 Luck"), with `caps` in the player's terms (vault-lib.mts playerCaps); null for a property with no typical range or a weight that isn't a number.
+export function weightWorth(key: string, weight: number, caps: Record<string, number>): string | null {
+  const span = typicalRange(key, caps);
+  return span == null || !Number.isFinite(weight) ? null : `= ${num(weight * span)} per ${num(span)} ${labelOf(key)}`;
+}
+// What a result's "Check your settings" lists: its diagnostics, warnings first; a run saved before them (no `diagnostics`) says what it knew, its unreachable hard floors, as one warning with no actions. On another suit's card (`alternative`) the floors_conflict rows are left out: their values are the best suit's.
+export function resultChecks(res: { diagnostics?: Diagnostic[] | undefined; unreachableFloors?: string[] | undefined }, withBuffs: boolean, alternative = false): Diagnostic[] {
+  if (res.diagnostics) {
+    const list = res.diagnostics.filter((d) => !alternative || d.code !== "floors_conflict");
+    return [...list.filter((d) => d.level === "warn"), ...list.filter((d) => d.level !== "warn")];
+  }
+  const keys = res.unreachableFloors || [];
+  return keys.length ? [{ code: "floor_unreachable", level: "warn", message: `No suit in the pool can reach these requirements${withBuffs ? ", even with the buffs" : ""}: ${keys.map((k) => propName(k)).join(", ")}.`, actions: [] }] : [];
+}
+
+// ---------------------------------------------------------------- swing (app/swing.mts)
+// A result's swing line and its steps: "Longsword 3.5 s · stamina 95 · SSI 45 (+10 Divine Fury) → swings every 1.75 s", then the last few steps at that stamina with the reached ones marked, and the next faster delay when the cap keeps it out of reach. `buffs` names what gave the share.
+export function swingLines(sw: SwingResult, weapon: string | null, buffs: string[] = [], shown = 4): { head: string; steps: Array<{ text: string; reached: boolean }>; out: string | null } {
+  const share = sw.share ? ` (${signed(sw.share)} ${buffs.length ? buffs.join(", ") : "buffs"})` : "";
+  const head = `${weapon ?? "Weapon"} ${speedText(sw.speed)} · stamina ${sw.stamina} · SSI ${sw.ssi}${share} → swings every ${delayText(sw.seconds)}`;
+  const steps = sw.steps.slice(-shown).map((st) => ({ text: `${delayText(st.seconds)} ≥ ${st.ssi}`, reached: sw.ssi >= st.ssi }));
+  const fastest = sw.steps.length ? sw.steps[sw.steps.length - 1]!.seconds : sw.seconds;
+  return { head, steps, out: fastest > MIN_TICKS * 0.25 ? `${delayText(fastest - 0.25)} out of reach` : null };
+}
+// A weapon's base speed as the page writes it: "3.5 s", "2.25 s".
+export const speedText = (speedS: number): string => `${num(speedS)} s`;
+// The SSI requirement a "Next step" button fills in: the effective SSI of the first step faster than `sw` reaches, or null when there is none within the cap. Its tooltip names the stamina it assumed.
+export function nextSwingStep(sw: SwingResult | null | undefined): { value: number; seconds: number; tip: string } | null {
+  const next = sw?.steps.find((st) => st.ssi > sw.ssi);
+  return sw && next ? { value: next.ssi, seconds: next.seconds, tip: `${delayText(next.seconds)} at stamina ${sw.stamina}; another suit's stamina can move the step.` } : null;
 }

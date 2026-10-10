@@ -1,19 +1,19 @@
 // builder-model.test.mts — `app/ui/builder-model.mts`, the Suit Builder's pure logic.
 //
-// `app/ui/builder-model.mts`, the Suit Builder's pure logic: the one-line summaries collapsed panel sections show (weights heaviest first with equal resists folded into "each resist", requirements with soft ones marked, the candidate pool, the Advanced knobs), the Advanced fields' validation messages with the allowed range ("Enter a whole number from 1 to 10,000.") and that the page's limits equal the server's `OPTS_LIMITS`, which field a server refusal names, a resist tile's outcome line (short, meets, at cap, over cap), the result's other-changes badges (gains first, missed requirements as losses), "after the change" values and pool estimates, the compare table's differing piece cells, best totals (past the cap counts as the cap) and hidden-rows note, the three-run compare limit, and a saved run's automatic label and badges, and the Weapons chip and summary wording. All `[fast]`.
+// `app/ui/builder-model.mts`, the Suit Builder's pure logic: No character's name in words (issue #12), the one-line summaries collapsed panel sections show (weights heaviest first with equal resists folded into "each resist", requirements with soft ones marked, the candidate pool, the Advanced knobs), the Advanced fields' validation messages with the allowed range ("Enter a whole number from 1 to 10,000.") and that the page's limits equal the server's `OPTS_LIMITS`, which field a server refusal names, a resist tile's outcome line (short, meets, at cap, over cap), the result's other-changes badges (gains first, missed requirements as losses), "after the change" values and pool estimates, the compare table's differing piece cells, best totals (past the cap counts as the cap) and hidden-rows note, the three-run compare limit, and a saved run's automatic label and badges, and the Weapons chip and summary wording, and a weight row's worth hint (issue #217). All `[fast]`. The rarity preference (issue #262) in words: the pool summary, the help line, the settings change, the rarity total and the Rarity row.
 //
 // Lives in app/ for the reason app/ui-render.test.mts gives.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { setRules, resistCapsFor } from "./vault-lib.mts";
+import { NOBODY, setRules, resistCapsFor, playerCaps, settingsDiff } from "./vault-lib.mts";
 import { buffSkillValues, runBuffs } from "./buffs.mts";
 import type { RulesV1 } from "./schema/types.d.mts";
 import {
-  propName, weightsSummary, requirementsSummary, poolSummary, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError,
+  propName, weightsSummary, requirementsSummary, poolSummary, withStoredRoots, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError,
   resistOutcome, locationCrumbs, otherChanges, afterChange, compareModel, hiddenRowsNote, toggleCompare, runAutoLabel, runBadges, plural, KNOB_RANGES,
-  resistCapError, withResistCap, capNote, resistCapsSummary, gearCapsText, capsLine, anyOverridden, effectiveFloor, floorCapWarning, pruneResistCaps,
-  weaponsSummary, weaponsChipText, toggleWeapon, withBuffs, paperdollFloors, pastCapBadges, runSettingsDiff,
+  resistCapError, withResistCap, capNote, resistCapsSummary, resistMinimumText, capsLine, anyOverridden, effectiveFloor, floorCapWarning, pruneResistCaps,
+  weaponsSummary, weaponsChipText, weaponMustHaveChipText, toggleWeapon, weaponName, withBuffs, pastCapBadges, runSettingsDiff, weightWorth, templateBuffsLine, sourceTitle, who, rarityHelp, rarityTotal, rarityDetail,
   type Knobs,
 } from "./ui/builder-model.mts";
 import { OPTS_LIMITS } from "./vault-server.mts";
@@ -22,6 +22,11 @@ import { templateSettings } from "./build-spec.mts";
 
 setRules(JSON.parse(readFileSync(new URL("./rules/uoalive.json", import.meta.url), "utf8")) as RulesV1);
 const melee = templateSettings(JSON.parse(readFileSync(new URL("./data/templates/uoalive.json", import.meta.url), "utf8")).templates.melee);
+
+test("[fast] builder model: No character's pseudo name reads as words, a character's name as it is (issue #12)", () => {
+  assert.equal(who(NOBODY), "No character");
+  assert.equal(who("Kestrel"), "Kestrel");
+});
 
 test("[fast] builder model: property names read as words in rule rows", () => {
   assert.equal(propName("physResist"), "Physical resist");
@@ -47,6 +52,9 @@ test("[fast] builder model: the candidate pool summary says what is in and out",
   assert.equal(poolSummary({}), "Own gear and unworn gear · no gargoyle-only · any weapon");
   assert.equal(poolSummary({ allowOthersWorn: true, allowGargoyle: true, medOnly: true, excludeWeapons: ["swordsmanship", "fencing", "mace fighting", "throwing"], lockedSlots: ["ring"], excludeTags: ["cursed"], excludeSkills: ["necromancy", "spirit speak"], excludeRoots: [1, 2] }),
     "Includes gear worn by others · gargoyle-only allowed · meditation-safe only · archery weapons only · 1 slot locked · no cursed · 2 skill bonuses forbidden · 2 containers skipped");
+  assert.deepEqual(withStoredRoots([{ value: "10", label: "Chest" }], [10, 0x4000abcd]), [{ value: "10", label: "Chest" }, { value: String(0x4000abcd), label: "Unknown container 0x4000ABCD (not in the scans)" }], "a listed serial that is no longer a root can still be unchecked");
+  assert.deepEqual(withStoredRoots([{ value: "10", label: "Chest" }]), [{ value: "10", label: "Chest" }]);
+  assert.equal(poolSummary({ onlyRoots: [1, 2], excludeRoots: [3] }), "Own gear and unworn gear · no gargoyle-only · any weapon · 2 containers only · 1 container skipped");
 });
 
 test("[fast] builder model: the Weapons chip and summary say the exclusions in words", () => {
@@ -69,6 +77,25 @@ test("[fast] builder model: the Weapons chip and summary say the exclusions in w
   assert.equal(poolSummary({ excludeWeapons: ["archery", "fencing", "mace fighting", "throwing"], ubwsAnyWeapon: false }), "Own gear and unworn gear · no gargoyle-only · swordsmanship weapons only");
   assert.deepEqual(toggleWeapon(["throwing"], "archery", true), ["archery", "throwing"], "kept in the skills' order");
   assert.deepEqual(toggleWeapon(["archery", "throwing"], "archery", false), ["throwing"]);
+  // Issue #259: Spellbooks add ", no spellbooks" to the chip and summary, last in the list.
+  assert.equal(weaponsChipText(["spellbook"]), "Weapons: any, no spellbooks");
+  assert.equal(weaponsChipText(["archery", "throwing", "spellbook"]), "Weapons: 2 excluded, no spellbooks");
+  assert.equal(weaponsChipText(["archery", "swordsmanship", "mace fighting", "throwing", "spellbook"]), "Weapons: Fencing only, no spellbooks");
+  assert.equal(weaponsChipText(["archery", "swordsmanship", "fencing", "mace fighting", "throwing", "spellbook"]), "Weapons: none, no spellbooks");
+  assert.equal(weaponsChipText(["fencing", "mace fighting", "spellbook"], true), "Weapons: 2 excluded, plus Use Best Weapon Skill, no spellbooks");
+  assert.equal(weaponsSummary(["spellbook"]), "any weapon, no spellbooks");
+  assert.equal(weaponsSummary(["archery", "throwing", "spellbook"]), "no archery or throwing weapons, no spellbooks");
+  assert.deepEqual(toggleWeapon(["throwing"], "spellbook", true), ["throwing", "spellbook"]);
+  assert.deepEqual(toggleWeapon(["spellbook"], "archery", true), ["archery", "spellbook"], "spellbooks last");
+  assert.equal(weaponName("spellbook"), "Spellbooks");
+});
+
+test("[fast] builder model: the Weapon must have chip and the pool summary name the required properties", () => {
+  assert.equal(weaponMustHaveChipText(), "Weapon must have");
+  assert.equal(weaponMustHaveChipText(["spell channeling"]), "Weapon must have: Spell Channeling");
+  assert.equal(weaponMustHaveChipText(["spell channeling", "balanced"]), "Weapon must have: Spell Channeling, Balanced");
+  assert.equal(poolSummary({ weaponMustHave: ["balanced"] }), "Own gear and unworn gear · no gargoyle-only · any weapon · weapon must have Balanced");
+  assert.equal(poolSummary({ weaponMustHave: [] }), "Own gear and unworn gear · no gargoyle-only · any weapon");
 });
 
 const knobs = (over: Partial<Knobs> = {}): Knobs => ({ strLimit: "110", restarts: "10000", exact: true, budgetS: "300", altCount: "5", altTol: "40", ...over });
@@ -178,10 +205,14 @@ test("[fast] builder model: a run's automatic label and its badges", () => {
   assert.equal(runAutoLabel(null, {}).text, "First saved run");
   assert.equal(runAutoLabel({ floors: { di: 20 } }, { floors: { di: 20 } }).text, "Same settings as the run before");
   assert.equal(runAutoLabel({ floors: { di: 20 } }, { floors: { di: 30 } }).text, "DI floor 20 → 30");
-  const badges = runBadges(8, { physResist: 29, fireResist: 40, coldResist: 30, poisonResist: 30, energyResist: 30 }, { physResist: 65, fireResist: 65, coldResist: 65, poisonResist: 65, energyResist: 65 }, 40, { physResist: 70, fireResist: 70, coldResist: 70, poisonResist: 70, energyResist: 70 });
-  assert.deepEqual(badges.map((b) => b.text), ["8 changes", "5 of 5 met", "Phys 69", "Fire 70", "Cold 70", "Poison 70", "Energy 70"]);
-  assert.equal(badges[1]!.tone, "ok");
-  assert.deepEqual(runBadges(null, null, {}, 0, {}), [], "an old run with no summary data gets no badges");
+  // Resisting Spells' minimum of 40: Cold's 10 reads 40, which meets its requirement of 40; Poison's 50 misses 65
+  const badges = runBadges(8, { physResist: 69, fireResist: 80, coldResist: 10, poisonResist: 50, energyResist: 65 }, { physResist: 65, fireResist: 65, coldResist: 40, poisonResist: 65, energyResist: 65 }, 40, { physResist: 70, fireResist: 70, coldResist: 70, poisonResist: 70, energyResist: 70 });
+  assert.deepEqual(badges.map((b) => b.text), ["8 changes", "4 of 5 met", "Phys 69", "Fire 70", "Cold 40", "Poison 50", "Energy 65"]);
+  assert.equal(badges[1]!.tone, "warn");
+  const met = runBadges(8, { physResist: 69, fireResist: 80, coldResist: 10, poisonResist: 65, energyResist: 65 }, { coldResist: 40 }, 40, { physResist: 70, fireResist: 70, coldResist: 70, poisonResist: 70, energyResist: 70 });
+  assert.deepEqual([met[1]!.text, met[1]!.tone], ["1 of 1 met", "ok"]);
+  assert.ok(runBadges(1, { coldResist: 10 }, {}, null, { coldResist: 70 }).some((b) => b.text === "Cold 10"), "no minimum: the item total");
+  assert.deepEqual(runBadges(null, null, {}, null, {}), [], "an old run with no summary data gets no badges");
   assert.equal(plural(1, "change"), "1 change");
   assert.equal(plural(2, "skill bonus", "skill bonuses"), "2 skill bonuses");
 });
@@ -199,12 +230,12 @@ test("[fast] builder model: a run's buffs show in its label and diff, and a run 
 test("[fast] builder model: a result's totals with the buffs it planned with, in paperdoll terms, and what they add past the cap", () => {
   const caps = { physResist: 70, fireResist: 70, coldResist: 70, poisonResist: 70, energyResist: 70, ssi: 60, dci: 45, di: 100 };
   const plan = { on: ["divineFury", "enemyOfOne"], skills: { ...buffSkillValues(null, {}).values, Chivalry: 105 }, stats: null, who: {} };
-  const r = withBuffs({ ssi: 45, dci: 30, di: 90, fireResist: 30 }, 20, caps, plan);
-  assert.deepEqual([r.totals.ssi, r.totals.dci, r.totals.fireResist, r.totals.di], [55, 10, 50, 100]);
+  const r = withBuffs({ ssi: 45, dci: 30, di: 90, fireResist: 30 }, 70, caps, plan);
+  assert.deepEqual([r.totals.ssi, r.totals.dci, r.totals.fireResist, r.totals.di], [55, 10, 30, 100], "Fire 30 over the minimum of 20: gear's own");
   assert.deepEqual(pastCapBadges(r), ["DI +68 past the cap (Enemy of One)"]);
-  const none = withBuffs({ ssi: 45 }, 20, caps, null);
-  assert.deepEqual([none.totals.ssi, none.totals.fireResist, pastCapBadges(none)], [45, 20, []], "without buffs: the paperdoll totals alone");
-  assert.deepEqual(paperdollFloors({ fireResist: 50, ssi: 60 }, 20), { fireResist: 70, ssi: 60 }, "only the floors set, resists with the bonus back");
+  const none = withBuffs({ ssi: 45 }, 70, caps, null);
+  assert.deepEqual([none.totals.ssi, none.totals.fireResist, none.lifted.length, pastCapBadges(none)], [45, 20, 5, []], "without buffs: the paperdoll totals alone, every resist held at the minimum");
+  assert.equal(withBuffs({ ssi: 45 }, null, caps, null).totals.fireResist, undefined, "no minimum: nothing added");
 });
 
 // ---- resist cap overrides (issue #44)
@@ -231,10 +262,9 @@ test("[fast] resist caps: notes, the collapsed summary, the Requirements note, t
   assert.equal(resistCapsSummary(resistCapsFor("human", { fireResist: 95 })), "Fire 95 (raised from 70) · the rest at the shard's cap");
   assert.equal(resistCapsSummary(resistCapsFor("human", { fireResist: 95, coldResist: 60, physResist: 80, poisonResist: 90 })),
     "Phys 80 (raised from 70) · Fire 95 (raised from 70) · Cold 60 (lowered from 70) · Poison 90 (raised from 70) · the other one at the shard's cap");
-  assert.equal(gearCapsText(human, 40), "so gear supplies up to 30");
-  assert.equal(gearCapsText(elf, 40), "so gear supplies up to 30 (Energy 35)");
-  assert.equal(gearCapsText(resistCapsFor("elf", { fireResist: 95 }), 40), "so gear supplies up to 30 (Fire 55, Energy 35)");
-  assert.equal(gearCapsText(resistCapsFor("human", { fireResist: 10 }), 40), "so gear supplies up to 30 (Fire 0)", "never below nothing");
+  assert.equal(resistMinimumText("Ana", 40), "Resisting Spells keeps each of Ana's resists at 40 or more: a resist requirement of 40 or less is met by any suit.");
+  assert.equal(resistMinimumText("Ana", null), null, "no minimum, nothing said");
+  assert.equal(resistMinimumText("Ana", 0), null, "a minimum of 0 meets no requirement: nothing said");
   assert.equal(capsLine(human), "Shard caps");
   assert.equal(capsLine(resistCapsFor("human", { fireResist: 95 })), "Fire 95 (raised from 70)");
   assert.equal(anyOverridden(elf), false, "an Elf's Energy 75 is the shard's own");
@@ -244,10 +274,10 @@ test("[fast] resist caps: notes, the collapsed summary, the Requirements note, t
 test("[fast] resist caps: a run's badges say its overridden cap, and compare judges each run by its own caps", () => {
   const caps = { physResist: 70, fireResist: 95, coldResist: 70, poisonResist: 70, energyResist: 70 };
   const shard = { ...caps, fireResist: 70 };
-  const badges = runBadges(3, { physResist: 30, fireResist: 50, coldResist: 30, poisonResist: 30, energyResist: 30 }, {}, 40, caps, shard).map((b) => b.text);
+  const badges = runBadges(3, { physResist: 70, fireResist: 90, coldResist: 30, poisonResist: 30, energyResist: 30 }, {}, 40, caps, shard).map((b) => b.text);
   assert.ok(badges.includes("Fire 90 · cap 95"), JSON.stringify(badges));
   assert.ok(badges.includes("Phys 70"), "an untouched resist reads as before");
-  assert.ok(runBadges(3, { fireResist: 50 }, {}, 40, shard).map((b) => b.text).includes("Fire 70"), "no shard caps given: nothing is marked");
+  assert.ok(runBadges(3, { fireResist: 90 }, {}, 40, shard).map((b) => b.text).includes("Fire 70"), "no shard caps given: nothing is marked");
   // Fire 90 in a run built for a cap of 95 beats Fire 86 in one built for 70 (worth 70 there).
   const m = compareModel([{ assignment: {}, totals: { fireResist: 86 } }, { assignment: {}, totals: { fireResist: 90 }, caps: { fireResist: 95 } }], [], ["fireResist"], { fireResist: 70 });
   assert.deepEqual(m.totals[0]!.best, [false, true]);
@@ -264,9 +294,51 @@ test("[fast] resist caps: a floor above its cap counts only up to it, warns, and
   assert.equal(floorCapWarning("fireResist", 70, 70), null);
   assert.equal(floorCapWarning("hci", 90, 45), null);
   // Fire 90 required, cap back at 70, suit Fire 86: met, as the headline and the solver say.
-  const badges = runBadges(1, { physResist: 70, fireResist: 86, coldResist: 70, poisonResist: 70, energyResist: 70 }, { physResist: 65, fireResist: 90, coldResist: 65, poisonResist: 65, energyResist: 65 }, 0, caps).map((b) => b.text);
+  const badges = runBadges(1, { physResist: 70, fireResist: 86, coldResist: 70, poisonResist: 70, energyResist: 70 }, { physResist: 65, fireResist: 90, coldResist: 65, poisonResist: 65, energyResist: 65 }, null, caps).map((b) => b.text);
   assert.ok(badges.includes("5 of 5 met"), JSON.stringify(badges));
   assert.deepEqual(pruneResistCaps({ energyResist: 75, fireResist: 95 }, "elf"), { fireResist: 95 });
   assert.deepEqual(pruneResistCaps({ energyResist: 75 }, "human"), { energyResist: 75 });
   assert.deepEqual(pruneResistCaps(undefined, "elf"), {});
+});
+
+test("[fast] builder model: a weight row's worth hint names what the weight makes a typical range worth", () => {
+  // A melee main's caps: resist caps of 70 on the paperdoll
+  const caps = playerCaps({ caps: { physResist: 70, dci: 45, hpRegen: 18 } });
+  assert.equal(weightWorth("luck", 3, caps), "= 1,500 per 500 Luck");
+  assert.equal(weightWorth("dci", 10, caps), "= 450 per 45 DCI");
+  assert.equal(weightWorth("physResist", 6, caps), "= 420 per 70 Phys");
+  assert.equal(weightWorth("luck", 0.8, caps), "= 400 per 500 Luck");
+  assert.equal(weightWorth("stamPool", 2, caps), "= 90 per 45 Stam pool");
+  assert.equal(weightWorth("sk:magery", 2, caps), "= 30 per 15 +Magery");
+  assert.equal(weightWorth("castingFocus", 2, caps), null, "no typical range");
+  assert.equal(weightWorth("luck", Number.NaN, caps), null, "no number, no hint");
+});
+
+// Issue #212: the template badge's buffs line compares the lists as sets, and a source link is named by its page.
+test("[fast] builder model: the template badge's buffs line and a source page's title", () => {
+  assert.equal(templateBuffsLine(["divineFury", "consecrateWeapon"], ["consecrateWeapon", "divineFury"]), null, "order does not matter");
+  assert.equal(templateBuffsLine(["divineFury", "consecrateWeapon"], ["divineFury", "enemyOfOne"]), "Buffs: +Enemy of One, −Consecrate Weapon");
+  assert.equal(templateBuffsLine([], ["bless"]), "Buffs: +Bless");
+  assert.equal(sourceTitle("https://uoalive.com/wiki/PlayerGuide:Lazy_Pally"), "Lazy Pally");
+  assert.equal(sourceTitle("https://uoalive.com/wiki/The_Crusade_Milestone_(Healing/Paladin_Update)"), "The Crusade Milestone (Healing/Paladin Update)");
+  assert.equal(sourceTitle("https://uoalive.com/forum/threads/archer-chiv-build.267/"), "archer chiv build");
+  assert.equal(sourceTitle("https://uoalive.com/wiki/PlayerGuide:ABC_Tamer_-_Hunter"), "ABC Tamer - Hunter");
+  assert.equal(sourceTitle("not a url"), "not a url");
+});
+
+// Issue #262: the rarity preference in words: the pool summary, the help line, a template's or run's change, and the
+// result's Rarity row with the rarity total (higher means rarer, whichever way the preference points).
+test("[fast] rarity preference: summary, help line, settings change, rarity total and the Rarity row", () => {
+  assert.equal(poolSummary({ rarity: "lower" }), "Own gear and unworn gear · no gargoyle-only · any weapon · prefer lower rarity");
+  assert.equal(rarityHelp(undefined), "");
+  assert.equal(rarityHelp("lower"), "Among equally good suits, use the lowest-rarity pieces. Requirements come first.");
+  assert.equal(rarityHelp("higher"), "Among equally good suits, use the highest-rarity pieces. Requirements come first.");
+  assert.deepEqual(settingsDiff({}, { rarity: "lower" }), ["prefer lower rarity"]);
+  assert.deepEqual(settingsDiff({ rarity: "higher" }, {}), ["any rarity"]);
+  assert.deepEqual(settingsDiff({ rarity: "higher" }, { rarity: "higher" }), []);
+  // a Legendary (8) and a Minor Magic Item (1), and a slot left empty: 9 either way
+  assert.equal(rarityTotal({ ring: { tieCost: 8 }, neck: { tieCost: 1 }, waist: null }, "lower", 8), 9);
+  assert.equal(rarityTotal({ ring: { tieCost: 0 }, neck: { tieCost: 7 }, waist: null }, "higher", 8), 9);
+  assert.equal(rarityDetail({ topScore: 10, cost: 6, rarity: "lower", tolerance: 0, costProven: true }, 6), "Lowest-rarity pieces among equal suits · rarity total 6");
+  assert.equal(rarityDetail({ topScore: 10, cost: 30, rarity: "higher", tolerance: 0 }, 66), "Highest-rarity pieces among equal suits · rarity total 66 (the highest found, not proven)");
 });

@@ -1,6 +1,6 @@
 // solver.test.mts — solver equivalence: HiGHS must never disagree with the core's own exact branch-and-bound about what the best suit is worth.
 //
-// `app/exact-solver.mts`: k-best alternatives agree with the core, an unreachable hard floor gets the core's partial credit, jointly-unreachable hard floors fall back honestly (`floorsConflict`), a negative soft-floor total scores zero credit like the core, HiGHS-unavailable (`PACKRAT_NO_HIGHS`) reports the heuristic result flagged `solver: "fallback"`, a plain timeout with and without an incumbent is reported honestly (never invented), a reachable soft floor with a negative-total optimum and a negative weight on a capped property both prove the brute-force best, `opts.slots` narrows the MIP, both solvers' slot lists come from `GEAR_SLOTS` with only the five armor pieces required, a piece in each new slot (boots, shirt, tunic, sash, earrings, kilt) wins in both solvers when it helps while a worn robe that costs comes off and the hand rule holds (issue #202), a HiGHS objective the core cannot reproduce is reported unproven with a warning, `timeBudgetMs` bounds the heuristic's restarts and every HiGHS call and alternative (a fake clock checks the limits), and progress carries a bound during the exact phase. The k-best alternatives case is `[slow]` (the core's exact search on the fixture's melee cell takes 10-20 s) and compares scores exactly only when both solvers proved, as `runBoth` does — everything else is `[fast]`.
+// `app/exact-solver.mts`: a resist capped under its Resisting Spells minimum scored as the same constant by both (issue #261), k-best alternatives agree with the core, an unreachable hard floor gets the core's partial credit, jointly-unreachable hard floors fall back honestly (`floorsConflict`), a negative soft-floor total scores zero credit like the core, HiGHS-unavailable (`PACKRAT_NO_HIGHS`) reports the heuristic result flagged `solver: "fallback"`, a plain timeout with and without an incumbent is reported honestly (never invented), a reachable soft floor with a negative-total optimum and a negative weight on a capped property both prove the brute-force best, `opts.slots` narrows the MIP, both solvers' slot lists come from `GEAR_SLOTS` with only the five armor pieces required, a piece in each new slot (boots, shirt, tunic, sash, earrings, kilt) wins in both solvers when it helps while a worn robe that costs comes off and the hand rule holds (issue #202), a HiGHS objective the core cannot reproduce is reported unproven with a warning, `timeBudgetMs` bounds the heuristic's restarts and every HiGHS call and alternative (a fake clock checks the limits), and progress carries a bound during the exact phase. A rarity preference (issue #262) in both solvers: floors-only and all-zero builds take the lowest or highest pieces, a met soft floor is never traded at a huge tolerance, a suit under the best comes back with the best as the first other suit, a pool carrying tie costs with no preference builds exactly as one without, a suit within the tolerance meeting one more soft floor kept by HiGHS, equal best suits meeting different floors holding one floor set without a false warning, the floors of an unproven first stage's suit still held, and with HiGHS stubbed the 3:1 time split, half of the rest kept for other suits, a second-stage timeout keeping the score's proof, and each guard on a doctored core. The k-best alternatives case is `[slow]` (the core's exact search on the fixture's melee cell takes 10-20 s) and compares scores exactly only when both solvers proved, as `runBoth` does — everything else is `[fast]`.
 //
 // HiGHS (app/exact-solver.mts, app/mip.mts, app/mip-solve.mts) must only ever get there faster than the core (scripts/optimizer-core.mts), or, on a real-sized inventory where neither proves in budget, no worse. Every "equal" assertion in this file compares HiGHS's re-scored result against the CORE's OWN numbers — never against the MIP's internal objective, which is on a different (offset) scale. The shared fixture and helpers are app/solver-fixture.mts; the default-template checks (app/solver-templates.test.mts) and the 3,000-item generated cell (app/solver-large.test.mts) have files of their own, so the runner runs them in parallel.
 import { test } from "node:test";
@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { effectiveProfile, GEAR_SLOTS } from "./vault-lib.mts";
 import { buffSkillValues, plannedProfile } from "./buffs.mts";
 import { solveExact, type OptPools, type OptAssignment, type OptProfile } from "./exact-solver.mts";
-import { DEFAULT_SLOTS, DEFAULT_OPTIONAL_SLOTS } from "./mip.mts";
+import { DEFAULT_SLOTS, DEFAULT_OPTIONAL_SLOTS, buildSuitMip } from "./mip.mts";
 import { solveModel as realSolveModel, type Handle, type SolveModelOptions } from "./mip-solve.mts";
 import { BASE_OPTS, cell, core, defaultProfiles, runBoth, sig, templateNames, type OptOptions } from "./solver-fixture.mts";
 
@@ -242,6 +242,22 @@ test("[fast] buffs: HiGHS equals the core's proven optimum with buffs planned on
   }
 });
 
+// Issue #261 review: a resist whose cap is under its Resisting Spells minimum always reads the minimum, so its term is the
+// constant w·min, even where no suit can fall under the minimum (a required worn piece at 45 over a minimum of 40). The
+// MIP left the constant out there and scored w·cap, so its suit came in under the core's and was reported unproven.
+test("[fast] a resist capped under its minimum is the constant w·min in both solvers, wherever the totals lie", async () => {
+  const worn = { serial: 90501, name: "Fire Tunic", slot: "chest", props: { fireResist: 45 } };
+  const lucky = { serial: 90502, name: "Lucky Tunic", slot: "chest", props: { fireResist: 50, luck: 3 } };
+  const profile = { weights: { fireResist: 2, luck: 1 }, caps: { fireResist: 30 }, mins: { fireResist: 40 } };
+  const opts = { exact: true, timeBudgetMs: 5000, restarts: 2, seed: 1, slots: ["chest"], optionalSlots: [] };
+  assert.equal(buildSuitMip({ pools: { chest: [worn, lucky] }, current: { chest: worn }, profile, slots: ["chest"], optionalSlots: [] }).scoreOffset, 80, "2 × 40, no column");
+  const r = await solveExact({ core, pools: { chest: [worn, lucky] } as unknown as OptPools, current: { chest: worn } as unknown as OptAssignment, profile, opts, onProgress: () => {} });
+  assert.equal(r.solver, "highs");
+  assert.equal(r.proven, true);
+  assert.equal(r.score, 83);
+  assert.equal(r.best.chest?.serial, 90502);
+});
+
 // Review M1: opts.slots narrowed the heuristic but not the MIP, which modelled every default slot —
 // here the neck, which the core then refused to score, so the job failed on "re-score mismatch".
 test("[fast] opts.slots narrows the MIP like the heuristic", async () => {
@@ -433,4 +449,172 @@ test("[fast] progress reports the exact phase with a finite bound or none", asyn
     assert.ok(e.bound === null ? e.gapPoints === null : e.gapPoints! >= 0);
     assert.equal(e.solver, "highs");
   }
+});
+
+// ---- a rarity preference (issue #262): the second stage, in both solvers
+// Pieces by rarity rank (1 Minor Magic Item … 8 Legendary Artifact), costed as POST /api/optimize stamps them.
+const ranked = (rarity: "lower" | "higher", pieces: Array<{ serial: number; slot: string; rank: number; props: Record<string, number> }>): Record<string, Array<{ serial: number; name: string; slot: string; props: Record<string, number>; tieCost: number }>> => {
+  const pools: Record<string, Array<{ serial: number; name: string; slot: string; props: Record<string, number>; tieCost: number }>> = {};
+  for (const p of pieces) (pools[p.slot] ??= []).push({ serial: p.serial, name: `P${p.serial}`, slot: p.slot, props: p.props, tieCost: rarity === "lower" ? p.rank : 8 - p.rank });
+  return pools;
+};
+const bothTie = async (pools: OptPools, current: OptAssignment, profile: OptProfile, opts: OptOptions) => {
+  const c = core.optimizeSuit(pools, current, profile, { ...opts, exact: true, timeBudgetMs: 5000 });
+  const h = await solveExact({ core, pools, current, profile, opts: { ...opts, exact: true, timeBudgetMs: 5000 }, onProgress: () => {} });
+  return { c, h };
+};
+const serials = (best: OptAssignment): Record<string, number | null> => Object.fromEntries(Object.entries(best).filter(([, it]) => it).map(([s, it]) => [s, it!.serial]));
+
+test("[fast] rarity, floors only: LRC/LMC requirements with no weights take the lowest pieces with lower, the highest with higher", async () => {
+  const pieces = [{ serial: 1, slot: "ring", rank: 8, props: { lrc: 20 } }, { serial: 2, slot: "ring", rank: 1, props: { lrc: 20 } }, { serial: 3, slot: "bracelet", rank: 5, props: { lmc: 10 } },
+    { serial: 4, slot: "bracelet", rank: 2, props: { lmc: 10 } }, { serial: 5, slot: "neck", rank: 4, props: { lrc: 20, lmc: 10 } }];
+  const profile: OptProfile = { weights: {}, caps: {}, floors: { lrc: 20, lmc: 10 }, hardFloors: ["lrc", "lmc"] };
+  const opts = (rarity: "lower" | "higher"): OptOptions => ({ restarts: 5, seed: 1, slots: ["ring", "bracelet", "neck"], optionalSlots: ["ring", "bracelet", "neck"], tieBreak: { rarity, tolerance: 0 } });
+  const lo = await bothTie(ranked("lower", pieces), {}, profile, opts("lower")), hi = await bothTie(ranked("higher", pieces), {}, profile, opts("higher"));
+  for (const [r, want, cost] of [[lo.c, { ring: 2, bracelet: 4 }, 3], [lo.h, { ring: 2, bracelet: 4 }, 3], [hi.c, { ring: 1, bracelet: 3 }, 3], [hi.h, { ring: 1, bracelet: 3 }, 3]] as const) {
+    assert.deepEqual(serials(r.best), want);
+    assert.equal(r.proven, true);
+    assert.equal(r.tieBreak!.cost, cost);
+  }
+  assert.equal(lo.h.tieBreak!.costProven, true);
+});
+
+test("[fast] rarity, no floors and no weights: optional slots stay empty and a worn required slot takes the lowest or highest piece", async () => {
+  const pieces = [{ serial: 11, slot: "helmet", rank: 6, props: {} }, { serial: 12, slot: "helmet", rank: 2, props: {} }, { serial: 13, slot: "helmet", rank: 7, props: {} }, { serial: 14, slot: "ring", rank: 3, props: {} }];
+  for (const [rarity, helmet] of [["lower", 12], ["higher", 13]] as const) {
+    const pools = ranked(rarity, pieces), current: OptAssignment = { helmet: pools.helmet![0]! };
+    const { c, h } = await bothTie(pools, current, { weights: {}, caps: {} }, { restarts: 5, seed: 1, slots: ["helmet", "ring"], optionalSlots: ["ring"], tieBreak: { rarity, tolerance: 0 } });
+    assert.deepEqual(serials(c.best), { helmet }, `core, ${rarity}`);
+    assert.deepEqual(serials(h.best), { helmet }, `HiGHS, ${rarity}`);
+  }
+});
+
+test("[fast] rarity: a met soft floor is never traded for rarity, however large the tolerance", async () => {
+  const pools = ranked("lower", [{ serial: 21, slot: "ring", rank: 8, props: { luck: 10 } }, { serial: 22, slot: "ring", rank: 1, props: { hci: 5 } }]);
+  const { c, h } = await bothTie(pools, {}, { weights: { hci: 1 }, caps: {}, floors: { luck: 10 } }, { restarts: 5, seed: 1, slots: ["ring"], optionalSlots: ["ring"], tieBreak: { rarity: "lower", tolerance: 1e8 } });
+  assert.deepEqual([serials(c.best), serials(h.best)], [{ ring: 21 }, { ring: 21 }]);
+});
+
+test("[fast] rarity: a suit within the tolerance under the best is returned, and the best-scoring suit comes back as the first other suit", async () => {
+  const pools = ranked("lower", [{ serial: 31, slot: "ring", rank: 8, props: { hci: 10 } }, { serial: 32, slot: "ring", rank: 1, props: { hci: 8 } }]);
+  const opts: OptOptions = { restarts: 5, seed: 1, slots: ["ring"], optionalSlots: [], tieBreak: { rarity: "lower", tolerance: 5 }, alternatives: { count: 2, tolerance: 5 } };
+  const { c, h } = await bothTie(pools, {}, { weights: { hci: 1 }, caps: {} }, opts);
+  for (const r of [c, h]) {
+    assert.deepEqual([serials(r.best), r.score, r.tieBreak!.topScore, r.tieBreak!.cost], [{ ring: 32 }, 8, 10, 1]);
+    assert.equal(r.alternatives![0]!.best.ring!.serial, 31, "the top-score suit, 2 points above");
+  }
+});
+
+test("[fast] rarity off: a pool carrying tie costs builds exactly as one without them", async () => {
+  const { pools, current, profile } = cell(templateNames[0]!);
+  const costed = Object.fromEntries(Object.entries(pools).map(([s, list]) => [s, list!.map((it, i) => ({ ...it, tieCost: i % 9 }))])) as OptPools;
+  const opts: OptOptions = { ...BASE_OPTS, timeBudgetMs: 5000, alternatives: { count: 2, tolerance: 0 } };
+  const a = core.optimizeSuit(pools, current, profile, { ...opts, exact: false }), b = core.optimizeSuit(costed, current, profile, { ...opts, exact: false });
+  assert.deepEqual([sig(a.best), a.score, a.tieBreak], [sig(b.best), b.score, undefined]);
+  const x = await solveExact({ core, pools, current, profile, opts, onProgress: () => {} }), y = await solveExact({ core, pools: costed, current, profile, opts, onProgress: () => {} });
+  assert.deepEqual([sig(x.best), x.score, x.proven, (x.alternatives || []).map((e) => [sig(e.best), e.score]), "tieBreak" in x], [sig(y.best), y.score, y.proven, (y.alternatives || []).map((e) => [sig(e.best), e.score]), false]);
+});
+
+// The exact solver's second stage, with HiGHS stubbed: its time share, a timeout, and each guard on a doctored core.
+const tiePools = () => ranked("lower", [{ serial: 41, slot: "ring", rank: 8, props: { hci: 10 } }, { serial: 42, slot: "ring", rank: 1, props: { hci: 10 } }, { serial: 43, slot: "neck", rank: 3, props: { dci: 5 } }, { serial: 44, slot: "neck", rank: 6, props: { dci: 5 } }]);
+const tieOpts: OptOptions = { exact: true, timeBudgetMs: 1000, restarts: 0, seed: 1, slots: ["ring", "neck"], optionalSlots: ["ring", "neck"], tieBreak: { rarity: "lower", tolerance: 0 } };
+const tieProfile: OptProfile = { weights: { hci: 1, dci: 1 }, caps: {} };
+
+test("[fast] rarity: the first stage gets three quarters of what is left of the budget, the second the rest", async () => {
+  let clock = 0;
+  const limits: { at: number; limitS: number }[] = [];
+  const timed = (handle: Handle, o: SolveModelOptions) => { limits.push({ at: clock, limitS: o.timeLimitS! }); const r = realSolveModel(handle, o); clock += 200; return r; };
+  const r = await solveExact({ core, pools: tiePools(), current: {}, profile: tieProfile, opts: tieOpts, onProgress: () => {}, solveModel: timed, now: () => clock });
+  assert.equal(limits.length, 2);
+  assert.ok(Math.abs(limits[0]!.limitS - 0.75) < 1e-9, `stage 1 got ${limits[0]!.limitS} s of 1 s`);
+  assert.ok(Math.abs(limits[1]!.limitS - 0.8) < 1e-9, `stage 2 got ${limits[1]!.limitS} s with 0.8 s left`);
+  assert.deepEqual([serials(r.best), r.tieBreak!.cost, r.proven], [{ ring: 42, neck: 43 }, 4, true]);
+});
+
+test("[fast] rarity: with other suits asked for, the second stage takes only half of what is left, and the other suits still come back", async () => {
+  let clock = 0;
+  const limits: number[] = [];
+  const timed = (handle: Handle, o: SolveModelOptions) => { limits.push(o.timeLimitS!); const r = realSolveModel(handle, o); clock += 100; return r; };
+  const r = await solveExact({ core, pools: tiePools(), current: {}, profile: tieProfile, opts: { ...tieOpts, alternatives: { count: 2, tolerance: 1e9 } }, onProgress: () => {}, solveModel: timed, now: () => clock });
+  assert.ok(Math.abs(limits[1]! - 0.45) < 1e-9, `stage 2 got ${limits[1]} s with 0.9 s left`);
+  assert.equal(r.alternatives!.length, 2, "the other suits are not starved");
+  assert.equal(r.altShortfall, undefined);
+  assert.deepEqual([serials(r.best), r.tieBreak!.cost], [{ ring: 42, neck: 43 }, 4]);
+});
+
+// Review F1: a suit within the tolerance that meets a soft floor the best suit misses gains that floor's bonus. The
+// stage-2 score row must count it, or HiGHS cuts the suit (and proves a dearer one) while the core keeps it.
+test("[fast] rarity: HiGHS keeps a suit within the tolerance that meets one more soft floor, as the core does", async () => {
+  const pools = { ring: [{ serial: 51, name: "A1", slot: "ring", props: { str: 1000 }, tieCost: 8 }, { serial: 52, name: "B1", slot: "ring", props: { str: 480, dex: 5 }, tieCost: 0 }],
+    bracelet: [{ serial: 53, name: "A2", slot: "bracelet", props: { str: 1000 }, tieCost: 8 }, { serial: 54, name: "B2", slot: "bracelet", props: { str: 480, dex: 5 }, tieCost: 0 }] };
+  const opts: OptOptions = { restarts: 0, seed: 1, slots: ["ring", "bracelet"], optionalSlots: ["ring", "bracelet"], tieBreak: { rarity: "lower", tolerance: 50 } };
+  const warnings: string[] = [];
+  const profile: OptProfile = { weights: { str: 1 }, caps: {}, floors: { dex: 10 }, floorBonus: 1000 };
+  const c = core.optimizeSuit(pools, {}, profile, { ...opts, exact: true, timeBudgetMs: 5000 });
+  const h = await solveExact({ core, pools, current: {}, profile, opts: { ...opts, exact: true, timeBudgetMs: 5000 }, onProgress: () => {}, onWarn: (m) => warnings.push(m) });
+  for (const r of [c, h]) assert.deepEqual([serials(r.best), r.score, r.tieBreak!.cost, r.proven], [{ ring: 52, bracelet: 54 }, 1960, 0, true]);
+  assert.deepEqual(warnings, []);
+});
+
+// Review F3: two suits tie for the best score but meet different soft floors. Both searches hold the floors of the same
+// suit (stage 1's, handed to the core as topStart), so neither guard fires and the proof stands, whichever the order.
+// One ring: A and B score 160 each, A meeting the Dex floor and B the Int floor; their cheap copies sit within 50 points.
+test("[fast] rarity: equal best suits meeting different floors hold one floor set in both searches, with no false warning", async () => {
+  const items = [{ serial: 61, name: "A", slot: "ring", props: { dex: 10, str: 60 }, tieCost: 8 }, { serial: 62, name: "B", slot: "ring", props: { int: 10, str: 60 }, tieCost: 8 },
+    { serial: 63, name: "A cheap", slot: "ring", props: { dex: 10, str: 20 }, tieCost: 0 }, { serial: 64, name: "B cheap", slot: "ring", props: { int: 10, str: 30 }, tieCost: 1 }];
+  const profile: OptProfile = { weights: { str: 1 }, caps: {}, floors: { dex: 10, int: 10 }, floorBonus: 100 };
+  const [a, b, ac, bc] = items as [typeof items[0], typeof items[0], typeof items[0], typeof items[0]];
+  for (const order of [[a, b, ac, bc], [b, a, bc, ac], [b, a, ac, bc], [a, b, bc, ac]]) for (const restarts of [0, 3]) {
+    const warnings: string[] = [];
+    const r = await solveExact({ core, pools: { ring: order }, current: {}, profile, opts: { restarts, seed: 1, exact: true, timeBudgetMs: 5000, slots: ["ring"], optionalSlots: ["ring"], tieBreak: { rarity: "lower", tolerance: 50 } }, onProgress: () => {}, onWarn: (m) => warnings.push(m) });
+    assert.deepEqual(warnings, [], `order ${order.map((x) => x.serial)}`);
+    assert.deepEqual([r.proven, r.tieBreak!.costProven, r.tieBreak!.topScore], [true, true, 160]);
+    assert.ok([63, 64].includes(r.best.ring!.serial), "the cheap piece for whichever floor was held");
+  }
+  // the core holds the floors of the suit it is handed as topStart, whatever its own search found first
+  for (const [top, floors, cheap] of [[61, ["dex"], 63], [62, ["int"], 64]] as const) {
+    const c = core.optimizeSuit({ ring: [a, b, ac, bc] }, {}, profile, { restarts: 0, seed: 1, slots: ["ring"], optionalSlots: ["ring"], tieBreak: { rarity: "lower", tolerance: 50, topStart: { ring: top } } });
+    assert.deepEqual([c.tieBreak!.floors, c.best.ring!.serial, c.tieBreak!.top], [floors, cheap, { ring: top }]);
+  }
+});
+
+// Review F8: an unproven stage 1 can hand back an incumbent whose suit meets a floor with that floor's indicator at 0. The
+// second stage works the floors out from the suit's own totals, so it still holds the floor.
+test("[fast] rarity: after an unproven first stage, the floors its suit meets are still held", async () => {
+  const pools = ranked("lower", [{ serial: 71, slot: "ring", rank: 8, props: { luck: 10, hci: 1 } }, { serial: 72, slot: "ring", rank: 1, props: { hci: 5 } }]);
+  let calls = 0;
+  const sloppy = (handle: Handle, o: SolveModelOptions) => {
+    const r = realSolveModel(handle, o);
+    if (++calls > 1 || !r.colValue) return r;
+    const colValue = Float64Array.from(r.colValue);
+    handle.built.cols.forEach((c, j) => { if (c.kind === "y") colValue[j] = 0; });
+    return { ...r, status: "timeLimit" as const, colValue };
+  };
+  const r = await solveExact({ core, pools, current: {}, profile: { weights: { hci: 1 }, caps: {}, floors: { luck: 10 }, floorBonus: 100 }, opts: { restarts: 0, seed: 1, exact: true, timeBudgetMs: 5000, slots: ["ring"], optionalSlots: ["ring"], tieBreak: { rarity: "lower", tolerance: 0 } }, onProgress: () => {}, solveModel: sloppy });
+  assert.deepEqual([serials(r.best), r.score], [{ ring: 71 }, 101]);
+});
+
+test("[fast] rarity: a second stage that times out keeps the score's proof and leaves the rarity choice unproven", async () => {
+  let calls = 0;
+  const second = (handle: Handle, o: SolveModelOptions) => (++calls === 2 ? { status: "timeLimit" as const, statusText: "timeLimit", objective: null, primal: null, dual: null, gapAbs: null, nodes: 1, colValue: null, ms: 1 } : realSolveModel(handle, o));
+  const r = await solveExact({ core, pools: tiePools(), current: {}, profile: tieProfile, opts: { ...tieOpts, timeBudgetMs: 5000 }, onProgress: () => {}, solveModel: second });
+  assert.deepEqual([r.proven, r.tieBreak!.costProven, r.score], [true, false, 15], "the score's proof stands; the rarity choice is unproven");
+});
+
+test("[fast] rarity: each guard fires on a doctored core and withdraws the proof", async () => {
+  const run = async (doctor: (r: ReturnType<typeof core.optimizeSuit>, handBack: boolean) => ReturnType<typeof core.optimizeSuit>) => {
+    const warnings: string[] = [];
+    const doctored = { ...core, optimizeSuit: ((...a: Parameters<typeof core.optimizeSuit>) => doctor(core.optimizeSuit(...a), a[3]!.restarts === 0 && !!a[3]!.warmStart)) as typeof core.optimizeSuit };
+    const r = await solveExact({ core: doctored, pools: tiePools(), current: {}, profile: tieProfile, opts: { ...tieOpts, restarts: 2, timeBudgetMs: 5000 }, onProgress: () => {}, onWarn: (m) => warnings.push(m) });
+    return { r, warnings: warnings.join(" | ") };
+  };
+  const cheaper = await run((r, back) => (back ? { ...r, tieBreak: { ...r.tieBreak!, cost: r.tieBreak!.cost - 1 } } : r));
+  assert.match(cheaper.warnings, /lower tie cost/);
+  assert.equal(cheaper.r.proven, false);
+  const lowTop = await run((r, back) => (back ? { ...r, tieBreak: { ...r.tieBreak!, topScore: r.tieBreak!.topScore - 1 } } : r));
+  assert.match(lowTop.warnings, /re-score mismatch/);
+  assert.equal(lowTop.r.proven, false);
+  const heurCheaper = await run((r, back) => (back ? r : { ...r, tieBreak: { ...r.tieBreak!, cost: -1 } }));
+  assert.match(heurCheaper.warnings, /below the heuristic/);
+  assert.equal(heurCheaper.r.proven, false);
 });

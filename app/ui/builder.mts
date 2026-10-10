@@ -5,10 +5,11 @@
 // is ui/runs.mts; they share the builder's state and call each other through ui/builder-session.mts. The panel is drawn
 // from the session's profile plus its Advanced knobs, so what a build sends, what a profile saves and what a run
 // snapshots are read from state, never from the DOM.
-import { PROP_LABELS, NOT_BUILDER_KEYS, GEAR_SLOTS, tagUnits, WEAPON_SKILLS, MELEE_SKILLS, resistSkillBonus, getRules, RESIST_KEYS, RESIST_CAP_LIMITS, resistCapsFor, templateFrom, settingsDiff, bagLabel } from "../vault-lib.mts";
+import { NOBODY, PROP_LABELS, NOT_BUILDER_KEYS, playerCaps, GEAR_SLOTS, tagUnits, WEAPON_EXCLUDES, MELEE_SKILLS, WEAPON_MUST_HAVE, flagLabel, getRules, RESIST_KEYS, RESIST_CAP_LIMITS, resistCapsFor, templateFrom, settingsDiff, bagLabel, toOptItem, totalsOf, fcCapFor, CASTING_SCHOOLS } from "../vault-lib.mts";
+import { heldWeapon, ssiShareOf, swingOf, type SwingResult } from "../swing.mts";
 import { BUILTIN_PREFIX, characterBuffs, characterEntry, characterProfile, findTemplate, planBuild, specFromProfile, templateLabel, templateRefs, templateSettings, templateSpecFrom, type PlannedBuild } from "../build-spec.mts";
-import type { ResistCap, RunBuffs, Character } from "../vault-lib.mts";
-import { buffById, gearNeedsText, overrideNote, planBuffs, normalizeBuffs, runBuffs, toggleBuff, buffPlanOf, type BuffPlan } from "../buffs.mts";
+import type { FcCap, ResistCap, RunBuffs, Character } from "../vault-lib.mts";
+import { buffById, gearNeedsText, overrideNote, planBuffs, plannedProfile, normalizeBuffs, runBuffs, toggleBuff, buffPlanOf, type BuffPlan } from "../buffs.mts";
 import { defaultStrLimit } from "../run-settings.mts";
 import { evaluateSuit } from "../evaluate.mts";
 import { state, invStamp } from "./store.mts";
@@ -22,9 +23,10 @@ import { optimizeErrorMessage } from "./messages.mts";
 import { parseRoute, registerScreen, routeFor } from "./nav.mts";
 import { setNavBusy } from "./shell.mts";
 import { putProfiles, setCharacterBuffs } from "./profiles.mts";
-import { session, commands, provide, readControls } from "./builder-session.mts";
-import { followJob, progressText } from "./builder-parts.mts";
-import { paperdoll, propName, weightsSummary, requirementsSummary, poolSummary, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistCapsSummary, gearCapsText, pruneResistCaps, floorCapWarning, weaponsChipText, weaponName, toggleWeapon, type KnobField } from "./builder-model.mts";
+import { session, commands, provide, readControls, type BuilderChange } from "./builder-session.mts";
+import { followJob, progressText, settingsCheck } from "./builder-parts.mts";
+import { characterNames } from "./roster.mts";
+import { nextSwingStep, speedText, swingLines, propName, weightsSummary, requirementsSummary, poolSummary, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistCapsSummary, resistMinimumText, pruneResistCaps, floorCapWarning, weaponsChipText, weaponMustHaveChipText, withStoredRoots, weaponName, toggleWeapon, weightWorth, fcCapText, rarityHelp, templateBuffsLine, sourceTitle, who, type KnobField } from "./builder-model.mts";
 import type { OptimizeResult, SavedRunLike, OptimizeStartApiResponse, OptimizeCancelApiResponse } from "./api-types.mts";
 
 // ---------------------------------------------------------------- panel state
@@ -44,11 +46,12 @@ const KNOB_IDS: Record<KnobField, string> = { strLimit: "b-str", restarts: "b-re
 // The builder's listeners, attached once for the page's life (app.mts's load()). Everything that depends on
 // the inventory is syncBuilderCharacters()'s job, which runs on every load and refresh.
 export function initBuilder(): void {
-  // Manual's "No character" is the empty value; a character is selected for both modes.
+  // A character is selected for both modes. "No character" (NOBODY) is Manual's in both, and Automatic's own when picked
+  // there; picked in Manual it leaves Automatic's character as it is.
   $<HTMLSelectElement>("#b-char")!.onchange = () => {
-    const v = $<HTMLSelectElement>("#b-char")!.value;
-    commands.setManualFor(v || null);
-    if (v && v !== session.character) selectCharacter(v);   // back from "No character" to the same one keeps its panel and result
+    const v = $<HTMLSelectElement>("#b-char")!.value, none = v === NOBODY;
+    commands.setManualFor(none ? null : v);
+    if (v !== session.character && (!none || session.mode !== "manual")) selectCharacter(v);   // back from Manual's "No character" to the same one keeps its panel and result
   };
   $<HTMLButtonElement>("#b-run")!.onclick = runBuild;
   $<HTMLButtonElement>("#b-save")!.onclick = saveProfile;
@@ -79,20 +82,21 @@ document.addEventListener("inventorychange", () => syncBuilderCharacters());
 // #/builder/<Name>: the route's character once the inventory is in; with no name, the route takes the selected one.
 registerScreen({ name: "builder", show: (r) => {
   if (!state.inv) return;
-  if (r.character && r.character !== session.character && state.inv.characters[r.character]) selectCharacter(r.character);
+  if (r.character && r.character !== session.character && (state.inv.characters[r.character] || (r.character === NOBODY && Object.keys(state.inv.characters).length > 0))) selectCharacter(r.character);
   else if (!r.character && session.character) history.replaceState(null, "", routeFor("builder"));
 } });
 export function syncBuilderCharacters(): void {
-  const names = [...new Set([...Object.keys(state.inv!.characters), ...Object.keys(state.profiles!.characters || {})])];
+  const names = characterNames(state.inv!.characters, state.profiles!.characters);
   const keep = session.character;
-  $<HTMLSelectElement>("#b-char")!.replaceChildren(...names.map((n) => el("option", { value: n }, n)));
-  if (keep && names.includes(keep) && session.profile) {
+  // No character first, once there is a character at all
+  $<HTMLSelectElement>("#b-char")!.replaceChildren(...(names.length ? [NOBODY, ...names] : []).map((n) => el("option", { value: n }, who(n))));
+  if (keep && (names.includes(keep) || (keep === NOBODY && names.length)) && session.profile) {
     $<HTMLSelectElement>("#b-char")!.value = keep;
     renderPanel();
     if (!session.result && !session.job) commands.renderCurrentSuit(keep);
   } else if (names.length) {
     const want = parseRoute().character;
-    selectCharacter(names.includes(want as string) ? want as string : names[0]!);
+    selectCharacter(names.includes(want as string) || want === NOBODY ? want as string : names[0]!);
   } else {
     session.character = null; session.profile = null;
     $<HTMLElement>("#b-panel-body")!.replaceChildren(el("p", { class: "muted b-no-char", id: "b-no-char" }, txt(NO_CHARACTER)));
@@ -140,6 +144,7 @@ export function selectCharacter(name: string): void {
 function renderPanel(): void {
   const p = session.profile;
   if (!p) return;
+  if (session.character === NOBODY) p.race = "human";   // No character has no race: the shard's caps (its Race control is hidden)
   p.floors ||= {}; p.softFloors ||= []; p.weights ||= {}; p.lockedSlots ||= []; p.excludeTags ||= []; p.excludeSkills ||= []; p.excludeRoots ||= [];
   $<HTMLElement>("#b-panel-body")!.replaceChildren(templateSection(), buffsSection(), requirementsSection(), capsSection(), weightsSection(), poolSection(), advancedSection());
   updateTemplateBadge();
@@ -174,9 +179,12 @@ function section(id: string, title: string, { count, summary, body, inline = fal
 // ---- template and race
 function templateSection(): HTMLElement {
   const p = session.profile!;
-  const names = templateRefs(state.profiles!, state.builtinTemplates);
-  const tpl = select(names.map((n) => ({ value: n, label: templateLabel(state.builtinTemplates, n) })), names.includes(p.template as string) ? p.template as string : names[0] || "", { attrs: { id: "b-tpl" } });
-  tpl.addEventListener("change", updateTemplateBadge);
+  const names = templateRefs(state.profiles!, state.builtinTemplates), builtin = (n: string): boolean => n.startsWith(BUILTIN_PREFIX);
+  // built-ins first, each under its own name; the player's own after
+  const group = (label: string, refs: string[]): HTMLElement | null => refs.length ? el("optgroup", { label }, ...refs.map((n) => el("option", { value: n }, plainName(n)))) : null;
+  const tpl = el("select", { class: "select", id: "b-tpl" }, group("Built-in", names.filter(builtin)), group("Your templates", names.filter((n) => !builtin(n))));
+  tpl.value = names.includes(p.template as string) ? p.template as string : names[0] || "";
+  tpl.addEventListener("change", () => { $<HTMLElement>("#b-tpl-info")!.replaceWith(templateInfo(tpl.value)); updateTemplateBadge(); });
   const menuBtn = button({ label: "Template actions: apply, save as, update, delete", icon: "more", iconOnly: true, variant: "ghost", attrs: { id: "b-tpl-menu", "aria-haspopup": "menu", "aria-expanded": "false" } });
   menuBtn.onclick = () => templateMenu(menuBtn);
   const race = segmented({ label: "Race", options: [{ value: "human", label: "Human" }, { value: "elf", label: "Elf" }, { value: "gargoyle", label: "Gargoyle" }], value: p.race || "human",
@@ -187,8 +195,21 @@ function templateSection(): HTMLElement {
   const str = knobField("strLimit", "STR limit");
   str.classList.add("b-str");
   return box("section", { class: "b-sec b-sec-top", "aria-label": "Template" },
-    box("div", { class: "field" }, el("label", { class: "label", for: "b-tpl" }, "Template"), box("div", { class: "b-tpl-row" }, tpl, el("span", { id: "b-tpl-state", class: "badge" }), menuBtn)),
-    box("div", { class: "b-race-row" }, box("div", { class: "field" }, el("span", { class: "label", id: "b-race-l" }, "Race"), race), str));
+    box("div", { class: "field" }, el("label", { class: "label", for: "b-tpl" }, "Template"), box("div", { class: "b-tpl-row" }, tpl, el("span", { id: "b-tpl-state", class: "badge" }), menuBtn), templateInfo(tpl.value)),
+    box("div", { class: "b-race-row" }, session.character === NOBODY ? null : box("div", { class: "field" }, el("span", { class: "label", id: "b-race-l" }, "Race"), race), str));
+}
+// A template's name as the picker shows it: a built-in's own name, without templateLabel's "(built-in)".
+const plainName = (ref: string): string => { const id = ref.slice(BUILTIN_PREFIX.length); return ref.startsWith(BUILTIN_PREFIX) ? state.builtinTemplates[id]?.name || id : ref; };
+// Under the picker, for a template with a description: a built-in's badge, the description, the buffs it loads and its
+// source pages (a built-in with none is the shard's defaults).
+function templateInfo(ref: string): HTMLElement {
+  const t = findTemplate(state.profiles!, state.builtinTemplates, ref), builtin = ref.startsWith(BUILTIN_PREFIX), on = t?.spec.buffs?.on ?? [];
+  if (!t?.description) return el("div", { id: "b-tpl-info", hidden: "" });
+  const sources = t.sources ?? [];
+  return box("div", { id: "b-tpl-info", class: "help b-tpl-info" },
+    el("p", {}, builtin ? badge("Built-in") : null, builtin ? " " : null, t.description),
+    on.length ? el("p", {}, `Loads: ${on.map((id) => buffById(id)?.name ?? id).join(" · ")}`) : null,
+    builtin ? el("p", {}, "Source: ", ...(sources.length ? sources.flatMap((u, i) => [i ? " · " : "", el("a", { href: u, target: "_blank", rel: "noopener noreferrer" }, sourceTitle(u))]) : ["UO Alive defaults"])) : null);
 }
 // A template is a saved set of builder settings with no character in it; the badge says whether the panel
 // still matches the one it was applied from.
@@ -196,7 +217,8 @@ function templateDrift(): { tone: "ok" | "warn" | "bad" | ""; text: string; deta
   const ref = session.profile!.template, tpl = findTemplate(state.profiles!, state.builtinTemplates, ref), name = ref && templateLabel(state.builtinTemplates, ref);
   if (!name) return { tone: "", text: "none", detail: "Save as… stores these settings as a template." };
   if (!tpl) return { tone: "bad", text: "missing", detail: `These settings came from a template named ${name}, which no longer exists.` };
-  const lines = settingsDiff(templateSettings(tpl), templateFrom(readControls()));
+  const buffs = tpl.spec.buffs && templateBuffsLine(tpl.spec.buffs.on, buffsOn());
+  const lines = [...settingsDiff(templateSettings(tpl), templateFrom(readControls())), ...(buffs ? [buffs] : [])];
   return lines.length ? { tone: "warn", text: "modified", detail: `Changed from ${name}: ${lines.join(" · ")}` } : { tone: "ok", text: "matches", detail: `These settings equal the ${name} template.` };
 }
 // Redrawn after every edit; the reason ("Changed from melee: DI floor 20 → 30") is its tooltip and, for a
@@ -222,12 +244,18 @@ async function saveTemplates(done: string): Promise<void> {
   // putProfiles()'s only `ok: false` path is its own catch, which always sets `error`.
   toast(r.ok ? done : r.error!, r.ok ? "good" : "bad");
 }
-// A template with buffs (a built-in one may carry them) also sets the character's buffs, which are saved at once.
+// A template with buffs also sets the character's buffs, which are saved at once, and Manual's when Manual is for the
+// same character (one undo step there).
 function applyTemplate(): void {
-  const ref = selectedTemplate(), t = findTemplate(state.profiles!, state.builtinTemplates, ref), name = templateLabel(state.builtinTemplates, ref);
+  const ref = selectedTemplate(), t = findTemplate(state.profiles!, state.builtinTemplates, ref), name = plainName(ref);
   if (!t) return;
   Object.assign(session.profile!, templateSettings(t), { template: ref });
-  if (t.spec.buffs) setCharacterBuffs(session.character!, { on: t.spec.buffs.on, skills: { ...commands.buffEditsOf(session.character!), ...t.spec.buffs.skills } });
+  if (t.spec.buffs) {
+    // No character's numbers are Manual's (ui-prefs), not its entry's
+    if (session.character === NOBODY) { setCharacterBuffs(NOBODY, { on: t.spec.buffs.on }); commands.editBuffInputs(NOBODY, t.spec.buffs.skills); }
+    else setCharacterBuffs(session.character!, { on: t.spec.buffs.on, skills: { ...commands.buffEditsOf(session.character!), ...t.spec.buffs.skills } });
+    commands.templateBuffs(t.spec.buffs.on, `${name} buffs`);
+  }
   clearCapDrafts();
   renderPanel();
   toast(`${name} applied. Save profile to keep it.`, "good");
@@ -237,7 +265,7 @@ async function saveTemplateAs(): Promise<void> {
   const name = await promptText({ title: "Template name", value: was.startsWith(BUILTIN_PREFIX) ? "" : was });
   if (name?.startsWith(BUILTIN_PREFIX)) { toast(`A template's name can't start with "${BUILTIN_PREFIX}".`, "bad"); return; }
   if (!name || (state.profiles!.templates[name] && !await confirmDialog({ title: `Overwrite the ${name} template?`, body: `The ${name} template is replaced with these settings.`, confirmLabel: `Overwrite ${name}` }))) return;
-  state.profiles!.templates[name] = { spec: templateSpecFrom(readControls()) };
+  state.profiles!.templates[name] = { spec: templateSpecFrom(readControls(), buffsOn()) };
   session.profile!.template = name;
   renderPanel();
   await saveTemplates(`Template ${name} saved.`);
@@ -245,7 +273,7 @@ async function saveTemplateAs(): Promise<void> {
 async function updateTemplate(): Promise<void> {
   const name = selectedTemplate();
   if (!Object.hasOwn(state.profiles!.templates, name) || !await confirmDialog({ title: `Update the ${name} template?`, body: `The ${name} template is overwritten with these settings.`, confirmLabel: `Update ${name}` })) return;
-  state.profiles!.templates[name] = { ...state.profiles!.templates[name], spec: templateSpecFrom(readControls()) };
+  state.profiles!.templates[name] = { ...state.profiles!.templates[name], spec: templateSpecFrom(readControls(), buffsOn()) };
   session.profile!.template = name;
   updateTemplateBadge();
   await saveTemplates(`Template ${name} updated.`);
@@ -297,8 +325,8 @@ function buffView(): BuffView {
   const name = session.character!, p = session.profile!, inputs = commands.buffInputsOf(name), plan = buffPlan(name, p.race, { on: buffsOn(), skills: {} });
   // what the character wears now, evaluated with the panel's buffs (app/evaluate.mts)
   const ev = evaluateSuit({ profile: p, character: state.inv!.characters[name] as Character | null, suit: Object.fromEntries((state.inv!.worn[name] || []).map((i) => [String(i.serial), i])), buffs: plan });
-  return { name, on: plan.on, values: plan.skills, planned: inputs.planned, edits: commands.buffEditsOf(name), stats: plan.stats, who: plan.who,
-    totals: paperdoll(ev.gearTotals, ev.planned.resistBonus), caps: ev.baseCaps, all: ev.buffs, replaced: note && "replaced" in note ? note.replaced : null,
+  return { name: name === NOBODY ? null : name, on: plan.on, values: plan.skills, planned: inputs.planned, edits: commands.buffEditsOf(name), stats: plan.stats, who: plan.who,
+    totals: ev.gearTotals, caps: ev.baseCaps, all: ev.buffs, replaced: note && "replaced" in note ? note.replaced : null,
     cleared: note && "cleared" in note ? note.cleared : null, count: true, open: !!picker };
 }
 // A buff on or off (or all off), with the picker's note: saved, and the chips, the count, the requirements' notes and
@@ -309,7 +337,7 @@ function setBuffs(next: string[], n: typeof note): void {
   const row = document.getElementById("b-buff-chips"), add = document.getElementById("b-buff-add"), v = buffView();
   if (row && add) row.replaceChildren(...v.on.map((id) => buffChip(id, v, buffActions)), add);
   setCount("buffs", v.on.length);
-  redraw("req");
+  redraw("req"); redraw("weights");   // the switch's step line counts the buffs' stamina and SSI
   picker?.paint(v);
 }
 const buffActions: PickerActions = {
@@ -332,7 +360,7 @@ function openBuffPicker(anchor: HTMLElement): void {
   if (picker) { closePopover(); return; }
   const host = box("div", { class: "bf-pick" });
   picker = createBuffPicker(host, "abf", buffActions, () => "Counted as always on: the search plans around them. A bonus past the cap, like Enemy of One's damage, never changes the plan.");
-  popover(anchor, [host], { label: `Buffs for ${session.character}`, width: 480, beside: $<HTMLElement>("#b-panel")!, onClose: () => { picker = null; note = null; } });
+  popover(anchor, [host], { label: `Buffs for ${who(session.character!)}`, width: 480, beside: $<HTMLElement>("#b-panel")!, onClose: () => { picker = null; note = null; } });
   picker.paint(buffView());
   picker.focusSearch();
 }
@@ -347,9 +375,15 @@ function allPropKeys(): string[] {
 // The panel's resist caps: the player's override, else the shard's cap for this character's race (an Elf's
 // Energy is 75 on uoalive).
 const panelResistCaps = (): Record<string, ResistCap> => resistCapsFor(session.profile!.race, session.profile!.resistCaps);
-// A property's cap for this build: a resist's from the panel's resist caps, anything else the shard's.
+// The panel's Faster Casting cap: the casting school's, from the profile's choice or the character's skills.
+const panelFcCap = (): FcCap => fcCapFor(state.inv!.characters[session.character!]?.skills, session.profile!.castingSchool);
+// The FC row's note: its cap and where that comes from.
+const fcCapNote = (): HTMLElement => el("span", { class: "t-sm muted b-fc-cap" }, fcCapText(panelFcCap()));
+// A property's cap for this build: a resist's from the panel's resist caps, Faster Casting's from the casting school,
+// anything else the shard's.
 function capFor(k: string): number | null {
   if (RESIST_KEYS.includes(k)) return panelResistCaps()[k]!.cap;
+  if (k === "fc") return panelFcCap().cap;
   return (getRules().caps as Record<string, number>)[k] ?? null;
 }
 // A number input bound to obj[k]: a value that isn't a number keeps its field marked with the reason, and the
@@ -379,10 +413,11 @@ function requirementsSection(): HTMLElement {
   const p = session.profile!, name = session.character!;
   const keys = Object.keys(p.floors!).filter((k) => !NOT_BUILDER_KEYS.has(k));
   return section("req", "Requirements", { count: keys.length, summary: () => requirementsSummary(p.floors, p.softFloors), body: () => {
-    const rsb = resistSkillBonus(state.inv!.characters[name]?.skills);
     // with buffs on, each requirement they touch says what gear still has to supply
     const { prof, r } = planBuffs(p, state.inv!.characters[name] as Character | null, buffPlan(name, p.race, panelBuffs()));
-    const help = el("p", { class: "help" }, txt(`The suit must reach every hard requirement. Soft ones are preferences. Resisting Spells gives ${name} +${rsb}, ${gearCapsText(panelResistCaps(), rsb)}.`));
+    // the minimum the search holds resists at: the character's own, or what the planned buffs leave (Protection)
+    const minText = resistMinimumText(name, prof.buffs ? prof.buffs.minimum : prof.resistMinimum);
+    const help = el("p", { class: "help" }, txt(`The suit must reach every hard requirement. Soft ones are preferences.${minText ? ` ${minText}` : ""}`));
     const rows = keys.map((k) => {
       const nm = propName(k);
       const hard = segmented({ label: `${nm}: hard or soft`, options: [{ value: "hard", label: "Hard" }, { value: "soft", label: "Soft" }], value: p.softFloors!.includes(k) ? "soft" : "hard",
@@ -392,8 +427,12 @@ function requirementsSection(): HTMLElement {
         button({ label: `Remove requirement: ${nm}`, icon: "close", iconOnly: true, variant: "ghost", size: "sm", onClick: () => { delete p.floors![k]; p.softFloors = p.softFloors!.filter((x) => x !== k); redraw("req"); focusIn("req", ".b-add"); } }));
       floorWarning(row, num, k);
       const ignored = prof.buffs?.overridesIgnored?.[k];
-      const said = r ? [ignored != null ? overrideNote(k, ignored, r) : null, gearNeedsText(k, prof.floors[k]!, prof.caps[k], r)].filter(Boolean).join(". ") : "";
+      // a requirement at or under the minimum the buffs leave asks nothing of gear
+      const byMinimum = prof.mins?.[k] != null && prof.floors[k]! <= prof.mins[k]!;
+      const said = r ? [ignored != null ? overrideNote(k, ignored, r) : null, byMinimum ? "Met by any suit: the Resisting Spells minimum" : gearNeedsText(k, prof.floors[k]!, prof.caps[k], r)].filter(Boolean).join(". ") : "";
       if (said) row.append(el("span", { class: "t-sm b-buff-note" }, said));
+      if (k === "fc") row.append(fcCapNote());
+      if (k === "ssi") { const next = nextStepButton(); if (next) row.append(next); }   // repainted as the shown result changes (paintNextStep)
       return row;
     });
     const add = filterChip({ label: "Add requirement", add: true, attrs: { class: "fchip add b-add", id: "b-addfloor" } });
@@ -439,7 +478,7 @@ function capRow(p: NonNullable<typeof session.profile>, k: string): HTMLElement 
       ? [badge(note, "accent"), button({ label: `Reset ${nm} cap to the shard's ${now.shard}`, icon: "undo", iconOnly: true, variant: "ghost", size: "sm", onClick: () => {
         p.resistCaps = withResistCap(p.resistCaps, k, now.shard, now.shard);
         delete capDrafts[k];
-        redraw("caps"); redraw("req");
+        redraw("caps"); redraw("req"); redraw("weights");
         focusIn("caps", `.rule-row[data-key="${CSS.escape(k)}"] input`, true);
       } })]
       : [txt("shard cap", "t-sm muted cap-shard"), el("span")];
@@ -452,7 +491,7 @@ function capRow(p: NonNullable<typeof session.profile>, k: string): HTMLElement 
     if (err) { capDrafts[k] = i.value; return; }
     delete capDrafts[k];
     p.resistCaps = withResistCap(p.resistCaps, k, Number(i.value), c.shard);
-    paint(); redraw("req");   // its note names what gear supplies under each cap; redraw() also updates the template badge
+    paint(); redraw("req"); redraw("weights");   // their notes name what gear supplies under each cap, and the worth of a resist weight; redraw() also updates the template badge
   });
   paint();
   if (capDrafts[k] != null) setInlineError(i, resistCapError(capDrafts[k]!));
@@ -462,16 +501,54 @@ function weightsSection(): HTMLElement {
   const p = session.profile!;
   const keys = Object.keys(p.weights!).filter((k) => !NOT_BUILDER_KEYS.has(k));
   return section("weights", "Weights", { count: keys.length, summary: () => weightsSummary(p.weights), body: () => {
+    // each row says what its weight makes a typical range worth, in the player's terms with the panel's buffs
+    const name = session.character!, caps = playerCaps(plannedProfile(p, state.inv!.characters[name] as Character | null, buffPlan(name, p.race, panelBuffs())));
     const rows = keys.map((k) => {
-      const nm = propName(k);
-      return box("div", { class: "rule-row weight", "data-key": k }, ruleName(nm), boundNumber(p.weights!, k, `${nm} weight`, k),
-        button({ label: `Remove weight: ${nm}`, icon: "close", iconOnly: true, variant: "ghost", size: "sm", onClick: () => { delete p.weights![k]; redraw("weights"); focusIn("weights", ".b-add"); } }));
+      const nm = propName(k), num = boundNumber(p.weights!, k, `${nm} weight`, k), worth = el("span", { class: "t-sm muted b-worth" });
+      // hidden while the field holds no number (its error shows instead), so it never names a weight the profile doesn't hold
+      const paint = (): void => { worth.textContent = (ruleValueError(num.value) ? null : weightWorth(k, p.weights![k]!, caps)) ?? ""; worth.hidden = !worth.textContent; };
+      num.addEventListener("input", paint);
+      paint();
+      return box("div", { class: "rule-row weight", "data-key": k }, ruleName(nm), num,
+        button({ label: `Remove weight: ${nm}`, icon: "close", iconOnly: true, variant: "ghost", size: "sm", onClick: () => { delete p.weights![k]; redraw("weights"); focusIn("weights", ".b-add"); } }), worth,
+        k === "ssi" ? swingStepsSetting() : k === "fc" ? fcCapNote() : null);
     });
     const add = filterChip({ label: "Add weight", add: true, attrs: { class: "fchip add b-add", id: "b-addweight" } });
     add.onclick = () => propertyPicker(add, "Add weight", Object.keys(p.weights!), (k) => { p.weights![k] = 1; redraw("weights"); focusIn("weights", `.rule-row[data-key="${CSS.escape(k)}"] input`, true); });
     return [el("p", { class: "help" }, txt("How much each point of a property is worth to the score. Higher counts more.")), rows.length ? box("div", { class: "b-rules" }, ...rows) : null, add];
   } });
 }
+// ---- swing steps (app/swing.mts): the switch on the SSI weight row, and the requirement row's "Next step" The worn suit's swing with the panel's buffs, the weapon a build is known to hold before it runs (a locked hand keeps the worn piece); null when it holds no weapon of known speed.
+function wornSwing(): { sw: SwingResult; weapon: string } | null {
+  const name = session.character!, p = session.profile!, worn = state.inv!.worn[name] || [];
+  const prof = planBuild(specFromProfile(p, { on: buffsOn(), skills: commands.buffEditsOf(name) }), { character: (state.inv!.characters[name] as Character | undefined) ?? null, worn, race: p.race }).profile;
+  const items = worn.filter((it) => it.slot).map(toOptItem), w = heldWeapon(Object.fromEntries(items.map((it) => [it.slot!, it])));
+  if (!w || !prof.swing) return null;
+  return { sw: swingOf(w.speed!, prof.swing.stamBase, totalsOf(Object.fromEntries(items.map((it) => [String(it.serial), it]))), ssiShareOf(prof)), weapon: w.name };
+}
+function swingStepsSetting(): HTMLElement {
+  const p = session.profile!, worn = wornSwing();
+  const sw = switchControl({ label: "Score swing speed by step", checked: !!p.swingSteps, attrs: { id: "b-swing-steps" }, onChange: (v) => { p.swingSteps = v; updateTemplateBadge(); } });
+  const steps = worn ? swingLines(worn.sw, worn.weapon).steps.map((s) => s.text).join(" · ") : "";
+  return box("div", { class: "b-swing-set" }, sw.root,
+    el("p", { class: "help" }, txt(`Counts SSI only where the swing gets faster.${worn && steps ? ` ${worn.weapon} ${speedText(worn.sw.speed)} at stamina ${worn.sw.stamina}: ${steps}.` : ""}`)));
+}
+// "Next step: 58" fills the SSI requirement with the next step faster than the last result's swing, else the worn suit's.
+function nextStepButton(): HTMLElement | null {
+  const p = session.profile!, next = nextSwingStep(session.result?.swing ?? wornSwing()?.sw);
+  if (!next || (p.floors!.ssi ?? 0) >= next.value) return null;
+  const b = button({ label: `Next step: ${next.value}`, size: "sm", variant: "ghost", cls: "b-next-step", onClick: () => { p.floors!.ssi = next.value; redraw("req"); focusIn("req", `.rule-row[data-key="ssi"] input`, true); } });
+  return tooltip(b, next.tip);
+}
+// The shown result changed (a build finished, a saved run opened, the result cleared): Next step follows its swing.
+function paintNextStep(): void {
+  const row = document.querySelector<HTMLElement>('#b-sec-req .rule-row[data-key="ssi"]');
+  if (!row || !session.profile) return;
+  row.querySelector(".b-next-step")?.remove();
+  const next = nextStepButton();
+  if (next) row.append(next);
+}
+document.addEventListener("builderchange", (e) => { if ((e as BuilderChange).detail.key === "result") paintNextStep(); });
 function focusIn(sec: string, sel: string, selectText = false): void {
   const e = document.querySelector<HTMLInputElement>(`#b-sec-${sec} ${sel}`);
   e?.focus();
@@ -513,13 +590,40 @@ function poolSection(): HTMLElement {
       switchControl({ label: text, checked: !!p[key], attrs: { id }, onChange: (v) => { p[key] = v; updateTemplateBadge(); } }).root;
     return [
       box("div", { class: "b-switches" }, sw("b-others", "Allow gear worn by other characters", "allowOthersWorn"), sw("b-garg", "Allow gargoyle-only gear", "allowGargoyle"), sw("b-med", "Meditation-safe gear only", "medOnly")),
-      box("div", { class: "b-chips" }, weaponChip(), listChip("b-locked", "Locked slots", () => p.lockedSlots!, (v) => { p.lockedSlots = v; }, () => GEAR_SLOTS.map((s) => ({ value: s, label: slotLabel(s) })), false),
+      castingSchoolField(),
+      rarityField(),
+      box("div", { class: "b-chips" }, weaponChip(), mustHaveChip(), listChip("b-locked", "Locked slots", () => p.lockedSlots!, (v) => { p.lockedSlots = v; }, () => GEAR_SLOTS.map((s) => ({ value: s, label: slotLabel(s) })), false),
         tagsChip(), listChip("b-exskills", "Forbid skill bonuses", () => p.excludeSkills!, (v) => { p.excludeSkills = v; },
           () => [...new Set([...(state.facets?.gearSkills || []), ...p.excludeSkills!])].sort().map((sk) => ({ value: sk, label: sk[0]!.toUpperCase() + sk.slice(1) })), true),
-        listChip("b-exroots", "Skip containers", () => p.excludeRoots!.map(String), (v) => { p.excludeRoots = v.map((x) => (Number.isFinite(Number(x)) ? Number(x) : x)); }, rootOptions, true)),
+        listChip("b-exroots", "Skip containers", () => p.excludeRoots!.map(String), (v) => { p.excludeRoots = v.map((x) => (Number.isFinite(Number(x)) ? Number(x) : x)); }, rootOptions, true),
+        // issue #12: only pieces under these root containers (kept only when it lists any); Skip containers still applies
+        listChip("b-onlyroots", "Only containers", () => (p.onlyRoots || []).map(String), (v) => { if (v.length) p.onlyRoots = v.map(Number); else delete p.onlyRoots; }, () => withStoredRoots(rootOptions(), p.onlyRoots), true)),
     ];
   } });
 }
+// The casting school the Faster Casting cap follows: "From skills" (the default, stored as no choice) or a school.
+function castingSchoolField(): HTMLElement {
+  const p = session.profile!;
+  const sel = select([{ value: "", label: "From skills" }, ...CASTING_SCHOOLS.map((s) => ({ value: s, label: s }))], p.castingSchool || "", { size: "sm", attrs: { id: "b-school" } });
+  const note = fcCapNote();
+  sel.addEventListener("change", () => {
+    if (sel.value) p.castingSchool = sel.value; else delete p.castingSchool;
+    note.textContent = fcCapText(panelFcCap());
+    updateTemplateBadge(); redraw("req"); redraw("weights");
+  });
+  return box("div", { class: "b-school" }, field({ label: "Casting school (Faster Casting cap)", control: sel }), note);
+}
+// The rarity preference (issue #262): Higher, Any (the default, stored as no choice) or Lower, with a help line when one is set.
+function rarityField(): HTMLElement {
+  const p = session.profile!;
+  const help = el("p", { class: "help", id: "b-rarity-help" }, rarityHelpText());
+  const seg = segmented({ label: "Rarity", size: "sm", options: [{ value: "higher", label: "Higher" }, { value: "", label: "Any" }, { value: "lower", label: "Lower" }], value: p.rarity || "",
+    onChange: (v) => { if (v === "higher" || v === "lower") p.rarity = v; else delete p.rarity; help.textContent = rarityHelpText(); help.hidden = !p.rarity; updateTemplateBadge(); } });
+  seg.id = "b-rarity";
+  help.hidden = !p.rarity;
+  return box("div", { class: "b-rarity" }, box("div", { class: "field" }, el("span", { class: "label" }, "Rarity"), seg), help);
+}
+const rarityHelpText = (): string => rarityHelp(session.profile!.rarity);
 function rootOptions(): Array<{ value: string; label: string }> {
   return Object.values(state.inv!.containers).filter((c) => c.parent == null)
     .map((r) => ({ value: String(r.serial), label: `${r.kind === "ground" ? "" : r.scannedBy + "'s "}${(r as { label?: string }).label || bagLabel(r)}` }))
@@ -530,14 +634,14 @@ function paintChip(chip: HTMLButtonElement, text: string, set: boolean): void {
   chip.classList.toggle("set", set);
   chip.querySelector("span")!.textContent = text;
 }
-// The Weapons chip: a checklist of the weapon skills, where a tick EXCLUDES that skill's weapons from the pool, and
-// under it the Use Best Weapon Skill switch (profile `ubwsAnyWeapon`, absent means on).
+// The Weapons chip: a checklist of the weapon skills and Spellbooks, where a tick EXCLUDES that skill's weapons (or every
+// spellbook) from the pool, and under it the Use Best Weapon Skill switch (profile `ubwsAnyWeapon`, absent means on).
 function weaponChip(): HTMLButtonElement {
   const p = session.profile!;
   const text = (): string => weaponsChipText(p.excludeWeapons, p.ubwsAnyWeapon !== false);
   const chip = filterChip({ label: text(), set: !!p.excludeWeapons?.length, attrs: { id: "b-weapon" } });
   chip.onclick = () => {
-    const checks = WEAPON_SKILLS.map((w) => check({ label: weaponName(w), checked: !!p.excludeWeapons?.includes(w), attrs: { value: w }, onChange: (on) => {
+    const checks = WEAPON_EXCLUDES.map((w) => check({ label: weaponName(w), checked: !!p.excludeWeapons?.includes(w), attrs: { value: w }, onChange: (on) => {
       p.excludeWeapons = toggleWeapon(p.excludeWeapons || [], w, on);
       paintChip(chip, text(), !!p.excludeWeapons.length); updateTemplateBadge(); paintUbws();
     } }).root);
@@ -561,6 +665,22 @@ function weaponChip(): HTMLButtonElement {
   };
   return chip;
 }
+// The Weapon must have chip (issue #214): a checklist of yes/no properties every weapon in the pool must carry (profile
+// `weaponMustHave`, kept only when it lists any). Shields and spellbooks are never held to it.
+function mustHaveChip(): HTMLButtonElement {
+  const p = session.profile!;
+  const chip = filterChip({ label: weaponMustHaveChipText(p.weaponMustHave), set: !!p.weaponMustHave?.length, attrs: { id: "b-wflags" } });
+  chip.onclick = () => {
+    const checks = WEAPON_MUST_HAVE.map((f) => check({ label: flagLabel(f), checked: !!p.weaponMustHave?.includes(f), attrs: { value: f }, onChange: (on) => {
+      const next = WEAPON_MUST_HAVE.filter((x) => (x === f ? on : p.weaponMustHave?.includes(x)));
+      if (next.length) p.weaponMustHave = next; else delete p.weaponMustHave;
+      paintChip(chip, weaponMustHaveChipText(p.weaponMustHave), !!next.length); updateTemplateBadge();
+    } }).root);
+    popover(chip, [el("p", { class: "help" }, txt("Only weapons with every checked property enter the pool. A locked weapon stays either way.")),
+      box("div", { class: "b-checks", role: "group", "aria-label": "Weapon must have" }, ...checks)], { label: "Weapon must have" });
+  };
+  return chip;
+}
 function tagsChip(): HTMLButtonElement {
   const p = session.profile!;
   const text = (): string => (p.excludeTags!.length ? `Exclude tags: ${p.excludeTags!.length}` : "Exclude tags");
@@ -581,7 +701,7 @@ function listChip(id: string, title: string, get: () => string[], set: (v: strin
     const list = box("div", { class: "b-checks" });
     const paint = (q: string): void => {
       const hits = all.filter((o) => !q || o.label.toLowerCase().includes(q));
-      list.replaceChildren(...(hits.length ? hits.map((o) => check({ label: o.label, checked: get().includes(o.value), onChange: (on) => {
+      list.replaceChildren(...(hits.length ? hits.map((o) => check({ label: o.label, checked: get().includes(o.value), attrs: { value: o.value }, onChange: (on) => {
         set(on ? [...get(), o.value] : get().filter((x) => x !== o.value));
         paintChip(chip, text(), !!get().length); updateTemplateBadge();
       } }).root) : [el("p", { class: "t-sm muted" }, all.length ? "Nothing matches." : "Nothing to choose from yet.")]));
@@ -640,7 +760,8 @@ function panelBuild(): PlannedBuild {
   const name = session.character!, p = readControls();
   const spec = { ...specFromProfile(p, { on: buffsOn(), skills: commands.buffEditsOf(name) }),
     search: { restarts: Number(knobs.restarts), exact: knobs.exact, budgetMs: 1000 * Number(knobs.budgetS), altCount: Number(knobs.altCount), altTol: Number(knobs.altTol) } };
-  return planBuild(spec, { character: (state.inv!.characters[name] as Character | undefined) ?? null, worn: state.inv!.worn[name] || [], race: p.race });
+  // No character builds on the shard's caps: human, whatever race a saved entry says
+  return planBuild(spec, { character: (state.inv!.characters[name] as Character | undefined) ?? null, worn: state.inv!.worn[name] || [], race: name === NOBODY ? "human" : p.race });
 }
 async function runBuild(): Promise<void> {
   if (session.job) return;
@@ -682,6 +803,9 @@ async function runBuild(): Promise<void> {
   if (session.job !== job) { if (r.ok) api(`/api/optimize/${r.id}/cancel`, { method: "POST" }).catch(() => {}); return; }   // cancelled while the request was in flight
   if (!r.ok) { failJob(job, r.error); return; }
   job.poolSize = r.poolSize; job.skipped = r.skipped; job.current = r.current; job.warning = r.warning || null;
+  // the requirements no suit can reach, said above the progress panel while the search runs
+  const checks = r.cached ? null : settingsCheck(r.diagnostics || [], name!);
+  if (checks) job.ui!.root.before(checks);
   // r.run.ms is `number | null` (a saved run's on-disk shape); a genuinely null one has never been guarded here.
   if (r.cached) { finishJob(job, { result: r.run!.result, ms: r.run!.ms!, runId: r.run!.id, reused: r.run! }); return; }
   job.id = r.id!;
@@ -737,7 +861,7 @@ function finishJob(job: BuilderJob, r: JobFinishInfo): void {
   // Switched to another character while it ran: never draw this suit (or its Plan and Grab all) under that
   // character. It waits until its own character is selected again.
   const away = job.name !== session.character;
-  const notes = [away ? message({ tone: "info", text: `${job.name}'s build finished. Switch back to ${job.name} to see it.`, attrs: { class: "msg info parked-note" } }) : null,
+  const notes = [away ? message({ tone: "info", text: `${who(job.name)}'s build finished. Switch back to ${who(job.name)} to see it.`, attrs: { class: "msg info parked-note" } }) : null,
     job.warning ? message({ tone: "warn", text: job.warning }) : null].filter((x): x is HTMLDivElement => x !== null);
   const hadFocus = endJob(job, null);
   $<HTMLElement>("#b-msg")!.replaceChildren(...notes);
@@ -777,13 +901,14 @@ function runPanel(job: BuilderJob): BuilderJobUi {
   const stat = (lbl: string): [HTMLElement, HTMLSpanElement] => { const v = txt("—", "v"); return [box("div", { class: "b-stat" }, txt(lbl, "t-sm muted"), v), v]; };
   const [sBest, vBest] = stat("Best so far"), [sReq, vReq] = stat("Requirements met"), [sCand, vCand] = stat("Candidates"), [sTime, vTime] = stat("Elapsed"), [sBeat, vBeat] = stat("Solver");
   const root = box("section", { class: "card b-progress", "aria-label": "Build progress", tabindex: "-1" },
-    box("div", { class: "b-row" }, dot, el("h2", { class: "t-lg" }, `Building ${job.name}'s suit`), txt(job.exact ? `exact search · budget ${job.budgetMs / 1000} s` : "heuristic search", "muted"), el("span", { class: "spacer" }), cancel),
+    box("div", { class: "b-row" }, dot, el("h2", { class: "t-lg" }, job.name === NOBODY ? "Building a suit for No character" : `Building ${job.name}'s suit`), txt(job.exact ? `exact search · budget ${job.budgetMs / 1000} s` : "heuristic search", "muted"), el("span", { class: "spacer" }), cancel),
     step,
     box("div", { class: "b-prog" }, bar, box("div", { class: "b-prog-line" }, main, txt("·", "faint"), cand, el("span", { class: "spacer" }), txt("You can keep using Pack Rat while this runs", "muted"))),
     box("div", { class: "b-stats" }, sBest, sReq, sCand, sTime, sBeat), live);
   root.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); cancelJob(job); } });
   let shownPhase = 0;
-  const phaseIdx = (p: string): number => (p === "done" ? phases.length : Math.max(0, phases.findIndex(([k]) => k === p)));
+  // a rarity preference's second stage (tie-break) is part of the exact phase's step
+  const phaseIdx = (p: string): number => (p === "done" ? phases.length : Math.max(0, phases.findIndex(([k]) => k === (p === "tie-break" ? "exact" : p))));
   const ui: BuilderJobUi = {
     root,
     update(j: BuilderJob) {
@@ -829,6 +954,6 @@ async function saveProfile(): Promise<void> {
   const { race: _race, template: _template, spec: was, ...rest } = Object.hasOwn(chars, name) ? chars[name]! : { spec: undefined };
   chars[name] = { ...rest, ...entry, spec: { ...was, ...entry.spec } };
   const r = await putProfiles();
-  toast(r.ok ? `Profile for ${session.character} saved.` : r.error!, r.ok ? "good" : "bad");
+  toast(r.ok ? `Profile for ${who(name)} saved.` : r.error!, r.ok ? "good" : "bad");
 }
 provide({ renderPanel, clearCapDrafts, panelBuild, buffPlan, loadRunBuffs });

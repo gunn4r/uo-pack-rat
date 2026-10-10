@@ -1,14 +1,16 @@
 // item-query.test.mts — `app/item-query.mts`, the item-list filtering, sorting, paging and faceting shared by the page and `GET /api/items`.
 //
-// `app/item-query.mts` (the pure item-list filtering/sorting/paging/faceting shared by the browser and the server's `GET /api/items`): `parseItemQuery`'s defaults and clamping, the list filters taken as repeated params (character, slot, kind, location, root container), prop rules with an operator (at least, at most, exactly), every `applyItemQuery` filter (kind, slot, location, root, character, rarity and rarity-at-least, seenDays, slayer, nogarg, med, hideTags, a prop rule incl. `EXTRA_COLS` keys) and sort (by prop column, by rarity ladder order), paging (offset/limit against `total`/`pieces`), group mode's JSON-safe shape and its stack and piece counts, `facetsOf` (including the places the Location filter's tree is built from), `rarityRank`, `rarityMax` (an item with no tier or one off the ladder counting as below every tier, an unknown ceiling ignored, a floor above the ceiling matching nothing), and `matchesItem` (an Organize rule's per-item checks, agreeing with `applyItemQuery` on every filter a rule keeps, its free text never matching location text). All `[fast]`.
+// `app/item-query.mts` (the pure item-list filtering/sorting/paging/faceting shared by the browser and the server's `GET /api/items`): `parseItemQuery`'s defaults and clamping, the list filters taken as repeated params (character, slot, kind, location, root container), prop rules with an operator (at least, at most, exactly), every `applyItemQuery` filter (kind, slot, location, root, character, rarity and rarity-at-least, seenDays, slayer, nogarg, med, hideTags, a prop rule incl. `EXTRA_COLS` keys) and sort (by prop column, by rarity ladder order), paging (offset/limit against `total`/`pieces`), group mode's JSON-safe shape and its stack and piece counts, `facetsOf` (including the places the Location filter's tree is built from), `rarityRank` (a Reforged tier with its base tier, eight tiers in both shipped ladders), `rarityMax` (an item with no tier or one off the ladder counting as below every tier, an unknown ceiling ignored, a floor above the ceiling matching nothing), and `matchesItem` (an Organize rule's per-item checks, agreeing with `applyItemQuery` on every filter a rule keeps, its free text never matching location text). All `[fast]`.
 //
 // applyItemQuery's predicate and sort keep parity with what the Inventory screen used to do on its own. Hand-built fixture items (no scan files, no server) keep this fast and pure.
 import { test } from "node:test";
+import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import { EXTRA_COLS, colVal, rarityRank, parseItemQuery, applyItemQuery, facetsOf, matchesItem } from "./item-query.mts";
 import type { ItemQueryRows, ItemQueryGroups, RuleQuery } from "./item-query.mts";
 import { KINDS, flagLabel, flagKeys } from "./vault-lib.mts";
 import type { Item } from "./vault-lib.mts";
+import type { RulesV1RarityItem } from "./schema/types.d.mts";
 
 const NOW = Date.parse("2026-09-16T00:00:00Z");
 const daysAgo = (n: number) => new Date(NOW - n * 864e5).toISOString();
@@ -257,7 +259,8 @@ test("[fast] applyItemQuery: rarityMax keeps that tier, the tiers below it and i
   assert.deepEqual(rows(`${max("Greater Artifact")}&rarityMin=${encodeURIComponent("Lesser Artifact")}`), ["Composite Bow", "Silver Katana", "Vile Ring"], "a band");
   assert.deepEqual(rows(`${max("Lesser Artifact")}&rarityMin=${encodeURIComponent("Greater Artifact")}`), [], "a floor above the ceiling matches nothing");
   assert.equal(rows(max("Not A Tier")).length, ITEMS.filter((i) => i.kind === "gear").length, "an unknown ceiling filters nothing");
-  assert.deepEqual(rows(max("Minor Magic Item"), [mk({ name: "Reforged Blade", rarity: "Reforged Lesser Artifact" })]), ["Reforged Blade"], "a tier off the ladder ranks with no tier");
+  assert.deepEqual(rows(max("Minor Magic Item"), [mk({ name: "Odd Blade", rarity: "Mythic Relic" })]), ["Odd Blade"], "a tier off the ladder ranks with no tier");
+  assert.deepEqual(rows(max("Minor Magic Item"), [mk({ name: "Reforged Blade", rarity: "Reforged Lesser Artifact" })]), [], "a Reforged tier ranks with its base tier");
 });
 
 test("[fast] parseItemQuery reads rarityMax", () => {
@@ -349,6 +352,19 @@ test("[fast] rarityRank: known names rank in ladder order, unknown → 0", () =>
   assert.equal(rarityRank(RARITY_LADDER, "Not A Real Tier"), 0);
   assert.equal(rarityRank(RARITY_LADDER, null), 0);
   assert.equal(rarityRank([], "Minor Magic Item"), 0);
+});
+
+test("[fast] rarityRank: a Reforged tier ranks with its base tier, and both shipped ladders have eight tiers (issue #262)", () => {
+  assert.equal(rarityRank(RARITY_LADDER, "Reforged Lesser Artifact"), rarityRank(RARITY_LADDER, "Lesser Artifact"));
+  assert.equal(rarityRank(RARITY_LADDER, "reforged  legendary artifact"), 5, "case-insensitive, any spacing");
+  assert.equal(rarityRank(RARITY_LADDER, "Reforged"), 0, "the word alone is no tier");
+  assert.equal(rarityRank(RARITY_LADDER, "Lesser Artifact Reforged"), 0, "only a leading Reforged");
+  for (const shard of ["uoalive", "generic-osi"]) {
+    const ladder = (JSON.parse(readFileSync(new URL(`./rules/${shard}.json`, import.meta.url), "utf8")) as { rarity: RulesV1RarityItem[] }).rarity;
+    assert.equal(ladder.length, 8, shard);
+    assert.equal(rarityRank(ladder, "Minor Magic Item"), 1, shard);
+    assert.equal(rarityRank(ladder, "Reforged Legendary Artifact"), 8, shard);
+  }
 });
 
 // Issue #182: yes/no properties ("Spell Channeling") as a filter. Only real item properties are offered: slayers have the
