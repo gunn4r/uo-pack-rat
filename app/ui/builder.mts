@@ -595,7 +595,9 @@ function poolSection(): HTMLElement {
       box("div", { class: "b-chips" }, weaponChip(), mustHaveChip(), listChip("b-locked", "Locked slots", () => p.lockedSlots!, (v) => { p.lockedSlots = v; }, () => GEAR_SLOTS.map((s) => ({ value: s, label: slotLabel(s) })), false),
         tagsChip(), listChip("b-exskills", "Forbid skill bonuses", () => p.excludeSkills!, (v) => { p.excludeSkills = v; },
           () => [...new Set([...(state.facets?.gearSkills || []), ...p.excludeSkills!])].sort().map((sk) => ({ value: sk, label: sk[0]!.toUpperCase() + sk.slice(1) })), true),
-        listChip("b-exroots", "Skip containers", () => p.excludeRoots!.map(String), (v) => { p.excludeRoots = v.map((x) => (Number.isFinite(Number(x)) ? Number(x) : x)); }, rootOptions, true)),
+        listChip("b-exroots", "Skip containers", () => p.excludeRoots!.map(String), (v) => { p.excludeRoots = v.map((x) => (Number.isFinite(Number(x)) ? Number(x) : x)); }, rootOptions, true),
+        // issue #12: only pieces under these root containers (kept only when it lists any); Skip containers still applies
+        listChip("b-onlyroots", "Only containers", () => (p.onlyRoots || []).map(String), (v) => { if (v.length) p.onlyRoots = v.map(Number); else delete p.onlyRoots; }, rootOptions, true)),
     ];
   } });
 }

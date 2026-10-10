@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import http from "node:http";
 import { isBoundedInt, isBoundedString, short } from "../../guards.mts";
 import { optionalSlotsFor } from "../../mip.mts";
-import { preBuildDiagnostics, weaponFlagDiagnostics, type Diagnostic, type DiagnosticsProfile } from "../../diagnostics.mts";
+import { onlyRootsDiagnostics, preBuildDiagnostics, weaponFlagDiagnostics, type Diagnostic, type DiagnosticsProfile } from "../../diagnostics.mts";
 import { readBody } from "../../read-body.mts";
 import { runKey, reusableRun, runSummary, manualRun, type RunOpts, type SavedRun } from "../../runs-lib.mts";
 import { OPTS_LIMITS, RUN_DEFAULTS, runSettingsError, type RunSettings } from "../../run-settings.mts";
@@ -165,7 +165,7 @@ export function routes(ctx: ServerContext): Route[] {
       // pool settings: held to the one rule a manual run's settings are (app/run-settings.mts).
       const badSettings = runSettingsError(meta.settings, "meta.settings") || runSettingsError(settings, "settings");
       if (badSettings) return send(res, 400, { ok: false, error: badSettings });
-      let skipped: Record<string, number> = {}, blocked: string[] = [], poolDiagnostics: Diagnostic[] = [], mustHave: string[] | undefined;
+      let skipped: Record<string, number> = {}, blocked: string[] = [], poolDiagnostics: Diagnostic[] = [], mustHave: string[] | undefined, only: number[] | undefined;
       // The by-character form: the caller sends {character, settings} instead of building pools/current
       // itself, and the server runs buildPools() against the cached inventory — the same function and
       // the same defaults the page's own optimizerProfile() uses (ui/builder.mts), so a request built
@@ -196,19 +196,25 @@ export function routes(ctx: ServerContext): Route[] {
         // runSettingsError checked every field of `s` above. What it leaves out takes the build spec's default
         // (app/build-spec.mts poolFromSpec, as planBuild), as the page and build_suit do: a missing strLimit is the character's STR, else 125.
         const pool = poolFromSpec(specFromRunSettings(s as RunSettings), who ? inv.characters[who] as Character : null);
-        const { allowOthersWorn, strLimit, excludeTags, excludeRoots, allowGargoyle, medOnly, excludeWeapons, ubwsAnyWeapon, excludeSkills, lockedSlots, weaponMustHave } = pool;
+        const { allowOthersWorn, strLimit, excludeTags, excludeRoots, onlyRoots, allowGargoyle, medOnly, excludeWeapons, ubwsAnyWeapon, excludeSkills, lockedSlots, weaponMustHave } = pool;
         const pins = (pinned || {}) as Record<string, number>;
         const badPin = manualSuitError(inv, pins, "pinned");
         if (badPin) return send(res, 400, { ok: false, error: badPin });
         // a fill keeps the placed pieces in place of the locked slots: they are the only slots that keep their piece
         const keep = fill ? Object.keys(pins) : lockedSlots;
-        const built = buildPools(inv, who || null, { allowOthersWorn: allowOthersWorn && !!character, strength: strLimit, excludeTags, excludeRoots, excludeGargoyle: !allowGargoyle, medOnly, excludeWeapons, ubwsAnyWeapon, excludeSkills, weaponMustHave, lockedSlots: fill ? [] : lockedSlots, ...(fill ? { pinned: pins } : {}) });
+        const poolOpts = { allowOthersWorn: allowOthersWorn && !!character, strength: strLimit, excludeTags, excludeRoots, excludeGargoyle: !allowGargoyle, medOnly, excludeWeapons, ubwsAnyWeapon, excludeSkills, weaponMustHave, lockedSlots: fill ? [] : lockedSlots, ...(fill ? { pinned: pins } : {}) };
+        const built = buildPools(inv, who || null, { ...poolOpts, onlyRoots });
         pools = built.pools; current = built.current; blocked = built.blocked;
         // the weapon properties the build requires: a locked weapon without them, or no weapon with them (app/diagnostics.mts)
-        mustHave = weaponMustHave;
+        mustHave = weaponMustHave; only = onlyRoots;
         if (built.weaponFlags && weaponMustHave) {
           const kept = built.weaponFlags.kept.map((slot) => { const it = inv.items[built.current[slot]!.serial]!; return { slot, name: it.name, missing: missingFlags(it, weaponMustHave) }; });
           poolDiagnostics = weaponFlagDiagnostics(weaponMustHave, kept, built.weaponFlags.none);
+        }
+        // the slots Only containers leaves with nothing from a container, though the other containers hold a piece for them
+        if (onlyRoots?.length) {
+          const wide = buildPools(inv, who || null, poolOpts), stored = (list: OptItem[] | undefined): boolean => (list || []).some((o) => inv.items[o.serial]?.root != null);
+          poolDiagnostics.push(...onlyRootsDiagnostics(GEAR_SLOTS.filter((sl) => !keep.includes(sl) && stored(wide.pools[sl]) && !stored(built.pools[sl]))));
         }
         skipped = Object.fromEntries(Object.entries(built.skipped).map(([k, v]) => [k, v.length]));
         for (const slot of blocked) delete current[slot];       // a worn piece the filters now rule out must not stay "current"
@@ -238,7 +244,7 @@ export function routes(ctx: ServerContext): Route[] {
       const { hardFloors } = profile as { hardFloors?: unknown };
       if (hardFloors != null && (!Array.isArray(hardFloors) || hardFloors.some((k) => !isBoundedString(k, 64)))) return send(res, 400, { ok: false, error: "profile.hardFloors must be an array of property names" });
       const fullOpts = Object.assign({ seed: RUN_DEFAULTS.seed, restarts: RUN_DEFAULTS.restarts }, opts as RunOpts);
-      const key = runKey({ pools, current, profile, opts: fullOpts, weaponMustHave: mustHave });
+      const key = runKey({ pools, current, profile, opts: fullOpts, weaponMustHave: mustHave, onlyRoots: only });
       const runs = runStore.all();
       const hit = fill ? null : reusableRun(runs, key, fullOpts as { timeBudgetMs?: number });
       // §11c: warn (not block) once the candidate pool is large enough that the exact solver can

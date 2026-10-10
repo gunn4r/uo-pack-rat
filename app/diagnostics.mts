@@ -80,6 +80,12 @@ export function weaponFlagDiagnostics(required: string[], kept: Array<{ slot: st
   return out;
 }
 
+// only_containers_empty (info, issue #12): the slots the Only containers list (pool `onlyRoots`) leaves with no piece from a container, though another container holds one; a worn piece may still fill them. No action.
+export function onlyRootsDiagnostics(slots: string[]): Diagnostic[] {
+  if (!slots.length) return [];
+  return [{ code: "only_containers_empty", level: "info", message: `Your Only containers hold nothing for ${andList(slots.map((s) => SLOT_LABELS[s] || s))}, so the suit takes nothing from them there.`, values: { slots: slots.length }, actions: [] }];
+}
+
 // Every diagnostic for a finished build: the floor ones, then floors_conflict for each hard floor the suit misses though one suit could reach it on its own. With `floorsConflict` set the exact search proved no suit meets them all; without it (a timeout that left only the heuristic's suit) the sentence says only that none was found in time. Warnings first.
 export function resultDiagnostics(input: ResultDiagnosticsInput): Diagnostic[] {
   const { profile, result } = input, after = obj(result.totals?.after), hard = hardOf(profile);

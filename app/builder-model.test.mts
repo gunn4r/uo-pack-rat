@@ -52,6 +52,7 @@ test("[fast] builder model: the candidate pool summary says what is in and out",
   assert.equal(poolSummary({}), "Own gear and unworn gear · no gargoyle-only · any weapon");
   assert.equal(poolSummary({ allowOthersWorn: true, allowGargoyle: true, medOnly: true, excludeWeapons: ["swordsmanship", "fencing", "mace fighting", "throwing"], lockedSlots: ["ring"], excludeTags: ["cursed"], excludeSkills: ["necromancy", "spirit speak"], excludeRoots: [1, 2] }),
     "Includes gear worn by others · gargoyle-only allowed · meditation-safe only · archery weapons only · 1 slot locked · no cursed · 2 skill bonuses forbidden · 2 containers skipped");
+  assert.equal(poolSummary({ onlyRoots: [1, 2], excludeRoots: [3] }), "Own gear and unworn gear · no gargoyle-only · any weapon · 2 containers only · 1 container skipped");
 });
 
 test("[fast] builder model: the Weapons chip and summary say the exclusions in words", () => {

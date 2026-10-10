@@ -115,6 +115,8 @@ async function planProfile(ctx: ToolContext, inv: InventoryDoc, name: string | n
     Object.assign(p, templateSettings(t), { template: args.template });
   }
   // a rarity preference: "any" clears the profile's (or template's), and none named keeps it
+  // Only containers (issue #12): a list replaces the profile's, an empty one clears it, none named keeps it
+  if (Array.isArray(args.onlyContainers)) { if (args.onlyContainers.length) p.onlyRoots = [...args.onlyContainers as number[]]; else delete p.onlyRoots; }
   if (args.rarity === "any") delete p.rarity;
   else if (args.rarity === "higher" || args.rarity === "lower") p.rarity = args.rarity;
   const saved = name ? characterBuffs(profiles, name) : { on: characterBuffs(profiles, NOBODY).on, skills: prefs.manualBuffSkills || {} };
@@ -471,6 +473,7 @@ export const TOOLS: Tool[] = [
       timeBudgetSeconds: { type: "integer", minimum: 1, maximum: 3600, description: "How long the exact search may take, 60 by default." },
       otherSuits: { type: "integer", minimum: 0, maximum: 20, description: "Also list this many next-best suits (0 by default)." },
       rarity: { type: "string", enum: ["higher", "any", "lower"], description: "Among equally good suits, prefer higher- or lower-rarity pieces; requirements always come first. \"any\" clears the profile's or template's preference; left out, it is kept." },
+      onlyContainers: { type: "array", maxItems: 200, items: SERIAL, description: "Build only from pieces in these root containers (a house's ground containers, a bank box, a backpack), by serial, and from worn pieces as usual. Replaces the profile's Only containers list; [] clears it; left out, it is kept." },
       waitSeconds: { type: "integer", minimum: 0, maximum: WAIT_MAX, description: `How long to wait for the result, ${WAIT_DEFAULT} seconds by default, ${WAIT_MAX} at most; then poll get_suit_build.` },
     } },
     annotations: { title: "Build a suit", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
