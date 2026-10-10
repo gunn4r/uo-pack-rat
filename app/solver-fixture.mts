@@ -14,7 +14,7 @@ import { buffSkillValues, plannedProfile } from "./buffs.mts";
 import type { ScanV2 } from "./schema/types.d.mts";
 import { corePath } from "./config.mts";
 import { solveExact, type OptPools, type OptAssignment, type OptProfile } from "./exact-solver.mts";
-import { DEFAULT_SLOTS } from "./mip.mts";
+import { DEFAULT_SLOTS, withReachableResistSteps } from "./mip.mts";
 import type * as Core from "../scripts/optimizer-core.mts";
 
 // solveExact's own `opts` field type (the core's real OptOptions, derived rather than restated —
@@ -57,7 +57,9 @@ export const templateNames = ["melee", "caster", "archer", "tank"];
 export function cell(profileName: string, { soft = [], overrides = {}, buffs = [] }: { soft?: string[] | undefined; overrides?: Partial<Template> | undefined; buffs?: string[] | undefined } = {}): { pools: OptPools; current: OptAssignment; profile: OptProfile } {
   const template = defaultProfiles.templates![profileName]!;
   const p = { ...template, softFloors: [...soft], ...overrides }, c = inv.characters.Fixture!;
-  const profile = plannedProfile(p, c, buffs.length ? { on: buffs, skills: buffSkillValues(c.skills || {}, {}).values, stats: null, who: {}, worn: {} } : null);
+  const planned = plannedProfile(p, c, buffs.length ? { on: buffs, skills: buffSkillValues(c.skills || {}, {}).values, stats: null, who: {}, worn: {} } : null);
+  // the Resisting Spells steps the pool reaches, as the server keeps them (app/http/routes/optimize.mts)
+  const profile = withReachableResistSteps(planned, fixturePools, fixtureCurrent);
   return { pools: fixturePools as unknown as OptPools, current: fixtureCurrent as unknown as OptAssignment, profile };
 }
 

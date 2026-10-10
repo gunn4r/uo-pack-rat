@@ -45,7 +45,8 @@ export interface RunKeyInput {
 // 6: every result carries `diagnostics` (app/diagnostics.mts), so a run saved before it is not reused without them.
 // 7: SSI can be scored by swing step (app/swing.mts), weapons carry their speed, and a result carries its `swing`.
 // 8: Resisting Spells is a minimum under each resist (`mins`), not a bonus taken off the resist caps and floors (#261).
-export const SOLVER_VERSION = 8;
+// 9: a suit's own Resisting Spells bonus lifts that minimum (`resistSteps`, #265).
+export const SOLVER_VERSION = 9;
 // The first SOLVER_VERSION whose saved diagnostics are in the player's terms as the page shows them now: before 8 a
 // resist's numbers counted the Resisting Spells bonus (#261), so an older run's are dropped when read and it falls back
 // as a run saved before diagnostics does.

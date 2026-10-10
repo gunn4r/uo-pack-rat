@@ -2,7 +2,7 @@
 import { randomUUID } from "node:crypto";
 import http from "node:http";
 import { isBoundedInt, isBoundedString, short } from "../../guards.mts";
-import { optionalSlotsFor } from "../../mip.mts";
+import { optionalSlotsFor, withReachableResistSteps } from "../../mip.mts";
 import { preBuildDiagnostics, weaponFlagDiagnostics, type Diagnostic, type DiagnosticsProfile } from "../../diagnostics.mts";
 import { readBody } from "../../read-body.mts";
 import { runKey, reusableRun, runSummary, manualRun, type RunOpts, type SavedRun } from "../../runs-lib.mts";
@@ -15,7 +15,7 @@ import type { Job } from "../../services/jobs.mts";
 import { isManualSuit } from "../../store/ui-prefs.mts";
 import { rarityRank } from "../../item-query.mts";
 import type { RulesV1RarityItem } from "../../schema/types.d.mts";
-import { GEAR_SLOTS, NOBODY, RARITY_PREFERENCES, buildPools, getRules, missingFlags, toOptItem, type Character, type Inventory, type Item, type OptItem, type Profile, type RarityPreference, type RunBuffs } from "../../vault-lib.mts";
+import { GEAR_SLOTS, NOBODY, RARITY_PREFERENCES, buildPools, getRules, missingFlags, toOptItem, type Character, type Inventory, type Item, type OptItem, type Profile, type RarityPreference, type ResistStep, type RunBuffs } from "../../vault-lib.mts";
 import { characterProfile, poolFromSpec, specFromRunSettings } from "../../build-spec.mts";
 import { send, asObject, SSE_HEADERS } from "../respond.mts";
 import { NEXT, type Route } from "../router.mts";
@@ -237,7 +237,11 @@ export function routes(ctx: ServerContext): Route[] {
       if (!profile || typeof profile !== "object" || Array.isArray(profile)) return send(res, 400, { ok: false, error: "profile required" });
       const { hardFloors } = profile as { hardFloors?: unknown };
       if (hardFloors != null && (!Array.isArray(hardFloors) || hardFloors.some((k) => !isBoundedString(k, 64)))) return send(res, 400, { ok: false, error: "profile.hardFloors must be an array of property names" });
+      const { resistSteps } = profile as { resistSteps?: unknown };
+      if (resistSteps != null && (!Array.isArray(resistSteps) || resistSteps.some((st) => !st || typeof st !== "object" || typeof st.at !== "number" || !st.mins || typeof st.mins !== "object"))) return send(res, 400, { ok: false, error: "profile.resistSteps must be an array of {at, mins}" });
       const fullOpts = Object.assign({ seed: RUN_DEFAULTS.seed, restarts: RUN_DEFAULTS.restarts }, opts as RunOpts);
+      // only the Resisting Spells steps this pool reaches, before the key: a pool without such pieces keys as before them
+      profile = withReachableResistSteps(profile as { resistSteps?: ResistStep[] }, pools as Partial<Record<string, OptItem[]>>, current as Partial<Record<string, OptItem | null>>, fullOpts.optionalSlots as string[] | undefined);
       const key = runKey({ pools, current, profile, opts: fullOpts, weaponMustHave: mustHave });
       const runs = runStore.all();
       const hit = fill ? null : reusableRun(runs, key, fullOpts as { timeBudgetMs?: number });

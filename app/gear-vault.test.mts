@@ -10,7 +10,7 @@ import { createHash } from "node:crypto";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 import {
-  parseTooltip, displayName, gameName, compareNames, classify, foldSnapshots, spellSchoolOf, buildPools, requirementReport, totalsOf, propertyKeys, bagLabel, capacityOf, NOT_BUILDER_KEYS, kindOf, groupByName, slayersOf, medableOf, weaponAllowed, settingsDiff, PROP_LABELS, LAYER_TO_SLOT, LAYER_ALIASES, effectiveProfile, resistMinimum, minResistAt, paperdollResist, toOptItem, labelOf, builderKeys, migrateProfiles, templateFrom, TEMPLATE_KEYS, setRules, getRules, tagUnits, tagInfo,
+  parseTooltip, displayName, gameName, compareNames, classify, foldSnapshots, spellSchoolOf, buildPools, requirementReport, totalsOf, propertyKeys, bagLabel, capacityOf, NOT_BUILDER_KEYS, kindOf, groupByName, slayersOf, medableOf, weaponAllowed, settingsDiff, PROP_LABELS, LAYER_TO_SLOT, LAYER_ALIASES, effectiveProfile, resistMinimum, minResistAt, paperdollResist, skillInSuit, resistStepsFor, liftedMin, RESIST_SKILL_KEY, RESIST_KEYS, toOptItem, labelOf, builderKeys, migrateProfiles, templateFrom, TEMPLATE_KEYS, setRules, getRules, tagUnits, tagInfo,
   WEAPON_SKILLS, WEAPON_EXCLUDES, migrateWeaponSetting, excludeWeaponsError, weaponSkillsOf, weaponHasFlags, weaponMustHaveError, BOOLEAN_FLAGS,
   shardResistCap, resistCapsFor, resistCapsError, profileResistCaps, RESIST_CAP_LIMITS,
 } from "./vault-lib.mts";
@@ -20,6 +20,7 @@ import { upgradeScan, TAZUO_V1_CAPS } from "./scan-schema.mts";
 import { runKey, reusableRun, runSummary, suitPieces, SOLVER_VERSION } from "./runs-lib.mts";
 import type { SavedRun } from "./runs-lib.mts";
 import { migrate } from "./migrate.mts";
+import { minimumWith } from "./buffs.mts";
 // A run as the runs store reads it (app/migrate.mts, the runs steps).
 const normalizeRun = (run: SavedRun): SavedRun => migrate("runs", run).doc as SavedRun;
 import { corePath } from "./config.mts";
@@ -1231,6 +1232,42 @@ test("[fast] the Resisting Spells minimum: the ServUO formula against the shard 
   const [row] = requirementReport({ fireResist: 0 }, { floors: { fireResist: 40 }, mins: { fireResist: 40 } });
   assert.equal(row!.met, true);
   assert.equal(requirementReport({ fireResist: 39 }, { floors: { fireResist: 41 }, mins: { fireResist: 40 } })[0]!.met, false);
+});
+
+// Issue #265: a suit's own Resisting Spells bonus lifts the minimum, up to the skill's cap (ServUO Skill.Value: an item
+// bonus obeys the cap, Protection's loss comes off first and ignores it), and the solvers read it as steps.
+test("[fast] the Resisting Spells minimum in a suit: the bonus up to the cap, Protection first, and the steps the solvers read", () => {
+  const rs = (value: number, cap?: number): Record<string, unknown> => ({ "Resisting Spells": { base: value, value, ...(cap != null ? { cap } : {}) } });
+  assert.equal(skillInSuit(90, 15, 100), 100, "the bonus stops at the cap");
+  assert.equal(skillInSuit(100, 15, 100), 100, "and adds nothing to a skill at its cap");
+  assert.equal(skillInSuit(100, 15, 100, -25), 90, "Protection's −25 first (75), then the bonus up to the cap");
+  assert.equal(skillInSuit(100, 30, null), 120, "no cap known: SKILL_CAP_TOP");
+  assert.equal(skillInSuit(30, 5, 100, -35), 5, "a loss past 0 stops at 0");
+  assert.equal(resistMinimum(rs(99.9, 120), 0.1), 40, "99.9 + 0.1: fixed 1000");
+  assert.equal(resistMinimum(rs(99.9, 120)), 39, "99.9: (999 − 400) / 15");
+  assert.equal(resistMinimum(rs(100, 100), 15), 40, "at its cap the bonus does nothing");
+  assert.equal(resistMinimum(rs(95, 100), 15), 40, "95 + 15 stops at 100");
+  assert.equal(resistMinimum(rs(39, 100), 1), 0, "a bonus can bring a minimum where there was none");
+  assert.equal(minimumWith({ skill: 100, bonus: 15, cap: 100 }, ["protection"], { Inscription: 0 }), 26, "Protection −35 (65), +15 (80): (800 − 400) / 15");
+  // the steps: the least bonus, in tenths, for each higher minimum, until the skill reaches its cap
+  const steps = resistStepsFor(99.9, 120, 0, () => 0);
+  assert.deepEqual(steps.slice(0, 2), [{ at: 0.1, mins: Object.fromEntries(RESIST_KEYS.map((k) => [k, 40])) }, { at: 5.1, mins: Object.fromEntries(RESIST_KEYS.map((k) => [k, 41])) }]);
+  assert.deepEqual(steps.map((s) => s.mins.fireResist), [40, 41, 42, 43, 44], "up to 120: 44");
+  assert.equal(steps.at(-1)!.at, 20.1);
+  assert.deepEqual(resistStepsFor(100, 100, 0, () => 0), [], "a skill at its cap: no step");
+  assert.deepEqual(resistStepsFor(38, 100, 0, () => 0)[0]!.at, 2, "from no minimum: 40 needs +2");
+  assert.deepEqual(resistStepsFor(100, 100, -25, (k) => (k === "physResist" ? 15 : 0)).map((s) => [s.at, s.mins.physResist, s.mins.fireResist]).slice(0, 2), [[1, 9, 24], [2.5, 10, 25]], "with Protection's −25: from 75 (a minimum of 23), a resist's share off each");
+  // a suit's min: the highest step its bonus reaches (less the 0.05 slack), else the profile's own
+  const prof = { mins: { fireResist: 39 }, resistSteps: steps };
+  assert.deepEqual([0, 0.04, 0.1, 5, 5.1, 40].map((b) => liftedMin(prof, "fireResist", b)), [39, 39, 40, 40, 41, 44]);
+  assert.equal(liftedMin({ resistSteps: resistStepsFor(38, 100, 0, () => 0) }, "fireResist", 1), null, "under the first step with no minimum of its own: none");
+  // requirementReport reads a resist at the suit's own min
+  assert.equal(requirementReport({ fireResist: 20, [RESIST_SKILL_KEY]: 0.1 }, { floors: { fireResist: 40 }, ...prof })[0]!.met, true);
+  assert.equal(requirementReport({ fireResist: 20 }, { floors: { fireResist: 40 }, ...prof })[0]!.met, false);
+  // effectiveProfile carries the steps for the character's skill and cap
+  assert.deepEqual(effectiveProfile({}, { skills: rs(99.9, 120) } as never).resistSteps, steps);
+  assert.equal(effectiveProfile({}, { skills: rs(100, 100) } as never).resistSteps, undefined, "none at the cap");
+  assert.equal(effectiveProfile({}, null).resistSteps, undefined);
 });
 
 test("[fast] resist cap overrides: effectiveProfile values a resist up to the player's cap, paperdoll terms, and a floor counts up to it", () => {
