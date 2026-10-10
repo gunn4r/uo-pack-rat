@@ -5,7 +5,7 @@
 // layout that width shows (a collapsed sidebar, facet chips folded into "+ Filter" below 1180 px). An assertion
 // only reachable above the real width is skipped with that reason, and still runs where the screen allows.
 import { spawn } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Readable } from "node:stream";
@@ -118,4 +118,11 @@ export function noUpdateCheck(dataDir: string): string {
   try { doc = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>; } catch { /* none yet: the app's own default */ }
   writeFileSync(file, JSON.stringify({ ...doc, autoUpdateCheck: false }));
   return dataDir;
+}
+
+/** The complete lines of a JSONL file another process is appending to: a missing file or a line still being written (no newline yet) is left out, so every line returned parses. */
+export function completeLines(file: string): string[] {
+  if (!existsSync(file)) return [];
+  const text = readFileSync(file, "utf8");
+  return text.slice(0, text.lastIndexOf("\n") + 1).split("\n").filter(Boolean);
 }
