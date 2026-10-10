@@ -63,6 +63,8 @@ test("[fast] run settings: one refused field of each kind, named with its label"
     [{ budgetMs: "300", exact: false }, "meta.settings.budgetMs must be a whole number from 0 to 3600000"],
     [{ excludeTags: [5] }, "meta.settings.excludeTags must be a list of names"],
     [{ race: "orc" }, "meta.settings.race must be human, elf or gargoyle"],
+    [{ onlyRoots: ["bank"] }, "meta.settings.onlyRoots must be a list of container serials"],
+    [{ onlyRoots: Array(201).fill(1) }, "meta.settings.onlyRoots must be a list of container serials"],
     [{ excludeWeapons: ["bows"] }, null],
     [{ resistCaps: { fireResist: 900 } }, null],
     [{ buffs: { on: ["noSuchBuff"], skills: {} } }, "meta.settings.buffs must list known buffs, each once and one form at most, with their numbers in range"],
@@ -75,6 +77,7 @@ test("[fast] run settings: one refused field of each kind, named with its label"
     else assert.ok(e.startsWith("meta.settings."), e);
   }
   assert.equal(runSettingsError({ excludeTags: [5] }, "settings"), "settings.excludeTags must be a list of names", "the label is the caller's");
+  assert.equal(runSettingsError({ onlyRoots: [0x40001234] }, "settings"), null, "container serials pass");
 });
 
 test("[fast] run settings: a null field means the default, and so does no settings at all", () => {

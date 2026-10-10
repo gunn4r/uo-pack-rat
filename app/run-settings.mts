@@ -62,6 +62,8 @@ export function runSettingsError(settings: unknown, label: string): string | nul
     }
     else if (LISTS.includes(k)) {
       if (!Array.isArray(v) || v.length > 200 || v.some((x) => !(isBoundedString(x, 64) || (k === "excludeRoots" && isBoundedInt(x, 0, MAX_SERIAL))))) return `${label}.${k} must be a list of names`;
+    } else if (k === "onlyRoots") {
+      if (!Array.isArray(v) || v.length > 200 || v.some((x) => !isBoundedInt(x, 0, MAX_SERIAL))) return `${label}.onlyRoots must be a list of container serials`;
     } else if (k === "race") { if (!RACES.includes(v as string)) return `${label}.race must be human, elf or gargoyle`; }
     else if (k === "excludeWeapons") { const e = excludeWeaponsError(v, `${label}.excludeWeapons`); if (e) return e; }
     else if (k === "weaponMustHave") { const e = weaponMustHaveError(v, `${label}.weaponMustHave`); if (e) return e; }

@@ -64,7 +64,7 @@ export function requirementsSummary(floors: Record<string, number> = {}, soft: s
   }).join(" · ");
 }
 export interface PoolSettings { allowOthersWorn?: boolean | undefined; allowGargoyle?: boolean | undefined; medOnly?: boolean | undefined; excludeWeapons?: string[] | undefined; ubwsAnyWeapon?: boolean | undefined; weaponMustHave?: string[] | undefined;
-  lockedSlots?: string[] | undefined; excludeTags?: string[] | undefined; excludeSkills?: string[] | undefined; excludeRoots?: unknown[] | undefined; rarity?: string | undefined }
+  lockedSlots?: string[] | undefined; excludeTags?: string[] | undefined; excludeSkills?: string[] | undefined; excludeRoots?: unknown[] | undefined; onlyRoots?: unknown[] | undefined; rarity?: string | undefined }
 // The Rarity setting's help line: none for "any".
 export function rarityHelp(rarity: string | undefined): string {
   return rarity ? `Among equally good suits, use the ${rarity === "higher" ? "highest" : "lowest"}-rarity pieces. Requirements come first.` : "";
@@ -80,6 +80,12 @@ export function rarityDetail(tb: TieBreakResult, total: number): string {
   const most = tb.rarity === "higher" ? "highest" : "lowest";
   return `${most[0]!.toUpperCase()}${most.slice(1)}-rarity pieces among equal suits · rarity total ${total.toLocaleString("en-US")}${tb.costProven ? "" : ` (the ${most} found, not proven)`}`;
 }
+// The Only containers chip's options (issue #12): the root containers, then any listed serial that is no longer one (gone from
+// the scans, or set by hand), so it can still be unchecked.
+export function withStoredRoots(options: Array<{ value: string; label: string }>, stored: readonly number[] = []): Array<{ value: string; label: string }> {
+  const gone = stored.filter((v) => !options.some((o) => o.value === String(v)));
+  return [...options, ...gone.map((v) => ({ value: String(v), label: `Unknown container 0x${v.toString(16).toUpperCase()} (not in the scans)` }))];
+}
 // "Own gear and unworn gear · no gargoyle-only · any weapon"
 export function poolSummary(p: PoolSettings): string {
   return [
@@ -91,6 +97,7 @@ export function poolSummary(p: PoolSettings): string {
     p.lockedSlots?.length ? `${plural(p.lockedSlots.length, "slot")} locked` : "",
     p.excludeTags?.length ? `no ${p.excludeTags.join(", ")}` : "",
     p.excludeSkills?.length ? `${plural(p.excludeSkills.length, "skill bonus", "skill bonuses")} forbidden` : "",
+    p.onlyRoots?.length ? `${plural(p.onlyRoots.length, "container")} only` : "",
     p.excludeRoots?.length ? `${plural(p.excludeRoots.length, "container")} skipped` : "",
     p.rarity ? `prefer ${p.rarity} rarity` : "",
   ].filter(Boolean).join(" · ");

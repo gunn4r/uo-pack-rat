@@ -1,6 +1,6 @@
 // gear-vault.test.mts — `app/vault-lib.mts` (parser, classifier, fold, pools) and the optimizer core through the same loader the server uses.
 //
-// `app/vault-lib.mts`: tooltip parsing (property keys, tags, STR requirement, rarity, extras/flags, a set piece's full-set block kept out of its own props, a power scroll's level as `psLevel`, a Scroll of Transcendence's skill and points as `sotSkill` and `sotPoints` and its `displayName`), the shipped corpus (every `adapters/*/fixture.scan.json` plus both demo scans, parsed and classified the way the fold does it: no prop-carrying gear without a slot, every "... Arms" piece in the arms slot, every set piece's props equal to its lines above the set header, a worn piece taken off landing in its layer's slot, and named TazUO fixture pieces checked by slot and resist), graphic- and name-to-slot classification (with the golden table of issue #202: every layer case the research found, each checked by graphic and by name alone, and a spell scroll's graphic never gear whatever its name), snapshot folding (newest scan of a root wins, skipped roots keep their last contents, tombstones, character tombstones and the scans that outrank them, distinct location text for same-named containers, each container's `capacity` from its Contents line (`capacityOf`: a weight cap, no weight, separators, markup, singular words; null without a maximum or a line), null for a ground root scanned before root tooltips, and an engraved root named by its engraving), optimizer pool building (other characters' worn gear, with no character every worn piece unless asked for, STR gate, tag filter), requirement reports, the weapon exclusion filter and its migration, the weapon properties filter (`weaponMustHave`), `settingsDiff`, profile templates (`migrateProfiles` old → new shape and idempotence, `templateFrom` leaving race/STR out, drift via `settingsDiff`), saved-run keys and reuse (`runs-lib.mts`), plus the optimizer core through the same loader the server uses: exact search against brute force (a hand-built case and 150 random suits), the other-suits list against every brute-force score (80 random suits), progress reporting, and warm starts, every layer name an adapter's `capabilities.json` declares resolving to a slot, and Razor Enhanced's layer names (`LAYER_ALIASES`) classifying exactly as their TazUO equivalents (issue #219). Fixtures: `app/fixtures/demo-*.json` (synthetic fixtures, see `app/fixtures/README.md`).
+// `app/vault-lib.mts`: tooltip parsing (property keys, tags, STR requirement, rarity, extras/flags, a set piece's full-set block kept out of its own props, a power scroll's level as `psLevel`, a Scroll of Transcendence's skill and points as `sotSkill` and `sotPoints` and its `displayName`), the shipped corpus (every `adapters/*/fixture.scan.json` plus both demo scans, parsed and classified the way the fold does it: no prop-carrying gear without a slot, every "... Arms" piece in the arms slot, every set piece's props equal to its lines above the set header, a worn piece taken off landing in its layer's slot, and named TazUO fixture pieces checked by slot and resist), graphic- and name-to-slot classification (with the golden table of issue #202: every layer case the research found, each checked by graphic and by name alone, and a spell scroll's graphic never gear whatever its name), snapshot folding (newest scan of a root wins, skipped roots keep their last contents, tombstones, character tombstones and the scans that outrank them, distinct location text for same-named containers, each container's `capacity` from its Contents line (`capacityOf`: a weight cap, no weight, separators, markup, singular words; null without a maximum or a line), null for a ground root scanned before root tooltips, and an engraved root named by its engraving), optimizer pool building (other characters' worn gear, with no character every worn piece unless asked for, Only containers (`onlyRoots`: nested bags in, Skip containers after it, worn pieces by their own rule, an empty list no filter, and through the Organize overlay a piece moved into a listed container in and a carried one in no container out), STR gate, tag filter), requirement reports, the weapon exclusion filter and its migration, the weapon properties filter (`weaponMustHave`), `settingsDiff`, profile templates (`migrateProfiles` old → new shape and idempotence, `templateFrom` leaving race/STR out, drift via `settingsDiff`), saved-run keys and reuse (`runs-lib.mts`), plus the optimizer core through the same loader the server uses: exact search against brute force (a hand-built case and 150 random suits), the other-suits list against every brute-force score (80 random suits), progress reporting, and warm starts, every layer name an adapter's `capabilities.json` declares resolving to a slot, and Razor Enhanced's layer names (`LAYER_ALIASES`) classifying exactly as their TazUO equivalents (issue #219). Fixtures: `app/fixtures/demo-*.json` (synthetic fixtures, see `app/fixtures/README.md`).
 //
 // Tests that use the fixtures must sit below the `const kestrel = …` / `const dorran = …` lines that load them from app/fixtures/. The [slow] cases here are the 150/80-random-suit brute-force comparisons and the demo-inventory exact and warm-start checks.
 import { test } from "node:test";
@@ -17,6 +17,7 @@ import {
 import type { Item, Inventory, ItemLocation, ProfilesFile, CharacterEntryRaw } from "./vault-lib.mts";
 import { specFromProfile, templateSettings, type TemplateMap } from "./build-spec.mts";
 import { upgradeScan, TAZUO_V1_CAPS } from "./scan-schema.mts";
+import { overlaidInventory } from "./organize.mts";
 import { runKey, reusableRun, runSummary, suitPieces, SOLVER_VERSION } from "./runs-lib.mts";
 import type { SavedRun } from "./runs-lib.mts";
 import { migrate } from "./migrate.mts";
@@ -479,6 +480,50 @@ test("[fast] pools with no character (the builder's No character, issue #12): ev
   const all = buildPools(inv, null, { allowOthersWorn: true });
   const inAll = new Set(Object.values(all.pools).flat().map((i) => i!.serial));
   assert.ok(worn.some((it) => inAll.has(it.serial)), "worn pieces enter the pools");
+});
+
+test("[fast] pools with onlyRoots (Only containers, issue #12): only pieces under the listed roots, nested bags included; Skip containers still applies; worn pieces follow their own rule; an empty list narrows nothing", () => {
+  const inv = foldSnapshots([dorran, kestrel]);
+  const [kRoot, dRoot] = ["Kestrel", "Dorran"].map((who) => Object.values(inv.containers).find((c) => c.parent == null && c.scannedBy === who)!.serial) as [number, number];
+  const serials = (r: ReturnType<typeof buildPools>): Set<number> => new Set(Object.values(r.pools).flat().map((i) => i!.serial));
+  const all = buildPools(inv, "Kestrel");
+  // one of Kestrel's pooled container pieces moved into a bag inside her container: the fold gives a nested piece its root's serial
+  const bag = 0x40aa0001, nested = inv.items[[...serials(all)].find((s) => inv.items[s]!.root === kRoot)!]!;
+  inv.containers[bag] = { ...inv.containers[kRoot]!, serial: bag, parent: kRoot, root: kRoot };
+  nested.container = bag;
+  const only = buildPools(inv, "Kestrel", { onlyRoots: [kRoot] });
+  assert.ok(serials(only).has(nested.serial), "a piece in a bag inside the listed root is a candidate");
+  const fromDorran = [...serials(all)].filter((s) => inv.items[s]!.root === dRoot);
+  assert.ok(fromDorran.length > 0);
+  for (const s of fromDorran) assert.ok(!serials(only).has(s) && only.skipped.roots.some((it) => it.serial === s), `${s} skipped as outside the list`);
+  for (const s of serials(only)) assert.ok(inv.items[s]!.root === kRoot || inv.items[s]!.equippedBy === "Kestrel", `${s} is in the listed root or worn`);
+  const worn = Object.values(inv.items).filter((i) => i.equippedBy === "Kestrel" && i.gear && i.slot && serials(all).has(i.serial));
+  assert.ok(worn.length > 0 && worn.every((it) => serials(only).has(it.serial)), "Kestrel's own worn pieces stay candidates");
+  assert.deepEqual(only.current, all.current);
+  // others' worn pieces still come in only with allowOthersWorn
+  const dorranWorn = Object.values(inv.items).filter((i) => i.equippedBy === "Dorran" && i.gear && i.slot).map((i) => i.serial);
+  assert.ok(!dorranWorn.some((s) => serials(only).has(s)));
+  assert.ok(dorranWorn.some((s) => serials(buildPools(inv, "Kestrel", { onlyRoots: [kRoot], allowOthersWorn: true })).has(s)));
+  // the only-list first, then Skip containers: a root in both is skipped
+  const both = buildPools(inv, "Kestrel", { onlyRoots: [kRoot], excludeRoots: [kRoot] });
+  assert.ok([...serials(both)].every((s) => inv.items[s]!.equippedBy === "Kestrel"), "nothing from a container is left");
+  assert.deepEqual(serials(buildPools(inv, "Kestrel", { onlyRoots: [] })), serials(all), "an empty list is no filter");
+  // with no character: exactly nobody's pieces in the listed root
+  assert.deepEqual(serials(buildPools(inv, null, { onlyRoots: [dRoot] })), new Set([...serials(buildPools(inv, null))].filter((s) => inv.items[s]!.root === dRoot)));
+});
+
+test("[fast] pools with onlyRoots read the Organize overlay: a piece moved into a listed container is in, one carried with no backpack to land in is out (issue #12)", () => {
+  const fold = foldSnapshots([dorran, kestrel]);
+  const [kRoot, dRoot] = ["Kestrel", "Dorran"].map((who) => Object.values(fold.containers).find((c) => c.parent == null && c.scannedBy === who)!.serial) as [number, number];
+  const serials = (r: ReturnType<typeof buildPools>): Set<number> => new Set(Object.values(r.pools).flat().map((i) => i!.serial));
+  const [moved, carried] = [...serials(buildPools(fold, null))].filter((s) => fold.items[s]!.root === kRoot) as [number, number];
+  const at = "2099-01-01T00:00:00Z";
+  const inv = overlaidInventory(fold, [{ serial: moved, name: "moved", from: kRoot, to: dRoot, at, trip: "t" }, { serial: carried, name: "carried", from: kRoot, to: null, at, trip: "t" }]);
+  assert.equal(inv.items[carried]!.root, null, "carried, in no container");
+  const only = buildPools(inv, null, { onlyRoots: [dRoot] });
+  assert.ok(serials(only).has(moved), "moved into the listed container: in");
+  assert.ok(!serials(only).has(carried) && only.skipped.roots.some((it) => it.serial === carried), "in no container: out");
+  assert.ok(serials(buildPools(inv, null)).has(carried), "without a list it is a candidate as before");
 });
 
 test("[smoke] fold: a later scan of the same root replaces its contents, order-independent", () => {
@@ -1016,6 +1061,10 @@ test("[fast] profiles: ubwsAnyWeapon is on unless set false, and the schema take
   assert.deepEqual(settingsDiff({}, { ubwsAnyWeapon: false }), ["Use Best Weapon Skill weapons held to their own skill"]);
   assert.deepEqual(settingsDiff({ ubwsAnyWeapon: false }, { ubwsAnyWeapon: true }), ["Use Best Weapon Skill weapons allowed"]);
   assert.deepEqual(settingsDiff({}, { ubwsAnyWeapon: true }), [], "absent means on");
+  assert.deepEqual(settingsDiff({}, { onlyRoots: [1, 2] }), ["only 2 containers"]);
+  assert.deepEqual(settingsDiff({ onlyRoots: [1] }, { onlyRoots: [2] }), ["only containers changed"]);
+  assert.deepEqual(settingsDiff({ onlyRoots: [1] }, {}), ["any container"]);
+  assert.deepEqual(settingsDiff({ onlyRoots: [1] }, { onlyRoots: [1] }), []);
 });
 
 // Issue #214: a build may require yes/no properties on its weapon (pool weaponMustHave). Both hands are filtered; shields
@@ -1365,6 +1414,9 @@ test("[fast] saved runs: the key ignores budget and warm start; a run is reused 
   assert.equal(runKey({ ...base, opts: { ...base.opts, timeBudgetMs: 5000, warmStart: { ring: 1 } } }), k);
   assert.notEqual(runKey({ ...base, profile: { ...base.profile, floors: { hci: 5 } } }), k);
   assert.notEqual(runKey({ ...base, opts: { ...base.opts, exact: false } }), k);
+  assert.equal(runKey({ ...base, onlyRoots: [] }), k, "an empty Only containers list leaves the key as it was");
+  assert.notEqual(runKey({ ...base, onlyRoots: [7] }), k, "a listed one is keyed (issue #12)");
+  assert.notEqual(runKey({ ...base, onlyRoots: [7] }), runKey({ ...base, onlyRoots: [8] }));
   const proven: SavedRun = { key: k, budgetMs: 1000, result: { method: "exact", proven: true } };
   const unproven: SavedRun = { key: k, budgetMs: 60000, result: { method: "exact", proven: false } };
   assert.equal(reusableRun([proven], k, { timeBudgetMs: 300000 }), proven);

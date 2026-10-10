@@ -21,6 +21,7 @@ export interface BuildPool {
   lockedSlots: string[]; excludeTags: string[]; excludeSkills: string[]; excludeRoots: Array<number | string>; excludeWeapons: string[];
   ubwsAnyWeapon: boolean; allowOthersWorn: boolean; allowGargoyle: boolean; medOnly: boolean; strLimit: StrLimit;
   weaponMustHave?: string[] | undefined;   // yes/no properties every weapon must carry (vault-lib.mts weaponHasFlags); a spec carries it only when non-empty
+  onlyRoots?: number[] | undefined;        // the root containers the pool is narrowed to (vault-lib.mts buildPools, issue #12); a spec carries it only when non-empty
 }
 // What to search for. Nothing reads it yet: #12's goal and suit count build on it.
 export interface BuildGoal { kind: "best" | "cheapest"; suits?: number | undefined }
@@ -39,7 +40,7 @@ export interface ProfilesV3 { schemaVersion: 3; characters: Record<string, Chara
 export const PROFILES_VERSION = 3;
 
 const INTENT_KEYS = ["floors", "softFloors", "weights", "floorBonus", "resistCaps", "swingSteps", "castingSchool", "rarity"] as const;
-const POOL_KEYS = ["lockedSlots", "excludeTags", "excludeSkills", "excludeRoots", "excludeWeapons", "ubwsAnyWeapon", "allowOthersWorn", "allowGargoyle", "medOnly", "strLimit", "weaponMustHave"] as const;
+const POOL_KEYS = ["lockedSlots", "excludeTags", "excludeSkills", "excludeRoots", "excludeWeapons", "ubwsAnyWeapon", "allowOthersWorn", "allowGargoyle", "medOnly", "strLimit", "weaponMustHave", "onlyRoots"] as const;
 const SEARCH_KEYS = ["budgetMs", "exact", "restarts", "altCount", "altTol"] as const;
 const GOAL_KINDS = ["best", "cheapest"];
 // What an absent field means. The search knobs' defaults are run-settings.mts's RUN_DEFAULTS.
@@ -53,13 +54,13 @@ export interface BuildSpecSource { intent?: Partialish<BuildIntent> | null | und
 const list = <T,>(x: readonly T[] | null | undefined): T[] => (Array.isArray(x) ? [...x] : []);
 const map = <T,>(x: Record<string, T> | null | undefined): Record<string, T> => (x && typeof x === "object" && !Array.isArray(x) ? { ...x } : {});
 export function buildSpec(s: BuildSpecSource = {}): BuildSpec {
-  const i = s.intent || {}, p = s.pool || {}, b = s.buffs || {}, mustHave = list(p.weaponMustHave);
+  const i = s.intent || {}, p = s.pool || {}, b = s.buffs || {}, mustHave = list(p.weaponMustHave), only = list(p.onlyRoots);
   return {
     intent: { floors: map(i.floors), softFloors: list(i.softFloors), weights: map(i.weights), floorBonus: i.floorBonus ?? SPEC_DEFAULTS.floorBonus, resistCaps: map(i.resistCaps), ...(i.swingSteps ? { swingSteps: true } : {}), ...(i.castingSchool ? { castingSchool: i.castingSchool } : {}), ...(i.rarity ? { rarity: i.rarity } : {}) },
     buffs: { on: list(b.on), skills: map(b.skills) },
     pool: { lockedSlots: list(p.lockedSlots), excludeTags: list(p.excludeTags), excludeSkills: list(p.excludeSkills), excludeRoots: list(p.excludeRoots),
       excludeWeapons: list(p.excludeWeapons), ubwsAnyWeapon: p.ubwsAnyWeapon ?? SPEC_DEFAULTS.ubwsAnyWeapon, allowOthersWorn: !!p.allowOthersWorn, allowGargoyle: !!p.allowGargoyle, medOnly: !!p.medOnly,
-      strLimit: p.strLimit ?? SPEC_DEFAULTS.strLimit, ...(mustHave.length ? { weaponMustHave: mustHave } : {}) },
+      strLimit: p.strLimit ?? SPEC_DEFAULTS.strLimit, ...(mustHave.length ? { weaponMustHave: mustHave } : {}), ...(only.length ? { onlyRoots: only } : {}) },
     ...(s.goal ? { goal: { ...s.goal } } : {}),
     ...(s.search ? { search: { ...s.search } } : {}),
   };
@@ -121,7 +122,7 @@ export function profilesSpecError(doc: ProfilesV3): string | null {
 // ---------------------------------------------------------------- the panel's flat profile
 // The Suit Builder's panel edits one flat profile (builder settings, the skipped containers, the STR limit, race and
 // template), the shape a v2 profiles.json entry had and a saved run's settings still have.
-export type FlatProfile = TemplateSource & { excludeRoots?: Array<number | string> | undefined; strLimit?: number | undefined; race?: string | null | undefined; template?: string | undefined };
+export type FlatProfile = TemplateSource & { excludeRoots?: Array<number | string> | undefined; onlyRoots?: number[] | undefined; strLimit?: number | undefined; race?: string | null | undefined; template?: string | undefined };
 export function specFromProfile(p: FlatProfile, buffs: BuildBuffs = { on: [], skills: {} }): BuildSpec {
   return buildSpec({ intent: p, pool: { ...p, strLimit: p.strLimit ?? SPEC_DEFAULTS.strLimit }, buffs });
 }
@@ -200,7 +201,7 @@ export type PoolSettings = Omit<BuildPool, "strLimit"> & { strLimit: number };
 export function poolFromSpec({ pool: sp }: BuildSpec, character: Character | null): PoolSettings {
   const strLimit = sp.strLimit === "character" ? defaultStrLimit(character) : sp.strLimit;
   return { allowOthersWorn: sp.allowOthersWorn, strLimit, excludeTags: sp.excludeTags, excludeRoots: sp.excludeRoots, allowGargoyle: sp.allowGargoyle, medOnly: sp.medOnly,
-    excludeWeapons: sp.excludeWeapons, ubwsAnyWeapon: sp.ubwsAnyWeapon, excludeSkills: sp.excludeSkills, lockedSlots: sp.lockedSlots, ...(sp.weaponMustHave ? { weaponMustHave: sp.weaponMustHave } : {}) };
+    excludeWeapons: sp.excludeWeapons, ubwsAnyWeapon: sp.ubwsAnyWeapon, excludeSkills: sp.excludeSkills, lockedSlots: sp.lockedSlots, ...(sp.weaponMustHave ? { weaponMustHave: sp.weaponMustHave } : {}), ...(sp.onlyRoots ? { onlyRoots: sp.onlyRoots } : {}) };
 }
 export interface PlannedBuild {
   base: Profile;               // the profile before any buff (Manual's for a hand-picked suit): evaluate.mts's `profile`

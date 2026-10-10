@@ -1,7 +1,7 @@
 // runs-types.mts — a saved suit-builder run and its list summary (app/runs-lib.mts), and the GET /api/runs and /api/runs/<id> responses built from them. Types only, with no imports, so the page's browser build can use them: the server annotates its responses with these and ui/api-types.mts narrows them to what the page reads.
 
 // A setting that works against the build (app/diagnostics.mts): a requirement out of reach, a weight that swamps the rest, swing speed. Each names the change that would fix it; the first action is the suggestion.
-export type DiagnosticCode = "floor_unreachable" | "floors_conflict" | "weight_dominates" | "swing_linear" | "swing_next_step" | "weapon_missing_flag" | "no_weapon_with_flag";
+export type DiagnosticCode = "floor_unreachable" | "floors_conflict" | "weight_dominates" | "swing_linear" | "swing_next_step" | "weapon_missing_flag" | "no_weapon_with_flag" | "only_containers_empty";
 export type DiagnosticAction =
   | { kind: "setFloor"; property: string; value: number }   // value in the player's terms, as intent.floors stores it
   | { kind: "makeSoft"; property: string }
