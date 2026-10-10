@@ -701,7 +701,7 @@ function listChip(id: string, title: string, get: () => string[], set: (v: strin
     const list = box("div", { class: "b-checks" });
     const paint = (q: string): void => {
       const hits = all.filter((o) => !q || o.label.toLowerCase().includes(q));
-      list.replaceChildren(...(hits.length ? hits.map((o) => check({ label: o.label, checked: get().includes(o.value), onChange: (on) => {
+      list.replaceChildren(...(hits.length ? hits.map((o) => check({ label: o.label, checked: get().includes(o.value), attrs: { value: o.value }, onChange: (on) => {
         set(on ? [...get(), o.value] : get().filter((x) => x !== o.value));
         paintChip(chip, text(), !!get().length); updateTemplateBadge();
       } }).root) : [el("p", { class: "t-sm muted" }, all.length ? "Nothing matches." : "Nothing to choose from yet.")]));
