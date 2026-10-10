@@ -762,8 +762,7 @@ function optBranchAndBound(slots: string[], cands: Record<string, (OptItem | nul
   // best of every property at once. Both are valid upper bounds; the search takes the smaller one.
   const concave: boolean[] = new Array(dims);
   for (let d = 0; d < dims; d++) {
-    // a step credit is not concave, nor a term whose min a Resisting Spells step lifts
-    let ok = space.w[d]! >= 0 && d !== space.stepSsi && !(space.rs >= 0 && space.rsMin[space.rsMin.length - 1]![d]! > space.min[d]!);
+    let ok = space.w[d]! >= 0 && d !== space.stepSsi;   // a step credit is not concave
     for (let k = 0; k < n && ok; k++) for (let j = 0; j < lists[k]!.length && ok; j++) if (optVec(lists[k]![j] as OptItem | null, space)[d]! < 0) ok = false;
     concave[d] = ok;
   }
@@ -776,6 +775,8 @@ function optBranchAndBound(slots: string[], cands: Record<string, (OptItem | nul
   // The highest Resisting Spells step the remaining slots can still reach (-1 for none, or no steps): its min bounds a
   // positive weight's term and a floor from above. A negative weight's best is its own min, the lowest any step leaves.
   const liftHi = function (k: number): number { return space.rs >= 0 ? optLiftIndex(space, totals[space.rs]! + sufHi[k]![space.rs]!) : -1; };
+  // ... and the step every completion reaches (the least the remaining slots can add).
+  const liftLo = function (k: number): number { return space.rs >= 0 ? optLiftIndex(space, totals[space.rs]! + sufLo[k]![space.rs]!) : -1; };
   // w·min(t, cap) without the min. With a min the term is not concave, but its gain from any t never passes this one's
   // (under the min it is 0 until the total reaches it, then the same), which is concave: the sparse bound takes it.
   const cappedRaw = function (d: number, t: number): number { const c = space.cap[d]!; return space.w[d]! * (t < c ? t : c); };
@@ -799,12 +800,20 @@ function optBranchAndBound(slots: string[], cands: Record<string, (OptItem | nul
     for (let d = 0; d < dims; d++) s += weightBest(d, k, li) + floorTerm(d, totals[d]! + sufHi[k]![d]!, li);
     return s;
   };
+  // With Resisting Spells steps, a concave term's min is the one every completion reaches (with none, the highest's), and
+  // what a higher step could add is counted apart: w·max(hi, x) ≤ w·max(lo, x) + w·(hi − max(lo, x0))⁺, x0 the least
+  // capped total any completion has, so nothing is added once the totals are past the highest min.
   const tightBound = function (k: number): number {
     let s = 0, gainA = 0;
-    const li = liftHi(k);
+    const li = liftHi(k), lo = liftLo(k);
     for (let d = 0; d < dims; d++) {
       const t = totals[d]!;
-      if (concave[d]) { const now = capped(d, t); s += now; gainA += capped(d, t + sufHi[k]![d]!) - now; }
+      if (concave[d]) {
+        const mHi = optMinAt(space, d, li), reached = optMinAt(space, d, lo), mLo = reached > -Infinity ? reached : mHi, now = capped(d, t, mLo);
+        const c = space.cap[d]!, x0 = t + sufLo[k]![d]!, held = Math.max(mLo, x0 < c ? x0 : c);
+        s += now + (mHi > held ? space.w[d]! * (mHi - held) : 0);
+        gainA += capped(d, t + sufHi[k]![d]!, mLo) - now;
+      }
       else s += weightBest(d, k, li);
       s += floorTerm(d, t + sufHi[k]![d]!, li);
     }
