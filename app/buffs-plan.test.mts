@@ -12,6 +12,7 @@ import { solveExact, type OptPools, type OptProfile } from "./exact-solver.mts";
 import { resistMinimumText } from "./ui/builder-model.mts";
 import { cell, core, defaultProfiles, fixture, templateNames } from "./solver-fixture.mts";   // also loads the uoalive rules
 import { runKey } from "./runs-lib.mts";
+import { withReachableResistSteps } from "./mip.mts";
 
 const DEFAULTS = buffSkillValues(null, {}).values;
 // A shipped template as the panel holds it, and the fixture character (the solver fixture's own cell builds these too).
@@ -145,7 +146,9 @@ test("[fast] buffs plan: Enemy of One never changes the plan, alone or beside ot
 
 // The regression guard: with no buffs, every default template's profile is byte for byte main's (02b052e), so the
 // solvers get the same input, a run keys the same and reuses the runs saved before buffs. Issue #261 moved every hash
-// once: the profile carries resistSkill and resistMinimum (and mins) in place of resistBonus.
+// once: the profile carries resistSkill and resistMinimum (and mins) in place of resistBonus. Issue #265 added
+// resistSteps, which the fixture's pool reaches (a +10 bracelet and a +10 ring), so it is left out of the hash here and
+// checked on its own.
 test("[fast] buffs plan: no buffs give main's profile for every default template, soft floors and cap overrides included", () => {
   const MAIN: Record<string, string> = {
     melee: "dd14ef1c4c5271debeed511364273a271bc3a0fc", "melee+soft": "bcc1185e25ef87fc454ed64e72a93e768b704b5b",
@@ -156,10 +159,14 @@ test("[fast] buffs plan: no buffs give main's profile for every default template
   assert.deepEqual(templateNames, ["melee", "caster", "archer", "tank"]);
   for (const n of templateNames) for (const soft of [[], ["luck"]]) {
     const c = cell(n, { soft, overrides: soft.length ? { resistCaps: { fireResist: 95 } } : {} });
-    assert.equal(createHash("sha1").update(JSON.stringify(c.profile)).digest("hex"), MAIN[`${n}${soft.length ? "+soft" : ""}`], `${n}${soft.length ? " with a soft floor and Fire 95" : ""}`);
+    assert.equal(createHash("sha1").update(JSON.stringify(withoutSteps(c.profile))).digest("hex"), MAIN[`${n}${soft.length ? "+soft" : ""}`], `${n}${soft.length ? " with a soft floor and Fire 95" : ""}`);
   }
   assert.deepEqual(plannedProfile(ALL, RS100, plan([])), effectiveProfile(ALL, RS100), "an empty set is no set");
+  // Resisting Spells 41.5 (cap 100, a minimum of 1) and +20 at most from the pool: a step every 1.5 points up to 14
+  const steps = cell("melee").profile.resistSteps!;
+  assert.deepEqual([steps.length, steps[0], steps.at(-1)!.at, steps.at(-1)!.mins.fireResist], [13, { at: 1.5, mins: Object.fromEntries(RESIST_KEYS.map((k) => [k, 2])) }, 19.5, 14]);
 });
+const withoutSteps = (p: object): object => { const { resistSteps: _s, ...rest } = p as { resistSteps?: unknown }; return rest; };
 
 // Issue #213: the fixture character (Bushido 74, no Magery) gets a Faster Casting cap of 4, which is the only thing that
 // moved the hashes above. Pinned to Magery (cap 2), every default template hashes exactly as before the casting school
@@ -173,7 +180,7 @@ test("[fast] buffs plan: pinned to a cap-2 casting school, every default templat
   };
   for (const n of templateNames) for (const soft of [[], ["luck"]]) {
     const c = cell(n, { soft, overrides: { castingSchool: "Magery", ...(soft.length ? { resistCaps: { fireResist: 95 } } : {}) } });
-    assert.equal(createHash("sha1").update(JSON.stringify(c.profile)).digest("hex"), BEFORE[`${n}${soft.length ? "+soft" : ""}`], `${n}${soft.length ? " with a soft floor and Fire 95" : ""}`);
+    assert.equal(createHash("sha1").update(JSON.stringify(withoutSteps(c.profile))).digest("hex"), BEFORE[`${n}${soft.length ? "+soft" : ""}`], `${n}${soft.length ? " with a soft floor and Fire 95" : ""}`);
   }
 });
 
@@ -233,9 +240,9 @@ test("[fast] buffs plan: a requirement's note: its article, a full cap, no cap a
 
 // The run key leaves out the plan's own bookkeeping, so it follows what the solvers read and nothing else.
 test("[fast] buffs plan: the run key follows the plan: Enemy of One alone keys as none, numbers no buff reads change nothing", () => {
-  const c = cell("melee"), key = (pl: BuffPlan | null): string => runKey({ pools: c.pools, current: c.current, profile: plannedProfile(defaultTemplate("melee"), FIXTURE, pl), opts: { seed: 2026, restarts: 200 } });
+  const c = cell("melee"), key = (pl: BuffPlan | null): string => runKey({ pools: c.pools, current: c.current, profile: withReachableResistSteps(plannedProfile(defaultTemplate("melee"), FIXTURE, pl), c.pools as never, c.current as never), opts: { seed: 2026, restarts: 200 } });
   const none = key(null);
-  assert.equal(none, "d2ef309784ae11e2454ad1cfd428fb9884ce8700", "the key for the melee template at SOLVER_VERSION 8, the Resisting Spells minimum and the base skill it is taken from in place of the bonus (was 9429d428… at 7 with the fixture's Faster Casting cap 4 from Bushido, ad809043… at a flat cap of 2, 51a4b93c… at 6, a18a559b… at 5, 2c90c9b1… at 4, ac4629c8… at 3): a change here means every saved run stops being reused");
+  assert.equal(none, "72d7113d79a9d0920474e222597a3c0a2ef43bf7", "the key for the melee template at SOLVER_VERSION 9, with the Resisting Spells steps the fixture's pool reaches (was d2ef3097… at 8 with the minimum from the base skill alone, 9429d428… at 7 with the fixture's Faster Casting cap 4 from Bushido, ad809043… at a flat cap of 2, 51a4b93c… at 6, a18a559b… at 5, 2c90c9b1… at 4, ac4629c8… at 3): a change here means every saved run stops being reused");
   assert.equal(key(plan(["enemyOfOne"])), none, "Enemy of One plans like none");
   assert.notEqual(key(plan(["divineFury"], { Chivalry: 105 })), key(plan(["divineFury"], { Chivalry: 120 })), "another tier, another plan");
   assert.equal(key(plan(["divineFury"], { Chivalry: 105 })), key(plan(["divineFury"], { Chivalry: 105, Necromancy: 40, Bushido: 3 })), "an edit no buff on reads");

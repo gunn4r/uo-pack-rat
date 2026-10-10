@@ -26,9 +26,9 @@ export { propName };
 export { paperdollCaps };
 // A suit's item totals in paperdoll terms with the buffs a build planned with (none: `b` null), against `caps`, each
 // resist held at the Resisting Spells minimum of `skill` (the character's own, EffectiveProfile.resistSkill; null for
-// none) with the suit's own Resisting Spells bonus.
-export function withBuffs(t: PropMap, skill: number | null, caps: Record<string, number>, b: Pick<PlannedBuffs, "on" | "skills" | "stats" | "who"> | null | undefined): BuffResult {
-  return applyBuffs(t, caps, b?.on || [], b?.skills || {}, b?.stats ?? null, b?.who, suitResist(skill, t));
+// none) with the suit's own Resisting Spells bonus, up to the skill's `cap` (vault-lib resistSkillCapOf).
+export function withBuffs(t: PropMap, skill: number | null, caps: Record<string, number>, b: Pick<PlannedBuffs, "on" | "skills" | "stats" | "who"> | null | undefined, cap: number | null = null): BuffResult {
+  return applyBuffs(t, caps, b?.on || [], b?.skills || {}, b?.stats ?? null, b?.who, suitResist(skill, t, cap));
 }
 // What the buffs add past the cap, as badges: "DI +68 past the cap (Enemy of One)"; a penalty applied after it, such
 // as Protection's casting delay, "FC −2 after the cap (Protection)".

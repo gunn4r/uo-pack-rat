@@ -2,7 +2,7 @@
 // no solver import here (app/mip-solve.mts owns the runtime). Every modelling choice reproduces
 // app/bench/mip-spike.mts, which was validated to the decimal against the core's proven optima —
 // see docs/solver.md for the model and app/bench/REPORT.md for the evidence.
-import { GEAR_SLOTS, REQUIRED_SLOTS, type OptItem } from "./vault-lib.mts";
+import { GEAR_SLOTS, REQUIRED_SLOTS, RESIST_SKILL_KEY, RESIST_STEP_SLACK, type OptItem, type ResistStep } from "./vault-lib.mts";
 
 export const HARD_FLOOR_BONUS = 1e7;   // == scripts/optimizer-core.mts HARD_FLOOR_BONUS
 // Every gear slot (issue #202); all but the five armor pieces may be left empty. The core keeps its own copy (it
@@ -29,7 +29,7 @@ type Term = [number, number];
 // each kind means.
 export interface MipCol {
   name: string;
-  kind: "x" | "c" | "z" | "y" | "s" | "u" | "a" | "v" | "b";
+  kind: "x" | "c" | "z" | "y" | "s" | "u" | "a" | "v" | "b" | "h";
   slot?: string | undefined;
   item?: OptItem | undefined;
   dim?: string | undefined;
@@ -48,6 +48,7 @@ export interface MipProfile {
   floorPartial?: number | undefined;
   mins?: Record<string, number> | undefined;   // a value the property never falls below (scripts/optimizer-core.mts OptProfile.mins)
   ssiSteps?: Array<{ ssi: number; stam: number; credit: number }> | undefined;   // SSI by swing step (scripts/optimizer-core.mts OptProfile)
+  resistSteps?: ResistStep[] | undefined;   // the minimums a suit's own Resisting Spells bonus lifts each resist to (vault-lib.mts EffectiveProfile)
 }
 
 export interface BuildSuitMipOptions {
@@ -91,12 +92,13 @@ export interface CapCol {
   cap: number;
   z: number | null;
 }
-// A property held up to a min (MipProfile.mins): v is what it scores, max(min, min(t, cap)); b, with a positive weight, is 1 when the suit's own total counts, 0 when the min does.
+// A property held up to a min (MipProfile.mins): v is what it scores, max(min, min(t, cap)); b, with a positive weight, is 1 when the suit's own total counts, 0 when the min does. `lifts`: with Resisting Spells steps, the min at each step (BuiltMip.resistStepCols' order), `min` the one below them. `col` is -1 when the term is the min alone (no v column: the step binaries carry its cost).
 export interface MinCol {
   col: number;
   b: number | null;
   min: number;
   cap: number;
+  lifts?: number[] | undefined;
 }
 export interface FloorCol {
   f: number;
@@ -105,6 +107,7 @@ export interface FloorCol {
   y: number | null;
   s: number;
   u: number | null;
+  h?: number | undefined;   // the Resisting Spells step binary whose min meets this floor, when one does
 }
 
 export interface BuiltMip {
@@ -119,9 +122,12 @@ export interface BuiltMip {
   minCols: Record<string, MinCol>;
   floorCols: Record<string, FloorCol>;
   stepCols: StepCol[];   // SSI by step: one binary per point, empty when steps are off
+  resistStepCols: ResistStepCol[];   // Resisting Spells steps: one binary per step the pool's bonus reaches, empty with none
   model: MipModel;
 }
 export interface StepCol { col: number; ssi: number; stam: number }
+// h = 1 when the suit's Resisting Spells bonus total reaches `at` (less RESIST_STEP_SLACK).
+export interface ResistStepCol { col: number; at: number }
 
 // Each slot's candidates, as the model's x columns take them: the pool's pieces for that slot, each serial once (as optCandidatesFor), and the worn piece always (keep what you wear). Slots with none are left out.
 function slotCandidates(pools: Partial<Record<string, OptItem[]>>, current: Partial<Record<string, OptItem | null | undefined>>, slots: string[]): Record<string, OptItem[]> {
@@ -162,6 +168,20 @@ export function propertyReach(pools: Partial<Record<string, OptItem[]>>, current
   return out;
 }
 
+// The Resisting Spells steps a suit from this pool can reach: those whose `at` (less RESIST_STEP_SLACK) is no more than
+// `max`, the most bonus any suit carries (propertyReach).
+export function reachableResistSteps(steps: ResistStep[] | undefined, max: number): ResistStep[] {
+  return (steps || []).filter((s) => s.at - RESIST_STEP_SLACK <= max);
+}
+// A profile with only the Resisting Spells steps this pool reaches (reachableResistSteps). With none left the field goes,
+// so a pool without such pieces builds, scores and keys (runs-lib.mts runKey) exactly as before the steps existed.
+export function withReachableResistSteps<P extends { resistSteps?: ResistStep[] | undefined }>(profile: P, pools: Partial<Record<string, OptItem[]>>, current: Partial<Record<string, OptItem | null | undefined>>, optionalSlots: string[] = DEFAULT_OPTIONAL_SLOTS, slots: string[] = DEFAULT_SLOTS): P {
+  if (!profile.resistSteps) return profile;
+  const kept = reachableResistSteps(profile.resistSteps, propertyReach(pools, current, optionalSlots, slots, [RESIST_SKILL_KEY])[RESIST_SKILL_KEY]!.max);
+  const { resistSteps: _all, ...rest } = profile;
+  return (kept.length ? { ...rest, resistSteps: kept } : rest) as P;
+}
+
 export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots = DEFAULT_OPTIONAL_SLOTS, slots = DEFAULT_SLOTS, hardAsSoft = false }: BuildSuitMipOptions): BuiltMip {
   const optional = new Set(optionalSlots);
   const W = profile.weights || {}, CAPS = profile.caps || {}, FL = profile.floors || {}, MINS = profile.mins || {};
@@ -195,6 +215,28 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
   let scoreOffset = 0;
   const reach = propertyReach(pools, current, optionalSlots, slots, dims);
   const unreachableFloors: string[] = [], hardRows: Record<string, number> = {}, capCols: Record<string, CapCol> = {}, minCols: Record<string, MinCol> = {}, floorCols: Record<string, FloorCol> = {}, stepCols: StepCol[] = [];
+  // Resisting Spells steps (MipProfile.resistSteps): the min a resist is held at rises with the suit's Resisting Spells
+  // bonus total S. One binary h_i per step the pool's bonus reaches, made only when a resist is weighted or floored:
+  // h_i = 1 needs S ≥ τ_i (τ_i = at_i − RESIST_STEP_SLACK), written S − (τ_i − Smin)·h_i ≥ Smin. The min is then
+  // m0 + Σ (L_i − L_{i−1})·h_i, with L_i the step's min and L_{−1} = m0. A negative resist weight would leave h at 0
+  // to keep that min low, so its first use adds the rows that force h_i = 1 once S passes τ_i: S − (Smax − τ_i)·h_i ≤ τ_i.
+  const rsReach = profile.resistSteps?.length ? propertyReach(pools, current, optionalSlots, slots, [RESIST_SKILL_KEY])[RESIST_SKILL_KEY]! : { max: 0, min: 0 };
+  const rSteps = reachableResistSteps(profile.resistSteps, rsReach.max), resistStepCols: ResistStepCol[] = [];
+  const liftsOf = (d: string): number[] | null => (rSteps.length && rSteps.every((st) => typeof st.mins[d] === "number") ? rSteps.map((st) => st.mins[d]!) : null);
+  const rsXs: Term[] = rSteps.length ? allX.map((j): Term => [j, cols[j]!.item!.props[RESIST_SKILL_KEY] || 0]).filter(([, v]) => v !== 0) : [];
+  if (dims.some((d) => liftsOf(d) && ((W[d] || 0) !== 0 || (FL[d] || 0) > 0))) {
+    for (const [i, st] of rSteps.entries()) {
+      const h = addCol({ name: `h_${i}`, kind: "h", dim: RESIST_SKILL_KEY }, 0, 0, 1, true), tau = st.at - RESIST_STEP_SLACK;
+      resistStepCols.push({ col: h, at: st.at });
+      addRow([...rsXs, [h, -(tau - rsReach.min)]], rsReach.min, INF);
+    }
+  }
+  let forced = false;
+  const forceSteps = (): void => {
+    if (forced) return;
+    forced = true;
+    for (const { col, at } of resistStepCols) addRow([...rsXs, [col, -(rsReach.max - (at - RESIST_STEP_SLACK))]], -INF, at - RESIST_STEP_SLACK);
+  };
   for (const d of dims) {
     // a floor at or under the property's min is met by every suit: dropped, as the core drops it
     const w = W[d] || 0, cap = CAPS[d], m = MINS[d], f = m != null && (FL[d] || 0) <= m ? 0 : FL[d] || 0;
@@ -203,6 +245,10 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
     const xs: Term[] = allX.map((j): Term => [j, cols[j]!.item!.props[d] || 0]).filter(([, v]) => v !== 0);
     // The range any suit's total can take (propertyReach): the floors below test against `max`, and the big-M rows use both.
     const { max: reachD, min: minReach } = reach[d]!;
+    // with Resisting Spells steps: each step's min, and m0, the min below them (with no min of its own, one no suit's own total falls under)
+    const lifts = resistStepCols.length ? liftsOf(d) : null;
+    const m0 = lifts ? m ?? Math.min(minReach, cap ?? INF, lifts[0]!) : 0;
+    const liftTerms = (): Term[] => lifts!.map((L, i): Term => [resistStepCols[i]!.col, -(L - (i ? lifts![i - 1]! : m0))]);
     if (steps && d === "ssi") {
       // one binary a_p per point, worth w·credit_p; at most one pays (the maximum picks the best the suit reaches), and a_p = 1 forces t_ssi ≥ ssi_p and t_stam ≥ stam_p, each in the floor rows' form t − (v − minReach)·a ≥ minReach. A requirement at or below the lowest total any suit reaches needs no row.
       const stamXs: Term[] = allX.map((j): Term => [j, cols[j]!.item!.props.stamPool || 0]).filter(([, v]) => v !== 0);
@@ -214,11 +260,29 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
         if (pt.stam > stamMin) addRow([...stamXs, [a, -(pt.stam - stamMin)]], stamMin, INF);
       }
       if (stepCols.length) addRow(stepCols.map(({ col }): Term => [col, 1]), -INF, 1);
+    } else if (w > 0 && lifts) {
+      // w·max(M, min(t, cap)) with M = m0 + Σ ΔL·h, top = min(cap, reach) and Mmax the last step's min. Where no suit's
+      // own total gets past m0 the term is M itself: w·m0 into scoreOffset and w·ΔL_i on h_i. Else, as with a plain min,
+      // a binary b: b = 1 holds v ≤ top and v ≤ t, b = 0 holds v ≤ M, each with the other side relaxed by its widest gap.
+      const top = Math.min(cap ?? INF, reachD), mMax = lifts[lifts.length - 1]!;
+      if (top <= m0) {
+        scoreOffset += w * m0;
+        for (const [j, v] of liftTerms()) colCost[j]! -= w * v;
+        minCols[d] = { col: -1, b: null, min: m0, cap: cap ?? INF, lifts };
+      } else {
+        const v = addCol({ name: `v_${d}`, kind: "v", dim: d }, w, -INF, INF, false);
+        const b = addCol({ name: `b_${d}`, kind: "b", dim: d }, 0, 0, 1, true);
+        const k1 = Math.max(0, mMax - top), k2 = top - m0, k3 = Math.max(0, mMax - minReach);
+        addRow([[v, 1], [b, k1]], -INF, top + k1);
+        addRow([[v, 1], ...liftTerms(), [b, -k2]], -INF, m0);
+        addRow([[v, 1], ...xs.map(([j, val]): Term => [j, -val]), [b, k3]], -INF, k3);
+        minCols[d] = { col: v, b, min: m0, cap: cap ?? INF, lifts };
+      }
     } else if (w !== 0) {
       // A min some suit could fall under: w·max(m, min(t, cap)). It is the constant w·m when no suit gets past m, which
       // includes a cap at or under m whatever the totals (min(t, cap) never passes it).
       const lift = m != null && minReach < m, top = Math.min(cap ?? INF, reachD), mm = m ?? 0;
-      if (m != null && top <= mm) scoreOffset += w * mm;
+      if (m != null && top <= mm && !lifts) scoreOffset += w * mm;
       else if (lift && w > 0) {
         // maximising a max needs a binary b: b = 1 lets v reach min(t, cap) (v ≤ t, v ≤ top), b = 0 holds v ≤ m; the
         // better of the two is max(m, min(t, cap)). Written v ≤ m + (top − m)·b and v − t ≤ (m − minReach)·(1 − b).
@@ -230,8 +294,10 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
       } else {
         // a negative weight drives v down to max(m, ·) on its own: v ≥ m (its lower bound) and v ≥ min(t, cap), the
         // c column below (pinned to min(t, cap) by z) or t itself when uncapped
-        const v = lift ? addCol({ name: `v_${d}`, kind: "v", dim: d }, w, mm, INF, false) : null;
-        if (v != null) minCols[d] = { col: v, b: null, min: mm, cap: cap ?? INF };
+        // with Resisting Spells steps, v ≥ M = m0 + Σ ΔL·h, the step binaries forced to what the suit reaches
+        const v = lifts ? addCol({ name: `v_${d}`, kind: "v", dim: d }, w, -INF, INF, false) : lift ? addCol({ name: `v_${d}`, kind: "v", dim: d }, w, mm, INF, false) : null;
+        if (lifts) { forceSteps(); addRow([[v!, 1], ...liftTerms()], m0, INF); }
+        if (v != null) minCols[d] = { col: v, b: null, min: lifts ? m0 : mm, cap: cap ?? INF, ...(lifts ? { lifts } : {}) };
         if (Number.isFinite(cap)) {                                 // w·min(t, cap): c ≤ t, c ≤ cap, objective w·c; c may go negative like t
           // Number.isFinite(number: unknown) is not a type predicate, so TS can't narrow `cap` itself
           // from the check just above — re-reading the same CAPS[d] (never mutated in between) into a
@@ -262,9 +328,11 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
       }
     }
     if (f <= 0) continue;
-    // a floor above the per-slot maxima can never be met, so its met-indicator is 0 for every suit
-    const isHard = hard.has(d), unreachable = reachD < f;
-    if (isHard && !hardAsSoft && !unreachable) { hardRows[d] = addRow(xs, f, INF); scoreOffset += HARD_FLOOR_BONUS; continue; }
+    // a Resisting Spells step whose min meets the floor meets it whatever the total: its binary h lifts the met row by f − minReach
+    const li = lifts ? lifts.findIndex((L) => L >= f) : -1, h = li >= 0 ? resistStepCols[li]!.col : null, hLift: Term[] = h != null ? [[h, Math.max(0, f - minReach)]] : [];
+    // a floor above the per-slot maxima (and every step's min) can never be met, so its met-indicator is 0 for every suit
+    const isHard = hard.has(d), unreachable = reachD < f && h == null;
+    if (isHard && !hardAsSoft && !unreachable) { hardRows[d] = addRow([...xs, ...hLift], f, INF); scoreOffset += HARD_FLOOR_BONUS; continue; }
     if (unreachable && isHard) unreachableFloors.push(d);
     // soft floor (or an unreachable / hardAsSoft hard floor): bonus·y + s with t ≥ f·y, s ≤ k·t, s ≤ bonus·partial·(1 − y)
     const bonus = isHard ? HARD_FLOOR_BONUS : FB, k = bonus * PARTIAL / f, sMax = bonus * PARTIAL;
@@ -274,7 +342,7 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
     // y = 0 leaves t free down to the lowest total any suit reaches (a plain t − f·y ≥ 0 would forbid
     // every negative-total suit outright, although the core scores it: no credit on this floor, the
     // rest of the suit counted as usual).
-    if (y != null) addRow([...xs, [y, -(f - minReach)]], minReach, INF);
+    if (y != null) addRow([...xs, [y, -(f - minReach)], ...hLift], minReach, INF);
     // the core gives zero partial credit below a total of 0: s ≤ k·t alone would make a negative-total
     // suit infeasible (s ≥ 0 but k·t < 0 there), so when a negative total is possible a binary u relaxes
     // that same row by k·N (N = −minReach, the most negative t can go) — u = 0 forces t ≥ 0 (s ≤ k·t
@@ -288,14 +356,14 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
       addRow([...xs, [u, -minReach]], 0, INF);              // t + N·u ≥ 0 with N = −minReach
       addRow([[sv, 1], [u, sMax]], -INF, sMax);              // s ≤ sMax·(1 − u)
     }
-    floorCols[d] = { f, k, sMax, y, s: sv, u };
+    floorCols[d] = { f, k, sMax, y, s: sv, u, ...(h != null ? { h } : {}) };
   }
   for (const s of Object.keys(xIndex)) addRow(xIndex[s]!.map((j) => [j, 1]), isRequired(s) ? 1 : -INF, 1);   // one per slot: = 1 when required and worn, else ≤ 1
   if (hands) addRow([...twoH, ...oneH].map((j) => [j, 1]), -INF, 1);   // a two-hander forbids the one-hand slot
 
   const model: MipModel = { numCols: cols.length, numRows: rowLower.length, sense: "maximize", offset: 0, colCost, colLower, colUpper, rowLower, rowUpper,
     matrix: { format: "csr", numRows: rowLower.length, numCols: cols.length, starts, indices, values }, integrality };
-  return { cols, xIndex, dims, unreachableFloors, reach, hardRows, scoreOffset, capCols, minCols, floorCols, stepCols, model };
+  return { cols, xIndex, dims, unreachableFloors, reach, hardRows, scoreOffset, capCols, minCols, floorCols, stepCols, resistStepCols, model };
 }
 
 // ---- the tie-break's second stage (issue #262) ----
@@ -342,9 +410,10 @@ export function tieBreakModel(built: BuiltMip, start: ArrayLike<number>, toleran
 // function of (built, assignment).
 
 export function startVector(built: BuiltMip, assignment: Partial<Record<string, OptItem>> = {}): Float64Array {
-  const { cols, xIndex, dims, capCols, minCols, floorCols, stepCols, model } = built;
+  const { cols, xIndex, dims, capCols, minCols, floorCols, stepCols, resistStepCols = [], model } = built;
   const vec = new Float64Array(model.numCols);
   const totals = Object.fromEntries(dims.map((d) => [d, 0]));
+  let bonus = 0;   // the Resisting Spells bonus total, for the steps
   for (const s of Object.keys(xIndex)) {
     const item = assignment[s];
     for (const j of xIndex[s]!) {
@@ -353,19 +422,26 @@ export function startVector(built: BuiltMip, assignment: Partial<Record<string, 
         vec[j] = 1;
         // Every d here comes from `dims`, the same array totals was built from — always present.
         for (const d of dims) totals[d]! += cols[j]!.item!.props[d] || 0;
+        bonus += cols[j]!.item!.props[RESIST_SKILL_KEY] || 0;
       }
     }
   }
+  let reached = -1;
+  for (const [i, rc] of resistStepCols.entries()) if (bonus >= rc.at - RESIST_STEP_SLACK) { vec[rc.col] = 1; reached = i; }
   for (const d of dims) {
     const t = totals[d]!;
     const cc = capCols[d];
     if (cc) vec[cc.col] = Math.min(t, cc.cap);
     if (cc && cc.z != null) vec[cc.z] = t >= cc.cap ? 1 : 0;
     const mc = minCols[d];
-    if (mc) { const own = Math.min(t, mc.cap); vec[mc.col] = Math.max(mc.min, own); if (mc.b != null) vec[mc.b] = own > mc.min ? 1 : 0; }
+    if (mc && mc.col >= 0) {
+      const own = Math.min(t, mc.cap), min = mc.lifts && reached >= 0 ? mc.lifts[reached]! : mc.min;
+      vec[mc.col] = Math.max(min, own);
+      if (mc.b != null) vec[mc.b] = own > min ? 1 : 0;
+    }
     const fc = floorCols[d];
     if (!fc) continue;
-    const met = fc.y != null && t >= fc.f;
+    const met = fc.y != null && (t >= fc.f || (fc.h != null && vec[fc.h]! > 0.5));
     if (fc.y != null) vec[fc.y] = met ? 1 : 0;
     vec[fc.s] = met ? 0 : fc.k * Math.max(0, t);
     if (fc.u != null) vec[fc.u] = t < 0 ? 1 : 0;

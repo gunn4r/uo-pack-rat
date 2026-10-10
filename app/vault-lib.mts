@@ -344,10 +344,53 @@ export function resistSkillOf(skills: Record<string, unknown> | null | undefined
   if (!e) return null;
   return typeof e.base === "number" && Number.isFinite(e.base) ? e.base : Number(e.value) || 0;
 }
+// A character's Resisting Spells cap as scanned, null when the scan has none (skillInSuit then takes SKILL_CAP_TOP).
+export function resistSkillCapOf(skills: Record<string, unknown> | null | undefined): number | null {
+  const cap = (skills?.["Resisting Spells"] as { cap?: number } | undefined)?.cap;
+  return typeof cap === "number" && Number.isFinite(cap) ? cap : null;
+}
+// The highest cap a skill takes (a 120 power scroll): the cap of a skill whose scan has none.
+export const SKILL_CAP_TOP = 120;
+// A character's own skill with a suit's item bonus to it and the skill's cap (null: SKILL_CAP_TOP), as skillInSuit takes them.
+export interface SuitSkill { skill: number; bonus: number; cap: number | null }
+// A skill in a suit, as ServUO's Skill.Value works it out: a loss that ignores the cap (Protection's) comes off the
+// skill first, then the suit's item bonus, which stops at the skill's cap and adds nothing to a skill already there.
+export function skillInSuit(skill: number, bonus: number, cap: number | null, loss = 0): number {
+  const v = Math.max(0, skill + loss), top = cap ?? SKILL_CAP_TOP;
+  return v >= top ? v : Math.min(v + bonus, top);
+}
 // A character's Resisting Spells minimum in a suit carrying `bonus` Resisting Spells (0: the character's own).
 export function resistMinimum(skills: Record<string, unknown> | null | undefined, bonus = 0): number | null {
   const skill = resistSkillOf(skills);
-  return skill == null ? null : minResistAt(skill + bonus);
+  return skill == null ? null : minResistAt(skillInSuit(skill, bonus, resistSkillCapOf(skills)));
+}
+// One step of the Resisting Spells minimum a suit's own bonus lifts (EffectiveProfile.resistSteps): a suit whose
+// Resisting Spells bonus total is at least `at` holds each resist at `mins[k]`, in item terms.
+export interface ResistStep { at: number; mins: Record<string, number> }
+// Half a tenth of a point: a suit reaches a step when its bonus total is at least `at` less this. Bonuses come in tenths
+// at the finest, so the margin changes nothing for a real total and lets the MIP tell "under" from "at" with room to
+// spare. scripts/optimizer-core.mts keeps its own copy.
+export const RESIST_STEP_SLACK = 0.05;
+// Every step the minimum takes as a suit's Resisting Spells bonus rises from 0, a tenth at a time, until the skill
+// reaches its cap: `skill` the character's own, `cap` its cap (null: SKILL_CAP_TOP), `loss` what the planned buffs take
+// off it (Protection's), `share` a resist's in-cap share from the buffs. Empty when no bonus can change the minimum.
+export function resistStepsFor(skill: number, cap: number | null, loss: number, share: (k: string) => number): ResistStep[] {
+  const out: ResistStep[] = [], top = cap ?? SKILL_CAP_TOP;
+  let last = minResistAt(skillInSuit(skill, 0, cap, loss));
+  for (let tenths = 1; skillInSuit(skill, (tenths - 1) / 10, cap, loss) < top; tenths++) {
+    const at = tenths / 10, m = minResistAt(skillInSuit(skill, at, cap, loss));
+    if (m == null || m === last) continue;
+    out.push({ at, mins: Object.fromEntries(RESIST_KEYS.map((k) => [k, m - share(k)])) });
+    last = m;
+  }
+  return out;
+}
+// The minimum a resist is held at in a suit whose Resisting Spells bonus total is `bonus`: the highest step it
+// reaches, else the profile's own (`mins`), else none.
+export function liftedMin(profile: { mins?: Record<string, number> | undefined; resistSteps?: ResistStep[] | undefined }, k: string, bonus: number): number | null {
+  let m = profile.mins?.[k] ?? null;
+  for (const s of profile.resistSteps || []) if (bonus >= s.at - RESIST_STEP_SLACK && s.mins[k] != null) m = s.mins[k]!;
+  return m;
 }
 // What a rules file written before issue #261 must change, or null: it still carries the old additive
 // `resistSkillBonus`, which nothing reads, and no `resistMinimum`, so its characters get no minimum at all.
@@ -461,6 +504,11 @@ export interface EffectiveProfile {
   swing?: { stamBase: number; refStamina: number; steps: boolean } | undefined;
   // The step table both solvers score SSI with (app/swing.mts stepTable), put on by the optimize worker.
   ssiSteps?: Array<{ ssi: number; stam: number; credit: number }> | undefined;
+  // The higher minimums a suit's own Resisting Spells bonus brings (resistStepsFor), lowest first, in item terms like
+  // `mins`; absent when no bonus can raise it (no minimum on this shard, no such skill, the skill at its cap). The
+  // server keeps only the steps the pool's bonus reaches (app/mip.mts withReachableResistSteps), so a pool without
+  // such pieces builds and keys as before them.
+  resistSteps?: ResistStep[] | undefined;
 }
 export interface PlannedBuffs {
   on: string[];
@@ -473,8 +521,9 @@ export interface PlannedBuffs {
   minimum: number | null;   // the Resisting Spells minimum with these buffs (Protection lowers it), what the solvers held each resist at
 }
 // What the buffs that are on change, in paperdoll terms: the caps once they changed them, and each key's in-cap share.
-// `minimum` is the Resisting Spells minimum with the buffs on (Protection lowers the skill), when the plan worked it out.
-export interface BuffShift { caps: Record<string, number>; shares: Record<string, number>; minimum?: number | null | undefined }
+// `minimum` is the Resisting Spells minimum with the buffs on (Protection lowers the skill), when the plan worked it out,
+// and `resistLoss` what they take off the skill (Protection's, 0 with none).
+export interface BuffShift { caps: Record<string, number>; shares: Record<string, number>; minimum?: number | null | undefined; resistLoss?: number | undefined }
 // The optimizer's profile for one character. Resist floors and caps are written in paperdoll terms (what the
 // character sheet shows), which are item totals: Resisting Spells adds nothing to gear, it holds each resist at its
 // minimum (`mins`, resistMinimum). A race can raise a resist's cap (rules.raceCaps, e.g. an Elf's Energy cap). The
@@ -507,8 +556,9 @@ export function effectiveProfile(p: Profile = {}, character: Character | null = 
     if (floors[k] != null) floors[k] = Math.max(0, floors[k] - share(k));
   }
   const hardFloors = Object.keys(floors).filter((k) => !(p.softFloors || []).includes(k));
+  const steps = skill == null ? [] : resistStepsFor(skill, resistSkillCapOf(character?.skills), shift?.resistLoss ?? 0, share);
   return { weights: { ...(p.weights || {}) }, caps, floors, floorBonus: p.floorBonus ?? 1000, hardFloors, resistSkill: skill, resistMinimum: own,
-    ...(min != null ? { mins } : {}), ...(Object.keys(overrides).length ? { resistCapOverrides: overrides } : {}) };
+    ...(min != null ? { mins } : {}), ...(Object.keys(overrides).length ? { resistCapOverrides: overrides } : {}), ...(steps.length ? { resistSteps: steps } : {}) };
 }
 // The fields of a built profile its caps are read from (profileResistCaps, playerCaps).
 export interface CapsView {
@@ -1594,6 +1644,7 @@ export interface RequirementProfileInput {
   caps?: Record<string, number> | undefined;
   weights?: Record<string, number> | undefined;
   mins?: Record<string, number> | undefined;   // EffectiveProfile.mins: a resist under its minimum counts as the minimum
+  resistSteps?: ResistStep[] | undefined;      // EffectiveProfile.resistSteps: the minimum the suit's own Resisting Spells bonus lifts it to
 }
 export interface RequirementRow {
   key: string;
@@ -1613,7 +1664,7 @@ export function requirementReport(totals: PropMap, profile: RequirementProfileIn
   keys.delete("tagPenalty");
   for (const k of [...keys].sort((a, b) => (floors[b] ? 1 : 0) - (floors[a] ? 1 : 0) || a.localeCompare(b))) {
     // a resist under its minimum reaches the minimum, so its value says that, and `met` agrees with it
-    const v = totals[k] || 0, floor = floors[k], cap = caps[k], min = profile.mins?.[k], held = min != null && min > v ? min : v;
+    const v = totals[k] || 0, floor = floors[k], cap = caps[k], min = liftedMin(profile, k, totals[RESIST_SKILL_KEY] || 0), held = min != null && min > v ? min : v;
     rows.push({ key: k, label: labelOf(k), value: held, floor: floor ?? null, cap: cap ?? null,
       met: floor == null ? null : held >= floor, capped: cap != null && v >= cap, over: cap != null ? Math.max(0, v - cap) : 0 });
   }
