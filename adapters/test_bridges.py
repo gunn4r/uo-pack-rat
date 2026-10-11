@@ -8,6 +8,8 @@ TazUO trips: takes at an explicit drop spot, puts only of the bridge's carried s
 
 The TazUO bridge's window closing (2.15.0, issue #196): a trip or a Grab closes the windows it opened, innermost first, and only after the last move; a window already open, the backpack, and a chest holding a window the player opened stay open; a Highlight closes nothing; a stopped trip's result and the stopped marker are written before the first close, and after a Stop closing gives up 0.5 s after the Stop was first seen; a stopped or failed command still closes what it opened; a client without `GetContainerGump()` or `Dispose()` gets one message per container per bridge run; and a failing message or an interrupt mid-close never breaks the next command.
 
+Scans (issue #281): the TazUO bridge starts Scan here, Character refresh or House map refresh from its own script folder and reports the start; it refuses while that script runs, while a Put away runs, when the client does not start it, and for a script outside the three; Razor Enhanced refuses a scan as an unknown action.
+
 With `PACKRAT_TEST_OUTPUTS` set to a folder, `fake_clients.py`'s `run_script` copies every bridge `status.json` a script writes into it (statuses that differ only in their timestamps kept once), for `app/adapter-outputs.test.mts`.
 
 Run: python3 adapters/test_bridges.py  (app/adapters.test.mts also spawns it, so `npm test` does).
@@ -15,7 +17,7 @@ Run: python3 adapters/test_bridges.py  (app/adapters.test.mts also spawns it, so
 import datetime, json, os, shutil, sys, tempfile, unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from fake_clients import PLAYER, STRANGER, World, adapter_path, razor_globals, run_script, tazuo_api  # noqa: E402
+from fake_clients import PLAYER, STRANGER, World, adapter_path, razor_globals, run_script, script_manager, tazuo_api  # noqa: E402
 
 PACK, POUCH, CHEST, BAG, FAR = 0x40000001, 0x40000002, 0x40000003, 0x40000004, 0x40000005
 RING, AMULET, BRACELET, FAR_RING = 0x40000010, 0x40000011, 0x40000012, 0x40000013
@@ -24,6 +26,7 @@ BOOK, RUNEBOOK, ARMOUR = 0x40000040, 0x40000041, 0x40000042
 DEST, DEST_BAG, TRASH_BIN, CORPSE, LOOSE, STACK, OTHER_GEM, EMPTY = (0x40000050, 0x40000051, 0x40000052, 0x40000053,
                                                                       0x40000054, 0x40000055, 0x40000056, 0x40000057)
 SPARE = 0x40000058               # an empty bag, for gathering (issue #128)
+SCANNER, REFRESH, HOUSE = "packrat-scanner.py", "packrat-character-refresh.py", "packrat-house-map-refresh.py"
 RUN_S = 120                      # every scenario stops the bridge after this many fake seconds
 
 
@@ -61,6 +64,11 @@ def trip_home():
     w.add(CORPSE, 0, name="a corpse", Graphic=0x2006, IsCorpse=True, X=9, Y=9)
     w.add(LOOSE, PACK, name="Ring", container_like=False, OnGround=False)
     return w
+
+
+def scan(cid, script):
+    """A scan line as POST /api/bridge writes it (issue #281)."""
+    return {"id": cid, "action": "scan", "script": script, "age_s": 0}
 
 
 def stamp(epoch):
@@ -348,6 +356,9 @@ class TazUOBridge(BridgeCase, unittest.TestCase):
 
     def start(self, world):
         api = world.api = tazuo_api(world, PACK)
+        scripts = getattr(self, "scripts", None)     # (folder, running, loaded): the client's script calls, for a scan
+        if scripts:
+            script_manager(api, [scripts[0] + "packrat-bridge.py"] + [scripts[0] + n for n in scripts[1]], [scripts[0] + n for n in scripts[2]])
         if getattr(self, "drop_cancel", False):
             del api.CancelPathfinding
         world.clock.at(RUN_S, lambda: setattr(api, "StopRequested", True))
@@ -361,6 +372,39 @@ class TazUOBridge(BridgeCase, unittest.TestCase):
         w = home()
         self.run_bridge(w, 1, [self.cmd("c1", "highlight", CHEST, [], pos={"x": 30, "y": 30, "z": 0})])
         self.assert_marked_then_cleared(w, CHEST, 11, 10)
+
+    # ---- scan (issue #281) -----------------------------------------------------------------------
+
+    def test_a_scan_starts_its_script_from_the_bridges_own_folder(self):
+        self.scripts = ("Pack Rat/", [], [SCANNER, REFRESH, HOUSE])
+        w = home()
+        final, _ = self.run_bridge(w, 1, [scan("s1", "scanner"), scan("s2", "refresh"), scan("s3", "house")])
+        self.assertEqual([final["results"][c]["ok"] for c in ("s1", "s2", "s3")], [True, True, True], final["results"])
+        self.assertEqual(final["results"]["s1"]["msg"], "started " + SCANNER)
+        self.assertEqual(w.api.log, [("play", "Pack Rat/" + n) for n in (SCANNER, REFRESH, HOUSE)])
+        self.assertEqual((self.opened(w), self.moved(w)), ([], []))
+
+    def test_a_scan_is_refused_while_its_script_runs_and_while_a_put_away_does(self):
+        self.scripts = ("", [SCANNER], [SCANNER, REFRESH])
+        w = home()
+        w.shared = {"packrat_putaway": "%d:%d" % (PACK, w.clock.now + 600)}
+        final, _ = self.run_bridge(w, 1, [scan("s1", "scanner"), scan("s2", "refresh")])
+        self.assertEqual(final["results"]["s1"], dict(final["results"]["s1"], ok=False, msg=SCANNER + " is already running"))
+        self.assertEqual(final["results"]["s2"], dict(final["results"]["s2"], ok=False, msg="a Put away is running: scan after it"))
+        self.assertEqual(w.api.log, [])
+
+    def test_a_scan_the_client_does_not_start_says_so(self):
+        self.scripts = ("", [], [])
+        final, _ = self.run_bridge(home(), 1, [scan("s1", "house")])
+        self.assertFalse(final["results"]["s1"]["ok"])
+        self.assertIn(HOUSE + " did not start", final["results"]["s1"]["msg"])
+
+    def test_a_scan_line_naming_something_else_is_refused_unrun(self):
+        self.scripts = ("", [], [SCANNER])
+        w = home()
+        final, _ = self.run_bridge(w, 1, [scan("s1", "packrat-bridge.py")])
+        self.assertEqual(final["results"]["s1"]["msg"], "script is not one of scanner, refresh, house")
+        self.assertEqual(w.api.log, [])
 
     def trip(self, cid, takes=(), puts=(), index=3, age_s=0):
         """One trip line as app/bridge-trip.mts writes it. Every root is placed on the player's tile:
@@ -1266,6 +1310,10 @@ class RazorBridge(BridgeCase, unittest.TestCase):
         colours = [c for c in world.calls if c[0] == "color"]
         self.assertEqual([c[1] for c in colours], [serial, serial])
         self.assertEqual(colours[1][2], -1)
+
+    def test_a_scan_is_an_unknown_action_here(self):
+        final, _ = self.run_bridge(home(), 1, [scan("s1", "scanner")])
+        self.assertEqual(final["results"]["s1"], dict(final["results"]["s1"], ok=False, msg="unknown action"))
 
     def test_a_walk_heads_for_the_tile_beside_the_container_not_onto_it(self):
         w = home()

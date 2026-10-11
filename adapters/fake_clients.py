@@ -354,14 +354,11 @@ class Control(object):
         self.IsDisposed = True
 
 
-def tazuo_panel_api(world, loaded=(), prefix=""):
-    """tazuo_api plus the gump and script-control calls packrat-panel.py uses. The panel runs as
-    `prefix`packrat-panel.py; PlayScript starts a script only when its relative path is in `loaded`
-    (the client's silent no-op otherwise). click() queues a control's callback, which runs on the
-    script's next ProcessCallbacks, as in the client; so does press() for a key bound with OnHotKey
-    (api.hotkeys). api.log records every PlayScript / StopScript and OnHotKey."""
-    api = tazuo_api(world, 0)
-    api.running, api.windows, api.queue, api.log, api.hotkeys = [prefix + "packrat-panel.py"], [], [], [], {}
+def script_manager(api, running, loaded=()):
+    """The client's script calls on `api`: `running` are the relative paths running now, and PlayScript
+    starts a script only when its relative path is in `loaded` (the client's silent no-op otherwise).
+    api.log records every PlayScript / StopScript."""
+    api.running, api.log = list(running), []
 
     def play(path):
         api.log.append(("play", path))
@@ -373,6 +370,20 @@ def tazuo_panel_api(world, loaded=(), prefix=""):
         if path in api.running:
             api.running.remove(path)
 
+    api.PlayScript, api.StopScript = play, stop
+    api.IsScriptRunning = lambda path: path in api.running
+    api.ListRunningScripts = lambda: list(api.running)
+    return api
+
+
+def tazuo_panel_api(world, loaded=(), prefix=""):
+    """tazuo_api plus the gump and script-control calls packrat-panel.py uses. The panel runs as
+    `prefix`packrat-panel.py (script_manager). click() queues a control's callback, which runs on the
+    script's next ProcessCallbacks, as in the client; so does press() for a key bound with OnHotKey
+    (api.hotkeys). api.log records every PlayScript / StopScript and OnHotKey."""
+    api = script_manager(tazuo_api(world, 0), [prefix + "packrat-panel.py"], loaded)
+    api.windows, api.queue, api.hotkeys = [], [], {}
+
     def process():
         while api.queue:
             api.queue.pop(0)()
@@ -381,9 +392,7 @@ def tazuo_panel_api(world, loaded=(), prefix=""):
         api.windows.append(Control(width=w, height=h))
         return api.windows[-1]
 
-    api.PlayScript, api.StopScript, api.ProcessCallbacks = play, stop, process
-    api.IsScriptRunning = lambda path: path in api.running
-    api.ListRunningScripts = lambda: list(api.running)
+    api.ProcessCallbacks = process
     api.OnStop = lambda fn: setattr(api, "on_stop", fn)
 
     def on_hotkey(key, fn=None):

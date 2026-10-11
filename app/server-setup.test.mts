@@ -253,7 +253,7 @@ test("[fast] POST /api/setup/locate resolves a nested .../ClassicUO/Data/Plugins
 // the whole server at a throwaway folder holding a copy of the real tazuo adapter (full bridge) next
 // to a minimal fixture adapter that declares no bridge at all, standing in for a client like the
 // ClassicUO web adapter that can't run one.
-test("[fast] GET /api/setup: an adapter with no bridge reports capabilities.bridge:[]; tazuo still reports its four actions and trip-bags", async () => {
+test("[fast] GET /api/setup: an adapter with no bridge reports capabilities.bridge:[]; tazuo still reports its five actions and trip-bags", async () => {
   const adaptersDir = mkdtempSync(join(tmpdir(), "qm-adapters-"));
   cpSync(join(HERE, "..", "adapters", "tazuo"), join(adaptersDir, "tazuo"), { recursive: true });
   const noBridgeDir = join(adaptersDir, "nobridge");
@@ -269,7 +269,7 @@ test("[fast] GET /api/setup: an adapter with no bridge reports capabilities.brid
     const setup = asJson<SetupResponse>(await (await fetch(s2.url + "/api/setup")).json());
     assert.deepEqual(setup.adapters.map((a) => a.id).sort(), ["nobridge", "tazuo"]);
     assert.deepEqual(setup.adapters.find((a) => a.id === "nobridge")!.capabilities.bridge, []);
-    assert.deepEqual(setup.adapters.find((a) => a.id === "tazuo")!.capabilities.bridge, ["highlight", "grab", "goto", "trip", "trip-bags"]);
+    assert.deepEqual(setup.adapters.find((a) => a.id === "tazuo")!.capabilities.bridge, ["highlight", "grab", "goto", "trip", "trip-bags", "scan"]);
     assert.deepEqual(setup.adapters.find((a) => a.id === "nobridge")!.features, []);
 
     // settings.client names which of those is active — PUT it at the no-bridge adapter first.
@@ -282,7 +282,7 @@ test("[fast] GET /api/setup: an adapter with no bridge reports capabilities.brid
     assert.equal(after.settings.client!.adapter, "nobridge");
     assert.deepEqual(after.adapters.find((a) => a.id === after.settings.client!.adapter)!.capabilities.bridge, []);
 
-    // Switching to tazuo flips the same lookup back to the four actions — same shape, no restart.
+    // Switching to tazuo flips the same lookup back to the five actions — same shape, no restart.
     const putTazuo = await fetch(s2.url + "/api/settings", {
       method: "PUT", headers: { "content-type": "application/json" },
       body: JSON.stringify({ client: { adapter: "tazuo", scriptsDir } }),
@@ -290,7 +290,7 @@ test("[fast] GET /api/setup: an adapter with no bridge reports capabilities.brid
     assert.equal(putTazuo.status, 200);
     after = asJson<SetupResponse>(await (await fetch(s2.url + "/api/setup")).json());
     assert.equal(after.settings.client!.adapter, "tazuo");
-    assert.deepEqual(after.adapters.find((a) => a.id === after.settings.client!.adapter)!.capabilities.bridge, ["highlight", "grab", "goto", "trip", "trip-bags"]);
+    assert.deepEqual(after.adapters.find((a) => a.id === after.settings.client!.adapter)!.capabilities.bridge, ["highlight", "grab", "goto", "trip", "trip-bags", "scan"]);
   } finally {
     await s2.close();
   }

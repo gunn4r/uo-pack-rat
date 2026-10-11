@@ -1,6 +1,6 @@
 {
   "adapter": "tazuo",
-  "version": "2.16.0",
+  "version": "2.17.0",
   "transport": "folder",
   "protocol": 1,
   "actions": ["open-container", "move-to-own-backpack", "move-into-ground-container", "pathfind-local", "client-local-highlight"],
@@ -13,7 +13,7 @@
     "ground": true,
     "nested": true,
     "tooltips": "opl",
-    "bridge": ["highlight", "grab", "goto", "trip", "trip-bags"]
+    "bridge": ["highlight", "grab", "goto", "trip", "trip-bags", "scan"]
   },
   "install": {
     "scriptsSuffix": [["TazUO", "LegionScripts"], ["LegionScripts"]],

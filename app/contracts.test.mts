@@ -1,6 +1,6 @@
 // contracts.test.mts — folds every adapter's fixture.scan.json against its own capabilities.json, checking the two agree with each other and with the shared scan and bridge schemas.
 //
-// walks every `adapters/<id>/` directory that ships both `capabilities.json` and `fixture.scan.json` (today: `adapters/tazuo/`, and `adapters/razor-enhanced/`, whose fixture comes from the fake client) and checks, with no adapter-specific code: the whole `capabilities.json` validates against `app/schema/adapter-manifest.v1.schema.json` and names its own folder, a folder adapter's `install` section lists its scripts folders and a paste adapter's holds only `register`; its `capabilities` object validates against the scan schema's `adapter.capabilities` shape; `fixture.scan.json` validates against the full `scan.v2.schema.json`; the fixture folds into a character with at least one nested container and at least one worn item located on it; and `capabilities.json`'s `capabilities` object (and its `features`) is deep-equal to the fixture's own `adapter.capabilities` (and `adapter.features`); every declared feature is one the app gates on, and an adapter with a bridge declares the `protocol` the app writes (catches a script's `CAPABILITIES` dict, its `capabilities.json`, and its fixture drifting apart from each other). Every ground root in a fixture carries its tooltip, with a Contents line, and a facet (issue #11). A guard test fails the whole suite if no adapter directory ships a contract at all. Also covers `app/schema/bridge.v1.schema.json` directly: the documented command/result/status examples (including a `stopped: true` status) validate, and an unknown `action` is rejected. See `docs/adapter-guide.md` for what shipping a contract requires.
+// walks every `adapters/<id>/` directory that ships both `capabilities.json` and `fixture.scan.json` (today: `adapters/tazuo/`, and `adapters/razor-enhanced/`, whose fixture comes from the fake client) and checks, with no adapter-specific code: the whole `capabilities.json` validates against `app/schema/adapter-manifest.v1.schema.json` and names its own folder, a folder adapter's `install` section lists its scripts folders and a paste adapter's holds only `register`; its `capabilities` object validates against the scan schema's `adapter.capabilities` shape; `fixture.scan.json` validates against the full `scan.v2.schema.json`; the fixture folds into a character with at least one nested container and at least one worn item located on it; and `capabilities.json`'s `capabilities` object (and its `features`) is deep-equal to the fixture's own `adapter.capabilities` (and `adapter.features`); every declared feature is one the app gates on, and an adapter with a bridge declares the `protocol` the app writes (catches a script's `CAPABILITIES` dict, its `capabilities.json`, and its fixture drifting apart from each other). Every ground root in a fixture carries its tooltip, with a Contents line, and a facet (issue #11). A guard test fails the whole suite if no adapter directory ships a contract at all. Also covers `app/schema/bridge.v1.schema.json` directly: the documented command/result/status examples (including a `stopped: true` status) validate, a scan line names one of its three scripts and carries nothing else, and an unknown `action` is rejected. See `docs/adapter-guide.md` for what shipping a contract requires.
 //
 // An "adapter" here is any directory under adapters/ that ships both a capabilities.json and a fixture.scan.json; a future adapter picks these tests up for free just by shipping those two files. With app/scan-schema.test.mts, app/rules.test.mts and app/bridge-trip.test.mts it keeps the contracts in docs/scan-schema.md, docs/bridge-protocol.md and docs/shard-rules.md honest against the code that ships.
 import { test } from "node:test";
@@ -29,7 +29,7 @@ const adapterDirs = existsSync(ADAPTERS_DIR)
 
 // ---- bridge v1 protocol schema (its own cases are at the bottom of this file; declared here
 // because the per-adapter loop below checks each declared action against its `action` enum) -------
-const BRIDGE_SCHEMA = JSON.parse(readFileSync(join(HERE, "schema", "bridge.v1.schema.json"), "utf8")) as { command: ValidatorSchema; result: ValidatorSchema; status: ValidatorSchema };
+const BRIDGE_SCHEMA = JSON.parse(readFileSync(join(HERE, "schema", "bridge.v1.schema.json"), "utf8")) as { command: ValidatorSchema; scan: ValidatorSchema; result: ValidatorSchema; status: ValidatorSchema };
 // The Organize trip (issue #11): its own shape, written only by app/bridge-trip.mts's queueTrip.
 const TRIP_SCHEMA = JSON.parse(readFileSync(join(HERE, "schema", "bridge-trip.v1.schema.json"), "utf8")) as ValidatorSchema;
 // The whole capabilities.json (its capabilities object is the scan schema's, checked below).
@@ -84,6 +84,11 @@ for (const name of adapterDirs) {
       // in this list, where every Pack Rat reads it, until an app that reads a scan's adapter.features has been out a release.
       if (action === BAG_TAKES) {
         assert.ok(declared.includes("trip"), "trip-bags without trip");
+        continue;
+      }
+      // scan has its own line shape and no button: the MCP scan tool queues it (issue #281).
+      if (action === "scan") {
+        assert.ok(validate(BRIDGE_SCHEMA.scan.properties!.action!, action).ok, "scan is not bridge.v1.schema.json's scan action");
         continue;
       }
       assert.ok(ALL_BRIDGE_ACTIONS.includes(action), `unknown bridge action ${JSON.stringify(action)} — app/ui/bridge.mts renders no button for it, so nothing would ever queue it`);
@@ -182,6 +187,14 @@ test("[fast] bridge.v1.schema.json accepts the documented command, result and st
   assert.ok(validate(BRIDGE_SCHEMA.status, { ...reporting, adapter: { ...reporting.adapter, since: 1 }, queueBytes: 0 }).ok);
   assert.equal(validate(BRIDGE_SCHEMA.status, { ...reporting, adapter: { id: "tazuo", version: "2.16.0" } }).ok, false, "a report names its protocol and features");
   assert.ok(validate(BRIDGE_SCHEMA.status, { ...status, alive: 1767268800 }).ok, "an older build's epoch-seconds heartbeat");
+});
+
+test("[fast] bridge.v1.schema.json takes a scan line naming one of the three scripts, and nothing else on it (issue #281)", () => {
+  const scan = { id: "x", action: "scan", script: "scanner", queuedAt: "2026-01-01T12:00:00.000Z", protocol: 1 };
+  for (const script of ["scanner", "refresh", "house"]) assert.ok(validate(BRIDGE_SCHEMA.scan, { ...scan, script }).ok, script);
+  for (const bad of [{ ...scan, script: "packrat-scanner.py" }, { ...scan, serial: 1 }, { ...scan, action: "grab" }, { id: "x", action: "scan", queuedAt: scan.queuedAt, protocol: 1 }]) {
+    assert.equal(validate(BRIDGE_SCHEMA.scan, bad).ok, false, JSON.stringify(bad));
+  }
 });
 
 test("[fast] bridge.v1.schema.json rejects an unknown action", () => {

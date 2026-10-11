@@ -3,7 +3,7 @@
 adapters/tazuo/test_paths.py still covers the TazUO-specific header and contract details; this file is what a second and third adapter pick up for free just by existing. Two halves:
 
 1. Conventions — none of the three banned unbounded-loop literals (see scripts/no-unbounded-loop.test.mts, which spells them out; this file must not, since TazUO refuses a script whose text contains one anywhere, comments included) in any adapter .py, `import API` alone on its line, each script's `CAPABILITIES` and `FEATURES` literals and version agreeing with its `capabilities.json` (and each bridge's `PROTOCOL` with its `protocol`), no public-speech call in a bridge, and the never-a-container names and graphics and the wearable names (read from their `adapters/_shared/` fragments) refusing what they must and nothing else. That the scripts' copies of a shared helper match is scripts/gen-contracts.mts's job (adapters/_shared/), not this file's.
-2. The bridge's untrusted-input guards (Phase 7 security review, area 5). Every bridge carries the same generated block of PURE functions — no game API, no files — bounded by the constants above them; this file extracts that block, execs it, and drives it directly, the same way adapters/tazuo/test_paths.py execs `data_dir` without a running client. Checked: stale, future-dated or unstamped commands refused, unknown actions, bad serials, over-long chains, out-of-range positions and walks, and over-long names refused, a line in a newer protocol refused (one with none read as protocol 1), an unknown top-level field ignored by both checks (what keeps installed bridges working when the app adds one), the burst budget (a 25-piece Grab all fits, a flood does not), partial and over-long queue lines, `resolve_root` and the chain check refusing another player's pack, and a trip's `putAway` (a container serial, and a Put away trip takes nothing).
+2. The bridge's untrusted-input guards (Phase 7 security review, area 5). Every bridge carries the same generated block of PURE functions — no game API, no files — bounded by the constants above them; this file extracts that block, execs it, and drives it directly, the same way adapters/tazuo/test_paths.py execs `data_dir` without a running client. Checked: stale, future-dated or unstamped commands refused, unknown actions, bad serials, over-long chains, out-of-range positions and walks, and over-long names refused, a line in a newer protocol refused (one with none read as protocol 1), an unknown top-level field ignored by both checks (what keeps installed bridges working when the app adds one), the burst budget (a 25-piece Grab all fits, a flood does not), partial and over-long queue lines, `resolve_root` and the chain check refusing another player's pack, a trip's `putAway` (a container serial, and a Put away trip takes nothing), and a scan line (issue #281: its script one of scanner, refresh and house, unknown fields ignored, and an unknown action on a bridge that does not start scans).
 
 Run: python3 adapters/test_adapters.py  (app/adapters.test.mts also spawns it, so `npm test` does).
 """
@@ -100,6 +100,17 @@ def fresh_trip(**over):
 
 
 TRIPS = ["highlight", "grab", "goto", "trip"]
+
+
+def fresh_scan(**over):
+    """A legitimate scan line exactly as POST /api/bridge writes it, at t=1000000."""
+    cmd = {"id": "5e1d2c3b-4a59-4687-9a0b-1c2d3e4f5a6b", "action": "scan", "script": "scanner",
+           "queuedAt": "1970-01-12T13:46:40Z", "protocol": 1}
+    cmd.update(over)
+    return cmd
+
+
+SCANS = TRIPS + ["scan"]
 
 
 class Conventions(unittest.TestCase):
@@ -460,6 +471,35 @@ class UntrustedInput(unittest.TestCase):
         for name, ns in self.each():
             trip, why = ns["check_line"](fresh_trip(), ["highlight", "grab", "goto"], NOW)
             self.assertIsNone(trip, name)
+            self.assertEqual(why, "unknown action", name)
+
+    # ---- scan (issue #281) ---------------------------------------------------------------------
+    def test_a_scan_line_names_one_of_the_three_scripts(self):
+        for name, ns in self.each():
+            for script in ("scanner", "refresh", "house"):
+                cmd, why = ns["check_line"](fresh_scan(script=script), SCANS, NOW)
+                self.assertEqual(cmd, {"id": fresh_scan()["id"], "action": "scan", "script": script, "name": script}, "%s: %s" % (name, why))
+            for bad in ("packrat-scanner.py", "../packrat-bridge.py", "Scanner", "", None, 1, ["scanner"]):
+                cmd, why = ns["check_line"](fresh_scan(script=bad), SCANS, NOW)
+                self.assertIsNone(cmd, "%s accepted script=%r" % (name, bad))
+                self.assertEqual(why, "script is not one of scanner, refresh, house", name)
+            line = fresh_scan()
+            del line["script"]
+            self.assertIsNone(ns["check_line"](line, SCANS, NOW)[0], "%s accepted a scan with no script" % name)
+
+    def test_a_scan_line_ignores_unknown_fields_and_needs_an_id_and_a_fresh_stamp(self):
+        for name, ns in self.each():
+            cmd, why = ns["check_line"](fresh_scan(serial=0x40000010, chain=[1], hint={"x": 1}), SCANS, NOW)
+            self.assertEqual(sorted(cmd or {}), ["action", "id", "name", "script"], "%s: %s" % (name, why))
+            self.assertIsNone(ns["check_line"](fresh_scan(id=""), SCANS, NOW)[0], name)
+            cmd, why = ns["check_line"](fresh_scan(), SCANS, NOW + 120)
+            self.assertIsNone(cmd, name)
+            self.assertIn("expired", why, name)
+
+    def test_a_scan_on_a_bridge_that_does_not_start_scans_is_an_unknown_action(self):
+        for name, ns in self.each():
+            cmd, why = ns["check_line"](fresh_scan(), TRIPS, NOW)
+            self.assertIsNone(cmd, name)
             self.assertEqual(why, "unknown action", name)
 
     # ---- protocol ------------------------------------------------------------------------------
