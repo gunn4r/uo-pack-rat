@@ -10,7 +10,7 @@ import { fastestMs, msOf } from "./timing-fixture.mts";
 import { fixtureTileData, vaultHouse, roofHouse, courtyardHouse, castleHouse, foundationHouse, stairHouse, G } from "./house-fixture.mts";
 import type { Container, Item } from "./vault-lib.mts";
 import type { HouseArea, HouseModel, Stack } from "./ui/api-types.mts";
-import { project, tilePolygon, boxFaces, pts, paintOrder, boundsOf, fit, zoomAt, vbText, anchorOf, W, chestViews, colourOf, legendOf, chestLabel, cutAway, calloutLines, houseTotals, pickHouse, houseLabel, houseName, carryOver, carryOverText, PLAIN, chestCount, nearestInDirection, tiledataNote, stackWhere, plainGrid, sceneOf, drawnZs, CHEST_H, whereOf, whereTitle, FACET_SIZE, cropAround, facetMapUrl, markersOf, facetMapNote, parseRegion, markerRadii, contentsOf, contentsSummary, filterContents, drawerChest, drawerMeta, slotsText, drawerPicker, DRAWER_TABS_MAX, parseMapHash, mapHash, floorContainerOf, positionWords, houseHits, levelHits, levelHitText, areaHitText, hitsSummary, searchCount, calloutHead, calloutRow, CALLOUT_W, CALLOUT_MIN, hitsView, houseIndex, elsewhereOf, outsideText, DRAWER_W, DRAWER_MIN, drawerMax, clampDrawer, drawerKey, piecesOf, frontCorner, fitLabel, pillsOf, placePill, LABEL_FIT, areaOfStack, levelAreas, restName, unproject, tileAt, rectOf, sizeText, unionTiles, coveredCells, outlineOf, nextAreaId, nextAreaColor, moveCursor, clampTile, liveAreas, withOrphans, redrawFailed, AREA_COLORS, AREA_COLOR_NAMES, planTracks, trackAt, gapText, stackPlan, planHead, planRows, bareText, planNeighbor, type ChestView, type ContentsNode } from "./ui/house-map-model.mts";
+import { project, tilePolygon, boxFaces, pts, paintOrder, boundsOf, fit, zoomAt, vbText, anchorOf, W, chestViews, colourOf, legendOf, chestLabel, cutAway, calloutLines, houseTotals, pickHouse, houseLabel, houseName, carryOver, carryOverText, PLAIN, chestCount, nearestInDirection, tiledataNote, stackWhere, plainGrid, sceneOf, drawnZs, CHEST_H, FURNITURE_H, whereOf, whereTitle, FACET_SIZE, cropAround, facetMapUrl, markersOf, facetMapNote, parseRegion, markerRadii, contentsOf, contentsSummary, filterContents, drawerChest, drawerMeta, slotsText, drawerPicker, DRAWER_TABS_MAX, parseMapHash, mapHash, floorContainerOf, positionWords, houseHits, levelHits, levelHitText, areaHitText, hitsSummary, searchCount, calloutHead, calloutRow, CALLOUT_W, CALLOUT_MIN, hitsView, houseIndex, elsewhereOf, outsideText, DRAWER_W, DRAWER_MIN, drawerMax, clampDrawer, drawerKey, piecesOf, frontCorner, fitLabel, pillsOf, placePill, LABEL_FIT, areaOfStack, levelAreas, restName, unproject, tileAt, rectOf, sizeText, unionTiles, coveredCells, outlineOf, nextAreaId, nextAreaColor, moveCursor, clampTile, liveAreas, withOrphans, redrawFailed, AREA_COLORS, AREA_COLOR_NAMES, planTracks, trackAt, gapText, stackPlan, planHead, planRows, bareText, planNeighbor, type ChestView, type ContentsNode } from "./ui/house-map-model.mts";
 
 const td = fixtureTileData();
 const has = (cls: string, c: string): boolean => cls.split(" ").includes(c);
@@ -235,6 +235,17 @@ test("[fast] house map: chests sharing a z on one tile are drawn one on another,
   assert.ok(piece?.kind === "stack");
   assert.equal(piece.chests[1]!.prism.top, pts(boxFaces(s.x - g.x0, s.y - g.y0, CHEST_H, CHEST_H, "angle", 0.18).top));
   assert.deepEqual(anchorOf(g, s, "angle"), project(s.x - g.x0 + 0.5, s.y - g.y0 + 0.5, 9 + CHEST_H, "angle"));
+});
+
+test("[fast] house map: furniture blocks are drawn as one low slab, whatever their tiledata height", () => {
+  const m = buildHouseModel(courtyardHouse(), td, []), sc = sceneOf(m, 0, "angle"), base = m.levels[0]!.floorZ;
+  const f = m.furniture.find((q) => q.kind === "block" && q.level === 0)!;
+  assert.ok(f.height !== FURNITURE_H, "the model keeps the real height");
+  assert.ok(FURNITURE_H < CHEST_H, "a chest on the same tile still reads above the slab");
+  const piece = sc.pieces.find((p) => p.kind === "item" && has(p.cls, "map-block") && p.x === f.x - m.x0 && p.y === f.y - m.y0);
+  assert.ok(piece?.kind === "item");
+  const want = boxFaces(f.x - m.x0, f.y - m.y0, f.z - base, FURNITURE_H, "angle", 0.15);
+  assert.deepEqual(piece.prism, { top: pts(want.top), left: pts(want.left), right: pts(want.right) });
 });
 
 test("[fast] house map: the courtyard draws its walls, window, foundation lip, stairs, table and door, and its yard tiles as yard", () => {
