@@ -1,6 +1,6 @@
 // organize.mts — Organize: GET|PUT /api/organize, GET /api/organize/presets, POST /api/organize/match and /api/organize/propose, GET /api/organize/plan and POST /api/organize/trip.
 import { isBoundedInt, isBoundedString, MAX_SERIAL } from "../../guards.mts";
-import { checkOrganizeConfig, LIMITS, matchProblem, MAX_SETUP_BYTES, type RuleMatch } from "../../organize-config.mts";
+import { checkOrganizeConfig, LIMITS, matchProblem, MAX_SETUP_BYTES, salvagedRefusal, type RuleMatch } from "../../organize-config.mts";
 import { PRESETS } from "../../organize-presets.mts";
 import { proposeOrganize, STRATEGY_IDS, type StrategyId } from "../../organize-strategies.mts";
 import type { OrganizePlanApiResponse, ProposeResult } from "../../organize-types.mts";
@@ -11,7 +11,7 @@ import type { Route } from "../router.mts";
 import type { ServerContext } from "../context.mts";
 
 export function routes(ctx: ServerContext): Route[] {
-  const { appSettings, blacklistStore, getInventory, organizeService, organizeStore } = ctx;
+  const { appSettings, blacklistStore, eventBus, getInventory, organizeService, organizeStore } = ctx;
   return [
     { method: "GET", path: "/api/organize", handle: (_req, res) => send(res, 200, { ok: true, ...organizeStore.read() }) },
     { method: "PUT", path: "/api/organize", handle: async (req, res) => {
@@ -22,6 +22,8 @@ export function routes(ctx: ServerContext): Route[] {
       const listed = Object.values(checked.config.labels).find((l) => black.has(l.serial));
       if (listed) return send(res, 400, { ok: false, error: `container ${listed.serial} is blacklisted and cannot be labeled` });
       organizeStore.write(checked.config);
+      // Every other open page reloads, labels and rules included (the page that saved sent its own id).
+      eventBus.broadcast("changed", { what: "inventory", by: req.headers["x-client-id"], at: Date.now() });
       return send(res, 200, { ok: true });
     } },
     { method: "GET", path: "/api/organize/presets", handle: (_req, res) => send(res, 200, { ok: true, presets: PRESETS }) },
@@ -44,7 +46,7 @@ export function routes(ctx: ServerContext): Route[] {
         return send(res, 400, { ok: false, error: "containers must be a list of container serials" });
       }
       const { fold, config, state, problems, features } = await organizeService.organizeNow();
-      if (problems.length) return send(res, 409, { ok: false, error: `organize.json was hand-edited and parts of it were dropped (${problems[0]}); open Organize and save the setup first` });
+      if (problems.length) return send(res, 409, { ok: false, error: salvagedRefusal(problems) });
       // `features`: what the bridge can do, as the plan Organize then shows decides it.
       const r = proposeOrganize(fold, config, state.moves, { strategy: strategy as StrategyId, containers: containers as number[] | undefined, now: Date.now(), rarity: appSettings.rules().rarity, suitPieces: organizeService.suitsFor(config.rules.map((r) => r.match)), blacklist: blacklistStore.read().map((e) => e.serial), seen: state.seen, features });
       return send(res, r.ok ? 200 : 409, r satisfies ProposeResult);
@@ -67,7 +69,7 @@ export function routes(ctx: ServerContext): Route[] {
       if (!features.has("trip")) return send(res, 409, { ok: false, error: `the ${adapter} bridge cannot run Organize trips` });
       // A salvaged setup lost rules or targets, and their items may now fall through to another rule or the
       // catch-all: nothing moves until the player has seen that and saved the setup again.
-      if (problems.length) return send(res, 409, { ok: false, error: `organize.json was hand-edited and parts of it were dropped (${problems[0]}); open Organize and save the setup first` });
+      if (problems.length) return send(res, 409, { ok: false, error: salvagedRefusal(problems) });
       const waiting = state.pending[0];
       if (waiting) return send(res, 409, { ok: false, error: `trip ${waiting.index} has not reported back yet` });
       if (stamp !== plan.stamp) return send(res, 409, { ok: false, error: "the plan has changed since it was shown; reload it", stamp: plan.stamp });

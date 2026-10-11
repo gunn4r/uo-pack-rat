@@ -1,6 +1,6 @@
 // mcp.test.mts — the built-in MCP server (issue #211; `app/mcp.mts`, `app/mcp-tools.mts`) on a real server and temp data folder.
 //
-// the built-in MCP server (issue #211; `app/mcp.mts`, `app/mcp-tools.mts`) on a real server and temp data folder, its `mcp.json` asking for port 0 so no test races another or a Pack Rat running on 47615: `initialize` negotiating each supported protocol version and answering the newest to any other, with `serverInfo` and the instructions; a notification's 202, an unknown method (-32601) and tool (-32602), a parse error (-32700), a batch refused, an unsupported `MCP-Protocol-Version` header (400), arguments a tool's schema refuses as an `isError` result; the listener's guards (another Host, any Origin, its own included, no or a wrong token, GET and DELETE, another path, a non-JSON content type, a body over 1 MB); off by default with nothing written, `PUT /api/mcp` refusing anything but the two booleans and opening and closing the listener at once (connection refused once off), `mcp.json` saved `0600`; `POST /api/mcp/token` replacing the token with the old one refused at once, and a file without one getting one; a busy port falling back to a free one without saving it, and a broken `mcp.json` reading as off with a log line; every read tool over the demo fixtures with paging, and `character_sheet`'s Resisting Spells minimum with a run saved before it opening (issue #261); `build_suit` for two characters (the second build of the same inputs reusing the saved run, buffs named, No character saved and reused, listed by `noCharacter` and read back as `character: null` with its effective totals, and a No character fill with pins not saved; `onlyContainers` narrowing the pool into its own run, `[]` as no list, non-serials refused, and a bag or an item named with where it sits), the run tools and `score_suit` over them; the in-game tools refused with the switch off (and still listed) while `stop_actions` writes the stop flag, and with it on writing the same `queue.jsonl` line the Grab button's `POST /api/bridge` writes (refused while the bridge is offline, a ground chest highlighted by its serial), an Organize trip through the Organize route with its one-at-a-time and stale-stamp refusals, and `get_action_status` reading the bridge's report; the tools reaching a `--token` app server; and the MCP SDK's own `Client` and `StreamableHTTPClientTransport` connecting, listing the tools and calling one. Fix round 1: an id with no method refused, the content type in any case, `POST /api/mcp/token` refusing fields; a hand-edited `mcp.json` (one bad field keeps the token, a BOM, an empty or broken file, a data folder that cannot take a new token leaving MCP off); property rules the route would drop refused with the accepted forms, slots, kinds, slayers and tags in any case, rows carrying their container and root serials; `container_contents` on a bag inside a chest; `score_suit` keeping the hands legal around a named weapon and planning with Manual's buffs (`manualBuffs` while `buffsCount` is on); suit results' `effectiveTotals` (paperdoll resists, Divine Fury's shares) on `score_suit`, `build_suit`, `get_suit_build`, `get_run` and a reused run, and `unreachableFloors` and `diagnostics` for a hard floor no piece reaches (issues #216, #217), with the suit's `swing`; an empty `pinned` as no pins and a fill without `currentScore`; a build replaced by a newer call saying so (a parked core); `get_action_status` on an id nobody queued; and `organize_trip` counting a move only when its put step is reported (a refused trip, a take without its put); `build_suit`'s `rarity` (issue #262) set, cleared with `any` or a template without one, and kept when left out. All `[fast]`.
+// the built-in MCP server (issue #211; `app/mcp.mts`, `app/mcp-tools.mts`) on a real server and temp data folder, its `mcp.json` asking for port 0 so no test races another or a Pack Rat running on 47615: `initialize` negotiating each supported protocol version and answering the newest to any other, with `serverInfo` and the instructions; a notification's 202, an unknown method (-32601) and tool (-32602), a parse error (-32700), a batch refused, an unsupported `MCP-Protocol-Version` header (400), arguments a tool's schema refuses as an `isError` result; the listener's guards (another Host, any Origin, its own included, no or a wrong token, GET and DELETE, another path, a non-JSON content type, a body over 1 MB); off by default with nothing written, `PUT /api/mcp` refusing anything but the two booleans and opening and closing the listener at once (connection refused once off), `mcp.json` saved `0600`; `POST /api/mcp/token` replacing the token with the old one refused at once, and a file without one getting one; a busy port falling back to a free one without saving it, and a broken `mcp.json` reading as off with a log line; every read tool over the demo fixtures with paging, and `character_sheet`'s Resisting Spells minimum with a run saved before it opening (issue #261); `build_suit` for two characters (the second build of the same inputs reusing the saved run, buffs named, No character saved and reused, listed by `noCharacter` and read back as `character: null` with its effective totals, and a No character fill with pins not saved; `onlyContainers` narrowing the pool into its own run, `[]` as no list, non-serials refused, and a bag or an item named with where it sits), the run tools and `score_suit` over them; the in-game tools refused with the switch off (and still listed) while `stop_actions` writes the stop flag, and with it on writing the same `queue.jsonl` line the Grab button's `POST /api/bridge` writes (refused while the bridge is offline, a ground chest highlighted by its serial), an Organize trip through the Organize route with its one-at-a-time and stale-stamp refusals, and `get_action_status` reading the bridge's report; the tools reaching a `--token` app server; and the MCP SDK's own `Client` and `StreamableHTTPClientTransport` connecting, listing the tools and calling one. Fix round 1: an id with no method refused, the content type in any case, `POST /api/mcp/token` refusing fields; a hand-edited `mcp.json` (one bad field keeps the token, a BOM, an empty or broken file, a data folder that cannot take a new token leaving MCP off); property rules the route would drop refused with the accepted forms, slots, kinds, slayers and tags in any case, rows carrying their container and root serials; `container_contents` on a bag inside a chest; `score_suit` keeping the hands legal around a named weapon and planning with Manual's buffs (`manualBuffs` while `buffsCount` is on); suit results' `effectiveTotals` (paperdoll resists, Divine Fury's shares) on `score_suit`, `build_suit`, `get_suit_build`, `get_run` and a reused run, and `unreachableFloors` and `diagnostics` for a hard floor no piece reaches (issues #216, #217), with the suit's `swing`; an empty `pinned` as no pins and a fill without `currentScore`; a build replaced by a newer call saying so (a parked core); `get_action_status` on an id nobody queued; and `organize_trip` counting a move only when its put step is reported (a refused trip, a take without its put); `build_suit`'s `rarity` (issue #262) set, cleared with `any` or a template without one, and kept when left out; `list_containers` (issue #276) over a captured house by its id or its name in any case (label, fill, area, level, position and top kinds; an unknown house naming the houses) and `outside` for the ground containers in no house; `label_containers` adding, renaming, pinning, unpinning and removing labels through `PUT /api/organize` with its `changed` event, refusing a bad batch whole (empty, unknown serial, trash, a bag, a label a rule or the catch-all uses, no label to remove, a serial twice, no name, a name over 64 characters, pinning a rule's target, a salvaged setup), and an Organize plan read before a label change refused as stale. All `[fast]`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, readFileSync, existsSync, statSync, mkdirSync, chmodSync } from "node:fs";
@@ -14,6 +14,8 @@ import { resolveConfig, ensureLayout } from "./config.mts";
 import type { ServerHandle } from "./vault-server.mts";
 import { startTestServer } from "./server-fixture.mts";
 import { houseScan } from "./organize-fixture.mts";
+import { vaultHouse } from "./house-fixture.mts";
+import { sseReader } from "./server-routes-fixture.mts";
 import { emptyRuleQuery, emptyOrganizeConfig, type OrganizeConfig } from "./organize-config.mts";
 import { ACTIONS_OFF, MCP_DEFAULT_PORT, PROTOCOL_VERSIONS } from "./mcp.mts";
 import { BRIDGE_OFFLINE, RESIST_KEYS } from "./vault-lib.mts";
@@ -621,6 +623,144 @@ test("[fast] organize_trip counts a move as made only when the bridge reports it
     const done = await run({ ok: true, msg: "Trip 1: 1 moved", steps: [{ op: "take", serial: REAG, ok: true, msg: "taken" }, { op: "put", serial: REAG, ok: true, msg: "put" }] });
     assert.equal(done.state, "done");
     assert.deepEqual(done.moves.map((m: { moved: boolean; to: string }) => [m.moved, m.to]), [[true, "Box " + B]]);
+  } finally { await sv.s.close(); }
+});
+
+test("[fast] list_containers lists a house's ground containers by id or name, with label, fill, area, position and top kinds; outside lists the rest", async () => {
+  const { house: cap, chests } = vaultHouse();
+  const first = chests[0]!, FAR = 0x40030001;
+  const sv = await serve({ demo: false, before: (dir) => {
+    const scan = houseScan({ scannedAt: cap.capturedAt, boxes: [...chests.map((c) => ({ serial: c.serial, pos: { x: c.x, y: c.y, z: c.z, facet: 1 } })), { serial: FAR, pos: { x: 100, y: 100, z: 0, facet: 1 } }],
+      things: [{ serial: 0x40031001, name: "Black Pearl", in: first.serial, amount: 50 }, { serial: 0x40031002, name: "Sapphire", in: first.serial }, { serial: 0x40031003, name: "Ruby", in: first.serial }] });
+    writeFileSync(join(dir, "scans", "house.json"), JSON.stringify({ ...scan, house: { facet: 1, capturedAt: cap.capturedAt, at: { x: 3003, y: 1003 }, tiles: cap.tiles, items: cap.items } }));
+    writeFileSync(join(dir, "organize.json"), JSON.stringify({ ...emptyOrganizeConfig(), labels: { [String(first.serial)]: { serial: first.serial, name: "Gems", pinned: true, origin: "manual" } } }));
+  } });
+  try {
+    const bounds = { x0: 3000, y0: 1000, x1: 3006, y1: 1006, facet: 1 };
+    assert.equal((await app(sv, "/api/house-map/1-3000-1000", "PUT", { name: "Home", bounds, areas: [{ id: "west", name: "West wall", level: 0, color: "area-1", rects: [{ x0: 3001, y0: 1001, x1: 3001, y1: 1005 }] }] })).status, 200);
+    const port = await mcpPort(sv);
+    const all = async (args: Record<string, unknown>): Promise<{ data: Record<string, any>; rows: Array<Record<string, any>> }> => {
+      const rows: Array<Record<string, any>> = [];
+      let data: Record<string, any> = {};
+      for (let offset = 0; offset === 0 || offset < data.total; offset += 100) {
+        const r = await call(port, "list_containers", { ...args, limit: 100, offset });
+        assert.equal(r.ok, true, r.text);
+        data = r.data;
+        rows.push(...data.containers);
+      }
+      return { data, rows };
+    };
+    const byId = await all({ house: "1-3000-1000" });
+    assert.deepEqual(byId.data.houses, [{ id: "1-3000-1000", name: "Home" }]);
+    assert.equal(byId.data.total, 120);
+    assert.equal(byId.rows.length, 120);
+    assert.ok(!byId.rows.some((r) => r.serial === FAR), "a container outside the house is not listed with it");
+    const gems = byId.rows.find((r) => r.serial === first.serial)!;
+    assert.deepEqual([gems.label, gems.fill.items, gems.fill.maxItems, gems.area, gems.level, gems.position, gems.house], [{ name: "Gems", pinned: true }, 3, 125, "West wall", 0, { x: first.x, y: first.y, z: first.z }, { id: "1-3000-1000", name: "Home" }]);
+    assert.equal(gems.contents.reduce((n: number, k: { count: number }) => n + k.count, 0), 3);
+    assert.ok(gems.contents.some((k: { kind: string }) => k.kind === "reagent"), JSON.stringify(gems.contents));
+    assert.deepEqual(byId.rows.find((r) => r.serial === chests[1]!.serial)!.label, null);
+    assert.equal(byId.rows.filter((r) => r.area === "West wall").length, 25, "the area's five tiles, five containers each");
+    assert.equal(byId.rows.filter((r) => r.area === null).length, 95);
+    assert.equal((await all({ house: "HOME" })).data.total, 120, "a house's name matches whatever its case");
+    assert.equal((await all({})).data.total, 120);
+    const none = await call(port, "list_containers", { house: "Cabin" });
+    assert.equal(none.ok, false);
+    assert.match(none.text, /no house "Cabin"; the houses are Home \(1-3000-1000\)/);
+    const outside = (await call(port, "list_containers", { outside: true })).data;
+    assert.deepEqual(outside.containers.map((r: { serial: number; house: unknown; position: unknown }) => [r.serial, r.house, r.position]), [[FAR, null, { x: 100, y: 100, z: 0 }]]);
+    assert.match((await call(port, "list_containers", { outside: true, house: "Home" })).text, /not both/);
+  } finally { await sv.s.close(); }
+});
+
+const C = 0x40000004, TRASH = 0x40001003;
+// The Organize house with a third, unlabeled ground container and a trash barrel the scanner recorded as an item.
+function labelHouse(dir: string, config: OrganizeConfig = HOUSE_CONFIG): void {
+  house(dir);
+  writeFileSync(join(dir, "scans", "house.json"), JSON.stringify(houseScan({ scannedAt: new Date(Date.now() - 3600e3).toISOString(),
+    boxes: [{ serial: A, pos: { x: 100, y: 100, z: 0, facet: 1 } }, { serial: BAG, parent: A, name: "Gem Bag" }, { serial: B, pos: { x: 102, y: 100, z: 0, facet: 1 } }, { serial: C, pos: { x: 104, y: 100, z: 0, facet: 1 } }],
+    things: [{ serial: GEM, name: "Sapphire", in: BAG }, { serial: REAG, name: "Black Pearl", in: A }, { serial: TRASH, name: "Trash Barrel", in: A }] })));
+  writeFileSync(join(dir, "organize.json"), JSON.stringify(config));
+}
+const savedLabels = (dir: string): OrganizeConfig["labels"] => (JSON.parse(readFileSync(join(dir, "organize.json"), "utf8")) as OrganizeConfig).labels;
+
+test("[fast] label_containers adds, renames, pins and removes labels through the Organize route, and tells open pages", async () => {
+  const sv = await serve({ demo: false, before: (dir) => labelHouse(dir) });
+  const sse = sseReader(await fetch(sv.s.url + "/api/events"));
+  try {
+    await sse.readUntil((b) => b.includes("event: hello"));
+    const port = await mcpPort(sv);
+    const r = await call(port, "label_containers", { changes: [{ serial: C, name: "  Gems  " }, { serial: A, name: "Overflow", pinned: true }, { serial: B, name: "Reagents" }] });
+    assert.equal(r.ok, true, r.text);
+    assert.deepEqual(r.data.applied, [
+      { serial: C, change: "added", name: "Gems", pinned: false },
+      { serial: A, change: "changed", name: "Overflow", pinned: true, was: { name: "Storage", pinned: false } },
+      { serial: B, change: "unchanged", name: "Reagents", pinned: false, was: { name: "Reagents", pinned: false } },
+    ]);
+    assert.equal(r.data.labels, 3);
+    await sse.readUntil((b) => b.includes('event: changed\ndata: {"what":"inventory","by":"mcp"'));
+    const labels = savedLabels(sv.dir);
+    assert.deepEqual([labels[String(C)], labels[String(A)]], [{ serial: C, name: "Gems", origin: "manual" }, { serial: A, name: "Overflow", pinned: true, origin: "manual" }]);
+    const cfg = (await app<{ config: OrganizeConfig }>(sv, "/api/organize")).body.config;
+    assert.deepEqual(cfg.rules, HOUSE_CONFIG.rules, "a rename keeps the rules");
+    const listed = (await call(port, "list_containers", { outside: true })).data.containers;
+    assert.deepEqual(listed.map((c: { serial: number; label: unknown }) => [c.serial, c.label]), [[A, { name: "Overflow", pinned: true }], [B, { name: "Reagents", pinned: false }], [C, { name: "Gems", pinned: false }]]);
+    const off = await call(port, "label_containers", { changes: [{ serial: A, pinned: false }, { serial: C, remove: true }] });
+    assert.equal(off.ok, true, off.text);
+    assert.deepEqual(off.data.applied.map((x: { change: string }) => x.change), ["changed", "removed"]);
+    assert.equal(off.data.labels, 2);
+    assert.deepEqual(Object.keys(savedLabels(sv.dir)).map(Number).sort(), [A, B].sort());
+    assert.equal(savedLabels(sv.dir)[String(A)]!.pinned, undefined);
+  } finally { await sse.cancel(); await sv.s.close(); }
+});
+
+test("[fast] label_containers refuses a bad batch whole, naming the entry and why", async () => {
+  const sv = await serve({ demo: false, before: (dir) => labelHouse(dir, { ...HOUSE_CONFIG, catchAll: A }) });
+  try {
+    const port = await mcpPort(sv);
+    const before = readFileSync(join(sv.dir, "organize.json"), "utf8");
+    const refused = async (changes: unknown[], why: RegExp): Promise<void> => {
+      const r = await call(port, "label_containers", { changes });
+      assert.equal(r.ok, false, JSON.stringify(changes));
+      assert.match(r.text, why);
+      assert.equal(readFileSync(join(sv.dir, "organize.json"), "utf8"), before, "nothing is written");
+    };
+    const good = { serial: C, name: "Gems" };
+    await refused([], /fewer than minItems 1/);
+    await refused([good, { serial: 0x4fffffff, name: "X" }], /changes\[1\] \(0x4FFFFFFF\): no container with this serial in the scans/);
+    await refused([good, { serial: TRASH, name: "Bin" }], /changes\[1\].*a trash container can't be labeled/);
+    await refused([good, { serial: BAG, name: "Gems" }], /only containers on the ground can be labeled, not a bag inside one/);
+    await refused([good, { serial: B, remove: true }], /Reagents keeps its label: the rule "Reagents" puts items into it/);
+    await refused([good, { serial: A, remove: true }], /Storage keeps its label: it is the catch-all/);
+    await refused([{ serial: C, remove: true }], /it has no label to remove/);
+    await refused([{ serial: A, remove: true, name: "X" }], /remove takes no name or pinned/);
+    await refused([good, { serial: C, pinned: true }], /changes\[1\].*listed twice/);
+    await refused([{ serial: C, pinned: true }], /a new label needs a name/);
+    await refused([{ serial: C, name: "   " }], /a new label needs a name/);
+    await refused([{ serial: C, name: "x".repeat(65) }], /must be 1 to 64 characters/);
+    await refused([{ serial: C }], /nothing to change/);
+    await refused([good, { serial: B, pinned: true }], /The rule "Reagents" puts items into Reagents, which is pinned/);
+    assert.equal((await call(port, "label_containers", { changes: [{ serial: C, name: "x".repeat(64) }] })).ok, true, "64 characters is the limit");
+  } finally { await sv.s.close(); }
+  const salvaged = await serve({ demo: false, before: (dir) => labelHouse(dir, { ...HOUSE_CONFIG, rules: [{ ...HOUSE_CONFIG.rules[0]!, targets: [C] }] }) });
+  try {
+    const r = await call(await mcpPort(salvaged), "label_containers", { changes: [{ serial: C, name: "Gems" }] });
+    assert.equal(r.ok, false);
+    assert.match(r.text, /hand-edited and parts of it were dropped.*open Organize and save the setup first/);
+  } finally { await salvaged.s.close(); }
+});
+
+test("[fast] an Organize plan read before a label change is stale for organize_trip", async () => {
+  const sv = await serve({ demo: false, mcp: { enabled: true, allowActions: true }, before: (dir) => { labelHouse(dir); bridgeAlive(dir); } });
+  try {
+    const port = await mcpPort(sv);
+    const plan = (await call(port, "organize_plan")).data;
+    assert.equal(plan.trips.length, 1);
+    assert.equal((await call(port, "label_containers", { changes: [{ serial: A, pinned: true }] })).ok, true);
+    const after = (await call(port, "organize_plan")).data;
+    assert.notEqual(after.stamp, plan.stamp);
+    assert.equal(after.trips.length, 0, "nothing is taken out of a pinned container");
+    assert.match((await call(port, "organize_trip", { index: 1, stamp: plan.stamp, waitSeconds: 0 })).text, /plan has changed/);
   } finally { await sv.s.close(); }
 });
 

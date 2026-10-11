@@ -18,6 +18,7 @@
     "app/run-settings.*",
     "app/build-spec.*",
     "app/swing.*",
+    "app/house-areas.*",
     "app/guards.*",
     "app/data-dir-notice.*",
     "app/schema/validate.*",
