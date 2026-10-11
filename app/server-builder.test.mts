@@ -369,6 +369,34 @@ test("[fast] /api/optimize by character with a bad settings type is 400", async 
   assert.match(asJson<ErrorBody>(await r.json()).error, /excludeTags/);
 });
 
+// Issue #265: the server keeps only the Resisting Spells steps the pool reaches, before the run key, so a pool without
+// such pieces keys (and reuses runs) as a profile without steps; a malformed resistSteps is refused.
+test("[fast] /api/optimize keeps only the Resisting Spells steps the pool reaches: none, and the run is reused as without them", async () => {
+  const pools = { ring: [{ serial: 9101, name: "Ring", slot: "ring", props: { fireResist: 10 } }], bracelet: [{ serial: 9102, name: "Bracelet", slot: "bracelet", props: { luck: 50 } }] };
+  const base = { weights: { fireResist: 1, luck: 1 }, caps: { fireResist: 70 }, mins: { fireResist: 6 } };
+  const opts = { exact: false, optionalSlots: ["ring", "bracelet"] };
+  const post = async (profile: object): Promise<{ status: number; body: OptimizeJobResponse & { cached?: boolean } & ErrorBody }> => {
+    const r = await fetch(srv.url + "/api/optimize", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ pools, current: {}, profile, opts }) });
+    return { status: r.status, body: asJson(await r.json()) };
+  };
+  const first = await post(base);
+  assert.equal(first.status, 200, JSON.stringify(first.body));
+  let status: OptimizeJobResponse = first.body;
+  for (let i = 0; i < 200 && status.state !== "done" && !first.body.cached; i++) {
+    await new Promise((res) => setTimeout(res, 20));
+    status = asJson<OptimizeJobResponse>(await (await fetch(srv.url + `/api/optimize/${first.body.id}/status`)).json());
+  }
+  const again = await post({ ...base, resistSteps: [{ at: 5, mins: { physResist: 8, fireResist: 8, coldResist: 8, poisonResist: 8, energyResist: 8 } }] });
+  assert.equal(again.body.cached, true, JSON.stringify(again.body));
+  const full = (m: number): Record<string, number> => ({ physResist: m, fireResist: m, coldResist: m, poisonResist: m, energyResist: m });
+  for (const [steps, why] of [[[{ at: "5" }], "at not a number"], [[{ at: 5, mins: { fireResist: 8 } }], "mins missing resists"], [[{ at: 5, mins: { ...full(8), coldResist: "8" } }], "a min not a number"],
+    [[{ at: 5, mins: full(8) }, { at: 5, mins: full(9) }], "at not increasing"], [[{ at: 0, mins: full(8) }], "at not above 0"], [[{ at: 2000, mins: full(8) }], "at past 1000"], [{ at: 5 }, "not an array"]] as const) {
+    const bad = await post({ ...base, resistSteps: steps });
+    assert.equal(bad.status, 400, why);
+    assert.match(bad.body.error, /resistSteps/, why);
+  }
+});
+
 // The by-character form builds its pools from `settings`, but a saved run must still remember the page's
 // whole settings snapshot (meta.settings: floors, weights, race, the search knobs): the Saved runs drawer
 // labels, badges, compares and re-applies runs from it. The route used to replace meta.settings with the

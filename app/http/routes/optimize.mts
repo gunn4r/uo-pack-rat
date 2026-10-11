@@ -2,7 +2,7 @@
 import { randomUUID } from "node:crypto";
 import http from "node:http";
 import { isBoundedInt, isBoundedString, short } from "../../guards.mts";
-import { optionalSlotsFor } from "../../mip.mts";
+import { optionalSlotsFor, withReachableResistSteps } from "../../mip.mts";
 import { onlyRootsDiagnostics, preBuildDiagnostics, weaponFlagDiagnostics, type Diagnostic, type DiagnosticsProfile } from "../../diagnostics.mts";
 import { readBody } from "../../read-body.mts";
 import { runKey, reusableRun, runSummary, manualRun, type RunOpts, type SavedRun } from "../../runs-lib.mts";
@@ -15,7 +15,7 @@ import type { Job } from "../../services/jobs.mts";
 import { isManualSuit } from "../../store/ui-prefs.mts";
 import { rarityRank } from "../../item-query.mts";
 import type { RulesV1RarityItem } from "../../schema/types.d.mts";
-import { GEAR_SLOTS, NOBODY, RARITY_PREFERENCES, buildPools, getRules, missingFlags, toOptItem, type Character, type Inventory, type Item, type OptItem, type Profile, type RarityPreference, type RunBuffs } from "../../vault-lib.mts";
+import { GEAR_SLOTS, NOBODY, RARITY_PREFERENCES, RESIST_KEYS, buildPools, getRules, missingFlags, toOptItem, type Character, type Inventory, type Item, type OptItem, type Profile, type RarityPreference, type ResistStep, type RunBuffs } from "../../vault-lib.mts";
 import { characterProfile, poolFromSpec, specFromRunSettings } from "../../build-spec.mts";
 import { send, asObject, SSE_HEADERS } from "../respond.mts";
 import { NEXT, type Route } from "../router.mts";
@@ -70,6 +70,19 @@ function currentError(current: unknown): string | null {
 // optionalSlots/warmStart are set by the route itself after this runs; seed/restarts/timeBudgetMs/
 // exact/alternatives are what app/ui/builder.mts actually sends.
 export { OPTS_LIMITS };
+// A profile's Resisting Spells steps (vault-lib.mts EffectiveProfile.resistSteps) as both solvers read them alike: each
+// `at` a bonus in (0, 1000], strictly increasing, and every step's `mins` a finite number for every resist.
+function resistStepsValid(steps: unknown): boolean {
+  if (!Array.isArray(steps)) return false;
+  let last = 0;
+  return steps.every((st) => {
+    if (!st || typeof st !== "object") return false;
+    const { at, mins } = st as { at?: unknown; mins?: unknown };
+    if (typeof at !== "number" || !Number.isFinite(at) || at <= last || at > 1000 || !mins || typeof mins !== "object") return false;
+    last = at;
+    return RESIST_KEYS.every((k) => Number.isFinite((mins as Record<string, unknown>)[k]));
+  });
+}
 const OPTS_MAX_TIME_BUDGET_MS = OPTS_LIMITS.timeBudgetMs.max;
 function optsError(opts: Record<string, unknown>): string | null {
   for (const [k, v] of Object.entries(opts)) {
@@ -243,7 +256,11 @@ export function routes(ctx: ServerContext): Route[] {
       if (!profile || typeof profile !== "object" || Array.isArray(profile)) return send(res, 400, { ok: false, error: "profile required" });
       const { hardFloors } = profile as { hardFloors?: unknown };
       if (hardFloors != null && (!Array.isArray(hardFloors) || hardFloors.some((k) => !isBoundedString(k, 64)))) return send(res, 400, { ok: false, error: "profile.hardFloors must be an array of property names" });
+      const { resistSteps } = profile as { resistSteps?: unknown };
+      if (resistSteps != null && !resistStepsValid(resistSteps)) return send(res, 400, { ok: false, error: "profile.resistSteps must be an array of {at, mins}: at in (0, 1000] and strictly increasing, mins a finite number for every resist" });
       const fullOpts = Object.assign({ seed: RUN_DEFAULTS.seed, restarts: RUN_DEFAULTS.restarts }, opts as RunOpts);
+      // only the Resisting Spells steps this pool reaches, before the key: a pool without such pieces keys as before them
+      profile = withReachableResistSteps(profile as { resistSteps?: ResistStep[] }, pools as Partial<Record<string, OptItem[]>>, current as Partial<Record<string, OptItem | null>>, fullOpts.optionalSlots as string[] | undefined);
       const key = runKey({ pools, current, profile, opts: fullOpts, weaponMustHave: mustHave, onlyRoots: only });
       const runs = runStore.all();
       const hit = fill ? null : reusableRun(runs, key, fullOpts as { timeBudgetMs?: number });

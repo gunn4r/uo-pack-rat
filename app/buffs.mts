@@ -4,8 +4,8 @@
 // Scripts/) or the UO Alive wiki, which wins where the two disagree (the other's number is said in the entry's note),
 // and carries how sure those numbers are. No DOM: Manual (ui/builder-manual.mts) and Automatic read the same model,
 // and app/buffs.test.mts checks it.
-import { RESIST_KEYS, minResistAt, labelOf, effectiveProfile, profileResistCaps, toOptItem, totalsOf } from "./vault-lib.mts";
-import type { BuffShift, Character, EffectiveProfile, Item, Profile, PropMap, RunBuffs } from "./vault-lib.mts";
+import { RESIST_KEYS, minResistAt, skillInSuit, labelOf, effectiveProfile, profileResistCaps, toOptItem, totalsOf } from "./vault-lib.mts";
+import type { BuffShift, SuitSkill, Character, EffectiveProfile, Item, Profile, PropMap, RunBuffs } from "./vault-lib.mts";
 
 // ---------------------------------------------------------------- the numbers a buff scales with
 // A skill, by the scan's name for it (a character's own value is the highest of `skills`), or a value no scan carries
@@ -452,18 +452,22 @@ export interface BuffResult {
   minimum: number | null;                  // the Resisting Spells minimum with these buffs (minimumWith), null for none
   lifted: string[];                        // the resists the minimum holds up: their totals are the minimum, not the suit's
 }
-// The Resisting Spells minimum with `buffs` on, at the skill `resist` (null: no character, no minimum): with Protection
-// on, at the skill Protection leaves (its Inscription read from `skills`).
-export function minimumWith(resist: number | null, buffs: readonly string[], skills: Skills): number | null {
+// What the `buffs` take off Resisting Spells: Protection's loss (its Inscription read from `skills`), else 0.
+export const resistLossWith = (buffs: readonly string[], skills: Skills): number => (buffs.includes("protection") ? protectionLoss((id) => skills[id] ?? BUFF_INPUTS[id]?.def ?? 0) : 0);
+// The Resisting Spells minimum with `buffs` on, at the skill `resist` (null: no character, no minimum): a number is a
+// skill with nothing on top, a SuitSkill the character's own with a suit's bonus and its cap (evaluate.mts suitResist).
+// With Protection on, at the skill Protection leaves, the suit's bonus then added up to the cap (vault-lib skillInSuit).
+export function minimumWith(resist: number | SuitSkill | null, buffs: readonly string[], skills: Skills): number | null {
   if (resist == null) return null;
-  return minResistAt(buffs.includes("protection") ? Math.max(0, resist + protectionLoss((id) => skills[id] ?? BUFF_INPUTS[id]?.def ?? 0)) : resist);
+  const r = typeof resist === "number" ? { skill: resist, bonus: 0, cap: null } : resist;
+  return minResistAt(skillInSuit(r.skill, r.bonus, r.cap, resistLossWith(buffs, skills)));
 }
 // The suit's totals with the `buffs` that are on. `totals` and `caps` are in the page's terms (resists as on the
 // paperdoll). The order is the game's: the caps change first, the in-cap shares are added (a stat slot takes its
 // largest share only) and clamped, and the outside shares come after the cap. Last, the Resisting Spells minimum at
-// `resist` (the character's skill with this suit's own Resisting Spells bonus, null for none; minimumWith) holds each
+// `resist` (the character's skill, this suit's own Resisting Spells bonus and the skill's cap, null for none; minimumWith) holds each
 // resist up: a resist under it reads the minimum, its cap too.
-export function applyBuffs(totals: PropMap, caps: Readonly<Record<string, number>>, buffs: readonly string[], skills: Skills, stats: Stats | null, who: BuffWho = {}, resist: number | null = null): BuffResult {
+export function applyBuffs(totals: PropMap, caps: Readonly<Record<string, number>>, buffs: readonly string[], skills: Skills, stats: Stats | null, who: BuffWho = {}, resist: number | SuitSkill | null = null): BuffResult {
   const c = buffContext(skills, stats, totals, who, caps);
   const r: BuffResult = { totals: { ...totals }, caps: { ...caps }, outside: {}, effective: {}, shares: {}, capShares: {}, beaten: [], unsure: [], blocked: [], minimum: null, lifted: [] };
   const live = BUFFS.filter((b) => buffs.includes(b.id) && (buffNeeds(b, skills, who) ? (r.blocked.push(b.id), false) : true));
@@ -554,8 +558,8 @@ export function buffShift(base: EffectiveProfile, plan: BuffPlan): { shift: Buff
   const shares = Object.fromEntries(Object.entries(r.shares).map(([k, list]) => [k, list.filter((x) => !x.outside).reduce((n, x) => n + x.value, 0)]));
   const touched = (k: string, v: number): boolean => v !== caps[k] || Object.hasOwn(shares, k) || (!!plan.stats && STAT_KEYS.some(([, sk]) => sk === k));
   const kept = Object.entries(r.caps).filter(([k, v]) => touched(k, v));
-  const minimum = minimumWith(base.resistSkill, plan.on.filter((id) => !r.blocked.includes(id)), plan.skills);
-  return { shift: { caps: Object.fromEntries(kept), shares, minimum }, r };
+  const live = plan.on.filter((id) => !r.blocked.includes(id)), minimum = minimumWith(base.resistSkill, live, plan.skills);
+  return { shift: { caps: Object.fromEntries(kept), shares, minimum, resistLoss: resistLossWith(live, plan.skills) }, r };
 }
 // The buffs among `on` whose numbers Automatic takes from the suit worn now: the potions (its Enhance Potions) and an
 // Enchant (the held weapon's Spell Channeling).

@@ -62,8 +62,13 @@ interface OptProfile {
   mins?: Record<string, number> | undefined;
   // SSI scored by swing step (app/swing.mts stepTable): with a positive SSI weight, SSI is worth weights.ssi × the largest `credit` among the points the suit reaches (ssi total >= ssi and stamPool total >= stam; 0 when it reaches none) in place of weights.ssi × min(ssi, cap). SSI floors still read the plain total.
   ssiSteps?: Array<{ ssi: number; stam: number; credit: number }> | undefined;
+  // Resisting Spells steps (app/vault-lib.mts EffectiveProfile.resistSteps), lowest first: a suit whose RESIST_SKILL_KEY total is at least `at` (less RESIST_STEP_SLACK) holds each property in `mins` at that min in place of `mins` above. It scores weights[p] × max(that min, min(total, cap)), and a floor is met when the total or that min reaches it.
+  resistSteps?: Array<{ at: number; mins: Record<string, number> }> | undefined;
 }
 const HARD_FLOOR_BONUS = 1e7;
+// == app/vault-lib.mts RESIST_SKILL_KEY and RESIST_STEP_SLACK
+const RESIST_SKILL_KEY = "sk:resisting spells";
+const RESIST_STEP_SLACK = 0.05;
 
 interface OptOptions {
   seed?: number;          // PRNG seed; same seed => byte-identical result
@@ -155,6 +160,10 @@ interface OptSpace {
   stepSsi: number;
   stepStam: number;
   steps: { ssi: number[]; stam: number[]; credit: number[] };
+  // Resisting Spells steps (OptProfile.resistSteps): the bonus dimension (-1 with no steps), each step's threshold (at less the slack) and each step's min per dimension (the dimension's own `min` where the step names none).
+  rs: number;
+  rsTau: number[];
+  rsMin: number[][];
 }
 
 // ---------------------------------------------------------------------------
@@ -264,6 +273,9 @@ function optBuildSpace(keys: string[], profile: OptProfile): OptSpace {
   // Steps need both dimensions in the space, even when no candidate carries them.
   const stepped = Array.isArray(profile.ssiSteps) && typeof weights["ssi"] === "number" && weights["ssi"] > 0;
   if (stepped) for (const k of ["ssi", "stamPool"]) if (keys.indexOf(k) < 0) keys = keys.concat([k]);
+  // Resisting Spells steps need the bonus dimension in the space, even when no candidate carries it.
+  const rSteps = Array.isArray(profile.resistSteps) ? profile.resistSteps : [], lifted = rSteps.length > 0;
+  if (lifted && keys.indexOf(RESIST_SKILL_KEY) < 0) keys = keys.concat([RESIST_SKILL_KEY]);
   for (let i = 0; i < keys.length; i++) {
     const k = keys[i]!;
     index[k] = i;
@@ -289,8 +301,30 @@ function optBuildSpace(keys: string[], profile: OptProfile): OptSpace {
     evals: 0,
     stepSsi: stepped ? index["ssi"]! : -1,
     stepStam: stepped ? index["stamPool"]! : -1,
-    steps: stepped ? { ssi: profile.ssiSteps!.map((p) => p.ssi), stam: profile.ssiSteps!.map((p) => p.stam), credit: profile.ssiSteps!.map((p) => p.credit) } : steps
+    steps: stepped ? { ssi: profile.ssiSteps!.map((p) => p.ssi), stam: profile.ssiSteps!.map((p) => p.stam), credit: profile.ssiSteps!.map((p) => p.credit) } : steps,
+    rs: lifted ? index[RESIST_SKILL_KEY]! : -1,
+    rsTau: lifted ? rSteps.map((st) => st.at - RESIST_STEP_SLACK) : [],
+    rsMin: lifted ? rSteps.map((st) => keys.map((k, i) => (typeof st.mins[k] === "number" ? st.mins[k] : min[i]!))) : []
   };
+}
+
+// The highest Resisting Spells step a bonus total of `s` reaches, -1 for none.
+function optLiftIndex(space: OptSpace, s: number): number {
+  let li = -1;
+  for (let i = 0; i < space.rsTau.length; i++) if (s >= space.rsTau[i]!) li = i;
+  return li;
+}
+// Dimension i's min at step `li` (-1: its own).
+function optMinAt(space: OptSpace, i: number, li: number): number {
+  return li >= 0 ? space.rsMin[li]![i]! : space.min[i]!;
+}
+// Whether dimension i's floor is met at total t with the min m: the total or the min reaches it.
+function optFloorMetAt(space: OptSpace, i: number, t: number, m: number): boolean {
+  const f = space.floor[i]!;
+  return t >= f || m >= f;
+}
+function optFloorMet(space: OptSpace, totals: number[], i: number): boolean {
+  return optFloorMetAt(space, i, totals[i]!, optMinAt(space, i, space.rs >= 0 ? optLiftIndex(space, totals[space.rs]!) : -1));
 }
 
 // The largest step credit a suit with `ssi` SSI and `stam` Stamina pool reaches (0 when it reaches none). It never falls as either total rises, so its value at the top of a reachable range bounds every suit below it.
@@ -318,19 +352,20 @@ function optVec(it: OptItem | null, space: OptSpace): number[] {
 }
 
 // Score a totals VECTOR. Over-cap points are worth exactly zero — that is the whole reason
-// this is a set-level problem. A total under its min counts as the min.
+// this is a set-level problem. A total under its min counts as the min (the Resisting Spells step its bonus reaches).
 function optScoreVector(totals: number[], space: OptSpace): number {
   space.evals++;
   let s = 0;
+  const li = space.rs >= 0 ? optLiftIndex(space, totals[space.rs]!) : -1;
   for (let i = 0; i < totals.length; i++) {
     const t = totals[i]!;
-    const c = space.cap[i]!, m = space.min[i]!;
+    const c = space.cap[i]!, m = li >= 0 ? space.rsMin[li]![i]! : space.min[i]!;
     const v = t < c ? t : c;
     s += i === space.stepSsi ? space.w[i]! * optStepCredit(space, t, totals[space.stepStam]!) : space.w[i]! * (v < m ? m : v);
     const f = space.floor[i]!;
     if (f > 0) {
       const fb = space.floorBonusArr[i]!;
-      if (t >= f) s += fb;
+      if (t >= f || m >= f) s += fb;   // the total or the min reaches it (optFloorMetAt)
       else s += fb * space.floorPartial * (t > 0 ? t / f : 0);
     }
   }
@@ -399,7 +434,8 @@ function optGradientProfile(profile: OptProfile): OptProfile {
     floorPartial: 1,
     hardFloors: profile.hardFloors,
     mins: profile.mins,
-    ssiSteps: profile.ssiSteps
+    ssiSteps: profile.ssiSteps,
+    resistSteps: profile.resistSteps
   };
 }
 
@@ -611,6 +647,18 @@ function optSanitize(a: OptAssignment, slots: string[]): OptAssignment {
 function optDimSign(space: OptSpace, i: number): number {
   // with SSI by step, more stamina can reach a faster step: it counts as good unless its own weight is negative
   if (i === space.stepStam) return space.w[i]! < 0 ? 2 : 1;
+  // with Resisting Spells steps, more bonus lifts the mins: good for a weighted or floored resist, bad for one weighted
+  // below 0, so it is good, bad or neither by every dimension it lifts and its own weight and floor
+  if (i === space.rs) {
+    let good = space.w[i]! > 0 || space.floor[i]! > 0, bad = space.w[i]! < 0;
+    const top = space.rsMin[space.rsMin.length - 1]!;
+    for (let d = 0; d < space.keys.length; d++) {
+      if (d === i || !(top[d]! > space.min[d]!)) continue;
+      if (space.w[d]! > 0 || space.floor[d]! > 0) good = true;
+      if (space.w[d]! < 0) bad = true;
+    }
+    return good && bad ? 2 : good ? 1 : bad ? -1 : 0;
+  }
   if (space.w[i]! < 0 && space.floor[i]! > 0) return 2;
   if (space.w[i]! > 0 || space.floor[i]! > 0) return 1;
   if (space.w[i]! < 0) return -1;
@@ -723,36 +771,51 @@ function optBranchAndBound(slots: string[], cands: Record<string, (OptItem | nul
     for (let d = 0; d < dims; d++) if (concave[d] && space.w[d]! > 0 && v[d]! > 0) out.push(d, v[d]!);
     return out;
   }));
-  const capped = function (d: number, t: number): number { const c = space.cap[d]!, m = space.min[d]!, v = t < c ? t : c; return space.w[d]! * (v < m ? m : v); };
+  const capped = function (d: number, t: number, m: number = space.min[d]!): number { const c = space.cap[d]!, v = t < c ? t : c; return space.w[d]! * (v < m ? m : v); };
+  // The highest Resisting Spells step the remaining slots can still reach (-1 for none, or no steps): its min bounds a
+  // positive weight's term and a floor from above. A negative weight's best is its own min, the lowest any step leaves.
+  const liftHi = function (k: number): number { return space.rs >= 0 ? optLiftIndex(space, totals[space.rs]! + sufHi[k]![space.rs]!) : -1; };
+  // ... and the step every completion reaches (the least the remaining slots can add).
+  const liftLo = function (k: number): number { return space.rs >= 0 ? optLiftIndex(space, totals[space.rs]! + sufLo[k]![space.rs]!) : -1; };
   // w·min(t, cap) without the min. With a min the term is not concave, but its gain from any t never passes this one's
   // (under the min it is 0 until the total reaches it, then the same), which is concave: the sparse bound takes it.
   const cappedRaw = function (d: number, t: number): number { const c = space.cap[d]!; return space.w[d]! * (t < c ? t : c); };
-  const floorTerm = function (d: number, t: number): number {
+  const floorTerm = function (d: number, t: number, li: number): number {
     const f = space.floor[d]!;
     if (!(f > 0)) return 0;
     const fb = space.floorBonusArr[d]!;
-    return t >= f ? fb : fb * space.floorPartial * (t > 0 ? t / f : 0);
+    return optFloorMetAt(space, d, t, optMinAt(space, d, li)) ? fb : fb * space.floorPartial * (t > 0 ? t / f : 0);
   };
   // The weight term's best over the reachable range [t + sufLo, t + sufHi] (w·max(min, min(t, cap)) is monotone,
   // so it is one of the two ends), and the floor term's best (always the top end).
-  const weightBest = function (d: number, k: number): number {
+  const weightBest = function (d: number, k: number, li: number): number {
     const t = totals[d]!;
     if (d === space.stepSsi) { const m = space.stepStam; return space.w[d]! * optStepCredit(space, t + sufHi[k]![d]!, totals[m]! + sufHi[k]![m]!); }
-    return space.w[d]! < 0 ? capped(d, t + sufLo[k]![d]!) : capped(d, t + sufHi[k]![d]!);
+    return space.w[d]! < 0 ? capped(d, t + sufLo[k]![d]!) : capped(d, t + sufHi[k]![d]!, optMinAt(space, d, li));
   };
   const looseBound = function (k: number): number {
     space.evals++;
     let s = 0;
-    for (let d = 0; d < dims; d++) s += weightBest(d, k) + floorTerm(d, totals[d]! + sufHi[k]![d]!);
+    const li = liftHi(k);
+    for (let d = 0; d < dims; d++) s += weightBest(d, k, li) + floorTerm(d, totals[d]! + sufHi[k]![d]!, li);
     return s;
   };
+  // With Resisting Spells steps, a concave term's min is the one every completion reaches (with none, the highest's), and
+  // what a higher step could add is counted apart: w·max(hi, x) ≤ w·max(lo, x) + w·(hi − max(lo, x0))⁺, x0 the least
+  // capped total any completion has, so nothing is added once the totals are past the highest min.
   const tightBound = function (k: number): number {
     let s = 0, gainA = 0;
+    const li = liftHi(k), lo = liftLo(k);
     for (let d = 0; d < dims; d++) {
       const t = totals[d]!;
-      if (concave[d]) { const now = capped(d, t); s += now; gainA += capped(d, t + sufHi[k]![d]!) - now; }
-      else s += weightBest(d, k);
-      s += floorTerm(d, t + sufHi[k]![d]!);
+      if (concave[d]) {
+        const mHi = optMinAt(space, d, li), reached = optMinAt(space, d, lo), mLo = reached > -Infinity ? reached : mHi, now = capped(d, t, mLo);
+        const c = space.cap[d]!, x0 = t + sufLo[k]![d]!, held = Math.max(mLo, x0 < c ? x0 : c);
+        s += now + (mHi > held ? space.w[d]! * (mHi - held) : 0);
+        gainA += capped(d, t + sufHi[k]![d]!, mLo) - now;
+      }
+      else s += weightBest(d, k, li);
+      s += floorTerm(d, t + sufHi[k]![d]!, li);
     }
     let gainB = 0;
     for (let lvl = k; lvl < n && gainB < gainA; lvl++) {
@@ -799,7 +862,7 @@ function optBranchAndBound(slots: string[], cands: Record<string, (OptItem | nul
     if (k === n && tie) {
       const sc = optScoreVector(totals, space);
       let ok = sc >= tie.min - EPS;
-      for (let i = 0; i < tie.met.length && ok; i++) if (totals[tie.met[i]!]! < space.floor[tie.met[i]!]!) ok = false;
+      for (let i = 0; i < tie.met.length && ok; i++) if (!optFloorMet(space, totals, tie.met[i]!)) ok = false;
       if (ok && (costSoFar < bestCost - EPS || (costSoFar <= bestCost + EPS && sc > bestScore + EPS))) {
         bestScore = sc;
         bestCost = costSoFar;
@@ -836,7 +899,8 @@ function optBranchAndBound(slots: string[], cands: Record<string, (OptItem | nul
     }
     if (tie) {
       if (costSoFar + sufCost[k]! > bestCost + EPS) return true;   // cannot get as cheap as the incumbent
-      for (let i = 0; i < tie.met.length; i++) { const d = tie.met[i]!; if (totals[d]! + sufHi[k]![d]! < space.floor[d]!) return true; }   // a floor out of reach
+      const li = liftHi(k);
+      for (let i = 0; i < tie.met.length; i++) { const d = tie.met[i]!; if (!optFloorMetAt(space, d, totals[d]! + sufHi[k]![d]!, optMinAt(space, d, li))) return true; }   // a floor out of reach
     }
     if (pruneAt(looseBound(k))) return true;                   // subtree cannot beat the incumbent (or reach the alternatives list)
     if (n - k >= 2 && pruneAt(tightBound(k))) return true;     // ... nor under the tighter, item-coupled bound
@@ -918,7 +982,7 @@ function optimizeSuit(pools: Record<string, OptItem[]>, current: OptAssignment, 
     prog.lastImprovementMs = Date.now() - t0;
     const tv = optTotalsOf(assignment, slots, space);
     let met = 0;
-    for (let i = 0; i < space.keys.length; i++) if (space.floor[i]! > 0 && tv[i]! >= space.floor[i]!) met++;
+    for (let i = 0; i < space.keys.length; i++) if (space.floor[i]! > 0 && optFloorMet(space, tv, i)) met++;
     prog.floorsMet = met;
   };
   const emit = function (force?: boolean): void {
@@ -1029,14 +1093,14 @@ function optimizeSuit(pools: Record<string, OptItem[]>, current: OptAssignment, 
       if (optScoreVector(optTotalsOf(ts, slots, space), space) >= topScore - EPS) tieRef = ts;
     }
     const topTv = optTotalsOf(tieRef, slots, space), met: number[] = tieMet;
-    for (let i = 0; i < space.keys.length; i++) if (space.floor[i]! > 0 && topTv[i]! >= space.floor[i]!) met.push(i);
+    for (let i = 0; i < space.keys.length; i++) if (space.floor[i]! > 0 && optFloorMet(space, topTv, i)) met.push(i);
     const qualifies = function (tv: number[], sc: number): boolean {
       if (sc < min - EPS) return false;
-      for (let i = 0; i < met.length; i++) if (tv[met[i]!]! < space.floor[met[i]!]!) return false;
+      for (let i = 0; i < met.length; i++) if (!optFloorMet(space, tv, met[i]!)) return false;
       return true;
     };
     const costOf = function (it: OptItem | null): number { return it ? it.tieCost || 0 : 0; };
-    tieKeeps = function (a: OptAssignment): boolean { const tv = optTotalsOf(a, slots, space); for (let i = 0; i < met.length; i++) if (tv[met[i]!]! < space.floor[met[i]!]!) return false; return true; };
+    tieKeeps = function (a: OptAssignment): boolean { const tv = optTotalsOf(a, slots, space); for (let i = 0; i < met.length; i++) if (!optFloorMet(space, tv, met[i]!)) return false; return true; };
     let pick = tieRef, pickScore = optScoreVector(topTv, space), pickCost = optTieCost(tieRef, slots);
     tieCands.push(best);
     for (let i = 0; i < tieCands.length; i++) {
