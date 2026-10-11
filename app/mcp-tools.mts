@@ -46,11 +46,11 @@ export const INSTRUCTIONS = [
   "Pack Rat holds a player's Ultima Online inventory: every item on every character, in every bank, backpack and scanned house container, folded from scans the game client wrote. Tools read it, run its Suit Builder and, when the player allows it, act in game.",
   "Start with inventory_facets for the property keys, slots, kinds and characters a search can name, then search_items (the Inventory screen's filters; `props` takes \"lrc:20\" for at least 20, \"lrc:le:20\" for at most, \"lrc:eq:20\" for exactly). Rows are compact, with the serials of the container an item sits in and of its root (for container_contents); get_item has the full tooltip. Paged lists take `limit` (25 by default, 100 at most) and `offset` and answer with `total`.",
   "character_sheet, list_runs, get_run, compare_runs and scan_status read characters, saved Suit Builder runs and how fresh the scans are. build_suit runs the Suit Builder for a character with its saved profile (or a template), buffs and pinned pieces, waits up to waitSeconds (45 by default, 50 at most, inside a client's usual 60-second timeout) and returns the suit, or a job id: then poll get_suit_build. One build_suit runs at a time; a new call replaces one still running. score_suit totals a hand-picked suit against a profile. A suit's `totals` are item totals; `effectiveTotals` are what the character has in it (resists as on the paperdoll, the buffs counted, not clipped at the caps); a requirement's floor and value are in item terms with the buffs already taken off the floor, so compare them with each other. `unreachableFloors` names hard requirements no suit could reach, scored as plain weights. `diagnostics` lists settings that work against the build (a requirement out of reach, a weight that swamps the rest, swing speed); each names the change that would fix it. Its numbers and actions are in the player's terms, as the Suit Builder panel shows them (resists on the paperdoll, buffs counted), not in item terms like a requirement's floor and value. organize_proposal and organize_plan show what Auto organize would set up and the trips the current setup would run; neither changes anything. list_containers lists a house's ground containers with their Organize labels, fill, area and top contents; label_containers adds, renames, pins or removes labels in one all-or-nothing batch, changing only Pack Rat's setup, never the game. Before a large batch, show the player the proposed labels and get their go-ahead.",
-  "In-game tools (highlight_item, go_to_item, grab_item, organize_trip) need \"Allow in-game actions\" on in Pack Rat's Settings and the bridge script running in the game client. They queue one command or one trip through the same bridge the app's buttons use and report what the bridge did within waitSeconds (45 by default, 50 at most); after that, poll get_action_status with the id. stop_actions stops a trip after its current step.",
+  "In-game tools (highlight_item, go_to_item, grab_item, organize_trip, scan) need \"Allow in-game actions\" on in Pack Rat's Settings and the bridge script running in the game client. They queue one command or one trip through the same bridge the app's buttons use and report what the bridge did within waitSeconds (45 by default, 50 at most); after that, poll get_action_status with the id. stop_actions stops a trip after its current step. scan refreshes the inventory (or the House map) from the game and waits for the new scan, so a list_containers or label_containers after it reads what is there now; the scanner reaches only containers near the character.",
 ].join("\n\n");
 
 // ---------------------------------------------------------------- shapes the routes answer with (only what is read)
-interface InventoryDoc { characters: Record<string, Character>; containers: Record<string, Container>; worn: Record<string, Item[]>; scans: Array<{ character: string; scannedAt: string }>; itemCount: number; facets: Record<string, unknown> & { kinds: Array<{ name: string; count: number }>; propKeys: string[] } }
+interface InventoryDoc { characters: Record<string, Character>; containers: Record<string, Container>; worn: Record<string, Item[]>; scans: Array<{ character: string; scannedAt: string; items: number; roots: number[] }>; itemCount: number; facets: Record<string, unknown> & { kinds: Array<{ name: string; count: number }>; propKeys: string[] } }
 interface SetupDoc { settings: { client?: { adapter: string } | null }; bridgeAdapter: string | null; adapters: Array<{ id: string; name?: string; capabilities?: { bridge?: string[] }; features?: string[] }> }
 interface BridgeStatus { online: boolean; age?: number; character?: string; adapter?: { features?: string[] }; current?: { id?: string } | null; results?: Record<string, BridgeResult> }
 interface BridgeResult { ok: boolean; msg: string; t?: string; partial?: boolean; stopped?: boolean; steps?: Array<{ op: string; serial: number; ok: boolean; msg: string }> }
@@ -250,6 +250,26 @@ function bridgeTool(action: BridgeAction, name: string, what: string): Tool {
       return { queuedFor: gate.status.character ?? null, item: target.name, ...await follow(ctx, r.id, waitOf(a)) };
     },
   };
+}
+
+// The scan tool (issue #281): what each `what` starts (the bridges' SCAN_SCRIPTS), and the newest scan Pack Rat has
+// accepted that it would write, by the scan's own stamp, never the clock: a character's inventory scans, or for a house
+// map refresh (a house-only file, which no inventory scan reflects) the newest house capture.
+const SCAN_SCRIPTS: Record<string, string> = { here: "scanner", character: "refresh", house: "house" };
+async function newestScanOf(ctx: ToolContext, what: string, character: string | null): Promise<{ ms: number; scan: Record<string, unknown> | null }> {
+  let best: { ms: number; scan: Record<string, unknown> | null } = { ms: -Infinity, scan: null };
+  if (what === "house") {
+    for (const h of (await ctx.api<{ houses: HouseSummary[] }>("/api/houses")).houses) {
+      const ms = Date.parse(h.capturedAt);
+      if (ms > best.ms) best = { ms, scan: { character, at: h.capturedAt, house: h.name ?? h.id, containers: h.containers } };
+    }
+    return best;
+  }
+  for (const s of (await inventory(ctx)).scans) {
+    const ms = Date.parse(s.scannedAt);
+    if (s.character === character && ms > best.ms) best = { ms, scan: { character, at: s.scannedAt, containers: s.roots.length, items: s.items } };
+  }
+  return best;
 }
 
 // ---------------------------------------------------------------- the tools
@@ -710,6 +730,35 @@ export const TOOLS: Tool[] = [
   bridgeTool("goto", "go_to_item", "Walk the character to the ground container an item is in (its scanned position)."),
   bridgeTool("grab", "grab_item", "Move an item into the backpack of the character the bridge runs on, walking to it and opening the containers down to it."),
   {
+    name: "scan",
+    description: "Refresh the inventory from the game: the bridge starts a scan script on the character it runs on, and this waits for the scan Pack Rat accepts from it. `what` picks the script: here (the default) is Scan here, which reads worn gear, the backpack, the bank box if it is open and every container within the scanner's reach of where the character stands, so only containers near the character; character is Character refresh, which reads stats, skills, worn gear and the backpack only; house is House map refresh, which records the house the character stands in for the House map and changes no inventory. Answers state done with the scan (character, when, the containers it read at the top level and the items in them; for a house, the house and its containers), scanning when the script started but Pack Rat has not accepted its scan within waitSeconds (then poll scan_status for a newer scannedAt), or the bridge's refusal (that script already running, say). Needs \"Allow in-game actions\" on and the bridge running.",
+    action: true,
+    inputSchema: { type: "object", additionalProperties: false, properties: {
+      what: { type: "string", enum: ["here", "character", "house"], description: "here (Scan here, the default), character (Character refresh) or house (House map refresh)." },
+      waitSeconds: { ...WAIT, description: `Seconds to wait for the bridge to start the scan and for Pack Rat to accept it, ${WAIT_DEFAULT} by default, ${WAIT_MAX} at most.` },
+    } },
+    annotations: { title: BRIDGE_ACTION_LABELS.scan, ...ACTS },
+    async handler(a, ctx) {
+      const what = (a.what as string | undefined) ?? "here", until = Date.now() + waitOf(a) * 1000;
+      const [inv, gate] = await Promise.all([inventory(ctx), bridgeGate(ctx)]);
+      const { features } = bridgeFeatures({ running: gate.status.online ? gate.status.adapter : null, scan: newestScanAdapter(inv.characters, gate.adapter?.id), manifest: gate.adapter });
+      const refused = bridgeRefusal("scan", {}, { adapter: gate.adapter, features, online: !!gate.status.online, hasPos: true });
+      if (refused) throw new ToolError(refused);
+      const character = gate.status.character ?? null;
+      const before = (await newestScanOf(ctx, what, character)).ms;
+      const r = await ctx.api<{ id: string }>("/api/bridge", { method: "POST", body: { action: "scan", script: SCAN_SCRIPTS[what] } });
+      ctx.memory.actions.set(r.id, Date.now());
+      const out = await follow(ctx, r.id, waitOf(a));
+      if (out.state !== "done") return { queuedFor: character, what, ...out };
+      for (;;) {
+        const now = await newestScanOf(ctx, what, character);
+        if (now.ms > before) return { queuedFor: character, what, id: r.id, state: "done", scan: now.scan };
+        if (Date.now() >= until) return { queuedFor: character, what, id: r.id, state: "scanning", hint: "the scan is running in game; poll scan_status until its time is newer" };
+        await ctx.sleep(2000);
+      }
+    },
+  },
+  {
     name: "organize_trip",
     description: "Run one trip of the current Organize plan (organize_plan lists them, with the stamp to pass), through the bridge: the character walks to the chests, takes the trip's items and puts each where its rule says. One trip at a time, and trips at the same site run in order: a later one is refused until the site's first has run. Answers with what the bridge did (steps done, failed steps and why, and which moves were made) once it reports back within waitSeconds, else an id: poll get_action_status. Needs \"Allow in-game actions\" on.",
     action: true,
@@ -737,7 +786,7 @@ export const TOOLS: Tool[] = [
   },
   {
     name: "get_action_status",
-    description: "Where an in-game command or Organize trip stands, by the id highlight_item, go_to_item, grab_item or organize_trip answered with: queued, running, done, failed or stopped, with the bridge's own report (and each step's for a trip).",
+    description: "Where an in-game command or Organize trip stands, by the id highlight_item, go_to_item, grab_item, scan or organize_trip answered with: queued, running, done, failed or stopped, with the bridge's own report (and each step's for a trip).",
     inputSchema: { type: "object", additionalProperties: false, required: ["id"], properties: { id: ID } },
     annotations: { title: "Action status", ...READ },
     async handler(a, ctx) { return follow(ctx, a.id as string, 0); },

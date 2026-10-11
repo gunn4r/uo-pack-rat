@@ -146,11 +146,12 @@ export function containerChain(containers: Record<string, Container>, container:
   while (cur && guard++ < 8) { chain.unshift(+cur.serial); cur = cur.parent != null ? containers[cur.parent] : null; }
   return chain;
 }
-export type BridgeAction = "highlight" | "grab" | "goto";
-export const BRIDGE_ACTION_LABELS: Record<BridgeAction, string> = { highlight: "Highlight", grab: "Grab", goto: "Go to" };
+// "scan" starts one of the client's scan scripts (issue #281): the MCP scan tool sends it, and no button does.
+export type BridgeAction = "highlight" | "grab" | "goto" | "scan";
+export const BRIDGE_ACTION_LABELS: Record<BridgeAction, string> = { highlight: "Highlight", grab: "Grab", goto: "Go to", scan: "Scan" };
 export const BRIDGE_OFFLINE = "Bridge offline. Press Play on packrat-bridge.py in game.";
 
-// What a bridge can do, as one set of feature names: the actions it runs ("highlight", "grab", "goto", "trip") and what
+// What a bridge can do, as one set of feature names: the actions it runs ("highlight", "grab", "goto", "trip", "scan") and what
 // it does besides ("trip-bags"). The page, Organize and the MCP tools all ask bridgeFeatures, which answers from the
 // running bridge's own report first (status.json's adapter, while it is online), then the newest scan made with that
 // adapter, then the manifest this app ships (docs/bridge-protocol.md, Features).

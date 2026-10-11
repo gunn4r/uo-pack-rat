@@ -85,12 +85,31 @@ def rfc3339_now():
 # END generated: rfc3339_now
 
 
+# BEGIN generated: tazuo/scripts
+SCANNER, REFRESH, HOUSE = "packrat-scanner.py", "packrat-character-refresh.py", "packrat-house-map-refresh.py"
+
+
+def script_prefix(self_name):
+    """The folder of the running script `self_name`, relative to LegionScripts ('' or 'Group/'): PlayScript
+    and IsScriptRunning match on that relative path exactly, and a bare name misses a script inside a group
+    folder. Read off the script's own entry in API.ListRunningScripts(); the Pack Rat scripts are siblings."""
+    try:
+        running = API.ListRunningScripts() or []
+    except Exception:
+        running = []
+    for p in running:
+        p = str(p).replace("\\", "/")
+        if p == self_name or p.endswith("/" + self_name):
+            return p[: len(p) - len(self_name)]
+    return ""
+# END generated: tazuo/scripts
+
+
 ADAPTER_ID = "tazuo"
-ADAPTER_VERSION = "2.16.0"
+ADAPTER_VERSION = "2.17.0"
 
 SELF = "packrat-panel.py"
-SCANNER, REFRESH, BRIDGE, BLACKLIST = "packrat-scanner.py", "packrat-character-refresh.py", "packrat-bridge.py", "packrat-blacklist.py"
-HOUSE = "packrat-house-map-refresh.py"
+BRIDGE, BLACKLIST = "packrat-bridge.py", "packrat-blacklist.py"
 LABELS = {SCANNER: "scan", REFRESH: "character refresh", HOUSE: "house map refresh", BRIDGE: "bridge", BLACKLIST: "blacklist"}
 RUNNING = {SCANNER: "scan", REFRESH: "refresh", HOUSE: "house", BRIDGE: "bridge", BLACKLIST: "blacklist"}   # the Running line's words: all five fit the window
 
@@ -181,16 +200,6 @@ def rel(name):
 
 def is_running(name):
     return bool(call(getattr(API, "IsScriptRunning", None), rel(name)))
-
-
-def own_prefix():
-    """This script's folder relative to LegionScripts ('' or 'Group/'): PlayScript and IsScriptRunning
-    match on that relative path exactly, and a bare name misses a script inside a group folder."""
-    for p in call(getattr(API, "ListRunningScripts", None)) or []:
-        p = str(p).replace("\\", "/")
-        if p == SELF or p.endswith("/" + SELF):
-            return p[: len(p) - len(SELF)]
-    return ""
 
 
 def start(name):
@@ -667,7 +676,7 @@ def build_window():
 
 
 def main():
-    state["prefix"] = own_prefix()
+    state["prefix"] = script_prefix(SELF)
     call(getattr(API, "OnStop", None), on_stop)
     load_prefs()
     g = build_window()
