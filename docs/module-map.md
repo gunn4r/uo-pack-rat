@@ -87,7 +87,7 @@ Profiles, buffs, pools, solvers, saved runs and Manual. `docs/solver.md` describ
 
 | Module | Role | Owns |
 |---|---|---|
-| `app/organize-config.mts` | Organize's saved setup, `<data>/organize.json`: labels, ordered rules, catch-all, pinned items. Pure. | `OrganizeConfig`, `checkOrganizeConfig`, `salvageOrganizeConfig`, `ruleMatchOf`, `CATCH_ALL_ID`, `EMPTY_BAGS_ID`, `BUILDS`, `SCHOOLS`, `LIMITS` |
+| `app/organize-config.mts` | Organize's saved setup, `<data>/organize.json`: labels, ordered rules, catch-all, pinned items. Pure. | `OrganizeConfig`, `checkOrganizeConfig`, `salvageOrganizeConfig`, `salvagedRefusal`, `ruleMatchOf`, `CATCH_ALL_ID`, `EMPTY_BAGS_ID`, `BUILDS`, `SCHOOLS`, `LIMITS` |
 | `app/organize.mts` | The planner: which item goes where, in which trip, and what does not fit. Pure and deterministic. | `planOrganize`, `tripCommand`, `scopeOf`, `claimOf`, `buildOf`, `CASTER_PROPS`, `MELEE_PROPS`, `TRIP_DEFAULTS` |
 | `app/organize-presets.mts` | Ready-made rule filters. | `PRESETS`, `ruleFromPreset` |
 | `app/organize-strategies.mts` | Auto organize: the Simple, Detailed and By build strategies and the proposal. | `STRATEGIES`, `groupItems`, `assignGroups`, `proposeOrganize` |
@@ -124,6 +124,7 @@ Profiles, buffs, pools, solvers, saved runs and Manual. `docs/solver.md` describ
 | `app/house-model.mts` | A house as the map draws it: levels, cells, rooms, furniture, stacks, spots. Pure. | `buildHouseModel`, `plotBounds` |
 | `app/house-model-types.mts` | The house model's shapes and the `GET /api/houses` responses. Types only, no imports: `app/house-model.mts` re-exports them, the routes `satisfies` them, and `app/ui/api-types.mts` re-exports them. | `HouseModel`, `Level`, `Cell`, `Furniture`, `Stack`, `Spot`, `HouseSummary`, `HousesApiResponse`, `HouseApiResponse` |
 | `app/house-names.mts` | `<data>/house-map.json`: house names and drawn areas, with its own reads and saves. A file that does not parse is moved aside as `.corrupt`, a newer one is read-only; a save that would grow the map past 500 names or 1 MB is refused (the route answers 409). | `checkHouseEntry`, `readHouseMap`, `saveHouseEntry`, `NAME_MAX`, `MAX_AREAS`, `AREA_COLORS` |
+| `app/house-areas.mts` | Which drawn area a stack of containers sits in. Pure, page and server alike: the House map and MCP's `list_containers` both go by it. | `areaOfStack`, `inRects` |
 | `app/house-fixture.mts`, `app/tiledata-fixture.mts`, `app/facet-fixture.mts` | Test fixtures: synthetic houses, tiledata and facet files. | `syntheticTileData`, `syntheticFacet` |
 | `app/ui/house-map.mts` | The House map screen: SVG levels, callouts, cut-away, pan and zoom, the detail panel. | `showMap`, `applyMapPrefs` |
 | `app/ui/houses-data.mts` | The House map's data: the house list and names fetched per visit, each model kept by id and capture stamp, and the house entry save. | `houses`, `housesData` |
