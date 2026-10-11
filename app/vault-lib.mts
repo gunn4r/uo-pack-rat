@@ -356,7 +356,7 @@ export interface SuitSkill { skill: number; bonus: number; cap: number | null }
 // A skill in a suit, as ServUO's Skill.Value works it out: a loss that ignores the cap (Protection's) comes off the
 // skill first, then the suit's item bonus, which stops at the skill's cap and adds nothing to a skill already there.
 export function skillInSuit(skill: number, bonus: number, cap: number | null, loss = 0): number {
-  const v = Math.max(0, skill + loss), top = cap ?? SKILL_CAP_TOP;
+  const v = skill + loss, top = cap ?? SKILL_CAP_TOP;
   return v >= top ? v : Math.min(v + bonus, top);
 }
 // A character's Resisting Spells minimum in a suit carrying `bonus` Resisting Spells (0: the character's own).

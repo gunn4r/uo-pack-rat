@@ -146,7 +146,7 @@ function headlineCard(res: OptimizeResult, current: OptSuit, suit: OptSuit, prof
   const other = [...otherChanges([...Object.keys(prof.floors), ...Object.keys(prof.weights)], was.totals, now.totals, now.caps, pdFloors), ...pastCapBadges(now).map((text) => ({ text, tone: "ok" as const }))];
   const checks = settingsCheck(resultChecks(res, !!prof.buffs, view != null), name);
   // the best suit's swing (an alternative's would need its own stamina), with the buffs that gave its share named
-  const ssiBuffs = res.swing?.share ? (withBuffs(after, skill, base, prof.buffs).shares.ssi || []).filter((x) => !x.outside).map((x) => buffById(x.id)?.name || x.id) : [];
+  const ssiBuffs = res.swing?.share ? (withBuffs(after, skill, base, prof.buffs, rsCap).shares.ssi || []).filter((x) => !x.outside).map((x) => buffById(x.id)?.name || x.id) : [];
   const swing = view == null && res.swing ? swingLine(res.swing, heldWeapon(suit)?.name ?? null, ssiBuffs) : null;
   return box("section", { class: "card b-head-card", "aria-label": view == null ? "Best suit" : `Suit ${view + 2}` },
     box("div", { class: "b-headline" },

@@ -1291,7 +1291,8 @@ test("[fast] the Resisting Spells minimum in a suit: the bonus up to the cap, Pr
   assert.equal(skillInSuit(100, 15, 100), 100, "and adds nothing to a skill at its cap");
   assert.equal(skillInSuit(100, 15, 100, -25), 90, "Protection's −25 first (75), then the bonus up to the cap");
   assert.equal(skillInSuit(100, 30, null), 120, "no cap known: SKILL_CAP_TOP");
-  assert.equal(skillInSuit(30, 5, 100, -35), 5, "a loss past 0 stops at 0");
+  assert.equal(skillInSuit(30, 5, 100, -35), 0, "a loss past 0 is not held at 0: −5, then +5");
+  assert.equal(minimumWith({ skill: 20, bonus: 45, cap: 100 }, ["protection"], { Inscription: 0 }), null, "20 − 35 + 45 = 30: no minimum");
   assert.equal(resistMinimum(rs(99.9, 120), 0.1), 40, "99.9 + 0.1: fixed 1000");
   assert.equal(resistMinimum(rs(99.9, 120)), 39, "99.9: (999 − 400) / 15");
   assert.equal(resistMinimum(rs(100, 100), 15), 40, "at its cap the bonus does nothing");

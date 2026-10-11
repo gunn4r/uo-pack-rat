@@ -386,11 +386,15 @@ test("[fast] /api/optimize keeps only the Resisting Spells steps the pool reache
     await new Promise((res) => setTimeout(res, 20));
     status = asJson<OptimizeJobResponse>(await (await fetch(srv.url + `/api/optimize/${first.body.id}/status`)).json());
   }
-  const again = await post({ ...base, resistSteps: [{ at: 5, mins: { fireResist: 8 } }] });
+  const again = await post({ ...base, resistSteps: [{ at: 5, mins: { physResist: 8, fireResist: 8, coldResist: 8, poisonResist: 8, energyResist: 8 } }] });
   assert.equal(again.body.cached, true, JSON.stringify(again.body));
-  const bad = await post({ ...base, resistSteps: [{ at: "5" }] });
-  assert.equal(bad.status, 400);
-  assert.match(bad.body.error, /resistSteps/);
+  const full = (m: number): Record<string, number> => ({ physResist: m, fireResist: m, coldResist: m, poisonResist: m, energyResist: m });
+  for (const [steps, why] of [[[{ at: "5" }], "at not a number"], [[{ at: 5, mins: { fireResist: 8 } }], "mins missing resists"], [[{ at: 5, mins: { ...full(8), coldResist: "8" } }], "a min not a number"],
+    [[{ at: 5, mins: full(8) }, { at: 5, mins: full(9) }], "at not increasing"], [[{ at: 0, mins: full(8) }], "at not above 0"], [[{ at: 2000, mins: full(8) }], "at past 1000"], [{ at: 5 }, "not an array"]] as const) {
+    const bad = await post({ ...base, resistSteps: steps });
+    assert.equal(bad.status, 400, why);
+    assert.match(bad.body.error, /resistSteps/, why);
+  }
 });
 
 // The by-character form builds its pools from `settings`, but a saved run must still remember the page's
