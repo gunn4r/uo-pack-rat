@@ -7,7 +7,7 @@ import type { AreaRect, Cell, ContainerLabel, FacetMapReason, HouseArea, HouseMa
 // A tile is W units wide at the game angle (half as tall), and one z step lifts a point K units: the client draws a 44-px tile and 4 px per z, a little flatter than this, which reads better at the map's size.
 export const W = 32, K = 2;
 // Heights in z: walls are cut down low so nothing hides behind them, a window lower still, the foundation's lip and a roof's edge a sliver, a chest a little under the 4 z between chests in a stack.
-export const WALL_H = 6, WINDOW_H = 3, LIP_H = 1.5, ROOF_H = 1.5, CHEST_H = 3.4;
+export const WALL_H = 6, WINDOW_H = 3, LIP_H = 1.5, ROOF_H = 1.5, CHEST_H = 3.4, FURNITURE_H = 3;
 export type View = "angle" | "top";
 export type Pt = [number, number];
 export interface Box { x: number; y: number; w: number; h: number }
@@ -854,7 +854,7 @@ export function sceneOf(m: HouseModel, level: number, view: View): Scene {
   for (const f of m.furniture) {
     if (f.level !== level) continue;
     const x = f.x - m.x0, y = f.y - m.y0, z = f.z - base;
-    if (f.kind === "block") solids.push({ kind: "item", x, y, z, cls: "map-block", prism: prism(x, y, z, Math.max(1, f.height), view, 0.15), name: f.name });
+    if (f.kind === "block") solids.push({ kind: "item", x, y, z, cls: "map-block", prism: prism(x, y, z, FURNITURE_H, view, 0.15), name: f.name });
     else solids.push({ kind: "item", x, y, z: z + 0.5, cls: f.kind === "door" ? "map-door" : "map-teleporter", prism: { top: pts(tilePolygon(x, y, z + 0.5, view, f.kind === "door" ? 0.3 : 0.15)), left: "", right: "" }, name: f.name });
   }
   for (const s of m.stacks) {
