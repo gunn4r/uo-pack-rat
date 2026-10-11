@@ -157,6 +157,9 @@ function ruleProblem(r: unknown, i: number, labels: Record<string, ContainerLabe
 
 const catchAllProblem = (v: unknown, labels: Record<string, ContainerLabel>, at = "catchAll"): string | null => (v === null ? null : containerProblem(v, labels, at));
 
+// Why nothing that acts on the setup runs while the read had to salvage it: the player sees what was dropped first.
+export const salvagedRefusal = (problems: readonly string[]): string => `organize.json was hand-edited and parts of it were dropped (${problems[0]}); open Organize and save the setup first`;
+
 export function checkOrganizeConfig(doc: unknown): { ok: true; config: OrganizeConfig } | { ok: false; error: string } {
   const fail = (error: string): { ok: false; error: string } => ({ ok: false, error });
   if (!isObj(doc)) return fail("an Organize setup must be an object");

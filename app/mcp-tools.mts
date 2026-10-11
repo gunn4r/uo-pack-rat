@@ -6,8 +6,8 @@
 // page does (buffs.mts, vault-lib.mts). One entry per tool: its name, description, JSON Schema for its arguments
 // (the subset app/schema/validate.mts checks, which mcp.mts runs before the handler), annotations and handler.
 // `action: true` marks a tool that acts in game: refused while Settings' "Allow in-game actions" is off.
-import { BRIDGE_ACTION_LABELS, BRIDGE_OFFLINE, GEAR_SLOTS, bridgeFeatures, bridgeRefusal, containerChain, newestScanAdapter, fullOf, isPseudoCharacter, NOBODY, RESIST_SKILL_KEY, resistMinimum, toOptItem, totalsOf } from "./vault-lib.mts";
-import type { BridgeAction, Character, Container, Item, OptItem, Profile, PropMap } from "./vault-lib.mts";
+import { BRIDGE_ACTION_LABELS, BRIDGE_OFFLINE, GEAR_SLOTS, bridgeFeatures, bridgeRefusal, containerChain, newestScanAdapter, fullOf, isPseudoCharacter, NOBODY, RESIST_SKILL_KEY, resistMinimum, toOptItem, totalsOf, TRASH_RE } from "./vault-lib.mts";
+import type { BridgeAction, Character, Container, ContainerCapacity, Item, OptItem, Profile, PropMap } from "./vault-lib.mts";
 import { buffPlanOf, normalizeBuffs, savedBuffs, BUFFS } from "./buffs.mts";
 import { BUILTIN_PREFIX, characterBuffs, characterProfile, findTemplate, planBuild, specFromProfile, templateRefs, templateSettings, type PlannedBuild, type ProfilesV3, type TemplateMap } from "./build-spec.mts";
 import { evaluateSuit } from "./evaluate.mts";
@@ -15,6 +15,10 @@ import { EXTRA_COLS, parseItemQuery } from "./item-query.mts";
 import { RUN_DEFAULTS } from "./run-settings.mts";
 import type { ValidatorSchema } from "./schema/validate.mts";
 import type { PlanMove } from "./organize-types.mts";
+import { LIMITS, salvagedRefusal, type OrganizeConfig } from "./organize-config.mts";
+import type { HouseModel, HouseSummary } from "./house-model-types.mts";
+import type { HouseArea } from "./house-names.mts";
+import { areaOfStack } from "./house-areas.mts";
 
 // A tool's failure in words the model reads (a route's own refusal, a bad argument): a tool result with isError.
 export class ToolError extends Error {}
@@ -41,7 +45,7 @@ export interface Tool {
 export const INSTRUCTIONS = [
   "Pack Rat holds a player's Ultima Online inventory: every item on every character, in every bank, backpack and scanned house container, folded from scans the game client wrote. Tools read it, run its Suit Builder and, when the player allows it, act in game.",
   "Start with inventory_facets for the property keys, slots, kinds and characters a search can name, then search_items (the Inventory screen's filters; `props` takes \"lrc:20\" for at least 20, \"lrc:le:20\" for at most, \"lrc:eq:20\" for exactly). Rows are compact, with the serials of the container an item sits in and of its root (for container_contents); get_item has the full tooltip. Paged lists take `limit` (25 by default, 100 at most) and `offset` and answer with `total`.",
-  "character_sheet, list_runs, get_run, compare_runs and scan_status read characters, saved Suit Builder runs and how fresh the scans are. build_suit runs the Suit Builder for a character with its saved profile (or a template), buffs and pinned pieces, waits up to waitSeconds (45 by default, 50 at most, inside a client's usual 60-second timeout) and returns the suit, or a job id: then poll get_suit_build. One build_suit runs at a time; a new call replaces one still running. score_suit totals a hand-picked suit against a profile. A suit's `totals` are item totals; `effectiveTotals` are what the character has in it (resists as on the paperdoll, the buffs counted, not clipped at the caps); a requirement's floor and value are in item terms with the buffs already taken off the floor, so compare them with each other. `unreachableFloors` names hard requirements no suit could reach, scored as plain weights. `diagnostics` lists settings that work against the build (a requirement out of reach, a weight that swamps the rest, swing speed); each names the change that would fix it. Its numbers and actions are in the player's terms, as the Suit Builder panel shows them (resists on the paperdoll, buffs counted), not in item terms like a requirement's floor and value. organize_proposal and organize_plan show what Auto organize would set up and the trips the current setup would run; neither changes anything.",
+  "character_sheet, list_runs, get_run, compare_runs and scan_status read characters, saved Suit Builder runs and how fresh the scans are. build_suit runs the Suit Builder for a character with its saved profile (or a template), buffs and pinned pieces, waits up to waitSeconds (45 by default, 50 at most, inside a client's usual 60-second timeout) and returns the suit, or a job id: then poll get_suit_build. One build_suit runs at a time; a new call replaces one still running. score_suit totals a hand-picked suit against a profile. A suit's `totals` are item totals; `effectiveTotals` are what the character has in it (resists as on the paperdoll, the buffs counted, not clipped at the caps); a requirement's floor and value are in item terms with the buffs already taken off the floor, so compare them with each other. `unreachableFloors` names hard requirements no suit could reach, scored as plain weights. `diagnostics` lists settings that work against the build (a requirement out of reach, a weight that swamps the rest, swing speed); each names the change that would fix it. Its numbers and actions are in the player's terms, as the Suit Builder panel shows them (resists on the paperdoll, buffs counted), not in item terms like a requirement's floor and value. organize_proposal and organize_plan show what Auto organize would set up and the trips the current setup would run; neither changes anything. list_containers lists a house's ground containers with their Organize labels, fill, area and top contents; label_containers adds, renames, pins or removes labels in one all-or-nothing batch, changing only Pack Rat's setup, never the game. Before a large batch, show the player the proposed labels and get their go-ahead.",
   "In-game tools (highlight_item, go_to_item, grab_item, organize_trip) need \"Allow in-game actions\" on in Pack Rat's Settings and the bridge script running in the game client. They queue one command or one trip through the same bridge the app's buttons use and report what the bridge did within waitSeconds (45 by default, 50 at most); after that, poll get_action_status with the id. stop_actions stops a trip after its current step.",
 ].join("\n\n");
 
@@ -51,6 +55,7 @@ interface SetupDoc { settings: { client?: { adapter: string } | null }; bridgeAd
 interface BridgeStatus { online: boolean; age?: number; character?: string; adapter?: { features?: string[] }; current?: { id?: string } | null; results?: Record<string, BridgeResult> }
 interface BridgeResult { ok: boolean; msg: string; t?: string; partial?: boolean; stopped?: boolean; steps?: Array<{ op: string; serial: number; ok: boolean; msg: string }> }
 interface RunDoc { id: string; character?: string; createdAt: string; label?: string; settings?: Record<string, unknown>; result?: Record<string, unknown> | null; ms?: number | null; inventoryStamp?: string | null }
+interface OrganizeDoc { config: OrganizeConfig; problems: string[]; readOnly?: string }
 interface PlanDoc { stamp: string; inventoryStamp: string; moves: PlanMove[]; trips: Array<{ index: number; site: number }>; rules: unknown[]; warnings: unknown[]; seconds: number; unclaimed: number }
 
 // ---------------------------------------------------------------- helpers
@@ -597,7 +602,111 @@ export const TOOLS: Tool[] = [
       return { stamp: plan.stamp, inventoryStamp: plan.inventoryStamp, seconds: plan.seconds, moves: plan.moves.length, unclaimed: plan.unclaimed, total: plan.trips.length, offset, trips, warnings: plan.warnings, running };
     },
   },
-  bridgeTool("highlight", "highlight_item", "Highlight an item (or a container) in game for a few seconds, opening the containers down to it."),
+  {
+    name: "list_containers",
+    description: "The ground containers of one house (by its id or name, as the House map shows it) or of every house, for deciding what to call them: each with its serial, scanned name and kind, its Organize label ({name, pinned}, or null), its fill (items and stones against their caps, null when unknown), its house, the house area it sits in (null outside the player's areas), its level and position, and the top item kinds inside with their counts. `outside` lists the ground containers in no captured house instead.",
+    inputSchema: { type: "object", additionalProperties: false, properties: {
+      house: { type: "string", minLength: 1, maxLength: 64, description: "A house's id (\"1-3000-1000\") or name, whatever its case. Left out, every house." },
+      outside: { type: "boolean", description: "List the ground containers no captured house holds instead (leave house out)." },
+      ...PAGE,
+    } },
+    annotations: { title: "Containers", ...READ },
+    async handler(a, ctx) {
+      const { limit, offset } = pageOf(a);
+      if (a.outside && a.house !== undefined) throw new ToolError("name a house, or set outside (not both)");
+      const [inv, { houses }, map, org] = await Promise.all([inventory(ctx), ctx.api<{ houses: HouseSummary[] }>("/api/houses"), ctx.api<{ houses: Record<string, { areas?: HouseArea[] }> }>("/api/house-map"), ctx.api<OrganizeDoc>("/api/organize")]);
+      let picked = houses;
+      if (typeof a.house === "string") {
+        const q = a.house.toLowerCase();
+        picked = houses.filter((h) => h.id.toLowerCase() === q || h.name?.toLowerCase() === q);
+        if (!picked.length) throw new ToolError(`no house ${JSON.stringify(a.house)}; the houses are ${houses.map((h) => (h.name ? `${h.name} (${h.id})` : h.id)).join(", ") || "none (a scan with a house capture adds one)"}`);
+      }
+      const label = (serial: number): { name: string; pinned: boolean } | null => { const l = org.config.labels[String(serial)]; return l ? { name: l.name, pinned: !!l.pinned } : null; };
+      const fill = (c: Container | undefined): ContainerCapacity | null => c?.capacity ?? null;
+      const rows: Array<Record<string, unknown> & { serial: number; scanned: boolean }> = [];
+      if (a.outside) {
+        const inHouse = new Set(houses.flatMap((h) => h.serials));
+        for (const c of Object.values(inv.containers).sort((x, y) => x.serial - y.serial)) {
+          if (c.parent != null || c.kind !== "ground" || isPseudoCharacter(c.scannedBy) || inHouse.has(c.serial)) continue;
+          rows.push({ serial: c.serial, name: c.name ?? null, kind: c.kind, label: label(c.serial), fill: fill(c), house: null, area: null, level: null, position: c.pos ? { x: c.pos.x, y: c.pos.y, z: c.pos.z } : null, scanned: true });
+        }
+      } else {
+        const models = await Promise.all(picked.map((h) => ctx.api<{ house: HouseModel }>(`/api/houses/${enc(h.id)}`)));
+        picked.forEach((h, i) => {
+          const m = models[i]!.house, areas = map.houses[h.id]?.areas ?? [];
+          for (const st of m.stacks) {
+            const area = areaOfStack(areas, st)?.name ?? null;
+            st.serials.forEach((serial, k) => {
+              const c = inv.containers[serial];
+              rows.push({ serial, name: c?.name ?? m.unopenedNames[serial] ?? null, kind: c?.kind ?? "ground", label: label(serial), fill: fill(c), house: { id: h.id, name: h.name ?? null }, area, level: st.level, position: { x: st.x, y: st.y, z: st.zs[k] }, scanned: !!c });
+            });
+          }
+        });
+      }
+      // The top kinds inside the page's scanned containers, bags included, from one paged item query over their roots.
+      const page = rows.slice(offset, offset + limit), roots = page.filter((r) => r.scanned).map((r) => r.serial);
+      const kinds = new Map<number, Map<string, number>>();
+      for (let at = 0; roots.length; at += 500) {
+        const r = await ctx.api<{ total: number; rows: Item[] }>(`/api/items?${roots.map((s) => `root=${s}`).join("&")}&limit=500&offset=${at}`);
+        for (const it of r.rows) { const k = kinds.get(it.root!) ?? new Map<string, number>(); kinds.set(it.root!, k.set(it.kind, (k.get(it.kind) ?? 0) + 1)); }
+        if (at + 500 >= r.total) break;
+      }
+      const top = (serial: number): Array<{ kind: string; count: number }> => [...(kinds.get(serial) ?? [])].sort((x, y) => y[1] - x[1] || x[0].localeCompare(y[0])).slice(0, 5).map(([kind, count]) => ({ kind, count }));
+      return { houses: a.outside ? [] : picked.map((h) => ({ id: h.id, name: h.name ?? null })), total: rows.length, offset,
+        containers: page.map(({ scanned, ...r }) => ({ ...r, ...(scanned ? { contents: top(r.serial) } : { contents: null, note: "a house capture saw it; no scan has opened it" }) })) };
+    },
+  },
+  {
+    name: "label_containers",
+    description: "Label, rename, pin, unpin or unlabel house containers for Organize, as one batch: each change is {serial, name?, pinned?} or {serial, remove: true}. All or nothing: one bad entry refuses the whole batch and says which and why. A new label needs a name; a rename keeps the rules that use the container. Refused: a container not in the scans or not on the ground, a trash container, a name over 64 characters, a serial listed twice, removing a label a rule, the catch-all or the empty bags use (named), pinning a container a rule puts items into, and a setup Organize must save first. Changes only Pack Rat's Organize setup, never the game; every open page reloads it.",
+    inputSchema: { type: "object", additionalProperties: false, required: ["changes"], properties: {
+      changes: { type: "array", minItems: 1, maxItems: LIMITS.labels, items: { type: "object", additionalProperties: false, required: ["serial"], properties: {
+        serial: SERIAL,
+        name: { type: "string", maxLength: 200, description: `The label, 1 to ${LIMITS.text} characters.` },
+        pinned: { type: "boolean", description: "Pinned: Organize never takes items out or puts items in." },
+        remove: { type: "boolean", description: "Remove the label (with no name or pinned)." },
+      } } },
+    } },
+    annotations: { title: "Label containers", readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+    async handler(a, ctx) {
+      const changes = a.changes as Array<{ serial: number; name?: string; pinned?: boolean; remove?: boolean }>;
+      const [org, inv, items] = await Promise.all([ctx.api<OrganizeDoc>("/api/organize"), inventory(ctx), itemsBySerial(ctx, [...new Set(changes.map((c) => c.serial))])]);
+      if (org.readOnly) throw new ToolError(org.readOnly);
+      if (org.problems.length) throw new ToolError(salvagedRefusal(org.problems));
+      const cfg = org.config, labels = { ...cfg.labels }, seen = new Set<number>(), applied: Array<Record<string, unknown>> = [];
+      for (const [i, ch] of changes.entries()) {
+        const at = `changes[${i}] (${hex(ch.serial)})`, key = String(ch.serial), had = cfg.labels[key];
+        if (seen.has(ch.serial)) throw new ToolError(`${at}: the container is listed twice; give one change per container`);
+        seen.add(ch.serial);
+        if (ch.remove) {
+          if (ch.name !== undefined || ch.pinned !== undefined) throw new ToolError(`${at}: remove takes no name or pinned`);
+          if (!had) throw new ToolError(`${at}: it has no label to remove`);
+          const rule = cfg.rules.find((r) => r.targets.includes(ch.serial));
+          const use = rule ? `the rule "${rule.name}" puts items into it` : cfg.catchAll === ch.serial ? "it is the catch-all" : cfg.emptyBagsTo === ch.serial ? "empty bags are gathered into it" : null;
+          if (use) throw new ToolError(`${at}: ${had.name} keeps its label: ${use}. Change that in Organize first.`);
+          delete labels[key];
+          applied.push({ serial: ch.serial, change: "removed", name: had.name });
+          continue;
+        }
+        if (ch.name === undefined && ch.pinned === undefined) throw new ToolError(`${at}: nothing to change; give a name, pinned or remove`);
+        const c = inv.containers[ch.serial];
+        if (TRASH_RE.test(c?.name ?? items[ch.serial]?.name ?? "")) throw new ToolError(`${at}: a trash container can't be labeled`);
+        if (!c) throw new ToolError(`${at}: no container with this serial in the scans`);
+        if (c.parent != null || c.kind !== "ground") throw new ToolError(`${at}: only containers on the ground can be labeled, not ${c.parent != null ? "a bag inside one" : `a ${c.kind ?? "container"}`}`);
+        const name = ch.name?.trim() ?? had?.name;
+        if (!name) throw new ToolError(`${at}: a new label needs a name`);
+        if (name.length > LIMITS.text) throw new ToolError(`${at}: a label's name must be 1 to ${LIMITS.text} characters`);
+        const pinned = ch.pinned ?? !!had?.pinned;
+        // As the page's Label… saves one: its color kept, made by hand.
+        labels[key] = { serial: ch.serial, name, ...(had?.color ? { color: had.color } : {}), ...(pinned ? { pinned: true } : {}), origin: "manual" };
+        applied.push({ serial: ch.serial, change: had ? (had.name === name && !!had.pinned === pinned ? "unchanged" : "changed") : "added", name, pinned, ...(had ? { was: { name: had.name, pinned: !!had.pinned } } : {}) });
+      }
+      // The page's own write path: the whole setup checked (a pinned rule target, a blacklisted container) and saved.
+      await ctx.api("/api/organize", { method: "PUT", body: { ...cfg, labels }, clientId: "mcp" });
+      return { applied, labels: Object.keys(labels).length };
+    },
+  },
+  bridgeTool("highlight", "highlight_item","Highlight an item (or a container) in game for a few seconds, opening the containers down to it."),
   bridgeTool("goto", "go_to_item", "Walk the character to the ground container an item is in (its scanned position)."),
   bridgeTool("grab", "grab_item", "Move an item into the backpack of the character the bridge runs on, walking to it and opening the containers down to it."),
   {

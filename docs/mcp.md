@@ -53,6 +53,7 @@ Tools that wait (`build_suit` for its result, the in-game tools for the bridge's
 | `list_runs`, `get_run`, `compare_runs` | Saved Suit Builder runs (`noCharacter` lists only No character's), one run's suit and totals, two or three side by side; a No character run answers `character: null` |
 | `scan_status` | Each character's last scan and whether the bridge is running |
 | `organize_plan`, `organize_proposal` | The trips your Organize setup would run now, and what Auto organize would set up (not saved) |
+| `list_containers` | The ground containers of one house (by its id or name) or of every house, or with `outside` those in no captured house: each with its serial, scanned name and kind, Organize label and pin, fill, house, area, level, position and top item kinds |
 
 **Computing** (no effect in game):
 
@@ -62,6 +63,14 @@ Tools that wait (`build_suit` for its result, the in-game tools for the bridge's
 | `score_suit` | Totals a hand-picked suit against a profile, with Manual's buffs (or those you name), the way Manual does |
 
 A suit's answer (`build_suit`, `get_suit_build`, `get_run`, `score_suit`) has two sets of totals. `totals` are the pieces' item totals. `effectiveTotals` are what the character has in that suit, the way the Suit Builder shows them: resists as on the paperdoll (each held at the Resisting Spells minimum; `score_suit` returns it as `resistMinimum`, with the buffs counted), with the buffs the build was planned with counted (Divine Fury's DCI −20 included), not clipped at the caps. A requirement's `floor` and `value` are in item terms, the floor already lowered or raised by the buffs, so compare them with each other, not with `effectiveTotals`; a resist's `value` counts the Resisting Spells minimum (with the buffs' share taken off, as the floor is), so `met` is `value ≥ floor`. `unreachableFloors` names any hard requirement no suit in the pool could reach: it was scored as a plain weight. `diagnostics` lists the settings that work against the build as `{code, level, property, message, values, actions}`: a requirement out of reach (`floor_unreachable`, with the best possible) or out of reach together with the other hard requirements (`floors_conflict`, with the suit's value), a weight that swamps the others (`weight_dominates`, with its share of the score and a suggested weight), swing speed (`swing_linear`: steps were asked for but SSI was scored per point; `swing_next_step`: the next faster swing step is close), and the weapon properties the profile requires (`weapon_missing_flag`: a locked weapon lacks them and stays; `no_weapon_with_flag`: no weapon has them, so the suit has none), and `only_containers_empty`: the Only containers list leaves some slots with nothing from a container; each action (`setFloor`, `makeSoft`, `setWeight`, `swingSteps`, `lockSlot`) names the change that would fix it. `swing`, when the suit holds a weapon with a known speed and the build has a character, is its swing: `{speed, stamina, ssi, share, seconds, steps}` (the weapon's base speed, full stamina, effective SSI with the buffs' share, the delay between swings, and each step SSI can reach at that stamina). A diagnostic's `values` and its actions' values are in the player's terms, as the Suit Builder panel shows them (resists on the paperdoll, buffs counted), unlike a requirement's item-terms `floor` and `value`. A saved run is evaluated with its own settings and buffs, for its character as scanned now (a No character run with no character); a build from the app that was never saved has no `effectiveTotals`.
+
+**Organize labels** (change Pack Rat's Organize setup, never the game, so they don't need the in-game switch):
+
+| Tool | What it does |
+|---|---|
+| `label_containers` | Adds, renames, pins, unpins and removes container labels in one batch, saved through the same route and check as the Organize screen. All or nothing: one bad change refuses the batch and names it, such as a container not in the scans or not on the ground, a trash container, a name over 64 characters, a container listed twice, removing a label a rule, the catch-all or the empty bags use (naming the rule), or pinning a container a rule puts items into. A rename keeps the rules. Every open page reloads the setup, and an Organize plan read before the change is refused as stale if its moves changed |
+
+The usage guide asks clients to show the player the proposed labels and get their go-ahead before a large batch.
 
 **In game** (need **Allow in-game actions** and the bridge running in the game client):
 

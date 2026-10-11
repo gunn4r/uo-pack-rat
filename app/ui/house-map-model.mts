@@ -1,6 +1,7 @@
 // ui/house-map-model.mts — the House map's pure rules (issue #10, spec section 4): the projection (the client's angle, or top-down), the polygons of a tile and of a box, the painter's order, a level's bounds and their fit; below, the joins of a stack with the inventory and the Organize labels, the colour modes, the cut-away, the callout, the totals, the house picker, keyboard moves, the plain grid for chests outside any drawn house, and the scene of one level. No DOM and no store.mts import, so app/ui-map.test.mts runs it under plain node:test; ui/house-map.mts draws what it returns. Coordinates are relative to the house's corner (x0, y0); heights to the level's floor.
 import { bagLabel, compareNames, itemOwnBlob, type Container, type Item } from "../vault-lib.mts";
 import { plural, splitSerial } from "./inv-model.mts";
+import { areaOfStack, inRects } from "../house-areas.mts";
 import type { AreaRect, Cell, ContainerLabel, FacetMapReason, HouseArea, HouseMapEntry, HouseModel, HouseSummary, InventoryData, Spot, Stack, TiledataFrom } from "./api-types.mts";
 
 // A tile is W units wide at the game angle (half as tall), and one z step lifts a point K units: the client draws a 44-px tile and 4 px per z, a little flatter than this, which reads better at the map's size.
@@ -338,9 +339,8 @@ export const liveAreas = (areas: readonly HouseArea[] | undefined, levels: numbe
 // What a save of the areas writes: the edited live list, then the hidden orphan-level ones as they were, so a storey taken away in place and built again gets its areas back.
 export const withOrphans = (edited: readonly HouseArea[], saved: readonly HouseArea[] | undefined, levels: number): HouseArea[] => [...edited, ...(saved ?? []).filter((a) => a.level >= levels)];
 export type Tile = [number, number];
-export const inRects = (rects: readonly AreaRect[], x: number, y: number): boolean => rects.some((r) => x >= r.x0 && x <= r.x1 && y >= r.y0 && y <= r.y1);
-// The area a stack belongs to: the first, in list order, on its level whose rectangles hold its tile; null for the rest.
-export const areaOfStack = (areas: readonly HouseArea[], s: Pick<Stack, "level" | "x" | "y">): HouseArea | null => areas.find((a) => a.level === s.level && inRects(a.rects, s.x, s.y)) ?? null;
+// inRects and areaOfStack live in app/house-areas.mts, shared with the server.
+export { inRects, areaOfStack };
 // Where the rest of a level is: "Everything else" once the level has areas, else the level is one "Whole floor".
 export const restName = (areas: readonly HouseArea[], level: number): string => (areas.some((a) => a.level === level) ? "Everything else" : "Whole floor");
 export const areaName = (areas: readonly HouseArea[], s: Pick<Stack, "level" | "x" | "y">): string => areaOfStack(areas, s)?.name ?? restName(areas, s.level);
