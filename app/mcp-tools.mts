@@ -254,9 +254,10 @@ function bridgeTool(action: BridgeAction, name: string, what: string): Tool {
 
 // The scan tool (issue #281): what each `what` starts (the bridges' SCAN_SCRIPTS), and the newest scan Pack Rat has
 // accepted that it would write, by the scan's own stamp, never the clock: a character's inventory scans, or for a house
-// map refresh (a house-only file, which no inventory scan reflects) the newest house capture.
+// map refresh (a house-only file, which no inventory scan reflects) the newest house capture. `inv` is an inventory
+// already read, else it is read here.
 const SCAN_SCRIPTS: Record<string, string> = { here: "scanner", character: "refresh", house: "house" };
-async function newestScanOf(ctx: ToolContext, what: string, character: string | null): Promise<{ ms: number; scan: Record<string, unknown> | null }> {
+async function newestScanOf(ctx: ToolContext, what: string, character: string | null, inv?: InventoryDoc): Promise<{ ms: number; scan: Record<string, unknown> | null }> {
   let best: { ms: number; scan: Record<string, unknown> | null } = { ms: -Infinity, scan: null };
   if (what === "house") {
     for (const h of (await ctx.api<{ houses: HouseSummary[] }>("/api/houses")).houses) {
@@ -265,7 +266,7 @@ async function newestScanOf(ctx: ToolContext, what: string, character: string | 
     }
     return best;
   }
-  for (const s of (await inventory(ctx)).scans) {
+  for (const s of (inv ?? await inventory(ctx)).scans) {
     const ms = Date.parse(s.scannedAt);
     if (s.character === character && ms > best.ms) best = { ms, scan: { character, at: s.scannedAt, containers: s.roots.length, items: s.items } };
   }
@@ -745,16 +746,20 @@ export const TOOLS: Tool[] = [
       const refused = bridgeRefusal("scan", {}, { adapter: gate.adapter, features, online: !!gate.status.online, hasPos: true });
       if (refused) throw new ToolError(refused);
       const character = gate.status.character ?? null;
-      const before = (await newestScanOf(ctx, what, character)).ms;
+      const before = (await newestScanOf(ctx, what, character, inv)).ms;
+      const left = (): number => Math.max(0, until - Date.now());
       const r = await ctx.api<{ id: string }>("/api/bridge", { method: "POST", body: { action: "scan", script: SCAN_SCRIPTS[what] } });
       ctx.memory.actions.set(r.id, Date.now());
-      const out = await follow(ctx, r.id, waitOf(a));
+      const out = await follow(ctx, r.id, left() / 1000);
       if (out.state !== "done") return { queuedFor: character, what, ...out };
       for (;;) {
         const now = await newestScanOf(ctx, what, character);
         if (now.ms > before) return { queuedFor: character, what, id: r.id, state: "done", scan: now.scan };
-        if (Date.now() >= until) return { queuedFor: character, what, id: r.id, state: "scanning", hint: "the scan is running in game; poll scan_status until its time is newer" };
-        await ctx.sleep(2000);
+        if (!left()) {
+          const hint = what === "house" ? "the house map refresh is running in game; list_containers shows the house once its capture is in" : "the scan is running in game; poll scan_status until its time is newer";
+          return { queuedFor: character, what, id: r.id, state: "scanning", hint };
+        }
+        await ctx.sleep(Math.min(2000, left()));
       }
     },
   },

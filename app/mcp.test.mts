@@ -1,6 +1,6 @@
 // mcp.test.mts — the built-in MCP server (issue #211; `app/mcp.mts`, `app/mcp-tools.mts`) on a real server and temp data folder.
 //
-// the built-in MCP server (issue #211; `app/mcp.mts`, `app/mcp-tools.mts`) on a real server and temp data folder, its `mcp.json` asking for port 0 so no test races another or a Pack Rat running on 47615: `initialize` negotiating each supported protocol version and answering the newest to any other, with `serverInfo` and the instructions; a notification's 202, an unknown method (-32601) and tool (-32602), a parse error (-32700), a batch refused, an unsupported `MCP-Protocol-Version` header (400), arguments a tool's schema refuses as an `isError` result; the listener's guards (another Host, any Origin, its own included, no or a wrong token, GET and DELETE, another path, a non-JSON content type, a body over 1 MB); off by default with nothing written, `PUT /api/mcp` refusing anything but the two booleans and opening and closing the listener at once (connection refused once off), `mcp.json` saved `0600`; `POST /api/mcp/token` replacing the token with the old one refused at once, and a file without one getting one; a busy port falling back to a free one without saving it, and a broken `mcp.json` reading as off with a log line; every read tool over the demo fixtures with paging, and `character_sheet`'s Resisting Spells minimum with a run saved before it opening (issue #261); `build_suit` for two characters (the second build of the same inputs reusing the saved run, buffs named, No character saved and reused, listed by `noCharacter` and read back as `character: null` with its effective totals, and a No character fill with pins not saved; `onlyContainers` narrowing the pool into its own run, `[]` as no list, non-serials refused, and a bag or an item named with where it sits), the run tools and `score_suit` over them; the in-game tools refused with the switch off (and still listed) while `stop_actions` writes the stop flag, and with it on writing the same `queue.jsonl` line the Grab button's `POST /api/bridge` writes (refused while the bridge is offline, a ground chest highlighted by its serial), an Organize trip through the Organize route with its one-at-a-time and stale-stamp refusals, and `get_action_status` reading the bridge's report; the tools reaching a `--token` app server; and the MCP SDK's own `Client` and `StreamableHTTPClientTransport` connecting, listing the tools and calling one. Fix round 1: an id with no method refused, the content type in any case, `POST /api/mcp/token` refusing fields; a hand-edited `mcp.json` (one bad field keeps the token, a BOM, an empty or broken file, a data folder that cannot take a new token leaving MCP off); property rules the route would drop refused with the accepted forms, slots, kinds, slayers and tags in any case, rows carrying their container and root serials; `container_contents` on a bag inside a chest; `score_suit` keeping the hands legal around a named weapon and planning with Manual's buffs (`manualBuffs` while `buffsCount` is on); suit results' `effectiveTotals` (paperdoll resists, Divine Fury's shares) on `score_suit`, `build_suit`, `get_suit_build`, `get_run` and a reused run, and `unreachableFloors` and `diagnostics` for a hard floor no piece reaches (issues #216, #217), with the suit's `swing`; an empty `pinned` as no pins and a fill without `currentScore`; a build replaced by a newer call saying so (a parked core); `get_action_status` on an id nobody queued; and `organize_trip` counting a move only when its put step is reported (a refused trip, a take without its put); `build_suit`'s `rarity` (issue #262) set, cleared with `any` or a template without one, and kept when left out; `list_containers` (issue #276) over a captured house by its id or its name in any case (label, fill, area, level, position and top kinds; an unknown house naming the houses) and `outside` for the ground containers in no house; `label_containers` adding, renaming, pinning, unpinning and removing labels through `PUT /api/organize` with its `changed` event, refusing a bad batch whole (empty, unknown serial, trash, a bag, a label a rule or the catch-all uses, no label to remove, a serial twice, no name, a name over 64 characters, pinning a rule's target, a salvaged setup), and an Organize plan read before a label change refused as stale; `scan` (issue #281) refused with actions off, the bridge offline or a bridge without the scan feature, queuing each `what` as its script's line (a bad script refused by the route), and answering done with the newer scan's counts, scanning when none arrives in time, or the bridge's refusal. All `[fast]`.
+// the built-in MCP server (issue #211; `app/mcp.mts`, `app/mcp-tools.mts`) on a real server and temp data folder, its `mcp.json` asking for port 0 so no test races another or a Pack Rat running on 47615: `initialize` negotiating each supported protocol version and answering the newest to any other, with `serverInfo` and the instructions; a notification's 202, an unknown method (-32601) and tool (-32602), a parse error (-32700), a batch refused, an unsupported `MCP-Protocol-Version` header (400), arguments a tool's schema refuses as an `isError` result; the listener's guards (another Host, any Origin, its own included, no or a wrong token, GET and DELETE, another path, a non-JSON content type, a body over 1 MB); off by default with nothing written, `PUT /api/mcp` refusing anything but the two booleans and opening and closing the listener at once (connection refused once off), `mcp.json` saved `0600`; `POST /api/mcp/token` replacing the token with the old one refused at once, and a file without one getting one; a busy port falling back to a free one without saving it, and a broken `mcp.json` reading as off with a log line; every read tool over the demo fixtures with paging, and `character_sheet`'s Resisting Spells minimum with a run saved before it opening (issue #261); `build_suit` for two characters (the second build of the same inputs reusing the saved run, buffs named, No character saved and reused, listed by `noCharacter` and read back as `character: null` with its effective totals, and a No character fill with pins not saved; `onlyContainers` narrowing the pool into its own run, `[]` as no list, non-serials refused, and a bag or an item named with where it sits), the run tools and `score_suit` over them; the in-game tools refused with the switch off (and still listed) while `stop_actions` writes the stop flag, and with it on writing the same `queue.jsonl` line the Grab button's `POST /api/bridge` writes (refused while the bridge is offline, a ground chest highlighted by its serial), an Organize trip through the Organize route with its one-at-a-time and stale-stamp refusals, and `get_action_status` reading the bridge's report; the tools reaching a `--token` app server; and the MCP SDK's own `Client` and `StreamableHTTPClientTransport` connecting, listing the tools and calling one. Fix round 1: an id with no method refused, the content type in any case, `POST /api/mcp/token` refusing fields; a hand-edited `mcp.json` (one bad field keeps the token, a BOM, an empty or broken file, a data folder that cannot take a new token leaving MCP off); property rules the route would drop refused with the accepted forms, slots, kinds, slayers and tags in any case, rows carrying their container and root serials; `container_contents` on a bag inside a chest; `score_suit` keeping the hands legal around a named weapon and planning with Manual's buffs (`manualBuffs` while `buffsCount` is on); suit results' `effectiveTotals` (paperdoll resists, Divine Fury's shares) on `score_suit`, `build_suit`, `get_suit_build`, `get_run` and a reused run, and `unreachableFloors` and `diagnostics` for a hard floor no piece reaches (issues #216, #217), with the suit's `swing`; an empty `pinned` as no pins and a fill without `currentScore`; a build replaced by a newer call saying so (a parked core); `get_action_status` on an id nobody queued; and `organize_trip` counting a move only when its put step is reported (a refused trip, a take without its put); `build_suit`'s `rarity` (issue #262) set, cleared with `any` or a template without one, and kept when left out; `list_containers` (issue #276) over a captured house by its id or its name in any case (label, fill, area, level, position and top kinds; an unknown house naming the houses) and `outside` for the ground containers in no house; `label_containers` adding, renaming, pinning, unpinning and removing labels through `PUT /api/organize` with its `changed` event, refusing a bad batch whole (empty, unknown serial, trash, a bag, a label a rule or the catch-all uses, no label to remove, a serial twice, no name, a name over 64 characters, pinning a rule's target, a salvaged setup), and an Organize plan read before a label change refused as stale; `scan` (issue #281) refused with actions off, the bridge offline or a bridge without the scan feature, queuing each `what` as its script's line (a bad script refused by the route), and answering done with the newer scan's counts (or, for the house, the newer house capture), scanning within waitSeconds when none arrives in time (another character's scan and an older one do not count), or the bridge's refusal. All `[fast]`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, readFileSync, existsSync, statSync, mkdirSync, chmodSync, renameSync } from "node:fs";
@@ -585,6 +585,13 @@ function scanBridge(dir: string, results: Record<string, unknown> = {}): void {
   writeFileSync(join(dir, "bridge", "tazuo", "status.json"), JSON.stringify({ alive: new Date().toISOString(), character: "Tester", current: null, results, counts: { done: 0, failed: 0 },
     adapter: { id: "tazuo", version: "2.17.0", protocol: 1, features: ["highlight", "grab", "goto", "trip", "trip-bags", "scan"] } }));
 }
+// A file dropped into the TazUO inbox as a scan script writes it.
+function dropScan(sv: Served, name: string, doc: unknown): void {
+  const inbox = join(sv.dir, "inbox", "tazuo");
+  mkdirSync(inbox, { recursive: true });
+  writeFileSync(join(inbox, `${name}.tmp`), JSON.stringify(doc));
+  renameSync(join(inbox, `${name}.tmp`), join(inbox, name));
+}
 // Waits for the tool's line after `before` lines, then has the bridge report the script started.
 async function startedScan(sv: Served, before: number): Promise<void> {
   for (let i = 0; i < 200 && queued(sv.dir).length === before; i++) await new Promise((ok) => setTimeout(ok, 25));
@@ -624,25 +631,49 @@ test("[fast] scan follows the bridge, then answers with the newer scan Pack Rat 
     const at = new Date().toISOString();
     const pending = call(port, "scan", { waitSeconds: 25 });
     await startedScan(sv, 0);
-    const inbox = join(sv.dir, "inbox", "tazuo");
-    mkdirSync(inbox, { recursive: true });
-    writeFileSync(join(inbox, "scan.tmp"), JSON.stringify(houseScan({ scannedAt: at, boxes: [{ serial: A }, { serial: B, pos: { x: 102, y: 100, z: 0, facet: 1 } }], things: [{ serial: GEM, name: "Sapphire", in: A }] })));
-    renameSync(join(inbox, "scan.tmp"), join(inbox, "Tester-20261010-120000.json"));
+    dropScan(sv, "Tester-20261010-120000.json", houseScan({ scannedAt: at, boxes: [{ serial: A }, { serial: B, pos: { x: 102, y: 100, z: 0, facet: 1 } }], things: [{ serial: GEM, name: "Sapphire", in: A }] }));
     const done = await pending;
     assert.equal(done.ok, true, done.text);
     assert.deepEqual([done.data.state, done.data.scan], ["done", { character: "Tester", at, containers: 2, items: 1 }]);
-    // The script started, but no newer scan arrives within waitSeconds: scanning, with what to poll.
-    const slow = call(port, "scan", { what: "character", waitSeconds: 2 });
+    // The script started, but no newer scan of Tester arrives within waitSeconds: another character's newer scan and an
+    // older scan of Tester do not count. Scanning, with what to poll, and no later than waitSeconds.
+    const scansBefore = (await call(port, "scan_status")).data.scans as number;
+    const started = Date.now();
+    const slow = call(port, "scan", { what: "character", waitSeconds: 6 });
     await startedScan(sv, 1);
+    dropScan(sv, "Other-20261010-120001.json", houseScan({ character: "Other", scannedAt: new Date().toISOString(), boxes: [{ serial: 0x40002001 }] }));
+    dropScan(sv, "Tester-20261010-110000.json", houseScan({ scannedAt: new Date(Date.parse(at) - 60e3).toISOString(), boxes: [{ serial: 0x40002002 }] }));
     const scanning = await slow;
     assert.deepEqual([scanning.ok, scanning.data.state], [true, "scanning"], scanning.text);
     assert.match(scanning.data.hint, /scan_status/);
+    assert.ok(Date.now() - started < 6000 + 1500, `answered ${Date.now() - started} ms after the call, past waitSeconds`);
+    assert.equal((await call(port, "scan_status")).data.scans, scansBefore + 2, "both scans were accepted while the tool waited");
     // A refusal from the bridge is its answer.
     const busy = call(port, "scan", { waitSeconds: 10 });
     for (let i = 0; i < 200 && queued(sv.dir).length === 2; i++) await new Promise((ok) => setTimeout(ok, 25));
     scanBridge(sv.dir, { [String(queued(sv.dir).at(-1)!.id)]: { ok: false, msg: "packrat-scanner.py is already running", t: new Date().toISOString() } });
     const refused = await busy;
     assert.deepEqual([refused.data.state, refused.data.result.msg], ["failed", "packrat-scanner.py is already running"]);
+  } finally { await sv.s.close(); }
+});
+
+test("[fast] scan of the house waits for a newer house capture, and its scanning hint points at list_containers", async () => {
+  const sv = await serve({ demo: false, mcp: { enabled: true, allowActions: true }, before: (dir) => { house(dir); scanBridge(dir); } });
+  try {
+    const port = await mcpPort(sv);
+    const slow = call(port, "scan", { what: "house", waitSeconds: 1 });
+    await startedScan(sv, 0);
+    const scanning = await slow;
+    assert.deepEqual([scanning.data.state, scanning.data.hint], ["scanning", "the house map refresh is running in game; list_containers shows the house once its capture is in"]);
+    const { house: cap, chests } = vaultHouse();
+    const capturedAt = new Date().toISOString();
+    const pending = call(port, "scan", { what: "house", waitSeconds: 25 });
+    await startedScan(sv, 1);
+    const scan = houseScan({ scannedAt: capturedAt, boxes: chests.slice(0, 2).map((c) => ({ serial: c.serial, pos: { x: c.x, y: c.y, z: c.z, facet: 1 } })) });
+    dropScan(sv, "Tester-20261010-130000.json", { ...scan, house: { facet: 1, capturedAt, at: { x: 3003, y: 1003 }, tiles: cap.tiles, items: cap.items } });
+    const done = await pending;
+    assert.equal(done.ok, true, done.text);
+    assert.deepEqual([done.data.state, done.data.scan.character, done.data.scan.at, done.data.scan.house], ["done", "Tester", capturedAt, "1-3000-1000"], JSON.stringify(done.data));
   } finally { await sv.s.close(); }
 });
 
