@@ -39,7 +39,7 @@ Only those fields are rewritten, and a name also turns up elsewhere (a container
 `app/contracts.test.mts` walks every directory under `adapters/`. Every one that ships a `capabilities.json` gets the manifest checks, whether or not it has a fixture yet:
 
 1. **`capabilities.json` validates against the scan schema's capabilities shape** — the same `adapter.capabilities` subschema a real scan is checked against (`docs/scan-schema.md`).
-2. **Every declared bridge action has an app button and a script that runs it** — each entry in `capabilities.bridge` is an action in `bridge.v1.schema.json` with a button in the app (or Organize's `trip`, or the `trip-bags` feature beside it), and the adapter ships a `packrat-bridge.py` or `packrat-bridge.ts` exactly when it declares any. Every entry in `features` is one the app gates on (`trip-bags`, which needs `trip`), and an adapter with a bridge declares the `protocol` the app writes (`BRIDGE_PROTOCOL`).
+2. **Every declared bridge action has an app button and a script that runs it** — each entry in `capabilities.bridge` is an action in `bridge.v1.schema.json` with a button in the app (or Organize's `trip`, the `trip-bags` feature beside it, or `scan`, which the MCP `scan` tool queues), and the adapter ships a `packrat-bridge.py` or `packrat-bridge.ts` exactly when it declares any. Every entry in `features` is one the app gates on (`trip-bags`, which needs `trip`), and an adapter with a bridge declares the `protocol` the app writes (`BRIDGE_PROTOCOL`).
 
 Those that also ship a `fixture.scan.json` get the fixture checks, with no adapter-specific code required:
 

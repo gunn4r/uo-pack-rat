@@ -69,7 +69,7 @@ def rfc3339_now():
 
 
 ADAPTER_ID = "razor-enhanced"
-ADAPTER_VERSION = "1.12.0"
+ADAPTER_VERSION = "1.12.1"
 # Keep this literal in sync with capabilities.json and packrat-scanner.py's own copy.
 CAPABILITIES = {
     "layers": ["RightHand", "LeftHand", "Shoes", "Pants", "Shirt", "Head", "Gloves", "Ring",
@@ -128,6 +128,7 @@ MAX_TRIP_TAKES = 20        # app/organize.mts's tripItems default: one trip is o
 MAX_TRIP_PUTS = 40         # this trip's own puts plus leftovers from a stopped one ("Put them away")
 MAX_TRIP_NAME = 40         # app/bridge-trip.mts cuts every name in a trip to this
 MAX_TRIP_INDEX = 10000     # the trip's number in its plan, only ever printed on screen
+SCAN_SCRIPTS = ("scanner", "refresh", "house")   # what a scan line may start: Scan here, Character refresh, House map refresh
 
 
 def days_from_civil(y, m, d):
@@ -422,6 +423,25 @@ def check_trip(cmd, now_s):
             "putAway": put_away}, ""
 
 
+def check_scan(cmd, now_s):
+    """Validate one parsed scan line {id, action: "scan", script, queuedAt, protocol}: `script` names one of
+    SCAN_SCRIPTS. Returns (scan, reason); each bridge maps the name to its own script file."""
+    if not isinstance(cmd, dict):
+        return None, "queue line is not a JSON object"
+    cid, why = check_id(cmd)
+    if why:
+        return None, why
+    if cmd.get("action") != "scan":
+        return None, "unknown action"
+    script = cmd.get("script")
+    if not isinstance(script, str) or script not in SCAN_SCRIPTS:
+        return None, "script is not one of " + ", ".join(SCAN_SCRIPTS)
+    why = check_age(cmd.get("queuedAt"), now_s)
+    if why:
+        return None, why
+    return {"id": cid, "action": "scan", "script": script, "name": script}, ""
+
+
 def check_protocol(cmd):
     """A line names the protocol it was written in; one with none comes from an app older than the field
     and reads as protocol 1. A newer protocol than this bridge knows is refused, never guessed at."""
@@ -434,15 +454,17 @@ def check_protocol(cmd):
 
 
 def check_line(cmd, actions, now_s):
-    """A line in a newer protocol is refused first. A trip goes to check_trip on a bridge that runs trips;
-    everything else, and a trip on a bridge that does not, goes to check_command, which refuses an action
-    the bridge lacks."""
+    """A line in a newer protocol is refused first. A trip goes to check_trip on a bridge that runs trips, and
+    a scan to check_scan on a bridge that starts scans; everything else, and a trip or a scan on a bridge that
+    does not, goes to check_command, which refuses an action the bridge lacks."""
     if isinstance(cmd, dict):
         why = check_protocol(cmd)
         if why:
             return None, why
     if isinstance(cmd, dict) and cmd.get("action") == "trip" and "trip" in actions:
         return check_trip(cmd, now_s)
+    if isinstance(cmd, dict) and cmd.get("action") == "scan" and "scan" in actions:
+        return check_scan(cmd, now_s)
     return check_command(cmd, actions, now_s)
 
 

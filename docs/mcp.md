@@ -7,7 +7,7 @@ Pack Rat has a built-in [Model Context Protocol](https://modelcontextprotocol.io
 **Settings › AI assistants (MCP)**:
 
 - **MCP server** — off by default. On, Pack Rat listens on `http://127.0.0.1:47615/mcp` (this computer only). Off, nothing listens.
-- **Allow in-game actions** — off by default. On, clients may also Highlight, Go to, Grab and run Organize trips.
+- **Allow in-game actions** — off by default. On, clients may also Highlight, Go to, Grab, start a scan and run Organize trips.
 - **Address** and **Token** — what a client connects with. The token is hidden until **Show**; **Copy** copies it. **New token** makes a new one after asking; every client set up with the old one stops connecting at once, so copy the command or the JSON into it again.
 - **Claude Code** — **Copy command** copies one line to run once in a terminal:
 
@@ -78,7 +78,8 @@ The usage guide asks clients to show the player the proposed labels and get thei
 |---|---|
 | `highlight_item`, `go_to_item`, `grab_item` | The Highlight, Go to and Grab buttons |
 | `organize_trip` | Runs one trip of the Organize plan, with the stamp `organize_plan` gave |
-| `get_action_status` | Where a command or trip stands, with the bridge's report of each step |
+| `scan` | Starts a scan on the bridge's character and waits for Pack Rat to accept it: `what` is `here` (Scan here, the default: worn gear, backpack, the bank box if open, and the containers within the scanner's reach of where the character stands), `character` (Character refresh: stats, skills, worn gear and backpack) or `house` (House map refresh). Answers with the new scan's time and counts, `scanning` when it is not in yet (then poll `scan_status`), or the bridge's refusal, such as that script already running. TazUO only: the Razor Enhanced bridge does not start scripts |
+| `get_action_status` | Where a command, scan or trip stands, with the bridge's report of each step |
 | `stop_actions` | Organize's Stop: the trip halts after its current step. Works with the switch off |
 
 These go through the same routes and checks as the app's buttons: the bridge must be online, one trip runs at a time, a plan that changed since it was read is refused, and the bridge script re-checks every command itself. **Put away** stays a button on the in-game panel.

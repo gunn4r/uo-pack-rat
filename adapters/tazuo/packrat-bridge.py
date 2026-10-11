@@ -9,6 +9,8 @@
 #   trip      : Organize. Take up to 20 items from your labelled containers into your backpack, then
 #               put each one into the container it belongs in, reporting every step; an item whose
 #               container can be reached from the same spot goes straight there instead
+#   scan      : start Scan here, Character refresh or House map refresh, as the panel's buttons do; it
+#               reports that the script started, and the app watches for the scan file it writes
 # Status (alive timestamp + last results) goes to bridge/tazuo/status.json for the app's indicator.
 # The data directory is `packrat-paths.json` beside this script, else $PACKRAT_DATA, else
 # ~/.pack-rat.
@@ -85,14 +87,34 @@ def read_blacklist(path):
 # END generated: read_blacklist
 
 
+# BEGIN generated: tazuo/scripts
+SCANNER, REFRESH, HOUSE = "packrat-scanner.py", "packrat-character-refresh.py", "packrat-house-map-refresh.py"
+
+
+def script_prefix(self_name):
+    """The folder of the running script `self_name`, relative to LegionScripts ('' or 'Group/'): PlayScript
+    and IsScriptRunning match on that relative path exactly, and a bare name misses a script inside a group
+    folder. Read off the script's own entry in API.ListRunningScripts(); the Pack Rat scripts are siblings."""
+    try:
+        running = API.ListRunningScripts() or []
+    except Exception:
+        running = []
+    for p in running:
+        p = str(p).replace("\\", "/")
+        if p == self_name or p.endswith("/" + self_name):
+            return p[: len(p) - len(self_name)]
+    return ""
+# END generated: tazuo/scripts
+
+
 ADAPTER_ID = "tazuo"
-ADAPTER_VERSION = "2.16.0"
+ADAPTER_VERSION = "2.17.0"
 CAPABILITIES = {
     "layers": ["OneHanded", "TwoHanded", "Shoes", "Pants", "Shirt", "Helmet", "Gloves",
                "Ring", "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic",
                "Earrings", "Arms", "Cloak", "Robe", "Skirt", "Legs"],
     "arms": True, "bank": True, "ground": True, "nested": True, "tooltips": "opl",
-    "bridge": ["highlight", "grab", "goto", "trip", "trip-bags"],
+    "bridge": ["highlight", "grab", "goto", "trip", "trip-bags", "scan"],
 }
 # The actions a queue line may name. "trip-bags" is not one: it is a feature, telling the app this bridge's trips
 # check a bag is empty before taking it (issue #128), so an older bridge is never sent one. It stays in this list,
@@ -128,6 +150,9 @@ ALARM_HUE, OK_HUE, INFO_HUE = 33, 68, 88
 PACK_MAX_ITEMS = 125      # a backpack's item cap (ServUO's Container default MaxItems)
 PUT_AWAY_VAR = "packrat_putaway"   # set by packrat-panel.py's Put away (put_away_asked)
 TAKE_DROP = (60, 90)      # where a trip drops what it takes, inside the backpack window: a drop at a spot never stacks
+SELF = "packrat-bridge.py"
+SCAN_FILES = {"scanner": SCANNER, "refresh": REFRESH, "house": HOUSE}   # a scan line's script (SCAN_SCRIPTS), as a file
+START_CHECK_S = 1.5       # a started script not seen running by then did not start (packrat-panel.py's)
 STOP_CLOSE_S = 0.5        # stop closing windows this long after the Stop was first seen: the client gives a stopped script 2 s
 
 # BEGIN generated: untrusted_input
@@ -162,6 +187,7 @@ MAX_TRIP_TAKES = 20        # app/organize.mts's tripItems default: one trip is o
 MAX_TRIP_PUTS = 40         # this trip's own puts plus leftovers from a stopped one ("Put them away")
 MAX_TRIP_NAME = 40         # app/bridge-trip.mts cuts every name in a trip to this
 MAX_TRIP_INDEX = 10000     # the trip's number in its plan, only ever printed on screen
+SCAN_SCRIPTS = ("scanner", "refresh", "house")   # what a scan line may start: Scan here, Character refresh, House map refresh
 
 
 def days_from_civil(y, m, d):
@@ -456,6 +482,25 @@ def check_trip(cmd, now_s):
             "putAway": put_away}, ""
 
 
+def check_scan(cmd, now_s):
+    """Validate one parsed scan line {id, action: "scan", script, queuedAt, protocol}: `script` names one of
+    SCAN_SCRIPTS. Returns (scan, reason); each bridge maps the name to its own script file."""
+    if not isinstance(cmd, dict):
+        return None, "queue line is not a JSON object"
+    cid, why = check_id(cmd)
+    if why:
+        return None, why
+    if cmd.get("action") != "scan":
+        return None, "unknown action"
+    script = cmd.get("script")
+    if not isinstance(script, str) or script not in SCAN_SCRIPTS:
+        return None, "script is not one of " + ", ".join(SCAN_SCRIPTS)
+    why = check_age(cmd.get("queuedAt"), now_s)
+    if why:
+        return None, why
+    return {"id": cid, "action": "scan", "script": script, "name": script}, ""
+
+
 def check_protocol(cmd):
     """A line names the protocol it was written in; one with none comes from an app older than the field
     and reads as protocol 1. A newer protocol than this bridge knows is refused, never guessed at."""
@@ -468,15 +513,17 @@ def check_protocol(cmd):
 
 
 def check_line(cmd, actions, now_s):
-    """A line in a newer protocol is refused first. A trip goes to check_trip on a bridge that runs trips;
-    everything else, and a trip on a bridge that does not, goes to check_command, which refuses an action
-    the bridge lacks."""
+    """A line in a newer protocol is refused first. A trip goes to check_trip on a bridge that runs trips, and
+    a scan to check_scan on a bridge that starts scans; everything else, and a trip or a scan on a bridge that
+    does not, goes to check_command, which refuses an action the bridge lacks."""
     if isinstance(cmd, dict):
         why = check_protocol(cmd)
         if why:
             return None, why
     if isinstance(cmd, dict) and cmd.get("action") == "trip" and "trip" in actions:
         return check_trip(cmd, now_s)
+    if isinstance(cmd, dict) and cmd.get("action") == "scan" and "scan" in actions:
+        return check_scan(cmd, now_s)
     return check_command(cmd, actions, now_s)
 
 
@@ -1487,12 +1534,38 @@ def do_trip(cmd):
     return failed == 0 and not partial and not stopped and not error, msg, {"steps": steps, "partial": partial, "stopped": stopped, "ms": ms_since(started)}
 
 
+def do_scan(cmd):
+    """Start one of the Pack Rat scanners, as the panel's buttons do: not while it already runs, nor while a
+    Put away does (its own refresh is the scan it waits for). Reports the start, not the scan."""
+    name = SCAN_FILES[cmd["script"]]
+    path = script_prefix(SELF) + name
+    running, play = getattr(API, "IsScriptRunning", None), getattr(API, "PlayScript", None)
+    if running is None or play is None:
+        return False, "this TazUO cannot start scripts: update it"
+    if running(path):
+        return False, f"{name} is already running"
+    try:
+        if float(str(API.GetSharedVar(PUT_AWAY_VAR)).split(":")[1]) > time.time():
+            return False, "a Put away is running: scan after it"
+    except Exception:
+        pass
+    play(path)
+    until = time.time() + START_CHECK_S
+    while not running(path):
+        if time.time() >= until:
+            return False, f"{name} did not start. Try again in a moment; if it persists, open the Script Manager or relog"
+        API.Pause(0.25)
+    return True, f"started {name}"
+
+
 def run(cmd):
     action = cmd["action"]
     if action not in ACTIONS:
         return False, "unknown action"
     if action == "trip":
         return do_trip(cmd)
+    if action == "scan":
+        return do_scan(cmd)
     chain = cmd["chain"]
     if chain:
         root = find(chain[0])

@@ -30,7 +30,7 @@ One line of `queue.jsonl`, one JSON object per line:
 | Field | Type | Meaning |
 |---|---|---|
 | `id` | string, 1–64 characters | Identifies this command (the app writes a `randomUUID()`) — the page uses it to match a later result back to the button that queued it. |
-| `action` | string, one of `"highlight"`, `"grab"`, `"goto"` | What to do — see Actions below (`trip` is its own shape, below). |
+| `action` | string, one of `"highlight"`, `"grab"`, `"goto"` | What to do — see Actions below (`trip` and `scan` are their own shapes, below). |
 | `serial` | integer ≥ 1 | The target item's serial. |
 | `name` | string, ≤ 120 characters | The item's display name (so the bridge script's on-screen messages don't have to look it up itself). It is only ever printed on screen. Each bridge truncates to the same 120. |
 | `chain` | array of integers ≥ 1, at most 8 | The container chain from the root down to the item's immediate parent, outermost first (`[root, …, parent]`) — what the bridge needs to open, in order, to reach the item. Empty for an item sitting directly in a root already open (rare in practice). The cap is 8 because the page walks at most 8 parents and the scanner's own nesting limit is 4, so nothing legitimate is longer. |
@@ -39,6 +39,16 @@ One line of `queue.jsonl`, one JSON object per line:
 | `protocol` | integer ≥ 1 | The protocol the line is written in: `app/bridge-contract.mts`'s `BRIDGE_PROTOCOL`, 1 today. See Protocol below. |
 
 `POST /api/bridge` builds this line itself from the request body (`{action, serial, name, chain, pos}` — `location` and any other extra field the page might send along is dropped, never carried into the queue), assigns the `id`, `queuedAt` and `protocol`, validates the assembled line against the `command` schema, and only then appends it. It requires `action` and `serial`; everything else defaults (`chain: []`, `pos: null`). The body is capped at 64 KB.
+
+### Scan line
+
+A `scan` (issue #281) starts one of the client's scan scripts and has no item, so it is a line of its own shape, the `scan` schema in `bridge.v1.schema.json`:
+
+```json
+{"id": "5e1d2c3b-4a59-4687-9a0b-1c2d3e4f5a6b", "action": "scan", "script": "scanner", "queuedAt": "2026-10-10T14:20:44.123Z", "protocol": 1}
+```
+
+`script` is `"scanner"` (Scan here), `"refresh"` (Character refresh) or `"house"` (House map refresh). `POST /api/bridge` writes it for a body `{action: "scan", script}` and refuses any other script with a 400; the bridge re-checks it (`check_scan` in the shared untrusted-input block) and maps the name to its own script file, so nothing in the line ever becomes a path. Only the MCP `scan` tool queues one; no button does.
 
 ## Result
 
@@ -71,7 +81,7 @@ The whole of `status.json`, replaced atomically (temp file + rename) roughly eve
     "0b6f3c1e-2a4d-4e8f-9c3a-5d7e1f2a3b4c": {"ok": true, "msg": "grabbed Leather Gorget — it is in your backpack", "t": "2026-09-13T14:20:46+00:00"}
   },
   "counts": {"done": 4, "failed": 1},
-  "adapter": {"id": "tazuo", "version": "2.16.0", "protocol": 1, "features": ["highlight", "grab", "goto", "trip", "trip-bags"]}
+  "adapter": {"id": "tazuo", "version": "2.17.0", "protocol": 1, "features": ["highlight", "grab", "goto", "trip", "trip-bags", "scan"]}
 }
 ```
 
@@ -95,8 +105,9 @@ The whole of `status.json`, replaced atomically (temp file + rename) roughly eve
 | `grab` | Same reach/open steps, then move the item into the character's own backpack and verify it landed there (`API.MoveItem` followed by a re-read of the item's container) before reporting success. The app records a grab it queued and, once its result says `ok`, reads the item as in that character's backpack and the container it left as one item emptier until a scan catches up (issue #148, docs/architecture.md). |
 | `goto` | Walk within reach of the root container (from `chain[0]`, or straight to `pos` when there's no chain) and stop — no opening, no moving. Requires either a `chain` or a `pos`; an item with neither reports failure ("no container position known for this item"). |
 | `trip` | Organize (TazUO only). Takes, then puts, one step at a time — see Trip, below. |
+| `scan` | TazUO 2.17.0 and later. Starts Scan here, Character refresh or House map refresh (the scan line's `script`) with `API.PlayScript`, from the bridge's own script folder, as the in-game panel's buttons do, and reports `started <file>` once the client shows it running. Refused while that script already runs, while a Put away runs (its own refresh is the scan it waits for), or when the client does not start it within 1.5 s. The result says the script started, not what it read: the app watches for the scan file. The Razor Enhanced bridge does not declare it: Razor Enhanced's script-start call could not be checked against a live client, so its bridge refuses a scan as an unknown action. |
 
-An `action` the adapter's own `capabilities.bridge` list doesn't include (see `docs/scan-schema.md`'s `adapter.capabilities.bridge`) is refused with `"unknown action"` rather than attempted — the reference TazUO adapter supports all three, plus `trip` and the `trip-bags` feature, which is not an action (`CAPABILITIES["bridge"] = ["highlight", "grab", "goto", "trip", "trip-bags"]`, `ACTIONS` without it; Features, below).
+An `action` the adapter's own `capabilities.bridge` list doesn't include (see `docs/scan-schema.md`'s `adapter.capabilities.bridge`) is refused with `"unknown action"` rather than attempted — the reference TazUO adapter supports all three, plus `trip`, `scan` and the `trip-bags` feature, which is not an action (`CAPABILITIES["bridge"] = ["highlight", "grab", "goto", "trip", "trip-bags", "scan"]`, `ACTIONS` without it; Features, below).
 
 ## Protocol
 
@@ -104,7 +115,7 @@ Every queue line carries `protocol`, the version of the line format it is writte
 
 ## Features
 
-What a bridge can do is one set of names: the actions it runs (`highlight`, `grab`, `goto`, `trip`) and what it does besides (`trip-bags`: its trips take a bag only once they have read it empty, issue #128). A scan's adapter block and `capabilities.json` may keep them in two lists, `capabilities.bridge` for the actions and `features` for the rest, and the app reads a name from either. The shipped scripts still list `trip-bags` in `capabilities.bridge` and write no `features` into scans: an older app refuses a scan whose adapter block has a field it does not know, so a scan gains `features` only once an app that accepts it has been out for a release. The status `adapter.features` is the one list.
+What a bridge can do is one set of names: the actions it runs (`highlight`, `grab`, `goto`, `trip`, `scan`) and what it does besides (`trip-bags`: its trips take a bag only once they have read it empty, issue #128). A scan's adapter block and `capabilities.json` may keep them in two lists, `capabilities.bridge` for the actions and `features` for the rest, and the app reads a name from either. The shipped scripts still list `trip-bags` in `capabilities.bridge` and write no `features` into scans: an older app refuses a scan whose adapter block has a field it does not know, so a scan gains `features` only once an app that accepts it has been out for a release. The status `adapter.features` is the one list.
 
 The page (Highlight, Grab and Go to, and Organize's Run buttons), Organize's planner and trip route, Put away and the MCP tools all ask `bridgeFeatures` (`app/vault-lib.mts`), which answers from:
 

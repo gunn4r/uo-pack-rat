@@ -16,14 +16,25 @@ import type { Route } from "../router.mts";
 import type { ServerContext } from "../context.mts";
 
 const HERE = APP_DIR;
-const BRIDGE_SCHEMA = JSON.parse(readFileSync(join(HERE, "schema", "bridge.v1.schema.json"), "utf8")) as { command: ValidatorSchema };
+const BRIDGE_SCHEMA = JSON.parse(readFileSync(join(HERE, "schema", "bridge.v1.schema.json"), "utf8")) as { command: ValidatorSchema; scan: ValidatorSchema };
 
 export function routes(ctx: ServerContext): Route[] {
   const { config: CONFIG, appSettings, organizeService, organizeStateStore } = ctx;
   return [
     { method: "POST", path: "/api/bridge", handle: async (req, res) => {
-      // queue a command for packrat-bridge.py: {action, serial, name, chain: [root…parent], pos|null}
+      // queue a command for packrat-bridge.py: {action, serial, name, chain: [root…parent], pos|null}, or {action: "scan", script}
       const cmd = asObject(await readBody(req, { limit: 64e3, tooLargeMsg: "bridge command too large" }));
+      // A scan (issue #281) starts one of the client's scan scripts: no item, so a line of its own shape, queued like
+      // every other command below.
+      if (cmd.action === "scan") {
+        const line = { id: randomUUID(), action: "scan", script: cmd.script, queuedAt: new Date().toISOString(), protocol: BRIDGE_PROTOCOL };
+        const { ok, errors } = validate(BRIDGE_SCHEMA.scan, line);
+        if (!ok) return send(res, 400, { ok: false, error: `${errors[0]!.path} ${errors[0]!.msg}`, errors });
+        const adapter = appSettings.bridgeAdapter();
+        mkdirSync(CONFIG.paths.bridgeFor(adapter), { recursive: true, mode: DATA_DIR_MODE });
+        appendFileSync(CONFIG.paths.bridgeQueueFor(adapter), JSON.stringify(line) + "\n", { mode: DATA_FILE_MODE });
+        return send(res, 200, { ok: true, id: line.id });
+      }
       // Cheap bounded checks in front of the schema (post-review fix, Minor 9): a 500,000-character
       // name once took queue.jsonl to half a megabyte in one request. These are loose outer bounds on
       // what is even worth assembling; the contract's own, tighter limits (name maxLength 120, chain

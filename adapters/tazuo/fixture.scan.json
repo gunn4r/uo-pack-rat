@@ -7311,7 +7311,7 @@
  "schemaVersion": 2,
  "adapter": {
   "id": "tazuo",
-  "version": "2.16.0",
+  "version": "2.17.0",
   "client": "TazUO",
   "clientVersion": null,
   "capabilities": {
@@ -7347,7 +7347,8 @@
     "grab",
     "goto",
     "trip",
-    "trip-bags"
+    "trip-bags",
+    "scan"
    ]
   }
  },
