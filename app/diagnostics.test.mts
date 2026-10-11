@@ -92,6 +92,18 @@ test("[fast] best possible is in the player's terms: the cap, the Resisting Spel
   assert.deepEqual([ssi!.values, ssi!.message], [{ floor: 60, best: 45 }, "Swing speed increase 60 can't be reached with your inventory (best possible: 45)."]);
 });
 
+// Issue #265: a suit's own Resisting Spells bonus lifts the minimum (resistSteps), so a floor only that lift meets is in reach.
+test("[fast] a floor the lifted Resisting Spells minimum meets: in reach, met by the suit with the bonus, and best possible counts it", () => {
+  const steps = [{ at: 5, mins: { physResist: 42 } }, { at: 10, mins: { physResist: 44 } }];
+  const res = { ring: [mk(1, "ring", { physResist: 20 }), mk(3, "ring", { "sk:resisting spells": 10 })], neck: [mk(2, "neck", { physResist: 15 })] };
+  const resist = (floor: number): DiagnosticsProfile => ({ floors: { physResist: floor }, caps: { physResist: 70 }, hardFloors: ["physResist"], mins: { physResist: 40 }, resistSteps: steps });
+  assert.deepEqual(preBuildDiagnostics({ pools: res, ...ssiSlots, profile: resist(44) }), [], "44: the +10 ring's step meets it");
+  assert.deepEqual(preBuildDiagnostics({ pools: res, ...ssiSlots, profile: resist(45) })[0]!.values, { floor: 45, best: 44 }, "45: out of reach, the best the step's 44");
+  const after = (ring: number): Record<string, number> => (ring === 3 ? { physResist: 15, "sk:resisting spells": 10 } : { physResist: 35 });
+  assert.deepEqual(resultDiagnostics({ pools: res, ...ssiSlots, profile: resist(44), result: { totals: { after: after(3) } } }), [], "the suit with the ring meets it");
+  assert.deepEqual(resultDiagnostics({ pools: res, ...ssiSlots, profile: resist(44), result: { totals: { after: after(1) } } }).map((d) => [d.code, d.values]), [["floors_conflict", { floor: 44, value: 40 }]], "the suit without it holds 40");
+});
+
 test("[fast] a buff whose share lifts the reach over the floor: no diagnostic", () => {
   // the player asks for 45; the buff gives 10, so gear needs 35, which the pool reaches exactly
   assert.deepEqual(preBuildDiagnostics({ pools: ssiPools, ...ssiSlots, profile: ssiProfile(35, { caps: { ssi: 50 }, buffs: { floors: { ssi: 45 } } }) }), []);

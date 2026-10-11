@@ -1,6 +1,6 @@
 // diagnostics.mts — settings that work against a build, each with the change that would fix it (issue #217): a requirement no suit in the pool can reach, hard requirements the suit could reach one at a time but not together, a weight that swamps the rest, and a required weapon property no weapon has. Pure and browser-safe. The server sends the floor ones with POST /api/optimize before the search starts; the worker attaches the full list to every result, on both solver paths, so a saved run keeps it.
 import { propertyReach, DEFAULT_OPTIONAL_SLOTS, DEFAULT_SLOTS } from "./mip.mts";
-import { RESIST_KEYS, SLOT_LABELS, labelOf, flagLabel, playerCaps, propName, typicalRange, type OptItem, type ResistCap } from "./vault-lib.mts";
+import { RESIST_KEYS, RESIST_SKILL_KEY, SLOT_LABELS, labelOf, flagLabel, liftedMin, playerCaps, propName, typicalRange, type OptItem, type ResistCap, type ResistStep } from "./vault-lib.mts";
 import { delayText, heldWeapon, stepCredit, swingSeconds, type Held, type SsiStepPoint, type SwingResult } from "./swing.mts";
 import type { Diagnostic, DiagnosticAction } from "./runs-types.mts";
 
@@ -17,6 +17,7 @@ export interface DiagnosticsProfile {
   buffs?: { floors?: Record<string, number> | undefined; caps?: Record<string, number> | undefined } | undefined;
   swing?: { steps?: boolean | undefined } | undefined;
   ssiSteps?: SsiStepPoint[] | undefined;   // the step table the solvers scored SSI with (app/swing.mts stepTable), when they did
+  resistSteps?: ResistStep[] | undefined;  // the mins a suit's own Resisting Spells bonus lifts each resist to (vault-lib.mts EffectiveProfile)
 }
 export interface DiagnosticsInput {
   pools?: Partial<Record<string, OptItem[]>> | undefined;
@@ -39,9 +40,10 @@ const hardOf = (profile: DiagnosticsProfile): Set<unknown> => new Set(Array.isAr
 function floorsOf(profile: DiagnosticsProfile): Array<[string, number]> {
   return Object.entries(obj(profile.floors)).flatMap(([k, v]): Array<[string, number]> => { const f = num(v), m = minOf(profile, k); return f != null && f > 0 && !(m != null && f <= m) ? [[k, f]] : []; });
 }
-const minOf = (profile: DiagnosticsProfile, k: string): number | null => num(obj(profile.mins)[k]);
+// A property's min in a suit carrying `bonus` Resisting Spells (0: the profile's own; liftedMin).
+const minOf = (profile: DiagnosticsProfile, k: string, bonus = 0): number | null => num(liftedMin({ mins: obj(profile.mins) as Record<string, number>, resistSteps: Array.isArray(profile.resistSteps) ? profile.resistSteps : [] }, k, bonus));
 // A total as the suit has it: held at its min, where it has one.
-const heldAt = (profile: DiagnosticsProfile, k: string, t: number): number => { const m = minOf(profile, k); return m != null && t < m ? m : t; };
+const heldAt = (profile: DiagnosticsProfile, k: string, t: number, bonus = 0): number => { const m = minOf(profile, k, bonus); return m != null && t < m ? m : t; };
 // What turns an item total into the player's terms: a planned buff's share (the floor before the buffs less the floor after them).
 function offsetOf(profile: DiagnosticsProfile, k: string, f: number): number {
   const before = num(obj(obj(profile.buffs).floors)[k]);
@@ -55,13 +57,14 @@ const lower = (k: string, value: number): DiagnosticAction[] => (value > 0 ? [{ 
 // floor_unreachable: one per floor above what any suit in the pool reaches (the per-slot bound, propertyReach), hard or soft. A floor exactly at the bound is reachable. Best possible = min(cap, bound) in the player's terms; a hard floor is offered Lower and Make soft, a soft one (info) only Lower.
 export function preBuildDiagnostics(input: DiagnosticsInput): Diagnostic[] {
   const { profile } = input, floors = floorsOf(profile);
-  const reach = reachOf(input, floors.map(([k]) => k)), hard = hardOf(profile), caps = obj(profile.caps);
+  const reach = reachOf(input, [...floors.map(([k]) => k), RESIST_SKILL_KEY]), hard = hardOf(profile), caps = obj(profile.caps);
+  const bonus = reach[RESIST_SKILL_KEY]!.max;   // the most Resisting Spells bonus a suit carries: the highest min any suit has
   const out: Diagnostic[] = [];
   for (const [k, f] of floors) {
     const max = reach[k]!.max;
-    if (max >= f) continue;
+    if (max >= f || (minOf(profile, k, bonus) ?? -Infinity) >= f) continue;
     const off = offsetOf(profile, k, f), cap = num(caps[k]);
-    const floor = Math.round(f + off), best = Math.floor(heldAt(profile, k, Math.min(cap ?? Infinity, max)) + off), isHard = hard.has(k);
+    const floor = Math.round(f + off), best = Math.floor(heldAt(profile, k, Math.min(cap ?? Infinity, max), bonus) + off), isHard = hard.has(k);
     // a resist floor set above its cap counts only up to the cap (vault-lib.mts effectiveProfile), so the sentence says which number it is
     const atCap = RESIST_KEYS.includes(k) && cap != null && floor >= Math.round(cap + off);
     out.push({ code: "floor_unreachable", level: isHard ? "warn" : "info", property: k,
@@ -89,19 +92,21 @@ export function onlyRootsDiagnostics(slots: string[]): Diagnostic[] {
 // Every diagnostic for a finished build: the floor ones, then floors_conflict for each hard floor the suit misses though one suit could reach it on its own. With `floorsConflict` set the exact search proved no suit meets them all; without it (a timeout that left only the heuristic's suit) the sentence says only that none was found in time. Warnings first.
 export function resultDiagnostics(input: ResultDiagnosticsInput): Diagnostic[] {
   const { profile, result } = input, after = obj(result.totals?.after), hard = hardOf(profile);
-  const floors = floorsOf(profile).filter(([k]) => hard.has(k)), reach = reachOf(input, floors.map(([k]) => k));
-  const out = preBuildDiagnostics(input);
+  const floors = floorsOf(profile).filter(([k]) => hard.has(k)), reach = reachOf(input, [...floors.map(([k]) => k), RESIST_SKILL_KEY]);
+  const out = preBuildDiagnostics(input), bonus = num(after[RESIST_SKILL_KEY]) ?? 0, most = reach[RESIST_SKILL_KEY]!.max;
+  // out of reach (said above) or met: by the total, or by the min the suit's own Resisting Spells bonus lifts it to
+  const atLeast = (m: number | null, f: number): boolean => m != null && m >= f;
   for (const [k, f] of floors) {
     const t = num(after[k]) ?? 0;
-    if (reach[k]!.max < f || t >= f) continue;
-    const off = offsetOf(profile, k, f), floor = Math.round(f + off), value = Math.floor(heldAt(profile, k, t) + off);
+    if ((reach[k]!.max < f && !atLeast(minOf(profile, k, most), f)) || t >= f || atLeast(minOf(profile, k, bonus), f)) continue;
+    const off = offsetOf(profile, k, f), floor = Math.round(f + off), value = Math.floor(heldAt(profile, k, t, bonus) + off);
     out.push({ code: "floors_conflict", level: "warn", property: k,
       message: result.floorsConflict
         ? `${propName(k)} ${floor} can be reached, but not together with your other hard requirements: this suit has ${value}.`
         : `${propName(k)} ${floor} can be reached, but no suit meeting it together with your other hard requirements was found within the time limit: this suit has ${value}.`,
       values: { floor, value }, actions: [{ kind: "makeSoft", property: k }, ...lower(k, value)] });
   }
-  out.push(...weightDiagnostics(profile, after, reachOf(input, [...Object.keys(obj(profile.weights)), "stamPool"])));
+  out.push(...weightDiagnostics(profile, after, reachOf(input, [...Object.keys(obj(profile.weights)), "stamPool", RESIST_SKILL_KEY])));
   out.push(...swingDiagnostics(input));
   return [...out.filter((d) => d.level === "warn"), ...out.filter((d) => d.level !== "warn")];
 }
@@ -116,10 +121,10 @@ const oneDecimal = (n: number): string => n.toLocaleString("en-US", { maximumFra
 export function weightDiagnostics(profile: DiagnosticsProfile, after: Record<string, unknown>, reach: Record<string, { max: number }>): Diagnostic[] {
   const weights = Object.entries(obj(profile.weights)).flatMap(([k, v]): Array<[string, number]> => { const w = num(v); return w != null && w !== 0 && k !== "tagPenalty" ? [[k, w]] : []; });
   const caps = obj(profile.caps) as Record<string, number>, spans = playerCaps({ ...profile, caps });
-  const capped = (k: string, t: number): number => { const c = num(caps[k]); return heldAt(profile, k, c != null && c < t ? c : t); };
+  const capped = (k: string, t: number, bonus: number): number => { const c = num(caps[k]); return heldAt(profile, k, c != null && c < t ? c : t, bonus); };
   // with SSI scored by swing step (`ssiSteps`), its term is the step credit the totals reach, as the solvers scored it
   const steps = Array.isArray(profile.ssiSteps) ? profile.ssiSteps : null;
-  const valueAt = (k: string, at: (key: string) => number): number => (steps && k === "ssi" ? stepCredit(steps, at("ssi"), at("stamPool")) : capped(k, at(k)));
+  const valueAt = (k: string, at: (key: string) => number): number => (steps && k === "ssi" ? stepCredit(steps, at("ssi"), at("stamPool")) : capped(k, at(k), at(RESIST_SKILL_KEY)));
   const got = (key: string): number => num(after[key]) ?? 0, top = (key: string): number => reach[key]?.max ?? 0;
   const term = (k: string, w: number): number => Math.abs(w * valueAt(k, got));
   const positive = weights.filter(([, w]) => w > 0);
