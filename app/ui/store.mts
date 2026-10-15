@@ -1,6 +1,6 @@
 // ui/store.mts — the shared mutable state object, the bridge connection state, and invStamp.
 // Moved verbatim out of index.html's inline <script type="module"> (Task 4, the page split).
-import type { Item, EffectiveProfile } from "../vault-lib.mts";
+import type { Item, EffectiveProfile, RunSettings } from "../vault-lib.mts";
 import type { FlatProfile, ProfilesV3, TemplateMap } from "../build-spec.mts";
 import type { Facets } from "../item-query.mts";
 import type { RulesV1 } from "../schema/types.d.mts";
@@ -52,6 +52,7 @@ export interface BuilderJob {
 }
 // A finished build and everything needed to draw it for the character it was built for.
 export interface FinishedBuild {
+  settings: RunSettings;   // the panel's settings the build was asked with (the Settings drawer's count, builder.mts)
   name: string;
   result: OptimizeResult;
   current: OptSuit;

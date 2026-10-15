@@ -169,6 +169,17 @@ test("[slow] the Settings drawer: ⌘, and its button, Esc, the tabs, an error's
     await page.click("#b-run");
     await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>("#b-run")?.disabled && !document.querySelector("#b-msg .b-progress"), undefined, { timeout: 60_000 });
     await count("No changes since the last build");
+    // That run reopened from Saved runs is no longer the build just shown: the footer counts what the run's banner names,
+    // and Load these settings leaves nothing.
+    await page.click("#b-runs-open");
+    await page.locator("#b-runs .run-card.showing button[aria-haspopup=menu]").click();
+    await page.click('.pop-over-drawer [role="menuitem"]:has-text("Open")');
+    const banner = await (await page.waitForFunction(() => document.querySelector("#b-msg .saved-run")?.textContent || null, undefined, { timeout: 10_000 })).jsonValue();
+    const named = /this run: (.*?)Load these settings/.exec(String(banner))?.[1]?.split(" · ").length ?? 0;
+    await count(named ? `${named} change${named === 1 ? "" : "s"} since the last build` : "No changes since the last build");
+    await closeSettings(page);   // the banner's button may sit under the drawer
+    await page.locator("#b-msg .saved-run").getByRole("button", { name: "Load these settings" }).click();
+    await count("No changes since the last build");
 
     // Esc closes it from anywhere on the screen: after a click on the drawer's blank space, and from the result.
     await settings(page, "advanced");

@@ -99,8 +99,12 @@ export function initBuilder(): void {
     });
   }
   showTab(tab);
-  // the footer's count follows the shown run
-  document.addEventListener("builderchange", (e) => { if (["openRun", "runs", "result"].includes((e as BuilderChange).detail.key)) paintChanges(); });
+  // the footer's count follows the shown run; a run shown anew is no longer the build just shown (showFinished sets it after)
+  document.addEventListener("builderchange", (e) => {
+    const key = (e as BuilderChange).detail.key;
+    if (key === "openRun" || key === "character") builtWith = null;
+    if (["openRun", "runs", "result"].includes(key)) paintChanges();
+  });
   // Manual has no Settings button: the drawer closes on the way in
   document.addEventListener("builderchange", (e) => { if ((e as BuilderChange).detail.key === "mode" && session.mode === "manual") closeSettings(); });
 }
@@ -303,17 +307,19 @@ export function updateTemplateBadge(): void {
   commands.refreshCurrentSuit();
 }
 // The footer's "N changes since the last build": what the runs drawer's diff (runSettingsDiff) names between the shown
-// run and the panel, hidden with no run shown. A run this session's build showed counts from the settings that build
-// was asked with: one answered from an earlier run carries that run's own search knobs. Repainted a moment after the
-// last edit, so typing does not plan the whole build on every key.
-const builtWith = new Map<string, RunSettings>();
+// run and the panel, hidden with no run shown. While the run on screen is the one a build just showed, it counts from
+// the settings that build was asked with: one answered from an earlier run carries that run's own search knobs. Any
+// other run shown (one opened from the drawer, that same run reopened, another character) clears it, so the count
+// then agrees with the drawer's banner. Repainted a moment after the last edit, so typing does not plan the whole
+// build on every key.
+let builtWith: { runId: string; settings: RunSettings } | null = null;
 let changesTimer: ReturnType<typeof setTimeout> | undefined;
 function paintChanges(): void {
   clearTimeout(changesTimer);
   changesTimer = setTimeout(() => {
     const out = $<HTMLElement>("#b-changes")!, run = session.openRun ? session.runs.find((r) => r.id === session.openRun) : null;
     if (!run || !session.profile) { out.textContent = ""; return; }
-    const n = runSettingsDiff(builtWith.get(run.id!) ?? run.settings, panelBuild().snapshot).length;
+    const n = runSettingsDiff(builtWith?.runId === run.id ? builtWith.settings : run.settings, panelBuild().snapshot).length;
     out.textContent = n ? `${plural(n, "change")} since the last build` : "No changes since the last build";
   }, 150);
 }
@@ -925,13 +931,13 @@ async function runBuild(): Promise<void> {
   const checks = r.cached ? null : settingsCheck(r.diagnostics || [], name!);
   if (checks) job.ui!.root.before(checks);
   // r.run.ms is `number | null` (a saved run's on-disk shape); a genuinely null one has never been guarded here.
-  if (r.cached) { builtWith.set(r.run!.id, snapshot); finishJob(job, { result: r.run!.result, ms: r.run!.ms!, runId: r.run!.id, reused: r.run! }); return; }
+  if (r.cached) { finishJob(job, { result: r.run!.result, ms: r.run!.ms!, runId: r.run!.id, reused: r.run!, settings: snapshot }); return; }
   job.id = r.id!;
   job.timer = setInterval(() => job.ui!.tick(job), 200) as unknown as number;
   job.es = followJob(job.id, {
     progress: (p) => { job.last = p; job.lastProgressAt = Date.now(); job.lastServerAt = Date.now(); job.connected = true; job.ui!.update(job); },
     alive: (connected) => { if (connected) job.lastServerAt = Date.now(); job.connected = connected; },
-    done: (d) => { if (d.runId) builtWith.set(d.runId, snapshot); finishJob(job, d); },
+    done: (d) => finishJob(job, { ...d, settings: snapshot }),
     failed: (error) => failJob(job, error),
     cancelled: (ms) => endJob(job, cancelledNote(ms)),
   });
@@ -975,10 +981,10 @@ function endJob(job: BuilderJob, node?: HTMLElement | null): boolean {
   if (hadFocus) node?.querySelector<HTMLElement>("button")?.focus();
   return hadFocus;
 }
-interface JobFinishInfo { result: OptimizeResult; ms: number; runId: string | null; reused?: SavedRunLike | null | undefined }
+interface JobFinishInfo { result: OptimizeResult; ms: number; runId: string | null; reused?: SavedRunLike | null | undefined; settings: RunSettings }
 function finishJob(job: BuilderJob, r: JobFinishInfo): void {
   const meta: BuildMeta = { ms: r.ms, poolSize: job.poolSize, skipped: job.skipped, reused: r.reused || null };
-  const finished: FinishedBuild = { name: job.name, result: r.result, current: job.current, profile: job.profile, runId: r.runId || null, meta };
+  const finished: FinishedBuild = { name: job.name, result: r.result, current: job.current, profile: job.profile, runId: r.runId || null, meta, settings: r.settings };
   // Switched to another character while it ran: never draw this suit (or its Plan and Grab all) under that
   // character. It waits until its own character is selected again.
   const away = job.name !== session.character;
@@ -993,7 +999,8 @@ function finishJob(job: BuilderJob, r: JobFinishInfo): void {
 // `focus`: the finished build's heading takes the focus the progress card had (tabindex -1: a target, not a stop).
 function showFinished(f: FinishedBuild, focus = false): void {
   session.result = f.result;
-  session.openRun = f.runId;
+  session.openRun = f.runId;   // clears builtWith (below), then it is this build's
+  builtWith = f.runId ? { runId: f.runId, settings: f.settings } : null;
   session.altView = null;
   commands.renderResult(f.result, f.current, f.profile, f.name, f.meta).then(() => {
     const h = focus ? $<HTMLElement>("#b-result h2") : null;
