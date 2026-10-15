@@ -17,9 +17,9 @@ import { session, commands, provide } from "./builder-session.mts";
 import { RESIST_NAMES, keyProps, tipTarget, verdict, grabAllButton, fetchCard, settingsCheck } from "./builder-parts.mts";
 import { savedBuffs, plannedFromWorn, buffById, buffsDiff, runBuffs } from "../buffs.mts";
 import type { RunBuffs } from "../vault-lib.mts";
-import { slotsOf, paperdollCaps, pastCapBadges, runSettingsDiff, withBuffs, afterChange, compareModel, hiddenRowsNote, otherChanges, plural, resistOutcome, toggleCompare, propName, capNote, capsLine, anyOverridden, effectiveFloor, resultChecks, swingLines, who, rarityDetail, rarityTotal, type CompareMember } from "./builder-model.mts";
+import { slotsOf, paperdollCaps, pastCapBadges, runSettingsDiff, withBuffs, afterChange, compareModel, hiddenRowsNote, otherChanges, plural, resistOutcome, toggleCompare, propName, capNote, capsLine, anyOverridden, effectiveFloor, resultChecks, shareRows, swingLines, who, rarityDetail, rarityTotal, type CompareMember } from "./builder-model.mts";
 import { heldWeapon } from "../swing.mts";
-import type { SwingResult } from "../runs-types.mts";
+import type { ScoreShare, SwingResult } from "../runs-types.mts";
 import type { OptSuit, OptimizeResult, SavedRunLike } from "./api-types.mts";
 
 // One resist tile: its name in its resist colour, the value (before → after when there is a before) against
@@ -148,6 +148,7 @@ function headlineCard(res: OptimizeResult, current: OptSuit, suit: OptSuit, prof
   // the best suit's swing (an alternative's would need its own stamina), with the buffs that gave its share named
   const ssiBuffs = res.swing?.share ? (withBuffs(after, skill, base, prof.buffs, rsCap).shares.ssi || []).filter((x) => !x.outside).map((x) => buffById(x.id)?.name || x.id) : [];
   const swing = view == null && res.swing ? swingLine(res.swing, heldWeapon(suit)?.name ?? null, ssiBuffs) : null;
+  const shares = scoreBreakdown(view == null ? res.shares : res.alternatives![view]!.shares);
   return box("section", { class: "card b-head-card", "aria-label": view == null ? "Best suit" : `Suit ${view + 2}` },
     box("div", { class: "b-headline" },
       box("div", { class: "b-headline-text" }, box("div", { class: "b-row" }, el("h2", { class: "t-xl" }, `${manual ? "Manual suit" : view == null ? "Best suit" : `Suit #${view + 2}`}${name === NOBODY ? " · No character" : ` for ${name}`}`), vb), el("p", { class: "muted" }, txt(line)), plannedWith(prof, name)),
@@ -156,7 +157,24 @@ function headlineCard(res: OptimizeResult, current: OptSuit, suit: OptSuit, prof
     checks,
     box("div", { class: "b-resists" }, ...tiles),
     swing,
-    other.length ? box("div", { class: "b-badges", role: "list", "aria-label": "Other changes" }, ...other.map((o) => box("span", { class: `badge ${o.tone}`, role: "listitem" }, txt(o.text)))) : null);
+    other.length ? box("div", { class: "b-badges", role: "list", "aria-label": "Other changes" }, ...other.map((o) => box("span", { class: `badge ${o.tone}`, role: "listitem" }, txt(o.text)))) : null,
+    shares);
+}
+
+// What made up the score (issue #273): each weighted property's share as a bar (ui/builder-model.mts shareRows). Collapsed: the top three positive rows, small shares folded into Other (its names in its accessible name and tooltip), and every negative row. "Show all" lists every property on its own row and stays open for the page session. A resist held at its minimum carries a short "incl. min" mark whose sentence a screen reader and a tooltip give. None for a run saved before it.
+let sharesAll = false;
+function scoreBreakdown(shares: ScoreShare[] | undefined): HTMLElement | null {
+  if (!shares?.length) return null;
+  const all = shareRows(shares, 0), folded = shareRows(shares), positive = folded.filter((r) => !r.negative);
+  const shown = sharesAll ? all : [...positive.slice(0, 3), ...folded.filter((r) => r.negative)];
+  const items = shown.map((r, i) => box("li", { class: `b-share${r.negative && !shown[i - 1]?.negative && i ? " b-share-neg" : ""}`, ...(r.holds ? { title: r.holds } : {}) },
+    box("span", { class: "b-share-name" }, txt(r.label), r.holds ? txt(`: ${r.holds}`, "sr") : null,
+      r.note ? el("span", { class: "t-sm muted", title: r.note, "aria-hidden": "true" }, " · incl. min") : null, r.note ? txt(` (${r.note})`, "sr") : null),
+    meter(Math.round(Math.abs(r.share) * 1000), 1000, { tone: r.negative ? "warn" : undefined, label: `${r.label} ${r.pct}` }),
+    txt(r.pct, `b-share-pct${r.negative ? " tone-warn" : ""}`)));
+  const more = positive.length > 3 || positive.some((r) => r.holds) ? button({ label: sharesAll ? "Show fewer" : `Show all (${all.length})`, variant: "ghost", size: "sm", attrs: { id: "b-shares-more" },
+    onClick: () => { sharesAll = !sharesAll; void rerender().then(() => document.getElementById("b-shares-more")?.focus()); } }) : null;
+  return box("div", { class: "b-shares" }, el("h3", { class: "t-sm muted", id: "b-shares-h" }, "What made up the score"), box("ul", { class: "b-share-list", "aria-labelledby": "b-shares-h" }, ...items), more);
 }
 
 // The swing line under the resists: the weapon, stamina and SSI and the delay they give, then the steps at that stamina with the reached ones in the ok tone.
