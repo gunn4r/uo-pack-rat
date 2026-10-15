@@ -1,6 +1,6 @@
 // server-builder.test.mts — HTTP tests of the Suit Builder: `POST /api/optimize`, the saved runs and `GET|PUT /api/profiles`.
 //
-// `POST /api/optimize`: one running job per client (a second `POST` supersedes the first) and none between callers with no client id, the events route's `?client=` check, the server-wide ceiling, a job that throws logging its stack under the ref the client sees, an exact build proven by HiGHS with the saved run's score, the by-character form building the client's pools, keeping the page's settings snapshot, treating null fields as absent and refusing a bad settings type, the time budget capping restarts, resist cap overrides, weapon exclusions and required weapon properties (the lock wins, an empty pool said), malformed pools, current, profile or opts refused, only known meta fields saved, a character with no scans a 404, and Manual's hand-offs (issue #12: `pinned` keeping the placed pieces, no run saved, and with no character only pieces nobody wears; No character's `_nobody` build from pieces nobody wears, saved, reused and listed under its name, others' worn gear on request, another pseudo name a 404, and its manual run; Only containers, `settings.onlyRoots`: a bad list 400, the pool narrowed to the listed container, the slots it leaves with nothing from a container and a hard floor it puts out of reach said before the search, and a No character build saved with the list and never answering one without it); SSI scored by swing step through the real worker (issue #217: per point with the reason while the weapon is not fixed, scoring what steps off scores, and the result's swing once the one-handed slot is locked); the job lifecycle (`jobTimings`, a parked core: a build past the retention kept, one past its budget cancelled, closing mid-build logging no failure); `GET|PUT|DELETE /api/runs/<id>` (a label type-checked, a truncated run a 404 that can still be deleted) and `POST /api/runs` saving a manual run with its checks; `POST /api/evaluate` answering what `evaluateSuit` computes from the same fixtures (the saved profile, a given profile with Divine Fury, a run's settings bringing their buffs, No character) and its checks; `PUT /api/profiles` (413 by bytes, 400 naming the schema path) and a truncated `profiles.json` moved aside and reseeded. A rarity preference (issue #262): `POST /api/optimize` stamps tie costs on pooled and worn pieces in both forms (an unknown serial ranking 0), keys each preference apart from none, and refuses a bad `opts.tieBreak`.
+// `POST /api/optimize`: one running job per client (a second `POST` supersedes the first) and none between callers with no client id, the events route's `?client=` check, the server-wide ceiling, a job that throws logging its stack under the ref the client sees, an exact build proven by HiGHS with the saved run's score, the by-character form building the client's pools, keeping the page's settings snapshot, treating null fields as absent and refusing a bad settings type, the time budget capping restarts, resist cap overrides, weapon exclusions and required weapon properties (the lock wins, an empty pool said), malformed pools, current, profile or opts refused, only known meta fields saved, a character with no scans a 404, and Manual's hand-offs (issue #12: `pinned` keeping the placed pieces, no run saved, and with no character only pieces nobody wears; No character's `_nobody` build from pieces nobody wears, saved, reused and listed under its name, others' worn gear on request, another pseudo name a 404, and its manual run; Only containers, `settings.onlyRoots`: a bad list 400, the pool narrowed to the listed container, the slots it leaves with nothing from a container and a hard floor it puts out of reach said before the search, and a No character build saved with the list and never answering one without it); SSI scored by swing step through the real worker (issue #217: per point with the reason while the weapon is not fixed, scoring what steps off scores, and the result's swing once the one-handed slot is locked); the job lifecycle (`jobTimings`, a parked core: a build past the retention kept, one past its budget cancelled, closing mid-build logging no failure); `GET|PUT|DELETE /api/runs/<id>` (a label type-checked, a truncated run a 404 that can still be deleted) and `POST /api/runs` saving a manual run with its checks; `POST /api/evaluate` answering what `evaluateSuit` computes from the same fixtures (the saved profile, a given profile with Divine Fury, a run's settings bringing their buffs, No character) and its checks; `PUT /api/profiles` (413 by bytes, 400 naming the schema path) and a truncated `profiles.json` moved aside and reseeded. A rarity preference (issue #262): `POST /api/optimize` stamps tie costs on pooled and worn pieces in both forms (an unknown serial ranking 0), keys each preference apart from none, and refuses a bad `opts.tieBreak`. What made up the score (issue #273): the best suit, each other suit and the saved run carry the shares, and a manual run stores its own.
 import { test, before, after, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, rmSync } from "node:fs";
@@ -9,7 +9,8 @@ import { tmpdir } from "node:os";
 import { resolveConfig, ensureLayout } from "./config.mts";
 import type { ServerHandle } from "./vault-server.mts";
 import { startTestServer as startServer } from "./server-fixture.mts";
-import { NOBODY, buildPools, isWeapon, setRules, toOptItem, type Item, type Profile } from "./vault-lib.mts";
+import { NOBODY, buildPools, isWeapon, setRules, toOptItem, totalsOf, type Item, type OptItem, type Profile } from "./vault-lib.mts";
+import { scoreShares, type ScoreShare } from "./diagnostics.mts";
 import { characterProfile, specFromProfile, templateSpecFrom, type ProfilesV3 } from "./build-spec.mts";
 import { manualBase, manualPlan } from "./buffs.mts";
 import { evaluateSuit, type SuitEvaluation } from "./evaluate.mts";
@@ -257,6 +258,33 @@ test("[fast] POST /api/optimize answers the unreachable floors before the search
 });
 
 // Swing steps through the real worker (issue #217): with the weapon not fixed SSI stays per point and the result says why, scoring what the same build with steps off scores; with the one-handed slot locked to the worn weapon the steps are used and the result's swing is the formula's for the suit.
+test("[fast] POST /api/optimize: the best suit and each other suit carry what made up their score, and the saved run keeps it (issue #273)", async () => {
+  const inv = asJson<InventoryResponse>(await get("/api/inventory").then((r) => r.json()));
+  const profiles = asJson<ProfilesResponse>(await get("/api/profiles").then((r) => r.json()));
+  const rules = asJson<RulesResponse>(await get("/api/rules").then((r) => r.json()));
+  const character = Object.keys(inv.inventory.characters)[0]!;
+  const { pools, current } = buildPools(foldFixtures(join(HERE, "fixtures")), character, {});
+  const profile = { ...firstTemplate(profiles), caps: rules.rules.caps, mins: { physResist: 40, fireResist: 40, coldResist: 40, poisonResist: 40, energyResist: 40 } };
+  const r = await fetch(srv.url + "/api/optimize", { method: "POST", headers: JSON_HEADERS,
+    body: JSON.stringify({ pools, current, profile, opts: { exact: true, timeBudgetMs: 20000, restarts: 5, seed: 2026, alternatives: { count: 2, tolerance: 1e9 } } }) });
+  const { id } = asJson<OptimizeJobResponse>(await r.json());
+  let status: OptimizeJobResponse | undefined;
+  for (let i = 0; i < 300; i++) {
+    status = asJson<OptimizeJobResponse>(await get(`/api/optimize/${id}/status`).then((x) => x.json()));
+    if (status.state !== "running") break;
+    await new Promise((res) => setTimeout(res, 100));
+  }
+  assert.equal(status!.state, "done", JSON.stringify(status));
+  type Suit = Record<string, OptItem>;
+  const res = status!.result as unknown as { totals: { after: Record<string, number> }; shares?: ScoreShare[]; alternatives?: Array<{ best: Suit; shares?: ScoreShare[] }> };
+  assert.deepEqual(res.shares, scoreShares(profile, res.totals.after));
+  assert.ok(res.shares!.length > 0);
+  assert.ok(res.alternatives!.length > 0, "other suits were found");
+  for (const a of res.alternatives!) assert.deepEqual(a.shares, scoreShares(profile, totalsOf(a.best)));
+  const run = asJson<RunResponse>(await get(`/api/runs/${status!.runId}`).then((x) => x.json()));
+  assert.deepEqual(run.run.result.shares, res.shares, "the saved run keeps them, with the minimums it was built with");
+});
+
 test("[fast] POST /api/optimize scores SSI by swing step once the weapon is fixed, and says why not while it is not", async () => {
   const dir = mkdtempSync(join(tmpdir(), "qm-"));
   const s2 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {})));
@@ -1109,6 +1137,13 @@ test("[fast] POST /api/runs saves Manual's suit as a manual run: its shape, its 
   assert.equal(full.result.best[piece.slot!]!.serial, piece.serial);
   assert.ok(Object.hasOwn(full.result.best, "feet") && Object.hasOwn(full.result.best, "earrings"), "every gear slot");
   assert.deepEqual(full.result.perSlotChanges.map((c) => [c.slot, c.toSerial]), [[piece.slot, piece.serial]]);
+  // what made up its score (issue #273): every weighted property the suit has, largest first, the sizes summing to 1
+  const weighted = asJson<{ ok: boolean; run: { id: string } }>(await (await post({ character, suit, settings: { weights: { physResist: 2, fireResist: 1, luck: -1 }, race: "human" } })).json()).run.id;
+  const { shares, totals } = asJson<{ run: { result: { shares: Array<{ property: string; share: number }>; totals: { after: Record<string, number> } } } }>(await (await get(`/api/runs/${weighted}`)).json()).run.result;
+  const t = totals.after, sum = 2 * t.physResist! + t.fireResist! + t.luck!;
+  assert.ok(t.physResist! > 0 && t.fireResist! > 0 && t.luck! > 0, JSON.stringify(t));
+  assert.deepEqual(Object.fromEntries(shares.map((x) => [x.property, Math.round(x.share * 1e6)])),
+    { physResist: Math.round(2 * t.physResist! / sum * 1e6), fireResist: Math.round(t.fireResist! / sum * 1e6), luck: -Math.round(t.luck! / sum * 1e6) }, JSON.stringify(shares));
   // the checks
   assert.equal((await post({ character: "Nobody", suit, settings })).status, 404);
   assert.equal((await post({ character, suit: {}, settings })).status, 400);

@@ -2,9 +2,9 @@
 import { propertyReach, DEFAULT_OPTIONAL_SLOTS, DEFAULT_SLOTS } from "./mip.mts";
 import { RESIST_KEYS, RESIST_SKILL_KEY, SLOT_LABELS, labelOf, flagLabel, liftedMin, playerCaps, propName, typicalRange, type OptItem, type ResistCap, type ResistStep } from "./vault-lib.mts";
 import { delayText, heldWeapon, stepCredit, swingSeconds, type Held, type SsiStepPoint, type SwingResult } from "./swing.mts";
-import type { Diagnostic, DiagnosticAction } from "./runs-types.mts";
+import type { Diagnostic, DiagnosticAction, ScoreShare } from "./runs-types.mts";
 
-export type { Diagnostic, DiagnosticAction, DiagnosticCode } from "./runs-types.mts";
+export type { Diagnostic, DiagnosticAction, DiagnosticCode, ScoreShare } from "./runs-types.mts";
 
 // The fields of the effective profile (vault-lib.mts EffectiveProfile) these read, all optional so a hand-built request's profile is read as far as it goes. Floors, caps and `mins` (the Resisting Spells minimum each resist is held at) are in item terms; the buffs' floors before them turn a number back into the player's terms.
 export interface DiagnosticsProfile {
@@ -111,32 +111,43 @@ export function resultDiagnostics(input: ResultDiagnosticsInput): Diagnostic[] {
   return [...out.filter((d) => d.level === "warn"), ...out.filter((d) => d.level !== "warn")];
 }
 
-// weight_dominates: a property whose weight swamps the others. A property's worth is its weight times its typical range (vault-lib.mts typicalRange, in the player's terms), so "= 1,500 per 500 Luck"; its share is |w × min(total, cap)| over the sum of those terms for every weighted property, on the suit found (floor bonuses and the tag penalty left out). It dominates when its worth is at least DOMINANT_WORTH times the median worth of the OTHER positively weighted properties with a typical range (none other: no check), and its share at least DOMINANT_SHARE. A thin suit (a new character, a small or narrowed pool) makes any big weight look dominant, so nothing is raised when the suit's score from the positive weights is below THIN_SUIT of what the pool could give them, Σ w × min(reach, cap) with `reach` the per-slot bound (propertyReach). The suggested weight makes its worth the others' median, to one significant figure.
+// weight_dominates: a property whose weight swamps the others. A property's worth is its weight times its typical range (vault-lib.mts typicalRange, in the player's terms), so "= 1,500 per 500 Luck"; its share is the size of its scoreShares share on the suit found. It dominates when its worth is at least DOMINANT_WORTH times the median worth of the OTHER positively weighted properties with a typical range (none other: no check), and its share at least DOMINANT_SHARE. A thin suit (a new character, a small or narrowed pool) makes any big weight look dominant, so nothing is raised when the suit's score from the positive weights is below THIN_SUIT of what the pool could give them, Σ w × min(reach, cap) with `reach` the per-slot bound (propertyReach). The suggested weight makes its worth the others' median, to one significant figure.
 export const DOMINANT_WORTH = 3;
 export const DOMINANT_SHARE = 0.25;
 export const THIN_SUIT = 0.5;
 const median = (xs: number[]): number => { const s = [...xs].sort((a, b) => a - b), m = s.length >> 1; return s.length % 2 ? s[m]! : (s[m - 1]! + s[m]!) / 2; };
 export const suggestedWeight = (medianWorth: number, typical: number): number => Number((medianWorth / typical).toPrecision(1));
 const oneDecimal = (n: number): string => n.toLocaleString("en-US", { maximumFractionDigits: 1 });
-export function weightDiagnostics(profile: DiagnosticsProfile, after: Record<string, unknown>, reach: Record<string, { max: number }>): Diagnostic[] {
+// A suit's score from weights, property by property (issue #273): each weighted property's term w × min(total, cap) over the sum of every term's size, so a negative weight's share is negative. Floor bonuses and the tag penalty are left out. A resist's term is held at the Resisting Spells minimum the suit's own bonus lifts it to (liftedMin), as the solvers score it, and `fromMin` marks one whose minimum is above its gear total; with SSI scored by swing step (`ssiSteps`), its term is the step credit the totals reach. Largest first; none when the suit scores nothing from weights. weight_dominates reads its share from here.
+export function scoreShares(profile: DiagnosticsProfile, after: Record<string, unknown>): ScoreShare[] {
+  const { weights, gear, stepped, valueAt } = scoring(profile), got = (key: string): number => num(after[key]) ?? 0;
+  const terms = weights.map(([k, w]) => ({ k, term: w * valueAt(k, got) }));
+  const total = terms.reduce((n, x) => n + Math.abs(x.term), 0);
+  if (total <= 0) return [];
+  const fromMin = (k: string): boolean => !(stepped && k === "ssi") && (minOf(profile, k, got(RESIST_SKILL_KEY)) ?? -Infinity) > gear(k, got(k));
+  return terms.map(({ k, term }) => ({ property: k, share: term / total, ...(fromMin(k) ? { fromMin: true } : {}) })).sort((a, b) => b.share - a.share);
+}
+// The weighted properties (no zero weights, no tag penalty) and each one's term value as the solvers score it, from totals read through `at`.
+function scoring(profile: DiagnosticsProfile) {
   const weights = Object.entries(obj(profile.weights)).flatMap(([k, v]): Array<[string, number]> => { const w = num(v); return w != null && w !== 0 && k !== "tagPenalty" ? [[k, w]] : []; });
-  const caps = obj(profile.caps) as Record<string, number>, spans = playerCaps({ ...profile, caps });
-  const capped = (k: string, t: number, bonus: number): number => { const c = num(caps[k]); return heldAt(profile, k, c != null && c < t ? c : t, bonus); };
-  // with SSI scored by swing step (`ssiSteps`), its term is the step credit the totals reach, as the solvers scored it
+  const caps = obj(profile.caps), gear = (k: string, t: number): number => { const c = num(caps[k]); return c != null && c < t ? c : t; };
   const steps = Array.isArray(profile.ssiSteps) ? profile.ssiSteps : null;
-  const valueAt = (k: string, at: (key: string) => number): number => (steps && k === "ssi" ? stepCredit(steps, at("ssi"), at("stamPool")) : capped(k, at(k), at(RESIST_SKILL_KEY)));
+  const valueAt = (k: string, at: (key: string) => number): number => (steps && k === "ssi" ? stepCredit(steps, at("ssi"), at("stamPool")) : heldAt(profile, k, gear(k, at(k)), at(RESIST_SKILL_KEY)));
+  return { weights, gear, stepped: !!steps, valueAt };
+}
+export function weightDiagnostics(profile: DiagnosticsProfile, after: Record<string, unknown>, reach: Record<string, { max: number }>): Diagnostic[] {
+  const { weights, valueAt } = scoring(profile), spans = playerCaps({ ...profile, caps: obj(profile.caps) as Record<string, number> });
   const got = (key: string): number => num(after[key]) ?? 0, top = (key: string): number => reach[key]?.max ?? 0;
-  const term = (k: string, w: number): number => Math.abs(w * valueAt(k, got));
+  const shares = new Map(scoreShares(profile, after).map((s) => [s.property, Math.abs(s.share)]));
   const positive = weights.filter(([, w]) => w > 0);
   const score = positive.reduce((n, [k, w]) => n + w * valueAt(k, got), 0);
   const potential = positive.reduce((n, [k, w]) => n + w * Math.max(0, valueAt(k, top)), 0);
-  const total = weights.reduce((n, [k, w]) => n + term(k, w), 0);
-  if (total <= 0 || score < THIN_SUIT * potential) return [];
+  if (!shares.size || score < THIN_SUIT * potential) return [];
   const worths = positive.flatMap(([k, w]) => { const typical = typicalRange(k, spans); return typical != null ? [{ k, w, typical, worth: w * typical }] : []; });
   return worths.flatMap(({ k, w, typical, worth }): Diagnostic[] => {
     const others = worths.filter((x) => x.k !== k).map((x) => x.worth);
     if (!others.length) return [];
-    const mid = median(others), ratio = worth / mid, share = term(k, w) / total;
+    const mid = median(others), ratio = worth / mid, share = shares.get(k) ?? 0;
     if (ratio < DOMINANT_WORTH || share < DOMINANT_SHARE) return [];
     const suggested = suggestedWeight(mid, typical), pct = Math.round(share * 100);
     return [{ code: "weight_dominates", level: "warn", property: k,

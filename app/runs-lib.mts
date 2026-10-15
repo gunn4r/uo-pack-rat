@@ -2,7 +2,7 @@
 // Server-side only (uses node:crypto); the page never imports it.
 import { createHash } from "node:crypto";
 import { totalsOf, type OptItem } from "./vault-lib.mts";
-import type { RunResult, RunSettingsRaw, RunSummary, SavedRun } from "./runs-types.mts";
+import type { RunResult, RunSettingsRaw, RunSummary, SavedRun, ScoreShare } from "./runs-types.mts";
 export type { RunResult, RunSettingsRaw, RunSummary, SavedRun } from "./runs-types.mts";
 
 // The optimizer search options a saved run was made with. Loosely shaped (an index signature) because
@@ -47,7 +47,8 @@ export interface RunKeyInput {
 // 7: SSI can be scored by swing step (app/swing.mts), weapons carry their speed, and a result carries its `swing`.
 // 8: Resisting Spells is a minimum under each resist (`mins`), not a bonus taken off the resist caps and floors (#261).
 // 9: a suit's own Resisting Spells bonus lifts that minimum (`resistSteps`, #265).
-export const SOLVER_VERSION = 9;
+// 10: every result and each other suit carries `shares` (#273).
+export const SOLVER_VERSION = 10;
 // The first SOLVER_VERSION whose saved diagnostics are in the player's terms as the page shows them now: before 8 a
 // resist's numbers counted the Resisting Spells bonus (#261), so an older run's are dropped when read and it falls back
 // as a run saved before diagnostics does.
@@ -89,8 +90,9 @@ export function reusableRun(runs: SavedRun[], key: string, opts: { timeBudgetMs?
 export interface ManualRunInput {
   id: string; character: string; createdAt: string; settings: RunSettingsRaw; inventoryStamp: unknown;
   suit: Record<string, OptItem>; worn: Record<string, OptItem>; slots: readonly string[];
+  shares?: ScoreShare[] | undefined;   // what made up the suit's score from weights (diagnostics.mts scoreShares), though it keeps no score
 }
-export function manualRun({ id, character, createdAt, settings, inventoryStamp, suit, worn, slots }: ManualRunInput): SavedRun {
+export function manualRun({ id, character, createdAt, settings, inventoryStamp, suit, worn, slots, shares }: ManualRunInput): SavedRun {
   const best = Object.fromEntries(slots.map((s) => [s, suit[s] ?? null]));
   const perSlotChanges = slots.filter((s) => (suit[s]?.serial ?? 0) !== (worn[s]?.serial ?? 0)).map((s) => {
     const from = worn[s], to = suit[s], gainedProps: Record<string, number> = {};
@@ -102,7 +104,7 @@ export function manualRun({ id, character, createdAt, settings, inventoryStamp, 
   });
   const key = `manual:${createHash("sha1").update(JSON.stringify({ character, suit: Object.fromEntries(Object.entries(best).map(([s, it]) => [s, it?.serial ?? null])), settings })).digest("hex")}`;
   return runRecord({ id, key, character, createdAt, settings, inventoryStamp, poolSize: null, skipped: {}, ms: 0,
-    result: { method: "manual", best, perSlotChanges, totals: { before: totalsOf(worn), after: totalsOf(suit) } } });
+    result: { method: "manual", best, perSlotChanges, totals: { before: totalsOf(worn), after: totalsOf(suit) }, ...(shares ? { shares } : {}) } });
 }
 
 // A saved run's document, for both writers: a finished search (the jobs service's saveRun, with its `search` part) and a

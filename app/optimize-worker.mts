@@ -12,10 +12,10 @@
 // rather than trusting `workerData`'s ambient `any`.
 import { parentPort, workerData } from "node:worker_threads";
 import { solveExact, type OptPools, type OptAssignment, type OptProfile, type ExactSolveResult, type SolveProgress } from "./exact-solver.mts";
-import { resultDiagnostics, withDiagnostics, type Diagnostic, type DiagnosticsProfile } from "./diagnostics.mts";
+import { resultDiagnostics, scoreShares, withDiagnostics, type Diagnostic, type DiagnosticsProfile, type ScoreShare } from "./diagnostics.mts";
 import { propertyReach, DEFAULT_OPTIONAL_SLOTS, DEFAULT_SLOTS } from "./mip.mts";
 import { heldWeapon, ssiShareOf, stepsFor, swingOf, type SwingResult } from "./swing.mts";
-import type { EffectiveProfile, OptItem } from "./vault-lib.mts";
+import { totalsOf, type EffectiveProfile, type OptItem } from "./vault-lib.mts";
 import type * as Core from "../scripts/optimizer-core.mts";
 
 type OptOptionsFull = NonNullable<Parameters<typeof Core.optimizeSuit>[3]>;
@@ -40,7 +40,8 @@ export interface WorkerWarnMessage {
   message: string;
 }
 // Either path's result, with the settings that worked against it (app/diagnostics.mts; no `diagnostics` when computing them failed) and the suit's swing (app/swing.mts).
-export type WorkerResult = (OptResult | ExactSolveResult) & { diagnostics?: Diagnostic[]; swing?: SwingResult | undefined };
+// Each suit carries what made up its score (scoreShares), with the minimums this build held resists at.
+export type WorkerResult = (OptResult | ExactSolveResult) & { diagnostics?: Diagnostic[]; swing?: SwingResult | undefined; shares?: ScoreShare[] };
 export interface WorkerDoneMessage {
   type: "done";
   result: WorkerResult;
@@ -82,7 +83,14 @@ try {
   // A failure here never costs the suit (withDiagnostics): the result goes out without diagnostics and the server logs why.
   const withDiags = withDiagnostics(withSwing, () => resultDiagnostics({ pools: items, current: worn, optionalSlots: opts.optionalSlots, slots: opts.slots, profile: solveProfile as DiagnosticsProfile, result: withSwing, swingNote: note }),
     (e) => port.postMessage({ type: "warn", message: `diagnostics failed, the result goes out without them: ${String((e as Error)?.stack || e)}` } satisfies WorkerWarnMessage));
-  port.postMessage({ type: "done", result: withDiags, ms: Date.now() - t0 } satisfies WorkerDoneMessage);
+  // Each suit's score by property, the alternatives' too; like the diagnostics, a failure here goes out as a result without them.
+  const sharesOf = (after: Record<string, number>): ScoreShare[] => scoreShares(solveProfile as DiagnosticsProfile, after);
+  let done: WorkerResult = withDiags;
+  try {
+    done = { ...withDiags, shares: sharesOf(result.totals?.after || {}),
+      ...(result.alternatives ? { alternatives: result.alternatives.map((a) => ({ ...a, shares: sharesOf(totalsOf(a.best as unknown as Partial<Record<string, OptItem>>)) })) } : {}) };
+  } catch (e) { port.postMessage({ type: "warn", message: `score shares failed, the result goes out without them: ${String((e as Error)?.stack || e)}` } satisfies WorkerWarnMessage); }
+  port.postMessage({ type: "done", result: done, ms: Date.now() - t0 } satisfies WorkerDoneMessage);
 } catch (e) {
   const errObj = e as Error;
   port.postMessage({ type: "error", error: String((e && errObj.stack) || e) } satisfies WorkerErrorMessage);

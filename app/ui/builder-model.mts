@@ -8,7 +8,7 @@ import type { FcCap, PlannedBuffs, PropMap, ResistCap, RunSettings } from "../va
 import { applyBuffs, buffById, buffsDiff, capWord, signed, type BuffResult } from "../buffs.mts";
 import { RUN_SETTING_LIMITS, type Range } from "../run-settings.mts";
 import { paperdollCaps, suitResist } from "../evaluate.mts";
-import type { Diagnostic, DiagnosticAction, DiagnosticCode, SwingResult } from "../runs-types.mts";
+import type { Diagnostic, DiagnosticAction, DiagnosticCode, ScoreShare, SwingResult } from "../runs-types.mts";
 import { delayText, MIN_TICKS } from "../swing.mts";
 import type { TieBreakResult } from "./api-types.mts";
 
@@ -449,6 +449,21 @@ export function resultChecks(res: { diagnostics?: Diagnostic[] | undefined; unre
   }
   const keys = res.unreachableFloors || [];
   return keys.length ? [{ code: "floor_unreachable", level: "warn", message: `No suit in the pool can reach these requirements${withBuffs ? ", even with the buffs" : ""}: ${keys.map((k) => propName(k)).join(", ")}.`, actions: [] }] : [];
+}
+
+// ---------------------------------------------------------------- what made up the score (app/diagnostics.mts scoreShares)
+// The breakdown's rows: the positive shares largest first, those under `fold` as one "Other" row naming what it holds (a lone one keeps its own name), then the negative ones, largest first, set apart. A resist held at a Resisting Spells minimum above its gear total says so.
+export const SHARE_FOLD = 0.02;
+export interface ShareRow { label: string; pct: string; share: number; negative: boolean; note: string | null; holds: string | null }
+const pctText = (share: number): string => { const p = Math.round(Math.abs(share) * 100); return `${share < 0 ? "−" : ""}${p === 0 && share !== 0 ? "<1" : p}%`; };
+export function shareRows(shares: ScoreShare[], fold = SHARE_FOLD): ShareRow[] {
+  const row = (label: string, share: number, note: string | null = null, holds: string | null = null): ShareRow => ({ label, pct: pctText(share), share, negative: share < 0, note, holds });
+  const own = (s: ScoreShare): ShareRow => row(propName(s.property), s.share, s.fromMin ? "includes the Resisting Spells minimum" : null);
+  const positive = shares.filter((s) => s.share >= 0).sort((a, b) => b.share - a.share), small = positive.filter((s) => s.share < fold);
+  const rows = positive.filter((s) => s.share >= fold).map(own);
+  if (small.length === 1) rows.push(own(small[0]!));
+  else if (small.length) rows.push(row(`Other (${small.length})`, small.reduce((n, s) => n + s.share, 0), null, small.map((s) => propName(s.property)).join(", ")));
+  return [...rows, ...shares.filter((s) => s.share < 0).sort((a, b) => a.share - b.share).map(own)];
 }
 
 // ---------------------------------------------------------------- swing (app/swing.mts)
