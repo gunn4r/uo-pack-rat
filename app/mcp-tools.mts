@@ -6,11 +6,12 @@
 // page does (buffs.mts, vault-lib.mts). One entry per tool: its name, description, JSON Schema for its arguments
 // (the subset app/schema/validate.mts checks, which mcp.mts runs before the handler), annotations and handler.
 // `action: true` marks a tool that acts in game: refused while Settings' "Allow in-game actions" is off.
-import { BRIDGE_ACTION_LABELS, BRIDGE_OFFLINE, GEAR_SLOTS, bridgeFeatures, bridgeRefusal, containerChain, newestScanAdapter, fullOf, isPseudoCharacter, NOBODY, RESIST_SKILL_KEY, resistMinimum, toOptItem, totalsOf, TRASH_RE } from "./vault-lib.mts";
+import { withCurrentActions, BRIDGE_ACTION_LABELS, BRIDGE_OFFLINE, GEAR_SLOTS, bridgeFeatures, bridgeRefusal, containerChain, newestScanAdapter, fullOf, isPseudoCharacter, NOBODY, RESIST_SKILL_KEY, resistMinimum, toOptItem, totalsOf, TRASH_RE } from "./vault-lib.mts";
 import type { BridgeAction, Character, Container, ContainerCapacity, Item, OptItem, Profile, PropMap } from "./vault-lib.mts";
 import { buffPlanOf, normalizeBuffs, savedBuffs, BUFFS } from "./buffs.mts";
 import { BUILTIN_PREFIX, characterBuffs, characterProfile, findTemplate, planBuild, specFromProfile, templateRefs, templateSettings, type PlannedBuild, type ProfilesV3, type TemplateMap } from "./build-spec.mts";
 import { evaluateSuit } from "./evaluate.mts";
+import type { Diagnostic } from "./runs-types.mts";
 import { EXTRA_COLS, parseItemQuery } from "./item-query.mts";
 import { RUN_DEFAULTS } from "./run-settings.mts";
 import type { ValidatorSchema } from "./schema/validate.mts";
@@ -160,7 +161,7 @@ function resultSummary(result: Record<string, unknown> | null | undefined, ev: E
     totals: nonZero((result.totals as { after?: Record<string, number> } | undefined)?.after),
     ...(ev && best ? { effectiveTotals: nonZero(evaluateSuit({ profile: ev.base, character: ev.character, suit: best, buffs: ev.plan }).effectiveTotals) } : {}),
     ...(Array.isArray(result.unreachableFloors) && result.unreachableFloors.length ? { unreachableFloors: result.unreachableFloors } : {}),
-    ...(Array.isArray(result.diagnostics) && result.diagnostics.length ? { diagnostics: result.diagnostics } : {}),
+    ...(Array.isArray(result.diagnostics) && result.diagnostics.length ? { diagnostics: (result.diagnostics as Diagnostic[]).map(withCurrentActions) } : {}),
     ...(result.swing ? { swing: result.swing } : {}),
     ...(result.tieBreak ? { tieBreak: result.tieBreak } : {}),
     ...(Array.isArray(result.alternatives) && result.alternatives.length ? { otherSuits: (result.alternatives as Array<{ best: Record<string, { serial: number; name: string } | null>; score: number }>).map((a) => ({ score: a.score, suit: suitRows(a.best) })) } : {}),

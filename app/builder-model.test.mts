@@ -6,14 +6,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { NOBODY, setRules, resistCapsFor, settingsDiff } from "./vault-lib.mts";
+import { NOBODY, setRules, resistCapsFor, settingsDiff, importanceOf, roundImportance, weightOfImportance, PROP_LABELS, NOT_BUILDER_KEYS } from "./vault-lib.mts";
 import { buffSkillValues, runBuffs } from "./buffs.mts";
 import type { RulesV1 } from "./schema/types.d.mts";
 import {
   propName, weightsSummary, requirementsSummary, poolSummary, withStoredRoots, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError,
   resistOutcome, locationCrumbs, otherChanges, afterChange, compareModel, hiddenRowsNote, toggleCompare, runAutoLabel, runBadges, plural, KNOB_RANGES,
   resistCapError, withResistCap, capNote, resistCapsSummary, resistMinimumText, capsLine, anyOverridden, effectiveFloor, floorCapWarning, pruneResistCaps,
-  weaponsSummary, weaponsChipText, weaponMustHaveChipText, toggleWeapon, weaponName, withBuffs, pastCapBadges, runSettingsDiff, weightTradeoff, templateBuffsLine, sourceTitle, who, rarityHelp, rarityTotal, rarityDetail, shareRows,
+  weaponsSummary, weaponsChipText, weaponMustHaveChipText, toggleWeapon, weaponName, withBuffs, pastCapBadges, runSettingsDiff, weightTradeoff, newWeight, editedValue, NEW_WEIGHT_IMPORTANCE, templateBuffsLine, sourceTitle, who, rarityHelp, rarityTotal, rarityDetail, shareRows,
   type Knobs,
 } from "./ui/builder-model.mts";
 import { OPTS_LIMITS } from "./vault-server.mts";
@@ -308,15 +308,34 @@ test("[fast] builder model: a weight row's hover says the trade-off with the top
   assert.equal(weightTradeoff("physResist", w), "At these settings, 1 DCI is worth about 2 Phys.");
   assert.equal(weightTradeoff("dci", w), "Defense chance increase has the highest weight: the other weights are compared with it.");
   assert.equal(weightTradeoff("di", { di: 1, luck: 0.5 }), "At these settings, 1 DI is worth about 2 Luck.", "the top by importance, Luck, is worth less per point");
-  assert.equal(weightTradeoff("luck", { luck: 0.001, dci: 10 }), "At these settings, 1 DCI is worth about 10,000 Luck.");
+  assert.equal(weightTradeoff("luck", { luck: 0.001, dci: 10 }), "At these settings, 1 DCI is worth far more than 1,000 Luck.", "no number past 1,000");
   assert.equal(weightTradeoff("luck", { tagPenalty: 100, dci: 1, luck: 0.05 }), "At these settings, 1 DCI is worth about 20 Luck.", "the tag penalty is not a weight row");
   // a negative weight, either way round; a zero weight; no positive weight to compare with
   assert.equal(weightTradeoff("intBonus", { dci: 10, intBonus: -2 }), "At these settings, 1 DCI makes up for about 5 INT.");
-  assert.equal(weightTradeoff("intBonus", { dci: 1, intBonus: -5 }), "At these settings, 1 INT takes away about as much as 5 DCI adds.");
+  assert.equal(weightTradeoff("intBonus", { dci: 1, intBonus: -5 }), "At these settings, 1 INT takes away what about 5 DCI adds.");
+  assert.equal(weightTradeoff("intBonus", { dci: 10, intBonus: -7.2 }), "At these settings, 1 DCI makes up for about 1.4 INT.", "one decimal under 1.5");
+  assert.equal(weightTradeoff("hci", { dci: 10, hci: 10 }), "At these settings, 1 HCI is worth about 1 DCI.");
   assert.equal(weightTradeoff("luck", { dci: 10, luck: 0 }), "At weight 0, Luck doesn't count.");
   assert.equal(weightTradeoff("intBonus", { intBonus: -2 }), "Intelligence bonus counts against the score.");
   // a Resisting Spells skill bonus also lifts the resist minimums, which its weight leaves out
-  assert.equal(weightTradeoff("sk:resisting spells", { dci: 10, "sk:resisting spells": 2 }), "At these settings, 1 DCI is worth about 5 +Resisting Spells. It also raises your resist minimums.");
+  assert.equal(weightTradeoff("sk:resisting spells", { dci: 10, "sk:resisting spells": 2 }), "At these settings, 1 DCI is worth about 5 Resisting Spells. It also raises your resist minimums.");
+});
+
+test("[fast] builder model: a new weight starts at importance 25 for every property, and a weight field merely touched keeps its exact value (issue #274)", () => {
+  for (const k of [...Object.keys(PROP_LABELS).filter((x) => !NOT_BUILDER_KEYS.has(x)), "sk:magery"]) assert.ok(Math.abs(importanceOf(k, newWeight(k)) - NEW_WEIGHT_IMPORTANCE) < 1e-9, k);
+  assert.equal(NEW_WEIGHT_IMPORTANCE, 25);
+  // Melee's DI (3 per point) shows 67 and Luck (0.05) shows 5.6
+  const conv = (k: string) => ({ show: (w: number) => roundImportance(importanceOf(k, w)), store: (n: number) => weightOfImportance(k, n) });
+  assert.equal(editedValue(3, 3, 67, conv("di")), 3, "retyping the shown number");
+  const up = editedValue(0.05, 0.05, 5.7, conv("luck"));
+  assert.equal(up, weightOfImportance("luck", 5.7), "↑ stores the new number");
+  assert.equal(editedValue(0.05, up, 5.6, conv("luck")), 0.05, "↓ back to the first shown number puts the first value back");
+  assert.equal(editedValue(0.05, 0.0504, 5.6, conv("luck")), 0.05);
+  const typed = editedValue(3, 3, 12.5, conv("di"));
+  assert.equal(editedValue(3, typed, 13, conv("di")), typed, "the number the current value shows keeps it");
+  // and a change too small to show is not named
+  assert.deepEqual(settingsDiff({ weights: { luck: 0.05, di: 3 } }, { weights: { luck: 0.0504, di: 3.015 } }), []);
+  assert.deepEqual(settingsDiff({ weights: { luck: 0.05 } }, { weights: { luck: 0.06 } }), ["Luck weight 5.6 → 6.7"]);
 });
 
 // Issue #212: the template badge's buffs line compares the lists as sets, and a source link is named by its page.

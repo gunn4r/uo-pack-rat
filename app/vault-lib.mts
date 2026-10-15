@@ -10,6 +10,7 @@
 import { isPseudoCharacter, NOBODY, parseStamp, V1_ADAPTER_VERSION } from "./scan-schema.mts";
 export { isPseudoCharacter, NOBODY };
 import type { RulesV1, ScanV2, ScanV2Adapter } from "./schema/types.d.mts";
+import type { Diagnostic } from "./runs-types.mts";
 
 // ---------------------------------------------------------------------------
 // Shared shapes. Declared once here — the inventory/item types every later task (the server, the
@@ -298,6 +299,9 @@ export const weightOfImportance = (key: string, importance: number): number => i
 // An importance as shown: whole from 10 up, one decimal below.
 export const roundImportance = (n: number): number => (Math.abs(n) >= 10 ? Math.round(n) : Math.round(n * 10) / 10);
 const importanceText = (key: string, weight: number): string => String(roundImportance(importanceOf(key, weight)));
+// A weight_dominates saved before issue #274 has no `values.importance`: its sentence and setWeight value are per point,
+// which the page and MCP now read as an importance, so it keeps its sentence and loses its action.
+export const withCurrentActions = (d: Diagnostic): Diagnostic => (d.code === "weight_dominates" && d.values?.importance == null && d.actions.length ? { ...d, actions: [] } : d);
 
 // Skill names as they appear in tooltips (lower-cased). A "+10 Magery" line on an item becomes the builder property
 // "sk:magery", so skill bonuses can be weighted, floored or forbidden like any other property.
@@ -1566,6 +1570,7 @@ export function settingsDiff(a: RunSettings = {}, b: RunSettings = {}): string[]
     // a weight reads as its importance (importanceText), a floor as it is
     const v = (k: string, x: number): string | number => (group === "weights" ? importanceText(k, x) : x);
     for (const k of [...new Set([...Object.keys(A), ...Object.keys(B)])].sort()) {
+      if (group === "weights" && k in A && k in B && v(k, A[k]!) === v(k, B[k]!)) continue;   // a change too small to show is not named as "X → X"
       if (!(k in A)) out.push(`${L(k)} ${noun} ${v(k, B[k]!)} added`);
       else if (!(k in B)) out.push(`${L(k)} ${noun} ${v(k, A[k]!)} removed`);
       else if (A[k] !== B[k]) out.push(`${L(k)} ${noun} ${v(k, A[k]!)} → ${v(k, B[k]!)}`);

@@ -21,6 +21,7 @@ import { ACTIONS_OFF, MCP_DEFAULT_PORT, PROTOCOL_VERSIONS } from "./mcp.mts";
 import { BRIDGE_OFFLINE, RESIST_KEYS } from "./vault-lib.mts";
 import { characterEntry, characterProfile, type ProfilesV3, type TemplateMap } from "./build-spec.mts";
 import { applyBuffs, buffSkillValues } from "./buffs.mts";
+import { SOLVER_VERSION } from "./runs-lib.mts";
 
 const TOKEN = "test-mcp-token-0123456789";
 const VERSION = (JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version: string }).version;
@@ -493,6 +494,21 @@ test("[fast] character_sheet reports the Resisting Spells minimum in place of a 
     assert.deepEqual([run.totals.fireResist, run.effectiveTotals.fireResist, run.effectiveTotals.coldResist, run.effectiveTotals.physResist], [30, 40, 55, 40], "Fire 30 under the minimum reads 40; Cold 55 is gear's own");
     assert.equal(run.diagnostics, undefined, "its saved diagnostics counted the old bonus: dropped, as for a run saved before diagnostics");
     assert.equal((await app<{ run: { id: string } }>(sv, "/api/runs/before-261")).body.run.id, "before-261");
+  } finally { await sv.s.close(); }
+});
+
+// Issue #274: a weight_dominates saved before weights became importances names a per-point Set weight value; get_run keeps its sentence and drops the action, which would now read as an importance.
+test("[fast] get_run drops the Set weight action of a weight_dominates saved before importance", async () => {
+  const old = { code: "weight_dominates", level: "warn", property: "luck", message: "Luck makes up 33% of this suit's score: at weight 3, 500 Luck is worth as much as 3.6 times the median of your other weights. Try 0.8.",
+    values: { weight: 3, typical: 500, share: 33, ratio: 3.6, median: 420, suggested: 0.8 }, actions: [{ kind: "setWeight", property: "luck", value: 0.8 }] };
+  const sv = await serve({ demo: false, before: (dir) => {
+    const chest = { serial: 0x40002001, name: "Plate Tunic", slot: "chest", props: { luck: 100 } };
+    writeFileSync(join(dir, "runs", "before-274.json"), JSON.stringify({ id: "before-274", key: "0".repeat(40), createdAt: "2026-10-08T12:00:00.000Z", label: "", solverVersion: SOLVER_VERSION,
+      settings: { weights: { luck: 3 } }, result: { method: "exact", proven: true, score: 1, best: { chest }, perSlotChanges: [], totals: { before: {}, after: chest.props }, diagnostics: [old] } }));
+  } });
+  try {
+    const run = (await call(await mcpPort(sv), "get_run", { id: "before-274" })).data;
+    assert.deepEqual(run.diagnostics, [{ ...old, actions: [] }]);
   } finally { await sv.s.close(); }
 });
 

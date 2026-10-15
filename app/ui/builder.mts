@@ -26,7 +26,7 @@ import { putProfiles, setCharacterBuffs } from "./profiles.mts";
 import { session, commands, provide, readControls, type BuilderChange } from "./builder-session.mts";
 import { followJob, progressText, settingsCheck } from "./builder-parts.mts";
 import { characterNames } from "./roster.mts";
-import { nextSwingStep, speedText, swingLines, propName, weightsSummary, requirementsSummary, poolSummary, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistCapsSummary, resistMinimumText, pruneResistCaps, floorCapWarning, weaponsChipText, weaponMustHaveChipText, withStoredRoots, weaponName, toggleWeapon, weightTradeoff, fcCapText, rarityHelp, templateBuffsLine, sourceTitle, who, type KnobField } from "./builder-model.mts";
+import { nextSwingStep, speedText, swingLines, propName, weightsSummary, newWeight, editedValue, requirementsSummary, poolSummary, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistCapsSummary, resistMinimumText, pruneResistCaps, floorCapWarning, weaponsChipText, weaponMustHaveChipText, withStoredRoots, weaponName, toggleWeapon, weightTradeoff, fcCapText, rarityHelp, templateBuffsLine, sourceTitle, who, type KnobField } from "./builder-model.mts";
 import type { OptimizeResult, SavedRunLike, OptimizeStartApiResponse, OptimizeCancelApiResponse } from "./api-types.mts";
 
 // ---------------------------------------------------------------- panel state
@@ -388,13 +388,16 @@ function capFor(k: string): number | null {
 }
 // A number input bound to obj[k]: a value that isn't a number keeps its field marked with the reason, and the
 // last good value stays in the profile. `conv` shows the stored value in another unit and stores what is typed back
-// in the stored one (a weight's importance); the stored value is written only when the field is edited.
+// in the stored one (a weight's importance), keeping the exact value of a field merely touched (builder-model.mts editedValue).
 function boundNumber(obj: Record<string, number>, k: string, aria: string, focusKey: string, conv?: { show: (v: number) => number; store: (n: number) => number }): HTMLInputElement {
-  const i = input({ type: "number", size: "sm", value: conv ? conv.show(obj[k]!) : obj[k], attrs: { "aria-label": aria, "data-key": focusKey } });
+  const first = obj[k]!;
+  const i = input({ type: "number", size: "sm", value: conv ? conv.show(first) : first, attrs: { "aria-label": aria, "data-key": focusKey } });
   i.addEventListener("input", () => {
     const err = ruleValueError(i.value);
     setInlineError(i, err);
-    if (!err) { obj[k] = conv ? conv.store(Number(i.value)) : Number(i.value); updateTemplateBadge(); }
+    if (err) return;
+    obj[k] = conv ? editedValue(first, obj[k]!, Number(i.value), conv) : Number(i.value);
+    updateTemplateBadge();
   });
   return i;
 }
@@ -518,7 +521,10 @@ function weightsSection(): HTMLElement {
         hover.textContent = weightTradeoff(k, p.weights!);
       };
       paints.push(paint);
-      num.addEventListener("input", () => paints.forEach((f) => f()));
+      // the arrows step by 1 from 10 up and by 0.1 below, as the number is shown
+      const step = (): void => { num.step = Math.abs(Number(num.value)) >= 10 ? "1" : "0.1"; };
+      step();
+      num.addEventListener("input", () => { step(); paints.forEach((f) => f()); });
       tooltip(num, () => hover.textContent!);
       tooltip(bar, () => hover.textContent!);
       num.setAttribute("aria-describedby", hover.id);
@@ -528,7 +534,7 @@ function weightsSection(): HTMLElement {
     });
     paints.forEach((f) => f());
     const add = filterChip({ label: "Add weight", add: true, attrs: { class: "fchip add b-add", id: "b-addweight" } });
-    add.onclick = () => propertyPicker(add, "Add weight", Object.keys(p.weights!), (k) => { p.weights![k] = 1; redraw("weights"); focusIn("weights", `.rule-row[data-key="${CSS.escape(k)}"] input`, true); });
+    add.onclick = () => propertyPicker(add, "Add weight", Object.keys(p.weights!), (k) => { p.weights![k] = newWeight(k); redraw("weights"); focusIn("weights", `.rule-row[data-key="${CSS.escape(k)}"] input`, true); });
     return [el("p", { class: "help" }, txt("How much a good amount of each property matters, about 0 to 100. Higher counts more.")), rows.length ? box("div", { class: "b-rules" }, ...rows) : null, add];
   } });
 }
