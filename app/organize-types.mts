@@ -67,4 +67,5 @@ export type ProposeResult = { ok: true; proposal: Proposal } | { ok: false; erro
 // `running`: the trip the server has queued and not heard back about (`picked` = its bridge is running it now).
 export interface OrganizeRunningTrip { id: string; index: number; queuedAt: string; picked: boolean }
 export interface OrganizePlanApiResponse { ok: boolean; plan: Plan; running: OrganizeRunningTrip | null }
-export type OrganizeProposeApiResponse = Extract<ProposeResult, { ok: true }>;
+// `stamp`: the saved setup's when the proposal was worked out, which Accept's PUT names as its base (issue #280).
+export type OrganizeProposeApiResponse = Extract<ProposeResult, { ok: true }> & { stamp: string };

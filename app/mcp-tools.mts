@@ -735,7 +735,7 @@ export const TOOLS: Tool[] = [
         if (applied.every((x) => x.change === "unchanged")) return { applied, labels: Object.keys(labels).length, saved: false, note: "nothing changed, so nothing was saved" };
         try {
           await ctx.api("/api/organize", { method: "PUT", body: { ...cfg, labels, base: org.stamp }, clientId: "mcp" });
-          return { applied, labels: Object.keys(labels).length };
+          return { applied, labels: Object.keys(labels).length, saved: true };
         } catch (e) {
           if (!(e instanceof ToolError && e.code === "stale")) throw e;
           if (retried) throw new ToolError("the Organize setup kept changing while this batch was being saved; nothing was saved, so try the batch again");

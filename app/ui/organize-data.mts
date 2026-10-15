@@ -24,10 +24,18 @@ export async function loadOrganize(): Promise<void> {
 }
 // The whole setup replaced; the server's refusal as a sentence, or null once saved. A setup changed elsewhere since
 // the page read it is reloaded and shown, and the change asked for is not saved: the page holds only the whole setup,
-// so it cannot tell which of its differences were this change.
-export async function saveConfig(next: OrganizeConfig): Promise<string | null> {
+// so it cannot tell which of its differences were this change. `base` names the setup `next` was made from when it is
+// not the page's copy (Auto organize's proposal). Saves run one at a time, each from the stamp the one before left, so
+// the page's own quick saves (a held ↓ on a rule) never read as a change made elsewhere.
+let saving: Promise<unknown> = Promise.resolve();
+export function saveConfig(next: OrganizeConfig, base?: string | null): Promise<string | null> {
+  const run = saving.then(() => putConfig(next, base));
+  saving = run.catch(() => null);
+  return run;
+}
+async function putConfig(next: OrganizeConfig, base?: string | null): Promise<string | null> {
   let saved: OrganizePutApiResponse;
-  try { saved = await api<OrganizePutApiResponse>("/api/organize", { method: "PUT", body: { ...next, base: state.organize.stamp ?? undefined } }); } catch (e) {
+  try { saved = await api<OrganizePutApiResponse>("/api/organize", { method: "PUT", body: { ...next, base: (base ?? state.organize.stamp) ?? undefined } }); } catch (e) {
     if ((e as ApiError).code !== "stale") return errorText(e);
     try { await loadOrganize(); } catch { /* the setup as the page had it */ }
     refreshPlaces();
