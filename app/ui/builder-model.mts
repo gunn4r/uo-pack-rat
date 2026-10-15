@@ -1,5 +1,4 @@
-// ui/builder-model.mts — the Suit Builder's pure logic (design spec 4.6-4.8): the Settings drawer's count of changes
-// since the last build, the Advanced fields' validation, a resist tile's outcome line, the result's
+// ui/builder-model.mts — the Suit Builder's pure logic (design spec 4.6-4.8): the Advanced fields' validation, a resist tile's outcome line, the result's
 // "other changes" badges and "after the change" values, the compare table's differing rows and best values,
 // and a saved run's label and badges. No DOM and no page state, so app/builder-model.test.mts can check it
 // all directly; ui/builder.mts, ui/builder-result.mts and ui/runs.mts draw what it returns.
@@ -35,17 +34,6 @@ export function withBuffs(t: PropMap, skill: number | null, caps: Record<string,
 export const pastCapBadges = (r: BuffResult): string[] =>
   Object.entries(r.outside).filter(([, v]) => v).map(([k, v]) => `${labelOf(k)} ${signed(v)} ${capWord(v)} the cap (${(r.shares[k] || []).filter((x) => x.outside).map((x) => buffById(x.id)!.name).join(", ")})`);
 
-// ---------------------------------------------------------------- the Settings drawer's footer
-// How many of a build's top-level settings (the requirements, the weights, the buffs, each pool field, each search knob)
-// differ between two settings snapshots: the panel's now and the shown run's. A field left out, or empty, is the same as
-// one that is absent, so a run saved before a field existed does not count it as a change.
-export function settingsChanges(a: RunSettings, b: RunSettings): number {
-  const norm = (v: unknown): string | undefined => (v == null || (typeof v === "object" && !Object.keys(v).length) ? undefined : canonical(v));
-  const keys = new Set([...Object.keys(a), ...Object.keys(b)]) as Set<keyof RunSettings>;
-  return [...keys].filter((k) => norm(a[k]) !== norm(b[k])).length;
-}
-// JSON with each object's keys sorted, so the same map in another key order reads the same.
-const canonical = (v: unknown): string => JSON.stringify(v, (_k, x: unknown) => (x && typeof x === "object" && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([p], [q]) => p.localeCompare(q))) : x));
 // The Rarity setting's help line: none for "any".
 export function rarityHelp(rarity: string | undefined): string {
   return rarity ? `Among equally good suits, use the ${rarity === "higher" ? "highest" : "lowest"}-rarity pieces. Requirements come first.` : "";

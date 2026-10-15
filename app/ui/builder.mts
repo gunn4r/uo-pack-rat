@@ -7,7 +7,7 @@
 import { NOBODY, PROP_LABELS, NOT_BUILDER_KEYS, importanceOf, roundImportance, weightOfImportance, GEAR_SLOTS, tagUnits, WEAPON_EXCLUDES, MELEE_SKILLS, WEAPON_MUST_HAVE, flagLabel, getRules, RESIST_KEYS, RESIST_CAP_LIMITS, resistCapsFor, templateFrom, settingsDiff, bagLabel, toOptItem, totalsOf, fcCapFor, CASTING_SCHOOLS } from "../vault-lib.mts";
 import { heldWeapon, ssiShareOf, swingOf, type SwingResult } from "../swing.mts";
 import { BUILTIN_PREFIX, characterBuffs, characterEntry, characterProfile, findTemplate, planBuild, specFromProfile, templateLabel, templateRefs, templateSettings, templateSpecFrom, type PlannedBuild } from "../build-spec.mts";
-import type { FcCap, ResistCap, RunBuffs, Character } from "../vault-lib.mts";
+import type { FcCap, ResistCap, RunBuffs, RunSettings, Character } from "../vault-lib.mts";
 import { buffById, gearNeedsText, overrideNote, planBuffs, normalizeBuffs, runBuffs, toggleBuff, buffPlanOf, type BuffPlan } from "../buffs.mts";
 import { defaultStrLimit } from "../run-settings.mts";
 import { evaluateSuit } from "../evaluate.mts";
@@ -25,7 +25,7 @@ import { putProfiles, setCharacterBuffs } from "./profiles.mts";
 import { session, commands, provide, readControls, type BuilderChange } from "./builder-session.mts";
 import { followJob, progressText, settingsCheck } from "./builder-parts.mts";
 import { characterNames } from "./roster.mts";
-import { nextSwingStep, speedText, swingLines, propName, newWeight, editedValue, settingsChanges, plural, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistMinimumText, pruneResistCaps, floorCapWarning, weaponsChipText, weaponMustHaveChipText, withStoredRoots, weaponName, toggleWeapon, weightTradeoff, fcCapText, rarityHelp, templateBuffsLine, sourceTitle, who, type KnobField } from "./builder-model.mts";
+import { nextSwingStep, speedText, swingLines, propName, newWeight, editedValue, runSettingsDiff, plural, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistMinimumText, pruneResistCaps, floorCapWarning, weaponsChipText, weaponMustHaveChipText, withStoredRoots, weaponName, toggleWeapon, weightTradeoff, fcCapText, rarityHelp, templateBuffsLine, sourceTitle, who, type KnobField } from "./builder-model.mts";
 import type { OptimizeResult, SavedRunLike, OptimizeStartApiResponse, OptimizeCancelApiResponse, UiPrefs } from "./api-types.mts";
 import { prefs } from "./prefs.mts";
 
@@ -35,8 +35,8 @@ const knobs = session.knobs;
 type Tab = NonNullable<UiPrefs["builderTab"]>;
 const TABS: Tab[] = ["requirements", "weights", "buffs", "pool", "advanced"];
 let tab: Tab = "requirements";
-// The panel's groups (each redrawn on its own, redraw(id)) and the tab each sits in.
-const TAB_OF: Record<string, Tab> = { req: "requirements", weights: "weights", buffs: "buffs", pool: "pool", adv: "advanced", char: "advanced", caps: "advanced" };
+// The tab each group that focusIn reaches sits in.
+const TAB_OF: Record<string, Tab> = { req: "requirements", weights: "weights", adv: "advanced", caps: "advanced" };
 // A requirement or weight row's property name: up to two lines, the full name in its title.
 const ruleName = (nm: string): HTMLSpanElement => { const t = txt(nm, "rule-name"); t.title = nm; return t; };
 // A resist cap typed out of range, as typed (the profile keeps the last good cap): kept here rather than read back
@@ -74,14 +74,15 @@ export function initBuilder(): void {
     runBuild();
   });
   // The Settings drawer: its button and ⌘, (Ctrl+, off the Mac) toggle it while the builder's top bar shows the button
-  // (not in Manual, the compare view or another screen, nor behind a drawer or dialog); Esc inside it and its × close it.
+  // (not in Manual, the compare view or another screen, nor behind a drawer or dialog); its × closes it, and so does Esc
+  // from anywhere on the screen, an open popover closing first (one with the focus, the progress card and the Saved runs
+  // drawer take their own Esc).
   $<HTMLButtonElement>("#b-settings")!.onclick = () => (drawerOpen() ? closeSettings() : openSettings());
   $<HTMLButtonElement>("#b-drawer-close")!.onclick = closeSettings;
-  $<HTMLElement>("#b-drawer")!.addEventListener("keydown", (e) => { if (e.key === "Escape" && !e.defaultPrevented) { e.preventDefault(); closeSettings(); } });
+  const settingsShown = (): boolean => { const b = $<HTMLButtonElement>("#b-settings")!; return !!b.getClientRects().length && !b.closest("[inert]") && !modalOpen(); };
   document.addEventListener("keydown", (e) => {
-    if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey || e.key !== ",") return;
-    const b = $<HTMLButtonElement>("#b-settings")!;
-    if (!b.getClientRects().length || b.closest("[inert]") || modalOpen()) return;
+    if (e.key === "Escape" && !e.defaultPrevented && drawerOpen() && settingsShown()) { e.preventDefault(); if (document.querySelector(".pop")) closePopover(); else closeSettings(); return; }
+    if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey || e.key !== "," || !settingsShown()) return;
     e.preventDefault();
     if (drawerOpen()) closeSettings(); else openSettings();
   });
@@ -117,7 +118,8 @@ function openSettings(on: Tab = tab, focus = true): void {
   }
   if (focus) $<HTMLElement>(`#b-tab-${tab}`)!.focus();
 }
-// Close it, the focus back on the Settings button when it was in the drawer (or had fallen to <body>).
+// Close it, the focus back on the Settings button when it was in the drawer, in a popover (closed with it) or had fallen
+// to <body>.
 function closeSettings(): void {
   const d = $<HTMLElement>("#b-drawer")!, from = document.activeElement;
   if (d.hidden) return;
@@ -125,7 +127,7 @@ function closeSettings(): void {
   d.hidden = true;
   const b = $<HTMLButtonElement>("#b-settings")!;
   b.setAttribute("aria-expanded", "false");
-  if (!from || from === document.body || d.contains(from)) b.focus();
+  if (!from || from === document.body || d.contains(from) || from.closest(".pop")) b.focus();
 }
 // Show one tab's panel; the choice is kept for the next launch.
 function showTab(to: Tab, focus = false): void {
@@ -166,6 +168,7 @@ export function syncBuilderCharacters(): void {
   } else {
     session.character = null; session.profile = null;
     $<HTMLElement>("#b-tpl-top")!.replaceChildren();
+    $<HTMLElement>("#b-drawer-tpl")!.textContent = ""; $<HTMLElement>("#b-changes")!.textContent = "";
     $<HTMLElement>("#b-tpl-info")!.replaceWith(templateInfo(""));
     $<HTMLElement>("#b-panel-body")!.replaceChildren(el("p", { class: "muted b-no-char", id: "b-no-char" }, txt(NO_CHARACTER)));
     $<HTMLElement>("#b-result")!.replaceChildren(box("div", { class: "card empty-state" }, el("h2", { class: "t-lg" }, "No characters yet"), el("p", { class: "muted" }, txt("Import a scan and its character shows up here."))));
@@ -228,7 +231,7 @@ function renderPanel(): void {
 }
 // Redraw one group in place (its rows changed), keeping the rest of the drawer and its scroll position as they are.
 function redraw(id: string): void {
-  const build: Record<string, () => HTMLElement> = { buffs: buffsSection, req: requirementsSection, caps: capsSection, weights: weightsSection, pool: poolSection, adv: advancedSection, char: charSection };
+  const build: Record<string, () => HTMLElement> = { buffs: buffsSection, req: requirementsSection, caps: capsSection, weights: weightsSection, pool: poolSection, adv: advancedSection };
   const old = document.getElementById(`b-sec-${id}`);
   if (old && build[id]) old.replaceWith(build[id]!());
   updateTemplateBadge();
@@ -250,7 +253,7 @@ function templateControls(): HTMLElement[] {
   tpl.addEventListener("change", () => { $<HTMLElement>("#b-tpl-info")!.replaceWith(templateInfo(tpl.value)); updateTemplateBadge(); });
   const menuBtn = button({ label: "Template actions: apply, save as, update, delete", icon: "more", iconOnly: true, variant: "ghost", size: "sm", attrs: { id: "b-tpl-menu", "aria-haspopup": "menu", "aria-expanded": "false" } });
   menuBtn.onclick = () => templateMenu(menuBtn);
-  return [el("label", { class: "t-sm muted", for: "b-tpl" }, "Template"), tpl, el("span", { id: "b-tpl-state", class: "badge" }), menuBtn];
+  return [el("label", { class: "t-sm muted b-top-l", for: "b-tpl" }, "Template"), tpl, el("span", { id: "b-tpl-state", class: "badge" }), menuBtn];
 }
 // Race, STR limit and the casting school: the character's, saved with the profile; race and STR limit decide which pieces
 // are candidates at all, the school the Faster Casting cap.
@@ -299,12 +302,20 @@ export function updateTemplateBadge(): void {
   paintChanges();
   commands.refreshCurrentSuit();
 }
-// The footer's "N changes since the last build": the panel's settings against the shown run's, hidden with no run shown.
+// The footer's "N changes since the last build": what the runs drawer's diff (runSettingsDiff) names between the shown
+// run and the panel, hidden with no run shown. A run this session's build showed counts from the settings that build
+// was asked with: one answered from an earlier run carries that run's own search knobs. Repainted a moment after the
+// last edit, so typing does not plan the whole build on every key.
+const builtWith = new Map<string, RunSettings>();
+let changesTimer: ReturnType<typeof setTimeout> | undefined;
 function paintChanges(): void {
-  const out = $<HTMLElement>("#b-changes")!, run = session.openRun ? session.runs.find((r) => r.id === session.openRun) : null;
-  if (!run || !session.profile) { out.textContent = ""; return; }
-  const n = settingsChanges(panelBuild().snapshot, run.settings);
-  out.textContent = n ? `${plural(n, "change")} since the last build` : "No changes since the last build";
+  clearTimeout(changesTimer);
+  changesTimer = setTimeout(() => {
+    const out = $<HTMLElement>("#b-changes")!, run = session.openRun ? session.runs.find((r) => r.id === session.openRun) : null;
+    if (!run || !session.profile) { out.textContent = ""; return; }
+    const n = runSettingsDiff(builtWith.get(run.id!) ?? run.settings, panelBuild().snapshot).length;
+    out.textContent = n ? `${plural(n, "change")} since the last build` : "No changes since the last build";
+  }, 150);
 }
 // A built-in template (app/data/templates/<shard>.json) is read-only: Save as… makes the player's own copy.
 const BUILTIN_READ_ONLY = "Built-in templates can't be changed. Save as… makes your own copy.";
@@ -828,7 +839,7 @@ function knobField(f: KnobField, text: string): HTMLDivElement {
   if (!knobs.exact && (f === "budgetS" || f === "altCount" || f === "altTol")) i.disabled = true;
   const err = knobError(f, knobs[f]);
   const fl = field({ label: text, control: i, error: err && !i.disabled ? err : undefined });
-  i.addEventListener("input", () => { knobs[f] = i.value; setFieldError(i, knobError(f, i.value)); if (f === "strLimit") updateTemplateBadge(); });
+  i.addEventListener("input", () => { knobs[f] = i.value; setFieldError(i, knobError(f, i.value)); if (f === "strLimit") updateTemplateBadge(); else paintChanges(); });
   return fl;
 }
 function advancedSection(): HTMLElement {
@@ -898,7 +909,8 @@ async function runBuild(): Promise<void> {
   setBuilding(true);
   job.ui = runPanel(job);
   $<HTMLElement>("#b-msg")!.replaceChildren(job.ui.root);
-  job.ui.root.focus();
+  // started from the drawer (its Build, or ⌘↵ in one of its fields), the focus stays there to tweak and build again
+  if (!$<HTMLElement>("#b-drawer")!.contains(document.activeElement)) job.ui.root.focus();
   let r: (OptimizeStartApiResponse & { ok: true }) | { ok: false; error: string };
   try {
     r = (await api<OptimizeStartApiResponse>("/api/optimize", { method: "POST", body: { character: name, settings, profile, opts,
@@ -913,13 +925,13 @@ async function runBuild(): Promise<void> {
   const checks = r.cached ? null : settingsCheck(r.diagnostics || [], name!);
   if (checks) job.ui!.root.before(checks);
   // r.run.ms is `number | null` (a saved run's on-disk shape); a genuinely null one has never been guarded here.
-  if (r.cached) { finishJob(job, { result: r.run!.result, ms: r.run!.ms!, runId: r.run!.id, reused: r.run! }); return; }
+  if (r.cached) { builtWith.set(r.run!.id, snapshot); finishJob(job, { result: r.run!.result, ms: r.run!.ms!, runId: r.run!.id, reused: r.run! }); return; }
   job.id = r.id!;
   job.timer = setInterval(() => job.ui!.tick(job), 200) as unknown as number;
   job.es = followJob(job.id, {
     progress: (p) => { job.last = p; job.lastProgressAt = Date.now(); job.lastServerAt = Date.now(); job.connected = true; job.ui!.update(job); },
     alive: (connected) => { if (connected) job.lastServerAt = Date.now(); job.connected = connected; },
-    done: (d) => finishJob(job, d),
+    done: (d) => { if (d.runId) builtWith.set(d.runId, snapshot); finishJob(job, d); },
     failed: (error) => failJob(job, error),
     cancelled: (ms) => endJob(job, cancelledNote(ms)),
   });
@@ -929,7 +941,8 @@ async function runBuild(): Promise<void> {
 function setBuilding(on: boolean): void {
   for (const [id, key] of [["#b-run", true], ["#b-run-foot", false]] as const) {
     const b = $<HTMLButtonElement>(id)!;
-    b.disabled = on;
+    // the footer's is only marked disabled (runBuild ignores a press while one runs), so it keeps the focus it has
+    if (key) b.disabled = on; else if (on) b.setAttribute("aria-disabled", "true"); else b.removeAttribute("aria-disabled");
     b.replaceChildren(...(on ? [txt("Building…")] : [txt("Build"), ...(key ? [kbd("⌘↵")] : [])]));
     b.querySelector(".kbd")?.setAttribute("aria-hidden", "true");
   }

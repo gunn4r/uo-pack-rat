@@ -23,7 +23,7 @@ export interface BuilderJobUi {
 }
 // One in-flight (or just-finished) optimize job, as builder.mts's runBuild() builds and mutates it.
 // Not server state — this is the page's own bookkeeping around the SSE stream at
-// /api/optimize/<id>/events, rebuilt fresh for every "Build best suit" click.
+// /api/optimize/<id>/events, rebuilt fresh for every Build.
 export interface BuilderJob {
   id: string | null;
   es: EventSource | null;

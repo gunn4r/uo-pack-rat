@@ -100,7 +100,8 @@ test("[slow] ⌘↵ builds from anywhere on the Builder screen, and not from beh
 // Issue #272: the Settings drawer. ⌘, (Ctrl+,) and the Settings button open it with the focus on its tab, Esc closes it with
 // the focus back on the button, ← and → move between the tabs and each shows its own controls, a bad requirement opens it
 // on Requirements when Build is pressed, its footer counts the settings changed since the shown run, and its tab is
-// remembered across a reload.
+// remembered across a reload. Round 1 of review: Esc from anywhere, ⌘, over a popover, focus after a drawer build, the
+// count following the runs drawer's diff and every knob, and the top bar at 1366 and 1024.
 test("[slow] the Settings drawer: ⌘, and its button, Esc, the tabs, an error's tab, the changes count, the remembered tab", async (t) => {
   const why = unavailable();
   if (why) return t.skip(why);
@@ -148,10 +149,46 @@ test("[slow] the Settings drawer: ⌘, and its button, Esc, the tabs, an error's
     await built(page);
     assert.equal(await drawer.isVisible(), true, "the drawer stays open through a build");
     await page.waitForFunction(() => document.querySelector("#b-changes")?.textContent === "No changes since the last build", undefined, { timeout: 10_000 });
+    assert.equal(await focused(), "b-run-foot", "a build from the drawer leaves the focus there");
+    const count = (want: string): Promise<unknown> => page.waitForFunction((w) => document.querySelector("#b-changes")?.textContent === w, want, { timeout: 10_000 });
     await settings(page, "weights");
-    const weight = page.locator("#b-sec-weights .rule-row input").first();
-    await weight.fill(String(Number(await weight.inputValue()) + 5));
-    await page.waitForFunction(() => document.querySelector("#b-changes")?.textContent === "1 change since the last build", undefined, { timeout: 10_000 });
+    const weight = page.locator("#b-sec-weights .rule-row input").first(), firstWeight = await weight.inputValue();
+    await weight.fill(String(Number(firstWeight) + 5));
+    await count("1 change since the last build");
+    // The count is the runs drawer's diff (runSettingsDiff): the weight typed back is no change, and a search knob counts.
+    await weight.fill(firstWeight);
+    await count("No changes since the last build");
+    await settings(page, "advanced");
+    const restarts = await page.locator("#b-restarts").inputValue();
+    await page.fill("#b-restarts", String(Number(restarts) + 7));
+    await count("1 change since the last build");
+    await page.fill("#b-restarts", restarts);
+    await count("No changes since the last build");
+    // Another time budget, built: whether the server answers from the earlier run or not, nothing differs from what was asked.
+    await page.fill("#b-budget", "3");
+    await page.click("#b-run");
+    await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>("#b-run")?.disabled && !document.querySelector("#b-msg .b-progress"), undefined, { timeout: 60_000 });
+    await count("No changes since the last build");
+
+    // Esc closes it from anywhere on the screen: after a click on the drawer's blank space, and from the result.
+    await settings(page, "advanced");
+    await page.click("#b-sec-adv-h");
+    await page.keyboard.press("Escape");
+    await drawer.waitFor({ state: "hidden" });
+    assert.equal(await focused(), "b-settings");
+    await page.click("#b-settings");
+    await page.click("#b-result h2");
+    await page.keyboard.press("Escape");
+    await drawer.waitFor({ state: "hidden" });
+    // ⌘, with a popover open from the drawer closes both, the focus back on Settings.
+    await settings(page, "requirements");
+    await page.click("#b-addfloor");
+    await page.waitForSelector(".pop .b-pick-list");
+    await page.keyboard.press("ControlOrMeta+Comma");
+    await drawer.waitFor({ state: "hidden" });
+    assert.equal(await page.locator(".pop").count(), 0, "the popover closed with it");
+    assert.equal(await focused(), "b-settings");
+    await settings(page, "weights");
 
     // The tab is kept in ui-prefs (a PUT the page does not wait on: poll the file), and the drawer comes back on it.
     const tabSaved = (): boolean => { try { return (JSON.parse(readFileSync(join(dataDir, "ui-prefs.json"), "utf8")) as { builderTab?: string }).builderTab === "weights"; } catch { return false; } };
@@ -162,6 +199,17 @@ test("[slow] the Settings drawer: ⌘, and its button, Esc, the tabs, an error's
     assert.equal(await drawer.isHidden(), true, "closed after a reload");
     await page.click("#b-settings");
     assert.equal(await page.getAttribute("#b-tab-weights", "aria-selected"), "true", "open on the tab it was left on");
+
+    // The top bar: one line at 1366 (where the screen allows that width); at 1024 the selects wrap and Settings, Saved
+    // runs and Build stay one group at the right of its row.
+    const top = (sel: string): Promise<number> => page.locator(sel).evaluate((n) => Math.round(n.getBoundingClientRect().top));
+    if ((await fitWindow(app, page, { width: 1366, height: 900 })).width === 1366) assert.equal(await top("#b-run"), await top("#b-char"), "one line at 1366");
+    await fitWindow(app, page, { width: 1024, height: 768 });
+    assert.equal(await top("#b-settings"), await top("#b-run"));
+    assert.equal(await top("#b-runs-open"), await top("#b-run"));
+    const bar = (await page.locator("#b-topbar").boundingBox())!, run = (await page.locator("#b-run").boundingBox())!;
+    assert.ok(bar.x + bar.width - (run.x + run.width) < 40, "Build at the bar's right end");
+    assert.ok(bar.height < 110, `two rows at most, got ${bar.height}`);
     assert.deepEqual(errors, []);
   } finally {
     await app.close();

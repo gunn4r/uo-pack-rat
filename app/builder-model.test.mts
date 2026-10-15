@@ -10,7 +10,7 @@ import { NOBODY, setRules, resistCapsFor, settingsDiff, importanceOf, roundImpor
 import { buffSkillValues, runBuffs } from "./buffs.mts";
 import type { RulesV1 } from "./schema/types.d.mts";
 import {
-  propName, withStoredRoots, settingsChanges, knobError, firstKnobError, knobFromServerError, ruleValueError,
+  propName, withStoredRoots, knobError, firstKnobError, knobFromServerError, ruleValueError,
   resistOutcome, locationCrumbs, otherChanges, afterChange, compareModel, hiddenRowsNote, toggleCompare, runAutoLabel, runBadges, plural, KNOB_RANGES,
   resistCapError, withResistCap, capNote, resistMinimumText, capsLine, anyOverridden, effectiveFloor, floorCapWarning, pruneResistCaps,
   weaponsChipText, weaponMustHaveChipText, toggleWeapon, weaponName, withBuffs, pastCapBadges, runSettingsDiff, weightTradeoff, newWeight, editedValue, NEW_WEIGHT_IMPORTANCE, templateBuffsLine, sourceTitle, who, rarityHelp, rarityTotal, rarityDetail, shareRows,
@@ -72,18 +72,21 @@ test("[fast] builder model: the Weapon must have chip names the required propert
 });
 
 const knobs = (over: Partial<Knobs> = {}): Knobs => ({ strLimit: "110", restarts: "10000", exact: true, budgetS: "300", altCount: "5", altTol: "40", ...over });
-// Issue #272: the Settings drawer's footer counts the top-level settings that differ from the shown run's.
-test("[fast] builder model: the changes since the last build count each differing top-level setting once", () => {
-  const run = { floors: { fireResist: 70, hci: 45 }, weights: { dci: 10 }, softFloors: [], excludeTags: ["cursed"], exact: true, budgetMs: 2000, buffs: { on: ["divineFury"], skills: { chivalry: 100 } } };
-  assert.equal(settingsChanges(run, structuredClone(run)), 0);
-  assert.equal(settingsChanges(run, { ...run, floors: { hci: 45, fireResist: 70 } }), 0, "a map in another key order is the same");
-  assert.equal(settingsChanges(run, { ...run, weights: { dci: 11 } }), 1, "one weight changed");
-  assert.equal(settingsChanges(run, { ...run, weights: { dci: 11, luck: 1 }, floors: { fireResist: 65, hci: 45 } }), 2, "two weights and a floor are two settings");
-  assert.equal(settingsChanges(run, { ...run, exact: false, budgetMs: 5000 }), 2, "each search knob counts");
-  assert.equal(settingsChanges(run, { ...run, buffs: { on: ["divineFury"], skills: { chivalry: 120 } } }), 1, "a buff's number");
-  assert.equal(settingsChanges(run, { ...run, excludeTags: [] }), 1);
-  assert.equal(settingsChanges({ ...run, softFloors: undefined }, { ...run, castingSchool: undefined }), 0, "an empty or absent field is no change");
-  assert.equal(settingsChanges({ allowGargoyle: false }, {}), 1, "false is a value: an absent Use Best Weapon Skill means on");
+// Issue #272: the Settings drawer's footer counts what runSettingsDiff names between the shown run and the panel, the
+// same diff the runs drawer's "Same settings as the panel" reads, so the two never disagree.
+test("[fast] builder model: the drawer's changes count is runSettingsDiff's, with the run drawer's defaults", () => {
+  const run = { floors: { fireResist: 70, hci: 45 }, weights: { dci: 10 }, softFloors: [], lockedSlots: ["helmet", "ring"], excludeTags: ["cursed"], exact: true, restarts: 50, budgetMs: 2000, altCount: 0, altTol: 0, buffs: { on: ["divineFury"], skills: {} } };
+  const count = (a: object, b: object): number => runSettingsDiff(a, b).length;
+  assert.equal(count(run, structuredClone(run)), 0);
+  // what the panel's snapshot always carries, against a run saved before those fields: Load these settings writes the
+  // same defaults back, so loading an old run leaves nothing to count
+  assert.equal(count(run, { ...run, allowGargoyle: false, medOnly: false, allowOthersWorn: false, ubwsAnyWeapon: true, excludeRoots: [], excludeSkills: [] }), 0, "an older run's absent fields read as their defaults");
+  assert.equal(count(run, { ...run, lockedSlots: ["ring", "helmet"] }), 0, "a list in another order is the same set");
+  assert.equal(count({ ...run, exact: false }, { ...run, exact: false, budgetMs: 300_000 }), 0, "the time budget does nothing without exact search");
+  assert.equal(count(run, { ...run, weights: { dci: 11 } }), 1, "one weight changed");
+  assert.equal(count(run, { ...run, weights: { dci: 11, luck: 1 } }), 2, "a weight changed and one added");
+  assert.equal(count(run, { ...run, restarts: 77 }), 1, "a search knob");
+  assert.equal(count(run, { ...run, buffs: { on: ["divineFury", "enemyOfOne"], skills: {} } }), 1, "a buff turned on");
 });
 
 test("[fast] builder model: an out-of-range knob gets a plain message with the allowed range", () => {

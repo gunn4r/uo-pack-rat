@@ -8,10 +8,13 @@
 #tab-builder .page.b-page { position: relative; flex-direction: row; align-items: stretch; gap: var(--space-4); overflow: hidden; }
 /* one line that wraps on a narrow window: title · character · template · mode · Settings · Saved runs · Build */
 #b-topbar { height: auto; min-height: var(--topbar-h); flex-wrap: wrap; gap: var(--space-2); padding-top: var(--space-2); padding-bottom: var(--space-2); }
-#b-topbar h1 { margin-right: var(--space-2); }
 .b-tpl-top { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
-.pr .b-tpl-top .select { width: 180px; }
-#tab-builder.manual #b-settings, #tab-builder.manual #b-run { display: none; }   /* Manual's fill plans with the drawer's settings, and has its own button */
+.pr .b-tpl-top .select { width: 140px; }
+.b-top-acts { flex: none; display: flex; align-items: center; gap: var(--space-2); margin-left: auto; }
+/* Manual's fill plans with the drawer's settings, and has its own button; the template is the drawer's too */
+#tab-builder.manual #b-settings, #tab-builder.manual #b-run, #tab-builder.manual #b-tpl-top { display: none; }
+/* open, the Settings button reads pressed */
+.pr #b-settings[aria-expanded="true"] { background: var(--color-chip-set); color: var(--color-on-chip-set); }
 /* the Settings drawer: not modal, over the result's right side (the popovers opened from it sit above it) */
 .b-drawer { z-index: var(--z-peek); width: min(var(--drawer-w-wide), 100%); }
 .b-drawer-titles { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; }
@@ -20,10 +23,13 @@
 .pr .b-tab { flex: none; padding: var(--space-2) var(--space-2); border: 0; border-bottom: 2px solid transparent; background: none; color: var(--color-text-muted); font-weight: var(--weight-medium); cursor: pointer; }
 .pr .b-tab:hover { color: var(--color-text); }
 .pr .b-tab[aria-selected="true"] { color: var(--color-text); border-bottom-color: var(--color-accent); }
-.pr .b-tab:focus-visible { outline: none; box-shadow: var(--ring-focus); }
+.pr .b-tab:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--color-focus); }   /* inside: the tablist's scroll box clips an outer ring */
 .b-drawer-body.drawer-body { padding: 0; gap: 0; }
 .b-tabp { display: flex; flex-direction: column; }
-.b-changes { min-width: 0; }
+/* the footer: on a narrow drawer the count takes a line of its own above the buttons */
+.b-drawer-foot { flex-wrap: wrap; }
+.b-changes { flex: 1 1 12rem; min-width: 0; }
+@media (max-width: 720px) { .b-changes { order: -1; flex-basis: 100%; } }
 .b-results { flex: 1 1 auto; min-width: 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--space-4); }
 #b-msg, #b-result { display: flex; flex-direction: column; gap: var(--space-4); }
 #b-msg:empty { display: none; }
@@ -34,7 +40,7 @@
 .b-crumb { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
 .pr .b-crumb a { color: var(--color-text-muted); text-decoration: none; font-size: var(--text-md); white-space: nowrap; }
 .pr .b-crumb a:hover { color: var(--color-text); text-decoration: underline; }
-.pr .topbar .b-topbar-char { width: 160px; }
+.pr .topbar .b-topbar-char { width: 128px; }
 
 /* ---------------------------------------------------------------- panel sections */
 .b-sec { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-4) var(--space-5); border-bottom: var(--border-width) solid var(--color-border); }
@@ -76,7 +82,7 @@
 /* Advanced: a two-column grid of labelled number fields */
 .b-adv { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
 .b-adv .b-adv-wide { grid-column: 1 / -1; }
-.pr .b-adv .input { width: 100%; }
+.pr .b-adv .input { width: 8rem; }
 /* the property picker and the chips' checklists (popovers) */
 .b-pick-list { display: flex; flex-direction: column; max-height: 280px; overflow-y: auto; }
 .b-pick-list > *, .b-checks > * { flex: none; }   /* a scrolling list: rows keep their height */
@@ -279,6 +285,14 @@
 }
 @media (max-width: 1023px) {
   .b-resists, .b-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+/* a phone-width top bar: the selects' and Saved runs' words and the key hints go (still named for a screen reader), the
+   selects take the room left */
+@media (max-width: 720px) {
+  #b-topbar .b-top-l { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  #b-topbar .kbd { display: none; }
+  .pr .topbar .b-topbar-char, .pr .b-tpl-top .select { flex: 1 1 auto; width: auto; min-width: 0; }
+  .b-tpl-top { flex: 1 1 100%; }
 }
 .b-no-char { padding: var(--space-4) var(--space-5); }   /* the drawer with no character: why Build and the saves are off */
 /* A worn or fetched piece that shows the item tooltip on hover and on keyboard focus; a table row takes the
