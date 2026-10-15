@@ -21,7 +21,8 @@ import type { HouseArea } from "./house-names.mts";
 import { areaOfStack } from "./house-areas.mts";
 
 // A tool's failure in words the model reads (a route's own refusal, a bad argument): a tool result with isError.
-export class ToolError extends Error {}
+// `code`: the route's own code for its refusal, if it gave one (PUT /api/organize's "stale").
+export class ToolError extends Error { code: unknown; constructor(message: string, code?: unknown) { super(message); this.code = code; } }
 // `memory` lives as long as the server: the in-game commands this server queued (id → when), so a status check can tell
 // one still waiting for the bridge from an id it never queued, the builds a newer build_suit call replaced, the
 // builds that filled around pinned pieces (whose currentScore is left out), and what the latest builds were planned
@@ -55,7 +56,7 @@ interface SetupDoc { settings: { client?: { adapter: string } | null }; bridgeAd
 interface BridgeStatus { online: boolean; age?: number; character?: string; adapter?: { features?: string[] }; current?: { id?: string } | null; results?: Record<string, BridgeResult> }
 interface BridgeResult { ok: boolean; msg: string; t?: string; partial?: boolean; stopped?: boolean; steps?: Array<{ op: string; serial: number; ok: boolean; msg: string }> }
 interface RunDoc { id: string; character?: string; createdAt: string; label?: string; settings?: Record<string, unknown>; result?: Record<string, unknown> | null; ms?: number | null; inventoryStamp?: string | null }
-interface OrganizeDoc { config: OrganizeConfig; problems: string[]; readOnly?: string }
+interface OrganizeDoc { config: OrganizeConfig; problems: string[]; readOnly?: string; stamp: string }
 interface PlanDoc { stamp: string; inventoryStamp: string; moves: PlanMove[]; trips: Array<{ index: number; site: number }>; rules: unknown[]; warnings: unknown[]; seconds: number; unclaimed: number }
 
 // ---------------------------------------------------------------- helpers
@@ -679,7 +680,7 @@ export const TOOLS: Tool[] = [
   },
   {
     name: "label_containers",
-    description: "Label, rename, pin, unpin or unlabel house containers for Organize, as one batch: each change is {serial, name?, pinned?} or {serial, remove: true}. All or nothing: one bad entry refuses the whole batch and says which and why. A new label needs a name; a rename keeps the rules that use the container. Refused: a container not in the scans or not on the ground, a trash container, a name over 64 characters, a serial listed twice, removing a label a rule, the catch-all or the empty bags use (named), pinning a container a rule puts items into, and a setup Organize must save first. Changes only Pack Rat's Organize setup, never the game; every open page reloads it.",
+    description: "Label, rename, pin, unpin or unlabel house containers for Organize, as one batch: each change is {serial, name?, pinned?} or {serial, remove: true}. All or nothing: one bad entry refuses the whole batch and says which and why. A new label needs a name; a rename keeps the rules that use the container. Refused: a container not in the scans or not on the ground, a trash container, a name over 64 characters, a serial listed twice, removing a label a rule, the catch-all or the empty bags use (named), pinning a container a rule puts items into, and a setup Organize must save first. A batch that changes nothing saves nothing and says so. Changes only Pack Rat's Organize setup, never the game; every open page reloads it.",
     inputSchema: { type: "object", additionalProperties: false, required: ["changes"], properties: {
       changes: { type: "array", minItems: 1, maxItems: LIMITS.labels, items: { type: "object", additionalProperties: false, required: ["serial"], properties: {
         serial: SERIAL,
@@ -691,43 +692,59 @@ export const TOOLS: Tool[] = [
     annotations: { title: "Label containers", readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
     async handler(a, ctx) {
       const changes = a.changes as Array<{ serial: number; name?: string; pinned?: boolean; remove?: boolean }>;
-      const [org, inv, items] = await Promise.all([ctx.api<OrganizeDoc>("/api/organize"), inventory(ctx), itemsBySerial(ctx, [...new Set(changes.map((c) => c.serial))])]);
-      if (org.readOnly) throw new ToolError(org.readOnly);
-      if (org.problems.length) throw new ToolError(salvagedRefusal(org.problems));
-      const cfg = org.config, labels = { ...cfg.labels }, seen = new Set<number>(), applied: Array<Record<string, unknown>> = [];
-      for (const [i, ch] of changes.entries()) {
-        const at = `changes[${i}] (${hex(ch.serial)})`, key = String(ch.serial), had = cfg.labels[key];
-        if (seen.has(ch.serial)) throw new ToolError(`${at}: the container is listed twice; give one change per container`);
-        seen.add(ch.serial);
-        if (ch.remove) {
-          if (ch.name !== undefined || ch.pinned !== undefined) throw new ToolError(`${at}: remove takes no name or pinned`);
-          if (!had) throw new ToolError(`${at}: it has no label to remove`);
-          const rule = cfg.rules.find((r) => r.targets.includes(ch.serial));
-          const use = rule ? `the rule "${rule.name}" puts items into it` : cfg.catchAll === ch.serial ? "it is the catch-all" : cfg.emptyBagsTo === ch.serial ? "empty bags are gathered into it" : null;
-          if (use) throw new ToolError(`${at}: ${had.name} keeps its label: ${use}. Change that in Organize first.`);
-          delete labels[key];
-          applied.push({ serial: ch.serial, change: "removed", name: had.name });
-          continue;
+      const [first, inv, items] = await Promise.all([ctx.api<OrganizeDoc>("/api/organize"), inventory(ctx), itemsBySerial(ctx, [...new Set(changes.map((c) => c.serial))])]);
+      // The batch over the setup as read: the labels it leads to and what it did to each container.
+      const apply = (org: OrganizeDoc): { cfg: OrganizeConfig; labels: OrganizeConfig["labels"]; applied: Array<Record<string, unknown>> } => {
+        if (org.readOnly) throw new ToolError(org.readOnly);
+        if (org.problems.length) throw new ToolError(salvagedRefusal(org.problems));
+        const cfg = org.config, labels = { ...cfg.labels }, seen = new Set<number>(), applied: Array<Record<string, unknown>> = [];
+        for (const [i, ch] of changes.entries()) {
+          const at = `changes[${i}] (${hex(ch.serial)})`, key = String(ch.serial), had = cfg.labels[key];
+          if (seen.has(ch.serial)) throw new ToolError(`${at}: the container is listed twice; give one change per container`);
+          seen.add(ch.serial);
+          if (ch.remove) {
+            if (ch.name !== undefined || ch.pinned !== undefined) throw new ToolError(`${at}: remove takes no name or pinned`);
+            if (!had) throw new ToolError(`${at}: it has no label to remove`);
+            const rule = cfg.rules.find((r) => r.targets.includes(ch.serial));
+            const use = rule ? `the rule "${rule.name}" puts items into it` : cfg.catchAll === ch.serial ? "it is the catch-all" : cfg.emptyBagsTo === ch.serial ? "empty bags are gathered into it" : null;
+            if (use) throw new ToolError(`${at}: ${had.name} keeps its label: ${use}. Change that in Organize first.`);
+            delete labels[key];
+            applied.push({ serial: ch.serial, change: "removed", name: had.name });
+            continue;
+          }
+          if (ch.name === undefined && ch.pinned === undefined) throw new ToolError(`${at}: nothing to change; give a name, pinned or remove`);
+          const c = inv.containers[ch.serial];
+          if (TRASH_RE.test(c?.name ?? items[ch.serial]?.name ?? "")) throw new ToolError(`${at}: a trash container can't be labeled`);
+          if (!c) throw new ToolError(`${at}: no container with this serial in the scans`);
+          if (c.parent != null || c.kind !== "ground") throw new ToolError(`${at}: only containers on the ground can be labeled, not ${c.parent != null ? "a bag inside one" : `a ${c.kind ?? "container"}`}`);
+          const name = ch.name?.trim() ?? had?.name;
+          if (!name) throw new ToolError(`${at}: a new label needs a name`);
+          if (name.length > LIMITS.text) throw new ToolError(`${at}: a label's name must be 1 to ${LIMITS.text} characters`);
+          const pinned = ch.pinned ?? !!had?.pinned, same = !!had && had.name === name && !!had.pinned === pinned;
+          // As the page's Label… saves one: its color kept, made by hand. A label left as it was keeps its origin.
+          if (!same) labels[key] = { serial: ch.serial, name, ...(had?.color ? { color: had.color } : {}), ...(pinned ? { pinned: true } : {}), origin: "manual" };
+          applied.push({ serial: ch.serial, change: had ? (same ? "unchanged" : "changed") : "added", name, pinned, ...(had ? { was: { name: had.name, pinned: !!had.pinned } } : {}) });
         }
-        if (ch.name === undefined && ch.pinned === undefined) throw new ToolError(`${at}: nothing to change; give a name, pinned or remove`);
-        const c = inv.containers[ch.serial];
-        if (TRASH_RE.test(c?.name ?? items[ch.serial]?.name ?? "")) throw new ToolError(`${at}: a trash container can't be labeled`);
-        if (!c) throw new ToolError(`${at}: no container with this serial in the scans`);
-        if (c.parent != null || c.kind !== "ground") throw new ToolError(`${at}: only containers on the ground can be labeled, not ${c.parent != null ? "a bag inside one" : `a ${c.kind ?? "container"}`}`);
-        const name = ch.name?.trim() ?? had?.name;
-        if (!name) throw new ToolError(`${at}: a new label needs a name`);
-        if (name.length > LIMITS.text) throw new ToolError(`${at}: a label's name must be 1 to ${LIMITS.text} characters`);
-        const pinned = ch.pinned ?? !!had?.pinned;
-        // As the page's Label… saves one: its color kept, made by hand.
-        labels[key] = { serial: ch.serial, name, ...(had?.color ? { color: had.color } : {}), ...(pinned ? { pinned: true } : {}), origin: "manual" };
-        applied.push({ serial: ch.serial, change: had ? (had.name === name && !!had.pinned === pinned ? "unchanged" : "changed") : "added", name, pinned, ...(had ? { was: { name: had.name, pinned: !!had.pinned } } : {}) });
+        return { cfg, labels, applied };
+      };
+      // The page's own write path: the whole setup checked (a pinned rule target, a blacklisted container) and saved,
+      // only if it is still the one read. A save from elsewhere in between (a page, another call) is read and the
+      // batch applied to it once more; a second one in a row refuses the batch, with nothing saved.
+      for (let org = first, retried = false; ; retried = true) {
+        const { cfg, labels, applied } = apply(org);
+        if (applied.every((x) => x.change === "unchanged")) return { applied, labels: Object.keys(labels).length, saved: false, note: "nothing changed, so nothing was saved" };
+        try {
+          await ctx.api("/api/organize", { method: "PUT", body: { ...cfg, labels, base: org.stamp }, clientId: "mcp" });
+          return { applied, labels: Object.keys(labels).length };
+        } catch (e) {
+          if (!(e instanceof ToolError && e.code === "stale")) throw e;
+          if (retried) throw new ToolError("the Organize setup kept changing while this batch was being saved; nothing was saved, so try the batch again");
+          org = await ctx.api<OrganizeDoc>("/api/organize");
+        }
       }
-      // The page's own write path: the whole setup checked (a pinned rule target, a blacklisted container) and saved.
-      await ctx.api("/api/organize", { method: "PUT", body: { ...cfg, labels }, clientId: "mcp" });
-      return { applied, labels: Object.keys(labels).length };
     },
   },
-  bridgeTool("highlight", "highlight_item","Highlight an item (or a container) in game for a few seconds, opening the containers down to it."),
+  bridgeTool("highlight", "highlight_item", "Highlight an item (or a container) in game for a few seconds, opening the containers down to it."),
   bridgeTool("goto", "go_to_item", "Walk the character to the ground container an item is in (its scanned position)."),
   bridgeTool("grab", "grab_item", "Move an item into the backpack of the character the bridge runs on, walking to it and opening the containers down to it."),
   {

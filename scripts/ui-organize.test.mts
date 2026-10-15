@@ -1,6 +1,6 @@
 // ui-organize.test.mts — [slow]: Organize (issue #11) in the real Electron window over the demo scans.
 //
-// `[slow]`: Organize in the real Electron window over the demo scans on a writable `--data` folder: the empty state that teaches labelling, Containers' Label… and Fill column, labels in the Items rows, the Rules card (fill, counts, catch-all, reordering by keyboard and drag), the rule drawer (presets, fill order, a forgotten target), a bag inside a chest picked as a target and labelled on save with the live match count (the demo scans copied into `scans/` with a pouch added, no `--demo`), Save as rule…, a mocked 600-move plan (reports first, trips collapsed), a client without `trip`, a trip run through the bridge's queue (Stop, a failed put, Pin this item), a salvaged setup refusing trips until Save setup, the screen at 1000 × 700, and Auto organize (Accept, running it again, Detailed, a 1000 × 700 drawer), and item kinds (issue #150: Review unclassified items, Classify this… and Reset to automatic, Settings' Export as an Electron download and Import through the file input).
+// `[slow]`: Organize in the real Electron window over the demo scans on a writable `--data` folder: the empty state that teaches labelling, Containers' Label… and Fill column, labels in the Items rows, the Rules card (fill, counts, catch-all, reordering by keyboard and drag), a save over a setup another window changed refused and the setup reloaded (issue #280), the rule drawer (presets, fill order, a forgotten target), a bag inside a chest picked as a target and labelled on save with the live match count (the demo scans copied into `scans/` with a pouch added, no `--demo`), Save as rule…, a mocked 600-move plan (reports first, trips collapsed), a client without `trip`, a trip run through the bridge's queue (Stop, a failed put, Pin this item), a salvaged setup refusing trips until Save setup, the screen at 1000 × 700, and Auto organize (Accept, running it again, Detailed, a 1000 × 700 drawer), and item kinds (issue #150: Review unclassified items, Classify this… and Reset to automatic, Settings' Export as an Electron download and Import through the file input).
 //
 // Also a page reloaded mid-trip picking the trip back up. Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
 import test from "node:test";
@@ -202,6 +202,33 @@ async function pickOption(page: Page, id: string, name: string, value: string): 
   await page.keyboard.press("Escape");
   await page.waitForSelector(".pop", { state: "detached" });
 }
+
+test("[slow] a save over a setup changed in another window is refused: the page reloads that setup and says the change was not saved (issue #280)", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = dataDirWith([{ id: "rule-1", name: "Reagents", kind: ["reagent"], targets: [DORRAN] }]);
+  const { app, page, errors } = await launch(dataDir);
+  try {
+    await go(page, "#/organize", '.org-rule[data-rule="rule-1"]');
+    // Another window saves a rule after this page read the setup.
+    const disk = readOrganize(dataDir)!;
+    disk.rules.push({ id: "other-window", name: "Gems", match: { query: { ...EMPTY_QUERY, kind: ["gem"] } }, targets: [KESTREL], origin: "manual" });
+    writeFileSync(join(dataDir, "organize.json"), JSON.stringify(disk));
+    await page.selectOption("#org-catchall", String(DORRAN));
+    await page.getByText("The Organize setup was changed in another window or by an AI assistant, so it was reloaded and your last change was not saved.", { exact: false }).waitFor();
+    await page.waitForSelector('.org-rule[data-rule="other-window"]');
+    assert.equal(await page.locator("#org-catchall").inputValue(), "", "the catch-all was not saved");
+    assert.deepEqual(readOrganize(dataDir), disk, "the other window's save stands");
+    // Made again on the setup as it is now, the change saves.
+    await page.selectOption("#org-catchall", String(DORRAN));
+    const saved = await until(() => readOrganize(dataDir), (f) => f?.catchAll === DORRAN, "the catch-all saved");
+    assert.deepEqual(saved!.rules.map((r) => r.id), ["rule-1", "other-window"]);
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+});
 
 test("[slow] + Rule from a preset, then targets in fill order; the editor lists a target no scan has", async (t) => {
   const why = unavailable();

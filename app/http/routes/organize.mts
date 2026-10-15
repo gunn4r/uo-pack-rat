@@ -13,18 +13,23 @@ import type { ServerContext } from "../context.mts";
 export function routes(ctx: ServerContext): Route[] {
   const { appSettings, blacklistStore, eventBus, getInventory, organizeService, organizeStore } = ctx;
   return [
-    { method: "GET", path: "/api/organize", handle: (_req, res) => send(res, 200, { ok: true, ...organizeStore.read() }) },
+    { method: "GET", path: "/api/organize", handle: (_req, res) => send(res, 200, { ok: true, ...organizeStore.read(), stamp: organizeStore.stamp() }) },
     { method: "PUT", path: "/api/organize", handle: async (req, res) => {
-      const checked = checkOrganizeConfig(await readBody(req, { limit: MAX_SETUP_BYTES, tooLargeMsg: "the Organize setup is too large" }));
+      // `base`: the stamp GET answered with. A setup saved by someone else since is refused (409, code "stale", with the
+      // current stamp) and the file is left alone; a PUT without one (a page from an older build) is still taken.
+      const { base, ...doc } = asObject(await readBody(req, { limit: MAX_SETUP_BYTES, tooLargeMsg: "the Organize setup is too large" }));
+      if (base !== undefined && !isBoundedString(base, 64)) return send(res, 400, { ok: false, error: "base must be the stamp GET /api/organize answered with" });
+      const checked = checkOrganizeConfig(doc);
       if (!checked.ok) return send(res, 400, { ok: false, error: checked.error });
       // A blacklisted container is never opened by a scan, so a label on one could only plan from stale contents.
       const black = new Set(blacklistStore.read().map((e) => e.serial));
       const listed = Object.values(checked.config.labels).find((l) => black.has(l.serial));
       if (listed) return send(res, 400, { ok: false, error: `container ${listed.serial} is blacklisted and cannot be labeled` });
-      organizeStore.write(checked.config);
+      const saved = organizeStore.write(checked.config, base as string | undefined);
+      if (!saved.ok) return send(res, 409, { ok: false, code: "stale", error: "the Organize setup was changed elsewhere since it was read; reload it", stamp: saved.stamp });
       // Every other open page reloads, labels and rules included (the page that saved sent its own id).
       eventBus.broadcast("changed", { what: "inventory", by: req.headers["x-client-id"], at: Date.now() });
-      return send(res, 200, { ok: true });
+      return send(res, 200, { ok: true, stamp: saved.stamp });
     } },
     { method: "GET", path: "/api/organize/presets", handle: (_req, res) => send(res, 200, { ok: true, presets: PRESETS }) },
     { method: "POST", path: "/api/organize/match", handle: async (req, res) => {

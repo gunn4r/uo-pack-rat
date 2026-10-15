@@ -1,6 +1,6 @@
 // organize-server.test.mts — the Organize routes (issue #11) and the item kinds routes (issue #150) on a real server and temp data folder.
 //
-// the Organize routes on a real server and temp data folder: `GET|PUT /api/organize` (a broken setup and a blacklisted label refused, a hand-edited file salvaged, an unparsable or non-version-1 one moved aside), `GET /api/organize/plan`, `GET /api/organize/presets`, `POST /api/organize/propose` (Auto organize: the proposal over every offered chest saved as it is with PUT and proposing again changing nothing; planned with what the running bridge can do, like the plan; an unknown strategy, a bad container list and a salvaged setup refused; a container it cannot use reported), `POST /api/organize/match` (what one rule filter takes of the movable items in labelled roots, ignoring the other rules; the strict filter check; the body limit), and `POST /api/organize/trip` (a stale stamp, a second trip before the first reports back, a trip that is not its site's first, a salvaged setup and a client without `trip` refused, a running bridge that reports no `trip` refused while one too old to report itself is judged by the newest scan as before; the largest valid setup accepted and read back; a trip whose bridge went quiet stops holding the queue; a reported trip read into the overlay), and Put away (issue #131): a request dropped after a refresh's scan answered with one trip carrying the picked container's `putAway`, only the pack's own items (never the pouch's), a second request refused while it has not reported back, what stayed once it has ("1 bag stays in your pack"), a chest last scanned before the click refused, a stale request with a bad id refused, and the pouch picked next giving up its own items. The item kinds routes (issue #150): `POST /api/item-kinds` re-kinds an item with no rescan, the plan follows, it survives a restart, a name beats a graphic and kind null resets; the refusals (gear, an unknown kind, a bad name or graphic, neither named); an import merges with its entries winning and says what it left out, a file with nothing to import is refused, and export then import on a fresh data folder reproduces the kinds; a file that does not parse is moved aside with a warning. All `[fast]`.
+// the Organize routes on a real server and temp data folder: `GET|PUT /api/organize` (a broken setup and a blacklisted label refused, the setup's stamp with a stale `base` refused and two saves from the same read landing once (issue #280), a hand-edited file salvaged, an unparsable or non-version-1 one moved aside), `GET /api/organize/plan`, `GET /api/organize/presets`, `POST /api/organize/propose` (Auto organize: the proposal over every offered chest saved as it is with PUT and proposing again changing nothing; planned with what the running bridge can do, like the plan; an unknown strategy, a bad container list and a salvaged setup refused; a container it cannot use reported), `POST /api/organize/match` (what one rule filter takes of the movable items in labelled roots, ignoring the other rules; the strict filter check; the body limit), and `POST /api/organize/trip` (a stale stamp, a second trip before the first reports back, a trip that is not its site's first, a salvaged setup and a client without `trip` refused, a running bridge that reports no `trip` refused while one too old to report itself is judged by the newest scan as before; the largest valid setup accepted and read back; a trip whose bridge went quiet stops holding the queue; a reported trip read into the overlay), and Put away (issue #131): a request dropped after a refresh's scan answered with one trip carrying the picked container's `putAway`, only the pack's own items (never the pouch's), a second request refused while it has not reported back, what stayed once it has ("1 bag stays in your pack"), a chest last scanned before the click refused, a stale request with a bad id refused, and the pouch picked next giving up its own items. The item kinds routes (issue #150): `POST /api/item-kinds` re-kinds an item with no rescan, the plan follows, it survives a restart, a name beats a graphic and kind null resets; the refusals (gear, an unknown kind, a bad name or graphic, neither named); an import merges with its entries winning and says what it left out, a file with nothing to import is refused, and export then import on a fresh data folder reproduces the kinds; a file that does not parse is moved aside with a warning. All `[fast]`.
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, readFileSync, existsSync, renameSync } from "node:fs";
@@ -45,11 +45,44 @@ async function call<T = Record<string, unknown>>(s: ServerHandle, path: string, 
 test("[fast] GET /api/organize starts empty; PUT saves a valid setup and GET reads it back", async () => {
   const { s, dir } = await serve();
   try {
-    assert.deepEqual((await call(s, "/api/organize")).body, { ok: true, config: emptyOrganizeConfig(), problems: [] });
-    const put = await call(s, "/api/organize", body("PUT", CONFIG_DOC));
+    assert.deepEqual((await call(s, "/api/organize")).body, { ok: true, config: emptyOrganizeConfig(), problems: [], stamp: "none" });
+    const put = await call<{ stamp: string }>(s, "/api/organize", body("PUT", CONFIG_DOC));
     assert.equal(put.status, 200, JSON.stringify(put.body));
     assert.deepEqual(JSON.parse(readFileSync(join(dir, "organize.json"), "utf8")), CONFIG_DOC);
-    assert.deepEqual((await call(s, "/api/organize")).body, { ok: true, config: CONFIG_DOC, problems: [] });
+    assert.deepEqual((await call(s, "/api/organize")).body, { ok: true, config: CONFIG_DOC, problems: [], stamp: put.body.stamp });
+  } finally {
+    await s.close();
+  }
+});
+
+test("[fast] PUT /api/organize with base: the current stamp saves, a stale one is refused with the file untouched, none is taken", async () => {
+  const { s, dir } = await serve();
+  const file = join(dir, "organize.json");
+  try {
+    const first = await call<{ stamp: string }>(s, "/api/organize", body("PUT", { ...CONFIG_DOC, base: "none" }));
+    assert.equal(first.status, 200, JSON.stringify(first.body));
+    assert.match(first.body.stamp, /^[0-9a-f]{16}$/);
+    const renamed = { ...CONFIG_DOC, labels: { ...CONFIG_DOC.labels, [String(A)]: { serial: A, name: "Regs", origin: "manual" as const } } };
+    const second = await call<{ stamp: string }>(s, "/api/organize", body("PUT", { ...renamed, base: first.body.stamp }));
+    assert.equal(second.status, 200, JSON.stringify(second.body));
+    assert.notEqual(second.body.stamp, first.body.stamp);
+    assert.equal((await call<{ stamp: string }>(s, "/api/organize")).body.stamp, second.body.stamp);
+    const saved = readFileSync(file, "utf8");
+    const stale = await call(s, "/api/organize", body("PUT", { ...CONFIG_DOC, base: first.body.stamp }));
+    assert.equal(stale.status, 409);
+    assert.equal(stale.body.code, "stale");
+    assert.equal(stale.body.stamp, second.body.stamp);
+    assert.equal(readFileSync(file, "utf8"), saved, "nothing is written");
+    assert.equal((await call(s, "/api/organize", body("PUT", { ...CONFIG_DOC, base: "none" }))).status, 409, "a file saved since no file was read");
+    assert.equal((await call(s, "/api/organize", body("PUT", { ...CONFIG_DOC, base: 5 }))).status, 400);
+    assert.equal((await call(s, "/api/organize", body("PUT", CONFIG_DOC))).status, 200, "a PUT without base is taken");
+    assert.deepEqual(JSON.parse(readFileSync(file, "utf8")), CONFIG_DOC);
+    // Two saves made from the same read: exactly one lands.
+    const base = (await call<{ stamp: string }>(s, "/api/organize")).body.stamp;
+    const both = await Promise.all([renamed, { ...renamed, pinnedItems: [RUBY] }].map((doc) => call(s, "/api/organize", body("PUT", { ...doc, base }))));
+    assert.deepEqual(both.map((r) => r.status).sort(), [200, 409]);
+    const won = both[0]!.status === 200 ? renamed : { ...renamed, pinnedItems: [RUBY] };
+    assert.deepEqual(JSON.parse(readFileSync(file, "utf8")), won);
   } finally {
     await s.close();
   }

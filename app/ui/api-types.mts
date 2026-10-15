@@ -451,7 +451,9 @@ export type {
   StrategyId as AutoStrategy, Candidate as ProposalCandidate, GroupReport as ProposalGroup, Layout as ProposalLayout, Proposal as OrganizeProposal, OrganizeProposeApiResponse,
 } from "../organize-types.mts";
 export interface OrganizePreset { id: string; name: string; match: RuleMatch }
-export interface OrganizeApiResponse { ok: boolean; config: OrganizeConfig; problems: string[]; readOnly?: string }
+// stamp: the saved setup's, which PUT takes back as `base`; a setup saved elsewhere since is refused (409, code "stale").
+export interface OrganizeApiResponse { ok: boolean; config: OrganizeConfig; problems: string[]; readOnly?: string; stamp: string }
+export interface OrganizePutApiResponse { ok: boolean; stamp: string }
 export interface OrganizePresetsApiResponse { ok: boolean; presets: OrganizePreset[] }
 export interface OrganizeTripApiResponse { ok: boolean; id: string; index: number }
 // POST /api/organize/match: what one rule filter takes of the movable items in labelled roots (app/organize.mts's matchCount).
@@ -471,8 +473,8 @@ export interface RejectedEvent {
   reason: string;
   at: number;
 }
-// eventBus.broadcast("changed", …): a forget / forget-character or an Organize trip reporting back ("inventory"), or a
-// run deletion ("runs") — every tab reloads that data.
+// eventBus.broadcast("changed", …): a forget / forget-character, an Organize setup save (PUT /api/organize) or an
+// Organize trip reporting back ("inventory"), or a run deletion ("runs") — every tab reloads that data.
 export interface ChangedEvent {
   what: "inventory" | "runs";
   by?: string;   // an inventory change's x-client-id: the tab that made it has already reloaded
