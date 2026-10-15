@@ -75,11 +75,11 @@ Profiles, buffs, pools, solvers, saved runs and Manual. `docs/solver.md` describ
 | `app/bench/mip-spike.mts` | The HiGHS spike, superseded by `app/mip.mts`; kept as evidence for `app/bench/REPORT.md`. | — |
 | `app/ui/builder-session.mts` | The Suit Builder's one session: the state its four modules share (character, profile, result, job, saved runs and compare picks, Automatic or Manual, the knobs), with setters that fire `builderchange`, and the commands they call on each other, registered with `provide()`. | `session`, `commands`, `provide`, `readControls`, `applyKnobs` |
 | `app/ui/builder-parts.mts` | What more than one builder module draws or reads: key properties, the item tooltip, the verdict, the Fetch list and Grab all, an optimize job's events and progress words. | `fetchCard`, `grabAllButton`, `verdict`, `followJob`, `progressText` |
-| `app/ui/builder.mts` | The Suit Builder screen: the panel, the optimize job over SSE, the empty state. Provides the panel commands. | `initBuilder`, `selectCharacter`, `cancelJob` |
-| `app/ui/builder-result.mts` | The result beside the panel and the compare view. Provides the result commands. | — |
+| `app/ui/builder.mts` | The Suit Builder screen: the top bar's template controls, the Settings drawer and its tabs, the optimize job over SSE, the empty state. Provides the panel commands. | `initBuilder`, `applyPanelPrefs`, `selectCharacter`, `cancelJob` |
+| `app/ui/builder-result.mts` | The result under the Settings drawer and the compare view. Provides the result commands. | — |
 | `app/ui/builder-manual.mts` | Manual mode: slot cards, picker, totals, undo, Fill the rest, Save as run; the builder's ui-prefs. Provides the Manual and buff-number commands. | `initManual`, `applyBuilderPrefs`, `savePrefs` |
 | `app/ui/builder-buffs.mts` | The buff chips, Manual's Buffs row and the buff picker. | `buffChip`, `createBuffPicker` |
-| `app/ui/builder-model.mts` | Pure: summaries, Advanced-field checks, resist-cap lines, badges, compare rows, run labels, a character key in words (`who`: No character). | `KNOB_RANGES`, `compareModel`, `runAutoLabel`, `who` |
+| `app/ui/builder-model.mts` | Pure: Advanced-field checks, resist-cap lines, badges, compare rows, run labels, a character key in words (`who`: No character). | `KNOB_RANGES`, `compareModel`, `runAutoLabel`, `who` |
 | `app/ui/manual-model.mts` | Pure: Manual's totals keys, slot groups, hand rule, deltas, undo history, hand-offs. | `TOTAL_KEYS`, `STAT_KEYS`, `MANUAL_GROUPS`, `handConflict`, `slotDelta`, `fillableSlots` |
 | `app/ui/runs.mts` | The Saved runs drawer, and the settings snapshot a run is saved with. Provides the runs commands. | `applySettings`, `openRunsDrawer`, `loadRuns` |
 

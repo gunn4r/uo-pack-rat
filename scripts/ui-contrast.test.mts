@@ -1,6 +1,6 @@
 // ui-contrast.test.mts — [slow]: the contrast check from design spec 2.3, run on the real page in both theme families, light and dark.
 //
-// `[slow]`: the contrast check (design spec 2.3, `docs/ui.md`) on the real page, in the Electron window over the demo data. Each scene (Inventory, the item tooltip, the Inventory's row actions, filter chips and active strip, rarity and location popovers, "+ Filter" menu, property rule, the tags popover (a hidden and a required tag), table settings, item peek, row-focus tooltip, empty result, grouped view and load-failed message, the Characters roster, its row menu, a character sheet and its slot popover, Containers and its row menu, a confirm dialog, the toast stack, a finished build, Manual after a fill (its outcome line, the slot cards, the fetch list), the Import drawer (empty, a clean paste with its preview, a paste that does not parse, and scan files), the setup wizard (the shard step, the client cards, a failed folder path, the paste branch's last step), the saved-runs drawer, the bridge popover, the collapsed sidebar, Settings, and Settings' lower sections with a failed update check (the request routed to a fixed answer, not GitHub), and the Suit Builder's states: an overridden resist cap with a result built at it and an out-of-range cap's error, the result's lower cards with Solver details and the full sheet open, compare suits, the drawer's run menu and inline rename, compare runs, the template menu, the property picker, a chip checklist, the Weapons popover with two skills excluded, an Advanced field error, the running build and the current-suit empty state, and Organize, its rule drawer, Label… and Auto organize) is measured in light and in dark, switched through `prefers-color-scheme` (the page follows it live while Appearance is System), with reduced motion so no colour transition is half-way. `scripts/contrast-probe.mts` measures every text/background pair (compositing semi-transparent fills down to an opaque layer), field values, placeholders, control boundaries, icons in icon-only buttons and messages, and status dots; any pair under 4.5:1 (text; 3:1 when large), or 3:1 (edges, icons, dots), fails the test, and a disabled control only needs 3:1 text. A canary (a `#bbb` label on white) proves the probe reports a failure. `[slow]` rather than `[fast]` because it launches Electron and runs a short build.
+// `[slow]`: the contrast check (design spec 2.3, `docs/ui.md`) on the real page, in the Electron window over the demo data. Each scene (Inventory, the item tooltip, the Inventory's row actions, filter chips and active strip, rarity and location popovers, "+ Filter" menu, property rule, the tags popover (a hidden and a required tag), table settings, item peek, row-focus tooltip, empty result, grouped view and load-failed message, the Characters roster, its row menu, a character sheet and its slot popover, Containers and its row menu, a confirm dialog, the toast stack, a finished build, Manual after a fill (its outcome line, the slot cards, the fetch list), the Import drawer (empty, a clean paste with its preview, a paste that does not parse, and scan files), the setup wizard (the shard step, the client cards, a failed folder path, the paste branch's last step), the saved-runs drawer, the bridge popover, the collapsed sidebar, Settings, and Settings' lower sections with a failed update check (the request routed to a fixed answer, not GitHub), and the Suit Builder's states: an overridden resist cap with a result built at it and an out-of-range cap's error, the result's lower cards with Solver details and the full sheet open, compare suits, the drawer's run menu and inline rename, compare runs, the template menu, the property picker, a chip checklist, the Weapons popover with two skills excluded, the Settings drawer's Weights tab, an Advanced field error, the running build and the current-suit empty state, and Organize, its rule drawer, Label… and Auto organize) is measured in light and in dark, switched through `prefers-color-scheme` (the page follows it live while Appearance is System), with reduced motion so no colour transition is half-way. `scripts/contrast-probe.mts` measures every text/background pair (compositing semi-transparent fills down to an opaque layer), field values, placeholders, control boundaries, icons in icon-only buttons and messages, and status dots; any pair under 4.5:1 (text; 3:1 when large), or 3:1 (edges, icons, dots), fails the test, and a disabled control only needs 3:1 text. A canary (a `#bbb` label on white) proves the probe reports a failure. `[slow]` rather than `[fast]` because it launches Electron and runs a short build.
 //
 // Theme families (Default and Britannia) are switched through theme.mts's applyLook. A screen or overlay added to the app gets a scene here. Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
 import test from "node:test";
@@ -33,6 +33,11 @@ async function route(page: Page, hash: string, ready: string): Promise<void> {
   await page.evaluate((h) => { location.hash = h; }, hash);
   await page.waitForSelector(ready, { timeout: 15_000 });
   await page.waitForTimeout(250);
+}
+// The Suit Builder's Settings drawer (issue #272) open on one of its tabs.
+async function settingsTab(page: Page, tab: string): Promise<void> {
+  if (await page.locator("#b-drawer").isHidden()) await page.click("#b-settings");
+  await page.click(`#b-tab-${tab}`);
 }
 // The wizard, opened from Settings' code path and walked forward `steps` times with its primary button.
 function openWizardAt(steps: number): (page: Page) => Promise<void> {
@@ -144,9 +149,9 @@ const SCENES: Scene[] = [
     await p.waitForFunction(() => document.querySelector<HTMLSelectElement>("#b-char")?.value, undefined, { timeout: 10_000 });
     // Advanced: other suits, so that card draws too. The budget leaves a slow runner time to find the two other suits
     // "builder compare suits" ticks (issue #240); a fast runner finishes well inside it.
-    await p.click("#b-sec-adv .b-sec-head button");
+    await settingsTab(p, "advanced");
     await p.fill("#b-budget", "10"); await p.fill("#b-altcount", "5"); await p.fill("#b-alttol", "40");
-    await p.click("#b-sec-adv .b-sec-head button");
+    await p.click("#b-drawer-close");
     await p.click("#b-run");
     await p.waitForFunction(() => !document.querySelector<HTMLButtonElement>("#b-run")?.disabled && document.querySelector("#b-result h2"), undefined, { timeout: 60_000 });
   } },
@@ -154,27 +159,29 @@ const SCENES: Scene[] = [
   // with it (the tile's "Cap raised from 70"), and an out-of-range cap's error. Fire stays at 95 for the scenes
   // after this one, so the full sheet, the runs drawer and compare draw their override states too.
   { name: "builder resist caps", enter: async (p) => {
-    await p.click("#b-sec-caps .b-sec-head button");
+    await settingsTab(p, "advanced");
     await p.fill("#b-cap-fireResist", "95");
     await p.click("#b-run");
     await p.waitForFunction(() => !document.querySelector<HTMLButtonElement>("#b-run")?.disabled && /raised from 70/.test(document.querySelector("#b-result .b-head-card")?.textContent || ""), undefined, { timeout: 60_000 });
     await p.fill("#b-cap-coldResist", "200");
     await p.waitForSelector("#b-cap-coldResist-err");
     await p.fill("#b-cap-poisonResist", "60");   // below the Poison requirement: its row warns
-    await p.waitForSelector("#b-sec-req .field-warn");
+    await p.waitForSelector("#b-sec-req .field-warn", { state: "attached" });
     await p.locator("#b-sec-caps").scrollIntoViewIfNeeded();
   }, leave: async (p) => { await p.fill("#b-cap-coldResist", "70"); await p.fill("#b-cap-poisonResist", "70"); } },
   // Buffs (issue #12): the Automatic picker in its popover with Divine Fury on and a DCI requirement it changes (the
   // chips, the picker's tags and fields, the requirement's note), then a build planned with it (the headline's
   // "Planned with" badges, Show without buffs, the past-the-cap badge).
   { name: "builder buff popover", enter: async (p) => {
+    await settingsTab(p, "requirements");
     await p.click("#b-addfloor");
     await p.keyboard.type("Defense chance");
     await p.keyboard.press("Enter");
+    await settingsTab(p, "buffs");
     await p.click("#b-buff-add");
     await p.locator("#abf-cb-divineFury").check();
     await p.locator("#abf-cb-enemyOfOne").check();
-    await p.waitForSelector("#b-sec-req .b-buff-note");
+    await p.waitForSelector("#b-sec-req .b-buff-note", { state: "attached" });
   } },
   { name: "builder planned with buffs", enter: async (p) => {
     await p.keyboard.press("Escape");
@@ -184,6 +191,7 @@ const SCENES: Scene[] = [
   // Manual's hand-offs (issue #12): the result taken into Manual, a slot cleared and filled again by the search (its
   // outcome line, the fetch list), and the suit saved as a run, so the runs drawer below draws its Manual badge.
   { name: "builder manual fill", enter: async (p) => {
+    await p.click("#b-drawer-close");   // the result's own button, under the drawer
     await p.click("#b-to-manual");
     await p.waitForSelector("#b-manual:not([hidden]) #mb-suit .mb-slot");
     await p.locator(".mb-slot:has([data-slot='ring']) .mb-clear").click();
@@ -281,8 +289,8 @@ const SCENES: Scene[] = [
     await p.locator("#tab-characters .sheet button.slot").first().click();
     await p.waitForSelector(".pop.item-pop");
   }, leave: (p) => p.keyboard.press("Escape") },
-  // ---- builder (phases 7-9): the result's lower cards, compare, the drawer's menu and rename, the panel's
-  // popovers and field error, the running build, the empty state. They follow "builder result" above, whose
+  // ---- builder (phases 7-9): the result's lower cards, compare, the drawer's menu and rename, the Settings drawer's
+  // popovers, weights and field error, the running build, the empty state. They follow "builder result" above, whose
   // build they reuse.
   { name: "builder result details", enter: async (p) => {
     await route(p, "#/builder", "#b-result h2");
@@ -300,7 +308,7 @@ const SCENES: Scene[] = [
   }, leave: async (p) => { await p.getByRole("button", { name: "Back to result" }).click(); } },
   { name: "runs drawer menu and rename", enter: async (p) => {
     // a second run, so there are two to tick
-    await p.click("#b-sec-adv .b-sec-head button"); await p.fill("#b-restarts", "150"); await p.click("#b-sec-adv .b-sec-head button");
+    await settingsTab(p, "advanced"); await p.fill("#b-restarts", "150"); await p.click("#b-drawer-close");
     await p.click("#b-run");
     await p.waitForFunction(() => !document.querySelector<HTMLButtonElement>("#b-run")?.disabled && document.querySelector("#b-result h2"), undefined, { timeout: 60_000 });
     await route(p, "#/runs", "#runs-drawer:not([hidden]) .run-card");
@@ -317,19 +325,20 @@ const SCENES: Scene[] = [
     await p.waitForSelector("#b-compare-view:not([hidden]) .b-cmp");
   }, leave: async (p) => { await p.getByRole("button", { name: "Back to result" }).click(); } },
   { name: "builder template menu", enter: async (p) => { await p.click("#b-tpl-menu"); await p.waitForSelector(".pop[role=menu]"); }, leave: (p) => p.keyboard.press("Escape") },
-  { name: "builder property picker", enter: async (p) => { await p.click("#b-addfloor"); await p.waitForSelector(".pop .b-pick-list"); }, leave: (p) => p.keyboard.press("Escape") },
-  { name: "builder chip checklist", enter: async (p) => { await p.click("#b-locked"); await p.waitForSelector(".pop .b-checks"); }, leave: (p) => p.keyboard.press("Escape") },
+  { name: "builder property picker", enter: async (p) => { await settingsTab(p, "requirements"); await p.click("#b-addfloor"); await p.waitForSelector(".pop .b-pick-list"); }, leave: (p) => p.keyboard.press("Escape") },
+  { name: "builder chip checklist", enter: async (p) => { await settingsTab(p, "pool"); await p.click("#b-locked"); await p.waitForSelector(".pop .b-checks"); }, leave: (p) => p.keyboard.press("Escape") },
   // The Weapons popover (issue #45) with two skills excluded: ticked and unticked rows.
   { name: "builder weapons exclusions", enter: async (p) => {
+    await settingsTab(p, "pool");
     await p.click("#b-weapon");
     for (const w of ["archery", "throwing"]) await p.locator(`.pop input[value="${w}"]`).check();
   }, leave: async (p) => {
     for (const w of ["archery", "throwing"]) await p.locator(`.pop input[value="${w}"]`).uncheck();
     await p.keyboard.press("Escape");
   } },
+  { name: "builder settings weights", enter: (p) => settingsTab(p, "weights") },   // the weights' rule rows
   { name: "builder advanced field error", enter: async (p) => {
-    await p.click("#b-sec-weights .b-sec-head button");   // the weights' rule rows too
-    await p.click("#b-sec-adv .b-sec-head button");
+    await settingsTab(p, "advanced");
     await p.fill("#b-restarts", "300000");
     await p.click("#b-run");
     await p.waitForSelector("#b-restarts-err");
@@ -337,6 +346,7 @@ const SCENES: Scene[] = [
   { name: "builder running", enter: async (p) => {
     // hold the start request so the progress card stays up while it is measured
     await p.route("**/api/optimize", async (r) => { await new Promise<void>((res) => { releaseStart = res; }); await r.abort().catch(() => {}); });
+    await p.click("#b-drawer-close");   // the progress card's Cancel, under the drawer
     await p.click("#b-run");
     await p.waitForSelector("#b-msg .b-progress");
   }, leave: async (p) => {

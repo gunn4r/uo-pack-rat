@@ -1,6 +1,6 @@
 // builder-model.test.mts — `app/ui/builder-model.mts`, the Suit Builder's pure logic.
 //
-// `app/ui/builder-model.mts`, the Suit Builder's pure logic: No character's name in words (issue #12), the one-line summaries collapsed panel sections show (weights heaviest first with equal resists folded into "each resist", requirements with soft ones marked, the candidate pool, the Advanced knobs), the Advanced fields' validation messages with the allowed range ("Enter a whole number from 1 to 10,000.") and that the page's limits equal the server's `OPTS_LIMITS`, which field a server refusal names, a resist tile's outcome line (short, meets, at cap, over cap), the result's other-changes badges (gains first, missed requirements as losses), "after the change" values and pool estimates, the compare table's differing piece cells, best totals (past the cap counts as the cap) and hidden-rows note, the three-run compare limit, and a saved run's automatic label and badges, and the Weapons chip and summary wording, and a weight row's trade-off hover and the weights summary in importance (issues #217, #274). All `[fast]`. The rarity preference (issue #262) in words: the pool summary, the help line, the settings change, the rarity total and the Rarity row. What made up the score (issue #273): the rows, the Other fold, a negative share set apart.
+// `app/ui/builder-model.mts`, the Suit Builder's pure logic: No character's name in words (issue #12), the Settings drawer's count of settings changed since the last build (issue #272), the Advanced fields' validation messages with the allowed range ("Enter a whole number from 1 to 10,000.") and that the page's limits equal the server's `OPTS_LIMITS`, which field a server refusal names, a resist tile's outcome line (short, meets, at cap, over cap), the result's other-changes badges (gains first, missed requirements as losses), "after the change" values and pool estimates, the compare table's differing piece cells, best totals (past the cap counts as the cap) and hidden-rows note, the three-run compare limit, and a saved run's automatic label and badges, and the Weapons chip wording, and a weight row's trade-off hover in importance (issues #217, #274). All `[fast]`. The rarity preference (issue #262) in words: the help line, the settings change, the rarity total and the Rarity row. What made up the score (issue #273): the rows, the Other fold, a negative share set apart.
 //
 // Lives in app/ for the reason app/ui-render.test.mts gives.
 import { test } from "node:test";
@@ -10,10 +10,10 @@ import { NOBODY, setRules, resistCapsFor, settingsDiff, importanceOf, roundImpor
 import { buffSkillValues, runBuffs } from "./buffs.mts";
 import type { RulesV1 } from "./schema/types.d.mts";
 import {
-  propName, weightsSummary, requirementsSummary, poolSummary, withStoredRoots, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError,
+  propName, withStoredRoots, knobError, firstKnobError, knobFromServerError, ruleValueError,
   resistOutcome, locationCrumbs, otherChanges, afterChange, compareModel, hiddenRowsNote, toggleCompare, runAutoLabel, runBadges, plural, KNOB_RANGES,
-  resistCapError, withResistCap, capNote, resistCapsSummary, resistMinimumText, capsLine, anyOverridden, effectiveFloor, floorCapWarning, pruneResistCaps,
-  weaponsSummary, weaponsChipText, weaponMustHaveChipText, toggleWeapon, weaponName, withBuffs, pastCapBadges, runSettingsDiff, weightTradeoff, newWeight, editedValue, NEW_WEIGHT_IMPORTANCE, templateBuffsLine, sourceTitle, who, rarityHelp, rarityTotal, rarityDetail, shareRows,
+  resistCapError, withResistCap, capNote, resistMinimumText, capsLine, anyOverridden, effectiveFloor, floorCapWarning, pruneResistCaps,
+  weaponsChipText, weaponMustHaveChipText, toggleWeapon, weaponName, withBuffs, pastCapBadges, runSettingsDiff, weightTradeoff, newWeight, editedValue, NEW_WEIGHT_IMPORTANCE, templateBuffsLine, sourceTitle, who, rarityHelp, rarityTotal, rarityDetail, shareRows,
   type Knobs,
 } from "./ui/builder-model.mts";
 import { OPTS_LIMITS } from "./vault-server.mts";
@@ -35,37 +35,16 @@ test("[fast] builder model: property names read as words in rule rows", () => {
   assert.equal(propName("sk:magery"), "Magery skill bonus");
 });
 
-test("[fast] builder model: the weights summary names importances, puts the heaviest first, folds equal resists and counts the rest", () => {
-  assert.equal(weightsSummary(melee.weights), "DCI 100 · HCI 100 · each resist 93 · DI 67 · SSI 67 · DEX 22 · 7 more");
-  assert.equal(weightsSummary({ fireResist: 6, hci: 2 }), "Fire 93 · HCI 20", "unequal or partial resists are listed one by one");
-  assert.equal(weightsSummary({ luck: 0.05, fc: -1 }), "Luck 5.6 · FC -0.4", "one decimal below 10");
-  assert.equal(weightsSummary({}), "No weights set");
-  assert.equal(weightsSummary({ tagPenalty: -25 }), "No weights set", "the tag penalty is not a weight the player sets here");
-});
-
-test("[fast] builder model: the requirements summary folds equal resists and marks soft ones", () => {
-  assert.equal(requirementsSummary(melee.floors, []), "each resist 65");
-  assert.equal(requirementsSummary({ physResist: 65, hci: 35 }, ["hci"]), "Phys 65 · HCI 35 soft");
-  assert.equal(requirementsSummary({}), "No requirements");
-});
-
-test("[fast] builder model: the candidate pool summary says what is in and out", () => {
-  assert.equal(poolSummary({}), "Own gear and unworn gear · no gargoyle-only · any weapon");
-  assert.equal(poolSummary({ allowOthersWorn: true, allowGargoyle: true, medOnly: true, excludeWeapons: ["swordsmanship", "fencing", "mace fighting", "throwing"], lockedSlots: ["ring"], excludeTags: ["cursed"], excludeSkills: ["necromancy", "spirit speak"], excludeRoots: [1, 2] }),
-    "Includes gear worn by others · gargoyle-only allowed · meditation-safe only · archery weapons only · 1 slot locked · no cursed · 2 skill bonuses forbidden · 2 containers skipped");
+test("[fast] builder model: the Only containers chip keeps a listed container that is no longer a root", () => {
   assert.deepEqual(withStoredRoots([{ value: "10", label: "Chest" }], [10, 0x4000abcd]), [{ value: "10", label: "Chest" }, { value: String(0x4000abcd), label: "Unknown container 0x4000ABCD (not in the scans)" }], "a listed serial that is no longer a root can still be unchecked");
   assert.deepEqual(withStoredRoots([{ value: "10", label: "Chest" }]), [{ value: "10", label: "Chest" }]);
-  assert.equal(poolSummary({ onlyRoots: [1, 2], excludeRoots: [3] }), "Own gear and unworn gear · no gargoyle-only · any weapon · 2 containers only · 1 container skipped");
 });
 
-test("[fast] builder model: the Weapons chip and summary say the exclusions in words", () => {
+test("[fast] builder model: the Weapons chip says the exclusions in words", () => {
   assert.equal(weaponsChipText([]), "Weapons: any");
   assert.equal(weaponsChipText(["archery", "throwing"]), "Weapons: 2 excluded");
   assert.equal(weaponsChipText(["archery", "swordsmanship", "mace fighting", "throwing"]), "Weapons: Fencing only");
   assert.equal(weaponsChipText(["archery", "swordsmanship", "fencing", "mace fighting", "throwing"]), "Weapons: none");
-  assert.equal(weaponsSummary(), "any weapon");
-  assert.equal(weaponsSummary(["throwing", "archery", "swordsmanship"]), "no archery, swordsmanship or throwing weapons", "in the skills' own order");
-  assert.equal(weaponsSummary(["archery", "swordsmanship", "fencing", "throwing"]), "mace fighting weapons only");
   // Use Best Weapon Skill is named only when some melee skill is excluded and some is still allowed.
   assert.equal(weaponsChipText(["archery", "fencing", "mace fighting", "throwing"], true), "Weapons: Swordsmanship only, plus Use Best Weapon Skill");
   assert.equal(weaponsChipText(["archery", "throwing"], true), "Weapons: 2 excluded", "every melee skill allowed: UBWS weapons pass anyway");
@@ -73,37 +52,41 @@ test("[fast] builder model: the Weapons chip and summary say the exclusions in w
   assert.equal(weaponsChipText([], true), "Weapons: any");
   assert.equal(weaponsChipText(["swordsmanship", "fencing", "mace fighting"], true), "Weapons: 3 excluded", "no melee skill left to swing with");
   assert.equal(weaponsChipText(["archery", "fencing", "mace fighting", "throwing"], false), "Weapons: Swordsmanship only");
-  assert.equal(weaponsSummary(["archery", "fencing", "mace fighting", "throwing"], true), "swordsmanship weapons only, plus Use Best Weapon Skill");
-  assert.equal(poolSummary({ excludeWeapons: ["archery", "fencing", "mace fighting", "throwing"] }), "Own gear and unworn gear · no gargoyle-only · swordsmanship weapons only, plus Use Best Weapon Skill", "absent means on");
-  assert.equal(poolSummary({ excludeWeapons: ["archery", "fencing", "mace fighting", "throwing"], ubwsAnyWeapon: false }), "Own gear and unworn gear · no gargoyle-only · swordsmanship weapons only");
   assert.deepEqual(toggleWeapon(["throwing"], "archery", true), ["archery", "throwing"], "kept in the skills' order");
   assert.deepEqual(toggleWeapon(["archery", "throwing"], "archery", false), ["throwing"]);
-  // Issue #259: Spellbooks add ", no spellbooks" to the chip and summary, last in the list.
+  // Issue #259: Spellbooks add ", no spellbooks" to the chip, last in the list.
   assert.equal(weaponsChipText(["spellbook"]), "Weapons: any, no spellbooks");
   assert.equal(weaponsChipText(["archery", "throwing", "spellbook"]), "Weapons: 2 excluded, no spellbooks");
   assert.equal(weaponsChipText(["archery", "swordsmanship", "mace fighting", "throwing", "spellbook"]), "Weapons: Fencing only, no spellbooks");
   assert.equal(weaponsChipText(["archery", "swordsmanship", "fencing", "mace fighting", "throwing", "spellbook"]), "Weapons: none, no spellbooks");
   assert.equal(weaponsChipText(["fencing", "mace fighting", "spellbook"], true), "Weapons: 2 excluded, plus Use Best Weapon Skill, no spellbooks");
-  assert.equal(weaponsSummary(["spellbook"]), "any weapon, no spellbooks");
-  assert.equal(weaponsSummary(["archery", "throwing", "spellbook"]), "no archery or throwing weapons, no spellbooks");
   assert.deepEqual(toggleWeapon(["throwing"], "spellbook", true), ["throwing", "spellbook"]);
   assert.deepEqual(toggleWeapon(["spellbook"], "archery", true), ["archery", "spellbook"], "spellbooks last");
   assert.equal(weaponName("spellbook"), "Spellbooks");
 });
 
-test("[fast] builder model: the Weapon must have chip and the pool summary name the required properties", () => {
+test("[fast] builder model: the Weapon must have chip names the required properties", () => {
   assert.equal(weaponMustHaveChipText(), "Weapon must have");
   assert.equal(weaponMustHaveChipText(["spell channeling"]), "Weapon must have: Spell Channeling");
   assert.equal(weaponMustHaveChipText(["spell channeling", "balanced"]), "Weapon must have: Spell Channeling, Balanced");
-  assert.equal(poolSummary({ weaponMustHave: ["balanced"] }), "Own gear and unworn gear · no gargoyle-only · any weapon · weapon must have Balanced");
-  assert.equal(poolSummary({ weaponMustHave: [] }), "Own gear and unworn gear · no gargoyle-only · any weapon");
 });
 
 const knobs = (over: Partial<Knobs> = {}): Knobs => ({ strLimit: "110", restarts: "10000", exact: true, budgetS: "300", altCount: "5", altTol: "40", ...over });
-test("[fast] builder model: the Advanced summary names the search, its restarts, budget and other suits", () => {
-  assert.equal(advancedSummary(knobs()), "Exact · 10,000 restarts · 300 s · 5 other suits within 40", "STR limit has its own field, not under Advanced");
-  assert.equal(advancedSummary(knobs({ exact: false, restarts: "1", strLimit: "" })), "Heuristic · 1 restart");
-  assert.equal(advancedSummary(knobs({ altCount: "0" })), "Exact · 10,000 restarts · 300 s");
+// Issue #272: the Settings drawer's footer counts what runSettingsDiff names between the shown run and the panel, the
+// same diff the runs drawer's "Same settings as the panel" reads, so the two never disagree.
+test("[fast] builder model: the drawer's changes count is runSettingsDiff's, with the run drawer's defaults", () => {
+  const run = { floors: { fireResist: 70, hci: 45 }, weights: { dci: 10 }, softFloors: [], lockedSlots: ["helmet", "ring"], excludeTags: ["cursed"], exact: true, restarts: 50, budgetMs: 2000, altCount: 0, altTol: 0, buffs: { on: ["divineFury"], skills: {} } };
+  const count = (a: object, b: object): number => runSettingsDiff(a, b).length;
+  assert.equal(count(run, structuredClone(run)), 0);
+  // what the panel's snapshot always carries, against a run saved before those fields: Load these settings writes the
+  // same defaults back, so loading an old run leaves nothing to count
+  assert.equal(count(run, { ...run, allowGargoyle: false, medOnly: false, allowOthersWorn: false, ubwsAnyWeapon: true, excludeRoots: [], excludeSkills: [] }), 0, "an older run's absent fields read as their defaults");
+  assert.equal(count(run, { ...run, lockedSlots: ["ring", "helmet"] }), 0, "a list in another order is the same set");
+  assert.equal(count({ ...run, exact: false }, { ...run, exact: false, budgetMs: 300_000 }), 0, "the time budget does nothing without exact search");
+  assert.equal(count(run, { ...run, weights: { dci: 11 } }), 1, "one weight changed");
+  assert.equal(count(run, { ...run, weights: { dci: 11, luck: 1 } }), 2, "a weight changed and one added");
+  assert.equal(count(run, { ...run, restarts: 77 }), 1, "a search knob");
+  assert.equal(count(run, { ...run, buffs: { on: ["divineFury", "enemyOfOne"], skills: {} } }), 1, "a buff turned on");
 });
 
 test("[fast] builder model: an out-of-range knob gets a plain message with the allowed range", () => {
@@ -253,16 +236,11 @@ test("[fast] resist caps: the field takes a whole number 0-150, and a cap set ba
   assert.deepEqual(before, { fireResist: 95 }, "pure: the old overrides are untouched");
 });
 
-test("[fast] resist caps: notes, the collapsed summary, the Requirements note, the compare line", () => {
+test("[fast] resist caps: notes, the Requirements note, the compare line", () => {
   assert.equal(capNote({ cap: 95, shard: 70 }), "raised from 70");
   assert.equal(capNote({ cap: 50, shard: 70 }), "lowered from 70");
   assert.equal(capNote({ cap: 70, shard: 70 }), null);
   const human = resistCapsFor("human", {}), elf = resistCapsFor("elf", {});
-  assert.equal(resistCapsSummary(human), "Shard caps: 70 each");
-  assert.equal(resistCapsSummary(elf), "Shard caps: 70, Energy 75");
-  assert.equal(resistCapsSummary(resistCapsFor("human", { fireResist: 95 })), "Fire 95 (raised from 70) · the rest at the shard's cap");
-  assert.equal(resistCapsSummary(resistCapsFor("human", { fireResist: 95, coldResist: 60, physResist: 80, poisonResist: 90 })),
-    "Phys 80 (raised from 70) · Fire 95 (raised from 70) · Cold 60 (lowered from 70) · Poison 90 (raised from 70) · the other one at the shard's cap");
   assert.equal(resistMinimumText("Ana", 40), "Resisting Spells keeps each of Ana's resists at 40 or more: a resist requirement of 40 or less is met by any suit.");
   assert.equal(resistMinimumText("Ana", null), null, "no minimum, nothing said");
   assert.equal(resistMinimumText("Ana", 0), null, "a minimum of 0 meets no requirement: nothing said");
@@ -350,10 +328,9 @@ test("[fast] builder model: the template badge's buffs line and a source page's 
   assert.equal(sourceTitle("not a url"), "not a url");
 });
 
-// Issue #262: the rarity preference in words: the pool summary, the help line, a template's or run's change, and the
+// Issue #262: the rarity preference in words: the help line, a template's or run's change, and the
 // result's Rarity row with the rarity total (higher means rarer, whichever way the preference points).
-test("[fast] rarity preference: summary, help line, settings change, rarity total and the Rarity row", () => {
-  assert.equal(poolSummary({ rarity: "lower" }), "Own gear and unworn gear · no gargoyle-only · any weapon · prefer lower rarity");
+test("[fast] rarity preference: help line, settings change, rarity total and the Rarity row", () => {
   assert.equal(rarityHelp(undefined), "");
   assert.equal(rarityHelp("lower"), "Among equally good suits, use the lowest-rarity pieces. Requirements come first.");
   assert.equal(rarityHelp("higher"), "Among equally good suits, use the highest-rarity pieces. Requirements come first.");

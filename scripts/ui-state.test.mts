@@ -138,9 +138,12 @@ test("[slow] refresh, Clear all, the virtual table and Forget keep the page's st
     await page.waitForFunction(() => document.querySelector<HTMLSelectElement>("#b-char")?.value, { timeout: 10_000 });
     const names = (await page.locator("#b-char option").allInnerTexts()).filter((n) => n !== "No character");
     await page.selectOption("#b-char", names[1]!);
-    // The Weapons chip's choices, counted in its popover: wiring the panel twice would draw a second chip.
+    // The Weapons chip's choices, counted in its popover: wiring the panel twice would draw a second chip. It is in the
+    // Settings drawer's Pool tab (issue #272).
     const weaponChoices = async (): Promise<number> => {
       assert.equal(await page.locator("#b-weapon").count(), 1, "one Weapons chip");
+      if (await page.locator("#b-drawer").isHidden()) await page.click("#b-settings");
+      await page.click("#b-tab-pool");
       await page.click("#b-weapon");
       const n = await page.locator(".pop input[type=checkbox]").count();
       await page.keyboard.press("Escape");
@@ -263,8 +266,10 @@ test("[slow] a build finished for one character is never shown under another", a
     await page.waitForFunction(() => document.querySelector<HTMLSelectElement>("#b-char")?.value, { timeout: 10_000 });
     const [builtFor, other] = (await page.locator("#b-char option").allInnerTexts()).filter((n) => n !== "No character") as [string, string];
     await page.selectOption("#b-char", builtFor);
-    await page.click("#b-sec-adv .b-sec-head button");   // the time budget is under Advanced, collapsed by default
+    await page.click("#b-settings");   // the time budget is under Advanced, in the Settings drawer
+    await page.click("#b-tab-advanced");
     await page.fill("#b-budget", "3");
+    await page.click("#b-drawer-close");
     await page.click("#b-run");
     await page.selectOption("#b-char", other);
     // The job ends when Build is enabled again.
@@ -276,8 +281,8 @@ test("[slow] a build finished for one character is never shown under another", a
 
     // Switching back shows it, under the right name.
     await page.selectOption("#b-char", builtFor);
-    await page.waitForSelector("#b-result h2", { timeout: 10_000 });
-    assert.equal(await page.locator("#b-result h2").first().innerText(), `Best suit for ${builtFor}`);
+    // the other character's "Current suit" heading is still there until the parked result draws: wait for it to go
+    await page.waitForFunction((n) => document.querySelector("#b-result h2")?.textContent === `Best suit for ${n}`, builtFor, { timeout: 10_000 });
     await page.locator("#b-result").getByRole("button", { name: "Full sheet" }).click();
     assert.match(await page.locator("#b-result .sheet").first().innerText(), new RegExp(builtFor));
 
@@ -302,8 +307,10 @@ test("[slow] focus moves on, not to the page body, when a build finishes, is can
     await openTab(page, "builder");
     await page.waitForFunction(() => document.querySelector<HTMLSelectElement>("#b-char")?.value, { timeout: 10_000 });
     const name = await page.locator("#b-char").inputValue();
-    await page.click("#b-sec-adv .b-sec-head button");
+    await page.click("#b-settings");
+    await page.click("#b-tab-advanced");
     await page.fill("#b-budget", "2");
+    await page.click("#b-drawer-close");
     await page.click("#b-run");
     await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>("#b-run")?.disabled && document.querySelector("#b-result h2"), undefined, { timeout: 60_000 });
     await page.waitForFunction(() => document.activeElement?.tagName === "H2", undefined, { timeout: 5_000 });
@@ -332,9 +339,9 @@ test("[slow] focus moves on, not to the page body, when a build finishes, is can
   }
 });
 
-// With no scans there is no character: Build and Save are disabled and say why, rather than staying live
+// With no scans there is no character: the Build and save buttons are disabled and say why, rather than staying live
 // and only answering with a toast.
-test("[slow] with no character, Build best suit and Save profile are disabled with the reason", async (t) => {
+test("[slow] with no character, Build, Save profile and Save as template are disabled with the reason", async (t) => {
   const why = unavailable();
   if (why) return t.skip(why);
   const dataDir = mkdtempSync(join(tmpdir(), "packrat-ui-nochar-"));
@@ -342,8 +349,8 @@ test("[slow] with no character, Build best suit and Save profile are disabled wi
   const { app, page, errors } = await launch(dataDir);
   try {
     await openTab(page, "builder");
-    await page.waitForSelector("#b-no-char");
-    for (const id of ["#b-run", "#b-save"]) {
+    await page.waitForSelector("#b-no-char", { state: "attached" });
+    for (const id of ["#b-run", "#b-run-foot", "#b-save", "#b-save-tpl"]) {
       assert.equal(await page.locator(id).isDisabled(), true, `${id} is disabled`);
       assert.match(await page.locator(id).getAttribute("title") || "", /no character to build for/);
       assert.equal(await page.locator(id).getAttribute("aria-describedby"), "b-no-char");
@@ -638,8 +645,10 @@ test("[slow] a saved run or run list that lands after a character switch is not 
     await page.waitForFunction(() => document.querySelector<HTMLSelectElement>("#b-char")?.value, { timeout: 10_000 });
     const [builtFor, other] = (await page.locator("#b-char option").allInnerTexts()).filter((n) => n !== "No character") as [string, string];
     await page.selectOption("#b-char", builtFor);
-    await page.click("#b-sec-adv .b-sec-head button");   // the time budget is under Advanced, collapsed by default
+    await page.click("#b-settings");   // the time budget is under Advanced, in the Settings drawer
+    await page.click("#b-tab-advanced");
     await page.fill("#b-budget", "3");
+    await page.click("#b-drawer-close");
     await page.click("#b-run");
     await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>("#b-run")?.disabled, undefined, { timeout: 60_000 });
     await page.waitForSelector("#b-runs .run-main", { state: "attached", timeout: 10_000 });

@@ -106,8 +106,10 @@ test("[slow] the item tooltip shows on every screen that draws an item: Inventor
 
     await go(page, "#/builder/Dorran", "#b-current .b-tip");
     await tipShows(page, page.locator("#b-current .b-tip").first(), "the Suit Builder's current suit");
-    await page.click("#b-sec-adv .b-sec-head button");
+    await page.click("#b-settings");   // the time budget is under Advanced, in the Settings drawer (issue #272)
+    await page.click("#b-tab-advanced");
     await page.fill("#b-budget", "2");
+    await page.click("#b-drawer-close");
     await page.click("#b-run");
     await page.waitForFunction(() => /Best suit for/.test(document.querySelector("#b-result h2")?.textContent || ""), undefined, { timeout: 60_000 });
     await tipShows(page, page.locator("#b-result .b-tip").first(), "a Suit Builder result piece");

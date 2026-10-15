@@ -201,7 +201,7 @@
 .tipwrap { display: inline-flex; border-radius: var(--radius-sm); }
 
 /* ---------------------------------------------------------------- overlays */
-.pop { position: fixed; width: var(--popover-w); max-height: calc(100vh - 16px); overflow: auto; background: var(--color-surface-raised); color: var(--color-text); border: var(--border-width-frame) solid var(--color-border); border-image: var(--frame-image); border-radius: var(--radius-lg); box-shadow: var(--shadow-2); z-index: var(--z-popover); }
+.pop { position: fixed; width: var(--popover-w); max-width: calc(100vw - 16px); max-height: calc(100vh - 16px); overflow: auto; background: var(--color-surface-raised); color: var(--color-text); border: var(--border-width-frame) solid var(--color-border); border-image: var(--frame-image); border-radius: var(--radius-lg); box-shadow: var(--shadow-2); z-index: var(--z-popover); }
 .pop:focus { outline: none; }
 .pop-body { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-4); }
 @media (prefers-reduced-motion: no-preference) { .pop, .tip { animation: pop-in var(--duration-fast) var(--ease-standard); } }
