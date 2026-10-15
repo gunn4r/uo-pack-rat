@@ -1,6 +1,6 @@
 // mcp.test.mts — the built-in MCP server (issue #211; `app/mcp.mts`, `app/mcp-tools.mts`) on a real server and temp data folder.
 //
-// the built-in MCP server (issue #211; `app/mcp.mts`, `app/mcp-tools.mts`) on a real server and temp data folder, its `mcp.json` asking for port 0 so no test races another or a Pack Rat running on 47615: `initialize` negotiating each supported protocol version and answering the newest to any other, with `serverInfo` and the instructions; a notification's 202, an unknown method (-32601) and tool (-32602), a parse error (-32700), a batch refused, an unsupported `MCP-Protocol-Version` header (400), arguments a tool's schema refuses as an `isError` result; the listener's guards (another Host, any Origin, its own included, no or a wrong token, GET and DELETE, another path, a non-JSON content type, a body over 1 MB); off by default with nothing written, `PUT /api/mcp` refusing anything but the two booleans and opening and closing the listener at once (connection refused once off), `mcp.json` saved `0600`; `POST /api/mcp/token` replacing the token with the old one refused at once, and a file without one getting one; a busy port falling back to a free one without saving it, and a broken `mcp.json` reading as off with a log line; every read tool over the demo fixtures with paging, and `character_sheet`'s Resisting Spells minimum with a run saved before it opening (issue #261); `build_suit` for two characters (the second build of the same inputs reusing the saved run, buffs named, No character saved and reused, listed by `noCharacter` and read back as `character: null` with its effective totals, and a No character fill with pins not saved; `onlyContainers` narrowing the pool into its own run, `[]` as no list, non-serials refused, and a bag or an item named with where it sits), the run tools and `score_suit` over them; the in-game tools refused with the switch off (and still listed) while `stop_actions` writes the stop flag, and with it on writing the same `queue.jsonl` line the Grab button's `POST /api/bridge` writes (refused while the bridge is offline, a ground chest highlighted by its serial), an Organize trip through the Organize route with its one-at-a-time and stale-stamp refusals, and `get_action_status` reading the bridge's report; the tools reaching a `--token` app server; and the MCP SDK's own `Client` and `StreamableHTTPClientTransport` connecting, listing the tools and calling one. Fix round 1: an id with no method refused, the content type in any case, `POST /api/mcp/token` refusing fields; a hand-edited `mcp.json` (one bad field keeps the token, a BOM, an empty or broken file, a data folder that cannot take a new token leaving MCP off); property rules the route would drop refused with the accepted forms, slots, kinds, slayers and tags in any case, rows carrying their container and root serials; `container_contents` on a bag inside a chest; `score_suit` keeping the hands legal around a named weapon and planning with Manual's buffs (`manualBuffs` while `buffsCount` is on); suit results' `effectiveTotals` (paperdoll resists, Divine Fury's shares) on `score_suit`, `build_suit`, `get_suit_build`, `get_run` and a reused run, and `unreachableFloors` and `diagnostics` for a hard floor no piece reaches (issues #216, #217), with the suit's `swing`; an empty `pinned` as no pins and a fill without `currentScore`; a build replaced by a newer call saying so (a parked core); `get_action_status` on an id nobody queued; and `organize_trip` counting a move only when its put step is reported (a refused trip, a take without its put); `build_suit`'s `rarity` (issue #262) set, cleared with `any` or a template without one, and kept when left out; `list_containers` (issue #276) over a captured house by its id or its name in any case (label, fill, area, level, position and top kinds; an unknown house naming the houses) and `outside` for the ground containers in no house; `label_containers` adding, renaming, pinning, unpinning and removing labels through `PUT /api/organize` with its `changed` event, refusing a bad batch whole (empty, unknown serial, trash, a bag, a label a rule or the catch-all uses, no label to remove, a serial twice, no name, a name over 64 characters, pinning a rule's target, a salvaged setup), and an Organize plan read before a label change refused as stale; `scan` (issue #281) refused with actions off, the bridge offline or a bridge without the scan feature, queuing each `what` as its script's line (a bad script refused by the route), and answering done with the newer scan's counts (or, for the house, the newer house capture), scanning within waitSeconds when none arrives in time (another character's scan and an older one do not count), or the bridge's refusal. All `[fast]`.
+// the built-in MCP server (issue #211; `app/mcp.mts`, `app/mcp-tools.mts`) on a real server and temp data folder, its `mcp.json` asking for port 0 so no test races another or a Pack Rat running on 47615: `initialize` negotiating each supported protocol version and answering the newest to any other, with `serverInfo` and the instructions; a notification's 202, an unknown method (-32601) and tool (-32602), a parse error (-32700), a batch refused, an unsupported `MCP-Protocol-Version` header (400), arguments a tool's schema refuses as an `isError` result; the listener's guards (another Host, any Origin, its own included, no or a wrong token, GET and DELETE, another path, a non-JSON content type, a body over 1 MB); off by default with nothing written, `PUT /api/mcp` refusing anything but the two booleans and opening and closing the listener at once (connection refused once off), `mcp.json` saved `0600`; `POST /api/mcp/token` replacing the token with the old one refused at once, and a file without one getting one; a busy port falling back to a free one without saving it, and a broken `mcp.json` reading as off with a log line; every read tool over the demo fixtures with paging, and `character_sheet`'s Resisting Spells minimum with a run saved before it opening (issue #261); `build_suit` for two characters (the second build of the same inputs reusing the saved run, buffs named, No character saved and reused, listed by `noCharacter` and read back as `character: null` with its effective totals, and a No character fill with pins not saved; `onlyContainers` narrowing the pool into its own run, `[]` as no list, non-serials refused, and a bag or an item named with where it sits), the run tools and `score_suit` over them; the in-game tools refused with the switch off (and still listed) while `stop_actions` writes the stop flag, and with it on writing the same `queue.jsonl` line the Grab button's `POST /api/bridge` writes (refused while the bridge is offline, a ground chest highlighted by its serial), an Organize trip through the Organize route with its one-at-a-time and stale-stamp refusals, and `get_action_status` reading the bridge's report; the tools reaching a `--token` app server; and the MCP SDK's own `Client` and `StreamableHTTPClientTransport` connecting, listing the tools and calling one. Fix round 1: an id with no method refused, the content type in any case, `POST /api/mcp/token` refusing fields; a hand-edited `mcp.json` (one bad field keeps the token, a BOM, an empty or broken file, a data folder that cannot take a new token leaving MCP off); property rules the route would drop refused with the accepted forms, slots, kinds, slayers and tags in any case, rows carrying their container and root serials; `container_contents` on a bag inside a chest; `score_suit` keeping the hands legal around a named weapon and planning with Manual's buffs (`manualBuffs` while `buffsCount` is on); suit results' `effectiveTotals` (paperdoll resists, Divine Fury's shares) on `score_suit`, `build_suit`, `get_suit_build`, `get_run` and a reused run, and `unreachableFloors` and `diagnostics` for a hard floor no piece reaches (issues #216, #217), with the suit's `swing`; an empty `pinned` as no pins and a fill without `currentScore`; a build replaced by a newer call saying so (a parked core); `get_action_status` on an id nobody queued; and `organize_trip` counting a move only when its put step is reported (a refused trip, a take without its put); `build_suit`'s `rarity` (issue #262) set, cleared with `any` or a template without one, and kept when left out; `list_containers` (issue #276) over a captured house by its id or its name in any case (label, fill, area, level, position and top kinds; an unknown house naming the houses) and `outside` for the ground containers in no house; `label_containers` adding, renaming, pinning, unpinning and removing labels through `PUT /api/organize` with its `changed` event, refusing a bad batch whole (empty, unknown serial, trash, a bag, a label a rule or the catch-all uses, no label to remove, a serial twice, no name, a name over 64 characters, pinning a rule's target, a salvaged setup), a batch that changes nothing saving nothing and keeping a strategy label's origin, a page's save between its read and write applied over once and a second one refusing the batch (issue #280), and an Organize plan read before a label change refused as stale; `scan` (issue #281) refused with actions off, the bridge offline or a bridge without the scan feature, queuing each `what` as its script's line (a bad script refused by the route), and answering done with the newer scan's counts (or, for the house, the newer house capture), scanning within waitSeconds when none arrives in time (another character's scan and an older one do not count), or the bridge's refusal. All `[fast]`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, readFileSync, existsSync, statSync, mkdirSync, chmodSync, renameSync } from "node:fs";
@@ -18,6 +18,7 @@ import { vaultHouse } from "./house-fixture.mts";
 import { sseReader } from "./server-routes-fixture.mts";
 import { emptyRuleQuery, emptyOrganizeConfig, type OrganizeConfig } from "./organize-config.mts";
 import { ACTIONS_OFF, MCP_DEFAULT_PORT, PROTOCOL_VERSIONS } from "./mcp.mts";
+import { ToolError, TOOLS, type ToolContext } from "./mcp-tools.mts";
 import { BRIDGE_OFFLINE, RESIST_KEYS } from "./vault-lib.mts";
 import { characterEntry, characterProfile, type ProfilesV3, type TemplateMap } from "./build-spec.mts";
 import { applyBuffs, buffSkillValues } from "./buffs.mts";
@@ -813,6 +814,7 @@ test("[fast] label_containers adds, renames, pins and removes labels through the
       { serial: B, change: "unchanged", name: "Reagents", pinned: false, was: { name: "Reagents", pinned: false } },
     ]);
     assert.equal(r.data.labels, 3);
+    assert.equal(r.data.saved, true);
     await sse.readUntil((b) => b.includes('event: changed\ndata: {"what":"inventory","by":"mcp"'));
     const labels = savedLabels(sv.dir);
     assert.deepEqual([labels[String(C)], labels[String(A)]], [{ serial: C, name: "Gems", origin: "manual" }, { serial: A, name: "Overflow", pinned: true, origin: "manual" }]);
@@ -863,6 +865,65 @@ test("[fast] label_containers refuses a bad batch whole, naming the entry and wh
     assert.equal(r.ok, false);
     assert.match(r.text, /hand-edited and parts of it were dropped.*open Organize and save the setup first/);
   } finally { await salvaged.s.close(); }
+});
+
+test("[fast] label_containers saves nothing for a batch that changes nothing, and keeps a strategy label's origin", async () => {
+  const auto = { ...HOUSE_CONFIG, labels: { ...HOUSE_CONFIG.labels, [String(B)]: { serial: B, name: "Reagents", origin: "strategy:simple" as const } } };
+  const sv = await serve({ demo: false, before: (dir) => labelHouse(dir, auto) });
+  const sse = sseReader(await fetch(sv.s.url + "/api/events"));
+  try {
+    await sse.readUntil((b) => b.includes("event: hello"));
+    const port = await mcpPort(sv), file = join(sv.dir, "organize.json");
+    const before = readFileSync(file, "utf8"), mtime = statSync(file).mtimeMs;
+    const r = await call(port, "label_containers", { changes: [{ serial: B, name: "Reagents" }, { serial: A, pinned: false }] });
+    assert.equal(r.ok, true, r.text);
+    assert.deepEqual(r.data.applied.map((x: { change: string }) => x.change), ["unchanged", "unchanged"]);
+    assert.equal(r.data.saved, false);
+    assert.match(r.data.note, /nothing changed/);
+    assert.equal(readFileSync(file, "utf8"), before);
+    assert.equal(statSync(file).mtimeMs, mtime);
+    // An unchanged entry in a batch that does change something keeps its label as it was.
+    assert.equal((await call(port, "label_containers", { changes: [{ serial: B, name: "Reagents" }, { serial: C, name: "Gems" }] })).ok, true);
+    const events = await sse.readUntil((b) => b.includes("event: changed"));
+    assert.equal(events.split("event: changed").length - 1, 1, "only the batch that changed something told the pages");
+    assert.equal(savedLabels(sv.dir)[String(B)]!.origin, "strategy:simple");
+  } finally { await sse.cancel(); await sv.s.close(); }
+});
+
+// label_containers' handler over a context that calls the app as app/mcp.mts does, with `between` run after each read
+// of the Organize setup: a page saving in the gap between the tool's read and its write.
+async function labelRacing(sv: Served, changes: unknown[], between: () => Promise<void>): Promise<unknown> {
+  const ctx: ToolContext = {
+    async api(path, init = {}) {
+      const r = await app<Record<string, unknown>>(sv, path, init.method, init.body);
+      if (r.status >= 400) throw new ToolError(String(r.body.error), r.body.code);
+      if (path === "/api/organize" && !init.method) await between();
+      return r.body as never;
+    },
+    sleep: async () => {},
+    memory: { actions: new Map(), replaced: new Set(), filled: new Set(), plans: new Map() },
+  };
+  return TOOLS.find((t) => t.name === "label_containers")!.handler({ changes }, ctx);
+}
+// A page's save of one label rename, made from the setup as it reads now.
+async function pageRename(sv: Served, serial: number, name: string): Promise<void> {
+  const { config, stamp } = (await app<{ config: OrganizeConfig; stamp: string }>(sv, "/api/organize")).body;
+  const put = await app(sv, "/api/organize", "PUT", { ...config, labels: { ...config.labels, [String(serial)]: { ...config.labels[String(serial)]!, name } }, base: stamp });
+  assert.equal(put.status, 200, JSON.stringify(put.body));
+}
+
+test("[fast] label_containers applies its batch again over a page's save that lands between its read and write, once", async () => {
+  const sv = await serve({ demo: false, before: (dir) => labelHouse(dir) });
+  try {
+    let saves = 0;
+    await labelRacing(sv, [{ serial: C, name: "Gems" }], async () => { if (!saves++) await pageRename(sv, B, "Herbs"); });
+    assert.equal(saves, 2, "read again once");
+    const labels = savedLabels(sv.dir);
+    assert.deepEqual([labels[String(B)]!.name, labels[String(C)]!.name], ["Herbs", "Gems"], "both changes are saved");
+    // A page saving again after the second read too: the batch is refused, and the page's saves stand.
+    await assert.rejects(labelRacing(sv, [{ serial: C, name: "Jewels" }], () => pageRename(sv, B, `Herbs ${++saves}`)), (e: Error) => e instanceof ToolError && /kept changing.*nothing was saved/.test(e.message));
+    assert.deepEqual([savedLabels(sv.dir)[String(B)]!.name, savedLabels(sv.dir)[String(C)]!.name], [`Herbs ${saves}`, "Gems"]);
+  } finally { await sv.s.close(); }
 });
 
 test("[fast] an Organize plan read before a label change is stale for organize_trip", async () => {

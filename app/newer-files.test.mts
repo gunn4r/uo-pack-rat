@@ -28,7 +28,9 @@ test("[fast] newer files: organize, item kinds, the house map and profiles are r
   };
   try {
     const organize = await call("/api/organize");
-    assert.deepEqual(organize.body, { ok: true, config: emptyOrganizeConfig(), problems: [], readOnly: notice("organize.json", 2) });
+    const { stamp, ...read } = organize.body;
+    assert.deepEqual(read, { ok: true, config: emptyOrganizeConfig(), problems: [], readOnly: notice("organize.json", 2) });
+    assert.match(String(stamp), /^[0-9a-f]{16}$/);
     const kinds = await call("/api/item-kinds");
     assert.deepEqual(kinds.body, { ok: true, version: 1, names: { ruby: "gem" }, graphics: {}, readOnly: notice("item-kinds.json", 3) });
     const houses = await call("/api/house-map");

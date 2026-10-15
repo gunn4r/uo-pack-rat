@@ -16,7 +16,7 @@ import type { AutoStrategy, OrganizeProposal, OrganizeProposeApiResponse } from 
 // The drawer's state: the strategy, the ticked chests (null until the first proposal says which it ticks by
 // default), the last proposal and the setup it was worked out from (Accept works it out again when the setup has
 // changed since), and `seq`, so an answer a newer request (or a tick) overtook is dropped.
-interface Draft { strategy: AutoStrategy; containers: number[] | null; proposal: OrganizeProposal | null; base: string; busy: boolean; error: string | null; notice: string | null; seq: number }
+interface Draft { strategy: AutoStrategy; containers: number[] | null; proposal: OrganizeProposal | null; base: string; stamp: string | null; busy: boolean; error: string | null; notice: string | null; seq: number }
 let draft: Draft | null = null;
 let handle: DrawerHandle | null = null;
 function drawer(): DrawerHandle {
@@ -31,7 +31,7 @@ const part = (id: string): HTMLElement => $<HTMLElement>(`#${id}`, drawer().root
 
 export async function openAutoOrganize(opener: HTMLElement | null = null): Promise<void> {
   const strategy = draft?.strategy ?? "simple";
-  draft = { strategy, containers: null, proposal: null, base: "", busy: true, error: null, notice: null, seq: 0 };
+  draft = { strategy, containers: null, proposal: null, base: "", stamp: null, busy: true, error: null, notice: null, seq: 0 };
   const seg = segmented({ label: "Strategy", value: strategy, options: (["simple", "detailed", "build"] as const).map((v) => ({ value: v, label: STRATEGY_TEXT[v].label })), onChange: (v) => { setStrategy(v as AutoStrategy); } });
   drawer().body.replaceChildren(
     box("section", { class: "auto-section", id: "auto-strategy" }, el("h3", { class: "t-md" }, "1. Strategy"), seg, txt(STRATEGY_TEXT[strategy].text, "t-sm muted auto-strategy-text")),
@@ -77,6 +77,7 @@ async function propose(): Promise<void> {
   d.busy = false;
   d.error = err;
   d.proposal = r ? r.proposal : null;
+  d.stamp = r ? r.stamp : null;
   if (r) { d.containers = r.proposal.containers; d.base = JSON.stringify(state.organize.config); }
   paint();
 }
@@ -147,7 +148,8 @@ async function accept(): Promise<void> {
   }
   d.busy = true;
   paintAccept();
-  const err = await saveConfig(p.config);
+  // Saved over the setup the server worked the proposal out from, which may be newer than the page's copy.
+  const err = await saveConfig(() => p.config, d.stamp);
   d.busy = false;
   if (err) { d.error = err; paint(); return; }
   drawer().close();

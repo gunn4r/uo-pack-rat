@@ -75,12 +75,13 @@ export interface BridgeState {
   seen: Set<string>;
   pending: Map<string, string>;
 }
-// The page's copy of the Organize setup (issue #11; ui/organize-data.mts keeps it): GET /api/organize's config
-// and the problems its salvage reported, the blacklisted serials (never labelled), every location text inside a
+// The page's copy of the Organize setup (issue #11; ui/organize-data.mts keeps it): GET /api/organize's config,
+// its stamp (which a save names) and the problems its salvage reported, the blacklisted serials (never labelled), every location text inside a
 // labelled container mapped to the same path by label (dom.mts's whereText), the last plan, and the presets
 // (fetched once, when the rule editor first opens).
 export interface OrganizePage {
   config: OrganizeConfig | null;
+  stamp: string | null;
   problems: string[];
   blacklist: number[];
   places: Map<string, string>;
@@ -131,7 +132,7 @@ export const state: AppState = {
   // renders its own rows, which already carry full records. Cleared whenever load() refreshes the
   // inventory (a rescan can move or drop a piece).
   itemCache: new Map(),
-  organize: { config: null, problems: [], blacklist: [], places: new Map(), plan: null, presets: null },
+  organize: { config: null, stamp: null, problems: [], blacklist: [], places: new Map(), plan: null, presets: null },
 };
 
 // ---------------------------------------------------------------- bridge (Highlight / Grab / Go to)

@@ -69,17 +69,17 @@ function render(): void {
         button({ label: "Open Containers", variant: "primary", attrs: { id: "org-open-containers" }, onClick: () => { location.hash = "#/containers"; } }), auto)));
     return;
   }
-  body().replaceChildren(...compactChildren([problemsEl(cfg), rulesCard(cfg), stage === "ready" ? planCard(cfg) : null]));
+  body().replaceChildren(...compactChildren([problemsEl(), rulesCard(cfg), stage === "ready" ? planCard(cfg) : null]));
 }
 function emptyState(title: string, text: string, action: HTMLElement | null): HTMLElement {
   return box("section", { class: "card org-empty" }, box("div", { class: "empty-state" }, el("h2", { class: "t-lg" }, title), el("p", { class: "muted" }, text), action));
 }
 // A hand-edited organize.json the server salvaged: what it dropped, and Save setup, since the server runs no trip
 // until the setup has been saved as it now reads (POST /api/organize/trip's 409).
-function problemsEl(cfg: OrganizeConfig): HTMLElement | null {
+function problemsEl(): HTMLElement | null {
   const p = state.organize.problems;
   if (!p.length) return null;
-  const save = button({ label: "Save setup", size: "sm", attrs: { id: "org-save-setup" }, onClick: () => { void saveConfig(cfg).then((err) => { if (err) toast(err, "bad"); else toast("Setup saved.", "good"); }); } });
+  const save = button({ label: "Save setup", size: "sm", attrs: { id: "org-save-setup" }, onClick: () => { void saveConfig((now) => ({ ...now })).then((err) => { if (err) toast(err, "bad"); else toast("Setup saved.", "good"); }); } });
   return message({ tone: "warn", title: "Part of organize.json could not be read and was left out", text: `${p.join(" · ")}. Check the rules below, then save the setup: no trip runs until you do.`, actions: [save] });
 }
 
@@ -107,10 +107,10 @@ function rulesCard(cfg: OrganizeConfig): HTMLElement {
 function ruleRow(cfg: OrganizeConfig, r: OrganizeRule, i: number, rep: PlanRuleReport | undefined): HTMLElement {
   const handle = button({ label: `Move ${r.name}`, icon: "grip", iconOnly: true, variant: "ghost", size: "sm", cls: "org-grip", attrs: { title: "Drag, or press ↑ or ↓", "aria-keyshortcuts": "ArrowUp ArrowDown" } });
   handle.addEventListener("keydown", (e) => {
-    const to = e.key === "ArrowUp" ? i - 1 : e.key === "ArrowDown" ? i + 1 : -1;
-    if (to < 0 || to >= cfg.rules.length) return;
+    const by = e.key === "ArrowUp" ? -1 : e.key === "ArrowDown" ? 1 : 0;
+    if (!by) return;
     e.preventDefault();
-    void reorder(i, to, true);
+    void reorder(r.id, (at) => at + by, true);
   });
   const targets = r.targets.map((s) => targetView(s, cfg, containers()));
   const chain = targets.length
@@ -119,8 +119,8 @@ function ruleRow(cfg: OrganizeConfig, r: OrganizeRule, i: number, rep: PlanRuleR
   const more = button({ label: `Actions for ${r.name}`, icon: "more", iconOnly: true, variant: "ghost", size: "sm", cls: "org-more", onClick: () => {
     menu(more, [
       { label: "Edit…", onSelect: () => { void openRuleEditor({ rule: r }); } },
-      { label: "Move up", disabled: i === 0 ? "Already first" : null, onSelect: () => { void reorder(i, i - 1, false); } },
-      { label: "Move down", disabled: i === cfg.rules.length - 1 ? "Already last" : null, onSelect: () => { void reorder(i, i + 1, false); } },
+      { label: "Move up", disabled: i === 0 ? "Already first" : null, onSelect: () => { void reorder(r.id, (at) => at - 1, false); } },
+      { label: "Move down", disabled: i === cfg.rules.length - 1 ? "Already last" : null, onSelect: () => { void reorder(r.id, (at) => at + 1, false); } },
       ...(r.id === "auto-other" ? [{ label: REVIEW_OTHER, onSelect: () => showKind("other") }] : []),
       "divider",
       { label: "Delete…", danger: true, onSelect: () => { void deleteRule(r); } },
@@ -148,7 +148,7 @@ const reviewOther = (): HTMLElement => button({ label: REVIEW_OTHER, variant: "g
 function pickRow(cfg: OrganizeConfig, key: "catchAll" | "emptyBagsTo", id: string, label: string, none: string, rep: PlanRuleReport | undefined, extra: HTMLElement | null = null): HTMLElement {
   const now = cfg[key] ?? null, domId = `org-${id.replace("-", "")}`;
   const s = select([{ value: "", label: none }, ...targetOptions(cfg, containers(), [], { bags: false })], now == null ? "" : String(now), { size: "sm", attrs: { id: domId } });
-  s.addEventListener("change", () => { void saveConfig({ ...cfg, [key]: s.value ? +s.value : null }).then((err) => { if (err) { s.value = now == null ? "" : String(now); toastBad(err); } }); });
+  s.addEventListener("change", () => { void saveConfig((c) => ({ ...c, [key]: s.value ? +s.value : null })).then((err) => { if (err) { s.value = now == null ? "" : String(now); toastBad(err); } }); });
   return box("div", { class: "org-catchall", "data-rule": id }, el("label", { for: domId, class: "t-sm strong" }, label), s, countsEl(rep), extra);
 }
 // Drag by the handle: the row is draggable only while its handle is held, so text in a row stays selectable.
@@ -161,18 +161,17 @@ function wireDrag(row: HTMLElement, handle: HTMLElement, i: number): void {
   row.addEventListener("drop", (e) => {
     e.preventDefault();
     row.classList.remove("drop");
-    if (dragFrom != null && dragFrom !== i) void reorder(dragFrom, i, false);
+    if (dragFrom != null && dragFrom !== i) void reorder(state.organize.config!.rules[dragFrom]!.id, () => i, false);
   });
 }
-async function reorder(from: number, to: number, keyboard: boolean): Promise<void> {
-  const cfg = state.organize.config!;
-  const next = moveRule(cfg, from, to);
-  if (next === cfg) return;
-  const moved = cfg.rules[from]!;
-  const err = await saveConfig(next);
+// Rule `id` moved from where it is when the save's turn comes to `to(where)`, so a second ↓ pressed while the first
+// is saving moves it once more.
+async function reorder(id: string, to: (at: number) => number, keyboard: boolean): Promise<void> {
+  const err = await saveConfig((cfg) => { const at = cfg.rules.findIndex((r) => r.id === id); return at < 0 ? cfg : moveRule(cfg, at, to(at)); });
   if (err) { toastBad(err); return; }
-  const at = next.rules.findIndex((r) => r.id === moved.id);
-  $<HTMLElement>("#org-live")!.textContent = `${moved.name} moved to position ${at + 1} of ${next.rules.length}.`;
+  const rules = state.organize.config!.rules, at = rules.findIndex((r) => r.id === id), moved = rules[at];
+  if (!moved) return;
+  $<HTMLElement>("#org-live")!.textContent = `${moved.name} moved to position ${at + 1} of ${rules.length}.`;
   if (keyboard) $<HTMLElement>(`.org-rule[data-rule="${CSS.escape(moved.id)}"] .org-grip`)?.focus();
 }
 const toastBad = (text: string): void => toast(text, "bad");
@@ -291,7 +290,7 @@ function failedEl(f: { index: number; steps: FailedStep[] }): HTMLElement {
       txt(`${s.name}: ${s.msg}`), button({ label: "Pin this item", size: "sm", variant: "ghost", attrs: { "data-no-tip": "" }, onClick: () => { void pinItem(s); } })), s, { focus: false }))) });
 }
 async function pinItem(s: FailedStep): Promise<void> {
-  const err = await saveConfig(pinnedWith(state.organize.config!, s.serial));
+  const err = await saveConfig((cfg) => pinnedWith(cfg, s.serial));
   if (err) { toastBad(err); return; }
   if (failed) failed = failed.steps.length > 1 ? { ...failed, steps: failed.steps.filter((x) => x.serial !== s.serial) } : null;
   toast(`${s.name} is pinned: Organize leaves it where it is.`, "good");

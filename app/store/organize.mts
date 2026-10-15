@@ -1,15 +1,22 @@
 // organize.mts — <data>/organize.json: Organize's setup (issue #11, app/organize-config.mts; GET/PUT /api/organize).
-import { existsSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
 import { basename } from "node:path";
 import { emptyOrganizeConfig, salvageOrganizeConfig, MAX_SETUP_BYTES, type OrganizeConfig } from "../organize-config.mts";
 import { jsonErrorReason } from "../paste-scan.mts";
 import { migrate, newerNotice } from "../migrate.mts";
 import { readJsonFile, refuseNewer, writeJsonFile } from "./json-file.mts";
 
+// The stamp of a missing organize.json (a content stamp is 16 hex digits, so it never reads as one).
+const MISSING_STAMP = "none";
+
 // Read through the salvage, so a hand edit that breaks one rule drops that rule, not the whole setup, and
 // `problems` says what went; a file that does not parse is moved aside (the way the settings store treats
 // settings.json) and Organize starts empty. A file made by a newer Pack Rat is read the same way, as far as this build
 // understands it, with `readOnly` saying so, and is never written over. Written only by PUT /api/organize, whole.
+// stamp() names the file's current content (issue #280): a write given the stamp it read (`base`) is refused when the
+// file has changed since, so two writers cannot overwrite each other. The check and the write run with no await
+// between them, so nothing else can land in the gap.
 export function createOrganizeStore(file: string) {
   function read(): { config: OrganizeConfig; problems: string[]; readOnly?: string } {
     if (!existsSync(file)) return { config: emptyOrganizeConfig(), problems: [] };
@@ -26,9 +33,17 @@ export function createOrganizeStore(file: string) {
     const why = got.bad.why === "too-big" ? `is over ${MAX_SETUP_BYTES / 1e6} MB` : got.bad.why === "check" ? got.bad.reason : `did not parse (${jsonErrorReason(got.bad.error)})`;
     return { config: emptyOrganizeConfig(), problems: [`organize.json ${why}; it was moved to ${basename(got.aside)} and Organize starts empty`] };
   }
-  function write(config: OrganizeConfig): void {
+  function stamp(): string {
+    let bytes: Buffer;
+    try { bytes = readFileSync(file); } catch (e) { if ((e as NodeJS.ErrnoException).code === "ENOENT") return MISSING_STAMP; throw e; }
+    return createHash("sha256").update(bytes).digest("hex").slice(0, 16);
+  }
+  function write(config: OrganizeConfig, base?: string): { ok: boolean; stamp: string } {
+    const now = base === undefined ? null : stamp();
+    if (now !== null && now !== base) return { ok: false, stamp: now };
     refuseNewer(file, "organize");
     writeJsonFile(file, config, { indent: 2 });
+    return { ok: true, stamp: stamp() };
   }
-  return { read, write };
+  return { read, stamp, write };
 }

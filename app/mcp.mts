@@ -117,7 +117,7 @@ export function createMcp(opts: McpOptions): McpController {
       if (clientId) headers["x-client-id"] = clientId;
       const r = await fetch(`http://127.0.0.1:${opts.appPort()}${path}`, { method, headers, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
       const data = await r.json().catch(() => ({})) as Record<string, unknown>;
-      if (!r.ok) throw new ToolError(typeof data.error === "string" ? data.error : `${method} ${path} failed (${r.status})`);
+      if (!r.ok) throw new ToolError(typeof data.error === "string" ? data.error : `${method} ${path} failed (${r.status})`, data.code);
       return data as never;
     },
     memory: { actions: new Map(), replaced: new Set(), filled: new Set(), plans: new Map() },
