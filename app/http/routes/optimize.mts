@@ -9,14 +9,16 @@ import { runKey, reusableRun, runSummary, manualRun, type RunOpts, type SavedRun
 import { OPTS_LIMITS, RUN_DEFAULTS, runSettingsError, type RunSettings } from "../../run-settings.mts";
 import { manualBase, manualPlan } from "../../buffs.mts";
 import { evaluateSuit } from "../../evaluate.mts";
-import type { RunBody, RunsListBody, RunSummary } from "../../runs-types.mts";
+import type { RunBody, RunsListBody, RunSummary, ScoreShare } from "../../runs-types.mts";
 import { sse } from "../../services/events.mts";
 import type { Job } from "../../services/jobs.mts";
 import { isManualSuit } from "../../store/ui-prefs.mts";
 import { rarityRank } from "../../item-query.mts";
 import type { RulesV1RarityItem } from "../../schema/types.d.mts";
 import { GEAR_SLOTS, NOBODY, RARITY_PREFERENCES, RESIST_KEYS, buildPools, getRules, missingFlags, toOptItem, totalsOf, type Character, type Inventory, type Item, type OptItem, type Profile, type RarityPreference, type ResistStep, type RunBuffs } from "../../vault-lib.mts";
-import { characterProfile, poolFromSpec, specFromRunSettings } from "../../build-spec.mts";
+import { characterProfile, planBuild, poolFromSpec, specFromRunSettings } from "../../build-spec.mts";
+import { safeAppendLog } from "../../log.mts";
+import { stepsFor } from "../../swing.mts";
 import { send, asObject, SSE_HEADERS } from "../respond.mts";
 import { NEXT, type Route } from "../router.mts";
 import type { ServerContext } from "../context.mts";
@@ -306,13 +308,16 @@ export function routes(ctx: ServerContext): Route[] {
       const pieces = Object.fromEntries(Object.entries(suit).map(([slot, serial]) => [slot, toOptItem(inv.items[serial]!)]));
       const worn: Record<string, OptItem> = {};
       for (const it of Object.values(inv.items)) if (it.equippedBy === character && it.slot && GEAR_SLOTS.includes(it.slot)) worn[it.slot] ??= toOptItem(it);
-      // what made up its score, with the minimums its settings and the character's skills give now, as POST /api/evaluate plans it
-      const c = character === NOBODY ? null : inv.characters[character] as Character, p = settings as Profile & { buffs?: RunBuffs };
-      const items: Record<string, Item> = Object.fromEntries(Object.entries(suit).map(([slot, serial]) => [slot, inv.items[serial]!]));
-      const planned = evaluateSuit({ profile: manualBase(p, c), character: c, suit: pieces,
-        buffs: manualPlan(c, Object.values(inv.items).filter((it) => it.equippedBy === character), items, c ? p.race || "human" : null, p.buffs?.on ?? [], p.buffs?.skills ?? {}) }).planned;
-      const run = manualRun({ id: randomUUID(), character, createdAt: new Date().toISOString(), settings: settings as Record<string, unknown>, inventoryStamp, suit: pieces, worn, slots: GEAR_SLOTS,
-        shares: scoreShares(planned as DiagnosticsProfile, totalsOf(pieces)) });
+      // what made up its score, planned as build_suit plans a hand-picked suit, with SSI by step as a search would score it (optimize-worker.mts); a failure saves the run without it
+      let shares: ScoreShare[] | undefined;
+      try {
+        const c = character === NOBODY ? null : inv.characters[character] as Character, totals = totalsOf(pieces), stam = totals.stamPool || 0;
+        const items: Record<string, Item> = Object.fromEntries(Object.entries(suit).map(([slot, serial]) => [slot, inv.items[serial]!]));
+        const { profile } = planBuild(specFromRunSettings(settings as RunSettings), { character: c, worn: Object.values(inv.items).filter((it) => it.equippedBy === character), race: (settings as Profile).race, suit: items });
+        const { ssiSteps } = stepsFor(profile, Object.fromEntries(Object.entries(pieces).map(([slot, it]) => [slot, [it]])), pieces, { min: stam, max: stam }, undefined, totals.ssi || 0);
+        shares = scoreShares((ssiSteps ? { ...profile, ssiSteps } : profile) as DiagnosticsProfile, totals);
+      } catch (e) { safeAppendLog(ctx.config.paths.log, `${new Date().toISOString()} manual run shares failed, saved without them: ${String((e as Error)?.stack || e)}\n`); }
+      const run = manualRun({ id: randomUUID(), character, createdAt: new Date().toISOString(), settings: settings as Record<string, unknown>, inventoryStamp, suit: pieces, worn, slots: GEAR_SLOTS, shares });
       runStore.write(run);
       eventBus.broadcast("changed", { what: "runs", at: Date.now() });
       return send(res, 200, { ok: true, run: runSummary(run) } satisfies RunBody<RunSummary>);

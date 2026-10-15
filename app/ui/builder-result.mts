@@ -161,16 +161,18 @@ function headlineCard(res: OptimizeResult, current: OptSuit, suit: OptSuit, prof
     shares);
 }
 
-// What made up the score (issue #273): each weighted property's share as a bar (ui/builder-model.mts shareRows), the top three until "Show all", which stays open for the page session. None for a run saved before it.
+// What made up the score (issue #273): each weighted property's share as a bar (ui/builder-model.mts shareRows). Collapsed: the top three positive rows, small shares folded into Other (its names in its accessible name and tooltip), and every negative row. "Show all" lists every property on its own row and stays open for the page session. A resist held at its minimum carries a short "incl. min" mark whose sentence a screen reader and a tooltip give. None for a run saved before it.
 let sharesAll = false;
 function scoreBreakdown(shares: ScoreShare[] | undefined): HTMLElement | null {
   if (!shares?.length) return null;
-  const rows = shareRows(shares), shown = sharesAll ? rows : rows.slice(0, 3);
+  const all = shareRows(shares, 0), folded = shareRows(shares), positive = folded.filter((r) => !r.negative);
+  const shown = sharesAll ? all : [...positive.slice(0, 3), ...folded.filter((r) => r.negative)];
   const items = shown.map((r, i) => box("li", { class: `b-share${r.negative && !shown[i - 1]?.negative && i ? " b-share-neg" : ""}`, ...(r.holds ? { title: r.holds } : {}) },
-    box("span", { class: "b-share-name" }, txt(r.label), r.note ? txt(` · ${r.note}`, "t-sm muted") : null),
+    box("span", { class: "b-share-name" }, txt(r.label), r.holds ? txt(`: ${r.holds}`, "sr") : null,
+      r.note ? el("span", { class: "t-sm muted", title: r.note, "aria-hidden": "true" }, " · incl. min") : null, r.note ? txt(` (${r.note})`, "sr") : null),
     meter(Math.round(Math.abs(r.share) * 1000), 1000, { tone: r.negative ? "warn" : undefined, label: `${r.label} ${r.pct}` }),
     txt(r.pct, `b-share-pct${r.negative ? " tone-warn" : ""}`)));
-  const more = rows.length > 3 ? button({ label: sharesAll ? "Show fewer" : `Show all (${rows.length})`, variant: "ghost", size: "sm", attrs: { id: "b-shares-more" },
+  const more = positive.length > 3 || positive.some((r) => r.holds) ? button({ label: sharesAll ? "Show fewer" : `Show all (${all.length})`, variant: "ghost", size: "sm", attrs: { id: "b-shares-more" },
     onClick: () => { sharesAll = !sharesAll; void rerender().then(() => document.getElementById("b-shares-more")?.focus()); } }) : null;
   return box("div", { class: "b-shares" }, el("h3", { class: "t-sm muted", id: "b-shares-h" }, "What made up the score"), box("ul", { class: "b-share-list", "aria-labelledby": "b-shares-h" }, ...items), more);
 }

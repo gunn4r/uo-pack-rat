@@ -1137,9 +1137,13 @@ test("[fast] POST /api/runs saves Manual's suit as a manual run: its shape, its 
   assert.equal(full.result.best[piece.slot!]!.serial, piece.serial);
   assert.ok(Object.hasOwn(full.result.best, "feet") && Object.hasOwn(full.result.best, "earrings"), "every gear slot");
   assert.deepEqual(full.result.perSlotChanges.map((c) => [c.slot, c.toSerial]), [[piece.slot, piece.serial]]);
-  // what made up its score, from its settings' one weight (issue #273)
-  const luck = asJson<{ run: { result: { totals: { after: Record<string, number> }; shares?: unknown } } }>(await (await get(`/api/runs/${j.run.id}`)).json()).run.result;
-  assert.deepEqual(luck.shares, luck.totals.after.luck ? [{ property: "luck", share: 1 }] : []);
+  // what made up its score (issue #273): every weighted property the suit has, largest first, the sizes summing to 1
+  const weighted = asJson<{ ok: boolean; run: { id: string } }>(await (await post({ character, suit, settings: { weights: { physResist: 2, fireResist: 1, luck: -1 }, race: "human" } })).json()).run.id;
+  const { shares, totals } = asJson<{ run: { result: { shares: Array<{ property: string; share: number }>; totals: { after: Record<string, number> } } } }>(await (await get(`/api/runs/${weighted}`)).json()).run.result;
+  const t = totals.after, sum = 2 * t.physResist! + t.fireResist! + t.luck!;
+  assert.ok(t.physResist! > 0 && t.fireResist! > 0 && t.luck! > 0, JSON.stringify(t));
+  assert.deepEqual(Object.fromEntries(shares.map((x) => [x.property, Math.round(x.share * 1e6)])),
+    { physResist: Math.round(2 * t.physResist! / sum * 1e6), fireResist: Math.round(t.fireResist! / sum * 1e6), luck: -Math.round(t.luck! / sum * 1e6) }, JSON.stringify(shares));
   // the checks
   assert.equal((await post({ character: "Nobody", suit, settings })).status, 404);
   assert.equal((await post({ character, suit: {}, settings })).status, 400);

@@ -351,4 +351,6 @@ test("[fast] builder model: what made up the score, largest first, shares under 
   // a lone small share keeps its own name; a share that rounds to nothing says so
   assert.deepEqual(shareRows([{ property: "di", share: 0.996 }, { property: "luck", share: 0.004 }]).map((r) => [r.label, r.pct]), [["Damage increase", "100%"], ["Luck", "<1%"]]);
   assert.deepEqual(shareRows([]), [], "a run saved before #273 has none");
+  // Show all: a fold of 0 lists every property on its own row
+  assert.deepEqual(shareRows([{ property: "di", share: 0.9 }, { property: "luck", share: 0.01 }, { property: "lmc", share: 0.01 }, { property: "hci", share: 0 }], 0).map((r) => [r.label, r.pct]), [["Damage increase", "90%"], ["Luck", "1%"], ["Lower mana cost", "1%"], ["Hit chance increase", "0%"]]);
 });
