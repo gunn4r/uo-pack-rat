@@ -1,19 +1,19 @@
 // builder-model.test.mts — `app/ui/builder-model.mts`, the Suit Builder's pure logic.
 //
-// `app/ui/builder-model.mts`, the Suit Builder's pure logic: No character's name in words (issue #12), the one-line summaries collapsed panel sections show (weights heaviest first with equal resists folded into "each resist", requirements with soft ones marked, the candidate pool, the Advanced knobs), the Advanced fields' validation messages with the allowed range ("Enter a whole number from 1 to 10,000.") and that the page's limits equal the server's `OPTS_LIMITS`, which field a server refusal names, a resist tile's outcome line (short, meets, at cap, over cap), the result's other-changes badges (gains first, missed requirements as losses), "after the change" values and pool estimates, the compare table's differing piece cells, best totals (past the cap counts as the cap) and hidden-rows note, the three-run compare limit, and a saved run's automatic label and badges, and the Weapons chip and summary wording, and a weight row's worth hint (issue #217). All `[fast]`. The rarity preference (issue #262) in words: the pool summary, the help line, the settings change, the rarity total and the Rarity row. What made up the score (issue #273): the rows, the Other fold, a negative share set apart.
+// `app/ui/builder-model.mts`, the Suit Builder's pure logic: No character's name in words (issue #12), the one-line summaries collapsed panel sections show (weights heaviest first with equal resists folded into "each resist", requirements with soft ones marked, the candidate pool, the Advanced knobs), the Advanced fields' validation messages with the allowed range ("Enter a whole number from 1 to 10,000.") and that the page's limits equal the server's `OPTS_LIMITS`, which field a server refusal names, a resist tile's outcome line (short, meets, at cap, over cap), the result's other-changes badges (gains first, missed requirements as losses), "after the change" values and pool estimates, the compare table's differing piece cells, best totals (past the cap counts as the cap) and hidden-rows note, the three-run compare limit, and a saved run's automatic label and badges, and the Weapons chip and summary wording, and a weight row's trade-off hover and the weights summary in importance (issues #217, #274). All `[fast]`. The rarity preference (issue #262) in words: the pool summary, the help line, the settings change, the rarity total and the Rarity row. What made up the score (issue #273): the rows, the Other fold, a negative share set apart.
 //
 // Lives in app/ for the reason app/ui-render.test.mts gives.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { NOBODY, setRules, resistCapsFor, playerCaps, settingsDiff } from "./vault-lib.mts";
+import { NOBODY, setRules, resistCapsFor, settingsDiff } from "./vault-lib.mts";
 import { buffSkillValues, runBuffs } from "./buffs.mts";
 import type { RulesV1 } from "./schema/types.d.mts";
 import {
   propName, weightsSummary, requirementsSummary, poolSummary, withStoredRoots, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError,
   resistOutcome, locationCrumbs, otherChanges, afterChange, compareModel, hiddenRowsNote, toggleCompare, runAutoLabel, runBadges, plural, KNOB_RANGES,
   resistCapError, withResistCap, capNote, resistCapsSummary, resistMinimumText, capsLine, anyOverridden, effectiveFloor, floorCapWarning, pruneResistCaps,
-  weaponsSummary, weaponsChipText, weaponMustHaveChipText, toggleWeapon, weaponName, withBuffs, pastCapBadges, runSettingsDiff, weightWorth, templateBuffsLine, sourceTitle, who, rarityHelp, rarityTotal, rarityDetail, shareRows,
+  weaponsSummary, weaponsChipText, weaponMustHaveChipText, toggleWeapon, weaponName, withBuffs, pastCapBadges, runSettingsDiff, weightTradeoff, templateBuffsLine, sourceTitle, who, rarityHelp, rarityTotal, rarityDetail, shareRows,
   type Knobs,
 } from "./ui/builder-model.mts";
 import { OPTS_LIMITS } from "./vault-server.mts";
@@ -35,9 +35,10 @@ test("[fast] builder model: property names read as words in rule rows", () => {
   assert.equal(propName("sk:magery"), "Magery skill bonus");
 });
 
-test("[fast] builder model: the weights summary puts the heaviest first, folds equal resists and counts the rest", () => {
-  assert.equal(weightsSummary(melee.weights), "DCI 10 · HCI 10 · each resist 6 · SSI 5 · DEX 4 · HPR 4 · 7 more");
-  assert.equal(weightsSummary({ fireResist: 6, hci: 2 }), "Fire 6 · HCI 2", "unequal or partial resists are listed one by one");
+test("[fast] builder model: the weights summary names importances, puts the heaviest first, folds equal resists and counts the rest", () => {
+  assert.equal(weightsSummary(melee.weights), "DCI 100 · HCI 100 · each resist 93 · DI 67 · SSI 67 · DEX 22 · 7 more");
+  assert.equal(weightsSummary({ fireResist: 6, hci: 2 }), "Fire 93 · HCI 20", "unequal or partial resists are listed one by one");
+  assert.equal(weightsSummary({ luck: 0.05, fc: -1 }), "Luck 5.6 · FC -0.4", "one decimal below 10");
   assert.equal(weightsSummary({}), "No weights set");
   assert.equal(weightsSummary({ tagPenalty: -25 }), "No weights set", "the tag penalty is not a weight the player sets here");
 });
@@ -301,17 +302,21 @@ test("[fast] resist caps: a floor above its cap counts only up to it, warns, and
   assert.deepEqual(pruneResistCaps(undefined, "elf"), {});
 });
 
-test("[fast] builder model: a weight row's worth hint names what the weight makes a typical range worth", () => {
-  // A melee main's caps: resist caps of 70 on the paperdoll
-  const caps = playerCaps({ caps: { physResist: 70, dci: 45, hpRegen: 18 } });
-  assert.equal(weightWorth("luck", 3, caps), "= 1,500 per 500 Luck");
-  assert.equal(weightWorth("dci", 10, caps), "= 450 per 45 DCI");
-  assert.equal(weightWorth("physResist", 6, caps), "= 420 per 70 Phys");
-  assert.equal(weightWorth("luck", 0.8, caps), "= 400 per 500 Luck");
-  assert.equal(weightWorth("stamPool", 2, caps), "= 90 per 45 Stam pool");
-  assert.equal(weightWorth("sk:magery", 2, caps), "= 30 per 15 +Magery");
-  assert.equal(weightWorth("castingFocus", 2, caps), null, "no typical range");
-  assert.equal(weightWorth("luck", Number.NaN, caps), null, "no number, no hint");
+test("[fast] builder model: a weight row's hover says the trade-off with the top weight, in whole units of the smaller one (issue #274)", () => {
+  const w = melee.weights!;
+  assert.equal(weightTradeoff("luck", w), "At these settings, 1 DCI is worth about 200 Luck.");
+  assert.equal(weightTradeoff("physResist", w), "At these settings, 1 DCI is worth about 2 Phys.");
+  assert.equal(weightTradeoff("dci", w), "Defense chance increase has the highest weight: the other weights are compared with it.");
+  assert.equal(weightTradeoff("di", { di: 1, luck: 0.5 }), "At these settings, 1 DI is worth about 2 Luck.", "the top by importance, Luck, is worth less per point");
+  assert.equal(weightTradeoff("luck", { luck: 0.001, dci: 10 }), "At these settings, 1 DCI is worth about 10,000 Luck.");
+  assert.equal(weightTradeoff("luck", { tagPenalty: 100, dci: 1, luck: 0.05 }), "At these settings, 1 DCI is worth about 20 Luck.", "the tag penalty is not a weight row");
+  // a negative weight, either way round; a zero weight; no positive weight to compare with
+  assert.equal(weightTradeoff("intBonus", { dci: 10, intBonus: -2 }), "At these settings, 1 DCI makes up for about 5 INT.");
+  assert.equal(weightTradeoff("intBonus", { dci: 1, intBonus: -5 }), "At these settings, 1 INT takes away about as much as 5 DCI adds.");
+  assert.equal(weightTradeoff("luck", { dci: 10, luck: 0 }), "At weight 0, Luck doesn't count.");
+  assert.equal(weightTradeoff("intBonus", { intBonus: -2 }), "Intelligence bonus counts against the score.");
+  // a Resisting Spells skill bonus also lifts the resist minimums, which its weight leaves out
+  assert.equal(weightTradeoff("sk:resisting spells", { dci: 10, "sk:resisting spells": 2 }), "At these settings, 1 DCI is worth about 5 +Resisting Spells. It also raises your resist minimums.");
 });
 
 // Issue #212: the template badge's buffs line compares the lists as sets, and a source link is named by its page.

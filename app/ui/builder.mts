@@ -5,18 +5,18 @@
 // is ui/runs.mts; they share the builder's state and call each other through ui/builder-session.mts. The panel is drawn
 // from the session's profile plus its Advanced knobs, so what a build sends, what a profile saves and what a run
 // snapshots are read from state, never from the DOM.
-import { NOBODY, PROP_LABELS, NOT_BUILDER_KEYS, playerCaps, GEAR_SLOTS, tagUnits, WEAPON_EXCLUDES, MELEE_SKILLS, WEAPON_MUST_HAVE, flagLabel, getRules, RESIST_KEYS, RESIST_CAP_LIMITS, resistCapsFor, templateFrom, settingsDiff, bagLabel, toOptItem, totalsOf, fcCapFor, CASTING_SCHOOLS } from "../vault-lib.mts";
+import { NOBODY, PROP_LABELS, NOT_BUILDER_KEYS, importanceOf, roundImportance, weightOfImportance, GEAR_SLOTS, tagUnits, WEAPON_EXCLUDES, MELEE_SKILLS, WEAPON_MUST_HAVE, flagLabel, getRules, RESIST_KEYS, RESIST_CAP_LIMITS, resistCapsFor, templateFrom, settingsDiff, bagLabel, toOptItem, totalsOf, fcCapFor, CASTING_SCHOOLS } from "../vault-lib.mts";
 import { heldWeapon, ssiShareOf, swingOf, type SwingResult } from "../swing.mts";
 import { BUILTIN_PREFIX, characterBuffs, characterEntry, characterProfile, findTemplate, planBuild, specFromProfile, templateLabel, templateRefs, templateSettings, templateSpecFrom, type PlannedBuild } from "../build-spec.mts";
 import type { FcCap, ResistCap, RunBuffs, Character } from "../vault-lib.mts";
-import { buffById, gearNeedsText, overrideNote, planBuffs, plannedProfile, normalizeBuffs, runBuffs, toggleBuff, buffPlanOf, type BuffPlan } from "../buffs.mts";
+import { buffById, gearNeedsText, overrideNote, planBuffs, normalizeBuffs, runBuffs, toggleBuff, buffPlanOf, type BuffPlan } from "../buffs.mts";
 import { defaultStrLimit } from "../run-settings.mts";
 import { evaluateSuit } from "../evaluate.mts";
 import { state, invStamp } from "./store.mts";
 import type { BuilderJob, BuilderJobUi, FinishedBuild, BuildMeta } from "./store.mts";
 import { $, el, label, full, fmtN, fmtSecs, slotLabel, toast } from "./dom.mts";
 import { promptText } from "./dialog.mts";
-import { box, txt, button, icon, kbd, badge, message, select, input, field, switchControl, check, segmented, filterChip, pill, popover, closePopover, menu, searchInput, stepper, progress, tooltip, confirmDialog, modalOpen } from "./components.mts";
+import { box, txt, button, icon, kbd, badge, message, select, input, field, switchControl, check, segmented, filterChip, pill, popover, closePopover, menu, searchInput, stepper, progress, meter, tooltip, confirmDialog, modalOpen } from "./components.mts";
 import { api } from "./api.mts";
 import { buffChip, createBuffPicker, keepChipFocus, type BuffPicker, type BuffView, type PickerActions } from "./builder-buffs.mts";
 import { optimizeErrorMessage } from "./messages.mts";
@@ -26,7 +26,7 @@ import { putProfiles, setCharacterBuffs } from "./profiles.mts";
 import { session, commands, provide, readControls, type BuilderChange } from "./builder-session.mts";
 import { followJob, progressText, settingsCheck } from "./builder-parts.mts";
 import { characterNames } from "./roster.mts";
-import { nextSwingStep, speedText, swingLines, propName, weightsSummary, requirementsSummary, poolSummary, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistCapsSummary, resistMinimumText, pruneResistCaps, floorCapWarning, weaponsChipText, weaponMustHaveChipText, withStoredRoots, weaponName, toggleWeapon, weightWorth, fcCapText, rarityHelp, templateBuffsLine, sourceTitle, who, type KnobField } from "./builder-model.mts";
+import { nextSwingStep, speedText, swingLines, propName, weightsSummary, requirementsSummary, poolSummary, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistCapsSummary, resistMinimumText, pruneResistCaps, floorCapWarning, weaponsChipText, weaponMustHaveChipText, withStoredRoots, weaponName, toggleWeapon, weightTradeoff, fcCapText, rarityHelp, templateBuffsLine, sourceTitle, who, type KnobField } from "./builder-model.mts";
 import type { OptimizeResult, SavedRunLike, OptimizeStartApiResponse, OptimizeCancelApiResponse } from "./api-types.mts";
 
 // ---------------------------------------------------------------- panel state
@@ -387,13 +387,14 @@ function capFor(k: string): number | null {
   return (getRules().caps as Record<string, number>)[k] ?? null;
 }
 // A number input bound to obj[k]: a value that isn't a number keeps its field marked with the reason, and the
-// last good value stays in the profile.
-function boundNumber(obj: Record<string, number>, k: string, aria: string, focusKey: string): HTMLInputElement {
-  const i = input({ type: "number", size: "sm", value: obj[k], attrs: { "aria-label": aria, "data-key": focusKey } });
+// last good value stays in the profile. `conv` shows the stored value in another unit and stores what is typed back
+// in the stored one (a weight's importance); the stored value is written only when the field is edited.
+function boundNumber(obj: Record<string, number>, k: string, aria: string, focusKey: string, conv?: { show: (v: number) => number; store: (n: number) => number }): HTMLInputElement {
+  const i = input({ type: "number", size: "sm", value: conv ? conv.show(obj[k]!) : obj[k], attrs: { "aria-label": aria, "data-key": focusKey } });
   i.addEventListener("input", () => {
     const err = ruleValueError(i.value);
     setInlineError(i, err);
-    if (!err) { obj[k] = Number(i.value); updateTemplateBadge(); }
+    if (!err) { obj[k] = conv ? conv.store(Number(i.value)) : Number(i.value); updateTemplateBadge(); }
   });
   return i;
 }
@@ -403,11 +404,14 @@ function setInlineError(control: HTMLElement, err: string | null): void {
   const id = `${control.id || (control.id = `b-in-${Math.random().toString(36).slice(2, 8)}`)}-err`;
   holder.querySelector(`#${CSS.escape(id)}`)?.remove();
   control.classList.toggle("invalid", !!err);
+  // the error joins any description the control already has (a weight's trade-off) and leaves it when cleared
+  const described = (control.getAttribute("aria-describedby") || "").split(" ").filter((x) => x && x !== id);
   if (err) {
     control.setAttribute("aria-invalid", "true");
-    control.setAttribute("aria-describedby", id);
+    described.push(id);
     holder.append(el("span", { class: "field-error", id }, err));
-  } else { control.removeAttribute("aria-invalid"); control.removeAttribute("aria-describedby"); }
+  } else control.removeAttribute("aria-invalid");
+  if (described.length) control.setAttribute("aria-describedby", described.join(" ")); else control.removeAttribute("aria-describedby");
 }
 function requirementsSection(): HTMLElement {
   const p = session.profile!, name = session.character!;
@@ -501,21 +505,31 @@ function weightsSection(): HTMLElement {
   const p = session.profile!;
   const keys = Object.keys(p.weights!).filter((k) => !NOT_BUILDER_KEYS.has(k));
   return section("weights", "Weights", { count: keys.length, summary: () => weightsSummary(p.weights), body: () => {
-    // each row says what its weight makes a typical range worth, in the player's terms with the panel's buffs
-    const name = session.character!, caps = playerCaps(plannedProfile(p, state.inv!.characters[name] as Character | null, buffPlan(name, p.race, panelBuffs())));
+    // each row shows and takes the weight's importance (vault-lib.mts importanceOf), with a bar scaled to the largest
+    // and the trade-off with the top property on hover and focus; the profile keeps the weight per point
+    const paints: Array<() => void> = [];
     const rows = keys.map((k) => {
-      const nm = propName(k), num = boundNumber(p.weights!, k, `${nm} weight`, k), worth = el("span", { class: "t-sm muted b-worth" });
-      // hidden while the field holds no number (its error shows instead), so it never names a weight the profile doesn't hold
-      const paint = (): void => { worth.textContent = (ruleValueError(num.value) ? null : weightWorth(k, p.weights![k]!, caps)) ?? ""; worth.hidden = !worth.textContent; };
-      num.addEventListener("input", paint);
-      paint();
-      return box("div", { class: "rule-row weight", "data-key": k }, ruleName(nm), num,
-        button({ label: `Remove weight: ${nm}`, icon: "close", iconOnly: true, variant: "ghost", size: "sm", onClick: () => { delete p.weights![k]; redraw("weights"); focusIn("weights", ".b-add"); } }), worth,
+      const nm = propName(k), num = boundNumber(p.weights!, k, `${nm} weight`, k, { show: (w) => roundImportance(importanceOf(k, w)), store: (n) => weightOfImportance(k, n) });
+      const hover = el("span", { class: "sr", id: `b-wtip-${k.replace(/\W/g, "_")}` }), bar = box("span", { class: "b-wbar" }, meter(0, 1), hover);
+      const paint = (): void => {
+        const imp = importanceOf(k, p.weights![k]!), top = Math.max(...keys.map((x) => Math.abs(importanceOf(x, p.weights![x]!))));
+        bar.firstElementChild!.replaceWith(meter(Math.abs(imp), top, { tone: imp < 0 ? "warn" : undefined, label: `${nm} weight ${roundImportance(imp)}` }));
+        bar.firstElementChild!.setAttribute("aria-describedby", hover.id);
+        hover.textContent = weightTradeoff(k, p.weights!);
+      };
+      paints.push(paint);
+      num.addEventListener("input", () => paints.forEach((f) => f()));
+      tooltip(num, () => hover.textContent!);
+      tooltip(bar, () => hover.textContent!);
+      num.setAttribute("aria-describedby", hover.id);
+      return box("div", { class: "rule-row weight", "data-key": k }, ruleName(nm), num, bar,
+        button({ label: `Remove weight: ${nm}`, icon: "close", iconOnly: true, variant: "ghost", size: "sm", onClick: () => { delete p.weights![k]; redraw("weights"); focusIn("weights", ".b-add"); } }),
         k === "ssi" ? swingStepsSetting() : k === "fc" ? fcCapNote() : null);
     });
+    paints.forEach((f) => f());
     const add = filterChip({ label: "Add weight", add: true, attrs: { class: "fchip add b-add", id: "b-addweight" } });
     add.onclick = () => propertyPicker(add, "Add weight", Object.keys(p.weights!), (k) => { p.weights![k] = 1; redraw("weights"); focusIn("weights", `.rule-row[data-key="${CSS.escape(k)}"] input`, true); });
-    return [el("p", { class: "help" }, txt("How much each point of a property is worth to the score. Higher counts more.")), rows.length ? box("div", { class: "b-rules" }, ...rows) : null, add];
+    return [el("p", { class: "help" }, txt("How much a good amount of each property matters, about 0 to 100. Higher counts more.")), rows.length ? box("div", { class: "b-rules" }, ...rows) : null, add];
   } });
 }
 // ---- swing steps (app/swing.mts): the switch on the SSI weight row, and the requirement row's "Next step" The worn suit's swing with the panel's buffs, the weapon a build is known to hold before it runs (a locked hand keeps the worn piece); null when it holds no weapon of known speed.

@@ -2,12 +2,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { propertyReach, buildSuitMip, type BuiltMip } from "./mip.mts";
-import { preBuildDiagnostics, resultDiagnostics, scoreShares, withDiagnostics, weightDiagnostics, weaponFlagDiagnostics, onlyRootsDiagnostics, suggestedWeight, DOMINANT_SHARE, DOMINANT_WORTH, THIN_SUIT, type DiagnosticsProfile } from "./diagnostics.mts";
+import { preBuildDiagnostics, resultDiagnostics, scoreShares, withDiagnostics, weightDiagnostics, weaponFlagDiagnostics, onlyRootsDiagnostics, DOMINANT_SHARE, DOMINANT_WORTH, THIN_SUIT, type DiagnosticsProfile } from "./diagnostics.mts";
 import { solveExact, type OptPools } from "./exact-solver.mts";
 import { core, defaultProfiles, templateNames, type OptOptions } from "./solver-fixture.mts";
 import { actionApplies, actionWords, applyAction, handledAction, nextSwingStep, resultChecks, swingLines } from "./ui/builder-model.mts";
 import { readFileSync } from "node:fs";
-import { buildPools, foldSnapshots, playerCaps, typicalRange, type OptItem } from "./vault-lib.mts";
+import { buildPools, foldSnapshots, importanceOf, roundImportance, typicalRange, weightOfImportance, IMPORTANCE_K, NOT_BUILDER_KEYS, PROP_LABELS, SKILL_NAMES, type OptItem } from "./vault-lib.mts";
 import { upgradeScan } from "./scan-schema.mts";
 import { plannedProfile } from "./buffs.mts";
 import { optionalSlotsFor } from "./mip.mts";
@@ -217,22 +217,11 @@ test("[fast] propertyReach's candidate rule against a bound written out: a seria
   assert.deepEqual(propertyReach(pools, current, ["ring"], ["ring", "neck"], ["luck"]), { luck: { max: 38, min: -4 } });
 });
 
-// ---- the weight scale (weight_dominates)
+// ---- the weight scale (typicalRange, importance, weight_dominates)
 
-test("[fast] typicalRange: the registry's typical, else the build's cap in the player's terms, else 15 for a skill bonus, else null", () => {
-  const caps = playerCaps({ caps: { physResist: 70, dci: 45, fc: 2, dexBonus: 70, ssi: 0 } });
-  assert.equal(typicalRange("physResist", caps), 70);
-  assert.equal(typicalRange("dci", caps), 45);
-  assert.equal(typicalRange("fc", caps), 2);
-  assert.equal(typicalRange("luck", caps), 500);
-  assert.equal(typicalRange("dexBonus", caps), 25, "the stat ceiling less the raw stat is a character's limit, not a span");
-  assert.deepEqual(["stamPool", "manaPool", "hitsPool"].map((k) => typicalRange(k, caps)), [45, 45, 35], "a pool's span follows its parts");
-  assert.equal(typicalRange("sk:magery", caps), 15);
-  assert.equal(typicalRange("ssi", caps), null, "a cap of 0 has no span");
-  assert.equal(typicalRange("castingFocus", caps), null, "no cap in this build and no typical");
-  // a resist cap override, and caps before the buffs rather than after
-  assert.equal(typicalRange("fireResist", playerCaps({ caps: { fireResist: 0 }, resistCapOverrides: { fireResist: { cap: 95, shard: 70 } } })), 95);
-  assert.equal(typicalRange("dci", playerCaps({ caps: { dci: 30 }, buffs: { caps: { dci: 45 } } })), 45);
+test("[fast] typicalRange: the registry's typical (a resist's cap of 70, the usual shard cap, a span), else 15 for a skill bonus, else null; never a build's caps", () => {
+  assert.deepEqual(["physResist", "dci", "fc", "luck", "dexBonus", "castingFocus", "sk:magery", "tagPenalty"].map((k) => typicalRange(k)), [70, 45, 2, 500, 25, 12, 15, null]);
+  assert.deepEqual(["stamPool", "manaPool", "hitsPool"].map((k) => typicalRange(k)), [45, 45, 35], "a pool's span follows its parts");
 });
 
 // A melee main: Resisting Spells 100 (a minimum of 40), luck weight 3, the totals of a suit like the one found. `full` is a pool that reaches no more than the suit has, so the thin-suit guard passes.
@@ -242,23 +231,61 @@ const meleeAfter: Record<string, number> = { physResist: 65, fireResist: 65, col
 const meleeMain = (weights: Record<string, number> = meleeWeights): DiagnosticsProfile => ({ weights, caps: meleeCaps, mins: { physResist: 40, fireResist: 40, coldResist: 40, poisonResist: 40, energyResist: 40 } });
 const full = (after: Record<string, number>): Record<string, { max: number }> => Object.fromEntries(Object.entries(after).map(([k, v]) => [k, { max: v }]));
 
-test("[fast] weight_dominates: luck at weight 3 on a melee main's suit, and nothing else; Set weight to the others' median, 0.8", () => {
+// ---- importance (issue #274): the number the Weights rows show, per-point weight × typical range × K, one stable factor per property
+
+const WEIGHT_KEYS = [...Object.keys(PROP_LABELS).filter((k) => !NOT_BUILDER_KEYS.has(k)), ...SKILL_NAMES.map((n) => `sk:${n}`)];
+
+test("[fast] importance: K puts a typical range's worth of 450 (DCI 10, HCI 10) at 100", () => {
+  assert.equal(IMPORTANCE_K, 2 / 9);
+  assert.equal(importanceOf("dci", 10), 100);
+  assert.equal(roundImportance(importanceOf("physResist", 6)), 93);
+  assert.equal(roundImportance(importanceOf("luck", 3)), 333);
+  assert.equal(roundImportance(importanceOf("luck", 0.1)), 11);
+  assert.equal(roundImportance(importanceOf("fc", 2)), 0.9, "one decimal below 10");
+  assert.equal(roundImportance(importanceOf("sk:magery", 2)), 6.7, "a skill bonus's typical range is 15");
+  assert.equal(roundImportance(importanceOf("castingFocus", 3)), 8);
+  assert.deepEqual([importanceOf("tagPenalty", -25), importanceOf("di", 0)], [-25, 0], "a key with no typical range keeps its number; zero is zero");
+  // a negative weight is a negative importance, and converts back the same way
+  assert.equal(roundImportance(importanceOf("intBonus", -2)), -11);
+  const near = (a: number, b: number): void => assert.ok(Math.abs(a - b) < 1e-12, `${a} ≈ ${b}`);
+  near(weightOfImportance("intBonus", -50), -9);
+  near(weightOfImportance("luck", 100), 0.9);
+});
+
+test("[fast] importance: every property the Weights list offers has a typical range, so every row converts", () => {
+  for (const k of WEIGHT_KEYS) assert.ok((typicalRange(k) ?? 0) > 0, k);
+  assert.ok(["stamPool", "manaPool", "hitsPool"].every((k) => WEIGHT_KEYS.includes(k)), "the pools are offered too");
+});
+
+test("[fast] importance: per point → importance → per point is the identity, and an edit stores importance / (typical × K), for random weights on every property", () => {
+  let seed = 274;
+  const rand = (): number => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+  for (const k of WEIGHT_KEYS) for (let i = 0; i < 50; i++) {
+    const w = (rand() - 0.3) * 10 ** (rand() * 4 - 2), typical = typicalRange(k)!;
+    const back = weightOfImportance(k, importanceOf(k, w));
+    assert.ok(Math.abs(back - w) <= 1e-12 * Math.max(1, Math.abs(w)), `${k} ${w} → ${back}`);
+    const typed = roundImportance((rand() - 0.2) * 200);
+    assert.equal(weightOfImportance(k, typed), typed / (typical * IMPORTANCE_K), `${k} ${typed}`);
+  }
+});
+
+test("[fast] weight_dominates: luck at weight 3 (importance 333) on a melee main's suit, and nothing else; Set weight to the others' median, 93", () => {
   const d = weightDiagnostics(meleeMain(), meleeAfter, full(meleeAfter));
-  assert.deepEqual(d.map((x) => [x.code, x.level, x.property, x.actions]), [["weight_dominates", "warn", "luck", [{ kind: "setWeight", property: "luck", value: 0.8 }]]]);
-  // the others' worths: resists 6 × 70 = 420 (five of them), DCI and HCI 450, SSI 480, DI 600 ... median 420
-  assert.deepEqual(d[0]!.values, { weight: 3, typical: 500, share: 33, ratio: 3.6, median: 420, suggested: 0.8 });
-  assert.equal(d[0]!.message, "Luck makes up 33% of this suit's score: at weight 3, 500 Luck is worth as much as 3.6 times the median of your other weights. Try 0.8.");
+  assert.deepEqual(d.map((x) => [x.code, x.level, x.property, x.actions]), [["weight_dominates", "warn", "luck", [{ kind: "setWeight", property: "luck", value: 93 }]]]);
+  // the others' importances: resists 93 (five of them), DCI and HCI 100, SSI 107, DI 133 ... median 93; `weight` is the per-point one the build ran with
+  assert.deepEqual(d[0]!.values, { weight: 3, importance: 333, share: 33, ratio: 3.6, median: 93, suggested: 93 });
+  assert.equal(d[0]!.message, "Luck makes up 33% of this suit's score: at weight 333, it counts 3.6 times the median of your other weights. Try 93.");
   // the result's list carries it, with the pool's per-slot bound as the reach
   const pools = { ring: [mk(1, "ring", meleeAfter)] }, slots = { slots: ["ring"], optionalSlots: ["ring"] };
   assert.deepEqual(resultDiagnostics({ pools, ...slots, profile: meleeMain(), result: { totals: { after: meleeAfter } } }).map((x) => x.code), ["weight_dominates"]);
   // at the suggested weight it no longer dominates
-  assert.deepEqual(weightDiagnostics(meleeMain({ ...meleeWeights, luck: 0.8 }), meleeAfter, full(meleeAfter)), []);
+  assert.deepEqual(weightDiagnostics(meleeMain({ ...meleeWeights, luck: weightOfImportance("luck", 93) }), meleeAfter, full(meleeAfter)), []);
 });
 
 test("[fast] weight_dominates compares with the OTHER weights: two properties can flag, one can't", () => {
   const after = { luck: 500, dci: 40 };
   const d = weightDiagnostics({ weights: { luck: 3, dci: 1 }, caps: { dci: 45 } }, after, full(after));
-  assert.deepEqual(d.map((x) => [x.property, x.values!.ratio, x.values!.suggested]), [["luck", 33.3, 0.09]]);
+  assert.deepEqual(d.map((x) => [x.property, x.values!.ratio, x.values!.suggested]), [["luck", 33.3, 10]]);
   assert.deepEqual(weightDiagnostics({ weights: { luck: 3 } }, { luck: 500 }, full({ luck: 500 })), [], "alone, there is nothing to compare it with");
 });
 
@@ -291,15 +318,6 @@ test("[fast] weight_dominates needs both thresholds, and a suit that isn't thin"
   assert.equal(weightDiagnostics(meleeMain(), luckOnly, r)[0]!.property, "luck");
 });
 
-test("[fast] the suggested weight is the others' median worth over the typical range, to one significant figure", () => {
-  assert.equal(suggestedWeight(420, 500), 0.8);
-  assert.equal(suggestedWeight(100, 300), 0.3);
-  assert.equal(suggestedWeight(1234, 100), 10);
-  assert.equal(suggestedWeight(48, 500), 0.1);
-  assert.equal(suggestedWeight(450, 45), 10);
-  assert.equal(suggestedWeight(420, 15), 30);
-});
-
 // The demo data (app/fixtures/demo-*.json) folded, and a shipped template planned for one of its characters with that character's own pools.
 const demoScan = (name: string): ScanV2 => upgradeScan(JSON.parse(readFileSync(new URL(`./fixtures/demo-${name}.json`, import.meta.url), "utf8")), { shard: "uoalive" }) as ScanV2;
 const demoInv = foldSnapshots([demoScan("Kestrel"), demoScan("Dorran")]);
@@ -329,12 +347,14 @@ test("[fast] weight_dominates: every shipped template on the demo characters' fu
 });
 
 test("[fast] the page: Set weight's words, and it applies only while the panel holds the weight the build ran with", () => {
-  const setLuck = { kind: "setWeight", property: "luck", value: 0.8 } as const;
+  const setLuck = { kind: "setWeight", property: "luck", value: 90 } as const;
   assert.equal(handledAction(setLuck), true);
-  assert.deepEqual(actionWords(setLuck), { label: "Set Luck to 0.8", done: "Set ✓", toast: "Luck weight set to 0.8. Build again to use it.", stale: "The weight changed since this build, so this no longer applies." });
+  assert.deepEqual(actionWords(setLuck), { label: "Set Luck to 90", done: "Set ✓", toast: "Luck weight set to 90. Build again to use it.", stale: "The weight changed since this build, so this no longer applies." });
+  // the action names an importance; the profile gets it per point (90 / (500 × K)), and the check compares per point
   const p: { weights?: Record<string, number> } = { weights: { luck: 3, dci: 10 } };
   applyAction(p, setLuck, 3);
-  assert.deepEqual(p, { weights: { luck: 0.8, dci: 10 } });
+  assert.deepEqual(p, { weights: { luck: weightOfImportance("luck", 90), dci: 10 } });
+  assert.ok(Math.abs(p.weights!.luck! - 0.81) < 1e-12);
   // changed since the build (0.5): left alone; removed since: not put back; no build weight known: no button
   const changed = { weights: { luck: 0.5 } }, removed: { weights: Record<string, number> } = { weights: {} };
   assert.deepEqual([actionApplies(changed, setLuck, 3), actionApplies(removed, setLuck, 3), actionApplies({ weights: { luck: 3 } }, setLuck)], [false, false, false]);

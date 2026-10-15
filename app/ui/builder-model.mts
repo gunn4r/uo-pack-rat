@@ -3,7 +3,7 @@
 // "other changes" badges and "after the change" values, the compare table's differing rows and best values,
 // and a saved run's label and badges. No DOM and no page state, so app/builder-model.test.mts can check it
 // all directly; ui/builder.mts, ui/builder-result.mts and ui/runs.mts draw what it returns.
-import { NOBODY, labelOf, paperdollResist, propName, typicalRange, GEAR_SLOTS, NOT_BUILDER_KEYS, RESIST_KEYS, RESIST_CAP_LIMITS, SLOT_LABELS, settingsDiff, shardResistCap, WEAPON_SKILLS, WEAPON_EXCLUDES, SPELLBOOKS, MELEE_SKILLS, ubwsLetsIn, flagLabel } from "../vault-lib.mts";
+import { NOBODY, labelOf, paperdollResist, propName, importanceOf, roundImportance, weightOfImportance, RESIST_SKILL_KEY, GEAR_SLOTS, NOT_BUILDER_KEYS, RESIST_KEYS, RESIST_CAP_LIMITS, SLOT_LABELS, settingsDiff, shardResistCap, WEAPON_SKILLS, WEAPON_EXCLUDES, SPELLBOOKS, MELEE_SKILLS, ubwsLetsIn, flagLabel } from "../vault-lib.mts";
 import type { FcCap, PlannedBuffs, PropMap, ResistCap, RunSettings } from "../vault-lib.mts";
 import { applyBuffs, buffById, buffsDiff, capWord, signed, type BuffResult } from "../buffs.mts";
 import { RUN_SETTING_LIMITS, type Range } from "../run-settings.mts";
@@ -44,9 +44,9 @@ function groupedEntries(values: Record<string, number>): Array<[string, number]>
   if (!same) return entries.map(([k, v]) => [labelOf(k), v]);
   return [["each resist", resists[0]!], ...entries.filter(([k]) => !RESIST_KEYS.includes(k)).map(([k, v]): [string, number] => [labelOf(k), v])];
 }
-// "HCI 10 · DCI 10 · each resist 6 · SSI 5 · HPR 4 · DEX 4 · 7 more": the heaviest first.
+// "DCI 100 · HCI 100 · each resist 93 · SSI 67 · DEX 22 · 7 more": each weight's importance (vault-lib.mts importanceOf), the heaviest first.
 export function weightsSummary(weights: Record<string, number> = {}, shown = 6): string {
-  const all = groupedEntries(weights).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  const all = groupedEntries(Object.fromEntries(Object.entries(weights).map(([k, w]) => [k, roundImportance(importanceOf(k, w))]))).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
   if (!all.length) return "No weights set";
   const rest = all.length - shown;
   return [...all.slice(0, shown).map(([l, v]) => `${l} ${num(v)}`), rest > 0 ? `${rest} more` : ""].filter(Boolean).join(" · ");
@@ -427,7 +427,7 @@ export function actionApplies(p: PanelProfile, a: PanelAction, from?: number, co
 }
 export function applyAction(p: PanelProfile, a: PanelAction, from?: number, code?: DiagnosticCode): void {
   if (!actionApplies(p, a, from, code)) return;
-  if (a.kind === "setWeight") p.weights![a.property] = a.value;
+  if (a.kind === "setWeight") p.weights![a.property] = weightOfImportance(a.property, a.value);   // the action names an importance; the profile is per point
   else if (a.kind === "swingSteps") p.swingSteps = a.on;
   else if (a.kind === "lockSlot") (p.lockedSlots ||= []).push(a.slot);
   else if (a.kind === "setFloor") {
@@ -436,10 +436,17 @@ export function applyAction(p: PanelProfile, a: PanelAction, from?: number, code
     if (raises(code) && !(p.softFloors ||= []).includes(a.property)) p.softFloors.push(a.property);
   } else (p.softFloors ||= []).push(a.property);
 }
-// A weight row's worth hint: what the weight makes a typical range of the property worth ("= 1,500 per 500 Luck"), with `caps` in the player's terms (vault-lib.mts playerCaps); null for a property with no typical range or a weight that isn't a number.
-export function weightWorth(key: string, weight: number, caps: Record<string, number>): string | null {
-  const span = typicalRange(key, caps);
-  return span == null || !Number.isFinite(weight) ? null : `= ${num(weight * span)} per ${num(span)} ${labelOf(key)}`;
+// A weight row's hover (issue #274): the trade-off with the top property, the one with the highest importance, from the per-point weights' ratio in whole units of the smaller one ("At these settings, 1 DI is worth about 16 Luck."). The top row says the others are compared with it. A Resisting Spells skill bonus also lifts every resist's minimum, which its weight leaves out, so its hover says so.
+export function weightTradeoff(key: string, weights: Record<string, number>): string {
+  const w = weights[key]!, L = labelOf;
+  const top = Object.entries(weights).filter(([k, v]) => !NOT_BUILDER_KEYS.has(k) && Number.isFinite(v) && v > 0).sort((a, b) => importanceOf(b[0], b[1]) - importanceOf(a[0], a[1]))[0];
+  const about = (x: number): string => num(Math.max(1, Math.round(x)));
+  const line = !Number.isFinite(w) || w === 0 ? `At weight 0, ${propName(key)} doesn't count.`
+    : !top ? `${propName(key)} counts against the score.`
+    : top[0] === key ? `${propName(key)} has the highest weight: the other weights are compared with it.`
+    : w > 0 ? (w >= top[1] ? `At these settings, 1 ${L(key)} is worth about ${about(w / top[1])} ${L(top[0])}.` : `At these settings, 1 ${L(top[0])} is worth about ${about(top[1] / w)} ${L(key)}.`)
+    : -w >= top[1] ? `At these settings, 1 ${L(key)} takes away about as much as ${about(-w / top[1])} ${L(top[0])} adds.` : `At these settings, 1 ${L(top[0])} makes up for about ${about(top[1] / -w)} ${L(key)}.`;
+  return key === RESIST_SKILL_KEY ? `${line} It also raises your resist minimums.` : line;
 }
 // What a result's "Check your settings" lists: its diagnostics, warnings first; a run saved before them (no `diagnostics`) says what it knew, its unreachable hard floors, as one warning with no actions. On another suit's card (`alternative`) the floors_conflict rows are left out: their values are the best suit's.
 export function resultChecks(res: { diagnostics?: Diagnostic[] | undefined; unreachableFloors?: string[] | undefined }, withBuffs: boolean, alternative = false): Diagnostic[] {

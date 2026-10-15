@@ -40,12 +40,14 @@
 .b-rules { display: flex; flex-direction: column; gap: var(--space-1-5); }
 /* a requirement: name · ≥ · number · Hard|Soft · remove; a weight: name · number · remove */
 .rule-row { display: grid; grid-template-columns: minmax(0, 1fr) 16px 56px auto var(--control-sm); gap: var(--space-1-5); align-items: center; }
-.rule-row.weight { grid-template-columns: minmax(0, 1fr) 64px var(--control-sm); }
+.rule-row.weight { grid-template-columns: minmax(0, 1fr) 64px 4rem var(--control-sm); }
+/* a weight's importance bar (issue #274), scaled to the largest in the list; a negative one in the warn tone */
+.b-wbar { display: block; }
+.b-wbar .meter { width: 100%; }
 .pr .rule-row .input.num { width: 100%; }
 .rule-row .field-error, .rule-row .field-warn { grid-column: 1 / -1; }
 /* with buffs on: what gear still has to supply, under the requirement it changes */
 .rule-row .b-buff-note { grid-column: 1 / -1; color: var(--color-accent); }
-.rule-row .b-worth { grid-column: 1 / -1; }
 .rule-row .b-fc-cap { grid-column: 1 / -1; }
 .rule-row .b-swing-set { grid-column: 1 / -1; display: flex; flex-direction: column; gap: var(--space-1); }
 .rule-row .b-next-step { grid-column: 1 / -1; justify-self: start; }

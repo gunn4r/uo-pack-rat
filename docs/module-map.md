@@ -34,7 +34,7 @@ Three files keep names from before the project became Pack Rat: `app/vault-serve
 | Module | Role | Owns |
 |---|---|---|
 | `app/item-query.mts` | Pure item filtering, sorting, paging and facets, shared by `GET /api/items` and the page. | `parseItemQuery`, `matchesItem`, `applyItemQuery`, `facetsOf`, `ItemQuery`, `RuleQuery`, `EXTRA_COLS`, `colVal`, `rarityRank`, `HIT_LIMIT` |
-| `app/vault-lib.mts` (property part) | The property keys a tooltip line becomes, their labels and the search blobs, and the span a good suit covers in each (a weight's worth). | `PROPERTIES`, `PropKey`, `typicalRange`, `playerCaps`, `PROP_PATTERNS`, `PROP_LABELS`, `PROP_FULL`, `NOT_BUILDER_KEYS`, `SKILL_NAMES`, `RESIST_META`, `RESIST_KEYS`, `labelOf`, `fullOf`, `propertyKeys`, `extraKeys`, `flagKeys`, `BOOLEAN_FLAGS`, `itemSearchBlob` |
+| `app/vault-lib.mts` (property part) | The property keys a tooltip line becomes, their labels and the search blobs, and the span a good suit covers in each, which turns a per-point weight into the importance the page shows and back (the only place the two convert). | `PROPERTIES`, `PropKey`, `typicalRange`, `IMPORTANCE_K`, `importanceOf`, `weightOfImportance`, `roundImportance`, `PROP_PATTERNS`, `PROP_LABELS`, `PROP_FULL`, `NOT_BUILDER_KEYS`, `SKILL_NAMES`, `RESIST_META`, `RESIST_KEYS`, `labelOf`, `fullOf`, `propertyKeys`, `extraKeys`, `flagKeys`, `BOOLEAN_FLAGS`, `itemSearchBlob` |
 
 ## Shard rules
 

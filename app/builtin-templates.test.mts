@@ -1,6 +1,6 @@
 // builtin-templates.test.mts — the shipped built-in templates (`app/data/templates/<shard>.json`, issue #212) as data.
 //
-// `[fast]`: every built-in in every shipped file passes `buildSpecError` as a template and the profiles store keeps all of them (none left out with a log line); ids are unique in the file's text (a scan of its keys, since JSON.parse keeps the last of a repeated key) and camelCase, names unique and at most 64 characters; every build template (all but the four generic starters) has a description, sources that are uoalive.com pages (none allowed) and buffs; the buffs are a legal list with at most one form, at most one mastery (a passive counts as the template's chosen mastery) and a Gargoyle-only buff only where gargoyle gear is allowed; no positively weighted property is worth `DOMINANT_WORTH` times the median of the others (the generic starters exempt); and `castingSchool` is a known school, named whenever Faster Casting is floored or weighted.
+// `[fast]`: every built-in in every shipped file passes `buildSpecError` as a template and the profiles store keeps all of them (none left out with a log line); ids are unique in the file's text (a scan of its keys, since JSON.parse keeps the last of a repeated key) and camelCase, names unique and at most 64 characters; every build template (all but the four generic starters) has a description, sources that are uoalive.com pages (none allowed) and buffs; the buffs are a legal list with at most one form, at most one mastery (a passive counts as the template's chosen mastery) and a Gargoyle-only buff only where gargoyle gear is allowed; no positively weighted property's importance is `DOMINANT_WORTH` times the median of the others' (the generic starters exempt); and `castingSchool` is a known school, named whenever Faster Casting is floored or weighted.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { buildSpecError, templateSettings, type TemplateMap } from "./build-spec.mts";
 import { buffById, isBuffList } from "./buffs.mts";
-import { CASTING_SCHOOLS, effectiveProfile, playerCaps, setRules, typicalRange } from "./vault-lib.mts";
+import { CASTING_SCHOOLS, importanceOf, setRules } from "./vault-lib.mts";
 import { DOMINANT_WORTH } from "./diagnostics.mts";
 import { createProfilesStore } from "./store/profiles.mts";
 import { createUiPrefsStore } from "./store/ui-prefs.mts";
@@ -101,14 +101,14 @@ test("[fast] built-in templates: buffs are a legal list, one form, one mastery, 
   }
 });
 
-test("[fast] built-in templates: no weight's worth swamps the others", () => {
+test("[fast] built-in templates: no weight's importance swamps the others", () => {
   const median = (xs: number[]): number => { const s = [...xs].sort((a, b) => a - b), m = s.length >> 1; return s.length % 2 ? s[m]! : (s[m - 1]! + s[m]!) / 2; };
   for (const [id, t] of builds) {
-    const p = templateSettings(t), spans = playerCaps(effectiveProfile(p));
-    const worths = Object.entries(p.weights || {}).flatMap(([k, w]) => { const typical = w > 0 ? typicalRange(k, spans) : null; return typical != null ? [{ k, worth: w * typical }] : []; });
+    const p = templateSettings(t);
+    const worths = Object.entries(p.weights || {}).flatMap(([k, w]) => (w > 0 && k !== "tagPenalty" ? [{ k, worth: importanceOf(k, w) }] : []));
     for (const { k, worth } of worths) {
       const mid = median(worths.filter((x) => x.k !== k).map((x) => x.worth));
-      assert.ok(worth < DOMINANT_WORTH * mid, `${id} ${k}: worth ${worth} against a median of ${mid}`);
+      assert.ok(worth < DOMINANT_WORTH * mid, `${id} ${k}: importance ${worth} against a median of ${mid}`);
     }
   }
 });
