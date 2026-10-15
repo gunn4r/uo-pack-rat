@@ -1,14 +1,13 @@
-// ui/builder.mts — the Suit Builder screen (design spec 4.6): the character select in the top bar, the 360 px
-// constraints panel (template, race, requirements, weights, candidate pool, Advanced) with its sticky Build
-// footer, the optimize job (inline progress card over SSE) and the empty state (the character's current
-// suit). The result, the compare view and the Solver details are ui/builder-result.mts; the saved-runs drawer
+// ui/builder.mts — the Suit Builder screen (design spec 4.6, issue #272): the one-line top bar (the character and
+// template selects, Settings, Build), the Settings drawer (its tabs: Requirements, Weights, Buffs, Pool, Advanced) with
+// its footer, the optimize job (inline progress card over SSE) and the empty state (the character's current suit). The result, the compare view and the Solver details are ui/builder-result.mts; the saved-runs drawer
 // is ui/runs.mts; they share the builder's state and call each other through ui/builder-session.mts. The panel is drawn
 // from the session's profile plus its Advanced knobs, so what a build sends, what a profile saves and what a run
 // snapshots are read from state, never from the DOM.
 import { NOBODY, PROP_LABELS, NOT_BUILDER_KEYS, importanceOf, roundImportance, weightOfImportance, GEAR_SLOTS, tagUnits, WEAPON_EXCLUDES, MELEE_SKILLS, WEAPON_MUST_HAVE, flagLabel, getRules, RESIST_KEYS, RESIST_CAP_LIMITS, resistCapsFor, templateFrom, settingsDiff, bagLabel, toOptItem, totalsOf, fcCapFor, CASTING_SCHOOLS } from "../vault-lib.mts";
 import { heldWeapon, ssiShareOf, swingOf, type SwingResult } from "../swing.mts";
 import { BUILTIN_PREFIX, characterBuffs, characterEntry, characterProfile, findTemplate, planBuild, specFromProfile, templateLabel, templateRefs, templateSettings, templateSpecFrom, type PlannedBuild } from "../build-spec.mts";
-import type { FcCap, ResistCap, RunBuffs, Character } from "../vault-lib.mts";
+import type { FcCap, ResistCap, RunBuffs, RunSettings, Character } from "../vault-lib.mts";
 import { buffById, gearNeedsText, overrideNote, planBuffs, normalizeBuffs, runBuffs, toggleBuff, buffPlanOf, type BuffPlan } from "../buffs.mts";
 import { defaultStrLimit } from "../run-settings.mts";
 import { evaluateSuit } from "../evaluate.mts";
@@ -16,7 +15,7 @@ import { state, invStamp } from "./store.mts";
 import type { BuilderJob, BuilderJobUi, FinishedBuild, BuildMeta } from "./store.mts";
 import { $, el, label, full, fmtN, fmtSecs, slotLabel, toast } from "./dom.mts";
 import { promptText } from "./dialog.mts";
-import { box, txt, button, icon, kbd, badge, message, select, input, field, switchControl, check, segmented, filterChip, pill, popover, closePopover, menu, searchInput, stepper, progress, meter, tooltip, confirmDialog, modalOpen } from "./components.mts";
+import { box, txt, button, kbd, badge, token, message, select, input, field, switchControl, check, segmented, filterChip, pill, popover, closePopover, menu, searchInput, stepper, progress, meter, tooltip, confirmDialog, modalOpen } from "./components.mts";
 import { api } from "./api.mts";
 import { buffChip, createBuffPicker, keepChipFocus, type BuffPicker, type BuffView, type PickerActions } from "./builder-buffs.mts";
 import { optimizeErrorMessage } from "./messages.mts";
@@ -26,13 +25,18 @@ import { putProfiles, setCharacterBuffs } from "./profiles.mts";
 import { session, commands, provide, readControls, type BuilderChange } from "./builder-session.mts";
 import { followJob, progressText, settingsCheck } from "./builder-parts.mts";
 import { characterNames } from "./roster.mts";
-import { nextSwingStep, speedText, swingLines, propName, weightsSummary, newWeight, editedValue, requirementsSummary, poolSummary, advancedSummary, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistCapsSummary, resistMinimumText, pruneResistCaps, floorCapWarning, weaponsChipText, weaponMustHaveChipText, withStoredRoots, weaponName, toggleWeapon, weightTradeoff, fcCapText, rarityHelp, templateBuffsLine, sourceTitle, who, type KnobField } from "./builder-model.mts";
-import type { OptimizeResult, SavedRunLike, OptimizeStartApiResponse, OptimizeCancelApiResponse } from "./api-types.mts";
+import { nextSwingStep, speedText, swingLines, propName, newWeight, editedValue, runSettingsDiff, plural, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistMinimumText, pruneResistCaps, floorCapWarning, weaponsChipText, weaponMustHaveChipText, withStoredRoots, weaponName, toggleWeapon, weightTradeoff, fcCapText, rarityHelp, templateBuffsLine, sourceTitle, who, type KnobField } from "./builder-model.mts";
+import type { OptimizeResult, SavedRunLike, OptimizeStartApiResponse, OptimizeCancelApiResponse, UiPrefs } from "./api-types.mts";
+import { prefs } from "./prefs.mts";
 
 // ---------------------------------------------------------------- panel state
-// The solver knobs as typed (ui/builder-session.mts), and which sections are open.
+// The solver knobs as typed (ui/builder-session.mts), and the Settings drawer's tab (ui-prefs `builderTab`).
 const knobs = session.knobs;
-const open: Record<string, boolean> = { buffs: true, req: true, caps: false, weights: false, pool: true, adv: false };
+type Tab = NonNullable<UiPrefs["builderTab"]>;
+const TABS: Tab[] = ["requirements", "weights", "buffs", "pool", "advanced"];
+let tab: Tab = "requirements";
+// The tab each group that focusIn reaches sits in.
+const TAB_OF: Record<string, Tab> = { req: "requirements", weights: "weights", adv: "advanced", caps: "advanced" };
 // A requirement or weight row's property name: up to two lines, the full name in its title.
 const ruleName = (nm: string): HTMLSpanElement => { const t = txt(nm, "rule-name"); t.title = nm; return t; };
 // A resist cap typed out of range, as typed (the profile keeps the last good cap): kept here rather than read back
@@ -54,7 +58,9 @@ export function initBuilder(): void {
     if (v !== session.character && (!none || session.mode !== "manual")) selectCharacter(v);   // back from Manual's "No character" to the same one keeps its panel and result
   };
   $<HTMLButtonElement>("#b-run")!.onclick = runBuild;
+  $<HTMLButtonElement>("#b-run-foot")!.onclick = runBuild;
   $<HTMLButtonElement>("#b-save")!.onclick = saveProfile;
+  $<HTMLButtonElement>("#b-save-tpl")!.onclick = saveTemplateAs;
   $<HTMLButtonElement>("#b-runs-open")!.onclick = () => commands.openRunsDrawer();
   // ⌘↵ (Ctrl+Enter off the Mac) builds from anywhere on the screen. Listened for on the document, not the
   // screen: after a click on blank space focus is on <body>, outside #tab-builder, so a listener there never
@@ -67,12 +73,78 @@ export function initBuilder(): void {
     e.preventDefault();
     runBuild();
   });
-  const toggle = $<HTMLButtonElement>("#b-panel-toggle")!;
-  toggle.onclick = () => {
-    const folded = $<HTMLElement>("#b-panel")!.classList.toggle("folded");
-    toggle.setAttribute("aria-expanded", String(!folded));
-    toggle.querySelector("svg")?.replaceWith(icon(folded ? "chevron-down" : "chevron-up", { size: "sm" }));
-  };
+  // The Settings drawer: its button and ⌘, (Ctrl+, off the Mac) toggle it while the builder's top bar shows the button
+  // (not in Manual, the compare view or another screen, nor behind a drawer or dialog); its × closes it, and so does Esc
+  // from anywhere on the screen, an open popover closing first (one with the focus, the progress card and the Saved runs
+  // drawer take their own Esc).
+  $<HTMLButtonElement>("#b-settings")!.onclick = () => (drawerOpen() ? closeSettings() : openSettings());
+  $<HTMLButtonElement>("#b-drawer-close")!.onclick = closeSettings;
+  const settingsShown = (): boolean => { const b = $<HTMLButtonElement>("#b-settings")!; return !!b.getClientRects().length && !b.closest("[inert]") && !modalOpen(); };
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !e.defaultPrevented && drawerOpen() && settingsShown()) { e.preventDefault(); if (document.querySelector(".pop")) closePopover(); else closeSettings(); return; }
+    if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey || e.key !== "," || !settingsShown()) return;
+    e.preventDefault();
+    if (drawerOpen()) closeSettings(); else openSettings();
+  });
+  // The tabs: a click, or ←/→ and Home/End with the focus following, shows one.
+  const tabs = [...document.querySelectorAll<HTMLButtonElement>("#b-drawer [role=tab]")];
+  for (const t of tabs) {
+    t.onclick = () => showTab(t.dataset.tab as Tab);
+    t.addEventListener("keydown", (e) => {
+      const i = tabs.indexOf(t), n = tabs.length;
+      const to = e.key === "ArrowRight" ? (i + 1) % n : e.key === "ArrowLeft" ? (i - 1 + n) % n : e.key === "Home" ? 0 : e.key === "End" ? n - 1 : -1;
+      if (to < 0) return;
+      e.preventDefault();
+      showTab(tabs[to]!.dataset.tab as Tab, true);
+    });
+  }
+  showTab(tab);
+  // the footer's count follows the shown run; a run shown anew is no longer the build just shown (showFinished sets it after)
+  document.addEventListener("builderchange", (e) => {
+    const key = (e as BuilderChange).detail.key;
+    if (key === "openRun" || key === "character") builtWith = null;
+    if (["openRun", "runs", "result"].includes(key)) paintChanges();
+  });
+  // Manual has no Settings button: the drawer closes on the way in
+  document.addEventListener("builderchange", (e) => { if ((e as BuilderChange).detail.key === "mode" && session.mode === "manual") closeSettings(); });
+}
+// The drawer's tab at load, from ui-prefs (app.mts applies it before initBuilder runs).
+export function applyPanelPrefs(p: UiPrefs | null): void { if (p?.builderTab && TABS.includes(p.builderTab)) tab = p.builderTab; }
+const drawerOpen = (): boolean => !$<HTMLElement>("#b-drawer")!.hidden;
+// Open the drawer on `on` (else the tab it had) with the focus on that tab; `focus` false when the caller focuses a
+// control in it next.
+function openSettings(on: Tab = tab, focus = true): void {
+  const d = $<HTMLElement>("#b-drawer")!;
+  if (on !== tab) showTab(on);
+  if (d.hidden) {
+    d.hidden = false;
+    $<HTMLButtonElement>("#b-settings")!.setAttribute("aria-expanded", "true");
+  }
+  if (focus) $<HTMLElement>(`#b-tab-${tab}`)!.focus();
+}
+// Close it, the focus back on the Settings button when it was in the drawer, in a popover (closed with it) or had fallen
+// to <body>.
+function closeSettings(): void {
+  const d = $<HTMLElement>("#b-drawer")!, from = document.activeElement;
+  if (d.hidden) return;
+  closePopover();   // a checklist or picker opened from it
+  d.hidden = true;
+  const b = $<HTMLButtonElement>("#b-settings")!;
+  b.setAttribute("aria-expanded", "false");
+  if (!from || from === document.body || d.contains(from) || from.closest(".pop")) b.focus();
+}
+// Show one tab's panel; the choice is kept for the next launch.
+function showTab(to: Tab, focus = false): void {
+  const changed = to !== tab;
+  tab = to;
+  for (const t of document.querySelectorAll<HTMLButtonElement>("#b-drawer [role=tab]")) {
+    const on = t.dataset.tab === to;
+    t.setAttribute("aria-selected", String(on));
+    t.tabIndex = on ? 0 : -1;
+  }
+  for (const p of document.querySelectorAll<HTMLElement>("#b-panel-body [role=tabpanel]")) p.hidden = p.dataset.tab !== to;
+  if (focus) $<HTMLElement>(`#b-tab-${to}`)!.focus();
+  if (changed) prefs.set({ builderTab: to }, { quiet: true });
 }
 // The character list after the inventory or profiles changed (a first load, a scan landing, a Forget).
 // A character still present stays selected and keeps its panel, unsaved edits included; the panel is redrawn
@@ -99,6 +171,9 @@ export function syncBuilderCharacters(): void {
     selectCharacter(names.includes(want as string) || want === NOBODY ? want as string : names[0]!);
   } else {
     session.character = null; session.profile = null;
+    $<HTMLElement>("#b-tpl-top")!.replaceChildren();
+    $<HTMLElement>("#b-drawer-tpl")!.textContent = ""; $<HTMLElement>("#b-changes")!.textContent = "";
+    $<HTMLElement>("#b-tpl-info")!.replaceWith(templateInfo(""));
     $<HTMLElement>("#b-panel-body")!.replaceChildren(el("p", { class: "muted b-no-char", id: "b-no-char" }, txt(NO_CHARACTER)));
     $<HTMLElement>("#b-result")!.replaceChildren(box("div", { class: "card empty-state" }, el("h2", { class: "t-lg" }, "No characters yet"), el("p", { class: "muted" }, txt("Import a scan and its character shows up here."))));
   }
@@ -106,11 +181,11 @@ export function syncBuilderCharacters(): void {
   commands.paintCharSelect();
   void commands.syncManual();
 }
-// With no character there is nothing to build or save: both buttons are disabled, and say why — in their
-// title, and in the panel's own line that they are described by.
+// With no character there is nothing to build or save: the Build and save buttons are disabled, and say why — in
+// their title, and in the drawer's own line that they are described by.
 const NO_CHARACTER = "There is no character to build for yet. Import a scan first.";
 function setNoCharacter(none: boolean): void {
-  for (const id of ["#b-run", "#b-save"]) {
+  for (const id of ["#b-run", "#b-run-foot", "#b-save", "#b-save-tpl"]) {
     const b = $<HTMLButtonElement>(id)!;
     if (!session.job) b.disabled = none;
     if (none) { b.title = NO_CHARACTER; b.setAttribute("aria-describedby", "b-no-char"); }
@@ -141,62 +216,59 @@ export function selectCharacter(name: string): void {
 }
 
 // ---------------------------------------------------------------- the panel
+// The template controls go in the top bar, the rest in the drawer's tab panels, a group or three each.
 function renderPanel(): void {
   const p = session.profile;
   if (!p) return;
   if (session.character === NOBODY) p.race = "human";   // No character has no race: the shard's caps (its Race control is hidden)
   p.floors ||= {}; p.softFloors ||= []; p.weights ||= {}; p.lockedSlots ||= []; p.excludeTags ||= []; p.excludeSkills ||= []; p.excludeRoots ||= [];
-  $<HTMLElement>("#b-panel-body")!.replaceChildren(templateSection(), buffsSection(), requirementsSection(), capsSection(), weightsSection(), poolSection(), advancedSection());
+  $<HTMLElement>("#b-tpl-top")!.replaceChildren(...templateControls());
+  $<HTMLElement>("#b-tpl-info")!.replaceWith(templateInfo(selectedTemplate()));
+  const panel = (t: Tab, ...groups: HTMLElement[]): HTMLElement => {
+    const n = box("section", { class: "b-tabp", role: "tabpanel", id: `b-tabp-${t}`, "aria-labelledby": `b-tab-${t}`, "data-tab": t }, ...groups);
+    n.hidden = t !== tab;
+    return n;
+  };
+  $<HTMLElement>("#b-panel-body")!.replaceChildren(panel("requirements", requirementsSection()), panel("weights", weightsSection()), panel("buffs", buffsSection()),
+    panel("pool", poolSection()), panel("advanced", advancedSection(), charSection(), capsSection()));
   updateTemplateBadge();
 }
-// Redraw one section in place (its open state or its rows changed), keeping the rest of the panel and its
-// scroll position as they are.
+// Redraw one group in place (its rows changed), keeping the rest of the drawer and its scroll position as they are.
 function redraw(id: string): void {
   const build: Record<string, () => HTMLElement> = { buffs: buffsSection, req: requirementsSection, caps: capsSection, weights: weightsSection, pool: poolSection, adv: advancedSection };
   const old = document.getElementById(`b-sec-${id}`);
   if (old && build[id]) old.replaceWith(build[id]!());
   updateTemplateBadge();
 }
-// A collapsible section: title, an optional count badge, the open/close button, and when closed a one-line
-// summary in place of its body.
-// Each section's count badge, kept so a count can change without the section being redrawn (setCount).
-const counts: Record<string, HTMLSpanElement> = {};
-const setCount = (id: string, n: number): void => { counts[id]?.replaceChildren(txt(String(n))); };
-function section(id: string, title: string, { count, summary, body, inline = false }: { count?: number | undefined; summary: () => string; body: () => Array<Node | null>; inline?: boolean }): HTMLElement {
-  const isOpen = open[id], hid = `b-sec-${id}-h`, bid = `b-sec-${id}-body`;
-  const cnt = count != null ? badge(String(count)) : null;
-  if (cnt) counts[id] = cnt; else delete counts[id];
-  const t = button({ label: `${isOpen ? "Collapse" : "Expand"} ${title.toLowerCase()}`, icon: isOpen ? "chevron-up" : "chevron-down", iconOnly: true, variant: "ghost", size: "sm",
-    attrs: { "aria-expanded": String(isOpen), "aria-controls": bid }, onClick: () => { open[id] = !open[id]; redraw(id); document.querySelector<HTMLElement>(`#b-sec-${id} .b-sec-head .btn`)?.focus(); } });
-  const sum = isOpen ? null : txt(summary(), `t-sm muted${inline ? " ellip" : ""}`);
-  const head = box("div", { class: "b-sec-head" }, el("h3", { id: hid, class: "t-md strong" }, title), cnt,
-    inline && sum ? sum : el("span", { class: "spacer" }), t);
-  return box("section", { class: "b-sec", id: `b-sec-${id}`, "aria-labelledby": hid }, head,
-    !isOpen && !inline ? el("p", {}, sum) : null,
-    isOpen ? box("div", { class: "b-sec-body", id: bid }, ...body()) : null);
+// A group of settings, `b-sec-<id>`: a heading where its tab holds more than one, then its controls.
+function group(id: string, title: string | null, body: () => Array<Node | null>): HTMLElement {
+  const hid = `b-sec-${id}-h`;
+  return box("section", { class: "b-sec", id: `b-sec-${id}`, ...(title ? { "aria-labelledby": hid } : {}) }, title ? el("h3", { id: hid, class: "t-md strong" }, title) : null, ...body());
 }
 
-// ---- template and race
-function templateSection(): HTMLElement {
+// ---- template (in the top bar), and race and STR limit (under Advanced)
+function templateControls(): HTMLElement[] {
   const p = session.profile!;
   const names = templateRefs(state.profiles!, state.builtinTemplates), builtin = (n: string): boolean => n.startsWith(BUILTIN_PREFIX);
   // built-ins first, each under its own name; the player's own after
-  const group = (label: string, refs: string[]): HTMLElement | null => refs.length ? el("optgroup", { label }, ...refs.map((n) => el("option", { value: n }, plainName(n)))) : null;
-  const tpl = el("select", { class: "select", id: "b-tpl" }, group("Built-in", names.filter(builtin)), group("Your templates", names.filter((n) => !builtin(n))));
+  const optgroup = (label: string, refs: string[]): HTMLElement | null => refs.length ? el("optgroup", { label }, ...refs.map((n) => el("option", { value: n }, plainName(n)))) : null;
+  const tpl = el("select", { class: "select input-sm", id: "b-tpl" }, optgroup("Built-in", names.filter(builtin)), optgroup("Your templates", names.filter((n) => !builtin(n))));
   tpl.value = names.includes(p.template as string) ? p.template as string : names[0] || "";
   tpl.addEventListener("change", () => { $<HTMLElement>("#b-tpl-info")!.replaceWith(templateInfo(tpl.value)); updateTemplateBadge(); });
-  const menuBtn = button({ label: "Template actions: apply, save as, update, delete", icon: "more", iconOnly: true, variant: "ghost", attrs: { id: "b-tpl-menu", "aria-haspopup": "menu", "aria-expanded": "false" } });
+  const menuBtn = button({ label: "Template actions: apply, save as, update, delete", icon: "more", iconOnly: true, variant: "ghost", size: "sm", attrs: { id: "b-tpl-menu", "aria-haspopup": "menu", "aria-expanded": "false" } });
   menuBtn.onclick = () => templateMenu(menuBtn);
+  return [el("label", { class: "t-sm muted b-top-l", for: "b-tpl" }, "Template"), tpl, el("span", { id: "b-tpl-state", class: "badge" }), menuBtn];
+}
+// Race, STR limit and the casting school: the character's, saved with the profile; race and STR limit decide which pieces
+// are candidates at all, the school the Faster Casting cap.
+function charSection(): HTMLElement {
+  const p = session.profile!;
   const race = segmented({ label: "Race", options: [{ value: "human", label: "Human" }, { value: "elf", label: "Elf" }, { value: "gargoyle", label: "Gargoyle" }], value: p.race || "human",
     onChange: (v) => { p.race = v; p.resistCaps = pruneResistCaps(p.resistCaps, v); redraw("req"); redraw("caps"); } });
   race.id = "b-race";
-  // STR limit sits beside Race, always in view: like race it is the character's, saved with the profile,
-  // and it decides which pieces are candidates at all (the rest of Advanced only tunes the search).
   const str = knobField("strLimit", "STR limit");
   str.classList.add("b-str");
-  return box("section", { class: "b-sec b-sec-top", "aria-label": "Template" },
-    box("div", { class: "field" }, el("label", { class: "label", for: "b-tpl" }, "Template"), box("div", { class: "b-tpl-row" }, tpl, el("span", { id: "b-tpl-state", class: "badge" }), menuBtn), templateInfo(tpl.value)),
-    box("div", { class: "b-race-row" }, session.character === NOBODY ? null : box("div", { class: "field" }, el("span", { class: "label", id: "b-race-l" }, "Race"), race), str));
+  return group("char", "Character", () => [box("div", { class: "b-race-row" }, session.character === NOBODY ? null : box("div", { class: "field" }, el("span", { class: "label", id: "b-race-l" }, "Race"), race), str), castingSchoolField()]);
 }
 // A template's name as the picker shows it: a built-in's own name, without templateLabel's "(built-in)".
 const plainName = (ref: string): string => { const id = ref.slice(BUILTIN_PREFIX.length); return ref.startsWith(BUILTIN_PREFIX) ? state.builtinTemplates[id]?.name || id : ref; };
@@ -222,14 +294,34 @@ function templateDrift(): { tone: "ok" | "warn" | "bad" | ""; text: string; deta
   return lines.length ? { tone: "warn", text: "modified", detail: `Changed from ${name}: ${lines.join(" · ")}` } : { tone: "ok", text: "matches", detail: `These settings equal the ${name} template.` };
 }
 // Redrawn after every edit; the reason ("Changed from melee: DI floor 20 → 30") is its tooltip and, for a
-// screen reader, part of its text.
+// screen reader, part of its text. The drawer's title repeats it beside the template's name ("Melee · modified"), and its
+// footer counts the changes since the last build.
 export function updateTemplateBadge(): void {
   const s = $<HTMLElement>("#b-tpl-state");
   if (!s || !session.profile) return;
-  const d = templateDrift();
+  const d = templateDrift(), ref = session.profile.template;
   const next = box("span", { id: "b-tpl-state", class: `badge${d.tone ? " " + d.tone : ""}`, tabindex: "0" }, txt(d.text), el("span", { class: "sr" }, `. ${d.detail}`));
   s.replaceWith(tooltip(next, d.detail));
+  $<HTMLElement>("#b-drawer-tpl")!.textContent = ref ? `${plainName(ref)} · ${d.text}` : "No template";
+  paintChanges();
   commands.refreshCurrentSuit();
+}
+// The footer's "N changes since the last build": what the runs drawer's diff (runSettingsDiff) names between the shown
+// run and the panel, hidden with no run shown. While the run on screen is the one a build just showed, it counts from
+// the settings that build was asked with: one answered from an earlier run carries that run's own search knobs. Any
+// other run shown (one opened from the drawer, that same run reopened, another character) clears it, so the count
+// then agrees with the drawer's banner. Repainted a moment after the last edit, so typing does not plan the whole
+// build on every key.
+let builtWith: { runId: string; settings: RunSettings } | null = null;
+let changesTimer: ReturnType<typeof setTimeout> | undefined;
+function paintChanges(): void {
+  clearTimeout(changesTimer);
+  changesTimer = setTimeout(() => {
+    const out = $<HTMLElement>("#b-changes")!, run = session.openRun ? session.runs.find((r) => r.id === session.openRun) : null;
+    if (!run || !session.profile) { out.textContent = ""; return; }
+    const n = runSettingsDiff(builtWith?.runId === run.id ? builtWith.settings : run.settings, panelBuild().snapshot).length;
+    out.textContent = n ? `${plural(n, "change")} since the last build` : "No changes since the last build";
+  }, 150);
 }
 // A built-in template (app/data/templates/<shard>.json) is read-only: Save as… makes the player's own copy.
 const BUILTIN_READ_ONLY = "Built-in templates can't be changed. Save as… makes your own copy.";
@@ -311,14 +403,11 @@ function loadRunBuffs(b: RunBuffs | undefined): void {
   commands.applyRunInputs(session.character!, b);
 }
 function buffsSection(): HTMLElement {
-  const on = buffsOn();
-  return section("buffs", "Buffs", { count: on.length, summary: () => (on.length ? on.map((id) => buffById(id)!.name).join(", ") : "None on"), body: () => {
-    const v = buffView();
-    const add = filterChip({ label: "Add buff", add: true, attrs: { id: "b-buff-add", "aria-haspopup": "dialog" } });
-    add.onclick = () => openBuffPicker(add);
-    return [el("p", { class: "help" }, txt("Counted as always on. The search doesn't spend gear on what they already give.")),
-      box("div", { class: "b-chips", id: "b-buff-chips" }, ...on.map((id) => buffChip(id, v, buffActions)), add)];
-  } });
+  const on = buffsOn(), v = buffView();
+  const add = filterChip({ label: "Add buff", add: true, attrs: { id: "b-buff-add", "aria-haspopup": "dialog" } });
+  add.onclick = () => openBuffPicker(add);
+  return group("buffs", null, () => [el("p", { class: "help" }, txt("Counted as always on. The search doesn't spend gear on what they already give.")),
+    box("div", { class: "b-chips", id: "b-buff-chips" }, ...on.map((id) => buffChip(id, v, buffActions)), add)]);
 }
 // The picker's state: the buffs on, their numbers, and what each would add, against the caps before any buff.
 function buffView(): BuffView {
@@ -329,14 +418,13 @@ function buffView(): BuffView {
     totals: ev.gearTotals, caps: ev.baseCaps, all: ev.buffs, replaced: note && "replaced" in note ? note.replaced : null,
     cleared: note && "cleared" in note ? note.cleared : null, count: true, open: !!picker };
 }
-// A buff on or off (or all off), with the picker's note: saved, and the chips, the count, the requirements' notes and
-// the picker follow.
+// A buff on or off (or all off), with the picker's note: saved, and the chips, the requirements' notes and the picker
+// follow.
 function setBuffs(next: string[], n: typeof note): void {
   setPanelBuffs(next);
   note = n;
   const row = document.getElementById("b-buff-chips"), add = document.getElementById("b-buff-add"), v = buffView();
   if (row && add) row.replaceChildren(...v.on.map((id) => buffChip(id, v, buffActions)), add);
-  setCount("buffs", v.on.length);
   redraw("req"); redraw("weights");   // the switch's step line counts the buffs' stamina and SSI
   picker?.paint(v);
 }
@@ -355,12 +443,12 @@ const buffActions: PickerActions = {
     if (off) { setBuffs(toggleBuff(buffsOn(), off).next, null); document.getElementById(`abf-cb-${off}`)?.focus(); }
   },
 };
-// Add buff opens the picker in a popover beside the panel; a second press, Esc or a click outside closes it.
+// Add buff opens the picker in a popover beside the drawer, on its left; a second press, Esc or a click outside closes it.
 function openBuffPicker(anchor: HTMLElement): void {
   if (picker) { closePopover(); return; }
   const host = box("div", { class: "bf-pick" });
   picker = createBuffPicker(host, "abf", buffActions, () => "Counted as always on: the search plans around them. A bonus past the cap, like Enemy of One's damage, never changes the plan.");
-  popover(anchor, [host], { label: `Buffs for ${who(session.character!)}`, width: 480, beside: $<HTMLElement>("#b-panel")!, onClose: () => { picker = null; note = null; } });
+  popover(anchor, [host], { label: `Buffs for ${who(session.character!)}`, width: 480, beside: $<HTMLElement>("#b-drawer")!, onClose: () => { picker = null; note = null; } });
   picker.paint(buffView());
   picker.focusSearch();
 }
@@ -419,7 +507,7 @@ function setInlineError(control: HTMLElement, err: string | null): void {
 function requirementsSection(): HTMLElement {
   const p = session.profile!, name = session.character!;
   const keys = Object.keys(p.floors!).filter((k) => !NOT_BUILDER_KEYS.has(k));
-  return section("req", "Requirements", { count: keys.length, summary: () => requirementsSummary(p.floors, p.softFloors), body: () => {
+  return group("req", null, () => {
     // with buffs on, each requirement they touch says what gear still has to supply
     const { prof, r } = planBuffs(p, state.inv!.characters[name] as Character | null, buffPlan(name, p.race, panelBuffs()));
     // the minimum the search holds resists at: the character's own, or what the planned buffs leave (Protection)
@@ -444,8 +532,8 @@ function requirementsSection(): HTMLElement {
     });
     const add = filterChip({ label: "Add requirement", add: true, attrs: { class: "fchip add b-add", id: "b-addfloor" } });
     add.onclick = () => propertyPicker(add, "Add requirement", Object.keys(p.floors!), (k) => { p.floors![k] = capFor(k) ?? 1; redraw("req"); focusIn("req", `.rule-row[data-key="${CSS.escape(k)}"] input`, true); });
-    return [help, rows.length ? box("div", { class: "b-rules" }, ...rows) : null, add];
-  } });
+    return [help, rows.length ? box("div", { class: "b-rules" }, ...rows) : null, forbidSkillsRow(), add];
+  });
 }
 // A resist requirement above its resist's cap is kept (a saved profile may carry one) but counts only up to the
 // cap, as the solver scores it: the row says so, and keeps saying so as the floor is typed.
@@ -466,10 +554,10 @@ function floorWarning(row: HTMLElement, num: HTMLInputElement, k: string): void 
 // what it was raised or lowered from with a reset. A cap back at the shard's value is no override at all.
 function capsSection(): HTMLElement {
   const p = session.profile!;
-  return section("caps", "Resist caps", { summary: () => resistCapsSummary(panelResistCaps()), body: () => [
+  return group("caps", "Resist caps", () => [
     el("p", { class: "help" }, txt(`The highest paperdoll value each resist is worth, for the score and for requirements. Raise one for a suit worn in a form that lowers it: Reaper Form takes 25 Fire, so a Fire cap of 95 keeps 70 in form. Whole numbers from ${RESIST_CAP_LIMITS.min} to ${RESIST_CAP_LIMITS.max}.`)),
     box("div", { class: "b-rules" }, ...RESIST_KEYS.map((k) => capRow(p, k))),
-  ] });
+  ]);
 }
 function capRow(p: NonNullable<typeof session.profile>, k: string): HTMLElement {
   const nm = propName(k), c = panelResistCaps()[k]!;
@@ -507,7 +595,7 @@ function capRow(p: NonNullable<typeof session.profile>, k: string): HTMLElement 
 function weightsSection(): HTMLElement {
   const p = session.profile!;
   const keys = Object.keys(p.weights!).filter((k) => !NOT_BUILDER_KEYS.has(k));
-  return section("weights", "Weights", { count: keys.length, summary: () => weightsSummary(p.weights), body: () => {
+  return group("weights", null, () => {
     // each row shows and takes the weight's importance (vault-lib.mts importanceOf), with a bar scaled to the largest
     // and the trade-off with the top property on hover and focus; the profile keeps the weight per point
     const paints: Array<() => void> = [];
@@ -536,7 +624,7 @@ function weightsSection(): HTMLElement {
     const add = filterChip({ label: "Add weight", add: true, attrs: { class: "fchip add b-add", id: "b-addweight" } });
     add.onclick = () => propertyPicker(add, "Add weight", Object.keys(p.weights!), (k) => { p.weights![k] = newWeight(k); redraw("weights"); focusIn("weights", `.rule-row[data-key="${CSS.escape(k)}"] input`, true); });
     return [el("p", { class: "help" }, txt("How much a good amount of each property matters, about 0 to 100. Higher counts more.")), rows.length ? box("div", { class: "b-rules" }, ...rows) : null, add];
-  } });
+  });
 }
 // ---- swing steps (app/swing.mts): the switch on the SSI weight row, and the requirement row's "Next step" The worn suit's swing with the panel's buffs, the weapon a build is known to hold before it runs (a locked hand keeps the worn piece); null when it holds no weapon of known speed.
 function wornSwing(): { sw: SwingResult; weapon: string } | null {
@@ -569,7 +657,9 @@ function paintNextStep(): void {
   if (next) row.append(next);
 }
 document.addEventListener("builderchange", (e) => { if ((e as BuilderChange).detail.key === "result") paintNextStep(); });
+// Focus a control in a group, the drawer opened on the group's tab first.
 function focusIn(sec: string, sel: string, selectText = false): void {
+  openSettings(TAB_OF[sec], false);
   const e = document.querySelector<HTMLInputElement>(`#b-sec-${sec} ${sel}`);
   e?.focus();
   if (selectText) e?.select();
@@ -605,21 +695,18 @@ function propertyPicker(anchor: HTMLElement, title: string, taken: string[], pic
 // ---- candidate pool
 function poolSection(): HTMLElement {
   const p = session.profile!;
-  return section("pool", "Candidate pool", { summary: () => poolSummary(p), body: () => {
+  return group("pool", null, () => {
     const sw = (id: string, text: string, key: "allowOthersWorn" | "allowGargoyle" | "medOnly"): HTMLLabelElement =>
       switchControl({ label: text, checked: !!p[key], attrs: { id }, onChange: (v) => { p[key] = v; updateTemplateBadge(); } }).root;
     return [
       box("div", { class: "b-switches" }, sw("b-others", "Allow gear worn by other characters", "allowOthersWorn"), sw("b-garg", "Allow gargoyle-only gear", "allowGargoyle"), sw("b-med", "Meditation-safe gear only", "medOnly")),
-      castingSchoolField(),
       rarityField(),
       box("div", { class: "b-chips" }, weaponChip(), mustHaveChip(), listChip("b-locked", "Locked slots", () => p.lockedSlots!, (v) => { p.lockedSlots = v; }, () => GEAR_SLOTS.map((s) => ({ value: s, label: slotLabel(s) })), false),
-        tagsChip(), listChip("b-exskills", "Forbid skill bonuses", () => p.excludeSkills!, (v) => { p.excludeSkills = v; },
-          () => [...new Set([...(state.facets?.gearSkills || []), ...p.excludeSkills!])].sort().map((sk) => ({ value: sk, label: sk[0]!.toUpperCase() + sk.slice(1) })), true),
-        listChip("b-exroots", "Skip containers", () => p.excludeRoots!.map(String), (v) => { p.excludeRoots = v.map((x) => (Number.isFinite(Number(x)) ? Number(x) : x)); }, rootOptions, true),
+        tagsChip(), listChip("b-exroots", "Skip containers", () => p.excludeRoots!.map(String), (v) => { p.excludeRoots = v.map((x) => (Number.isFinite(Number(x)) ? Number(x) : x)); }, rootOptions, true),
         // issue #12: only pieces under these root containers (kept only when it lists any); Skip containers still applies
         listChip("b-onlyroots", "Only containers", () => (p.onlyRoots || []).map(String), (v) => { if (v.length) p.onlyRoots = v.map(Number); else delete p.onlyRoots; }, () => withStoredRoots(rootOptions(), p.onlyRoots), true)),
     ];
-  } });
+  });
 }
 // The casting school the Faster Casting cap follows: "From skills" (the default, stored as no choice) or a school.
 function castingSchoolField(): HTMLElement {
@@ -716,22 +803,38 @@ function tagsChip(): HTMLButtonElement {
 function listChip(id: string, title: string, get: () => string[], set: (v: string[]) => void, options: () => Array<{ value: string; label: string }>, searchable: boolean): HTMLButtonElement {
   const text = (): string => (get().length ? `${title}: ${get().length}` : title);
   const chip = filterChip({ label: text(), set: !!get().length, attrs: { id } });
-  chip.onclick = () => {
-    const all = options();
-    const list = box("div", { class: "b-checks" });
-    const paint = (q: string): void => {
-      const hits = all.filter((o) => !q || o.label.toLowerCase().includes(q));
-      list.replaceChildren(...(hits.length ? hits.map((o) => check({ label: o.label, checked: get().includes(o.value), attrs: { value: o.value }, onChange: (on) => {
-        set(on ? [...get(), o.value] : get().filter((x) => x !== o.value));
-        paintChip(chip, text(), !!get().length); updateTemplateBadge();
-      } }).root) : [el("p", { class: "t-sm muted" }, all.length ? "Nothing matches." : "Nothing to choose from yet.")]));
-    };
-    const s = searchable && all.length > 7 ? searchInput({ label: `Search ${title.toLowerCase()}`, placeholder: "Search" }) : null;
-    s?.input.addEventListener("input", () => paint(s.input.value.trim().toLowerCase()));
-    paint("");
-    popover(chip, [s?.root, list], { label: title, width: 300 });
-  };
+  chip.onclick = () => checklist(chip, title, get, set, options(), searchable, () => paintChip(chip, text(), !!get().length));
   return chip;
+}
+// The checklist popover behind a chip; `changed` repaints what shows the list.
+function checklist(anchor: HTMLElement, title: string, get: () => string[], set: (v: string[]) => void, all: Array<{ value: string; label: string }>, searchable: boolean, changed: () => void): void {
+  const list = box("div", { class: "b-checks" });
+  const paint = (q: string): void => {
+    const hits = all.filter((o) => !q || o.label.toLowerCase().includes(q));
+    list.replaceChildren(...(hits.length ? hits.map((o) => check({ label: o.label, checked: get().includes(o.value), attrs: { value: o.value }, onChange: (on) => {
+      set(on ? [...get(), o.value] : get().filter((x) => x !== o.value));
+      changed(); updateTemplateBadge();
+    } }).root) : [el("p", { class: "t-sm muted" }, all.length ? "Nothing matches." : "Nothing to choose from yet.")]));
+  };
+  const s = searchable && all.length > 7 ? searchInput({ label: `Search ${title.toLowerCase()}`, placeholder: "Search" }) : null;
+  s?.input.addEventListener("input", () => paint(s.input.value.trim().toLowerCase()));
+  paint("");
+  popover(anchor, [s?.root, list], { label: title, width: 300 });
+}
+// The skill bonuses no piece may carry, under Requirements: a removable chip per skill and "+ Skill", the checklist of
+// the skills gear carries.
+function forbidSkillsRow(): HTMLElement {
+  const p = session.profile!, name = (sk: string): string => sk[0]!.toUpperCase() + sk.slice(1);
+  const add = filterChip({ label: "Skill", add: true, attrs: { id: "b-exskills", "aria-haspopup": "dialog" } });
+  const lead = el("span", { class: "t-sm muted", id: "b-exskills-l" }, "Never wear a bonus to");
+  const row = box("div", { class: "b-chips b-exskills", id: "b-exskills-row", role: "group", "aria-labelledby": "b-exskills-l" });
+  const paint = (): void => row.replaceChildren(lead, ...p.excludeSkills!.map((sk) => token({ label: name(sk), removeLabel: `Allow a ${name(sk)} bonus`, onRemove: () => {
+    p.excludeSkills = p.excludeSkills!.filter((x) => x !== sk); paint(); updateTemplateBadge(); add.focus();
+  } })), add);
+  add.onclick = () => checklist(add, "Never wear a bonus to", () => p.excludeSkills!, (v) => { p.excludeSkills = v; },
+    [...new Set([...(state.facets?.gearSkills || []), ...p.excludeSkills!])].sort().map((sk) => ({ value: sk, label: name(sk) })), true, paint);
+  paint();
+  return row;
 }
 
 // ---- Advanced: the solver knobs
@@ -742,16 +845,16 @@ function knobField(f: KnobField, text: string): HTMLDivElement {
   if (!knobs.exact && (f === "budgetS" || f === "altCount" || f === "altTol")) i.disabled = true;
   const err = knobError(f, knobs[f]);
   const fl = field({ label: text, control: i, error: err && !i.disabled ? err : undefined });
-  i.addEventListener("input", () => { knobs[f] = i.value; setFieldError(i, knobError(f, i.value)); if (f === "strLimit") updateTemplateBadge(); });
+  i.addEventListener("input", () => { knobs[f] = i.value; setFieldError(i, knobError(f, i.value)); if (f === "strLimit") updateTemplateBadge(); else paintChanges(); });
   return fl;
 }
 function advancedSection(): HTMLElement {
-  return section("adv", "Advanced", { inline: true, summary: () => advancedSummary(knobs), body: () => {
+  return group("adv", "Search", () => {
     const exact = switchControl({ label: "Exact search (prove the best)", checked: knobs.exact, attrs: { id: "b-exact" }, onChange: (v) => { knobs.exact = v; redraw("adv"); document.getElementById("b-exact")?.focus(); } });
     return [box("div", { class: "b-adv" }, box("div", { class: "b-adv-wide" }, exact.root),
       knobField("restarts", "Restarts"), knobField("budgetS", "Time budget (s)"), knobField("altCount", "Other suits"), knobField("altTol", "Within points"),
       el("p", { class: "help b-adv-wide" }, txt(knobs.exact ? "Other suits lists the next best suits scoring within that many points of the best." : "Time budget and other suits need exact search.")))];
-  } });
+  });
 }
 // field()'s error line, updated in place as the value changes.
 function setFieldError(control: HTMLInputElement, err: string | null): void {
@@ -763,9 +866,10 @@ function setFieldError(control: HTMLInputElement, err: string | null): void {
   else control.removeAttribute("aria-invalid");
   if (described.length) control.setAttribute("aria-describedby", described.join(" ")); else control.removeAttribute("aria-describedby");
 }
-// Build with a bad field: open Advanced if the field is in it, show the error and put focus there.
+// Build with a bad field: the drawer opens on Advanced, which holds every knob, with the error under the field and the
+// focus in it.
 function focusKnob(f: KnobField, err: string): void {
-  if (f !== "strLimit" && !open.adv) { open.adv = true; redraw("adv"); }
+  openSettings("advanced", false);
   const i = document.getElementById(KNOB_IDS[f]) as HTMLInputElement | null;
   if (!i) return;
   setFieldError(i, err);
@@ -790,16 +894,15 @@ async function runBuild(): Promise<void> {
   // A bad field stops the build and takes focus, with its reason under it; the button itself stays enabled.
   const bad = firstKnobError(knobs);
   if (bad) { focusKnob(bad.field, bad.error); return; }
-  // A resist cap out of range stops the build from the panel's state, open or closed: the section opens on it.
+  // A resist cap out of range stops the build from the panel's state, the drawer open or closed: it opens on the field.
   const badCap = RESIST_KEYS.find((k) => capDrafts[k] != null);
   if (badCap) {
-    if (!open.caps) { open.caps = true; redraw("caps"); }
     focusIn("caps", `#b-cap-${badCap}`, true);
     document.getElementById(`b-cap-${badCap}`)?.closest(".rule-row")?.scrollIntoView({ block: "nearest" });
     return;
   }
   const badRule = document.querySelector<HTMLInputElement>("#b-panel-body .rule-row input[aria-invalid='true']");
-  if (badRule) { badRule.focus(); return; }
+  if (badRule) { openSettings(badRule.closest<HTMLElement>("[role=tabpanel]")!.dataset.tab as Tab, false); badRule.focus(); return; }
   const name = session.character, { pool: settings, opts, profile, snapshot } = panelBuild();
   const exact = knobs.exact, budgetMs = 1000 * Number(knobs.budgetS);
   commands.closeCompare();
@@ -812,7 +915,8 @@ async function runBuild(): Promise<void> {
   setBuilding(true);
   job.ui = runPanel(job);
   $<HTMLElement>("#b-msg")!.replaceChildren(job.ui.root);
-  job.ui.root.focus();
+  // started from the drawer (its Build, or ⌘↵ in one of its fields), the focus stays there to tweak and build again
+  if (!$<HTMLElement>("#b-drawer")!.contains(document.activeElement)) job.ui.root.focus();
   let r: (OptimizeStartApiResponse & { ok: true }) | { ok: false; error: string };
   try {
     r = (await api<OptimizeStartApiResponse>("/api/optimize", { method: "POST", body: { character: name, settings, profile, opts,
@@ -827,24 +931,27 @@ async function runBuild(): Promise<void> {
   const checks = r.cached ? null : settingsCheck(r.diagnostics || [], name!);
   if (checks) job.ui!.root.before(checks);
   // r.run.ms is `number | null` (a saved run's on-disk shape); a genuinely null one has never been guarded here.
-  if (r.cached) { finishJob(job, { result: r.run!.result, ms: r.run!.ms!, runId: r.run!.id, reused: r.run! }); return; }
+  if (r.cached) { finishJob(job, { result: r.run!.result, ms: r.run!.ms!, runId: r.run!.id, reused: r.run!, settings: snapshot }); return; }
   job.id = r.id!;
   job.timer = setInterval(() => job.ui!.tick(job), 200) as unknown as number;
   job.es = followJob(job.id, {
     progress: (p) => { job.last = p; job.lastProgressAt = Date.now(); job.lastServerAt = Date.now(); job.connected = true; job.ui!.update(job); },
     alive: (connected) => { if (connected) job.lastServerAt = Date.now(); job.connected = connected; },
-    done: (d) => finishJob(job, d),
+    done: (d) => finishJob(job, { ...d, settings: snapshot }),
     failed: (error) => failJob(job, error),
     cancelled: (ms) => endJob(job, cancelledNote(ms)),
   });
 }
-// While a build runs: the footer button says so and is disabled, the sidebar's Suit Builder item shows a busy
-// dot, and a result already on screen stays there dimmed and out of reach until the new one lands.
+// While a build runs: the top bar's and the drawer footer's Build buttons say so and are disabled, the sidebar's Suit
+// Builder item shows a busy dot, and a result already on screen stays there dimmed and out of reach until the new one lands.
 function setBuilding(on: boolean): void {
-  const b = $<HTMLButtonElement>("#b-run")!;
-  b.disabled = on;
-  b.replaceChildren(...(on ? [txt("Building…")] : [txt("Build best suit"), kbd("⌘↵")]));
-  b.querySelector(".kbd")?.setAttribute("aria-hidden", "true");
+  for (const [id, key] of [["#b-run", true], ["#b-run-foot", false]] as const) {
+    const b = $<HTMLButtonElement>(id)!;
+    // the footer's is only marked disabled (runBuild ignores a press while one runs), so it keeps the focus it has
+    if (key) b.disabled = on; else if (on) b.setAttribute("aria-disabled", "true"); else b.removeAttribute("aria-disabled");
+    b.replaceChildren(...(on ? [txt("Building…")] : [txt("Build"), ...(key ? [kbd("⌘↵")] : [])]));
+    b.querySelector(".kbd")?.setAttribute("aria-hidden", "true");
+  }
   setNavBusy("builder", on);
   const res = $<HTMLElement>("#b-result")!;
   const stale = on && !!session.result;
@@ -874,10 +981,10 @@ function endJob(job: BuilderJob, node?: HTMLElement | null): boolean {
   if (hadFocus) node?.querySelector<HTMLElement>("button")?.focus();
   return hadFocus;
 }
-interface JobFinishInfo { result: OptimizeResult; ms: number; runId: string | null; reused?: SavedRunLike | null | undefined }
+interface JobFinishInfo { result: OptimizeResult; ms: number; runId: string | null; reused?: SavedRunLike | null | undefined; settings: RunSettings }
 function finishJob(job: BuilderJob, r: JobFinishInfo): void {
   const meta: BuildMeta = { ms: r.ms, poolSize: job.poolSize, skipped: job.skipped, reused: r.reused || null };
-  const finished: FinishedBuild = { name: job.name, result: r.result, current: job.current, profile: job.profile, runId: r.runId || null, meta };
+  const finished: FinishedBuild = { name: job.name, result: r.result, current: job.current, profile: job.profile, runId: r.runId || null, meta, settings: r.settings };
   // Switched to another character while it ran: never draw this suit (or its Plan and Grab all) under that
   // character. It waits until its own character is selected again.
   const away = job.name !== session.character;
@@ -892,7 +999,8 @@ function finishJob(job: BuilderJob, r: JobFinishInfo): void {
 // `focus`: the finished build's heading takes the focus the progress card had (tabindex -1: a target, not a stop).
 function showFinished(f: FinishedBuild, focus = false): void {
   session.result = f.result;
-  session.openRun = f.runId;
+  session.openRun = f.runId;   // clears builtWith (below), then it is this build's
+  builtWith = f.runId ? { runId: f.runId, settings: f.settings } : null;
   session.altView = null;
   commands.renderResult(f.result, f.current, f.profile, f.name, f.meta).then(() => {
     const h = focus ? $<HTMLElement>("#b-result h2") : null;

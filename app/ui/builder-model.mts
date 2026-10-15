@@ -1,9 +1,8 @@
-// ui/builder-model.mts — the Suit Builder's pure logic (design spec 4.6-4.8): the one-line summaries a
-// collapsed panel section shows, the Advanced fields' validation, a resist tile's outcome line, the result's
+// ui/builder-model.mts — the Suit Builder's pure logic (design spec 4.6-4.8): the Advanced fields' validation, a resist tile's outcome line, the result's
 // "other changes" badges and "after the change" values, the compare table's differing rows and best values,
 // and a saved run's label and badges. No DOM and no page state, so app/builder-model.test.mts can check it
 // all directly; ui/builder.mts, ui/builder-result.mts and ui/runs.mts draw what it returns.
-import { NOBODY, labelOf, paperdollResist, propName, importanceOf, withCurrentActions, roundImportance, weightOfImportance, RESIST_SKILL_KEY, GEAR_SLOTS, NOT_BUILDER_KEYS, RESIST_KEYS, RESIST_CAP_LIMITS, SLOT_LABELS, settingsDiff, shardResistCap, WEAPON_SKILLS, WEAPON_EXCLUDES, SPELLBOOKS, MELEE_SKILLS, ubwsLetsIn, flagLabel } from "../vault-lib.mts";
+import { NOBODY, labelOf, paperdollResist, propName, importanceOf, withCurrentActions, weightOfImportance, RESIST_SKILL_KEY, GEAR_SLOTS, NOT_BUILDER_KEYS, RESIST_KEYS, RESIST_CAP_LIMITS, SLOT_LABELS, settingsDiff, shardResistCap, WEAPON_SKILLS, WEAPON_EXCLUDES, SPELLBOOKS, MELEE_SKILLS, ubwsLetsIn, flagLabel } from "../vault-lib.mts";
 import type { FcCap, PlannedBuffs, PropMap, ResistCap, RunSettings } from "../vault-lib.mts";
 import { applyBuffs, buffById, buffsDiff, capWord, signed, type BuffResult } from "../buffs.mts";
 import { RUN_SETTING_LIMITS, type Range } from "../run-settings.mts";
@@ -35,36 +34,6 @@ export function withBuffs(t: PropMap, skill: number | null, caps: Record<string,
 export const pastCapBadges = (r: BuffResult): string[] =>
   Object.entries(r.outside).filter(([, v]) => v).map(([k, v]) => `${labelOf(k)} ${signed(v)} ${capWord(v)} the cap (${(r.shares[k] || []).filter((x) => x.outside).map((x) => buffById(x.id)!.name).join(", ")})`);
 
-// ---------------------------------------------------------------- panel summaries
-// "each resist 6" when all five resists carry the same value, else each one on its own.
-function groupedEntries(values: Record<string, number>): Array<[string, number]> {
-  const entries = Object.entries(values).filter(([k]) => !NOT_BUILDER_KEYS.has(k));
-  const resists = RESIST_KEYS.map((k) => values[k]);
-  const same = resists.every((v) => v != null && v === resists[0]);
-  if (!same) return entries.map(([k, v]) => [labelOf(k), v]);
-  return [["each resist", resists[0]!], ...entries.filter(([k]) => !RESIST_KEYS.includes(k)).map(([k, v]): [string, number] => [labelOf(k), v])];
-}
-// "DCI 100 · HCI 100 · each resist 93 · SSI 67 · DEX 22 · 7 more": each weight's importance (vault-lib.mts importanceOf), the heaviest first.
-export function weightsSummary(weights: Record<string, number> = {}, shown = 6): string {
-  const all = groupedEntries(Object.fromEntries(Object.entries(weights).map(([k, w]) => [k, roundImportance(importanceOf(k, w))]))).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-  if (!all.length) return "No weights set";
-  const rest = all.length - shown;
-  return [...all.slice(0, shown).map(([l, v]) => `${l} ${num(v)}`), rest > 0 ? `${rest} more` : ""].filter(Boolean).join(" · ");
-}
-// "each resist 65 · HCI 35 soft"
-export function requirementsSummary(floors: Record<string, number> = {}, soft: string[] = []): string {
-  const keys = Object.keys(floors).filter((k) => !NOT_BUILDER_KEYS.has(k));
-  if (!keys.length) return "No requirements";
-  const resistsSoft = RESIST_KEYS.filter((k) => soft.includes(k));
-  const grouped = groupedEntries(floors);
-  return grouped.map(([l, v]) => {
-    const k = l === "each resist" ? null : keys.find((x) => labelOf(x) === l);
-    const isSoft = k ? soft.includes(k) : resistsSoft.length === RESIST_KEYS.length;
-    return `${l} ${num(v)}${isSoft ? " soft" : ""}`;
-  }).join(" · ");
-}
-export interface PoolSettings { allowOthersWorn?: boolean | undefined; allowGargoyle?: boolean | undefined; medOnly?: boolean | undefined; excludeWeapons?: string[] | undefined; ubwsAnyWeapon?: boolean | undefined; weaponMustHave?: string[] | undefined;
-  lockedSlots?: string[] | undefined; excludeTags?: string[] | undefined; excludeSkills?: string[] | undefined; excludeRoots?: unknown[] | undefined; onlyRoots?: unknown[] | undefined; rarity?: string | undefined }
 // The Rarity setting's help line: none for "any".
 export function rarityHelp(rarity: string | undefined): string {
   return rarity ? `Among equally good suits, use the ${rarity === "higher" ? "highest" : "lowest"}-rarity pieces. Requirements come first.` : "";
@@ -86,29 +55,11 @@ export function withStoredRoots(options: Array<{ value: string; label: string }>
   const gone = stored.filter((v) => !options.some((o) => o.value === String(v)));
   return [...options, ...gone.map((v) => ({ value: String(v), label: `Unknown container 0x${v.toString(16).toUpperCase()} (not in the scans)` }))];
 }
-// "Own gear and unworn gear · no gargoyle-only · any weapon"
-export function poolSummary(p: PoolSettings): string {
-  return [
-    p.allowOthersWorn ? "Includes gear worn by others" : "Own gear and unworn gear",
-    p.allowGargoyle ? "gargoyle-only allowed" : "no gargoyle-only",
-    p.medOnly ? "meditation-safe only" : "",
-    weaponsSummary(p.excludeWeapons, p.ubwsAnyWeapon !== false),
-    p.weaponMustHave?.length ? `weapon must have ${p.weaponMustHave.map(flagLabel).join(", ")}` : "",
-    p.lockedSlots?.length ? `${plural(p.lockedSlots.length, "slot")} locked` : "",
-    p.excludeTags?.length ? `no ${p.excludeTags.join(", ")}` : "",
-    p.excludeSkills?.length ? `${plural(p.excludeSkills.length, "skill bonus", "skill bonuses")} forbidden` : "",
-    p.onlyRoots?.length ? `${plural(p.onlyRoots.length, "container")} only` : "",
-    p.excludeRoots?.length ? `${plural(p.excludeRoots.length, "container")} skipped` : "",
-    p.rarity ? `prefer ${p.rarity} rarity` : "",
-  ].filter(Boolean).join(" · ");
-}
 
 // ---------------------------------------------------------------- weapons
-// The Weapons control holds the weapon skills left out of the pool. The summary says them ("no archery or throwing
-// weapons", "fencing weapons only"); the chip counts them ("Weapons: 2 excluded"). Either adds ", plus Use Best Weapon
-// Skill" when that switch is on, some melee skill is excluded and some is not: only then does it matter in practice.
-// Spellbooks (issue #259) add ", no spellbooks" to either ("Weapons: Fencing only, no spellbooks").
-const orList = (xs: string[]): string => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} or ${xs[xs.length - 1]}`);
+// The Weapons control holds the weapon skills left out of the pool. The chip counts them ("Weapons: 2 excluded"), and
+// adds ", plus Use Best Weapon Skill" when that switch is on, some melee skill is excluded and some is not: only then does
+// it matter in practice. Spellbooks (issue #259) add ", no spellbooks" ("Weapons: Fencing only, no spellbooks").
 export const weaponName = (w: string): string => (w === SPELLBOOKS ? "Spellbooks" : w[0]!.toUpperCase() + w.slice(1));
 interface WeaponWords { any: string; none: string; only: (w: string) => string; some: (excluded: string[]) => string; noBooks: string }
 function weaponsText(excluded: string[], ubws: boolean, t: WeaponWords): string {
@@ -118,8 +69,6 @@ function weaponsText(excluded: string[], ubws: boolean, t: WeaponWords): string 
   const out = named ? `${text}, plus Use Best Weapon Skill` : text;
   return skills.length === excluded.length ? out : skills.length ? `${out}, no spellbooks` : t.noBooks;
 }
-export const weaponsSummary = (excluded: string[] = [], ubws = false): string =>
-  weaponsText(excluded, ubws, { any: "any weapon", none: "no weapons", only: (w) => `${w} weapons only`, some: (ex) => `no ${orList(ex)} weapons`, noBooks: "any weapon, no spellbooks" });
 export const weaponsChipText = (excluded: string[] = [], ubws = false): string =>
   weaponsText(excluded, ubws, { any: "Weapons: any", none: "Weapons: none", only: (w) => `Weapons: ${weaponName(w)} only`, some: (ex) => `Weapons: ${ex.length} excluded`, noBooks: "Weapons: any, no spellbooks" });
 // The Weapon must have chip (issue #214): "Weapon must have: Spell Channeling" when it holds any.
@@ -160,24 +109,6 @@ export function capNote(c: ResistCap): string | null {
   return `${c.cap > c.shard ? "raised" : "lowered"} from ${c.shard}`;
 }
 const overridden = (view: Record<string, ResistCap>): string[] => RESIST_KEYS.filter((k) => view[k] && view[k]!.cap !== view[k]!.shard);
-// The collapsed section's line: "Shard caps: 70 each" (with a race's exception, "70, Energy 75"), or the overrides
-// ("Fire 95 (raised from 70) · the rest at the shard's cap").
-export function resistCapsSummary(view: Record<string, ResistCap>): string {
-  const set = overridden(view);
-  if (set.length) {
-    const rest = RESIST_KEYS.length - set.length;
-    return [...set.map((k) => `${labelOf(k)} ${view[k]!.cap} (${capNote(view[k]!)})`), rest ? `${rest === 1 ? "the other one" : "the rest"} at the shard's cap` : ""].filter(Boolean).join(" · ");
-  }
-  const { common, odd } = commonAndOdd(RESIST_KEYS.map((k): [string, number] => [k, view[k]!.cap]));
-  return `Shard caps: ${odd.length ? [common, ...odd].join(", ") : `${common} each`}`;
-}
-// The most common value of the five and the others by name: { common: 70, odd: ["Energy 75"] }.
-function commonAndOdd(pairs: Array<[string, number]>): { common: number; odd: string[] } {
-  const count = new Map<number, number>();
-  for (const [, v] of pairs) count.set(v, (count.get(v) || 0) + 1);
-  const common = [...count.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0]![0];
-  return { common, odd: pairs.filter(([, v]) => v !== common).map(([k, v]) => `${labelOf(k)} ${v}`) };
-}
 // The Requirements section's note on Resisting Spells, null with no minimum (or one of 0, which meets nothing): "Resisting Spells keeps each of Ana's
 // resists at 40 or more: a resist requirement of 40 or less is met by any suit."
 export function resistMinimumText(name: string, min: number | null): string | null {
@@ -230,17 +161,6 @@ export function knobFromServerError(text: string): KnobField | null {
   if (/opts\.alternatives\.tolerance/.test(text)) return "altTol";
   if (/strLimit/.test(text)) return "strLimit";
   return null;
-}
-// "Exact · 10,000 restarts · 300 s · 5 other suits within 40" (STR limit is not under Advanced: it has its
-// own field beside Race)
-export function advancedSummary(k: Knobs): string {
-  const n = (s: string): number => Number(s);
-  return [
-    k.exact ? "Exact" : "Heuristic",
-    `${plural(n(k.restarts), "restart")}`,
-    k.exact ? `${num(n(k.budgetS))} s` : "",
-    k.exact && n(k.altCount) > 0 ? `${plural(n(k.altCount), "other suit")} within ${num(n(k.altTol))}` : "",
-  ].filter(Boolean).join(" · ");
 }
 
 // ---------------------------------------------------------------- result

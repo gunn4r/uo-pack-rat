@@ -78,12 +78,12 @@ const isManual = (): boolean => session.mode === "manual";
 // The character whose bonuses Manual's totals take: the builder's own, unless "No character" is picked (in Manual, or in Automatic).
 const manualCharacter = (): string | null => (noCharacter || session.character === NOBODY ? null : session.character);
 
-// Once, from initBuilder(): the mode switch beside the title, and Manual's screen.
+// Once, from initBuilder(): the mode switch in the top bar after the template picker, and Manual's screen.
 export function initManual(): void {
-  seg = segmented({ label: "Builder mode", options: [{ value: "automatic", label: "Automatic" }, { value: "manual", label: "Manual" }], value: session.mode, size: "md",
+  seg = segmented({ label: "Builder mode", options: [{ value: "automatic", label: "Automatic" }, { value: "manual", label: "Manual" }], value: session.mode,
     onChange: (v) => setMode(v as BuilderMode) });
   seg.id = "b-mode";
-  $<HTMLElement>("#h-builder")!.after(seg);
+  $<HTMLElement>("#b-tpl-top")!.after(seg);
   const root = $<HTMLElement>("#b-manual")!;
   // Esc closes the picker (or the buff picker) from anywhere on the screen (a slot card, a row, the search, the bare
   // page after a click on text) and gives its slot card (or Add buff) the focus; a popover, a drawer, a dialog or a
