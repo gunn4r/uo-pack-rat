@@ -138,9 +138,12 @@ test("[slow] refresh, Clear all, the virtual table and Forget keep the page's st
     await page.waitForFunction(() => document.querySelector<HTMLSelectElement>("#b-char")?.value, { timeout: 10_000 });
     const names = (await page.locator("#b-char option").allInnerTexts()).filter((n) => n !== "No character");
     await page.selectOption("#b-char", names[1]!);
-    // The Weapons chip's choices, counted in its popover: wiring the panel twice would draw a second chip.
+    // The Weapons chip's choices, counted in its popover: wiring the panel twice would draw a second chip. It is in the
+    // Settings drawer's Pool tab (issue #272).
     const weaponChoices = async (): Promise<number> => {
       assert.equal(await page.locator("#b-weapon").count(), 1, "one Weapons chip");
+      if (await page.locator("#b-drawer").isHidden()) await page.click("#b-settings");
+      await page.click("#b-tab-pool");
       await page.click("#b-weapon");
       const n = await page.locator(".pop input[type=checkbox]").count();
       await page.keyboard.press("Escape");

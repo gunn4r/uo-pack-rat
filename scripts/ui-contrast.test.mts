@@ -346,6 +346,7 @@ const SCENES: Scene[] = [
   { name: "builder running", enter: async (p) => {
     // hold the start request so the progress card stays up while it is measured
     await p.route("**/api/optimize", async (r) => { await new Promise<void>((res) => { releaseStart = res; }); await r.abort().catch(() => {}); });
+    await p.click("#b-drawer-close");   // the progress card's Cancel, under the drawer
     await p.click("#b-run");
     await p.waitForSelector("#b-msg .b-progress");
   }, leave: async (p) => {
