@@ -22,18 +22,21 @@ export async function loadOrganize(): Promise<void> {
   state.organize.stamp = o.stamp;
   if (b) state.organize.blacklist = b.containers.map((e) => +e.serial);
 }
-// The whole setup replaced; the server's refusal as a sentence, or null once saved. A setup changed elsewhere since
-// the page read it is reloaded and shown, and the change asked for is not saved: the page holds only the whole setup,
-// so it cannot tell which of its differences were this change. `base` names the setup `next` was made from when it is
-// not the page's copy (Auto organize's proposal). Saves run one at a time, each from the stamp the one before left, so
-// the page's own quick saves (a held ↓ on a rule) never read as a change made elsewhere.
+// The whole setup replaced by what `update` makes of the page's copy; the server's refusal as a sentence, or null once
+// saved (or when `update` changes nothing). Saves run one at a time, and `update` runs when its turn comes, on the
+// setup the save before it left, so quick edits (two selects, a held ↓ on a rule) each build on the last and none is
+// lost or read as a change made elsewhere. A setup changed elsewhere since the page read it is reloaded and shown, and
+// the change asked for is not saved. `base` names the setup the change was made from when it is not the page's copy
+// (Auto organize's proposal).
 let saving: Promise<unknown> = Promise.resolve();
-export function saveConfig(next: OrganizeConfig, base?: string | null): Promise<string | null> {
-  const run = saving.then(() => putConfig(next, base));
+export function saveConfig(update: (cfg: OrganizeConfig) => OrganizeConfig, base?: string | null): Promise<string | null> {
+  const run = saving.then(() => putConfig(update, base));
   saving = run.catch(() => null);
   return run;
 }
-async function putConfig(next: OrganizeConfig, base?: string | null): Promise<string | null> {
+async function putConfig(update: (cfg: OrganizeConfig) => OrganizeConfig, base?: string | null): Promise<string | null> {
+  const cfg = state.organize.config!, next = update(cfg);
+  if (next === cfg) return null;
   let saved: OrganizePutApiResponse;
   try { saved = await api<OrganizePutApiResponse>("/api/organize", { method: "PUT", body: { ...next, base: (base ?? state.organize.stamp) ?? undefined } }); } catch (e) {
     if ((e as ApiError).code !== "stale") return errorText(e);

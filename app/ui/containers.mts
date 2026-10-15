@@ -23,7 +23,7 @@ import { openedRoots } from "./roster.mts";
 import { registerScreen, showContainer } from "./nav.mts";
 import { splitSerial } from "./item-parts.mts";
 import { bridgeActionReason, runBridgeAction } from "./bridge.mts";
-import type { ForgetApiResponse, MissingApiResponse, OrganizeConfig } from "./api-types.mts";
+import type { ContainerLabel, ForgetApiResponse, MissingApiResponse, OrganizeConfig } from "./api-types.mts";
 
 const KIND_NAMES: Record<string, string> = { backpack: "Backpack", bank: "Bank", ground: "On the ground" };
 // Same total width as before the Fill column, so the table still fits a 1000 px window without scrolling.
@@ -69,17 +69,18 @@ export async function labelContainer(r: Container): Promise<void> {
   const save = async (): Promise<void> => {
     const n = name.value.trim();
     if (!n || n.length > 64) { fail("Give the label a name, up to 64 characters."); name.focus(); return; }
-    const { config, dropped } = withLabel(await current(), { serial: +r.serial, name: n, ...(colour.value ? { color: colour.value } : {}), ...(pin.input.checked ? { pinned: true } : {}), origin: "manual" });
+    const label: ContainerLabel = { serial: +r.serial, name: n, ...(colour.value ? { color: colour.value } : {}), ...(pin.input.checked ? { pinned: true } : {}), origin: "manual" };
+    const { dropped } = withLabel(await current(), label);
     if (dropped.length && !await confirmDialog({ title: `Pin ${n}?`, body: pinNote(n, dropped), confirmLabel: `Pin ${n}`, danger: false })) return;
-    const err = await saveConfig(config);
+    const err = await saveConfig((cfg) => withLabel(cfg, label).config);
     if (err) { fail(err); return; }
     dlg?.close();
     toast(`${n} is labeled for Organize.`, "good");
   };
   const remove = async (): Promise<void> => {
-    const { config, dropped } = withoutLabel(await current(), +r.serial);
+    const { dropped } = withoutLabel(await current(), +r.serial);
     if (!await confirmDialog({ title: `Remove the label from ${shown}?`, body: dropped.length ? `Organize stops using it, and it comes off ${dropped.join(", ")}.` : "Organize stops using it: nothing is taken from it or put into it.", confirmLabel: "Remove label" })) return;
-    const err = await saveConfig(config);
+    const err = await saveConfig((cfg) => withoutLabel(cfg, +r.serial).config);
     if (err) { fail(err); return; }
     dlg?.close();
     toast(`${shown} is no longer labeled.`, "good");

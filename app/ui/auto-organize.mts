@@ -149,7 +149,7 @@ async function accept(): Promise<void> {
   d.busy = true;
   paintAccept();
   // Saved over the setup the server worked the proposal out from, which may be newer than the page's copy.
-  const err = await saveConfig(p.config, d.stamp);
+  const err = await saveConfig(() => p.config, d.stamp);
   d.busy = false;
   if (err) { d.error = err; paint(); return; }
   drawer().close();

@@ -1,6 +1,6 @@
 // ui-organize.test.mts — [slow]: Organize (issue #11) in the real Electron window over the demo scans.
 //
-// `[slow]`: Organize in the real Electron window over the demo scans on a writable `--data` folder: the empty state that teaches labelling, Containers' Label… and Fill column, labels in the Items rows, the Rules card (fill, counts, catch-all, reordering by keyboard and drag), a save over a setup another window changed refused and the setup reloaded, and two quick saves of its own taken one after the other (issue #280), the rule drawer (presets, fill order, a forgotten target), a bag inside a chest picked as a target and labelled on save with the live match count (the demo scans copied into `scans/` with a pouch added, no `--demo`), Save as rule…, a mocked 600-move plan (reports first, trips collapsed), a client without `trip`, a trip run through the bridge's queue (Stop, a failed put, Pin this item), a salvaged setup refusing trips until Save setup, the screen at 1000 × 700, and Auto organize (Accept, running it again, Detailed, a 1000 × 700 drawer), and item kinds (issue #150: Review unclassified items, Classify this… and Reset to automatic, Settings' Export as an Electron download and Import through the file input).
+// `[slow]`: Organize in the real Electron window over the demo scans on a writable `--data` folder: the empty state that teaches labelling, Containers' Label… and Fill column, labels in the Items rows, the Rules card (fill, counts, catch-all, reordering by keyboard and drag), a save over a setup another window changed refused and the setup reloaded, and quick saves of its own (↓ twice, two selects) each building on the one before (issue #280), the rule drawer (presets, fill order, a forgotten target), a bag inside a chest picked as a target and labelled on save with the live match count (the demo scans copied into `scans/` with a pouch added, no `--demo`), Save as rule…, a mocked 600-move plan (reports first, trips collapsed), a client without `trip`, a trip run through the bridge's queue (Stop, a failed put, Pin this item), a salvaged setup refusing trips until Save setup, the screen at 1000 × 700, and Auto organize (Accept, running it again, Detailed, a 1000 × 700 drawer), and item kinds (issue #150: Review unclassified items, Classify this… and Reset to automatic, Settings' Export as an Electron download and Import through the file input).
 //
 // Also a page reloaded mid-trip picking the trip back up. Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
 import test from "node:test";
@@ -206,7 +206,7 @@ async function pickOption(page: Page, id: string, name: string, value: string): 
 test("[slow] a save over a setup changed in another window is refused: the page reloads that setup and says the change was not saved, while the page's own quick saves never are (issue #280)", async (t) => {
   const why = unavailable();
   if (why) return t.skip(why);
-  const dataDir = dataDirWith([{ id: "rule-1", name: "Reagents", kind: ["reagent"], targets: [DORRAN] }]);
+  const dataDir = dataDirWith([{ id: "rule-1", name: "Reagents", kind: ["reagent"], targets: [DORRAN] }, { id: "rule-3", name: "Scrolls", names: ["blank scroll"], targets: [DORRAN] }]);
   const { app, page, errors } = await launch(dataDir);
   try {
     await go(page, "#/organize", '.org-rule[data-rule="rule-1"]');
@@ -222,19 +222,27 @@ test("[slow] a save over a setup changed in another window is refused: the page 
     // Made again on the setup as it is now, the change saves.
     await page.selectOption("#org-catchall", String(DORRAN));
     const saved = await until(() => readOrganize(dataDir), (f) => f?.catchAll === DORRAN, "the catch-all saved");
-    assert.deepEqual(saved!.rules.map((r) => r.id), ["rule-1", "other-window"]);
-    // ↓ pressed twice while the first move is still saving (each PUT held back): the second save waits for the first
-    // and names the setup it left, so neither is refused.
+    assert.deepEqual(saved!.rules.map((r) => r.id), ["rule-1", "rule-3", "other-window"]);
+    // Quick edits while the one before is still saving (each PUT held back): each waits for the one before, builds on
+    // the setup it left and names its stamp, so none is refused and none undoes another.
     let puts = 0;
     await page.route("**/api/organize", async (r) => {
       if (r.request().method() === "PUT") { puts++; await new Promise((ok) => setTimeout(ok, 400)); }
       await r.continue();
     });
+    // ↓ twice moves the rule twice, as pressed.
     await page.locator('.org-rule[data-rule="rule-1"] .org-grip').focus();
     await page.keyboard.press("ArrowDown");
     await page.keyboard.press("ArrowDown");
-    await until(() => puts, (n) => n === 2, "both saves sent");
-    await until(() => readOrganize(dataDir), (f) => f?.rules.map((r) => r.id).join() === "other-window,rule-1", "rule-1 moved down");
+    await until(() => puts, (n) => n === 2, "both moves sent");
+    await until(() => readOrganize(dataDir), (f) => f?.rules.map((r) => r.id).join() === "rule-3,other-window,rule-1", "rule-1 moved down twice");
+    // Two different edits: the catch-all, then the empty bags before the first has saved. Both stand.
+    await page.selectOption("#org-catchall", String(KESTREL));
+    await page.selectOption("#org-emptybags", String(DORRAN));
+    await until(() => puts, (n) => n === 4, "both edits sent");
+    const both = await until(() => readOrganize(dataDir), (f) => f?.emptyBagsTo === DORRAN, "the empty bags saved");
+    assert.equal(both!.catchAll, KESTREL, "the first edit was not undone by the second");
+    assert.deepEqual(both!.rules.map((r) => r.id), ["rule-3", "other-window", "rule-1"]);
     await page.waitForTimeout(800);
     const conflicts = await page.evaluate(() => [...document.querySelectorAll("#toasts .toast .toast-text")].filter((e) => /another window/.test(e.textContent || "")).length);
     assert.equal(conflicts, 1, "only the real conflict above was reported");
