@@ -10,6 +10,7 @@
 import { isPseudoCharacter, NOBODY, parseStamp, V1_ADAPTER_VERSION } from "./scan-schema.mts";
 export { isPseudoCharacter, NOBODY };
 import type { RulesV1, ScanV2, ScanV2Adapter } from "./schema/types.d.mts";
+import type { Diagnostic } from "./runs-types.mts";
 
 // ---------------------------------------------------------------------------
 // Shared shapes. Declared once here — the inventory/item types every later task (the server, the
@@ -215,8 +216,9 @@ export function getRules(): RulesV1 {
 // sheet's "Other" group list them in it). A parsed property has the
 // tooltip pattern that reads it; the rest are set by parseTooltip itself (psLevel, sotPoints, tagPenalty), by the
 // fold (the pools) or read off the item (the "extra" columns). `builder` is whether the Suit Builder's weight and
-// requirement rows offer it. `typical` is the span a good suit covers in a property the shard rules give no cap
-// (typicalRange, the weight rows' worth hint and the weight_dominates diagnostic read it). The exports below are derived from it.
+// requirement rows offer it. `typical` is the span a good suit covers in each property the builder offers: the usual
+// shard cap where there is one (a resist's 70), else what a good suit gathers (typicalRange, and so a weight's
+// importance, read it). The exports below are derived from it.
 type PropKind = "number" | "extra";
 interface PropDef<K extends string = string> { key: K; pattern?: RegExp; label: string; full: string; builder: boolean; kind: PropKind; typical?: number }
 const tip = (text: string): RegExp => new RegExp(`${text}[^-\\d]*(-?\\d+)`);
@@ -225,21 +227,21 @@ const derived = <K extends string>(key: K, label: string, full: string, builder 
 const extra = <K extends string>(key: K, label: string, full: string): PropDef<K> => ({ key, label, full, builder: false, kind: "extra" });
 const typ = <K extends string>(def: PropDef<K>, typical: number): PropDef<K> => ({ ...def, typical });
 export const PROPERTIES = [
-  parsed("physResist", "physical resist", "Phys", "Physical Resist"), parsed("fireResist", "fire resist", "Fire", "Fire Resist"),
-  parsed("coldResist", "cold resist", "Cold", "Cold Resist"), parsed("poisonResist", "poison resist", "Poison", "Poison Resist"),
-  parsed("energyResist", "energy resist", "Energy", "Energy Resist"),
-  parsed("hci", "hit chance increase", "HCI", "Hit Chance Increase"), parsed("dci", "defense chance increase", "DCI", "Defense Chance Increase"),
-  parsed("ssi", "swing speed increase", "SSI", "Swing Speed Increase"), parsed("di", "damage increase", "DI", "Damage Increase"),
-  parsed("lmc", "lower mana cost", "LMC", "Lower Mana Cost"), parsed("lrc", "lower reagent cost", "LRC", "Lower Reagent Cost"),
-  parsed("fc", "faster casting", "FC", "Faster Casting"), parsed("fcr", "faster cast recovery", "FCR", "Faster Cast Recovery"),
-  parsed("sdi", "spell damage increase", "SDI", "Spell Damage Increase"),
-  parsed("hpi", "hit point increase", "HP+", "Hit Point Increase"), parsed("hpRegen", "hit point regeneration", "HPR", "Hit Point Regeneration"),
-  typ(parsed("stamInc", "stamina increase", "Stam+", "Stamina Increase"), 20), parsed("stamRegen", "stamina regeneration", "SR", "Stamina Regeneration"),
-  typ(parsed("manaInc", "mana increase", "Mana+", "Mana Increase"), 20), parsed("manaRegen", "mana regeneration", "MR", "Mana Regeneration"),
+  typ(parsed("physResist", "physical resist", "Phys", "Physical Resist"), 70), typ(parsed("fireResist", "fire resist", "Fire", "Fire Resist"), 70),
+  typ(parsed("coldResist", "cold resist", "Cold", "Cold Resist"), 70), typ(parsed("poisonResist", "poison resist", "Poison", "Poison Resist"), 70),
+  typ(parsed("energyResist", "energy resist", "Energy", "Energy Resist"), 70),
+  typ(parsed("hci", "hit chance increase", "HCI", "Hit Chance Increase"), 45), typ(parsed("dci", "defense chance increase", "DCI", "Defense Chance Increase"), 45),
+  typ(parsed("ssi", "swing speed increase", "SSI", "Swing Speed Increase"), 60), typ(parsed("di", "damage increase", "DI", "Damage Increase"), 100),
+  typ(parsed("lmc", "lower mana cost", "LMC", "Lower Mana Cost"), 40), typ(parsed("lrc", "lower reagent cost", "LRC", "Lower Reagent Cost"), 100),
+  typ(parsed("fc", "faster casting", "FC", "Faster Casting"), 2), typ(parsed("fcr", "faster cast recovery", "FCR", "Faster Cast Recovery"), 6),
+  typ(parsed("sdi", "spell damage increase", "SDI", "Spell Damage Increase"), 100),
+  typ(parsed("hpi", "hit point increase", "HP+", "Hit Point Increase"), 25), typ(parsed("hpRegen", "hit point regeneration", "HPR", "Hit Point Regeneration"), 18),
+  typ(parsed("stamInc", "stamina increase", "Stam+", "Stamina Increase"), 20), typ(parsed("stamRegen", "stamina regeneration", "SR", "Stamina Regeneration"), 24),
+  typ(parsed("manaInc", "mana increase", "Mana+", "Mana Increase"), 20), typ(parsed("manaRegen", "mana regeneration", "MR", "Mana Regeneration"), 30),
   typ(parsed("strBonus", "strength bonus", "STR", "Strength Bonus"), 25), typ(parsed("dexBonus", "dexterity bonus", "DEX", "Dexterity Bonus"), 25),
   typ(parsed("intBonus", "intelligence bonus", "INT", "Intelligence Bonus"), 25),
   typ(parsed("reflectPhys", "reflect physical damage", "RPD", "Reflect Physical Damage"), 50),
-  parsed("castingFocus", "casting focus", "CF", "Casting Focus"), typ(parsed("luck", "^luck", "Luck", "Luck"), 500),
+  typ(parsed("castingFocus", "casting focus", "CF", "Casting Focus"), 12), typ(parsed("luck", "^luck", "Luck", "Luck"), 500),
   typ(parsed("hitLifeLeech", "hit life leech", "HLL", "Hit Life Leech"), 100), typ(parsed("hitStamLeech", "hit stamina leech", "HSL", "Hit Stamina Leech"), 100),
   typ(parsed("hitManaLeech", "hit mana leech", "HML", "Hit Mana Leech"), 100), typ(parsed("hitLowerDef", "hit lower defense", "HLD", "Hit Lower Defense"), 50),
   typ(parsed("hitLowerAttack", "hit lower attack", "HLA", "Hit Lower Attack"), 50),
@@ -278,18 +280,28 @@ export const PROP_LABELS: Record<string, string> = Object.fromEntries(NUMBER_PRO
 export const NOT_BUILDER_KEYS = new Set(NUMBER_PROPS.filter((p) => !p.builder).map((p): string => p.key));
 // Full names for the abbreviations, shown as hover tooltips in the app.
 export const PROP_FULL: Record<string, string> = Object.fromEntries(NUMBER_PROPS.map((p) => [p.key, p.full]));
-// The span a good suit covers in a property, in the player's terms (issue #217): the registry's typical where it has
-// one (only properties the shard rules give no cap, so a cap the build carries there is a character's limit, such as
-// the stat ceiling less the raw stat, not a span), else the build's cap before buffs (`caps` from playerCaps), else 15
-// for a skill bonus; null for a property with none of these, which gets no worth hint and is left out of the
-// weight_dominates check.
+// The span a good suit covers in a property (issue #217): the registry's typical, else 15 for a skill bonus; null for a
+// property with neither (none the builder offers). A fixed number per property, not a character's or a build's cap, so
+// a weight's importance below never changes with the character, buffs or Resisting Spells.
 const TYPICAL: Record<string, number> = Object.fromEntries(NUMBER_PROPS.flatMap((p): Array<[string, number]> => (p.typical != null ? [[p.key, p.typical]] : [])));
-export function typicalRange(key: string, caps: Record<string, number>): number | null {
-  if (TYPICAL[key] != null) return TYPICAL[key];
-  const cap = caps[key];
-  if (typeof cap === "number" && Number.isFinite(cap)) return cap > 0 ? cap : null;
-  return key.startsWith("sk:") ? 15 : null;
+export function typicalRange(key: string): number | null {
+  return TYPICAL[key] ?? (key.startsWith("sk:") ? 15 : null);
 }
+// A weight's importance (issue #274), the number the Suit Builder shows and edits: how much a good amount of the property
+// matters, per-point weight × typical range × IMPORTANCE_K, one stable factor per property. K puts the shipped
+// templates' top properties at or near 100 (450 per typical range, as DCI 10 or HCI 10). Profiles, templates, runs and
+// the solvers stay per point; these are the only place the two convert. A key with no typical range (the tag penalty)
+// shows its per-point weight as it is.
+export const IMPORTANCE_K = 2 / 9;
+const importanceScale = (key: string): number => (typicalRange(key) ?? 1 / IMPORTANCE_K) * IMPORTANCE_K;
+export const importanceOf = (key: string, weight: number): number => weight * importanceScale(key);
+export const weightOfImportance = (key: string, importance: number): number => importance / importanceScale(key);
+// An importance as shown: whole from 10 up, one decimal below.
+export const roundImportance = (n: number): number => (Math.abs(n) >= 10 ? Math.round(n) : Math.round(n * 10) / 10);
+const importanceText = (key: string, weight: number): string => String(roundImportance(importanceOf(key, weight)));
+// A weight_dominates saved before issue #274 has no `values.importance`: its sentence and setWeight value are per point,
+// which the page and MCP now read as an importance, so it keeps its sentence and loses its action.
+export const withCurrentActions = (d: Diagnostic): Diagnostic => (d.code === "weight_dominates" && d.values?.importance == null && d.actions.length ? { ...d, actions: [] } : d);
 
 // Skill names as they appear in tooltips (lower-cased). A "+10 Magery" line on an item becomes the builder property
 // "sk:magery", so skill bonuses can be weighted, floored or forbidden like any other property.
@@ -561,7 +573,7 @@ export function effectiveProfile(p: Profile = {}, character: Character | null = 
   return { weights: { ...(p.weights || {}) }, caps, floors, floorBonus: p.floorBonus ?? 1000, hardFloors, resistSkill: skill, resistMinimum: own,
     ...(min != null ? { mins } : {}), ...(Object.keys(overrides).length ? { resistCapOverrides: overrides } : {}), ...(steps.length ? { resistSteps: steps } : {}) };
 }
-// The fields of a built profile its caps are read from (profileResistCaps, playerCaps).
+// The fields of a built profile its resist caps are read from (profileResistCaps).
 export interface CapsView {
   caps: Record<string, number>;
   resistCapOverrides?: Record<string, ResistCap> | undefined;
@@ -578,13 +590,6 @@ export function profileResistCaps(prof: CapsView): Record<string, ResistCap> {
   }));
 }
 
-// A built profile's caps in the player's terms, before any planned buff (typicalRange's `caps`): the item-total caps
-// with each resist's paperdoll cap (profileResistCaps) in place of its item-total one.
-export function playerCaps(prof: CapsView): Record<string, number> {
-  const caps = { ...(prof.buffs?.caps ?? prof.caps) };
-  for (const [k, c] of Object.entries(profileResistCaps(prof))) caps[k] = c.cap;
-  return caps;
-}
 
 // Cursed/Brittle/Antique/Prized (/Massive/Unwieldy on shards that use them) tag-penalty units, from
 // the shard's rules file. A function, not a constant, because it must reflect whichever shard is
@@ -1562,10 +1567,13 @@ export function settingsDiff(a: RunSettings = {}, b: RunSettings = {}): string[]
   const L = labelOf;
   for (const [group, noun] of [["floors", "floor"], ["weights", "weight"]] as const) {
     const A: Record<string, number> = a[group] || {}, B: Record<string, number> = b[group] || {};
+    // a weight reads as its importance (importanceText), a floor as it is
+    const v = (k: string, x: number): string | number => (group === "weights" ? importanceText(k, x) : x);
     for (const k of [...new Set([...Object.keys(A), ...Object.keys(B)])].sort()) {
-      if (!(k in A)) out.push(`${L(k)} ${noun} ${B[k]} added`);
-      else if (!(k in B)) out.push(`${L(k)} ${noun} ${A[k]} removed`);
-      else if (A[k] !== B[k]) out.push(`${L(k)} ${noun} ${A[k]} → ${B[k]}`);
+      if (group === "weights" && k in A && k in B && v(k, A[k]!) === v(k, B[k]!)) continue;   // a change too small to show is not named as "X → X"
+      if (!(k in A)) out.push(`${L(k)} ${noun} ${v(k, B[k]!)} added`);
+      else if (!(k in B)) out.push(`${L(k)} ${noun} ${v(k, A[k]!)} removed`);
+      else if (A[k] !== B[k]) out.push(`${L(k)} ${noun} ${v(k, A[k]!)} → ${v(k, B[k]!)}`);
     }
   }
   // A resist cap override: set, changed, or taken off (back to the shard's cap for the character's race).

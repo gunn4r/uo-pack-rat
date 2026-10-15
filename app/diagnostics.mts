@@ -1,6 +1,6 @@
 // diagnostics.mts — settings that work against a build, each with the change that would fix it (issue #217): a requirement no suit in the pool can reach, hard requirements the suit could reach one at a time but not together, a weight that swamps the rest, and a required weapon property no weapon has. Pure and browser-safe. The server sends the floor ones with POST /api/optimize before the search starts; the worker attaches the full list to every result, on both solver paths, so a saved run keeps it.
 import { propertyReach, DEFAULT_OPTIONAL_SLOTS, DEFAULT_SLOTS } from "./mip.mts";
-import { RESIST_KEYS, RESIST_SKILL_KEY, SLOT_LABELS, labelOf, flagLabel, liftedMin, playerCaps, propName, typicalRange, type OptItem, type ResistCap, type ResistStep } from "./vault-lib.mts";
+import { RESIST_KEYS, RESIST_SKILL_KEY, SLOT_LABELS, flagLabel, importanceOf, liftedMin, propName, roundImportance, type OptItem, type ResistCap, type ResistStep } from "./vault-lib.mts";
 import { delayText, heldWeapon, stepCredit, swingSeconds, type Held, type SsiStepPoint, type SwingResult } from "./swing.mts";
 import type { Diagnostic, DiagnosticAction, ScoreShare } from "./runs-types.mts";
 
@@ -111,12 +111,11 @@ export function resultDiagnostics(input: ResultDiagnosticsInput): Diagnostic[] {
   return [...out.filter((d) => d.level === "warn"), ...out.filter((d) => d.level !== "warn")];
 }
 
-// weight_dominates: a property whose weight swamps the others. A property's worth is its weight times its typical range (vault-lib.mts typicalRange, in the player's terms), so "= 1,500 per 500 Luck"; its share is the size of its scoreShares share on the suit found. It dominates when its worth is at least DOMINANT_WORTH times the median worth of the OTHER positively weighted properties with a typical range (none other: no check), and its share at least DOMINANT_SHARE. A thin suit (a new character, a small or narrowed pool) makes any big weight look dominant, so nothing is raised when the suit's score from the positive weights is below THIN_SUIT of what the pool could give them, Σ w × min(reach, cap) with `reach` the per-slot bound (propertyReach). The suggested weight makes its worth the others' median, to one significant figure.
+// weight_dominates: a property whose weight swamps the others. A property's worth is its importance (vault-lib.mts importanceOf, the number the Weights rows show, one stable factor per property); its share is the size of its scoreShares share on the suit found. It dominates when its importance is at least DOMINANT_WORTH times the median importance of the OTHER positively weighted properties (none other: no check), and its share at least DOMINANT_SHARE. A thin suit (a new character, a small or narrowed pool) makes any big weight look dominant, so nothing is raised when the suit's score from the positive weights is below THIN_SUIT of what the pool could give them, Σ w × min(reach, cap) with `reach` the per-slot bound (propertyReach). The suggested importance is the others' median as the panel shows it (roundImportance); `values.weight` is the per-point weight the build ran with, which the Set weight action checks the panel still holds.
 export const DOMINANT_WORTH = 3;
 export const DOMINANT_SHARE = 0.25;
 export const THIN_SUIT = 0.5;
 const median = (xs: number[]): number => { const s = [...xs].sort((a, b) => a - b), m = s.length >> 1; return s.length % 2 ? s[m]! : (s[m - 1]! + s[m]!) / 2; };
-export const suggestedWeight = (medianWorth: number, typical: number): number => Number((medianWorth / typical).toPrecision(1));
 const oneDecimal = (n: number): string => n.toLocaleString("en-US", { maximumFractionDigits: 1 });
 // A suit's score from weights, property by property (issue #273): each weighted property's term w × min(total, cap) over the sum of every term's size, so a negative weight's share is negative. Floor bonuses and the tag penalty are left out. A resist's term is held at the Resisting Spells minimum the suit's own bonus lifts it to (liftedMin), as the solvers score it, and `fromMin` marks one whose minimum is above its gear total; with SSI scored by swing step (`ssiSteps`), its term is the step credit the totals reach. Largest first; none when the suit scores nothing from weights. weight_dominates reads its share from here.
 export function scoreShares(profile: DiagnosticsProfile, after: Record<string, unknown>): ScoreShare[] {
@@ -136,23 +135,23 @@ function scoring(profile: DiagnosticsProfile) {
   return { weights, gear, stepped: !!steps, valueAt };
 }
 export function weightDiagnostics(profile: DiagnosticsProfile, after: Record<string, unknown>, reach: Record<string, { max: number }>): Diagnostic[] {
-  const { weights, valueAt } = scoring(profile), spans = playerCaps({ ...profile, caps: obj(profile.caps) as Record<string, number> });
+  const { weights, valueAt } = scoring(profile);
   const got = (key: string): number => num(after[key]) ?? 0, top = (key: string): number => reach[key]?.max ?? 0;
   const shares = new Map(scoreShares(profile, after).map((s) => [s.property, Math.abs(s.share)]));
   const positive = weights.filter(([, w]) => w > 0);
   const score = positive.reduce((n, [k, w]) => n + w * valueAt(k, got), 0);
   const potential = positive.reduce((n, [k, w]) => n + w * Math.max(0, valueAt(k, top)), 0);
   if (!shares.size || score < THIN_SUIT * potential) return [];
-  const worths = positive.flatMap(([k, w]) => { const typical = typicalRange(k, spans); return typical != null ? [{ k, w, typical, worth: w * typical }] : []; });
-  return worths.flatMap(({ k, w, typical, worth }): Diagnostic[] => {
+  const worths = positive.map(([k, w]) => ({ k, w, worth: importanceOf(k, w) }));
+  return worths.flatMap(({ k, w, worth }): Diagnostic[] => {
     const others = worths.filter((x) => x.k !== k).map((x) => x.worth);
     if (!others.length) return [];
     const mid = median(others), ratio = worth / mid, share = shares.get(k) ?? 0;
     if (ratio < DOMINANT_WORTH || share < DOMINANT_SHARE) return [];
-    const suggested = suggestedWeight(mid, typical), pct = Math.round(share * 100);
+    const importance = roundImportance(worth), suggested = roundImportance(mid), pct = Math.round(share * 100);
     return [{ code: "weight_dominates", level: "warn", property: k,
-      message: `${propName(k)} makes up ${pct}% of this suit's score: at weight ${oneDecimal(w)}, ${typical.toLocaleString("en-US")} ${labelOf(k)} is worth as much as ${oneDecimal(ratio)} times the median of your other weights. Try ${suggested}.`,
-      values: { weight: w, typical, share: pct, ratio: Math.round(ratio * 10) / 10, median: mid, suggested }, actions: [{ kind: "setWeight", property: k, value: suggested }] }];
+      message: `${propName(k)} makes up ${pct}% of this suit's score: at weight ${importance}, it counts ${oneDecimal(ratio)} times the median of your other weights. Try ${suggested}.`,
+      values: { weight: w, importance, share: pct, ratio: Math.round(ratio * 10) / 10, median: suggested, suggested }, actions: [{ kind: "setWeight", property: k, value: suggested }] }];
   });
 }
 
