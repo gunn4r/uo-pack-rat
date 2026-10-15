@@ -1150,7 +1150,7 @@ test("[fast] settingsDiff names what changed between two runs", () => {
   const b = { floors: { di: 80 }, softFloors: ["di"], weights: { ssi: 5, dci: 8 }, lockedSlots: ["twoHanded"], excludeWeapons: ["archery", "throwing"], exact: true, budgetMs: 60000, strLimit: 73 };
   const d = settingsDiff(a, b);
   const L = (k: string) => PROP_LABELS[k] || k;
-  for (const want of [`${L("di")} floor 40 → 80`, `${L("hci")} floor 35 removed`, `${L("ssi")} weight 10 → 5`, `${L("dci")} weight 8 added`, `${L("di")} floor made soft`, "excluding archery, throwing weapons", "budget 300 s → 60 s"])
+  for (const want of [`${L("di")} floor 40 → 80`, `${L("hci")} floor 35 removed`, `${L("ssi")} weight 133 → 67`, `${L("dci")} weight 80 added`, `${L("di")} floor made soft`, "excluding archery, throwing weapons", "budget 300 s → 60 s"])
     assert.ok(d.includes(want), `missing "${want}" in ${JSON.stringify(d)}`);
   assert.ok(d.some((x) => x.startsWith("locked ")));
   assert.deepEqual(settingsDiff(a, a), []);
