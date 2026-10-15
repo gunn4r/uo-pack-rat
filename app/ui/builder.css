@@ -301,3 +301,10 @@
 .b-check-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-3); }
 .b-check-row > p { flex: 1 1 16rem; min-width: 0; margin: 0; }
 .b-check-acts { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+/* What made up the score (issue #273): one line per property, name · bar · share; the negative ones set apart below */
+.b-shares { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-1); }
+.b-shares > h3 { margin: 0; font-weight: var(--weight-regular); }
+.b-share-list { align-self: stretch; margin: 0; padding: 0; list-style: none; }
+.b-share { display: grid; grid-template-columns: minmax(0, 16rem) minmax(4rem, 1fr) 3rem; align-items: center; gap: var(--space-3); padding: var(--space-0-5) 0; }
+.b-share-neg { margin-top: var(--space-1); padding-top: var(--space-1-5); border-top: var(--border-width) solid var(--color-border); }
+.b-share-pct { text-align: right; font-variant-numeric: tabular-nums; }

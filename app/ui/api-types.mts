@@ -13,7 +13,7 @@ import type { RulesV1 } from "../schema/types.d.mts";
 import type { AutostartOutcome, Hotkey as PanelHotkey, PanelPrefs } from "../tazuo-panel-prefs.mts";
 import type { OrganizeConfig, RuleMatch } from "../organize-config.mts";
 import type { MissingItem } from "../missing.mts";
-import type { Diagnostic, RunBody, RunsListBody, RunSummary, SavedRun, SwingResult } from "../runs-types.mts";
+import type { Diagnostic, RunBody, RunsListBody, RunSummary, SavedRun, ScoreShare, SwingResult } from "../runs-types.mts";
 import type { HouseApiResponse } from "../house-model-types.mts";
 import type { DataDirCheckInfo } from "../data-dir-notice.mts";
 
@@ -298,7 +298,7 @@ export interface OptimizeResult {
   method?: string | undefined;
   proven?: boolean | undefined;
   nodes?: number | undefined;
-  alternatives?: Array<{ best: OptSuit; score: number }> | undefined;
+  alternatives?: Array<{ best: OptSuit; score: number; shares?: ScoreShare[] | undefined }> | undefined;
   altTolerance?: number | undefined;
   altShortfall?: "budget" | "tolerance" | "exhausted" | undefined;   // why fewer alternatives than asked (exact-solver.mts's AltShortfall)
   solver?: string | undefined;
@@ -312,6 +312,7 @@ export interface OptimizeResult {
   diagnostics?: Diagnostic[] | undefined;   // absent on a run saved before SOLVER_VERSION 6: unreachableFloors is drawn instead
   swing?: SwingResult | undefined;          // the suit's swing (app/swing.mts), when it holds a weapon with a known speed and the build has a character
   tieBreak?: TieBreakResult | undefined;    // a rarity preference's outcome (app/exact-solver.mts TieBreakResult)
+  shares?: ScoreShare[] | undefined;        // what made up the suit's score (app/diagnostics.mts scoreShares); absent on a run saved before issue #273
 }
 // A rarity preference's outcome: the best score found, the returned suit's rarity points, the preference and tolerance, and whether the points are proven the lowest (exact search only).
 export interface TieBreakResult { topScore: number; cost: number; rarity?: string | undefined; tolerance?: number | undefined; costProven?: boolean | undefined }
