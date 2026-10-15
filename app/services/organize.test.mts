@@ -20,7 +20,7 @@ function setup() {
   const events: string[] = [], logged: string[] = [];
   const service = createOrganizeService({
     paths, getInventory: async () => { throw new Error("not planned"); },
-    organizeStore: { read: () => ({ config: emptyOrganizeConfig(), problems: [] }) },
+    organizeStore: { read: () => ({ config: emptyOrganizeConfig(), problems: [] }), stamp: () => "none" },
     organizeStateStore: { read: () => { stateReads++; return emptyOrganizeState(); }, write: () => { stateWrites++; } },
     blacklistStore: { read: () => [] }, runStore: { all: () => { runReads++; return []; } },
     rules: () => loadRules("uoalive"), bridgeAdapter: () => "tazuo", manifest: () => null, events: { broadcast: (e) => events.push(e) }, log: (line) => logged.push(line),
