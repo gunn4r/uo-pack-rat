@@ -1,6 +1,6 @@
 // ui-builder.test.mts — [slow]: the Suit Builder's keyboard, hover and panel behavior in the real Electron window.
 //
-// `[slow]`: the Suit Builder's keyboard and hover behaviour in the real Electron window, on a writable `--data` directory seeded with the demo scans: a raised resist cap (Fire 95) marked in the Resist caps section, built with, shown on the result's Fire tile and the saved run's badge, kept by Save profile across a reload, refused out of range with the error under the field, and reset to the shard's cap; ⌘↵ (Ctrl+Enter) builds with focus on the page body and while typing in a panel field, and does nothing behind the Saved runs drawer; the current suit's and the Fetch list's pieces show the item tooltip on hover and after Tab focus, and so do both names in a Plan row, each its own piece's (issue #75; the row itself and its Slot cell show none, a kept row's worn name still does); a Fetch list row shows a deep bag path in full (nothing cut or ellipsised) and its copy button puts the container serial on the clipboard; STR limit is beside Race with Advanced closed, and a bad value there is focused without opening Advanced; a switch's on track is at least 3:1 against its off track, with the knob moved right, in Default and Britannia, light and dark; two excluded weapon skills show on the Weapons chip and survive Save profile and a reload; Check your settings (issue #217): a hard Luck requirement no suit reaches is named with the best possible above the progress panel and in the result, and Lower and Make soft edit the panel's floor and the template badge without starting a build; a weight row's weight row shows its importance and its hover follows the typed weight (the trade-off with the top property, or that it is the top one), and Set weight (a Luck weight that swamps the rest) edits the panel and the template badge, but not once the weight was changed since the build. Swing steps (issue #217), with Kestrel's worn weapon made the pool's best: the SSI weight's switch shows the worn weapon's steps and marks the template changed; the result says SSI was scored per point with Lock Weapon (1H) and shows the swing line, Next step follows the result's swing (none before the build); Lock starts no build and the next build scores by step; the switch is kept in the saved run's settings and by Save profile across a reload. Casting school (issue #213): the Faster Casting cap and its source beside the select, raised to 4 by naming Chivalry, which marks the template changed, and on a new FC requirement row that starts at the cap. Rarity (issue #262): Lower marks the template changed and shows a help line, the result's Solver details carry the Rarity row with the rarity total, Save profile keeps it, and applying a template without one clears it. Templates (issue #212): the built-ins listed first under their own names, a built-in's badge, description, buffs and source under the picker; Apply sets Manual's buffs as one undo step that Undo takes back; the badge counts a buff changed since; Save as keeps the buffs. Manual mode (issue #12): a slot opens the picker on its pieces, a row picked with the keyboard (focus, Enter) fills the slot, moves the totals and says so in the status line, the picker stays on that slot with the picked row marked "In this slot", the undo key empties the slot again (the status line saying what was undone) and redo puts the piece back, Esc closes it with focus back on the slot card, and the mode and the suit are in `ui-prefs.json`; and the hand-offs: another character picked mid-fill cancels the fill and leaves the suit alone, Fill the rest automatically fills empty slots around a placed ring in one undo step and shows the fetch list, Save as run puts a Manual run in the drawer that opens in the result view with Open in Manual, and an Automatic result's Start from this result loads it into Manual as one undo step. No character in Automatic (issue #12): no Race row, the buff picker speaking of no character, no "_nobody" anywhere in the page text, the Caster template's requirements, a build headed "Best suit · No character" with Grab disabled and its reason while no bridge is online, and with a bridge online on Kestrel (stubbed) Grab all queueing one grab per piece and the toast naming her, a Suit totals card, its run in its own drawer, Save profile kept across a reload, Manual on its No character, and Kestrel picked back with her own panel. Only containers (issue #12): the chip lists the same containers as Skip containers, counts the one checked, the closed pool section says "1 container only", the build's saved run keeps the list, Save profile keeps it across a reload, and cleared it leaves the saved profile.
+// `[slow]`: the Suit Builder's keyboard and hover behaviour in the real Electron window, on a writable `--data` directory seeded with the demo scans: the Settings drawer (issue #272): ⌘, (Ctrl+,) and its button open it with the focus on its tab, Esc closes it onto the button, ← and → move between the tabs, each showing its own controls, a bad requirement opens it on Requirements when Build is pressed, its footer counts the settings changed since the shown run (none, then one after a weight edit), and its tab is remembered across a reload; a raised resist cap (Fire 95) marked in the Resist caps group, built with, shown on the result's Fire tile and the saved run's badge, kept by Save profile across a reload, refused out of range with the error under the field, and reset to the shard's cap; ⌘↵ (Ctrl+Enter) builds with focus on the page body and while typing in a field in the drawer, and does nothing behind the Saved runs drawer; the current suit's and the Fetch list's pieces show the item tooltip on hover and after Tab focus, and so do both names in a Plan row, each its own piece's (issue #75; the row itself and its Slot cell show none, a kept row's worn name still does); a Fetch list row shows a deep bag path in full (nothing cut or ellipsised) and its copy button puts the container serial on the clipboard; STR limit is beside Race under Advanced, and a bad value there opens the drawer on it; a switch's on track is at least 3:1 against its off track, with the knob moved right, in Default and Britannia, light and dark; two excluded weapon skills show on the Weapons chip and survive Save profile and a reload; Check your settings (issue #217): a hard Luck requirement no suit reaches is named with the best possible above the progress panel and in the result, and Lower and Make soft edit the panel's floor and the template badge without starting a build; a weight row's weight row shows its importance and its hover follows the typed weight (the trade-off with the top property, or that it is the top one), and Set weight (a Luck weight that swamps the rest) edits the panel and the template badge, but not once the weight was changed since the build. Swing steps (issue #217), with Kestrel's worn weapon made the pool's best: the SSI weight's switch shows the worn weapon's steps and marks the template changed; the result says SSI was scored per point with Lock Weapon (1H) and shows the swing line, Next step follows the result's swing (none before the build); Lock starts no build and the next build scores by step; the switch is kept in the saved run's settings and by Save profile across a reload. Casting school (issue #213): the Faster Casting cap and its source beside the select, raised to 4 by naming Chivalry, which marks the template changed, and on a new FC requirement row that starts at the cap. Rarity (issue #262): Lower marks the template changed and shows a help line, the result's Solver details carry the Rarity row with the rarity total, Save profile keeps it, and applying a template without one clears it. Templates (issue #212): the built-ins listed first under their own names, a built-in's badge, description, buffs and source under the picker; Apply sets Manual's buffs as one undo step that Undo takes back; the badge counts a buff changed since; Save as keeps the buffs. Manual mode (issue #12): a slot opens the picker on its pieces, a row picked with the keyboard (focus, Enter) fills the slot, moves the totals and says so in the status line, the picker stays on that slot with the picked row marked "In this slot", the undo key empties the slot again (the status line saying what was undone) and redo puts the piece back, Esc closes it with focus back on the slot card, and the mode and the suit are in `ui-prefs.json`; and the hand-offs: another character picked mid-fill cancels the fill and leaves the suit alone, Fill the rest automatically fills empty slots around a placed ring in one undo step and shows the fetch list, Save as run puts a Manual run in the drawer that opens in the result view with Open in Manual, and an Automatic result's Start from this result loads it into Manual as one undo step. No character in Automatic (issue #12): no Race row, the buff picker speaking of no character, no "_nobody" anywhere in the page text, the Caster template's requirements, a build headed "Best suit · No character" with Grab disabled and its reason while no bridge is online, and with a bridge online on Kestrel (stubbed) Grab all queueing one grab per piece and the toast naming her, a Suit totals card, its run in its own drawer, Save profile kept across a reload, Manual on its No character, and Kestrel picked back with her own panel. Only containers (issue #12): the chip lists the same containers as Skip containers, counts the one checked, the build's saved run keeps the list, Save profile keeps it across a reload, and cleared it leaves the saved profile.
 //
 // Each of the older cases is maintainer feedback on the redesign (PR #43), plus the resist cap overrides (issue #44), the weapon exclusions (issue #45) and the Weapon must have chip (issue #214). Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
 import test from "node:test";
@@ -39,14 +39,22 @@ async function launch(dataDir: string): Promise<{ app: ElectronApplication; page
   await fitWindow(app, page, { width: 1440, height: 900 });
   return { app, page, errors };
 }
+// The Settings drawer (issue #272) open on one of its tabs, and closed again (the focus back on the Settings button).
+async function settings(page: Page, tab: "requirements" | "weights" | "buffs" | "pool" | "advanced"): Promise<void> {
+  if (await page.locator("#b-drawer").isHidden()) await page.click("#b-settings");
+  await page.click(`#b-tab-${tab}`);
+}
+async function closeSettings(page: Page): Promise<void> {
+  if (await page.locator("#b-drawer").isVisible()) await page.click("#b-drawer-close");
+}
 // The Suit Builder with its first character's current suit showing, and a 2 s time budget so builds are quick.
 async function openBuilder(page: Page): Promise<void> {
   await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
   await page.click('[data-nav="builder"]');
   await page.waitForSelector("#tab-builder:not([hidden]) #b-current", { timeout: 10_000 });
-  await page.click("#b-sec-adv .b-sec-head button");
+  await settings(page, "advanced");
   await page.fill("#b-budget", "2");
-  await page.click("#b-sec-adv .b-sec-head button");
+  await closeSettings(page);
 }
 const built = (page: Page): Promise<void> => page.waitForFunction(() => !document.querySelector<HTMLButtonElement>("#b-run")?.disabled && /Best suit for/.test(document.querySelector("#b-result h2")?.textContent || ""), undefined, { timeout: 60_000 }).then(() => {});
 
@@ -66,7 +74,8 @@ test("[slow] ⌘↵ builds from anywhere on the Builder screen, and not from beh
     await built(page);
     assert.equal(starts, 1, "one build from the page body");
 
-    // While typing in a panel field.
+    // While typing in a field in the Settings drawer.
+    await settings(page, "requirements");
     await page.locator("#b-sec-req input[type=number]").first().click();
     const second = page.waitForRequest((r) => r.method() === "POST" && new URL(r.url()).pathname === "/api/optimize", { timeout: 10_000 });
     await page.keyboard.press("ControlOrMeta+Enter");
@@ -81,6 +90,78 @@ test("[slow] ⌘↵ builds from anywhere on the Builder screen, and not from beh
     await page.waitForTimeout(500);
     assert.equal(await page.locator("#b-run").isDisabled(), false, "no build started behind the drawer");
     assert.equal(starts, 2);
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+});
+
+// Issue #272: the Settings drawer. ⌘, (Ctrl+,) and the Settings button open it with the focus on its tab, Esc closes it with
+// the focus back on the button, ← and → move between the tabs and each shows its own controls, a bad requirement opens it
+// on Requirements when Build is pressed, its footer counts the settings changed since the shown run, and its tab is
+// remembered across a reload.
+test("[slow] the Settings drawer: ⌘, and its button, Esc, the tabs, an error's tab, the changes count, the remembered tab", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = seedDataDir("packrat-ui-drawer-");
+  const { app, page, errors } = await launch(dataDir);
+  try {
+    await openBuilder(page);   // leaves it closed, on Advanced
+    const drawer = page.locator("#b-drawer"), focused = (): Promise<string | undefined> => page.evaluate(() => document.activeElement?.id);
+    await page.click("#b-current h2");
+    await page.keyboard.press("ControlOrMeta+Comma");
+    await drawer.waitFor();
+    assert.equal(await focused(), "b-tab-advanced", "the focus on the tab it was left on");
+    assert.equal(await page.getAttribute("#b-settings", "aria-expanded"), "true");
+    await page.keyboard.press("Escape");
+    await drawer.waitFor({ state: "hidden" });
+    assert.equal(await focused(), "b-settings", "Esc gives the focus back to the Settings button");
+    await page.click("#b-settings");
+    await page.click("#b-tab-requirements");
+    const controls: Array<[string, string]> = [["requirements", "#b-addfloor"], ["weights", "#b-addweight"], ["buffs", "#b-buff-add"], ["pool", "#b-weapon"], ["advanced", "#b-exact"]];
+    for (const [tab, sel] of controls) {
+      assert.equal(await page.getAttribute(`#b-tab-${tab}`, "aria-selected"), "true");
+      assert.equal(await page.locator(sel).isVisible(), true, `${tab} shows ${sel}`);
+      assert.equal(await page.locator("#b-panel-body [role=tabpanel]:not([hidden])").count(), 1, "one panel at a time");
+      await page.keyboard.press("ArrowRight");
+    }
+    assert.equal(await focused(), "b-tab-requirements", "→ on the last tab wraps to the first");
+    await page.keyboard.press("ControlOrMeta+Comma");
+    await drawer.waitFor({ state: "hidden" });
+
+    // A bad requirement with the drawer closed: Build opens it on Requirements, with the focus in the field.
+    await page.click("#b-settings");
+    const req = page.locator("#b-sec-req .rule-row input[type=number]").first(), was = await req.inputValue();
+    await req.fill("");
+    await page.click("#b-tab-pool");
+    await closeSettings(page);
+    await page.click("#b-run");
+    await drawer.waitFor();
+    assert.equal(await page.getAttribute("#b-tab-requirements", "aria-selected"), "true");
+    assert.equal(await page.evaluate(() => document.activeElement === document.querySelector("#b-sec-req .rule-row input[type=number]")), true, "the focus in the bad field");
+    await req.fill(was);
+
+    // The footer: no count with no run shown, none after a build, one after a weight edit.
+    assert.equal(await page.locator("#b-changes").innerText(), "");
+    await page.click("#b-run-foot");
+    await built(page);
+    assert.equal(await drawer.isVisible(), true, "the drawer stays open through a build");
+    await page.waitForFunction(() => document.querySelector("#b-changes")?.textContent === "No changes since the last build", undefined, { timeout: 10_000 });
+    await settings(page, "weights");
+    const weight = page.locator("#b-sec-weights .rule-row input").first();
+    await weight.fill(String(Number(await weight.inputValue()) + 5));
+    await page.waitForFunction(() => document.querySelector("#b-changes")?.textContent === "1 change since the last build", undefined, { timeout: 10_000 });
+
+    // The tab is kept in ui-prefs (a PUT the page does not wait on: poll the file), and the drawer comes back on it.
+    const tabSaved = (): boolean => { try { return (JSON.parse(readFileSync(join(dataDir, "ui-prefs.json"), "utf8")) as { builderTab?: string }).builderTab === "weights"; } catch { return false; } };
+    for (let i = 0; i < 50 && !tabSaved(); i++) await page.waitForTimeout(100);
+    assert.ok(tabSaved(), "the tab is in ui-prefs.json");
+    await page.reload();
+    await page.waitForSelector("#tab-builder:not([hidden]) #b-current", { timeout: 30_000 });
+    assert.equal(await drawer.isHidden(), true, "closed after a reload");
+    await page.click("#b-settings");
+    assert.equal(await page.getAttribute("#b-tab-weights", "aria-selected"), "true", "open on the tab it was left on");
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
@@ -241,6 +322,7 @@ test("[slow] Check your settings: the block shows before and after the build, an
   const { app, page, errors } = await launch(dataDir);
   try {
     await openBuilder(page);
+    await settings(page, "requirements");
     const luckRow = page.locator("#b-sec-req .rule-row[data-key=luck]");
     if (!(await luckRow.count())) {
       await page.click("#b-addfloor");
@@ -256,6 +338,7 @@ test("[slow] Check your settings: the block shows before and after the build, an
     assert.match(String(preText), /Check your settings[\s\S]*Luck 100000 can't be reached with your inventory \(best possible: \d+\)\./);
     await built(page);
     assert.equal(await page.locator("#b-msg .b-check").count(), 0, "the pre-build block goes with the progress card");
+    await closeSettings(page);   // the drawer stays open through a build; closed, the whole result is in reach
     const block = page.locator(".b-head-card .b-check");
     const text = await block.innerText();
     const best = Number(/Luck 100000 can't be reached with your inventory \(best possible: (\d+)\)\./.exec(text)?.[1]);
@@ -287,7 +370,7 @@ test("[slow] weight scale: the row shows importance with a trade-off hover, and 
     await openBuilder(page);
     await page.selectOption("#b-char", "Kestrel");
     await page.waitForFunction(() => (document.querySelector("#b-tpl") as HTMLSelectElement | null)?.value === "builtin:melee", undefined, { timeout: 10_000 });
-    await page.click("#b-sec-weights .b-sec-head button");
+    await settings(page, "weights");
     const luck = page.locator("#b-sec-weights .rule-row[data-key=luck]"), field = luck.locator("input");
     // read the hover's text (the row's accessible description) inside the wait, so a repaint between the wait and a read can't race it
     const hover = (want: string): Promise<unknown> => page.waitForFunction((w) => {
@@ -310,12 +393,15 @@ test("[slow] weight scale: the row shows importance with a trade-off hover, and 
     const setLuck = block.getByRole("button", { name: `Set Luck to ${to}` });
     // changed since the build: the click says so, turns the button off and leaves the weight alone
     await field.fill("1900");
+    await closeSettings(page);
     await setLuck.click();
     assert.equal(await field.inputValue(), "1900");
     assert.equal(await setLuck.isDisabled(), true);
+    await settings(page, "weights");
     await field.fill("2000");
     await page.click("#b-run");
     await built(page);
+    await closeSettings(page);
     await block.getByRole("button", { name: `Set Luck to ${to}` }).click();
     assert.equal(await field.inputValue(), to, "the panel's weight is set");
     await hover("^At these settings, 1 (DCI|HCI) is worth about \\d+ Luck\\.$");
@@ -343,13 +429,14 @@ test("[slow] swing steps: the switch, the swing line, Next step from the result,
     await openBuilder(page);
     await page.selectOption("#b-char", "Kestrel");
     await page.waitForFunction(() => (document.querySelector("#b-tpl") as HTMLSelectElement | null)?.value === "builtin:melee", undefined, { timeout: 10_000 });
-    await page.click("#b-sec-weights .b-sec-head button");
+    await settings(page, "weights");
     const sw = page.locator("#b-swing-steps");
     await sw.waitFor({ timeout: 10_000 });
     assert.equal(await sw.isChecked(), false);
     assert.match(String(await page.locator("#b-sec-weights .b-swing-set").textContent()), /Counts SSI only where the swing gets faster\. War Axe 3 s at stamina \d+: .+ ≥ \d+/);
     await sw.check();
     assert.match(await page.locator("#b-tpl-state").innerText(), /SSI by step/);
+    await settings(page, "requirements");
     await page.click("#b-addfloor");
     await page.click(".b-pick-list button[data-key=ssi]");
     await page.locator('#b-sec-req .rule-row[data-key="ssi"] input').fill("1");
@@ -367,6 +454,7 @@ test("[slow] swing steps: the switch, the swing line, Next step from the result,
     const unreached = /(?:: |· )[\d.]+ s ≥ (\d+)(?! ✓)(?: ·|$)/.exec(line.split("Steps at stamina")[1] || "")?.[1];
     assert.ok(unreached, line);
     assert.equal(await read("#b-sec-req .b-next-step"), `Next step: ${unreached}`);
+    await closeSettings(page);
     await page.locator(".b-head-card .b-check").getByRole("button", { name: "Lock Weapon (1H)" }).click();
     assert.equal(await page.locator(".b-head-card .b-check").getByRole("button", { name: "Locked ✓" }).isDisabled(), true);
     assert.equal(starts, 1, "Lock starts no build");
@@ -380,12 +468,13 @@ test("[slow] swing steps: the switch, the swing line, Next step from the result,
       .some((f: string) => (JSON.parse(readFileSync(join(dataDir, "runs", f), "utf8")) as { settings?: { swingSteps?: boolean } }).settings?.swingSteps === true);
     for (let i = 0; i < 50 && !kept(); i++) await page.waitForTimeout(100);
     assert.ok(kept(), "the saved run keeps the switch");
+    await settings(page, "weights");
     await page.click("#b-save");
     await page.waitForFunction(() => /Profile for .* saved/.test(document.body.textContent || ""), undefined, { timeout: 10_000 });
     await page.reload();
-    await page.waitForSelector("#tab-builder:not([hidden]) #b-weapon", { timeout: 30_000 });
+    await page.waitForSelector("#tab-builder:not([hidden]) #b-weapon", { state: "attached", timeout: 30_000 });
     await page.selectOption("#b-char", "Kestrel");
-    await page.click("#b-sec-weights .b-sec-head button");
+    await settings(page, "weights");
     assert.equal(await page.locator("#b-swing-steps").isChecked(), true, "Save profile kept the switch");
     assert.deepEqual(errors, []);
   } finally {
@@ -394,7 +483,7 @@ test("[slow] swing steps: the switch, the swing line, Next step from the result,
   }
 });
 
-// Issue #213: the demo characters have no casting skills, so the Faster Casting cap starts at 2 and says why; naming Chivalry in the Candidate pool section raises it to 4, marks the template changed, and an FC requirement added then starts at 4 with the cap's source on its row.
+// Issue #213: the demo characters have no casting skills, so the Faster Casting cap starts at 2 and says why; naming Chivalry under Advanced raises it to 4, marks the template changed, and an FC requirement added then starts at 4 with the cap's source on its row.
 test("[slow] casting school: the FC cap's source beside the select and on the FC requirement row", async (t) => {
   const why = unavailable();
   if (why) return t.skip(why);
@@ -402,12 +491,14 @@ test("[slow] casting school: the FC cap's source beside the select and on the FC
   const { app, page, errors } = await launch(dataDir);
   try {
     await openBuilder(page);
-    const note = page.locator("#b-sec-pool .b-school .b-fc-cap");
+    await settings(page, "advanced");
+    const note = page.locator("#b-sec-char .b-school .b-fc-cap");
     await note.waitFor({ timeout: 10_000 });
     assert.equal(await note.innerText(), "cap 2: no Chivalry, Spellweaving or Bushido");
     await page.selectOption("#b-school", "Chivalry");
     assert.equal(await note.innerText(), "cap 4: Chivalry (chosen)");
     assert.match(await page.locator("#b-tpl-state").innerText(), /casting school Chivalry/);
+    await settings(page, "requirements");
     await page.click("#b-addfloor");
     await page.click(".b-pick-list button[data-key=fc]");
     const row = page.locator('#b-sec-req .rule-row[data-key="fc"]');
@@ -420,7 +511,7 @@ test("[slow] casting school: the FC cap's source beside the select and on the FC
   }
 });
 
-// Issue #262: Rarity in the Candidate pool section: Lower marks the template changed and shows a help line; the build's
+// Issue #262: Rarity in the Pool tab: Lower marks the template changed and shows a help line; the build's
 // Solver details carry the Rarity row with the rarity total; Save profile keeps it across a reload; and applying a
 // template that has no preference clears it. Every read polls, so a later redraw cannot race it.
 test("[slow] rarity preference: the segmented control, its help line, the result's Rarity row, Save profile and template Apply", async (t) => {
@@ -432,18 +523,21 @@ test("[slow] rarity preference: the segmented control, its help line, the result
   const lowerOn = (on: boolean): Promise<unknown> => page.waitForFunction((want) => document.querySelector('#b-rarity [data-value="lower"]')?.getAttribute("aria-checked") === String(want), on, { timeout: 10_000 });
   try {
     await openBuilder(page);
+    await settings(page, "pool");
     await page.waitForFunction(() => (document.querySelector("#b-rarity-help") as HTMLElement | null)?.hidden === true);
     await page.click('#b-rarity [data-value="lower"]');
     await text("#b-rarity-help", /^Among equally good suits, use the lowest-rarity pieces\. Requirements come first\.$/);
     await text("#b-tpl-state", /prefer lower rarity/);
     await page.click("#b-run");
     await built(page);
+    await closeSettings(page);
     await page.click("#b-result .b-disclose");
     await text("#b-details", /Rarity\s*Lowest-rarity pieces among equal suits · rarity total \d+/);
+    await settings(page, "pool");
     await page.click("#b-save");
     await page.waitForFunction(() => /Profile for .* saved/.test(document.body.textContent || ""), undefined, { timeout: 10_000 });
     await page.reload();
-    await page.waitForSelector("#tab-builder:not([hidden]) #b-rarity", { timeout: 30_000 });
+    await page.waitForSelector("#tab-builder:not([hidden]) #b-rarity", { state: "attached", timeout: 30_000 });
     await lowerOn(true);
     // a template is a full set of settings: applying one with no preference clears it
     await page.click("#b-tpl-menu");
@@ -458,25 +552,24 @@ test("[slow] rarity preference: the segmented control, its help line, the result
   }
 });
 
-test("[slow] STR limit sits beside Race, in view with Advanced closed, and a bad value is shown there", async (t) => {
+test("[slow] STR limit sits beside Race under Advanced, and a bad value opens the drawer there", async (t) => {
   const why = unavailable();
   if (why) return t.skip(why);
   const dataDir = seedDataDir("packrat-ui-strlimit-");
   const { app, page, errors } = await launch(dataDir);
   try {
     await openBuilder(page);
-    assert.equal(await page.locator("#b-sec-adv-body").count(), 0, "Advanced is closed");
+    await settings(page, "advanced");
     const str = page.getByLabel("STR limit");
     assert.equal(await str.isVisible(), true);
-    assert.equal(await page.locator("#b-sec-adv #b-str").count(), 0, "not under Advanced");
-    await page.click("#b-sec-adv .b-sec-head button");
-    assert.equal(await page.locator("#b-sec-adv #b-str").count(), 0, "not under Advanced when it is open either");
-    await page.click("#b-sec-adv .b-sec-head button");
+    assert.equal(await page.locator("#b-sec-char #b-race").count(), 1, "beside Race, in the Character group");
+    assert.equal(await page.locator("#b-sec-char #b-str").count(), 1);
     await str.fill("0");
+    await closeSettings(page);
     await page.click("#b-run");
     await page.waitForSelector("#b-str-err");
-    assert.equal(await page.evaluate(() => document.activeElement?.id), "b-str", "Build puts focus on the bad field");
-    assert.equal(await page.locator("#b-sec-adv-body").count(), 0, "and leaves Advanced closed");
+    assert.equal(await page.evaluate(() => document.activeElement?.id), "b-str", "Build opens the drawer and puts focus on the bad field");
+    assert.equal(await page.getAttribute("#b-tab-advanced", "aria-selected"), "true", "on Advanced");
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
@@ -484,7 +577,7 @@ test("[slow] STR limit sits beside Race, in view with Advanced closed, and a bad
   }
 });
 
-// Resist cap overrides (issue #44): a Fire cap raised to 95 for a Reaper Form suit is marked in the panel, the
+// Resist cap overrides (issue #44): a Fire cap raised to 95 for a Reaper Form suit is marked in the drawer, the
 // result is measured against it and says so, the saved run shows it, and Save profile keeps it across a reload.
 // A cap out of range stops the build with its reason under the field; the reset puts the shard's cap back.
 test("[slow] a raised resist cap is marked, built with, shown in the result and the run, and saved with the profile; a buff is planned with", async (t) => {
@@ -495,14 +588,15 @@ test("[slow] a raised resist cap is marked, built with, shown in the result and 
   try {
     await openBuilder(page);
     const fire = page.locator("#b-cap-fireResist"), fireRow = page.locator("#b-sec-caps .rule-row[data-key=fireResist]");
-    await page.click("#b-sec-caps .b-sec-head button");
+    await settings(page, "advanced");
     assert.equal(await fire.inputValue(), "70", "the shard's cap until the player types another");
     assert.match(await fireRow.innerText(), /shard cap/);
     await fire.fill("95");
     assert.match(await fireRow.innerText(), /raised from 70/);
     assert.equal(await fireRow.getByRole("button", { name: "Reset Fire resist cap to the shard's 70" }).count(), 1);
-    // A buff (issue #12): Divine Fury turned on in Automatic's picker is a chip in the Buffs section, and the build
+    // A buff (issue #12): Divine Fury turned on in Automatic's picker is a chip in the Buffs tab, and the build
     // plans with it: its headline says so, and "Show without buffs" redraws the totals without it.
+    await settings(page, "buffs");
     await page.click("#b-buff-add");
     await page.locator("#abf-cb-divineFury").check();
     await page.keyboard.press("Escape");
@@ -514,6 +608,7 @@ test("[slow] a raised resist cap is marked, built with, shown in the result and 
     assert.match(await tile.innerText(), /\/ 95/);
     assert.match(await tile.innerText(), /Cap raised from 70/);
     assert.match(await page.locator("#b-result .b-planned").innerText(), /Planned with\s*Divine Fury/);
+    await closeSettings(page);
     await page.click("#b-buffs-shown");
     await page.waitForSelector('#b-buffs-shown[aria-pressed="true"]');
     assert.equal(await page.locator("#b-buffs-shown").innerText(), "Show without buffs", "one label, its state in aria-pressed");
@@ -525,11 +620,12 @@ test("[slow] a raised resist cap is marked, built with, shown in the result and 
     await page.keyboard.press("Escape");
 
     // Saved with the profile: a reload brings it back.
+    await settings(page, "advanced");
     await page.click("#b-save");
     await page.waitForFunction(() => /Profile for .* saved/.test(document.body.textContent || ""), undefined, { timeout: 10_000 });
     await page.reload();
-    await page.waitForSelector("#tab-builder:not([hidden]) #b-sec-caps", { timeout: 30_000 });
-    await page.click("#b-sec-caps .b-sec-head button");
+    await page.waitForSelector("#tab-builder:not([hidden]) #b-sec-caps", { state: "attached", timeout: 30_000 });
+    await settings(page, "advanced");
     assert.equal(await fire.inputValue(), "95", "the profile kept the override");
 
     // Out of range: the build does not run, and the field says why and takes focus.
@@ -552,23 +648,25 @@ test("[slow] a raised resist cap is marked, built with, shown in the result and 
 });
 
 // Review of #48: a requirement above its resist's cap warns on its row; a race change drops an override that is now
-// the race's own cap, so Save does not store it; and an out-of-range cap stops Build with the section closed.
-test("[slow] resist caps: a floor past its cap warns, a race change drops a now-default override, a closed section still blocks Build", async (t) => {
+// the race's own cap, so Save does not store it; and an out-of-range cap stops Build with the drawer closed.
+test("[slow] resist caps: a floor past its cap warns, a race change drops a now-default override, a closed drawer still blocks Build", async (t) => {
   const why = unavailable();
   if (why) return t.skip(why);
   const dataDir = seedDataDir("packrat-ui-rescaps2-");
   const { app, page, errors } = await launch(dataDir);
   try {
     await openBuilder(page);
-    await page.click("#b-sec-caps .b-sec-head button");
+    await settings(page, "advanced");
     const fireReq = page.locator("#b-sec-req .rule-row[data-key=fireResist]");
     await page.fill("#b-cap-fireResist", "60");
     assert.match(await fireReq.innerText(), /Counts only up to the Fire cap, 60/);
     await page.fill("#b-cap-fireResist", "70");
     assert.doesNotMatch(await fireReq.innerText(), /Counts only up to/);
+    await settings(page, "requirements");
     await fireReq.locator("input[type=number]").fill("90");
     assert.match(await fireReq.innerText(), /Counts only up to the Fire cap, 70/, "and it follows the floor as it is typed");
     await fireReq.locator("input[type=number]").fill("65");
+    await settings(page, "advanced");
 
     // Human with Energy 75 (raised), then Elf: 75 is the Elf's own cap, so nothing is overridden or saved.
     await page.fill("#b-cap-energyResist", "75");
@@ -584,10 +682,10 @@ test("[slow] resist caps: a floor past its cap warns, a race change drops a now-
     });
     assert.deepEqual(saved, {}, "no override stored for the Elf's own Energy cap");
 
-    // Out of range, section closed: Build opens it on the field instead of building.
+    // Out of range, drawer closed: Build opens it on the field instead of building.
     await page.fill("#b-cap-coldResist", "200");
-    await page.click("#b-sec-caps .b-sec-head button");
-    assert.equal(await page.locator("#b-cap-coldResist").count(), 0, "the section is closed");
+    await closeSettings(page);
+    assert.equal(await page.locator("#b-cap-coldResist").isHidden(), true, "the drawer is closed");
     await page.click("#b-run");
     await page.waitForSelector("#b-cap-coldResist-err");
     assert.equal(await page.evaluate(() => document.activeElement?.id), "b-cap-coldResist");
@@ -609,6 +707,7 @@ test("[slow] excluded weapon skills and the Use Best Weapon Skill check show on 
   const { app, page, errors } = await launch(dataDir);
   try {
     await openBuilder(page);
+    await settings(page, "pool");
     const chip = page.locator("#b-weapon");
     assert.equal(await chip.innerText(), "Weapons: any");
     await chip.click();
@@ -629,7 +728,8 @@ test("[slow] excluded weapon skills and the Use Best Weapon Skill check show on 
     await page.click("#b-save");
     await page.waitForFunction(() => /Profile for .* saved/.test(document.body.textContent || ""), undefined, { timeout: 10_000 });
     await page.reload();
-    await page.waitForSelector("#tab-builder:not([hidden]) #b-weapon", { timeout: 30_000 });
+    await page.waitForSelector("#tab-builder:not([hidden]) #b-weapon", { state: "attached", timeout: 30_000 });
+    await settings(page, "pool");
     assert.equal(await chip.innerText(), "Weapons: Swordsmanship only");
     await chip.click();
     assert.ok(!(await page.locator(".pop #b-ubws").isChecked()), "the switch saved off");
@@ -650,6 +750,7 @@ test("[slow] the Weapons popover's Spellbooks row excludes spellbooks and is sav
   const { app, page, errors } = await launch(dataDir);
   try {
     await openBuilder(page);
+    await settings(page, "pool");
     const chip = page.locator("#b-weapon");
     await chip.click();
     await page.waitForFunction(() => [...document.querySelectorAll(".pop .b-checks label")].map((l) => (l.textContent || "").trim()).join("|") === "Archery|Swordsmanship|Fencing|Mace fighting|Throwing|Spellbooks", undefined, { timeout: 10_000 });
@@ -661,8 +762,9 @@ test("[slow] the Weapons popover's Spellbooks row excludes spellbooks and is sav
     await page.click("#b-save");
     await page.waitForFunction(() => /Profile for .* saved/.test(document.body.textContent || ""), undefined, { timeout: 10_000 });
     await page.reload();
-    await page.waitForSelector("#tab-builder:not([hidden]) #b-weapon", { timeout: 30_000 });
+    await page.waitForSelector("#tab-builder:not([hidden]) #b-weapon", { state: "attached", timeout: 30_000 });
     await page.waitForFunction(() => document.querySelector("#b-weapon")?.textContent?.trim() === "Weapons: 1 excluded, no spellbooks", undefined, { timeout: 10_000 });
+    await settings(page, "pool");
     await chip.click();
     assert.deepEqual(await page.locator(".pop .b-checks input:checked").evaluateAll((is) => is.map((i) => (i as HTMLInputElement).value)), ["throwing", "spellbook"]);
     assert.deepEqual(errors, []);
@@ -681,6 +783,7 @@ test("[slow] the Weapon must have chip shows the checked properties and is saved
   const { app, page, errors } = await launch(dataDir);
   try {
     await openBuilder(page);
+    await settings(page, "pool");
     const chip = page.locator("#b-wflags");
     assert.equal(await chip.innerText(), "Weapon must have");
     await chip.click();
@@ -694,7 +797,8 @@ test("[slow] the Weapon must have chip shows the checked properties and is saved
     await page.click("#b-save");
     await page.waitForFunction(() => /Profile for .* saved/.test(document.body.textContent || ""), undefined, { timeout: 10_000 });
     await page.reload();
-    await page.waitForSelector("#tab-builder:not([hidden]) #b-wflags", { timeout: 30_000 });
+    await page.waitForSelector("#tab-builder:not([hidden]) #b-wflags", { state: "attached", timeout: 30_000 });
+    await settings(page, "pool");
     assert.equal(await chip.innerText(), "Weapon must have: Spell Channeling");
     await chip.click();
     assert.deepEqual(await page.locator(".pop .b-checks input:checked").evaluateAll((is) => is.map((i) => (i as HTMLInputElement).value)), ["spell channeling"]);
@@ -707,13 +811,14 @@ test("[slow] the Weapon must have chip shows the checked properties and is saved
   }
 });
 
-test("[slow] the Only containers chip narrows the pool, says so in the summary, is built with, kept by the run and saved with the profile (issue #12)", async (t) => {
+test("[slow] the Only containers chip narrows the pool, is built with, kept by the run and saved with the profile (issue #12)", async (t) => {
   const why = unavailable();
   if (why) return t.skip(why);
   const dataDir = seedDataDir("packrat-ui-onlyroots-");
   const { app, page, errors } = await launch(dataDir);
   try {
     await openBuilder(page);
+    await settings(page, "pool");
     const who = await page.locator("#b-char").inputValue(), chip = page.locator("#b-onlyroots");
     await page.waitForFunction(() => document.querySelector<HTMLElement>("#b-onlyroots")?.innerText === "Only containers");
     await chip.click();
@@ -723,10 +828,6 @@ test("[slow] the Only containers chip narrows the pool, says so in the summary, 
     await page.locator(`.pop input[value="${picked}"]`).check();
     await page.waitForFunction(() => document.querySelector<HTMLElement>("#b-onlyroots")?.innerText === "Only containers: 1");
     await page.keyboard.press("Escape");
-    // the closed section's summary says it
-    await page.click("#b-sec-pool .b-sec-head button");
-    await page.waitForFunction(() => /1 container only/.test(document.querySelector("#b-sec-pool")?.textContent || ""));
-    await page.click("#b-sec-pool .b-sec-head button");
     await page.click("#b-run");
     await built(page);
     // the saved run keeps the list (the server writes it as the build finishes: wait for the file)
@@ -739,7 +840,8 @@ test("[slow] the Only containers chip narrows the pool, says so in the summary, 
     const pool = (): { onlyRoots?: number[] } => (JSON.parse(readFileSync(join(dataDir, "profiles.json"), "utf8")) as { characters: Record<string, { spec: { pool: { onlyRoots?: number[] } } }> }).characters[who]!.spec.pool;
     assert.deepEqual(pool().onlyRoots, [picked]);
     await page.reload();
-    await page.waitForSelector("#tab-builder:not([hidden]) #b-onlyroots", { timeout: 30_000 });
+    await page.waitForSelector("#tab-builder:not([hidden]) #b-onlyroots", { state: "attached", timeout: 30_000 });
+    await settings(page, "pool");
     await page.waitForFunction(() => document.querySelector<HTMLElement>("#b-onlyroots")?.innerText === "Only containers: 1");
     // cleared, it is no filter and leaves the saved profile
     await chip.click();
@@ -767,6 +869,7 @@ test("[slow] a switch's on state stands apart from its off state in each theme a
     // reduced motion: a slow runner can otherwise read the track's colour half-way through its transition
     await page.emulateMedia({ reducedMotion: "reduce" });
     await openBuilder(page);
+    await settings(page, "pool");
     await page.getByRole("switch", { name: "Allow gargoyle-only gear" }).check();
     for (const theme of ["default", "britannia"]) for (const mode of ["light", "dark"]) {
       await page.evaluate(([th, md]) => { document.documentElement.dataset.theme = th!; document.documentElement.dataset.mode = md!; }, [theme, mode]);
@@ -802,7 +905,7 @@ test("[slow] Manual mode: a picked piece fills its slot, moves the totals and le
     await openBuilder(page);
     await page.click('#b-mode [data-value="manual"]');
     await page.waitForSelector("#b-manual:not([hidden]) #mb-suit .mb-slot");
-    assert.equal(await page.locator("#b-panel").isVisible(), false, "the Automatic panel is out of the way");
+    assert.equal(await page.locator("#b-settings").isVisible(), false, "Automatic's Settings are out of the way");
     const ring = page.locator('.mb-slot-pick[data-slot="ring"]');
     await ring.click();
     await page.waitForSelector("#mb-picker:not([hidden]) tbody tr.item");
@@ -964,6 +1067,7 @@ test("[slow] templates: built-ins first with their description, Apply sets Manua
     await page.reload();
     await page.waitForSelector("#tab-builder:not([hidden]) #b-tpl", { timeout: 30_000 });
     await page.selectOption("#b-char", "Kestrel");
+    await settings(page, "buffs");   // the template's description shows at the drawer's top
     assert.deepEqual(await page.$$eval("#b-tpl optgroup", (els) => els.map((e) => (e as HTMLOptGroupElement).label)), ["Built-in"]);
     assert.deepEqual(await page.$$eval("#b-tpl optgroup option", (els) => els.map((e) => e.textContent)), ["Melee", "Caster", "Archer", "Tank", "Sampire", "Paladin (Lazy Pally)", "Summoner", "Tamer (Archer)", "Archer (Chivalry)", "Archer-Bard", "Necro-Mage", "Mystic-Mage", "Spellweaver (Necroweaver)", "Thrower (Gargoyle)", "Tank (Mystic)", "Horrific Beast Wrestler", "Hemomancer"]);
     await page.selectOption("#b-tpl", "builtin:melee");
@@ -1035,22 +1139,26 @@ test("[slow] No character: built in Automatic from its own profile, saved as a r
     assert.equal(await page.locator("#b-race").count(), 0, "no Race row");
     const noPseudo = async (where: string): Promise<void> => assert.doesNotMatch(await page.evaluate(() => document.body.innerText), /_nobody/, `no "_nobody" in the page text (${where})`);
     // the buff picker speaks of no character, not of "_nobody"
+    await settings(page, "buffs");
     await page.click("#b-buff-add");
     await page.locator("#abf-h").waitFor();
     assert.equal(await page.locator("#abf-h").innerText(), "Buffs");
     assert.match(await page.locator(".pop .bf-status").innerText(), /no character: every skill at 120/);
     await noPseudo("buff picker");
     await page.keyboard.press("Escape");
+    await settings(page, "advanced");
     assert.ok(await page.locator("#b-str").isVisible(), "STR limit stays");
     await page.selectOption("#b-tpl", "builtin:caster");
     await page.click("#b-tpl-menu");
     await page.getByRole("menuitem", { name: "Apply to these settings" }).click();
+    await settings(page, "requirements");
     await page.locator("#b-sec-req .rule-row[data-key=lrc]").waitFor();
     assert.equal(await page.locator("#b-sec-req .rule-row[data-key=lrc] input[type=number]").inputValue(), "100");
     assert.equal(await page.locator("#b-sec-req .rule-row[data-key=lmc] input[type=number]").inputValue(), "40");
     await page.click("#b-run");
     await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>("#b-run")?.disabled && document.querySelector("#b-result h2")?.textContent === "Best suit · No character", undefined, { timeout: 60_000 });
     assert.equal(await page.locator("#b-grab-all").isDisabled(), true);
+    await closeSettings(page);
     await page.hover("#b-result .tipwrap:has(#b-grab-all)");
     await page.waitForFunction(() => [...document.querySelectorAll(".tip")].some((e) => e.textContent === "Log a character in to grab"));
     assert.equal(await page.locator("#b-result section[aria-label='Suit totals'] > .card-head h2").innerText(), "Suit totals");
@@ -1073,12 +1181,13 @@ test("[slow] No character: built in Automatic from its own profile, saved as a r
     assert.match(await page.locator("#b-runs-who").innerText(), /^No character · 1 run/);
     await page.keyboard.press("Escape");
     // Save profile, then a reload comes back to No character with its requirements
+    await settings(page, "requirements");
     await page.click("#b-save");
     await page.waitForFunction(() => /Profile for No character saved/.test(document.body.textContent || ""), undefined, { timeout: 10_000 });
     const saved = JSON.parse(readFileSync(join(dataDir, "profiles.json"), "utf8")) as { characters: Record<string, { spec: { intent: { floors: Record<string, number> } } }> };
     assert.equal(saved.characters._nobody!.spec.intent.floors.lrc, 100);
     await page.reload();
-    await page.waitForSelector("#tab-builder:not([hidden]) #b-sec-req .rule-row[data-key=lrc]", { timeout: 30_000 });
+    await page.waitForSelector("#tab-builder:not([hidden]) #b-sec-req .rule-row[data-key=lrc]", { state: "attached", timeout: 30_000 });
     assert.equal(await page.locator("#b-char").inputValue(), "_nobody");
     assert.equal(await page.locator("#b-race").count(), 0);
     // Manual shows its No character; a character picked back in Automatic has its own panel

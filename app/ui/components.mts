@@ -354,10 +354,12 @@ function setBackgroundInert(on: boolean): void {
 // scrolls inside itself (.pop has overflow: auto) and its last control — "Done" — stays reachable.
 const EDGE = 8, GAP = 6;
 // Beside a column instead (the `beside` option): right of its right edge, level with the anchor's top, moved up as far
-// as it takes to stay in the viewport, and pulled left over the column when the viewport is too narrow.
-export function besidePlacement(a: { top: number }, col: { right: number }, size: { width: number; height: number }, vp: { width: number; height: number }): { top: number; left: number; maxHeight: number } {
+// as it takes to stay in the viewport; left of its left edge when only that side has the room (a drawer at the window's
+// right), and pulled over the column when neither side has it.
+export function besidePlacement(a: { top: number }, col: { left: number; right: number }, size: { width: number; height: number }, vp: { width: number; height: number }): { top: number; left: number; maxHeight: number } {
   const room = Math.max(0, vp.height - 2 * EDGE), h = Math.min(size.height, room);
-  return { top: Math.max(EDGE, Math.min(a.top, vp.height - EDGE - h)), left: Math.max(EDGE, Math.min(col.right + GAP, vp.width - size.width - EDGE)), maxHeight: room };
+  const leftOf = col.right + GAP + size.width > vp.width - EDGE && col.left - GAP - size.width >= EDGE;
+  return { top: Math.max(EDGE, Math.min(a.top, vp.height - EDGE - h)), left: leftOf ? col.left - GAP - size.width : Math.max(EDGE, Math.min(col.right + GAP, vp.width - size.width - EDGE)), maxHeight: room };
 }
 export function popoverPlacement(a: { top: number; bottom: number; left: number }, size: { width: number; height: number }, vp: { width: number; height: number }): { top: number; left: number; maxHeight: number } {
   const below = Math.max(0, vp.height - EDGE - (a.bottom + GAP)), above = Math.max(0, a.top - GAP - EDGE);

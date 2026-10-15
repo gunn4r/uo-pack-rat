@@ -75,6 +75,7 @@ export interface UiPrefs {
   areaLabels?: "show" | "hide" | undefined;            // the House map's area name pills (absent = shown)
   mapDrawerWidth?: number | undefined;                 // the House map contents drawer's width in px (absent = 400)
   builderMode?: "automatic" | "manual" | undefined;    // the Suit Builder's mode (absent = Automatic)
+  builderTab?: "requirements" | "weights" | "buffs" | "pool" | "advanced" | undefined;   // the Settings drawer's last tab (absent = Requirements)
   manualFor?: "character" | "none" | undefined;        // Manual totals with the picked character's bonuses, or raw items (absent = character)
   manualSuit?: Record<string, number> | undefined;     // the Manual suit: a serial per slot (builder-manual.mts)
   manualBuffs?: string[] | undefined;                  // the Manual suit's buffs that are on (app/buffs.mts ids)
