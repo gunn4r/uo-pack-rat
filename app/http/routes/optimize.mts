@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import http from "node:http";
 import { isBoundedInt, isBoundedString, short } from "../../guards.mts";
 import { optionalSlotsFor, withReachableResistSteps } from "../../mip.mts";
-import { onlyRootsDiagnostics, preBuildDiagnostics, weaponFlagDiagnostics, type Diagnostic, type DiagnosticsProfile } from "../../diagnostics.mts";
+import { onlyRootsDiagnostics, preBuildDiagnostics, scoreShares, weaponFlagDiagnostics, type Diagnostic, type DiagnosticsProfile } from "../../diagnostics.mts";
 import { readBody } from "../../read-body.mts";
 import { runKey, reusableRun, runSummary, manualRun, type RunOpts, type SavedRun } from "../../runs-lib.mts";
 import { OPTS_LIMITS, RUN_DEFAULTS, runSettingsError, type RunSettings } from "../../run-settings.mts";
@@ -15,7 +15,7 @@ import type { Job } from "../../services/jobs.mts";
 import { isManualSuit } from "../../store/ui-prefs.mts";
 import { rarityRank } from "../../item-query.mts";
 import type { RulesV1RarityItem } from "../../schema/types.d.mts";
-import { GEAR_SLOTS, NOBODY, RARITY_PREFERENCES, RESIST_KEYS, buildPools, getRules, missingFlags, toOptItem, type Character, type Inventory, type Item, type OptItem, type Profile, type RarityPreference, type ResistStep, type RunBuffs } from "../../vault-lib.mts";
+import { GEAR_SLOTS, NOBODY, RARITY_PREFERENCES, RESIST_KEYS, buildPools, getRules, missingFlags, toOptItem, totalsOf, type Character, type Inventory, type Item, type OptItem, type Profile, type RarityPreference, type ResistStep, type RunBuffs } from "../../vault-lib.mts";
 import { characterProfile, poolFromSpec, specFromRunSettings } from "../../build-spec.mts";
 import { send, asObject, SSE_HEADERS } from "../respond.mts";
 import { NEXT, type Route } from "../router.mts";
@@ -306,7 +306,13 @@ export function routes(ctx: ServerContext): Route[] {
       const pieces = Object.fromEntries(Object.entries(suit).map(([slot, serial]) => [slot, toOptItem(inv.items[serial]!)]));
       const worn: Record<string, OptItem> = {};
       for (const it of Object.values(inv.items)) if (it.equippedBy === character && it.slot && GEAR_SLOTS.includes(it.slot)) worn[it.slot] ??= toOptItem(it);
-      const run = manualRun({ id: randomUUID(), character, createdAt: new Date().toISOString(), settings: settings as Record<string, unknown>, inventoryStamp, suit: pieces, worn, slots: GEAR_SLOTS });
+      // what made up its score, with the minimums its settings and the character's skills give now, as POST /api/evaluate plans it
+      const c = character === NOBODY ? null : inv.characters[character] as Character, p = settings as Profile & { buffs?: RunBuffs };
+      const items: Record<string, Item> = Object.fromEntries(Object.entries(suit).map(([slot, serial]) => [slot, inv.items[serial]!]));
+      const planned = evaluateSuit({ profile: manualBase(p, c), character: c, suit: pieces,
+        buffs: manualPlan(c, Object.values(inv.items).filter((it) => it.equippedBy === character), items, c ? p.race || "human" : null, p.buffs?.on ?? [], p.buffs?.skills ?? {}) }).planned;
+      const run = manualRun({ id: randomUUID(), character, createdAt: new Date().toISOString(), settings: settings as Record<string, unknown>, inventoryStamp, suit: pieces, worn, slots: GEAR_SLOTS,
+        shares: scoreShares(planned as DiagnosticsProfile, totalsOf(pieces)) });
       runStore.write(run);
       eventBus.broadcast("changed", { what: "runs", at: Date.now() });
       return send(res, 200, { ok: true, run: runSummary(run) } satisfies RunBody<RunSummary>);

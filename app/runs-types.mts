@@ -21,6 +21,9 @@ export interface Diagnostic {
 export interface SwingStep { seconds: number; ssi: number }
 export interface SwingResult { speed: number; stamina: number; ssi: number; share: number; seconds: number; steps: SwingStep[] }
 
+// One weighted property's share of a suit's score from weights (app/diagnostics.mts scoreShares): a fraction of the sum of every term's size, negative for a negative weight. `fromMin` marks a resist held at a Resisting Spells minimum above its gear total.
+export interface ScoreShare { property: string; share: number; fromMin?: boolean | undefined }
+
 export interface RunResult {
   proven?: boolean | undefined;
   method?: string | undefined;
@@ -30,6 +33,7 @@ export interface RunResult {
   nodes?: number | undefined;
   diagnostics?: Diagnostic[] | undefined;      // absent on runs saved before SOLVER_VERSION 6: unreachableFloors says what they knew
   swing?: SwingResult | undefined;             // the suit's swing, when it holds a weapon with a known speed and the build has a character
+  shares?: ScoreShare[] | undefined;           // what made up the suit's score, largest first; each alternative carries its own; absent on runs saved before issue #273
   [key: string]: unknown;
 }
 // A run's settings snapshot as saved to disk, possibly still in its pre-2026-09-13 shape (see
