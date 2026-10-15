@@ -28,7 +28,7 @@ export function targetChip(t: TargetView): HTMLElement {
 
 export async function deleteRule(r: OrganizeRule): Promise<boolean> {
   if (!await confirmDialog({ title: `Delete ${r.name}?`, body: "Its items stay where they are, or go to the catch-all if one is picked. Labels are kept.", confirmLabel: `Delete ${r.name}` })) return false;
-  const err = await saveConfig(withoutRule(state.organize.config!, r.id));
+  const err = await saveConfig((cfg) => withoutRule(cfg, r.id));
   if (err) { toast(err, "bad"); return false; }
   return true;
 }
@@ -168,7 +168,7 @@ async function save(): Promise<void> {
   d.serverError = null;
   if (c.errors.name || c.errors.names) { draw(c.errors.name ? "#rule-name" : "#rule-names"); return; }
   const rule: OrganizeRule = { id: d.id, name: c.name, match: draftMatch(d, c.names), targets: d.targets, origin: "manual" };
-  const err = await saveConfig(upsertRule(withTargetLabels(state.organize.config!, d.targets, state.inv?.containers || {}), rule));
+  const err = await saveConfig((cfg) => upsertRule(withTargetLabels(cfg, d.targets, state.inv?.containers || {}), rule));
   if (err) { d.serverError = err; draw(); return; }
   drawer().close();
   const text = d.isNew ? `Rule ${rule.name} added.` : `Rule ${rule.name} saved.`;

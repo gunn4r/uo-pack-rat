@@ -20,7 +20,7 @@ import type { RulesV1 } from "../schema/types.d.mts";
 export function createOrganizeService({ paths, getInventory, organizeStore, organizeStateStore, blacklistStore, runStore, rules, bridgeAdapter, manifest, events, log }: {
   paths: Pick<ConfigPaths, "bridgeFor" | "bridgeQueueFor" | "bridgeStatusFor">;
   getInventory: () => Promise<{ fold: Inventory }>;
-  organizeStore: { read(): { config: OrganizeConfig; problems: string[] } };
+  organizeStore: { read(): { config: OrganizeConfig; problems: string[] }; stamp(): string };
   organizeStateStore: { read(): OrganizeState; write(state: OrganizeState): void };
   blacklistStore: { read(): BlacklistEntry[] };
   runStore: { all(): SavedRun[] };
@@ -65,19 +65,20 @@ export function createOrganizeService({ paths, getInventory, organizeStore, orga
   }
   // What a plan starts from now: finished trips harvested, entries a newer scan has settled dropped, labels' last-seen
   // times refreshed (the state file is rewritten only when that changed something). Organize works on the fold alone
-  // and applies the overlay itself. organizeNow adds the plan; Put away plans its own (planOf with a source).
-  async function organizeInputs(adapter = bridgeAdapter()): Promise<{ fold: Inventory; config: OrganizeConfig; state: OrganizeState; problems: string[]; bridges: Record<string, BridgeView>; features: Set<string> }> {
+  // and applies the overlay itself. organizeNow adds the plan; Put away plans its own (planOf with a source). `stamp` is
+  // the setup's as read here (issue #280), which a save made from what this returns names as its base.
+  async function organizeInputs(adapter = bridgeAdapter()): Promise<{ fold: Inventory; config: OrganizeConfig; stamp: string; state: OrganizeState; problems: string[]; bridges: Record<string, BridgeView>; features: Set<string> }> {
     const { fold } = await getInventory();
-    const { config, problems } = organizeStore.read();
+    const { config, problems } = organizeStore.read(), stamp = organizeStore.stamp();
     const now = Date.now();
     const { state: harvested, bridges } = harvestNow(now);
     const state = noteSeen(pruneOverlay(harvested, fold, now), config, fold);
     if (JSON.stringify(state) !== JSON.stringify(harvested)) organizeStateStore.write(state);
-    return { fold, config, state, problems, bridges, features: featuresOf(adapter, fold, now) };
+    return { fold, config, stamp, state, problems, bridges, features: featuresOf(adapter, fold, now) };
   }
   const planOf = (fold: Inventory, config: OrganizeConfig, state: OrganizeState, features: ReadonlySet<string>, putAway?: PutAway): Plan =>
     planOrganize(fold, config, state.moves, { now: Date.now(), rarity: rules().rarity, suitPieces: suitsFor(config.rules.map((r) => r.match)), blacklist: blacklistStore.read().map((e) => e.serial), seen: state.seen, features, putAway });
-  async function organizeNow(): Promise<{ fold: Inventory; config: OrganizeConfig; state: OrganizeState; plan: Plan; problems: string[]; bridges: Record<string, BridgeView>; features: Set<string> }> {
+  async function organizeNow(): Promise<{ fold: Inventory; config: OrganizeConfig; stamp: string; state: OrganizeState; plan: Plan; problems: string[]; bridges: Record<string, BridgeView>; features: Set<string> }> {
     const got = await organizeInputs();
     return { ...got, plan: planOf(got.fold, got.config, got.state, got.features) };
   }
