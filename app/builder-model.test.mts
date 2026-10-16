@@ -15,7 +15,7 @@ import {
   resistCapError, withResistCap, capNote, resistMinimumText, capsLine, anyOverridden, effectiveFloor, floorCapWarning, pruneResistCaps,
   weaponsChipText, weaponMustHaveChipText, toggleWeapon, weaponName, withBuffs, pastCapNotes, runSettingsDiff, weightTradeoff, newWeight, editedValue, NEW_WEIGHT_IMPORTANCE, templateBuffsLine, sourceTitle, who, rarityHelp, rarityTotal, rarityDetail, shareRows, needStatus, shownImportance,
   latestRun, latestShownRun, otherCharactersRuns, gearChangedSince, suggestTemplates, SUGGEST_MIN_SKILL, needsLine, topWeights, poolLine, searchLine,
-  goalWord, goalName, goalRows, moveGoal, linkGoal, removeGoal, addGoal, goalOutcomes, goalTrades, goalVerdict, swingOutcome, tradeText, spareLines, applyAction,
+  goalWord, goalName, goalRows, moveGoal, linkGoal, removeGoal, addGoal, goalOutcomes, goalTrades, goalVerdict, swingOutcome, tradeText, spareLine, applyAction,
   type Knobs, type ChangeRow,
 } from "./ui/builder-model.mts";
 import { OPTS_LIMITS } from "./vault-server.mts";
@@ -556,15 +556,19 @@ test("[fast] builder model: how the goals went, the trades the build made and wh
   assert.equal(goalVerdict({ key: "di", rank: 3, value: 40, cap: 100, maxed: false }, []), "not maxed: higher goals or your requirements came first");
   // Swing speed in seconds from the suit's own swing, against a swing-time goal or its fastest step
   const every: Goals = { ...MELEE_GOALS, swing: { mode: "every", seconds: 1.5 } };
-  assert.deepEqual(swingOutcome(every, { seconds: 1.75, ssi: 31 }, "Broadsword", false), { text: "1.75 s with Broadsword (goal 1.5 s) · SSI 31", maxed: false });
-  assert.deepEqual(swingOutcome(every, { seconds: 1.5, ssi: 29 }, "War Axe", false), { text: "1.5 s with War Axe (goal 1.5 s) · SSI 29", maxed: true });
-  assert.deepEqual(swingOutcome(MELEE_GOALS, { seconds: 1.25, ssi: 51 }, "Katana", true), { text: "1.25 s with Katana (its fastest) · SSI 51", maxed: true });
-  assert.deepEqual(swingOutcome(MELEE_GOALS, { seconds: 2.75, ssi: 0 }, "Broadsword", false), { text: "2.75 s with Broadsword · SSI 0", maxed: false });
-  // spare points: gains, losses (never "went to" a loss), no change, no group
-  assert.deepEqual(spareLines(MELEE_GOALS, now, suit), ["Spare points went to: Luck +120"]);
-  assert.deepEqual(spareLines(MELEE_GOALS, suit, now), ["Given up for the goals: Luck −120"]);
-  assert.deepEqual(spareLines(MELEE_GOALS, now, now), ["Spare points: no change in Luck"]);
-  assert.deepEqual(spareLines({ ...MELEE_GOALS, leftover: "none" }, now, suit), []);
-  assert.deepEqual(spareLines({ ranks: [["luck"]], leftover: "luck" }, now, suit), [], "every member a goal");
-  assert.deepEqual(spareLines({ ranks: [["dexBonus"]], leftover: "melee" }, { strBonus: 5 }, { strBonus: 3, hpRegen: 2 }), ["Spare points went to: HPR +2", "Given up for the goals: STR −2"]);
+  const broad = { seconds: 1.25, weapon: "Double Bladed Staff" };
+  assert.deepEqual(swingOutcome(MELEE_GOALS, { seconds: 1.75, ssi: 31 }, "Broadsword", true, broad), { text: "1.75 s with Broadsword (fastest it can reach)", ssi: "SSI 31", after: null, maxed: true });
+  assert.deepEqual(swingOutcome(MELEE_GOALS, { seconds: 2.75, ssi: 0 }, "Broadsword", false, broad), { text: "2.75 s with Broadsword", ssi: "SSI 0", after: "1.25 s possible with Double Bladed Staff", maxed: false });
+  assert.equal(swingOutcome(MELEE_GOALS, { seconds: 1.25, ssi: 0 }, "Broadsword", false, broad).after, null, "nothing faster to point at");
+  assert.deepEqual(swingOutcome(every, { seconds: 1.5, ssi: 29 }, "War Axe", false, { seconds: 1.25, weapon: "War Axe" }), { text: "1.5 s with War Axe · goal met", ssi: "SSI 29", after: null, maxed: true });
+  assert.deepEqual(swingOutcome(every, { seconds: 1.75, ssi: 31 }, "Broadsword", false, { seconds: 1.25, weapon: "War Axe" }), { text: "1.75 s with Broadsword · goal was every 1.5 s (set for War Axe)", ssi: "SSI 31", after: null, maxed: false });
+  assert.equal(swingOutcome(every, { seconds: 1.75, ssi: 31 }, "War Axe", false, { seconds: 1.25, weapon: "War Axe" }).text, "1.75 s with War Axe · goal was every 1.5 s");
+  // Where spare points went: risers only, else none left over (stayed, or what the goals cost); nothing for Nothing
+  assert.equal(spareLine(MELEE_GOALS, { luck: 60 }, { luck: 180 }), "Spare points went to: Luck +120 (60 → 180)");
+  assert.equal(spareLine(MELEE_GOALS, { luck: 96 }, { luck: 96 }), "Spare points: none left over (Luck stays 96)");
+  assert.equal(spareLine(MELEE_GOALS, { luck: 126 }, { luck: 96 }), "Spare points: none left over. The goals cost some Luck (126 → 96)");
+  assert.equal(spareLine({ ...MELEE_GOALS, leftover: "none" }, now, suit), null);
+  assert.equal(spareLine({ ranks: [["luck"]], leftover: "luck" }, now, suit), null, "every member a goal");
+  assert.equal(spareLine({ ranks: [["dexBonus"]], leftover: "melee" }, { strBonus: 5 }, { strBonus: 3, stamInc: 8, hpRegen: 2 }), `Spare points went to: ${goalName("stamInc")} +8, ${goalName("hpRegen")} +2`);
+  assert.equal(spareLine({ ranks: [["dexBonus"]], leftover: "melee" }, { strBonus: 5 }, { strBonus: 3 }), `Spare points: none left over. The goals cost some ${goalName("strBonus")} (5 → 3)`);
 });

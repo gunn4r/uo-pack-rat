@@ -446,7 +446,7 @@ test("[slow] goals: the ranked list, its counts, =, spare points, How the goals 
     const count = (want: string): Promise<unknown> => page.waitForFunction((w) => document.querySelector("#b-changes")?.textContent === w, want, { timeout: 10_000 });
     await count("No changes since the last build");
     const went = await page.locator("#b-goals-went").innerText();
-    assert.match(went, /^How the goals went\n1\.\s*Swing speed\n[\d.]+ s with .+ · SSI \d+[\s\S]*3\.\s*Damage[\s\S]*(Spare points went to: |Given up for the goals: |Spare points: no change)/);
+    assert.match(went, /^How the goals went\n1\.\s*Swing speed\n[\d.]+ s with .+ · SSI \d+[\s\S]*3\.\s*Damage[\s\S]*Spare points(: none left over| went to: )/);
     assert.doesNotMatch(went, /as high as the gear allows|went to: \S+ −/, "no unproven verdict, and no loss as a destination");
     // built from goals, SSI counted per point is a note under the swing goal, not a warning in Check your settings
     assert.doesNotMatch(await page.locator(".b-head-card").innerText(), /SSI was scored per point/);

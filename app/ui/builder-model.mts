@@ -580,13 +580,20 @@ export function goalVerdict(o: GoalOutcome, trades: readonly GoalTrade[]): strin
   if (t) return `went down to make room for ${andList(t.ups.map((u) => goalWord(u.key)))}`;
   return o.rank === 1 ? "not maxed: your requirements, or the pieces you have, came first" : "not maxed: higher goals or your requirements came first";
 }
-// Swing speed's line in seconds, from the suit's own swing (its weapon and stamina), as the goal row speaks: "1.75 s with
-// Broadsword (goal 1.5 s)", "1.25 s with Katana (its fastest)". Maxed when the swing is at least as fast as the goal's, or,
-// for the fastest swing, when no faster step is within the cap (`fastest`).
-export function swingOutcome(g: Goals, sw: { seconds: number; ssi: number }, weapon: string | null, fastest: boolean): { text: string; maxed: boolean } {
-  const goal = g.swing?.mode === "every" ? g.swing.seconds ?? null : null, maxed = goal != null ? sw.seconds <= goal : fastest;
-  const tail = goal != null ? ` (goal ${delayText(goal)})` : maxed ? " (its fastest)" : "";
-  return { text: `${delayText(sw.seconds)} with ${weapon ?? "the weapon"}${tail} · SSI ${num(sw.ssi)}`, maxed };
+// Swing speed's line in seconds, from the suit's own swing (its weapon and stamina), with its SSI as secondary text:
+// "As fast as possible" reads "1.75 s with Broadsword (fastest it can reach)", or "2.75 s with Broadsword" with what the
+// weapon worn now could reach (`worn`: "1.25 s possible with Double Bladed Staff"); a swing time reads "1.5 s with War Axe ·
+// goal met", or "1.75 s with Broadsword · goal was every 1.5 s (set for War Axe)" when the suit's weapon is not the one the
+// goal was worked out for. Maxed only when the suit's swing reaches the goal's delay, or its weapon's fastest step (`fastest`).
+export interface SwingOutcome { text: string; ssi: string; after: string | null; maxed: boolean }
+export function swingOutcome(g: Goals, sw: { seconds: number; ssi: number }, weapon: string | null, fastest: boolean, worn: { seconds: number; weapon: string | null } | null = null): SwingOutcome {
+  const goal = g.swing?.mode === "every" ? g.swing.seconds ?? null : null, w = weapon ?? "the weapon", at = `${delayText(sw.seconds)} with ${w}`, ssi = `SSI ${num(sw.ssi)}`;
+  if (goal != null) {
+    const met = sw.seconds <= goal, other = worn?.weapon && worn.weapon !== weapon ? ` (set for ${worn.weapon})` : "";
+    return { text: met ? `${at} · goal met` : `${at} · goal was every ${delayText(goal)}${other}`, ssi, after: null, maxed: met };
+  }
+  const possible = !fastest && worn && worn.seconds < sw.seconds ? `${delayText(worn.seconds)} possible with ${worn.weapon ?? "the weapon worn now"}` : null;
+  return { text: fastest ? `${at} (fastest it can reach)` : at, ssi, after: possible, maxed: fastest };
 }
 // The trades the build made, from what is worn now to the suit: a goal that went down while a lower-ranked one went up,
 // each held at its cap, in rank order, at most `n`, each with every lower goal that rose.
@@ -608,13 +615,14 @@ export function tradeText(t: GoalTrade, swing: { from: number; to: number } | nu
 }
 // The spare-points group's properties that are not goals (none for Nothing, or when every one is a goal).
 export const spareKeys = (g: Goals): string[] => { const goals = new Set(g.ranks.flat()); return LEFTOVER_GROUPS[g.leftover].filter((k) => !goals.has(k)); };
-// Where the spare points went, as lines: the group's gains ("Spare points went to: Luck +120"), its losses ("Given up for the
-// goals: Luck −30"), or "Spare points: no change in Luck" when none moved; none with no group.
-export function spareLines(g: Goals, now: PropMap, suit: PropMap): string[] {
-  const keys = spareKeys(g), d = (k: string): number => (suit[k] || 0) - (now[k] || 0);
-  if (!keys.length) return [];
-  const say = (ks: string[]): string => ks.map((k) => `${labelOf(k)} ${signed(d(k))}`).join(" · ");
-  const up = keys.filter((k) => d(k) > 0), down = keys.filter((k) => d(k) < 0);
-  if (!up.length && !down.length) return [`Spare points: no change in ${andList(keys.map(labelOf))}`];
-  return [...(up.length ? [`Spare points went to: ${say(up)}`] : []), ...(down.length ? [`Given up for the goals: ${say(down)}`] : [])];
+// Where the spare points went, one line or none: the group's members that rose, "Spare points went to: Luck +120 (60 → 180)"
+// (the totals only for one); with none risen, "Spare points: none left over (Luck stays 96)", or when the goals cost some,
+// "Spare points: none left over. The goals cost some Luck (126 → 96)". None for Nothing, or a group whose every member is a goal.
+export function spareLine(g: Goals, now: PropMap, suit: PropMap): string | null {
+  const keys = spareKeys(g), v = (t: PropMap, k: string): number => t[k] || 0, d = (k: string): number => v(suit, k) - v(now, k);
+  if (!keys.length) return null;
+  const up = keys.filter((k) => d(k) > 0), down = keys.filter((k) => d(k) < 0), span = (k: string): string => `${num(v(now, k))} → ${num(v(suit, k))}`;
+  if (up.length) return `Spare points went to: ${up.map((k) => `${goalName(k)} ${signed(d(k))}${up.length === 1 ? ` (${span(k)})` : ""}`).join(", ")}`;
+  if (down.length) return `Spare points: none left over. The goals cost some ${andList(down.map((k) => `${goalName(k)} (${span(k)})`))}`;
+  return `Spare points: none left over (${keys.length === 1 ? `${goalName(keys[0]!)} stays ${num(v(suit, keys[0]!))}` : `${andList(keys.map(goalName))} unchanged`})`;
 }

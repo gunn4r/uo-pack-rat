@@ -18,7 +18,7 @@ import { session, commands, provide } from "./builder-session.mts";
 import { RESIST_NAMES, keyProps, tipTarget, verdict, grabAllButton, fetchCard, settingsCheck } from "./builder-parts.mts";
 import { savedBuffs, plannedFromWorn, buffById, buffsDiff, runBuffs, signed } from "../buffs.mts";
 import type { RunBuffs } from "../vault-lib.mts";
-import { slotsOf, paperdollCaps, pastCapNotes, runSettingsDiff, withBuffs, afterChange, compareModel, hiddenRowsNote, changeRows, gaugeRows, worse, gaugeNote, gaugeTrack, changesSummary, nextSwingStep, sharePct, plural, resistOutcome, toggleCompare, propName, capNote, capsLine, anyOverridden, effectiveFloor, resultChecks, shareRows, swingLines, who, rarityDetail, rarityTotal, goalName, goalOutcomes, goalTrades, goalVerdict, swingOutcome, tradeText, spareLines, type ChangeRow, type CompareMember } from "./builder-model.mts";
+import { slotsOf, paperdollCaps, pastCapNotes, runSettingsDiff, withBuffs, afterChange, compareModel, hiddenRowsNote, changeRows, gaugeRows, worse, gaugeNote, gaugeTrack, changesSummary, nextSwingStep, sharePct, plural, resistOutcome, toggleCompare, propName, capNote, capsLine, anyOverridden, effectiveFloor, resultChecks, shareRows, swingLines, who, rarityDetail, rarityTotal, goalName, goalOutcomes, goalTrades, goalVerdict, swingOutcome, tradeText, spareLine, type ChangeRow, type CompareMember } from "./builder-model.mts";
 import { heldWeapon, ssiShareOf, swingOf } from "../swing.mts";
 import type { ScoreShare, SwingResult } from "../runs-types.mts";
 import type { OptSuit, OptimizeResult, SavedRunLike, UiPrefs } from "./api-types.mts";
@@ -226,15 +226,18 @@ function goalsCard(g: Goals, current: OptSuit, suit: OptSuit, prof: EffectivePro
   const ssiCap = (prof.buffs?.caps ?? prof.caps).ssi, caps = { ...now.caps, ...(ssiCap != null ? { ssi: Math.min(ssiCap, now.caps.ssi ?? ssiCap) } : {}) };
   // each suit's swing with its own weapon, at the build's stamina before gear
   const swingIn = (s: OptSuit): ReturnType<typeof swingOf> | null => { const w = heldWeapon(s); return w && prof.swing ? swingOf(w.speed!, prof.swing.stamBase, totalsOf(s), ssiShareOf(prof)) : null; };
-  const from = swingIn(current), to = swingIn(suit), swing = to ? swingOutcome(g, to, heldWeapon(suit)?.name ?? null, !nextSwingStep(to)) : null;
+  // the weapon worn now and its fastest step at the worn stamina: what the goal row was worked out for
+  const from = swingIn(current), to = swingIn(suit), wornFastest = from ? from.steps.at(-1)?.seconds ?? from.seconds : null;
+  const swing = to ? swingOutcome(g, to, heldWeapon(suit)?.name ?? null, !nextSwingStep(to), from && wornFastest != null ? { seconds: wornFastest, weapon: heldWeapon(current)?.name ?? null } : null) : null;
   const trades = goalTrades(g, was.totals, now.totals, caps), rows = goalOutcomes(g, now.totals, caps, swing?.maxed ?? null);
   return box("section", { class: "card b-side-card", id: "b-goals-went", "aria-labelledby": "b-goals-went-h" }, el("h3", { class: "t-md", id: "b-goals-went-h" }, "How the goals went"),
     box("ol", { class: "b-went" }, ...rows.map((r) => box("li", {}, box("span", { class: "b-went-name" }, txt(`${r.rank}.`, "muted"), txt(goalName(r.key))),
-      r.key === "ssi" && swing ? txt(swing.text, "b-went-val b-went-swing") : txt(r.cap != null ? `${numText(r.value)} / ${numText(r.cap)}` : numText(r.value), "b-went-val"),
+      r.key === "ssi" && swing ? box("span", { class: "b-went-swing" }, txt(swing.text, "b-went-val"), txt(` · ${swing.ssi}`, "t-sm muted"), swing.after ? txt(` (${swing.after})`, "t-sm muted") : null)
+        : txt(r.cap != null ? `${numText(r.value)} / ${numText(r.cap)}` : numText(r.value), "b-went-val"),
       txt(goalVerdict(r, trades), `t-sm ${r.maxed ? "tone-ok" : "muted"}`),
       r.key === "ssi" && perPoint ? txt("Counted per point: the weapon isn't fixed, so the swing time can't be scored by step.", "t-sm muted") : null))),
     trades.length ? box("ul", { class: "b-trades" }, ...trades.map((t) => el("li", { class: "t-sm" }, txt(`Trade made: ${tradeText(t, from && to ? { from: from.seconds, to: to.seconds } : null)}`)))) : null,
-    ...spareLines(g, was.totals, now.totals).map((line) => el("p", { class: "t-sm" }, txt(line))));
+    ((line) => (line ? el("p", { class: "t-sm" }, txt(line)) : null))(spareLine(g, was.totals, now.totals)));
 }
 
 // The swing line under the resists: the weapon, stamina and SSI and the delay they give, then the steps at that stamina with the reached ones in the ok tone.
