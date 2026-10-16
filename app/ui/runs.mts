@@ -217,6 +217,8 @@ export async function openRun(id: string, auto = false): Promise<void> {
   if (!name) return;
   const run = await fetchRun(id);
   if (!run || session.character !== name || (auto && (session.result || session.job))) return;
+  // a run file that kept no result (a hand-written or damaged one) has no suit to show
+  if (!run.result) { if (!auto) toast("That saved run has no suit to show.", "bad"); return; }
   session.openRun = id; renderRuns();
   if (!auto) { closeRunsDrawer(); commands.showAutomatic(); commands.closeCompare(); }
   const diff = runSettingsDiff(settingsSnapshot(), run.settings);
@@ -304,8 +306,8 @@ async function otherRunsCard(name: string): Promise<HTMLElement | null> {
   const others = otherCharactersRuns(all.filter((r) => known(r.character)), name);
   if (!others.length) return null;
   const before = (r: RunSummaryLike): RunSummaryLike | undefined => { const mine = all.filter((x) => x.character === r.character); return mine[mine.indexOf(r) + 1]; };
-  return box("section", { class: "card b-side-card", id: "b-others", "aria-labelledby": "b-others-h" },
-    el("h3", { class: "t-md strong", id: "b-others-h" }, "Other characters' recent runs"),
+  return box("section", { class: "card b-side-card", id: "b-other-runs", "aria-labelledby": "b-other-runs-h" },
+    el("h3", { class: "t-md strong", id: "b-other-runs-h" }, "Other characters' recent runs"),
     box("ul", { class: "b-run-rows" }, ...others.map((r) => runRow(`${who(r.character!)} · ${runTitle(r, before(r))}`, fmtRunTime(r.createdAt), () => {
       commands.setManualFor(r.character === NOBODY ? null : r.character!);
       commands.selectCharacter(r.character!, r.id);

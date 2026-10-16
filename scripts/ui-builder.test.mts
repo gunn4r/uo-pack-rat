@@ -1170,7 +1170,7 @@ test("[slow] a switch's on state stands apart from its off state in each theme a
         const rgb = (c: string): number[] => c.match(/[\d.]+/g)!.slice(0, 3).map(Number);
         const lum = (c: string): number => { const [r, g, b] = rgb(c).map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!; };
         const ratio = (a: string, b: string): number => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
-        const off = document.querySelector<HTMLInputElement>("#b-others")!, on = document.querySelector<HTMLInputElement>("#b-garg")!;
+        const off = document.querySelector<HTMLInputElement>("#b-other-runs")!, on = document.querySelector<HTMLInputElement>("#b-garg")!;
         const fill = (n: Element): string => getComputedStyle(n).backgroundColor;
         const knobLeft = (n: Element): number => parseFloat(getComputedStyle(n, "::after").left);
         return { fills: ratio(fill(on), fill(off)), offLeft: knobLeft(off), onLeft: knobLeft(on), checked: [off.checked, on.checked] };
@@ -1541,8 +1541,8 @@ test("[slow] arriving: the first-visit view, coming back to the latest run, othe
 
     // Kestrel: her own first-visit view, with Dorran's run among the others; back on Dorran, his last run again
     await page.selectOption("#b-char", "Kestrel");
-    await page.waitForSelector("#b-start #b-others", { timeout: 10_000 });
-    assert.match(await page.locator("#b-others").innerText(), /Other characters' recent runs\s+Dorran · /);
+    await page.waitForSelector("#b-start #b-other-runs", { timeout: 10_000 });
+    assert.match(await page.locator("#b-other-runs").innerText(), /Other characters' recent runs\s+Dorran · /);
     await page.selectOption("#b-char", "Dorran");
     await page.waitForFunction(() => /^Best suit for Dorran/.test(document.querySelector("#b-result h2")?.textContent || ""), undefined, { timeout: 10_000 });
 
@@ -1557,7 +1557,7 @@ test("[slow] arriving: the first-visit view, coming back to the latest run, othe
 
     // the other character's card opens Dorran's run from Kestrel
     await page.selectOption("#b-char", "Kestrel");
-    await page.locator("#b-others .b-run-row").first().click();
+    await page.locator("#b-other-runs .b-run-row").first().click();
     await page.waitForFunction(() => /^Best suit for Dorran/.test(document.querySelector("#b-result h2")?.textContent || ""), undefined, { timeout: 10_000 });
     assert.equal(await page.locator("#b-char").inputValue(), "Dorran");
 
