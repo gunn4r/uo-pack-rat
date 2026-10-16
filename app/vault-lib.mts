@@ -340,17 +340,23 @@ export function goalsText(g: Goals): string {
   const name = (k: string): string => (k === "ssi" && g.swing?.mode === "every" && g.swing.seconds != null ? `SSI ${g.swing.seconds} s` : labelOf(k));
   return `${g.ranks.map((r) => r.map(name).join(" = ")).join(" › ") || "no goals"}, spare points to ${LEFTOVER_LABELS[g.leftover].toLowerCase()}`;
 }
+// The most ranks goals hold, and the most properties one rank holds (the Goals tab stops at both).
+export const GOAL_RANKS_MAX = 40, GOAL_RANK_SIZE_MAX = 10;
+// A property a goal can name: one the builder offers, or a skill bonus ("sk:magery").
+export const isGoalProperty = (k: string): boolean => (Object.hasOwn(PROP_LABELS, k) && !NOT_BUILDER_KEYS.has(k)) || (k.startsWith("sk:") && SKILL_SET.has(k.slice(3)));
 // The check goals are held to wherever they are stored or sent (a profile's spec, a run's settings, build_suit): only
-// these fields; ranks a list of at most 40 lists of builder property names, none named twice; a swing time from 1.25 to
-// 10 s in quarter seconds. `label` names the field in the reason; null when fine.
+// these fields; ranks a list of at most GOAL_RANKS_MAX lists of at most GOAL_RANK_SIZE_MAX known properties
+// (isGoalProperty), none named twice; a swing time from 1.25 to 10 s in quarter seconds. `label` names the field in the
+// reason; null when fine.
 export function goalsError(v: unknown, label: string): string | null {
   const obj = (x: unknown): x is Record<string, unknown> => !!x && typeof x === "object" && !Array.isArray(x);
   if (!obj(v)) return `${label} must be an object`;
   const extra = Object.keys(v).find((k) => !["ranks", "swing", "leftover", "ownWeights"].includes(k));
   if (extra) return `${label}.${extra.slice(0, 64)} is not a goals setting`;
-  const name = (k: unknown): boolean => typeof k === "string" && k.length > 0 && k.length <= 64 && !NOT_BUILDER_KEYS.has(k) && !["__proto__", "constructor", "prototype"].includes(k);
-  if (!Array.isArray(v.ranks) || v.ranks.length > 40 || !v.ranks.every((r) => Array.isArray(r) && r.length > 0 && r.length <= 10 && r.every(name))) return `${label}.ranks must be a list of ranks, each a list of property names`;
-  const keys = (v.ranks as string[][]).flat();
+  if (!Array.isArray(v.ranks) || v.ranks.length > GOAL_RANKS_MAX || !v.ranks.every((r) => Array.isArray(r) && r.length > 0 && r.length <= GOAL_RANK_SIZE_MAX && r.every((k) => typeof k === "string")))
+    return `${label}.ranks must be a list of at most ${GOAL_RANKS_MAX} ranks, each a list of 1 to ${GOAL_RANK_SIZE_MAX} property names`;
+  const keys = (v.ranks as string[][]).flat(), unknown = keys.find((k) => !isGoalProperty(k));
+  if (unknown != null) return `${label}.ranks names ${JSON.stringify(unknown.slice(0, 64))}, which is not a property the Suit Builder offers (property keys such as "ssi", "hci", "luck" or "sk:magery")`;
   if (new Set(keys).size !== keys.length) return `${label}.ranks names a property twice`;
   if (!(GOAL_LEFTOVERS as readonly unknown[]).includes(v.leftover)) return `${label}.leftover must be one of ${GOAL_LEFTOVERS.join(", ")}`;
   if (v.ownWeights != null && typeof v.ownWeights !== "boolean") return `${label}.ownWeights must be a boolean`;

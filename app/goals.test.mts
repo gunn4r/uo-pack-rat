@@ -1,13 +1,14 @@
 // goals.test.mts — the Suit Builder's goals (issue #292): ranked goals compiled to the weights the solvers score with, and a build from goals being the build from those weights.
 //
-// `[fast]`: `app/vault-lib.mts`'s `compileGoals`: the rank importances (100, 80, 65, 50, 40, 30, 25, 20, 15, then 15 for every later rank), linked properties sharing their rank's, the spare-points group at 5 less any member that is a goal, SSI by swing step on with a Swing speed goal in either swing mode, an empty list, the tag penalty kept, and the same goals always compiling to the same weights; `goalsError`; a goals change counting as one settings change (`settingsDiff`); `app/build-spec.mts`'s `planBuild` capping SSI at a swing-every-N-s goal's step for the weapon worn now (none for the fastest swing, nor for weights set by hand) and `app/swing.mts`'s step table keeping no point past that cap; every built-in template's weights and swing-step switch equal to what its goals compile to; and a seeded fuzz over small random pools: a build from random goals equals the build from their compiled weights and the brute-force best of the goals' own scoring, and the trade finder (`app/ui/builder-model.mts`'s `goalTrades`) names a trade exactly when a higher goal went down while a lower one went up.
+// `[fast]`: `app/vault-lib.mts`'s `compileGoals`: the rank importances (100, 80, 65, 50, 40, 30, 25, 20, 15, then 15 for every later rank), linked properties sharing their rank's, the spare-points group at 5 less any member that is a goal, SSI by swing step on with a Swing speed goal in either swing mode, an empty list, the tag penalty kept, and the same goals always compiling to the same weights; `goalsError` (unknown property names refused, named); a goals change counting as one settings change (`settingsDiff`); `app/build-spec.mts`'s `planBuild` capping SSI at a swing-every-N-s goal's step for the weapon worn now (none for the fastest swing, nor for weights set by hand) and `app/swing.mts`'s step table keeping no point past that cap; every built-in template's weights and swing-step switch equal to what its goals compile to; the step table's credit held at a swing-time goal's cap however the faster swing is reached (a review repro); a run's saved settings planning the same SSI cap and swing as its build; a spec read back recompiling the weights its goals set; and two seeded fuzzes: over small random pools with no character, a build from random goals equals the build from their compiled weights and the brute-force best of the goals' own scoring, and the trade finder (`app/ui/builder-model.mts`'s `goalTrades`) names a trade exactly when a higher goal went down while a lower one went up; and with the demo characters' own swings, random goals ranking Swing speed in both modes, planned as the page plans them, score an oracle that prices each suit's own swing from the formula held at the goal's step, while two broken builds (no credit cap, ranks reversed) each miss it at least once.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { compileGoals, foldSnapshots, goalsError, importanceOf, settingsDiff, toOptItem, typicalRange, IMPORTANCE_K, LEFTOVER_GROUPS, GOAL_LEFTOVERS, type Goals, type Item } from "./vault-lib.mts";
 import { upgradeScan } from "./scan-schema.mts";
-import { buildSpec, planBuild, type BuildSpecSource, type TemplateMap } from "./build-spec.mts";
-import { heldWeapon, stepsFor } from "./swing.mts";
+import { buildSpec, planBuild, profileFromSpec, specFromRunSettings, type BuildSpecSource, type TemplateMap } from "./build-spec.mts";
+import { heldWeapon, stepsFor, stepTable, swingSteps, swingTicks } from "./swing.mts";
+import { propertyReach } from "./mip.mts";
 import { core } from "./solver-fixture.mts";   // also loads the uoalive rules
 import { goalTrades } from "./ui/builder-model.mts";
 import type { OptPools } from "./exact-solver.mts";
@@ -60,10 +61,13 @@ test("[fast] goals: the check names what is wrong", () => {
   const ok: Goals = { ranks: [["ssi"], ["hci", "dci"]], swing: { mode: "every", seconds: 1.5 }, leftover: "luck", ownWeights: true };
   assert.equal(goalsError(ok, "goals"), null);
   assert.equal(goalsError({ ranks: [], leftover: "none" }, "goals"), null, "no goals at all is fine");
+  assert.equal(goalsError({ ranks: [["stamPool"], ["sk:magery", "physResist"]], leftover: "none" }, "goals"), null, "a pool, a skill bonus and a resist");
   const bad: Array<[unknown, RegExp]> = [
     [[], /goals must be an object/], [{ ranks: [["ssi"]], leftover: "luck", strategy: "strict" }, /goals\.strategy is not a goals setting/],
-    [{ ranks: [[]], leftover: "luck" }, /ranks must be a list/], [{ ranks: [["tagPenalty"]], leftover: "luck" }, /ranks must be a list/],
-    [{ ranks: [["__proto__"]], leftover: "luck" }, /ranks must be a list/], [{ ranks: [["ssi"], ["ssi"]], leftover: "luck" }, /names a property twice/],
+    [{ ranks: [[]], leftover: "luck" }, /ranks must be a list of at most 40 ranks, each a list of 1 to 10 property names/], [{ ranks: [Array.from({ length: 11 }, (_, i) => `k${i}`)], leftover: "luck" }, /each a list of 1 to 10/],
+    [{ ranks: [["tagPenalty"]], leftover: "luck" }, /names "tagPenalty", which is not a property the Suit Builder offers/], [{ ranks: [["__proto__"]], leftover: "luck" }, /names "__proto__"/],
+    [{ ranks: [["SSI"], ["hitChance"]], leftover: "luck" }, /names "SSI", which is not a property/], [{ ranks: [["sk:basket weaving"]], leftover: "luck" }, /names "sk:basket weaving"/],
+    [{ ranks: [["ssi"], ["ssi"]], leftover: "luck" }, /names a property twice/],
     [{ ranks: [["ssi"]], leftover: "gold" }, /leftover must be one of luck, melee, caster, none/], [{ ranks: [["ssi"]], leftover: "luck", ownWeights: 1 }, /ownWeights must be a boolean/],
     [{ ranks: [["ssi"]], leftover: "luck", swing: { mode: "slow" } }, /swing must be/], [{ ranks: [["ssi"]], leftover: "luck", swing: { mode: "every" } }, /seconds is needed/],
     [{ ranks: [["ssi"]], leftover: "luck", swing: { mode: "every", seconds: 1.3 } }, /quarter seconds/], [{ ranks: [["ssi"]], leftover: "luck", swing: { mode: "every", seconds: 0.5 } }, /from 1\.25 to 10/],
@@ -106,6 +110,34 @@ test("[fast] goals: a swing every N s caps SSI at that step for the weapon worn 
   const table = (goals: Goals) => stepsFor(plan(goals), { [axe.slot!]: [axe] }, { [axe.slot!]: axe }, { min: 0, max: 30 }).ssiSteps!.map((p) => p.ssi);
   assert.ok(table({ ...ssi, swing: { mode: "every", seconds: 1.5 } }).every((s) => s <= 29));
   assert.ok(table({ ...ssi, swing: { mode: "fastest" } }).some((s) => s > 29), "the fastest swing keeps the faster steps");
+});
+
+// Review of #301: a delay faster than the goal's, reached through more stamina, must not credit more than the goal either.
+// A 2.5 s weapon at a reference stamina of 95 needs SSI 1 for 1.5 s; one stamina band up (+40 gear stamina) reaches 1.25 s.
+test("[fast] goals: a swing-time goal's SSI cap holds the step credit too, however the faster swing is reached", () => {
+  const pools = { oneHanded: [{ serial: 1, name: "Blade", slot: "oneHanded", props: {}, speed: 2.5 }] }, current = { oneHanded: pools.oneHanded[0]! };
+  const profile = (cap: number) => ({ swing: { stamBase: 80, refStamina: 95, steps: true }, weights: { ssi: 1 }, caps: { ssi: cap } });
+  const capped = stepsFor(profile(1), pools, current, { min: 0, max: 40 }).ssiSteps!;
+  assert.ok(capped.length > 0 && capped.every((p) => p.credit <= 1 && p.ssi <= 1), JSON.stringify(capped));
+  // with no goal (the formula's 60) the band above keeps its full price, as before goals
+  assert.ok(stepsFor(profile(60), pools, current, { min: 0, max: 40 }).ssiSteps!.some((p) => p.credit > 1));
+});
+
+test("[fast] goals: a run's saved settings plan the same SSI cap and swing as the build did", () => {
+  const goals: Goals = { ranks: [["ssi"], ["hci"]], swing: { mode: "every", seconds: 1.5 }, leftover: "luck" }, c = compileGoals(goals);
+  const ctx = { character: inv.characters.Kestrel!, worn: wornBy("Kestrel") };
+  const live = planBuild(buildSpec({ intent: { weights: c.weights, swingSteps: c.swingSteps, goals } }), ctx);
+  const reopened = planBuild(specFromRunSettings(live.snapshot), { ...ctx, race: live.snapshot.race });
+  assert.equal(reopened.profile.caps.ssi, 29);
+  assert.deepEqual([reopened.profile.caps.ssi, reopened.profile.swing], [live.profile.caps.ssi, live.profile.swing]);
+});
+
+test("[fast] goals: a spec read back recompiles the weights its goals set; weights set by hand are kept", () => {
+  const goals: Goals = { ranks: [["ssi"], ["hci"]], leftover: "luck" }, c = compileGoals(goals, { tagPenalty: -25 });
+  const edited = profileFromSpec({ intent: { weights: { ...c.weights, ssi: 99 }, goals } });
+  assert.deepEqual([edited.weights, edited.swingSteps], [c.weights, true], "a hand-edited file holds what the goals set");
+  const own = profileFromSpec({ intent: { weights: { luck: 3 }, goals: { ...goals, ownWeights: true } } });
+  assert.deepEqual([own.weights, own.swingSteps], [{ luck: 3 }, undefined]);
 });
 
 test("[fast] goals: every built-in template's weights and swing-step switch are what its goals compile to", () => {
@@ -170,4 +202,66 @@ test("[fast] goals fuzz: a build from goals is the build from their weights and 
     traded += trades.length ? 1 : 0;
   }
   assert.ok(traded > 20, `the fuzz made trades (${traded})`);
+});
+
+// A second seeded fuzz with a character (review of #301): the demo characters' own swings (Kestrel's 3 s War Axe at 100
+// stamina, Dorran's 2.25 s staff at 70), random pieces carrying SSI and the Stamina pool, and random goals that rank Swing
+// speed as the fastest swing or a swing every N s. Each build is planned as the page plans it (planBuild with the worn suit,
+// the worker's step table) and its proven score must equal an oracle that reads only the goals: each rank's importance per
+// point, and for Swing speed the suit's own swing from the formula, priced at the worn stamina and held at the goal's step.
+// Two broken builds (the step table without the goal's credit cap, and goals compiled with their ranks reversed) must each
+// miss the oracle at least once, so the test can tell.
+test("[fast] goals fuzz with a swing: a build from goals scores the goals' own best, swing time included", () => {
+  const rnd = core.optMulberry32(301), int = (lo: number, hi: number): number => lo + Math.floor(rnd() * (hi - lo + 1));
+  const ssiAtLeast = (n: number, t: number): number => Math.floor((100 * n) / (t + 1)) - 99;
+  let serial = 50_000, everyRuns = 0, missUncapped = 0, missReversed = 0;
+  for (let n = 0; n < 120; n++) {
+    const who = n % 2 ? "Dorran" : "Kestrel", worn = wornBy(who), character = inv.characters[who]!;
+    const held = heldWeapon(Object.fromEntries(worn.filter((it) => it.slot).map((it) => [it.slot!, toOptItem(it)])))!;
+    const slots = ["helmet", "chest", "ring", "bracelet"].filter(() => rnd() < 0.8);
+    if (slots.length < 2) slots.splice(0, slots.length, "helmet", "ring");
+    const pools: OptPools = Object.fromEntries(slots.map((slot) => [slot, Array.from({ length: int(1, 3) }, () => {
+      const props: Record<string, number> = {};
+      if (rnd() < 0.6) props.ssi = int(1, 25);
+      if (rnd() < 0.5) props.stamPool = int(1, 25);
+      for (const k of ["hci", "dci", "luck"]) if (rnd() < 0.4) props[k] = int(1, 20);
+      return { serial: serial++, name: `p${serial}`, slot, props };
+    })]));
+    // Swing speed and some of HCI, DCI and Luck in a random order, a row linked to the one above one time in five
+    const order = ["ssi", ...["hci", "dci", "luck"].filter(() => rnd() < 0.6)].map((k) => [rnd(), k] as const).sort((x, y) => x[0] - y[0]).map(([, k]) => k), ranks: string[][] = [];
+    for (const k of order) if (ranks.length && rnd() < 0.2) ranks.at(-1)!.push(k); else ranks.push([k]);
+    // a swing time from the worn weapon's steps at the worn stamina, one time in two
+    const plan0 = planBuild(buildSpec({ intent: { weights: {} } }), { character, worn }).profile, steps = swingSteps(held.speed!, plan0.swing!.refStamina);
+    const every = rnd() < 0.5 && steps.length ? steps[int(0, steps.length - 1)]!.seconds : null;
+    const goals: Goals = { ranks, leftover: rnd() < 0.5 ? "none" : "luck", swing: every != null ? { mode: "every", seconds: every } : { mode: "fastest" } };
+    const built = (g: Goals, uncapped = false): { score: number; best: Suit } => {
+      const c = compileGoals(g), prof = planBuild(buildSpec({ intent: { weights: c.weights, swingSteps: c.swingSteps, goals: g } }), { character, worn }).profile;
+      const reach = propertyReach(pools as never, {}, slots, slots, ["stamPool", "ssi"]);
+      const hand = { [held.slot!]: [held] }, cur = { [held.slot!]: held };
+      const table = uncapped ? stepTable({ speedS: held.speed!, stamBase: prof.swing!.stamBase, refStamina: prof.swing!.refStamina, share: 0, stamRange: reach.stamPool!, ssiMax: reach.ssi!.max })
+        : stepsFor(prof, hand, cur, reach.stamPool!).ssiSteps!;
+      const r = core.optimizeSuit(pools, {}, { ...prof, ssiSteps: table }, { seed: 1, restarts: 3, slots, optionalSlots: slots, exact: true, timeBudgetMs: 5000 });
+      assert.equal(r.proven, true);
+      return { score: r.score, best: r.best as Suit };
+    };
+    // the oracle: the goals' importances per point, and Swing speed's credit from the suit's own swing, held at the goal's step
+    const ref = planBuild(buildSpec({ intent: { ...compileGoals(goals), goals } }), { character, worn }).profile, { stamBase, refStamina } = ref.swing!;
+    const nRef = Math.round(4 * held.speed!) - Math.floor(refStamina / 30), goalCap = every != null ? ref.caps.ssi! : Infinity;
+    const imp = new Map<string, number>(ranks.flatMap((r, i) => r.map((k) => [k, [100, 80, 65, 50][i] ?? 40] as [string, number])));
+    if (goals.leftover === "luck" && !imp.has("luck")) imp.set("luck", 5);
+    const score = (s: Suit): number => {
+      const t = totals(s), credit = Math.min(goalCap, Math.max(0, ssiAtLeast(nRef, swingTicks(held.speed!, stamBase + (t.stamPool || 0), Math.min(60, t.ssi || 0)))));
+      return [...imp].reduce((sum, [k, v]) => sum + (v / (typicalRange(k)! * IMPORTANCE_K)) * (k === "ssi" ? credit : Math.min(t[k] || 0, ref.caps[k] ?? Infinity)), 0);
+    };
+    let all: Suit[] = [{}];
+    for (const slot of slots) all = all.flatMap((s) => [null, ...pools[slot]!].map((it) => ({ ...s, [slot]: it })));
+    const best = Math.max(...all.map(score)), close = (x: number): boolean => Math.abs(x - best) < 1e-6 * Math.max(1, best);
+    const got = built(goals), label = `instance ${n} (${who}): ${JSON.stringify(goals)}`;
+    assert.ok(close(score(got.best)) && Math.abs(got.score - best) < 1e-6 * Math.max(1, best), `${label}: built ${score(got.best)} (core ${got.score}) against the goals' best ${best}`);
+    if (every != null) { everyRuns++; if (!close(score(built(goals, true).best))) missUncapped++; }
+    if (!close(score(built({ ...goals, ranks: [...ranks].reverse() }).best))) missReversed++;
+  }
+  assert.ok(everyRuns > 20, `swing-time goals (${everyRuns})`);
+  assert.ok(missUncapped > 0, "a step table without the goal's credit cap misses the goals' best at least once");
+  assert.ok(missReversed > 0, "goals compiled with their ranks reversed miss the goals' best at least once");
 });

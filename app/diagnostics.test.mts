@@ -7,7 +7,7 @@ import { solveExact, type OptPools } from "./exact-solver.mts";
 import { core, defaultProfiles, STARTERS_BEFORE_GOALS, templateNames, type OptOptions } from "./solver-fixture.mts";
 import { actionApplies, actionWords, applyAction, handledAction, nextSwingStep, resultChecks, swingLines } from "./ui/builder-model.mts";
 import { readFileSync } from "node:fs";
-import { buildPools, foldSnapshots, importanceOf, withCurrentActions, roundImportance, typicalRange, weightOfImportance, IMPORTANCE_K, NOT_BUILDER_KEYS, PROP_LABELS, SKILL_NAMES, type OptItem } from "./vault-lib.mts";
+import { buildPools, compileGoals, foldSnapshots, importanceOf, withCurrentActions, roundImportance, typicalRange, weightOfImportance, IMPORTANCE_K, NOT_BUILDER_KEYS, PROP_LABELS, SKILL_NAMES, type OptItem } from "./vault-lib.mts";
 import { upgradeScan } from "./scan-schema.mts";
 import { plannedProfile } from "./buffs.mts";
 import { optionalSlotsFor } from "./mip.mts";
@@ -327,6 +327,14 @@ function demoCell(who: string, template: string, weights?: Record<string, number
   const { pools, current } = buildPools(demoInv, who, { excludeGargoyle: true, strength: Number(c.stats?.str ?? 125) });
   return { pools, current, optionalSlots: optionalSlotsFor(current, []), profile: plannedProfile({ ...defaultProfiles.templates[template]!, ...(weights ? { weights } : {}), race: "human" }, c, null) };
 }
+
+// Issue #292: goals compile to weights, so the check reads them like any others: one goal over the four melee spare points.
+test("[fast] weight_dominates: goal weights too, one goal over its spare points", () => {
+  const { weights } = compileGoals({ ranks: [["di"]], leftover: "melee" });
+  const after = { di: 100, strBonus: 5, dexBonus: 5, stamInc: 5, hpRegen: 2 };
+  const d = weightDiagnostics({ weights, caps: meleeCaps }, after, full(after));
+  assert.deepEqual(d.map((x) => [x.property, x.values?.median]), [["di", 5]]);
+});
 
 test("[fast] weight_dominates: the archer template on a thin suit (a weapon only, low resists) is quiet, though its median is low", () => {
   const c = demoCell("Kestrel", "archer", STARTERS_BEFORE_GOALS.archer);   // the weights it had before goals, whose median is low

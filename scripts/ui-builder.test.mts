@@ -399,11 +399,14 @@ test("[slow] Check your settings: the block shows before and after the build, an
 });
 
 // Issue #292: the Goals tab. Dorran's Melee opens on its goals (Swing speed, then Hit chance = Defense chance, then Damage,
-// spare points to Luck) with what each rank counts; ↓ on Swing speed moves it under the linked pair and the counts follow;
+// spare points to Luck) with what each rank counts and Swing speed's SSI need; ↓ on Swing speed moves it under the linked
+// pair (whose arrows name both) and the counts follow;
 // "=" links Damage to the rank above; another spare-points choice is one change since the build; a build shows "How the
-// goals went" beside the result; a weight edited under "Show the weights these goals set" folds the goals into "Using your
-// own weights" and "Start from goals again" brings them back with nothing changed; at 420 px the page never scrolls
-// sideways. Kestrel's saved profile, written with weights and no goals, opens on its weights as before goals.
+// goals went" beside the result, its swing in seconds and per point said there rather than as a warning, and spare points
+// never a loss "went to"; a weight edited under "Show the weights these goals set" folds the goals into "Using your own
+// weights" and "Start from goals again" brings them back with nothing changed; Load these settings brings a run's goals
+// back; at 420 px the page never scrolls sideways. Kestrel's saved profile, written with weights and no goals, opens on
+// its weights as before goals, and its run loaded over Melee's goals leaves goal mode.
 test("[slow] goals: the ranked list, its counts, =, spare points, How the goals went, fine-tune and back, a profile with no goals", async (t) => {
   const why = unavailable();
   if (why) return t.skip(why);
@@ -420,18 +423,19 @@ test("[slow] goals: the ranked list, its counts, =, spare points, How the goals 
     await page.waitForSelector("#b-goals-h");
     assert.equal(await page.locator("#b-goals-h").innerText(), "What should this suit be best at?");
     const rows = (): Promise<string[]> => page.locator("#b-sec-goals .b-goal").evaluateAll((ls) => ls.map((l) => `${l.querySelector(".b-goal-name")!.textContent} ${l.querySelector(".b-goal-counts")!.textContent}`));
-    assert.deepEqual(await rows(), ["1.Swing speed counts 100 · max 60", "2.Hit chance counts 80 · max 45", "2.Defense chance counts 80 · max 45", "3.Damage counts 65 · max 100"]);
+    assert.deepEqual(await rows(), ["1.Swing speed counts 100 · needs SSI 17", "2.Hit chance counts 80 · max 45", "2.Defense chance counts 80 · max 45", "3.Damage counts 65 · max 100"]);
     assert.equal(await page.locator("#b-sec-weights").isHidden(), true, "the weights stay out of sight");
     // ↓ moves Swing speed's rank under the linked pair, and the focus stays on the row's arrows
-    await page.locator('.b-goal[data-key="ssi"] .b-goal-down').click();
-    assert.deepEqual(await rows(), ["1.Hit chance counts 100 · max 45", "1.Defense chance counts 100 · max 45", "2.Swing speed counts 80 · max 60", "3.Damage counts 65 · max 100"]);
+    await page.getByRole("button", { name: "Move Swing speed down", exact: true }).click();
+    assert.deepEqual(await rows(), ["1.Hit chance counts 100 · max 45", "1.Defense chance counts 100 · max 45", "2.Swing speed counts 80 · needs SSI 17", "3.Damage counts 65 · max 100"]);
     assert.equal(await page.evaluate(() => document.activeElement?.closest(".b-goal")?.getAttribute("data-key")), "ssi");
-    await page.locator('.b-goal[data-key="ssi"] .b-goal-up').click();
+    assert.equal(await page.getByRole("button", { name: "Move Hit chance and Defense chance down" }).count(), 2, "a linked rank's arrows name both, on both rows");
+    await page.getByRole("button", { name: "Move Swing speed up", exact: true }).click();
     // "=" links Damage to the rank above
     const link = page.locator('.b-goal[data-key="di"] .pill');
     assert.equal(await link.getAttribute("aria-pressed"), "false");
     await link.click();
-    assert.deepEqual(await rows(), ["1.Swing speed counts 100 · max 60", "2.Hit chance counts 80 · max 45", "2.Defense chance counts 80 · max 45", "2.Damage counts 80 · max 100"]);
+    assert.deepEqual(await rows(), ["1.Swing speed counts 100 · needs SSI 17", "2.Hit chance counts 80 · max 45", "2.Defense chance counts 80 · max 45", "2.Damage counts 80 · max 100"]);
     assert.equal(await page.locator('.b-goal[data-key="di"] .pill').getAttribute("aria-pressed"), "true");
     await page.locator('.b-goal[data-key="di"] .pill').click();
     assert.match(await page.locator("#b-tpl-state").innerText(), /matches/, "back as the template had it");
@@ -441,7 +445,12 @@ test("[slow] goals: the ranked list, its counts, =, spare points, How the goals 
     await built(page);
     const count = (want: string): Promise<unknown> => page.waitForFunction((w) => document.querySelector("#b-changes")?.textContent === w, want, { timeout: 10_000 });
     await count("No changes since the last build");
-    assert.match(await page.locator("#b-goals-went").innerText(), /^How the goals went\n1\.\s*Swing speed[\s\S]*3\.\s*Damage[\s\S]*(maxed|as high as the gear allows)[\s\S]*Spare points went to: /);
+    const went = await page.locator("#b-goals-went").innerText();
+    assert.match(went, /^How the goals went\n1\.\s*Swing speed\n[\d.]+ s with .+ · SSI \d+[\s\S]*3\.\s*Damage[\s\S]*(Spare points went to: |Given up for the goals: |Spare points: no change)/);
+    assert.doesNotMatch(went, /as high as the gear allows|went to: \S+ −/, "no unproven verdict, and no loss as a destination");
+    // built from goals, SSI counted per point is a note under the swing goal, not a warning in Check your settings
+    assert.doesNotMatch(await page.locator(".b-head-card").innerText(), /SSI was scored per point/);
+    assert.match(went, /Counted per point: the weapon isn't fixed, so the swing time can't be scored by step\./);
     await page.click('#b-leftover [data-value="melee"]');
     await count("1 change since the last build");
     await page.click('#b-leftover [data-value="luck"]');
@@ -460,17 +469,42 @@ test("[slow] goals: the ranked list, its counts, =, spare points, How the goals 
     await page.waitForSelector("#b-goals-h");
     await count("No changes since the last build");
 
+    // the run's Load these settings brings its goals back
+    await page.getByRole("button", { name: "Move Swing speed down", exact: true }).click();
+    await count("1 change since the last build");
+    const loadRun = async (): Promise<void> => {
+      await page.click("#b-runs-open");
+      await page.locator("#b-runs .run-card button[aria-haspopup=menu]").first().click();
+      await page.click('.pop-over-drawer [role="menuitem"]:has-text("Open")');
+      await page.waitForSelector("#b-run-banner .saved-run, #b-run-banner .b-gear-changed", { timeout: 10_000 });
+      await closeSettings(page);
+      await page.locator("#b-run-banner").getByRole("button", { name: "Load these settings" }).click();
+    };
+    await loadRun();
+    await settings(page, "weights", { weights: false });
+    assert.deepEqual(await rows(), ["1.Swing speed counts 100 · needs SSI 17", "2.Hit chance counts 80 · max 45", "2.Defense chance counts 80 · max 45", "3.Damage counts 65 · max 100"], "the run's goals are back");
+    await count("No changes since the last build");
+
     // at phone width the drawer fits without a sideways scroll
     await fitWindow(app, page, { width: 420, height: 900 });
     const widths = await page.evaluate(() => [document.documentElement.scrollWidth, innerWidth, document.querySelector("#b-drawer .b-drawer-body")!.scrollWidth, document.querySelector("#b-drawer .b-drawer-body")!.clientWidth]);
     assert.ok(widths[0]! <= widths[1]! && widths[2]! <= widths[3]!, `no sideways scroll: ${widths.join(", ")}`);
     await fitWindow(app, page, { width: 1440, height: 900 });
 
-    // a profile saved with weights and no goals opens on its weights
+    // a profile saved with weights and no goals opens on its weights; a run built from it, loaded over goals, leaves goal mode
     await page.selectOption("#b-char", "Kestrel");
     await page.waitForSelector('#b-sec-weights .rule-row[data-key="dci"]');
     assert.equal(await page.locator("#b-sec-goals").isHidden(), true);
     assert.equal(await page.locator("#b-sec-weights").isVisible(), true);
+    await page.click("#b-run-foot");
+    await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>("#b-run")?.disabled && /Best suit for Kestrel/.test(document.querySelector("#b-result h2")?.textContent || ""), undefined, { timeout: 60_000 });
+    await page.click("#b-tpl-menu");
+    await page.click('[role="menuitem"]:has-text("Apply to these settings")');
+    await page.waitForSelector("#b-goals-h");
+    await loadRun();
+    await settings(page, "weights", { weights: false });
+    await page.waitForSelector('#b-sec-weights .rule-row[data-key="dci"]');
+    assert.equal(await page.locator("#b-sec-goals").isHidden(), true, "the run had no goals: the panel's weights are its own");
     assert.deepEqual(errors, []);
   } finally {
     await app.close();

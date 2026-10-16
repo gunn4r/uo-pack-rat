@@ -4,7 +4,8 @@
 // settings snapshot a run is saved with, putting a saved run's settings back into the panel, and arriving (issue #272):
 // a character's latest run opened when it is first shown, the "<name>'s runs" card beside a result, the other characters'
 // latest runs for the first-visit view, and New build back to it.
-import { NOBODY, RESIST_KEYS, RESIST_SKILL_KEY, resistMinimum, resistSkillOf, resistSkillCapOf, totalsOf, resistCapsFor, fcCapFor, goalsActive } from "../vault-lib.mts";
+import { NOBODY, RESIST_KEYS, RESIST_SKILL_KEY, resistMinimum, resistSkillOf, resistSkillCapOf, totalsOf, resistCapsFor, fcCapFor, goalsActive, copyGoals } from "../vault-lib.mts";
+import { planBuild, specFromRunSettings } from "../build-spec.mts";
 import { buffById, plannedProfile, savedBuffs } from "../buffs.mts";
 import type { RunSettings, OptItem, PropMap, Character, EffectiveProfile } from "../vault-lib.mts";
 import { state } from "./store.mts";
@@ -25,7 +26,8 @@ export function applySettings(st: RunSettings): void {
   const p = session.profile!;
   Object.assign(p, { floors: { ...(st.floors || {}) }, softFloors: [...(st.softFloors || [])], weights: { ...(st.weights || {}) }, lockedSlots: [...(st.lockedSlots || [])],
     excludeTags: [...(st.excludeTags || [])], excludeRoots: [...(st.excludeRoots || [])], strLimit: st.strLimit, allowGargoyle: !!st.allowGargoyle, medOnly: !!st.medOnly, excludeWeapons: [...(st.excludeWeapons || [])], ubwsAnyWeapon: st.ubwsAnyWeapon !== false, weaponMustHave: [...(st.weaponMustHave || [])],
-    race: st.race || p.race || "human", excludeSkills: [...(st.excludeSkills || [])], allowOthersWorn: !!st.allowOthersWorn, resistCaps: { ...(st.resistCaps || {}) }, swingSteps: !!st.swingSteps, castingSchool: st.castingSchool || undefined, rarity: st.rarity || undefined });
+    race: st.race || p.race || "human", excludeSkills: [...(st.excludeSkills || [])], allowOthersWorn: !!st.allowOthersWorn, resistCaps: { ...(st.resistCaps || {}) }, swingSteps: !!st.swingSteps, castingSchool: st.castingSchool || undefined, rarity: st.rarity || undefined,
+    goals: st.goals ? copyGoals(st.goals) : undefined });   // a run built from weights set by hand leaves goal mode (issue #292)
   if (st.onlyRoots?.length) p.onlyRoots = [...st.onlyRoots]; else delete p.onlyRoots;
   applyKnobs(st);
   commands.loadRunBuffs(savedBuffs(st));
@@ -34,10 +36,12 @@ export function applySettings(st: RunSettings): void {
   toast("Settings loaded into the panel. Save profile to keep them.", "good");
 }
 // The profile a run was built with, its buffs planned as they were (effectiveProfile's own default parameter already
-// treats an omitted character the same as null).
+// treats an omitted character the same as null). A run built from goals is planned again as a build is (build-spec.mts
+// planBuild), so a swing-time goal's SSI cap and the character's swing are on it, as "How the goals went" reads them.
 export function profileFromSettings(st: RunSettings): EffectiveProfile {
-  const name = session.character!;
-  return plannedProfile(st, state.inv!.characters[name] as Character | null, commands.buffPlan(name, st.race, savedBuffs(st)));
+  const name = session.character!, character = state.inv!.characters[name] as Character | null;
+  if (goalsActive(st.goals)) return planBuild(specFromRunSettings(st), { character: name === NOBODY ? null : character, worn: state.inv!.worn[name] || [], race: st.race }).profile;
+  return plannedProfile(st, character, commands.buffPlan(name, st.race, savedBuffs(st)));
 }
 
 // ---------------------------------------------------------------- the list

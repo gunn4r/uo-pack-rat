@@ -4,7 +4,7 @@
 // is ui/runs.mts; they share the builder's state and call each other through ui/builder-session.mts. The panel is drawn
 // from the session's profile plus its Advanced knobs, so what a build sends, what a profile saves and what a run
 // snapshots are read from state, never from the DOM.
-import { NOBODY, PROP_LABELS, NOT_BUILDER_KEYS, importanceOf, weightOfImportance, GEAR_SLOTS, tagUnits, WEAPON_EXCLUDES, MELEE_SKILLS, WEAPON_MUST_HAVE, flagLabel, getRules, RESIST_KEYS, RESIST_CAP_LIMITS, resistCapsFor, templateFrom, settingsDiff, bagLabel, toOptItem, totalsOf, fcCapFor, CASTING_SCHOOLS, compileGoals, goalsActive, GOAL_LEFTOVERS, LEFTOVER_GROUPS, LEFTOVER_LABELS } from "../vault-lib.mts";
+import { NOBODY, PROP_LABELS, NOT_BUILDER_KEYS, importanceOf, weightOfImportance, GEAR_SLOTS, tagUnits, WEAPON_EXCLUDES, MELEE_SKILLS, WEAPON_MUST_HAVE, flagLabel, getRules, RESIST_KEYS, RESIST_CAP_LIMITS, resistCapsFor, templateFrom, settingsDiff, bagLabel, toOptItem, totalsOf, fcCapFor, CASTING_SCHOOLS, compileGoals, goalsActive, GOAL_LEFTOVERS, LEFTOVER_GROUPS, LEFTOVER_LABELS, GOAL_RANKS_MAX, GOAL_RANK_SIZE_MAX } from "../vault-lib.mts";
 import { delayText, heldWeapon, ssiShareOf, swingOf, type SwingResult } from "../swing.mts";
 import { BUILTIN_PREFIX, characterBuffs, characterEntry, characterProfile, findTemplate, goalSsiCap, planBuild, specFromProfile, templateLabel, templateName, templateRefs, templateSettings, templateSpecFrom, type PlannedBuild } from "../build-spec.mts";
 import type { FcCap, Goals, ResistCap, RunBuffs, RunSettings, Character } from "../vault-lib.mts";
@@ -15,7 +15,7 @@ import { state, invStamp } from "./store.mts";
 import type { BuilderJob, BuilderJobUi, FinishedBuild, BuildMeta } from "./store.mts";
 import { $, el, label, full, fmtN, fmtSecs, slotLabel, toast } from "./dom.mts";
 import { promptText } from "./dialog.mts";
-import { box, txt, button, kbd, badge, token, message, select, input, field, switchControl, check, segmented, filterChip, pill, popover, closePopover, menu, searchInput, stepper, progress, tooltip, refreshTooltips, icon, confirmDialog, modalOpen } from "./components.mts";
+import { box, txt, button, kbd, badge, token, message, select, input, field, switchControl, check, segmented, filterChip, pill, popover, closePopover, menu, searchInput, stepper, progress, tooltip, refreshTooltips, icon, confirmDialog, modalOpen, rowActions, tipWrap } from "./components.mts";
 import { api } from "./api.mts";
 import { createBuffPicker, type BuffPicker, type BuffView, type PickerActions } from "./builder-buffs.mts";
 import { optimizeErrorMessage } from "./messages.mts";
@@ -25,7 +25,7 @@ import { putProfiles, setCharacterBuffs } from "./profiles.mts";
 import { session, commands, provide, readControls, type BuilderChange } from "./builder-session.mts";
 import { followJob, progressText, settingsCheck } from "./builder-parts.mts";
 import { characterNames } from "./roster.mts";
-import { needStatus, shownImportance, nextSwingStep, speedText, swingLines, propName, newWeight, editedValue, runSettingsDiff, plural, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistMinimumText, pruneResistCaps, floorCapWarning, weaponsChipText, weaponMustHaveChipText, withStoredRoots, weaponName, toggleWeapon, weightTradeoff, fcCapText, rarityHelp, templateBuffsLine, sourceTitle, who, goalRows, goalName, goalWord, moveGoal, linkGoal, removeGoal, addGoal, type KnobField } from "./builder-model.mts";
+import { needStatus, shownImportance, nextSwingStep, speedText, swingLines, propName, newWeight, editedValue, runSettingsDiff, plural, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistMinimumText, pruneResistCaps, floorCapWarning, weaponsChipText, weaponMustHaveChipText, withStoredRoots, weaponName, toggleWeapon, weightTradeoff, fcCapText, rarityHelp, templateBuffsLine, sourceTitle, who, goalRows, goalName, moveGoal, spareKeys, andList, linkGoal, removeGoal, addGoal, type KnobField } from "./builder-model.mts";
 import type { OptimizeResult, SavedRunLike, OptimizeStartApiResponse, OptimizeCancelApiResponse, UiPrefs } from "./api-types.mts";
 import { prefs } from "./prefs.mts";
 
@@ -732,42 +732,62 @@ function goalsSection(): HTMLElement {
       } });
       return [el("p", { class: "help b-goals-off" }, txt("Using your own weights."), " ", again)];
     }
-    const rows = goalRows(g), last = g.ranks.length;
+    const rows = goalRows(g), last = g.ranks.length, row = (k: string): string => `.b-goal[data-key="${CSS.escape(k)}"]`;
     const items = rows.map((r, i) => {
-      const nm = goalName(r.key), cap = r.key === "ssi" ? ssiGoalCap(g) ?? capFor("ssi") : capFor(r.key);
-      const link = i ? pill({ label: "=", pressed: r.linked, onToggle: (on) => setGoals(linkGoal(g, r.key, on), `.b-goal[data-key="${CSS.escape(r.key)}"] .pill`) }) : el("span");
-      if (i) { link.setAttribute("aria-label", `${nm}: same importance as ${goalName(rows[i - 1]!.key)}`); tooltip(link, "Same importance as the one above"); }
-      const move = (by: -1 | 1, icon: "arrow-up" | "arrow-down", word: "up" | "down"): HTMLButtonElement => button({ label: `Move ${nm} ${word}`, icon, iconOnly: true, variant: "ghost", size: "sm", cls: `b-goal-${word}`,
-        disabled: by < 0 ? r.rank === 1 : r.rank === last, onClick: () => { setGoals(moveGoal(g, r.key, by)); focusGoalArrow(r.key, word); } });
+      const nm = goalName(r.key), rank = andList(g.ranks[r.rank - 1]!.map(goalName));
+      // "=" links to the rank above, unless that rank is full (the most a rank holds, GOAL_RANK_SIZE_MAX)
+      const full = !r.linked && i > 0 && g.ranks[r.rank - 2]!.length >= GOAL_RANK_SIZE_MAX;
+      const pressed = pill({ label: "=", pressed: r.linked, onToggle: (on) => setGoals(linkGoal(g, r.key, on), `${row(r.key)} .pill`) });
+      if (i) pressed.setAttribute("aria-label", `${nm}: same importance as ${goalName(rows[i - 1]!.key)}`);
+      if (full) pressed.disabled = true;
+      const link = !i ? el("span") : full ? tipWrap(pressed, `The rank above already holds ${GOAL_RANK_SIZE_MAX} goals, the most a rank holds.`) : tooltip(pressed, "Same importance as the one above");
+      // ↑ and ↓ move the whole rank, so they name every goal in it
+      const move = (by: -1 | 1, word: "up" | "down"): Parameters<typeof rowActions>[0][number] => ({ label: `Move ${rank} ${word}`, icon: by < 0 ? "arrow-up" : "arrow-down",
+        disabled: by < 0 && r.rank === 1 ? "Already first" : by > 0 && r.rank === last ? "Already last" : null, onClick: () => { setGoals(moveGoal(g, r.key, by)); focusGoalArrow(r.key, word); } });
+      const next = rows[i + 1] ?? rows[i - 1];
       return box("li", { class: `b-goal${r.linked ? " linked" : ""}`, "data-key": r.key }, link,
-        box("span", { class: "b-goal-name" }, txt(`${r.rank}.`, "b-goal-rank"), txt(nm)),
-        txt(`counts ${r.counts}${cap != null ? ` · max ${cap}` : ""}`, "t-sm muted b-goal-counts"),
-        move(-1, "arrow-up", "up"), move(1, "arrow-down", "down"),
-        button({ label: `Remove goal: ${nm}`, icon: "close", iconOnly: true, variant: "ghost", size: "sm", onClick: () => setGoals(removeGoal(g, r.key), rows.length > 1 ? `.b-goal[data-key="${CSS.escape((rows[i + 1] ?? rows[i - 1])!.key)}"] .b-goal-x` : "#b-addgoal") , cls: "b-goal-x" }),
+        box("span", { class: "b-goal-name", tabindex: "-1" }, txt(`${r.rank}.`, "b-goal-rank"), txt(nm)),
+        txt(`counts ${r.counts}${goalCapText(g, r.key)}`, "t-sm muted b-goal-counts"),
+        rowActions([move(-1, "up"), move(1, "down"), { label: `Remove goal: ${nm}`, icon: "close", onClick: () => setGoals(removeGoal(g, r.key), next ? `${row(next.key)} .rowact > :last-child` : "#b-addgoal") }]),
         r.key === "ssi" ? swingGoal(g) : null);
     });
-    const add = filterChip({ label: "Add a goal", add: true, attrs: { class: "fchip add b-add", id: "b-addgoal" } });
-    add.onclick = () => propertyPicker(add, "Add a goal", [], (k) => setGoals(addGoal(g, k), `.b-goal[data-key="${CSS.escape(k)}"] .b-goal-x`), goalChoices(rows.map((r) => r.key)));
+    // "+ Add a goal" offers the short list (goalChoices) up to the most ranks goals hold; the new row's name takes the focus
+    const add = filterChip({ label: "Add a goal", add: true, attrs: { class: "fchip add b-add", id: "b-addgoal", "aria-haspopup": "listbox" } });
+    add.onclick = () => propertyPicker(add, "Add a goal", [], (k) => setGoals(addGoal(g, k), k === "ssi" ? "#b-swing-goal" : `${row(k)} .b-goal-name`), goalChoices(rows.map((r) => r.key)), goalName);
+    if (last >= GOAL_RANKS_MAX) add.disabled = true;
     const leftover = segmented({ label: "Spare points", size: "sm", options: GOAL_LEFTOVERS.map((v) => ({ value: v, label: LEFTOVER_LABELS[v] })), value: g.leftover,
       onChange: (v) => setGoals({ ...g, leftover: v as Goals["leftover"] }, `#b-leftover [data-value="${v}"]`) });
     leftover.id = "b-leftover";
-    const spare = LEFTOVER_GROUPS[g.leftover].map(goalWord);
+    // the help names the group's properties that are not goals: those are the ones spare points go to
+    const spare = spareKeys(g).map(goalName), group = LEFTOVER_GROUPS[g.leftover];
+    const spareHelp = spare.length ? `${spare.join(", ")}: counts a little, after the goals.` : group.length ? `${andList(group.map(goalName))} ${group.length === 1 ? "is already a goal" : "are already goals"}, so spare points add nothing.` : "Nothing past the goals.";
     const fine = switchControl({ label: "Show the weights these goals set", checked: fineTune, attrs: { id: "b-finetune" }, onChange: (v) => { fineTune = v; prefs.set({ builderFineTune: v ? "on" : "off" }, { quiet: true }); redraw("weights"); } });
     return [el("h3", { class: "t-md strong", id: "b-goals-h", tabindex: "-1" }, "What should this suit be best at?"),
       el("p", { class: "help" }, txt("Most important first. Higher goals count more, but a small loss up top can buy a big gain lower down.")),
-      rows.length ? box("ol", { class: "b-goals", "aria-labelledby": "b-goals-h" }, ...items) : el("p", { class: "t-sm muted" }, txt("No goals yet.")), add,
+      rows.length ? box("ol", { class: "b-goals", "aria-labelledby": "b-goals-h" }, ...items) : el("p", { class: "t-sm muted" }, txt("No goals yet.")), add.disabled ? tipWrap(add, `Goals hold at most ${GOAL_RANKS_MAX} ranks.`) : add,
       box("div", { class: "field b-leftover" }, el("span", { class: "label" }, "After that, put spare points into:"), leftover,
-        el("p", { class: "help" }, txt(spare.length ? `${spare.map((w) => w[0]!.toUpperCase() + w.slice(1)).join(", ")}: counts a little, after the goals.` : "Nothing past the goals."))),
+        el("p", { class: "help" }, txt(spareHelp))),
       fine.root];
   });
   sec.hidden = !stored;
   return sec;
 }
-// After a move, the focus back on the moved row's same arrow, or its other one once that end is reached.
+// After a move, the focus back on the moved row's same arrow, or its other one once that end is reached, else its ✕.
 function focusGoalArrow(key: string, word: "up" | "down"): void {
-  const row = document.querySelector<HTMLElement>(`#b-sec-goals .b-goal[data-key="${CSS.escape(key)}"]`);
-  const b = row?.querySelector<HTMLButtonElement>(`.b-goal-${word}`), other = row?.querySelector<HTMLButtonElement>(`.b-goal-${word === "up" ? "down" : "up"}`);
-  (b && !b.disabled ? b : other && !other.disabled ? other : row?.querySelector<HTMLButtonElement>(".b-goal-x"))?.focus();
+  const [up, down, x] = [...document.querySelectorAll<HTMLButtonElement>(`#b-sec-goals .b-goal[data-key="${CSS.escape(key)}"] .rowact button`)];
+  const b = word === "up" ? up : down, other = word === "up" ? down : up;
+  (b && !b.disabled ? b : other && !other.disabled ? other : x)?.focus();
+}
+// What a goal row says after what it counts: its cap ("· max 45"); for Swing speed the SSI its swing needs, the goal's step
+// (a swing time's cap) or the fastest step of the weapon worn now ("· needs SSI 51"), else the cap.
+function goalCapText(g: Goals, k: string): string {
+  if (k === "ssi") {
+    const cap = ssiGoalCap(g), fastest = g.swing?.mode !== "every" ? wornSwing()?.sw.steps.at(-1) : undefined;
+    if (cap != null) return ` · needs SSI ${cap}`;
+    if (fastest) return ` · needs SSI ${fastest.ssi}`;
+  }
+  const cap = capFor(k);
+  return cap != null ? ` · max ${cap}` : "";
 }
 // The SSI a swing-time goal stops counting at for the weapon worn now (build-spec.mts goalSsiCap), null for the fastest swing.
 function ssiGoalCap(g: Goals): number | null {
@@ -783,7 +803,7 @@ function swingGoal(g: Goals): HTMLElement {
   const sel = select(options, every != null ? String(every) : "", { size: "sm", attrs: { id: "b-swing-goal", "aria-label": "Swing speed goal" } });
   sel.addEventListener("change", () => setGoals({ ...g, swing: sel.value ? { mode: "every", seconds: Number(sel.value) } : { mode: "fastest" } }, "#b-swing-goal"));
   const target = every != null ? steps.find((st) => st.seconds === every) : steps.at(-1);
-  const line = !worn ? "Wear a weapon to see the swing each SSI gives."
+  const line = !worn ? (session.character === NOBODY ? "Pick a character to see swing times." : "Wear a weapon to see the swing each SSI gives.")
     : target ? `${delayText(target.seconds)} with ${worn.weapon} at ${worn.sw.stamina} stamina: needs SSI ${target.ssi}`
     : every != null ? `${worn.weapon} can't swing every ${delayText(every)} at ${worn.sw.stamina} stamina within the SSI cap.` : `${worn.weapon} is at its fastest swing at ${worn.sw.stamina} stamina.`;
   return box("div", { class: "b-swing-goal" }, sel, txt(line, "t-sm muted"));
@@ -929,15 +949,15 @@ function tuneWeight(key: string | null, from: HTMLElement): void {
 }
 // The searchable property combobox behind "+ Add requirement" / "+ Add weight": type to filter, ↓ into the
 // list, Enter picks the first match.
-function propertyPicker(anchor: HTMLElement, title: string, taken: string[], pick: (k: string) => void, offered: string[] = allPropKeys()): void {
-  const keys = offered.filter((k) => !taken.includes(k)).sort((a, b) => propName(a).localeCompare(propName(b)));
+function propertyPicker(anchor: HTMLElement, title: string, taken: string[], pick: (k: string) => void, offered: string[] = allPropKeys(), name: (k: string) => string = propName): void {
+  const keys = offered.filter((k) => !taken.includes(k)).sort((a, b) => name(a).localeCompare(name(b)));
   const s = searchInput({ label: `${title}: search properties`, placeholder: "Search properties" });
   const list = box("div", { class: "b-pick-list", role: "listbox", "aria-label": "Properties" });
   const choose = (k: string): void => { closePopover(); pick(k); };
   const paint = (): void => {
     const q = s.input.value.trim().toLowerCase();
-    const hits = keys.filter((k) => !q || `${propName(k)} ${label(k)} ${full(k)}`.toLowerCase().includes(q));
-    list.replaceChildren(...(hits.length ? hits.map((k) => box("button", { class: "menu-item", type: "button", role: "option", "data-key": k, onclick: () => choose(k) }, txt(propName(k)), txt(label(k), "t-sm muted")))
+    const hits = keys.filter((k) => !q || `${name(k)} ${propName(k)} ${label(k)} ${full(k)}`.toLowerCase().includes(q));
+    list.replaceChildren(...(hits.length ? hits.map((k) => box("button", { class: "menu-item", type: "button", role: "option", "data-key": k, onclick: () => choose(k) }, txt(name(k)), txt(label(k), "t-sm muted")))
       : [el("p", { class: "t-sm muted" }, "No property matches.")]));
   };
   s.input.addEventListener("input", paint);

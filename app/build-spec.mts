@@ -6,7 +6,7 @@
 // Suit Builder's panel edits. Pure and browser-safe, like run-settings.mts and evaluate.mts.
 import { buffPlanOf, buffSkillValues, isBuffList, isBuffSkills, isBuffSkillsByCharacter, manualBase, manualPlan, normalizeBuffListsByCharacter, NO_CHARACTER, planBuffs, runBuffs, type BuffPlan } from "./buffs.mts";
 import { RACES, RUN_DEFAULTS, RUN_SETTING_LIMITS, defaultStrLimit, runSettingsError } from "./run-settings.mts";
-import { copyGoals, goalsActive, migrateProfiles, templateFrom, TEMPLATE_KEYS, toOptItem, totalsOf, type Character, type EffectiveProfile, type Goals, type Item, type Profile, type ProfilesFile, type RarityPreference, type RunBuffs, type RunSettings, type Template, type TemplateSource } from "./vault-lib.mts";
+import { compileGoals, copyGoals, goalsActive, migrateProfiles, templateFrom, TEMPLATE_KEYS, toOptItem, totalsOf, type Character, type EffectiveProfile, type Goals, type Item, type Profile, type ProfilesFile, type RarityPreference, type RunBuffs, type RunSettings, type Template, type TemplateSource } from "./vault-lib.mts";
 import { heldWeapon, ssiForTicks } from "./swing.mts";
 
 // ---------------------------------------------------------------- the document
@@ -128,10 +128,14 @@ export type FlatProfile = TemplateSource & { excludeRoots?: Array<number | strin
 export function specFromProfile(p: FlatProfile, buffs: BuildBuffs = { on: [], skills: {} }): BuildSpec {
   return buildSpec({ intent: p, pool: { ...p, strLimit: p.strLimit ?? SPEC_DEFAULTS.strLimit }, buffs });
 }
-// A spec as the panel's settings: "character" leaves the STR limit out (the panel shows the character's).
+// A spec as the panel's settings: "character" leaves the STR limit out (the panel shows the character's). With goals in
+// force the weights and swing-step switch are compiled from them again (issue #292), so a hand-edited file or a newer
+// rank table never leaves weights the goals did not set.
 export function profileFromSpec(spec: BuildSpecSource): FlatProfile {
   const { intent, pool } = buildSpec(spec), { strLimit, ...rest } = pool;
-  return { ...intent, ...rest, ...(strLimit === "character" ? {} : { strLimit }) };
+  const { swingSteps: _steps, ...own } = intent, c = goalsActive(intent.goals) ? compileGoals(intent.goals, intent.weights) : null;
+  const goals = c ? { ...own, weights: c.weights, ...(c.swingSteps ? { swingSteps: true } : {}) } : intent;
+  return { ...goals, ...rest, ...(strLimit === "character" ? {} : { strLimit }) };
 }
 // A template's spec from the panel's settings: the template fields only (no skipped containers or STR limit), and the
 // buffs on when given (their numbers are the character's, not the build's, so none are kept).
