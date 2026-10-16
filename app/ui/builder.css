@@ -148,7 +148,7 @@
 /* ---------------------------------------------------------------- result */
 .b-head-card { display: flex; flex-direction: column; gap: var(--space-4); padding: var(--space-5); }
 .b-headline { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); min-width: 0; }   /* the actions drop under the title on a narrow result */
-.b-head-acts { flex: none; display: flex; align-items: center; gap: var(--space-2); }
+.b-head-acts { flex: 0 1 auto; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); min-width: 0; }   /* New build, Start from this result and Grab all wrap on a phone-width result */
 .b-headline-text { display: flex; flex-direction: column; gap: var(--space-0-5); flex: 1 1 320px; min-width: 0; }
 /* "Planned with [chips] · Show without buffs", and the note on numbers taken from the suit worn now */
 .b-planned { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-1-5); }
