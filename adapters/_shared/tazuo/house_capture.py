@@ -1,35 +1,9 @@
 def house_capture(px, py):
-    """The house the player stands in, from the client's own house tiles (issue #10), or None outside a house or on a build without the multi calls. Only the tiles connected to the player's tile are kept (8-connected in x/y, across every z), so a neighbouring house is left out. What stands on the ground inside that footprint is recorded too (both left out when the ground cannot be read): furniture and fixtures as `items`, and every container as `containers` (2.11.0), opened or not, so the map shows a chest from the first scan even when it stood too far away to open; corpses, trash containers and blacklisted ones are left out (trash by name, or because the roots pass, which runs first, read its tooltip; a far trash container whose cached name is generic cannot be told apart without a tooltip query, which this never makes). Names come from tiledata in the app, so this asks the server nothing. A house of more than HOUSE_MAX_TILES tiles is left out and its count noted in HOUSE_TOO_LARGE."""
-    at = getattr(API, "GetMultisAt", None)
-    area = getattr(API, "GetMultisInArea", None)
-    if at is None or area is None:
+    """The house the player stands in, from the client's own house tiles (issue #10), or None outside a house or on a build without the multi calls (house_footprint). What stands on the ground inside that footprint is recorded too (both left out when the ground cannot be read): furniture and fixtures as `items`, and every container as `containers` (2.11.0), opened or not, so the map shows a chest from the first scan even when it stood too far away to open; corpses, trash containers and blacklisted ones are left out (trash by name, or because the roots pass, which runs first, read its tooltip; a far trash container whose cached name is generic cannot be told apart without a tooltip query, which this never makes). Names come from tiledata in the app, so this asks the server nothing. A house of more than HOUSE_MAX_TILES tiles is left out and its count noted in HOUSE_TOO_LARGE."""
+    fp = house_footprint(px, py)
+    if fp is None:
         return None
-    try:
-        if not list(at(px, py) or []):
-            return None
-        found = list(area(px - HOUSE_RADIUS, py - HOUSE_RADIUS, px + HOUSE_RADIUS, py + HOUSE_RADIUS) or [])
-    except Exception:
-        return None
-    cells = {}
-    for m in found:
-        try:
-            t = [int(m.Graphic), int(m.X), int(m.Y), int(m.Z), 1 if bool(getattr(m, "Impassible", False)) else 0]
-        except Exception:
-            continue
-        cells.setdefault((t[1], t[2]), []).append(t)
-    if (px, py) not in cells:
-        return None
-    keep = {(px, py)}
-    todo = [(px, py)]
-    while todo:
-        x, y = todo.pop()
-        for dx in (-1, 0, 1):
-            for dy in (-1, 0, 1):
-                n = (x + dx, y + dy)
-                if n in cells and n not in keep:
-                    keep.add(n)
-                    todo.append(n)
-    tiles = sorted(t for c in keep for t in cells[c])
+    tiles, keep = fp
     if len(tiles) > HOUSE_MAX_TILES:
         HOUSE_TOO_LARGE.append(len(tiles))
         return None

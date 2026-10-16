@@ -1,9 +1,8 @@
-// house-names.mts — <data>/house-map.json (issues #164 and #10): what the player says about each house, by house id ({ version: 1, houses: { "<id>": { name, bounds?, areas? } } }). `name`, `bounds` and `areas` are checked; any other field on an entry or an area is kept, so notes can join the same entry later. `bounds` is the house's footprint when it was named or its areas drawn, so a redesigned or moved house (a new id) can be offered the old name and areas. `areas` are the player's own areas on the House map: each a name, a level, a colour from a fixed palette and up to MAX_RECTS rectangles of world tiles (inclusive). `forgotten` (issue #298) lists the houses the player removed from the House map, each by id with the capture stamp it had then: the house stays hidden until a newer capture of it. Written only by PUT /api/house-map/<id>, whole entry at a time, and POST /api/house-map/<id>/forget; a file that does not parse is moved aside as house-map.json.corrupt (the way organize.json is) and reads as empty.
+// house-names.mts — <data>/house-map.json (issues #164 and #10): what the player says about each house, by house id ({ version: 1, houses: { "<id>": { name, bounds?, areas? } } }). `name`, `bounds` and `areas` are checked; any other field on an entry or an area is kept, so notes can join the same entry later. `bounds` is the house's footprint when it was named or its areas drawn, so a redesigned or moved house (a new id) can be offered the old name and areas. `areas` are the player's own areas on the House map: each a name, a level, a colour from a fixed palette and up to MAX_RECTS rectangles of world tiles (inclusive). `forgotten` (issue #298) lists the houses the player removed from the House map before claims (issue #299) replaced that: it is kept as it is and read only so the houses claimed at the first start with claims leave them out (app/store/house-claims.mts). Written only by PUT /api/house-map/<id>, whole entry at a time; a file that does not parse is moved aside as house-map.json.corrupt (the way organize.json is) and reads as empty.
 import { existsSync, lstatSync, readFileSync } from "node:fs";
 import { basename } from "node:path";
 import { moveAside, writeFileAtomic } from "./atomic-write.mts";
 import { DATA_FILE_MODE } from "./config.mts";
-import { captureTime } from "./house-capture.mts";
 import { migrate, newerNotice } from "./migrate.mts";
 
 export interface HouseBounds { x0: number; y0: number; x1: number; y1: number; facet: number | null }
@@ -127,11 +126,8 @@ export function readHouseMap(file: string): { doc: HouseMapDoc; problem: string 
     readOnly: newerNotice(basename(file), "house-map", raw) };
 }
 
-export const isStamp = (v: unknown): v is string => typeof v === "string" && v.length <= 40 && Number.isFinite(Date.parse(v));
+const isStamp = (v: unknown): v is string => typeof v === "string" && v.length <= 40 && Number.isFinite(Date.parse(v));
 const isForgottenEntry = (v: unknown): v is ForgottenHouse => isObj(v) && typeof v.id === "string" && isHouseId(v.id) && isStamp(v.capturedAt);
-// Whether the house `id`, captured last at `capturedAt`, is one the player removed: forgotten at that capture or a later one.
-export const isForgotten = (doc: HouseMapDoc, id: string, capturedAt: string): boolean =>
-  !!doc.forgotten?.some((f) => f.id === id && captureTime(capturedAt) <= captureTime(f.capturedAt));
 
 const textOf = (doc: HouseMapDoc): string => JSON.stringify(doc, null, 2) + "\n";
 // Sets one house's entry (null removes it) in `doc`, the map as read, and writes the map; or says why not. Only a change
@@ -146,16 +142,6 @@ export function saveHouseEntry(file: string, doc: HouseMapDoc, id: string, entry
     const size = Buffer.byteLength(text);
     if (size > MAX_HOUSE_MAP_BYTES && size > Buffer.byteLength(textOf(doc))) return `that would make house-map.json larger than ${MAX_HOUSE_MAP_BYTES / 1e6} MB`;
   }
-  writeFileAtomic(file, text, DATA_FILE_MODE);
-  return null;
-}
-// Forgets the house `id` as captured at `capturedAt` (an isStamp stamp) in `doc`, the map as read, and writes the map; or says why not. One entry per house, the newest stamp kept; past MAX_HOUSES the oldest entries go. Like a save, it is refused when it would grow the file past the size a read accepts.
-export function forgetHouse(file: string, doc: HouseMapDoc, id: string, capturedAt: string): string | null {
-  const was = doc.forgotten?.find((f) => f.id === id);
-  const at = was && captureTime(was.capturedAt) > captureTime(capturedAt) ? was.capturedAt : capturedAt;
-  const forgotten = [...(doc.forgotten ?? []).filter((f) => f.id !== id), { id, capturedAt: at }].slice(-MAX_HOUSES);
-  const text = textOf({ ...doc, forgotten }), size = Buffer.byteLength(text);
-  if (size > MAX_HOUSE_MAP_BYTES && size > Buffer.byteLength(textOf(doc))) return `that would make house-map.json larger than ${MAX_HOUSE_MAP_BYTES / 1e6} MB`;
   writeFileAtomic(file, text, DATA_FILE_MODE);
   return null;
 }

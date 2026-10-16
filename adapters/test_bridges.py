@@ -1048,6 +1048,14 @@ class TazUOBridge(BridgeCase, unittest.TestCase):
         self.assertNotIn(TRASH_BIN, self.opened(w))
         self.assertEqual(w.items[AMULET].Container, PACK)
 
+    def test_on_a_build_without_the_tooltip_timeout_a_put_still_never_goes_into_a_trash_barrel(self):
+        w = trip_home()
+        w.no_tooltip_timeout = True     # the trash check's 2 s read fails there, and its blocking read must answer
+        final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG])], puts=[(AMULET, [TRASH_BIN])])])
+        self.assertIn("is a trash container", final["results"]["t1"]["steps"][1]["msg"])
+        self.assertNotIn(TRASH_BIN, self.opened(w))
+        self.assertEqual(w.items[AMULET].Container, PACK)
+
     def test_a_put_that_merges_onto_a_stack_counts_as_put_away(self):
         w = trip_home()
         w.merges = True
