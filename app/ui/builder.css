@@ -130,9 +130,12 @@
 .b-gauge-track > s { position: absolute; top: -3px; width: 2px; height: 12px; margin-left: -1px; background: var(--color-text); }
 .b-gauge.loss .b-gauge-track > i { background: var(--color-border-strong); }   /* a loss is muted, not red */
 .b-past { display: flex; flex-direction: column; gap: var(--space-0-5); }   /* a buff's past-cap amount on a property with no gauge */
-.pr .b-chg .b-chg-more { align-self: flex-start; color: var(--color-text-muted); }   /* a muted link to the Table */
+.pr .b-chg .b-chg-more { align-self: flex-start; margin-left: calc(-1 * (var(--space-2) + var(--border-width))); color: var(--color-text-muted); }   /* a muted link to the Table, its text on the grid's left edge */
 .b-chg-scroll { overflow-x: auto; border: var(--border-width) solid var(--color-border); border-radius: var(--radius-md); }
 .b-chg-scroll.more-right { box-shadow: inset -10px 0 8px -8px var(--color-border-strong); }   /* more to see on the right */
+/* the focus ring, kept with the edge shadow (which would otherwise replace it) */
+.pr .b-chg-scroll:focus-visible { box-shadow: var(--ring-focus); }
+.pr .b-chg-scroll.more-right:focus-visible { box-shadow: var(--ring-focus), inset -10px 0 8px -8px var(--color-border-strong); }
 .b-chg-note { margin: 0; }
 /* the columns as wide as their content, the last one taking what is left; the Property column stays put while it scrolls */
 .b-chg-tbl { table-layout: auto; }
