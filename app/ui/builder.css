@@ -427,6 +427,7 @@
 .b-went > li > :nth-child(n+3) { grid-column: 1 / -1; }
 .b-went-name { display: flex; gap: var(--space-1-5); min-width: 0; }
 .b-went-val { font-weight: var(--weight-semibold); font-variant-numeric: tabular-nums; }
+.b-went-swing { grid-column: 1 / -1; }   /* the swing in seconds takes its own line under the goal's name */
 .b-trades { display: flex; flex-direction: column; gap: var(--space-1); margin: 0; padding: 0; list-style: none; }
 .b-side-card > p { margin: 0; }
 .b-run-rows { margin: 0; padding: 0; list-style: none; }

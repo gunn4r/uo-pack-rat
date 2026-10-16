@@ -230,7 +230,7 @@ function goalsCard(g: Goals, current: OptSuit, suit: OptSuit, prof: EffectivePro
   const trades = goalTrades(g, was.totals, now.totals, caps), rows = goalOutcomes(g, now.totals, caps, swing?.maxed ?? null);
   return box("section", { class: "card b-side-card", id: "b-goals-went", "aria-labelledby": "b-goals-went-h" }, el("h3", { class: "t-md", id: "b-goals-went-h" }, "How the goals went"),
     box("ol", { class: "b-went" }, ...rows.map((r) => box("li", {}, box("span", { class: "b-went-name" }, txt(`${r.rank}.`, "muted"), txt(goalName(r.key))),
-      txt(r.key === "ssi" && swing ? swing.text : r.cap != null ? `${numText(r.value)} / ${numText(r.cap)}` : numText(r.value), "b-went-val"),
+      r.key === "ssi" && swing ? txt(swing.text, "b-went-val b-went-swing") : txt(r.cap != null ? `${numText(r.value)} / ${numText(r.cap)}` : numText(r.value), "b-went-val"),
       txt(goalVerdict(r, trades), `t-sm ${r.maxed ? "tone-ok" : "muted"}`),
       r.key === "ssi" && perPoint ? txt("Counted per point: the weapon isn't fixed, so the swing time can't be scored by step.", "t-sm muted") : null))),
     trades.length ? box("ul", { class: "b-trades" }, ...trades.map((t) => el("li", { class: "t-sm" }, txt(`Trade made: ${tradeText(t, from && to ? { from: from.seconds, to: to.seconds } : null)}`)))) : null,
