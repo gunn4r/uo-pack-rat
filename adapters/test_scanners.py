@@ -656,6 +656,35 @@ class TazUOScanner(DataDir, unittest.TestCase):
         self.assertEqual(len(chest_asks[-1]), 1)
         self.assertFalse(any("without a tooltip" in m for m in w.messages))
 
+    def test_a_recall_mid_chest_with_100_tooltips_missing_ends_within_the_cap(self):
+        w = World(); home(w)
+        rings = [RING + 0x100 + i for i in range(100)]
+        for r in rings:
+            w.add(r, CHEST, name="", Tooltip="Ring", container_like=False, OnGround=False)
+        w.late_tooltips = dict((r, None) for r in rings)
+        api = tazuo_api(w, PACK)
+        opener = w.open
+        api.UseObject = lambda s, *a: (setattr(w, "px", 900) if int(s) == CHEST else None, opener(int(s)))[1]
+        t0 = w.clock.now
+        run_script(self.SCRIPT, w, api=api)
+        [s] = self.scans("tazuo")
+        # Three containers opened (1.2 s each), the backpack's first look (0.5 s) and the chest's whole wait (8 s at most).
+        self.assertLess(w.clock.now - t0, 3 * 1.2 + 0.5 + 8 + 0.5)
+        self.assertEqual([r["serial"] for r in s["roots"]], [PACK])
+        self.assertFalse(any("without a tooltip" in m for m in w.messages))
+
+    def test_the_without_a_tooltip_count_leaves_out_a_root_the_scan_then_dropped(self):
+        w = World(); home(w)
+        w.add(RING + 0x40, CHEST, name="", Tooltip="Ring", container_like=False, OnGround=False)
+        w.late_tooltips = {RING + 0x40: None}
+        api = tazuo_api(w, PACK)
+        opener = w.open
+        api.UseObject = lambda s, *a: (setattr(w, "px", 900) if int(s) == CHEST else None, opener(int(s)))[1]
+        run_script(self.SCRIPT, w, api=api)
+        [s] = self.scans("tazuo")
+        self.assertEqual([r["serial"] for r in s["roots"]], [PACK])
+        self.assertFalse(any("without a tooltip" in m for m in w.messages))
+
     def test_tooltips_that_never_arrive_are_waited_for_a_bounded_time(self):
         for never, opened in ((1, True), (5, False)):
             with self.subTest(never=never):
@@ -668,7 +697,7 @@ class TazUOScanner(DataDir, unittest.TestCase):
                 t0 = w.clock.now
                 self.scan(w)
                 [s] = self.scans("tazuo")
-                self.assertLess(w.clock.now - t0, 10, "a root waits at most 2 s plus 30 ms an item")
+                self.assertLess(w.clock.now - t0, 10, "a root waits at most 2 s plus 30 ms an item, never the client's own 10 s a tooltip")
                 self.assertEqual(self.root(s, CHEST)["opened"], opened)
                 ids = [i["serial"] for i in s["items"]]
                 if opened:

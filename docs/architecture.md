@@ -211,7 +211,7 @@ Every route lives in `app/http/routes/`, one module per area, each exporting `ro
 - `GET /api/facet-map/<facet>.png?x0&y0&x1&y1&w` (x-region: the region drawn, slid inside the facet; a facet overview from the same UO folder's facetNN.mul: app/facet-map.mts, app/png.mts; 404 {reason} when there is none)
 - `GET /api/house-map`
 - `PUT /api/house-map/<id>` {name, bounds?, areas?} (`<data>/house-map.json`, the player's house names and drawn areas: app/house-names.mts; an empty name with no areas removes the entry; 400 on a bad name, area or id, 409 when a change would grow it past 500 names or 1 MB)
-- `POST /api/house-map/<id>/forget` {capturedAt} (issue #298: removes the house from the House map until a capture newer than `capturedAt`; its name and areas are kept; 400 on a bad id or stamp, 409 when a newer Pack Rat made the file)
+- `POST /api/house-map/<id>/forget` {capturedAt} (issue #298: removes the house from the House map until a capture newer than `capturedAt`; its name and areas are kept; 400 on a bad id or stamp, 409 when a newer Pack Rat made the file or the forget would grow it past 1 MB)
 
 ### `app/http/routes/kinds.mts`
 

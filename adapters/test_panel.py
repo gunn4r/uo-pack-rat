@@ -91,10 +91,23 @@ class Panel(unittest.TestCase):
         self.assertNotIn("Scan here", seen["on"])
         self.assertEqual(sorted(c[1] for c in api.log if c[0] == "stop"), sorted(["packrat-scanner.py", "packrat-character-refresh.py", "packrat-house-map-refresh.py"]))
         self.assertNotIn("Stop scan", seen["off"])
+        self.assertFalse(any("finished" in t for t in seen["off"]), "a stopped scan is not reported as finished")
         for text in ("Scan here", "Character refresh", "House map refresh"):
             self.assertIn(text, seen["off"])
 
+    def test_a_stop_scan_click_after_the_scan_ended_starts_nothing(self):
+        w = World()
+        api = tazuo_panel_api(w, loaded=list(ALL))
+        button = []
+        w.clock.at(1, lambda: button.append(self.control(api, "Scan here")) or api.click(button[0]))
+        # The scan ends and the click lands before the panel's next look at the running scripts.
+        w.clock.at(3, lambda: (api.running.remove("packrat-scanner.py"), api.click(button[0])))
+        self.run_panel(w, api, until_s=3.5)
+        self.assertEqual([c for c in api.log if c[0] == "play"], [("play", "packrat-scanner.py")])
+        self.assertIn("The scan already finished.", self.labels(api))
+
     def test_every_button_and_line_fits_the_window_and_no_two_buttons_overlap(self):
+
         w = World()
         api = tazuo_panel_api(w)
         self.run_panel(w, api, until_s=1)

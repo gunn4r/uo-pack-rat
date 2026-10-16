@@ -29,7 +29,8 @@ def note_if_closed(serial):
 def await_tooltips(serials):
     """Ask the server for these items' tooltips and wait for them, re-asking only for the ones still
     missing every OPL_STEP_S, for at most OPL_WAIT_S plus OPL_WAIT_PER_ITEM_S per item (OPL_WAIT_MAX_S
-    in all) or until Stop. Returns the serials whose tooltip never arrived."""
+    in all) or until Stop. Every look reads without the client's own wait, so the limit bounds the time.
+    Returns the serials whose tooltip never arrived."""
     missing, waited, step = list(serials), 0.0, OPL_FIRST_WAIT_S
     limit = min(OPL_WAIT_MAX_S, OPL_WAIT_S + OPL_WAIT_PER_ITEM_S * len(missing))
     while missing and waited < limit and not API.StopRequested:
@@ -43,7 +44,7 @@ def await_tooltips(serials):
             break
         waited += step
         step = OPL_STEP_S
-        missing = [s for s in missing if not tooltip_lines(s)]
+        missing = [s for s in missing if not tooltip_lines(s, False)]
     return missing
 
 
@@ -103,7 +104,6 @@ def scan_root(root_serial, kind, label, containers, items, seen):
         # Most of the root has no tooltip (the player moved away, or the server is slow): records with no name and no properties tell the app nothing, so the root is left for the app to keep.
         sysmsg(f"  {label}: {len(missing)} of {len(listing)} tooltips did not arrive — its contents are kept from the last scan", ALARM_HUE)
         return -1
-    NO_TOOLTIP.update(missing)
     containers[root_serial] = root_entry(root_serial, kind, label)
     n = 0
     for it in listing:
@@ -111,7 +111,9 @@ def scan_root(root_serial, kind, label, containers, items, seen):
         if s in seen:
             continue
         seen.add(s)
-        lines = tooltip_lines(s)
+        lines = tooltip_lines(s, False)   # await_tooltips did the waiting: one still missing is recorded without it
+        if not lines:
+            NO_TOOLTIP.add(s)
         parent = int(getattr(it, "Container", root_serial) or root_serial)
         if s in opened or s in unopened:
             cname = lines[0] if lines else str(it.Name or "")

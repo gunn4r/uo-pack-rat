@@ -267,13 +267,18 @@ def tazuo_api(world, backpack, bank=0, skills=None):
     api.Contents = lambda s: len(world.kids(int(s), True))
     api.GetItemsOnGround = lambda r: [it for it in world.items.values() if it.OnGround and world.dist(it.X, it.Y) <= r]
     # `late_tooltips` (serial -> fake seconds): that item's tooltip reads empty until that long after the
-    # first RequestOPLData naming it, and never arrives when the value is None.
+    # first RequestOPLData naming it, and never arrives when the value is None. A read with `wait` blocks
+    # until it arrives or for `timeout` seconds, as TazUO's ItemNameAndProps does.
     late, arrives = getattr(world, "late_tooltips", {}), {}
 
-    def name_and_props(s, b=False):
+    def name_and_props(s, wait=False, timeout=10):
         s = int(s)
-        if s in late and (arrives.get(s) is None or world.clock.now < arrives[s]):
-            return ""
+        if s in late:
+            due = arrives.get(s)
+            if wait and (due is None or world.clock.now < due):
+                world.clock.advance(timeout if due is None else min(timeout, due - world.clock.now))
+            if due is None or world.clock.now < due:
+                return ""
         return getattr(world.items[s], "Tooltip", None) or world.items[s].Name
 
     def request_opl(serials):

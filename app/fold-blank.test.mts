@@ -1,6 +1,6 @@
 // fold-blank.test.mts — `foldSnapshots` and an item a scan recorded with no name and no tooltip (issue #298).
 //
-// Such a record (its tooltip never arrived before the scan moved on) says only where the item is. It keeps the last known name and properties, the one in the same root and one that moved to another container alike, and takes the new place; a worn piece too. A blank item the fold never saw before is still listed. `[fast]`.
+// Such a record (its tooltip never arrived before the scan moved on) says only where the item is. It keeps the last known name and properties, the one in the same root and one that moved to another container alike, and takes the new place and the graphic, hue and amount the client reported; a worn piece too. A blank item the fold never saw before is still listed. `[fast]`.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -36,6 +36,13 @@ test("[fast] a blank record keeps the older name and properties", () => {
   assert.equal(ring.name, "Ruby Ring");
   assert.deepEqual(ring.lines, foldSnapshots([first]).items[RING]!.lines);
   assert.equal(ring.seenAt, "2026-09-21T10:00:00Z", "it was seen in this scan");
+});
+
+test("[fast] a blank record takes the graphic, hue and amount the client reported", () => {
+  const now = { ...item(RING, CHEST, []), graphic: 0x108b, hue: 0x21, amount: 120 };
+  const ring = foldSnapshots([first, scan("2026-09-21T10:00:00Z", [now])]).items[RING]!;
+  assert.equal(ring.name, "Ruby Ring");
+  assert.deepEqual([ring.graphic, ring.hue, ring.amount], [0x108b, 0x21, 120]);
 });
 
 test("[fast] a blank record that moved keeps its name and takes the new place", () => {

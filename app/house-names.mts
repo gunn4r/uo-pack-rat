@@ -127,7 +127,7 @@ export function readHouseMap(file: string): { doc: HouseMapDoc; problem: string 
     readOnly: newerNotice(basename(file), "house-map", raw) };
 }
 
-const isStamp = (v: unknown): v is string => typeof v === "string" && v.length <= 40 && Number.isFinite(Date.parse(v));
+export const isStamp = (v: unknown): v is string => typeof v === "string" && v.length <= 40 && Number.isFinite(Date.parse(v));
 const isForgottenEntry = (v: unknown): v is ForgottenHouse => isObj(v) && typeof v.id === "string" && isHouseId(v.id) && isStamp(v.capturedAt);
 // Whether the house `id`, captured last at `capturedAt`, is one the player removed: forgotten at that capture or a later one.
 export const isForgotten = (doc: HouseMapDoc, id: string, capturedAt: string): boolean =>
@@ -149,12 +149,13 @@ export function saveHouseEntry(file: string, doc: HouseMapDoc, id: string, entry
   writeFileAtomic(file, text, DATA_FILE_MODE);
   return null;
 }
-// Forgets the house `id` as captured at `capturedAt` (a stamp, else the reason it is refused) in `doc`, the map as read, and writes the map. One entry per house, the newest stamp kept; past MAX_HOUSES the oldest entries go.
-export function forgetHouse(file: string, doc: HouseMapDoc, id: string, capturedAt: unknown): string | null {
-  if (!isStamp(capturedAt)) return "capturedAt must be the house's capture time";
+// Forgets the house `id` as captured at `capturedAt` (an isStamp stamp) in `doc`, the map as read, and writes the map; or says why not. One entry per house, the newest stamp kept; past MAX_HOUSES the oldest entries go. Like a save, it is refused when it would grow the file past the size a read accepts.
+export function forgetHouse(file: string, doc: HouseMapDoc, id: string, capturedAt: string): string | null {
   const was = doc.forgotten?.find((f) => f.id === id);
   const at = was && captureTime(was.capturedAt) > captureTime(capturedAt) ? was.capturedAt : capturedAt;
   const forgotten = [...(doc.forgotten ?? []).filter((f) => f.id !== id), { id, capturedAt: at }].slice(-MAX_HOUSES);
-  writeFileAtomic(file, textOf({ ...doc, forgotten }), DATA_FILE_MODE);
+  const text = textOf({ ...doc, forgotten }), size = Buffer.byteLength(text);
+  if (size > MAX_HOUSE_MAP_BYTES && size > Buffer.byteLength(textOf(doc))) return `that would make house-map.json larger than ${MAX_HOUSE_MAP_BYTES / 1e6} MB`;
+  writeFileAtomic(file, text, DATA_FILE_MODE);
   return null;
 }

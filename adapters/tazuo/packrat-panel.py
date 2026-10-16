@@ -231,9 +231,13 @@ SCAN_BUTTONS = {SCANNER: ("scan_btn", "Scan here"), REFRESH: ("refresh_btn", "Ch
 
 
 def scan_click(name, fn):
+    """A click on a scan button, its script's state read at the click: one that still read Stop scan when
+    the script had already ended starts nothing."""
     def click():
         if is_running(name):
             stop_scan(name)
+        elif shown.get(SCAN_BUTTONS[name][0]) == "Stop scan":
+            say("The %s already finished." % LABELS[name])
         else:
             fn()
     return click
@@ -243,6 +247,7 @@ def stop_scan(name):
     """Stops a scan script. A Put away waiting for that scan ends with it: the file a stopped scan writes
     may leave out the container it picked."""
     call(getattr(API, "StopScript", None), rel(name))
+    state["quiet"].add(name)    # it ends because of the Stop: no "finished" line
     run = state["run"]
     if run is not None and run["phase"] == "scan" and run["script"] == name:
         end_put_away("Put away canceled.")

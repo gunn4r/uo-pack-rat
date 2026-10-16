@@ -1062,14 +1062,15 @@ export function foldSnapshots(snapshots: ScanV2[], overrides: KindOverrides = NO
       }
       for (const [kept, root] of moves) { kept.root = root; kept.scannedBy = char; }
     }
-    // An item this scan records with no name and no tooltip (its tooltip never arrived, issue #298) says only where it is: it keeps the last known record, at its new place.
+    // An item this scan records with no name and no tooltip (its tooltip never arrived, issue #298): it keeps the last known name and properties, and takes what the client did report (graphic, hue, amount) and its new place.
     const replaced = new Map<string, Item>();
     for (const [serial, it] of Object.entries(inv.items)) {
       if ((it.equippedBy === char) || (it.root != null && roots.has(+it.root) && !keptItems.has(serial))) { replaced.set(serial, it); delete inv.items[serial]; }
     }
     const foldItem = (raw: EnrichRaw, loc: EnrichLoc): Item => {
       const known = !raw.name && !raw.tooltip?.length ? inv.items[raw.serial] ?? replaced.get(String(raw.serial)) : undefined;
-      return known ? { ...known, ...loc } : enrich(raw, loc, overrides);
+      if (!known) return enrich(raw, loc, overrides);
+      return { ...known, ...(raw.graphic != null ? { graphic: raw.graphic } : {}), ...(raw.hue != null ? { hue: raw.hue } : {}), ...(raw.amount ? { amount: raw.amount } : {}), ...loc };
     };
     for (const [serial, c] of Object.entries(inv.containers)) if (roots.has(+c.root) && !keptContainers.has(serial)) delete inv.containers[serial];
     const snapContainers = (snap.containers || {}) as Record<string, ScanContainerRaw>;
