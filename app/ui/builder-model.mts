@@ -397,6 +397,9 @@ export function applyAction(p: PanelProfile, a: PanelAction, from?: number, code
     if (raises(code) && !(p.softFloors ||= []).includes(a.property)) p.softFloors.push(a.property);
   } else (p.softFloors ||= []).push(a.property);
 }
+// A weight's importance as its editable box shows it (issue #272): the stored value to at most two decimals, trailing zeros
+// trimmed, so a typed 12.5 reads 12.5 after any redraw (a tooltip or summary may round further, roundImportance).
+export const shownImportance = (n: number): number => Math.round(n * 100) / 100;
 // A weight the player adds starts at importance 25, the same for every property (issue #274).
 export const NEW_WEIGHT_IMPORTANCE = 25;
 export const newWeight = (key: string): number => weightOfImportance(key, NEW_WEIGHT_IMPORTANCE);
@@ -459,4 +462,11 @@ export const speedText = (speedS: number): string => `${num(speedS)} s`;
 export function nextSwingStep(sw: SwingResult | null | undefined): { value: number; seconds: number; tip: string } | null {
   const next = sw?.steps.find((st) => st.ssi > sw.ssi);
   return sw && next ? { value: next.ssi, seconds: next.seconds, tip: `${delayText(next.seconds)} at stamina ${sw.stamina}; another suit's stamina can move the step.` } : null;
+}
+// A requirement row's line from the result shown (issue #272), met or short exactly as the solver decides it, the raw total against the requirement it counts (effectiveFloor): "Met: 45", else "2 short" in the warn tone. The cap is only for what it shows: a met total past its cap reads the cap, as the paperdoll does, and what the cap wastes, "Met: 70 (+8 past cap)". The SSI row gives the next swing step instead of "Met" (`next`, nextSwingStep of the result's swing, and the weapon it holds): "Next swing step at 58 (1.25 s with Katana)", after "2 short" when it misses.
+export function needStatus(k: string, floor: number, total: number, caps: Record<string, number>, next: { value: number; seconds: number } | null = null, weapon: string | null = null): { text: string; tone: Tone } {
+  const held = caps[k] != null ? Math.min(total, caps[k]!) : total, short = effectiveFloor(k, floor, caps) - total;
+  const step = next ? `Next swing step at ${num(next.value)} (${delayText(next.seconds)} with ${weapon ?? "the weapon"})` : null;
+  if (short > 0) return { text: [`${num(short)} short`, step].filter(Boolean).join(" · "), tone: "warn" };
+  return { text: step ?? `Met: ${num(held)}${total > held ? ` (+${num(total - held)} past cap)` : ""}`, tone: "ok" };
 }

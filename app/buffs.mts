@@ -4,7 +4,7 @@
 // Scripts/) or the UO Alive wiki, which wins where the two disagree (the other's number is said in the entry's note),
 // and carries how sure those numbers are. No DOM: Manual (ui/builder-manual.mts) and Automatic read the same model,
 // and app/buffs.test.mts checks it.
-import { RESIST_KEYS, minResistAt, skillInSuit, labelOf, effectiveProfile, profileResistCaps, toOptItem, totalsOf } from "./vault-lib.mts";
+import { RESIST_KEYS, SKILL_NAMES, minResistAt, skillInSuit, labelOf, effectiveProfile, profileResistCaps, toOptItem, totalsOf } from "./vault-lib.mts";
 import type { BuffShift, SuitSkill, Character, EffectiveProfile, Item, Profile, PropMap, RunBuffs } from "./vault-lib.mts";
 
 // ---------------------------------------------------------------- the numbers a buff scales with
@@ -422,6 +422,55 @@ export function buffNeeds(b: Buff, skills: Skills, who: BuffWho = {}): string | 
   const [id, at] = b.min;
   return (skills[id] ?? BUFF_INPUTS[id]!.def) < at ? `Needs ${BUFF_INPUTS[id]!.label} ${at}` : null;
 }
+
+// The Buffs tab (issue #272). A group that is a school with a skill of its own (Chivalry, Magery, …), whose heading
+// shows the character's skill.
+export const isSchool = (group: string): boolean => SKILL_NAMES.includes(group.toLowerCase());
+// Whether the plan counts `b` and on what: `needs` is buffNeeds at the plan's own numbers (`values`, buffSkillValues
+// with the player's edits), so the tab never greys a buff a build counts, and `unscanned` lists its inputs the character's
+// scan lacks, which the plan counts at their default (a typed number is not among them).
+export function buffAvailability(b: Buff, values: Skills, planned: ReadonlySet<string>, edits: Readonly<Record<string, number>>, who: BuffWho): { needs: string | null; unscanned: string[] } {
+  return { needs: buffNeeds(b, values, who), unscanned: b.inputs.filter((i) => planned.has(i) && !Object.hasOwn(edits, i)) };
+}
+// What an entry changes in the suit maths, in short words from its own definition at these numbers: each property its
+// effects move ("swing speed up", "defense chance down"; all five resists, or all three stats, moving together as one
+// "resists up"), each cap it changes ("defense chance cap up"), then what no total shows ("hits the lowest resist").
+// "no suit effect" when it does none of these. `down` marks a tag that lowers something for the suit (the page tints it).
+export interface EffectTag { text: string; down: boolean }
+export function buffEffectTags(id: string, skills: Skills, stats: Stats | null, totals: PropMap, who: BuffWho = {}, caps: Readonly<Record<string, number>> = {}): EffectTag[] {
+  const b = BY_ID.get(id)!, c = buffContext(skills, stats, totals, who, caps);
+  const dir = (v: number): string => (v < 0 ? "down" : "up");
+  // the resists, or the stats, moving one way are named together: all of them as "resists" / "stats", some by their words
+  const words = (moves: Array<[string, string]>, cap: string): string[] => {
+    const out: string[] = [], done = new Set<string>();
+    for (const [k, d] of moves) {
+      if (done.has(`${k} ${d}`)) continue;
+      const fam = RESIST_KEYS.includes(k) ? RESIST_KEYS : STATS.includes(k) ? STATS : null, res = fam === RESIST_KEYS;
+      const same = fam ? fam.filter((f) => moves.some(([x, y]) => x === f && y === d)) : [k];
+      same.forEach((x) => done.add(`${x} ${d}`));
+      const all = same.length > 1 && same.length === fam!.length, many = res && same.length > 1;
+      const base = all ? (res ? "resist" : "stats") : `${same.map(tagWord).join(", ")}${res ? " resist" : ""}`;
+      out.push(`${base}${many ? (cap ? " caps" : "s") : cap} ${d}`);
+    }
+    return out;
+  };
+  const moves = b.effects(c).filter((e) => e.value || e.pct).map((e): [string, string] => [e.key, dir(e.value || e.pct!)]);
+  const capMoves = [...Object.entries({ ...b.caps?.(c), ...b.capsLate?.(c) }).filter(([, d]) => d),
+    ...Object.entries(b.capsSet?.(c) || {}).filter(([k, v]) => caps[k] != null && v !== caps[k]).map(([k, v]): [string, number] => [k, v - caps[k]!])].map(([k, d]): [string, string] => [k, dir(d)]);
+  const tags = [...new Set([...words(moves, ""), ...words(capMoves, " cap"), ...(b.extra?.(c) || [])])];
+  return (tags.length ? tags : ["no suit effect"]).map((text) => ({ text, down: text.endsWith(" down") }));
+}
+// The one word each property an entry moves takes in its tags (a resist's alone, "fire" + " resist"); a skill bonus is the
+// skill's name. Every key the catalog's effects and caps use has one (app/buffs.test.mts checks).
+export const TAG_WORDS: Readonly<Record<string, string>> = {
+  physResist: "physical", fireResist: "fire", coldResist: "cold", poisonResist: "poison", energyResist: "energy",
+  strBonus: "strength", dexBonus: "dexterity", intBonus: "intelligence",
+  hci: "hit chance", dci: "defense chance", di: "damage", sdi: "spell damage", ssi: "swing speed", fc: "faster casting", castingFocus: "casting focus",
+  hpRegen: "hit point regeneration", stamRegen: "stamina regeneration", manaRegen: "mana regeneration",
+  hitsPool: "hit points", stamPool: "stamina", manaPool: "mana",
+  hitLightning: "hit lightning", hitFireball: "hit fireball", hitHarm: "hit harm", hitMagicArrow: "hit magic arrow", hitDispel: "hit dispel",
+};
+const tagWord = (k: string): string => (k.startsWith("sk:") ? labelOf(k).slice(1).toLowerCase() : TAG_WORDS[k] ?? k);
 
 // ---------------------------------------------------------------- toggling
 // Turns `id` on or off. On, it replaces any entry of its exclusive set (one form at a time), named in `replaced`.
