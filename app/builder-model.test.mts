@@ -11,9 +11,9 @@ import { buffSkillValues, runBuffs } from "./buffs.mts";
 import type { RulesV1 } from "./schema/types.d.mts";
 import {
   propName, withStoredRoots, knobError, firstKnobError, knobFromServerError, ruleValueError,
-  resistOutcome, locationCrumbs, otherChanges, afterChange, compareModel, hiddenRowsNote, toggleCompare, runAutoLabel, runBadges, plural, KNOB_RANGES,
+  resistOutcome, locationCrumbs, changeRows, gaugeRows, gaugeNote, gaugeTrack, changesSummary, afterChange, compareModel, hiddenRowsNote, toggleCompare, runAutoLabel, runBadges, plural, KNOB_RANGES,
   resistCapError, withResistCap, capNote, resistMinimumText, capsLine, anyOverridden, effectiveFloor, floorCapWarning, pruneResistCaps,
-  weaponsChipText, weaponMustHaveChipText, toggleWeapon, weaponName, withBuffs, pastCapBadges, runSettingsDiff, weightTradeoff, newWeight, editedValue, NEW_WEIGHT_IMPORTANCE, templateBuffsLine, sourceTitle, who, rarityHelp, rarityTotal, rarityDetail, shareRows,
+  weaponsChipText, weaponMustHaveChipText, toggleWeapon, weaponName, withBuffs, pastCapNotes, runSettingsDiff, weightTradeoff, newWeight, editedValue, NEW_WEIGHT_IMPORTANCE, templateBuffsLine, sourceTitle, who, rarityHelp, rarityTotal, rarityDetail, shareRows,
   type Knobs,
 } from "./ui/builder-model.mts";
 import { OPTS_LIMITS } from "./vault-server.mts";
@@ -131,13 +131,29 @@ test("[fast] builder model: a Fetch list location reads as its path of container
   assert.deepEqual(locationCrumbs(undefined), ["Unknown place"]);
 });
 
-test("[fast] builder model: other changes are badges, gains first, resists and unchanged values left out", () => {
-  const got = otherChanges(Object.keys(melee.weights), { dci: 0, hci: 4, luck: 126, stamRegen: 5, physResist: 3 }, { dci: 20, hci: 22, luck: 96, stamRegen: 3, physResist: 29 }, { dci: 45, hci: 45, stamRegen: 24 });
-  assert.deepEqual(got, [
-    { text: "DCI 0 → 20 / 45", tone: "ok" }, { text: "HCI 4 → 22 / 45", tone: "ok" },
-    { text: "Luck 126 → 96", tone: "bad" }, { text: "SR 5 → 3 / 24", tone: "bad" },
-  ]);
-  assert.deepEqual(otherChanges(["hci"], { hci: 30 }, { hci: 30 }, {}, { hci: 35 }), [{ text: "HCI 30 → 30 (needs 35)", tone: "bad" }], "a missed requirement shows even when it does not move");
+test("[fast] builder model: What changes lists every property, gauges the moved non-resists gains first, and notes each against its cap (issue #272)", () => {
+  const before = { dci: 20, hci: 25, di: 60, ssi: 30, luck: 340, strBonus: 8, physResist: 58, mageWeapon: -20 }, after = { dci: 45, hci: 45, di: 100, ssi: 55, luck: 120, strBonus: 6, physResist: 70, hpRegen: 7 };
+  const caps = { dci: 45, hci: 45, di: 100, ssi: 60, hpRegen: 18, physResist: 70 };
+  const rows = changeRows(["intBonus", "tagPenalty"], before, after, caps, { hci: 40 }, [{ property: "physResist", share: 0.4 }, { property: "dci", share: 0.3 }, { property: "intBonus", share: 0 }]);
+  assert.deepEqual(rows.map((r) => r.key), ["physResist", "hci", "dci", "ssi", "di", "hpRegen", "strBonus", "intBonus", "luck"], "registry order, resists first; a weight with nothing counts, never the tag penalty or Mage Weapon");
+  assert.deepEqual(rows.find((r) => r.key === "dci"), { key: "dci", now: 20, suit: 45, cap: 45, delta: 25, share: 0.3, floor: null });
+  assert.equal(rows.find((r) => r.key === "intBonus")!.share, null, "a share of nothing is blank");
+  assert.equal(rows.find((r) => r.key === "luck")!.cap, null);
+  const g = gaugeRows(rows);
+  assert.deepEqual(g.map((r) => r.key), ["hci", "dci", "ssi", "di", "hpRegen", "strBonus", "luck"], "no resist, nothing unchanged, the losses last");
+  const at = (k: string, next: number | null = null): string => gaugeNote(g.find((r) => r.key === k)!, next).text;
+  assert.deepEqual([at("dci"), at("di"), at("hpRegen"), at("luck"), at("strBonus")], ["at cap", "at cap", "11 under cap", "given up", "given up"]);
+  assert.equal(at("ssi", 58), "next step 58");
+  assert.equal(at("ssi"), "5 under cap", "no swing: against the cap");
+  assert.equal(at("ssi", 65), "5 under cap", "a step past the cap is not offered");
+  assert.deepEqual(gaugeNote({ key: "hci", now: 30, suit: 35, cap: 45, delta: 5, share: null, floor: 40 }), { text: "needs 40", warn: true }, "a missed requirement wins");
+  assert.equal(gaugeNote({ key: "di", now: 90, suit: 110, cap: 100, delta: 20, share: null, floor: null }).text, "10 over cap");
+  assert.equal(gaugeNote({ key: "sk:magery", now: 0, suit: 5, cap: null, delta: 5, share: null, floor: null }).text, "up from 0");
+  assert.deepEqual(gaugeTrack(g.find((r) => r.key === "ssi")!), { fill: (100 * 55) / 60, tick: 50 });
+  assert.deepEqual(gaugeTrack(g.find((r) => r.key === "luck")!), { fill: (100 * 120) / 340, tick: 100 }, "no cap: against the larger of the two");
+  assert.equal(changesSummary(g), "5 up · 2 down · HCI, DCI and DI reach their caps");
+  assert.equal(changesSummary(g.filter((r) => r.key === "dci")), "1 up · DCI reaches its cap");
+  assert.equal(changesSummary([]), "No other property changes");
 });
 
 test("[fast] builder model: after the change lists the values that move first, with the pool estimates", () => {
@@ -216,9 +232,9 @@ test("[fast] builder model: a result's totals with the buffs it planned with, in
   const plan = { on: ["divineFury", "enemyOfOne"], skills: { ...buffSkillValues(null, {}).values, Chivalry: 105 }, stats: null, who: {} };
   const r = withBuffs({ ssi: 45, dci: 30, di: 90, fireResist: 30 }, 70, caps, plan);
   assert.deepEqual([r.totals.ssi, r.totals.dci, r.totals.fireResist, r.totals.di], [55, 10, 30, 100], "Fire 30 over the minimum of 20: gear's own");
-  assert.deepEqual(pastCapBadges(r), ["DI +68 past the cap (Enemy of One)"]);
+  assert.deepEqual(pastCapNotes(r), { di: "+68 past the cap (Enemy of One)" });
   const none = withBuffs({ ssi: 45 }, 70, caps, null);
-  assert.deepEqual([none.totals.ssi, none.totals.fireResist, none.lifted.length, pastCapBadges(none)], [45, 20, 5, []], "without buffs: the paperdoll totals alone, every resist held at the minimum");
+  assert.deepEqual([none.totals.ssi, none.totals.fireResist, none.lifted.length, pastCapNotes(none)], [45, 20, 5, {}], "without buffs: the paperdoll totals alone, every resist held at the minimum");
   assert.equal(withBuffs({ ssi: 45 }, null, caps, null).totals.fireResist, undefined, "no minimum: nothing added");
 });
 
@@ -349,6 +365,7 @@ test("[fast] builder model: what made up the score, largest first, shares under 
   assert.deepEqual(rows.map((r) => [r.label, r.pct, r.negative]), [["Damage increase", "41%", false], ["Physical resist", "30%", false], ["Hit chance increase", "20%", false], ["Other (2)", "2%", false], ["Intelligence bonus", "−7%", true]]);
   assert.equal(rows[1]!.note, "includes the Resisting Spells minimum");
   assert.equal(rows[3]!.holds, "Luck, Lower mana cost");
+  assert.deepEqual(rows.map((r) => r.key), ["di", "physResist", "hci", null, "intBonus"], "each row names its property for its weight link; Other has none");
   // a lone small share keeps its own name; a share that rounds to nothing says so
   assert.deepEqual(shareRows([{ property: "di", share: 0.996 }, { property: "luck", share: 0.004 }]).map((r) => [r.label, r.pct]), [["Damage increase", "100%"], ["Luck", "<1%"]]);
   assert.deepEqual(shareRows([]), [], "a run saved before #273 has none");

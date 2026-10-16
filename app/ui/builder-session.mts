@@ -79,6 +79,7 @@ export interface BuilderCommands {
   panelBuild(): PlannedBuild;
   buffPlan(name: string, race: string | null | undefined, buffs: RunBuffs | undefined): BuffPlan;
   loadRunBuffs(b: RunBuffs | undefined): void;
+  tuneWeight(key: string | null): void;
   // builder-result.mts: the current suit, the result and the compare view
   renderResult(res: OptimizeResult, current: OptSuit, prof: EffectiveProfile, name: string, meta?: BuildMeta): Promise<void>;
   renderCurrentSuit(name: string): void;

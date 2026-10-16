@@ -664,6 +664,12 @@ function focusIn(sec: string, sel: string, selectText = false): void {
   e?.focus();
   if (selectText) e?.select();
 }
+// A score breakdown row's property in the Settings drawer: its weight's field, else Add weight; Other (null) opens the Weights tab.
+function tuneWeight(key: string | null): void {
+  if (key == null) openSettings("weights");
+  else if (session.profile?.weights?.[key] != null) focusIn("weights", `.rule-row[data-key="${CSS.escape(key)}"] input`, true);
+  else focusIn("weights", "#b-addweight");
+}
 // The searchable property combobox behind "+ Add requirement" / "+ Add weight": type to filter, ↓ into the
 // list, Enter picks the first match.
 function propertyPicker(anchor: HTMLElement, title: string, taken: string[], pick: (k: string) => void): void {
@@ -1084,4 +1090,4 @@ async function saveProfile(): Promise<void> {
   const r = await putProfiles();
   toast(r.ok ? `Profile for ${who(name)} saved.` : r.error!, r.ok ? "good" : "bad");
 }
-provide({ renderPanel, clearCapDrafts, panelBuild, buffPlan, loadRunBuffs });
+provide({ renderPanel, clearCapDrafts, panelBuild, buffPlan, loadRunBuffs, tuneWeight });

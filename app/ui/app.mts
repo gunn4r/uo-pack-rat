@@ -10,7 +10,7 @@ import { initFilters, applyUiPrefs, inventoryFailed } from "./inventory.mts";
 import { showCharacter } from "./characters.mts";
 import { applyPanelPrefs, initBuilder } from "./builder.mts";
 import { applyBuilderPrefs, initManual } from "./builder-manual.mts";
-import "./builder-result.mts";   // provides the result commands to ui/builder-session.mts; nothing else imports it
+import { applyResultPrefs } from "./builder-result.mts";   // also provides the result commands to ui/builder-session.mts
 import { connectEvents } from "./events.mts";
 import { openWizard } from "./wizard.mts";
 import { renderSettings, startUpdateChecks } from "./settings.mts";
@@ -70,6 +70,7 @@ async function load(): Promise<void> {
   applyMapPrefs(prefs ? prefs.prefs : null);
   applyBuilderPrefs(prefs ? prefs.prefs : null);
   applyPanelPrefs(prefs ? prefs.prefs : null);
+  applyResultPrefs(prefs ? prefs.prefs : null);
   // Settings, Import, the live-scan stream and the first-run wizard need nothing from the inventory,
   // so they come up before it: a failed inventory or profiles fetch must not take the Settings tab
   // (the page's way to the data folder) down with it.

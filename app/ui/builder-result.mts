@@ -1,6 +1,6 @@
 // ui/builder-result.mts — what the Suit Builder shows right of its panel (design spec 4.6 empty state, 4.7):
 // the character's current suit before any build, then a result in answer-first order (headline with the
-// resist tiles and the other changes, the Plan, the Fetch list, the other suits, "<name> after the change",
+// resist tiles and What changes, the Plan, the Fetch list, the other suits, "<name> after the change",
 // Solver details), and the compare view for 2-3 suits or saved runs. The numbers come from
 // ui/builder-model.mts; the bridge actions are gated by ui/bridge.mts's bridgeActionReason(). It shares the builder's
 // state through ui/builder-session.mts and provides the result and compare commands there.
@@ -9,18 +9,19 @@ import type { EffectiveProfile, Item, OptItem, PropMap, ResistCap } from "../vau
 import { state } from "./store.mts";
 import type { BuildMeta } from "./store.mts";
 import { $, el, label, fmtN, fmtSecs, fmtRunTime, slotLabel, rarCell, whereText } from "./dom.mts";
-import { box, txt, button, icon, badge, message, meter, switchControl, check, table, tableFoot, rowActions, tipWrap, tooltip, keyValue, token } from "./components.mts";
+import { box, txt, button, icon, badge, message, meter, segmented, switchControl, check, table, tableFoot, rowActions, tipWrap, tooltip, keyValue, token } from "./components.mts";
+import { prefs } from "./prefs.mts";
 import { sheetNode, sheetParts } from "./sheet.mts";
 import { bridgeActionReason, runBridgeAction } from "./bridge.mts";
 import { resolveItems } from "./items.mts";
 import { session, commands, provide } from "./builder-session.mts";
 import { RESIST_NAMES, keyProps, tipTarget, verdict, grabAllButton, fetchCard, settingsCheck } from "./builder-parts.mts";
-import { savedBuffs, plannedFromWorn, buffById, buffsDiff, runBuffs } from "../buffs.mts";
+import { savedBuffs, plannedFromWorn, buffById, buffsDiff, runBuffs, signed } from "../buffs.mts";
 import type { RunBuffs } from "../vault-lib.mts";
-import { slotsOf, paperdollCaps, pastCapBadges, runSettingsDiff, withBuffs, afterChange, compareModel, hiddenRowsNote, otherChanges, plural, resistOutcome, toggleCompare, propName, capNote, capsLine, anyOverridden, effectiveFloor, resultChecks, shareRows, swingLines, who, rarityDetail, rarityTotal, type CompareMember } from "./builder-model.mts";
+import { slotsOf, paperdollCaps, pastCapNotes, runSettingsDiff, withBuffs, afterChange, compareModel, hiddenRowsNote, changeRows, gaugeRows, gaugeNote, gaugeTrack, changesSummary, nextSwingStep, sharePct, plural, resistOutcome, toggleCompare, propName, capNote, capsLine, anyOverridden, effectiveFloor, resultChecks, shareRows, swingLines, who, rarityDetail, rarityTotal, type ChangeRow, type CompareMember } from "./builder-model.mts";
 import { heldWeapon } from "../swing.mts";
 import type { ScoreShare, SwingResult } from "../runs-types.mts";
-import type { OptSuit, OptimizeResult, SavedRunLike } from "./api-types.mts";
+import type { OptSuit, OptimizeResult, SavedRunLike, UiPrefs } from "./api-types.mts";
 
 // One resist tile: its name in its resist colour, the value (before → after when there is a before) against
 // the requirement or cap, a meter and the outcome line, and under it the cap's override when the build has one
@@ -143,12 +144,12 @@ function headlineCard(res: OptimizeResult, current: OptSuit, suit: OptSuit, prof
   const start = button({ label: manual ? "Open in Manual" : "Start from this result", icon: "pencil", attrs: { id: "b-to-manual" },
     onClick: () => { void commands.openInManual(suit, slotsOf(res.best), buffsUsed, manual ? "Open the manual run" : "Start from the result"); } });
   const tiles = RESIST_KEYS.map((k) => resistTile(k, now.totals[k]!, pdFloors[k] ?? null, { cap: now.caps[k]!, shard: caps[k]!.shard }, was.totals[k]!));
-  const other = [...otherChanges([...Object.keys(prof.floors), ...Object.keys(prof.weights)], was.totals, now.totals, now.caps, pdFloors), ...pastCapBadges(now).map((text) => ({ text, tone: "ok" as const }))];
+  const shareList = view == null ? res.shares : res.alternatives![view]!.shares;
+  const rows = changeRows([...Object.keys(prof.floors), ...Object.keys(prof.weights)], was.totals, now.totals, now.caps, pdFloors, shareList);
   const checks = settingsCheck(resultChecks(res, !!prof.buffs, view != null), name);
   // the best suit's swing (an alternative's would need its own stamina), with the buffs that gave its share named
   const ssiBuffs = res.swing?.share ? (withBuffs(after, skill, base, prof.buffs, rsCap).shares.ssi || []).filter((x) => !x.outside).map((x) => buffById(x.id)?.name || x.id) : [];
   const swing = view == null && res.swing ? swingLine(res.swing, heldWeapon(suit)?.name ?? null, ssiBuffs) : null;
-  const shares = scoreBreakdown(view == null ? res.shares : res.alternatives![view]!.shares);
   return box("section", { class: "card b-head-card", "aria-label": view == null ? "Best suit" : `Suit ${view + 2}` },
     box("div", { class: "b-headline" },
       box("div", { class: "b-headline-text" }, box("div", { class: "b-row" }, el("h2", { class: "t-xl" }, `${manual ? "Manual suit" : view == null ? "Best suit" : `Suit #${view + 2}`}${name === NOBODY ? " · No character" : ` for ${name}`}`), vb), el("p", { class: "muted" }, txt(line)), plannedWith(prof, name)),
@@ -157,8 +158,47 @@ function headlineCard(res: OptimizeResult, current: OptSuit, suit: OptSuit, prof
     checks,
     box("div", { class: "b-resists" }, ...tiles),
     swing,
-    other.length ? box("div", { class: "b-badges", role: "list", "aria-label": "Other changes" }, ...other.map((o) => box("span", { class: `badge ${o.tone}`, role: "listitem" }, txt(o.text)))) : null,
-    shares);
+    whatChanges(rows, view == null ? nextSwingStep(res.swing)?.value ?? null : null, pastCapNotes(now)),
+    changesView === "table" ? null : scoreBreakdown(shareList));
+}
+
+// What changes (issue #272): its summary line and the Gauges | Table switch (ui-prefs `builderChanges`, kept for the next launch), then a gauge per property other than the resists whose total moves (builder-model.mts gaugeRows), or every property of the result in a table with its share of the score, which then stands in for the score breakdown.
+let changesView: "gauges" | "table" = "gauges";
+export function applyResultPrefs(p: UiPrefs | null): void { if (p?.builderChanges === "table") changesView = "table"; }
+const numText = (v: number): string => fmtN(v).replace("-", "−");
+function whatChanges(rows: ChangeRow[], nextSsi: number | null, past: Record<string, string>): HTMLElement {
+  const gauges = gaugeRows(rows);
+  const seg = segmented({ label: "Show the changes as", options: [{ value: "gauges", label: "Gauges" }, { value: "table", label: "Table" }], value: changesView, onChange: (v) => {
+    changesView = v === "table" ? "table" : "gauges";
+    prefs.set({ builderChanges: changesView }, { quiet: true });
+    void rerender().then(() => document.querySelector<HTMLElement>("#b-chg-view [aria-checked=true]")?.focus());
+  } });
+  seg.id = "b-chg-view";
+  return box("div", { class: "b-chg" },
+    box("div", { class: "b-chg-head" }, el("h3", { class: "t-md", id: "b-chg-h" }, "What changes"), txt(changesSummary(gauges), "t-sm muted"), el("span", { class: "spacer" }), seg),
+    changesView === "table" ? changesTable(rows) : gauges.length ? box("ul", { class: "b-gauges", "aria-labelledby": "b-chg-h" }, ...gauges.map((r) => gauge(r, nextSsi, past[r.key]))) : null);
+}
+// One gauge: the short name, the suit's total against its cap and the change, a track filled to the suit's total with a tick at what is worn now, and its note. A loss is muted, not red.
+function gauge(r: ChangeRow, nextSsi: number | null, past: string | undefined): HTMLElement {
+  const note = gaugeNote(r, nextSsi), t = gaugeTrack(r), loss = r.delta < 0;
+  return box("li", { class: `b-gauge${loss ? " loss" : ""}` },
+    box("span", { class: "b-gauge-top" }, el("span", { class: "b-gauge-name muted", title: propName(r.key) }, label(r.key)), txt(numText(r.suit), "b-gauge-val"), r.cap != null ? txt(`/ ${numText(r.cap)}`, "muted") : null,
+      el("span", { class: "spacer" }), txt(signed(r.delta), `b-gauge-delta ${loss ? "muted" : "tone-ok"}`), txt(`, was ${numText(r.now)}`, "sr")),
+    box("span", { class: "b-gauge-track", "aria-hidden": "true" }, el("i", { style: `width:${t.fill}%` }), el("s", { style: `left:${t.tick}%` })),
+    txt(note.text, `t-sm ${note.warn ? "tone-warn" : "muted"}`), past ? txt(past, "t-sm muted") : null);
+}
+// The Table view: Property · Now · Suit · Cap · Change · Share of score, resists first; it scrolls in its own box when narrow.
+function changesTable(rows: ChangeRow[]): HTMLElement {
+  const cells = rows.map((r) => ({ cells: [txt(propName(r.key)), txt(numText(r.now), "muted"), txt(numText(r.suit), "strong"), txt(r.cap != null ? numText(r.cap) : "—", "muted"),
+    txt(r.delta ? signed(r.delta) : "0", r.delta > 0 ? "tone-ok" : "muted"),
+    r.share == null ? txt("") : tuneButton({ key: r.key, name: `${propName(r.key)} ${sharePct(r.share)}`, cls: "b-tune" }, meter(Math.round(Math.abs(r.share) * 1000), 1000, { tone: r.share < 0 ? "warn" : undefined }), txt(sharePct(r.share), `b-share-pct${r.share < 0 ? " tone-warn" : ""}`))] }));
+  const t = table({ label: "What changes", columns: [{ label: "Property" }, { label: "Now", num: true, width: "72px" }, { label: "Suit", num: true, width: "72px" }, { label: "Cap", num: true, width: "72px" }, { label: "Change", num: true, width: "80px" }, { label: "Share of score", width: "180px" }], rows: cells });
+  t.classList.add("b-chg-tbl");
+  return box("div", { class: "b-chg-scroll" }, t);
+}
+// A share of the score as a button that opens the Settings drawer on its weight (builder.mts tuneWeight); Other (null) on the Weights tab.
+function tuneButton({ key, name, cls, title }: { key: string | null; name: string; cls: string; title?: string | null }, ...kids: Array<HTMLElement | null>): HTMLButtonElement {
+  return box("button", { type: "button", class: cls, "aria-label": name, ...(title ? { title } : {}), onclick: () => commands.tuneWeight(key) }, ...kids);
 }
 
 // What made up the score (issue #273): each weighted property's share as a bar (ui/builder-model.mts shareRows). Collapsed: the top three positive rows, small shares folded into Other (its names in its accessible name and tooltip), and every negative row. "Show all" lists every property on its own row and stays open for the page session. A resist held at its minimum carries a short "incl. min" mark whose sentence a screen reader and a tooltip give. None for a run saved before it.
@@ -167,14 +207,15 @@ function scoreBreakdown(shares: ScoreShare[] | undefined): HTMLElement | null {
   if (!shares?.length) return null;
   const all = shareRows(shares, 0), folded = shareRows(shares), positive = folded.filter((r) => !r.negative);
   const shown = sharesAll ? all : [...positive.slice(0, 3), ...folded.filter((r) => r.negative)];
-  const items = shown.map((r, i) => box("li", { class: `b-share${r.negative && !shown[i - 1]?.negative && i ? " b-share-neg" : ""}`, ...(r.holds ? { title: r.holds } : {}) },
-    box("span", { class: "b-share-name" }, txt(r.label), r.holds ? txt(`: ${r.holds}`, "sr") : null,
-      r.note ? el("span", { class: "t-sm muted", title: r.note, "aria-hidden": "true" }, " · incl. min") : null, r.note ? txt(` (${r.note})`, "sr") : null),
-    meter(Math.round(Math.abs(r.share) * 1000), 1000, { tone: r.negative ? "warn" : undefined, label: `${r.label} ${r.pct}` }),
-    txt(r.pct, `b-share-pct${r.negative ? " tone-warn" : ""}`)));
+  // each row opens its weight in the Settings drawer
+  const items = shown.map((r, i) => box("li", { class: r.negative && !shown[i - 1]?.negative && i ? "b-share-neg" : "" },
+    tuneButton({ key: r.key, name: `${r.label} ${r.pct}${r.holds ? `: ${r.holds}` : ""}${r.note ? ` (${r.note})` : ""}`, cls: "b-share", title: r.holds },
+      box("span", { class: "b-share-name" }, txt(r.label), r.note ? el("span", { class: "t-sm muted", title: r.note }, " · incl. min") : null),
+      meter(Math.round(Math.abs(r.share) * 1000), 1000, { tone: r.negative ? "warn" : undefined }),
+      txt(r.pct, `b-share-pct${r.negative ? " tone-warn" : ""}`))));
   const more = positive.length > 3 || positive.some((r) => r.holds) ? button({ label: sharesAll ? "Show fewer" : `Show all (${all.length})`, variant: "ghost", size: "sm", attrs: { id: "b-shares-more" },
     onClick: () => { sharesAll = !sharesAll; void rerender().then(() => document.getElementById("b-shares-more")?.focus()); } }) : null;
-  return box("div", { class: "b-shares" }, el("h3", { class: "t-sm muted", id: "b-shares-h" }, "What made up the score"), box("ul", { class: "b-share-list", "aria-labelledby": "b-shares-h" }, ...items), more);
+  return box("div", { class: "b-shares" }, box("div", { class: "b-chg-head" }, el("h3", { class: "t-sm muted", id: "b-shares-h" }, "What made up the score"), txt("click a row to tune its weight", "t-sm muted")), box("ul", { class: "b-share-list", "aria-labelledby": "b-shares-h" }, ...items), more);
 }
 
 // The swing line under the resists: the weapon, stamina and SSI and the delay they give, then the steps at that stamina with the reached ones in the ok tone.

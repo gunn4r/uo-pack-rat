@@ -1,8 +1,8 @@
 // ui/builder-model.mts — the Suit Builder's pure logic (design spec 4.6-4.8): the Advanced fields' validation, a resist tile's outcome line, the result's
-// "other changes" badges and "after the change" values, the compare table's differing rows and best values,
+// "What changes" gauges and table and "after the change" values, the compare table's differing rows and best values,
 // and a saved run's label and badges. No DOM and no page state, so app/builder-model.test.mts can check it
 // all directly; ui/builder.mts, ui/builder-result.mts and ui/runs.mts draw what it returns.
-import { NOBODY, labelOf, paperdollResist, propName, importanceOf, withCurrentActions, weightOfImportance, RESIST_SKILL_KEY, GEAR_SLOTS, NOT_BUILDER_KEYS, RESIST_KEYS, RESIST_CAP_LIMITS, SLOT_LABELS, settingsDiff, shardResistCap, WEAPON_SKILLS, WEAPON_EXCLUDES, SPELLBOOKS, MELEE_SKILLS, ubwsLetsIn, flagLabel } from "../vault-lib.mts";
+import { NOBODY, PROPERTIES, labelOf, paperdollResist, propName, importanceOf, withCurrentActions, weightOfImportance, RESIST_SKILL_KEY, GEAR_SLOTS, NOT_BUILDER_KEYS, RESIST_KEYS, RESIST_CAP_LIMITS, SLOT_LABELS, settingsDiff, shardResistCap, WEAPON_SKILLS, WEAPON_EXCLUDES, SPELLBOOKS, MELEE_SKILLS, ubwsLetsIn, flagLabel } from "../vault-lib.mts";
 import type { FcCap, PlannedBuffs, PropMap, ResistCap, RunSettings } from "../vault-lib.mts";
 import { applyBuffs, buffById, buffsDiff, capWord, signed, type BuffResult } from "../buffs.mts";
 import { RUN_SETTING_LIMITS, type Range } from "../run-settings.mts";
@@ -29,10 +29,10 @@ export { paperdollCaps };
 export function withBuffs(t: PropMap, skill: number | null, caps: Record<string, number>, b: Pick<PlannedBuffs, "on" | "skills" | "stats" | "who"> | null | undefined, cap: number | null = null): BuffResult {
   return applyBuffs(t, caps, b?.on || [], b?.skills || {}, b?.stats ?? null, b?.who, suitResist(skill, t, cap));
 }
-// What the buffs add past the cap, as badges: "DI +68 past the cap (Enemy of One)"; a penalty applied after it, such
-// as Protection's casting delay, "FC −2 after the cap (Protection)".
-export const pastCapBadges = (r: BuffResult): string[] =>
-  Object.entries(r.outside).filter(([, v]) => v).map(([k, v]) => `${labelOf(k)} ${signed(v)} ${capWord(v)} the cap (${(r.shares[k] || []).filter((x) => x.outside).map((x) => buffById(x.id)!.name).join(", ")})`);
+// What the buffs add past the cap, by property, for its gauge: DI "+68 past the cap (Enemy of One)"; a penalty applied
+// after it, such as Protection's casting delay, FC "−2 after the cap (Protection)".
+export const pastCapNotes = (r: BuffResult): Record<string, string> =>
+  Object.fromEntries(Object.entries(r.outside).filter(([, v]) => v).map(([k, v]) => [k, `${signed(v)} ${capWord(v)} the cap (${(r.shares[k] || []).filter((x) => x.outside).map((x) => buffById(x.id)!.name).join(", ")})`]));
 
 // The Rarity setting's help line: none for "any".
 export function rarityHelp(rarity: string | undefined): string {
@@ -179,17 +179,48 @@ export function locationCrumbs(text: string | null | undefined): string[] {
   const parts = (text || "").split(" › ").map((p) => p.trim()).filter(Boolean);
   return parts.length ? parts : ["Unknown place"];
 }
-// The result's other changes, as badges: every requirement or weighted property (resists have their own
-// tiles) whose total moves, gains first. A requirement the suit misses is a loss whatever its direction.
-export function otherChanges(keys: string[], before: PropMap, after: PropMap, caps: Record<string, number>, floors: Record<string, number> = {}): Array<{ text: string; tone: "ok" | "bad" }> {
-  const rows = [...new Set(keys)].filter((k) => k !== "tagPenalty" && !RESIST_KEYS.includes(k)).flatMap((k) => {
-    const b = before[k] || 0, a = after[k] || 0, cap = caps[k], floor = floors[k];
-    const missed = floor != null && a < floor;
-    if (a === b && !missed) return [];
-    const text = `${labelOf(k)} ${num(b)} → ${num(a)}${cap != null ? ` / ${num(cap)}` : ""}${missed ? ` (needs ${num(floor)})` : ""}`;
-    return [{ k, text, tone: (a > b && !missed ? "ok" : "bad") as "ok" | "bad" }];
+// ---------------------------------------------------------------- what changes (issue #272)
+// One property of the result's "What changes": its total worn now and in the suit, its cap (null when it has none), the
+// change, its share of the score (null when it adds nothing) and its requirement (null for none).
+export interface ChangeRow { key: string; now: number; suit: number; cap: number | null; delta: number; share: number | null; floor: number | null }
+const ORDER = new Map<string, number>(PROPERTIES.map((p, i) => [p.key, i]));
+const byRegistry = (a: string, b: string): number => (ORDER.get(a) ?? ORDER.size) - (ORDER.get(b) ?? ORDER.size) || labelOf(a).localeCompare(labelOf(b));
+const andList = (xs: string[]): string => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}`);
+// Every property of the result, the Table view's rows: those either suit carries and every requirement and weight (`keys`), in the registry's order (resists first, skill bonuses last), none the builder never offers (the tag penalty among them).
+export function changeRows(keys: string[], before: PropMap, after: PropMap, caps: Record<string, number>, floors: Record<string, number> = {}, shares: ScoreShare[] = []): ChangeRow[] {
+  const share = new Map(shares.filter((s) => s.share !== 0).map((s) => [s.property, s.share]));
+  const all = new Set([...keys, ...Object.keys(before).filter((k) => before[k]), ...Object.keys(after).filter((k) => after[k])]);
+  return [...all].filter((k) => !NOT_BUILDER_KEYS.has(k)).sort(byRegistry).map((k) => {
+    const now = before[k] || 0, suit = after[k] || 0;
+    return { key: k, now, suit, cap: caps[k] ?? null, delta: suit - now, share: share.get(k) ?? null, floor: floors[k] ?? null };
   });
-  return rows.sort((x, y) => (x.tone === y.tone ? labelOf(x.k).localeCompare(labelOf(y.k)) : x.tone === "ok" ? -1 : 1)).map(({ text, tone }) => ({ text, tone }));
+}
+// The gauges: the properties other than the resists (they have their tiles) whose total moves, the gains first.
+export function gaugeRows(rows: ChangeRow[]): ChangeRow[] {
+  const moved = rows.filter((r) => r.delta !== 0 && !RESIST_KEYS.includes(r.key));
+  return [...moved.filter((r) => r.delta > 0), ...moved.filter((r) => r.delta < 0)];
+}
+// A gauge's short note: a requirement the suit misses ("needs 35", the warn tone), a loss ("given up"), else against the cap: "at cap", "3 over cap", the next swing step under the cap for SSI (`nextSsi`, the result's nextSwingStep), "11 under cap"; with no cap, where it came from.
+export function gaugeNote(r: ChangeRow, nextSsi: number | null = null): { text: string; warn: boolean } {
+  const note = (text: string, warn = false): { text: string; warn: boolean } => ({ text, warn });
+  if (r.floor != null && r.suit < r.floor) return note(`needs ${num(r.floor)}`, true);
+  if (r.delta < 0) return note("given up");
+  if (r.cap == null) return note(`up from ${num(r.now)}`);
+  if (r.suit === r.cap) return note("at cap");
+  if (r.suit > r.cap) return note(`${num(r.suit - r.cap)} over cap`);
+  if (r.key === "ssi" && nextSsi != null && nextSsi > r.suit && nextSsi <= r.cap) return note(`next step ${num(nextSsi)}`);
+  return note(`${num(r.cap - r.suit)} under cap`);
+}
+// A gauge's track in percent: the fill is the suit's total, the tick the total worn now, each a share of the cap, or of the larger of the two with no cap.
+export function gaugeTrack(r: ChangeRow): { fill: number; tick: number } {
+  const scale = r.cap ?? Math.max(r.now, r.suit), pct = (v: number): number => (scale > 0 ? Math.max(0, Math.min(100, (100 * v) / scale)) : 0);
+  return { fill: pct(r.suit), tick: pct(r.now) };
+}
+// The "What changes" summary from its gauges: "5 up · 3 down · DCI, HCI and DI reach their caps" (a cap counts when the suit reaches it and the suit worn now does not).
+export function changesSummary(gauges: ChangeRow[]): string {
+  const up = gauges.filter((r) => r.delta > 0).length, down = gauges.filter((r) => r.delta < 0).length;
+  const capped = gauges.filter((r) => r.cap != null && r.suit >= r.cap && r.now < r.cap).map((r) => labelOf(r.key));
+  return [up ? `${up} up` : "", down ? `${down} down` : "", capped.length ? `${andList(capped)} ${capped.length === 1 ? "reaches its cap" : "reach their caps"}` : ""].filter(Boolean).join(" · ") || "No other property changes";
 }
 // "<name> after the change": the attributes and pools, the ones that move first. The scan's attributes are
 // totals with the current suit on, so after = total + the change in the bonus; the pools follow the sheet's
@@ -390,15 +421,16 @@ export function resultChecks(res: { diagnostics?: Diagnostic[] | undefined; unre
 // ---------------------------------------------------------------- what made up the score (app/diagnostics.mts scoreShares)
 // The breakdown's rows: the positive shares largest first, those under `fold` as one "Other" row naming what it holds (a lone one keeps its own name), then the negative ones, largest first, set apart. A resist held at a Resisting Spells minimum above its gear total says so.
 export const SHARE_FOLD = 0.02;
-export interface ShareRow { label: string; pct: string; share: number; negative: boolean; note: string | null; holds: string | null }
-const pctText = (share: number): string => { const p = Math.round(Math.abs(share) * 100); return `${share < 0 ? "−" : ""}${p === 0 && share !== 0 ? "<1" : p}%`; };
+// `key` is the row's property, null for Other.
+export interface ShareRow { key: string | null; label: string; pct: string; share: number; negative: boolean; note: string | null; holds: string | null }
+export const sharePct = (share: number): string => { const p = Math.round(Math.abs(share) * 100); return `${share < 0 ? "−" : ""}${p === 0 && share !== 0 ? "<1" : p}%`; };
 export function shareRows(shares: ScoreShare[], fold = SHARE_FOLD): ShareRow[] {
-  const row = (label: string, share: number, note: string | null = null, holds: string | null = null): ShareRow => ({ label, pct: pctText(share), share, negative: share < 0, note, holds });
-  const own = (s: ScoreShare): ShareRow => row(propName(s.property), s.share, s.fromMin ? "includes the Resisting Spells minimum" : null);
+  const row = (key: string | null, label: string, share: number, note: string | null = null, holds: string | null = null): ShareRow => ({ key, label, pct: sharePct(share), share, negative: share < 0, note, holds });
+  const own = (s: ScoreShare): ShareRow => row(s.property, propName(s.property), s.share, s.fromMin ? "includes the Resisting Spells minimum" : null);
   const positive = shares.filter((s) => s.share >= 0).sort((a, b) => b.share - a.share), small = positive.filter((s) => s.share < fold);
   const rows = positive.filter((s) => s.share >= fold).map(own);
   if (small.length === 1) rows.push(own(small[0]!));
-  else if (small.length) rows.push(row(`Other (${small.length})`, small.reduce((n, s) => n + s.share, 0), null, small.map((s) => propName(s.property)).join(", ")));
+  else if (small.length) rows.push(row(null, `Other (${small.length})`, small.reduce((n, s) => n + s.share, 0), null, small.map((s) => propName(s.property)).join(", ")));
   return [...rows, ...shares.filter((s) => s.share < 0).sort((a, b) => a.share - b.share).map(own)];
 }
 
