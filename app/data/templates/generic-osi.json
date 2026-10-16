@@ -1,5 +1,5 @@
 {
-  "_comment": "Built-in Suit Builder templates for this shard (app/build-spec.mts). Read at run time and shown read-only as Built-in; Save as makes a player's own copy in <data>/profiles.json. Never copied there, so a release can change them. Each spec is held to buildSpecError (app/build-spec.test.mts checks every shipped file). weights = value of one point; floors = must-have minimums; caps are the shard's rules (app/rules/<shard>.json).",
+  "_comment": "Built-in Suit Builder templates for this shard (app/build-spec.mts). Read at run time and shown read-only as Built-in; Save as makes a player's own copy in <data>/profiles.json. Never copied there, so a release can change them. Each spec is held to buildSpecError (app/build-spec.test.mts checks every shipped file). weights = value of one point, compiled from goals (the ranked goals, app/vault-lib.mts compileGoals; a test holds them equal); floors = must-have minimums; caps are the shard's rules (app/rules/<shard>.json).",
   "schemaVersion": 3,
   "templates": {
     "melee": {
@@ -8,7 +8,9 @@
         "intent": {
           "floors": { "physResist": 65, "fireResist": 65, "coldResist": 65, "poisonResist": 65, "energyResist": 65 },
           "softFloors": [],
-          "weights": { "physResist": 6, "fireResist": 6, "coldResist": 6, "poisonResist": 6, "energyResist": 6, "dci": 10, "hci": 10, "ssi": 5, "di": 3, "hpRegen": 4, "dexBonus": 4, "strBonus": 3, "hpi": 3, "stamRegen": 3, "stamInc": 2, "lmc": 1, "luck": 0.05, "tagPenalty": -25 },
+          "weights": { "tagPenalty": -25, "ssi": 7.5, "hci": 8, "dci": 8, "di": 2.925, "luck": 0.045 },
+          "swingSteps": true,
+          "goals": { "ranks": [["ssi"], ["hci", "dci"], ["di"]], "swing": { "mode": "fastest" }, "leftover": "luck" },
           "floorBonus": 1000,
           "resistCaps": {}
         },
@@ -21,7 +23,8 @@
         "intent": {
           "floors": { "lrc": 100, "lmc": 40, "fc": 2, "fcr": 6, "physResist": 60, "fireResist": 60, "coldResist": 60, "poisonResist": 60, "energyResist": 60 },
           "softFloors": [],
-          "weights": { "fc": 60, "fcr": 30, "lrc": 8, "lmc": 8, "manaRegen": 8, "dci": 6, "castingFocus": 6, "sdi": 4, "intBonus": 4, "physResist": 4, "fireResist": 4, "coldResist": 4, "poisonResist": 4, "energyResist": 4, "manaInc": 3, "hpi": 2, "tagPenalty": -25 },
+          "weights": { "tagPenalty": -25, "fc": 225, "fcr": 75, "lmc": 9, "lrc": 2.925, "sdi": 2.25, "intBonus": 0.9, "manaInc": 1.125, "manaRegen": 0.75 },
+          "goals": { "ranks": [["fc", "fcr"], ["lmc"], ["lrc"], ["sdi"]], "leftover": "caster" },
           "floorBonus": 1000,
           "resistCaps": {}
         },
@@ -34,7 +37,9 @@
         "intent": {
           "floors": { "physResist": 65, "fireResist": 65, "coldResist": 65, "poisonResist": 65, "energyResist": 65, "hci": 35 },
           "softFloors": [],
-          "weights": { "physResist": 6, "fireResist": 6, "coldResist": 6, "poisonResist": 6, "energyResist": 6, "ssi": 10, "hci": 10, "dci": 8, "di": 6, "dexBonus": 5, "stamInc": 3, "stamRegen": 3, "hpi": 3, "intBonus": 3, "manaInc": 2, "manaRegen": 2, "strBonus": 2, "lmc": 2, "hpRegen": 1, "luck": 0.05, "tagPenalty": -25 },
+          "weights": { "tagPenalty": -25, "ssi": 7.5, "di": 4.5, "hci": 8, "dci": 6.5, "luck": 0.045 },
+          "swingSteps": true,
+          "goals": { "ranks": [["ssi", "di"], ["hci"], ["dci"]], "swing": { "mode": "fastest" }, "leftover": "luck" },
           "floorBonus": 1000,
           "resistCaps": {}
         },
@@ -47,7 +52,8 @@
         "intent": {
           "floors": { "physResist": 70, "fireResist": 70, "coldResist": 70, "poisonResist": 70, "energyResist": 70 },
           "softFloors": [],
-          "weights": { "physResist": 8, "fireResist": 8, "coldResist": 8, "poisonResist": 8, "energyResist": 8, "dci": 10, "hpRegen": 8, "hpi": 6, "stamRegen": 3, "strBonus": 3, "hci": 2, "reflectPhys": 1, "tagPenalty": -25 },
+          "weights": { "tagPenalty": -25, "dci": 10, "hpi": 14.4, "hpRegen": 16.25, "hci": 5, "strBonus": 7.2, "stamRegen": 7.5, "dexBonus": 0.9, "stamInc": 1.125 },
+          "goals": { "ranks": [["dci"], ["hpi"], ["hpRegen"], ["hci"], ["strBonus", "stamRegen"]], "leftover": "melee" },
           "floorBonus": 1000,
           "resistCaps": {}
         },

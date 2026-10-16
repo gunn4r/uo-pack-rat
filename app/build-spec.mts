@@ -6,13 +6,15 @@
 // Suit Builder's panel edits. Pure and browser-safe, like run-settings.mts and evaluate.mts.
 import { buffPlanOf, buffSkillValues, isBuffList, isBuffSkills, isBuffSkillsByCharacter, manualBase, manualPlan, normalizeBuffListsByCharacter, NO_CHARACTER, planBuffs, runBuffs, type BuffPlan } from "./buffs.mts";
 import { RACES, RUN_DEFAULTS, RUN_SETTING_LIMITS, defaultStrLimit, runSettingsError } from "./run-settings.mts";
-import { migrateProfiles, templateFrom, TEMPLATE_KEYS, toOptItem, totalsOf, type Character, type EffectiveProfile, type Item, type Profile, type ProfilesFile, type RarityPreference, type RunBuffs, type RunSettings, type Template, type TemplateSource } from "./vault-lib.mts";
+import { compileGoals, copyGoals, goalsActive, migrateProfiles, templateFrom, TEMPLATE_KEYS, toOptItem, totalsOf, type Character, type EffectiveProfile, type Goals, type Item, type Profile, type ProfilesFile, type RarityPreference, type RunBuffs, type RunSettings, type Template, type TemplateSource } from "./vault-lib.mts";
+import { heldWeapon, ssiForTicks } from "./swing.mts";
 
 // ---------------------------------------------------------------- the document
 // swingSteps: score SSI by swing step (app/swing.mts) rather than per point; absent means off, and a spec carries it only when on.
 // castingSchool: the school the Faster Casting cap follows (vault-lib.mts fcCapFor); absent means from the character's skills.
 // rarity: among equally good suits, prefer higher- or lower-rarity pieces (issue #262); absent means any. It breaks exact ties only (the solvers' tolerance 0).
-export interface BuildIntent { floors: Record<string, number>; softFloors: string[]; weights: Record<string, number>; floorBonus: number; resistCaps: Record<string, number>; swingSteps?: boolean | undefined; castingSchool?: string | undefined; rarity?: RarityPreference | undefined }
+// goals: the ranked goals `weights` were compiled from (issue #292, vault-lib.mts compileGoals); absent for weights set by hand. `weights` is always what the solvers score with.
+export interface BuildIntent { floors: Record<string, number>; softFloors: string[]; weights: Record<string, number>; floorBonus: number; resistCaps: Record<string, number>; swingSteps?: boolean | undefined; castingSchool?: string | undefined; rarity?: RarityPreference | undefined; goals?: Goals | undefined }
 // The buffs counted as always on, and the numbers edited for them (app/buffs.mts's inputs; the rest are the character's own).
 export interface BuildBuffs { on: string[]; skills: Record<string, number> }
 // "character": the character's STR, else 125 (run-settings.mts defaultStrLimit).
@@ -39,7 +41,7 @@ export interface TemplateEntry { name?: string | undefined; description?: string
 export interface ProfilesV3 { schemaVersion: 3; characters: Record<string, CharacterEntry>; templates: Record<string, TemplateEntry>; [key: string]: unknown }
 export const PROFILES_VERSION = 3;
 
-const INTENT_KEYS = ["floors", "softFloors", "weights", "floorBonus", "resistCaps", "swingSteps", "castingSchool", "rarity"] as const;
+const INTENT_KEYS = ["floors", "softFloors", "weights", "floorBonus", "resistCaps", "swingSteps", "castingSchool", "rarity", "goals"] as const;
 const POOL_KEYS = ["lockedSlots", "excludeTags", "excludeSkills", "excludeRoots", "excludeWeapons", "ubwsAnyWeapon", "allowOthersWorn", "allowGargoyle", "medOnly", "strLimit", "weaponMustHave", "onlyRoots"] as const;
 const SEARCH_KEYS = ["budgetMs", "exact", "restarts", "altCount", "altTol"] as const;
 const GOAL_KINDS = ["best", "cheapest"];
@@ -56,7 +58,7 @@ const map = <T,>(x: Record<string, T> | null | undefined): Record<string, T> => 
 export function buildSpec(s: BuildSpecSource = {}): BuildSpec {
   const i = s.intent || {}, p = s.pool || {}, b = s.buffs || {}, mustHave = list(p.weaponMustHave), only = list(p.onlyRoots);
   return {
-    intent: { floors: map(i.floors), softFloors: list(i.softFloors), weights: map(i.weights), floorBonus: i.floorBonus ?? SPEC_DEFAULTS.floorBonus, resistCaps: map(i.resistCaps), ...(i.swingSteps ? { swingSteps: true } : {}), ...(i.castingSchool ? { castingSchool: i.castingSchool } : {}), ...(i.rarity ? { rarity: i.rarity } : {}) },
+    intent: { floors: map(i.floors), softFloors: list(i.softFloors), weights: map(i.weights), floorBonus: i.floorBonus ?? SPEC_DEFAULTS.floorBonus, resistCaps: map(i.resistCaps), ...(i.swingSteps ? { swingSteps: true } : {}), ...(i.castingSchool ? { castingSchool: i.castingSchool } : {}), ...(i.rarity ? { rarity: i.rarity } : {}), ...(i.goals ? { goals: copyGoals(i.goals) } : {}) },
     buffs: { on: list(b.on), skills: map(b.skills) },
     pool: { lockedSlots: list(p.lockedSlots), excludeTags: list(p.excludeTags), excludeSkills: list(p.excludeSkills), excludeRoots: list(p.excludeRoots),
       excludeWeapons: list(p.excludeWeapons), ubwsAnyWeapon: p.ubwsAnyWeapon ?? SPEC_DEFAULTS.ubwsAnyWeapon, allowOthersWorn: !!p.allowOthersWorn, allowGargoyle: !!p.allowGargoyle, medOnly: !!p.medOnly,
@@ -126,10 +128,14 @@ export type FlatProfile = TemplateSource & { excludeRoots?: Array<number | strin
 export function specFromProfile(p: FlatProfile, buffs: BuildBuffs = { on: [], skills: {} }): BuildSpec {
   return buildSpec({ intent: p, pool: { ...p, strLimit: p.strLimit ?? SPEC_DEFAULTS.strLimit }, buffs });
 }
-// A spec as the panel's settings: "character" leaves the STR limit out (the panel shows the character's).
+// A spec as the panel's settings: "character" leaves the STR limit out (the panel shows the character's). With goals in
+// force the weights and swing-step switch are compiled from them again (issue #292), so a hand-edited file or a newer
+// rank table never leaves weights the goals did not set.
 export function profileFromSpec(spec: BuildSpecSource): FlatProfile {
   const { intent, pool } = buildSpec(spec), { strLimit, ...rest } = pool;
-  return { ...intent, ...rest, ...(strLimit === "character" ? {} : { strLimit }) };
+  const { swingSteps: _steps, ...own } = intent, c = goalsActive(intent.goals) ? compileGoals(intent.goals, intent.weights) : null;
+  const goals = c ? { ...own, weights: c.weights, ...(c.swingSteps ? { swingSteps: true } : {}) } : intent;
+  return { ...goals, ...rest, ...(strLimit === "character" ? {} : { strLimit }) };
 }
 // A template's spec from the panel's settings: the template fields only (no skipped containers or STR limit), and the
 // buffs on when given (their numbers are the character's, not the build's, so none are kept).
@@ -216,7 +222,7 @@ export interface PlannedBuild {
 }
 // A spec turned into a build for a character: the profile the solvers score with and its buff plan, the pool settings,
 // the search options and the saved run's settings snapshot. The shard's rules are the ones vault-lib holds (setRules).
-// With a character the profile carries `swing`: stamina before gear (raw DEX and the buffs' in-cap shares on DEX and the Stamina pool), the worn suit's stamina, and whether SSI is scored by step (app/swing.mts).
+// With a character the profile carries `swing`: stamina before gear (raw DEX and the buffs' in-cap shares on DEX and the Stamina pool), the worn suit's stamina, and whether SSI is scored by step (app/swing.mts); a goal of a swing every N s caps SSI (goalSsiCap).
 export function planBuild(spec: BuildSpec, { character, worn, race, suit }: PlanContext): PlannedBuild {
   const flat = profileFromSpec(spec), edits = spec.buffs.skills, on = spec.buffs.on;
   const p: Profile = { ...flat, race: race || "human" };
@@ -227,13 +233,24 @@ export function planBuild(spec: BuildSpec, { character, worn, race, suit }: Plan
   const exact = s.exact ?? RUN_DEFAULTS.exact, budgetMs = s.budgetMs ?? RUN_DEFAULTS.budgetMs, altCount = s.altCount ?? 0, altTol = s.altTol ?? 0;
   const opts = { restarts: s.restarts ?? RUN_DEFAULTS.restarts, exact, ...(exact ? { timeBudgetMs: budgetMs } : {}), ...(exact && altCount > 0 ? { alternatives: { count: altCount, tolerance: altTol } } : {}), ...(intent.rarity ? { tieBreak: { rarity: intent.rarity, tolerance: 0 } } : {}) };
   const snapshot: RunSettings = { ...pool, floors: intent.floors, softFloors: intent.softFloors, weights: intent.weights, race: p.race!, resistCaps: intent.resistCaps,
-    restarts: s.restarts || RUN_DEFAULTS.restarts, exact, budgetMs: budgetMs || RUN_DEFAULTS.budgetMs, altCount, altTol, ...(buffs ? { buffs } : {}), ...(intent.swingSteps ? { swingSteps: true } : {}), ...(intent.castingSchool ? { castingSchool: intent.castingSchool } : {}), ...(intent.rarity ? { rarity: intent.rarity } : {}) };
+    restarts: s.restarts || RUN_DEFAULTS.restarts, exact, budgetMs: budgetMs || RUN_DEFAULTS.budgetMs, altCount, altTol, ...(buffs ? { buffs } : {}), ...(intent.swingSteps ? { swingSteps: true } : {}), ...(intent.castingSchool ? { castingSchool: intent.castingSchool } : {}), ...(intent.rarity ? { rarity: intent.rarity } : {}), ...(intent.goals ? { goals: intent.goals } : {}) };
   const { prof, r } = planBuffs(base, character, plan);
   if (!plan.stats || !r) return { base, plan, profile: prof, buffs, pool, opts, snapshot };
   const share = (k: string): number => (r.shares[k] || []).filter((x) => !x.outside).reduce((n, x) => n + x.value, 0);
   const stamBase = plan.stats.dex + share("dexBonus") + share("stamPool");
   const wornStam = totalsOf(Object.fromEntries(worn.map((it) => [String(it.serial), toOptItem(it)]))).stamPool || 0;
-  return { base, plan, profile: { ...prof, swing: { stamBase, refStamina: stamBase + wornStam, steps: !!intent.swingSteps } }, buffs, pool, opts, snapshot };
+  // a goal of a swing every N s caps SSI at what that delay takes with the weapon worn now, at the worn suit's stamina: SSI past it counts nothing
+  const held = heldWeapon(Object.fromEntries(worn.filter((it) => it.slot).map((it) => [it.slot!, toOptItem(it)])));
+  const cap = held ? goalSsiCap(intent.goals, held.speed!, stamBase + wornStam) : null;
+  const scored = cap == null ? prof : planBuffs({ ...base, caps: { ...base.caps, ssi: cap } }, character, plan).prof;
+  return { base, plan, profile: { ...scored, swing: { stamBase, refStamina: stamBase + wornStam, steps: !!intent.swingSteps } }, buffs, pool, opts, snapshot };
+}
+// The SSI a Swing speed goal of a swing every N s stops counting at (issue #292): the least effective SSI that gives that
+// delay for a weapon of `speedS` at `stamina`; null for the fastest swing, goals not in force, no Swing speed goal, or a
+// delay past the SSI cap.
+export function goalSsiCap(goals: Goals | null | undefined, speedS: number, stamina: number): number | null {
+  if (!goalsActive(goals) || goals.swing?.mode !== "every" || goals.swing.seconds == null || !goals.ranks.some((r) => r.includes("ssi"))) return null;
+  return ssiForTicks(speedS, stamina, Math.round(goals.swing.seconds * 4));
 }
 
 // ---------------------------------------------------------------- v2 → v3

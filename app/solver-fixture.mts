@@ -40,6 +40,14 @@ export const defaultProfiles: { templates: Record<string, Template> } = { templa
 // The four generic starters only: the build templates (#212) have their own test (solver-builtins.test.mts), so the
 // equivalence and buff-plan tests and their hashes stay on these.
 export const templateNames = ["melee", "caster", "archer", "tank"];
+// The four starters' weights before issue #292 compiled them from goals: the tests that pin a profile or run key by hash
+// (buffs-plan.test.mts), the one that needs a low median (diagnostics.test.mts) and the buffs proof (solver.test.mts) keep building from these.
+export const STARTERS_BEFORE_GOALS: Record<string, Record<string, number>> = {
+  melee: { physResist: 6, fireResist: 6, coldResist: 6, poisonResist: 6, energyResist: 6, dci: 10, hci: 10, ssi: 5, di: 3, hpRegen: 4, dexBonus: 4, strBonus: 3, hpi: 3, stamRegen: 3, stamInc: 2, lmc: 1, luck: 0.05, tagPenalty: -25 },
+  caster: { fc: 60, fcr: 30, lrc: 8, lmc: 8, manaRegen: 8, dci: 6, castingFocus: 6, sdi: 4, intBonus: 4, physResist: 4, fireResist: 4, coldResist: 4, poisonResist: 4, energyResist: 4, manaInc: 3, hpi: 2, tagPenalty: -25 },
+  archer: { physResist: 6, fireResist: 6, coldResist: 6, poisonResist: 6, energyResist: 6, ssi: 10, hci: 10, dci: 8, di: 6, dexBonus: 5, stamInc: 3, stamRegen: 3, hpi: 3, intBonus: 3, manaInc: 2, manaRegen: 2, strBonus: 2, lmc: 2, hpRegen: 1, luck: 0.05, tagPenalty: -25 },
+  tank: { physResist: 8, fireResist: 8, coldResist: 8, poisonResist: 8, energyResist: 8, dci: 10, hpRegen: 8, hpi: 6, stamRegen: 3, strBonus: 3, hci: 2, reflectPhys: 1, tagPenalty: -25 },
+};
 
 // cell(profileName, {soft, overrides}) — the fixture's pools/current, plus a profile built from one
 // of the shipped default templates: `overrides` land on the template (before effectiveProfile), so

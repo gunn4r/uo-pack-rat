@@ -70,7 +70,7 @@ test("[fast] build spec: the panel's flat profile goes to a spec and back; absen
   assert.equal(empty.pool.strLimit, "character");
   assert.equal(empty.pool.ubwsAnyWeapon, true);
   assert.equal(empty.intent.floorBonus, 1000);
-  const { swingSteps: _off, castingSchool: _school, weaponMustHave: _none, rarity: _any, ...defaults } = templateFrom();   // a spec carries the swing-step switch only when on, the casting school only when one is named, weaponMustHave only when it lists any, and the rarity preference only when set
+  const { swingSteps: _off, castingSchool: _school, weaponMustHave: _none, rarity: _any, goals: _noGoals, ...defaults } = templateFrom();   // a spec carries the swing-step switch only when on, the casting school only when one is named, weaponMustHave only when it lists any, and the rarity preference and goals only when set
   assert.deepEqual(profileFromSpec(empty), { ...defaults, excludeRoots: [] }, "the same defaults templateFrom fills in");
 });
 

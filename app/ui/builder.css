@@ -82,6 +82,20 @@
   .rule-row.weight > .rule-name { grid-column: 1 / -1; display: block; }
   .b-wscale > span:first-child, .b-wmarks span:not(:first-child):not(:last-child) { display: none; }
 }
+/* the Goals tab (issue #292): one row per goal, "=" (the rank above's) · rank and name · what it counts · ↑ ↓ ✕ (row actions), and
+   Swing speed's swing time under its row; at phone width what it counts goes under the name */
+.b-goals { display: flex; flex-direction: column; gap: var(--space-1); margin: 0; padding: 0; list-style: none; }
+.b-goal { display: grid; grid-template-columns: 2.25rem minmax(0, 1fr) auto auto; gap: var(--space-1) var(--space-1-5); align-items: center; padding: var(--space-1) var(--space-1-5) var(--space-1) var(--space-1); border: var(--border-width) solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); }
+.b-goal-name:focus { outline: none; }   /* the focus target after Add, not a tab stop: ringed when reached by keyboard */
+.b-goal-name:focus-visible { box-shadow: var(--ring-focus); border-radius: var(--radius-sm); }
+.b-goal-name { display: flex; align-items: baseline; gap: var(--space-1-5); min-width: 0; overflow-wrap: anywhere; font-weight: var(--weight-medium); }
+.b-goal-rank { flex: none; color: var(--color-text-muted); font-variant-numeric: tabular-nums; }
+.b-goal-counts { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.b-swing-goal { grid-column: 2 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); }
+@media (max-width: 720px) {
+  .b-goal { grid-template-columns: 2.25rem minmax(0, 1fr) auto; }
+  .b-goal-counts { grid-column: 2; grid-row: 2; }
+}
 /* a requirement's name, and under it what it came to in the result shown */
 .b-need { display: flex; flex-direction: column; min-width: 0; }
 .b-need-status:empty { display: none; }
@@ -406,6 +420,16 @@
 .b-side-card { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3) var(--space-4); }
 .b-side-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-2); }
 .b-side-head h3, .b-side-card > h3 { margin: 0; }
+/* How the goals went (issue #292): a goal per row, its rank and name · its total against its cap, and under them maxed or not */
+.b-went { margin: 0; padding: 0; list-style: none; }
+.b-went > li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0 var(--space-2); padding: var(--space-1-5) 0; border-bottom: var(--border-width) solid var(--color-border); }
+.b-went > li:last-child { border-bottom: 0; }
+.b-went > li > :nth-child(n+3) { grid-column: 1 / -1; }
+.b-went-name { display: flex; gap: var(--space-1-5); min-width: 0; }
+.b-went-val { font-weight: var(--weight-semibold); font-variant-numeric: tabular-nums; }
+.b-went-swing { grid-column: 1 / -1; }   /* the swing in seconds takes its own line under the goal's name */
+.b-trades { display: flex; flex-direction: column; gap: var(--space-1); margin: 0; padding: 0; list-style: none; }
+.b-side-card > p { margin: 0; }
 .b-run-rows { margin: 0; padding: 0; list-style: none; }
 .pr .b-run-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: var(--space-2); width: 100%; padding: var(--space-1-5) 0; border: 0; border-bottom: var(--border-width) solid var(--color-border); border-radius: 0; background: none; color: var(--color-text); font-weight: var(--weight-regular); text-align: left; }
 .pr .b-run-row:hover { background: var(--color-row-hover); }
