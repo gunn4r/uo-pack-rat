@@ -1,21 +1,22 @@
-// houses.mts — the house map: GET /api/houses[/<id>], GET /api/facet-map/<facet>.png, GET /api/house-map and PUT /api/house-map/<id>.
+// houses.mts — the house map: GET /api/houses[/<id>], GET /api/facet-map/<facet>.png, GET /api/house-map, PUT /api/house-map/<id>, GET /api/house-claims and DELETE /api/house-claims/<id>.
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { DATA_DIR_MODE } from "../../config.mts";
 import { renderRegion, type Region } from "../../facet-map.mts";
-import type { HouseSource } from "../../house-capture.mts";
+import { tileBounds, type HouseSource } from "../../house-capture.mts";
 import type { HouseApiResponse, HousesApiResponse } from "../../house-model-types.mts";
 import { plotBounds, plotSize } from "../../house-model.mts";
-import { checkHouseEntry, forgetHouse, isForgotten, isHouseId, isStamp, readHouseMap, saveHouseEntry, MAX_ENTRY_BYTES } from "../../house-names.mts";
+import { checkHouseEntry, isHouseId, readHouseMap, saveHouseEntry, MAX_ENTRY_BYTES } from "../../house-names.mts";
 import { safeAppendLog } from "../../log.mts";
 import { encodePng } from "../../png.mts";
 import { readBody } from "../../read-body.mts";
+import { claimsOver } from "../../store/house-claims.mts";
 import { send } from "../respond.mts";
 import type { Route } from "../router.mts";
 import type { ServerContext } from "../context.mts";
 
 export function routes(ctx: ServerContext): Route[] {
-  const { config: CONFIG, getInventory, houseService } = ctx;
+  const { config: CONFIG, getInventory, houseService, houseClaimsStore } = ctx;
   // <data>/house-map.json: the player's house names (issue #164, app/house-names.mts). A file that does not parse is
   // moved aside and the houses read unnamed; what a read set aside or left out goes to the log, once while it stays the same.
   const HOUSE_MAP = join(CONFIG.dataDir, "house-map.json");
@@ -27,10 +28,10 @@ export function routes(ctx: ServerContext): Route[] {
     return got;
   }
   return [
-    // The houses the scans captured (issue #10): GET /api/houses lists each with its size, chest count and container serials (what Inventory's "Show on map" looks an item's container up in), GET /api/houses/<id> serves one house's whole model. Both come from the fold's cache and the built models are memoised (houseModel); an id that names no house (or does not decode) is a 404. A house the player removed (POST /api/house-map/<id>/forget) is left out until a newer capture of it.
+    // The houses the scans captured (issue #10): GET /api/houses lists each with its size, chest count and container serials (what Inventory's "Show on map" looks an item's container up in), GET /api/houses/<id> serves one house's whole model. Both come from the fold's cache and the built models are memoised (houseModel); an id that names no house (or does not decode) is a 404. Only the houses the player claimed are served (issue #299): a house whose bounds overlap a claim on its facet.
     { method: "GET", path: /^\/api\/houses(?:\/|$)/, handle: async (_req, res, url) => {
-      const { inv, houses: all } = await getInventory(), map = readNames().doc;
-      const houses = all.filter((h) => !isForgotten(map, h.id, h.capturedAt));
+      const { inv, houses: all } = await getInventory(), map = readNames().doc, claims = houseClaimsStore.read();
+      const houses = all.filter((h) => claimsOver(claims, h.facet, tileBounds(h.tiles)).length);
       let one: HouseSource | undefined;
       if (url.pathname !== "/api/houses") {
         let id: string | null;
@@ -84,18 +85,15 @@ export function routes(ctx: ServerContext): Route[] {
       if (refused) return send(res, 409, { ok: false, error: refused });
       return send(res, 200, { ok: true, entry: checked.entry });
     } },
-    // Remove a house from the House map (issue #298): POST /api/house-map/<id>/forget {capturedAt}, the capture the page showed. It stays hidden until a newer capture of it; its name and areas are kept. A bad id or stamp is a 400; a forget that would grow the file past the size a read accepts is a 409, as a PUT's is.
-    { method: "POST", path: /^\/api\/house-map\/[^/]+\/forget$/, handle: async (req, res, url) => {
+    // The houses claimed (issue #299, <data>/house-claims.json, app/store/house-claims.mts): GET lists them; DELETE /api/house-claims/<id> unclaims the house of that id, every claim over it gone (the claim of its id, and any claim its bounds overlap on its facet, made before it was customized), so it leaves the House map. A malformed id is a 400.
+    { method: "GET", path: "/api/house-claims", handle: (_req, res) => send(res, 200, { ok: true, claims: houseClaimsStore.read() }) },
+    { method: "DELETE", path: /^\/api\/house-claims\/[^/]+$/, handle: async (_req, res, url) => {
       let id: string | null;
-      try { id = decodeURIComponent(url.pathname.slice("/api/house-map/".length, -"/forget".length)); } catch { id = null; }
+      try { id = decodeURIComponent(url.pathname.slice("/api/house-claims/".length)); } catch { id = null; }
       if (id == null || !isHouseId(id)) return send(res, 400, { ok: false, error: "that is not a house id (<facet>-<x>-<y>)" });
-      const capturedAt = (await readBody(req, { limit: 1024 }) as { capturedAt?: unknown } | null)?.capturedAt;
-      if (!isStamp(capturedAt)) return send(res, 400, { ok: false, error: "capturedAt must be the house's capture time" });
-      const { doc, readOnly } = readNames();
-      if (readOnly) return send(res, 409, { ok: false, error: readOnly });
-      mkdirSync(dirname(HOUSE_MAP), { recursive: true, mode: DATA_DIR_MODE });
-      const refused = forgetHouse(HOUSE_MAP, doc, id, capturedAt);
-      if (refused) return send(res, 409, { ok: false, error: refused });
+      const house = (await getInventory()).houses.find((h) => h.id === id), claims = houseClaimsStore.read();
+      const over = new Set(house ? claimsOver(claims, house.facet, tileBounds(house.tiles)) : []);
+      houseClaimsStore.write(claims.filter((c) => c.id !== id && !over.has(c)));
       return send(res, 200, { ok: true });
     } },
   ];

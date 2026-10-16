@@ -14,6 +14,7 @@ import type { OrganizeService } from "../services/organize.mts";
 import type { createProfilesStore } from "../store/profiles.mts";
 import type { createUiPrefsStore } from "../store/ui-prefs.mts";
 import type { createBlacklistStore } from "../store/blacklist.mts";
+import type { createHouseClaimsStore } from "../store/house-claims.mts";
 import type { createItemKindsStore } from "../store/item-kinds.mts";
 import type { createOrganizeStore } from "../store/organize.mts";
 import type { createOrganizeStateStore } from "../store/organize-state.mts";
@@ -56,6 +57,7 @@ export interface ServerContext {
   profilesStore: ReturnType<typeof createProfilesStore>;
   uiPrefsStore: ReturnType<typeof createUiPrefsStore>;
   blacklistStore: ReturnType<typeof createBlacklistStore>;
+  houseClaimsStore: ReturnType<typeof createHouseClaimsStore>;
   itemKindsStore: ReturnType<typeof createItemKindsStore>;
   organizeStore: ReturnType<typeof createOrganizeStore>;
   organizeStateStore: ReturnType<typeof createOrganizeStateStore>;

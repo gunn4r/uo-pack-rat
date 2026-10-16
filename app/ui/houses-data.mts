@@ -1,4 +1,4 @@
-// ui/houses-data.mts — the House map's data (issue #10): the houses the scans captured (GET /api/houses), the player's house names and areas (GET /api/house-map, one house's entry saved with PUT /api/house-map/<id>, a house removed with POST /api/house-map/<id>/forget), and each house's model (GET /api/houses/<id>). The list and the names are fetched on every load, since a rename or a new UO folder can change them outside the page. A model is kept by its house id and capture stamp (capturedAt and captures) while the inventory and the tiledata it was built from stay the same, so showing the map again fetches only the models that changed.
+// ui/houses-data.mts — the House map's data (issue #10): the houses the scans captured (GET /api/houses), the player's house names and areas (GET /api/house-map, one house's entry saved with PUT /api/house-map/<id>, a house unclaimed with DELETE /api/house-claims/<id>), and each house's model (GET /api/houses/<id>). The list and the names are fetched on every load, since a rename or a new UO folder can change them outside the page. A model is kept by its house id and capture stamp (capturedAt and captures) while the inventory and the tiledata it was built from stay the same, so showing the map again fetches only the models that changed.
 import { api, type ApiOptions } from "./api.mts";
 import type { HouseApiResponse, HouseMapApiResponse, HouseMapEntry, HouseMapPutApiResponse, HouseSummary, HousesApiResponse } from "./api-types.mts";
 
@@ -29,8 +29,8 @@ export function housesData(get: Get = api) {
   }
   // Replace one house's whole entry; the server's answer (the entry as saved, or null once removed).
   const saveEntry = (id: string, entry: HouseMapEntry): Promise<HouseMapPutApiResponse> => get<HouseMapPutApiResponse>(`/api/house-map/${encodeURIComponent(id)}`, { method: "PUT", body: entry });
-  // Remove a house from the map as captured at `capturedAt` (issue #298): a newer capture brings it back.
-  const forget = (id: string, capturedAt: string): Promise<{ ok: boolean }> => get<{ ok: boolean }>(`/api/house-map/${encodeURIComponent(id)}/forget`, { method: "POST", body: { capturedAt } });
-  return { load, saveEntry, forget };
+  // Unclaim a house (issue #299): it leaves the map until it is claimed again in game.
+  const unclaim = (id: string): Promise<{ ok: boolean }> => get<{ ok: boolean }>(`/api/house-claims/${encodeURIComponent(id)}`, { method: "DELETE" });
+  return { load, saveEntry, unclaim };
 }
 export const houses = housesData();

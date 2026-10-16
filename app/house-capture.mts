@@ -16,6 +16,13 @@ export function houseIdOf(facet: number | null | undefined, tiles: HouseTile[]):
   return `${facet ?? "x"}-${x}-${y}`;
 }
 
+// A house's bounding box over every tile (the front steps included), x0/y0 the corner its id is named by.
+export function tileBounds(tiles: ReadonlyArray<readonly number[]>): { x0: number; y0: number; x1: number; y1: number } {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const t of tiles) { if (t[1]! < x0) x0 = t[1]!; if (t[1]! > x1) x1 = t[1]!; if (t[2]! < y0) y0 = t[2]!; if (t[2]! > y1) y1 = t[2]!; }
+  return { x0, y0, x1, y1 };
+}
+
 export type HouseCapture = NonNullable<ScanV2["house"]>;
 export interface HouseGroup { id: string; captures: Array<{ scan: number; house: HouseCapture }>; items: Map<number, { item: HouseItem; scan: number }>; containers: Map<number, { item: HouseItem; scan: number }>; trash: Map<number, number>; supersededBy: number[] }
 
@@ -42,11 +49,7 @@ export function houseGroups(scans: ScanV2[]): HouseGroup[] {
     }
     for (const [serial] of g.trash) if (!g.containers.delete(serial)) g.trash.delete(serial);
   }
-  const boxOf = (h: HouseCapture): { facet: number | null; t: number; x0: number; y0: number; x1: number; y1: number } => {
-    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-    for (const t of h.tiles) { if (t[1]! < x0) x0 = t[1]!; if (t[1]! > x1) x1 = t[1]!; if (t[2]! < y0) y0 = t[2]!; if (t[2]! > y1) y1 = t[2]!; }
-    return { facet: h.facet ?? null, t: captureTime(h.capturedAt), x0, y0, x1, y1 };
-  };
+  const boxOf = (h: HouseCapture): { facet: number | null; t: number; x0: number; y0: number; x1: number; y1: number } => ({ facet: h.facet ?? null, t: captureTime(h.capturedAt), ...tileBounds(h.tiles) });
   const boxes = groups.map((g) => ({ g, all: g.captures.map((c) => boxOf(c.house)) }));
   for (const { g, all } of boxes) {
     const last = all[all.length - 1]!;

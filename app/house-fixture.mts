@@ -1,8 +1,19 @@
 // house-fixture.mts — synthetic houses for the house model's tests (issue #10): no game data, every graphic below is made up and described by the synthetic tiledata built here.
 import { FLAG, readTileData, type TileData } from "./tiledata.mts";
 import { syntheticTileData, type FixtureTile } from "./tiledata-fixture.mts";
-import { houseIdOf, type HouseSource, type HouseTile, type HouseItem } from "./house-capture.mts";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { houseIdOf, tileBounds, type HouseSource, type HouseTile, type HouseItem } from "./house-capture.mts";
 import type { HouseContainerInput } from "./house-model.mts";
+
+// Claims (issue #299) written to <data>/house-claims.json, so the server serves the houses: one over each house's bounds, or with `everything`, one over the whole of every facet (for tests about anything but which houses are claimed).
+export function claimHouses(dir: string, houses: Array<{ facet: number | null; tiles: ReadonlyArray<readonly number[]> }> | "everything"): void {
+  const claimedAt = "2026-10-16T10:00:00Z";
+  const claims = houses === "everything"
+    ? [null, 0, 1, 2, 3, 4, 5].map((facet) => ({ id: `${facet ?? "x"}-0-0`, facet, bounds: { x0: 0, y0: 0, x1: 999_999, y1: 999_999 }, claimedAt }))
+    : houses.map((h) => ({ id: houseIdOf(h.facet, h.tiles as HouseTile[]), facet: h.facet, bounds: tileBounds(h.tiles), claimedAt }));
+  writeFileSync(join(dir, "house-claims.json"), JSON.stringify(claims));
+}
 
 export const G = { dirt: 1, pavers: 2, grass: 3, planks: 4, stoneWall: 5, brickWall: 6, window: 7, stairs: 8, roof: 9, table: 10, door: 11, teleporter: 12, rug: 13, banister: 14, block: 15, woodWall: 16 } as const;
 

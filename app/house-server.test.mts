@@ -1,16 +1,16 @@
 // house-server.test.mts — the house routes (issue #10) and the facet overview (issue #164) on a real server and temp data folder.
 //
-// `GET /api/houses` and `GET /api/houses/<id>` (issue #10) on a real server and temp data folder: a scan with a house capture listed with its size and chest count and served as a model holding all its ground chests (a backpack root with a position left out), the same model served again while nothing changes and a newer capture replacing it, a footprint grown west replacing the old house so a chest inside both counts once, a house holding no ground chest listed with 0 containers, the tiledata.mul found through a temp TazUO launcher profile, the model still built without one, and an unknown, path-like or malformed id answered 404; a chest a capture saw and no scan opened served as not opened with its tiledata name and kept out of `GET /api/inventory`; the `uoFolder` setting (it wins over TazUO's launcher, `tiledataFrom` names the reason when there is no tiledata: override-missing, unreadable, no-client; PUT refuses a relative path, a UNC path and a folder without tiledata.mul without echoing it, a hand-edited UNC or relative one reads as override-missing without touching the filesystem, and a TazUO client with no launcher profile reports no-tazuo-profile). All `[fast]`. A house-only file (issue #10) moves the served house's `capturedAt` on while `GET /api/inventory` stays identical (the card, its stats and its worn set included) but for `snapshotCount`. The areas (issue #10): a PUT with 32 areas of 16 rectangles (past the old 8 kB body cap) saved and read back, an area-only house giving no name in the houses list or the model, a bad colour a 400, and no name with no areas removing the entry. Also the house names (issue #164): `GET /api/house-map` empty, a `PUT /api/house-map/<id>` stored trimmed and shown in the houses list and the model, an empty name removing it, and a bad name, a malformed id or a non-JSON body refused. A trash container an earlier capture listed in `trash` (issue #162) is no stack and not unopened when a later far capture lists it, while an opened chest in the same list is still drawn. A removed house (issue #298, `POST /api/house-map/<id>/forget`) leaves the list and the model, its name kept and a rename not bringing it back, a bad id or stamp a 400, until a newer capture lists it again; a forget that would grow the file past 1 MB is a 409 and leaves the file as it was. The facet overview (issue #164): each listed house's `plot` (its bounds without the front steps), `GET /api/facet-map/<facet>.png` from a temp UO folder holding a synthetic `facet01.mul` (a PNG of a region, never larger than asked or than the region, the aspect ratio kept, `x-region` naming the region drawn; a region reaching past the facet slid inside it, and one larger than the facet cut to it), a 400 for a facet outside 0 to 5, a missing, malformed or partial region or a bad size, and a 404 `{ok:false, reason}` for a missing (`missing`) or undecodable (`unreadable`) file, a UO folder set in Settings that is gone (`override-missing`) and without a client (`no-client`), the folder never in the answer; an image at most 2048 pixels on either side (1024 by default, a tall region capped by its height).
+// `GET /api/houses` and `GET /api/houses/<id>` (issue #10) on a real server and temp data folder: a scan with a house capture listed with its size and chest count and served as a model holding all its ground chests (a backpack root with a position left out), the same model served again while nothing changes and a newer capture replacing it, a footprint grown west replacing the old house so a chest inside both counts once, a house holding no ground chest listed with 0 containers, the tiledata.mul found through a temp TazUO launcher profile, the model still built without one, and an unknown, path-like or malformed id answered 404; a chest a capture saw and no scan opened served as not opened with its tiledata name and kept out of `GET /api/inventory`; the `uoFolder` setting (it wins over TazUO's launcher, `tiledataFrom` names the reason when there is no tiledata: override-missing, unreadable, no-client; PUT refuses a relative path, a UNC path and a folder without tiledata.mul without echoing it, a hand-edited UNC or relative one reads as override-missing without touching the filesystem, and a TazUO client with no launcher profile reports no-tazuo-profile). All `[fast]`. A house-only file (issue #10) moves the served house's `capturedAt` on while `GET /api/inventory` stays identical (the card, its stats and its worn set included) but for `snapshotCount`. The areas (issue #10): a PUT with 32 areas of 16 rectangles (past the old 8 kB body cap) saved and read back, an area-only house giving no name in the houses list or the model, a bad colour a 400, and no name with no areas removing the entry. Also the house names (issue #164): `GET /api/house-map` empty, a `PUT /api/house-map/<id>` stored trimmed and shown in the houses list and the model, an empty name removing it, and a bad name, a malformed id or a non-JSON body refused. A trash container an earlier capture listed in `trash` (issue #162) is no stack and not unopened when a later far capture lists it, while an opened chest in the same list is still drawn. Claimed houses (issue #299): a house never claimed hidden from the list and the model, one whose bounds overlap a claim on its facet served (a claim made before it was customized included), `GET /api/house-claims` listing the claims, `DELETE /api/house-claims/<id>` removing every claim over that house and keeping the rest, a malformed id a 400, a newer capture not bringing an unclaimed house back; the first start with claims claiming the houses named or given areas (their saved bounds, else the id's corner tile), less the ones removed before (`forgotten`), never again once the file exists, and writing nothing when there is nothing to claim. The facet overview (issue #164): each listed house's `plot` (its bounds without the front steps), `GET /api/facet-map/<facet>.png` from a temp UO folder holding a synthetic `facet01.mul` (a PNG of a region, never larger than asked or than the region, the aspect ratio kept, `x-region` naming the region drawn; a region reaching past the facet slid inside it, and one larger than the facet cut to it), a 400 for a facet outside 0 to 5, a missing, malformed or partial region or a bad size, and a 404 `{ok:false, reason}` for a missing (`missing`) or undecodable (`unreadable`) file, a UO folder set in Settings that is gone (`override-missing`) and without a client (`no-client`), the folder never in the answer; an image at most 2048 pixels on either side (1024 by default, a tall region capped by its height).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { resolveConfig, ensureLayout } from "./config.mts";
 import type { ServerHandle } from "./vault-server.mts";
 import { startTestServer } from "./server-fixture.mts";
 import { houseScan } from "./organize-fixture.mts";
-import { vaultHouse, G } from "./house-fixture.mts";
+import { claimHouses, vaultHouse, G } from "./house-fixture.mts";
 import { syntheticTileData } from "./tiledata-fixture.mts";
 import { syntheticFacet, rgb555, type Run } from "./facet-fixture.mts";
 import { FLAG } from "./tiledata.mts";
@@ -18,8 +18,8 @@ import type { HouseModel } from "./house-model.mts";
 
 const PACK = 0x40020001;
 
-// settings: fields laid over settings.json before the server starts, as a player's hand edit would be.
-async function serve(withTiledata: boolean, settings?: Record<string, unknown>): Promise<{ s: ServerHandle; dir: string }> {
+// settings: fields laid over settings.json before the server starts, as a player's hand edit would be. claims: every house claimed (issue #299).
+async function serve(withTiledata: boolean, settings?: Record<string, unknown>, claims = true): Promise<{ s: ServerHandle; dir: string }> {
   const dir = mkdtempSync(join(tmpdir(), "pr-house-"));
   const config = ensureLayout(resolveConfig(["--port", "0", "--data", dir], {}));
   const { house, chests } = vaultHouse();
@@ -34,6 +34,7 @@ async function serve(withTiledata: boolean, settings?: Record<string, unknown>):
     writeFileSync(join(dir, "settings.json"), JSON.stringify({ schemaVersion: 1, shard: "uoalive", client: { adapter: "tazuo", scriptsDir: scripts } }));
   }
   if (settings) writeFileSync(join(dir, "settings.json"), JSON.stringify({ ...JSON.parse(readFileSync(join(dir, "settings.json"), "utf8")), ...settings }));
+  if (claims) claimHouses(dir, "everything");
   const s = await startTestServer(config);
   return { s, dir };
 }
@@ -255,39 +256,57 @@ test("[fast] houses: a hand-edited UO folder of a UNC or relative shape is repor
   } finally { await s.close(); rmSync(bare, { recursive: true, force: true }); }
 });
 
-// The house names (issue #164): GET /api/house-map and PUT /api/house-map/<id> on <data>/house-map.json, and each house's name in GET /api/houses and /api/houses/<id>.
-// Remove a house (issue #298): POST /api/house-map/<id>/forget with the capture the page showed.
-test("[fast] houses: a removed house is gone from the list and the model, its name kept, until a newer capture brings it back", async () => {
-  const { s, dir } = await serve(false);
+// Claimed houses (issue #299): GET /api/houses serves only the houses a claim in <data>/house-claims.json covers; DELETE /api/house-claims/<id> unclaims one.
+test("[fast] houses: only a claimed house is served, a customized one whose bounds overlap its claim too, and DELETE /api/house-claims/<id> unclaims it for good", async () => {
+  const { s, dir } = await serve(false, undefined, false);
   try {
     const { house } = vaultHouse();
-    const post = async (path: string, body: unknown): Promise<number> => (await fetch(s.url + path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })).status;
-    assert.equal((await putName(s, "/api/house-map/1-3000-1000", { name: "Not mine" })).status, 200);
-    assert.equal(await post("/api/house-map/1-3000-1000/forget", { capturedAt: house.capturedAt }), 200);
-    assert.deepEqual((await get<{ houses: unknown[] }>(s, "/api/houses")).body.houses, []);
+    const list = async (): Promise<string[]> => (await get<{ houses: Array<{ id: string }> }>(s, "/api/houses")).body.houses.map((h) => h.id);
+    const del = async (id: string): Promise<number> => (await fetch(s.url + "/api/house-claims/" + id, { method: "DELETE" })).status;
+    assert.deepEqual(await list(), [], "a house captured and never claimed is hidden");
     assert.equal((await get(s, "/api/houses/1-3000-1000")).status, 404);
-    const file = JSON.parse(readFileSync(join(dir, "house-map.json"), "utf8"));
-    assert.deepEqual(file.forgotten, [{ id: "1-3000-1000", capturedAt: house.capturedAt }]);
-    assert.equal(file.houses["1-3000-1000"].name, "Not mine");
-    assert.equal((await putName(s, "/api/house-map/1-3000-1000", { name: "Still not mine" })).status, 200);
-    assert.deepEqual((await get<{ houses: unknown[] }>(s, "/api/houses")).body.houses, [], "a rename keeps it forgotten");
-    for (const [path, body] of [["/api/house-map/plain/forget", { capturedAt: house.capturedAt }], ["/api/house-map/1-3000-1000/forget", {}], ["/api/house-map/1-3000-1000/forget", { capturedAt: "soon" }]] as const) {
-      assert.equal(await post(path, body), 400, JSON.stringify([path, body]));
-    }
+    // A claim made before the house grew a tile west: its id is another, its bounds overlap.
+    writeFileSync(join(dir, "house-claims.json"), JSON.stringify([
+      { id: "1-3001-1000", facet: 1, bounds: { x0: 3001, y0: 1000, x1: 3006, y1: 1006 }, claimedAt: "2026-10-16T10:00:00Z", by: "Tester" },
+      { id: "1-5000-5000", facet: 1, bounds: { x0: 5000, y0: 5000, x1: 5010, y1: 5010 }, claimedAt: "2026-10-16T10:00:00Z" },
+      { id: "2-3000-1000", facet: 2, bounds: { x0: 3000, y0: 1000, x1: 3006, y1: 1006 }, claimedAt: "2026-10-16T10:00:00Z" }]));
+    assert.deepEqual(await list(), ["1-3000-1000"]);
+    assert.equal((await get(s, "/api/houses/1-3000-1000")).status, 200);
+    assert.deepEqual((await get<{ claims: Array<{ id: string }> }>(s, "/api/house-claims")).body.claims.map((c) => c.id), ["1-3001-1000", "1-5000-5000", "2-3000-1000"]);
+    for (const id of ["plain", "..%2Fetc", "%E0%A4%A"]) assert.equal(await del(id), 400, id);
+    assert.equal(await del("1-3000-1000"), 200);
+    assert.deepEqual(await list(), []);
+    assert.deepEqual((JSON.parse(readFileSync(join(dir, "house-claims.json"), "utf8")) as Array<{ id: string }>).map((c) => c.id), ["1-5000-5000", "2-3000-1000"], "every claim over the house goes, the others stay");
     const later = new Date(Date.parse(house.capturedAt) + 60e3).toISOString();
     const scan = houseScan({ character: "Other", scannedAt: later, boxes: [], things: [] });
     writeFileSync(join(dir, "scans", "house-later.json"), JSON.stringify({ ...scan, house: { facet: 1, capturedAt: later, at: { x: 3003, y: 1003 }, tiles: house.tiles, items: house.items } }));
-    const back = await get<{ houses: Array<{ id: string; name?: string }> }>(s, "/api/houses");
-    assert.deepEqual(back.body.houses.map((h) => [h.id, h.name]), [["1-3000-1000", "Still not mine"]]);
-    // A map just under the size a read accepts: a forget that would tip it over is refused and the file left as it was.
-    const doc = (pad: number): string => JSON.stringify({ version: 1, houses: { "1-1-0": { name: "Full", notes: "x".repeat(pad) } } }, null, 2) + "\n";
-    const near = doc(1e6 - 20 - (doc(0).length));
-    writeFileSync(join(dir, "house-map.json"), near);
-    assert.equal(await post("/api/house-map/1-3000-1000/forget", { capturedAt: later }), 409);
-    assert.equal(readFileSync(join(dir, "house-map.json"), "utf8"), near);
+    assert.deepEqual(await list(), [], "a newer capture does not bring it back");
+    assert.equal(await del("1-3000-1000"), 200, "unclaiming again changes nothing");
   } finally { await s.close(); }
 });
 
+test("[fast] houses: the first start with claims claims the houses named or given areas, less the ones removed before, and never again", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "pr-house-claims-"));
+  const start = (): Promise<ServerHandle> => startTestServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
+  const area = { id: "a", name: "Hall", level: 0, color: "area-1", rects: [{ x0: 201, y0: 301, x1: 202, y1: 302 }] };
+  writeFileSync(join(dir, "house-map.json"), JSON.stringify({ version: 1, houses: {
+    "1-3000-1000": { name: "Home", bounds: { x0: 3000, y0: 1000, x1: 3006, y1: 1006, facet: 1 } },
+    "1-200-300": { name: "", bounds: { x0: 200, y0: 300, x1: 210, y1: 310, facet: 1 }, areas: [area] },
+    "1-600-700": { name: "Cabin" },
+    "1-400-400": { name: "Not mine" } }, forgotten: [{ id: "1-400-400", capturedAt: "2026-10-01T10:00:00Z" }] }));
+  let s = await start();
+  await s.close();
+  const claims = JSON.parse(readFileSync(join(dir, "house-claims.json"), "utf8")) as Array<{ id: string; facet: number; bounds: unknown; by?: string }>;
+  assert.deepEqual(claims.map((c) => [c.id, c.facet, c.bounds, c.by]), [["1-3000-1000", 1, { x0: 3000, y0: 1000, x1: 3006, y1: 1006 }, undefined], ["1-200-300", 1, { x0: 200, y0: 300, x1: 210, y1: 310 }, undefined], ["1-600-700", 1, { x0: 600, y0: 700, x1: 600, y1: 700 }, undefined]]);
+  writeFileSync(join(dir, "house-claims.json"), "[]\n");   // the player unclaimed both
+  s = await start();
+  try { assert.equal(readFileSync(join(dir, "house-claims.json"), "utf8"), "[]\n", "an unclaimed house stays unclaimed"); } finally { await s.close(); }
+  const bare = mkdtempSync(join(tmpdir(), "pr-house-claims-"));
+  const t = await startTestServer(ensureLayout(resolveConfig(["--port", "0", "--data", bare], {})));
+  try { assert.equal(existsSync(join(bare, "house-claims.json")), false, "nothing to claim writes nothing"); } finally { await t.close(); }
+});
+
+// The house names (issue #164): GET /api/house-map and PUT /api/house-map/<id> on <data>/house-map.json, and each house's name in GET /api/houses and /api/houses/<id>.
 async function putName(s: ServerHandle, path: string, body: unknown): Promise<{ status: number; body: { ok: boolean; error?: string; entry?: unknown } }> {
   const r = await fetch(s.url + path, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   return { status: r.status, body: (await r.json()) as { ok: boolean; error?: string; entry?: unknown } };

@@ -1,8 +1,9 @@
 # packrat-scanner.py — ATTENDED one-shot: snapshot everything this character can see for
 # the Pack Rat app. Reads every equipped layer, the backpack (nested bags included), the
-# bank box if it is open, and every openable container within SCAN_RANGE tiles (recursively: bags
-# in chests in chests). Dumps RAW tooltips — the app does all parsing, so this script stays dumb
-# and never needs updating when a new property shows up. When done (or stopped) it closes the
+# bank box if it is open, and, inside a house the player claimed with the panel's Claim this house
+# (issue #299), every openable container within SCAN_RANGE tiles (recursively: bags in chests in
+# chests). Dumps RAW tooltips — the app does all parsing, so this script stays dumb and never needs
+# updating when a new property shows up. When done (or stopped) it closes the
 # container windows it opened itself; one you already had open stays open.
 #
 # Output: <data directory>/inbox/tazuo/<Character>-<YYYYmmdd-HHMMSS>.json (one file per run). The
@@ -74,7 +75,7 @@ def read_blacklist(path):
 
 
 ADAPTER_ID = "tazuo"
-ADAPTER_VERSION = "2.18.0"
+ADAPTER_VERSION = "2.19.0"
 CAPABILITIES = {
     "layers": ["OneHanded", "TwoHanded", "Shoes", "Pants", "Shirt", "Helmet", "Gloves",
                "Ring", "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic",
@@ -162,13 +163,18 @@ def sysmsg(msg, hue=OK_HUE):
 
 
 # BEGIN generated: tazuo/tooltip_lines
-def tooltip_lines(serial, wait=True):
-    """The item's tooltip lines. `wait`: the client waits up to 10 s for a tooltip it does not have yet
-    (TazUO's ItemNameAndProps); without it, a missing tooltip reads as none at once."""
+def tooltip_lines(serial, wait=True, timeout=None):
+    """The item's tooltip lines. `wait`: the client waits for a tooltip it does not have yet, up to
+    `timeout` s (TazUO's ItemNameAndProps, 10 s when not given); without it, a missing tooltip reads as
+    none at once. A build whose ItemNameAndProps takes no timeout gets the read without one (its own
+    10 s wait), never none: a trash check must not fall back to a cached name ("barrel") over it."""
     try:
-        data = API.ItemNameAndProps(int(serial), wait)
+        data = API.ItemNameAndProps(int(serial), wait) if timeout is None else API.ItemNameAndProps(int(serial), wait, timeout)
     except Exception:
-        data = None
+        try:
+            data = API.ItemNameAndProps(int(serial), wait) if timeout is not None else None
+        except Exception:
+            data = None
     return [ln.strip() for ln in str(data or "").splitlines() if ln.strip()]
 # END generated: tazuo/tooltip_lines
 
@@ -209,10 +215,14 @@ def is_container(item, name):
 
 
 # BEGIN generated: tazuo/is_trash
+TRASH_WAIT_S = 2         # the longest wait for a container's tooltip name, so a recall among many bags is caught soon
+
+
 def is_trash(serial, name):
     """A container is trash by its tooltip name ("A Trash Barrel"): the client's own cached name for the
-    art may be just "barrel". The cached name is the fallback when the tooltip reads nothing."""
-    lines = tooltip_lines(serial)
+    art may be just "barrel". The cached name is the fallback when the tooltip reads nothing within
+    TRASH_WAIT_S."""
+    lines = tooltip_lines(serial, True, TRASH_WAIT_S)
     return bool(TRASH_RE.search(lines[0] if lines else name or ""))
 # END generated: tazuo/is_trash
 
@@ -280,9 +290,9 @@ def root_entry(serial, kind, label):
 # END generated: tazuo/root
 
 
-# BEGIN generated: tazuo/house_capture
-def house_capture(px, py):
-    """The house the player stands in, from the client's own house tiles (issue #10), or None outside a house or on a build without the multi calls. Only the tiles connected to the player's tile are kept (8-connected in x/y, across every z), so a neighbouring house is left out. What stands on the ground inside that footprint is recorded too (both left out when the ground cannot be read): furniture and fixtures as `items`, and every container as `containers` (2.11.0), opened or not, so the map shows a chest from the first scan even when it stood too far away to open; corpses, trash containers and blacklisted ones are left out (trash by name, or because the roots pass, which runs first, read its tooltip; a far trash container whose cached name is generic cannot be told apart without a tooltip query, which this never makes). Names come from tiledata in the app, so this asks the server nothing. A house of more than HOUSE_MAX_TILES tiles is left out and its count noted in HOUSE_TOO_LARGE."""
+# BEGIN generated: tazuo/house_footprint
+def house_footprint(px, py):
+    """The house the player stands in, from the client's own house tiles (issue #10): its tiles, sorted, each [graphic, x, y, z, impassable], and the (x, y) cells they cover; or None outside a house or on a build without the multi calls. Only the tiles connected to the player's tile are kept (8-connected in x/y, across every z), so a neighbouring house is left out. It reads only tiles the client has: it records nothing and asks the server nothing."""
     at = getattr(API, "GetMultisAt", None)
     area = getattr(API, "GetMultisInArea", None)
     if at is None or area is None:
@@ -312,7 +322,68 @@ def house_capture(px, py):
                 if n in cells and n not in keep:
                     keep.add(n)
                     todo.append(n)
-    tiles = sorted(t for c in keep for t in cells[c])
+    return sorted(t for c in keep for t in cells[c]), keep
+
+
+def house_here():
+    """The house the player stands in as (id, facet, bounds), or None (house_footprint, so only tiles are read). The id is the app's (app/house-capture.mts houseIdOf: "<facet>-<x0>-<y0>", the facet "x" when the client cannot say), and bounds {x0, y0, x1, y1} span every tile."""
+    try:
+        fp = house_footprint(int(API.Player.X), int(API.Player.Y))
+    except Exception:
+        return None
+    if fp is None:
+        return None
+    xs, ys = [c[0] for c in fp[1]], [c[1] for c in fp[1]]
+    f = facet()
+    bounds = {"x0": min(xs), "y0": min(ys), "x1": max(xs), "y1": max(ys)}
+    return "%s-%d-%d" % ("x" if f is None else f, bounds["x0"], bounds["y0"]), f, bounds
+# END generated: tazuo/house_footprint
+
+
+# BEGIN generated: tazuo/claims
+CLAIMS_PATH = os.path.join(data_dir(), "house-claims.json")
+NOT_CLAIMED = "Not in one of your houses, so only your pack was scanned. Use Claim this house in the Pack Rat panel if this house is yours."
+
+
+def read_claims(path):
+    """The valid entries of <data directory>/house-claims.json, the houses the player claimed (issue #299:
+    {id, facet, bounds: {x0, y0, x1, y1}, claimedAt, by?}), the same checks app/store/house-claims.mts makes.
+    A bad entry is dropped, and a missing, unreadable or oversized file reads as none: a scan then reads
+    no ground container."""
+    def ok(e):
+        b = e.get("bounds") if isinstance(e, dict) else None
+        return (isinstance(b, dict) and isinstance(e.get("id"), str) and re.match(r"^(\d{1,3}|x)-\d{1,6}-\d{1,6}$", e["id"])
+                and "facet" in e and (e["facet"] is None or (type(e["facet"]) is int and 0 <= e["facet"] <= 5))
+                and all(type(b.get(k)) is int and 0 <= b[k] <= 999999 for k in ("x0", "y0", "x1", "y1")) and b["x0"] <= b["x1"] and b["y0"] <= b["y1"]
+                and isinstance(e.get("claimedAt"), str) and 0 < len(e["claimedAt"]) <= 40 and ("by" not in e or (isinstance(e["by"], str) and 0 < len(e["by"]) <= 64)))
+    try:
+        if os.path.getsize(path) > 256 * 1024:
+            return []
+        with open(path, "r", encoding="utf-8") as f:
+            doc = json.load(f)
+        return [e for e in doc if ok(e)][:500]
+    except Exception:
+        return []
+
+
+def claims_over(here, claims):
+    """The claims the house `here` (house_here's (id, facet, bounds), or None) falls under: on its facet,
+    with bounds overlapping its own, so a house customized since it was claimed still counts."""
+    if here is None:
+        return []
+    f, b = here[1], here[2]
+    return [c for c in claims if c.get("facet") == f and c["bounds"]["x0"] <= b["x1"] and b["x0"] <= c["bounds"]["x1"]
+            and c["bounds"]["y0"] <= b["y1"] and b["y0"] <= c["bounds"]["y1"]]
+# END generated: tazuo/claims
+
+
+# BEGIN generated: tazuo/house_capture
+def house_capture(px, py):
+    """The house the player stands in, from the client's own house tiles (issue #10), or None outside a house or on a build without the multi calls (house_footprint). What stands on the ground inside that footprint is recorded too (both left out when the ground cannot be read): furniture and fixtures as `items`, and every container as `containers` (2.11.0), opened or not, so the map shows a chest from the first scan even when it stood too far away to open; corpses, trash containers and blacklisted ones are left out (trash by name, or because the roots pass, which runs first, read its tooltip; a far trash container whose cached name is generic cannot be told apart without a tooltip query, which this never makes). Names come from tiledata in the app, so this asks the server nothing. A house of more than HOUSE_MAX_TILES tiles is left out and its count noted in HOUSE_TOO_LARGE."""
+    fp = house_footprint(px, py)
+    if fp is None:
+        return None
+    tiles, keep = fp
     if len(tiles) > HOUSE_MAX_TILES:
         HOUSE_TOO_LARGE.append(len(tiles))
         return None
@@ -615,6 +686,8 @@ def main():
     p = API.Player
     char = str(p.Name)
     start = (int(p.X), int(p.Y), facet())
+    # Ground containers are opened, and the house captured, only inside a house the player claimed (issue #299); finding the house reads only tiles.
+    claimed = bool(claims_over(house_here(), read_claims(CLAIMS_PATH)))
     snap = {"schemaVersion": 2, "character": char,
             "scannedAt": rfc3339_now(),
             "adapter": {"id": ADAPTER_ID, "version": ADAPTER_VERSION, "client": "TazUO",
@@ -651,7 +724,7 @@ def main():
     except Exception:
         pass
     bank_open = any(r[1] == "bank" for r in roots)
-    scan_ground = SCAN_GROUND and not (GROUND_ONLY_AT_HOME and bank_open)
+    scan_ground = SCAN_GROUND and claimed and not (GROUND_ONLY_AT_HOME and bank_open)
     ground = (API.GetItemsOnGround(SCAN_RANGE) or []) if scan_ground else []
     if SCAN_GROUND and bank_open and GROUND_ONLY_AT_HOME:
         sysmsg("Bank is open: ground containers skipped (backpack + bank only).", INFO_HUE)
@@ -706,7 +779,7 @@ def main():
         return
 
     try:
-        house = None if cut else house_capture(int(API.Player.X), int(API.Player.Y))
+        house = None if cut or not claimed else house_capture(int(API.Player.X), int(API.Player.Y))
     except Exception:   # the house is extra: a capture that fails never costs the scan
         house = None
     if house is not None:
@@ -740,6 +813,8 @@ def main():
         sysmsg(f"  {len(NO_TOOLTIP)} item{'s' if len(NO_TOOLTIP) != 1 else ''} recorded without a tooltip (it did not arrive in time)", INFO_HUE)
     if cut == "moved":
         sysmsg("You moved away, so the scan stopped. Run it again from where you started.", ALARM_HUE)
+    elif not claimed and not bank_open:     # at a bank, the line above already says the ground was skipped
+        sysmsg(NOT_CLAIMED, ALARM_HUE)
 
 
 try:
