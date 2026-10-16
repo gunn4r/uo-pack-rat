@@ -1,6 +1,6 @@
 // stores.test.mts — each store in `app/store/` on its own: size caps, bad files and the exact bytes written.
 //
-// each store in `app/store/` on its own: its size cap at the cap and one byte past it (blacklist 256 KiB, organize-state 4 MB, item-kinds and organize their own limits), what a missing, damaged or partly bad file reads as (moved aside, empty, salvaged or skipped) with the exact warning, log or problem text, and the exact bytes each write leaves (indent, trailing newline, a run compact with none); a file a newer Pack Rat made (organize, item-kinds, profiles) read as far as it can be, marked read-only and never written over. All `[fast]`; they pin the policies the routes rely on while the server is split.
+// each store in `app/store/` on its own: its size cap at the cap and one byte past it (blacklist and house claims 256 KiB, organize-state 4 MB, item-kinds and organize their own limits), what a missing, damaged or partly bad file reads as (moved aside, empty, salvaged or skipped) with the exact warning, log or problem text, and the exact bytes each write leaves (indent, trailing newline, a run compact with none); a file a newer Pack Rat made (organize, item-kinds, profiles) read as far as it can be, marked read-only and never written over. The house claims (issue #299): which claims a house's bounds fall under, and the claims made at the first start from the houses named or given areas. All `[fast]`; they pin the policies the routes rely on while the server is split.
 import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -11,6 +11,7 @@ import { createSettingsStore } from "./settings.mts";
 import { createProfilesStore } from "./profiles.mts";
 import { createUiPrefsStore } from "./ui-prefs.mts";
 import { createBlacklistStore } from "./blacklist.mts";
+import { claimsFromHouseMap, claimsOver, createHouseClaimsStore, MAX_CLAIMS, type HouseClaim } from "./house-claims.mts";
 import { createItemKindsStore } from "./item-kinds.mts";
 import { createOrganizeStore } from "./organize.mts";
 import { createOrganizeStateStore } from "./organize-state.mts";
@@ -178,6 +179,48 @@ test("[fast] stores: blacklist reads up to 256 KiB, a larger, missing or damaged
   assert.deepEqual(store.read(), [entry, { ...entry, serial: 5, where: "Home" }]);
   store.write([entry]);
   assert.equal(readFileSync(f, "utf8"), "[\n {\n  \"serial\": 1234,\n  \"name\": \"Chest\",\n  \"addedAt\": \"2026-01-01T00:00:00.000Z\"\n }\n]\n");
+});
+
+test("[fast] stores: house claims read up to 256 KiB, a larger, missing or damaged file as empty, only valid entries, and write indent 1 with a newline (issue #299)", () => {
+  const d = dir(), f = join(d, "house-claims.json"), store = createHouseClaimsStore(f);
+  const claim = { id: "1-3000-1000", facet: 1, bounds: { x0: 3000, y0: 1000, x1: 3006, y1: 1006 }, claimedAt: "2026-10-16T10:00:00Z", by: "Tester" };
+  assert.deepEqual([store.read(), store.exists()], [[], false]);
+  writeFileSync(f, padded([claim], 256 * 1024));
+  assert.deepEqual([store.read(), store.exists()], [[claim], true]);
+  writeFileSync(f, padded([claim], 256 * 1024 + 1));
+  assert.deepEqual(store.read(), []);
+  assert.ok(existsSync(f), "never moved aside");
+  writeFileSync(f, "{oops");
+  assert.deepEqual(store.read(), []);
+  const bad = [{ ...claim, id: "home" }, { ...claim, facet: 6 }, { ...claim, facet: undefined }, { ...claim, bounds: { x0: 9, y0: 0, x1: 1, y1: 1 } }, { ...claim, bounds: { x0: 0, y0: 0, x1: 1 } },
+    { ...claim, claimedAt: 5 }, { ...claim, by: 7 }, null, "1-3000-1000"];
+  const { by: _by, ...unsigned } = claim;
+  writeFileSync(f, JSON.stringify([claim, ...bad, { ...unsigned, facet: null, id: "x-1-2", extra: 1 }]));
+  assert.deepEqual(store.read(), [claim, { ...unsigned, facet: null, id: "x-1-2" }]);
+  writeFileSync(f, JSON.stringify(Array.from({ length: MAX_CLAIMS + 1 }, () => claim)));
+  assert.equal(store.read().length, MAX_CLAIMS);
+  store.write([unsigned]);
+  assert.equal(readFileSync(f, "utf8"), JSON.stringify([unsigned], null, 1) + "\n");
+});
+
+test("[fast] stores: claimsOver matches a claim on the same facet whose bounds overlap, and claimsFromHouseMap claims the named houses and those with areas, less the forgotten (issue #299)", () => {
+  const claim = (id: string, facet: number | null, x0: number, y0: number, x1: number, y1: number): HouseClaim => ({ id, facet, bounds: { x0, y0, x1, y1 }, claimedAt: "t" });
+  const claims = [claim("1-0-0", 1, 0, 0, 10, 10), claim("x-0-0", null, 0, 0, 10, 10), claim("1-50-50", 1, 50, 50, 60, 60)];
+  assert.deepEqual(claimsOver(claims, 1, { x0: 10, y0: 10, x1: 20, y1: 20 }).map((c) => c.id), ["1-0-0"], "a corner shared is an overlap");
+  assert.deepEqual(claimsOver(claims, 1, { x0: 11, y0: 0, x1: 20, y1: 10 }).map((c) => c.id), []);
+  assert.deepEqual(claimsOver(claims, null, { x0: 5, y0: 5, x1: 6, y1: 6 }).map((c) => c.id), ["x-0-0"], "an unknown facet matches only an unknown one");
+  assert.deepEqual(claimsOver(claims, 2, { x0: 5, y0: 5, x1: 6, y1: 6 }), []);
+  const area = { id: "a", name: "Hall", level: 0, color: "area-1", rects: [{ x0: 1, y0: 1, x1: 2, y1: 2 }] };
+  const map = { version: 1 as const, houses: {
+    "1-3000-1000": { name: "Home", bounds: { x0: 3000, y0: 1000, x1: 3006, y1: 1006, facet: 1 } },
+    "1-200-300": { name: "", areas: [area] },
+    "x-7-8": { name: "Unknown facet" },
+    "1-400-400": { name: "Removed" },
+    "1-500-500": { name: "" } }, forgotten: [{ id: "1-400-400", capturedAt: "2026-10-01T10:00:00Z" }] };
+  assert.deepEqual(claimsFromHouseMap(map, "now"), [
+    { id: "1-3000-1000", facet: 1, bounds: { x0: 3000, y0: 1000, x1: 3006, y1: 1006 }, claimedAt: "now" },
+    { id: "1-200-300", facet: 1, bounds: { x0: 200, y0: 300, x1: 200, y1: 300 }, claimedAt: "now" },
+    { id: "x-7-8", facet: null, bounds: { x0: 7, y0: 8, x1: 7, y1: 8 }, claimedAt: "now" }]);
 });
 
 test("[fast] stores: item-kinds reads up to MAX_KINDS_BYTES, moves a larger or damaged file aside with a warning, and writes kindsText", (t) => {

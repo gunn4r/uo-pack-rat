@@ -82,7 +82,7 @@ def read_blacklist(path):
 
 
 ADAPTER_ID = "tazuo"
-ADAPTER_VERSION = "2.18.0"
+ADAPTER_VERSION = "2.19.0"
 CAPABILITIES = {
     "layers": ["OneHanded", "TwoHanded", "Shoes", "Pants", "Shirt", "Helmet", "Gloves",
                "Ring", "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic",
@@ -153,11 +153,12 @@ def sysmsg(msg, hue=OK_HUE):
 
 
 # BEGIN generated: tazuo/tooltip_lines
-def tooltip_lines(serial, wait=True):
-    """The item's tooltip lines. `wait`: the client waits up to 10 s for a tooltip it does not have yet
-    (TazUO's ItemNameAndProps); without it, a missing tooltip reads as none at once."""
+def tooltip_lines(serial, wait=True, timeout=None):
+    """The item's tooltip lines. `wait`: the client waits for a tooltip it does not have yet, up to
+    `timeout` s (TazUO's ItemNameAndProps, 10 s when not given); without it, a missing tooltip reads as
+    none at once."""
     try:
-        data = API.ItemNameAndProps(int(serial), wait)
+        data = API.ItemNameAndProps(int(serial), wait) if timeout is None else API.ItemNameAndProps(int(serial), wait, timeout)
     except Exception:
         data = None
     return [ln.strip() for ln in str(data or "").splitlines() if ln.strip()]
@@ -200,10 +201,14 @@ def is_container(item, name):
 
 
 # BEGIN generated: tazuo/is_trash
+TRASH_WAIT_S = 2         # the longest wait for a container's tooltip name, so a recall among many bags is caught soon
+
+
 def is_trash(serial, name):
     """A container is trash by its tooltip name ("A Trash Barrel"): the client's own cached name for the
-    art may be just "barrel". The cached name is the fallback when the tooltip reads nothing."""
-    lines = tooltip_lines(serial)
+    art may be just "barrel". The cached name is the fallback when the tooltip reads nothing within
+    TRASH_WAIT_S."""
+    lines = tooltip_lines(serial, True, TRASH_WAIT_S)
     return bool(TRASH_RE.search(lines[0] if lines else name or ""))
 # END generated: tazuo/is_trash
 

@@ -12,6 +12,8 @@ The TazUO house map refresh (2.12.0, issue #10): a house-only file (`kind: "hous
 
 Issue #298: a TazUO scan whose player moves more than 15 tiles away or to another facet partway stops right after the root under way and before the house capture (the roots finished are written, that one and the rest left out, no house, the in-game line saying why); a Stop while a root opens, or one that interrupts a pause inside it, writes the roots finished the same way with its own line, and a Stop before any root is finished writes nothing, while a few steps change nothing; tooltips that arrive late (the fake's `late_tooltips`) are waited for, re-asked for only while missing, and ones that never arrive are waited for a bounded time, the root recorded as not opened when most of it has none, else counted in the summary.
 
+Claimed houses (issue #299): the TazUO tests write a claim over the house home() builds (DataDir.claim). A scan opens ground containers and captures the house only inside a claimed house, a customized one whose footprint overlaps the claim included; in an unclaimed house, under a claim on another facet, outside any house, or with a missing or broken claims file it reads only the pack and equipped items and says why; the house map refresh writes nothing in an unclaimed house and asks the server nothing to find out. A bag whose tooltip never arrives is checked for trash for at most 2 s.
+
 The Razor scanner records a worn piece on its own layer (`GetItemOnLayer` in the fake answers an item added with `Layer=`); that test's world is the one `adapters/razor-enhanced/fixture.scan.json` is made from. With `PACKRAT_TEST_OUTPUTS` set to a folder, `fake_clients.py`'s `run_script` copies every scan a script writes into it, for `app/adapter-outputs.test.mts`.
 
 Run: python3 adapters/test_scanners.py  (app/adapters.test.mts also spawns it, so `npm test` does).
@@ -24,10 +26,13 @@ from fake_clients import PLAYER, World, adapter_path, house_tiles, razor_globals
 PACK, CHEST, BAG, RING, RING2, EMPTY = 0x40000001, 0x40000002, 0x40000003, 0x40000010, 0x40000011, 0x40000004
 TRASH_BARREL, BARREL, TRASH_CHEST = 0x40000300, 0x40000301, 0x40000302
 CHEST2 = 0x40000006
+NOT_CLAIMED = "Not in one of your houses, so only your pack was scanned. Use Claim this house in the Pack Rat panel if this house is yours."
 
 
 def home(world):
-    """A backpack holding a ring, and a chest in reach holding a bag holding a ring."""
+    """A backpack holding a ring, and a chest in reach holding a bag holding a ring, in a house of 12 by 12
+    tiles from (5, 5) (the claims DataDir.claim writes cover it)."""
+    world.multis = house_tiles(5, 5, 12, 12)
     world.add(PACK, PLAYER, name="Backpack", OnGround=False)
     world.add(RING2, PACK, name="Gold Ring", container_like=False, OnGround=False)
     world.add(CHEST, 0, name="Wooden Chest", X=11, Y=10)
@@ -120,9 +125,22 @@ class DataDir(object):
     def opened(self, world):
         return [c[1] for c in world.calls if c[0] == "open"]
 
+    def claim(self, bounds=(5, 5, 16, 16), facets=(None, 0, 1, 2, 3, 4, 5)):
+        """Write <data>/house-claims.json (issue #299): a claim of `bounds` on each of `facets`, the house home()
+        builds by default, so a scan there reads the ground as it did before claims."""
+        x0, y0, x1, y1 = bounds
+        doc = [{"id": "%s-%d-%d" % ("x" if f is None else f, x0, y0), "facet": f, "bounds": {"x0": x0, "y0": y0, "x1": x1, "y1": y1},
+                "claimedAt": "2026-10-16T10:00:00Z", "by": "Tester"} for f in facets]
+        with open(os.path.join(self.data, "house-claims.json"), "w", encoding="utf-8") as f:
+            json.dump(doc, f)
+
 
 class TazUOScanner(DataDir, unittest.TestCase):
     SCRIPT = adapter_path("tazuo", "packrat-scanner.py")
+
+    def setUp(self):
+        super().setUp()
+        self.claim()
 
     def scan(self, world, **kw):
         api = tazuo_api(world, PACK, skills=kw.pop("skills", None))
@@ -136,6 +154,60 @@ class TazUOScanner(DataDir, unittest.TestCase):
         self.assertTrue(self.root(s, CHEST)["opened"])
         self.assertEqual(sorted(i["serial"] for i in s["items"]), [RING, RING2])
         self.assertIn(str(BAG), json.loads(json.dumps(s["containers"])))
+
+    def test_only_a_claimed_house_has_its_ground_scanned_and_its_house_captured(self):
+        for name, claim, multis, opened in (
+                ("a claimed house", (5, 5, 16, 16), house_tiles(5, 5, 12, 12), True),
+                ("a house customized since it was claimed: its footprint overlaps the claim", (5, 5, 16, 16), house_tiles(3, 7, 10, 12), True),
+                ("an unclaimed house", (40, 40, 50, 50), house_tiles(5, 5, 12, 12), False),
+                ("a claim on another facet", (5, 5, 16, 16), house_tiles(5, 5, 12, 12), False),
+                ("outside any house", (5, 5, 16, 16), house_tiles(30, 30, 5, 5), False)):
+            with self.subTest(name):
+                shutil.rmtree(os.path.join(self.data, "inbox"), ignore_errors=True)
+                self.claim(claim, facets=[4 if "facet" in name else 1])
+                w = World(); home(w); w.facet = 1; w.multis = multis
+                self.scan(w)
+                [s] = self.scans("tazuo")
+                if opened:
+                    self.assertTrue(self.root(s, CHEST)["opened"])
+                    self.assertIn("house", s)
+                    self.assertNotIn(NOT_CLAIMED, w.messages)
+                else:
+                    self.assertEqual([r["serial"] for r in s["roots"]], [PACK])
+                    self.assertEqual([i["serial"] for i in s["items"]], [RING2], "the pack is still read")
+                    self.assertNotIn(CHEST, self.opened(w))
+                    self.assertNotIn("house", s)
+                    self.assertIn(NOT_CLAIMED, w.messages)
+
+    def test_a_missing_or_broken_claims_file_reads_as_no_claim(self):
+        for doc in (None, "not json", '{"id": "1-5-5"}', json.dumps([{"id": "1-5-5", "facet": 1, "bounds": {"x0": 16, "y0": 5, "x1": 5, "y1": 16}}])):
+            with self.subTest(doc=doc):
+                shutil.rmtree(os.path.join(self.data, "inbox"), ignore_errors=True)
+                if os.path.exists(os.path.join(self.data, "house-claims.json")):
+                    os.remove(os.path.join(self.data, "house-claims.json"))
+                if doc is not None:
+                    with open(os.path.join(self.data, "house-claims.json"), "w", encoding="utf-8") as f:
+                        f.write(doc)
+                w = World(); home(w); w.facet = 1
+                self.scan(w)
+                [s] = self.scans("tazuo")
+                self.assertEqual([r["serial"] for r in s["roots"]], [PACK])
+
+    def test_a_bag_whose_tooltip_never_arrives_is_checked_for_trash_for_at_most_2_s(self):
+        took = []
+        for late in (False, True):
+            shutil.rmtree(os.path.join(self.data, "inbox"), ignore_errors=True)
+            w = World(); home(w)
+            bags = [BAG + 0x100 + i for i in range(4)]
+            for b in bags:
+                w.add(b, CHEST, name="Bag", OnGround=False)
+            w.late_tooltips = dict((b, None) for b in bags) if late else {}
+            t0 = w.clock.now
+            self.scan(w)
+            took.append(w.clock.now - t0)
+        self.assertTrue(all(b in self.opened(w) for b in bags), "a bag with no tooltip is no trash by its cached name")
+        # The chest's own tooltip wait (8 s at most) and 2 s for each trash check (a bag is checked when it is opened and when it is listed), never the client's own 10 s.
+        self.assertLess(took[1] - took[0], 8 + 2 * 4 * 2)
 
     def only_the_pack(self, w):
         """A stopped scan wrote the backpack it finished and nothing of the chest it was reading, and said so."""
@@ -470,7 +542,7 @@ class TazUOScanner(DataDir, unittest.TestCase):
                 [s] = self.scans("tazuo")
                 self.assertNotIn("house", s)
 
-    def test_a_multi_call_that_raises_leaves_the_house_out_and_the_scan_whole(self):
+    def test_a_multi_call_that_raises_reads_as_no_house_and_the_pack_is_still_scanned(self):
         w = World(); home(w); w.multis = house_tiles(5, 5, 12, 12)
         api = tazuo_api(w, PACK)
         def broken(*a):
@@ -479,7 +551,7 @@ class TazUOScanner(DataDir, unittest.TestCase):
         run_script(self.SCRIPT, w, api=api)
         [s] = self.scans("tazuo")
         self.assertNotIn("house", s)
-        self.assertTrue(self.root(s, CHEST)["opened"])
+        self.assertEqual([r["serial"] for r in s["roots"]], [PACK], "no claimed house can be found, so no ground container is opened")
 
     def test_furniture_inside_the_house_is_recorded_and_containers_are_not(self):
         w = World(); home(w); w.multis = house_tiles(5, 5, 12, 12)
@@ -537,7 +609,7 @@ class TazUOScanner(DataDir, unittest.TestCase):
         self.scan(w)
         self.assertNotIn("trash", self.scans("tazuo")[-1]["house"])
         shutil.rmtree(os.path.join(self.data, "inbox"))
-        w = World(); home(w); trash(w)
+        w = World(); home(w); w.multis = None; trash(w)
         self.scan(w)
         [s] = self.scans("tazuo")
         self.assertNotIn("house", s)
@@ -748,6 +820,11 @@ class TazUORefresh(DataDir, unittest.TestCase):
 
 class TazUOHouseMapRefresh(DataDir, unittest.TestCase):
     SCRIPT = adapter_path("tazuo", "packrat-house-map-refresh.py")
+
+    def setUp(self):
+        super().setUp()
+        self.claim()
+
     def house(self, w):
         """Run the house map refresh with a client that records every tooltip and OPL request."""
         api = tazuo_api(w, PACK)
@@ -780,6 +857,20 @@ class TazUOHouseMapRefresh(DataDir, unittest.TestCase):
         self.assertEqual(self.opened(w), [], "no container is opened")
         self.assertEqual(asked, [], "no tooltip or OPL request")
         self.assertEqual(w.messages, ["Pack Rat house map refresh (Tester) -> %s: 144 tiles, 1 pieces of furniture, 2 containers" % os.path.basename(files[0])])
+
+    def test_only_a_claimed_house_is_captured(self):
+        for name, claim, multis, written in (
+                ("a house customized since it was claimed: its footprint overlaps the claim", (5, 5, 16, 16), house_tiles(3, 7, 10, 12), True),
+                ("an unclaimed house", (40, 40, 50, 50), house_tiles(5, 5, 12, 12), False)):
+            with self.subTest(name):
+                shutil.rmtree(os.path.join(self.data, "inbox"), ignore_errors=True)
+                self.claim(claim, facets=[1])
+                w = World(); home(w); w.facet = 1; w.multis = multis
+                asked = self.house(w)
+                self.assertEqual(len(self.scans("tazuo")), 1 if written else 0)
+                self.assertEqual(asked, [], "finding the house asks the server nothing")
+                if not written:
+                    self.assertEqual(w.messages, [NOT_CLAIMED])
 
     def test_trash_blacklisted_containers_and_corpses_are_left_out_of_the_chests(self):
         w = World(); home(w); w.multis = house_tiles(5, 5, 12, 12)

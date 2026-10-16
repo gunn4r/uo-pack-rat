@@ -16,7 +16,8 @@
 # Output: <data directory>/inbox/tazuo/<Character>-<YYYYmmdd-HHMMSS>-house.json, a house-only file
 # (`"kind": "house"`, no inventory; docs/scan-schema.md). The app's inbox watcher (app/watcher.mjs)
 # picks it up and moves it into <data directory>/scans/ under its own accepted name. Outside a house,
-# or on a client build without the multi calls, it writes nothing and says so. The data directory is
+# or on a client build without the multi calls, it writes nothing and says so; so it does in a house
+# the player has not claimed with the panel's Claim this house (issue #299). The data directory is
 # `packrat-paths.json` beside this script, else $PACKRAT_DATA, else ~/.pack-rat.
 # RUN: press Play anywhere inside a house. Nothing rule-sensitive — stay attended.
 
@@ -81,7 +82,7 @@ def read_blacklist(path):
 
 
 ADAPTER_ID = "tazuo"
-ADAPTER_VERSION = "2.18.0"
+ADAPTER_VERSION = "2.19.0"
 CAPABILITIES = {
     "layers": ["OneHanded", "TwoHanded", "Shoes", "Pants", "Shirt", "Helmet", "Gloves",
                "Ring", "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic",
@@ -203,9 +204,9 @@ def facet():
 # END generated: tazuo/facet
 
 
-# BEGIN generated: tazuo/house_capture
-def house_capture(px, py):
-    """The house the player stands in, from the client's own house tiles (issue #10), or None outside a house or on a build without the multi calls. Only the tiles connected to the player's tile are kept (8-connected in x/y, across every z), so a neighbouring house is left out. What stands on the ground inside that footprint is recorded too (both left out when the ground cannot be read): furniture and fixtures as `items`, and every container as `containers` (2.11.0), opened or not, so the map shows a chest from the first scan even when it stood too far away to open; corpses, trash containers and blacklisted ones are left out (trash by name, or because the roots pass, which runs first, read its tooltip; a far trash container whose cached name is generic cannot be told apart without a tooltip query, which this never makes). Names come from tiledata in the app, so this asks the server nothing. A house of more than HOUSE_MAX_TILES tiles is left out and its count noted in HOUSE_TOO_LARGE."""
+# BEGIN generated: tazuo/house_footprint
+def house_footprint(px, py):
+    """The house the player stands in, from the client's own house tiles (issue #10): its tiles, sorted, each [graphic, x, y, z, impassable], and the (x, y) cells they cover; or None outside a house or on a build without the multi calls. Only the tiles connected to the player's tile are kept (8-connected in x/y, across every z), so a neighbouring house is left out. It reads only tiles the client has: it records nothing and asks the server nothing."""
     at = getattr(API, "GetMultisAt", None)
     area = getattr(API, "GetMultisInArea", None)
     if at is None or area is None:
@@ -235,7 +236,68 @@ def house_capture(px, py):
                 if n in cells and n not in keep:
                     keep.add(n)
                     todo.append(n)
-    tiles = sorted(t for c in keep for t in cells[c])
+    return sorted(t for c in keep for t in cells[c]), keep
+
+
+def house_here():
+    """The house the player stands in as (id, facet, bounds), or None (house_footprint, so only tiles are read). The id is the app's (app/house-capture.mts houseIdOf: "<facet>-<x0>-<y0>", the facet "x" when the client cannot say), and bounds {x0, y0, x1, y1} span every tile."""
+    try:
+        fp = house_footprint(int(API.Player.X), int(API.Player.Y))
+    except Exception:
+        return None
+    if fp is None:
+        return None
+    xs, ys = [c[0] for c in fp[1]], [c[1] for c in fp[1]]
+    f = facet()
+    bounds = {"x0": min(xs), "y0": min(ys), "x1": max(xs), "y1": max(ys)}
+    return "%s-%d-%d" % ("x" if f is None else f, bounds["x0"], bounds["y0"]), f, bounds
+# END generated: tazuo/house_footprint
+
+
+# BEGIN generated: tazuo/claims
+CLAIMS_PATH = os.path.join(data_dir(), "house-claims.json")
+NOT_CLAIMED = "Not in one of your houses, so only your pack was scanned. Use Claim this house in the Pack Rat panel if this house is yours."
+
+
+def read_claims(path):
+    """The valid entries of <data directory>/house-claims.json, the houses the player claimed (issue #299:
+    {id, facet, bounds: {x0, y0, x1, y1}, claimedAt, by?}), the same checks app/store/house-claims.mts makes.
+    A bad entry is dropped, and a missing, unreadable or oversized file reads as none: a scan then reads
+    no ground container."""
+    def ok(e):
+        b = e.get("bounds") if isinstance(e, dict) else None
+        return (isinstance(b, dict) and isinstance(e.get("id"), str) and re.match(r"^(\d{1,3}|x)-\d{1,6}-\d{1,6}$", e["id"])
+                and "facet" in e and (e["facet"] is None or (type(e["facet"]) is int and 0 <= e["facet"] <= 5))
+                and all(type(b.get(k)) is int and 0 <= b[k] <= 999999 for k in ("x0", "y0", "x1", "y1")) and b["x0"] <= b["x1"] and b["y0"] <= b["y1"]
+                and isinstance(e.get("claimedAt"), str) and len(e["claimedAt"]) <= 40 and (e.get("by") is None or (isinstance(e["by"], str) and len(e["by"]) <= 64)))
+    try:
+        if os.path.getsize(path) > 256 * 1024:
+            return []
+        with open(path, "r", encoding="utf-8") as f:
+            doc = json.load(f)
+        return [e for e in doc if ok(e)][:500]
+    except Exception:
+        return []
+
+
+def claims_over(here, claims):
+    """The claims the house `here` (house_here's (id, facet, bounds), or None) falls under: on its facet,
+    with bounds overlapping its own, so a house customized since it was claimed still counts."""
+    if here is None:
+        return []
+    f, b = here[1], here[2]
+    return [c for c in claims if c.get("facet") == f and c["bounds"]["x0"] <= b["x1"] and b["x0"] <= c["bounds"]["x1"]
+            and c["bounds"]["y0"] <= b["y1"] and b["y0"] <= c["bounds"]["y1"]]
+# END generated: tazuo/claims
+
+
+# BEGIN generated: tazuo/house_capture
+def house_capture(px, py):
+    """The house the player stands in, from the client's own house tiles (issue #10), or None outside a house or on a build without the multi calls (house_footprint). What stands on the ground inside that footprint is recorded too (both left out when the ground cannot be read): furniture and fixtures as `items`, and every container as `containers` (2.11.0), opened or not, so the map shows a chest from the first scan even when it stood too far away to open; corpses, trash containers and blacklisted ones are left out (trash by name, or because the roots pass, which runs first, read its tooltip; a far trash container whose cached name is generic cannot be told apart without a tooltip query, which this never makes). Names come from tiledata in the app, so this asks the server nothing. A house of more than HOUSE_MAX_TILES tiles is left out and its count noted in HOUSE_TOO_LARGE."""
+    fp = house_footprint(px, py)
+    if fp is None:
+        return None
+    tiles, keep = fp
     if len(tiles) > HOUSE_MAX_TILES:
         HOUSE_TOO_LARGE.append(len(tiles))
         return None
@@ -287,6 +349,11 @@ def house_capture(px, py):
 # ---------------- the house map refresh itself ----------------
 def main():
     char = str(API.Player.Name)
+    # Only a house the player claimed is captured (issue #299); finding the house reads only tiles.
+    here = house_here()
+    if here is not None and not claims_over(here, read_claims(CLAIMS_PATH)):
+        sysmsg(NOT_CLAIMED, ALARM_HUE)
+        return
     try:
         house = house_capture(int(API.Player.X), int(API.Player.Y))
     except Exception:

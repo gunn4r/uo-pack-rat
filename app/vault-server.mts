@@ -40,6 +40,8 @@ import { createOrganizeStore } from "./store/organize.mts";
 import { createOrganizeStateStore } from "./store/organize-state.mts";
 import { createItemKindsStore } from "./store/item-kinds.mts";
 import { createBlacklistStore } from "./store/blacklist.mts";
+import { claimsFromHouseMap, createHouseClaimsStore } from "./store/house-claims.mts";
+import { readHouseMap } from "./house-names.mts";
 import { createProfilesStore } from "./store/profiles.mts";
 import { createUiPrefsStore } from "./store/ui-prefs.mts";
 import { createSettingsStore } from "./store/settings.mts";
@@ -221,6 +223,12 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   const PANEL_PREFS = join(CONFIG.dataDir, "tazuo-panel.json");
   const savePanel = (change: object): void => writePanelPrefs(PANEL_PREFS, { ...readPanelPrefs(PANEL_PREFS), ...change }, DATA_FILE_MODE);
   const blacklistStore = createBlacklistStore(join(CONFIG.dataDir, "scan-blacklist.json"));
+  // The houses claimed (issue #299). The first start with claims claims the houses already named or given areas, so they keep working; the file then exists, and an unclaimed house stays unclaimed.
+  const houseClaimsStore = createHouseClaimsStore(join(CONFIG.dataDir, "house-claims.json"));
+  if (!houseClaimsStore.exists()) {
+    const claims = claimsFromHouseMap(readHouseMap(join(CONFIG.dataDir, "house-map.json")).doc, new Date().toISOString());
+    if (claims.length) houseClaimsStore.write(claims);
+  }
   const itemKindsStore = createItemKindsStore(join(CONFIG.dataDir, "item-kinds.json"));
   const organizeStore = createOrganizeStore(join(CONFIG.dataDir, "organize.json"));
   const organizeStateStore = createOrganizeStateStore(join(CONFIG.dataDir, "organize-state.json"));
@@ -247,7 +255,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
 
   // Every route, in the order the server tries them (app/http/routes/; docs/architecture.md lists them).
   const ctx: ServerContext = { config: CONFIG, host, clientSearch, clientRunning, updateFetch, packageJson: PACKAGE_JSON, appSettings, setupService, eventBus, houseService,
-    retentionService, jobService, organizeService, getInventory, profilesStore, uiPrefsStore, blacklistStore, itemKindsStore, organizeStore, organizeStateStore, runStore,
+    retentionService, jobService, organizeService, getInventory, profilesStore, uiPrefsStore, blacklistStore, houseClaimsStore, itemKindsStore, organizeStore, organizeStateStore, runStore,
     panelPrefsFile: PANEL_PREFS, savePanel, watchers, timers, mcp };
   const routes: Route[] = [staticRoutes, inventoryRoutes, prefsRoutes, settingsRoutes, setupRoutes, importRoutes, hostRoutes, optimizeRoutes, mcpRoutes, bridgeRoutes,
     forgetRoutes, blacklistRoutes, housesRoutes, kindsRoutes, organizeRoutes].flatMap((make) => make(ctx));

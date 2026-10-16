@@ -14,7 +14,7 @@ import { resolveConfig, ensureLayout } from "./config.mts";
 import type { ServerHandle } from "./vault-server.mts";
 import { startTestServer } from "./server-fixture.mts";
 import { houseScan } from "./organize-fixture.mts";
-import { vaultHouse } from "./house-fixture.mts";
+import { claimHouses, vaultHouse } from "./house-fixture.mts";
 import { sseReader } from "./server-routes-fixture.mts";
 import { emptyRuleQuery, emptyOrganizeConfig, type OrganizeConfig } from "./organize-config.mts";
 import { ACTIONS_OFF, MCP_DEFAULT_PORT, PROTOCOL_VERSIONS } from "./mcp.mts";
@@ -675,7 +675,7 @@ test("[fast] scan follows the bridge, then answers with the newer scan Pack Rat 
 });
 
 test("[fast] scan of the house waits for a newer house capture, and its scanning hint points at list_containers", async () => {
-  const sv = await serve({ demo: false, mcp: { enabled: true, allowActions: true }, before: (dir) => { house(dir); scanBridge(dir); } });
+  const sv = await serve({ demo: false, mcp: { enabled: true, allowActions: true }, before: (dir) => { house(dir); scanBridge(dir); claimHouses(dir, "everything"); } });
   try {
     const port = await mcpPort(sv);
     const slow = call(port, "scan", { what: "house", waitSeconds: 1 });
@@ -745,7 +745,7 @@ test("[fast] organize_trip counts a move as made only when the bridge reports it
 test("[fast] list_containers lists a house's ground containers by id or name, with label, fill, area, position and top kinds; outside lists the rest", async () => {
   const { house: cap, chests } = vaultHouse();
   const first = chests[0]!, FAR = 0x40030001;
-  const sv = await serve({ demo: false, before: (dir) => {
+  const sv = await serve({ demo: false, before: (dir) => { claimHouses(dir, "everything");
     const scan = houseScan({ scannedAt: cap.capturedAt, boxes: [...chests.map((c) => ({ serial: c.serial, pos: { x: c.x, y: c.y, z: c.z, facet: 1 } })), { serial: FAR, pos: { x: 100, y: 100, z: 0, facet: 1 } }],
       things: [{ serial: 0x40031001, name: "Black Pearl", in: first.serial, amount: 50 }, { serial: 0x40031002, name: "Sapphire", in: first.serial }, { serial: 0x40031003, name: "Ruby", in: first.serial }] });
     writeFileSync(join(dir, "scans", "house.json"), JSON.stringify({ ...scan, house: { facet: 1, capturedAt: cap.capturedAt, at: { x: 3003, y: 1003 }, tiles: cap.tiles, items: cap.items } }));

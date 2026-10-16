@@ -361,6 +361,7 @@ class Control(object):
     """A script-built window or control: its text, children, and click / close callbacks."""
     def __init__(self, text="", width=0, height=0):
         self.Text, self.children, self.IsDisposed, self.IsVisible = text, [], False, True
+        self.TextHue = 0
         self.on_click = self.on_disposed = None
         self.X, self.Y, self.Width, self.Height = 0, 0, width, height
 

@@ -8,10 +8,14 @@
 #   Blacklist a container   packrat-blacklist.py
 #   Put away...             Put away (issue #131): files what lies directly in a container you pick with
 #                           a target cursor by the app's Organize rules (see below)
+#   Claim this house        claims the house you stand in (issue #299): scans open ground containers and
+#                           capture the house only inside a claimed one. It reads Unclaim this house inside
+#                           a claimed house, which takes the claim back, and is greyed outside any house
 #   Close                   hides the window; the hotkey shows it again
 # Below the buttons: which Pack Rat scripts are running, whether the bridge is on, and how long ago this
-# character's last scan file was saved. The panel reads only local files and the client's own script
-# list; it never touches the world. Every world action still comes from a click.
+# character's last scan file was saved. The panel reads only local files, the client's own script
+# list and the house tiles where you stand (and, for a claim, the house sign's tooltip); it never touches
+# the world. Every world action still comes from a click.
 #
 # Put away is one click, one run: it raises a target cursor, and the container picked (your backpack, a
 # bag at any depth in it, or a container in a chest on the ground within reach, which the app must have
@@ -107,7 +111,7 @@ def script_prefix(self_name):
 
 
 ADAPTER_ID = "tazuo"
-ADAPTER_VERSION = "2.18.0"
+ADAPTER_VERSION = "2.19.0"
 
 SELF = "packrat-panel.py"
 BRIDGE, BLACKLIST = "packrat-bridge.py", "packrat-blacklist.py"
@@ -156,10 +160,16 @@ DEFAULT_HOTKEY = "CTRL+SHIFT+P"
 HOTKEY_MODS = ("CTRL", "ALT", "SHIFT")
 HOTKEY_KEY_RE = re.compile(r"[A-Z0-9]|F[1-9]|F1[0-2]")    # used with fullmatch
 W, H = 380, 344
-TITLE_HUE, TEXT_HUE, OK_HUE = 1153, 996, 68
+TITLE_HUE, TEXT_HUE, OK_HUE, DIM_HUE = 1153, 996, 68, 902
+CLAIM_MAX = 500           # the claims house-claims.json holds at most (app/store/house-claims.mts)
+SIGN_GRAPHICS = (0x0BD1, 0x0BD2)   # a house sign's art (ServUO HouseSign)
+SIGN_RE = re.compile(r"\bsign\b", re.I)
+OWNER_RE = re.compile(r"^owner:\s*(.+)$", re.I)   # the sign's owner line ("Owner: <name>")
+SIGN_WAIT_S = 1           # how long a claim waits for the sign's tooltip
+SCAN_NAME = re.compile(r"^(.+)-\d{8}[-T]\d{6}")   # a scan file's name: its character's slug, then its stamp
 
 state = {"done": False, "prefix": "", "character": "", "pending": {}, "was_running": set(),
-         "hotkey": None, "window": None, "show_at_login": True, "run": None, "quiet": set()}
+         "hotkey": None, "window": None, "show_at_login": True, "run": None, "quiet": set(), "claim_hue": None}
 ui = {}
 shown = {}
 
@@ -425,6 +435,8 @@ def refresh():
     t = last_scan()
     set_text("scan", "Last scan: " + ("none yet" if t is None else ago(t)))
     away_buttons()
+    here = house_here()
+    claim_button(here, bool(claims_over(here, read_claims(CLAIMS_PATH))))
     write_json_atomic(HEARTBEAT, {"alive": rfc3339_now(), "character": state["character"]})
 
 
@@ -463,6 +475,201 @@ def read_blacklist(path):
     except Exception:
         return []
 # END generated: read_blacklist
+
+
+# BEGIN generated: tazuo/tooltip_lines
+def tooltip_lines(serial, wait=True, timeout=None):
+    """The item's tooltip lines. `wait`: the client waits for a tooltip it does not have yet, up to
+    `timeout` s (TazUO's ItemNameAndProps, 10 s when not given); without it, a missing tooltip reads as
+    none at once."""
+    try:
+        data = API.ItemNameAndProps(int(serial), wait) if timeout is None else API.ItemNameAndProps(int(serial), wait, timeout)
+    except Exception:
+        data = None
+    return [ln.strip() for ln in str(data or "").splitlines() if ln.strip()]
+# END generated: tazuo/tooltip_lines
+
+
+# BEGIN generated: tazuo/house_limits
+HOUSE_RADIUS = 40        # tiles searched around the player for the house's tiles (a castle is about 32 across)
+HOUSE_MAX_TILES = 20000  # a capture larger than this is left out rather than bloating the scan
+HOUSE_ITEM_REACH = 18    # the server sends ground items within about this many tiles
+HOUSE_MULTI_IDS = (0x13EC, 0x147B)   # custom-house multi ids (ServUO HousePlacementTool.cs)
+HOUSE_ITEM_CENTRE_RADIUS = 2   # the bounds include steps and the rim, so their centre sits up to about a tile off the multi origin, and an even-sized plot has a .5 centre
+HOUSE_MAX_ITEMS = 5000   # the scan schema's cap on house items: past it the nearest are kept, so the scan file still validates
+HOUSE_MAX_CONTAINERS = 5000  # the scan schema's cap on the house's containers: past it the nearest are kept
+# END generated: tazuo/house_limits
+
+
+# BEGIN generated: tazuo/house_footprint
+def house_footprint(px, py):
+    """The house the player stands in, from the client's own house tiles (issue #10): its tiles, sorted, each [graphic, x, y, z, impassable], and the (x, y) cells they cover; or None outside a house or on a build without the multi calls. Only the tiles connected to the player's tile are kept (8-connected in x/y, across every z), so a neighbouring house is left out. It reads only tiles the client has: it records nothing and asks the server nothing."""
+    at = getattr(API, "GetMultisAt", None)
+    area = getattr(API, "GetMultisInArea", None)
+    if at is None or area is None:
+        return None
+    try:
+        if not list(at(px, py) or []):
+            return None
+        found = list(area(px - HOUSE_RADIUS, py - HOUSE_RADIUS, px + HOUSE_RADIUS, py + HOUSE_RADIUS) or [])
+    except Exception:
+        return None
+    cells = {}
+    for m in found:
+        try:
+            t = [int(m.Graphic), int(m.X), int(m.Y), int(m.Z), 1 if bool(getattr(m, "Impassible", False)) else 0]
+        except Exception:
+            continue
+        cells.setdefault((t[1], t[2]), []).append(t)
+    if (px, py) not in cells:
+        return None
+    keep = {(px, py)}
+    todo = [(px, py)]
+    while todo:
+        x, y = todo.pop()
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                n = (x + dx, y + dy)
+                if n in cells and n not in keep:
+                    keep.add(n)
+                    todo.append(n)
+    return sorted(t for c in keep for t in cells[c]), keep
+
+
+def house_here():
+    """The house the player stands in as (id, facet, bounds), or None (house_footprint, so only tiles are read). The id is the app's (app/house-capture.mts houseIdOf: "<facet>-<x0>-<y0>", the facet "x" when the client cannot say), and bounds {x0, y0, x1, y1} span every tile."""
+    try:
+        fp = house_footprint(int(API.Player.X), int(API.Player.Y))
+    except Exception:
+        return None
+    if fp is None:
+        return None
+    xs, ys = [c[0] for c in fp[1]], [c[1] for c in fp[1]]
+    f = facet()
+    bounds = {"x0": min(xs), "y0": min(ys), "x1": max(xs), "y1": max(ys)}
+    return "%s-%d-%d" % ("x" if f is None else f, bounds["x0"], bounds["y0"]), f, bounds
+# END generated: tazuo/house_footprint
+
+
+# BEGIN generated: tazuo/claims
+CLAIMS_PATH = os.path.join(data_dir(), "house-claims.json")
+NOT_CLAIMED = "Not in one of your houses, so only your pack was scanned. Use Claim this house in the Pack Rat panel if this house is yours."
+
+
+def read_claims(path):
+    """The valid entries of <data directory>/house-claims.json, the houses the player claimed (issue #299:
+    {id, facet, bounds: {x0, y0, x1, y1}, claimedAt, by?}), the same checks app/store/house-claims.mts makes.
+    A bad entry is dropped, and a missing, unreadable or oversized file reads as none: a scan then reads
+    no ground container."""
+    def ok(e):
+        b = e.get("bounds") if isinstance(e, dict) else None
+        return (isinstance(b, dict) and isinstance(e.get("id"), str) and re.match(r"^(\d{1,3}|x)-\d{1,6}-\d{1,6}$", e["id"])
+                and "facet" in e and (e["facet"] is None or (type(e["facet"]) is int and 0 <= e["facet"] <= 5))
+                and all(type(b.get(k)) is int and 0 <= b[k] <= 999999 for k in ("x0", "y0", "x1", "y1")) and b["x0"] <= b["x1"] and b["y0"] <= b["y1"]
+                and isinstance(e.get("claimedAt"), str) and len(e["claimedAt"]) <= 40 and (e.get("by") is None or (isinstance(e["by"], str) and len(e["by"]) <= 64)))
+    try:
+        if os.path.getsize(path) > 256 * 1024:
+            return []
+        with open(path, "r", encoding="utf-8") as f:
+            doc = json.load(f)
+        return [e for e in doc if ok(e)][:500]
+    except Exception:
+        return []
+
+
+def claims_over(here, claims):
+    """The claims the house `here` (house_here's (id, facet, bounds), or None) falls under: on its facet,
+    with bounds overlapping its own, so a house customized since it was claimed still counts."""
+    if here is None:
+        return []
+    f, b = here[1], here[2]
+    return [c for c in claims if c.get("facet") == f and c["bounds"]["x0"] <= b["x1"] and b["x0"] <= c["bounds"]["x1"]
+            and c["bounds"]["y0"] <= b["y1"] and b["y0"] <= c["bounds"]["y1"]]
+# END generated: tazuo/claims
+
+
+def slug(name):
+    """A character name as scan file names spell it, lower-cased."""
+    return re.sub(r"[^A-Za-z0-9_-]", "_", name).lower()
+
+
+def my_characters():
+    """The characters Pack Rat has scans of, read off the names of the files in <data>/scans/ (never opened),
+    and this one, as slugs."""
+    out = {slug(state["character"])}
+    try:
+        with os.scandir(os.path.join(DATA, "scans")) as it:
+            for i, e in enumerate(it):
+                if i >= MAX_DIR_ENTRIES:
+                    break
+                m = SCAN_NAME.match(e.name)
+                if m:
+                    out.add(m.group(1).lower())
+    except Exception:
+        pass
+    return out
+
+
+def sign_owner(bounds):
+    """The owner the house's sign names on its tooltip ("Owner: X"), or None: no sign on the ground within a
+    tile of `bounds`, no owner line, or no tooltip within SIGN_WAIT_S."""
+    for g in call(getattr(API, "GetItemsOnGround", None), HOUSE_ITEM_REACH) or []:
+        try:
+            x, y, s = int(g.X), int(g.Y), int(g.Serial)
+            near = bounds["x0"] - 1 <= x <= bounds["x1"] + 1 and bounds["y0"] - 1 <= y <= bounds["y1"] + 1
+            sign = int(getattr(g, "Graphic", 0) or 0) in SIGN_GRAPHICS or SIGN_RE.search(str(getattr(g, "Name", "") or ""))
+        except Exception:
+            continue
+        if not near or not sign:
+            continue
+        call(getattr(API, "RequestOPLData", None), [s])
+        for ln in tooltip_lines(s, True, SIGN_WAIT_S):
+            m = OWNER_RE.match(ln)
+            if m:
+                return m.group(1).strip()
+    return None
+
+
+def claim_button(here, claimed):
+    """Claim this house reads Unclaim this house inside a claimed house, and is greyed outside any house."""
+    set_text("claim_btn", "Unclaim this house" if claimed else "Claim this house")
+    b, hue = ui.get("claim_btn"), DIM_HUE if here is None else state["claim_hue"]
+    if b is not None and hue is not None:
+        try:
+            b.TextHue = hue
+        except Exception:
+            pass
+
+
+def on_claim():
+    """Claim this house: a claim for the house the player stands in, unless its sign names someone who is not
+    one of this player's characters; inside a claimed house it takes every claim over it back."""
+    here = house_here()
+    if here is None:
+        say("Stand inside a house to claim it.")
+        return
+    claims = read_claims(CLAIMS_PATH)
+    over = claims_over(here, claims)
+    if over:
+        claims = [c for c in claims if c not in over]
+        done = ("Unclaimed this house.", "Scans here read only your pack now.")
+    else:
+        owner = sign_owner(here[2])
+        if owner is not None and slug(owner) not in my_characters():
+            say("This house's sign names %s as the owner," % text_of(owner, 24), "so it was not claimed.")
+            return
+        if len(claims) >= CLAIM_MAX:
+            say("Pack Rat keeps %d claimed houses at most;" % CLAIM_MAX, "unclaim one in the app first.")
+            return
+        claims = claims + [{"id": here[0], "facet": here[1], "bounds": here[2], "claimedAt": rfc3339_now(), "by": state["character"]}]
+        done = ("Claimed this house.", "Scans here read its containers now.")
+    try:
+        write_json_atomic(CLAIMS_PATH, claims)
+    except Exception:
+        say("Could not save the claim.")
+        return
+    claim_button(here, not over)
+    say(*done)
 
 
 def picked_source(serial):
@@ -687,6 +894,7 @@ def build_window():
                ("bridge_btn", "Start bridge", on_bridge, 16, 116),
                ("away_btn", "Put away...", on_put_away, 196, 116),
                ("login_btn", login_text(), on_login, 16, 152),
+               ("claim_btn", "Claim this house", on_claim, 196, 152),
                ("close_btn", "Close", on_close, 276, 304)]
     for key, text, fn, x, y in buttons:
         b = call(gumps("CreateSimpleButton"), text, 88 if key == "close_btn" else 168, 28)
@@ -698,6 +906,7 @@ def build_window():
         g.Add(b)
         call(gumps("AddControlOnClick"), b, fn)
         ui[key] = b
+    state["claim_hue"] = getattr(ui.get("claim_btn"), "TextHue", None)
     call(gumps("AddControlOnDisposed"), g, lambda: on_disposed(g))
     call(gumps("AddGump"), g)
     state["window"] = g

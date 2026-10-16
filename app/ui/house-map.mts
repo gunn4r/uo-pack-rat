@@ -668,14 +668,14 @@ function stage(): HTMLElement {
 }
 // Above the map: why it is drawn in plain colours (no tiledata.mul), or, on the plain grid, how to get the house drawn.
 function notes(): HTMLElement[] {
-  if (S.id === PLAIN) return [message({ tone: "info", text: "These containers are not inside a house a scan has drawn. Scan from inside the house with the 2.11.0 scripts to draw it.", attrs: { id: "map-plain-note" } })];
+  if (S.id === PLAIN) return [message({ tone: "info", text: "These containers are not inside a house you claimed. Stand inside your house in game and press Claim this house in the Pack Rat panel, then scan there to draw it.", attrs: { id: "map-plain-note" } })];
   const note = !S.list || S.list.tiledata || S.plan ? null : tiledataNote(S.list.tiledataFrom.reason);   // the Stack plan draws no walls or floors
   return note ? [message({ tone: "warn", title: "Plain colors", text: note, attrs: { id: "map-tiledata-note" }, actions: [box("a", { class: "btn btn-sm", href: "#/settings" }, txt("Set the UO folder in Settings"))] })] : [];
 }
 function emptyState(): HTMLElement {
   return box("section", { class: "card map-empty" }, box("div", { class: "empty-state" },
     el("h2", { class: "t-lg" }, "No house to draw yet"),
-    el("p", { class: "muted" }, "Scan from inside your house with the 2.11.0 scripts (TazUO), and the house map draws it here with every container where it stands.")));
+    el("p", { class: "muted" }, "Stand inside your house in game and press Claim this house in the Pack Rat panel. Then scan there, and the House map draws it here with every container where it stands.")));
 }
 
 // ---------------------------------------------------------------- drawing
@@ -1198,21 +1198,21 @@ function totalsPanel(m: HouseModel): HTMLElement[] {
     legend(),
     el("p", { class: "t-sm muted" }, "Click a stack on the map, or an area on the left."),
     whereSection(m),
-    forgetButton(m),
+    unclaimButton(m),
   ].filter((e): e is HTMLElement => e != null);
 }
-// Remove this house (issue #298): a house the scan captured where it should not have (the player had moved into another house) leaves the map, after the page's yes/no dialog, until a newer scan captures it again.
-function forgetButton(m: HouseModel): HTMLElement | null {
+// Unclaim this house (issue #299): after the page's yes/no dialog the claim goes, so the house leaves the map and scans there read only the pack, until it is claimed again in game.
+function unclaimButton(m: HouseModel): HTMLElement | null {
   const h = summaryOf(m);
   if (!h) return null;
-  return box("div", { class: "map-panel-actions" }, button({ label: "Remove this house", variant: "ghost", size: "sm", attrs: { id: "map-forget" }, onClick: () => { void askForget(m, h); } }));
+  return box("div", { class: "map-panel-actions" }, button({ label: "Unclaim this house", variant: "ghost", size: "sm", attrs: { id: "map-unclaim" }, onClick: () => { void askUnclaim(m, h); } }));
 }
-// An unnamed house is named by its facet and centre tile ("the Trammel house at 1777, 2364"), so two unnamed houses on one facet read apart. After the removal focus goes to the house picker, or to the screen's heading when the picker is disabled (one choice or none left).
-async function askForget(m: HouseModel, h: NonNullable<ReturnType<typeof summaryOf>>): Promise<void> {
+// An unnamed house is named by its facet and centre tile ("the Trammel house at 1777, 2364"), so two unnamed houses on one facet read apart. After the unclaim focus goes to the house picker, or to the screen's heading when the picker is disabled (one choice or none left).
+async function askUnclaim(m: HouseModel, h: NonNullable<ReturnType<typeof summaryOf>>): Promise<void> {
   const name = m.name ?? `the ${houseName(m)} at ${whereOf(h).centreText}`;
-  if (!await confirmDialog({ title: `Remove ${name}?`, body: "It leaves the House map until a newer scan captures it again. Its containers and what is in them stay in the Inventory.", confirmLabel: "Remove house" })) { $<HTMLElement>("#map-forget")?.focus(); return; }
-  try { await houses.forget(m.id, h.capturedAt); } catch (e) { toast(errorText(e), "bad"); $<HTMLElement>("#map-forget")?.focus(); return; }
-  toast(`Removed ${name} from the House map.`, "good");
+  if (!await confirmDialog({ title: `Unclaim ${name}?`, body: "It leaves the House map, and scans there read only your pack, until you claim it again in game. Its name, its areas, its containers and what is in them are kept.", confirmLabel: "Unclaim house" })) { $<HTMLElement>("#map-unclaim")?.focus(); return; }
+  try { await houses.unclaim(m.id); } catch (e) { toast(errorText(e), "bad"); $<HTMLElement>("#map-unclaim")?.focus(); return; }
+  toast(`Unclaimed ${name}.`, "good");
   history.replaceState(null, "", mapHash({ q: query }));
   await showMap({ house: null, q: query, select: null });
   const pick = $<HTMLSelectElement>("#map-house"), heading = $<HTMLElement>("#h-map");
