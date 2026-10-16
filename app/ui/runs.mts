@@ -1,18 +1,20 @@
 // ui/runs.mts — the Saved runs drawer (design spec 4.8): one card per run with its name or automatic label,
 // meta line and summary badges, a ⋯ menu (Open, Rename inline, Delete with a confirm dialog), a filter, and a
 // footer that ticks up to three runs for the compare view (ui/builder-result.mts's openRunCompare). Also the
-// settings snapshot a run is saved with, and putting a saved run's settings back into the panel.
-import { RESIST_KEYS, RESIST_SKILL_KEY, resistMinimum, resistSkillOf, resistSkillCapOf, totalsOf, resistCapsFor, fcCapFor } from "../vault-lib.mts";
+// settings snapshot a run is saved with, putting a saved run's settings back into the panel, and arriving (issue #272):
+// a character's latest run opened when it is first shown, the "<name>'s runs" card beside a result, the other characters'
+// latest runs for the first-visit view, and New build back to it.
+import { NOBODY, RESIST_KEYS, RESIST_SKILL_KEY, resistMinimum, resistSkillOf, resistSkillCapOf, totalsOf, resistCapsFor, fcCapFor } from "../vault-lib.mts";
 import { buffById, plannedProfile, savedBuffs } from "../buffs.mts";
 import type { RunSettings, OptItem, PropMap, Character, EffectiveProfile } from "../vault-lib.mts";
-import { state, invStamp } from "./store.mts";
-import { $, el, fmtSecs, fmtRunTime, toast } from "./dom.mts";
+import { state } from "./store.mts";
+import { $, el, fmtSecs, fmtRunTime, fmtRunDay, toast } from "./dom.mts";
 import { api } from "./api.mts";
 import { bindDrawer, box, txt, button, badge, message, input, confirmDialog, menu, type DrawerHandle } from "./components.mts";
 import { renderNavCounts } from "./shell.mts";
 import { resolveItems } from "./items.mts";
 import { session, commands, provide, applyKnobs } from "./builder-session.mts";
-import { paperdollCaps, slotsOf, runAutoLabel, runBadges, runSettingsDiff, toggleCompare, plural, who, withBuffs } from "./builder-model.mts";
+import { paperdollCaps, slotsOf, runAutoLabel, runBadges, runSettingsDiff, toggleCompare, plural, who, withBuffs, latestShownRun, otherCharactersRuns, gearChangedSince } from "./builder-model.mts";
 import type { RunsListApiResponse, RunApiResponse, RunPutApiResponse, RunSummaryLike, SavedRunLike } from "./api-types.mts";
 
 // ---------------------------------------------------------------- settings snapshot / apply
@@ -43,16 +45,50 @@ export function profileFromSettings(st: RunSettings): EffectiveProfile {
 // selection moved on.
 let runsSeq = 0;
 let compareNote: string | null = null;
-export async function loadRuns(): Promise<void> {
+// `arrive` (issue #272), when the builder first shows the character (selectCharacter: a page load or a character switch):
+// a run's id opens that run, true opens the character's latest (arriveAt). A refresh of the list never opens one, and
+// drops the every-character list the first-visit view keeps (the runs changed: a build, a rename, a delete).
+export async function loadRuns(arrive: boolean | string = false): Promise<void> {
   const name = session.character, mine = ++runsSeq;
   if (!name) return;
+  if (arrive) { waiting = null; arriving = { name, arrive }; } else allRuns = null;
   let runs: RunSummaryLike[];
   try { runs = (await api<RunsListApiResponse>(`/api/runs?character=${encodeURIComponent(name)}`)).runs || []; }
   catch { runs = []; }
   if (mine !== runsSeq) return;
   session.runs = runs;
   renderRuns();
+  // the coming back asked for runs from whichever list lands for its character, a refresh started meanwhile included
+  if (arriving?.name !== name) return;
+  const a = arriving.arrive;
+  arriving = null;
+  await arriveAt(name, a);
 }
+// The coming back a selectCharacter asked for, until a list for that character lands.
+let arriving: { name: string; arrive: true | string } | null = null;
+const BUILD_RUNNING = "A build is running. Cancel it or wait before opening a saved run.";
+// A character shown while a build ran: its coming back waits for the build to end.
+let waiting: string | null = null;
+// Coming back to `name`: the run asked for, else its newest run with a suit (latestShownRun), unless a result is on screen
+// by now; while a build runs, a run asked for is refused as the drawer refuses one, and the latest waits for the build to
+// end. With nothing opened, the first-visit view (selectCharacter leaves the result blank until this decides, so it never
+// flashes up under a run about to open).
+async function arriveAt(name: string, arrive: true | string): Promise<void> {
+  if (session.result) return;
+  let shown = false;
+  if (session.job) { if (typeof arrive === "string") toast(BUILD_RUNNING); else waiting = name; }
+  else {
+    const id = typeof arrive === "string" ? arrive : latestShownRun(session.runs)?.id;
+    if (id) shown = await openRun(id, arrive === true);
+  }
+  if (!shown && session.character === name && !session.result && !document.getElementById("b-start")) commands.renderCurrentSuit(name);
+}
+document.addEventListener("builderchange", (e) => {
+  if ((e as CustomEvent<{ key: string }>).detail.key !== "job" || session.job || !waiting) return;
+  const name = waiting;
+  waiting = null;
+  if (session.character === name && !session.result) void arriveAt(name, true);
+});
 // The drawer's behaviour (focus trap, Esc, scrim, inert when closed, focus back to the opener) is
 // components.mts's bindDrawer over the markup in index.html.
 let drawer: DrawerHandle | null = null;
@@ -63,6 +99,7 @@ const runsDrawer = (): DrawerHandle => {
     $<HTMLInputElement>("#b-runs-filter")!.addEventListener("input", () => renderRuns());
     $<HTMLButtonElement>("#b-runs-clear")!.onclick = () => { session.compare = new Set(); compareNote = null; renderRuns(); };
     $<HTMLButtonElement>("#b-runs-compare")!.onclick = compareSelected;
+    $<HTMLButtonElement>("#b-runs-new")!.onclick = () => { closeRunsDrawer(); startOver(); };
   }
   return (drawer ||= bindDrawer($<HTMLElement>("#runs-drawer")!));
 };
@@ -82,7 +119,7 @@ function paintFooter(): void {
 }
 export function renderRuns(): void {
   runsDrawer();
-  const box_ = $<HTMLElement>("#b-runs")!, runs = session.runs || [], stamp = invStamp();
+  const box_ = $<HTMLElement>("#b-runs")!, runs = session.runs || [];
   const ticked = [...session.compare].filter((id) => runs.some((r) => r.id === id));
   if (ticked.length !== session.compare.size) session.compare = new Set(ticked);
   const name = session.character || "";
@@ -90,6 +127,7 @@ export function renderRuns(): void {
   $<HTMLElement>("#b-runs-who")!.textContent = name ? `${who(name)} · ${plural(runs.length, "run")} · newest first` : "";
   renderNavCounts();
   paintFooter();
+  $<HTMLButtonElement>("#b-runs-new")!.disabled = !!session.job || !session.openRun;
   if (!runs.length) { box_.replaceChildren(el("li", { class: "runs-empty" }, message({ tone: "info", text: "No saved runs yet. Every build is saved here." }))); return; }
   const q = ($<HTMLInputElement>("#b-runs-filter")!.value || "").trim().toLowerCase();
   const skills = state.inv?.characters[name]?.skills, skill = resistSkillOf(skills);
@@ -104,7 +142,7 @@ export function renderRuns(): void {
     const b = run.totalsAfter && buffs ? withBuffs(run.totalsAfter, skill, paperdollCaps(view, fcCapFor(state.inv!.characters[name]?.skills, run.settings.castingSchool).cap), commands.buffPlan(name, run.settings.race, buffs), resistSkillCapOf(skills)) : null;
     const badges = b ? runBadges(run.changes, b.totals, run.settings.floors || {}, null, b.caps, pick("shard")) : runBadges(run.changes, run.totalsAfter, run.settings.floors || {}, resistMinimum(skills, run.totalsAfter?.[RESIST_SKILL_KEY]), pick("cap"), pick("shard"));
     if (buffs) badges.push({ text: buffs.on.length === 1 ? `with ${buffById(buffs.on[0]!)!.name}` : `with ${plural(buffs.on.length, "buff")}` });
-    return runCard(run, title, auto.diff, badges, run.inventoryStamp != null && run.inventoryStamp !== "" && run.inventoryStamp !== stamp);
+    return runCard(run, title, auto.diff, badges, gearChangedSince(state.inv?.scans || [], run));
   }).filter((x): x is HTMLLIElement => !!x);
   box_.replaceChildren(...(kept.length ? kept : [el("li", { class: "runs-empty" }, el("p", { class: "muted" }, txt("No saved run matches the filter.")))]));
 }
@@ -164,13 +202,22 @@ async function deleteRun(run: RunSummaryLike, title: string): Promise<void> {
   if (!await confirmDialog({ title: `Delete the run from ${fmtRunTime(run.createdAt)}?`, body: `"${title}" and its suit are removed from the saved runs. Building again with the same settings makes a new one.`, confirmLabel: "Delete run" })) return;
   try { await api(`/api/runs/${run.id}`, { method: "DELETE" }); } catch (err) { toast((err as Error).message, "bad"); return; }
   session.compare = toggleCompare(session.compare, run.id, false).next;
-  // the run on screen is gone: its result (with Start from this result, Grab all) goes too, back to the current suit
-  if (session.openRun === run.id) {
-    session.openRun = null;
-    if (!session.job && session.character) { session.result = null; $<HTMLElement>("#b-msg")!.replaceChildren(); commands.resetResultView(); commands.renderCurrentSuit(session.character); }
-  }
+  // the run on screen is gone: its result (with Start from this result, Grab all) goes too, back to the first-visit view
+  if (session.openRun === run.id) clearShown();
   await loadRuns();
   toast("Run deleted.", "good");
+}
+// The result on screen cleared, back to the first-visit view (ui/builder-start.mts), while no build runs.
+function clearShown(): void {
+  session.openRun = null;
+  if (!session.job && session.character) { session.result = null; $<HTMLElement>("#b-msg")!.replaceChildren(); commands.resetResultView(); commands.renderCurrentSuit(session.character); }
+}
+// New build (the "<name>'s runs" card): the first-visit view for the character, the runs kept.
+function startOver(): void {
+  if (session.job) return;
+  clearShown();
+  renderRuns();
+  $<HTMLElement>("#b-start h2")?.focus();
 }
 
 // ---------------------------------------------------------------- open / compare
@@ -190,15 +237,27 @@ async function runToManual(id: string): Promise<void> {
   closeRunsDrawer();
   await commands.openInManual(run.result.best, slotsOf(run.result.best), savedBuffs(run.settings), `Open the run from ${fmtRunTime(run.createdAt)}`);
 }
-export async function openRun(id: string): Promise<void> {
-  if (session.job) { toast("A build is running. Cancel it or wait before opening a saved run."); return; }
+// `auto`: opened on its own as the builder first shows the character (arriveAt): Manual, the drawer and the compare view
+// are left as they are, a build started or a run shown meanwhile wins, and the run's search knobs (the Advanced fields,
+// which a profile does not keep) come back into the panel. Whether the run was drawn.
+export async function openRun(id: string, auto = false): Promise<boolean> {
+  if (session.job) { if (!auto) toast(BUILD_RUNNING); return false; }
   // The run belongs to the character selected now; if the player picks another one while it loads, it is
   // dropped rather than drawn (with its Fetch list and Grab all) under that one.
   const name = session.character;
-  if (!name) return;
+  if (!name) return false;
   const run = await fetchRun(id);
-  if (!run || session.character !== name) return;
-  session.openRun = id; renderRuns(); closeRunsDrawer(); commands.showAutomatic(); commands.closeCompare();
+  if (!run || session.character !== name || (auto && (session.result || session.job || session.openRun))) return false;
+  // a run file that kept no result (a hand-written or damaged one) has no suit to show
+  if (!run.result) { if (!auto) toast("That saved run has no suit to show.", "bad"); return false; }
+  session.openRun = id; renderRuns();
+  $<HTMLElement>("#b-msg")!.replaceChildren();   // a note left from before (a canceled build) goes; the run's banner heads the result
+  if (!auto) { closeRunsDrawer(); commands.showAutomatic(); commands.closeCompare(); }
+  else {
+    const { restarts, exact, budgetMs, altCount, altTol } = run.settings;
+    applyKnobs({ restarts, exact, budgetMs, altCount, altTol } as RunSettings);
+    commands.renderPanel();
+  }
   const diff = runSettingsDiff(settingsSnapshot(), run.settings);
   // A saved run never persisted the assignment it started from, only its result (best, perSlotChanges,
   // totals). Reconstruct a per-slot "current" from that: an unchanged slot is whatever `best` has; a changed
@@ -210,7 +269,7 @@ export async function openRun(id: string): Promise<void> {
   const current: Record<string, OptItem | null> = Object.fromEntries(slotsOf(run.result.best).map((slot): [string, OptItem | null] => [slot, best[slot] || null]));
   const changes = run.result.perSlotChanges || [];
   const resolved = await resolveItems(changes.map((c) => c.fromSerial).filter(Boolean));
-  if (session.character !== name) return;
+  if (session.character !== name || session.openRun !== id || (auto && session.job)) return false;
   const unresolvedSlots: string[] = [];
   for (const c of changes) {
     if (!c.fromSerial) { current[c.slot] = null; continue; }
@@ -224,17 +283,79 @@ export async function openRun(id: string): Promise<void> {
     for (const k of new Set([...Object.keys(known), ...Object.keys(stored)])) leftover[k] = (stored[k] || 0) - (known[k] || 0);
     current[unresolvedSlots[0]!] = { ...current[unresolvedSlots[0]!], props: leftover } as OptItem;
   }
-  const stale = run.inventoryStamp && run.inventoryStamp !== invStamp();
-  $<HTMLElement>("#b-msg")!.replaceChildren(message({ tone: "info", title: `Saved run · ${fmtRunTime(run.createdAt)}${run.label ? " · " + run.label : ""}`,
-    text: diff.length ? `Your settings → this run: ${diff.join(" · ")}` : "Same settings as the panel.",
-    actions: [button({ label: "Load these settings", size: "sm", onClick: () => applySettings(run.settings) })], attrs: { class: "msg info saved-run" } }),
-    ...(stale ? [message({ tone: "warn", text: "The inventory has been rescanned since this run, so some pieces may have moved or changed." })] : []));
   session.altView = null;
   session.result = run.result;
   // run.ms is `number | null` (a saved run's on-disk shape); run.skipped is whatever that run stored (live
   // arrays or plain counts), which the Solver details' counter reads either way.
   await commands.renderResult(run.result, current, profileFromSettings(run.settings), name, { ms: run.ms ?? 0, poolSize: run.poolSize, skipped: run.skipped as Record<string, unknown> | undefined, reused: null });
+  if (session.openRun !== id) return false;
+  paintRunBanner(run, diff);
+  return true;
 }
+// The saved run's one banner over the result: its time and name and how the panel's settings differ, with Load these
+// settings; when the inventory changed since the run (gearChangedSince, the drawer's "Inventory changed"), it leads with
+// that instead, the settings changed counted as the drawer's footer counts them, and Build again, which loads the run's
+// settings into the panel and builds them (issue #272). The item-level gear changes are #291's.
+let bannerRun: SavedRunLike | null = null;
+function paintRunBanner(run: SavedRunLike, diff: string[]): void {
+  bannerRun = run;
+  const load = button({ label: "Load these settings", size: "sm", onClick: () => applySettings(run.settings) });
+  const since = diff.length ? `Your settings → this run: ${diff.join(" · ")}` : "Same settings as the panel.";
+  const banner = !gearChangedSince(state.inv?.scans || [], run)
+    ? message({ tone: "info", title: `Saved run · ${fmtRunDay(run.createdAt)}${run.label ? " · " + run.label : ""}`, text: since, actions: [load], attrs: { class: "msg info saved-run" } })
+    : message({ tone: "warn", title: `This is your build from ${fmtRunDay(run.createdAt)}${run.label ? ` (${run.label})` : ""}.`,
+      text: box("span", { class: "b-gear-changed" }, txt(`Your gear changed since: newer scans came in${diff.length ? `, and ${plural(diff.length, "setting")} changed` : ""}.`), diff.length ? el("span", { class: "t-sm muted" }, since) : null),
+      actions: [button({ label: "Build again", kbd: "⌘↵", variant: "primary", size: "sm", attrs: { "aria-keyshortcuts": "Meta+Enter Control+Enter" }, onClick: () => { applySettings(run.settings); commands.build(); } }), ...(diff.length ? [load] : [])], attrs: { class: "msg warn saved-run" } });
+  banner.querySelector(".kbd")?.setAttribute("aria-hidden", "true");
+  document.getElementById("b-run-banner")?.replaceChildren(banner);
+}
+// A scan landing while a saved run's banner is up: the banner says so.
+document.addEventListener("inventorychange", () => {
+  const run = bannerRun;
+  if (run && session.openRun === run.id && !session.job && document.querySelector("#b-run-banner .saved-run")) paintRunBanner(run, runSettingsDiff(settingsSnapshot(), run.settings));
+});
+
+// ---------------------------------------------------------------- arriving (issue #272)
+// A run's name in a short list: the player's own, else the drawer's automatic label (`before`: the character's run before it).
+const runTitle = (run: RunSummaryLike, before: RunSummaryLike | undefined): string => run.label || autoLabel(run, before).text;
+// One row of a short list of runs: its name and when it was built, a button that opens it.
+function runRow(text: string, when: string, onClick: () => void, current = false): HTMLElement {
+  return box("li", {}, box("button", { type: "button", class: `b-run-row${current ? " current" : ""}`, ...(current ? { "aria-current": "true" } : {}), onclick: onClick }, txt(text, "ellip"), txt(when, "t-sm muted")));
+}
+// "<name>'s runs" beside a result: the character's latest three runs, the shown one marked, New build back to the first-visit
+// view and All saved runs (the drawer). Hidden with no runs; redrawn in place when the runs or the shown run change.
+function runsCard(): HTMLElement {
+  const name = session.character, runs = session.runs || [];
+  if (!name || !runs.length) return el("section", { id: "b-myruns", hidden: "" });
+  return box("section", { class: "card b-side-card", id: "b-myruns", "aria-labelledby": "b-myruns-h" },
+    el("h3", { class: "t-md strong", id: "b-myruns-h" }, `${who(name)}'s runs`),
+    box("ul", { class: "b-run-rows" }, ...runs.slice(0, 3).map((r, i) => runRow(runTitle(r, runs[i + 1]), fmtRunDay(r.createdAt), () => { if (session.openRun !== r.id) void openRun(r.id); }, session.openRun === r.id))),
+    button({ label: "All saved runs", variant: "ghost", size: "sm", cls: "b-link", onClick: openRunsDrawer }));
+}
+document.addEventListener("builderchange", (e) => {
+  const key = (e as CustomEvent<{ key: string }>).detail.key;
+  if (["runs", "openRun", "job"].includes(key)) document.getElementById("b-myruns")?.replaceWith(runsCard());
+});
+// The first-visit view's "Other characters' recent runs": the latest run of up to three other characters still scanned,
+// each opening its character with that run, as the drawer opens one; null with none.
+// Every character's runs, fetched once and kept until the runs change (loadRuns, a refresh).
+let allRuns: Promise<RunSummaryLike[]> | null = null;
+async function otherRunsCard(name: string): Promise<HTMLElement | null> {
+  let all: RunSummaryLike[];
+  try { all = await (allRuns ||= api<RunsListApiResponse>("/api/runs").then((r) => r.runs || [])); } catch { allRuns = null; return null; }
+  const known = (c: string | undefined): boolean => !!c && (Object.hasOwn(state.inv?.characters || {}, c) || c === NOBODY);
+  const others = otherCharactersRuns(all.filter((r) => known(r.character)), name);
+  if (!others.length) return null;
+  const before = (r: RunSummaryLike): RunSummaryLike | undefined => { const mine = all.filter((x) => x.character === r.character); return mine[mine.indexOf(r) + 1]; };
+  return box("section", { class: "card b-side-card", id: "b-other-runs", "aria-labelledby": "b-other-runs-h" },
+    el("h3", { class: "t-md strong", id: "b-other-runs-h" }, "Other characters' recent runs"),
+    box("ul", { class: "b-run-rows" }, ...others.map((r) => runRow(`${who(r.character!)} · ${runTitle(r, before(r))}`, fmtRunDay(r.createdAt), () => {
+      if (session.job) { toast(BUILD_RUNNING); return; }
+      commands.setManualFor(r.character === NOBODY ? null : r.character!);
+      commands.selectCharacter(r.character!, r.id);
+    }))));
+}
+
 export async function compareSelected(): Promise<void> {
   // Same rule as openRun: a build finishing would draw over the comparison.
   if (session.job) { toast("A build is running. Cancel it or wait before comparing runs."); return; }
@@ -251,4 +372,4 @@ export async function compareSelected(): Promise<void> {
   const titleOf = (r: SavedRunLike): string => { const i = list.findIndex((x) => x.id === r.id); return r.label || autoLabel(r, i >= 0 ? list[i + 1] : undefined).text; };
   commands.openRunCompare(runs, titleOf, (id) => { openRun(id); }, (id) => { session.compare = toggleCompare(session.compare, id, false).next; renderRuns(); });
 }
-provide({ loadRuns, openRunsDrawer });
+provide({ loadRuns, openRunsDrawer, runsCard, otherRunsCard, startOver });

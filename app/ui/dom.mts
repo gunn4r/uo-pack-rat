@@ -107,6 +107,15 @@ export const safeColor = (c: string | null | undefined): string | null => (typeo
 
 export const fmtN = (x: number | string | null | undefined): string => (+(x as string) || 0).toLocaleString();
 export const fmtSecs = (ms: number): string => ms >= 1000 ? `${(ms / 1000).toFixed(1)} s` : `${Math.round(ms)} ms`;
+// A run's day and time where a sentence names it: "today, 10:40 PM", "yesterday, 9:12 AM", else "Oct 14, 6:12 PM", with the
+// year for one from another year ("Dec 30, 2025, 6:12 PM").
+export function fmtRunDay(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d as unknown as number)) return "?";
+  const day = (n: number): string => { const x = new Date(); x.setDate(x.getDate() - n); return x.toDateString(); };
+  const on = d.toDateString() === day(0) ? "today" : d.toDateString() === day(1) ? "yesterday" : d.toLocaleDateString([], { month: "short", day: "numeric", ...(d.getFullYear() !== new Date().getFullYear() ? { year: "numeric" as const } : {}) });
+  return `${on}, ${d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
+}
 export function fmtRunTime(iso: string): string {
   const d = new Date(iso);
   if (isNaN(d as unknown as number)) return "?";

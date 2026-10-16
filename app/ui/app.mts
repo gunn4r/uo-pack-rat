@@ -11,6 +11,7 @@ import { showCharacter } from "./characters.mts";
 import { applyPanelPrefs, initBuilder } from "./builder.mts";
 import { applyBuilderPrefs, initManual } from "./builder-manual.mts";
 import { applyResultPrefs } from "./builder-result.mts";   // also provides the result commands to ui/builder-session.mts
+import "./builder-start.mts";   // provides the first-visit view's commands to ui/builder-session.mts
 import { connectEvents } from "./events.mts";
 import { openWizard } from "./wizard.mts";
 import { renderSettings, startUpdateChecks } from "./settings.mts";
