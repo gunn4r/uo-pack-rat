@@ -168,7 +168,7 @@ export function syncBuilderCharacters(): void {
   if (keep && (names.includes(keep) || (keep === NOBODY && names.length)) && session.profile) {
     $<HTMLSelectElement>("#b-char")!.value = keep;
     renderPanel();
-    if (!session.result && !session.job) commands.renderCurrentSuit(keep);
+    if (!session.result && !session.job) commands.renderCurrentSuit(keep, true);
   } else if (names.length) {
     const want = parseRoute().character;
     selectCharacter(names.includes(want as string) || want === NOBODY ? want as string : names[0]!);
@@ -363,12 +363,18 @@ function applyTemplate(say = true): void {
 }
 // A template card in the first-visit view (ui/builder-start.mts), the player's starting choice: what picking it in the top
 // bar does, then Apply and Save profile, so the character's saved settings are that template and a build from it comes
-// back with nothing changed; the card of the panel's own template applies nothing again.
-function pickTemplate(ref: string): void {
+// back with nothing changed; the card of the panel's own template applies nothing again. When there is something to lose
+// (the panel differs from its template, or from the character's saved settings) it asks first.
+async function pickTemplate(ref: string): Promise<void> {
+  const name = session.character!, p = session.profile!;
+  if (ref === p.template) { const tpl = $<HTMLSelectElement>("#b-tpl")!; tpl.value = ref; tpl.dispatchEvent(new Event("change")); return; }
+  const unsaved = settingsDiff(templateFrom(characterProfile(state.profiles!, name, state.builtinTemplates)), templateFrom(readControls())).length > 0;
+  if ((templateDrift().tone !== "ok" || unsaved) && !await confirmDialog({ title: `Replace ${who(name)}'s saved settings with ${plainName(ref)}?`,
+    body: "Your current settings are only kept in runs built with them.", confirmLabel: "Replace" })) return;
+  if (session.character !== name || session.profile !== p) return;   // another character picked while it asked
   const tpl = $<HTMLSelectElement>("#b-tpl")!;
   tpl.value = ref;
   tpl.dispatchEvent(new Event("change"));
-  if (ref === session.profile!.template) return;
   applyTemplate(false);
   void saveProfile(`${plainName(ref)} saved as ${who(session.character!)}'s settings.`);
 }
@@ -1227,4 +1233,4 @@ async function saveProfile(said?: string): Promise<void> {
   const r = await putProfiles();
   toast(r.ok ? said ?? `Profile for ${who(name)} saved.` : r.error!, r.ok ? "good" : "bad");
 }
-provide({ renderPanel, clearCapDrafts, panelBuild, buffPlan, loadRunBuffs, tuneWeight, pickTemplate, selectCharacter, build: () => { void runBuild(); }, openSettingsTab: (t) => openSettings(t as Tab) });
+provide({ renderPanel, clearCapDrafts, panelBuild, buffPlan, loadRunBuffs, tuneWeight, pickTemplate: (ref) => { void pickTemplate(ref); }, selectCharacter, build: () => { void runBuild(); }, openSettingsTab: (t) => openSettings(t as Tab) });

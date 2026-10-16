@@ -91,7 +91,7 @@ export interface BuilderCommands {
   build(): void;
   openSettingsTab(tab: string): void;
   // builder-start.mts: the first-visit view
-  renderCurrentSuit(name: string): void;
+  renderCurrentSuit(name: string, keepCards?: boolean): void;
   refreshCurrentSuit(): void;
   // builder-result.mts: the result and the compare view
   renderResult(res: OptimizeResult, current: OptSuit, prof: EffectiveProfile, name: string, meta?: BuildMeta): Promise<void>;

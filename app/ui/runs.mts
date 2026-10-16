@@ -51,15 +51,21 @@ let compareNote: string | null = null;
 export async function loadRuns(arrive: boolean | string = false): Promise<void> {
   const name = session.character, mine = ++runsSeq;
   if (!name) return;
-  if (arrive) waiting = null; else allRuns = null;
+  if (arrive) { waiting = null; arriving = { name, arrive }; } else allRuns = null;
   let runs: RunSummaryLike[];
   try { runs = (await api<RunsListApiResponse>(`/api/runs?character=${encodeURIComponent(name)}`)).runs || []; }
   catch { runs = []; }
   if (mine !== runsSeq) return;
   session.runs = runs;
   renderRuns();
-  if (arrive) await arriveAt(name, arrive);
+  // the coming back asked for runs from whichever list lands for its character, a refresh started meanwhile included
+  if (arriving?.name !== name) return;
+  const a = arriving.arrive;
+  arriving = null;
+  await arriveAt(name, a);
 }
+// The coming back a selectCharacter asked for, until a list for that character lands.
+let arriving: { name: string; arrive: true | string } | null = null;
 const BUILD_RUNNING = "A build is running. Cancel it or wait before opening a saved run.";
 // A character shown while a build ran: its coming back waits for the build to end.
 let waiting: string | null = null;
@@ -241,7 +247,7 @@ export async function openRun(id: string, auto = false): Promise<boolean> {
   const name = session.character;
   if (!name) return false;
   const run = await fetchRun(id);
-  if (!run || session.character !== name || (auto && (session.result || session.job))) return false;
+  if (!run || session.character !== name || (auto && (session.result || session.job || session.openRun))) return false;
   // a run file that kept no result (a hand-written or damaged one) has no suit to show
   if (!run.result) { if (!auto) toast("That saved run has no suit to show.", "bad"); return false; }
   session.openRun = id; renderRuns();

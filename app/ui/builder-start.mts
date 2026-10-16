@@ -6,7 +6,7 @@
 // words come from ui/builder-model.mts; it shares the builder's state through ui/builder-session.mts.
 import { NOBODY, RESIST_KEYS, RESIST_SKILL_KEY, GEAR_SLOTS, resistMinimum, resistCapsFor, fcCapFor, totalsOf, roundImportance } from "../vault-lib.mts";
 import type { OptItem } from "../vault-lib.mts";
-import { BUILTIN_PREFIX, characterBuffs, findTemplate, templateName, templateSettings, type TemplateEntry } from "../build-spec.mts";
+import { BUILTIN_PREFIX, characterBuffs, findTemplate, templateName, templateRefs, templateSettings, type TemplateEntry } from "../build-spec.mts";
 import { buffById } from "../buffs.mts";
 import { state, invStamp } from "./store.mts";
 import { $, el, label, ago } from "./dom.mts";
@@ -22,11 +22,13 @@ import type { ItemsApiResponse } from "./api-types.mts";
 let shownFor: string | null = null;
 let others: { name: string; card: HTMLElement | null } | null = null;
 let pieces: { stamp: string; n: number | null } | null = null;
-function renderCurrentSuit(name: string): void {
+// `keepCards`: a redraw for the same character after the scans changed keeps the template cards where they are, while the
+// templates are the same.
+function renderCurrentSuit(name: string, keepCards = false): void {
   shownFor = name;
   session.outcome = null;
   others = null;
-  cardSet = null;
+  if (!keepCards) cardSet = null;
   draw(name);
   void commands.otherRunsCard(name).then((card) => { if (shownFor === name) { others = { name, card }; refreshCurrentSuit(); } });
   const stamp = invStamp();
@@ -66,11 +68,12 @@ function mainColumn(name: string): HTMLElement {
 // never moves or changes its badge when picked; picking only moves the selected state, which is the panel's template. A
 // card applies its template and saves it as the character's settings (builder.mts pickTemplate).
 const CARDS = 4;
-let cardSet: { name: string; suggested: string | null; refs: string[] } | null = null;
+let cardSet: { name: string; templates: string; suggested: string | null; refs: string[] } | null = null;
 const shortDate = (iso: string): string => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 function cardRefs(name: string): NonNullable<typeof cardSet> {
-  if (cardSet?.name === name) return cardSet;
-  const current = session.profile?.template, profiles = state.profiles!;
+  const profiles = state.profiles!, templates = templateRefs(profiles, state.builtinTemplates).join("\n");
+  if (cardSet?.name === name && cardSet.templates === templates) return cardSet;
+  const current = session.profile?.template;
   const suggested = current && findTemplate(profiles, state.builtinTemplates, current) ? current : null;
   const skills = Object.fromEntries(Object.entries(state.inv!.characters[name]?.skills || {}).map(([k, e]) => [k, Number((e as { value?: number })?.value) || 0]));
   // a template's text names its skills: its name, description, the skills its buffs are cast with and its casting school
@@ -78,7 +81,7 @@ function cardRefs(name: string): NonNullable<typeof cardSet> {
   const own = Object.keys(profiles.templates || {}).sort((a, b) => (profiles.templates[b]!.savedAt ?? "").localeCompare(profiles.templates[a]!.savedAt ?? "")).map((ref) => ({ ref, text: `${ref} ${text(profiles.templates[ref]!)}` }));
   const builtins = Object.entries(state.builtinTemplates).map(([id, t]) => ({ ref: BUILTIN_PREFIX + id, text: text(t) }));
   const others = suggestTemplates([...own, ...builtins].filter((c) => c.ref !== suggested), skills, CARDS - (suggested ? 1 : 0));
-  return (cardSet = { name, suggested, refs: [...(suggested ? [suggested] : []), ...others] });
+  return (cardSet = { name, templates, suggested, refs: [...(suggested ? [suggested] : []), ...others] });
 }
 function templateCards(name: string): HTMLElement {
   const current = session.profile?.template, profiles = state.profiles!, { suggested, refs } = cardRefs(name);
