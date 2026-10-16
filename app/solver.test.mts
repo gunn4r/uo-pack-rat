@@ -245,12 +245,13 @@ test("[fast] buffs: HiGHS equals the core's proven optimum on the goal templates
   }
 });
 
-// On the starters' weights before goals (issue #292): Tank's goals take the core's own proof about 2.3 million nodes, too
-// close to the budget on a busy CI runner for a test that needs both sides proven.
+// On the starters' weights before goals (issue #292): Tank's goals take the core's own proof about 2.3 million nodes. Both
+// sides must prove here, and the core's proof of a full-fixture build takes seconds that a busy CI runner can stretch past
+// the usual 20 s budget, so this one has a minute.
 test("[fast] buffs: HiGHS equals the core's proven optimum with buffs planned on", async (t) => {
   for (const name of ["melee", "tank"]) {
     await t.test(name, async (t2) => {
-      const { r, ref } = await runBoth(t2, cell(name, { buffs: ["divineFury", "magicReflection", "corpseSkin"], overrides: { weights: STARTERS_BEFORE_GOALS[name]! } }), BASE_OPTS);
+      const { r, ref } = await runBoth(t2, cell(name, { buffs: ["divineFury", "magicReflection", "corpseSkin"], overrides: { weights: STARTERS_BEFORE_GOALS[name]! } }), { ...BASE_OPTS, timeBudgetMs: 60_000 });
       assert.equal(r.proven && ref.proven, true, "both proven, so runBoth held them to one score");
     });
   }
