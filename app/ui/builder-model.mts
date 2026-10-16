@@ -29,10 +29,10 @@ export { paperdollCaps };
 export function withBuffs(t: PropMap, skill: number | null, caps: Record<string, number>, b: Pick<PlannedBuffs, "on" | "skills" | "stats" | "who"> | null | undefined, cap: number | null = null): BuffResult {
   return applyBuffs(t, caps, b?.on || [], b?.skills || {}, b?.stats ?? null, b?.who, suitResist(skill, t, cap));
 }
-// What the buffs add past the cap, by property, for its gauge: DI "+68 past the cap (Enemy of One)"; a penalty applied
-// after it, such as Protection's casting delay, FC "−2 after the cap (Protection)".
-export const pastCapNotes = (r: BuffResult): Record<string, string> =>
-  Object.fromEntries(Object.entries(r.outside).filter(([, v]) => v).map(([k, v]) => [k, `${signed(v)} ${capWord(v)} the cap (${(r.shares[k] || []).filter((x) => x.outside).map((x) => buffById(x.id)!.name).join(", ")})`]));
+// What the buffs add past the cap, by property, for What changes: DI "+68 past the cap (Enemy of One)", short "+68 past"; a
+// penalty applied after it, such as Protection's casting delay, FC "−2 after the cap (Protection)", short "−2 after".
+export const pastCapNotes = (r: BuffResult): Record<string, { text: string; short: string }> =>
+  Object.fromEntries(Object.entries(r.outside).filter(([, v]) => v).map(([k, v]) => [k, { text: `${signed(v)} ${capWord(v)} the cap (${(r.shares[k] || []).filter((x) => x.outside).map((x) => buffById(x.id)!.name).join(", ")})`, short: `${signed(v)} ${capWord(v)}` }]));
 
 // The Rarity setting's help line: none for "any".
 export function rarityHelp(rarity: string | undefined): string {
@@ -195,10 +195,13 @@ export function changeRows(keys: string[], before: PropMap, after: PropMap, caps
     return { key: k, now, suit, cap: caps[k] ?? null, delta: suit - now, share: share.get(k) ?? null, floor: floors[k] ?? null };
   });
 }
-// The gauges: the properties other than the resists (they have their tiles) whose total moves, the gains first.
-export function gaugeRows(rows: ChangeRow[]): ChangeRow[] {
+// The gauges: the properties other than the resists (they have their tiles) whose total moves and that matter to the build (`matter`: a non-zero weight or a requirement, hard or soft), the gains first; a pool (Stam/Mana/Hits pool) never beside its bonus's gauge (Stam+, Mana+, HP+). `more` counts the other non-resist properties that move, shown only in the Table.
+const POOL_OF: Record<string, string> = { stamPool: "stamInc", manaPool: "manaInc", hitsPool: "hpi" };
+export function gaugeRows(rows: ChangeRow[], matter: readonly string[]): { gauges: ChangeRow[]; more: number } {
   const moved = rows.filter((r) => r.delta !== 0 && !RESIST_KEYS.includes(r.key));
-  return [...moved.filter((r) => r.delta > 0), ...moved.filter((r) => r.delta < 0)];
+  const picked = moved.filter((r) => matter.includes(r.key));
+  const gauges = picked.filter((r) => !(POOL_OF[r.key] && picked.some((x) => x.key === POOL_OF[r.key])));
+  return { gauges: [...gauges.filter((r) => r.delta > 0), ...gauges.filter((r) => r.delta < 0)], more: moved.length - gauges.length };
 }
 // A gauge's short note: a requirement the suit misses ("needs 35", the warn tone), a loss ("given up"), else against the cap: "at cap", "3 over cap", the next swing step under the cap for SSI (`nextSsi`, the result's nextSwingStep), "11 under cap"; with no cap, where it came from.
 export function gaugeNote(r: ChangeRow, nextSsi: number | null = null): { text: string; warn: boolean } {

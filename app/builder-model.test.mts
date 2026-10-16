@@ -139,8 +139,15 @@ test("[fast] builder model: What changes lists every property, gauges the moved 
   assert.deepEqual(rows.find((r) => r.key === "dci"), { key: "dci", now: 20, suit: 45, cap: 45, delta: 25, share: 0.3, floor: null });
   assert.equal(rows.find((r) => r.key === "intBonus")!.share, null, "a share of nothing is blank");
   assert.equal(rows.find((r) => r.key === "luck")!.cap, null);
-  const g = gaugeRows(rows);
+  const all = gaugeRows(rows, rows.map((r) => r.key)), g = all.gauges;
   assert.deepEqual(g.map((r) => r.key), ["hci", "dci", "ssi", "di", "hpRegen", "strBonus", "luck"], "no resist, nothing unchanged, the losses last");
+  assert.equal(all.more, 0);
+  // only what the build asks for gets a gauge, a loss of it included; the rest is counted for the Table
+  const some = gaugeRows(rows, ["hci", "luck", "intBonus", "physResist"]);
+  assert.deepEqual([some.gauges.map((r) => r.key), some.more], [["hci", "luck"], 5]);
+  // a pool never beside its bonus's gauge, alone it keeps one
+  const pools = changeRows([], { stamInc: 0, stamPool: 0, manaPool: 5 }, { stamInc: 10, stamPool: 10, manaPool: 9 }, {});
+  assert.deepEqual([gaugeRows(pools, ["stamInc", "stamPool", "manaPool"]).gauges.map((r) => r.key), gaugeRows(pools, ["stamInc", "stamPool", "manaPool"]).more], [["stamInc", "manaPool"], 1]);
   const at = (k: string, next: number | null = null): string => gaugeNote(g.find((r) => r.key === k)!, next).text;
   assert.deepEqual([at("dci"), at("di"), at("hpRegen"), at("luck"), at("strBonus")], ["at cap", "at cap", "11 under cap", "given up", "given up"]);
   assert.equal(at("ssi", 58), "next step 58");
@@ -232,7 +239,7 @@ test("[fast] builder model: a result's totals with the buffs it planned with, in
   const plan = { on: ["divineFury", "enemyOfOne"], skills: { ...buffSkillValues(null, {}).values, Chivalry: 105 }, stats: null, who: {} };
   const r = withBuffs({ ssi: 45, dci: 30, di: 90, fireResist: 30 }, 70, caps, plan);
   assert.deepEqual([r.totals.ssi, r.totals.dci, r.totals.fireResist, r.totals.di], [55, 10, 30, 100], "Fire 30 over the minimum of 20: gear's own");
-  assert.deepEqual(pastCapNotes(r), { di: "+68 past the cap (Enemy of One)" });
+  assert.deepEqual(pastCapNotes(r), { di: { text: "+68 past the cap (Enemy of One)", short: "+68 past" } });
   const none = withBuffs({ ssi: 45 }, 70, caps, null);
   assert.deepEqual([none.totals.ssi, none.totals.fireResist, none.lifted.length, pastCapNotes(none)], [45, 20, 5, {}], "without buffs: the paperdoll totals alone, every resist held at the minimum");
   assert.equal(withBuffs({ ssi: 45 }, null, caps, null).totals.fireResist, undefined, "no minimum: nothing added");
