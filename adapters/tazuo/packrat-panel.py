@@ -437,7 +437,7 @@ def refresh():
     t = last_scan()
     set_text("scan", "Last scan: " + ("none yet" if t is None else ago(t)))
     away_buttons()
-    if bool(getattr(state["window"], "IsVisible", False)):    # hidden, nobody sees the button
+    if bool(getattr(state["window"], "IsVisible", True)):    # hidden, nobody sees the button
         here = house_now()
         claim_button(here, bool(claims_over(here, claims_now())))
     write_json_atomic(HEARTBEAT, {"alive": rfc3339_now(), "character": state["character"]})
@@ -641,12 +641,13 @@ def sign_owners(bounds):
 
 def house_now(fresh=False):
     """house_here(), worked out again only when the player has moved or changed facet (or `fresh`): the
-    footprint reads a wide area of tiles, too much for every status pass."""
+    footprint reads a wide area of tiles, too much for every status pass. Not being in a house is never kept:
+    the client may not have sent the house's tiles yet (after a recall or a login), so it is asked again."""
     try:
         at = (int(API.Player.X), int(API.Player.Y), facet())
     except Exception:
         at = None
-    if fresh or at is None or at != state["here_at"]:
+    if fresh or at is None or at != state["here_at"] or state["here"] is None:
         state["here_at"], state["here"] = at, house_here()
     return state["here"]
 
