@@ -62,7 +62,8 @@ document.addEventListener("bridgechange", () => { if (last && !session.job) rere
 // anything before this call may find another character selected by now.
 async function renderResult(res: OptimizeResult, current: OptSuit, prof: EffectiveProfile, name: string, meta?: BuildMeta): Promise<void> {
   const mySeq = ++renderSeq;
-  if (last?.res !== res) { picked = new Set(); pickRefused = null; withoutBuffs = false; }
+  const again = last?.res === res;
+  if (!again) { picked = new Set(); pickRefused = null; withoutBuffs = false; }
   last = { res, current, prof, name, meta };
   // what the Requirements tab says each need came to: the best suit with the buffs it was planned with
   const planned = withBuffs(totalsOf(res.best), prof.resistSkill, paperdollCaps(profileResistCaps(prof), fcCapOf(prof)), prof.buffs, resistSkillCapOf(state.inv!.characters[name]?.skills));
@@ -86,7 +87,9 @@ async function renderResult(res: OptimizeResult, current: OptSuit, prof: Effecti
   ].filter((x): x is HTMLElement => !!x);
   const out = $<HTMLElement>("#b-result")!;
   out.classList.remove("b-stale"); out.inert = false; out.removeAttribute("aria-hidden");
-  out.replaceChildren(box("div", { class: "b-arrive" }, box("div", { class: "b-arrive-main" }, ...nodes), box("aside", { class: "b-arrive-side", "aria-label": "Runs" }, commands.runsCard())));
+  // the saved run's banner (ui/runs.mts paintRunBanner) heads the main column; a redraw of the same result keeps it
+  const banner = (again && document.getElementById("b-run-banner")) || el("div", { id: "b-run-banner" });
+  out.replaceChildren(box("div", { class: "b-arrive" }, box("div", { class: "b-arrive-main" }, banner, ...nodes), box("aside", { class: "b-arrive-side", "aria-label": "Runs" }, commands.runsCard())));
 }
 
 // A built profile's Faster Casting cap before any planned buff (vault-lib.mts fcCapFor), for paperdollCaps.
@@ -126,7 +129,8 @@ function headlineCard(res: OptimizeResult, current: OptSuit, suit: OptSuit, prof
   return box("section", { class: "card b-head-card", "aria-label": view == null ? "Best suit" : `Suit ${view + 2}` },
     box("div", { class: "b-headline" },
       box("div", { class: "b-headline-text" }, box("div", { class: "b-row" }, el("h2", { class: "t-xl" }, `${manual ? "Manual suit" : view == null ? "Best suit" : `Suit #${view + 2}`}${name === NOBODY ? " · No character" : ` for ${name}`}`), vb), el("p", { class: "muted" }, txt(line)), plannedWith(prof, name)),
-      box("div", { class: "b-head-acts" }, start, grabAllButton(fetchItems, name === NOBODY ? null : name, { id: "b-grab-all" }))),
+      box("div", { class: "b-head-acts" }, session.openRun && name === session.character ? button({ label: "New build", attrs: { id: "b-new-build" }, disabled: !!session.job, onClick: () => commands.startOver() }) : null,
+        start, grabAllButton(fetchItems, name === NOBODY ? null : name, { id: "b-grab-all" }))),
     v.detail ? message({ tone: v.tone === "bad" ? "bad" : "warn", text: v.detail }) : null,
     checks,
     box("div", { class: "b-resists" }, ...tiles),

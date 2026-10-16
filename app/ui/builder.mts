@@ -59,7 +59,7 @@ export function initBuilder(): void {
   };
   $<HTMLButtonElement>("#b-run")!.onclick = runBuild;
   $<HTMLButtonElement>("#b-run-foot")!.onclick = runBuild;
-  $<HTMLButtonElement>("#b-save")!.onclick = saveProfile;
+  $<HTMLButtonElement>("#b-save")!.onclick = () => saveProfile();
   $<HTMLButtonElement>("#b-save-tpl")!.onclick = saveTemplateAs;
   $<HTMLButtonElement>("#b-runs-open")!.onclick = () => commands.openRunsDrawer();
   // ⌘↵ (Ctrl+Enter off the Mac) builds from anywhere on the screen. Listened for on the document, not the
@@ -335,7 +335,7 @@ function paintChanges(): void {
 const BUILTIN_READ_ONLY = "Built-in templates can't be changed. Save as… makes your own copy.";
 function templateMenu(anchor: HTMLButtonElement): void {
   const builtin = selectedTemplate().startsWith(BUILTIN_PREFIX) ? BUILTIN_READ_ONLY : undefined;
-  menu(anchor, [{ label: "Apply to these settings", onSelect: applyTemplate }, { label: "Save as…", onSelect: saveTemplateAs },
+  menu(anchor, [{ label: "Apply to these settings", onSelect: () => applyTemplate() }, { label: "Save as…", onSelect: saveTemplateAs },
     { label: "Update this template", onSelect: updateTemplate, disabled: builtin }, { label: "Delete…", onSelect: deleteTemplate, danger: true, disabled: builtin }], { label: "Template actions" });
 }
 const selectedTemplate = (): string => $<HTMLSelectElement>("#b-tpl")!.value;
@@ -346,7 +346,8 @@ async function saveTemplates(done: string): Promise<void> {
 }
 // A template with buffs also sets the character's buffs, which are saved at once, and Manual's when Manual is for the
 // same character (one undo step there).
-function applyTemplate(): void {
+// `say`: the toast that it was applied (a template card says it was saved instead).
+function applyTemplate(say = true): void {
   const ref = selectedTemplate(), t = findTemplate(state.profiles!, state.builtinTemplates, ref), name = plainName(ref);
   if (!t) return;
   Object.assign(session.profile!, templateSettings(t), { template: ref });
@@ -358,15 +359,18 @@ function applyTemplate(): void {
   }
   clearCapDrafts();
   renderPanel();
-  toast(`${name} applied. Save profile to keep it.`, "good");
+  if (say) toast(`${name} applied. Save profile to keep it.`, "good");
 }
-// A template card in the first-visit view (ui/builder-start.mts): what picking it in the top bar does, then applied, so the
-// panel builds from it; the card of the panel's own template applies nothing again.
+// A template card in the first-visit view (ui/builder-start.mts), the player's starting choice: what picking it in the top
+// bar does, then Apply and Save profile, so the character's saved settings are that template and a build from it comes
+// back with nothing changed; the card of the panel's own template applies nothing again.
 function pickTemplate(ref: string): void {
   const tpl = $<HTMLSelectElement>("#b-tpl")!;
   tpl.value = ref;
   tpl.dispatchEvent(new Event("change"));
-  if (ref !== session.profile!.template) applyTemplate();
+  if (ref === session.profile!.template) return;
+  applyTemplate(false);
+  void saveProfile(`${plainName(ref)} saved as ${who(session.character!)}'s settings.`);
 }
 async function saveTemplateAs(): Promise<void> {
   const was = session.profile!.template || "";
@@ -1213,7 +1217,7 @@ function runPanel(job: BuilderJob): BuilderJobUi {
 }
 
 // ---------------------------------------------------------------- save
-async function saveProfile(): Promise<void> {
+async function saveProfile(said?: string): Promise<void> {
   if (!session.character || !session.profile) { toast("No character to save a profile for yet: scan one first.", "bad"); return; }
   // A copy (later panel edits must not ride along with a template save), keeping what the panel doesn't edit: any
   // other field of the entry, and the spec's goal and search.
@@ -1221,6 +1225,6 @@ async function saveProfile(): Promise<void> {
   const { race: _race, template: _template, spec: was, ...rest } = Object.hasOwn(chars, name) ? chars[name]! : { spec: undefined };
   chars[name] = { ...rest, ...entry, spec: { ...was, ...entry.spec } };
   const r = await putProfiles();
-  toast(r.ok ? `Profile for ${who(name)} saved.` : r.error!, r.ok ? "good" : "bad");
+  toast(r.ok ? said ?? `Profile for ${who(name)} saved.` : r.error!, r.ok ? "good" : "bad");
 }
 provide({ renderPanel, clearCapDrafts, panelBuild, buffPlan, loadRunBuffs, tuneWeight, pickTemplate, selectCharacter, build: () => { void runBuild(); }, openSettingsTab: (t) => openSettings(t as Tab) });

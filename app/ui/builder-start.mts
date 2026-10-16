@@ -26,6 +26,7 @@ function renderCurrentSuit(name: string): void {
   shownFor = name;
   session.outcome = null;
   others = null;
+  cardSet = null;
   draw(name);
   void commands.otherRunsCard(name).then((card) => { if (shownFor === name) { others = { name, card }; refreshCurrentSuit(); } });
   const stamp = invStamp();
@@ -49,36 +50,49 @@ function draw(name: string): void {
 // ---- the main column: the question, the template cards, the summary and Build
 function mainColumn(name: string): HTMLElement {
   const nobody = name === NOBODY, builtins = Object.keys(state.builtinTemplates).length;
-  const all = button({ label: `All ${builtins} built-in templates`, variant: "ghost", size: "sm", cls: "b-side-link", onClick: () => $<HTMLSelectElement>("#b-tpl")?.focus() });
+  const all = button({ label: `All ${builtins} built-in templates`, variant: "ghost", size: "sm", cls: "b-link", onClick: () => $<HTMLSelectElement>("#b-tpl")?.focus() });
   const build = button({ label: nobody ? "Build the suit" : `Build ${name}'s suit`, variant: "primary", size: "lg", attrs: { id: "b-start-build", "data-k": "build", "aria-keyshortcuts": "Meta+Enter Control+Enter" }, onClick: () => commands.build() });
   return box("div", { class: "b-arrive-main" },
     box("div", {}, el("h2", { class: "t-xl", tabindex: "-1", "data-k": "head" }, nobody ? "What should the suit be for?" : `What should ${name}'s suit be for?`),
-      el("p", { class: "muted" }, "Pick a starting point. Every setting can be changed in Settings before or after you build.")),
+      el("p", { class: "muted" }, `Pick a starting point: it becomes ${nobody ? "the" : `${name}'s`} saved settings. Every setting can be changed in Settings before or after you build.`)),
     templateCards(name), builtins ? all : null,
     summaryCard(name),
     box("div", { class: "b-start-build" }, build, txt("Usually a few seconds · ⌘↵", "muted")));
 }
 
-// The panel's own template first ("Suggested"), then the built-ins that best fit the character's skills and the player's
-// own templates, newest first. Picking one does what picking it in the top bar does, and applies it (builder.mts pickTemplate).
-const OWN_CARDS = 4, BUILTIN_CARDS = 3;
+// Four cards, one row on a wide window and two by two at phone width: the panel's template when the view is first shown
+// ("Suggested"), then the other templates that best fit the character's skills, the player's own (newest first) ahead of the
+// built-ins on a tie (suggestTemplates). The set and its order are fixed while the view is up for the character, so a card
+// never moves or changes its badge when picked; picking only moves the selected state, which is the panel's template. A
+// card applies its template and saves it as the character's settings (builder.mts pickTemplate).
+const CARDS = 4;
+let cardSet: { name: string; suggested: string | null; refs: string[] } | null = null;
 const shortDate = (iso: string): string => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-function templateCards(name: string): HTMLElement {
-  const current = session.profile?.template, profiles = state.profiles!, has = (ref: string | undefined): ref is string => !!ref && !!findTemplate(profiles, state.builtinTemplates, ref);
+function cardRefs(name: string): NonNullable<typeof cardSet> {
+  if (cardSet?.name === name) return cardSet;
+  const current = session.profile?.template, profiles = state.profiles!;
+  const suggested = current && findTemplate(profiles, state.builtinTemplates, current) ? current : null;
   const skills = Object.fromEntries(Object.entries(state.inv!.characters[name]?.skills || {}).map(([k, e]) => [k, Number((e as { value?: number })?.value) || 0]));
-  // a built-in's text names its skills: its name, description, the skills its buffs are cast with and its casting school
+  // a template's text names its skills: its name, description, the skills its buffs are cast with and its casting school
   const text = (t: TemplateEntry): string => [t.name, t.description, t.spec.intent.castingSchool, ...(t.spec.buffs?.on ?? []).map((id) => buffById(id)?.min?.[0])].filter(Boolean).join(" ");
-  const builtins = suggestTemplates(Object.entries(state.builtinTemplates).map(([id, t]) => ({ ref: BUILTIN_PREFIX + id, text: text(t) })).filter((c) => c.ref !== current), skills, BUILTIN_CARDS);
-  const own = Object.keys(profiles.templates || {}).filter((r) => r !== current).sort((a, b) => (profiles.templates[b]!.savedAt ?? "").localeCompare(profiles.templates[a]!.savedAt ?? "")).slice(0, OWN_CARDS);
-  const card = (ref: string, tag: string): HTMLElement => {
-    const t = findTemplate(profiles, state.builtinTemplates, ref)!, builtin = ref.startsWith(BUILTIN_PREFIX), on = ref === current;
-    const st = templateSettings(t);
+  const own = Object.keys(profiles.templates || {}).sort((a, b) => (profiles.templates[b]!.savedAt ?? "").localeCompare(profiles.templates[a]!.savedAt ?? "")).map((ref) => ({ ref, text: `${ref} ${text(profiles.templates[ref]!)}` }));
+  const builtins = Object.entries(state.builtinTemplates).map(([id, t]) => ({ ref: BUILTIN_PREFIX + id, text: text(t) }));
+  const others = suggestTemplates([...own, ...builtins].filter((c) => c.ref !== suggested), skills, CARDS - (suggested ? 1 : 0));
+  return (cardSet = { name, suggested, refs: [...(suggested ? [suggested] : []), ...others] });
+}
+function templateCards(name: string): HTMLElement {
+  const current = session.profile?.template, profiles = state.profiles!, { suggested, refs } = cardRefs(name);
+  const card = (ref: string): HTMLElement | null => {
+    const t = findTemplate(profiles, state.builtinTemplates, ref);
+    if (!t) return null;   // deleted since the view was shown
+    const builtin = ref.startsWith(BUILTIN_PREFIX), on = ref === current, st = templateSettings(t);
+    const tag = ref === suggested ? "Suggested" : builtin ? "Built-in" : "Yours";
     const line = builtin ? t.description || needsLine(st.floors || {}, st.softFloors || [], label) : t.savedAt ? `Saved ${shortDate(t.savedAt)}` : "Your template";
+    // on the selected card's accent fill the badge is the plain one, so it keeps its pill
     return box("button", { type: "button", class: `b-tpl-card${on ? " on" : ""}`, "aria-pressed": String(on), "data-k": `tpl:${ref}`, title: line, onclick: () => commands.pickTemplate(ref) },
-      badge(tag, tag === "Yours" ? undefined : "accent"), txt(templateName(state.builtinTemplates, ref), "strong"), txt(line, "t-sm muted b-tpl-line"));
+      badge(tag, tag === "Yours" || on ? undefined : "accent"), txt(templateName(state.builtinTemplates, ref), "strong"), txt(line, "t-sm muted b-tpl-line"));
   };
-  return box("div", { class: "b-tpl-cards", role: "group", "aria-label": "Templates" },
-    has(current) ? card(current, "Suggested") : null, ...builtins.map((r) => card(r, "Built-in")), ...own.map((r) => card(r, "Yours")));
+  return box("div", { class: "b-tpl-cards", role: "group", "aria-label": "Templates" }, ...refs.map(card));
 }
 
 // What Build will build for (Needs, Buffs, Pool, Search) and the weights that matter most, each line opening the drawer on

@@ -406,9 +406,8 @@
 .b-side-card { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3) var(--space-4); }
 .b-side-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-2); }
 .b-side-head h3, .b-side-card > h3 { margin: 0; }
-.pr .b-side-link { align-self: flex-start; }
 .b-run-rows { margin: 0; padding: 0; list-style: none; }
-.pr .b-run-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: var(--space-2); width: 100%; padding: var(--space-1-5) var(--space-1); border: 0; border-bottom: var(--border-width) solid var(--color-border); border-radius: 0; background: none; color: var(--color-text); font-weight: var(--weight-regular); text-align: left; }
+.pr .b-run-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: var(--space-2); width: 100%; padding: var(--space-1-5) 0; border: 0; border-bottom: var(--border-width) solid var(--color-border); border-radius: 0; background: none; color: var(--color-text); font-weight: var(--weight-regular); text-align: left; }
 .pr .b-run-row:hover { background: var(--color-row-hover); }
 .b-run-rows li:last-child > .b-run-row { border-bottom: 0; }
 .pr .b-run-row.current { font-weight: var(--weight-semibold); }
@@ -425,11 +424,14 @@
 .b-sum-half h3 { margin: 0; }
 .b-sum { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: baseline; gap: var(--space-1) var(--space-3); margin: 0; }
 .b-sum dd { margin: 0; }
-.pr .b-sum-key { height: auto; padding: 0; border: 0; background: none; color: var(--color-link); text-decoration: underline; text-underline-offset: 3px; }
+/* a link-styled button: the summary's terms, "+ N more in Settings", "All N built-in templates", "All saved runs" */
+.pr .b-sum-key, .pr .b-link { align-self: flex-start; height: auto; padding: 0; border: 0; background: none; color: var(--color-link); font-weight: var(--weight-regular); text-decoration: underline; text-underline-offset: 3px; }
+.pr .b-sum-key:hover, .pr .b-link:hover { background: none; color: var(--color-link-hover); }
 .b-imps { align-self: stretch; display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; --b-wc: var(--color-accent); }
 .pr .b-imp { display: grid; grid-template-columns: minmax(0, 10rem) minmax(4rem, 1fr) 2.5rem; align-items: center; gap: var(--space-2); width: 100%; padding: var(--space-0-5) var(--space-1); border: 0; border-radius: var(--radius-sm); background: none; color: var(--color-text); font-weight: var(--weight-regular); text-align: left; }
 .pr .b-imp:hover { background: var(--color-row-hover); }
 .b-imp-n { text-align: right; font-variant-numeric: tabular-nums; }
+.pr #b-start-build { height: 42px; padding: 0 var(--space-6); font-size: var(--text-lg); }   /* the view's one big action */
 .b-start-build { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-4); }
 /* what the character wears now: the five resists, then two gauges to a row */
 .b-wear-tiles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--space-1); }
@@ -437,6 +439,7 @@
 .b-wear-val { font-size: var(--text-lg); font-weight: var(--weight-semibold); font-variant-numeric: tabular-nums; }
 #b-wearing .b-gauges { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 /* the saved run's banner when the gear changed since: the sentence, then how the settings differ */
+#b-run-banner:empty { display: none; }
 .b-gear-changed { display: flex; flex-direction: column; gap: var(--space-0-5); }
 @media (max-width: 1023px) {
   .b-tpl-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }

@@ -8,7 +8,7 @@ import { NOBODY, RESIST_KEYS, RESIST_SKILL_KEY, resistMinimum, resistSkillOf, re
 import { buffById, plannedProfile, savedBuffs } from "../buffs.mts";
 import type { RunSettings, OptItem, PropMap, Character, EffectiveProfile } from "../vault-lib.mts";
 import { state } from "./store.mts";
-import { $, el, fmtSecs, fmtRunTime, toast } from "./dom.mts";
+import { $, el, fmtSecs, fmtRunTime, fmtRunDay, toast } from "./dom.mts";
 import { api } from "./api.mts";
 import { bindDrawer, box, txt, button, badge, message, input, confirmDialog, menu, type DrawerHandle } from "./components.mts";
 import { renderNavCounts } from "./shell.mts";
@@ -93,6 +93,7 @@ const runsDrawer = (): DrawerHandle => {
     $<HTMLInputElement>("#b-runs-filter")!.addEventListener("input", () => renderRuns());
     $<HTMLButtonElement>("#b-runs-clear")!.onclick = () => { session.compare = new Set(); compareNote = null; renderRuns(); };
     $<HTMLButtonElement>("#b-runs-compare")!.onclick = compareSelected;
+    $<HTMLButtonElement>("#b-runs-new")!.onclick = () => { closeRunsDrawer(); startOver(); };
   }
   return (drawer ||= bindDrawer($<HTMLElement>("#runs-drawer")!));
 };
@@ -120,6 +121,7 @@ export function renderRuns(): void {
   $<HTMLElement>("#b-runs-who")!.textContent = name ? `${who(name)} · ${plural(runs.length, "run")} · newest first` : "";
   renderNavCounts();
   paintFooter();
+  $<HTMLButtonElement>("#b-runs-new")!.disabled = !!session.job || !session.openRun;
   if (!runs.length) { box_.replaceChildren(el("li", { class: "runs-empty" }, message({ tone: "info", text: "No saved runs yet. Every build is saved here." }))); return; }
   const q = ($<HTMLInputElement>("#b-runs-filter")!.value || "").trim().toLowerCase();
   const skills = state.inv?.characters[name]?.skills, skill = resistSkillOf(skills);
@@ -243,6 +245,7 @@ export async function openRun(id: string, auto = false): Promise<boolean> {
   // a run file that kept no result (a hand-written or damaged one) has no suit to show
   if (!run.result) { if (!auto) toast("That saved run has no suit to show.", "bad"); return false; }
   session.openRun = id; renderRuns();
+  $<HTMLElement>("#b-msg")!.replaceChildren();   // a note left from before (a canceled build) goes; the run's banner heads the result
   if (!auto) { closeRunsDrawer(); commands.showAutomatic(); commands.closeCompare(); }
   else {
     const { restarts, exact, budgetMs, altCount, altTol } = run.settings;
@@ -274,12 +277,13 @@ export async function openRun(id: string, auto = false): Promise<boolean> {
     for (const k of new Set([...Object.keys(known), ...Object.keys(stored)])) leftover[k] = (stored[k] || 0) - (known[k] || 0);
     current[unresolvedSlots[0]!] = { ...current[unresolvedSlots[0]!], props: leftover } as OptItem;
   }
-  paintRunBanner(run, diff);
   session.altView = null;
   session.result = run.result;
   // run.ms is `number | null` (a saved run's on-disk shape); run.skipped is whatever that run stored (live
   // arrays or plain counts), which the Solver details' counter reads either way.
   await commands.renderResult(run.result, current, profileFromSettings(run.settings), name, { ms: run.ms ?? 0, poolSize: run.poolSize, skipped: run.skipped as Record<string, unknown> | undefined, reused: null });
+  if (session.openRun !== id) return false;
+  paintRunBanner(run, diff);
   return true;
 }
 // The saved run's one banner over the result: its time and name and how the panel's settings differ, with Load these
@@ -292,17 +296,17 @@ function paintRunBanner(run: SavedRunLike, diff: string[]): void {
   const load = button({ label: "Load these settings", size: "sm", onClick: () => applySettings(run.settings) });
   const since = diff.length ? `Your settings → this run: ${diff.join(" · ")}` : "Same settings as the panel.";
   const banner = !gearChangedSince(state.inv?.scans || [], run)
-    ? message({ tone: "info", title: `Saved run · ${fmtRunTime(run.createdAt)}${run.label ? " · " + run.label : ""}`, text: since, actions: [load], attrs: { class: "msg info saved-run" } })
-    : message({ tone: "warn", title: `This is your build from ${fmtRunTime(run.createdAt)}${run.label ? ` (${run.label})` : ""}.`,
+    ? message({ tone: "info", title: `Saved run · ${fmtRunDay(run.createdAt)}${run.label ? " · " + run.label : ""}`, text: since, actions: [load], attrs: { class: "msg info saved-run" } })
+    : message({ tone: "warn", title: `This is your build from ${fmtRunDay(run.createdAt)}${run.label ? ` (${run.label})` : ""}.`,
       text: box("span", { class: "b-gear-changed" }, txt(`Your gear changed since: newer scans came in${diff.length ? `, and ${plural(diff.length, "setting")} changed` : ""}.`), diff.length ? el("span", { class: "t-sm muted" }, since) : null),
       actions: [button({ label: "Build again", kbd: "⌘↵", variant: "primary", size: "sm", attrs: { "aria-keyshortcuts": "Meta+Enter Control+Enter" }, onClick: () => { applySettings(run.settings); commands.build(); } }), ...(diff.length ? [load] : [])], attrs: { class: "msg warn saved-run" } });
   banner.querySelector(".kbd")?.setAttribute("aria-hidden", "true");
-  $<HTMLElement>("#b-msg")!.replaceChildren(banner);
+  document.getElementById("b-run-banner")?.replaceChildren(banner);
 }
 // A scan landing while a saved run's banner is up: the banner says so.
 document.addEventListener("inventorychange", () => {
   const run = bannerRun;
-  if (run && session.openRun === run.id && !session.job && document.querySelector("#b-msg .saved-run")) paintRunBanner(run, runSettingsDiff(settingsSnapshot(), run.settings));
+  if (run && session.openRun === run.id && !session.job && document.querySelector("#b-run-banner .saved-run")) paintRunBanner(run, runSettingsDiff(settingsSnapshot(), run.settings));
 });
 
 // ---------------------------------------------------------------- arriving (issue #272)
@@ -318,10 +322,9 @@ function runsCard(): HTMLElement {
   const name = session.character, runs = session.runs || [];
   if (!name || !runs.length) return el("section", { id: "b-myruns", hidden: "" });
   return box("section", { class: "card b-side-card", id: "b-myruns", "aria-labelledby": "b-myruns-h" },
-    box("div", { class: "b-side-head" }, el("h3", { class: "t-md strong", id: "b-myruns-h" }, `${who(name)}'s runs`), el("span", { class: "spacer" }),
-      button({ label: "New build", variant: "ghost", size: "sm", disabled: !!session.job, attrs: { id: "b-new-build" }, onClick: startOver })),
-    box("ul", { class: "b-run-rows" }, ...runs.slice(0, 3).map((r, i) => runRow(runTitle(r, runs[i + 1]), fmtRunTime(r.createdAt), () => { if (session.openRun !== r.id) void openRun(r.id); }, session.openRun === r.id))),
-    button({ label: "All saved runs", variant: "ghost", size: "sm", cls: "b-side-link", onClick: openRunsDrawer }));
+    el("h3", { class: "t-md strong", id: "b-myruns-h" }, `${who(name)}'s runs`),
+    box("ul", { class: "b-run-rows" }, ...runs.slice(0, 3).map((r, i) => runRow(runTitle(r, runs[i + 1]), fmtRunDay(r.createdAt), () => { if (session.openRun !== r.id) void openRun(r.id); }, session.openRun === r.id))),
+    button({ label: "All saved runs", variant: "ghost", size: "sm", cls: "b-link", onClick: openRunsDrawer }));
 }
 document.addEventListener("builderchange", (e) => {
   const key = (e as CustomEvent<{ key: string }>).detail.key;
@@ -340,7 +343,7 @@ async function otherRunsCard(name: string): Promise<HTMLElement | null> {
   const before = (r: RunSummaryLike): RunSummaryLike | undefined => { const mine = all.filter((x) => x.character === r.character); return mine[mine.indexOf(r) + 1]; };
   return box("section", { class: "card b-side-card", id: "b-other-runs", "aria-labelledby": "b-other-runs-h" },
     el("h3", { class: "t-md strong", id: "b-other-runs-h" }, "Other characters' recent runs"),
-    box("ul", { class: "b-run-rows" }, ...others.map((r) => runRow(`${who(r.character!)} · ${runTitle(r, before(r))}`, fmtRunTime(r.createdAt), () => {
+    box("ul", { class: "b-run-rows" }, ...others.map((r) => runRow(`${who(r.character!)} · ${runTitle(r, before(r))}`, fmtRunDay(r.createdAt), () => {
       if (session.job) { toast(BUILD_RUNNING); return; }
       commands.setManualFor(r.character === NOBODY ? null : r.character!);
       commands.selectCharacter(r.character!, r.id);

@@ -500,7 +500,7 @@ export function gearChangedSince(scans: ReadonlyArray<{ scannedAt: string }>, ru
 export const latestShownRun = <R extends RunStamp & { method?: string | null | undefined }>(runs: readonly R[]): R | null => latestRun(runs.filter((r) => r.method != null));
 // A skill counts toward a template's suggestion from this value up.
 export const SUGGEST_MIN_SKILL = 30;
-// The built-in templates the first-visit view offers beside the current one, at most `n`: each scored by the skill points of
+// The templates the first-visit view offers beside the suggested one, at most `n`: each scored by the skill points of
 // the character's trained skills its text names (its name, description, its buffs' casting skills and its casting school,
 // `text`), the highest first, ties and the rest in catalog order.
 export function suggestTemplates(cands: ReadonlyArray<{ ref: string; text: string }>, skills: Readonly<Record<string, number>>, n = 3): string[] {
