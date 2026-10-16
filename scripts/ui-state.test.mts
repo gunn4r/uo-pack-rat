@@ -281,7 +281,7 @@ test("[slow] a build finished for one character is never shown under another", a
 
     // Switching back shows it, under the right name.
     await page.selectOption("#b-char", builtFor);
-    // the other character's "Current suit" heading is still there until the parked result draws: wait for it to go
+    // the other character's first-visit heading is still there until the parked result draws: wait for it to go
     await page.waitForFunction((n) => document.querySelector("#b-result h2")?.textContent === `Best suit for ${n}`, builtFor, { timeout: 10_000 });
     await page.locator("#b-result").getByRole("button", { name: "Full sheet" }).click();
     assert.match(await page.locator("#b-result .sheet").first().innerText(), new RegExp(builtFor));

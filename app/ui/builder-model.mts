@@ -470,3 +470,65 @@ export function needStatus(k: string, floor: number, total: number, caps: Record
   if (short > 0) return { text: [`${num(short)} short`, step].filter(Boolean).join(" · "), tone: "warn" };
   return { text: step ?? `Met: ${num(held)}${total > held ? ` (+${num(total - held)} past cap)` : ""}`, tone: "ok" };
 }
+
+// ---------------------------------------------------------------- arriving (issue #272): the first-visit view and coming back
+const stampMs = (s: string | null | undefined): number => { const t = Date.parse(s ?? ""); return Number.isFinite(t) ? t : -Infinity; };
+type RunStamp = { id: string; createdAt: string; character?: string | undefined };
+// The newest run of a list, by when it was built (whatever the list's order); null for none.
+export function latestRun<R extends RunStamp>(runs: readonly R[]): R | null {
+  return runs.reduce<R | null>((best, r) => (!best || stampMs(r.createdAt) > stampMs(best.createdAt) ? r : best), null);
+}
+// The latest run of each character other than `except`, newest first, at most `n`.
+export function otherCharactersRuns<R extends RunStamp>(runs: readonly R[], except: string | null, n = 3): R[] {
+  const by = new Map<string, R[]>();
+  for (const r of runs) if (r.character != null && r.character !== except) by.set(r.character, [...(by.get(r.character) ?? []), r]);
+  return [...by.values()].map((list) => latestRun(list)!).sort((a, b) => stampMs(b.createdAt) - stampMs(a.createdAt)).slice(0, n);
+}
+// Whether the inventory changed since a run was built (the drawer's "Inventory changed" and the result's banner): the newest
+// scan is not the one the run was built from (its `inventoryStamp`), so a scan stamped before the build that landed after it
+// counts too. A run saved without a stamp falls back to its build time: a scan newer than it. No scan, or neither a stamp
+// nor a time, is no change.
+export function gearChangedSince(scans: ReadonlyArray<{ scannedAt: string }>, run: { inventoryStamp?: unknown; createdAt?: string | null | undefined }): boolean {
+  if (typeof run.inventoryStamp === "string" && run.inventoryStamp) {
+    const newest = scans.reduce<{ scannedAt: string } | null>((best, s) => (!best || stampMs(s.scannedAt) > stampMs(best.scannedAt) ? s : best), null);
+    return !!newest && newest.scannedAt !== run.inventoryStamp;
+  }
+  const at = stampMs(run.createdAt);
+  return at > -Infinity && scans.some((s) => stampMs(s.scannedAt) > at);
+}
+// The run to come back to: the newest that kept a suit (a run file whose result is gone lists with no method).
+export const latestShownRun = <R extends RunStamp & { method?: string | null | undefined }>(runs: readonly R[]): R | null => latestRun(runs.filter((r) => r.method != null));
+// A skill counts toward a template's suggestion from this value up.
+export const SUGGEST_MIN_SKILL = 30;
+// The templates the first-visit view offers beside the suggested one, at most `n`: each scored by the skill points of
+// the character's trained skills its text names (its name, description, its buffs' casting skills and its casting school,
+// `text`), the highest first, ties and the rest in catalog order.
+export function suggestTemplates(cands: ReadonlyArray<{ ref: string; text: string }>, skills: Readonly<Record<string, number>>, n = 3): string[] {
+  const trained = Object.entries(skills).filter(([, v]) => v >= SUGGEST_MIN_SKILL).map(([k, v]) => [k.toLowerCase(), v] as const);
+  const score = (text: string): number => { const t = text.toLowerCase(); return trained.reduce((s, [k, v]) => (t.includes(k) ? s + v : s), 0); };
+  return cands.map((c, i) => ({ ref: c.ref, s: score(c.text), i })).sort((a, b) => b.s - a.s || a.i - b.i).slice(0, n).map((c) => c.ref);
+}
+// The summary's Needs line: each requirement ("DCI 45"), a soft one marked "(soft)", the five resists as one "Resists 70"
+// when they are alike; "None" with none. `name` is a property's short name.
+export function needsLine(floors: Readonly<Record<string, number>>, soft: readonly string[], name: (k: string) => string): string {
+  const tag = (k: string): string => (soft.includes(k) ? " (soft)" : "");
+  const first = RESIST_KEYS[0]!, alike = RESIST_KEYS.every((k) => floors[k] != null && floors[k] === floors[first] && tag(k) === tag(first));
+  const rest = Object.keys(floors).filter((k) => !NOT_BUILDER_KEYS.has(k) && !(alike && RESIST_KEYS.includes(k)));
+  return [...(alike ? [`Resists ${num(floors[first]!)}${tag(first)}`] : []), ...rest.map((k) => `${name(k)} ${num(floors[k]!)}${tag(k)}`)].join(" · ") || "None";
+}
+// "What matters most": the weights that add, by importance, largest first, the five resists as one row ("resists") when
+// they weigh alike; the first `n` and how many more there are.
+export function topWeights(weights: Readonly<Record<string, number>>, n = 4): { rows: Array<{ key: string; importance: number }>; more: number } {
+  const first = RESIST_KEYS[0]!, alike = RESIST_KEYS.every((k) => weights[k] === weights[first] && weights[k]! > 0);
+  const keys = Object.keys(weights).filter((k) => !NOT_BUILDER_KEYS.has(k) && weights[k]! > 0 && !(alike && RESIST_KEYS.includes(k)));
+  const rows = [...(alike ? [{ key: "resists", importance: importanceOf(first, weights[first]!) }] : []), ...keys.map((k) => ({ key: k, importance: importanceOf(k, weights[k]!) }))]
+    .sort((a, b) => b.importance - a.importance);
+  return { rows: rows.slice(0, n), more: Math.max(0, rows.length - n) };
+}
+// The summary's Pool line: the weapons allowed, the gear pieces scanned (when known) and the rarity preference.
+export function poolLine(excluded: string[] = [], ubws = false, pieces: number | null = null, rarity: string | undefined = undefined): string {
+  const weapons = weaponsText(excluded, ubws, { any: "Any weapon", none: "No weapons", only: (w) => `${weaponName(w)} only`, some: (ex) => `${plural(ex.length, "weapon skill")} left out`, noBooks: "Any weapon, no spellbooks" });
+  return [weapons, pieces != null ? plural(pieces, "piece") : null, rarity ? `prefer ${rarity} rarity` : "any rarity"].filter(Boolean).join(" · ");
+}
+// The summary's Search line, from the Advanced fields as typed: "Exact, up to 30 s" or "Heuristic, 20 restarts".
+export const searchLine = (k: Pick<Knobs, "exact" | "budgetS" | "restarts">): string => (k.exact ? `Exact, up to ${k.budgetS} s` : `Heuristic, ${k.restarts} restarts`);

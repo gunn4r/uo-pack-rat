@@ -1,12 +1,12 @@
 // ui/builder.mts — the Suit Builder screen (design spec 4.6, issue #272): the one-line top bar (the character and
 // template selects, Settings, Build), the Settings drawer (its tabs: Requirements, Weights, Buffs, Pool, Advanced) with
-// its footer, the optimize job (inline progress card over SSE) and the empty state (the character's current suit). The result, the compare view and the Solver details are ui/builder-result.mts; the saved-runs drawer
+// its footer and the optimize job (inline progress card over SSE). The first-visit view is ui/builder-start.mts; the result, the compare view and the Solver details are ui/builder-result.mts; the saved-runs drawer
 // is ui/runs.mts; they share the builder's state and call each other through ui/builder-session.mts. The panel is drawn
 // from the session's profile plus its Advanced knobs, so what a build sends, what a profile saves and what a run
 // snapshots are read from state, never from the DOM.
 import { NOBODY, PROP_LABELS, NOT_BUILDER_KEYS, importanceOf, weightOfImportance, GEAR_SLOTS, tagUnits, WEAPON_EXCLUDES, MELEE_SKILLS, WEAPON_MUST_HAVE, flagLabel, getRules, RESIST_KEYS, RESIST_CAP_LIMITS, resistCapsFor, templateFrom, settingsDiff, bagLabel, toOptItem, totalsOf, fcCapFor, CASTING_SCHOOLS } from "../vault-lib.mts";
 import { heldWeapon, ssiShareOf, swingOf, type SwingResult } from "../swing.mts";
-import { BUILTIN_PREFIX, characterBuffs, characterEntry, characterProfile, findTemplate, planBuild, specFromProfile, templateLabel, templateRefs, templateSettings, templateSpecFrom, type PlannedBuild } from "../build-spec.mts";
+import { BUILTIN_PREFIX, characterBuffs, characterEntry, characterProfile, findTemplate, planBuild, specFromProfile, templateLabel, templateName, templateRefs, templateSettings, templateSpecFrom, type PlannedBuild } from "../build-spec.mts";
 import type { FcCap, ResistCap, RunBuffs, RunSettings, Character } from "../vault-lib.mts";
 import { BUFFS, BUFF_GROUPS, BUFF_INPUTS, buffAvailability, buffById, buffEffectTags, isSchool, gearNeedsText, overrideNote, planBuffs, normalizeBuffs, runBuffs, toggleBuff, buffPlanOf, type Buff, type BuffPlan } from "../buffs.mts";
 import { defaultStrLimit } from "../run-settings.mts";
@@ -59,7 +59,7 @@ export function initBuilder(): void {
   };
   $<HTMLButtonElement>("#b-run")!.onclick = runBuild;
   $<HTMLButtonElement>("#b-run-foot")!.onclick = runBuild;
-  $<HTMLButtonElement>("#b-save")!.onclick = saveProfile;
+  $<HTMLButtonElement>("#b-save")!.onclick = () => saveProfile();
   $<HTMLButtonElement>("#b-save-tpl")!.onclick = saveTemplateAs;
   $<HTMLButtonElement>("#b-runs-open")!.onclick = () => commands.openRunsDrawer();
   // ⌘↵ (Ctrl+Enter off the Mac) builds from anywhere on the screen. Listened for on the document, not the
@@ -168,7 +168,7 @@ export function syncBuilderCharacters(): void {
   if (keep && (names.includes(keep) || (keep === NOBODY && names.length)) && session.profile) {
     $<HTMLSelectElement>("#b-char")!.value = keep;
     renderPanel();
-    if (!session.result && !session.job) commands.renderCurrentSuit(keep);
+    if (!session.result && !session.job) commands.renderCurrentSuit(keep, true);
   } else if (names.length) {
     const want = parseRoute().character;
     selectCharacter(names.includes(want as string) || want === NOBODY ? want as string : names[0]!);
@@ -195,7 +195,9 @@ function setNoCharacter(none: boolean): void {
     else { b.removeAttribute("title"); b.removeAttribute("aria-describedby"); }
   }
 }
-export function selectCharacter(name: string): void {
+// `open`: the saved run to show once its list is in, else (true) the character's latest when no result is on screen by then
+// (ui/runs.mts loadRuns: coming back).
+export function selectCharacter(name: string, open: string | true = true): void {
   session.character = name;
   if (parseRoute().tab === "builder") history.replaceState(null, "", routeFor("builder"));
   session.profile = characterProfile(state.profiles!, name, state.builtinTemplates);
@@ -212,8 +214,11 @@ export function selectCharacter(name: string): void {
   // A build that finished while another character was on screen waits here for its own character.
   const parked = session.parked;
   if (parked?.name === name) { session.parked = null; showFinished(parked); }
-  else commands.renderCurrentSuit(name);
-  commands.loadRuns();
+  // coming back decides between a saved run and the first-visit view once the runs are in (ui/runs.mts arriveAt); a build
+  // running keeps its card over the first-visit view
+  else if (session.job) commands.renderCurrentSuit(name);
+  else $<HTMLElement>("#b-result")!.replaceChildren();
+  commands.loadRuns(open);
   commands.paintCharSelect();
   commands.renderManual();
 }
@@ -274,7 +279,7 @@ function charSection(): HTMLElement {
   return group("char", "Character", () => [box("div", { class: "b-race-row" }, session.character === NOBODY ? null : box("div", { class: "field" }, el("span", { class: "label", id: "b-race-l" }, "Race"), race), str), castingSchoolField()]);
 }
 // A template's name as the picker shows it: a built-in's own name, without templateLabel's "(built-in)".
-const plainName = (ref: string): string => { const id = ref.slice(BUILTIN_PREFIX.length); return ref.startsWith(BUILTIN_PREFIX) ? state.builtinTemplates[id]?.name || id : ref; };
+const plainName = (ref: string): string => templateName(state.builtinTemplates, ref);
 // Under the picker, for a template with a description: a built-in's badge, the description, the buffs it loads and its
 // source pages (a built-in with none is the shard's defaults).
 function templateInfo(ref: string): HTMLElement {
@@ -330,7 +335,7 @@ function paintChanges(): void {
 const BUILTIN_READ_ONLY = "Built-in templates can't be changed. Save as… makes your own copy.";
 function templateMenu(anchor: HTMLButtonElement): void {
   const builtin = selectedTemplate().startsWith(BUILTIN_PREFIX) ? BUILTIN_READ_ONLY : undefined;
-  menu(anchor, [{ label: "Apply to these settings", onSelect: applyTemplate }, { label: "Save as…", onSelect: saveTemplateAs },
+  menu(anchor, [{ label: "Apply to these settings", onSelect: () => applyTemplate() }, { label: "Save as…", onSelect: saveTemplateAs },
     { label: "Update this template", onSelect: updateTemplate, disabled: builtin }, { label: "Delete…", onSelect: deleteTemplate, danger: true, disabled: builtin }], { label: "Template actions" });
 }
 const selectedTemplate = (): string => $<HTMLSelectElement>("#b-tpl")!.value;
@@ -341,7 +346,8 @@ async function saveTemplates(done: string): Promise<void> {
 }
 // A template with buffs also sets the character's buffs, which are saved at once, and Manual's when Manual is for the
 // same character (one undo step there).
-function applyTemplate(): void {
+// `say`: the toast that it was applied (a template card says it was saved instead).
+function applyTemplate(say = true): void {
   const ref = selectedTemplate(), t = findTemplate(state.profiles!, state.builtinTemplates, ref), name = plainName(ref);
   if (!t) return;
   Object.assign(session.profile!, templateSettings(t), { template: ref });
@@ -353,14 +359,31 @@ function applyTemplate(): void {
   }
   clearCapDrafts();
   renderPanel();
-  toast(`${name} applied. Save profile to keep it.`, "good");
+  if (say) toast(`${name} applied. Save profile to keep it.`, "good");
+}
+// A template card in the first-visit view (ui/builder-start.mts), the player's starting choice: what picking it in the top
+// bar does, then Apply and Save profile, so the character's saved settings are that template and a build from it comes
+// back with nothing changed; the card of the panel's own template applies nothing again. When there is something to lose
+// (the panel differs from its template, or from the character's saved settings) it asks first.
+async function pickTemplate(ref: string): Promise<void> {
+  const name = session.character!, p = session.profile!;
+  if (ref === p.template) { const tpl = $<HTMLSelectElement>("#b-tpl")!; tpl.value = ref; tpl.dispatchEvent(new Event("change")); return; }
+  const unsaved = settingsDiff(templateFrom(characterProfile(state.profiles!, name, state.builtinTemplates)), templateFrom(readControls())).length > 0;
+  if ((templateDrift().tone !== "ok" || unsaved) && !await confirmDialog({ title: `Replace ${who(name)}'s saved settings with ${plainName(ref)}?`,
+    body: "Your current settings are only kept in runs built with them.", confirmLabel: "Replace" })) return;
+  if (session.character !== name || session.profile !== p) return;   // another character picked while it asked
+  const tpl = $<HTMLSelectElement>("#b-tpl")!;
+  tpl.value = ref;
+  tpl.dispatchEvent(new Event("change"));
+  applyTemplate(false);
+  void saveProfile(`${plainName(ref)} saved as ${who(session.character!)}'s settings.`);
 }
 async function saveTemplateAs(): Promise<void> {
   const was = session.profile!.template || "";
   const name = await promptText({ title: "Template name", value: was.startsWith(BUILTIN_PREFIX) ? "" : was });
   if (name?.startsWith(BUILTIN_PREFIX)) { toast(`A template's name can't start with "${BUILTIN_PREFIX}".`, "bad"); return; }
   if (!name || (state.profiles!.templates[name] && !await confirmDialog({ title: `Overwrite the ${name} template?`, body: `The ${name} template is replaced with these settings.`, confirmLabel: `Overwrite ${name}` }))) return;
-  state.profiles!.templates[name] = { spec: templateSpecFrom(readControls(), buffsOn()) };
+  state.profiles!.templates[name] = { spec: templateSpecFrom(readControls(), buffsOn()), savedAt: new Date().toISOString() };
   session.profile!.template = name;
   renderPanel();
   await saveTemplates(`Template ${name} saved.`);
@@ -368,7 +391,7 @@ async function saveTemplateAs(): Promise<void> {
 async function updateTemplate(): Promise<void> {
   const name = selectedTemplate();
   if (!Object.hasOwn(state.profiles!.templates, name) || !await confirmDialog({ title: `Update the ${name} template?`, body: `The ${name} template is overwritten with these settings.`, confirmLabel: `Update ${name}` })) return;
-  state.profiles!.templates[name] = { ...state.profiles!.templates[name], spec: templateSpecFrom(readControls(), buffsOn()) };
+  state.profiles!.templates[name] = { ...state.profiles!.templates[name], spec: templateSpecFrom(readControls(), buffsOn()), savedAt: new Date().toISOString() };
   session.profile!.template = name;
   updateTemplateBadge();
   await saveTemplates(`Template ${name} updated.`);
@@ -1200,7 +1223,7 @@ function runPanel(job: BuilderJob): BuilderJobUi {
 }
 
 // ---------------------------------------------------------------- save
-async function saveProfile(): Promise<void> {
+async function saveProfile(said?: string): Promise<void> {
   if (!session.character || !session.profile) { toast("No character to save a profile for yet: scan one first.", "bad"); return; }
   // A copy (later panel edits must not ride along with a template save), keeping what the panel doesn't edit: any
   // other field of the entry, and the spec's goal and search.
@@ -1208,6 +1231,6 @@ async function saveProfile(): Promise<void> {
   const { race: _race, template: _template, spec: was, ...rest } = Object.hasOwn(chars, name) ? chars[name]! : { spec: undefined };
   chars[name] = { ...rest, ...entry, spec: { ...was, ...entry.spec } };
   const r = await putProfiles();
-  toast(r.ok ? `Profile for ${who(name)} saved.` : r.error!, r.ok ? "good" : "bad");
+  toast(r.ok ? said ?? `Profile for ${who(name)} saved.` : r.error!, r.ok ? "good" : "bad");
 }
-provide({ renderPanel, clearCapDrafts, panelBuild, buffPlan, loadRunBuffs, tuneWeight });
+provide({ renderPanel, clearCapDrafts, panelBuild, buffPlan, loadRunBuffs, tuneWeight, pickTemplate: (ref) => { void pickTemplate(ref); }, selectCharacter, build: () => { void runBuild(); }, openSettingsTab: (t) => openSettings(t as Tab) });

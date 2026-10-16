@@ -35,7 +35,7 @@ export type TemplateSpec = Omit<BuildSpec, "buffs"> & { buffs?: BuildBuffs | und
 // display name (the id when absent). Any other field round-trips untouched.
 export interface CharacterEntry { race?: string | null | undefined; template?: string | undefined; spec: BuildSpec; [key: string]: unknown }
 // A built-in's description and source pages show under the template picker; Save as copies neither.
-export interface TemplateEntry { name?: string | undefined; description?: string | undefined; sources?: string[] | undefined; spec: TemplateSpec; [key: string]: unknown }
+export interface TemplateEntry { name?: string | undefined; description?: string | undefined; sources?: string[] | undefined; savedAt?: string | undefined; spec: TemplateSpec; [key: string]: unknown }
 export interface ProfilesV3 { schemaVersion: 3; characters: Record<string, CharacterEntry>; templates: Record<string, TemplateEntry>; [key: string]: unknown }
 export const PROFILES_VERSION = 3;
 
@@ -162,12 +162,14 @@ export function findTemplate(profiles: Pick<ProfilesV3, "templates">, builtins: 
 // Every template a reference can name: the player's first, then the built-ins.
 export const templateRefs = (profiles: Pick<ProfilesV3, "templates">, builtins: TemplateMap): string[] =>
   [...Object.keys(profiles.templates || {}), ...Object.keys(builtins).map((id) => BUILTIN_PREFIX + id)];
-// A template's name as the page shows it.
-export function templateLabel(builtins: TemplateMap, ref: string): string {
+// A template's own name: a built-in's name, the player's template's key.
+export function templateName(builtins: TemplateMap, ref: string): string {
   if (!ref.startsWith(BUILTIN_PREFIX)) return ref;
   const id = ref.slice(BUILTIN_PREFIX.length);
-  return `${builtins[id]?.name || id} (built-in)`;
+  return builtins[id]?.name || id;
 }
+// A template's name as the page shows it.
+export const templateLabel = (builtins: TemplateMap, ref: string): string => (ref.startsWith(BUILTIN_PREFIX) ? `${templateName(builtins, ref)} (built-in)` : ref);
 // The template fields a template sets, as the panel's settings.
 export const templateSettings = (t: TemplateEntry): Template => templateFrom(profileFromSpec(t.spec));
 
