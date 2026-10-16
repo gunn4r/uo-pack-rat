@@ -108,7 +108,7 @@ def script_prefix(self_name):
 
 
 ADAPTER_ID = "tazuo"
-ADAPTER_VERSION = "2.17.0"
+ADAPTER_VERSION = "2.18.0"
 CAPABILITIES = {
     "layers": ["OneHanded", "TwoHanded", "Shoes", "Pants", "Shirt", "Helmet", "Gloves",
                "Ring", "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic",
@@ -630,9 +630,11 @@ def is_container(item, name):
 
 
 # BEGIN generated: tazuo/tooltip_lines
-def tooltip_lines(serial):
+def tooltip_lines(serial, wait=True):
+    """The item's tooltip lines. `wait`: the client waits up to 10 s for a tooltip it does not have yet
+    (TazUO's ItemNameAndProps); without it, a missing tooltip reads as none at once."""
     try:
-        data = API.ItemNameAndProps(int(serial), True)
+        data = API.ItemNameAndProps(int(serial), wait)
     except Exception:
         data = None
     return [ln.strip() for ln in str(data or "").splitlines() if ln.strip()]

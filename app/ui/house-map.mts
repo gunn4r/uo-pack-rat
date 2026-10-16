@@ -1198,7 +1198,26 @@ function totalsPanel(m: HouseModel): HTMLElement[] {
     legend(),
     el("p", { class: "t-sm muted" }, "Click a stack on the map, or an area on the left."),
     whereSection(m),
+    forgetButton(m),
   ].filter((e): e is HTMLElement => e != null);
+}
+// Remove this house (issue #298): a house the scan captured where it should not have (the player had moved into another house) leaves the map, after the page's yes/no dialog, until a newer scan captures it again.
+function forgetButton(m: HouseModel): HTMLElement | null {
+  const h = summaryOf(m);
+  if (!h) return null;
+  return box("div", { class: "map-panel-actions" }, button({ label: "Remove this house", variant: "ghost", size: "sm", attrs: { id: "map-forget" }, onClick: () => { void askForget(m, h); } }));
+}
+// An unnamed house is named by its facet and centre tile ("the Trammel house at 1777, 2364"), so two unnamed houses on one facet read apart. After the removal focus goes to the house picker, or to the screen's heading when the picker is disabled (one choice or none left).
+async function askForget(m: HouseModel, h: NonNullable<ReturnType<typeof summaryOf>>): Promise<void> {
+  const name = m.name ?? `the ${houseName(m)} at ${whereOf(h).centreText}`;
+  if (!await confirmDialog({ title: `Remove ${name}?`, body: "It leaves the House map until a newer scan captures it again. Its containers and what is in them stay in the Inventory.", confirmLabel: "Remove house" })) { $<HTMLElement>("#map-forget")?.focus(); return; }
+  try { await houses.forget(m.id, h.capturedAt); } catch (e) { toast(errorText(e), "bad"); $<HTMLElement>("#map-forget")?.focus(); return; }
+  toast(`Removed ${name} from the House map.`, "good");
+  history.replaceState(null, "", mapHash({ q: query }));
+  await showMap({ house: null, q: query, select: null });
+  const pick = $<HTMLSelectElement>("#map-house"), heading = $<HTMLElement>("#h-map");
+  if (pick && !pick.disabled) { pick.focus(); return; }
+  if (heading) { heading.tabIndex = -1; heading.focus(); }
 }
 // ---------------------------------------------------------------- where the house is (issue #164)
 const summaryOf = (m: HouseModel) => (m.id === PLAIN ? undefined : S.list?.houses.find((h) => h.id === m.id));

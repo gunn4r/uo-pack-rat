@@ -6,7 +6,7 @@ import { renderRegion, type Region } from "../../facet-map.mts";
 import type { HouseSource } from "../../house-capture.mts";
 import type { HouseApiResponse, HousesApiResponse } from "../../house-model-types.mts";
 import { plotBounds, plotSize } from "../../house-model.mts";
-import { checkHouseEntry, isHouseId, readHouseMap, saveHouseEntry, MAX_ENTRY_BYTES } from "../../house-names.mts";
+import { checkHouseEntry, forgetHouse, isForgotten, isHouseId, isStamp, readHouseMap, saveHouseEntry, MAX_ENTRY_BYTES } from "../../house-names.mts";
 import { safeAppendLog } from "../../log.mts";
 import { encodePng } from "../../png.mts";
 import { readBody } from "../../read-body.mts";
@@ -27,9 +27,10 @@ export function routes(ctx: ServerContext): Route[] {
     return got;
   }
   return [
-    // The houses the scans captured (issue #10): GET /api/houses lists each with its size, chest count and container serials (what Inventory's "Show on map" looks an item's container up in), GET /api/houses/<id> serves one house's whole model. Both come from the fold's cache and the built models are memoised (houseModel); an id that names no house (or does not decode) is a 404.
+    // The houses the scans captured (issue #10): GET /api/houses lists each with its size, chest count and container serials (what Inventory's "Show on map" looks an item's container up in), GET /api/houses/<id> serves one house's whole model. Both come from the fold's cache and the built models are memoised (houseModel); an id that names no house (or does not decode) is a 404. A house the player removed (POST /api/house-map/<id>/forget) is left out until a newer capture of it.
     { method: "GET", path: /^\/api\/houses(?:\/|$)/, handle: async (_req, res, url) => {
-      const { inv, houses } = await getInventory();
+      const { inv, houses: all } = await getInventory(), map = readNames().doc;
+      const houses = all.filter((h) => !isForgotten(map, h.id, h.capturedAt));
       let one: HouseSource | undefined;
       if (url.pathname !== "/api/houses") {
         let id: string | null;
@@ -37,7 +38,7 @@ export function routes(ctx: ServerContext): Route[] {
         one = houses.find((h) => h.id === id);
         if (!one) return send(res, 404, { ok: false, error: "no such house" });
       }
-      const from = houseService.tileData(), td = from.td, names = readNames().doc.houses;
+      const from = houseService.tileData(), td = from.td, names = map.houses;
       const named = (id: string): { name?: string } => (names[id]?.name ? { name: names[id].name } : {});
       if (one) return send(res, 200, { ok: true, house: { ...houseService.model(inv, one, td), ...named(one.id) } } satisfies HouseApiResponse);
       return send(res, 200, { ok: true, tiledata: td !== null, tiledataFrom: { folder: from.folder, source: from.source, reason: from.reason }, houses: houses.map((h) => {
@@ -82,6 +83,20 @@ export function routes(ctx: ServerContext): Route[] {
       const refused = saveHouseEntry(HOUSE_MAP, doc, id, checked.entry);
       if (refused) return send(res, 409, { ok: false, error: refused });
       return send(res, 200, { ok: true, entry: checked.entry });
+    } },
+    // Remove a house from the House map (issue #298): POST /api/house-map/<id>/forget {capturedAt}, the capture the page showed. It stays hidden until a newer capture of it; its name and areas are kept. A bad id or stamp is a 400; a forget that would grow the file past the size a read accepts is a 409, as a PUT's is.
+    { method: "POST", path: /^\/api\/house-map\/[^/]+\/forget$/, handle: async (req, res, url) => {
+      let id: string | null;
+      try { id = decodeURIComponent(url.pathname.slice("/api/house-map/".length, -"/forget".length)); } catch { id = null; }
+      if (id == null || !isHouseId(id)) return send(res, 400, { ok: false, error: "that is not a house id (<facet>-<x>-<y>)" });
+      const capturedAt = (await readBody(req, { limit: 1024 }) as { capturedAt?: unknown } | null)?.capturedAt;
+      if (!isStamp(capturedAt)) return send(res, 400, { ok: false, error: "capturedAt must be the house's capture time" });
+      const { doc, readOnly } = readNames();
+      if (readOnly) return send(res, 409, { ok: false, error: readOnly });
+      mkdirSync(dirname(HOUSE_MAP), { recursive: true, mode: DATA_DIR_MODE });
+      const refused = forgetHouse(HOUSE_MAP, doc, id, capturedAt);
+      if (refused) return send(res, 409, { ok: false, error: refused });
+      return send(res, 200, { ok: true });
     } },
   ];
 }
