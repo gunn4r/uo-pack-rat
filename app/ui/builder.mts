@@ -8,16 +8,16 @@ import { NOBODY, PROP_LABELS, NOT_BUILDER_KEYS, importanceOf, roundImportance, w
 import { heldWeapon, ssiShareOf, swingOf, type SwingResult } from "../swing.mts";
 import { BUILTIN_PREFIX, characterBuffs, characterEntry, characterProfile, findTemplate, planBuild, specFromProfile, templateLabel, templateRefs, templateSettings, templateSpecFrom, type PlannedBuild } from "../build-spec.mts";
 import type { FcCap, ResistCap, RunBuffs, RunSettings, Character } from "../vault-lib.mts";
-import { buffById, gearNeedsText, overrideNote, planBuffs, normalizeBuffs, runBuffs, toggleBuff, buffPlanOf, type BuffPlan } from "../buffs.mts";
+import { BUFFS, BUFF_GROUPS, buffById, buffCastNeeds, buffEffectTags, castSkills, isSchool, gearNeedsText, overrideNote, planBuffs, normalizeBuffs, runBuffs, toggleBuff, buffPlanOf, type Buff, type BuffPlan } from "../buffs.mts";
 import { defaultStrLimit } from "../run-settings.mts";
 import { evaluateSuit } from "../evaluate.mts";
 import { state, invStamp } from "./store.mts";
 import type { BuilderJob, BuilderJobUi, FinishedBuild, BuildMeta } from "./store.mts";
 import { $, el, label, full, fmtN, fmtSecs, slotLabel, toast } from "./dom.mts";
 import { promptText } from "./dialog.mts";
-import { box, txt, button, kbd, badge, token, message, select, input, field, switchControl, check, segmented, filterChip, pill, popover, closePopover, menu, searchInput, stepper, progress, meter, tooltip, confirmDialog, modalOpen } from "./components.mts";
+import { box, txt, button, kbd, badge, token, message, select, input, field, switchControl, check, segmented, filterChip, pill, popover, closePopover, menu, searchInput, stepper, progress, tooltip, confirmDialog, modalOpen } from "./components.mts";
 import { api } from "./api.mts";
-import { buffChip, createBuffPicker, keepChipFocus, type BuffPicker, type BuffView, type PickerActions } from "./builder-buffs.mts";
+import { createBuffPicker, type BuffPicker, type BuffView, type PickerActions } from "./builder-buffs.mts";
 import { optimizeErrorMessage } from "./messages.mts";
 import { parseRoute, registerScreen, routeFor } from "./nav.mts";
 import { setNavBusy } from "./shell.mts";
@@ -25,7 +25,7 @@ import { putProfiles, setCharacterBuffs } from "./profiles.mts";
 import { session, commands, provide, readControls, type BuilderChange } from "./builder-session.mts";
 import { followJob, progressText, settingsCheck } from "./builder-parts.mts";
 import { characterNames } from "./roster.mts";
-import { nextSwingStep, speedText, swingLines, propName, newWeight, editedValue, runSettingsDiff, plural, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistMinimumText, pruneResistCaps, floorCapWarning, weaponsChipText, weaponMustHaveChipText, withStoredRoots, weaponName, toggleWeapon, weightTradeoff, fcCapText, rarityHelp, templateBuffsLine, sourceTitle, who, type KnobField } from "./builder-model.mts";
+import { needStatus, nextSwingStep, speedText, swingLines, propName, newWeight, editedValue, runSettingsDiff, plural, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistMinimumText, pruneResistCaps, floorCapWarning, weaponsChipText, weaponMustHaveChipText, withStoredRoots, weaponName, toggleWeapon, weightTradeoff, fcCapText, rarityHelp, templateBuffsLine, sourceTitle, who, type KnobField } from "./builder-model.mts";
 import type { OptimizeResult, SavedRunLike, OptimizeStartApiResponse, OptimizeCancelApiResponse, UiPrefs } from "./api-types.mts";
 import { prefs } from "./prefs.mts";
 
@@ -405,12 +405,44 @@ function loadRunBuffs(b: RunBuffs | undefined): void {
   setPanelBuffs(b?.on ?? []);
   commands.applyRunInputs(session.character!, b);
 }
+// The tab lists the buffs by school (issue #272), each with its switch and what it changes in the suit maths, a school's
+// heading the character's skill in it. Only the ones it can cast are listed, and any that are on, until Show all (kept
+// for the page session); one it can't cast is greyed with what it needs. With No character, or a scan that carries no
+// skills, every buff is listed, and no skill. The picker (Search and edit numbers) holds the rest: the search, the
+// numbers they scale with, Clear all.
+let allBuffs = false;
 function buffsSection(): HTMLElement {
-  const on = buffsOn(), v = buffView();
-  const add = filterChip({ label: "Add buff", add: true, attrs: { id: "b-buff-add", "aria-haspopup": "dialog" } });
+  const v = buffView(), scanned = v.name ? state.inv!.characters[v.name]?.skills ?? {} : {}, own = Object.keys(scanned).length ? scanned : null;
+  const skills = own ? castSkills(v.values, v.planned, v.edits) : v.values;
+  const level = (g: string): number | null => (own && isSchool(g) ? Number((own[g] as { value?: unknown } | undefined)?.value) || 0 : null);
+  const groups = BUFF_GROUPS.flatMap((g) => {
+    const school = level(g.name);
+    const rows = BUFFS.filter((b) => b.group === g.name).map((b) => ({ b, needs: buffCastNeeds(b, skills, v.who, school) }))
+      .filter(({ b, needs }) => allBuffs || !own || v.on.includes(b.id) || (!needs && !g.collapsed && !b.unconfirmed));
+    if (!rows.length) return [];
+    const head = box("div", { class: "b-bf-head" }, txt(g.name, "caps"), school == null ? null : txt(school ? `skill ${school}` : "not trained", "t-sm muted"));
+    return [box("section", { class: "b-bf-group", "aria-label": g.name }, head, ...rows.map(({ b, needs }) => buffRow(b, needs, v)))];
+  });
+  const add = button({ label: "Search and edit numbers", icon: "search", variant: "ghost", size: "sm", attrs: { id: "b-buff-add", "aria-haspopup": "dialog" } });
   add.onclick = () => openBuffPicker(add);
-  return group("buffs", null, () => [el("p", { class: "help" }, txt("Counted as always on. The search doesn't spend gear on what they already give.")),
-    box("div", { class: "b-chips", id: "b-buff-chips" }, ...on.map((id) => buffChip(id, v, buffActions)), add)]);
+  const all = button({ label: allBuffs ? "Show castable only" : "Show all", variant: "ghost", size: "sm", attrs: { id: "b-bf-all" },
+    onClick: () => { allBuffs = !allBuffs; redraw("buffs"); document.getElementById("b-bf-all")?.focus(); } });
+  const lead = own ? `Only the buffs ${v.name}'s skills can cast are listed, and any that are on.`
+    : v.name ? `Every buff is listed: ${v.name}'s scan carries no skills, so each counts at 120.` : "Every buff is listed: with no character every skill counts at 120.";
+  return group("buffs", null, () => [box("div", { class: "b-bf-lead" }, el("p", { class: "help" }, txt(lead)), own ? all : null), ...groups,
+    el("p", { class: "help" }, txt("Counted as always on. The search doesn't spend gear on what they already give.")), add]);
+}
+// One buff: its switch and name, what it changes (buffEffectTags), and under them what it needs to cast, else its note.
+function buffRow(b: Buff, needs: string | null, v: BuffView): HTMLElement {
+  const on = v.on.includes(b.id), line = needs ?? b.note ?? null, lid = `b-bf-${b.id.replace(/\W/g, "-")}-d`;
+  const sw = switchControl({ label: b.name, checked: on, disabled: !!b.race && !!needs && !on, onChange: () => buffActions.toggle(b.id),
+    attrs: { id: `b-bf-${b.id.replace(/\W/g, "-")}`, "aria-label": b.name, "aria-describedby": lid } });
+  sw.root.lastElementChild!.replaceWith(box("span", { class: "b-bf-text" }, txt(b.name, "strong"),
+    box("span", { class: "b-bf-fx", id: lid }, ...buffEffectTags(b.id, v.values, v.stats, v.totals, v.who, v.caps).map((t) => txt(t)), line ? txt(line, "t-sm muted b-bf-line") : null)));
+  sw.root.classList.add("b-bf");
+  if (needs) sw.root.classList.add("b-bf-cant");
+  sw.root.dataset.buff = b.id;
+  return sw.root;
 }
 // The picker's state: the buffs on, their numbers, and what each would add, against the caps before any buff.
 function buffView(): BuffView {
@@ -426,16 +458,17 @@ function buffView(): BuffView {
 function setBuffs(next: string[], n: typeof note): void {
   setPanelBuffs(next);
   note = n;
-  const row = document.getElementById("b-buff-chips"), add = document.getElementById("b-buff-add"), v = buffView();
-  if (row && add) row.replaceChildren(...v.on.map((id) => buffChip(id, v, buffActions)), add);
-  redraw("req"); redraw("weights");   // the switch's step line counts the buffs' stamina and SSI
-  picker?.paint(v);
+  // the tab's list is redrawn whole: a switch that had the focus keeps it, or Search and edit numbers takes it when its row went
+  const f = document.activeElement?.closest("#b-sec-buffs") ? document.activeElement.id : null;
+  redraw("buffs"); redraw("req"); redraw("weights");   // the switch's step line counts the buffs' stamina and SSI
+  if (f) (document.getElementById(f) ?? document.getElementById("b-buff-add"))?.focus();
+  picker?.paint(buffView());
 }
 const buffActions: PickerActions = {
-  toggle: (id) => keepChipFocus("#b-buff-chips", "b-buff-add", () => {
+  toggle: (id) => {
     const { next, replaced: off } = toggleBuff(buffsOn(), id);
     setBuffs(next, off ? { replaced: { on: id, off } } : null);
-  }),
+  },
   setInput: (id, value) => { commands.editBuffInputs(session.character, { [id]: value }); setBuffs(buffsOn(), note); },
   clear: () => setBuffs([], buffsOn().length ? { cleared: buffsOn() } : null),
   close: closePopover,
@@ -521,9 +554,12 @@ function requirementsSection(): HTMLElement {
       const hard = segmented({ label: `${nm}: hard or soft`, options: [{ value: "hard", label: "Hard" }, { value: "soft", label: "Soft" }], value: p.softFloors!.includes(k) ? "soft" : "hard",
         onChange: (v) => { p.softFloors = p.softFloors!.filter((x) => x !== k); if (v === "soft") p.softFloors.push(k); updateTemplateBadge(); } });
       const num = boundNumber(p.floors!, k, `${nm} minimum`, k);
-      const row = box("div", { class: "rule-row", "data-key": k }, ruleName(nm), txt("≥", "muted"), num, hard,
+      const status = el("span", { class: "t-sm b-need-status" });
+      const row = box("div", { class: "rule-row", "data-key": k }, box("span", { class: "b-need" }, ruleName(nm), status), txt("≥", "muted"), num, hard,
         button({ label: `Remove requirement: ${nm}`, icon: "close", iconOnly: true, variant: "ghost", size: "sm", onClick: () => { delete p.floors![k]; p.softFloors = p.softFloors!.filter((x) => x !== k); redraw("req"); focusIn("req", ".b-add"); } }));
       floorWarning(row, num, k);
+      paintNeed(row);
+      num.addEventListener("input", () => paintNeed(row));
       const ignored = prof.buffs?.overridesIgnored?.[k];
       // a requirement at or under the minimum the buffs leave asks nothing of gear
       const byMinimum = prof.mins?.[k] != null && prof.floors[k]! <= prof.mins[k]!;
@@ -538,6 +574,16 @@ function requirementsSection(): HTMLElement {
     return [help, rows.length ? box("div", { class: "b-rules" }, ...rows) : null, forbidSkillsRow(), add];
   });
 }
+// Under a requirement's name, what it came to in the result shown (builder-model.mts needStatus): "Met: 45", "2 short",
+// and for SSI the next swing step; nothing with no result shown, or one for another character. A run built from other
+// settings still says it: it is the last build's outcome, and the footer counts the changes since.
+function paintNeed(row: HTMLElement): void {
+  const k = row.dataset.key!, o = session.outcome, floor = session.profile?.floors?.[k], out = row.querySelector<HTMLElement>(".b-need-status")!;
+  const s = o && o.name === session.character && floor != null ? needStatus(k, floor, o.totals[k] || 0, o.caps, k === "ssi" ? nextSwingStep(o.swing) : null, o.weapon) : null;
+  out.textContent = s?.text ?? "";
+  out.className = `t-sm b-need-status${s ? ` tone-${s.tone}` : ""}`;
+}
+document.addEventListener("builderchange", (e) => { if ((e as BuilderChange).detail.key === "outcome") document.querySelectorAll<HTMLElement>("#b-sec-req .rule-row[data-key]").forEach(paintNeed); });
 // A resist requirement above its resist's cap is kept (a saved profile may carry one) but counts only up to the
 // cap, as the solver scores it: the row says so, and keeps saying so as the floor is typed.
 function floorWarning(row: HTMLElement, num: HTMLInputElement, k: string): void {
@@ -599,34 +645,57 @@ function weightsSection(): HTMLElement {
   const p = session.profile!;
   const keys = Object.keys(p.weights!).filter((k) => !NOT_BUILDER_KEYS.has(k));
   return group("weights", null, () => {
-    // each row shows and takes the weight's importance (vault-lib.mts importanceOf), with a bar scaled to the largest
-    // and the trade-off with the top property on hover and focus; the profile keeps the weight per point
+    // each row shows and takes the weight's importance (vault-lib.mts importanceOf) in its field and on a notched slider
+    // (issue #272) on a fixed 0-100 scale, so one row never resizes another; the slider snaps to 5, the field takes any
+    // number (a negative one, flipped by ±, in the warn tone; past 100 the slider is full and says the value). The
+    // trade-off with the top property is on hover and focus, and under the list for the row last moved; the profile
+    // keeps the weight per point.
     const paints: Array<() => void> = [];
+    const readout = el("p", { class: "help b-wreadout", id: "b-wreadout", hidden: "" });
     const rows = keys.map((k) => {
-      const nm = propName(k), num = boundNumber(p.weights!, k, `${nm} weight`, k, { show: (w) => roundImportance(importanceOf(k, w)), store: (n) => weightOfImportance(k, n) });
-      const hover = el("span", { class: "sr", id: `b-wtip-${k.replace(/\W/g, "_")}` }), bar = box("span", { class: "b-wbar" }, meter(0, 1), hover);
+      const nm = propName(k), conv = { show: (w: number) => roundImportance(importanceOf(k, w)), store: (n: number) => weightOfImportance(k, n) };
+      const num = boundNumber(p.weights!, k, `${nm} weight`, k, conv);
+      const hover = el("span", { class: "sr", id: `b-wtip-${k.replace(/\W/g, "_")}` });
+      const slider = el("input", { type: "range", class: "b-wslider", min: "0", max: "100", step: "5", "aria-label": `${nm} weight slider`, "aria-describedby": hover.id });
+      const over = el("span", { class: "b-wover", "aria-hidden": "true" });
+      const track = box("span", { class: "b-wtrack" }, ...[25, 50, 75].map((x) => el("i", { style: `left:${x}%` })), slider, over, hover);
+      const sign = button({ label: "±", variant: "ghost", size: "sm", cls: "b-wsign", attrs: { "aria-label": `${nm}: negative weight` } });
       const paint = (): void => {
-        const imp = importanceOf(k, p.weights![k]!), top = Math.max(...keys.map((x) => Math.abs(importanceOf(x, p.weights![x]!))));
-        bar.firstElementChild!.replaceWith(meter(Math.abs(imp), top, { tone: imp < 0 ? "warn" : undefined, label: `${nm} weight ${roundImportance(imp)}` }));
-        bar.firstElementChild!.setAttribute("aria-describedby", hover.id);
+        const imp = importanceOf(k, p.weights![k]!), mag = Math.min(100, Math.abs(imp)), shown = roundImportance(imp);
+        slider.value = String(mag);
+        slider.style.setProperty("--fill", `${mag}%`);
+        slider.setAttribute("aria-valuetext", String(shown).replace("-", "−"));
+        track.classList.toggle("neg", imp < 0);
+        over.textContent = Math.abs(imp) > 100 ? `▸${String(shown).replace("-", "−")}` : "";
+        sign.setAttribute("aria-pressed", String(imp < 0));
         hover.textContent = weightTradeoff(k, p.weights!);
       };
       paints.push(paint);
-      // the arrows step by 1 from 10 up and by 0.1 below, as the number is shown
+      // the field's arrows step by 1 from 10 up and by 0.1 below, as the number is shown
       const step = (): void => { num.step = Math.abs(Number(num.value)) >= 10 ? "1" : "0.1"; };
       step();
-      num.addEventListener("input", () => { step(); paints.forEach((f) => f()); });
+      const said = (): void => { readout.hidden = false; readout.textContent = weightTradeoff(k, p.weights!); };
+      num.addEventListener("input", () => { step(); paints.forEach((f) => f()); said(); });
+      // the slider and ± write the field, which stores the weight as a typed one would (editedValue)
+      const write = (n: number): void => { num.value = String(n); num.dispatchEvent(new Event("input")); };
+      slider.addEventListener("input", () => write((importanceOf(k, p.weights![k]!) < 0 ? -1 : 1) * Number(slider.value)));
+      slider.addEventListener("focus", said);
+      sign.onclick = () => { p.weights![k] = -p.weights![k]!; write(conv.show(p.weights![k]!)); };
       tooltip(num, () => hover.textContent!);
-      tooltip(bar, () => hover.textContent!);
+      tooltip(track, () => hover.textContent!);
       num.setAttribute("aria-describedby", hover.id);
-      return box("div", { class: "rule-row weight", "data-key": k }, ruleName(nm), num, bar,
+      return box("div", { class: "rule-row weight", "data-key": k }, ruleName(nm), num, track, sign,
         button({ label: `Remove weight: ${nm}`, icon: "close", iconOnly: true, variant: "ghost", size: "sm", onClick: () => { delete p.weights![k]; redraw("weights"); focusIn("weights", ".b-add"); } }),
         k === "ssi" ? swingStepsSetting() : k === "fc" ? fcCapNote() : null);
     });
     paints.forEach((f) => f());
+    // the scale's words, once under the slider column
+    const scale = rows.length ? box("div", { class: "b-wscale", "aria-hidden": "true" }, el("span"), el("span"),
+      box("span", { class: "b-wmarks" }, ...[["off", 0], ["low", 25], ["some", 50], ["high", 75], ["top", 100]].map(([w, x]) => el("span", { style: `left:${x}%` }, String(w)))), el("span"), el("span")) : null;
     const add = filterChip({ label: "Add weight", add: true, attrs: { class: "fchip add b-add", id: "b-addweight" } });
     add.onclick = () => propertyPicker(add, "Add weight", Object.keys(p.weights!), (k) => { p.weights![k] = newWeight(k); redraw("weights"); focusIn("weights", `.rule-row[data-key="${CSS.escape(k)}"] input`, true); });
-    return [el("p", { class: "help" }, txt("How much a good amount of each property matters, about 0 to 100. Higher counts more.")), rows.length ? box("div", { class: "b-rules" }, ...rows) : null, add];
+    return [el("p", { class: "help" }, txt("How much a good amount of each property matters, about 0 to 100. Higher counts more. Dragging snaps to 5; type any number, a negative one to count against.")),
+      rows.length ? box("div", { class: "b-rules" }, ...rows) : null, scale, readout, add];
   });
 }
 // ---- swing steps (app/swing.mts): the switch on the SSI weight row, and the requirement row's "Next step" The worn suit's swing with the panel's buffs, the weapon a build is known to hold before it runs (a locked hand keeps the worn piece); null when it holds no weapon of known speed.

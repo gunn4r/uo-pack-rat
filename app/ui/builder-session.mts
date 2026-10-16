@@ -3,14 +3,18 @@
 // each other. The four never import each other: each reads and sets the session here, and registers the commands it
 // performs for the others with provide(). Today a session is one character, one result and one job.
 import { RUN_DEFAULTS } from "../run-settings.mts";
-import type { EffectiveProfile, RunBuffs, RunSettings } from "../vault-lib.mts";
+import type { EffectiveProfile, PropMap, RunBuffs, RunSettings } from "../vault-lib.mts";
 import type { BuffPlan, Stats } from "../buffs.mts";
 import type { PlannedBuild } from "../build-spec.mts";
 import { knobError, type Knobs } from "./builder-model.mts";
 import type { BuilderProfile, BuilderJob, BuildMeta, FinishedBuild } from "./store.mts";
 import type { OptimizeResult, OptSuit, RunSummaryLike, SavedRunLike } from "./api-types.mts";
+import type { SwingResult } from "../runs-types.mts";
 
 export type BuilderMode = "automatic" | "manual";
+// The shown result's best suit as the Requirements tab reads it (issue #272): its paperdoll totals with the buffs it was
+// planned with, the caps they leave, its swing and held weapon, and the character it was built for.
+export interface ShownOutcome { name: string; totals: PropMap; caps: Record<string, number>; swing: SwingResult | null; weapon: string | null }
 export interface BuilderState {
   character: string | null;
   profile: BuilderProfile | null;
@@ -23,8 +27,9 @@ export interface BuilderState {
   // A build that finished while another character was selected, shown when its character is next.
   parked: FinishedBuild | null;
   mode: BuilderMode;   // Automatic or Manual (a ui-prefs field, builder-manual.mts applyBuilderPrefs)
+  outcome: ShownOutcome | null;   // set by builder-result.mts as it draws a result, null with none shown
 }
-const data: BuilderState = { character: null, profile: null, result: null, job: null, runs: [], compare: new Set(), openRun: null, altView: null, parked: null, mode: "automatic" };
+const data: BuilderState = { character: null, profile: null, result: null, job: null, runs: [], compare: new Set(), openRun: null, altView: null, parked: null, mode: "automatic", outcome: null };
 // Every setter fires `builderchange` on the document, with the field's name as its detail.
 export type BuilderChange = CustomEvent<{ key: keyof BuilderState | "knobs" }>;
 const changed = (key: keyof BuilderState | "knobs"): void => { globalThis.document?.dispatchEvent(new CustomEvent("builderchange", { detail: { key } })); };
@@ -47,6 +52,7 @@ export const session = {
   get altView(): number | null { return data.altView; }, set altView(v: number | null) { put("altView", v); },
   get parked(): FinishedBuild | null { return data.parked; }, set parked(v: FinishedBuild | null) { put("parked", v); },
   get mode(): BuilderMode { return data.mode; }, set mode(v: BuilderMode) { put("mode", v); },
+  get outcome(): ShownOutcome | null { return data.outcome; }, set outcome(v: ShownOutcome | null) { put("outcome", v); },
   get knobs(): Knobs { return knobs; },
 };
 

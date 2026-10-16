@@ -460,3 +460,10 @@ export function nextSwingStep(sw: SwingResult | null | undefined): { value: numb
   const next = sw?.steps.find((st) => st.ssi > sw.ssi);
   return sw && next ? { value: next.ssi, seconds: next.seconds, tip: `${delayText(next.seconds)} at stamina ${sw.stamina}; another suit's stamina can move the step.` } : null;
 }
+// A requirement row's line from the result shown (issue #272), its total against the requirement as the solver counts it (effectiveFloor): "Met: 45", else "2 short" in the warn tone. The SSI row gives the next swing step instead of "Met" (`next`, nextSwingStep of the result's swing, and the weapon it holds): "Next swing step at 58 (1.25 s with Katana)", after "2 short" when it misses.
+export function needStatus(k: string, floor: number, total: number, caps: Record<string, number>, next: { value: number; seconds: number } | null = null, weapon: string | null = null): { text: string; tone: Tone } {
+  const short = effectiveFloor(k, floor, caps) - total;
+  const step = next ? `Next swing step at ${num(next.value)} (${delayText(next.seconds)} with ${weapon ?? "the weapon"})` : null;
+  if (short > 0) return { text: [`${num(short)} short`, step].filter(Boolean).join(" · "), tone: "warn" };
+  return { text: step ?? `Met: ${num(total)}`, tone: "ok" };
+}

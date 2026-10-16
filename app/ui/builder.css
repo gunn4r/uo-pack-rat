@@ -53,10 +53,40 @@
 .b-rules { display: flex; flex-direction: column; gap: var(--space-1-5); }
 /* a requirement: name · ≥ · number · Hard|Soft · remove; a weight: name · number · remove */
 .rule-row { display: grid; grid-template-columns: minmax(0, 1fr) 16px 56px auto var(--control-sm); gap: var(--space-1-5); align-items: center; }
-.rule-row.weight { grid-template-columns: minmax(0, 1fr) 64px 4rem var(--control-sm); }
-/* a weight's importance bar (issue #274), scaled to the largest in the list; a negative one in the warn tone */
-.b-wbar { display: block; }
-.b-wbar .meter { width: 100%; }
+/* a weight: name · number · slider · ± · remove, and the scale's words under the list in the same columns */
+.rule-row.weight, .b-wscale { grid-template-columns: minmax(0, 1fr) 64px minmax(5rem, 1fr) var(--control-sm) var(--control-sm); }
+/* a weight's notched slider (issue #272): a fixed 0-100 track filled to the importance, faint notches at 25, 50 and 75,
+   the thumb shown on hover and focus; a negative weight fills in the warn tone, one past 100 is full and says its value */
+.b-wtrack { position: relative; display: flex; align-items: center; height: var(--control-sm); --b-wc: var(--color-accent); }
+.b-wtrack.neg { --b-wc: var(--color-warning); }
+.b-wtrack i { position: absolute; top: 50%; width: 1px; height: 12px; margin-top: -6px; background: var(--color-border-strong); pointer-events: none; }
+.b-wslider { appearance: none; -webkit-appearance: none; width: 100%; height: 6px; margin: 0; border-radius: var(--radius-full); cursor: pointer; background: linear-gradient(to right, var(--b-wc) var(--fill, 0%), var(--color-surface-sunken) var(--fill, 0%)); }
+.b-wslider::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: var(--radius-full); background: var(--color-surface); border: 2px solid var(--b-wc); opacity: 0; transition: opacity var(--duration-fast) var(--ease-standard); }
+.b-wslider::-moz-range-thumb { width: 12px; height: 12px; border-radius: var(--radius-full); background: var(--color-surface); border: 2px solid var(--b-wc); opacity: 0; }
+.b-wtrack:hover .b-wslider::-webkit-slider-thumb, .b-wslider:focus-visible::-webkit-slider-thumb, .b-wslider:active::-webkit-slider-thumb { opacity: 1; }
+.b-wtrack:hover .b-wslider::-moz-range-thumb, .b-wslider:focus-visible::-moz-range-thumb { opacity: 1; }
+.pr .b-wslider:focus-visible { box-shadow: var(--ring-focus); }
+.b-wover { position: absolute; right: 0; top: -6px; font-size: var(--text-xs); line-height: 1; color: var(--color-accent); pointer-events: none; }
+.b-wover:empty { display: none; }
+.b-wsign[aria-pressed="true"] { color: var(--color-warning); border-color: var(--color-warning); }
+.b-wscale { display: grid; gap: var(--space-1-5); font-size: var(--text-xs); color: var(--color-text-muted); }
+.b-wmarks { position: relative; height: var(--lh-xs); }
+.b-wmarks span { position: absolute; transform: translateX(-50%); }
+.b-wmarks span:first-child { transform: none; }
+.b-wmarks span:last-child { transform: translateX(-100%); }
+/* a requirement's name, and under it what it came to in the result shown */
+.b-need { display: flex; flex-direction: column; min-width: 0; }
+.b-need-status:empty { display: none; }
+/* the Buffs tab: the buffs by school, each a switch with what it changes; one the character can't cast is greyed */
+.b-bf-lead { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-2); }
+.b-bf-group { display: flex; flex-direction: column; gap: var(--space-1); }
+.b-bf-head { display: flex; align-items: baseline; gap: var(--space-2); padding-top: var(--space-2); }
+.b-bf { padding: var(--space-1) 0; }
+.b-bf-text { display: flex; flex-direction: column; gap: var(--space-0-5); min-width: 0; }
+.b-bf-fx { display: flex; flex-wrap: wrap; gap: var(--space-1); font-size: var(--text-sm); color: var(--color-text-muted); }
+.b-bf-fx > span:not(.b-bf-line) { padding: 0 var(--space-1-5); border-radius: var(--radius-sm); background: var(--color-surface-sunken); }
+.b-bf-line { flex-basis: 100%; }
+.b-bf-cant .b-bf-text > .strong { color: var(--color-text-muted); }
 .pr .rule-row .input.num { width: 100%; }
 .rule-row .field-error, .rule-row .field-warn { grid-column: 1 / -1; }
 /* with buffs on: what gear still has to supply, under the requirement it changes */
