@@ -13,7 +13,7 @@ import {
   propName, withStoredRoots, knobError, firstKnobError, knobFromServerError, ruleValueError,
   resistOutcome, locationCrumbs, changeRows, gaugeRows, gaugeNote, worse, gaugeTrack, changesSummary, afterChange, compareModel, hiddenRowsNote, toggleCompare, runAutoLabel, runBadges, plural, KNOB_RANGES,
   resistCapError, withResistCap, capNote, resistMinimumText, capsLine, anyOverridden, effectiveFloor, floorCapWarning, pruneResistCaps,
-  weaponsChipText, weaponMustHaveChipText, toggleWeapon, weaponName, withBuffs, pastCapNotes, runSettingsDiff, weightTradeoff, newWeight, editedValue, NEW_WEIGHT_IMPORTANCE, templateBuffsLine, sourceTitle, who, rarityHelp, rarityTotal, rarityDetail, shareRows, needStatus,
+  weaponsChipText, weaponMustHaveChipText, toggleWeapon, weaponName, withBuffs, pastCapNotes, runSettingsDiff, weightTradeoff, newWeight, editedValue, NEW_WEIGHT_IMPORTANCE, templateBuffsLine, sourceTitle, who, rarityHelp, rarityTotal, rarityDetail, shareRows, needStatus, shownImportance,
   type Knobs, type ChangeRow,
 } from "./ui/builder-model.mts";
 import { OPTS_LIMITS } from "./vault-server.mts";
@@ -412,8 +412,20 @@ test("[fast] builder model: a requirement's line from the result shown: met, sho
   assert.deepEqual(needStatus("physResist", 60, 78, { physResist: 70 }), { text: "Met: 70 (+8 past cap)", tone: "ok" });
   assert.deepEqual(needStatus("dci", 45, 52, caps), { text: "Met: 45 (+7 past cap)", tone: "ok" });
   assert.deepEqual(needStatus("luck", 100, 150, caps), { text: "Met: 150", tone: "ok" }, "no cap: the total");
+  // met or short is the solver's: the raw total against the floor, a non-resist floor past its cap included
+  assert.deepEqual(needStatus("dci", 50, 60, caps), { text: "Met: 45 (+15 past cap)", tone: "ok" });
+  assert.deepEqual(needStatus("dci", 50, 40, caps), { text: "10 short", tone: "warn" });
   const next = { value: 58, seconds: 1.25 };
   assert.deepEqual(needStatus("ssi", 50, 55, caps, next, "Katana"), { text: "Next swing step at 58 (1.25 s with Katana)", tone: "ok" });
   assert.deepEqual(needStatus("ssi", 58, 55, caps, next, "Katana"), { text: "3 short · Next swing step at 58 (1.25 s with Katana)", tone: "warn" });
   assert.deepEqual(needStatus("ssi", 50, 60, caps, null, null), { text: "Met: 60", tone: "ok" }, "no faster step within the cap");
+});
+
+test("[fast] builder model: a weight's box shows its importance as stored, to two decimals with no trailing zeros (issue #272)", () => {
+  assert.equal(String(shownImportance(12.5)), "12.5");
+  assert.equal(String(shownImportance(93.33333333)), "93.33");
+  assert.equal(String(shownImportance(100.0000001)), "100");
+  assert.equal(String(shownImportance(-40)), "-40");
+  // a typed decimal survives the round trip through the stored per-point weight
+  for (const [k, typed] of [["luck", 12.5], ["dci", 7.25], ["physResist", 93.33]] as const) assert.equal(shownImportance(importanceOf(k, weightOfImportance(k, typed))), typed, k);
 });

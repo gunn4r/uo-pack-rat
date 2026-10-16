@@ -437,7 +437,7 @@ test("[slow] weight scale: the row shows importance with a trade-off hover, and 
       const e = document.getElementById(i?.getAttribute("aria-describedby")?.split(" ")[0] ?? "");
       return !!e && new RegExp(w).test(e.textContent ?? "");
     }, want, { timeout: 5_000 });
-    assert.equal(await field.inputValue(), "5.6");
+    assert.equal(await field.inputValue(), "5.56", "the importance as stored, to two decimals");
     await hover("^At these settings, 1 (DCI|HCI) is worth about 200 Luck\\.$");
     await field.fill("2000");
     await hover("^Luck has the highest weight: the other weights are compared with it\\.$");
@@ -607,6 +607,13 @@ test("[slow] drawer extras: notched weight sliders, buffs by school, each requir
     await row(2).num.fill("178");
     assert.equal(await rows.nth(2).locator(".b-wover").innerText(), "▸178");
     assert.equal(await fill(row(2).slider), "100%");
+    // past 100 → leaves the typed value alone; ← takes it to the full bar's 100
+    await row(2).slider.focus();
+    await page.keyboard.press("ArrowRight");
+    assert.equal(await row(2).num.inputValue(), "178");
+    assert.equal(await rows.nth(2).locator(".b-wover").innerText(), "▸178");
+    await page.keyboard.press("ArrowLeft");
+    assert.equal(await row(2).num.inputValue(), "100");
     await row(2).num.fill("12.5");
     assert.equal(await row(2).num.inputValue(), "12.5");
     assert.equal(await fill(row(2).slider), "12.5%");
@@ -668,7 +675,7 @@ test("[slow] drawer extras: notched weight sliders, buffs by school, each requir
     await page.locator(".pop").waitFor({ state: "detached" });
     assert.equal(await page.evaluate(() => document.activeElement?.id), "b-buff-add");
     assert.equal(await page.getAttribute("#b-buff-add", "aria-expanded"), "false");
-    // the buff toggles redrew the weights: the typed 12.5 is still the stored importance, and the box still shows it
+    // the buff toggles redrew the weights: the box shows the stored importance as typed, 12.5, not a rounded 13
     await settings(page, "weights");
     assert.equal(await fill(row(2).slider), "12.5%");
     assert.equal(await row(2).num.inputValue(), "12.5");

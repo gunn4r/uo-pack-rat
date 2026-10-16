@@ -4,7 +4,7 @@
 // is ui/runs.mts; they share the builder's state and call each other through ui/builder-session.mts. The panel is drawn
 // from the session's profile plus its Advanced knobs, so what a build sends, what a profile saves and what a run
 // snapshots are read from state, never from the DOM.
-import { NOBODY, PROP_LABELS, NOT_BUILDER_KEYS, importanceOf, roundImportance, weightOfImportance, GEAR_SLOTS, tagUnits, WEAPON_EXCLUDES, MELEE_SKILLS, WEAPON_MUST_HAVE, flagLabel, getRules, RESIST_KEYS, RESIST_CAP_LIMITS, resistCapsFor, templateFrom, settingsDiff, bagLabel, toOptItem, totalsOf, fcCapFor, CASTING_SCHOOLS } from "../vault-lib.mts";
+import { NOBODY, PROP_LABELS, NOT_BUILDER_KEYS, importanceOf, weightOfImportance, GEAR_SLOTS, tagUnits, WEAPON_EXCLUDES, MELEE_SKILLS, WEAPON_MUST_HAVE, flagLabel, getRules, RESIST_KEYS, RESIST_CAP_LIMITS, resistCapsFor, templateFrom, settingsDiff, bagLabel, toOptItem, totalsOf, fcCapFor, CASTING_SCHOOLS } from "../vault-lib.mts";
 import { heldWeapon, ssiShareOf, swingOf, type SwingResult } from "../swing.mts";
 import { BUILTIN_PREFIX, characterBuffs, characterEntry, characterProfile, findTemplate, planBuild, specFromProfile, templateLabel, templateRefs, templateSettings, templateSpecFrom, type PlannedBuild } from "../build-spec.mts";
 import type { FcCap, ResistCap, RunBuffs, RunSettings, Character } from "../vault-lib.mts";
@@ -25,7 +25,7 @@ import { putProfiles, setCharacterBuffs } from "./profiles.mts";
 import { session, commands, provide, readControls, type BuilderChange } from "./builder-session.mts";
 import { followJob, progressText, settingsCheck } from "./builder-parts.mts";
 import { characterNames } from "./roster.mts";
-import { needStatus, nextSwingStep, speedText, swingLines, propName, newWeight, editedValue, runSettingsDiff, plural, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistMinimumText, pruneResistCaps, floorCapWarning, weaponsChipText, weaponMustHaveChipText, withStoredRoots, weaponName, toggleWeapon, weightTradeoff, fcCapText, rarityHelp, templateBuffsLine, sourceTitle, who, type KnobField } from "./builder-model.mts";
+import { needStatus, shownImportance, nextSwingStep, speedText, swingLines, propName, newWeight, editedValue, runSettingsDiff, plural, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistMinimumText, pruneResistCaps, floorCapWarning, weaponsChipText, weaponMustHaveChipText, withStoredRoots, weaponName, toggleWeapon, weightTradeoff, fcCapText, rarityHelp, templateBuffsLine, sourceTitle, who, type KnobField } from "./builder-model.mts";
 import type { OptimizeResult, SavedRunLike, OptimizeStartApiResponse, OptimizeCancelApiResponse, UiPrefs } from "./api-types.mts";
 import { prefs } from "./prefs.mts";
 
@@ -662,10 +662,6 @@ function capRow(p: NonNullable<typeof session.profile>, k: string): HTMLElement 
 }
 // The weight rows at 0 that keep a negative sign, by character and property, for the page session.
 const negZero = new Set<string>();
-// What was typed (or written by the slider) in a weight's box, with the weight it stored, by character and property: a
-// redraw shows that text while the weight is still the one it stored, so a typed 12.5 stays 12.5 rather than the
-// rounded importance (only the box; a tooltip may round).
-const typedWeights = new Map<string, { text: string; weight: number }>();
 function weightsSection(): HTMLElement {
   const p = session.profile!;
   const keys = Object.keys(p.weights!).filter((k) => !NOT_BUILDER_KEYS.has(k));
@@ -678,7 +674,7 @@ function weightsSection(): HTMLElement {
     const paints: Array<() => void> = [];
     const readout = el("p", { class: "help b-wreadout", id: "b-wreadout", hidden: "" });
     const rows = keys.map((k) => {
-      const nm = propName(k), conv = { show: (w: number) => roundImportance(importanceOf(k, w)), store: (n: number) => weightOfImportance(k, n) };
+      const nm = propName(k), conv = { show: (w: number) => shownImportance(importanceOf(k, w)), store: (n: number) => weightOfImportance(k, n) };
       const num = boundNumber(p.weights!, k, `${nm} weight`, k, conv);
       const hover = el("span", { class: "sr", id: `b-wtip-${k.replace(/\W/g, "_")}` });
       const slider = el("input", { type: "range", class: "b-wslider", min: "0", max: "100", step: "5", "aria-label": `${nm} weight slider`, "aria-describedby": hover.id });
@@ -688,11 +684,9 @@ function weightsSection(): HTMLElement {
       // a row at 0 keeps its sign for the page session (negZero), so ± then a drag, or a negative weight dragged to 0
       // and back, stays negative; the profile stores 0 either way
       const zeroKey = `${session.character}\u0000${k}`, negative = (): boolean => { const imp = importanceOf(k, p.weights![k]!); return imp < 0 || (imp === 0 && negZero.has(zeroKey)); };
-      const was = typedWeights.get(zeroKey);
-      if (was && was.weight === p.weights![k]) num.value = was.text;
-      else if (negative() && !p.weights![k]) num.value = "-0";
+      if (negative() && !p.weights![k]) num.value = "-0";
       const paint = (): void => {
-        const imp = importanceOf(k, p.weights![k]!), mag = Math.min(100, Math.abs(imp)), exact = Math.round(imp * 10) / 10, neg = negative();
+        const imp = importanceOf(k, p.weights![k]!), mag = Math.min(100, Math.abs(imp)), exact = shownImportance(imp), neg = negative();
         const said = neg && !exact ? "−0" : String(exact).replace("-", "−");
         // the handle sits at the exact value: a value off the notches (a typed 12.5) takes no step, a drag snaps again
         slider.step = mag % 5 ? "any" : "5";
@@ -713,20 +707,21 @@ function weightsSection(): HTMLElement {
       num.addEventListener("input", () => {
         const t = num.value.trim();
         if (t !== "" && Number(t) === 0) { if (t.startsWith("-")) negZero.add(zeroKey); else negZero.delete(zeroKey); }
-        if (t !== "" && Number.isFinite(Number(t))) typedWeights.set(zeroKey, { text: t, weight: p.weights![k]! });
         step(); paints.forEach((f) => f()); said();
       });
       // the slider and ± write the field, which stores the weight as a typed one would (editedValue)
       const write = (n: number): void => { num.value = Object.is(n, -0) ? "-0" : String(n); num.dispatchEvent(new Event("input")); };
       slider.addEventListener("input", () => write((negative() ? -1 : 1) * Number(slider.value)));
       slider.addEventListener("pointerdown", () => { slider.step = "5"; });
-      // the arrow keys go to the next notch of 5 that way, from a value off the notches too (12.5: → 15, ← 10)
+      // the arrow keys go to the next notch of 5 that way, from a value off the notches too (12.5: → 15, ← 10); past 100
+      // the bar is full, so → leaves a typed 178 alone and ← takes it to 100
       slider.addEventListener("keydown", (e) => {
         const d = e.key === "ArrowRight" || e.key === "ArrowUp" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowDown" ? -1 : 0;
         if (!d) return;
         e.preventDefault();
-        const mag = Math.min(100, Math.abs(importanceOf(k, p.weights![k]!)));
-        write((negative() ? -1 : 1) * Math.max(0, Math.min(100, d > 0 ? Math.floor(mag / 5) * 5 + 5 : Math.ceil(mag / 5) * 5 - 5)));
+        const abs = Math.abs(importanceOf(k, p.weights![k]!)), mag = Math.min(100, abs);
+        if (d > 0 && abs >= 100) return;
+        write((negative() ? -1 : 1) * (abs > 100 ? 100 : Math.max(0, Math.min(100, d > 0 ? Math.floor(mag / 5) * 5 + 5 : Math.ceil(mag / 5) * 5 - 5))));
       });
       slider.addEventListener("focus", said);
       sign.onclick = () => {
