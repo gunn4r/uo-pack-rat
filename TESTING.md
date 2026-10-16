@@ -74,6 +74,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `app/fold-blank.test.mts` — `foldSnapshots` and an item a scan recorded with no name and no tooltip (issue #298).
 - `app/fold-unopened.test.mts` — `foldSnapshots` and a container a scan saw but could not open.
 - `app/gear-vault.test.mts` — `app/vault-lib.mts` (parser, classifier, fold, pools) and the optimizer core through the same loader the server uses.
+- `app/goals.test.mts` — the Suit Builder's goals (issue #292): ranked goals compiled to the weights the solvers score with, and a build from goals being the build from those weights.
 - `app/house-capture.test.mts` — `app/house-capture.mts` (issue #10): house ids, the newest capture per house, furniture merged across captures and superseded footprints.
 - `app/house-model.test.mts` — `app/house-model.mts` (issue #10) on synthetic houses (`app/house-fixture.mts`).
 - `app/house-names.test.mts` — `app/house-names.mts`, the house names and drawn areas in `<data>/house-map.json` (issue #164).

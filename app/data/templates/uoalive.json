@@ -1,5 +1,5 @@
 {
-  "_comment": "Built-in Suit Builder templates for this shard (app/build-spec.mts). Read at run time and shown read-only as Built-in; Save as makes a player's own copy in <data>/profiles.json. Never copied there, so a release can change them. Each spec is held to buildSpecError (app/build-spec.test.mts checks every shipped file). weights = value of one point; floors = must-have minimums; caps are the shard's rules (app/rules/<shard>.json).",
+  "_comment": "Built-in Suit Builder templates for this shard (app/build-spec.mts). Read at run time and shown read-only as Built-in; Save as makes a player's own copy in <data>/profiles.json. Never copied there, so a release can change them. Each spec is held to buildSpecError (app/build-spec.test.mts checks every shipped file). weights = value of one point, compiled from goals (the ranked goals, app/vault-lib.mts compileGoals; a test holds them equal); floors = must-have minimums; caps are the shard's rules (app/rules/<shard>.json).",
   "schemaVersion": 3,
   "templates": {
     "melee": {
@@ -8,7 +8,9 @@
         "intent": {
           "floors": { "physResist": 65, "fireResist": 65, "coldResist": 65, "poisonResist": 65, "energyResist": 65 },
           "softFloors": [],
-          "weights": { "physResist": 6, "fireResist": 6, "coldResist": 6, "poisonResist": 6, "energyResist": 6, "dci": 10, "hci": 10, "ssi": 5, "di": 3, "hpRegen": 4, "dexBonus": 4, "strBonus": 3, "hpi": 3, "stamRegen": 3, "stamInc": 2, "lmc": 1, "luck": 0.05, "tagPenalty": -25 },
+          "weights": { "tagPenalty": -25, "ssi": 7.5, "hci": 8, "dci": 8, "di": 2.925, "luck": 0.045 },
+          "swingSteps": true,
+          "goals": { "ranks": [["ssi"], ["hci", "dci"], ["di"]], "swing": { "mode": "fastest" }, "leftover": "luck" },
           "floorBonus": 1000,
           "resistCaps": {}
         },
@@ -21,7 +23,8 @@
         "intent": {
           "floors": { "lrc": 100, "lmc": 40, "fc": 2, "fcr": 6, "physResist": 60, "fireResist": 60, "coldResist": 60, "poisonResist": 60, "energyResist": 60 },
           "softFloors": [],
-          "weights": { "fc": 60, "fcr": 30, "lrc": 8, "lmc": 8, "manaRegen": 8, "dci": 6, "castingFocus": 6, "sdi": 4, "intBonus": 4, "physResist": 4, "fireResist": 4, "coldResist": 4, "poisonResist": 4, "energyResist": 4, "manaInc": 3, "hpi": 2, "tagPenalty": -25 },
+          "weights": { "tagPenalty": -25, "fc": 225, "fcr": 75, "lmc": 9, "lrc": 2.925, "sdi": 2.25, "intBonus": 0.9, "manaInc": 1.125, "manaRegen": 0.75 },
+          "goals": { "ranks": [["fc", "fcr"], ["lmc"], ["lrc"], ["sdi"]], "leftover": "caster" },
           "floorBonus": 1000,
           "resistCaps": {}
         },
@@ -34,7 +37,9 @@
         "intent": {
           "floors": { "physResist": 65, "fireResist": 65, "coldResist": 65, "poisonResist": 65, "energyResist": 65, "hci": 35 },
           "softFloors": [],
-          "weights": { "physResist": 6, "fireResist": 6, "coldResist": 6, "poisonResist": 6, "energyResist": 6, "ssi": 10, "hci": 10, "dci": 8, "di": 6, "dexBonus": 5, "stamInc": 3, "stamRegen": 3, "hpi": 3, "intBonus": 3, "manaInc": 2, "manaRegen": 2, "strBonus": 2, "lmc": 2, "hpRegen": 1, "luck": 0.05, "tagPenalty": -25 },
+          "weights": { "tagPenalty": -25, "ssi": 7.5, "di": 4.5, "hci": 8, "dci": 6.5, "luck": 0.045 },
+          "swingSteps": true,
+          "goals": { "ranks": [["ssi", "di"], ["hci"], ["dci"]], "swing": { "mode": "fastest" }, "leftover": "luck" },
           "floorBonus": 1000,
           "resistCaps": {}
         },
@@ -47,7 +52,8 @@
         "intent": {
           "floors": { "physResist": 70, "fireResist": 70, "coldResist": 70, "poisonResist": 70, "energyResist": 70 },
           "softFloors": [],
-          "weights": { "physResist": 8, "fireResist": 8, "coldResist": 8, "poisonResist": 8, "energyResist": 8, "dci": 10, "hpRegen": 8, "hpi": 6, "stamRegen": 3, "strBonus": 3, "hci": 2, "reflectPhys": 1, "tagPenalty": -25 },
+          "weights": { "tagPenalty": -25, "dci": 10, "hpi": 14.4, "hpRegen": 16.25, "hci": 5, "strBonus": 7.2, "stamRegen": 7.5, "dexBonus": 0.9, "stamInc": 1.125 },
+          "goals": { "ranks": [["dci"], ["hpi"], ["hpRegen"], ["hci"], ["strBonus", "stamRegen"]], "leftover": "melee" },
           "floorBonus": 1000,
           "resistCaps": {}
         },
@@ -62,7 +68,9 @@
         "intent": {
           "floors": { "physResist": 70, "fireResist": 70, "coldResist": 70, "poisonResist": 70, "energyResist": 70, "hci": 45, "dci": 45, "di": 100 },
           "softFloors": ["fireResist", "hci", "dci", "di"],
-          "weights": { "physResist": 6, "fireResist": 6, "coldResist": 6, "poisonResist": 6, "energyResist": 6, "hci": 10, "dci": 8, "di": 4, "ssi": 6, "hitManaLeech": 3, "hitStamLeech": 2, "hitLifeLeech": 2, "hitLowerDef": 4, "lmc": 5, "stamPool": 5, "hpi": 8, "dexBonus": 6, "strBonus": 6, "tagPenalty": -25 },
+          "weights": { "tagPenalty": -25, "hci": 10, "di": 3.6, "dci": 6.5, "ssi": 4.875, "hitManaLeech": 2.25, "stamPool": 4, "strBonus": 0.9, "dexBonus": 0.9, "stamInc": 1.125, "hpRegen": 1.25 },
+          "swingSteps": true,
+          "goals": { "ranks": [["hci"], ["di"], ["dci", "ssi"], ["hitManaLeech"], ["stamPool"]], "swing": { "mode": "fastest" }, "leftover": "melee" },
           "floorBonus": 1000,
           "resistCaps": {}
         },
@@ -78,7 +86,9 @@
         "intent": {
           "floors": { "physResist": 70, "fireResist": 70, "coldResist": 70, "poisonResist": 70, "energyResist": 70, "hci": 45, "dci": 45 },
           "softFloors": ["hci", "dci"],
-          "weights": { "physResist": 6, "fireResist": 6, "coldResist": 6, "poisonResist": 6, "energyResist": 6, "hci": 10, "dci": 10, "ssi": 6, "di": 4, "dexBonus": 10, "strBonus": 6, "stamInc": 8, "manaInc": 6, "hpRegen": 12, "hpi": 8, "lmc": 5, "tagPenalty": -25 },
+          "weights": { "tagPenalty": -25, "hci": 10, "dci": 10, "di": 3.6, "ssi": 4.875, "dexBonus": 9, "hpRegen": 10, "strBonus": 0.9, "stamInc": 1.125 },
+          "swingSteps": true,
+          "goals": { "ranks": [["hci", "dci"], ["di"], ["ssi"], ["dexBonus"], ["hpRegen"]], "swing": { "mode": "fastest" }, "leftover": "melee" },
           "floorBonus": 1000,
           "resistCaps": {}
         },
@@ -94,7 +104,8 @@
         "intent": {
           "floors": { "lrc": 100, "lmc": 40, "fc": 2, "fcr": 6, "physResist": 60, "fireResist": 60, "coldResist": 60, "poisonResist": 60, "energyResist": 60 },
           "softFloors": ["physResist", "fireResist", "coldResist", "poisonResist", "energyResist"],
-          "weights": { "sdi": 5, "fc": 150, "fcr": 50, "lrc": 3, "lmc": 8, "manaRegen": 10, "intBonus": 10, "manaInc": 10, "castingFocus": 20, "physResist": 4, "fireResist": 4, "coldResist": 4, "poisonResist": 4, "energyResist": 4, "dci": 4, "hpi": 6, "tagPenalty": -25 },
+          "weights": { "tagPenalty": -25, "sdi": 4.5, "lmc": 9, "fc": 146.25, "fcr": 48.75, "lrc": 2.925, "manaRegen": 9.75, "intBonus": 9, "castingFocus": 15, "manaInc": 1.125 },
+          "goals": { "ranks": [["sdi"], ["lmc"], ["fc", "fcr", "lrc", "manaRegen"], ["intBonus"], ["castingFocus"]], "leftover": "caster" },
           "floorBonus": 1000,
           "resistCaps": {},
           "castingSchool": "Magery"
@@ -111,7 +122,9 @@
         "intent": {
           "floors": { "physResist": 70, "fireResist": 70, "coldResist": 70, "poisonResist": 70, "energyResist": 70, "hci": 45, "di": 100, "lmc": 40, "stamPool": 55 },
           "softFloors": ["hci", "di", "lmc", "stamPool"],
-          "weights": { "physResist": 5, "fireResist": 5, "coldResist": 5, "poisonResist": 5, "energyResist": 5, "hci": 8, "di": 3, "ssi": 6, "stamPool": 6, "lmc": 6, "manaRegen": 8, "manaInc": 8, "dci": 5, "hitManaLeech": 2, "sk:veterinary": 15, "sk:animal taming": 12, "sk:animal lore": 12, "tagPenalty": -25 },
+          "weights": { "tagPenalty": -25, "hci": 10, "ssi": 7.5, "di": 3.6, "stamPool": 6.5, "lmc": 5.625, "manaRegen": 7.5, "dci": 4, "sk:veterinary": 12, "intBonus": 0.9, "manaInc": 1.125, "lrc": 0.225 },
+          "swingSteps": true,
+          "goals": { "ranks": [["hci", "ssi"], ["di"], ["stamPool"], ["lmc", "manaRegen"], ["dci", "sk:veterinary"]], "swing": { "mode": "fastest" }, "leftover": "caster" },
           "floorBonus": 1000,
           "resistCaps": {}
         },
@@ -127,7 +140,9 @@
         "intent": {
           "floors": { "physResist": 70, "fireResist": 70, "coldResist": 70, "poisonResist": 70, "energyResist": 70, "hci": 45, "di": 100 },
           "softFloors": ["hci", "di"],
-          "weights": { "physResist": 6, "fireResist": 6, "coldResist": 6, "poisonResist": 6, "energyResist": 6, "hci": 10, "ssi": 7, "di": 4, "dci": 7, "stamPool": 7, "dexBonus": 8, "hpRegen": 10, "lmc": 5, "manaInc": 6, "hitManaLeech": 3, "tagPenalty": -25 },
+          "weights": { "tagPenalty": -25, "hci": 10, "ssi": 6, "di": 2.925, "dci": 5, "stamPool": 5, "hitManaLeech": 1.8, "strBonus": 0.9, "dexBonus": 0.9, "stamInc": 1.125, "hpRegen": 1.25 },
+          "swingSteps": true,
+          "goals": { "ranks": [["hci"], ["ssi"], ["di"], ["dci", "stamPool"], ["hitManaLeech"]], "swing": { "mode": "fastest" }, "leftover": "melee" },
           "floorBonus": 1000,
           "resistCaps": {}
         },
@@ -143,7 +158,9 @@
         "intent": {
           "floors": { "physResist": 70, "fireResist": 70, "coldResist": 70, "poisonResist": 70, "energyResist": 70, "hci": 45, "di": 100 },
           "softFloors": ["hci", "di"],
-          "weights": { "physResist": 6, "fireResist": 6, "coldResist": 6, "poisonResist": 6, "energyResist": 6, "hci": 9, "ssi": 6, "di": 3, "dci": 6, "stamPool": 6, "lmc": 8, "manaRegen": 10, "manaInc": 10, "sk:musicianship": 15, "sk:provocation": 15, "sk:discordance": 15, "hitManaLeech": 3, "tagPenalty": -25 },
+          "weights": { "tagPenalty": -25, "hci": 10, "ssi": 6, "lmc": 7.3125, "di": 2.25, "manaRegen": 7.5, "hitManaLeech": 2.25, "intBonus": 0.9, "manaInc": 1.125, "lrc": 0.225 },
+          "swingSteps": true,
+          "goals": { "ranks": [["hci"], ["ssi"], ["lmc"], ["di", "manaRegen", "hitManaLeech"]], "swing": { "mode": "fastest" }, "leftover": "caster" },
           "floorBonus": 1000,
           "resistCaps": {}
         },
@@ -159,7 +176,8 @@
         "intent": {
           "floors": { "lrc": 100, "lmc": 40, "fc": 2, "fcr": 6, "physResist": 70, "fireResist": 70, "coldResist": 70, "poisonResist": 70, "energyResist": 70 },
           "softFloors": ["fireResist", "energyResist"],
-          "weights": { "fc": 150, "fcr": 50, "lrc": 3, "lmc": 8, "sdi": 4, "manaRegen": 10, "intBonus": 10, "manaInc": 10, "castingFocus": 20, "dci": 6, "physResist": 4, "fireResist": 4, "coldResist": 4, "poisonResist": 4, "energyResist": 4, "hpi": 6, "tagPenalty": -25 },
+          "weights": { "tagPenalty": -25, "sdi": 4.5, "lmc": 9, "fc": 146.25, "fcr": 48.75, "lrc": 2.925, "manaRegen": 9.75, "dci": 5, "intBonus": 7.2, "manaInc": 1.125 },
+          "goals": { "ranks": [["sdi"], ["lmc"], ["fc", "fcr", "lrc", "manaRegen"], ["dci"], ["intBonus"]], "leftover": "caster" },
           "floorBonus": 1000,
           "resistCaps": {},
           "castingSchool": "Necromancy"
@@ -176,7 +194,8 @@
         "intent": {
           "floors": { "lrc": 100, "lmc": 40, "fc": 2, "fcr": 6, "physResist": 70, "fireResist": 70, "coldResist": 70, "poisonResist": 70, "energyResist": 70 },
           "softFloors": ["physResist", "fireResist", "coldResist", "poisonResist", "energyResist"],
-          "weights": { "fc": 150, "fcr": 50, "lrc": 3, "lmc": 8, "sdi": 4, "manaRegen": 10, "intBonus": 10, "manaInc": 10, "castingFocus": 25, "dci": 6, "physResist": 4, "fireResist": 4, "coldResist": 4, "poisonResist": 4, "energyResist": 4, "hpi": 6, "tagPenalty": -25 },
+          "weights": { "tagPenalty": -25, "sdi": 4.5, "lmc": 9, "fc": 146.25, "fcr": 48.75, "lrc": 2.925, "manaRegen": 9.75, "castingFocus": 24.375, "dci": 5, "intBonus": 0.9, "manaInc": 1.125 },
+          "goals": { "ranks": [["sdi"], ["lmc"], ["fc", "fcr", "lrc", "manaRegen", "castingFocus"], ["dci"]], "leftover": "caster" },
           "floorBonus": 1000,
           "resistCaps": {},
           "castingSchool": "Mysticism"
@@ -193,7 +212,8 @@
         "intent": {
           "floors": { "lrc": 100, "lmc": 40, "fc": 2, "fcr": 6, "physResist": 70, "fireResist": 70, "coldResist": 70, "poisonResist": 70, "energyResist": 70 },
           "softFloors": ["physResist", "fireResist", "coldResist", "poisonResist", "energyResist"],
-          "weights": { "sdi": 5, "fc": 150, "fcr": 50, "lrc": 3, "lmc": 8, "manaRegen": 10, "intBonus": 10, "manaInc": 10, "castingFocus": 20, "physResist": 4, "fireResist": 4, "coldResist": 4, "poisonResist": 4, "energyResist": 4, "hpi": 6, "tagPenalty": -25 },
+          "weights": { "tagPenalty": -25, "sdi": 4.5, "lmc": 9, "fc": 146.25, "fcr": 48.75, "lrc": 2.925, "manaRegen": 9.75, "intBonus": 9, "castingFocus": 15, "manaInc": 1.125 },
+          "goals": { "ranks": [["sdi"], ["lmc"], ["fc", "fcr", "lrc", "manaRegen"], ["intBonus"], ["castingFocus"]], "leftover": "caster" },
           "floorBonus": 1000,
           "resistCaps": {},
           "castingSchool": "Spellweaving"
@@ -210,7 +230,9 @@
         "intent": {
           "floors": { "physResist": 70, "fireResist": 70, "coldResist": 70, "poisonResist": 70, "energyResist": 70, "hci": 50, "di": 100 },
           "softFloors": ["hci", "di"],
-          "weights": { "physResist": 6, "fireResist": 6, "coldResist": 6, "poisonResist": 6, "energyResist": 6, "hci": 10, "ssi": 7, "di": 4, "dci": 8, "stamPool": 7, "dexBonus": 8, "hitManaLeech": 3, "hitLifeLeech": 2, "lmc": 5, "tagPenalty": -25 },
+          "weights": { "tagPenalty": -25, "hci": 10, "ssi": 6, "di": 2.925, "dci": 5, "stamPool": 4, "hitManaLeech": 1.8, "dexBonus": 5.4, "hitLifeLeech": 1.35, "lmc": 3.375, "luck": 0.045 },
+          "swingSteps": true,
+          "goals": { "ranks": [["hci"], ["ssi"], ["di"], ["dci"], ["stamPool", "hitManaLeech"], ["dexBonus", "hitLifeLeech", "lmc"]], "swing": { "mode": "fastest" }, "leftover": "luck" },
           "floorBonus": 1000,
           "resistCaps": {}
         },
@@ -226,7 +248,9 @@
         "intent": {
           "floors": { "physResist": 70, "fireResist": 70, "coldResist": 70, "poisonResist": 70, "energyResist": 70 },
           "softFloors": [],
-          "weights": { "physResist": 7, "fireResist": 7, "coldResist": 7, "poisonResist": 7, "energyResist": 7, "hci": 8, "dci": 8, "di": 3, "ssi": 5, "stamInc": 10, "reflectPhys": 4, "lmc": 6, "lrc": 2, "strBonus": 8, "dexBonus": 8, "hpRegen": 12, "hitLifeLeech": 2, "hitManaLeech": 2, "tagPenalty": -25 },
+          "weights": { "tagPenalty": -25, "hci": 10, "dci": 10, "di": 3.6, "ssi": 6, "lmc": 7.3125, "hpRegen": 12.5, "strBonus": 0.9, "dexBonus": 0.9, "stamInc": 1.125 },
+          "swingSteps": true,
+          "goals": { "ranks": [["hci", "dci"], ["di", "ssi"], ["lmc"], ["hpRegen"]], "swing": { "mode": "fastest" }, "leftover": "melee" },
           "floorBonus": 1000,
           "resistCaps": {}
         },
@@ -242,7 +266,9 @@
         "intent": {
           "floors": { "physResist": 70, "fireResist": 70, "coldResist": 70, "poisonResist": 70, "energyResist": 70, "hci": 45, "dci": 45, "di": 100 },
           "softFloors": ["hci", "dci", "di"],
-          "weights": { "physResist": 6, "fireResist": 6, "coldResist": 6, "poisonResist": 6, "energyResist": 6, "hci": 10, "dci": 10, "di": 4, "ssi": 6, "hpi": 10, "stamInc": 10, "dexBonus": 10, "strBonus": 6, "lmc": 5, "reflectPhys": 3, "hpRegen": 0, "tagPenalty": -25 },
+          "weights": { "tagPenalty": -25, "hci": 10, "dci": 10, "di": 3.6, "ssi": 4.875, "hpi": 9, "dexBonus": 9, "strBonus": 0.9, "stamInc": 1.125, "hpRegen": 1.25 },
+          "swingSteps": true,
+          "goals": { "ranks": [["hci", "dci"], ["di"], ["ssi"], ["hpi", "dexBonus"]], "swing": { "mode": "fastest" }, "leftover": "melee" },
           "floorBonus": 1000,
           "resistCaps": {}
         },
@@ -258,7 +284,9 @@
         "intent": {
           "floors": { "physResist": 75, "fireResist": 75, "coldResist": 70, "poisonResist": 70, "energyResist": 70, "hci": 45, "di": 100, "dci": 20, "lmc": 36 },
           "softFloors": ["fireResist", "hci", "di", "dci", "lmc"],
-          "weights": { "physResist": 6, "fireResist": 6, "coldResist": 6, "poisonResist": 6, "energyResist": 6, "hci": 10, "di": 4, "dci": 6, "ssi": 6, "lmc": 6, "strBonus": 6, "dexBonus": 6, "stamPool": 6, "hitLifeLeech": 3, "hitManaLeech": 3, "hitStamLeech": 2, "sk:veterinary": 15, "tagPenalty": -25 },
+          "weights": { "tagPenalty": -25, "hci": 10, "di": 3.6, "ssi": 4.875, "hitLifeLeech": 2.25, "hitManaLeech": 2.25, "dci": 4, "stamPool": 4, "strBonus": 0.9, "dexBonus": 0.9, "stamInc": 1.125, "hpRegen": 1.25 },
+          "swingSteps": true,
+          "goals": { "ranks": [["hci"], ["di"], ["ssi"], ["hitLifeLeech", "hitManaLeech"], ["dci", "stamPool"]], "swing": { "mode": "fastest" }, "leftover": "melee" },
           "floorBonus": 1000,
           "resistCaps": { "physResist": 75, "fireResist": 75 }
         },

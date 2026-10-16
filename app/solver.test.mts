@@ -10,7 +10,7 @@ import { buffSkillValues, plannedProfile } from "./buffs.mts";
 import { solveExact, type OptPools, type OptAssignment, type OptProfile } from "./exact-solver.mts";
 import { DEFAULT_SLOTS, DEFAULT_OPTIONAL_SLOTS, buildSuitMip } from "./mip.mts";
 import { solveModel as realSolveModel, type Handle, type SolveModelOptions } from "./mip-solve.mts";
-import { BASE_OPTS, cell, core, defaultProfiles, runBoth, sig, templateNames, type OptOptions } from "./solver-fixture.mts";
+import { BASE_OPTS, cell, core, defaultProfiles, runBoth, sig, STARTERS_BEFORE_GOALS, templateNames, type OptOptions } from "./solver-fixture.mts";
 
 // Like runBoth: the core's alternatives are only exact when its search proved within the time budget
 // (about 10 s for this cell on a laptop, more on a CI runner), so an unproven core is checked for
@@ -233,10 +233,25 @@ test("[fast] buffs: with Divine Fury on, both solvers pick the cheaper SSI suit 
 // The equivalence on the real fixture with buffs whose shares are negative (Divine Fury's DCI), change a cap (Magic
 // Reflection's Phys) and set one (Corpse Skin's Fire and Poison): the melee and tank templates both prove, to one score
 // (the archer one takes the core past its budget, as without buffs).
+// The shipped goal templates' own weights (issue #292), on a few slots so the core proves too: Melee's Swing speed goal and
+// Tank's spare points, with the same buffs.
+test("[fast] buffs: HiGHS equals the core's proven optimum on the goal templates, on six slots", async (t) => {
+  const slots = ["helmet", "neck", "chest", "arms", "gloves", "ring"];
+  for (const name of ["melee", "tank"]) {
+    await t.test(name, async (t2) => {
+      const { r, ref } = await runBoth(t2, cell(name, { buffs: ["divineFury", "magicReflection", "corpseSkin"] }), { ...BASE_OPTS, slots, optionalSlots: slots });
+      assert.equal(r.proven && ref.proven, true, "both proven, so runBoth held them to one score");
+    });
+  }
+});
+
+// On the starters' weights before goals (issue #292): Tank's goals take the core's own proof about 2.3 million nodes. Both
+// sides must prove here, and the core's proof of a full-fixture build takes seconds that a busy CI runner can stretch past
+// the usual 20 s budget, so this one has a minute.
 test("[fast] buffs: HiGHS equals the core's proven optimum with buffs planned on", async (t) => {
   for (const name of ["melee", "tank"]) {
     await t.test(name, async (t2) => {
-      const { r, ref } = await runBoth(t2, cell(name, { buffs: ["divineFury", "magicReflection", "corpseSkin"] }), BASE_OPTS);
+      const { r, ref } = await runBoth(t2, cell(name, { buffs: ["divineFury", "magicReflection", "corpseSkin"], overrides: { weights: STARTERS_BEFORE_GOALS[name]! } }), { ...BASE_OPTS, timeBudgetMs: 60_000 });
       assert.equal(r.proven && ref.proven, true, "both proven, so runBoth held them to one score");
     });
   }

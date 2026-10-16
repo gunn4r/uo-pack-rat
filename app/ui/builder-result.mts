@@ -5,7 +5,7 @@
 // ui/builder-model.mts; the bridge actions are gated by ui/bridge.mts's bridgeActionReason(). It shares the builder's
 // state through ui/builder-session.mts and provides the result and compare commands there.
 import { GEAR_SLOTS, NOBODY, RESIST_KEYS, resistSkillOf, resistSkillCapOf, toOptItem, totalsOf, requirementReport, resistCapsFor, profileResistCaps, fcCapFor } from "../vault-lib.mts";
-import type { EffectiveProfile, Item, PropMap, ResistCap } from "../vault-lib.mts";
+import type { EffectiveProfile, Goals, Item, PropMap, ResistCap } from "../vault-lib.mts";
 import { state } from "./store.mts";
 import type { BuildMeta } from "./store.mts";
 import { $, el, label, fmtN, fmtSecs, fmtRunTime, slotLabel, whereText } from "./dom.mts";
@@ -18,8 +18,8 @@ import { session, commands, provide } from "./builder-session.mts";
 import { RESIST_NAMES, keyProps, tipTarget, verdict, grabAllButton, fetchCard, settingsCheck } from "./builder-parts.mts";
 import { savedBuffs, plannedFromWorn, buffById, buffsDiff, runBuffs, signed } from "../buffs.mts";
 import type { RunBuffs } from "../vault-lib.mts";
-import { slotsOf, paperdollCaps, pastCapNotes, runSettingsDiff, withBuffs, afterChange, compareModel, hiddenRowsNote, changeRows, gaugeRows, worse, gaugeNote, gaugeTrack, changesSummary, nextSwingStep, sharePct, plural, resistOutcome, toggleCompare, propName, capNote, capsLine, anyOverridden, effectiveFloor, resultChecks, shareRows, swingLines, who, rarityDetail, rarityTotal, type ChangeRow, type CompareMember } from "./builder-model.mts";
-import { heldWeapon } from "../swing.mts";
+import { slotsOf, paperdollCaps, pastCapNotes, runSettingsDiff, withBuffs, afterChange, compareModel, hiddenRowsNote, changeRows, gaugeRows, worse, gaugeNote, gaugeTrack, changesSummary, nextSwingStep, sharePct, plural, resistOutcome, toggleCompare, propName, capNote, capsLine, anyOverridden, effectiveFloor, resultChecks, shareRows, swingLines, who, rarityDetail, rarityTotal, goalName, goalOutcomes, goalTrades, goalVerdict, swingOutcome, tradeText, spareLine, type ChangeRow, type CompareMember } from "./builder-model.mts";
+import { heldWeapon, ssiShareOf, swingOf } from "../swing.mts";
 import type { ScoreShare, SwingResult } from "../runs-types.mts";
 import type { OptSuit, OptimizeResult, SavedRunLike, UiPrefs } from "./api-types.mts";
 
@@ -89,7 +89,8 @@ async function renderResult(res: OptimizeResult, current: OptSuit, prof: Effecti
   out.classList.remove("b-stale"); out.inert = false; out.removeAttribute("aria-hidden");
   // the saved run's banner (ui/runs.mts paintRunBanner) heads the main column; a redraw of the same result keeps it
   const banner = (again && document.getElementById("b-run-banner")) || el("div", { id: "b-run-banner" });
-  out.replaceChildren(box("div", { class: "b-arrive" }, box("div", { class: "b-arrive-main" }, banner, ...nodes), box("aside", { class: "b-arrive-side", "aria-label": "Runs" }, commands.runsCard())));
+  const goals = meta?.goals && res.method !== "manual" ? goalsCard(meta.goals, current, suit, prof, name, view == null && !!res.diagnostics?.some((d) => d.code === "swing_linear")) : null;
+  out.replaceChildren(box("div", { class: "b-arrive" }, box("div", { class: "b-arrive-main" }, banner, ...nodes), box("aside", { class: "b-arrive-side", "aria-label": goals ? "Goals and runs" : "Runs" }, goals, commands.runsCard())));
 }
 
 // A built profile's Faster Casting cap before any planned buff (vault-lib.mts fcCapFor), for paperdollCaps.
@@ -122,7 +123,8 @@ function headlineCard(res: OptimizeResult, current: OptSuit, suit: OptSuit, prof
   const rows = changeRows(was.totals, now.totals, now.caps, { floors: pdFloors, weights: prof.weights, shares: shareList, extra: [...Object.keys(prof.floors), ...Object.keys(past)] });
   // the next swing step is the result's, so only while the SSI shown is the one it swings at (not with "Show without buffs" taking a buff's share off)
   const nextSsi = view == null && res.swing && res.swing.ssi === (now.totals.ssi || 0) ? nextSwingStep(res.swing)?.value ?? null : null;
-  const checks = settingsCheck(resultChecks(res, !!prof.buffs, view != null), name);
+  // built from goals, SSI counted per point is said under the Swing speed goal in How the goals went, not as a warning here
+  const checks = settingsCheck(resultChecks(res, !!prof.buffs, view != null).filter((d) => !(meta?.goals && d.code === "swing_linear")), name);
   // the best suit's swing (an alternative's would need its own stamina), with the buffs that gave its share named
   const ssiBuffs = res.swing?.share ? (withBuffs(after, skill, base, prof.buffs, rsCap).shares.ssi || []).filter((x) => !x.outside).map((x) => buffById(x.id)?.name || x.id) : [];
   const swing = view == null && res.swing ? swingLine(res.swing, heldWeapon(suit)?.name ?? null, ssiBuffs) : null;
@@ -211,6 +213,31 @@ function scoreBreakdown(shares: ScoreShare[] | undefined): HTMLElement | null {
   const more = positive.length > 3 || positive.some((r) => r.holds) ? button({ label: sharesAll ? "Show fewer" : `Show all (${all.length})`, variant: "ghost", size: "sm", attrs: { id: "b-shares-more" },
     onClick: () => { sharesAll = !sharesAll; void rerender().then(() => document.getElementById("b-shares-more")?.focus()); } }) : null;
   return box("div", { class: "b-shares" }, box("div", { class: "b-chg-head" }, el("h3", { class: "t-sm muted", id: "b-shares-h" }, "What made up the score"), txt("select a row to tune its weight", "t-sm muted")), box("ul", { class: "b-share-list", "aria-labelledby": "b-shares-h" }, ...items), more);
+}
+
+// How the goals went (issue #292), beside a result built from goals: each goal's total in the suit shown against its cap
+// (a swing-time goal's SSI, else the build's) and its verdict (builder-model.mts goalVerdict: maxed, given up in a trade, or
+// what came first); Swing speed in seconds from the suit's own swing (swingOutcome), with a note when its swing could only be
+// counted per point; the trades the build made from what is worn now (a higher goal down while a lower one went up); and
+// where the spare points went or what they gave up. In paperdoll terms, with the buffs it was planned with.
+function goalsCard(g: Goals, current: OptSuit, suit: OptSuit, prof: EffectiveProfile, name: string, perPoint: boolean): HTMLElement {
+  const base = paperdollCaps(profileResistCaps(prof), fcCapOf(prof)), rsCap = resistSkillCapOf(state.inv!.characters[name]?.skills);
+  const was = withBuffs(totalsOf(current), prof.resistSkill, base, prof.buffs, rsCap), now = withBuffs(totalsOf(suit), prof.resistSkill, base, prof.buffs, rsCap);
+  const ssiCap = (prof.buffs?.caps ?? prof.caps).ssi, caps = { ...now.caps, ...(ssiCap != null ? { ssi: Math.min(ssiCap, now.caps.ssi ?? ssiCap) } : {}) };
+  // each suit's swing with its own weapon, at the build's stamina before gear
+  const swingIn = (s: OptSuit): ReturnType<typeof swingOf> | null => { const w = heldWeapon(s); return w && prof.swing ? swingOf(w.speed!, prof.swing.stamBase, totalsOf(s), ssiShareOf(prof)) : null; };
+  // the weapon worn now and its fastest step at the worn stamina: what the goal row was worked out for
+  const from = swingIn(current), to = swingIn(suit), wornFastest = from ? from.steps.at(-1)?.seconds ?? from.seconds : null;
+  const swing = to ? swingOutcome(g, to, heldWeapon(suit)?.name ?? null, !nextSwingStep(to), from && wornFastest != null ? { seconds: wornFastest, weapon: heldWeapon(current)?.name ?? null } : null) : null;
+  const trades = goalTrades(g, was.totals, now.totals, caps), rows = goalOutcomes(g, now.totals, caps, swing?.maxed ?? null);
+  return box("section", { class: "card b-side-card", id: "b-goals-went", "aria-labelledby": "b-goals-went-h" }, el("h3", { class: "t-md", id: "b-goals-went-h" }, "How the goals went"),
+    box("ol", { class: "b-went" }, ...rows.map((r) => box("li", {}, box("span", { class: "b-went-name" }, txt(`${r.rank}.`, "muted"), txt(goalName(r.key))),
+      r.key === "ssi" && swing ? box("span", { class: "b-went-swing" }, txt(swing.text, "b-went-val"), txt(` · ${swing.ssi}`, "t-sm muted"), swing.after ? txt(` (${swing.after})`, "t-sm muted") : null)
+        : txt(r.cap != null ? `${numText(r.value)} / ${numText(r.cap)}` : numText(r.value), "b-went-val"),
+      txt(goalVerdict(r, trades), `t-sm ${r.maxed ? "tone-ok" : "muted"}`),
+      r.key === "ssi" && perPoint ? txt("Counted per point: the weapon isn't fixed, so the swing time can't be scored by step.", "t-sm muted") : null))),
+    trades.length ? box("ul", { class: "b-trades" }, ...trades.map((t) => el("li", { class: "t-sm" }, txt(`Trade made: ${tradeText(t, from && to ? { from: from.seconds, to: to.seconds } : null)}`)))) : null,
+    ((line) => (line ? el("p", { class: "t-sm" }, txt(line)) : null))(spareLine(g, was.totals, now.totals)));
 }
 
 // The swing line under the resists: the weapon, stamina and SSI and the delay they give, then the steps at that stamina with the reached ones in the ok tone.

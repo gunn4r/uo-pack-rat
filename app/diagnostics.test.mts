@@ -4,10 +4,10 @@ import assert from "node:assert/strict";
 import { propertyReach, buildSuitMip, type BuiltMip } from "./mip.mts";
 import { preBuildDiagnostics, resultDiagnostics, scoreShares, withDiagnostics, weightDiagnostics, weaponFlagDiagnostics, onlyRootsDiagnostics, DOMINANT_SHARE, DOMINANT_WORTH, THIN_SUIT, type DiagnosticsProfile } from "./diagnostics.mts";
 import { solveExact, type OptPools } from "./exact-solver.mts";
-import { core, defaultProfiles, templateNames, type OptOptions } from "./solver-fixture.mts";
+import { core, defaultProfiles, STARTERS_BEFORE_GOALS, templateNames, type OptOptions } from "./solver-fixture.mts";
 import { actionApplies, actionWords, applyAction, handledAction, nextSwingStep, resultChecks, swingLines } from "./ui/builder-model.mts";
 import { readFileSync } from "node:fs";
-import { buildPools, foldSnapshots, importanceOf, withCurrentActions, roundImportance, typicalRange, weightOfImportance, IMPORTANCE_K, NOT_BUILDER_KEYS, PROP_LABELS, SKILL_NAMES, type OptItem } from "./vault-lib.mts";
+import { buildPools, compileGoals, foldSnapshots, importanceOf, withCurrentActions, roundImportance, typicalRange, weightOfImportance, IMPORTANCE_K, NOT_BUILDER_KEYS, PROP_LABELS, SKILL_NAMES, type OptItem } from "./vault-lib.mts";
 import { upgradeScan } from "./scan-schema.mts";
 import { plannedProfile } from "./buffs.mts";
 import { optionalSlotsFor } from "./mip.mts";
@@ -319,17 +319,25 @@ test("[fast] weight_dominates needs both thresholds, and a suit that isn't thin"
   assert.equal(weightDiagnostics(meleeMain(), luckOnly, r)[0]!.property, "luck");
 });
 
-// The demo data (app/fixtures/demo-*.json) folded, and a shipped template planned for one of its characters with that character's own pools.
+// The demo data (app/fixtures/demo-*.json) folded, and a shipped template planned for one of its characters with that character's own pools, with other `weights` when given.
 const demoScan = (name: string): ScanV2 => upgradeScan(JSON.parse(readFileSync(new URL(`./fixtures/demo-${name}.json`, import.meta.url), "utf8")), { shard: "uoalive" }) as ScanV2;
 const demoInv = foldSnapshots([demoScan("Kestrel"), demoScan("Dorran")]);
-function demoCell(who: string, template: string) {
+function demoCell(who: string, template: string, weights?: Record<string, number>) {
   const c = demoInv.characters[who]!;
   const { pools, current } = buildPools(demoInv, who, { excludeGargoyle: true, strength: Number(c.stats?.str ?? 125) });
-  return { pools, current, optionalSlots: optionalSlotsFor(current, []), profile: plannedProfile({ ...defaultProfiles.templates[template]!, race: "human" }, c, null) };
+  return { pools, current, optionalSlots: optionalSlotsFor(current, []), profile: plannedProfile({ ...defaultProfiles.templates[template]!, ...(weights ? { weights } : {}), race: "human" }, c, null) };
 }
 
+// Issue #292: goals compile to weights, so the check reads them like any others: one goal over the four melee spare points.
+test("[fast] weight_dominates: goal weights too, one goal over its spare points", () => {
+  const { weights } = compileGoals({ ranks: [["di"]], leftover: "melee" });
+  const after = { di: 100, strBonus: 5, dexBonus: 5, stamInc: 5, hpRegen: 2 };
+  const d = weightDiagnostics({ weights, caps: meleeCaps }, after, full(after));
+  assert.deepEqual(d.map((x) => [x.property, x.values?.median]), [["di", 5]]);
+});
+
 test("[fast] weight_dominates: the archer template on a thin suit (a weapon only, low resists) is quiet, though its median is low", () => {
-  const c = demoCell("Kestrel", "archer");
+  const c = demoCell("Kestrel", "archer", STARTERS_BEFORE_GOALS.archer);   // the weights it had before goals, whose median is low
   const weaponOnly = { di: 40, ssi: 10, hci: 5, luck: 100 };
   const lowResists = { physResist: 30, fireResist: 10, coldResist: 10, poisonResist: 10, energyResist: 10, di: 100, ssi: 30, hci: 15 };
   for (const after of [weaponOnly, lowResists]) {
