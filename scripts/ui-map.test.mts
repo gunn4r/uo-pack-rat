@@ -549,7 +549,7 @@ test("[slow] House map: Remove this house asks in the page, then the house leave
     const file = JSON.parse(readFileSync(join(dir, "house-map.json"), "utf8")) as { forgotten: Array<{ id: string }> };
     assert.deepEqual(file.forgotten.map((f) => f.id), [COURT]);
     await page.reload();
-    await go(page, `#/map/${COURT}`, `#map-house option[value="${VAULT}"]`);
+    await go(page, `#/map/${COURT}`, "#map-panel #map-forget");
     assert.equal(await page.locator(`#map-house option[value="${COURT}"]`).count(), 0, "still gone after a reload");
     assert.deepEqual(errors, []);
   } finally { await done(app, dir); }
