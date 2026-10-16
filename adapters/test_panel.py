@@ -2,7 +2,7 @@
 
 The fake is fake_clients.tazuo_panel_api: its window, what each button starts or stops and under which relative path, the show/hide hotkey read from the app's tazuo-panel.json, and the heartbeat the installer reads.
 
-Covers: each button's script path under a group folder, the bridge button following state, the three scan buttons reading Stop scan while their script runs and stopping it (issue #298; stopping the scan a Put away waits for cancels the Put away), the not-started message, the hotkey re-read from `tazuo-panel.json` (a bare letter refused), the window hidden and rebuilt, starting hidden when `showAtLogin` is off, the Show at login button, and the heartbeat. Put away (issue #131): the target cursor (nothing picked, not a container, a book, a corpse, trash, another mobile's pack, a chest out of reach, a blacklisted bag, each refused with its reason, and only a chest in reach starting a scan), the refresh run for a bag in the pack, the request written after its scan file with the picked container, the character and where it stands, the shared variable set to that container for the run and cleared after it, each trip's result followed and a new request after a trip that put everything, the bridge required, an app that does not answer, Cancel put away (the stop flag written, the button's name back), a trip that never reports back ending the run with the stop flag written, and a client whose shared variable does not hold ending the run before any request. Also (2.12.0, issue #10) the House map refresh button beside Character refresh starting `packrat-house-map-refresh.py`, refused while a Put away runs, a `-house` file neither the last scan nor the scan Put away waits for, the Running line within 48 characters with all five scripts running, and every button and line inside the window with no two buttons overlapping. Claim this house (issue #299): the claim written to `house-claims.json` with the house's id, facet, bounds and character, the button then reading Unclaim this house, which takes back every claim the house overlaps and keeps the rest; greyed outside a house, where a click claims nothing; a house sign naming a stranger as its owner refusing the claim, and one naming this character, a character with a scan file, or no owner claiming.
+Covers: each button's script path under a group folder, the bridge button following state, the three scan buttons reading Stop scan while their script runs and stopping it (issue #298; stopping the scan a Put away waits for cancels the Put away), the not-started message, the hotkey re-read from `tazuo-panel.json` (a bare letter refused), the window hidden and rebuilt, starting hidden when `showAtLogin` is off, the Show at login button, and the heartbeat. Put away (issue #131): the target cursor (nothing picked, not a container, a book, a corpse, trash, another mobile's pack, a chest out of reach, a blacklisted bag, each refused with its reason, and only a chest in reach starting a scan), the refresh run for a bag in the pack, the request written after its scan file with the picked container, the character and where it stands, the shared variable set to that container for the run and cleared after it, each trip's result followed and a new request after a trip that put everything, the bridge required, an app that does not answer, Cancel put away (the stop flag written, the button's name back), a trip that never reports back ending the run with the stop flag written, and a client whose shared variable does not hold ending the run before any request. Also (2.12.0, issue #10) the House map refresh button beside Character refresh starting `packrat-house-map-refresh.py`, refused while a Put away runs, a `-house` file neither the last scan nor the scan Put away waits for, the Running line within 48 characters with all five scripts running, and every button and line inside the window with no two buttons overlapping. Claim this house (issue #299): the claim written to `house-claims.json` with the house's id, facet, bounds and character, the button then reading Unclaim this house, which takes back every claim the house overlaps and keeps the rest; greyed outside a house, where a click changes and says nothing; the house worked out again only after the player moves; no claim before the character's name has loaded; a house sign naming a stranger as its owner refusing the claim, one naming this character, a character with a scan file, or no owner claiming, and a stranger's sign beside one naming this character not refusing it.
 
 Run: python3 adapters/test_panel.py  (app/adapters.test.mts also spawns it, so `npm test` does).
 """
@@ -158,7 +158,7 @@ class Panel(unittest.TestCase):
         w.clock.at(1, lambda: api.click(self.control(api, "Claim this house")))
         self.run_panel(w, api, until_s=3)
         self.assertEqual(self.control(api, "Claim this house").TextHue, 902)
-        self.assertIn("Stand inside a house to claim it.", self.labels(api))
+        self.assertFalse(any("claim" in t.lower() for t in self.labels(api) if t != "Claim this house"), "a click there changes nothing and says nothing")
         self.assertIsNone(self.claims())
         w, api = self.in_house()
         self.run_panel(w, api, until_s=1)
@@ -172,6 +172,29 @@ class Panel(unittest.TestCase):
         self.assertIn("This house's sign names Some Stranger as the owner,", self.labels(api))
         self.assertIn("so it was not claimed.", self.labels(api))
         self.assertIn("Claim this house", self.labels(api))
+
+    def test_the_house_is_worked_out_again_only_when_the_player_moves(self):
+        w, api = self.in_house()
+        area, reads = api.GetMultisInArea, []
+        api.GetMultisInArea = lambda *a: (reads.append(w.clock.now), area(*a))[1]
+        w.clock.at(9, lambda: setattr(w, "px", 11))
+        self.run_panel(w, api, until_s=20)
+        self.assertEqual(len(reads), 2, "once at the start and once after the step, over ten status passes")
+
+    def test_a_character_whose_name_has_not_loaded_cannot_claim(self):
+        w, api = self.in_house()
+        api.Player.Name = ""
+        w.clock.at(1, lambda: api.click(self.control(api, "Claim this house")))
+        self.run_panel(w, api, until_s=3)
+        self.assertIsNone(self.claims())
+        self.assertIn("Pack Rat does not know this character's", self.labels(api))
+
+    def test_a_neighbours_sign_naming_a_stranger_does_not_refuse_when_this_houses_sign_names_you(self):
+        w, api = self.in_house(sign="A House Sign\nOwner: Tester")
+        w.add(SIGN + 1, 0, name="sign", container_like=False, Graphic=0x0BD2, Tooltip="A House Sign\nOwner: Some Stranger", X=17, Y=10)
+        w.clock.at(1, lambda: api.click(self.control(api, "Claim this house")))
+        self.run_panel(w, api, until_s=3)
+        self.assertEqual([c["id"] for c in self.claims()], ["1-5-5"])
 
     def test_a_sign_naming_one_of_your_characters_or_no_owner_line_claims(self):
         os.makedirs(os.path.join(self.data, "scans"))

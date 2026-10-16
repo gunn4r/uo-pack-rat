@@ -475,8 +475,11 @@ class TazUOScanner(DataDir, unittest.TestCase):
                 shutil.rmtree(os.path.join(self.data, "inbox"), ignore_errors=True)
                 self.trash_scan(cached)
 
-    def trash_scan(self, cached):
-        w = World(); home(w); trash(w, cached)
+    def test_on_a_build_without_the_tooltip_timeout_a_trash_container_is_still_known_by_its_tooltip(self):
+        self.trash_scan(True, no_timeout=True)
+
+    def trash_scan(self, cached, no_timeout=False):
+        w = World(); home(w); trash(w, cached); w.no_tooltip_timeout = no_timeout
         self.scan(w)
         [s] = self.scans("tazuo")
         self.assertNotIn(TRASH_BARREL, self.opened(w))
@@ -870,7 +873,7 @@ class TazUOHouseMapRefresh(DataDir, unittest.TestCase):
                 self.assertEqual(len(self.scans("tazuo")), 1 if written else 0)
                 self.assertEqual(asked, [], "finding the house asks the server nothing")
                 if not written:
-                    self.assertEqual(w.messages, [NOT_CLAIMED])
+                    self.assertEqual(w.messages, ["Not in one of your houses, so nothing was refreshed. Use Claim this house in the Pack Rat panel if this house is yours."])
 
     def test_trash_blacklisted_containers_and_corpses_are_left_out_of_the_chests(self):
         w = World(); home(w); w.multis = house_tiles(5, 5, 12, 12)

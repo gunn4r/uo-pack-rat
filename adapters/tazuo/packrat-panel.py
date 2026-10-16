@@ -10,7 +10,8 @@
 #                           a target cursor by the app's Organize rules (see below)
 #   Claim this house        claims the house you stand in (issue #299): scans open ground containers and
 #                           capture the house only inside a claimed one. It reads Unclaim this house inside
-#                           a claimed house, which takes the claim back, and is greyed outside any house
+#                           a claimed house, which takes the claim back, and is greyed and does nothing outside
+#                           any house. The house where you stand is worked out again only when you move
 #   Close                   hides the window; the hotkey shows it again
 # Below the buttons: which Pack Rat scripts are running, whether the bridge is on, and how long ago this
 # character's last scan file was saved. The panel reads only local files, the client's own script
@@ -169,7 +170,8 @@ SIGN_WAIT_S = 1           # how long a claim waits for the sign's tooltip
 SCAN_NAME = re.compile(r"^(.+)-\d{8}[-T]\d{6}")   # a scan file's name: its character's slug, then its stamp
 
 state = {"done": False, "prefix": "", "character": "", "pending": {}, "was_running": set(),
-         "hotkey": None, "window": None, "show_at_login": True, "run": None, "quiet": set(), "claim_hue": None}
+         "hotkey": None, "window": None, "show_at_login": True, "run": None, "quiet": set(), "claim_hue": None,
+         "here_at": None, "here": None, "claims_mt": None, "claims": []}
 ui = {}
 shown = {}
 
@@ -435,8 +437,9 @@ def refresh():
     t = last_scan()
     set_text("scan", "Last scan: " + ("none yet" if t is None else ago(t)))
     away_buttons()
-    here = house_here()
-    claim_button(here, bool(claims_over(here, read_claims(CLAIMS_PATH))))
+    if bool(getattr(state["window"], "IsVisible", False)):    # hidden, nobody sees the button
+        here = house_now()
+        claim_button(here, bool(claims_over(here, claims_now())))
     write_json_atomic(HEARTBEAT, {"alive": rfc3339_now(), "character": state["character"]})
 
 
@@ -481,11 +484,15 @@ def read_blacklist(path):
 def tooltip_lines(serial, wait=True, timeout=None):
     """The item's tooltip lines. `wait`: the client waits for a tooltip it does not have yet, up to
     `timeout` s (TazUO's ItemNameAndProps, 10 s when not given); without it, a missing tooltip reads as
-    none at once."""
+    none at once. A build whose ItemNameAndProps takes no timeout gets the read without one (its own
+    10 s wait), never none: a trash check must not fall back to a cached name ("barrel") over it."""
     try:
         data = API.ItemNameAndProps(int(serial), wait) if timeout is None else API.ItemNameAndProps(int(serial), wait, timeout)
     except Exception:
-        data = None
+        try:
+            data = API.ItemNameAndProps(int(serial), wait) if timeout is not None else None
+        except Exception:
+            data = None
     return [ln.strip() for ln in str(data or "").splitlines() if ln.strip()]
 # END generated: tazuo/tooltip_lines
 
@@ -566,7 +573,7 @@ def read_claims(path):
         return (isinstance(b, dict) and isinstance(e.get("id"), str) and re.match(r"^(\d{1,3}|x)-\d{1,6}-\d{1,6}$", e["id"])
                 and "facet" in e and (e["facet"] is None or (type(e["facet"]) is int and 0 <= e["facet"] <= 5))
                 and all(type(b.get(k)) is int and 0 <= b[k] <= 999999 for k in ("x0", "y0", "x1", "y1")) and b["x0"] <= b["x1"] and b["y0"] <= b["y1"]
-                and isinstance(e.get("claimedAt"), str) and len(e["claimedAt"]) <= 40 and (e.get("by") is None or (isinstance(e["by"], str) and len(e["by"]) <= 64)))
+                and isinstance(e.get("claimedAt"), str) and 0 < len(e["claimedAt"]) <= 40 and ("by" not in e or (isinstance(e["by"], str) and 0 < len(e["by"]) <= 64)))
     try:
         if os.path.getsize(path) > 256 * 1024:
             return []
@@ -610,9 +617,11 @@ def my_characters():
     return out
 
 
-def sign_owner(bounds):
-    """The owner the house's sign names on its tooltip ("Owner: X"), or None: no sign on the ground within a
-    tile of `bounds`, no owner line, or no tooltip within SIGN_WAIT_S."""
+def sign_owners(bounds):
+    """The owners the house signs on the ground within a tile of `bounds` name on their tooltips ("Owner: X"),
+    each sign read with a wait of at most SIGN_WAIT_S; none when there is no sign or no owner line. Every sign
+    is read, since a neighbour's sign can stand within that tile too."""
+    owners = []
     for g in call(getattr(API, "GetItemsOnGround", None), HOUSE_ITEM_REACH) or []:
         try:
             x, y, s = int(g.X), int(g.Y), int(g.Serial)
@@ -626,12 +635,36 @@ def sign_owner(bounds):
         for ln in tooltip_lines(s, True, SIGN_WAIT_S):
             m = OWNER_RE.match(ln)
             if m:
-                return m.group(1).strip()
-    return None
+                owners.append(m.group(1).strip())
+    return owners
+
+
+def house_now(fresh=False):
+    """house_here(), worked out again only when the player has moved or changed facet (or `fresh`): the
+    footprint reads a wide area of tiles, too much for every status pass."""
+    try:
+        at = (int(API.Player.X), int(API.Player.Y), facet())
+    except Exception:
+        at = None
+    if fresh or at is None or at != state["here_at"]:
+        state["here_at"], state["here"] = at, house_here()
+    return state["here"]
+
+
+def claims_now():
+    """read_claims(CLAIMS_PATH), read again only when the file's time changes (the app's Unclaim writes it too)."""
+    try:
+        mt = os.path.getmtime(CLAIMS_PATH)
+    except Exception:
+        mt = None
+    if mt is None or mt != state["claims_mt"]:
+        state["claims_mt"], state["claims"] = mt, read_claims(CLAIMS_PATH)
+    return state["claims"]
 
 
 def claim_button(here, claimed):
-    """Claim this house reads Unclaim this house inside a claimed house, and is greyed outside any house."""
+    """Claim this house reads Unclaim this house inside a claimed house; outside any house it is greyed and a
+    click does nothing (on_claim)."""
     set_text("claim_btn", "Unclaim this house" if claimed else "Claim this house")
     b, hue = ui.get("claim_btn"), DIM_HUE if here is None else state["claim_hue"]
     if b is not None and hue is not None:
@@ -642,11 +675,13 @@ def claim_button(here, claimed):
 
 
 def on_claim():
-    """Claim this house: a claim for the house the player stands in, unless its sign names someone who is not
-    one of this player's characters; inside a claimed house it takes every claim over it back."""
-    here = house_here()
+    """Claim this house: a claim for the house the player stands in, unless the house's signs name owners and
+    none of them is one of this player's characters; inside a claimed house it takes every claim over it back.
+    Outside a house the button is disabled: the click changes nothing. A character whose name the client has
+    not given yet cannot claim, since the claim names it."""
+    here = house_now(fresh=True)
     if here is None:
-        say("Stand inside a house to claim it.")
+        claim_button(None, False)
         return
     claims = read_claims(CLAIMS_PATH)
     over = claims_over(here, claims)
@@ -654,9 +689,13 @@ def on_claim():
         claims = [c for c in claims if c not in over]
         done = ("Unclaimed this house.", "Scans here read only your pack now.")
     else:
-        owner = sign_owner(here[2])
-        if owner is not None and slug(owner) not in my_characters():
-            say("This house's sign names %s as the owner," % text_of(owner, 24), "so it was not claimed.")
+        if not state["character"]:
+            say("Pack Rat does not know this character's", "name yet; try again in a moment.")
+            return
+        owners = sign_owners(here[2])
+        mine = my_characters()
+        if owners and not any(slug(o) in mine for o in owners):
+            say("This house's sign names %s as the owner," % text_of(owners[0], 24), "so it was not claimed.")
             return
         if len(claims) >= CLAIM_MAX:
             say("Pack Rat keeps %d claimed houses at most;" % CLAIM_MAX, "unclaim one in the app first.")
@@ -668,6 +707,7 @@ def on_claim():
     except Exception:
         say("Could not save the claim.")
         return
+    state["claims_mt"] = None   # read again at the next status pass
     claim_button(here, not over)
     say(*done)
 

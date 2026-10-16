@@ -12,7 +12,7 @@ def read_claims(path):
         return (isinstance(b, dict) and isinstance(e.get("id"), str) and re.match(r"^(\d{1,3}|x)-\d{1,6}-\d{1,6}$", e["id"])
                 and "facet" in e and (e["facet"] is None or (type(e["facet"]) is int and 0 <= e["facet"] <= 5))
                 and all(type(b.get(k)) is int and 0 <= b[k] <= 999999 for k in ("x0", "y0", "x1", "y1")) and b["x0"] <= b["x1"] and b["y0"] <= b["y1"]
-                and isinstance(e.get("claimedAt"), str) and len(e["claimedAt"]) <= 40 and (e.get("by") is None or (isinstance(e["by"], str) and len(e["by"]) <= 64)))
+                and isinstance(e.get("claimedAt"), str) and 0 < len(e["claimedAt"]) <= 40 and ("by" not in e or (isinstance(e["by"], str) and 0 < len(e["by"]) <= 64)))
     try:
         if os.path.getsize(path) > 256 * 1024:
             return []

@@ -271,7 +271,11 @@ def tazuo_api(world, backpack, bank=0, skills=None):
     # until it arrives or for `timeout` seconds, as TazUO's ItemNameAndProps does.
     late, arrives = getattr(world, "late_tooltips", {}), {}
 
-    def name_and_props(s, wait=False, timeout=10):
+    def name_and_props(s, wait=False, *timeout):
+        # `no_tooltip_timeout`: a build whose ItemNameAndProps takes no timeout argument (pythonnet finds no overload).
+        if timeout and getattr(world, "no_tooltip_timeout", False):
+            raise TypeError("No method matches given arguments for ItemNameAndProps")
+        timeout = timeout[0] if timeout else 10
         s = int(s)
         if s in late:
             due = arrives.get(s)
