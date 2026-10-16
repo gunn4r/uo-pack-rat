@@ -19,6 +19,7 @@ export const UI_PREF_CHOICES = {
   manualFor: ["character", "none"],       // whether Manual totals take the picked character's bonuses
   buffsCount: ["on", "off"],              // whether Manual's totals count the buffs that are on (app/buffs.mts)
   builderTab: ["requirements", "weights", "buffs", "pool", "advanced"],   // the Suit Builder's last Settings drawer tab (app/ui/builder.mts, issue #272)
+  builderChanges: ["gauges", "table"],   // how the Suit Builder's result shows What changes (app/ui/builder-result.mts, issue #272)
 } as const satisfies Record<string, readonly string[]>;
 // The list fields: the Inventory tab's columns and the character sheet's shown properties (absent = the default set).
 export const UI_PREF_LISTS = ["cols", "sheetProps"] as const;
