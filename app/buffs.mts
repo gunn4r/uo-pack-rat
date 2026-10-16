@@ -435,8 +435,9 @@ export function buffAvailability(b: Buff, values: Skills, planned: ReadonlySet<s
 // What an entry changes in the suit maths, in short words from its own definition at these numbers: each property its
 // effects move ("swing speed up", "defense chance down"; all five resists, or all three stats, moving together as one
 // "resists up"), each cap it changes ("defense chance cap up"), then what no total shows ("hits the lowest resist").
-// "no suit effect" when it does none of these.
-export function buffEffectTags(id: string, skills: Skills, stats: Stats | null, totals: PropMap, who: BuffWho = {}, caps: Readonly<Record<string, number>> = {}): string[] {
+// "no suit effect" when it does none of these. `down` marks a tag that lowers something for the suit (the page tints it).
+export interface EffectTag { text: string; down: boolean }
+export function buffEffectTags(id: string, skills: Skills, stats: Stats | null, totals: PropMap, who: BuffWho = {}, caps: Readonly<Record<string, number>> = {}): EffectTag[] {
   const b = BY_ID.get(id)!, c = buffContext(skills, stats, totals, who, caps);
   const dir = (v: number): string => (v < 0 ? "down" : "up");
   // the resists, or the stats, moving one way are named together: all of them as "resists" / "stats", some by their words
@@ -457,7 +458,7 @@ export function buffEffectTags(id: string, skills: Skills, stats: Stats | null, 
   const capMoves = [...Object.entries({ ...b.caps?.(c), ...b.capsLate?.(c) }).filter(([, d]) => d),
     ...Object.entries(b.capsSet?.(c) || {}).filter(([k, v]) => caps[k] != null && v !== caps[k]).map(([k, v]): [string, number] => [k, v - caps[k]!])].map(([k, d]): [string, string] => [k, dir(d)]);
   const tags = [...new Set([...words(moves, ""), ...words(capMoves, " cap"), ...(b.extra?.(c) || [])])];
-  return tags.length ? tags : ["no suit effect"];
+  return (tags.length ? tags : ["no suit effect"]).map((text) => ({ text, down: text.endsWith(" down") }));
 }
 // The one word each property an entry moves takes in its tags (a resist's alone, "fire" + " resist"); a skill bonus is the
 // skill's name. Every key the catalog's effects and caps use has one (app/buffs.test.mts checks).

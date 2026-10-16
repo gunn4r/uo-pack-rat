@@ -494,8 +494,11 @@ test("[fast] buffs: manualProfile plans a hand-picked suit from that suit's weap
 });
 
 test("[fast] buffs: the Buffs tab's effect tags come from each entry's own effects, caps and extras, in one word per property (issue #272)", () => {
-  const { values } = buffSkillValues(null, {}), tags = (id: string, skills: Skills = values): string[] => buffEffectTags(id, skills, null, {}, {}, CAPS);
+  const { values } = buffSkillValues(null, {}), tags = (id: string, skills: Skills = values): string[] => buffEffectTags(id, skills, null, {}, {}, CAPS).map((t) => t.text);
   assert.deepEqual(tags("divineFury"), ["hit chance up", "damage up", "swing speed up", "defense chance down"]);
+  // a tag that lowers something for the suit is marked, for the warn tone
+  assert.deepEqual(buffEffectTags("divineFury", values, null, {}, {}, CAPS).map((t) => t.down), [false, false, false, true]);
+  assert.deepEqual(buffEffectTags("curse", values, null, {}, {}, CAPS).map((t) => t.down), [true, true]);
   // below Chivalry 90 Consecrate Weapon adds no damage: only what no total shows is left
   assert.deepEqual(tags("consecrateWeapon", { ...values, Chivalry: 60 }), ["hits the lowest resist"]);
   assert.deepEqual(tags("consecrateWeapon"), ["damage up", "hits the lowest resist"]);

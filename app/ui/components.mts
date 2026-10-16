@@ -424,6 +424,10 @@ export function closePopover(): void { openPopover?.close(); }
 // A small text tooltip on hover (after --delay-tooltip) and on keyboard focus, described-by the anchor. Above
 // the anchor by default (below when there is no room); side "right" puts it beside the anchor instead, for an
 // anchor with text right above it that the tooltip must not cover (above again when there is no room).
+// The tooltips on screen whose text follows the page, so refreshTooltips() can redraw them while they show (a weight's
+// trade-off as its slider is dragged).
+const liveTips = new Map<HTMLElement, () => string>();
+export function refreshTooltips(): void { for (const [tip, text] of liveTips) tip.textContent = text(); }
 export function tooltip(anchor: HTMLElement, text: string | (() => string), { side = "top" }: { side?: "top" | "right" } = {}): HTMLElement {
   const tip = el("div", { class: "tip", role: "tooltip", id: nextId("tip") }, typeof text === "string" ? text : "");
   let timer = 0;
@@ -432,7 +436,7 @@ export function tooltip(anchor: HTMLElement, text: string | (() => string), { si
     clearTimeout(timer);
     timer = setTimeout(() => {
       if (!anchor.isConnected) return;
-      if (typeof text === "function") tip.textContent = text();   // a text that follows the page, read as it shows
+      if (typeof text === "function") { tip.textContent = text(); liveTips.set(tip, text); }   // a text that follows the page, read as it shows
       document.body.append(tip);
       const a = anchor.getBoundingClientRect(), w = tip.offsetWidth, h = tip.offsetHeight;
       if (side === "right" && a.right + 6 + w <= innerWidth - 8) {
@@ -445,7 +449,7 @@ export function tooltip(anchor: HTMLElement, text: string | (() => string), { si
       tip.style.top = `${top}px`;
     }, delay) as unknown as number;
   };
-  const hide = (): void => { clearTimeout(timer); tip.remove(); };
+  const hide = (): void => { clearTimeout(timer); tip.remove(); liveTips.delete(tip); };
   anchor.addEventListener("mouseenter", () => show(400));
   anchor.addEventListener("focusin", () => show(0));
   anchor.addEventListener("mouseleave", hide);

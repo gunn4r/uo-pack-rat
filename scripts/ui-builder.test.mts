@@ -600,16 +600,35 @@ test("[slow] drawer extras: notched weight sliders, buffs by school, each requir
     assert.equal(await row(0).slider.getAttribute("aria-valuetext"), String(v1 - 5));
     assert.equal(await fill(row(1).slider), other, "another row's bar keeps its size");
     assert.match(await page.locator("#b-wreadout").innerText(), /^At these settings|has the highest weight/);
+    // the trade-off tooltip on screen follows the slider as it moves
+    await row(1).slider.focus();
+    for (let i = 0; i < 14; i++) await page.keyboard.press("ArrowLeft");
+    assert.equal(await page.locator(".tip").last().innerText(), await page.locator("#b-wreadout").innerText());
     await row(2).num.fill("178");
     assert.equal(await rows.nth(2).locator(".b-wover").innerText(), "▸178");
     assert.equal(await fill(row(2).slider), "100%");
     await row(2).num.fill("12.5");
     assert.equal(await row(2).num.inputValue(), "12.5");
     assert.equal(await fill(row(2).slider), "12.5%");
+    // the handle sits at 12.5 and says so; the arrows go to the next notch that way (→ 15, 20; ← 15, 10)
+    assert.equal(await row(2).slider.inputValue(), "12.5");
+    assert.equal(await row(2).slider.getAttribute("aria-valuetext"), "12.5");
+    await row(2).slider.focus();
+    for (const [key, want] of [["ArrowRight", "15"], ["ArrowRight", "20"], ["ArrowLeft", "15"]] as const) { await page.keyboard.press(key); assert.equal(await row(2).num.inputValue(), want, key); }
+    await row(2).num.fill("12.5");
+    await row(2).slider.focus();
+    await page.keyboard.press("ArrowLeft");
+    assert.equal(await row(2).num.inputValue(), "10");
+    await row(2).num.fill("12.5");
     const before = Number(await row(3).num.inputValue());
     await rows.nth(3).locator(".b-wsign").click();
     assert.equal(Number(await row(3).num.inputValue()), -before);
     assert.equal(await rows.nth(3).locator(".b-wsign").getAttribute("aria-pressed"), "true");
+    // the pressed ± is drawn tinted, unlike a positive row's, with the pointer away
+    await page.mouse.move(0, 0);
+    await page.waitForTimeout(400);   // the button's color transition
+    const look = (i: number): Promise<string> => rows.nth(i).locator(".b-wsign").evaluate((b) => { const c = getComputedStyle(b); return `${c.color} ${c.backgroundColor} ${c.borderColor}`; });
+    assert.notEqual(await look(3), await look(0));
     assert.match(await rows.nth(3).locator(".b-wtrack").getAttribute("class") ?? "", /\bneg\b/);
     // at 0, ± keeps the row negative ("−0", the warn style) so a drag up from there goes negative
     await row(4).num.fill("0");
@@ -655,6 +674,14 @@ test("[slow] drawer extras: notched weight sliders, buffs by school, each requir
 
     await settings(page, "requirements");
     assert.equal(await page.locator("#b-sec-req .b-need-status").first().innerText(), "", "no status before a build");
+    // a soft DCI 45 the suit misses, and an SSI 30 it meets with a faster step to come
+    for (const [q, v] of [["Swing speed", "30"], ["Defense chance", "45"]] as const) {
+      await page.click("#b-addfloor");
+      await page.keyboard.type(q);
+      await page.keyboard.press("Enter");
+      await page.keyboard.type(v);
+    }
+    await page.locator("#b-sec-req .rule-row[data-key=dci] [data-value=soft]").click();
     await page.click("#b-run");
     await built(page);
     // each resist need says the number its tile shows, held at the cap of 70 (the Melee floor is 65)
@@ -663,6 +690,18 @@ test("[slow] drawer extras: notched weight sliders, buffs by school, each requir
       const want = n < 65 ? `${65 - n} short` : n > 70 ? `Met: 70 (+${n - 70} past cap)` : `Met: ${n}`;
       assert.equal(await page.locator(`#b-sec-req .rule-row[data-key=${k}] .b-need-status`).innerText(), want, k);
     }
+    // DCI: what its gauge shows short of 45, in the warn tone
+    const dci = Number(await page.locator("#b-result .b-gauge", { has: page.locator(".b-gauge-name", { hasText: /^DCI$/ }) }).locator(".b-gauge-val").innerText());
+    assert.ok(dci < 45, `DCI ${dci} misses 45`);
+    const dciStatus = page.locator("#b-sec-req .rule-row[data-key=dci] .b-need-status");
+    assert.equal(await dciStatus.innerText(), `${45 - dci} short`);
+    assert.match(await dciStatus.getAttribute("class") ?? "", /tone-warn/);
+    // SSI: the next step the result's swing line has not reached, with its delay and the held weapon
+    const ssi = /^Next swing step at (\d+) \(([\d.]+ s) with (.+)\)$/.exec(await page.locator("#b-sec-req .rule-row[data-key=ssi] .b-need-status").innerText());
+    assert.ok(ssi, "the SSI status names the next step");
+    const steps = await page.locator("#b-result .b-head-card").innerText();
+    assert.ok(steps.includes(`${ssi[2]} ≥ ${ssi[1]}`) && !steps.includes(`${ssi[2]} ≥ ${ssi[1]} ✓`), `the step is one the swing line lists unreached: ${ssi[0]}`);
+    assert.ok(steps.includes(ssi[3]!), "the held weapon is the swing line's");
     await fitWindow(app, page, { width: 420, height: 900 });
     for (const tab of ["weights", "buffs", "requirements"] as const) {
       await settings(page, tab);

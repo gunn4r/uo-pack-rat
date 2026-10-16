@@ -60,20 +60,27 @@
 .b-wtrack { position: relative; display: flex; align-items: center; height: var(--control-sm); --b-wc: var(--color-accent); }
 .b-wtrack.neg { --b-wc: var(--color-warning); }
 .b-wtrack i { position: absolute; top: 50%; width: 1px; height: 12px; margin-top: -6px; background: var(--color-border-strong); pointer-events: none; }
-.b-wslider { appearance: none; -webkit-appearance: none; width: 100%; height: 6px; margin: 0; border-radius: var(--radius-full); cursor: pointer; background: linear-gradient(to right, var(--b-wc) var(--fill, 0%), var(--color-surface-sunken) var(--fill, 0%)); }
+.b-wslider { appearance: none; -webkit-appearance: none; width: 100%; height: 6px; margin: 0; border-radius: var(--radius-full); cursor: pointer; background: linear-gradient(to right, var(--b-wc) var(--fill, 0%), var(--color-border) var(--fill, 0%)); }
 .b-wslider::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: var(--radius-full); background: var(--color-surface); border: 2px solid var(--b-wc); opacity: 0; transition: opacity var(--duration-fast) var(--ease-standard); }
 .b-wslider::-moz-range-thumb { width: 12px; height: 12px; border-radius: var(--radius-full); background: var(--color-surface); border: 2px solid var(--b-wc); opacity: 0; }
 .b-wtrack:hover .b-wslider::-webkit-slider-thumb, .b-wslider:focus-visible::-webkit-slider-thumb, .b-wslider:active::-webkit-slider-thumb { opacity: 1; }
 .b-wtrack:hover .b-wslider::-moz-range-thumb, .b-wslider:focus-visible::-moz-range-thumb { opacity: 1; }
 .pr .b-wslider:focus-visible { box-shadow: var(--ring-focus); }
-.b-wover { position: absolute; right: 0; top: -6px; font-size: var(--text-xs); line-height: 1; color: var(--color-accent); pointer-events: none; }
+.b-wover { position: absolute; right: 0; top: -6px; font-size: var(--text-xs); line-height: 1; color: var(--b-wc); pointer-events: none; }
 .b-wover:empty { display: none; }
-.b-wsign[aria-pressed="true"] { color: var(--color-warning); border-color: var(--color-warning); }
+.pr .btn.b-wsign[aria-pressed="true"] { color: var(--color-on-warning-soft); background: var(--color-warning-soft); border-color: var(--color-warning); }
 .b-wscale { display: grid; gap: var(--space-1-5); font-size: var(--text-xs); color: var(--color-text-muted); }
 .b-wmarks { position: relative; height: var(--lh-xs); }
 .b-wmarks span { position: absolute; transform: translateX(-50%); }
 .b-wmarks span:first-child { transform: none; }
 .b-wmarks span:last-child { transform: translateX(-100%); }
+/* a phone-width drawer: a weight's name on its own line over its number, slider, ± and remove, and only "off" and "top"
+   under the track's ends */
+@media (max-width: 720px) {
+  .rule-row.weight, .b-wscale { grid-template-columns: 64px minmax(0, 1fr) var(--control-sm) var(--control-sm); }
+  .rule-row.weight > .rule-name { grid-column: 1 / -1; display: block; }
+  .b-wscale > span:first-child, .b-wmarks span:not(:first-child):not(:last-child) { display: none; }
+}
 /* a requirement's name, and under it what it came to in the result shown */
 .b-need { display: flex; flex-direction: column; min-width: 0; }
 .b-need-status:empty { display: none; }
@@ -86,6 +93,9 @@
 .b-bf-fx { display: flex; flex-wrap: wrap; gap: var(--space-1); font-size: var(--text-sm); color: var(--color-text-muted); }
 .b-bf-fx > span:not(.b-bf-line) { padding: 0 var(--space-1-5); border-radius: var(--radius-sm); background: var(--color-surface-sunken); }
 .b-bf-line { flex-basis: 100%; }
+/* a tag that lowers something for the suit, and what a buff needs to cast, in the warn tone */
+.b-bf-fx > span.b-bf-down { color: var(--color-on-warning-soft); background: var(--color-warning-soft); }
+.b-bf-need { display: inline-flex; align-items: center; gap: var(--space-1); }
 .b-bf-cant .b-bf-text > .strong { color: var(--color-text-muted); }
 .pr .rule-row .input.num { width: 100%; }
 .rule-row .field-error, .rule-row .field-warn { grid-column: 1 / -1; }

@@ -15,7 +15,7 @@ import { state, invStamp } from "./store.mts";
 import type { BuilderJob, BuilderJobUi, FinishedBuild, BuildMeta } from "./store.mts";
 import { $, el, label, full, fmtN, fmtSecs, slotLabel, toast } from "./dom.mts";
 import { promptText } from "./dialog.mts";
-import { box, txt, button, kbd, badge, token, message, select, input, field, switchControl, check, segmented, filterChip, pill, popover, closePopover, menu, searchInput, stepper, progress, tooltip, confirmDialog, modalOpen } from "./components.mts";
+import { box, txt, button, kbd, badge, token, message, select, input, field, switchControl, check, segmented, filterChip, pill, popover, closePopover, menu, searchInput, stepper, progress, tooltip, refreshTooltips, icon, confirmDialog, modalOpen } from "./components.mts";
 import { api } from "./api.mts";
 import { createBuffPicker, type BuffPicker, type BuffView, type PickerActions } from "./builder-buffs.mts";
 import { optimizeErrorMessage } from "./messages.mts";
@@ -452,11 +452,11 @@ function buffList(): HTMLElement {
 function buffRow(b: Buff, needs: string | null, unscanned: string[], v: BuffView): HTMLElement {
   const on = v.on.includes(b.id), lid = `b-bf-${b.id.replace(/\W/g, "-")}-d`;
   const missing = unscanned.length ? `${unscanned.map((i) => BUFF_INPUTS[i]!.label).join(", ")} not in the scan: counted at ${BUFF_INPUTS[unscanned[0]!]!.def}` : null;
-  const line = needs ?? missing ?? b.note ?? null;
+  const line = needs ? box("span", { class: "t-sm tone-warn b-bf-line b-bf-need" }, icon("alert", { size: "sm" }), txt(needs)) : missing ?? b.note ? txt((missing ?? b.note)!, "t-sm muted b-bf-line") : null;
   const sw = switchControl({ label: b.name, checked: on, disabled: !!b.race && !!needs && !on, onChange: () => buffActions.toggle(b.id),
     attrs: { id: `b-bf-${b.id.replace(/\W/g, "-")}`, "aria-label": b.name, "aria-describedby": lid } });
   sw.root.lastElementChild!.replaceWith(box("span", { class: "b-bf-text" }, txt(b.name, "strong"),
-    box("span", { class: "b-bf-fx", id: lid }, ...buffEffectTags(b.id, v.values, v.stats, v.totals, v.who, v.caps).map((t) => txt(t)), line ? txt(line, "t-sm muted b-bf-line") : null)));
+    box("span", { class: "b-bf-fx", id: lid }, ...buffEffectTags(b.id, v.values, v.stats, v.totals, v.who, v.caps).map((t) => txt(t.text, t.down ? "b-bf-down" : undefined)), line)));
   sw.root.classList.add("b-bf");
   if (needs) sw.root.classList.add("b-bf-cant");
   sw.root.dataset.buff = b.id;
@@ -686,8 +686,10 @@ function weightsSection(): HTMLElement {
       const zeroKey = `${session.character}\u0000${k}`, negative = (): boolean => { const imp = importanceOf(k, p.weights![k]!); return imp < 0 || (imp === 0 && negZero.has(zeroKey)); };
       if (negative() && !p.weights![k]) num.value = "-0";
       const paint = (): void => {
-        const imp = importanceOf(k, p.weights![k]!), mag = Math.min(100, Math.abs(imp)), shown = roundImportance(imp), neg = negative();
-        const said = neg && !shown ? "−0" : String(shown).replace("-", "−");
+        const imp = importanceOf(k, p.weights![k]!), mag = Math.min(100, Math.abs(imp)), exact = Math.round(imp * 10) / 10, neg = negative();
+        const said = neg && !exact ? "−0" : String(exact).replace("-", "−");
+        // the handle sits at the exact value: a value off the notches (a typed 12.5) takes no step, a drag snaps again
+        slider.step = mag % 5 ? "any" : "5";
         slider.value = String(mag);
         slider.style.setProperty("--fill", `${mag}%`);
         slider.setAttribute("aria-valuetext", said);
@@ -695,6 +697,7 @@ function weightsSection(): HTMLElement {
         over.textContent = Math.abs(imp) > 100 ? `▸${said}` : "";
         sign.setAttribute("aria-pressed", String(neg));
         hover.textContent = weightTradeoff(k, p.weights!);
+        refreshTooltips();   // a trade-off tooltip on screen follows the drag
       };
       paints.push(paint);
       // the field's arrows step by 1 from 10 up and by 0.1 below, as the number is shown
@@ -709,6 +712,15 @@ function weightsSection(): HTMLElement {
       // the slider and ± write the field, which stores the weight as a typed one would (editedValue)
       const write = (n: number): void => { num.value = Object.is(n, -0) ? "-0" : String(n); num.dispatchEvent(new Event("input")); };
       slider.addEventListener("input", () => write((negative() ? -1 : 1) * Number(slider.value)));
+      slider.addEventListener("pointerdown", () => { slider.step = "5"; });
+      // the arrow keys go to the next notch of 5 that way, from a value off the notches too (12.5: → 15, ← 10)
+      slider.addEventListener("keydown", (e) => {
+        const d = e.key === "ArrowRight" || e.key === "ArrowUp" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowDown" ? -1 : 0;
+        if (!d) return;
+        e.preventDefault();
+        const mag = Math.min(100, Math.abs(importanceOf(k, p.weights![k]!)));
+        write((negative() ? -1 : 1) * Math.max(0, Math.min(100, d > 0 ? Math.floor(mag / 5) * 5 + 5 : Math.ceil(mag / 5) * 5 - 5)));
+      });
       slider.addEventListener("focus", said);
       sign.onclick = () => {
         if (!p.weights![k]) { write(negative() ? 0 : -0); return; }
