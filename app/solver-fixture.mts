@@ -41,7 +41,7 @@ export const defaultProfiles: { templates: Record<string, Template> } = { templa
 // equivalence and buff-plan tests and their hashes stay on these.
 export const templateNames = ["melee", "caster", "archer", "tank"];
 // The four starters' weights before issue #292 compiled them from goals: the tests that pin a profile or run key by hash
-// (buffs-plan.test.mts) and the one that needs a low median (diagnostics.test.mts) keep building from these.
+// (buffs-plan.test.mts), the one that needs a low median (diagnostics.test.mts) and the buffs proof (solver.test.mts) keep building from these.
 export const STARTERS_BEFORE_GOALS: Record<string, Record<string, number>> = {
   melee: { physResist: 6, fireResist: 6, coldResist: 6, poisonResist: 6, energyResist: 6, dci: 10, hci: 10, ssi: 5, di: 3, hpRegen: 4, dexBonus: 4, strBonus: 3, hpi: 3, stamRegen: 3, stamInc: 2, lmc: 1, luck: 0.05, tagPenalty: -25 },
   caster: { fc: 60, fcr: 30, lrc: 8, lmc: 8, manaRegen: 8, dci: 6, castingFocus: 6, sdi: 4, intBonus: 4, physResist: 4, fireResist: 4, coldResist: 4, poisonResist: 4, energyResist: 4, manaInc: 3, hpi: 2, tagPenalty: -25 },

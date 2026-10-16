@@ -478,11 +478,16 @@ test("[slow] goals: the ranked list, its counts, =, spare points, How the goals 
   }
 });
 
-// Issues #217, #274: Kestrel's Melee weights with Luck at importance 2000. The Luck row shows the template's per-point 0.045 (its goals' spare points) as importance 5, and its hover names the trade-off with the top weight until Luck becomes the top one; the build names Luck in "Check your settings" with Set Luck; a weight changed since the build leaves Set Luck doing nothing, and on a fresh build it sets the panel's weight and marks the template badge.
+// Issues #217, #274: Kestrel's Melee weights with Luck at importance 2000, from a profile saved with Melee's weights before goals (issue #292: its goals' few weights leave the demo suit thin, so nothing would dominate). The Luck row shows the template's per-point 0.05 as importance 5.6, and its hover names the trade-off with the top weight until Luck becomes the top one; the build names Luck in "Check your settings" with Set Luck; a weight changed since the build leaves Set Luck doing nothing, and on a fresh build it sets the panel's weight and marks the template badge.
 test("[slow] weight scale: the row shows importance with a trade-off hover, and Set weight edits the panel only while it holds the build's weight", async (t) => {
   const why = unavailable();
   if (why) return t.skip(why);
   const dataDir = seedDataDir("packrat-ui-weights-");
+  const pool = { lockedSlots: [], excludeTags: [], excludeSkills: [], excludeRoots: [], excludeWeapons: [], ubwsAnyWeapon: true, allowOthersWorn: false, allowGargoyle: false, medOnly: false, strLimit: "character" };
+  const resists = (n: number): Record<string, number> => ({ physResist: n, fireResist: n, coldResist: n, poisonResist: n, energyResist: n });
+  const weights = { ...resists(6), dci: 10, hci: 10, ssi: 5, di: 3, hpRegen: 4, dexBonus: 4, strBonus: 3, hpi: 3, stamRegen: 3, stamInc: 2, lmc: 1, luck: 0.05, tagPenalty: -25 };
+  writeFileSync(join(dataDir, "profiles.json"), JSON.stringify({ schemaVersion: 3, templates: {}, characters: { Kestrel: { race: "human", template: "builtin:melee",
+    spec: { intent: { floors: resists(65), softFloors: [], weights, floorBonus: 1000, resistCaps: {} }, buffs: { on: [], skills: {} }, pool } } } }));
   const { app, page, errors } = await launch(dataDir);
   try {
     await openBuilder(page);
@@ -496,8 +501,8 @@ test("[slow] weight scale: the row shows importance with a trade-off hover, and 
       const e = document.getElementById(i?.getAttribute("aria-describedby")?.split(" ")[0] ?? "");
       return !!e && new RegExp(w).test(e.textContent ?? "");
     }, want, { timeout: 5_000 });
-    assert.equal(await field.inputValue(), "5", "the importance as stored, to two decimals");
-    await hover("^At these settings, 1 SSI is worth about 167 Luck\\.$");
+    assert.equal(await field.inputValue(), "5.56", "the importance as stored, to two decimals");
+    await hover("^At these settings, 1 (DCI|HCI) is worth about 200 Luck\\.$");
     await field.fill("2000");
     await hover("^Luck has the highest weight: the other weights are compared with it\\.$");
     await field.fill("");
@@ -522,7 +527,7 @@ test("[slow] weight scale: the row shows importance with a trade-off hover, and 
     await closeSettings(page);
     await block.getByRole("button", { name: `Set Luck to ${to}` }).click();
     assert.equal(await field.inputValue(), to, "the panel's weight is set");
-    await hover("^At these settings, 1 SSI is worth about \\d+ Luck\\.$");
+    await hover("^At these settings, 1 (DCI|HCI) is worth about \\d+ Luck\\.$");
     assert.match(await page.locator("#b-tpl-state").innerText(), new RegExp(`Luck weight [\\d.]+ → ${to.replace(".", "\\.")}`), "the template badge names the change");
     assert.equal(await block.getByRole("button", { name: "Set ✓" }).isDisabled(), true);
     assert.deepEqual(errors, []);
