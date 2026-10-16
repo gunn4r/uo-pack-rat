@@ -11,10 +11,10 @@ import { buffSkillValues, runBuffs } from "./buffs.mts";
 import type { RulesV1 } from "./schema/types.d.mts";
 import {
   propName, withStoredRoots, knobError, firstKnobError, knobFromServerError, ruleValueError,
-  resistOutcome, locationCrumbs, changeRows, gaugeRows, gaugeNote, gaugeTrack, changesSummary, afterChange, compareModel, hiddenRowsNote, toggleCompare, runAutoLabel, runBadges, plural, KNOB_RANGES,
+  resistOutcome, locationCrumbs, changeRows, gaugeRows, gaugeNote, worse, gaugeTrack, changesSummary, afterChange, compareModel, hiddenRowsNote, toggleCompare, runAutoLabel, runBadges, plural, KNOB_RANGES,
   resistCapError, withResistCap, capNote, resistMinimumText, capsLine, anyOverridden, effectiveFloor, floorCapWarning, pruneResistCaps,
   weaponsChipText, weaponMustHaveChipText, toggleWeapon, weaponName, withBuffs, pastCapNotes, runSettingsDiff, weightTradeoff, newWeight, editedValue, NEW_WEIGHT_IMPORTANCE, templateBuffsLine, sourceTitle, who, rarityHelp, rarityTotal, rarityDetail, shareRows,
-  type Knobs,
+  type Knobs, type ChangeRow,
 } from "./ui/builder-model.mts";
 import { OPTS_LIMITS } from "./vault-server.mts";
 import { RUN_SETTING_LIMITS } from "./run-settings.mts";
@@ -134,9 +134,9 @@ test("[fast] builder model: a Fetch list location reads as its path of container
 test("[fast] builder model: What changes lists every property, gauges the moved non-resists gains first, and notes each against its cap (issue #272)", () => {
   const before = { dci: 20, hci: 25, di: 60, ssi: 30, luck: 340, strBonus: 8, physResist: 58, mageWeapon: -20 }, after = { dci: 45, hci: 45, di: 100, ssi: 55, luck: 120, strBonus: 6, physResist: 70, hpRegen: 7 };
   const caps = { dci: 45, hci: 45, di: 100, ssi: 60, hpRegen: 18, physResist: 70 };
-  const rows = changeRows(["intBonus", "tagPenalty"], before, after, caps, { hci: 40 }, [{ property: "physResist", share: 0.4 }, { property: "dci", share: 0.3 }, { property: "intBonus", share: 0 }]);
+  const rows = changeRows(before, after, caps, { floors: { hci: 40 }, weights: { intBonus: 1 }, extra: ["tagPenalty"], shares: [{ property: "physResist", share: 0.4 }, { property: "dci", share: 0.3 }, { property: "intBonus", share: 0 }] });
   assert.deepEqual(rows.map((r) => r.key), ["physResist", "hci", "dci", "ssi", "di", "hpRegen", "strBonus", "intBonus", "luck"], "registry order, resists first; a weight with nothing counts, never the tag penalty or Mage Weapon");
-  assert.deepEqual(rows.find((r) => r.key === "dci"), { key: "dci", now: 20, suit: 45, cap: 45, delta: 25, share: 0.3, floor: null });
+  assert.deepEqual(rows.find((r) => r.key === "dci"), { key: "dci", now: 20, suit: 45, cap: 45, delta: 25, share: 0.3, floor: null, sign: 1 });
   assert.equal(rows.find((r) => r.key === "intBonus")!.share, null, "a share of nothing is blank");
   assert.equal(rows.find((r) => r.key === "luck")!.cap, null);
   const all = gaugeRows(rows, rows.map((r) => r.key)), g = all.gauges;
@@ -146,21 +146,42 @@ test("[fast] builder model: What changes lists every property, gauges the moved 
   const some = gaugeRows(rows, ["hci", "luck", "intBonus", "physResist"]);
   assert.deepEqual([some.gauges.map((r) => r.key), some.more], [["hci", "luck"], 5]);
   // a pool never beside its bonus's gauge, alone it keeps one
-  const pools = changeRows([], { stamInc: 0, stamPool: 0, manaPool: 5 }, { stamInc: 10, stamPool: 10, manaPool: 9 }, {});
+  const pools = changeRows({ stamInc: 0, stamPool: 0, manaPool: 5 }, { stamInc: 10, stamPool: 10, manaPool: 9 }, {});
   assert.deepEqual([gaugeRows(pools, ["stamInc", "stamPool", "manaPool"]).gauges.map((r) => r.key), gaugeRows(pools, ["stamInc", "stamPool", "manaPool"]).more], [["stamInc", "manaPool"], 1]);
   const at = (k: string, next: number | null = null): string => gaugeNote(g.find((r) => r.key === k)!, next).text;
   assert.deepEqual([at("dci"), at("di"), at("hpRegen"), at("luck"), at("strBonus")], ["at cap", "at cap", "11 under cap", "given up", "given up"]);
   assert.equal(at("ssi", 58), "next step 58");
   assert.equal(at("ssi"), "5 under cap", "no swing: against the cap");
   assert.equal(at("ssi", 65), "5 under cap", "a step past the cap is not offered");
-  assert.deepEqual(gaugeNote({ key: "hci", now: 30, suit: 35, cap: 45, delta: 5, share: null, floor: 40 }), { text: "needs 40", warn: true }, "a missed requirement wins");
-  assert.equal(gaugeNote({ key: "di", now: 90, suit: 110, cap: 100, delta: 20, share: null, floor: null }).text, "10 over cap");
-  assert.equal(gaugeNote({ key: "sk:magery", now: 0, suit: 5, cap: null, delta: 5, share: null, floor: null }).text, "up from 0");
+  const row = (o: Partial<ChangeRow>): ChangeRow => ({ key: "hci", now: 0, suit: 0, cap: null, delta: 0, share: null, floor: null, sign: 1, ...o });
+  assert.deepEqual(gaugeNote(row({ now: 30, suit: 35, cap: 45, delta: 5, floor: 40 })), { text: "needs 40", warn: true }, "a missed requirement wins");
+  assert.equal(gaugeNote(row({ key: "di", now: 90, suit: 110, cap: 100, delta: 10 })).text, "10 over cap");
+  assert.equal(gaugeNote(row({ key: "sk:magery", suit: 5, delta: 5 })).text, "up from 0");
   assert.deepEqual(gaugeTrack(g.find((r) => r.key === "ssi")!), { fill: (100 * 55) / 60, tick: 50 });
   assert.deepEqual(gaugeTrack(g.find((r) => r.key === "luck")!), { fill: (100 * 120) / 340, tick: 100 }, "no cap: against the larger of the two");
+  assert.deepEqual(gaugeTrack(row({ key: "strBonus", now: -5, suit: -2, delta: 3 })), { fill: 40, tick: 100 }, "negative totals with no cap draw by size");
   assert.equal(changesSummary(g), "5 up · 2 down · HCI, DCI and DI reach their caps");
   assert.equal(changesSummary(g.filter((r) => r.key === "dci")), "1 up · DCI reaches its cap");
   assert.equal(changesSummary([]), "No other property changes");
+});
+
+test("[fast] builder model: What changes keeps a missed requirement, judges on what counts under the cap, and follows a negative weight (issue #272)", () => {
+  // a requirement the suit misses has a gauge even when it does not move
+  const missed = changeRows({ hci: 30 }, { hci: 30 }, { hci: 45 }, { floors: { hci: 35 } });
+  const mg = gaugeRows(missed, []).gauges;
+  assert.deepEqual(mg.map((r) => [r.key, r.delta, gaugeNote(r).text]), [["hci", 0, "needs 35"]]);
+  assert.equal(changesSummary(mg), "1 requirement not met");
+  // over the cap: DI 130 worn and 100 in the suit, cap 100, is no change; 110 → 120 neither; 130 → 90 is −10
+  const capped = changeRows({ di: 130, hci: 50, dci: 130 }, { di: 100, hci: 60, dci: 90 }, { di: 100, hci: 45, dci: 100 }, { weights: { di: 1, hci: 1, dci: 1 } });
+  assert.deepEqual(capped.map((r) => [r.key, r.delta]), [["hci", 0], ["dci", -10], ["di", 0]]);
+  const cg = gaugeRows(capped, ["di", "hci", "dci"]);
+  assert.deepEqual([cg.gauges.map((r) => r.key), cg.more], [["dci"], 0], "only the change in what counts");
+  assert.equal(changesSummary(cg.gauges), "1 down");
+  // a negative weight: a drop is what the build wants, a rise counts against it
+  const neg = changeRows({ "sk:necromancy": 5, intBonus: 0 }, { "sk:necromancy": 0, intBonus: 4 }, {}, { weights: { "sk:necromancy": -50, intBonus: -2 } });
+  const ng = gaugeRows(neg, ["sk:necromancy", "intBonus"]).gauges;
+  assert.deepEqual(ng.map((r) => [r.key, r.sign, worse(r), gaugeNote(r).text]), [["sk:necromancy", -1, false, "down from 5"], ["intBonus", -1, true, "counts against"]], "the better one first");
+  assert.equal(worse(changeRows({ luck: 100 }, { luck: 50 }, {})[0]!), true, "a plain loss");
 });
 
 test("[fast] builder model: after the change lists the values that move first, with the pool estimates", () => {

@@ -122,16 +122,19 @@ function openSettings(on: Tab = tab, focus = true): void {
   }
   if (focus) $<HTMLElement>(`#b-tab-${tab}`)!.focus();
 }
-// Close it, the focus back on the Settings button when it was in the drawer, in a popover (closed with it) or had fallen
-// to <body>.
+// The result's breakdown row or share that opened the drawer (tuneWeight), which takes the focus back when it closes.
+let opener: HTMLElement | null = null;
+// Close it, the focus back on the Settings button (or the result row that opened it, still on screen) when it was in the
+// drawer, in a popover (closed with it) or had fallen to <body>.
 function closeSettings(): void {
   const d = $<HTMLElement>("#b-drawer")!, from = document.activeElement;
   if (d.hidden) return;
   closePopover();   // a checklist or picker opened from it
   d.hidden = true;
-  const b = $<HTMLButtonElement>("#b-settings")!;
+  const b = $<HTMLButtonElement>("#b-settings")!, back = opener?.isConnected ? opener : b;
+  opener = null;
   b.setAttribute("aria-expanded", "false");
-  if (!from || from === document.body || d.contains(from) || from.closest(".pop")) b.focus();
+  if (!from || from === document.body || d.contains(from) || from.closest(".pop")) back.focus();
 }
 // Show one tab's panel; the choice is kept for the next launch.
 function showTab(to: Tab, focus = false): void {
@@ -664,8 +667,9 @@ function focusIn(sec: string, sel: string, selectText = false): void {
   e?.focus();
   if (selectText) e?.select();
 }
-// A score breakdown row's property in the Settings drawer: its weight's field, else Add weight; Other (null) opens the Weights tab.
-function tuneWeight(key: string | null): void {
+// A score breakdown row's property in the Settings drawer: its weight's field, else Add weight; Other (null) opens the Weights tab. Closing the drawer then puts the focus back on the row (`from`).
+function tuneWeight(key: string | null, from: HTMLElement): void {
+  opener = from;
   if (key == null) openSettings("weights");
   else if (session.profile?.weights?.[key] != null) focusIn("weights", `.rule-row[data-key="${CSS.escape(key)}"] input`, true);
   else focusIn("weights", "#b-addweight");

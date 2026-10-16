@@ -180,50 +180,57 @@ export function locationCrumbs(text: string | null | undefined): string[] {
   return parts.length ? parts : ["Unknown place"];
 }
 // ---------------------------------------------------------------- what changes (issue #272)
-// One property of the result's "What changes": its total worn now and in the suit, its cap (null when it has none), the
-// change, its share of the score (null when it adds nothing) and its requirement (null for none).
-export interface ChangeRow { key: string; now: number; suit: number; cap: number | null; delta: number; share: number | null; floor: number | null }
+// One property of the result's "What changes": its total worn now and in the suit (as summed, so what is wasted past the
+// cap shows), its cap (null when it has none), the change in what counts (each total held at the cap), its share of the
+// score (null when it adds nothing), its requirement (null for none) and the direction the build wants it (-1 for a
+// negative weight, where less is better).
+export interface ChangeRow { key: string; now: number; suit: number; cap: number | null; delta: number; share: number | null; floor: number | null; sign: 1 | -1 }
 const ORDER = new Map<string, number>(PROPERTIES.map((p, i) => [p.key, i]));
 const byRegistry = (a: string, b: string): number => (ORDER.get(a) ?? ORDER.size) - (ORDER.get(b) ?? ORDER.size) || labelOf(a).localeCompare(labelOf(b));
 const andList = (xs: string[]): string => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}`);
-// Every property of the result, the Table view's rows: those either suit carries and every requirement and weight (`keys`), in the registry's order (resists first, skill bonuses last), none the builder never offers (the tag penalty among them).
-export function changeRows(keys: string[], before: PropMap, after: PropMap, caps: Record<string, number>, floors: Record<string, number> = {}, shares: ScoreShare[] = []): ChangeRow[] {
+// Every property of the result, the Table view's rows: those either suit carries, every requirement and weight, and the `extra` keys (a buff's past-cap amount), in the registry's order (resists first, skill bonuses last), none the builder never offers (the tag penalty among them).
+export function changeRows(before: PropMap, after: PropMap, caps: Record<string, number>, { floors = {}, weights = {}, shares = [], extra = [] }: { floors?: Record<string, number> | undefined; weights?: Record<string, number> | undefined; shares?: ScoreShare[] | undefined; extra?: string[] | undefined } = {}): ChangeRow[] {
   const share = new Map(shares.filter((s) => s.share !== 0).map((s) => [s.property, s.share]));
-  const all = new Set([...keys, ...Object.keys(before).filter((k) => before[k]), ...Object.keys(after).filter((k) => after[k])]);
+  const all = new Set([...Object.keys(floors), ...Object.keys(weights), ...extra, ...Object.keys(before).filter((k) => before[k]), ...Object.keys(after).filter((k) => after[k])]);
   return [...all].filter((k) => !NOT_BUILDER_KEYS.has(k)).sort(byRegistry).map((k) => {
-    const now = before[k] || 0, suit = after[k] || 0;
-    return { key: k, now, suit, cap: caps[k] ?? null, delta: suit - now, share: share.get(k) ?? null, floor: floors[k] ?? null };
+    const now = before[k] || 0, suit = after[k] || 0, cap = caps[k] ?? null, held = (v: number): number => (cap == null ? v : Math.min(v, cap));
+    return { key: k, now, suit, cap, delta: held(suit) - held(now), share: share.get(k) ?? null, floor: floors[k] ?? null, sign: (weights[k] ?? 0) < 0 ? -1 : 1 };
   });
 }
-// The gauges: the properties other than the resists (they have their tiles) whose total moves and that matter to the build (`matter`: a non-zero weight or a requirement, hard or soft), the gains first; a pool (Stam/Mana/Hits pool) never beside its bonus's gauge (Stam+, Mana+, HP+). `more` counts the other non-resist properties that move, shown only in the Table.
+// A change against what the build wants: a loss, or a rise in a property with a negative weight.
+export const worse = (r: ChangeRow): boolean => r.delta * r.sign < 0;
+const missed = (r: ChangeRow): boolean => r.floor != null && r.suit < r.floor;
+// The gauges: the properties other than the resists (they have their tiles) whose counted total moves and that matter to the build (`matter`: a non-zero weight or a requirement, hard or soft), and every requirement the suit misses, moved or not; the better ones first. A pool (Stam/Mana/Hits pool) is never beside its bonus's gauge (Stam+, Mana+, HP+). `more` counts the other non-resist properties that move, shown only in the Table.
 const POOL_OF: Record<string, string> = { stamPool: "stamInc", manaPool: "manaInc", hitsPool: "hpi" };
 export function gaugeRows(rows: ChangeRow[], matter: readonly string[]): { gauges: ChangeRow[]; more: number } {
-  const moved = rows.filter((r) => r.delta !== 0 && !RESIST_KEYS.includes(r.key));
-  const picked = moved.filter((r) => matter.includes(r.key));
+  const own = rows.filter((r) => !RESIST_KEYS.includes(r.key)), moved = own.filter((r) => r.delta !== 0);
+  const picked = own.filter((r) => (r.delta !== 0 && matter.includes(r.key)) || missed(r));
   const gauges = picked.filter((r) => !(POOL_OF[r.key] && picked.some((x) => x.key === POOL_OF[r.key])));
-  return { gauges: [...gauges.filter((r) => r.delta > 0), ...gauges.filter((r) => r.delta < 0)], more: moved.length - gauges.length };
+  return { gauges: [...gauges.filter((r) => !worse(r)), ...gauges.filter(worse)], more: moved.filter((r) => !gauges.includes(r)).length };
 }
-// A gauge's short note: a requirement the suit misses ("needs 35", the warn tone), a loss ("given up"), else against the cap: "at cap", "3 over cap", the next swing step under the cap for SSI (`nextSsi`, the result's nextSwingStep), "11 under cap"; with no cap, where it came from.
+// A gauge's short note: a requirement the suit misses ("needs 35", the warn tone); a change against the build ("given up", or "counts against" for a rise in a negative weight); a drop the build wants ("down from 5"); else against the cap: "at cap", "3 over cap", the next swing step under the cap for SSI (`nextSsi`, the result's nextSwingStep), "11 under cap"; with no cap, where it came from.
 export function gaugeNote(r: ChangeRow, nextSsi: number | null = null): { text: string; warn: boolean } {
   const note = (text: string, warn = false): { text: string; warn: boolean } => ({ text, warn });
-  if (r.floor != null && r.suit < r.floor) return note(`needs ${num(r.floor)}`, true);
-  if (r.delta < 0) return note("given up");
+  if (missed(r)) return note(`needs ${num(r.floor!)}`, true);
+  if (worse(r)) return note(r.sign < 0 ? "counts against" : "given up");
+  if (r.sign < 0) return note(`down from ${num(r.now)}`);
   if (r.cap == null) return note(`up from ${num(r.now)}`);
   if (r.suit === r.cap) return note("at cap");
   if (r.suit > r.cap) return note(`${num(r.suit - r.cap)} over cap`);
   if (r.key === "ssi" && nextSsi != null && nextSsi > r.suit && nextSsi <= r.cap) return note(`next step ${num(nextSsi)}`);
   return note(`${num(r.cap - r.suit)} under cap`);
 }
-// A gauge's track in percent: the fill is the suit's total, the tick the total worn now, each a share of the cap, or of the larger of the two with no cap.
+// A gauge's track in percent: the fill is the suit's total, the tick the total worn now, each by size as a share of the cap, or of the larger of the two with no cap (so a negative total draws too).
 export function gaugeTrack(r: ChangeRow): { fill: number; tick: number } {
-  const scale = r.cap ?? Math.max(r.now, r.suit), pct = (v: number): number => (scale > 0 ? Math.max(0, Math.min(100, (100 * v) / scale)) : 0);
+  const scale = r.cap ?? Math.max(Math.abs(r.now), Math.abs(r.suit)), pct = (v: number): number => (scale > 0 ? Math.min(100, (100 * Math.abs(v)) / scale) : 0);
   return { fill: pct(r.suit), tick: pct(r.now) };
 }
-// The "What changes" summary from its gauges: "5 up · 3 down · DCI, HCI and DI reach their caps" (a cap counts when the suit reaches it and the suit worn now does not).
+// The "What changes" summary from its gauges: "5 up · 3 down · DCI, HCI and DI reach their caps · 1 requirement not met", counting what the gauges show by the direction of the counted change (a cap counts when the suit reaches it and the suit worn now does not).
 export function changesSummary(gauges: ChangeRow[]): string {
   const up = gauges.filter((r) => r.delta > 0).length, down = gauges.filter((r) => r.delta < 0).length;
   const capped = gauges.filter((r) => r.cap != null && r.suit >= r.cap && r.now < r.cap).map((r) => labelOf(r.key));
-  return [up ? `${up} up` : "", down ? `${down} down` : "", capped.length ? `${andList(capped)} ${capped.length === 1 ? "reaches its cap" : "reach their caps"}` : ""].filter(Boolean).join(" · ") || "No other property changes";
+  const short = gauges.filter(missed).length;
+  return [up ? `${up} up` : "", down ? `${down} down` : "", capped.length ? `${andList(capped)} ${capped.length === 1 ? "reaches its cap" : "reach their caps"}` : "", short ? `${plural(short, "requirement")} not met` : ""].filter(Boolean).join(" · ") || "No other property changes";
 }
 // "<name> after the change": the attributes and pools, the ones that move first. The scan's attributes are
 // totals with the current suit on, so after = total + the change in the bonus; the pools follow the sheet's
