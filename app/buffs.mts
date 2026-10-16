@@ -4,7 +4,7 @@
 // Scripts/) or the UO Alive wiki, which wins where the two disagree (the other's number is said in the entry's note),
 // and carries how sure those numbers are. No DOM: Manual (ui/builder-manual.mts) and Automatic read the same model,
 // and app/buffs.test.mts checks it.
-import { RESIST_KEYS, SKILL_NAMES, minResistAt, skillInSuit, labelOf, propName, effectiveProfile, profileResistCaps, toOptItem, totalsOf } from "./vault-lib.mts";
+import { RESIST_KEYS, SKILL_NAMES, minResistAt, skillInSuit, labelOf, effectiveProfile, profileResistCaps, toOptItem, totalsOf } from "./vault-lib.mts";
 import type { BuffShift, SuitSkill, Character, EffectiveProfile, Item, Profile, PropMap, RunBuffs } from "./vault-lib.mts";
 
 // ---------------------------------------------------------------- the numbers a buff scales with
@@ -426,14 +426,11 @@ export function buffNeeds(b: Buff, skills: Skills, who: BuffWho = {}): string | 
 // The Buffs tab (issue #272). A group that is a school with a skill of its own (Chivalry, Magery, …), whose heading
 // shows the character's skill.
 export const isSchool = (group: string): boolean => SKILL_NAMES.includes(group.toLowerCase());
-// The numbers a character casts at: `values` (buffSkillValues) with a skill it lacks at 0 rather than the default a plan
-// counts it at; an edited number stays as typed.
-export const castSkills = (values: Skills, planned: ReadonlySet<string>, edits: Readonly<Record<string, number>>): Skills =>
-  ({ ...values, ...Object.fromEntries([...planned].filter((i) => !Object.hasOwn(edits, i)).map((i) => [i, 0])) });
-// Why the character can't cast `b`, or null: buffNeeds at `skills` (castSkills), else, for an entry with no minimum of its
-// own, its school untrained (`school`, the character's skill in it, null for none or no character): "Needs Chivalry".
-export function buffCastNeeds(b: Buff, skills: Skills, who: BuffWho, school: number | null): string | null {
-  return buffNeeds(b, skills, who) ?? (!b.min && school === 0 ? `Needs ${b.group}` : null);
+// Whether the plan counts `b` and on what: `needs` is buffNeeds at the plan's own numbers (`values`, buffSkillValues
+// with the player's edits), so the tab never greys a buff a build counts, and `unscanned` lists its inputs the character's
+// scan lacks, which the plan counts at their default (a typed number is not among them).
+export function buffAvailability(b: Buff, values: Skills, planned: ReadonlySet<string>, edits: Readonly<Record<string, number>>, who: BuffWho): { needs: string | null; unscanned: string[] } {
+  return { needs: buffNeeds(b, values, who), unscanned: b.inputs.filter((i) => planned.has(i) && !Object.hasOwn(edits, i)) };
 }
 // What an entry changes in the suit maths, in short words from its own definition at these numbers: each property its
 // effects move ("swing speed up", "defense chance down"; all five resists, or all three stats, moving together as one
@@ -442,8 +439,7 @@ export function buffCastNeeds(b: Buff, skills: Skills, who: BuffWho, school: num
 export function buffEffectTags(id: string, skills: Skills, stats: Stats | null, totals: PropMap, who: BuffWho = {}, caps: Readonly<Record<string, number>> = {}): string[] {
   const b = BY_ID.get(id)!, c = buffContext(skills, stats, totals, who, caps);
   const dir = (v: number): string => (v < 0 ? "down" : "up");
-  const word = (k: string): string => (k.startsWith("sk:") ? labelOf(k).slice(1) : propName(k).replace(/ (increase|bonus)$/, "")).toLowerCase();
-  // the resists, or the stats, moving the same way are named together: all of them as "resists", some by their labels
+  // the resists, or the stats, moving one way are named together: all of them as "resists" / "stats", some by their words
   const words = (moves: Array<[string, string]>, cap: string): string[] => {
     const out: string[] = [], done = new Set<string>();
     for (const [k, d] of moves) {
@@ -451,8 +447,9 @@ export function buffEffectTags(id: string, skills: Skills, stats: Stats | null, 
       const fam = RESIST_KEYS.includes(k) ? RESIST_KEYS : STATS.includes(k) ? STATS : null, res = fam === RESIST_KEYS;
       const same = fam ? fam.filter((f) => moves.some(([x, y]) => x === f && y === d)) : [k];
       same.forEach((x) => done.add(`${x} ${d}`));
-      const name = same.length === 1 ? `${word(k)}${cap}` : `${same.length === fam!.length ? "" : `${same.map(labelOf).join(", ")} `}${res ? (cap ? "resist caps" : "resists") : `stats${cap}`}`;
-      out.push(`${name} ${d}`);
+      const all = same.length > 1 && same.length === fam!.length, many = res && same.length > 1;
+      const base = all ? (res ? "resist" : "stats") : `${same.map(tagWord).join(", ")}${res ? " resist" : ""}`;
+      out.push(`${base}${many ? (cap ? " caps" : "s") : cap} ${d}`);
     }
     return out;
   };
@@ -462,6 +459,17 @@ export function buffEffectTags(id: string, skills: Skills, stats: Stats | null, 
   const tags = [...new Set([...words(moves, ""), ...words(capMoves, " cap"), ...(b.extra?.(c) || [])])];
   return tags.length ? tags : ["no suit effect"];
 }
+// The one word each property an entry moves takes in its tags (a resist's alone, "fire" + " resist"); a skill bonus is the
+// skill's name. Every key the catalog's effects and caps use has one (app/buffs.test.mts checks).
+export const TAG_WORDS: Readonly<Record<string, string>> = {
+  physResist: "physical", fireResist: "fire", coldResist: "cold", poisonResist: "poison", energyResist: "energy",
+  strBonus: "strength", dexBonus: "dexterity", intBonus: "intelligence",
+  hci: "hit chance", dci: "defense chance", di: "damage", sdi: "spell damage", ssi: "swing speed", fc: "faster casting", castingFocus: "casting focus",
+  hpRegen: "hit point regeneration", stamRegen: "stamina regeneration", manaRegen: "mana regeneration",
+  hitsPool: "hit points", stamPool: "stamina", manaPool: "mana",
+  hitLightning: "hit lightning", hitFireball: "hit fireball", hitHarm: "hit harm", hitMagicArrow: "hit magic arrow", hitDispel: "hit dispel",
+};
+const tagWord = (k: string): string => (k.startsWith("sk:") ? labelOf(k).slice(1).toLowerCase() : TAG_WORDS[k] ?? k);
 
 // ---------------------------------------------------------------- toggling
 // Turns `id` on or off. On, it replaces any entry of its exclusive set (one form at a time), named in `replaced`.

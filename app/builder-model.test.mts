@@ -401,13 +401,17 @@ test("[fast] builder model: what made up the score, largest first, shares under 
   assert.deepEqual(shareRows([{ property: "di", share: 0.9 }, { property: "luck", share: 0.01 }, { property: "lmc", share: 0.01 }, { property: "hci", share: 0 }], 0).map((r) => [r.label, r.pct]), [["Damage increase", "90%"], ["Luck", "1%"], ["Lower mana cost", "1%"], ["Hit chance increase", "0%"]]);
 });
 
-test("[fast] builder model: a requirement's line from the result shown: met, short, a resist past its cap, the next swing step (issue #272)", () => {
+test("[fast] builder model: a requirement's line from the result shown: met, short, a floor or a total past its cap, the next swing step (issue #272)", () => {
   const caps = { dci: 45, ssi: 60, fireResist: 70 };
   assert.deepEqual(needStatus("dci", 45, 45, caps), { text: "Met: 45", tone: "ok" });
   assert.deepEqual(needStatus("dci", 45, 32, caps), { text: "13 short", tone: "warn" });
   // a resist requirement past its cap counts only up to the cap, as the solver scores it
   assert.deepEqual(needStatus("fireResist", 80, 70, caps), { text: "Met: 70", tone: "ok" });
   assert.deepEqual(needStatus("fireResist", 70, 68, caps), { text: "2 short", tone: "warn" });
+  // a total past the cap reads the cap, as the paperdoll does, and says what the cap wastes
+  assert.deepEqual(needStatus("physResist", 60, 78, { physResist: 70 }), { text: "Met: 70 (+8 past cap)", tone: "ok" });
+  assert.deepEqual(needStatus("dci", 45, 52, caps), { text: "Met: 45 (+7 past cap)", tone: "ok" });
+  assert.deepEqual(needStatus("luck", 100, 150, caps), { text: "Met: 150", tone: "ok" }, "no cap: the total");
   const next = { value: 58, seconds: 1.25 };
   assert.deepEqual(needStatus("ssi", 50, 55, caps, next, "Katana"), { text: "Next swing step at 58 (1.25 s with Katana)", tone: "ok" });
   assert.deepEqual(needStatus("ssi", 58, 55, caps, next, "Katana"), { text: "3 short · Next swing step at 58 (1.25 s with Katana)", tone: "warn" });

@@ -580,7 +580,7 @@ test("[slow] drawer extras: notched weight sliders, buffs by school, each requir
   const dataDir = seedDataDir("packrat-ui-extras-");
   const scan = join(dataDir, "scans", "demo-Kestrel.json"), raw = readFileSync(scan, "utf8");
   assert.ok(raw.includes('"skills": {},'));
-  writeFileSync(scan, raw.replace('"skills": {},', '"skills": { "Chivalry": { "base": 68.2, "value": 68.2, "cap": 100 }, "Bushido": { "base": 74, "value": 74, "cap": 100 } },'));
+  writeFileSync(scan, raw.replace('"skills": {},', '"skills": { "Chivalry": { "base": 68.2, "value": 68.2, "cap": 100 }, "Bushido": { "base": 74, "value": 74, "cap": 100 }, "Necromancy": { "base": 50, "value": 50, "cap": 100 } },'));
   const { app, page, errors } = await launch(dataDir);
   try {
     await openBuilder(page);
@@ -611,25 +611,58 @@ test("[slow] drawer extras: notched weight sliders, buffs by school, each requir
     assert.equal(Number(await row(3).num.inputValue()), -before);
     assert.equal(await rows.nth(3).locator(".b-wsign").getAttribute("aria-pressed"), "true");
     assert.match(await rows.nth(3).locator(".b-wtrack").getAttribute("class") ?? "", /\bneg\b/);
+    // at 0, ± keeps the row negative ("−0", the warn style) so a drag up from there goes negative
+    await row(4).num.fill("0");
+    await rows.nth(4).locator(".b-wsign").click();
+    assert.equal(await row(4).num.inputValue(), "-0");
+    assert.equal(await rows.nth(4).locator(".b-wsign").getAttribute("aria-pressed"), "true");
+    assert.match(await rows.nth(4).locator(".b-wtrack").getAttribute("class") ?? "", /\bneg\b/);
+    await row(4).slider.focus();
+    await page.keyboard.press("ArrowRight");
+    assert.equal(await row(4).num.inputValue(), "-5");
 
     await settings(page, "buffs");
-    const heads = await page.$$eval("#b-sec-buffs .b-bf-head", (h) => h.map((x) => (x as HTMLElement).innerText.replace(/\s+/g, " ")));
+    const headings = (): Promise<string[]> => page.$$eval("#b-sec-buffs .b-bf-head", (h) => h.map((x) => (x as HTMLElement).innerText.replace(/\s+/g, " ")));
+    const heads = await headings();
     assert.ok(heads.some((h) => /^Chivalry skill 68\.2$/i.test(h)), heads.join(" | "));
-    assert.ok(!heads.some((h) => /^Necromancy/i.test(h)), "no castable Necromancy buff");
+    assert.ok(heads.some((h) => /^Necromancy skill 50$/i.test(h)), "Horrific Beast (40) is usable at Necromancy 50");
+    assert.ok(!heads.some((h) => /^Spellweaving/i.test(h)), "Spellweaving, not in the scan, waits for Show all");
+    assert.equal(await page.locator('#b-sec-buffs .b-bf[data-buff="vampiricEmbrace"]').count(), 0);
     assert.match(await page.locator('#b-sec-buffs .b-bf[data-buff="divineFury"]').innerText(), /swing speed up[\s\S]*defense chance down/);
     await page.click("#b-bf-all");
-    assert.ok((await page.$$eval("#b-sec-buffs .b-bf-head", (h) => h.map((x) => (x as HTMLElement).innerText.replace(/\s+/g, " ")))).some((h) => /^Necromancy not trained$/i.test(h)));
-    const vamp = page.locator('#b-sec-buffs .b-bf.b-bf-cant[data-buff="vampiricEmbrace"]');
-    assert.match(await vamp.innerText(), /Needs Necromancy 99/);
     assert.equal(await page.evaluate(() => document.activeElement?.id), "b-bf-all", "Show all keeps the focus");
+    // greyed exactly when the plan blocks it; a skill the scan lacks is counted at 120 and only said
+    assert.match(await page.locator('#b-sec-buffs .b-bf.b-bf-cant[data-buff="vampiricEmbrace"]').innerText(), /Needs Necromancy 99/);
+    const reaper = page.locator('#b-sec-buffs .b-bf[data-buff="reaperForm"]');
+    assert.match(await reaper.innerText(), /Spellweaving not in the scan: counted at 120/);
+    assert.doesNotMatch(await reaper.getAttribute("class") ?? "", /b-bf-cant/);
+    assert.ok((await headings()).some((h) => /^Spellweaving not in the scan$/i.test(h)));
     await page.locator("#b-bf-divineFury").check();
     assert.equal(await page.evaluate(() => document.activeElement?.id), "b-bf-divineFury", "the switch keeps the focus through the redraw");
+    // the picker's anchor survives a toggle inside the picker: Esc closes it onto the button, aria-expanded following
+    await page.click("#b-buff-add");
+    assert.equal(await page.getAttribute("#b-buff-add", "aria-expanded"), "true");
+    await page.locator("#abf-cb-bless").check();
+    assert.equal(await page.getAttribute("#b-buff-add", "aria-expanded"), "true", "still the picker's live anchor");
+    assert.equal(await page.locator('#b-bf-bless').isChecked(), true);
+    await page.keyboard.press("Escape");
+    await page.locator(".pop").waitFor({ state: "detached" });
+    assert.equal(await page.evaluate(() => document.activeElement?.id), "b-buff-add");
+    assert.equal(await page.getAttribute("#b-buff-add", "aria-expanded"), "false");
+    // the buff toggles redrew the weights: the typed 12.5 is still the stored importance (the box rounds it to 13 from 10 up)
+    await settings(page, "weights");
+    assert.equal(await fill(row(2).slider), "12.5%");
 
     await settings(page, "requirements");
     assert.equal(await page.locator("#b-sec-req .b-need-status").first().innerText(), "", "no status before a build");
     await page.click("#b-run");
     await built(page);
-    await page.waitForFunction(() => /^(Met: \d+|\d+ short)/.test(document.querySelector<HTMLElement>("#b-sec-req .rule-row[data-key=physResist] .b-need-status")?.innerText ?? ""));
+    // each resist need says the number its tile shows, held at the cap of 70 (the Melee floor is 65)
+    for (const [k, name] of [["physResist", "Physical"], ["fireResist", "Fire"]] as const) {
+      const n = Number(await page.locator("#b-result .b-head-card .resist", { has: page.locator(".resist-name", { hasText: new RegExp(`^${name}$`) }) }).locator(".b-resist-val .t-xl").innerText());
+      const want = n < 65 ? `${65 - n} short` : n > 70 ? `Met: 70 (+${n - 70} past cap)` : `Met: ${n}`;
+      assert.equal(await page.locator(`#b-sec-req .rule-row[data-key=${k}] .b-need-status`).innerText(), want, k);
+    }
     await fitWindow(app, page, { width: 420, height: 900 });
     for (const tab of ["weights", "buffs", "requirements"] as const) {
       await settings(page, tab);

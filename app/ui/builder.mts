@@ -8,7 +8,7 @@ import { NOBODY, PROP_LABELS, NOT_BUILDER_KEYS, importanceOf, roundImportance, w
 import { heldWeapon, ssiShareOf, swingOf, type SwingResult } from "../swing.mts";
 import { BUILTIN_PREFIX, characterBuffs, characterEntry, characterProfile, findTemplate, planBuild, specFromProfile, templateLabel, templateRefs, templateSettings, templateSpecFrom, type PlannedBuild } from "../build-spec.mts";
 import type { FcCap, ResistCap, RunBuffs, RunSettings, Character } from "../vault-lib.mts";
-import { BUFFS, BUFF_GROUPS, buffById, buffCastNeeds, buffEffectTags, castSkills, isSchool, gearNeedsText, overrideNote, planBuffs, normalizeBuffs, runBuffs, toggleBuff, buffPlanOf, type Buff, type BuffPlan } from "../buffs.mts";
+import { BUFFS, BUFF_GROUPS, BUFF_INPUTS, buffAvailability, buffById, buffEffectTags, isSchool, gearNeedsText, overrideNote, planBuffs, normalizeBuffs, runBuffs, toggleBuff, buffPlanOf, type Buff, type BuffPlan } from "../buffs.mts";
 import { defaultStrLimit } from "../run-settings.mts";
 import { evaluateSuit } from "../evaluate.mts";
 import { state, invStamp } from "./store.mts";
@@ -406,35 +406,53 @@ function loadRunBuffs(b: RunBuffs | undefined): void {
   commands.applyRunInputs(session.character!, b);
 }
 // The tab lists the buffs by school (issue #272), each with its switch and what it changes in the suit maths, a school's
-// heading the character's skill in it. Only the ones it can cast are listed, and any that are on, until Show all (kept
-// for the page session); one it can't cast is greyed with what it needs. With No character, or a scan that carries no
-// skills, every buff is listed, and no skill. The picker (Search and edit numbers) holds the rest: the search, the
-// numbers they scale with, Clear all.
+// heading the character's skill in it. Whether a buff counts is the plan's own answer (buffAvailability, at the numbers a
+// build plans with, typed ones included): one the plan blocks is greyed with what it needs, and one that leans on a skill
+// the scan lacks says it is counted at the default. Until Show all (kept for the page session) the list holds what the
+// character can use and any that are on; the lead line names what waits. With No character, or a scan that carries no
+// skills, every buff is listed, and no skill. The picker (Search and edit numbers) holds the rest: the search, the numbers
+// they scale with, Clear all. A toggle redraws the list only, so the picker's anchor stays.
 let allBuffs = false;
 function buffsSection(): HTMLElement {
-  const v = buffView(), scanned = v.name ? state.inv!.characters[v.name]?.skills ?? {} : {}, own = Object.keys(scanned).length ? scanned : null;
-  const skills = own ? castSkills(v.values, v.planned, v.edits) : v.values;
-  const level = (g: string): number | null => (own && isSchool(g) ? Number((own[g] as { value?: unknown } | undefined)?.value) || 0 : null);
-  const groups = BUFF_GROUPS.flatMap((g) => {
-    const school = level(g.name);
-    const rows = BUFFS.filter((b) => b.group === g.name).map((b) => ({ b, needs: buffCastNeeds(b, skills, v.who, school) }))
-      .filter(({ b, needs }) => allBuffs || !own || v.on.includes(b.id) || (!needs && !g.collapsed && !b.unconfirmed));
-    if (!rows.length) return [];
-    const head = box("div", { class: "b-bf-head" }, txt(g.name, "caps"), school == null ? null : txt(school ? `skill ${school}` : "not trained", "t-sm muted"));
-    return [box("section", { class: "b-bf-group", "aria-label": g.name }, head, ...rows.map(({ b, needs }) => buffRow(b, needs, v)))];
-  });
+  const v = buffView(), own = scannedSkills(v);
   const add = button({ label: "Search and edit numbers", icon: "search", variant: "ghost", size: "sm", attrs: { id: "b-buff-add", "aria-haspopup": "dialog" } });
   add.onclick = () => openBuffPicker(add);
-  const all = button({ label: allBuffs ? "Show castable only" : "Show all", variant: "ghost", size: "sm", attrs: { id: "b-bf-all" },
-    onClick: () => { allBuffs = !allBuffs; redraw("buffs"); document.getElementById("b-bf-all")?.focus(); } });
-  const lead = own ? `Only the buffs ${v.name}'s skills can cast are listed, and any that are on.`
+  const all = button({ label: allBuffs ? "Show usable only" : "Show all", variant: "ghost", size: "sm", attrs: { id: "b-bf-all" },
+    onClick: () => { allBuffs = !allBuffs; all.querySelector("span")!.textContent = allBuffs ? "Show usable only" : "Show all"; document.getElementById("b-bf-list")?.replaceWith(buffList()); } });
+  const lead = own ? `Listed: the buffs ${v.name} can use and any that are on. Show all adds the ones that need more skill or a skill not in ${v.name}'s scan.`
     : v.name ? `Every buff is listed: ${v.name}'s scan carries no skills, so each counts at 120.` : "Every buff is listed: with no character every skill counts at 120.";
-  return group("buffs", null, () => [box("div", { class: "b-bf-lead" }, el("p", { class: "help" }, txt(lead)), own ? all : null), ...groups,
+  return group("buffs", null, () => [box("div", { class: "b-bf-lead" }, el("p", { class: "help" }, txt(lead)), own ? all : null), buffList(),
     el("p", { class: "help" }, txt("Counted as always on. The search doesn't spend gear on what they already give.")), add]);
 }
-// One buff: its switch and name, what it changes (buffEffectTags), and under them what it needs to cast, else its note.
-function buffRow(b: Buff, needs: string | null, v: BuffView): HTMLElement {
-  const on = v.on.includes(b.id), line = needs ?? b.note ?? null, lid = `b-bf-${b.id.replace(/\W/g, "-")}-d`;
+// The character's scanned skills, or null with No character or a scan that carries none.
+function scannedSkills(v: BuffView): Record<string, unknown> | null {
+  const sk = v.name ? state.inv!.characters[v.name]?.skills ?? {} : {};
+  return Object.keys(sk).length ? sk : null;
+}
+function buffList(): HTMLElement {
+  const v = buffView(), own = scannedSkills(v);
+  // a school's heading: a typed number, else the scan's skill, else that the scan lacks it
+  const level = (g: string): string | null => {
+    if (!own || !isSchool(g)) return null;
+    if (Object.hasOwn(v.edits, g)) return `skill ${v.edits[g]} (typed)`;
+    const n = Number((own[g] as { value?: unknown } | undefined)?.value) || 0;
+    return n ? `skill ${n}` : Object.hasOwn(own, g) ? "not trained" : "not in the scan";
+  };
+  const groups = BUFF_GROUPS.flatMap((g) => {
+    const rows = BUFFS.filter((b) => b.group === g.name).map((b) => ({ b, ...buffAvailability(b, v.values, v.planned, v.edits, v.who) }))
+      .filter(({ b, needs, unscanned }) => allBuffs || !own || v.on.includes(b.id) || (!needs && !unscanned.length));
+    if (!rows.length) return [];
+    const lv = level(g.name), head = box("div", { class: "b-bf-head" }, txt(g.name, "caps"), lv ? txt(lv, "t-sm muted") : null);
+    return [box("section", { class: "b-bf-group", "aria-label": g.name }, head, ...rows.map(({ b, needs, unscanned }) => buffRow(b, needs, own ? unscanned : [], v)))];
+  });
+  return box("div", { class: "b-bf-list", id: "b-bf-list" }, ...groups);
+}
+// One buff: its switch and name, what it changes (buffEffectTags), and under them what it needs, else the skills the scan
+// lacks that it is counted at the default for, else its note.
+function buffRow(b: Buff, needs: string | null, unscanned: string[], v: BuffView): HTMLElement {
+  const on = v.on.includes(b.id), lid = `b-bf-${b.id.replace(/\W/g, "-")}-d`;
+  const missing = unscanned.length ? `${unscanned.map((i) => BUFF_INPUTS[i]!.label).join(", ")} not in the scan: counted at ${BUFF_INPUTS[unscanned[0]!]!.def}` : null;
+  const line = needs ?? missing ?? b.note ?? null;
   const sw = switchControl({ label: b.name, checked: on, disabled: !!b.race && !!needs && !on, onChange: () => buffActions.toggle(b.id),
     attrs: { id: `b-bf-${b.id.replace(/\W/g, "-")}`, "aria-label": b.name, "aria-describedby": lid } });
   sw.root.lastElementChild!.replaceWith(box("span", { class: "b-bf-text" }, txt(b.name, "strong"),
@@ -459,8 +477,9 @@ function setBuffs(next: string[], n: typeof note): void {
   setPanelBuffs(next);
   note = n;
   // the tab's list is redrawn whole: a switch that had the focus keeps it, or Search and edit numbers takes it when its row went
-  const f = document.activeElement?.closest("#b-sec-buffs") ? document.activeElement.id : null;
-  redraw("buffs"); redraw("req"); redraw("weights");   // the switch's step line counts the buffs' stamina and SSI
+  const f = document.activeElement?.closest("#b-bf-list") ? document.activeElement.id : null;
+  document.getElementById("b-bf-list")?.replaceWith(buffList());   // the list only: Search and edit numbers anchors the picker
+  redraw("req"); redraw("weights");   // the switch's step line counts the buffs' stamina and SSI
   if (f) (document.getElementById(f) ?? document.getElementById("b-buff-add"))?.focus();
   picker?.paint(buffView());
 }
@@ -641,6 +660,8 @@ function capRow(p: NonNullable<typeof session.profile>, k: string): HTMLElement 
   if (capDrafts[k] != null) setInlineError(i, resistCapError(capDrafts[k]!));
   return row;
 }
+// The weight rows at 0 that keep a negative sign, by character and property, for the page session.
+const negZero = new Set<string>();
 function weightsSection(): HTMLElement {
   const p = session.profile!;
   const keys = Object.keys(p.weights!).filter((k) => !NOT_BUILDER_KEYS.has(k));
@@ -660,14 +681,19 @@ function weightsSection(): HTMLElement {
       const over = el("span", { class: "b-wover", "aria-hidden": "true" });
       const track = box("span", { class: "b-wtrack" }, ...[25, 50, 75].map((x) => el("i", { style: `left:${x}%` })), slider, over, hover);
       const sign = button({ label: "±", variant: "ghost", size: "sm", cls: "b-wsign", attrs: { "aria-label": `${nm}: negative weight` } });
+      // a row at 0 keeps its sign for the page session (negZero), so ± then a drag, or a negative weight dragged to 0
+      // and back, stays negative; the profile stores 0 either way
+      const zeroKey = `${session.character}\u0000${k}`, negative = (): boolean => { const imp = importanceOf(k, p.weights![k]!); return imp < 0 || (imp === 0 && negZero.has(zeroKey)); };
+      if (negative() && !p.weights![k]) num.value = "-0";
       const paint = (): void => {
-        const imp = importanceOf(k, p.weights![k]!), mag = Math.min(100, Math.abs(imp)), shown = roundImportance(imp);
+        const imp = importanceOf(k, p.weights![k]!), mag = Math.min(100, Math.abs(imp)), shown = roundImportance(imp), neg = negative();
+        const said = neg && !shown ? "−0" : String(shown).replace("-", "−");
         slider.value = String(mag);
         slider.style.setProperty("--fill", `${mag}%`);
-        slider.setAttribute("aria-valuetext", String(shown).replace("-", "−"));
-        track.classList.toggle("neg", imp < 0);
-        over.textContent = Math.abs(imp) > 100 ? `▸${String(shown).replace("-", "−")}` : "";
-        sign.setAttribute("aria-pressed", String(imp < 0));
+        slider.setAttribute("aria-valuetext", said);
+        track.classList.toggle("neg", neg);
+        over.textContent = Math.abs(imp) > 100 ? `▸${said}` : "";
+        sign.setAttribute("aria-pressed", String(neg));
         hover.textContent = weightTradeoff(k, p.weights!);
       };
       paints.push(paint);
@@ -675,12 +701,19 @@ function weightsSection(): HTMLElement {
       const step = (): void => { num.step = Math.abs(Number(num.value)) >= 10 ? "1" : "0.1"; };
       step();
       const said = (): void => { readout.hidden = false; readout.textContent = weightTradeoff(k, p.weights!); };
-      num.addEventListener("input", () => { step(); paints.forEach((f) => f()); said(); });
+      num.addEventListener("input", () => {
+        const t = num.value.trim();
+        if (t !== "" && Number(t) === 0) { if (t.startsWith("-")) negZero.add(zeroKey); else negZero.delete(zeroKey); }
+        step(); paints.forEach((f) => f()); said();
+      });
       // the slider and ± write the field, which stores the weight as a typed one would (editedValue)
-      const write = (n: number): void => { num.value = String(n); num.dispatchEvent(new Event("input")); };
-      slider.addEventListener("input", () => write((importanceOf(k, p.weights![k]!) < 0 ? -1 : 1) * Number(slider.value)));
+      const write = (n: number): void => { num.value = Object.is(n, -0) ? "-0" : String(n); num.dispatchEvent(new Event("input")); };
+      slider.addEventListener("input", () => write((negative() ? -1 : 1) * Number(slider.value)));
       slider.addEventListener("focus", said);
-      sign.onclick = () => { p.weights![k] = -p.weights![k]!; write(conv.show(p.weights![k]!)); };
+      sign.onclick = () => {
+        if (!p.weights![k]) { write(negative() ? 0 : -0); return; }
+        p.weights![k] = -p.weights![k]!; write(conv.show(p.weights![k]!));
+      };
       tooltip(num, () => hover.textContent!);
       tooltip(track, () => hover.textContent!);
       num.setAttribute("aria-describedby", hover.id);
