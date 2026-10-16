@@ -214,7 +214,10 @@ export function selectCharacter(name: string, open: string | true = true): void 
   // A build that finished while another character was on screen waits here for its own character.
   const parked = session.parked;
   if (parked?.name === name) { session.parked = null; showFinished(parked); }
-  else commands.renderCurrentSuit(name);
+  // coming back decides between a saved run and the first-visit view once the runs are in (ui/runs.mts arriveAt); a build
+  // running keeps its card over the first-visit view
+  else if (session.job) commands.renderCurrentSuit(name);
+  else $<HTMLElement>("#b-result")!.replaceChildren();
   commands.loadRuns(open);
   commands.paintCharSelect();
   commands.renderManual();
@@ -358,7 +361,7 @@ function applyTemplate(): void {
   toast(`${name} applied. Save profile to keep it.`, "good");
 }
 // A template card in the first-visit view (ui/builder-start.mts): what picking it in the top bar does, then applied, so the
-// panel builds from it; the panel's own template is left as it is.
+// panel builds from it; the card of the panel's own template applies nothing again.
 function pickTemplate(ref: string): void {
   const tpl = $<HTMLSelectElement>("#b-tpl")!;
   tpl.value = ref;

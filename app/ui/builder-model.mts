@@ -484,11 +484,20 @@ export function otherCharactersRuns<R extends RunStamp>(runs: readonly R[], exce
   for (const r of runs) if (r.character != null && r.character !== except) by.set(r.character, [...(by.get(r.character) ?? []), r]);
   return [...by.values()].map((list) => latestRun(list)!).sort((a, b) => stampMs(b.createdAt) - stampMs(a.createdAt)).slice(0, n);
 }
-// Whether the gear changed since a run was built: a scan newer than the run. No scan, or no time recorded, is no change.
-export function gearChangedSince(scans: ReadonlyArray<{ scannedAt: string }>, createdAt: string | null | undefined): boolean {
-  const at = stampMs(createdAt);
+// Whether the inventory changed since a run was built (the drawer's "Inventory changed" and the result's banner): the newest
+// scan is not the one the run was built from (its `inventoryStamp`), so a scan stamped before the build that landed after it
+// counts too. A run saved without a stamp falls back to its build time: a scan newer than it. No scan, or neither a stamp
+// nor a time, is no change.
+export function gearChangedSince(scans: ReadonlyArray<{ scannedAt: string }>, run: { inventoryStamp?: unknown; createdAt?: string | null | undefined }): boolean {
+  if (typeof run.inventoryStamp === "string" && run.inventoryStamp) {
+    const newest = scans.reduce<{ scannedAt: string } | null>((best, s) => (!best || stampMs(s.scannedAt) > stampMs(best.scannedAt) ? s : best), null);
+    return !!newest && newest.scannedAt !== run.inventoryStamp;
+  }
+  const at = stampMs(run.createdAt);
   return at > -Infinity && scans.some((s) => stampMs(s.scannedAt) > at);
 }
+// The run to come back to: the newest that kept a suit (a run file whose result is gone lists with no method).
+export const latestShownRun = <R extends RunStamp & { method?: string | null | undefined }>(runs: readonly R[]): R | null => latestRun(runs.filter((r) => r.method != null));
 // A skill counts toward a template's suggestion from this value up.
 export const SUGGEST_MIN_SKILL = 30;
 // The built-in templates the first-visit view offers beside the current one, at most `n`: each scored by the skill points of

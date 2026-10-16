@@ -1,6 +1,6 @@
 // builder-model.test.mts — `app/ui/builder-model.mts`, the Suit Builder's pure logic.
 //
-// `app/ui/builder-model.mts`, the Suit Builder's pure logic: No character's name in words (issue #12), the Settings drawer's count of settings changed since the last build (issue #272), the Advanced fields' validation messages with the allowed range ("Enter a whole number from 1 to 10,000.") and that the page's limits equal the server's `OPTS_LIMITS`, which field a server refusal names, a resist tile's outcome line (short, meets, at cap, over cap), the result's other-changes badges (gains first, missed requirements as losses), "after the change" values and pool estimates, the compare table's differing piece cells, best totals (past the cap counts as the cap) and hidden-rows note, the three-run compare limit, and a saved run's automatic label and badges, and the Weapons chip wording, and a weight row's trade-off hover in importance (issues #217, #274). All `[fast]`. The rarity preference (issue #262) in words: the help line, the settings change, the rarity total and the Rarity row. What made up the score (issue #273): the rows, the Other fold, a negative share set apart. A requirement's line from the result shown (issue #272). Arriving at the builder (issue #272): the latest run per character, whether the gear changed since a run (a newer scan; none or no time is no change), the built-in templates suggested for a character's skills, and the first-visit summary's lines.
+// `app/ui/builder-model.mts`, the Suit Builder's pure logic: No character's name in words (issue #12), the Settings drawer's count of settings changed since the last build (issue #272), the Advanced fields' validation messages with the allowed range ("Enter a whole number from 1 to 10,000.") and that the page's limits equal the server's `OPTS_LIMITS`, which field a server refusal names, a resist tile's outcome line (short, meets, at cap, over cap), the result's other-changes badges (gains first, missed requirements as losses), "after the change" values and pool estimates, the compare table's differing piece cells, best totals (past the cap counts as the cap) and hidden-rows note, the three-run compare limit, and a saved run's automatic label and badges, and the Weapons chip wording, and a weight row's trade-off hover in importance (issues #217, #274). All `[fast]`. The rarity preference (issue #262) in words: the help line, the settings change, the rarity total and the Rarity row. What made up the score (issue #273): the rows, the Other fold, a negative share set apart. A requirement's line from the result shown (issue #272). Arriving at the builder (issue #272): the latest run per character, whether the gear changed since a run (the newest scan is not the run's own, else one newer than the run; a late-landing scan counts), the run to come back to, the built-in templates suggested for a character's skills, and the first-visit summary's lines.
 //
 // Lives in app/ for the reason app/ui-render.test.mts gives.
 import { test } from "node:test";
@@ -14,7 +14,7 @@ import {
   resistOutcome, locationCrumbs, changeRows, gaugeRows, gaugeNote, worse, gaugeTrack, changesSummary, afterChange, compareModel, hiddenRowsNote, toggleCompare, runAutoLabel, runBadges, plural, KNOB_RANGES,
   resistCapError, withResistCap, capNote, resistMinimumText, capsLine, anyOverridden, effectiveFloor, floorCapWarning, pruneResistCaps,
   weaponsChipText, weaponMustHaveChipText, toggleWeapon, weaponName, withBuffs, pastCapNotes, runSettingsDiff, weightTradeoff, newWeight, editedValue, NEW_WEIGHT_IMPORTANCE, templateBuffsLine, sourceTitle, who, rarityHelp, rarityTotal, rarityDetail, shareRows, needStatus, shownImportance,
-  latestRun, otherCharactersRuns, gearChangedSince, suggestTemplates, SUGGEST_MIN_SKILL, needsLine, topWeights, poolLine, searchLine,
+  latestRun, latestShownRun, otherCharactersRuns, gearChangedSince, suggestTemplates, SUGGEST_MIN_SKILL, needsLine, topWeights, poolLine, searchLine,
   type Knobs, type ChangeRow,
 } from "./ui/builder-model.mts";
 import { OPTS_LIMITS } from "./vault-server.mts";
@@ -447,13 +447,22 @@ test("[fast] builder model: the latest run per character, and the gear changed s
   assert.deepEqual(otherCharactersRuns(runs.slice(0, 2), "Ana"), []);
 
   const scans = [{ scannedAt: "2026-10-12T09:00:00Z" }, { scannedAt: "2026-10-12T11:00:00Z" }];
-  assert.equal(gearChangedSince(scans, "2026-10-12T10:00:00Z"), true, "a scan newer than the run");
-  assert.equal(gearChangedSince(scans, "2026-10-12T12:00:00Z"), false);
-  assert.equal(gearChangedSince(scans, "2026-10-12T11:00:00Z"), false, "a scan at the run's own time is no change");
-  assert.equal(gearChangedSince([], "2026-10-12T10:00:00Z"), false, "no scan");
-  assert.equal(gearChangedSince(scans, undefined), false, "no time recorded");
-  assert.equal(gearChangedSince(scans, "not a time"), false);
-  assert.equal(gearChangedSince([{ scannedAt: "" }], "2026-10-12T10:00:00Z"), false, "a scan with no time");
+  // a run with the stamp of the scan it was built from: changed exactly when the newest scan is another
+  assert.equal(gearChangedSince(scans, { inventoryStamp: "2026-10-12T11:00:00Z", createdAt: "2026-10-12T11:05:00Z" }), false, "built from the newest scan");
+  assert.equal(gearChangedSince(scans, { inventoryStamp: "2026-10-12T09:00:00Z", createdAt: "2026-10-12T09:05:00Z" }), true, "a newer scan since");
+  // a scan started before the build and landing after it: stamped earlier than the run's time, still a change
+  const late = [{ scannedAt: "2026-10-12T10:00:00Z" }, { scannedAt: "2026-10-12T10:30:00Z" }];
+  assert.equal(gearChangedSince(late, { inventoryStamp: "2026-10-12T10:00:00Z", createdAt: "2026-10-12T10:31:00Z" }), true, "the late-landing scan");
+  assert.equal(gearChangedSince([], { inventoryStamp: "2026-10-12T10:00:00Z", createdAt: "2026-10-12T10:31:00Z" }), false, "no scan");
+  // no stamp recorded: a scan newer than the run's build time
+  assert.equal(gearChangedSince(scans, { createdAt: "2026-10-12T10:00:00Z" }), true, "a scan newer than the run");
+  assert.equal(gearChangedSince(scans, { inventoryStamp: "", createdAt: "2026-10-12T12:00:00Z" }), false);
+  assert.equal(gearChangedSince(scans, { inventoryStamp: null, createdAt: "2026-10-12T11:00:00Z" }), false, "a scan at the run's own time is no change");
+  assert.equal(gearChangedSince([], { createdAt: "2026-10-12T10:00:00Z" }), false, "no scan");
+  assert.equal(gearChangedSince(scans, {}), false, "neither a stamp nor a time");
+  assert.equal(gearChangedSince(scans, { createdAt: "not a time" }), false);
+  assert.equal(gearChangedSince([{ scannedAt: "" }], { createdAt: "2026-10-12T10:00:00Z" }), false, "a scan with no time");
+  assert.equal(latestShownRun([...runs.slice(0, 2).map((r) => ({ ...r, method: "exact" })), { id: "z", character: "Ana", createdAt: "2026-10-14T10:00:00Z", method: null }])?.id, "a2", "a run with no suit is passed over");
 });
 
 test("[fast] builder model: the built-in templates suggested for a character's skills (issue #272)", () => {
