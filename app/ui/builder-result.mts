@@ -45,6 +45,7 @@ function resistTile(k: string, after: number, floor: number | null, c: ResistCap
 let currentShown: string | null = null;
 function renderCurrentSuit(name: string): void {
   currentShown = name;
+  session.outcome = null;
   $<HTMLElement>("#b-result")!.replaceChildren(currentSuitCard(name));
 }
 function refreshCurrentSuit(): void {
@@ -83,7 +84,7 @@ let showUnchanged = false, sheetOpen = false, detailsOpen = false;
 let withoutBuffs = false;
 let picked = new Set<string>();   // the other suits ticked for comparison: "0" is the best, "n" is suit #n+1
 let pickRefused: string | null = null;
-function resetResultView(): void { renderSeq++; last = null; picked = new Set(); pickRefused = null; }
+function resetResultView(): void { renderSeq++; last = null; picked = new Set(); pickRefused = null; session.outcome = null; }
 function resultLoadError(e: unknown): void {
   $<HTMLElement>("#b-result")!.replaceChildren(message({ tone: "bad", title: "Could not load the suit's items", text: (e as Error).message }));
 }
@@ -98,6 +99,9 @@ async function renderResult(res: OptimizeResult, current: OptSuit, prof: Effecti
   if (last?.res !== res) { picked = new Set(); pickRefused = null; withoutBuffs = false; }
   last = { res, current, prof, name, meta };
   currentShown = null;
+  // what the Requirements tab says each need came to: the best suit with the buffs it was planned with
+  const planned = withBuffs(totalsOf(res.best), prof.resistSkill, paperdollCaps(profileResistCaps(prof), fcCapOf(prof)), prof.buffs, resistSkillCapOf(state.inv!.characters[name]?.skills));
+  session.outcome = { name, totals: planned.totals, caps: planned.caps, swing: res.swing ?? null, weapon: heldWeapon(res.best)?.name ?? null };
   const alts = res.alternatives || [];
   const view = session.altView != null && alts[session.altView] ? session.altView : null;
   const suit = view == null ? res.best : alts[view]!.best;

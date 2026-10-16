@@ -1,6 +1,6 @@
 // builder-model.test.mts — `app/ui/builder-model.mts`, the Suit Builder's pure logic.
 //
-// `app/ui/builder-model.mts`, the Suit Builder's pure logic: No character's name in words (issue #12), the Settings drawer's count of settings changed since the last build (issue #272), the Advanced fields' validation messages with the allowed range ("Enter a whole number from 1 to 10,000.") and that the page's limits equal the server's `OPTS_LIMITS`, which field a server refusal names, a resist tile's outcome line (short, meets, at cap, over cap), the result's other-changes badges (gains first, missed requirements as losses), "after the change" values and pool estimates, the compare table's differing piece cells, best totals (past the cap counts as the cap) and hidden-rows note, the three-run compare limit, and a saved run's automatic label and badges, and the Weapons chip wording, and a weight row's trade-off hover in importance (issues #217, #274). All `[fast]`. The rarity preference (issue #262) in words: the help line, the settings change, the rarity total and the Rarity row. What made up the score (issue #273): the rows, the Other fold, a negative share set apart.
+// `app/ui/builder-model.mts`, the Suit Builder's pure logic: No character's name in words (issue #12), the Settings drawer's count of settings changed since the last build (issue #272), the Advanced fields' validation messages with the allowed range ("Enter a whole number from 1 to 10,000.") and that the page's limits equal the server's `OPTS_LIMITS`, which field a server refusal names, a resist tile's outcome line (short, meets, at cap, over cap), the result's other-changes badges (gains first, missed requirements as losses), "after the change" values and pool estimates, the compare table's differing piece cells, best totals (past the cap counts as the cap) and hidden-rows note, the three-run compare limit, and a saved run's automatic label and badges, and the Weapons chip wording, and a weight row's trade-off hover in importance (issues #217, #274). All `[fast]`. The rarity preference (issue #262) in words: the help line, the settings change, the rarity total and the Rarity row. What made up the score (issue #273): the rows, the Other fold, a negative share set apart. A requirement's line from the result shown (issue #272).
 //
 // Lives in app/ for the reason app/ui-render.test.mts gives.
 import { test } from "node:test";
@@ -13,7 +13,7 @@ import {
   propName, withStoredRoots, knobError, firstKnobError, knobFromServerError, ruleValueError,
   resistOutcome, locationCrumbs, changeRows, gaugeRows, gaugeNote, worse, gaugeTrack, changesSummary, afterChange, compareModel, hiddenRowsNote, toggleCompare, runAutoLabel, runBadges, plural, KNOB_RANGES,
   resistCapError, withResistCap, capNote, resistMinimumText, capsLine, anyOverridden, effectiveFloor, floorCapWarning, pruneResistCaps,
-  weaponsChipText, weaponMustHaveChipText, toggleWeapon, weaponName, withBuffs, pastCapNotes, runSettingsDiff, weightTradeoff, newWeight, editedValue, NEW_WEIGHT_IMPORTANCE, templateBuffsLine, sourceTitle, who, rarityHelp, rarityTotal, rarityDetail, shareRows,
+  weaponsChipText, weaponMustHaveChipText, toggleWeapon, weaponName, withBuffs, pastCapNotes, runSettingsDiff, weightTradeoff, newWeight, editedValue, NEW_WEIGHT_IMPORTANCE, templateBuffsLine, sourceTitle, who, rarityHelp, rarityTotal, rarityDetail, shareRows, needStatus, shownImportance,
   type Knobs, type ChangeRow,
 } from "./ui/builder-model.mts";
 import { OPTS_LIMITS } from "./vault-server.mts";
@@ -399,4 +399,33 @@ test("[fast] builder model: what made up the score, largest first, shares under 
   assert.deepEqual(shareRows([]), [], "a run saved before #273 has none");
   // Show all: a fold of 0 lists every property on its own row
   assert.deepEqual(shareRows([{ property: "di", share: 0.9 }, { property: "luck", share: 0.01 }, { property: "lmc", share: 0.01 }, { property: "hci", share: 0 }], 0).map((r) => [r.label, r.pct]), [["Damage increase", "90%"], ["Luck", "1%"], ["Lower mana cost", "1%"], ["Hit chance increase", "0%"]]);
+});
+
+test("[fast] builder model: a requirement's line from the result shown: met, short, a floor or a total past its cap, the next swing step (issue #272)", () => {
+  const caps = { dci: 45, ssi: 60, fireResist: 70 };
+  assert.deepEqual(needStatus("dci", 45, 45, caps), { text: "Met: 45", tone: "ok" });
+  assert.deepEqual(needStatus("dci", 45, 32, caps), { text: "13 short", tone: "warn" });
+  // a resist requirement past its cap counts only up to the cap, as the solver scores it
+  assert.deepEqual(needStatus("fireResist", 80, 70, caps), { text: "Met: 70", tone: "ok" });
+  assert.deepEqual(needStatus("fireResist", 70, 68, caps), { text: "2 short", tone: "warn" });
+  // a total past the cap reads the cap, as the paperdoll does, and says what the cap wastes
+  assert.deepEqual(needStatus("physResist", 60, 78, { physResist: 70 }), { text: "Met: 70 (+8 past cap)", tone: "ok" });
+  assert.deepEqual(needStatus("dci", 45, 52, caps), { text: "Met: 45 (+7 past cap)", tone: "ok" });
+  assert.deepEqual(needStatus("luck", 100, 150, caps), { text: "Met: 150", tone: "ok" }, "no cap: the total");
+  // met or short is the solver's: the raw total against the floor, a non-resist floor past its cap included
+  assert.deepEqual(needStatus("dci", 50, 60, caps), { text: "Met: 45 (+15 past cap)", tone: "ok" });
+  assert.deepEqual(needStatus("dci", 50, 40, caps), { text: "10 short", tone: "warn" });
+  const next = { value: 58, seconds: 1.25 };
+  assert.deepEqual(needStatus("ssi", 50, 55, caps, next, "Katana"), { text: "Next swing step at 58 (1.25 s with Katana)", tone: "ok" });
+  assert.deepEqual(needStatus("ssi", 58, 55, caps, next, "Katana"), { text: "3 short · Next swing step at 58 (1.25 s with Katana)", tone: "warn" });
+  assert.deepEqual(needStatus("ssi", 50, 60, caps, null, null), { text: "Met: 60", tone: "ok" }, "no faster step within the cap");
+});
+
+test("[fast] builder model: a weight's box shows its importance as stored, to two decimals with no trailing zeros (issue #272)", () => {
+  assert.equal(String(shownImportance(12.5)), "12.5");
+  assert.equal(String(shownImportance(93.33333333)), "93.33");
+  assert.equal(String(shownImportance(100.0000001)), "100");
+  assert.equal(String(shownImportance(-40)), "-40");
+  // a typed decimal survives the round trip through the stored per-point weight
+  for (const [k, typed] of [["luck", 12.5], ["dci", 7.25], ["physResist", 93.33]] as const) assert.equal(shownImportance(importanceOf(k, weightOfImportance(k, typed))), typed, k);
 });

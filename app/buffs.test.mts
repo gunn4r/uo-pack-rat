@@ -1,13 +1,13 @@
 // buffs.test.mts — `app/buffs.mts`, the Suit Builder's buffs, abilities and forms (issue #12).
 //
-// `[fast]`: `app/buffs.mts`, the Suit Builder's buffs, abilities and forms (issue #12): each shipped effect's formula against the research's numbers, skill scaling at 0, the threshold and 120, one form at a time, the stat slots where the largest share counts, a cap raise, a bonus past the cap that never counts toward it, Protection's lower Resisting Spells, the words the picker shows, and the saved choices' checks.
+// `[fast]`: `app/buffs.mts`, the Suit Builder's buffs, abilities and forms (issue #12): each shipped effect's formula against the research's numbers, skill scaling at 0, the threshold and 120, one form at a time, the stat slots where the largest share counts, a cap raise, a bonus past the cap that never counts toward it, Protection's lower Resisting Spells, the words the picker shows, the Buffs tab's effect tags and what a buff needs to cast (issue #272), and the saved choices' checks.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { effectiveProfile, profileResistCaps, setRules } from "./vault-lib.mts";
 import type { Character, Item, Profile, PropMap } from "./vault-lib.mts";
 import type { RulesV1 } from "./schema/types.d.mts";
-import { BUFFS, BUFF_IDS, BUFF_GROUPS, BUFF_INPUTS, applyBuffs, buffById, buffShift, buffSkillValues, buffText, buffsDiff, gearNeedsText, isBuffList, isBuffSkills, isBuffSkillsByCharacter, isRunBuffs, manualProfile, normalizeBuffListsByCharacter, normalizeBuffs, ownEntry, plannedFromWorn, plannedProfile, runBuffs, savedBuffs, toggleBuff } from "./buffs.mts";
+import { BUFFS, BUFF_IDS, BUFF_GROUPS, BUFF_INPUTS, applyBuffs, buffAvailability, buffById, buffEffectTags, buffShift, isSchool, TAG_WORDS, buffSkillValues, buffText, buffsDiff, gearNeedsText, isBuffList, isBuffSkills, isBuffSkillsByCharacter, isRunBuffs, manualProfile, normalizeBuffListsByCharacter, normalizeBuffs, ownEntry, plannedFromWorn, plannedProfile, runBuffs, savedBuffs, toggleBuff } from "./buffs.mts";
 import type { BuffPlan, Skills, Stats } from "./buffs.mts";
 
 setRules(JSON.parse(readFileSync(new URL("./rules/uoalive.json", import.meta.url), "utf8")) as RulesV1);
@@ -491,4 +491,55 @@ test("[fast] buffs: manualProfile plans a hand-picked suit from that suit's weap
   const none = manualProfile({ floors: { hci: 10 }, race: "elf" }, null, [], picked, null, ["divineFury"], {});
   assert.equal(none.buffs?.stats, null);
   assert.equal(none.buffs?.who.race, null, "no character: no race");
+});
+
+test("[fast] buffs: the Buffs tab's effect tags come from each entry's own effects, caps and extras, in one word per property (issue #272)", () => {
+  const { values } = buffSkillValues(null, {}), tags = (id: string, skills: Skills = values): string[] => buffEffectTags(id, skills, null, {}, {}, CAPS).map((t) => t.text);
+  assert.deepEqual(tags("divineFury"), ["hit chance up", "damage up", "swing speed up", "defense chance down"]);
+  // a tag that lowers something for the suit is marked, for the warn tone
+  assert.deepEqual(buffEffectTags("divineFury", values, null, {}, {}, CAPS).map((t) => t.down), [false, false, false, true]);
+  assert.deepEqual(buffEffectTags("curse", values, null, {}, {}, CAPS).map((t) => t.down), [true, true]);
+  // below Chivalry 90 Consecrate Weapon adds no damage: only what no total shows is left
+  assert.deepEqual(tags("consecrateWeapon", { ...values, Chivalry: 60 }), ["hits the lowest resist"]);
+  assert.deepEqual(tags("consecrateWeapon"), ["damage up", "hits the lowest resist"]);
+  // the resists moving one way are named together: all five as "resists", some by their words
+  assert.deepEqual(tags("reaperForm"), ["swing speed up", "spell damage up", "physical, cold, poison, energy resists up", "fire resist down"]);
+  assert.deepEqual(tags("etherealForm"), ["resists down", "8% mana leech"]);
+  assert.deepEqual(tags("bless"), ["stats up"]);
+  assert.deepEqual(tags("whiteTiger"), ["defense chance up", "defense chance cap up"]);
+  assert.deepEqual(tags("stoneForm"), ["resists up", "swing speed down", "faster casting down", "damage up", "resist caps up"]);
+  assert.deepEqual(tags("corpseSkin"), ["fire, poison resists down", "physical, cold resists up", "fire, poison resist caps down"]);
+  // a pool reads as its stat, like the stat's regeneration
+  assert.deepEqual(tags("jukari"), ["fire resist up", "stamina up"]);
+  assert.deepEqual(tags("wolfKitsune"), ["hit chance up", "hit points up"]);
+  assert.deepEqual(tags("ratRabbit"), ["stealth up"]);
+  // Gargoyle Berserk with no HP lost changes nothing
+  assert.deepEqual(tags("berserk", { ...values, "HP lost": 0 }), ["no suit effect"]);
+  // every property the catalog moves has its one word
+  const c = { s: (i: string) => values[i] ?? 0, stats: { str: 100, dex: 100, int: 100 }, totals: {}, resist: null, who: {}, caps: CAPS };
+  for (const b of BUFFS) {
+    assert.ok(tags(b.id).length, b.id);
+    for (const k of [...b.effects(c).map((e) => e.key), ...Object.keys({ ...b.caps?.(c), ...b.capsLate?.(c), ...b.capsSet?.(c) })]) assert.ok(k.startsWith("sk:") || Object.hasOwn(TAG_WORDS, k), `${b.id}: ${k}`);
+  }
+});
+
+test("[fast] buffs: the Buffs tab asks the plan whether a buff counts, typed numbers included (issue #272)", () => {
+  const at = (edits: Record<string, number>, id: string, race = "human", ch: Record<string, unknown> = { Chivalry: { value: 68.2 }, Necromancy: { value: 50 } }) => {
+    const { values, planned } = buffSkillValues(ch, edits), b = buffById(id)!;
+    const a = buffAvailability(b, values, planned, edits, { race });
+    // the tab greys exactly what the plan blocks
+    assert.equal(!!a.needs, applyBuffs({}, CAPS, [id], values, null, { race }).blocked.includes(id), id);
+    return a;
+  };
+  assert.deepEqual(at({}, "vampiricEmbrace"), { needs: "Needs Necromancy 99", unscanned: [] });
+  assert.deepEqual(at({}, "wraithForm"), { needs: null, unscanned: ["Spirit Speak"] }, "a skill the scan lacks is counted at the default, not greyed");
+  assert.deepEqual(at({}, "divineFury"), { needs: null, unscanned: [] });
+  assert.deepEqual(at({}, "reaperForm"), { needs: null, unscanned: ["Spellweaving", "Arcane Focus"].filter((i) => BUFF_INPUTS[i]!.skills.length) });
+  // a typed number counts as typed: Chivalry 90 and Necromancy 99 make them count, with nothing unscanned
+  assert.deepEqual(at({ Necromancy: 99 }, "vampiricEmbrace"), { needs: null, unscanned: [] });
+  const noChiv = { Necromancy: { value: 50 } };
+  assert.deepEqual(at({}, "divineFury", "human", noChiv), { needs: null, unscanned: ["Chivalry"] }, "no Chivalry in the scan: counted at 120, never greyed");
+  assert.deepEqual(at({ Chivalry: 90 }, "divineFury", "human", noChiv), { needs: null, unscanned: [] }, "a typed Chivalry 90 counts as typed");
+  assert.equal(at({}, "gargoyle").needs, "Gargoyles only");
+  assert.ok(isSchool("Chivalry") && isSchool("Magery") && !isSchool("Bard masteries") && !isSchool("Potions"));
 });
