@@ -668,9 +668,10 @@ test("[slow] drawer extras: notched weight sliders, buffs by school, each requir
     await page.locator(".pop").waitFor({ state: "detached" });
     assert.equal(await page.evaluate(() => document.activeElement?.id), "b-buff-add");
     assert.equal(await page.getAttribute("#b-buff-add", "aria-expanded"), "false");
-    // the buff toggles redrew the weights: the typed 12.5 is still the stored importance (the box rounds it to 13 from 10 up)
+    // the buff toggles redrew the weights: the typed 12.5 is still the stored importance, and the box still shows it
     await settings(page, "weights");
     assert.equal(await fill(row(2).slider), "12.5%");
+    assert.equal(await row(2).num.inputValue(), "12.5");
 
     await settings(page, "requirements");
     assert.equal(await page.locator("#b-sec-req .b-need-status").first().innerText(), "", "no status before a build");

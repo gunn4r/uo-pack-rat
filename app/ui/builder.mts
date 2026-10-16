@@ -662,6 +662,10 @@ function capRow(p: NonNullable<typeof session.profile>, k: string): HTMLElement 
 }
 // The weight rows at 0 that keep a negative sign, by character and property, for the page session.
 const negZero = new Set<string>();
+// What was typed (or written by the slider) in a weight's box, with the weight it stored, by character and property: a
+// redraw shows that text while the weight is still the one it stored, so a typed 12.5 stays 12.5 rather than the
+// rounded importance (only the box; a tooltip may round).
+const typedWeights = new Map<string, { text: string; weight: number }>();
 function weightsSection(): HTMLElement {
   const p = session.profile!;
   const keys = Object.keys(p.weights!).filter((k) => !NOT_BUILDER_KEYS.has(k));
@@ -684,7 +688,9 @@ function weightsSection(): HTMLElement {
       // a row at 0 keeps its sign for the page session (negZero), so ± then a drag, or a negative weight dragged to 0
       // and back, stays negative; the profile stores 0 either way
       const zeroKey = `${session.character}\u0000${k}`, negative = (): boolean => { const imp = importanceOf(k, p.weights![k]!); return imp < 0 || (imp === 0 && negZero.has(zeroKey)); };
-      if (negative() && !p.weights![k]) num.value = "-0";
+      const was = typedWeights.get(zeroKey);
+      if (was && was.weight === p.weights![k]) num.value = was.text;
+      else if (negative() && !p.weights![k]) num.value = "-0";
       const paint = (): void => {
         const imp = importanceOf(k, p.weights![k]!), mag = Math.min(100, Math.abs(imp)), exact = Math.round(imp * 10) / 10, neg = negative();
         const said = neg && !exact ? "−0" : String(exact).replace("-", "−");
@@ -707,6 +713,7 @@ function weightsSection(): HTMLElement {
       num.addEventListener("input", () => {
         const t = num.value.trim();
         if (t !== "" && Number(t) === 0) { if (t.startsWith("-")) negZero.add(zeroKey); else negZero.delete(zeroKey); }
+        if (t !== "" && Number.isFinite(Number(t))) typedWeights.set(zeroKey, { text: t, weight: p.weights![k]! });
         step(); paints.forEach((f) => f()); said();
       });
       // the slider and ± write the field, which stores the weight as a typed one would (editedValue)
