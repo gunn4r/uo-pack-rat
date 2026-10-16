@@ -601,6 +601,11 @@ def moved_away(start):
     return max(abs(x - start[0]), abs(y - start[1])) > MOVED_AWAY
 
 
+def cut_short(start):
+    """Why the scan must end now: "stopped" (Stop pressed), "moved" (moved_away), or None."""
+    return "stopped" if API.StopRequested else "moved" if moved_away(start) else None
+
+
 def main():
     t0 = time.time()
     p = API.Player
@@ -663,16 +668,25 @@ def main():
         except Exception:
             continue
 
-    counts, moved = [], False
+    # Cut short (Stop, or moved away: a recall, a gate): the roots finished are written, the root under way and the ones left are left out of the file so the app keeps what it knew about them, and no house is captured.
+    counts, cut = [], None
     for serial, kind, label in roots:
-        if API.StopRequested:
-            sysmsg("Pack Rat scan stopped — nothing written.", ALARM_HUE)
-            return
-        # Moved away (a recall, a gate): the roots left are out of reach, so they are left out of the file and the app keeps what it knew about them.
-        moved = moved_away(start)
-        if moved:
+        cut = cut_short(start)
+        if cut:
             break
-        n = scan_root(serial, kind, label, snap["containers"], snap["items"], seen)
+        # Read into its own lists, so a root the scan is cut short in is never written.
+        containers, items = {}, []
+        try:
+            n = scan_root(serial, kind, label, containers, items, seen)
+        except Exception:
+            if not API.StopRequested:
+                raise
+            n = -1      # Stop interrupts a pause inside the root
+        cut = cut_short(start)
+        if cut:
+            break
+        snap["containers"].update(containers)
+        snap["items"].extend(items)
         opened = n >= 0
         # Could not open it (too far / locked): still listed, but opened:False and no items, so the
         # app's fold keeps whatever it last knew about this root instead of wiping it.
@@ -681,16 +695,13 @@ def main():
             counts.append(f"{label}: not opened (skipped)")
             continue
         counts.append(f"{label}: {n}" + (" (empty)" if n == 0 else ""))
-    if API.StopRequested:
-        # Stop landed while the last root was opening: that root reads as not opened, but a stopped
-        # scan is not a scan the player asked for. Write nothing.
+    cut = cut or cut_short(start)
+    if cut == "stopped" and not snap["roots"]:
         sysmsg("Pack Rat scan stopped — nothing written.", ALARM_HUE)
         return
 
-    # A house captured after moving away would be the house the player stands in now, not the one scanned.
-    moved = moved or moved_away(start)
     try:
-        house = None if moved else house_capture(int(API.Player.X), int(API.Player.Y))
+        house = None if cut else house_capture(int(API.Player.X), int(API.Player.Y))
     except Exception:   # the house is extra: a capture that fails never costs the scan
         house = None
     if house is not None:
@@ -701,6 +712,9 @@ def main():
     fname = re.sub(r"[^A-Za-z0-9_-]", "_", char) + time.strftime("-%Y%m%d-%H%M%S") + ".json"
     path = os.path.join(OUT_DIR, fname)
     write_json_atomic(path, snap)
+    if cut == "stopped":    # the client gives a stopped script 2 s: one line, and the windows closed
+        sysmsg("Scan stopped. Chests it had not finished keep what Pack Rat knew.", ALARM_HUE)
+        return
     sysmsg(f"Pack Rat scan done in {time.time() - t0:.0f}s: {len(snap['items'])} items in "
            f"{len(snap['roots'])} containers -> {fname}")
     for c in counts:
@@ -719,7 +733,7 @@ def main():
         sysmsg(f"  house too large to record: {HOUSE_TOO_LARGE[0]} tiles", INFO_HUE)
     if NO_TOOLTIP:
         sysmsg(f"  {len(NO_TOOLTIP)} item{'s' if len(NO_TOOLTIP) != 1 else ''} recorded without a tooltip (it did not arrive in time)", INFO_HUE)
-    if moved:
+    if cut == "moved":
         sysmsg("You moved away, so the scan stopped. Run it again from where you started.", ALARM_HUE)
 
 

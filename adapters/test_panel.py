@@ -2,7 +2,7 @@
 
 The fake is fake_clients.tazuo_panel_api: its window, what each button starts or stops and under which relative path, the show/hide hotkey read from the app's tazuo-panel.json, and the heartbeat the installer reads.
 
-Covers: each button's script path under a group folder, the bridge button following state, the not-started message, the hotkey re-read from `tazuo-panel.json` (a bare letter refused), the window hidden and rebuilt, starting hidden when `showAtLogin` is off, the Show at login button, and the heartbeat. Put away (issue #131): the target cursor (nothing picked, not a container, a book, a corpse, trash, another mobile's pack, a chest out of reach, a blacklisted bag, each refused with its reason, and only a chest in reach starting a scan), the refresh run for a bag in the pack, the request written after its scan file with the picked container, the character and where it stands, the shared variable set to that container for the run and cleared after it, each trip's result followed and a new request after a trip that put everything, the bridge required, an app that does not answer, Cancel put away (the stop flag written, the button's name back), a trip that never reports back ending the run with the stop flag written, and a client whose shared variable does not hold ending the run before any request. Also (2.12.0, issue #10) the House map refresh button beside Character refresh starting `packrat-house-map-refresh.py`, refused while a Put away runs, a `-house` file neither the last scan nor the scan Put away waits for, the Running line within 48 characters with all five scripts running, and every button and line inside the window with no two buttons overlapping.
+Covers: each button's script path under a group folder, the bridge button following state, the three scan buttons reading Stop scan while their script runs and stopping it (issue #298; stopping the scan a Put away waits for cancels the Put away), the not-started message, the hotkey re-read from `tazuo-panel.json` (a bare letter refused), the window hidden and rebuilt, starting hidden when `showAtLogin` is off, the Show at login button, and the heartbeat. Put away (issue #131): the target cursor (nothing picked, not a container, a book, a corpse, trash, another mobile's pack, a chest out of reach, a blacklisted bag, each refused with its reason, and only a chest in reach starting a scan), the refresh run for a bag in the pack, the request written after its scan file with the picked container, the character and where it stands, the shared variable set to that container for the run and cleared after it, each trip's result followed and a new request after a trip that put everything, the bridge required, an app that does not answer, Cancel put away (the stop flag written, the button's name back), a trip that never reports back ending the run with the stop flag written, and a client whose shared variable does not hold ending the run before any request. Also (2.12.0, issue #10) the House map refresh button beside Character refresh starting `packrat-house-map-refresh.py`, refused while a Put away runs, a `-house` file neither the last scan nor the scan Put away waits for, the Running line within 48 characters with all five scripts running, and every button and line inside the window with no two buttons overlapping.
 
 Run: python3 adapters/test_panel.py  (app/adapters.test.mts also spawns it, so `npm test` does).
 """
@@ -75,6 +75,24 @@ class Panel(unittest.TestCase):
         self.assertFalse(api.windows[0].IsVisible, "Close hides the window")
         self.assertGreaterEqual(w.clock.now - w.clock.start, 30, "and the panel keeps running")
         self.assertEqual(w.calls, [], "the panel takes no action in the world")
+
+    def test_a_scan_button_reads_stop_scan_while_its_script_runs_and_stops_it(self):
+        w = World()
+        api = tazuo_panel_api(w, loaded=list(ALL))
+        seen, buttons = {}, []
+        for at, text in ((1, "Scan here"), (2, "Character refresh"), (3, "House map refresh")):
+            w.clock.at(at, lambda text=text: buttons.append(self.control(api, text)) or api.click(buttons[-1]))
+        w.clock.at(6, lambda: seen.setdefault("on", self.labels(api)))
+        for at in (7, 8, 9):
+            w.clock.at(at, lambda at=at: api.click(buttons[at - 7]))
+        w.clock.at(12, lambda: seen.setdefault("off", self.labels(api)))
+        self.run_panel(w, api, until_s=14)
+        self.assertEqual(seen["on"].count("Stop scan"), 3)
+        self.assertNotIn("Scan here", seen["on"])
+        self.assertEqual(sorted(c[1] for c in api.log if c[0] == "stop"), sorted(["packrat-scanner.py", "packrat-character-refresh.py", "packrat-house-map-refresh.py"]))
+        self.assertNotIn("Stop scan", seen["off"])
+        for text in ("Scan here", "Character refresh", "House map refresh"):
+            self.assertIn(text, seen["off"])
 
     def test_every_button_and_line_fits_the_window_and_no_two_buttons_overlap(self):
         w = World()
@@ -345,6 +363,17 @@ class Panel(unittest.TestCase):
         self.assertIn("The trip did not report back.", self.labels(api))
         self.assertTrue(os.path.isfile(self.path("bridge", "stop")), "a slow trip never goes on unattended")
         self.assertEqual(api.shared["packrat_putaway"], "")
+
+    def test_stopping_the_scan_a_put_away_waits_for_cancels_the_put_away(self):
+        w, api = self.house([CHEST])
+        w.clock.at(1, lambda: api.click(self.control(api, "Put away...")))
+        w.clock.at(3, lambda: api.click(self.control(api, "Stop scan")))
+        w.clock.at(4, lambda: self.write({}, "inbox", "tazuo", "Tester-20260930-120000.json"))   # what the stopped scan wrote
+        self.run_panel(w, api, until_s=8)
+        self.assertIn(("stop", "packrat-scanner.py"), api.log)
+        self.assertIn("Put away canceled.", self.labels(api))
+        self.assertFalse(os.path.exists(self.path("inbox", "tazuo", "putaway-request.json")), "no request from the stopped scan's file")
+        self.assertEqual(api.shared.get("packrat_putaway", ""), "")
 
     def test_put_away_can_be_cancelled_and_ends_at_once_on_a_client_without_shared_variables(self):
         w, api = self.house([PACK, PACK])

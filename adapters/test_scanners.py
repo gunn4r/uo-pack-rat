@@ -10,7 +10,7 @@ Issue #10: a scan inside a house records its tiles and where the player stood, k
 
 The TazUO house map refresh (2.12.0, issue #10): a house-only file (`kind: "house"`, no inventory) named `<Character>-<stamp>-house.json` with the tiles, furniture and every chest, no container opened and no tooltip or OPL request, its one summary line, trash by cached name, blacklisted containers and corpses kept out of the chests, nothing written outside a house, without the multi calls or past the tile cap (each said in one line), the tiles kept and the furniture claim left out when the ground read fails, nothing written after a Stop, and a run without `__file__`; the trash containers the roots pass skipped written as `house.trash` (issue #162), with no field when there were none or no house.
 
-Issue #298: a TazUO scan whose player moves more than 15 tiles away or to another facet partway stops before the next root and before the house capture (the roots read are written, the rest left out, no house, the in-game line saying why), while a few steps change nothing; tooltips that arrive late (the fake's `late_tooltips`) are waited for, re-asked for only while missing, and ones that never arrive are waited for a bounded time, the root recorded as not opened when most of it has none, else counted in the summary.
+Issue #298: a TazUO scan whose player moves more than 15 tiles away or to another facet partway stops right after the root under way and before the house capture (the roots finished are written, that one and the rest left out, no house, the in-game line saying why); a Stop while a root opens, or one that interrupts a pause inside it, writes the roots finished the same way with its own line, and a Stop before any root is finished writes nothing, while a few steps change nothing; tooltips that arrive late (the fake's `late_tooltips`) are waited for, re-asked for only while missing, and ones that never arrive are waited for a bounded time, the root recorded as not opened when most of it has none, else counted in the summary.
 
 The Razor scanner records a worn piece on its own layer (`GetItemOnLayer` in the fake answers an item added with `Layer=`); that test's world is the one `adapters/razor-enhanced/fixture.scan.json` is made from. With `PACKRAT_TEST_OUTPUTS` set to a folder, `fake_clients.py`'s `run_script` copies every scan a script writes into it, for `app/adapter-outputs.test.mts`.
 
@@ -137,7 +137,16 @@ class TazUOScanner(DataDir, unittest.TestCase):
         self.assertEqual(sorted(i["serial"] for i in s["items"]), [RING, RING2])
         self.assertIn(str(BAG), json.loads(json.dumps(s["containers"])))
 
-    def test_stop_while_the_last_root_opens_writes_nothing(self):
+    def only_the_pack(self, w):
+        """A stopped scan wrote the backpack it finished and nothing of the chest it was reading, and said so."""
+        [s] = self.scans("tazuo")
+        self.assertEqual([r["serial"] for r in s["roots"]], [PACK])
+        self.assertNotIn(str(CHEST), s["containers"])
+        self.assertEqual([i["serial"] for i in s["items"]], [RING2])
+        self.assertNotIn("house", s)
+        self.assertIn("Scan stopped. Chests it had not finished keep what Pack Rat knew.", w.messages)
+
+    def test_stop_while_a_root_opens_writes_the_finished_roots_and_not_that_one(self):
         w = World(); home(w)
         api = tazuo_api(w, PACK)
         opener = w.open
@@ -147,8 +156,32 @@ class TazUOScanner(DataDir, unittest.TestCase):
                 api.StopRequested = True
             return opener(serial)
         api.UseObject = lambda s, *a: open_then_stop(int(s))
+        w.multis = house_tiles(5, 5, 12, 12)
         run_script(self.SCRIPT, w, api=api)
-        self.assertEqual(self.scans("tazuo"), [], "a stopped scan must not write a chest it never read")
+        self.only_the_pack(w)
+
+    def test_stop_before_any_root_is_finished_writes_nothing(self):
+        w = World(); home(w)
+        api = tazuo_api(w, PACK)
+        opener = w.open
+        api.UseObject = lambda s, *a: (setattr(api, "StopRequested", True), opener(int(s)))[1]
+        run_script(self.SCRIPT, w, api=api)
+        self.assertEqual(self.scans("tazuo"), [])
+        self.assertIn("Pack Rat scan stopped — nothing written.", w.messages)
+
+    def test_a_stop_that_interrupts_a_pause_inside_a_root_still_writes_the_finished_roots(self):
+        w = World(); home(w)
+        api = tazuo_api(w, PACK)
+        pause = api.Pause
+
+        def interrupted(sec):
+            if any(c == ("open", CHEST) for c in w.calls):
+                api.StopRequested = True
+                raise RuntimeError("Thread interrupted")   # what the client's Stop does to a blocking call
+            pause(sec)
+        api.Pause = interrupted
+        run_script(self.SCRIPT, w, api=api)
+        self.only_the_pack(w)
 
     def test_a_locked_root_is_recorded_not_opened(self):
         w = World(); home(w); w.locked.add(CHEST)
@@ -244,7 +277,7 @@ class TazUOScanner(DataDir, unittest.TestCase):
         # The client cancels a stopped script's token, and FindItem then returns nothing.
         api.FindItem = lambda s: None if api.StopRequested else finder(s)
         run_script(self.SCRIPT, w, api=api)
-        self.assertEqual(self.scans("tazuo"), [])
+        self.only_the_pack(w)
         self.assertEqual(self.closed(w), [CHEST, PACK])
 
     def test_after_a_stop_closing_gives_up_within_the_clients_stop_grace(self):
@@ -264,7 +297,7 @@ class TazUOScanner(DataDir, unittest.TestCase):
         w.on_close = lambda serial: started.append(w.clock.now)
         run_script(self.SCRIPT, w, api=api)
         self.assertTrue(t0, "the scan should have seen the Stop")
-        self.assertEqual(self.scans("tazuo"), [])
+        self.only_the_pack(w)
         self.assertTrue(started, "some windows still close after a Stop")
         # From the first window lookup to the end of the last one.
         self.assertLessEqual(max(started) - (min(started) - w.gump_delay), 2.0)
@@ -588,15 +621,16 @@ class TazUOScanner(DataDir, unittest.TestCase):
     def test_moving_away_stops_the_scan_keeps_the_finished_roots_and_writes_no_house(self):
         moved = "You moved away, so the scan stopped. Run it again from where you started."
         s, w = self.moving_scan(CHEST, to=(400, 900))
-        self.assertTrue(self.root(s, CHEST)["opened"])
-        self.assertEqual([r["serial"] for r in s["roots"]], [PACK, CHEST], "a root the scan never reached is left out")
+        self.assertEqual([r["serial"] for r in s["roots"]], [PACK], "the root the player left while it was read, and the ones never reached, are left out")
+        self.assertNotIn(str(CHEST), s["containers"])
+        self.assertEqual([i["serial"] for i in s["items"]], [RING2])
         self.assertNotIn(CHEST2, self.opened(w))
         self.assertNotIn("house", s)
         self.assertIn(moved, w.messages)
         with self.subTest("a facet change on the last root"):
             shutil.rmtree(os.path.join(self.data, "inbox"), ignore_errors=True)
             s, w = self.moving_scan(CHEST2, facet=4)
-            self.assertEqual([r["serial"] for r in s["roots"]], [PACK, CHEST, CHEST2])
+            self.assertEqual([r["serial"] for r in s["roots"]], [PACK, CHEST])
             self.assertNotIn("house", s, "the house is captured from where the player stands now")
             self.assertIn(moved, w.messages)
         with self.subTest("a few steps"):
