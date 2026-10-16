@@ -91,9 +91,8 @@ function templateCards(name: string): HTMLElement {
     const builtin = ref.startsWith(BUILTIN_PREFIX), on = ref === current, st = templateSettings(t);
     const tag = ref === suggested ? "Suggested" : builtin ? "Built-in" : "Yours";
     const line = builtin ? t.description || needsLine(st.floors || {}, st.softFloors || [], label) : t.savedAt ? `Saved ${shortDate(t.savedAt)}` : "Your template";
-    // on the selected card's accent fill the badge is the plain one, so it keeps its pill
     return box("button", { type: "button", class: `b-tpl-card${on ? " on" : ""}`, "aria-pressed": String(on), "data-k": `tpl:${ref}`, title: line, onclick: () => commands.pickTemplate(ref) },
-      badge(tag, tag === "Yours" || on ? undefined : "accent"), txt(templateName(state.builtinTemplates, ref), "strong"), txt(line, "t-sm muted b-tpl-line"));
+      badge(tag, tag === "Yours" ? undefined : "accent"), txt(templateName(state.builtinTemplates, ref), "strong"), txt(line, "t-sm muted b-tpl-line"));
   };
   return box("div", { class: "b-tpl-cards", role: "group", "aria-label": "Templates" }, ...refs.map(card));
 }
