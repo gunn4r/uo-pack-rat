@@ -1,6 +1,6 @@
 // ui-builder.test.mts — [slow]: the Suit Builder's keyboard, hover and panel behavior in the real Electron window.
 //
-// `[slow]`: the Suit Builder's keyboard and hover behaviour in the real Electron window, on a writable `--data` directory seeded with the demo scans: the Settings drawer (issue #272): ⌘, (Ctrl+,) and its button open it with the focus on its tab, Esc closes it onto the button, ← and → move between the tabs, each showing its own controls, a bad requirement opens it on Requirements when Build is pressed, its footer counts the settings changed since the shown run (none, then one after a weight edit), and its tab is remembered across a reload; the result's What changes (issue #272): Gauges by default with one gauge per moved non-resist property and a loss muted, Table with every property and no score breakdown, the choice kept across a reload, a breakdown row opening its weight in the drawer (Esc back to the row), a buff's past-cap note kept, and no sideways page scroll at 420 px; a raised resist cap (Fire 95) marked in the Resist caps group, built with, shown on the result's Fire tile and the saved run's badge, kept by Save profile across a reload, refused out of range with the error under the field, and reset to the shard's cap; ⌘↵ (Ctrl+Enter) builds with focus on the page body and while typing in a field in the drawer, and does nothing behind the Saved runs drawer; the Fetch list's pieces show the item tooltip on hover and after Tab focus, and so do both names in a Plan row, each its own piece's (issue #75; the row itself and its Slot cell show none, a kept row's worn name still does); a Fetch list row shows a deep bag path in full (nothing cut or ellipsised) and its copy button puts the container serial on the clipboard; STR limit is beside Race under Advanced, and a bad value there opens the drawer on it; a switch's on track is at least 3:1 against its off track, with the knob moved right, in Default and Britannia, light and dark; two excluded weapon skills show on the Weapons chip and survive Save profile and a reload; Check your settings (issue #217): a hard Luck requirement no suit reaches is named with the best possible above the progress panel and in the result, and Lower and Make soft edit the panel's floor and the template badge without starting a build; a weight row's weight row shows its importance and its hover follows the typed weight (the trade-off with the top property, or that it is the top one), and Set weight (a Luck weight that swamps the rest) edits the panel and the template badge, but not once the weight was changed since the build. Swing steps (issue #217), with Kestrel's worn weapon made the pool's best: the SSI weight's switch shows the worn weapon's steps and marks the template changed; the result says SSI was scored per point with Lock Weapon (1H) and shows the swing line, Next step follows the result's swing (none before the build); Lock starts no build and the next build scores by step; the switch is kept in the saved run's settings and by Save profile across a reload. Casting school (issue #213): the Faster Casting cap and its source beside the select, raised to 4 by naming Chivalry, which marks the template changed, and on a new FC requirement row that starts at the cap. Rarity (issue #262): Lower marks the template changed and shows a help line, the result's Solver details carry the Rarity row with the rarity total, Save profile keeps it, and applying a template without one clears it. Templates (issue #212): the built-ins listed first under their own names, a built-in's badge, description, buffs and source under the picker; Apply sets Manual's buffs as one undo step that Undo takes back; the badge counts a buff changed since; Save as keeps the buffs. Manual mode (issue #12): a slot opens the picker on its pieces, a row picked with the keyboard (focus, Enter) fills the slot, moves the totals and says so in the status line, the picker stays on that slot with the picked row marked "In this slot", the undo key empties the slot again (the status line saying what was undone) and redo puts the piece back, Esc closes it with focus back on the slot card, and the mode and the suit are in `ui-prefs.json`; and the hand-offs: another character picked mid-fill cancels the fill and leaves the suit alone, Fill the rest automatically fills empty slots around a placed ring in one undo step and shows the fetch list, Save as run puts a Manual run in the drawer that opens in the result view with Open in Manual, and an Automatic result's Start from this result loads it into Manual as one undo step. No character in Automatic (issue #12): no Race row, the buff picker speaking of no character, no "_nobody" anywhere in the page text, the Caster template's requirements, a build headed "Best suit · No character" with Grab disabled and its reason while no bridge is online, and with a bridge online on Kestrel (stubbed) Grab all queueing one grab per piece and the toast naming her, a Suit totals card, its run in its own drawer, Save profile kept across a reload, Manual on its No character, and Kestrel picked back with her own panel. Only containers (issue #12): the chip lists the same containers as Skip containers, counts the one checked, the build's saved run keeps the list, Save profile keeps it across a reload, and cleared it leaves the saved profile. The drawer's extras (issue #272): a weight's notched slider steps by 5 with its field following and never resizes another row, a value past 100 tagged, ± in the warn tone; the buffs by school with the character's skill, castable ones first and the rest greyed with their need; each requirement's status from the last build; no sideways scroll at 420 px. Arriving (issue #272): the first-visit view's four template cards, summary and Build, a card applying its template and saving it as the character's settings without any card moving, a result staying put through a scans refresh and a character switch and back, a reload with nothing changed coming back to the latest run with no settings changed and staying through a scans refresh, New build, another character's run opened from the first-visit view, and a newer scan's gear-changed banner (live and after a reload) whose Build again builds the run's settings. A card asks before it replaces tuned, saved settings (Cancel leaves the saved profile on disk as it was, Replace saves the card's template), and a runs list refreshed right after a character switch still lets the first-visit view or a run come up.
+// `[slow]`: the Suit Builder's keyboard and hover behaviour in the real Electron window, on a writable `--data` directory seeded with the demo scans: Goals (issue #292): a template's ranked goals with what each counts, ↓ moving a rank and its counts, = linking a row, another spare-points choice counted as one change, How the goals went after a build, a weight edited under the fine-tune switch folding the goals until Start from goals again, no sideways scroll at 420 px, and a profile with no goals opening on its weights; the Settings drawer (issue #272): ⌘, (Ctrl+,) and its button open it with the focus on its tab, Esc closes it onto the button, ← and → move between the tabs, each showing its own controls, a bad requirement opens it on Requirements when Build is pressed, its footer counts the settings changed since the shown run (none, then one after a weight edit), and its tab is remembered across a reload; the result's What changes (issue #272): Gauges by default with one gauge per moved non-resist property and a loss muted, Table with every property and no score breakdown, the choice kept across a reload, a breakdown row opening its weight in the drawer (Esc back to the row), a buff's past-cap note kept, and no sideways page scroll at 420 px; a raised resist cap (Fire 95) marked in the Resist caps group, built with, shown on the result's Fire tile and the saved run's badge, kept by Save profile across a reload, refused out of range with the error under the field, and reset to the shard's cap; ⌘↵ (Ctrl+Enter) builds with focus on the page body and while typing in a field in the drawer, and does nothing behind the Saved runs drawer; the Fetch list's pieces show the item tooltip on hover and after Tab focus, and so do both names in a Plan row, each its own piece's (issue #75; the row itself and its Slot cell show none, a kept row's worn name still does); a Fetch list row shows a deep bag path in full (nothing cut or ellipsised) and its copy button puts the container serial on the clipboard; STR limit is beside Race under Advanced, and a bad value there opens the drawer on it; a switch's on track is at least 3:1 against its off track, with the knob moved right, in Default and Britannia, light and dark; two excluded weapon skills show on the Weapons chip and survive Save profile and a reload; Check your settings (issue #217): a hard Luck requirement no suit reaches is named with the best possible above the progress panel and in the result, and Lower and Make soft edit the panel's floor and the template badge without starting a build; a weight row's weight row shows its importance and its hover follows the typed weight (the trade-off with the top property, or that it is the top one), and Set weight (a Luck weight that swamps the rest) edits the panel and the template badge, but not once the weight was changed since the build. Swing steps (issue #217), with Kestrel's worn weapon made the pool's best: the SSI weight's switch shows the worn weapon's steps and marks the template changed; the result says SSI was scored per point with Lock Weapon (1H) and shows the swing line, Next step follows the result's swing (none before the build); Lock starts no build and the next build scores by step; the switch is kept in the saved run's settings and by Save profile across a reload. Casting school (issue #213): the Faster Casting cap and its source beside the select, raised to 4 by naming Chivalry, which marks the template changed, and on a new FC requirement row that starts at the cap. Rarity (issue #262): Lower marks the template changed and shows a help line, the result's Solver details carry the Rarity row with the rarity total, Save profile keeps it, and applying a template without one clears it. Templates (issue #212): the built-ins listed first under their own names, a built-in's badge, description, buffs and source under the picker; Apply sets Manual's buffs as one undo step that Undo takes back; the badge counts a buff changed since; Save as keeps the buffs. Manual mode (issue #12): a slot opens the picker on its pieces, a row picked with the keyboard (focus, Enter) fills the slot, moves the totals and says so in the status line, the picker stays on that slot with the picked row marked "In this slot", the undo key empties the slot again (the status line saying what was undone) and redo puts the piece back, Esc closes it with focus back on the slot card, and the mode and the suit are in `ui-prefs.json`; and the hand-offs: another character picked mid-fill cancels the fill and leaves the suit alone, Fill the rest automatically fills empty slots around a placed ring in one undo step and shows the fetch list, Save as run puts a Manual run in the drawer that opens in the result view with Open in Manual, and an Automatic result's Start from this result loads it into Manual as one undo step. No character in Automatic (issue #12): no Race row, the buff picker speaking of no character, no "_nobody" anywhere in the page text, the Caster template's requirements, a build headed "Best suit · No character" with Grab disabled and its reason while no bridge is online, and with a bridge online on Kestrel (stubbed) Grab all queueing one grab per piece and the toast naming her, a Suit totals card, its run in its own drawer, Save profile kept across a reload, Manual on its No character, and Kestrel picked back with her own panel. Only containers (issue #12): the chip lists the same containers as Skip containers, counts the one checked, the build's saved run keeps the list, Save profile keeps it across a reload, and cleared it leaves the saved profile. The drawer's extras (issue #272): a weight's notched slider steps by 5 with its field following and never resizes another row, a value past 100 tagged, ± in the warn tone; the buffs by school with the character's skill, castable ones first and the rest greyed with their need; each requirement's status from the last build; no sideways scroll at 420 px. Arriving (issue #272): the first-visit view's four template cards, summary and Build, a card applying its template and saving it as the character's settings without any card moving, a result staying put through a scans refresh and a character switch and back, a reload with nothing changed coming back to the latest run with no settings changed and staying through a scans refresh, New build, another character's run opened from the first-visit view, and a newer scan's gear-changed banner (live and after a reload) whose Build again builds the run's settings. A card asks before it replaces tuned, saved settings (Cancel leaves the saved profile on disk as it was, Replace saves the card's template), and a runs list refreshed right after a character switch still lets the first-visit view or a run come up.
 //
 // Each of the older cases is maintainer feedback on the redesign (PR #43), plus the resist cap overrides (issue #44), the weapon exclusions (issue #45) and the Weapon must have chip (issue #214). Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
 import test from "node:test";
@@ -39,10 +39,13 @@ async function launch(dataDir: string): Promise<{ app: ElectronApplication; page
   await fitWindow(app, page, { width: 1440, height: 900 });
   return { app, page, errors };
 }
-// The Settings drawer (issue #272) open on one of its tabs, and closed again (the focus back on the Settings button).
-async function settings(page: Page, tab: "requirements" | "weights" | "buffs" | "pool" | "advanced"): Promise<void> {
+// The Settings drawer (issue #272) open on one of its tabs, and closed again (the focus back on the Settings button). On the
+// Goals tab, the weights the goals set are shown too (issue #292), unless `weights` is false.
+async function settings(page: Page, tab: "requirements" | "weights" | "buffs" | "pool" | "advanced", { weights = true }: { weights?: boolean } = {}): Promise<void> {
   if (await page.locator("#b-drawer").isHidden()) await page.click("#b-settings");
   await page.click(`#b-tab-${tab}`);
+  const fine = page.locator("#b-finetune");
+  if (tab === "weights" && weights && await fine.isVisible() && !await fine.isChecked()) await fine.check();
 }
 async function closeSettings(page: Page): Promise<void> {
   if (await page.locator("#b-drawer").isVisible()) await page.click("#b-drawer-close");
@@ -120,7 +123,7 @@ test("[slow] the Settings drawer: ⌘, and its button, Esc, the tabs, an error's
     assert.equal(await focused(), "b-settings", "Esc gives the focus back to the Settings button");
     await page.click("#b-settings");
     await page.click("#b-tab-requirements");
-    const controls: Array<[string, string]> = [["requirements", "#b-addfloor"], ["weights", "#b-addweight"], ["buffs", "#b-buff-add"], ["pool", "#b-weapon"], ["advanced", "#b-exact"]];
+    const controls: Array<[string, string]> = [["requirements", "#b-addfloor"], ["weights", "#b-addgoal"], ["buffs", "#b-buff-add"], ["pool", "#b-weapon"], ["advanced", "#b-exact"]];
     for (const [tab, sel] of controls) {
       assert.equal(await page.getAttribute(`#b-tab-${tab}`, "aria-selected"), "true");
       assert.equal(await page.locator(sel).isVisible(), true, `${tab} shows ${sel}`);
@@ -395,7 +398,87 @@ test("[slow] Check your settings: the block shows before and after the build, an
   }
 });
 
-// Issues #217, #274: Kestrel's Melee weights with Luck at importance 2000. The Luck row shows the template's per-point 0.05 as importance 5.6, and its hover names the trade-off with the top weight until Luck becomes the top one; the build names Luck in "Check your settings" with Set Luck; a weight changed since the build leaves Set Luck doing nothing, and on a fresh build it sets the panel's weight and marks the template badge.
+// Issue #292: the Goals tab. Dorran's Melee opens on its goals (Swing speed, then Hit chance = Defense chance, then Damage,
+// spare points to Luck) with what each rank counts; ↓ on Swing speed moves it under the linked pair and the counts follow;
+// "=" links Damage to the rank above; another spare-points choice is one change since the build; a build shows "How the
+// goals went" beside the result; a weight edited under "Show the weights these goals set" folds the goals into "Using your
+// own weights" and "Start from goals again" brings them back with nothing changed; at 420 px the page never scrolls
+// sideways. Kestrel's saved profile, written with weights and no goals, opens on its weights as before goals.
+test("[slow] goals: the ranked list, its counts, =, spare points, How the goals went, fine-tune and back, a profile with no goals", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = seedDataDir("packrat-ui-goals-");
+  const pool = { lockedSlots: [], excludeTags: [], excludeSkills: [], excludeRoots: [], excludeWeapons: [], ubwsAnyWeapon: true, allowOthersWorn: false, allowGargoyle: false, medOnly: false, strLimit: "character" };
+  writeFileSync(join(dataDir, "profiles.json"), JSON.stringify({ schemaVersion: 3, templates: {}, characters: { Kestrel: { race: "human", template: "builtin:melee",
+    spec: { intent: { floors: {}, softFloors: [], weights: { dci: 10, luck: 1 }, floorBonus: 1000, resistCaps: {} }, buffs: { on: [], skills: {} }, pool } } } }));
+  const { app, page, errors } = await launch(dataDir);
+  try {
+    await openBuilder(page);
+    await page.selectOption("#b-char", "Dorran");
+    await page.waitForFunction(() => document.querySelector("#b-start h2")?.textContent === "What should Dorran's suit be for?", undefined, { timeout: 10_000 });
+    await settings(page, "weights", { weights: false });
+    await page.waitForSelector("#b-goals-h");
+    assert.equal(await page.locator("#b-goals-h").innerText(), "What should this suit be best at?");
+    const rows = (): Promise<string[]> => page.locator("#b-sec-goals .b-goal").evaluateAll((ls) => ls.map((l) => `${l.querySelector(".b-goal-name")!.textContent} ${l.querySelector(".b-goal-counts")!.textContent}`));
+    assert.deepEqual(await rows(), ["1.Swing speed counts 100 · max 60", "2.Hit chance counts 80 · max 45", "2.Defense chance counts 80 · max 45", "3.Damage counts 65 · max 100"]);
+    assert.equal(await page.locator("#b-sec-weights").isHidden(), true, "the weights stay out of sight");
+    // ↓ moves Swing speed's rank under the linked pair, and the focus stays on the row's arrows
+    await page.locator('.b-goal[data-key="ssi"] .b-goal-down').click();
+    assert.deepEqual(await rows(), ["1.Hit chance counts 100 · max 45", "1.Defense chance counts 100 · max 45", "2.Swing speed counts 80 · max 60", "3.Damage counts 65 · max 100"]);
+    assert.equal(await page.evaluate(() => document.activeElement?.closest(".b-goal")?.getAttribute("data-key")), "ssi");
+    await page.locator('.b-goal[data-key="ssi"] .b-goal-up').click();
+    // "=" links Damage to the rank above
+    const link = page.locator('.b-goal[data-key="di"] .pill');
+    assert.equal(await link.getAttribute("aria-pressed"), "false");
+    await link.click();
+    assert.deepEqual(await rows(), ["1.Swing speed counts 100 · max 60", "2.Hit chance counts 80 · max 45", "2.Defense chance counts 80 · max 45", "2.Damage counts 80 · max 100"]);
+    assert.equal(await page.locator('.b-goal[data-key="di"] .pill').getAttribute("aria-pressed"), "true");
+    await page.locator('.b-goal[data-key="di"] .pill').click();
+    assert.match(await page.locator("#b-tpl-state").innerText(), /matches/, "back as the template had it");
+
+    // a build, then another spare-points choice is one change
+    await page.click("#b-run-foot");
+    await built(page);
+    const count = (want: string): Promise<unknown> => page.waitForFunction((w) => document.querySelector("#b-changes")?.textContent === w, want, { timeout: 10_000 });
+    await count("No changes since the last build");
+    assert.match(await page.locator("#b-goals-went").innerText(), /^How the goals went\n1\.\s*Swing speed[\s\S]*3\.\s*Damage[\s\S]*(maxed|as high as the gear allows)[\s\S]*Spare points went to: /);
+    await page.click('#b-leftover [data-value="melee"]');
+    await count("1 change since the last build");
+    await page.click('#b-leftover [data-value="luck"]');
+    await count("No changes since the last build");
+
+    // fine-tune: a weight edited leaves goal mode; Start from goals again brings the goals back
+    await page.locator("#b-finetune").check();
+    const luck = page.locator('#b-sec-weights .rule-row[data-key="luck"] input[type=range]');
+    await luck.focus();
+    await page.keyboard.press("ArrowRight");
+    await page.waitForSelector("#b-goals-again");
+    assert.match(await page.locator("#b-sec-goals").innerText(), /^Using your own weights\.\s*Start from goals again$/);
+    assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("type")), "range", "the slider keeps the focus");
+    await count("1 change since the last build");
+    await page.click("#b-goals-again");
+    await page.waitForSelector("#b-goals-h");
+    await count("No changes since the last build");
+
+    // at phone width the drawer fits without a sideways scroll
+    await fitWindow(app, page, { width: 420, height: 900 });
+    const widths = await page.evaluate(() => [document.documentElement.scrollWidth, innerWidth, document.querySelector("#b-drawer .b-drawer-body")!.scrollWidth, document.querySelector("#b-drawer .b-drawer-body")!.clientWidth]);
+    assert.ok(widths[0]! <= widths[1]! && widths[2]! <= widths[3]!, `no sideways scroll: ${widths.join(", ")}`);
+    await fitWindow(app, page, { width: 1440, height: 900 });
+
+    // a profile saved with weights and no goals opens on its weights
+    await page.selectOption("#b-char", "Kestrel");
+    await page.waitForSelector('#b-sec-weights .rule-row[data-key="dci"]');
+    assert.equal(await page.locator("#b-sec-goals").isHidden(), true);
+    assert.equal(await page.locator("#b-sec-weights").isVisible(), true);
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  }
+});
+
+// Issues #217, #274: Kestrel's Melee weights with Luck at importance 2000. The Luck row shows the template's per-point 0.045 (its goals' spare points) as importance 5, and its hover names the trade-off with the top weight until Luck becomes the top one; the build names Luck in "Check your settings" with Set Luck; a weight changed since the build leaves Set Luck doing nothing, and on a fresh build it sets the panel's weight and marks the template badge.
 test("[slow] weight scale: the row shows importance with a trade-off hover, and Set weight edits the panel only while it holds the build's weight", async (t) => {
   const why = unavailable();
   if (why) return t.skip(why);
@@ -413,8 +496,8 @@ test("[slow] weight scale: the row shows importance with a trade-off hover, and 
       const e = document.getElementById(i?.getAttribute("aria-describedby")?.split(" ")[0] ?? "");
       return !!e && new RegExp(w).test(e.textContent ?? "");
     }, want, { timeout: 5_000 });
-    assert.equal(await field.inputValue(), "5.56", "the importance as stored, to two decimals");
-    await hover("^At these settings, 1 (DCI|HCI) is worth about 200 Luck\\.$");
+    assert.equal(await field.inputValue(), "5", "the importance as stored, to two decimals");
+    await hover("^At these settings, 1 SSI is worth about 167 Luck\\.$");
     await field.fill("2000");
     await hover("^Luck has the highest weight: the other weights are compared with it\\.$");
     await field.fill("");
@@ -439,7 +522,7 @@ test("[slow] weight scale: the row shows importance with a trade-off hover, and 
     await closeSettings(page);
     await block.getByRole("button", { name: `Set Luck to ${to}` }).click();
     assert.equal(await field.inputValue(), to, "the panel's weight is set");
-    await hover("^At these settings, 1 (DCI|HCI) is worth about \\d+ Luck\\.$");
+    await hover("^At these settings, 1 SSI is worth about \\d+ Luck\\.$");
     assert.match(await page.locator("#b-tpl-state").innerText(), new RegExp(`Luck weight [\\d.]+ → ${to.replace(".", "\\.")}`), "the template badge names the change");
     assert.equal(await block.getByRole("button", { name: "Set ✓" }).isDisabled(), true);
     assert.deepEqual(errors, []);
@@ -707,7 +790,7 @@ test("[slow] drawer extras: notched weight sliders, buffs by school, each requir
   }
 });
 
-// Issue #217 (swing steps), on Kestrel with her worn War Axe made the best weapon in the pool (strong properties, Swordsmanship), so the result holds the worn weapon: the SSI weight row's switch, with the worn weapon's steps under it, marks the template changed; the build says SSI was scored per point (the pool holds weapons of several speeds) and offers Lock Weapon (1H), shows the swing line, and Next step follows the result's swing (none before the build); Lock edits the panel without a build, and the next build scores by step with no warning; the switch is kept in the saved run's settings and by Save profile across a reload.
+// Issue #217 (swing steps), on Kestrel with her worn War Axe made the best weapon in the pool (strong properties, Swordsmanship), so the result holds the worn weapon: the SSI weight row's switch, on from Melee's Swing speed goal (issue #292) with the worn weapon's steps under it, marks the template changed when turned off; the build says SSI was scored per point (the pool holds weapons of several speeds) and offers Lock Weapon (1H), shows the swing line, and Next step follows the result's swing (none before the build); Lock edits the panel without a build, and the next build scores by step with no warning; the switch is kept in the saved run's settings and by Save profile across a reload.
 test("[slow] swing steps: the switch, the swing line, Next step from the result, Lock, and the switch saved with the run and the profile", async (t) => {
   const why = unavailable();
   if (why) return t.skip(why);
@@ -725,10 +808,12 @@ test("[slow] swing steps: the switch, the swing line, Next step from the result,
     await settings(page, "weights");
     const sw = page.locator("#b-swing-steps");
     await sw.waitFor({ timeout: 10_000 });
-    assert.equal(await sw.isChecked(), false);
+    assert.equal(await sw.isChecked(), true, "Melee's Swing speed goal scores SSI by step");
     assert.match(String(await page.locator("#b-sec-weights .b-swing-set").textContent()), /Counts SSI only where the swing gets faster\. War Axe 3 s at stamina \d+: .+ ≥ \d+/);
+    await sw.uncheck();
+    assert.match(await page.locator("#b-tpl-state").innerText(), /SSI by point/);
     await sw.check();
-    assert.match(await page.locator("#b-tpl-state").innerText(), /SSI by step/);
+    assert.match(await page.locator("#b-tpl-state").innerText(), /matches/);
     await settings(page, "requirements");
     await page.click("#b-addfloor");
     await page.click(".b-pick-list button[data-key=ssi]");

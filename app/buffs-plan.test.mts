@@ -10,7 +10,7 @@ import { BUFFS, STAT_MAX, applyBuffs, article, buffSkillValues, gearNeedsText, m
 import type { BuffPlan, BuffResult, Skills, Stats } from "./buffs.mts";
 import { solveExact, type OptPools, type OptProfile } from "./exact-solver.mts";
 import { resistMinimumText } from "./ui/builder-model.mts";
-import { cell, core, defaultProfiles, fixture, templateNames } from "./solver-fixture.mts";   // also loads the uoalive rules
+import { cell, core, defaultProfiles, fixture, STARTERS_BEFORE_GOALS, templateNames } from "./solver-fixture.mts";   // also loads the uoalive rules
 import { runKey } from "./runs-lib.mts";
 import { withReachableResistSteps } from "./mip.mts";
 
@@ -158,7 +158,7 @@ test("[fast] buffs plan: no buffs give main's profile for every default template
   };
   assert.deepEqual(templateNames, ["melee", "caster", "archer", "tank"]);
   for (const n of templateNames) for (const soft of [[], ["luck"]]) {
-    const c = cell(n, { soft, overrides: soft.length ? { resistCaps: { fireResist: 95 } } : {} });
+    const c = cell(n, { soft, overrides: { weights: STARTERS_BEFORE_GOALS[n]!, ...(soft.length ? { resistCaps: { fireResist: 95 } } : {}) } });
     assert.equal(createHash("sha1").update(JSON.stringify(withoutSteps(c.profile))).digest("hex"), MAIN[`${n}${soft.length ? "+soft" : ""}`], `${n}${soft.length ? " with a soft floor and Fire 95" : ""}`);
   }
   assert.deepEqual(plannedProfile(ALL, RS100, plan([])), effectiveProfile(ALL, RS100), "an empty set is no set");
@@ -179,7 +179,7 @@ test("[fast] buffs plan: pinned to a cap-2 casting school, every default templat
     tank: "7c14b89fc25b3455a26ae851430224d71fbae01c", "tank+soft": "7aba65777fca0964e64f51a540bacc042d0288d1",
   };
   for (const n of templateNames) for (const soft of [[], ["luck"]]) {
-    const c = cell(n, { soft, overrides: { castingSchool: "Magery", ...(soft.length ? { resistCaps: { fireResist: 95 } } : {}) } });
+    const c = cell(n, { soft, overrides: { castingSchool: "Magery", weights: STARTERS_BEFORE_GOALS[n]!, ...(soft.length ? { resistCaps: { fireResist: 95 } } : {}) } });
     assert.equal(createHash("sha1").update(JSON.stringify(withoutSteps(c.profile))).digest("hex"), BEFORE[`${n}${soft.length ? "+soft" : ""}`], `${n}${soft.length ? " with a soft floor and Fire 95" : ""}`);
   }
 });
@@ -240,7 +240,8 @@ test("[fast] buffs plan: a requirement's note: its article, a full cap, no cap a
 
 // The run key leaves out the plan's own bookkeeping, so it follows what the solvers read and nothing else.
 test("[fast] buffs plan: the run key follows the plan: Enemy of One alone keys as none, numbers no buff reads change nothing", () => {
-  const c = cell("melee"), key = (pl: BuffPlan | null): string => runKey({ pools: c.pools, current: c.current, profile: withReachableResistSteps(plannedProfile(defaultTemplate("melee"), FIXTURE, pl), c.pools as never, c.current as never), opts: { seed: 2026, restarts: 200 } });
+  const c = cell("melee"), melee = { ...defaultTemplate("melee"), weights: STARTERS_BEFORE_GOALS.melee! };
+  const key = (pl: BuffPlan | null): string => runKey({ pools: c.pools, current: c.current, profile: withReachableResistSteps(plannedProfile(melee, FIXTURE, pl), c.pools as never, c.current as never), opts: { seed: 2026, restarts: 200 } });
   const none = key(null);
   assert.equal(none, "924e23995562f98e3274fa13c0a839c03274274a", "the key for the melee template at SOLVER_VERSION 10, with the Resisting Spells steps the fixture's pool reaches (was 72d7113d… at 9, d2ef3097… at 8 with the minimum from the base skill alone, 9429d428… at 7 with the fixture's Faster Casting cap 4 from Bushido, ad809043… at a flat cap of 2, 51a4b93c… at 6, a18a559b… at 5, 2c90c9b1… at 4, ac4629c8… at 3): a change here means every saved run stops being reused");
   assert.equal(key(plan(["enemyOfOne"])), none, "Enemy of One plans like none");

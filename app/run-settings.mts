@@ -3,7 +3,7 @@
 // page's Advanced fields share, and the defaults. Pure and browser-safe: the page imports the ranges and defaults.
 import { isRunBuffs } from "./buffs.mts";
 import { isBoundedInt, isBoundedString, MAX_SERIAL, short } from "./guards.mts";
-import { CASTING_SCHOOLS, RARITY_PREFERENCES, excludeWeaponsError, resistCapsError, weaponMustHaveError, type RarityPreference } from "./vault-lib.mts";
+import { CASTING_SCHOOLS, RARITY_PREFERENCES, excludeWeaponsError, goalsError, resistCapsError, weaponMustHaveError, type RarityPreference } from "./vault-lib.mts";
 export type { RunSettings } from "./vault-lib.mts";
 
 // The search options POST /api/optimize takes in `opts`, and the range each may sit in.
@@ -41,7 +41,7 @@ const plainKey = (k: string): boolean => isBoundedString(k, 64) && !["__proto__"
 
 // A run's settings, as the Saved runs drawer keeps them (ui/runs.mts settingsSnapshot) and the optimize route's
 // by-character form reads its pool from: only the known fields, each of its type and in range, property maps with plain
-// keys (no __proto__), and the resist caps, weapon exclusions and buffs held to their own rules. A null field means
+// keys (no __proto__), and the resist caps, weapon exclusions, buffs and goals held to their own rules. A null field means
 // "the default", like an absent one. `label` names the field in the reason ("settings", "meta.settings"); null when fine.
 export function runSettingsError(settings: unknown, label: string): string | null {
   if (settings == null) return null;
@@ -71,6 +71,7 @@ export function runSettingsError(settings: unknown, label: string): string | nul
     else if (k === "castingSchool") { if (!CASTING_SCHOOLS.includes(v as string)) return `${label}.castingSchool must be one of ${CASTING_SCHOOLS.join(", ")}`; }
     else if (k === "rarity") { if (!RARITY_PREFERENCES.includes(v as RarityPreference)) return `${label}.rarity must be one of ${RARITY_PREFERENCES.join(", ")}`; }
     else if (k === "buffs") { if (!isRunBuffs(v)) return `${label}.buffs must list known buffs, each once and one form at most, with their numbers in range`; }
+    else if (k === "goals") { const e = goalsError(v, `${label}.goals`); if (e) return e; }
     else return `${label}.${short(k)} is not a run setting`;
   }
   return null;

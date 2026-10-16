@@ -4,7 +4,7 @@
 // settings snapshot a run is saved with, putting a saved run's settings back into the panel, and arriving (issue #272):
 // a character's latest run opened when it is first shown, the "<name>'s runs" card beside a result, the other characters'
 // latest runs for the first-visit view, and New build back to it.
-import { NOBODY, RESIST_KEYS, RESIST_SKILL_KEY, resistMinimum, resistSkillOf, resistSkillCapOf, totalsOf, resistCapsFor, fcCapFor } from "../vault-lib.mts";
+import { NOBODY, RESIST_KEYS, RESIST_SKILL_KEY, resistMinimum, resistSkillOf, resistSkillCapOf, totalsOf, resistCapsFor, fcCapFor, goalsActive } from "../vault-lib.mts";
 import { buffById, plannedProfile, savedBuffs } from "../buffs.mts";
 import type { RunSettings, OptItem, PropMap, Character, EffectiveProfile } from "../vault-lib.mts";
 import { state } from "./store.mts";
@@ -287,7 +287,7 @@ export async function openRun(id: string, auto = false): Promise<boolean> {
   session.result = run.result;
   // run.ms is `number | null` (a saved run's on-disk shape); run.skipped is whatever that run stored (live
   // arrays or plain counts), which the Solver details' counter reads either way.
-  await commands.renderResult(run.result, current, profileFromSettings(run.settings), name, { ms: run.ms ?? 0, poolSize: run.poolSize, skipped: run.skipped as Record<string, unknown> | undefined, reused: null });
+  await commands.renderResult(run.result, current, profileFromSettings(run.settings), name, { ms: run.ms ?? 0, poolSize: run.poolSize, skipped: run.skipped as Record<string, unknown> | undefined, reused: null, ...(goalsActive(run.settings.goals) ? { goals: run.settings.goals } : {}) });
   if (session.openRun !== id) return false;
   paintRunBanner(run, diff);
   return true;

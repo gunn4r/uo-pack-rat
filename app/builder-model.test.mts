@@ -1,12 +1,12 @@
 // builder-model.test.mts — `app/ui/builder-model.mts`, the Suit Builder's pure logic.
 //
-// `app/ui/builder-model.mts`, the Suit Builder's pure logic: No character's name in words (issue #12), the Settings drawer's count of settings changed since the last build (issue #272), the Advanced fields' validation messages with the allowed range ("Enter a whole number from 1 to 10,000.") and that the page's limits equal the server's `OPTS_LIMITS`, which field a server refusal names, a resist tile's outcome line (short, meets, at cap, over cap), the result's other-changes badges (gains first, missed requirements as losses), "after the change" values and pool estimates, the compare table's differing piece cells, best totals (past the cap counts as the cap) and hidden-rows note, the three-run compare limit, and a saved run's automatic label and badges, and the Weapons chip wording, and a weight row's trade-off hover in importance (issues #217, #274). All `[fast]`. The rarity preference (issue #262) in words: the help line, the settings change, the rarity total and the Rarity row. What made up the score (issue #273): the rows, the Other fold, a negative share set apart. A requirement's line from the result shown (issue #272). Arriving at the builder (issue #272): the latest run per character, whether the gear changed since a run (the newest scan is not the run's own, else one newer than the run; a late-landing scan counts), the run to come back to, the built-in templates suggested for a character's skills, and the first-visit summary's lines.
+// `app/ui/builder-model.mts`, the Suit Builder's pure logic: No character's name in words (issue #12), the Settings drawer's count of settings changed since the last build (issue #272), the Advanced fields' validation messages with the allowed range ("Enter a whole number from 1 to 10,000.") and that the page's limits equal the server's `OPTS_LIMITS`, which field a server refusal names, a resist tile's outcome line (short, meets, at cap, over cap), the result's other-changes badges (gains first, missed requirements as losses), "after the change" values and pool estimates, the compare table's differing piece cells, best totals (past the cap counts as the cap) and hidden-rows note, the three-run compare limit, and a saved run's automatic label and badges, and the Weapons chip wording, and a weight row's trade-off hover in importance (issues #217, #274). All `[fast]`. The rarity preference (issue #262) in words: the help line, the settings change, the rarity total and the Rarity row. What made up the score (issue #273): the rows, the Other fold, a negative share set apart. A requirement's line from the result shown (issue #272). Goals (issue #292): the goal rows and names, the Goals tab's edits (↑ ↓ move a rank, = links and unlinks, ✕, + Add a goal), a Set weight leaving goal mode, and How the goals went: each goal against its cap, the trades (a higher goal down for a lower one up, at most three, in words with the swing) and where spare points went. Arriving at the builder (issue #272): the latest run per character, whether the gear changed since a run (the newest scan is not the run's own, else one newer than the run; a late-landing scan counts), the run to come back to, the built-in templates suggested for a character's skills, and the first-visit summary's lines.
 //
 // Lives in app/ for the reason app/ui-render.test.mts gives.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { NOBODY, setRules, resistCapsFor, settingsDiff, importanceOf, roundImportance, weightOfImportance, PROP_LABELS, NOT_BUILDER_KEYS, labelOf } from "./vault-lib.mts";
+import { NOBODY, setRules, resistCapsFor, settingsDiff, importanceOf, roundImportance, weightOfImportance, PROP_LABELS, NOT_BUILDER_KEYS, labelOf, type Goals } from "./vault-lib.mts";
 import { buffSkillValues, runBuffs } from "./buffs.mts";
 import type { RulesV1 } from "./schema/types.d.mts";
 import {
@@ -15,6 +15,7 @@ import {
   resistCapError, withResistCap, capNote, resistMinimumText, capsLine, anyOverridden, effectiveFloor, floorCapWarning, pruneResistCaps,
   weaponsChipText, weaponMustHaveChipText, toggleWeapon, weaponName, withBuffs, pastCapNotes, runSettingsDiff, weightTradeoff, newWeight, editedValue, NEW_WEIGHT_IMPORTANCE, templateBuffsLine, sourceTitle, who, rarityHelp, rarityTotal, rarityDetail, shareRows, needStatus, shownImportance,
   latestRun, latestShownRun, otherCharactersRuns, gearChangedSince, suggestTemplates, SUGGEST_MIN_SKILL, needsLine, topWeights, poolLine, searchLine,
+  goalWord, goalName, goalRows, moveGoal, linkGoal, removeGoal, addGoal, goalOutcomes, goalTrades, tradeText, spareText, applyAction,
   type Knobs, type ChangeRow,
 } from "./ui/builder-model.mts";
 import { OPTS_LIMITS } from "./vault-server.mts";
@@ -326,10 +327,11 @@ test("[fast] resist caps: a floor above its cap counts only up to it, warns, and
 });
 
 test("[fast] builder model: a weight row's hover says the trade-off with the top weight, in whole units of the smaller one (issue #274)", () => {
-  const w = melee.weights!;
-  assert.equal(weightTradeoff("luck", w), "At these settings, 1 DCI is worth about 200 Luck.");
-  assert.equal(weightTradeoff("physResist", w), "At these settings, 1 DCI is worth about 2 Phys.");
-  assert.equal(weightTradeoff("dci", w), "Defense chance increase has the highest weight: the other weights are compared with it.");
+  const w = melee.weights!;   // from its goals: SSI 100, HCI = DCI 80, DI 65, Luck 5
+  assert.equal(weightTradeoff("luck", w), "At these settings, 1 SSI is worth about 167 Luck.");
+  assert.equal(weightTradeoff("dci", w), "At these settings, 1 DCI is worth about 1.1 SSI.");
+  assert.equal(weightTradeoff("ssi", w), "Swing speed increase has the highest weight: the other weights are compared with it.");
+  assert.equal(weightTradeoff("physResist", { dci: 10, physResist: 6 }), "At these settings, 1 DCI is worth about 2 Phys.");
   assert.equal(weightTradeoff("di", { di: 1, luck: 0.5 }), "At these settings, 1 DI is worth about 2 Luck.", "the top by importance, Luck, is worth less per point");
   assert.equal(weightTradeoff("luck", { luck: 0.001, dci: 10 }), "At these settings, 1 DCI is worth far more than 1,000 Luck.", "no number past 1,000");
   assert.equal(weightTradeoff("luck", { tagPenalty: 100, dci: 1, luck: 0.05 }), "At these settings, 1 DCI is worth about 20 Luck.", "the tag penalty is not a weight row");
@@ -497,4 +499,58 @@ test("[fast] builder model: the first-visit summary's lines (issue #272)", () =>
   assert.equal(poolLine(["archery", "throwing"], false, 1), "2 weapon skills left out · 1 piece · any rarity");
   assert.equal(searchLine({ exact: true, budgetS: "30", restarts: "20" }), "Exact, up to 30 s");
   assert.equal(searchLine({ exact: false, budgetS: "30", restarts: "20" }), "Heuristic, 20 restarts");
+});
+
+// Issue #292: the Goals tab's rows and edits, and the result's "How the goals went".
+const MELEE_GOALS: Goals = { ranks: [["ssi"], ["hci", "dci"], ["di"]], swing: { mode: "fastest" }, leftover: "luck" };
+test("[fast] builder model: the goal rows, their names and the Goals tab's edits (issue #292)", () => {
+  assert.deepEqual(goalRows(MELEE_GOALS), [{ key: "ssi", rank: 1, linked: false, counts: 100 }, { key: "hci", rank: 2, linked: false, counts: 80 }, { key: "dci", rank: 2, linked: true, counts: 80 }, { key: "di", rank: 3, linked: false, counts: 65 }]);
+  assert.deepEqual(["ssi", "hci", "di", "physResist", "lmc", "sk:magery"].map(goalName), ["Swing speed", "Hit chance", "Damage", "Physical resist", "Lower mana cost", "Magery skill bonus"]);
+  assert.equal(goalWord("hci"), "hit chance");
+  // ↑ and ↓ move a whole rank; the ends go nowhere
+  assert.deepEqual(moveGoal(MELEE_GOALS, "di", -1).ranks, [["ssi"], ["di"], ["hci", "dci"]]);
+  assert.deepEqual(moveGoal(MELEE_GOALS, "dci", -1).ranks, [["hci", "dci"], ["ssi"], ["di"]], "a linked row moves with its rank");
+  assert.equal(moveGoal(MELEE_GOALS, "ssi", -1), MELEE_GOALS);
+  assert.equal(moveGoal(MELEE_GOALS, "di", 1), MELEE_GOALS);
+  // "=" links a row to the one above, and unlinking gives it its own rank, the rows linked under it with it
+  assert.deepEqual(linkGoal(MELEE_GOALS, "di", true).ranks, [["ssi"], ["hci", "dci", "di"]]);
+  assert.deepEqual(linkGoal(MELEE_GOALS, "dci", false).ranks, [["ssi"], ["hci"], ["dci"], ["di"]]);
+  assert.deepEqual(linkGoal({ ...MELEE_GOALS, ranks: [["a", "b", "c"]] }, "b", false).ranks, [["a"], ["b", "c"]]);
+  assert.deepEqual(linkGoal(MELEE_GOALS, "ssi", true).ranks, MELEE_GOALS.ranks, "the first row has nothing above it");
+  // ✕ removes a row (an emptied rank goes); a new goal goes last, once
+  assert.deepEqual(removeGoal(MELEE_GOALS, "ssi").ranks, [["hci", "dci"], ["di"]]);
+  assert.deepEqual(removeGoal(MELEE_GOALS, "hci").ranks, [["ssi"], ["dci"], ["di"]]);
+  assert.deepEqual(addGoal(MELEE_GOALS, "luck").ranks, [["ssi"], ["hci", "dci"], ["di"], ["luck"]]);
+  assert.equal(addGoal(MELEE_GOALS, "hci"), MELEE_GOALS);
+  assert.deepEqual(MELEE_GOALS.ranks, [["ssi"], ["hci", "dci"], ["di"]], "no edit changes the goals it is given");
+  // a weight set from "Check your settings" leaves goal mode, as a slider does
+  const p = { weights: { luck: 1 }, goals: MELEE_GOALS };
+  applyAction(p, { kind: "setWeight", property: "luck", value: 5 }, 1);
+  assert.equal(p.goals.ownWeights, true);
+});
+
+test("[fast] builder model: how the goals went, the trades the build made and where spare points went (issue #292)", () => {
+  const caps = { ssi: 60, hci: 45, dci: 45, di: 100 };
+  const now = { ssi: 56, hci: 30, dci: 45, di: 100, luck: 200 }, suit = { ssi: 55, hci: 45, dci: 45, di: 110, luck: 320 };
+  assert.deepEqual(goalOutcomes(MELEE_GOALS, suit, caps), [
+    { key: "ssi", rank: 1, value: 55, cap: 60, maxed: false }, { key: "hci", rank: 2, value: 45, cap: 45, maxed: true },
+    { key: "dci", rank: 2, value: 45, cap: 45, maxed: true }, { key: "di", rank: 3, value: 100, cap: 100, maxed: true }]);
+  assert.equal(goalOutcomes(MELEE_GOALS, suit, caps, true)[0]!.maxed, true, "Swing speed at its fastest step is maxed");
+  assert.deepEqual(goalOutcomes({ ranks: [["luck"]], leftover: "none" }, suit, caps), [{ key: "luck", rank: 1, value: 320, cap: null, maxed: false }], "no cap: never maxed");
+  // SSI went down while HCI, ranked below it, went up; DI's 110 is held at its cap of 100, so it did not move
+  const trades = goalTrades(MELEE_GOALS, now, suit, caps);
+  assert.deepEqual(trades, [{ key: "ssi", from: 56, to: 55, ups: [{ key: "hci", by: 15 }] }]);
+  assert.equal(tradeText(trades[0]!, { from: 1.5, to: 1.5 }), "−1 swing speed (56 → 55, still a 1.5 s swing) for +15 hit chance");
+  assert.equal(tradeText(trades[0]!, { from: 1.5, to: 1.75 }), "−1 swing speed (56 → 55, 1.5 s → 1.75 s swing) for +15 hit chance");
+  assert.equal(tradeText({ key: "hci", from: 45, to: 40, ups: [{ key: "di", by: 10 }, { key: "luck", by: 50 }] }), "−5 hit chance (45 → 40) for +10 damage and +50 luck");
+  // a lower goal down for a higher one up is no trade; nor a loss with no gain below it; linked goals share a rank
+  assert.deepEqual(goalTrades(MELEE_GOALS, { ssi: 50, di: 100 }, { ssi: 55, di: 90 }, caps), []);
+  assert.deepEqual(goalTrades(MELEE_GOALS, { hci: 45, dci: 30 }, { hci: 40, dci: 45 }, caps), [], "HCI and DCI share their rank");
+  const many: Goals = { ranks: [["a"], ["b"], ["c"], ["d"], ["e"]], leftover: "none" };
+  assert.equal(goalTrades(many, { a: 9, b: 9, c: 9, d: 9, e: 0 }, { a: 8, b: 8, c: 8, d: 8, e: 9 }, {}).length, 3, "at most three");
+  assert.equal(spareText(MELEE_GOALS, now, suit), "Luck +120");
+  assert.equal(spareText(MELEE_GOALS, now, now), "no change");
+  assert.equal(spareText({ ...MELEE_GOALS, leftover: "none" }, now, suit), null);
+  assert.equal(spareText({ ranks: [["luck"]], leftover: "luck" }, now, suit), null, "every member a goal");
+  assert.equal(spareText({ ranks: [["dexBonus"]], leftover: "melee" }, { strBonus: 5 }, { strBonus: 3, hpRegen: 2 }), "STR −2 · HPR +2");
 });

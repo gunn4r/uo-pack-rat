@@ -1,13 +1,13 @@
 // ui/builder.mts — the Suit Builder screen (design spec 4.6, issue #272): the one-line top bar (the character and
-// template selects, Settings, Build), the Settings drawer (its tabs: Requirements, Weights, Buffs, Pool, Advanced) with
+// template selects, Settings, Build), the Settings drawer (its tabs: Requirements, Goals, Buffs, Pool, Advanced) with
 // its footer and the optimize job (inline progress card over SSE). The first-visit view is ui/builder-start.mts; the result, the compare view and the Solver details are ui/builder-result.mts; the saved-runs drawer
 // is ui/runs.mts; they share the builder's state and call each other through ui/builder-session.mts. The panel is drawn
 // from the session's profile plus its Advanced knobs, so what a build sends, what a profile saves and what a run
 // snapshots are read from state, never from the DOM.
-import { NOBODY, PROP_LABELS, NOT_BUILDER_KEYS, importanceOf, weightOfImportance, GEAR_SLOTS, tagUnits, WEAPON_EXCLUDES, MELEE_SKILLS, WEAPON_MUST_HAVE, flagLabel, getRules, RESIST_KEYS, RESIST_CAP_LIMITS, resistCapsFor, templateFrom, settingsDiff, bagLabel, toOptItem, totalsOf, fcCapFor, CASTING_SCHOOLS } from "../vault-lib.mts";
-import { heldWeapon, ssiShareOf, swingOf, type SwingResult } from "../swing.mts";
-import { BUILTIN_PREFIX, characterBuffs, characterEntry, characterProfile, findTemplate, planBuild, specFromProfile, templateLabel, templateName, templateRefs, templateSettings, templateSpecFrom, type PlannedBuild } from "../build-spec.mts";
-import type { FcCap, ResistCap, RunBuffs, RunSettings, Character } from "../vault-lib.mts";
+import { NOBODY, PROP_LABELS, NOT_BUILDER_KEYS, importanceOf, weightOfImportance, GEAR_SLOTS, tagUnits, WEAPON_EXCLUDES, MELEE_SKILLS, WEAPON_MUST_HAVE, flagLabel, getRules, RESIST_KEYS, RESIST_CAP_LIMITS, resistCapsFor, templateFrom, settingsDiff, bagLabel, toOptItem, totalsOf, fcCapFor, CASTING_SCHOOLS, compileGoals, goalsActive, GOAL_LEFTOVERS, LEFTOVER_GROUPS, LEFTOVER_LABELS } from "../vault-lib.mts";
+import { delayText, heldWeapon, ssiShareOf, swingOf, type SwingResult } from "../swing.mts";
+import { BUILTIN_PREFIX, characterBuffs, characterEntry, characterProfile, findTemplate, goalSsiCap, planBuild, specFromProfile, templateLabel, templateName, templateRefs, templateSettings, templateSpecFrom, type PlannedBuild } from "../build-spec.mts";
+import type { FcCap, Goals, ResistCap, RunBuffs, RunSettings, Character } from "../vault-lib.mts";
 import { BUFFS, BUFF_GROUPS, BUFF_INPUTS, buffAvailability, buffById, buffEffectTags, isSchool, gearNeedsText, overrideNote, planBuffs, normalizeBuffs, runBuffs, toggleBuff, buffPlanOf, type Buff, type BuffPlan } from "../buffs.mts";
 import { defaultStrLimit } from "../run-settings.mts";
 import { evaluateSuit } from "../evaluate.mts";
@@ -25,7 +25,7 @@ import { putProfiles, setCharacterBuffs } from "./profiles.mts";
 import { session, commands, provide, readControls, type BuilderChange } from "./builder-session.mts";
 import { followJob, progressText, settingsCheck } from "./builder-parts.mts";
 import { characterNames } from "./roster.mts";
-import { needStatus, shownImportance, nextSwingStep, speedText, swingLines, propName, newWeight, editedValue, runSettingsDiff, plural, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistMinimumText, pruneResistCaps, floorCapWarning, weaponsChipText, weaponMustHaveChipText, withStoredRoots, weaponName, toggleWeapon, weightTradeoff, fcCapText, rarityHelp, templateBuffsLine, sourceTitle, who, type KnobField } from "./builder-model.mts";
+import { needStatus, shownImportance, nextSwingStep, speedText, swingLines, propName, newWeight, editedValue, runSettingsDiff, plural, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistMinimumText, pruneResistCaps, floorCapWarning, weaponsChipText, weaponMustHaveChipText, withStoredRoots, weaponName, toggleWeapon, weightTradeoff, fcCapText, rarityHelp, templateBuffsLine, sourceTitle, who, goalRows, goalName, goalWord, moveGoal, linkGoal, removeGoal, addGoal, type KnobField } from "./builder-model.mts";
 import type { OptimizeResult, SavedRunLike, OptimizeStartApiResponse, OptimizeCancelApiResponse, UiPrefs } from "./api-types.mts";
 import { prefs } from "./prefs.mts";
 
@@ -36,7 +36,9 @@ type Tab = NonNullable<UiPrefs["builderTab"]>;
 const TABS: Tab[] = ["requirements", "weights", "buffs", "pool", "advanced"];
 let tab: Tab = "requirements";
 // The tab each group that focusIn reaches sits in.
-const TAB_OF: Record<string, Tab> = { req: "requirements", weights: "weights", adv: "advanced", caps: "advanced" };
+const TAB_OF: Record<string, Tab> = { req: "requirements", goals: "weights", weights: "weights", adv: "advanced", caps: "advanced" };
+// Whether the Goals tab shows the weights the goals set under them (ui-prefs `builderFineTune`, issue #292).
+let fineTune = false;
 // A requirement or weight row's property name: up to two lines, the full name in its title.
 const ruleName = (nm: string): HTMLSpanElement => { const t = txt(nm, "rule-name"); t.title = nm; return t; };
 // A resist cap typed out of range, as typed (the profile keeps the last good cap): kept here rather than read back
@@ -108,8 +110,8 @@ export function initBuilder(): void {
   // Manual has no Settings button: the drawer closes on the way in
   document.addEventListener("builderchange", (e) => { if ((e as BuilderChange).detail.key === "mode" && session.mode === "manual") closeSettings(); });
 }
-// The drawer's tab at load, from ui-prefs (app.mts applies it before initBuilder runs).
-export function applyPanelPrefs(p: UiPrefs | null): void { if (p?.builderTab && TABS.includes(p.builderTab)) tab = p.builderTab; }
+// The drawer's tab and whether the Goals tab shows its weights, at load, from ui-prefs (app.mts applies it before initBuilder runs).
+export function applyPanelPrefs(p: UiPrefs | null): void { if (p?.builderTab && TABS.includes(p.builderTab)) tab = p.builderTab; fineTune = p?.builderFineTune === "on"; }
 const drawerOpen = (): boolean => !$<HTMLElement>("#b-drawer")!.hidden;
 // Open the drawer on `on` (else the tab it had) with the focus on that tab; `focus` false when the caller focuses a
 // control in it next.
@@ -237,13 +239,13 @@ function renderPanel(): void {
     n.hidden = t !== tab;
     return n;
   };
-  $<HTMLElement>("#b-panel-body")!.replaceChildren(panel("requirements", requirementsSection()), panel("weights", weightsSection()), panel("buffs", buffsSection()),
+  $<HTMLElement>("#b-panel-body")!.replaceChildren(panel("requirements", requirementsSection()), panel("weights", goalsSection(), weightsSection()), panel("buffs", buffsSection()),
     panel("pool", poolSection()), panel("advanced", advancedSection(), charSection(), capsSection()));
   updateTemplateBadge();
 }
 // Redraw one group in place (its rows changed), keeping the rest of the drawer and its scroll position as they are.
 function redraw(id: string): void {
-  const build: Record<string, () => HTMLElement> = { buffs: buffsSection, req: requirementsSection, caps: capsSection, weights: weightsSection, pool: poolSection, adv: advancedSection };
+  const build: Record<string, () => HTMLElement> = { buffs: buffsSection, req: requirementsSection, caps: capsSection, goals: goalsSection, weights: weightsSection, pool: poolSection, adv: advancedSection };
   const old = document.getElementById(`b-sec-${id}`);
   if (old && build[id]) old.replaceWith(build[id]!());
   updateTemplateBadge();
@@ -683,12 +685,117 @@ function capRow(p: NonNullable<typeof session.profile>, k: string): HTMLElement 
   if (capDrafts[k] != null) setInlineError(i, resistCapError(capDrafts[k]!));
   return row;
 }
+// ---- goals (issue #292): the Goals tab's ranked list, which sets the weights (vault-lib.mts compileGoals)
+// The goals' weights compiled again into the panel's profile, with the swing-step switch they set.
+function applyGoals(p: NonNullable<typeof session.profile>): void {
+  const c = compileGoals(p.goals!, p.weights);
+  p.weights = c.weights;
+  p.swingSteps = c.swingSteps;
+}
+// A goals edit: the profile's goals replaced and compiled, the tab redrawn, and the focus on `focus` in the goals group.
+function setGoals(next: Goals, focus?: string): void {
+  const p = session.profile!;
+  p.goals = next;
+  applyGoals(p);
+  redraw("goals"); redraw("weights");
+  if (focus) focusIn("goals", focus);
+}
+// A weight (or the swing-step switch) edited by hand while goals set them: the goals stop setting the weights and fold into
+// a note that can start from them again. The weights group stays as it is, so the control being edited keeps the focus.
+function ownWeights(): void {
+  const p = session.profile!;
+  if (!goalsActive(p.goals)) return;
+  p.goals = { ...p.goals, ownWeights: true };
+  redraw("goals");
+  const help = document.getElementById("b-weights-help");
+  if (help) help.textContent = WEIGHTS_HELP;
+}
+// What "+ Add a goal" offers: the properties the built-in templates rank, the spare-points groups' and the resists, and any
+// the panel weights, less the goals already listed.
+function goalChoices(taken: readonly string[]): string[] {
+  const ranked = Object.values(state.builtinTemplates).flatMap((t) => t.spec.intent.goals?.ranks.flat() ?? []);
+  return [...new Set([...ranked, ...Object.values(LEFTOVER_GROUPS).flat(), ...RESIST_KEYS, ...Object.keys(session.profile!.weights!)])].filter((k) => !NOT_BUILDER_KEYS.has(k) && !taken.includes(k));
+}
+// The Goals tab's top: with goals in force, the ranked list (each row's rank and name, what it counts and its cap, "=" to
+// share the rank above, ↑ ↓ ✕; Swing speed's swing time under its row), "+ Add a goal", where spare points go, and the
+// switch that shows the weights they set. With the weights edited by hand since, a note that starts from the goals again;
+// with no goals at all, nothing (the weights below are the tab, as before goals).
+function goalsSection(): HTMLElement {
+  const p = session.profile!, stored = p.goals;
+  const sec = group("goals", null, () => {
+    if (!stored) return [];
+    const g: Goals = stored;
+    if (g.ownWeights) {
+      const again = button({ label: "Start from goals again", variant: "ghost", size: "sm", cls: "b-link", attrs: { id: "b-goals-again" }, onClick: () => {
+        const { ownWeights: _own, ...rest } = g;
+        setGoals(rest, "#b-goals-h");
+      } });
+      return [el("p", { class: "help b-goals-off" }, txt("Using your own weights."), " ", again)];
+    }
+    const rows = goalRows(g), last = g.ranks.length;
+    const items = rows.map((r, i) => {
+      const nm = goalName(r.key), cap = r.key === "ssi" ? ssiGoalCap(g) ?? capFor("ssi") : capFor(r.key);
+      const link = i ? pill({ label: "=", pressed: r.linked, onToggle: (on) => setGoals(linkGoal(g, r.key, on), `.b-goal[data-key="${CSS.escape(r.key)}"] .pill`) }) : el("span");
+      if (i) { link.setAttribute("aria-label", `${nm}: same importance as ${goalName(rows[i - 1]!.key)}`); tooltip(link, "Same importance as the one above"); }
+      const move = (by: -1 | 1, icon: "arrow-up" | "arrow-down", word: "up" | "down"): HTMLButtonElement => button({ label: `Move ${nm} ${word}`, icon, iconOnly: true, variant: "ghost", size: "sm", cls: `b-goal-${word}`,
+        disabled: by < 0 ? r.rank === 1 : r.rank === last, onClick: () => { setGoals(moveGoal(g, r.key, by)); focusGoalArrow(r.key, word); } });
+      return box("li", { class: `b-goal${r.linked ? " linked" : ""}`, "data-key": r.key }, link,
+        box("span", { class: "b-goal-name" }, txt(`${r.rank}.`, "b-goal-rank"), txt(nm)),
+        txt(`counts ${r.counts}${cap != null ? ` · max ${cap}` : ""}`, "t-sm muted b-goal-counts"),
+        move(-1, "arrow-up", "up"), move(1, "arrow-down", "down"),
+        button({ label: `Remove goal: ${nm}`, icon: "close", iconOnly: true, variant: "ghost", size: "sm", onClick: () => setGoals(removeGoal(g, r.key), rows.length > 1 ? `.b-goal[data-key="${CSS.escape((rows[i + 1] ?? rows[i - 1])!.key)}"] .b-goal-x` : "#b-addgoal") , cls: "b-goal-x" }),
+        r.key === "ssi" ? swingGoal(g) : null);
+    });
+    const add = filterChip({ label: "Add a goal", add: true, attrs: { class: "fchip add b-add", id: "b-addgoal" } });
+    add.onclick = () => propertyPicker(add, "Add a goal", [], (k) => setGoals(addGoal(g, k), `.b-goal[data-key="${CSS.escape(k)}"] .b-goal-x`), goalChoices(rows.map((r) => r.key)));
+    const leftover = segmented({ label: "Spare points", size: "sm", options: GOAL_LEFTOVERS.map((v) => ({ value: v, label: LEFTOVER_LABELS[v] })), value: g.leftover,
+      onChange: (v) => setGoals({ ...g, leftover: v as Goals["leftover"] }, `#b-leftover [data-value="${v}"]`) });
+    leftover.id = "b-leftover";
+    const spare = LEFTOVER_GROUPS[g.leftover].map(goalWord);
+    const fine = switchControl({ label: "Show the weights these goals set", checked: fineTune, attrs: { id: "b-finetune" }, onChange: (v) => { fineTune = v; prefs.set({ builderFineTune: v ? "on" : "off" }, { quiet: true }); redraw("weights"); } });
+    return [el("h3", { class: "t-md strong", id: "b-goals-h", tabindex: "-1" }, "What should this suit be best at?"),
+      el("p", { class: "help" }, txt("Most important first. Higher goals count more, but a small loss up top can buy a big gain lower down.")),
+      rows.length ? box("ol", { class: "b-goals", "aria-labelledby": "b-goals-h" }, ...items) : el("p", { class: "t-sm muted" }, txt("No goals yet.")), add,
+      box("div", { class: "field b-leftover" }, el("span", { class: "label" }, "After that, put spare points into:"), leftover,
+        el("p", { class: "help" }, txt(spare.length ? `${spare.map((w) => w[0]!.toUpperCase() + w.slice(1)).join(", ")}: counts a little, after the goals.` : "Nothing past the goals."))),
+      fine.root];
+  });
+  sec.hidden = !stored;
+  return sec;
+}
+// After a move, the focus back on the moved row's same arrow, or its other one once that end is reached.
+function focusGoalArrow(key: string, word: "up" | "down"): void {
+  const row = document.querySelector<HTMLElement>(`#b-sec-goals .b-goal[data-key="${CSS.escape(key)}"]`);
+  const b = row?.querySelector<HTMLButtonElement>(`.b-goal-${word}`), other = row?.querySelector<HTMLButtonElement>(`.b-goal-${word === "up" ? "down" : "up"}`);
+  (b && !b.disabled ? b : other && !other.disabled ? other : row?.querySelector<HTMLButtonElement>(".b-goal-x"))?.focus();
+}
+// The SSI a swing-time goal stops counting at for the weapon worn now (build-spec.mts goalSsiCap), null for the fastest swing.
+function ssiGoalCap(g: Goals): number | null {
+  const worn = wornSwing();
+  return worn ? goalSsiCap(g, worn.sw.speed, worn.sw.stamina) : null;
+}
+// Under the Swing speed goal: the swing it aims for, "As fast as possible" or one of the worn weapon's steps ("Every 1.5 s"),
+// and what that needs: "1.5 s with Katana at 95 stamina: needs SSI 45".
+function swingGoal(g: Goals): HTMLElement {
+  const worn = wornSwing(), steps = worn?.sw.steps ?? [], every = g.swing?.mode === "every" ? g.swing.seconds ?? null : null;
+  const options = [{ value: "", label: "As fast as possible" }, ...steps.map((st) => ({ value: String(st.seconds), label: `Every ${delayText(st.seconds)}` })),
+    ...(every != null && !steps.some((st) => st.seconds === every) ? [{ value: String(every), label: `Every ${delayText(every)}` }] : [])];
+  const sel = select(options, every != null ? String(every) : "", { size: "sm", attrs: { id: "b-swing-goal", "aria-label": "Swing speed goal" } });
+  sel.addEventListener("change", () => setGoals({ ...g, swing: sel.value ? { mode: "every", seconds: Number(sel.value) } : { mode: "fastest" } }, "#b-swing-goal"));
+  const target = every != null ? steps.find((st) => st.seconds === every) : steps.at(-1);
+  const line = !worn ? "Wear a weapon to see the swing each SSI gives."
+    : target ? `${delayText(target.seconds)} with ${worn.weapon} at ${worn.sw.stamina} stamina: needs SSI ${target.ssi}`
+    : every != null ? `${worn.weapon} can't swing every ${delayText(every)} at ${worn.sw.stamina} stamina within the SSI cap.` : `${worn.weapon} is at its fastest swing at ${worn.sw.stamina} stamina.`;
+  return box("div", { class: "b-swing-goal" }, sel, txt(line, "t-sm muted"));
+}
 // The weight rows at 0 that keep a negative sign, by character and property, for the page session.
 const negZero = new Set<string>();
+// The weights, under the goals: shown in place of them when there are no goals in force, else only with "Show the weights
+// these goals set" on (fineTune), where editing one switches to own weights (ownWeights).
 function weightsSection(): HTMLElement {
-  const p = session.profile!;
+  const p = session.profile!, fromGoals = goalsActive(p.goals);
   const keys = Object.keys(p.weights!).filter((k) => !NOT_BUILDER_KEYS.has(k));
-  return group("weights", null, () => {
+  const sec = group("weights", null, () => {
     // each row shows and takes the weight's importance (vault-lib.mts importanceOf) in its field and on a notched slider
     // (issue #272) on a fixed 0-100 scale, so one row never resizes another; the slider snaps to 5, the field takes any
     // number (a negative one, flipped by ±, in the warn tone; past 100 the slider is full and says the value). The
@@ -730,6 +837,7 @@ function weightsSection(): HTMLElement {
       num.addEventListener("input", () => {
         const t = num.value.trim();
         if (t !== "" && Number(t) === 0) { if (t.startsWith("-")) negZero.add(zeroKey); else negZero.delete(zeroKey); }
+        if (!ruleValueError(t)) ownWeights();
         step(); paints.forEach((f) => f()); said();
       });
       // the slider and ± write the field, which stores the weight as a typed one would (editedValue)
@@ -742,7 +850,8 @@ function weightsSection(): HTMLElement {
         const d = e.key === "ArrowRight" || e.key === "ArrowUp" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowDown" ? -1 : 0;
         if (!d) return;
         e.preventDefault();
-        const abs = Math.abs(importanceOf(k, p.weights![k]!)), mag = Math.min(100, abs);
+        // as shown (two decimals): a compiled Luck of 5 is 4.999999… per point times its scale, which must still step to 10
+        const abs = Math.abs(shownImportance(importanceOf(k, p.weights![k]!))), mag = Math.min(100, abs);
         if (d > 0 && abs >= 100) return;
         write((negative() ? -1 : 1) * (abs > 100 ? 100 : Math.max(0, Math.min(100, d > 0 ? Math.floor(mag / 5) * 5 + 5 : Math.ceil(mag / 5) * 5 - 5))));
       });
@@ -755,7 +864,7 @@ function weightsSection(): HTMLElement {
       tooltip(track, () => hover.textContent!);
       num.setAttribute("aria-describedby", hover.id);
       return box("div", { class: "rule-row weight", "data-key": k }, ruleName(nm), num, track, sign,
-        button({ label: `Remove weight: ${nm}`, icon: "close", iconOnly: true, variant: "ghost", size: "sm", onClick: () => { delete p.weights![k]; redraw("weights"); focusIn("weights", ".b-add"); } }),
+        button({ label: `Remove weight: ${nm}`, icon: "close", iconOnly: true, variant: "ghost", size: "sm", onClick: () => { ownWeights(); delete p.weights![k]; redraw("weights"); focusIn("weights", ".b-add"); } }),
         k === "ssi" ? swingStepsSetting() : k === "fc" ? fcCapNote() : null);
     });
     paints.forEach((f) => f());
@@ -763,11 +872,15 @@ function weightsSection(): HTMLElement {
     const scale = rows.length ? box("div", { class: "b-wscale", "aria-hidden": "true" }, el("span"), el("span"),
       box("span", { class: "b-wmarks" }, ...[["off", 0], ["low", 25], ["some", 50], ["high", 75], ["top", 100]].map(([w, x]) => el("span", { style: `left:${x}%` }, String(w)))), el("span"), el("span")) : null;
     const add = filterChip({ label: "Add weight", add: true, attrs: { class: "fchip add b-add", id: "b-addweight" } });
-    add.onclick = () => propertyPicker(add, "Add weight", Object.keys(p.weights!), (k) => { p.weights![k] = newWeight(k); redraw("weights"); focusIn("weights", `.rule-row[data-key="${CSS.escape(k)}"] input`, true); });
-    return [el("p", { class: "help" }, txt("How much a good amount of each property matters, about 0 to 100. Higher counts more. Dragging snaps to 5; type any number, a negative one to count against.")),
+    add.onclick = () => propertyPicker(add, "Add weight", Object.keys(p.weights!), (k) => { ownWeights(); p.weights![k] = newWeight(k); redraw("weights"); focusIn("weights", `.rule-row[data-key="${CSS.escape(k)}"] input`, true); });
+    return [el("p", { class: "help", id: "b-weights-help" }, txt(fromGoals ? GOAL_WEIGHTS_HELP : WEIGHTS_HELP)),
       rows.length ? box("div", { class: "b-rules" }, ...rows) : null, scale, readout, add];
   });
+  sec.hidden = fromGoals && !fineTune;
+  return sec;
 }
+const WEIGHTS_HELP = "How much a good amount of each property matters, about 0 to 100. Higher counts more. Dragging snaps to 5; type any number, a negative one to count against.";
+const GOAL_WEIGHTS_HELP = "The weights your goals set, about 0 to 100. Changing one switches to your own weights.";
 // ---- swing steps (app/swing.mts): the switch on the SSI weight row, and the requirement row's "Next step" The worn suit's swing with the panel's buffs, the weapon a build is known to hold before it runs (a locked hand keeps the worn piece); null when it holds no weapon of known speed.
 function wornSwing(): { sw: SwingResult; weapon: string } | null {
   const name = session.character!, p = session.profile!, worn = state.inv!.worn[name] || [];
@@ -778,7 +891,7 @@ function wornSwing(): { sw: SwingResult; weapon: string } | null {
 }
 function swingStepsSetting(): HTMLElement {
   const p = session.profile!, worn = wornSwing();
-  const sw = switchControl({ label: "Score swing speed by step", checked: !!p.swingSteps, attrs: { id: "b-swing-steps" }, onChange: (v) => { p.swingSteps = v; updateTemplateBadge(); } });
+  const sw = switchControl({ label: "Score swing speed by step", checked: !!p.swingSteps, attrs: { id: "b-swing-steps" }, onChange: (v) => { ownWeights(); p.swingSteps = v; updateTemplateBadge(); } });
   const steps = worn ? swingLines(worn.sw, worn.weapon).steps.map((s) => s.text).join(" · ") : "";
   return box("div", { class: "b-swing-set" }, sw.root,
     el("p", { class: "help" }, txt(`Counts SSI only where the swing gets faster.${worn && steps ? ` ${worn.weapon} ${speedText(worn.sw.speed)} at stamina ${worn.sw.stamina}: ${steps}.` : ""}`)));
@@ -806,17 +919,18 @@ function focusIn(sec: string, sel: string, selectText = false): void {
   e?.focus();
   if (selectText) e?.select();
 }
-// A score breakdown row's property in the Settings drawer: its weight's field, else Add weight; Other (null) opens the Weights tab. Closing the drawer then puts the focus back on the row (`from`).
+// A score breakdown row's property in the Settings drawer: its weight's field, else Add weight; Other (null) opens the Weights tab. Closing the drawer then puts the focus back on the row (`from`). With goals setting the weights, the weights are shown under them first (fineTune).
 function tuneWeight(key: string | null, from: HTMLElement): void {
   opener = from;
+  if (goalsActive(session.profile?.goals) && !fineTune) { fineTune = true; prefs.set({ builderFineTune: "on" }, { quiet: true }); redraw("goals"); redraw("weights"); }
   if (key == null) openSettings("weights");
   else if (session.profile?.weights?.[key] != null) focusIn("weights", `.rule-row[data-key="${CSS.escape(key)}"] input`, true);
   else focusIn("weights", "#b-addweight");
 }
 // The searchable property combobox behind "+ Add requirement" / "+ Add weight": type to filter, ↓ into the
 // list, Enter picks the first match.
-function propertyPicker(anchor: HTMLElement, title: string, taken: string[], pick: (k: string) => void): void {
-  const keys = allPropKeys().filter((k) => !taken.includes(k));
+function propertyPicker(anchor: HTMLElement, title: string, taken: string[], pick: (k: string) => void, offered: string[] = allPropKeys()): void {
+  const keys = offered.filter((k) => !taken.includes(k)).sort((a, b) => propName(a).localeCompare(propName(b)));
   const s = searchInput({ label: `${title}: search properties`, placeholder: "Search properties" });
   const list = box("div", { class: "b-pick-list", role: "listbox", "aria-label": "Properties" });
   const choose = (k: string): void => { closePopover(); pick(k); };
@@ -1132,7 +1246,7 @@ function endJob(job: BuilderJob, node?: HTMLElement | null): boolean {
 }
 interface JobFinishInfo { result: OptimizeResult; ms: number; runId: string | null; reused?: SavedRunLike | null | undefined; settings: RunSettings }
 function finishJob(job: BuilderJob, r: JobFinishInfo): void {
-  const meta: BuildMeta = { ms: r.ms, poolSize: job.poolSize, skipped: job.skipped, reused: r.reused || null };
+  const meta: BuildMeta = { ms: r.ms, poolSize: job.poolSize, skipped: job.skipped, reused: r.reused || null, ...(goalsActive(r.settings.goals) ? { goals: r.settings.goals } : {}) };
   const finished: FinishedBuild = { name: job.name, result: r.result, current: job.current, profile: job.profile, runId: r.runId || null, meta, settings: r.settings };
   // Switched to another character while it ran: never draw this suit (or its Plan and Grab all) under that
   // character. It waits until its own character is selected again.

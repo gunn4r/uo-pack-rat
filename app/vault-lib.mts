@@ -303,6 +303,66 @@ const importanceText = (key: string, weight: number): string => String(roundImpo
 // which the page and MCP now read as an importance, so it keeps its sentence and loses its action.
 export const withCurrentActions = (d: Diagnostic): Diagnostic => (d.code === "weight_dominates" && d.values?.importance == null && d.actions.length ? { ...d, actions: [] } : d);
 
+// Goals (issue #292): the properties to get as high as the gear allows, up to each one's cap, most important first, a rank
+// holding two or more that count the same; what spare points go to; and for a Swing speed goal, the fastest swing or a
+// swing every `seconds` (the SSI that takes with the weapon worn now caps SSI, app/build-spec.mts planBuild). `ownWeights`:
+// the weights were edited by hand since the goals set them, so the goals are kept only to start from again. Goals compile
+// to the profile's weights through the importance conversion above (compileGoals), so the solvers, saved runs and every
+// reader that knows only weights are unchanged.
+export const GOAL_LEFTOVERS = ["luck", "melee", "caster", "none"] as const;
+export type GoalLeftover = (typeof GOAL_LEFTOVERS)[number];
+export const SWING_GOALS = ["fastest", "every"] as const;
+export interface GoalSwing { mode: (typeof SWING_GOALS)[number]; seconds?: number | undefined }
+export interface Goals { ranks: string[][]; swing?: GoalSwing | undefined; leftover: GoalLeftover; ownWeights?: boolean | undefined }
+// What a rank counts on the importance scale: the first 100, the second 80, and so on, 15 for every rank from the ninth.
+export const RANK_IMPORTANCE: readonly number[] = [100, 80, 65, 50, 40, 30, 25, 20, 15];
+export const rankImportance = (rank: number): number => RANK_IMPORTANCE[Math.min(rank, RANK_IMPORTANCE.length - 1)]!;
+// Spare points get a low importance, so their group only takes what the goals leave.
+export const LEFTOVER_IMPORTANCE = 5;
+export const LEFTOVER_GROUPS: Record<GoalLeftover, readonly string[]> = { luck: ["luck"], melee: ["strBonus", "dexBonus", "stamInc", "hpRegen"], caster: ["intBonus", "manaInc", "manaRegen", "lmc", "lrc"], none: [] };
+export const LEFTOVER_LABELS: Record<GoalLeftover, string> = { luck: "Luck", melee: "Melee stats", caster: "Caster stats", none: "Nothing" };
+// Whether goals set the profile's weights: there are goals, and the weights were not edited by hand since.
+export const goalsActive = (g: Goals | null | undefined): g is Goals => !!g && !g.ownWeights;
+// The weights goals set, and whether SSI is scored by swing step (when Swing speed is a goal): each rank's properties at
+// that rank's importance, then the spare-points group's properties that are not goals at LEFTOVER_IMPORTANCE. A weight the
+// builder never offers (the tag penalty) is kept from `kept`, the profile's weights. A weight is rounded to 12 significant
+// digits, so DI's 65 is 2.925 per point rather than 2.9250000000000003.
+export function compileGoals(g: Goals, kept: Readonly<Record<string, number>> = {}): { weights: Record<string, number>; swingSteps: boolean } {
+  const weights: Record<string, number> = Object.fromEntries(Object.entries(kept).filter(([k]) => NOT_BUILDER_KEYS.has(k)));
+  const per = (k: string, importance: number): number => Number(weightOfImportance(k, importance).toPrecision(12));
+  g.ranks.forEach((rank, i) => { for (const k of rank) weights[k] = per(k, rankImportance(i)); });
+  const goal = new Set(g.ranks.flat());
+  for (const k of LEFTOVER_GROUPS[g.leftover]) if (!goal.has(k)) weights[k] = per(k, LEFTOVER_IMPORTANCE);
+  return { weights, swingSteps: goal.has("ssi") };
+}
+// Goals in a line, for a settings diff: "SSI 1.5 s › HCI = DCI › DI, spare points to luck".
+export function goalsText(g: Goals): string {
+  const name = (k: string): string => (k === "ssi" && g.swing?.mode === "every" && g.swing.seconds != null ? `SSI ${g.swing.seconds} s` : labelOf(k));
+  return `${g.ranks.map((r) => r.map(name).join(" = ")).join(" › ") || "no goals"}, spare points to ${LEFTOVER_LABELS[g.leftover].toLowerCase()}`;
+}
+// The check goals are held to wherever they are stored or sent (a profile's spec, a run's settings, build_suit): only
+// these fields; ranks a list of at most 40 lists of builder property names, none named twice; a swing time from 1.25 to
+// 10 s in quarter seconds. `label` names the field in the reason; null when fine.
+export function goalsError(v: unknown, label: string): string | null {
+  const obj = (x: unknown): x is Record<string, unknown> => !!x && typeof x === "object" && !Array.isArray(x);
+  if (!obj(v)) return `${label} must be an object`;
+  const extra = Object.keys(v).find((k) => !["ranks", "swing", "leftover", "ownWeights"].includes(k));
+  if (extra) return `${label}.${extra.slice(0, 64)} is not a goals setting`;
+  const name = (k: unknown): boolean => typeof k === "string" && k.length > 0 && k.length <= 64 && !NOT_BUILDER_KEYS.has(k) && !["__proto__", "constructor", "prototype"].includes(k);
+  if (!Array.isArray(v.ranks) || v.ranks.length > 40 || !v.ranks.every((r) => Array.isArray(r) && r.length > 0 && r.length <= 10 && r.every(name))) return `${label}.ranks must be a list of ranks, each a list of property names`;
+  const keys = (v.ranks as string[][]).flat();
+  if (new Set(keys).size !== keys.length) return `${label}.ranks names a property twice`;
+  if (!(GOAL_LEFTOVERS as readonly unknown[]).includes(v.leftover)) return `${label}.leftover must be one of ${GOAL_LEFTOVERS.join(", ")}`;
+  if (v.ownWeights != null && typeof v.ownWeights !== "boolean") return `${label}.ownWeights must be a boolean`;
+  if (v.swing != null) {
+    const s = v.swing;
+    if (!obj(s) || Object.keys(s).some((k) => k !== "mode" && k !== "seconds") || !(SWING_GOALS as readonly unknown[]).includes(s.mode)) return `${label}.swing must be { mode: ${SWING_GOALS.join(" or ")}, seconds? }`;
+    if (s.seconds != null && !(typeof s.seconds === "number" && s.seconds >= 1.25 && s.seconds <= 10 && Number.isInteger(s.seconds * 4))) return `${label}.swing.seconds must be a swing time from 1.25 to 10 s, in quarter seconds`;
+    if (s.mode === "every" && s.seconds == null) return `${label}.swing.seconds is needed for a swing every so many seconds`;
+  }
+  return null;
+}
+
 // Skill names as they appear in tooltips (lower-cased). A "+10 Magery" line on an item becomes the builder property
 // "sk:magery", so skill bonuses can be weighted, floored or forbidden like any other property.
 export const SKILL_NAMES: string[] = ["alchemy", "anatomy", "animal lore", "animal taming", "archery", "arms lore", "begging", "blacksmithy", "bushido",
@@ -1427,7 +1487,7 @@ export function excludeWeaponsError(v: unknown, path = "excludeWeapons"): string
 // Templates: a full set of builder settings with no character in them (no race, STR limit or skipped containers).
 // A character's profile keeps its own working copy plus `template`, the name it was applied from; drift between the
 // two is settingsDiff(templateFrom(template), templateFrom(profile)).
-export const TEMPLATE_KEYS: string[] = ["floors", "softFloors", "weights", "floorBonus", "lockedSlots", "excludeTags", "excludeSkills", "allowOthersWorn", "allowGargoyle", "medOnly", "excludeWeapons", "ubwsAnyWeapon", "weaponMustHave", "resistCaps", "swingSteps", "castingSchool", "rarity"];
+export const TEMPLATE_KEYS: string[] = ["floors", "softFloors", "weights", "floorBonus", "lockedSlots", "excludeTags", "excludeSkills", "allowOthersWorn", "allowGargoyle", "medOnly", "excludeWeapons", "ubwsAnyWeapon", "weaponMustHave", "resistCaps", "swingSteps", "castingSchool", "rarity", "goals"];
 export interface TemplateSource {
   floors?: Record<string, number> | undefined;
   softFloors?: string[] | undefined;
@@ -1446,6 +1506,7 @@ export interface TemplateSource {
   swingSteps?: boolean | undefined;        // score SSI by swing step (app/swing.mts); absent means off
   castingSchool?: string | undefined;      // the school the Faster Casting cap follows (fcCapFor); absent means from the character's skills
   rarity?: RarityPreference | undefined;   // among equally good suits, prefer higher- or lower-rarity pieces; absent means any
+  goals?: Goals | undefined;               // the goals the weights come from (issue #292); absent for weights set by hand
 }
 export interface Template {
   floors: Record<string, number>;
@@ -1465,13 +1526,16 @@ export interface Template {
   swingSteps: boolean;
   castingSchool: string;   // "" means from the character's skills
   rarity: RarityPreference | undefined;   // undefined means any (a key either way, so applying a template clears a preference it lacks)
+  goals: Goals | undefined;               // undefined means none (a key either way, so applying a template without goals clears them)
 }
 export function templateFrom(s: TemplateSource = {}): Template {
   return { floors: { ...(s.floors || {}) }, softFloors: [...(s.softFloors || [])], weights: { ...(s.weights || {}) }, floorBonus: s.floorBonus ?? 1000,
     lockedSlots: [...(s.lockedSlots || [])], excludeTags: [...(s.excludeTags || [])], excludeSkills: [...(s.excludeSkills || [])],
     allowOthersWorn: !!s.allowOthersWorn, allowGargoyle: !!s.allowGargoyle, medOnly: !!s.medOnly, excludeWeapons: [...(s.excludeWeapons || [])], ubwsAnyWeapon: s.ubwsAnyWeapon !== false, weaponMustHave: [...(s.weaponMustHave || [])], resistCaps: { ...(s.resistCaps || {}) }, swingSteps: !!s.swingSteps,
-    castingSchool: s.castingSchool || "", rarity: s.rarity || undefined };
+    castingSchool: s.castingSchool || "", rarity: s.rarity || undefined, goals: s.goals ? copyGoals(s.goals) : undefined };
 }
+// A copy of goals that shares no list with them.
+export const copyGoals = (g: Goals): Goals => ({ ...g, ranks: g.ranks.map((r) => [...r]), ...(g.swing ? { swing: { ...g.swing } } : {}) });
 
 // A profiles.json character entry, loosely — every field optional, TemplateSource's builder settings
 // plus the bits a character carries that a template doesn't (which template it came from, race, a STR
@@ -1558,6 +1622,7 @@ export interface RunSettings {
   swingSteps?: boolean | undefined;
   castingSchool?: string | undefined;
   rarity?: RarityPreference | undefined;
+  goals?: Goals | undefined;   // the goals its weights came from (issue #292); absent for a run built from weights set by hand
 }
 // A run's buffs: which were on, and the numbers they scale with (app/buffs.mts's inputs, Resisting Spells aside).
 export interface RunBuffs { on: string[]; skills: Record<string, number> }
@@ -1565,7 +1630,12 @@ export interface RunBuffs { on: string[]; skills: Record<string, number> }
 export function settingsDiff(a: RunSettings = {}, b: RunSettings = {}): string[] {
   const out: string[] = [];
   const L = labelOf;
+  // with goals setting the weights on both sides (issue #292), changed goals are one line, and the weights and swing-step
+  // switch they set are not compared
+  const fromGoals = goalsActive(a.goals) && goalsActive(b.goals);
+  if (fromGoals && goalsText(a.goals!) !== goalsText(b.goals!)) out.push(`goals: ${goalsText(b.goals!)}`);
   for (const [group, noun] of [["floors", "floor"], ["weights", "weight"]] as const) {
+    if (group === "weights" && fromGoals) continue;
     const A: Record<string, number> = a[group] || {}, B: Record<string, number> = b[group] || {};
     // a weight reads as its importance (importanceText), a floor as it is
     const v = (k: string, x: number): string | number => (group === "weights" ? importanceText(k, x) : x);
@@ -1607,7 +1677,7 @@ export function settingsDiff(a: RunSettings = {}, b: RunSettings = {}): string[]
   const others = (s: RunSettings) => !!s.allowOthersWorn;   // a saved run is normalized to allowOthersWorn before it ever reaches here
   if (others(a) !== others(b)) out.push(others(b) ? "others' worn gear allowed" : "others' worn gear excluded");
   flag("exact", "exact search on", "exact search off");
-  flag("swingSteps", "+SSI by step", "SSI by point");
+  if (!fromGoals) flag("swingSteps", "+SSI by step", "SSI by point");
   if ((a.castingSchool || "") !== (b.castingSchool || "")) out.push(b.castingSchool ? `casting school ${b.castingSchool}` : "casting school from skills");
   if ((a.rarity || "") !== (b.rarity || "")) out.push(b.rarity ? `prefer ${b.rarity} rarity` : "any rarity");
   const [wOn, wOff] = setDiff(a.excludeWeapons, b.excludeWeapons);

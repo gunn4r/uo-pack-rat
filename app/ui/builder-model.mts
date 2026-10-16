@@ -2,9 +2,9 @@
 // "What changes" gauges and table and "after the change" values, the compare table's differing rows and best values,
 // and a saved run's label and badges. No DOM and no page state, so app/builder-model.test.mts can check it
 // all directly; ui/builder.mts, ui/builder-result.mts and ui/runs.mts draw what it returns.
-import { NOBODY, PROPERTIES, labelOf, paperdollResist, propName, importanceOf, withCurrentActions, weightOfImportance, RESIST_SKILL_KEY, GEAR_SLOTS, NOT_BUILDER_KEYS, RESIST_KEYS, RESIST_CAP_LIMITS, SLOT_LABELS, settingsDiff, shardResistCap, WEAPON_SKILLS, WEAPON_EXCLUDES, SPELLBOOKS, MELEE_SKILLS, ubwsLetsIn, flagLabel } from "../vault-lib.mts";
-import type { FcCap, PlannedBuffs, PropMap, ResistCap, RunSettings } from "../vault-lib.mts";
-import { applyBuffs, buffById, buffsDiff, capWord, signed, type BuffResult } from "../buffs.mts";
+import { NOBODY, PROPERTIES, labelOf, paperdollResist, propName, importanceOf, withCurrentActions, weightOfImportance, RESIST_SKILL_KEY, GEAR_SLOTS, NOT_BUILDER_KEYS, RESIST_KEYS, RESIST_CAP_LIMITS, SLOT_LABELS, settingsDiff, shardResistCap, WEAPON_SKILLS, WEAPON_EXCLUDES, SPELLBOOKS, MELEE_SKILLS, ubwsLetsIn, flagLabel, rankImportance, LEFTOVER_GROUPS } from "../vault-lib.mts";
+import type { FcCap, Goals, PlannedBuffs, PropMap, ResistCap, RunSettings } from "../vault-lib.mts";
+import { applyBuffs, buffById, buffsDiff, capWord, signed, TAG_WORDS, type BuffResult } from "../buffs.mts";
 import { RUN_SETTING_LIMITS, type Range } from "../run-settings.mts";
 import { paperdollCaps, suitResist } from "../evaluate.mts";
 import type { Diagnostic, DiagnosticAction, DiagnosticCode, ScoreShare, SwingResult } from "../runs-types.mts";
@@ -356,7 +356,7 @@ export function runBadges(changes: number | null | undefined, totals: PropMap | 
 // ---------------------------------------------------------------- "Check your settings" (app/diagnostics.mts)
 // The actions the page carries out on the panel's profile: the button's words, its done state, the toast once applied, its words when it no longer fits, and the edit itself. An action of another kind gets no button. `code` is the diagnostic's: a swing_next_step's setFloor sets the SSI requirement at a step, where every other setFloor lowers one.
 type PanelAction = Extract<DiagnosticAction, { kind: "setFloor" | "makeSoft" | "setWeight" | "swingSteps" | "lockSlot" }>;
-type PanelProfile = { floors?: Record<string, number> | undefined; softFloors?: string[] | undefined; weights?: Record<string, number> | undefined; swingSteps?: boolean | undefined; lockedSlots?: string[] | undefined };
+type PanelProfile = { floors?: Record<string, number> | undefined; softFloors?: string[] | undefined; weights?: Record<string, number> | undefined; swingSteps?: boolean | undefined; lockedSlots?: string[] | undefined; goals?: Goals | undefined };
 export const handledAction = (a: DiagnosticAction): a is PanelAction => a.kind === "setFloor" || a.kind === "makeSoft" || a.kind === "setWeight" || a.kind === "swingSteps" || a.kind === "lockSlot";
 const raises = (code: DiagnosticCode | undefined): boolean => code === "swing_next_step";
 export function actionWords(a: PanelAction, code?: DiagnosticCode): { label: string; done: string; toast: string; stale: string } {
@@ -388,6 +388,8 @@ export function actionApplies(p: PanelProfile, a: PanelAction, from?: number, co
 }
 export function applyAction(p: PanelProfile, a: PanelAction, from?: number, code?: DiagnosticCode): void {
   if (!actionApplies(p, a, from, code)) return;
+  // a weight or the swing-step switch set by hand: the goals no longer set them (issue #292)
+  if ((a.kind === "setWeight" || a.kind === "swingSteps") && p.goals) p.goals = { ...p.goals, ownWeights: true };
   if (a.kind === "setWeight") p.weights![a.property] = weightOfImportance(a.property, a.value);   // the action names an importance; the profile is per point
   else if (a.kind === "swingSteps") p.swingSteps = a.on;
   else if (a.kind === "lockSlot") (p.lockedSlots ||= []).push(a.slot);
@@ -532,3 +534,66 @@ export function poolLine(excluded: string[] = [], ubws = false, pieces: number |
 }
 // The summary's Search line, from the Advanced fields as typed: "Exact, up to 30 s" or "Heuristic, 20 restarts".
 export const searchLine = (k: Pick<Knobs, "exact" | "budgetS" | "restarts">): string => (k.exact ? `Exact, up to ${k.budgetS} s` : `Heuristic, ${k.restarts} restarts`);
+
+// ---------------------------------------------------------------- goals (issue #292, vault-lib.mts compileGoals)
+// A goal's property in a sentence ("swing speed", "hit chance", "physical resist") and as a row's name ("Swing speed").
+export const goalWord = (k: string): string => { const w = RESIST_KEYS.includes(k) ? propName(k) : TAG_WORDS[k] ?? propName(k); return w[0]!.toLowerCase() + w.slice(1); };
+export const goalName = (k: string): string => { const w = goalWord(k); return w[0]!.toUpperCase() + w.slice(1); };
+// The goals as rows, most important first: each property with its rank (from 1), whether it shares that rank with the row above, and what it counts.
+export interface GoalRow { key: string; rank: number; linked: boolean; counts: number }
+export const goalRows = (g: Goals): GoalRow[] => g.ranks.flatMap((r, i) => r.map((key, j) => ({ key, rank: i + 1, linked: j > 0, counts: rankImportance(i) })));
+// The edits the Goals tab makes, each a new set of goals. ↑ and ↓ move the row's whole rank past the next one; "=" links a row
+// to the one above (sharing its rank) or unlinks it (its own rank, and the rows under it with it); ✕ removes a row; a new goal
+// goes last.
+const fromRows = (g: Goals, rows: Array<{ key: string; linked: boolean }>): Goals => {
+  const ranks: string[][] = [];
+  for (const r of rows) if (r.linked && ranks.length) ranks.at(-1)!.push(r.key); else ranks.push([r.key]);
+  return { ...g, ranks };
+};
+export function moveGoal(g: Goals, key: string, by: -1 | 1): Goals {
+  const i = g.ranks.findIndex((r) => r.includes(key)), j = i + by;
+  if (i < 0 || j < 0 || j >= g.ranks.length) return g;
+  const ranks = g.ranks.map((r) => [...r]);
+  [ranks[i], ranks[j]] = [ranks[j]!, ranks[i]!];
+  return { ...g, ranks };
+}
+export const linkGoal = (g: Goals, key: string, on: boolean): Goals => fromRows(g, goalRows(g).map((r, i) => (r.key === key && i > 0 ? { ...r, linked: on } : r)));
+export const removeGoal = (g: Goals, key: string): Goals => ({ ...g, ranks: g.ranks.map((r) => r.filter((k) => k !== key)).filter((r) => r.length) });
+export const addGoal = (g: Goals, key: string): Goals => (g.ranks.some((r) => r.includes(key)) ? g : { ...g, ranks: [...g.ranks.map((r) => [...r]), [key]] });
+
+// "How the goals went" on a result: each goal's suit total against its cap (held there), "maxed" when it reaches it, else
+// "as high as the gear allows"; Swing speed is maxed too once no faster step is within the cap (`fastest`). Totals and caps
+// are paperdoll terms.
+export interface GoalOutcome { key: string; rank: number; value: number; cap: number | null; maxed: boolean }
+export function goalOutcomes(g: Goals, suit: PropMap, caps: Readonly<Record<string, number>>, fastest = false): GoalOutcome[] {
+  return goalRows(g).map(({ key, rank }) => {
+    const cap = caps[key] ?? null, value = cap == null ? suit[key] || 0 : Math.min(suit[key] || 0, cap);
+    return { key, rank, value, cap, maxed: (cap != null && value >= cap) || (key === "ssi" && fastest) };
+  });
+}
+// The trades the build made, from what is worn now to the suit: a goal that went down while a lower-ranked one went up,
+// each held at its cap, in rank order, at most `n`, each with every lower goal that rose.
+export interface GoalTrade { key: string; from: number; to: number; ups: Array<{ key: string; by: number }> }
+export function goalTrades(g: Goals, now: PropMap, suit: PropMap, caps: Readonly<Record<string, number>>, n = 3): GoalTrade[] {
+  const held = (k: string, t: PropMap): number => (caps[k] != null ? Math.min(t[k] || 0, caps[k]!) : t[k] || 0);
+  const rows = goalRows(g).map((r) => ({ ...r, from: held(r.key, now), to: held(r.key, suit) }));
+  return rows.filter((d) => d.to < d.from).flatMap((d) => {
+    const ups = rows.filter((u) => u.rank > d.rank && u.to > u.from).map((u) => ({ key: u.key, by: u.to - u.from }));
+    return ups.length ? [{ key: d.key, from: d.from, to: d.to, ups }] : [];
+  }).slice(0, n);
+}
+// A trade in words: "−1 swing speed (56 → 55, still a 1.5 s swing) for +15 hit chance and +10 damage". `swing`, the delays
+// worn now and in the suit, when the goal given up is Swing speed.
+export function tradeText(t: GoalTrade, swing: { from: number; to: number } | null = null): string {
+  const s = t.key === "ssi" && swing ? `, ${swing.from === swing.to ? `still a ${delayText(swing.to)}` : `${delayText(swing.from)} → ${delayText(swing.to)}`} swing` : "";
+  const ups = t.ups.map((u) => `+${num(u.by)} ${goalWord(u.key)}`);
+  return `−${num(t.from - t.to)} ${goalWord(t.key)} (${num(t.from)} → ${num(t.to)}${s}) for ${andList(ups)}`;
+}
+// Where the spare points went: each property of the spare-points group (less the goals) that moved, "Luck +120 · DEX −2", or
+// "no change" when none did; null with no group (Nothing, or every one of its properties a goal).
+export function spareText(g: Goals, now: PropMap, suit: PropMap): string | null {
+  const goals = new Set(g.ranks.flat()), keys = LEFTOVER_GROUPS[g.leftover].filter((k) => !goals.has(k));
+  if (!keys.length) return null;
+  const moved = keys.filter((k) => (suit[k] || 0) !== (now[k] || 0)).map((k) => `${labelOf(k)} ${signed((suit[k] || 0) - (now[k] || 0))}`);
+  return moved.join(" · ") || "no change";
+}

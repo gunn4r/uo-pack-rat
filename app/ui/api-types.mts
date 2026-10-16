@@ -77,6 +77,7 @@ export interface UiPrefs {
   builderMode?: "automatic" | "manual" | undefined;    // the Suit Builder's mode (absent = Automatic)
   builderTab?: "requirements" | "weights" | "buffs" | "pool" | "advanced" | undefined;   // the Settings drawer's last tab (absent = Requirements)
   builderChanges?: "gauges" | "table" | undefined;   // the result's What changes view (absent = Gauges)
+  builderFineTune?: "on" | "off" | undefined;   // whether the Goals tab shows the weights its goals set (absent = off)
   manualFor?: "character" | "none" | undefined;        // Manual totals with the picked character's bonuses, or raw items (absent = character)
   manualSuit?: Record<string, number> | undefined;     // the Manual suit: a serial per slot (builder-manual.mts)
   manualBuffs?: string[] | undefined;                  // the Manual suit's buffs that are on (app/buffs.mts ids)

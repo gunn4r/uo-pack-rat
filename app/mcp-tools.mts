@@ -6,8 +6,8 @@
 // page does (buffs.mts, vault-lib.mts). One entry per tool: its name, description, JSON Schema for its arguments
 // (the subset app/schema/validate.mts checks, which mcp.mts runs before the handler), annotations and handler.
 // `action: true` marks a tool that acts in game: refused while Settings' "Allow in-game actions" is off.
-import { withCurrentActions, BRIDGE_ACTION_LABELS, BRIDGE_OFFLINE, GEAR_SLOTS, bridgeFeatures, bridgeRefusal, containerChain, newestScanAdapter, fullOf, isPseudoCharacter, NOBODY, RESIST_SKILL_KEY, resistMinimum, toOptItem, totalsOf, TRASH_RE } from "./vault-lib.mts";
-import type { BridgeAction, Character, Container, ContainerCapacity, Item, OptItem, Profile, PropMap } from "./vault-lib.mts";
+import { withCurrentActions, BRIDGE_ACTION_LABELS, BRIDGE_OFFLINE, GEAR_SLOTS, bridgeFeatures, bridgeRefusal, containerChain, newestScanAdapter, fullOf, isPseudoCharacter, NOBODY, RESIST_SKILL_KEY, resistMinimum, toOptItem, totalsOf, TRASH_RE, compileGoals, goalsError, GOAL_LEFTOVERS, SWING_GOALS, RANK_IMPORTANCE, LEFTOVER_IMPORTANCE } from "./vault-lib.mts";
+import type { BridgeAction, Character, Container, ContainerCapacity, Item, OptItem, Profile, PropMap, Goals } from "./vault-lib.mts";
 import { buffPlanOf, normalizeBuffs, savedBuffs, BUFFS } from "./buffs.mts";
 import { BUILTIN_PREFIX, characterBuffs, characterProfile, findTemplate, planBuild, specFromProfile, templateRefs, templateSettings, type PlannedBuild, type ProfilesV3, type TemplateMap } from "./build-spec.mts";
 import { evaluateSuit } from "./evaluate.mts";
@@ -130,6 +130,13 @@ async function planProfile(ctx: ToolContext, inv: InventoryDoc, name: string | n
       throw new ToolError(c ? `${hex(serial)} is a bag inside ${hex(c.root)}${root ? ` (${root.label || root.name || "a container"})` : ""}; onlyContainers takes root containers` : `${hex(serial)} is not a container in the scans; onlyContainers takes root containers`);
     }
     if (args.onlyContainers.length) p.onlyRoots = [...args.onlyContainers as number[]]; else delete p.onlyRoots;
+  }
+  // ranked goals (issue #292) in place of the profile's weights, compiled as the Goals tab compiles them
+  if (args.goals !== undefined) {
+    const e = goalsError(args.goals, "goals");
+    if (e) throw new ToolError(e);
+    const goals = args.goals as Goals, c = compileGoals(goals, p.weights);
+    Object.assign(p, { goals, weights: c.weights, swingSteps: c.swingSteps });
   }
   // a rarity preference: "any" clears the profile's (or template's), and none named keeps it
   if (args.rarity === "any") delete p.rarity;
@@ -509,6 +516,10 @@ export const TOOLS: Tool[] = [
       timeBudgetSeconds: { type: "integer", minimum: 1, maximum: 3600, description: "How long the exact search may take, 60 by default." },
       otherSuits: { type: "integer", minimum: 0, maximum: 20, description: "Also list this many next-best suits (0 by default)." },
       rarity: { type: "string", enum: ["higher", "any", "lower"], description: "Among equally good suits, prefer higher- or lower-rarity pieces; requirements always come first. \"any\" clears the profile's or template's preference; left out, it is kept." },
+      goals: { type: "object", additionalProperties: false, required: ["ranks", "leftover"], description: `Ranked goals in place of the profile's (or template's) weights, the Suit Builder's Goals tab: each property gets as high as the gear allows, up to its cap. ranks: most important first, each a list of property keys that count the same, e.g. [["ssi"], ["hci", "dci"], ["di"]]; they count ${RANK_IMPORTANCE.join(", ")} on the 0-100 importance scale, and ${RANK_IMPORTANCE.at(-1)} for every later rank. leftover: where spare points go (luck; melee: STR, DEX, Stamina Increase, HP regeneration; caster: INT, Mana Increase, mana regeneration, LMC, LRC; or none), at ${LEFTOVER_IMPORTANCE}. swing, for an ssi goal: {mode: "fastest"}, or {mode: "every", seconds: 1.5} to stop counting SSI at what that swing takes with the weapon worn now. SSI is scored by swing step when it is a goal.`,
+        properties: { ranks: { type: "array", maxItems: 40, items: { type: "array", minItems: 1, maxItems: 10, items: { type: "string", minLength: 1, maxLength: 64 } } },
+          swing: { type: "object", additionalProperties: false, required: ["mode"], properties: { mode: { type: "string", enum: [...SWING_GOALS] }, seconds: { type: "number", minimum: 1.25, maximum: 10 } } },
+          leftover: { type: "string", enum: [...GOAL_LEFTOVERS] } } },
       onlyContainers: { type: "array", maxItems: 200, items: SERIAL, description: "Build only from pieces in these root containers (a house's ground containers, a bank box, a backpack), by serial, and from worn pieces as usual. Replaces the profile's Only containers list; [] clears it; left out, it is kept." },
       waitSeconds: { type: "integer", minimum: 0, maximum: WAIT_MAX, description: `How long to wait for the result, ${WAIT_DEFAULT} seconds by default, ${WAIT_MAX} at most; then poll get_suit_build.` },
     } },

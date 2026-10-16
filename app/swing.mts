@@ -116,11 +116,12 @@ export function swingOf(speedS: number, stamBase: number, totals: Readonly<Recor
   return { speed: speedS, stamina, ssi, share, seconds: swingSeconds(speedS, stamina, ssi), steps: swingSteps(speedS, stamina, share) };
 }
 
-// The step table a build scores SSI with, or why it scores SSI per point though steps were asked for (`note`, a reason for a sentence). Steps need the character's swing with steps on, a positive SSI weight (a negative one stays per point, unsaid) and one weapon speed across the hand slots' candidates. `stamRange` is the gear Stamina pool's range over every suit (app/mip.mts propertyReach).
+// The step table a build scores SSI with, or why it scores SSI per point though steps were asked for (`note`, a reason for a sentence). Steps need the character's swing with steps on, a positive SSI weight (a negative one stays per point, unsaid) and one weapon speed across the hand slots' candidates. `stamRange` is the gear Stamina pool's range over every suit (app/mip.mts propertyReach), `ssiMax` the most item SSI any suit reaches; the profile's SSI cap lowers it.
 export function stepsFor(profile: Pick<EffectiveProfile, "swing" | "weights" | "caps" | "buffs">, pools: Parameters<typeof weaponSpeedOf>[0], current: Parameters<typeof weaponSpeedOf>[1], stamRange: { min: number; max: number }, optionalSlots?: readonly string[], ssiMax?: number): { ssiSteps: SsiStepPoint[] | null; note: string | null } {
   const sw = profile.swing;
   if (!sw?.steps || !((profile.weights?.ssi ?? 0) > 0)) return { ssiSteps: null, note: null };
   const { speed, reason } = weaponSpeedOf(pools, current, optionalSlots);
   if (speed == null) return { ssiSteps: null, note: reason };
-  return { ssiSteps: stepTable({ speedS: speed, stamBase: sw.stamBase, refStamina: sw.refStamina, share: ssiShareOf(profile), stamRange, ssiMax }), note: null };
+  // no point past the profile's SSI cap: the gear's share of the formula's 60 (every point of the table is within it), or a Swing speed goal's lower one (issue #292)
+  return { ssiSteps: stepTable({ speedS: speed, stamBase: sw.stamBase, refStamina: sw.refStamina, share: ssiShareOf(profile), stamRange, ssiMax: Math.min(ssiMax ?? Infinity, profile.caps?.ssi ?? Infinity) }), note: null };
 }
