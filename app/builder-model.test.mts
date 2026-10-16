@@ -1,12 +1,12 @@
 // builder-model.test.mts — `app/ui/builder-model.mts`, the Suit Builder's pure logic.
 //
-// `app/ui/builder-model.mts`, the Suit Builder's pure logic: No character's name in words (issue #12), the Settings drawer's count of settings changed since the last build (issue #272), the Advanced fields' validation messages with the allowed range ("Enter a whole number from 1 to 10,000.") and that the page's limits equal the server's `OPTS_LIMITS`, which field a server refusal names, a resist tile's outcome line (short, meets, at cap, over cap), the result's other-changes badges (gains first, missed requirements as losses), "after the change" values and pool estimates, the compare table's differing piece cells, best totals (past the cap counts as the cap) and hidden-rows note, the three-run compare limit, and a saved run's automatic label and badges, and the Weapons chip wording, and a weight row's trade-off hover in importance (issues #217, #274). All `[fast]`. The rarity preference (issue #262) in words: the help line, the settings change, the rarity total and the Rarity row. What made up the score (issue #273): the rows, the Other fold, a negative share set apart. A requirement's line from the result shown (issue #272).
+// `app/ui/builder-model.mts`, the Suit Builder's pure logic: No character's name in words (issue #12), the Settings drawer's count of settings changed since the last build (issue #272), the Advanced fields' validation messages with the allowed range ("Enter a whole number from 1 to 10,000.") and that the page's limits equal the server's `OPTS_LIMITS`, which field a server refusal names, a resist tile's outcome line (short, meets, at cap, over cap), the result's other-changes badges (gains first, missed requirements as losses), "after the change" values and pool estimates, the compare table's differing piece cells, best totals (past the cap counts as the cap) and hidden-rows note, the three-run compare limit, and a saved run's automatic label and badges, and the Weapons chip wording, and a weight row's trade-off hover in importance (issues #217, #274). All `[fast]`. The rarity preference (issue #262) in words: the help line, the settings change, the rarity total and the Rarity row. What made up the score (issue #273): the rows, the Other fold, a negative share set apart. A requirement's line from the result shown (issue #272). Arriving at the builder (issue #272): the latest run per character, whether the gear changed since a run (a newer scan; none or no time is no change), the built-in templates suggested for a character's skills, and the first-visit summary's lines.
 //
 // Lives in app/ for the reason app/ui-render.test.mts gives.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { NOBODY, setRules, resistCapsFor, settingsDiff, importanceOf, roundImportance, weightOfImportance, PROP_LABELS, NOT_BUILDER_KEYS } from "./vault-lib.mts";
+import { NOBODY, setRules, resistCapsFor, settingsDiff, importanceOf, roundImportance, weightOfImportance, PROP_LABELS, NOT_BUILDER_KEYS, labelOf } from "./vault-lib.mts";
 import { buffSkillValues, runBuffs } from "./buffs.mts";
 import type { RulesV1 } from "./schema/types.d.mts";
 import {
@@ -14,6 +14,7 @@ import {
   resistOutcome, locationCrumbs, changeRows, gaugeRows, gaugeNote, worse, gaugeTrack, changesSummary, afterChange, compareModel, hiddenRowsNote, toggleCompare, runAutoLabel, runBadges, plural, KNOB_RANGES,
   resistCapError, withResistCap, capNote, resistMinimumText, capsLine, anyOverridden, effectiveFloor, floorCapWarning, pruneResistCaps,
   weaponsChipText, weaponMustHaveChipText, toggleWeapon, weaponName, withBuffs, pastCapNotes, runSettingsDiff, weightTradeoff, newWeight, editedValue, NEW_WEIGHT_IMPORTANCE, templateBuffsLine, sourceTitle, who, rarityHelp, rarityTotal, rarityDetail, shareRows, needStatus, shownImportance,
+  latestRun, otherCharactersRuns, gearChangedSince, suggestTemplates, SUGGEST_MIN_SKILL, needsLine, topWeights, poolLine, searchLine,
   type Knobs, type ChangeRow,
 } from "./ui/builder-model.mts";
 import { OPTS_LIMITS } from "./vault-server.mts";
@@ -428,4 +429,63 @@ test("[fast] builder model: a weight's box shows its importance as stored, to tw
   assert.equal(String(shownImportance(-40)), "-40");
   // a typed decimal survives the round trip through the stored per-point weight
   for (const [k, typed] of [["luck", 12.5], ["dci", 7.25], ["physResist", 93.33]] as const) assert.equal(shownImportance(importanceOf(k, weightOfImportance(k, typed))), typed, k);
+});
+
+test("[fast] builder model: the latest run per character, and the gear changed since a run (issue #272)", () => {
+  const runs = [
+    { id: "a1", character: "Ana", createdAt: "2026-10-10T10:00:00Z" },
+    { id: "a2", character: "Ana", createdAt: "2026-10-12T10:00:00Z" },
+    { id: "b1", character: "Bo", createdAt: "2026-10-11T10:00:00Z" },
+    { id: "c1", character: "Cy", createdAt: "2026-10-09T10:00:00Z" },
+    { id: "d1", character: "Di", createdAt: "2026-10-08T10:00:00Z" },
+    { id: "x", createdAt: "2026-10-13T10:00:00Z" },
+  ];
+  assert.equal(latestRun(runs.slice(0, 2))?.id, "a2", "by when it was built, not the list's order");
+  assert.equal(latestRun([]), null);
+  assert.deepEqual(otherCharactersRuns(runs, "Bo").map((r) => r.id), ["a2", "c1", "d1"], "one per character, newest first, the character's own and a run with no character left out");
+  assert.deepEqual(otherCharactersRuns(runs, "Ana", 2).map((r) => r.id), ["b1", "c1"]);
+  assert.deepEqual(otherCharactersRuns(runs.slice(0, 2), "Ana"), []);
+
+  const scans = [{ scannedAt: "2026-10-12T09:00:00Z" }, { scannedAt: "2026-10-12T11:00:00Z" }];
+  assert.equal(gearChangedSince(scans, "2026-10-12T10:00:00Z"), true, "a scan newer than the run");
+  assert.equal(gearChangedSince(scans, "2026-10-12T12:00:00Z"), false);
+  assert.equal(gearChangedSince(scans, "2026-10-12T11:00:00Z"), false, "a scan at the run's own time is no change");
+  assert.equal(gearChangedSince([], "2026-10-12T10:00:00Z"), false, "no scan");
+  assert.equal(gearChangedSince(scans, undefined), false, "no time recorded");
+  assert.equal(gearChangedSince(scans, "not a time"), false);
+  assert.equal(gearChangedSince([{ scannedAt: "" }], "2026-10-12T10:00:00Z"), false, "a scan with no time");
+});
+
+test("[fast] builder model: the built-in templates suggested for a character's skills (issue #272)", () => {
+  const cands = [
+    { ref: "builtin:melee", text: "Melee" }, { ref: "builtin:caster", text: "Caster" }, { ref: "builtin:archer", text: "Archer" }, { ref: "builtin:tank", text: "Tank" },
+    { ref: "builtin:chivArcher", text: "Archer (Chivalry) Archery, Tactics, Anatomy, Healing and Chivalry archer" },
+    { ref: "builtin:summoner", text: "Summoner Magery, Eval, Mysticism, Focus Magery" },
+  ];
+  assert.deepEqual(suggestTemplates(cands, {}), ["builtin:melee", "builtin:caster", "builtin:archer"], "no skills: catalog order");
+  assert.deepEqual(suggestTemplates(cands, { Archery: 100, Chivalry: 90, Magery: 40 }), ["builtin:chivArcher", "builtin:summoner", "builtin:melee"], "the most skill points named first");
+  assert.deepEqual(suggestTemplates(cands, { Magery: SUGGEST_MIN_SKILL - 1 }, 2), ["builtin:melee", "builtin:caster"], "an untrained skill counts for nothing");
+});
+
+test("[fast] builder model: the first-visit summary's lines (issue #272)", () => {
+  const short = (k: string): string => labelOf(k);
+  assert.equal(needsLine({ physResist: 70, fireResist: 70, coldResist: 70, poisonResist: 70, energyResist: 70, dci: 45, ssi: 55 }, ["ssi"], short), `Resists 70 · ${short("dci")} 45 · ${short("ssi")} 55 (soft)`);
+  assert.equal(needsLine({ physResist: 70, fireResist: 65, dci: 45 }, ["fireResist"], short), `${short("physResist")} 70 · ${short("fireResist")} 65 (soft) · ${short("dci")} 45`, "resists that differ are listed one by one");
+  assert.equal(needsLine({ physResist: 70, fireResist: 70, coldResist: 70, poisonResist: 70, energyResist: 70 }, ["fireResist"], short).startsWith("Resists"), false, "one soft resist breaks the group");
+  assert.equal(needsLine({}, [], short), "None");
+  assert.equal(needsLine({ tagPenalty: 1 }, [], short), "None", "not a builder property");
+
+  const w = { physResist: 6, fireResist: 6, coldResist: 6, poisonResist: 6, energyResist: 6, dci: 10, hci: 10, ssi: 5, luck: 0.05, lmc: 0, tagPenalty: -25 };
+  const top = topWeights(w);
+  assert.deepEqual(top.rows.map((r) => r.key), ["dci", "hci", "resists", "ssi"]);
+  assert.equal(top.rows[2]!.importance, importanceOf("physResist", 6));
+  assert.equal(top.more, 1, "Luck is the one more; a zero weight and the tag penalty are not weights that add");
+  assert.deepEqual(topWeights({ ...w, fireResist: 3 }, 10).rows.filter((r) => /Resist$/.test(r.key)).length, 5, "resists that differ are rows of their own");
+  assert.deepEqual(topWeights({}), { rows: [], more: 0 });
+
+  assert.equal(poolLine([], true, 1284), "Any weapon · 1,284 pieces · any rarity");
+  assert.equal(poolLine(["archery", "fencing", "mace fighting", "throwing"], false, null, "lower"), "Swordsmanship only · prefer lower rarity");
+  assert.equal(poolLine(["archery", "throwing"], false, 1), "2 weapon skills left out · 1 piece · any rarity");
+  assert.equal(searchLine({ exact: true, budgetS: "30", restarts: "20" }), "Exact, up to 30 s");
+  assert.equal(searchLine({ exact: false, budgetS: "30", restarts: "20" }), "Heuristic, 20 restarts");
 });

@@ -1,14 +1,14 @@
-// ui/builder-result.mts — what the Suit Builder shows right of its panel (design spec 4.6 empty state, 4.7):
-// the character's current suit before any build, then a result in answer-first order (headline with the
+// ui/builder-result.mts — a Suit Builder result (design spec 4.7) in answer-first order (headline with the
 // resist tiles and What changes, the Plan, the Fetch list, the other suits, "<name> after the change",
-// Solver details), and the compare view for 2-3 suits or saved runs. The numbers come from
+// Solver details) with the character's runs beside it (ui/runs.mts runsCard), and the compare view for 2-3 suits or
+// saved runs. Before a build the first-visit view (ui/builder-start.mts) has the screen. The numbers come from
 // ui/builder-model.mts; the bridge actions are gated by ui/bridge.mts's bridgeActionReason(). It shares the builder's
 // state through ui/builder-session.mts and provides the result and compare commands there.
-import { GEAR_SLOTS, NOBODY, RESIST_KEYS, RESIST_SKILL_KEY, resistMinimum, resistSkillOf, resistSkillCapOf, toOptItem, totalsOf, requirementReport, resistCapsFor, profileResistCaps, fcCapFor } from "../vault-lib.mts";
-import type { EffectiveProfile, Item, OptItem, PropMap, ResistCap } from "../vault-lib.mts";
+import { GEAR_SLOTS, NOBODY, RESIST_KEYS, resistSkillOf, resistSkillCapOf, toOptItem, totalsOf, requirementReport, resistCapsFor, profileResistCaps, fcCapFor } from "../vault-lib.mts";
+import type { EffectiveProfile, Item, PropMap, ResistCap } from "../vault-lib.mts";
 import { state } from "./store.mts";
 import type { BuildMeta } from "./store.mts";
-import { $, el, label, fmtN, fmtSecs, fmtRunTime, slotLabel, rarCell, whereText } from "./dom.mts";
+import { $, el, label, fmtN, fmtSecs, fmtRunTime, slotLabel, whereText } from "./dom.mts";
 import { box, txt, button, icon, badge, message, meter, segmented, switchControl, check, table, tableFoot, rowActions, tipWrap, tooltip, keyValue, token } from "./components.mts";
 import { prefs } from "./prefs.mts";
 import { sheetNode, sheetParts } from "./sheet.mts";
@@ -39,40 +39,6 @@ function resistTile(k: string, after: number, floor: number | null, c: ResistCap
     note ? txt(`Cap ${note}`, "t-sm strong b-cap-note") : null);
 }
 
-// ---------------------------------------------------------------- empty state: the current suit
-// Before any build: the five resists of what the character wears now against the panel's requirements, and
-// the worn pieces. It is also what a result is compared against.
-let currentShown: string | null = null;
-function renderCurrentSuit(name: string): void {
-  currentShown = name;
-  session.outcome = null;
-  $<HTMLElement>("#b-result")!.replaceChildren(currentSuitCard(name));
-}
-function refreshCurrentSuit(): void {
-  if (currentShown && currentShown === session.character && !session.result && document.getElementById("b-current")) renderCurrentSuit(currentShown);
-}
-function currentSuitCard(name: string): HTMLElement {
-  if (name === NOBODY) return el("section", { class: "card", id: "b-current", "aria-label": "No character" },
-    box("div", { class: "card-head" }, el("h2", {}, "No character")),
-    box("div", { class: "card-pad" }, el("p", { class: "muted" }, txt("Builds from the pieces nobody wears, on item totals: no skills, race or stats."))));
-  const worn = state.inv!.worn[name] || [];
-  const p = session.profile;
-  const totals = totalsOf(Object.fromEntries(worn.map((i) => [String(i.serial), i as unknown as OptItem])));
-  const min = resistMinimum(state.inv!.characters[name]?.skills, totals[RESIST_SKILL_KEY]);
-  const caps = resistCapsFor(p?.race, p?.resistCaps);
-  // a requirement set above its cap counts only up to it, as the solver scores it; a resist under the minimum reads it
-  const tiles = RESIST_KEYS.map((k) => resistTile(k, Math.max(totals[k] || 0, min ?? -Infinity), p?.floors?.[k] != null ? Math.min(p.floors[k]!, caps[k]!.cap) : null, caps[k]!));
-  const order = (it: Item): number => { const i = GEAR_SLOTS.indexOf(it.slot || ""); return i < 0 ? 99 : i; };
-  const sorted = [...worn].sort((a, b) => order(a) - order(b));
-  const rows = sorted.map((it) => ({ cells: [slotLabel(it.slot), txt(it.name), rarCell(it), txt(keyProps(it.props) || "no properties", keyProps(it.props) ? "muted" : "faint")] }));
-  const tbl = rows.length ? table({ label: "Worn now", columns: [{ label: "Slot", width: "18%" }, { label: "Wearing", width: "30%" }, { label: "Rarity", width: "18%" }, { label: "Key properties" }], rows }) : null;
-  tbl?.querySelectorAll("tbody tr").forEach((tr, i) => tipTarget(tr as HTMLTableRowElement, sorted[i]!));
-  return el("section", { class: "card b-flush", id: "b-current", "aria-label": `${name}'s current suit` },
-    box("div", { class: "card-head" }, el("h2", {}, "Current suit"), txt(`What ${name} wears now, against the requirements`, "t-sm muted")),
-    box("div", { class: "b-resists card-pad" }, ...tiles),
-    tbl || box("div", { class: "card-pad" }, el("p", { class: "muted" }, txt(`${name} wore nothing the last scan could read.`))));
-}
-
 // ---------------------------------------------------------------- result
 // Two calls can overlap (Show on another suit, a saved run landing while one still resolves its pieces), so
 // renderSeq is a generation counter: bumped at entry, checked after the only await, and every DOM write is one
@@ -98,7 +64,6 @@ async function renderResult(res: OptimizeResult, current: OptSuit, prof: Effecti
   const mySeq = ++renderSeq;
   if (last?.res !== res) { picked = new Set(); pickRefused = null; withoutBuffs = false; }
   last = { res, current, prof, name, meta };
-  currentShown = null;
   // what the Requirements tab says each need came to: the best suit with the buffs it was planned with
   const planned = withBuffs(totalsOf(res.best), prof.resistSkill, paperdollCaps(profileResistCaps(prof), fcCapOf(prof)), prof.buffs, resistSkillCapOf(state.inv!.characters[name]?.skills));
   session.outcome = { name, totals: planned.totals, caps: planned.caps, swing: res.swing ?? null, weapon: heldWeapon(res.best)?.name ?? null };
@@ -121,7 +86,7 @@ async function renderResult(res: OptimizeResult, current: OptSuit, prof: Effecti
   ].filter((x): x is HTMLElement => !!x);
   const out = $<HTMLElement>("#b-result")!;
   out.classList.remove("b-stale"); out.inert = false; out.removeAttribute("aria-hidden");
-  out.replaceChildren(...nodes);
+  out.replaceChildren(box("div", { class: "b-arrive" }, box("div", { class: "b-arrive-main" }, ...nodes), box("aside", { class: "b-arrive-side", "aria-label": "Runs" }, commands.runsCard())));
 }
 
 // A built profile's Faster Casting cap before any planned buff (vault-lib.mts fcCapFor), for paperdollCaps.
@@ -505,4 +470,4 @@ function openRunCompare(runs: SavedRunLike[], titleOf: (r: SavedRunLike) => stri
       onRemove: (i) => { const gone = list[i]!; list = list.filter((_, j) => j !== i); onRemove(gone.id); if (list.length < 2) closeCompare(); else showCompare(openSpec!); } };
   });
 }
-provide({ renderResult, renderCurrentSuit, refreshCurrentSuit, resetResultView, resultLoadError, closeCompare, openRunCompare });
+provide({ renderResult, resetResultView, resultLoadError, closeCompare, openRunCompare });

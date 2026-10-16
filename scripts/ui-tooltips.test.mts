@@ -1,6 +1,6 @@
 // ui-tooltips.test.mts — [slow]: the item tooltip on every screen that draws an item (issue #10).
 //
-// `[slow]`: the item tooltip on every screen that draws an item (issue #10), at 1024 × 768 over the demo scans with both demo chests labelled and a black pearl rule: an Inventory row (list, a grouped row of one stack while a bigger group carries no serial, with the peek open), a character sheet slot, the Suit Builder's current suit and a result piece, a House map contents drawer row and an Organize plan move each show `#tip` with that item's name, inside the window. Also: no tooltip over a drawer row's actions, Esc and a scroll that takes the item from under the pointer hide it, a row below the fold still shows it after the hover scrolls it into view, keyboard focus shows it with `aria-describedby` and Tab goes on into the row's actions, and a character sheet slot's pop keeps it away. A new screen that draws items without `dom.mts`'s `itemTip` should be added here.
+// `[slow]`: the item tooltip on every screen that draws an item (issue #10), at 1024 × 768 over the demo scans with both demo chests labelled and a black pearl rule: an Inventory row (list, a grouped row of one stack while a bigger group carries no serial, with the peek open), a character sheet slot, a Suit Builder result piece, a House map contents drawer row and an Organize plan move each show `#tip` with that item's name, inside the window. Also: no tooltip over a drawer row's actions, Esc and a scroll that takes the item from under the pointer hide it, a row below the fold still shows it after the hover scrolls it into view, keyboard focus shows it with `aria-describedby` and Tab goes on into the row's actions, and a character sheet slot's pop keeps it away. A new screen that draws items without `dom.mts`'s `itemTip` should be added here.
 //
 // A screen that draws items without dom.mts's itemTip fails here. Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
 import test from "node:test";
@@ -104,8 +104,7 @@ test("[slow] the item tooltip shows on every screen that draws an item: Inventor
     await go(page, "#/characters/Dorran", "#tab-characters .sheet .slot[data-serial]");
     await tipShows(page, page.locator("#tab-characters .sheet .slot[data-serial]").first(), "a character sheet slot");
 
-    await go(page, "#/builder/Dorran", "#b-current .b-tip");
-    await tipShows(page, page.locator("#b-current .b-tip").first(), "the Suit Builder's current suit");
+    await go(page, "#/builder/Dorran", "#b-start");
     await page.click("#b-settings");   // the time budget is under Advanced, in the Settings drawer (issue #272)
     await page.click("#b-tab-advanced");
     await page.fill("#b-budget", "2");
