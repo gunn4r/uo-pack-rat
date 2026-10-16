@@ -266,8 +266,23 @@ def tazuo_api(world, backpack, bank=0, skills=None):
         api.FindTypeAll = find_type_all
     api.Contents = lambda s: len(world.kids(int(s), True))
     api.GetItemsOnGround = lambda r: [it for it in world.items.values() if it.OnGround and world.dist(it.X, it.Y) <= r]
-    api.ItemNameAndProps = lambda s, b=False: getattr(world.items[int(s)], "Tooltip", None) or world.items[int(s)].Name
-    api.RequestOPLData = lambda serials: None
+    # `late_tooltips` (serial -> fake seconds): that item's tooltip reads empty until that long after the
+    # first RequestOPLData naming it, and never arrives when the value is None.
+    late, arrives = getattr(world, "late_tooltips", {}), {}
+
+    def name_and_props(s, b=False):
+        s = int(s)
+        if s in late and (arrives.get(s) is None or world.clock.now < arrives[s]):
+            return ""
+        return getattr(world.items[s], "Tooltip", None) or world.items[s].Name
+
+    def request_opl(serials):
+        world.calls.append(("opl", sorted(int(s) for s in serials)))
+        for s in serials:
+            if int(s) in late and int(s) not in arrives:
+                arrives[int(s)] = None if late[int(s)] is None else world.clock.now + late[int(s)]
+    api.ItemNameAndProps = name_and_props
+    api.RequestOPLData = request_opl
     if world.facet is not None:    # a build without GetMap() has no attribute at all
         api.GetMap = lambda: world.facet() if callable(world.facet) else world.facet
     if world.multis is not None:    # a build without the multi calls has no attribute at all

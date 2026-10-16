@@ -1,8 +1,9 @@
-// house-names.mts — <data>/house-map.json (issues #164 and #10): what the player says about each house, by house id ({ version: 1, houses: { "<id>": { name, bounds?, areas? } } }). `name`, `bounds` and `areas` are checked; any other field on an entry or an area is kept, so notes can join the same entry later. `bounds` is the house's footprint when it was named or its areas drawn, so a redesigned or moved house (a new id) can be offered the old name and areas. `areas` are the player's own areas on the House map: each a name, a level, a colour from a fixed palette and up to MAX_RECTS rectangles of world tiles (inclusive). Written only by PUT /api/house-map/<id>, whole entry at a time; a file that does not parse is moved aside as house-map.json.corrupt (the way organize.json is) and reads as empty.
+// house-names.mts — <data>/house-map.json (issues #164 and #10): what the player says about each house, by house id ({ version: 1, houses: { "<id>": { name, bounds?, areas? } } }). `name`, `bounds` and `areas` are checked; any other field on an entry or an area is kept, so notes can join the same entry later. `bounds` is the house's footprint when it was named or its areas drawn, so a redesigned or moved house (a new id) can be offered the old name and areas. `areas` are the player's own areas on the House map: each a name, a level, a colour from a fixed palette and up to MAX_RECTS rectangles of world tiles (inclusive). `forgotten` (issue #298) lists the houses the player removed from the House map, each by id with the capture stamp it had then: the house stays hidden until a newer capture of it. Written only by PUT /api/house-map/<id>, whole entry at a time, and POST /api/house-map/<id>/forget; a file that does not parse is moved aside as house-map.json.corrupt (the way organize.json is) and reads as empty.
 import { existsSync, lstatSync, readFileSync } from "node:fs";
 import { basename } from "node:path";
 import { moveAside, writeFileAtomic } from "./atomic-write.mts";
 import { DATA_FILE_MODE } from "./config.mts";
+import { captureTime } from "./house-capture.mts";
 import { migrate, newerNotice } from "./migrate.mts";
 
 export interface HouseBounds { x0: number; y0: number; x1: number; y1: number; facet: number | null }
@@ -10,7 +11,8 @@ export interface AreaRect { x0: number; y0: number; x1: number; y1: number }
 export interface HouseArea { id: string; name: string; level: number; color: string; rects: AreaRect[]; [field: string]: unknown }
 // `name` is "" for a house with areas but no name of its own.
 export interface HouseEntry { name: string; bounds?: HouseBounds | undefined; areas?: HouseArea[] | undefined; [field: string]: unknown }
-export interface HouseMapDoc { version: 1; houses: Record<string, HouseEntry> }
+export interface ForgottenHouse { id: string; capturedAt: string }
+export interface HouseMapDoc { version: 1; houses: Record<string, HouseEntry>; forgotten?: ForgottenHouse[] | undefined }
 export const NAME_MAX = 60;
 // The area colours are token names (--color-area-1 … --color-area-8 in the themes), never a raw colour.
 export const AREA_COLORS = ["area-1", "area-2", "area-3", "area-4", "area-5", "area-6", "area-7", "area-8"] as const;
@@ -120,9 +122,16 @@ export function readHouseMap(file: string): { doc: HouseMapDoc; problem: string 
     const r = isHouseId(id) ? checkHouseEntry(v) : null;
     if (r?.ok && r.entry) houses[id] = r.entry; else dropped++;
   }
-  return { doc: { version: 1, houses }, problem: dropped ? `house-map.json: ${dropped} ${dropped === 1 ? "entry" : "entries"} with a bad id, name or area left out` : null,
+  const forgotten = Array.isArray((raw as { forgotten?: unknown }).forgotten) ? ((raw as { forgotten: unknown[] }).forgotten).filter(isForgottenEntry) : [];
+  return { doc: { version: 1, houses, ...(forgotten.length ? { forgotten } : {}) }, problem: dropped ? `house-map.json: ${dropped} ${dropped === 1 ? "entry" : "entries"} with a bad id, name or area left out` : null,
     readOnly: newerNotice(basename(file), "house-map", raw) };
 }
+
+const isStamp = (v: unknown): v is string => typeof v === "string" && v.length <= 40 && Number.isFinite(Date.parse(v));
+const isForgottenEntry = (v: unknown): v is ForgottenHouse => isObj(v) && typeof v.id === "string" && isHouseId(v.id) && isStamp(v.capturedAt);
+// Whether the house `id`, captured last at `capturedAt`, is one the player removed: forgotten at that capture or a later one.
+export const isForgotten = (doc: HouseMapDoc, id: string, capturedAt: string): boolean =>
+  !!doc.forgotten?.some((f) => f.id === id && captureTime(capturedAt) <= captureTime(f.capturedAt));
 
 const textOf = (doc: HouseMapDoc): string => JSON.stringify(doc, null, 2) + "\n";
 // Sets one house's entry (null removes it) in `doc`, the map as read, and writes the map; or says why not. Only a change
@@ -131,12 +140,21 @@ const textOf = (doc: HouseMapDoc): string => JSON.stringify(doc, null, 2) + "\n"
 export function saveHouseEntry(file: string, doc: HouseMapDoc, id: string, entry: HouseEntry | null): string | null {
   const houses = { ...doc.houses };
   if (entry) houses[id] = entry; else delete houses[id];
-  const next: HouseMapDoc = { version: 1, houses }, text = textOf(next);
+  const next: HouseMapDoc = { ...doc, houses }, text = textOf(next);
   if (entry) {
     if (!doc.houses[id] && Object.keys(doc.houses).length >= MAX_HOUSES) return `at most ${MAX_HOUSES} houses can be named; clear some names first`;
     const size = Buffer.byteLength(text);
     if (size > MAX_HOUSE_MAP_BYTES && size > Buffer.byteLength(textOf(doc))) return `that would make house-map.json larger than ${MAX_HOUSE_MAP_BYTES / 1e6} MB`;
   }
   writeFileAtomic(file, text, DATA_FILE_MODE);
+  return null;
+}
+// Forgets the house `id` as captured at `capturedAt` (a stamp, else the reason it is refused) in `doc`, the map as read, and writes the map. One entry per house, the newest stamp kept; past MAX_HOUSES the oldest entries go.
+export function forgetHouse(file: string, doc: HouseMapDoc, id: string, capturedAt: unknown): string | null {
+  if (!isStamp(capturedAt)) return "capturedAt must be the house's capture time";
+  const was = doc.forgotten?.find((f) => f.id === id);
+  const at = was && captureTime(was.capturedAt) > captureTime(capturedAt) ? was.capturedAt : capturedAt;
+  const forgotten = [...(doc.forgotten ?? []).filter((f) => f.id !== id), { id, capturedAt: at }].slice(-MAX_HOUSES);
+  writeFileAtomic(file, textOf({ ...doc, forgotten }), DATA_FILE_MODE);
   return null;
 }

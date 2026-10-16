@@ -1198,7 +1198,23 @@ function totalsPanel(m: HouseModel): HTMLElement[] {
     legend(),
     el("p", { class: "t-sm muted" }, "Click a stack on the map, or an area on the left."),
     whereSection(m),
+    forgetButton(m),
   ].filter((e): e is HTMLElement => e != null);
+}
+// Remove this house (issue #298): a house the scan captured where it should not have (the player had moved into another house) leaves the map, after the page's yes/no dialog, until a newer scan captures it again.
+function forgetButton(m: HouseModel): HTMLElement | null {
+  const h = summaryOf(m);
+  if (!h) return null;
+  return box("div", { class: "map-panel-actions" }, button({ label: "Remove this house", variant: "ghost", size: "sm", attrs: { id: "map-forget" }, onClick: () => { void askForget(m, h.capturedAt); } }));
+}
+async function askForget(m: HouseModel, capturedAt: string): Promise<void> {
+  const name = houseName(m);
+  if (!await confirmDialog({ title: `Remove ${name}?`, body: "It leaves the House map until a newer scan captures it again. Its containers and what is in them stay in the Inventory.", confirmLabel: "Remove house" })) { $<HTMLElement>("#map-forget")?.focus(); return; }
+  try { await houses.forget(m.id, capturedAt); } catch (e) { toast(errorText(e), "bad"); $<HTMLElement>("#map-forget")?.focus(); return; }
+  toast(`Removed ${name} from the House map.`, "good");
+  history.replaceState(null, "", mapHash({ q: query }));
+  await showMap({ house: null, q: query, select: null });
+  $<HTMLElement>("#map-house")?.focus();
 }
 // ---------------------------------------------------------------- where the house is (issue #164)
 const summaryOf = (m: HouseModel) => (m.id === PLAIN ? undefined : S.list?.houses.find((h) => h.id === m.id));

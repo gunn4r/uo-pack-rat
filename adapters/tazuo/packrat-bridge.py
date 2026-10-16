@@ -108,7 +108,7 @@ def script_prefix(self_name):
 
 
 ADAPTER_ID = "tazuo"
-ADAPTER_VERSION = "2.17.0"
+ADAPTER_VERSION = "2.18.0"
 CAPABILITIES = {
     "layers": ["OneHanded", "TwoHanded", "Shoes", "Pants", "Shirt", "Helmet", "Gloves",
                "Ring", "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic",

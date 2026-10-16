@@ -74,7 +74,7 @@ def read_blacklist(path):
 
 
 ADAPTER_ID = "tazuo"
-ADAPTER_VERSION = "2.17.0"
+ADAPTER_VERSION = "2.18.0"
 CAPABILITIES = {
     "layers": ["OneHanded", "TwoHanded", "Shoes", "Pants", "Shirt", "Helmet", "Gloves",
                "Ring", "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic",
@@ -108,6 +108,7 @@ TRASHED = set()          # trash containers this run never opened (TRASH_RE)
 HOUSE_LEFT_OUT = set()   # furniture past HOUSE_MAX_ITEMS this run left out of the house section (the farthest from the player)
 HOUSE_TOO_LARGE = []     # the tile count of a house this run left out for passing HOUSE_MAX_TILES
 # END generated: tazuo/house_files
+MOVED_AWAY = 15          # tiles: past this from where the scan started (or on another facet) the player has moved away, and the scan stops
 STOP_CLOSE_S = 1.5       # after a Stop, stop closing windows after this long: the client gives a stopped script 2 s
 # BEGIN generated: tazuo/out_dir
 OUT_DIR = os.path.join(data_dir(), "inbox", "tazuo")
@@ -359,6 +360,12 @@ def house_capture(px, py):
 
 
 # BEGIN generated: tazuo/walk
+OPL_FIRST_WAIT_S = 0.5    # after asking for a root's tooltips, before the first look
+OPL_STEP_S = 0.25         # then between looks, re-asking for the ones still missing
+OPL_WAIT_S, OPL_WAIT_PER_ITEM_S, OPL_WAIT_MAX_S = 2.0, 0.03, 8.0   # the longest wait: 2 s plus 30 ms an item, 8 s at most
+NO_TOOLTIP = set()        # items this run recorded without a tooltip (they never arrived in time)
+
+
 def was_opened(serial):
     """The client's own word that a container's contents arrived (its gump opened)."""
     try:
@@ -379,6 +386,27 @@ def note_if_closed(serial):
             OPENED_HERE.append(it)
     except Exception:
         pass
+
+
+def await_tooltips(serials):
+    """Ask the server for these items' tooltips and wait for them, re-asking only for the ones still
+    missing every OPL_STEP_S, for at most OPL_WAIT_S plus OPL_WAIT_PER_ITEM_S per item (OPL_WAIT_MAX_S
+    in all) or until Stop. Returns the serials whose tooltip never arrived."""
+    missing, waited, step = list(serials), 0.0, OPL_FIRST_WAIT_S
+    limit = min(OPL_WAIT_MAX_S, OPL_WAIT_S + OPL_WAIT_PER_ITEM_S * len(missing))
+    while missing and waited < limit and not API.StopRequested:
+        try:
+            API.RequestOPLData(missing)
+        except Exception:
+            pass
+        try:
+            API.Pause(step)
+        except Exception:
+            break
+        waited += step
+        step = OPL_STEP_S
+        missing = [s for s in missing if not tooltip_lines(s)]
+    return missing
 
 
 def scan_root(root_serial, kind, label, containers, items, seen):
@@ -430,11 +458,14 @@ def scan_root(root_serial, kind, label, containers, items, seen):
     listed = set(int(it.Serial) for it in listing if int(it.Serial) in BLACKLIST)
     SKIPPED.update(listed)
     unopened.update(listed)       # never opened: the fold keeps what it last knew inside a blacklisted bag
-    try:
-        API.RequestOPLData([int(it.Serial) for it in listing])
-        API.Pause(0.5)
-    except Exception:
-        pass
+    missing = await_tooltips([int(it.Serial) for it in listing])
+    if API.StopRequested:
+        return -1
+    if len(missing) * 2 > len(listing):
+        # Most of the root has no tooltip (the player moved away, or the server is slow): records with no name and no properties tell the app nothing, so the root is left for the app to keep.
+        sysmsg(f"  {label}: {len(missing)} of {len(listing)} tooltips did not arrive — its contents are kept from the last scan", ALARM_HUE)
+        return -1
+    NO_TOOLTIP.update(missing)
     containers[root_serial] = root_entry(root_serial, kind, label)
     n = 0
     for it in listing:
@@ -557,10 +588,24 @@ def read_skills():
 # END generated: tazuo/skills
 
 
+def moved_away(start):
+    """True once the player stands more than MOVED_AWAY tiles from `start` (x, y, facet) or on another
+    facet. A facet the client cannot say is not compared."""
+    try:
+        x, y = int(API.Player.X), int(API.Player.Y)
+    except Exception:
+        return False
+    f = facet()
+    if start[2] is not None and f is not None and f != start[2]:
+        return True
+    return max(abs(x - start[0]), abs(y - start[1])) > MOVED_AWAY
+
+
 def main():
     t0 = time.time()
     p = API.Player
     char = str(p.Name)
+    start = (int(p.X), int(p.Y), facet())
     snap = {"schemaVersion": 2, "character": char,
             "scannedAt": rfc3339_now(),
             "adapter": {"id": ADAPTER_ID, "version": ADAPTER_VERSION, "client": "TazUO",
@@ -618,11 +663,15 @@ def main():
         except Exception:
             continue
 
-    counts = []
+    counts, moved = [], False
     for serial, kind, label in roots:
         if API.StopRequested:
             sysmsg("Pack Rat scan stopped — nothing written.", ALARM_HUE)
             return
+        # Moved away (a recall, a gate): the roots left are out of reach, so they are left out of the file and the app keeps what it knew about them.
+        moved = moved_away(start)
+        if moved:
+            break
         n = scan_root(serial, kind, label, snap["containers"], snap["items"], seen)
         opened = n >= 0
         # Could not open it (too far / locked): still listed, but opened:False and no items, so the
@@ -638,8 +687,10 @@ def main():
         sysmsg("Pack Rat scan stopped — nothing written.", ALARM_HUE)
         return
 
+    # A house captured after moving away would be the house the player stands in now, not the one scanned.
+    moved = moved or moved_away(start)
     try:
-        house = house_capture(int(API.Player.X), int(API.Player.Y))
+        house = None if moved else house_capture(int(API.Player.X), int(API.Player.Y))
     except Exception:   # the house is extra: a capture that fails never costs the scan
         house = None
     if house is not None:
@@ -666,6 +717,10 @@ def main():
         sysmsg(f"  house: {len(house['tiles'])} tiles, {furniture}", INFO_HUE)
     if HOUSE_TOO_LARGE:
         sysmsg(f"  house too large to record: {HOUSE_TOO_LARGE[0]} tiles", INFO_HUE)
+    if NO_TOOLTIP:
+        sysmsg(f"  {len(NO_TOOLTIP)} item{'s' if len(NO_TOOLTIP) != 1 else ''} recorded without a tooltip (it did not arrive in time)", INFO_HUE)
+    if moved:
+        sysmsg("You moved away, so the scan stopped. Run it again from where you started.", ALARM_HUE)
 
 
 try:
