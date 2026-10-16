@@ -3,6 +3,7 @@
 #   Scan here               packrat-scanner.py
 #   Character refresh       packrat-character-refresh.py
 #   House map refresh       packrat-house-map-refresh.py (waits while a Put away runs: its file would read as the run's scan)
+#                           (each of these three reads "Stop scan" while its script runs, and stops it)
 #   Start / Stop bridge     packrat-bridge.py (the label follows whether it is running)
 #   Blacklist a container   packrat-blacklist.py
 #   Put away...             Put away (issue #131): files what lies directly in a container you pick with
@@ -106,7 +107,7 @@ def script_prefix(self_name):
 
 
 ADAPTER_ID = "tazuo"
-ADAPTER_VERSION = "2.17.0"
+ADAPTER_VERSION = "2.18.0"
 
 SELF = "packrat-panel.py"
 BRIDGE, BLACKLIST = "packrat-bridge.py", "packrat-blacklist.py"
@@ -223,6 +224,35 @@ def watch_pending():
         elif time.time() >= until:
             del state["pending"][name]
             say("Didn't start. Try again in a moment;", "if it persists, open Script Manager or relog.")
+
+
+# The three scan buttons: while a button's script runs, it reads "Stop scan" and a click stops that script.
+SCAN_BUTTONS = {SCANNER: ("scan_btn", "Scan here"), REFRESH: ("refresh_btn", "Character refresh"), HOUSE: ("house_btn", "House map refresh")}
+
+
+def scan_click(name, fn):
+    """A click on a scan button, its script's state read at the click: one that still read Stop scan when
+    the script had already ended starts nothing."""
+    def click():
+        if is_running(name):
+            stop_scan(name)
+        elif shown.get(SCAN_BUTTONS[name][0]) == "Stop scan":
+            say("The %s already finished." % LABELS[name])
+        else:
+            fn()
+    return click
+
+
+def stop_scan(name):
+    """Stops a scan script. A Put away waiting for that scan ends with it: the file a stopped scan writes
+    may leave out the container it picked."""
+    call(getattr(API, "StopScript", None), rel(name))
+    state["quiet"].add(name)    # it ends because of the Stop: no "finished" line
+    run = state["run"]
+    if run is not None and run["phase"] == "scan" and run["script"] == name:
+        end_put_away("Put away canceled.")
+    else:
+        say("Stopping the %s..." % LABELS[name])
 
 
 def on_house():
@@ -389,6 +419,8 @@ def refresh():
     state["was_running"] = set(running)
     set_text("running", "Running: " + (", ".join(RUNNING[n] for n in running) or "nothing"))
     set_text("bridge_btn", "Stop bridge" if BRIDGE in running else "Start bridge")
+    for name, (key, text) in SCAN_BUTTONS.items():
+        set_text(key, "Stop scan" if name in running else text)
     set_text("bridge", "Bridge: " + ("on" if BRIDGE in running else "off"))
     t = last_scan()
     set_text("scan", "Last scan: " + ("none yet" if t is None else ago(t)))
@@ -648,9 +680,9 @@ def build_window():
         lbl.SetPos(16, y)
         g.Add(lbl)
         ui[key] = lbl
-    buttons = [("refresh_btn", "Character refresh", lambda: start(REFRESH), 16, 44),
-               ("house_btn", "House map refresh", on_house, 196, 44),
-               ("scan_btn", "Scan here", lambda: start(SCANNER), 16, 80),
+    buttons = [("refresh_btn", "Character refresh", scan_click(REFRESH, lambda: start(REFRESH)), 16, 44),
+               ("house_btn", "House map refresh", scan_click(HOUSE, on_house), 196, 44),
+               ("scan_btn", "Scan here", scan_click(SCANNER, lambda: start(SCANNER)), 16, 80),
                ("blacklist_btn", "Blacklist a container", lambda: start(BLACKLIST), 196, 80),
                ("bridge_btn", "Start bridge", on_bridge, 16, 116),
                ("away_btn", "Put away...", on_put_away, 196, 116),

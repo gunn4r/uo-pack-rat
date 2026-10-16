@@ -10,6 +10,8 @@ Issue #10: a scan inside a house records its tiles and where the player stood, k
 
 The TazUO house map refresh (2.12.0, issue #10): a house-only file (`kind: "house"`, no inventory) named `<Character>-<stamp>-house.json` with the tiles, furniture and every chest, no container opened and no tooltip or OPL request, its one summary line, trash by cached name, blacklisted containers and corpses kept out of the chests, nothing written outside a house, without the multi calls or past the tile cap (each said in one line), the tiles kept and the furniture claim left out when the ground read fails, nothing written after a Stop, and a run without `__file__`; the trash containers the roots pass skipped written as `house.trash` (issue #162), with no field when there were none or no house.
 
+Issue #298: a TazUO scan whose player moves more than 15 tiles away or to another facet partway stops right after the root under way and before the house capture (the roots finished are written, that one and the rest left out, no house, the in-game line saying why); a Stop while a root opens, or one that interrupts a pause inside it, writes the roots finished the same way with its own line, and a Stop before any root is finished writes nothing, while a few steps change nothing; tooltips that arrive late (the fake's `late_tooltips`) are waited for, re-asked for only while missing, and ones that never arrive are waited for a bounded time, the root recorded as not opened when most of it has none, else counted in the summary.
+
 The Razor scanner records a worn piece on its own layer (`GetItemOnLayer` in the fake answers an item added with `Layer=`); that test's world is the one `adapters/razor-enhanced/fixture.scan.json` is made from. With `PACKRAT_TEST_OUTPUTS` set to a folder, `fake_clients.py`'s `run_script` copies every scan a script writes into it, for `app/adapter-outputs.test.mts`.
 
 Run: python3 adapters/test_scanners.py  (app/adapters.test.mts also spawns it, so `npm test` does).
@@ -21,6 +23,7 @@ from fake_clients import PLAYER, World, adapter_path, house_tiles, razor_globals
 
 PACK, CHEST, BAG, RING, RING2, EMPTY = 0x40000001, 0x40000002, 0x40000003, 0x40000010, 0x40000011, 0x40000004
 TRASH_BARREL, BARREL, TRASH_CHEST = 0x40000300, 0x40000301, 0x40000302
+CHEST2 = 0x40000006
 
 
 def home(world):
@@ -134,7 +137,16 @@ class TazUOScanner(DataDir, unittest.TestCase):
         self.assertEqual(sorted(i["serial"] for i in s["items"]), [RING, RING2])
         self.assertIn(str(BAG), json.loads(json.dumps(s["containers"])))
 
-    def test_stop_while_the_last_root_opens_writes_nothing(self):
+    def only_the_pack(self, w):
+        """A stopped scan wrote the backpack it finished and nothing of the chest it was reading, and said so."""
+        [s] = self.scans("tazuo")
+        self.assertEqual([r["serial"] for r in s["roots"]], [PACK])
+        self.assertNotIn(str(CHEST), s["containers"])
+        self.assertEqual([i["serial"] for i in s["items"]], [RING2])
+        self.assertNotIn("house", s)
+        self.assertIn("Scan stopped. Chests it had not finished keep what Pack Rat knew.", w.messages)
+
+    def test_stop_while_a_root_opens_writes_the_finished_roots_and_not_that_one(self):
         w = World(); home(w)
         api = tazuo_api(w, PACK)
         opener = w.open
@@ -144,8 +156,32 @@ class TazUOScanner(DataDir, unittest.TestCase):
                 api.StopRequested = True
             return opener(serial)
         api.UseObject = lambda s, *a: open_then_stop(int(s))
+        w.multis = house_tiles(5, 5, 12, 12)
         run_script(self.SCRIPT, w, api=api)
-        self.assertEqual(self.scans("tazuo"), [], "a stopped scan must not write a chest it never read")
+        self.only_the_pack(w)
+
+    def test_stop_before_any_root_is_finished_writes_nothing(self):
+        w = World(); home(w)
+        api = tazuo_api(w, PACK)
+        opener = w.open
+        api.UseObject = lambda s, *a: (setattr(api, "StopRequested", True), opener(int(s)))[1]
+        run_script(self.SCRIPT, w, api=api)
+        self.assertEqual(self.scans("tazuo"), [])
+        self.assertIn("Pack Rat scan stopped — nothing written.", w.messages)
+
+    def test_a_stop_that_interrupts_a_pause_inside_a_root_still_writes_the_finished_roots(self):
+        w = World(); home(w)
+        api = tazuo_api(w, PACK)
+        pause = api.Pause
+
+        def interrupted(sec):
+            if any(c == ("open", CHEST) for c in w.calls):
+                api.StopRequested = True
+                raise RuntimeError("Thread interrupted")   # what the client's Stop does to a blocking call
+            pause(sec)
+        api.Pause = interrupted
+        run_script(self.SCRIPT, w, api=api)
+        self.only_the_pack(w)
 
     def test_a_locked_root_is_recorded_not_opened(self):
         w = World(); home(w); w.locked.add(CHEST)
@@ -241,7 +277,7 @@ class TazUOScanner(DataDir, unittest.TestCase):
         # The client cancels a stopped script's token, and FindItem then returns nothing.
         api.FindItem = lambda s: None if api.StopRequested else finder(s)
         run_script(self.SCRIPT, w, api=api)
-        self.assertEqual(self.scans("tazuo"), [])
+        self.only_the_pack(w)
         self.assertEqual(self.closed(w), [CHEST, PACK])
 
     def test_after_a_stop_closing_gives_up_within_the_clients_stop_grace(self):
@@ -261,7 +297,7 @@ class TazUOScanner(DataDir, unittest.TestCase):
         w.on_close = lambda serial: started.append(w.clock.now)
         run_script(self.SCRIPT, w, api=api)
         self.assertTrue(t0, "the scan should have seen the Stop")
-        self.assertEqual(self.scans("tazuo"), [])
+        self.only_the_pack(w)
         self.assertTrue(started, "some windows still close after a Stop")
         # From the first window lookup to the end of the last one.
         self.assertLessEqual(max(started) - (min(started) - w.gump_delay), 2.0)
@@ -561,6 +597,115 @@ class TazUOScanner(DataDir, unittest.TestCase):
         self.assertEqual(len(tiles[0]), 12 * 12 + 12 + 100)
         self.assertEqual(tiles[0], tiles[1])
         self.assertEqual(tiles[0], tiles[2])
+
+    def moving_scan(self, when, to=None, facet=None):
+        """A scan inside a house with two chests in reach, where the player is put at `to` and on
+        `facet` as chest `when` is opened; returns the scan and the world."""
+        w = World(); home(w); w.facet = 1
+        w.multis = house_tiles(5, 5, 12, 12)
+        w.add(CHEST2, 0, name="Wooden Chest", X=10, Y=11)
+        w.add(RING + 0x30, CHEST2, name="Pearl Ring", container_like=False, OnGround=False)
+        api = tazuo_api(w, PACK)
+        opener = w.open
+
+        def open_then_move(serial):
+            if serial == when:
+                w.px, w.py = to or (w.px, w.py)
+                w.facet = facet or w.facet
+            return opener(serial)
+        api.UseObject = lambda s, *a: open_then_move(int(s))
+        run_script(self.SCRIPT, w, api=api)
+        [s] = self.scans("tazuo")
+        return s, w
+
+    def test_moving_away_stops_the_scan_keeps_the_finished_roots_and_writes_no_house(self):
+        moved = "You moved away, so the scan stopped. Run it again from where you started."
+        s, w = self.moving_scan(CHEST, to=(400, 900))
+        self.assertEqual([r["serial"] for r in s["roots"]], [PACK], "the root the player left while it was read, and the ones never reached, are left out")
+        self.assertNotIn(str(CHEST), s["containers"])
+        self.assertEqual([i["serial"] for i in s["items"]], [RING2])
+        self.assertNotIn(CHEST2, self.opened(w))
+        self.assertNotIn("house", s)
+        self.assertIn(moved, w.messages)
+        with self.subTest("a facet change on the last root"):
+            shutil.rmtree(os.path.join(self.data, "inbox"), ignore_errors=True)
+            s, w = self.moving_scan(CHEST2, facet=4)
+            self.assertEqual([r["serial"] for r in s["roots"]], [PACK, CHEST])
+            self.assertNotIn("house", s, "the house is captured from where the player stands now")
+            self.assertIn(moved, w.messages)
+        with self.subTest("a few steps"):
+            shutil.rmtree(os.path.join(self.data, "inbox"), ignore_errors=True)
+            s, w = self.moving_scan(CHEST, to=(16, 12))
+            self.assertEqual(len(s["roots"]), 3)
+            self.assertIn("house", s)
+            self.assertNotIn(moved, w.messages)
+
+    def test_late_tooltips_are_waited_for_and_re_asked_for_only_while_missing(self):
+        w = World(); home(w)
+        late = [RING + 0x40 + i for i in range(6)]
+        for i, r in enumerate(late):
+            w.add(r, CHEST, name="", Tooltip=f"Ring {i}", container_like=False, OnGround=False)
+        w.late_tooltips = dict((r, 1.0 + 0.25 * i) for i, r in enumerate(late))
+        self.scan(w)
+        [s] = self.scans("tazuo")
+        self.assertEqual(sorted(i["name"] for i in s["items"] if i["serial"] in late), [f"Ring {i}" for i in range(6)])
+        asked = [c[1] for c in w.calls if c[0] == "opl"]
+        chest_asks = [a for a in asked if set(a) & set(late)]
+        self.assertIn(RING, chest_asks[0])
+        self.assertTrue(all(set(a) <= set(late) for a in chest_asks[1:]), "a re-ask names only the missing items")
+        self.assertEqual(len(chest_asks[-1]), 1)
+        self.assertFalse(any("without a tooltip" in m for m in w.messages))
+
+    def test_a_recall_mid_chest_with_100_tooltips_missing_ends_within_the_cap(self):
+        w = World(); home(w)
+        rings = [RING + 0x100 + i for i in range(100)]
+        for r in rings:
+            w.add(r, CHEST, name="", Tooltip="Ring", container_like=False, OnGround=False)
+        w.late_tooltips = dict((r, None) for r in rings)
+        api = tazuo_api(w, PACK)
+        opener = w.open
+        api.UseObject = lambda s, *a: (setattr(w, "px", 900) if int(s) == CHEST else None, opener(int(s)))[1]
+        t0 = w.clock.now
+        run_script(self.SCRIPT, w, api=api)
+        [s] = self.scans("tazuo")
+        # Three containers opened (1.2 s each), the backpack's first look (0.5 s) and the chest's whole wait (8 s at most).
+        self.assertLess(w.clock.now - t0, 3 * 1.2 + 0.5 + 8 + 0.5)
+        self.assertEqual([r["serial"] for r in s["roots"]], [PACK])
+        self.assertFalse(any("without a tooltip" in m for m in w.messages))
+
+    def test_the_without_a_tooltip_count_leaves_out_a_root_the_scan_then_dropped(self):
+        w = World(); home(w)
+        w.add(RING + 0x40, CHEST, name="", Tooltip="Ring", container_like=False, OnGround=False)
+        w.late_tooltips = {RING + 0x40: None}
+        api = tazuo_api(w, PACK)
+        opener = w.open
+        api.UseObject = lambda s, *a: (setattr(w, "px", 900) if int(s) == CHEST else None, opener(int(s)))[1]
+        run_script(self.SCRIPT, w, api=api)
+        [s] = self.scans("tazuo")
+        self.assertEqual([r["serial"] for r in s["roots"]], [PACK])
+        self.assertFalse(any("without a tooltip" in m for m in w.messages))
+
+    def test_tooltips_that_never_arrive_are_waited_for_a_bounded_time(self):
+        for never, opened in ((1, True), (5, False)):
+            with self.subTest(never=never):
+                shutil.rmtree(os.path.join(self.data, "inbox"), ignore_errors=True)
+                w = World(); home(w)
+                rings = [RING + 0x40 + i for i in range(6)]
+                for r in rings:
+                    w.add(r, CHEST, name="", Tooltip="Ring", container_like=False, OnGround=False)
+                w.late_tooltips = dict((r, None) for r in rings[:never])
+                t0 = w.clock.now
+                self.scan(w)
+                [s] = self.scans("tazuo")
+                self.assertLess(w.clock.now - t0, 10, "a root waits at most 2 s plus 30 ms an item, never the client's own 10 s a tooltip")
+                self.assertEqual(self.root(s, CHEST)["opened"], opened)
+                ids = [i["serial"] for i in s["items"]]
+                if opened:
+                    self.assertTrue(set(rings) <= set(ids))
+                    self.assertIn("  1 item recorded without a tooltip (it did not arrive in time)", w.messages)
+                else:
+                    self.assertFalse(set(rings) & set(ids), "a root mostly without tooltips is kept from the last scan")
+                    self.assertNotIn(str(CHEST), s["containers"])
 
 
 class TazUORefresh(DataDir, unittest.TestCase):

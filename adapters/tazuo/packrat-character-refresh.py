@@ -82,7 +82,7 @@ def read_blacklist(path):
 
 
 ADAPTER_ID = "tazuo"
-ADAPTER_VERSION = "2.17.0"
+ADAPTER_VERSION = "2.18.0"
 CAPABILITIES = {
     "layers": ["OneHanded", "TwoHanded", "Shoes", "Pants", "Shirt", "Helmet", "Gloves",
                "Ring", "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic",
@@ -153,9 +153,11 @@ def sysmsg(msg, hue=OK_HUE):
 
 
 # BEGIN generated: tazuo/tooltip_lines
-def tooltip_lines(serial):
+def tooltip_lines(serial, wait=True):
+    """The item's tooltip lines. `wait`: the client waits up to 10 s for a tooltip it does not have yet
+    (TazUO's ItemNameAndProps); without it, a missing tooltip reads as none at once."""
     try:
-        data = API.ItemNameAndProps(int(serial), True)
+        data = API.ItemNameAndProps(int(serial), wait)
     except Exception:
         data = None
     return [ln.strip() for ln in str(data or "").splitlines() if ln.strip()]
@@ -263,6 +265,12 @@ def root_entry(serial, kind, label):
 
 
 # BEGIN generated: tazuo/walk
+OPL_FIRST_WAIT_S = 0.5    # after asking for a root's tooltips, before the first look
+OPL_STEP_S = 0.25         # then between looks, re-asking for the ones still missing
+OPL_WAIT_S, OPL_WAIT_PER_ITEM_S, OPL_WAIT_MAX_S = 2.0, 0.03, 8.0   # the longest wait: 2 s plus 30 ms an item, 8 s at most
+NO_TOOLTIP = set()        # items this run recorded without a tooltip (they never arrived in time)
+
+
 def was_opened(serial):
     """The client's own word that a container's contents arrived (its gump opened)."""
     try:
@@ -283,6 +291,28 @@ def note_if_closed(serial):
             OPENED_HERE.append(it)
     except Exception:
         pass
+
+
+def await_tooltips(serials):
+    """Ask the server for these items' tooltips and wait for them, re-asking only for the ones still
+    missing every OPL_STEP_S, for at most OPL_WAIT_S plus OPL_WAIT_PER_ITEM_S per item (OPL_WAIT_MAX_S
+    in all) or until Stop. Every look reads without the client's own wait, so the limit bounds the time.
+    Returns the serials whose tooltip never arrived."""
+    missing, waited, step = list(serials), 0.0, OPL_FIRST_WAIT_S
+    limit = min(OPL_WAIT_MAX_S, OPL_WAIT_S + OPL_WAIT_PER_ITEM_S * len(missing))
+    while missing and waited < limit and not API.StopRequested:
+        try:
+            API.RequestOPLData(missing)
+        except Exception:
+            pass
+        try:
+            API.Pause(step)
+        except Exception:
+            break
+        waited += step
+        step = OPL_STEP_S
+        missing = [s for s in missing if not tooltip_lines(s, False)]
+    return missing
 
 
 def scan_root(root_serial, kind, label, containers, items, seen):
@@ -334,11 +364,13 @@ def scan_root(root_serial, kind, label, containers, items, seen):
     listed = set(int(it.Serial) for it in listing if int(it.Serial) in BLACKLIST)
     SKIPPED.update(listed)
     unopened.update(listed)       # never opened: the fold keeps what it last knew inside a blacklisted bag
-    try:
-        API.RequestOPLData([int(it.Serial) for it in listing])
-        API.Pause(0.5)
-    except Exception:
-        pass
+    missing = await_tooltips([int(it.Serial) for it in listing])
+    if API.StopRequested:
+        return -1
+    if len(missing) * 2 > len(listing):
+        # Most of the root has no tooltip (the player moved away, or the server is slow): records with no name and no properties tell the app nothing, so the root is left for the app to keep.
+        sysmsg(f"  {label}: {len(missing)} of {len(listing)} tooltips did not arrive — its contents are kept from the last scan", ALARM_HUE)
+        return -1
     containers[root_serial] = root_entry(root_serial, kind, label)
     n = 0
     for it in listing:
@@ -346,7 +378,9 @@ def scan_root(root_serial, kind, label, containers, items, seen):
         if s in seen:
             continue
         seen.add(s)
-        lines = tooltip_lines(s)
+        lines = tooltip_lines(s, False)   # await_tooltips did the waiting: one still missing is recorded without it
+        if not lines:
+            NO_TOOLTIP.add(s)
         parent = int(getattr(it, "Container", root_serial) or root_serial)
         if s in opened or s in unopened:
             cname = lines[0] if lines else str(it.Name or "")
@@ -517,6 +551,8 @@ def main():
         sysmsg(f"  skipped {len(SKIPPED)} blacklisted container{'s' if len(SKIPPED) != 1 else ''}", INFO_HUE)
     if TRASHED:
         sysmsg(f"  skipped {len(TRASHED)} trash container{'s' if len(TRASHED) != 1 else ''}", INFO_HUE)
+    if NO_TOOLTIP:
+        sysmsg(f"  {len(NO_TOOLTIP)} item{'s' if len(NO_TOOLTIP) != 1 else ''} recorded without a tooltip (it did not arrive in time)", INFO_HUE)
 
 
 try:

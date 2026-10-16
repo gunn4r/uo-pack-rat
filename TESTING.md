@@ -71,6 +71,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `app/evaluate.test.mts` — `evaluateSuit` (`app/evaluate.mts`, issue #216) against the three assemblies it replaced.
 - `app/facet-map.test.mts` — `app/facet-map.mts` (issue #164): decoding a facetNN.mul overview bitmap and cutting a region out of it.
 - `app/fc-cap.test.mts` — the Faster Casting cap by casting school (issue #213): `fcCapFor` in `app/vault-lib.mts` and where the cap goes.
+- `app/fold-blank.test.mts` — `foldSnapshots` and an item a scan recorded with no name and no tooltip (issue #298).
 - `app/fold-unopened.test.mts` — `foldSnapshots` and a container a scan saw but could not open.
 - `app/gear-vault.test.mts` — `app/vault-lib.mts` (parser, classifier, fold, pools) and the optimizer core through the same loader the server uses.
 - `app/goals.test.mts` — the Suit Builder's goals (issue #292): ranked goals compiled to the weights the solvers score with, and a build from goals being the build from those weights.
