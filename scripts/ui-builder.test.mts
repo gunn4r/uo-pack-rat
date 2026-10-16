@@ -1522,7 +1522,9 @@ test("[slow] arriving: the first-visit view, coming back to the latest run, othe
     assert.equal(await page.locator("#b-start-build").innerText(), "Build Dorran's suit");
     assert.match(await page.locator("#b-wearing").innerText(), /^Dorran is wearing now/);
     await fitWindow(app, page, { width: 420, height: 900 });
-    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), 0, "no sideways scroll at 420");
+    // polled: the sidebar folds as the window narrows, so a read in the middle of the resize can catch it wider
+    const fits = await page.waitForFunction(() => document.documentElement.scrollWidth - document.documentElement.clientWidth <= 0, undefined, { timeout: 5_000 }).then(() => true, () => false);
+    assert.ok(fits, `no sideways scroll at 420: ${await page.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth, ...[...document.querySelectorAll("body *")].filter((e) => e.getBoundingClientRect().right > innerWidth + 0.5).slice(0, 5).map((e) => `${e.tagName}.${e.className}#${e.id}`)].join(" "))}`);
     await fitWindow(app, page, { width: 1440, height: 900 });
 
     // a card does what the top bar's select does, and applies the template
