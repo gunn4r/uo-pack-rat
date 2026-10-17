@@ -116,8 +116,8 @@ export function buildSpecError(v: unknown, label: string, { template = false }: 
   }
   return null;
 }
-// A template's name: at most this long (a character's `template` naming it is held to the same, healEntry), and never
-// "builtin:…", which names the shard's own.
+// A new or renamed template's name: at most this long, and never "builtin:…", which names the shard's own. A name an
+// older version saved stays as it is, and so do the characters' links to it (profilesSpecError, healEntry).
 export const TEMPLATE_NAME_MAX = 128;
 // profiles.json v3's characters and templates, each spec held to buildSpecError (the schema checks the file's shape), and
 // each NEW template's name to TEMPLATE_NAME_MAX and the built-in prefix: a name already in the stored file (`stored`, which
@@ -333,7 +333,8 @@ function healEntry(e: Record<string, unknown>, where: string, healed: string[]):
     } else if (bad(k, v)) { say(k, v, "set to its default"); delete out[k]; }
   }
   if (e.race != null && !RACES.includes(e.race as string)) { say("race", e.race, "left out"); delete out.race; }
-  if (e.template != null && !(typeof e.template === "string" && e.template.length <= TEMPLATE_NAME_MAX)) { say("template", e.template, "left out"); delete out.template; }
+  // any name: a template an older version saved may be longer than TEMPLATE_NAME_MAX, and its characters keep their link
+  if (e.template != null && typeof e.template !== "string") { say("template", e.template, "left out"); delete out.template; }
   return out as FlatProfile;
 }
 export interface MigratedProfiles<P> { profiles: ProfilesV3; prefs: P; changed: boolean; prefsChanged: boolean; healed: string[] }

@@ -25,7 +25,7 @@
     "goal": { "type": "object", "additionalProperties": false, "required": ["kind"], "properties": { "kind": { "type": "string", "enum": ["best", "cheapest"] }, "suits": { "type": "integer", "minimum": 1, "maximum": 100 } } },
     "search": { "type": "object", "additionalProperties": false, "properties": { "budgetMs": { "type": "integer" }, "exact": { "type": "boolean" }, "restarts": { "type": "integer" }, "altCount": { "type": "integer" }, "altTol": { "type": "number" } } },
     "spec": { "type": "object", "additionalProperties": false, "required": ["intent", "pool"], "properties": { "intent": { "$ref": "#/$defs/intent" }, "buffs": { "$ref": "#/$defs/buffs" }, "pool": { "$ref": "#/$defs/pool" }, "goal": { "$ref": "#/$defs/goal" }, "search": { "$ref": "#/$defs/search" } } },
-    "character": { "type": "object", "required": ["spec"], "properties": { "race": { "type": "string", "enum": ["human", "elf", "gargoyle"] }, "template": { "type": "string", "maxLength": 128 }, "label": { "type": "string", "maxLength": 40, "pattern": "^[^\\u0000-\\u001f\\u007f]*$" }, "spec": { "$ref": "#/$defs/spec" } } },
+    "character": { "type": "object", "required": ["spec"], "properties": { "race": { "type": "string", "enum": ["human", "elf", "gargoyle"] }, "template": { "type": "string" }, "label": { "type": "string", "maxLength": 40, "pattern": "^[^\\u0000-\\u001f\\u007f]*$" }, "spec": { "$ref": "#/$defs/spec" } } },
     "template": { "type": "object", "required": ["spec"], "properties": { "name": { "type": "string", "maxLength": 64 }, "spec": { "$ref": "#/$defs/spec" } } }
   },
   "properties": {

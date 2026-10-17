@@ -327,6 +327,20 @@ test("[fast] profiles v3: the migration is idempotent, its result passes PUT /ap
   assert.deepEqual(migrateProfilesV3({}, {}).profiles, { schemaVersion: 3, characters: {}, templates: {} }, "an empty file");
 });
 
+// Issue #336: a template an older version named past 128 characters stays, and so does the link of a character made from
+// it: the v2 migration keeps it, and the file passes the schema and PUT /api/profiles' checks against itself.
+test("[fast] an older file's 130-character template keeps its character's link through the migration and the save checks", () => {
+  const long = "t".repeat(130);
+  const v2 = { schemaVersion: 2, characters: { A: { template: long, floors: { luck: 100 } } }, templates: { [long]: { floors: { luck: 100 } } } };
+  const { profiles, healed } = migrateProfilesV3(v2 as unknown as ProfilesFile);
+  assert.equal(profiles.characters.A!.template, long, "the link stays");
+  assert.ok(Object.hasOwn(profiles.templates, long));
+  assert.deepEqual(healed, []);
+  assert.deepEqual(validate(V3_SCHEMA, profiles).errors, []);
+  assert.equal(profilesSpecError(profiles, profiles), null, "a save of the file as stored");
+  assert.match(profilesSpecError(profiles) ?? "", /“t{40}…”/, "the same name new is refused");
+});
+
 // What a Pack Rat from before v3 does with a v3 file, as its code read it: its store migrates on read (vault-lib's
 // migrateProfiles, unchanged since), its page opens a character with characterProfile (below, as written then) and its
 // PUT /api/profiles checks a body against the v2 schema (kept in the fixture folder).
