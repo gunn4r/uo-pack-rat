@@ -35,7 +35,8 @@ export type TemplateSpec = Omit<BuildSpec, "buffs"> & { buffs?: BuildBuffs | und
 
 // profiles.json v3: a character is its race, the template it came from and its spec; a template is its spec and a
 // display name (the id when absent). Any other field round-trips untouched.
-export interface CharacterEntry { race?: string | null | undefined; template?: string | undefined; spec: BuildSpec; [key: string]: unknown }
+// `label`: the player's own name for the build ("Main Crafter"), shown in the character picker (issue #336).
+export interface CharacterEntry { race?: string | null | undefined; template?: string | undefined; label?: string | undefined; spec: BuildSpec; [key: string]: unknown }
 // A built-in's description and source pages show under the template picker; Save as copies neither.
 export interface TemplateEntry { name?: string | undefined; description?: string | undefined; sources?: string[] | undefined; savedAt?: string | undefined; spec: TemplateSpec; [key: string]: unknown }
 export interface ProfilesV3 { schemaVersion: 3; characters: Record<string, CharacterEntry>; templates: Record<string, TemplateEntry>; [key: string]: unknown }
@@ -196,6 +197,13 @@ export function characterProfile(profiles: ProfilesV3, name: string, builtins: T
 export function characterBuffs(profiles: ProfilesV3, name: string): BuildBuffs {
   const saved = Object.hasOwn(profiles.characters || {}, name) ? profiles.characters[name] : undefined;
   return buildSpec({ buffs: saved?.spec?.buffs }).buffs;
+}
+
+// A character's build label, trimmed; null for none. LABEL_MAX is the longest one profiles.json takes.
+export const LABEL_MAX = 40;
+export function characterLabel(profiles: Pick<ProfilesV3, "characters"> | null | undefined, name: string): string | null {
+  const saved = profiles && Object.hasOwn(profiles.characters || {}, name) ? profiles.characters[name] : undefined;
+  return typeof saved?.label === "string" && saved.label.trim() ? saved.label.trim() : null;
 }
 
 // ---------------------------------------------------------------- planBuild

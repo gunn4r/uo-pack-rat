@@ -12,7 +12,7 @@ import type { RulesV1 } from "./schema/types.d.mts";
 import { upgradeScan } from "./scan-schema.mts";
 import { buffPlanOf, buffSkillValues, manualBase, manualPlan, plannedProfile, runBuffs } from "./buffs.mts";
 import { RACES, RUN_DEFAULTS, defaultStrLimit } from "./run-settings.mts";
-import { buildSpec, buildSpecError, type BuildSpecSource, type CharacterEntry, characterBuffs, characterProfile, findTemplate, migrateProfilesV3, planBuild, profileFromSpec, profilesSpecError, specFromProfile, specFromRunSettings, templateLabel, templateRefs, templateSettings, templateSpecFrom,
+import { buildSpec, buildSpecError, type BuildSpecSource, type CharacterEntry, characterBuffs, characterLabel, LABEL_MAX, characterProfile, findTemplate, migrateProfilesV3, planBuild, profileFromSpec, profilesSpecError, specFromProfile, specFromRunSettings, templateLabel, templateRefs, templateSettings, templateSpecFrom,
   type BuildSpec, type FlatProfile, type ProfilesV3, type TemplateMap } from "./build-spec.mts";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
@@ -384,4 +384,15 @@ test("[fast] built-in templates: every shipped file's templates pass the spec ch
   // The four templates new data folders used to be seeded with, kept as uoalive's built-ins setting for setting.
   const shipped = (JSON.parse(readFileSync(join(dir, "uoalive.json"), "utf8")) as { templates: TemplateMap }).templates;
   assert.deepEqual(Object.keys(shipped).slice(0, 4), ["melee", "caster", "archer", "tank"], "first, before the build templates (#212)");
+});
+
+// Issue #336: a character's build label as the picker and the MCP tools read it, and the longest profiles.json takes.
+test("[fast] characterLabel: trimmed, null for none, a blank or a non-string one; LABEL_MAX is the schema's", () => {
+  const spec = buildSpec();
+  const p = { characters: { A: { spec, label: "  Main Crafter " }, B: { spec, label: "   " }, C: { spec }, D: { spec, label: 7 as unknown as string } } } as Pick<ProfilesV3, "characters">;
+  assert.equal(characterLabel(p, "A"), "Main Crafter");
+  for (const n of ["B", "C", "D", "nobody", "toString"]) assert.equal(characterLabel(p, n), null, n);
+  assert.equal(characterLabel(null, "A"), null);
+  const schema = JSON.parse(readFileSync(join(HERE, "schema", "profiles.v3.schema.json"), "utf8")) as { $defs: { character: { properties: { label: { maxLength: number } } } } };
+  assert.equal(schema.$defs.character.properties.label.maxLength, LABEL_MAX);
 });

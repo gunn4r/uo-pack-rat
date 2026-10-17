@@ -20,7 +20,7 @@ import { emptyRuleQuery, emptyOrganizeConfig, type OrganizeConfig } from "./orga
 import { ACTIONS_OFF, MCP_DEFAULT_PORT, PROTOCOL_VERSIONS } from "./mcp.mts";
 import { ToolError, TOOLS, type ToolContext } from "./mcp-tools.mts";
 import { BRIDGE_OFFLINE, RESIST_KEYS } from "./vault-lib.mts";
-import { characterEntry, characterProfile, type ProfilesV3, type TemplateMap } from "./build-spec.mts";
+import { characterEntry, characterProfile, type CharacterEntry, type ProfilesV3, type TemplateMap } from "./build-spec.mts";
 import { applyBuffs, buffSkillValues } from "./buffs.mts";
 import { SOLVER_VERSION } from "./runs-lib.mts";
 
@@ -997,5 +997,22 @@ test("[fast] build_suit's rarity: set, cleared with any or a template without on
     assert.equal(await tb({ rarity: "any" }), undefined, "any clears it");
     assert.equal(await tb({ template: "tank" }), undefined, "a template without one clears it, as the builder's Apply does");
     assert.equal((await call(port, "build_suit", { character: "Kestrel", rarity: "rarest" })).ok, false);
+  } finally { await sv.s.close(); }
+});
+
+// Issue #336: a character's build label, saved in its profile, rides along on both character tools.
+test("[fast] list_characters and character_sheet carry the build label, null for none; a label over 40 characters is refused", async () => {
+  const sv = await serve();
+  try {
+    const port = await mcpPort(sv);
+    const labels = async (): Promise<Record<string, unknown>> => Object.fromEntries((await call(port, "list_characters")).data.characters.map((c: { name: string; label: unknown }) => [c.name, c.label]));
+    assert.deepEqual(await labels(), { Dorran: null, Kestrel: null });
+    const { profiles, builtinTemplates } = (await app<{ profiles: ProfilesV3; builtinTemplates: TemplateMap }>(sv, "/api/profiles")).body;
+    const entry = (label: string): CharacterEntry => ({ ...characterEntry(characterProfile(profiles, "Kestrel", builtinTemplates), { on: [], skills: {} }), label });
+    assert.equal((await app(sv, "/api/profiles", "PUT", { ...profiles, characters: { ...profiles.characters, Kestrel: entry("x".repeat(41)) } })).status, 400);
+    assert.equal((await app(sv, "/api/profiles", "PUT", { ...profiles, characters: { ...profiles.characters, Kestrel: entry(" Archer-Bard ") } })).status, 200);
+    assert.deepEqual(await labels(), { Dorran: null, Kestrel: "Archer-Bard" }, "trimmed");
+    assert.equal((await call(port, "character_sheet", { character: "Kestrel" })).data.label, "Archer-Bard");
+    assert.equal((await call(port, "character_sheet", { character: "Dorran" })).data.label, null);
   } finally { await sv.s.close(); }
 });

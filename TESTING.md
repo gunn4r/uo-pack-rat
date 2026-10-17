@@ -183,6 +183,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `scripts/ui-contrast.test.mts` — [slow]: the contrast check from design spec 2.3, run on the real page in both theme families, light and dark.
 - `scripts/ui-forms.test.mts` — [slow]: the form-like screens (the Import drawer, the setup wizard and Settings) in the real Electron window.
 - `scripts/ui-gather.test.mts` — [slow]: the Unravel view's Gather into a bag (issue #271) in the real Electron window.
+- `scripts/ui-labels.test.mts` — [slow]: character build labels (issue #336) in the real Electron window.
 - `scripts/ui-map.test.mts` — [slow]: the House map (issues #10 and #164) in the real Electron window over a seeded data folder.
 - `scripts/ui-move.test.mts` — [slow]: the Inventory's selection, Move to and Move back (issue #270) in the real Electron window.
 - `scripts/ui-organize.test.mts` — [slow]: Organize (issue #11) in the real Electron window over the demo scans.
