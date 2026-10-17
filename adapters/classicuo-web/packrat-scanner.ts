@@ -97,7 +97,7 @@ const PASTE_END = "-----END PACK RAT SCAN-----";
 // contract test (app/contracts.test.mjs, once this adapter ships a fixture) compares them.
 // ---------------------------------------------------------------------------------------------
 const ADAPTER_ID = "classicuo-web";
-const ADAPTER_VERSION = "1.3.0";
+const ADAPTER_VERSION = "1.4.0";
 const CAPABILITIES = {
   layers: ["OneHanded", "TwoHanded", "Shoes", "Pants", "Shirt", "Helmet", "Gloves",
     "Ring", "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic",
@@ -270,6 +270,13 @@ function tooltipOf(serial: number): { lines: string[]; name: string; nameSource:
   return { lines: [], name: "", nameSource: "label" };
 }
 
+// A container's graphic and hue (issue #174), for its art in the app; empty when the client cannot say.
+function look(it: any): { graphic?: number; hue?: number } {
+  const graphic = Number(it?.graphic), hue = Number(it?.hue) || 0;
+  const ok = (n: number): boolean => Number.isInteger(n) && n >= 0 && n <= 0xffff;
+  return graphic > 0 && ok(graphic) && ok(hue) ? { graphic, hue } : {};
+}
+
 function itemEntry(it: any, container: number | null, layer?: string): any {
   const serial = Number(it.serial);
   const t = tooltipOf(serial);
@@ -324,6 +331,7 @@ function walk(rootSerial: number, containerItem: any, containers: Record<string,
         parent: Number(containerItem.serial),
         root: rootSerial,
         tooltip: t.lines,
+        ...look(kid),
       };
       containers[String(s)] = entry;
       if (depth < MAX_NEST && safeContents(kid)!.length > 0) walk(rootSerial, kid, containers, items, seen, depth + 1);
@@ -371,7 +379,7 @@ function main(): void {
   if (backpack && backpack.serial) {
     const bs = Number(backpack.serial);
     seen.add(bs);
-    containers[String(bs)] = { serial: bs, kind: "backpack", name: "Backpack", parent: null, root: bs };
+    containers[String(bs)] = { serial: bs, kind: "backpack", name: "Backpack", parent: null, root: bs, ...look(backpack) };
     const n = walk(bs, backpack, containers, items, seen, 0);
     roots.push({ serial: bs, kind: "backpack", name: "Backpack", opened: n >= 0 });
     client.sysMsg(`  backpack: ${n >= 0 ? n + " items" : "not opened"}`, 88);
@@ -407,7 +415,7 @@ function main(): void {
     if (TRASH_RE.test(name)) { trashed++; continue; }
     const pos: any = { x: Number(g.x || 0), y: Number(g.y || 0), z: Number(g.z || 0) };
     if (facet !== undefined) pos.facet = facet;
-    containers[String(s)] = { serial: s, kind: "ground", name, parent: null, root: s, pos, tooltip: t.lines };
+    containers[String(s)] = { serial: s, kind: "ground", name, parent: null, root: s, pos, tooltip: t.lines, ...look(g) };
     const n = walk(s, g, containers, items, seen, 0);
     // This script never opens anything, so a ground chest reading [] is more likely one the client
     // never loaded than an empty one: record it unopened, so the app keeps what it last knew.

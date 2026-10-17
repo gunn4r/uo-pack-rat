@@ -9,6 +9,7 @@ import { label, slotLabel, rarityColor, safeColor, toast, whereText, tagChip } f
 import { rarityToken } from "./items.mts";
 import { bridgeActionReason, runBridgeAction } from "./bridge.mts";
 import { txt, box, rowActions, menu, copyText } from "./components.mts";
+import { containerArt } from "./item-art.mts";
 import type { MenuItem } from "./components.mts";
 import { splitSerial } from "./inv-model.mts";
 import { openClassify } from "./kinds.mts";
@@ -41,7 +42,8 @@ export function rarityEl(rarity: string | null | undefined, cls = ""): HTMLEleme
 }
 export function locationEl(it: Item): HTMLElement {
   const { name, serial } = splitSerial(whereText(it.location?.text));
-  return serial ? box("span", { class: "inv-loc" }, txt(name, "ellip"), txt(serial, "mono faint")) : txt(name, "ellip");
+  const art = it.equippedBy ? null : containerArt(it.container, 24);
+  return serial || art ? box("span", { class: "inv-loc" }, art, txt(name, "ellip"), serial ? txt(serial, "mono faint") : null) : txt(name, "ellip");
 }
 
 // ---------------------------------------------------------------- row actions

@@ -1,6 +1,6 @@
 // house-capture.test.mts — `app/house-capture.mts` (issue #10): house ids, the newest capture per house, furniture merged across captures and superseded footprints.
 //
-// `app/house-capture.mts` (issue #10): a house's id (facet and footprint corner), the newest capture of a house giving its tiles while another footprint is another house, furniture merged across captures with an item a later capture should have seen and did not dropped, a capture without `items` (the ground could not be read) erasing and adding no furniture, a newer overlapping footprint on the same facet superseding a house (another or an unknown facet superseding nothing), and a malformed `capturedAt` sorting as the oldest; containers a capture saw merged the same way; the `trash` lists of every capture of a house (issue #162) leaving those serials out of its containers, in any order, and a list without them changing nothing. All `[fast]`.
+// `app/house-capture.mts` (issue #10): a house's id (facet and footprint corner), the newest capture of a house giving its tiles while another footprint is another house, furniture merged across captures with an item a later capture should have seen and did not dropped, a capture without `items` (the ground could not be read) erasing and adding no furniture, a newer overlapping footprint on the same facet superseding a house (another or an unknown facet superseding nothing), and a malformed `capturedAt` sorting as the oldest; containers a capture saw merged the same way; the `trash` lists of every capture of a house (issue #162) leaving those serials out of its containers, in any order, and a list without them changing nothing; a container's hue from its capture's `containerHues` (issue #174). All `[fast]`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { houseIdOf, latestHouses, type HouseCapture, type HouseTile } from "./house-capture.mts";
@@ -82,4 +82,12 @@ test("[fast] house capture: a trash container any capture of the house listed in
   assert.deepEqual(seen([far]), [21, 22], "without a trash list the container still shows");
   const later = scan("2026-10-01T13:00:00Z", { at: { x: 100, y: 100 }, containers: [[21, 0x2813, 101, 102, 7]], trash: [22] });
   assert.deepEqual(seen([later, near, far]), [], "the lists of every capture are joined, the newest one's too");
+});
+
+test("[fast] house capture: a container takes its hue from its own capture's containerHues as a sixth element (issue #174); one with none keeps five", () => {
+  const [h] = latestHouses([
+    scan("2026-10-01T10:00:00Z", { containers: [[21, 0x0e40, 130, 130, 7], [22, 0x0e40, 131, 131, 7]], containerHues: [[21, 1153], [22, 2500]] }),
+    scan("2026-10-01T12:00:00Z", { containers: [[22, 0x0e40, 131, 131, 7], [23, 0x0e7c, 103, 103, 7]], containerHues: [[23, 1168], [99, 5]] }),
+  ]);
+  assert.deepEqual(h!.containers, [[21, 0x0e40, 130, 130, 7, 1153], [22, 0x0e40, 131, 131, 7], [23, 0x0e7c, 103, 103, 7, 1168]], "22's newest capture gives no hue");
 });
