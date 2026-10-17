@@ -12,7 +12,8 @@ import type { ItemQueryRows, UnravelRow } from "../item-query.mts";
 import { state } from "./store.mts";
 import { $, el, itemTip, toast, whereText } from "./dom.mts";
 import { api } from "./api.mts";
-import { txt, box, button, message, select, openDialog } from "./components.mts";
+import { txt, box, button, message, select, openDialog, icon, segmented } from "./components.mts";
+import { prefs } from "./prefs.mts";
 import { errorText } from "./messages.mts";
 import { plural } from "./inv-model.mts";
 import { parseRoute, registerScreen } from "./nav.mts";
@@ -21,7 +22,7 @@ import { grabAll } from "./bridge.mts";
 import { emptySelection, isSelected, isWorn, toggleRows, toggleLoaded, grabItems, wornNote, selectionBody, pickedText, leftText, GRAB_TOO_MANY, WORN_LOCK, type Matches, type Selection } from "./move-model.mts";
 import { openPicker, startMove, placeOf, gate } from "./move-to.mts";
 import { gatherWeight, gatherButton, GATHER_LOOSE, GATHER_GROUND } from "./unravel-model.mts";
-import type { ItemsApiResponse, MovePlanApiResponse, SettingsApiResponse } from "./api-types.mts";
+import type { ItemsApiResponse, MovePlanApiResponse, SettingsApiResponse, UiPrefs } from "./api-types.mts";
 
 type Group = "relic" | "held" | "essence" | "residue";
 let rows: UnravelRow[] | null = null;
@@ -35,6 +36,18 @@ let chipsOpen = false;
 // worn pieces never ticked. `order` is the rows as drawn, group by group, which a range runs over.
 let sel: Selection = emptySelection();
 let order: UnravelRow[] = [];
+// Each group's rows as last drawn (Select these takes a collapsed group's too), the groups folded shut and the one-line rows
+// (issue #332): the last two are ui-prefs fields (unravelCollapsed, unravelRows), so they last across launches.
+let groupRows = new Map<Group, UnravelRow[]>();
+const collapsed = new Set<Group>();
+let condensed = false;
+// load()'s GET /api/ui-prefs answer (null when that request failed).
+export function applyUnravelPrefs(p: UiPrefs | null): void {
+  collapsed.clear();
+  for (const g of p?.unravelCollapsed ?? []) if ((GROUP_ORDER as string[]).includes(g)) collapsed.add(g as Group);
+  condensed = p?.unravelRows === "condensed";
+  if (built) { rowsSwitch.setValue(condensed ? "condensed" : "full"); render(); }
+}
 const noQuery: Matches = () => false;
 
 const root = (): HTMLElement => $<HTMLElement>("#tab-unravel")!;
@@ -126,16 +139,20 @@ function maybeTitle(weight: number): string {
 
 // ---------------------------------------------------------------- the frame, built once
 let picker: HTMLSelectElement;
+let rowsSwitch: HTMLDivElement & { setValue: (v: string) => void };
 function build(): void {
   if (built) return;
   built = true;
   picker = select([], "", { attrs: { id: "unr-who", "aria-label": "Unraveled by" } });
   picker.addEventListener("change", () => { character = picker.value; render(); });
+  rowsSwitch = segmented({ label: "Rows", size: "sm", value: condensed ? "condensed" : "full", options: [{ value: "full", label: "Full rows" }, { value: "condensed", label: "Condensed" }],
+    onChange: (v) => { condensed = v === "condensed"; prefs.set({ unravelRows: condensed ? "condensed" : "full" }); render(); } });
+  rowsSwitch.id = "unr-rows";
   root().replaceChildren(
     box("div", { class: "unr-who" }, box("label", { class: "unr-who-pick", for: "unr-who" }, txt("Unraveled by")), picker,
       txt("Each unravel can also raise Imbuing. The skill comes from the latest scan.", "unr-note")),
     el("div", { class: "unr-forecast", id: "unr-forecast" }),
-    el("div", { class: "unr-excl", id: "unr-excl" }),
+    box("div", { class: "unr-tools" }, el("div", { class: "unr-excl", id: "unr-excl" }), rowsSwitch),
     el("div", { class: "inv-move-result", id: "unr-move-result", "aria-live": "polite", hidden: true }),
     box("section", { class: "card unr-card", "aria-label": "Unravel candidates" },
       el("div", { class: "unr-selbar", id: "unr-selbar", hidden: true }),
@@ -231,21 +248,23 @@ function drawGroups(shown: UnravelRow[], skill: number): void {
   }
   const by = new Map<Group, UnravelRow[]>(GROUP_ORDER.map((g) => [g, []]));
   for (const r of shown) by.get(groupOf(r, skill))!.push(r);
-  // A redrawn list can put other rows at the anchor's index: a shift-click starts afresh.
-  order = GROUP_ORDER.flatMap((g) => by.get(g)!);
+  groupRows = by;
+  listEl.classList.toggle("condensed", condensed);
+  // A redrawn list can put other rows at the anchor's index: a shift-click starts afresh. A collapsed group's rows are not drawn.
+  order = GROUP_ORDER.filter((g) => !collapsed.has(g)).flatMap((g) => by.get(g)!);
   sel = { ...sel, anchor: null };
   const out: HTMLElement[] = [];
   let index = 0;
   for (const g of GROUP_ORDER) {
     const list = by.get(g)!;
     if (!list.length) continue;
-    const h = groupHead(g, list.length);
-    out.push(box("div", { class: `unr-group ${g}`, role: "group", "aria-label": h.title },
-      box("div", { class: "unr-group-head" },
-        el("h3", {}, el("span", { class: "unr-dot", "aria-hidden": "true" }), h.title),
-        txt(h.note, "unr-gs"),
-        linkButton("Select these", { "data-select": g })),
-      ...list.map((r) => rowEl(r, skill, index++))));
+    const h = groupHead(g, list.length), shut = collapsed.has(g), rowsId = `unr-rows-${g}`;
+    // The heading's button folds the group: its title, and the count on it while folded.
+    const fold = box("button", { type: "button", class: "unr-fold", "aria-expanded": String(!shut), "aria-controls": rowsId, "data-fold": g },
+      icon("chevron-down", { size: "sm", cls: "unr-chev" }), el("span", { class: "unr-dot", "aria-hidden": "true" }), txt(h.title), shut ? txt(list.length.toLocaleString("en-US"), "unr-count") : null);
+    out.push(box("div", { class: `unr-group ${g}${shut ? " shut" : ""}`, role: "group", "aria-label": h.title },
+      box("div", { class: "unr-group-head" }, el("h3", {}, fold), txt(h.note, "unr-gs"), linkButton("Select these", { "data-select": g })),
+      box("div", { id: rowsId, class: "unr-group-rows" }, ...(shut ? [] : list.map((r) => rowEl(r, skill, index++))))));
   }
   listEl.replaceChildren(...out);
 }
@@ -255,10 +274,11 @@ function rowEl(r: UnravelRow, skill: number, index: number): HTMLElement {
   const cb = el("input", { type: "checkbox", class: "unr-cb", "aria-label": `Select ${r.name}`, "data-serial": String(r.serial), ...(isWorn(r) ? { disabled: "", title: WORN_LOCK } : {}) });
   cb.checked = on;
   const name = itemTip(txt(r.name, "unr-name"), r, { focus: false });
-  return box("div", { class: `unr-row${on ? " sel" : ""}`, "data-serial": String(r.serial), "data-index": String(index) },
+  const where = whereText(r.location?.text) || "Unknown place";
+  return box("div", { class: `unr-row${on ? " sel" : ""}`, "data-serial": String(r.serial), "data-index": String(index), ...(condensed ? { title: where } : {}) },
     cb,
     box("span", { class: "unr-nm" }, name, box("span", { class: "unr-sub" }, rarityEl(r.rarity), ...reasons.map((x) => txt(REASON_CHIP[x], "unr-tag")))),
-    txt(whereText(r.location?.text) || "Unknown place", "unr-where"),
+    txt(where, "unr-where"),
     box("span", { class: "unr-yield" },
       box("span", { class: "unr-ing-line" }, txt(t.ing, `unr-ing ${t.cls}`), r.unravel.maybe ? el("span", { class: "unr-maybe", title: maybeTitle(r.unravel.weight) }, "maybe") : null),
       txt(t.why, "unr-why")),
@@ -287,10 +307,18 @@ function onListClick(e: MouseEvent): void {
   const t = e.target as HTMLElement;
   const keep = t.closest<HTMLElement>("[data-keep]");
   if (keep) { const s = +keep.dataset.keep!; void setKept([s], !keepList().includes(s)); return; }
+  const fold = t.closest<HTMLElement>("[data-fold]");
+  if (fold) {
+    const g = fold.dataset.fold as Group;
+    if (collapsed.has(g)) collapsed.delete(g); else collapsed.add(g);
+    prefs.set({ unravelCollapsed: GROUP_ORDER.filter((x) => collapsed.has(x)) });
+    render();
+    $<HTMLElement>(`#unr-list [data-fold="${g}"]`)?.focus();
+    return;
+  }
   const grp = t.closest<HTMLElement>("[data-select]");
   if (grp) {
-    const skill = who()?.skill ?? 0;
-    const r = toggleLoaded(sel, order.filter((x) => groupOf(x, skill) === grp.dataset.select), true, noQuery);
+    const r = toggleLoaded(sel, groupRows.get(grp.dataset.select as Group) ?? [], true, noQuery);
     sel = r.sel;
     const worn = wornNote(r.worn);
     if (worn) toast(worn);

@@ -213,7 +213,7 @@
 /* ---------------------------------------------------------------- Unravel view (ui/unravel.mts) */
 /* Its own scroller: the forecast and the lines above the list scroll away with it. Ingredients wear the rarity hue of the
    tier they come from: Relic the artifact purple, Essence the magic blue; Residue is muted and a held piece a warning. */
-#tab-unravel { overflow-y: auto; --unr-relic: var(--rarity-lesser-artifact); --unr-essence: var(--rarity-major-magic); --unr-residue: var(--color-text-muted); --unr-held: var(--color-warning); }
+#tab-unravel { overflow: hidden; --unr-relic: var(--rarity-lesser-artifact); --unr-essence: var(--rarity-major-magic); --unr-residue: var(--color-text-muted); --unr-held: var(--color-warning); }
 #tab-unravel > * { flex: none; }
 .unr-who { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); padding: var(--space-3) var(--space-4); background: var(--color-surface); color: var(--color-text); border: var(--border-width) solid var(--color-border); border-radius: var(--radius-lg); }
 .unr-who-pick { font-weight: var(--weight-medium); }
@@ -233,13 +233,31 @@
 .pr .unr-link:hover { color: var(--color-link-hover); }
 .unr-chip .unr-chip-n { color: var(--color-text-muted); font-variant-numeric: tabular-nums; }
 .unr-chip[aria-pressed="true"] .unr-chip-n { color: inherit; }
-.unr-card { overflow: visible; }
-.unr-selbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); padding: var(--space-2) var(--space-3); background: var(--color-accent-soft); color: var(--color-on-accent-soft); border-bottom: var(--border-width) solid var(--color-border); position: sticky; top: 0; z-index: 1; }
+/* The top (picker, forecast, what is left out, the selection bar) stays put and only the list scrolls (issue #332); on a
+   narrow or short window, where that top would take half the screen, the whole view scrolls instead. */
+#tab-unravel > .unr-card { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.unr-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.unr-tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); }
+.unr-tools > .unr-excl { flex: 1 1 320px; min-width: 0; }
+.unr-selbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); padding: var(--space-2) var(--space-3); background: var(--color-accent-soft); color: var(--color-on-accent-soft); border-bottom: var(--border-width) solid var(--color-border); }
 .unr-sel-n { font-weight: var(--weight-semibold); font-size: var(--text-md); }
 .unr-sel-sum { font-variant-numeric: tabular-nums; }
 .unr-sel-acts { display: flex; flex-wrap: wrap; gap: var(--space-1-5); margin-left: auto; }
 .unr-group-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) 10px; padding: 10px var(--space-3); background: var(--color-surface-subtle); border-bottom: var(--border-width) solid var(--color-border); }
-.unr-group-head h3 { margin: 0; display: flex; align-items: center; gap: var(--space-1-5); font-size: var(--text-base); }
+.unr-group-head h3 { margin: 0; display: flex; align-items: center; font-size: var(--text-base); }
+/* A group's heading folds it (issue #332): a chevron that turns, and the count on the heading while folded. */
+.pr .unr-fold { display: inline-flex; align-items: center; gap: var(--space-1-5); padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; }
+.unr-chev { transition: transform var(--duration-fast) var(--ease-standard); }
+.unr-group.shut .unr-chev { transform: rotate(-90deg); }
+.unr-count { color: var(--color-text-muted); font-weight: var(--weight-regular); font-variant-numeric: tabular-nums; }
+/* Condensed rows: one line each, the place in the row's title. */
+.unr-list.condensed .unr-row { grid-template-columns: 28px minmax(0, 1.6fr) minmax(0, 1.8fr) auto; padding-top: 2px; padding-bottom: 2px; }
+.unr-list.condensed .unr-where { display: none; }
+.unr-list.condensed .unr-nm, .unr-list.condensed .unr-yield { flex-direction: row; align-items: baseline; gap: var(--space-2); }
+.unr-list.condensed .unr-name { flex: 0 1 auto; min-width: 0; }
+.unr-list.condensed .unr-sub { flex: 0 1 auto; flex-wrap: nowrap; min-width: 0; overflow: hidden; }
+.unr-list.condensed .unr-ing-line { flex: none; }
+.unr-list.condensed .unr-why { flex: 1 1 auto; min-width: 0; }
 .unr-gs { flex: 1 1 240px; min-width: 0; color: var(--color-text-muted); font-size: var(--text-sm); }
 .unr-row { display: grid; grid-template-columns: 28px minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1.2fr) auto; align-items: center; gap: var(--space-1) var(--space-3); padding: var(--space-2) var(--space-3); border-bottom: var(--border-width) solid var(--color-border); cursor: pointer; }
 .unr-row:hover { background: var(--color-row-hover); color: var(--color-on-row-hover); }
@@ -258,7 +276,14 @@
 .unr-keep { justify-self: end; }
 .unr-state { padding: var(--space-6) var(--space-4); text-align: center; }
 .unr-foot { flex-wrap: wrap; }
+@media (max-width: 720px), (max-height: 640px) {
+  #tab-unravel { overflow-y: auto; }
+  #tab-unravel > .unr-card { flex: none; overflow: visible; }
+  .unr-list { overflow: visible; }
+  .unr-selbar { position: sticky; top: 0; z-index: 1; }
+}
 @media (max-width: 720px) {
+  .unr-list.condensed .unr-row { grid-template-columns: 28px minmax(0, 1fr) auto; }
   .unr-row { grid-template-columns: 28px minmax(0, 1fr) auto; }
   .unr-row .unr-where, .unr-row .unr-yield { grid-column: 2 / 4; }
   .unr-row .unr-keep { grid-column: 3; grid-row: 1; }

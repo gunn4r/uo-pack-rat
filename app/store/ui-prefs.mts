@@ -21,9 +21,11 @@ export const UI_PREF_CHOICES = {
   builderTab: ["requirements", "weights", "buffs", "pool", "advanced"],   // the Suit Builder's last Settings drawer tab (app/ui/builder.mts, issue #272)
   builderChanges: ["gauges", "table"],   // how the Suit Builder's result shows What changes (app/ui/builder-result.mts, issue #272)
   builderFineTune: ["on", "off"],        // whether the Suit Builder's Goals tab shows the weights its goals set (app/ui/builder.mts, issue #292)
+  unravelRows: ["full", "condensed"],    // the Unravel view's rows: two lines, or one (app/ui/unravel.mts, issue #332)
 } as const satisfies Record<string, readonly string[]>;
-// The list fields: the Inventory tab's columns and the character sheet's shown properties (absent = the default set).
-export const UI_PREF_LISTS = ["cols", "sheetProps"] as const;
+// The list fields: the Inventory tab's columns and the character sheet's shown properties (absent = the default set), and the
+// Unravel view's collapsed groups (issue #332).
+export const UI_PREF_LISTS = ["cols", "sheetProps", "unravelCollapsed"] as const;
 // The version fields: the release whose in-app update notice was dismissed (ui/settings.mts's automatic
 // update check), and the ClassicUO web scanner last copied into the client (ui/paste-scanner.mts).
 export const UI_PREF_VERSIONS = ["dismissedUpdate", "copiedScanner"] as const;
