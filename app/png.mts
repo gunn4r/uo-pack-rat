@@ -1,4 +1,4 @@
-// png.mts — a minimal PNG encoder on node built-ins (issue #164): 8-bit RGB, no interlace, every row filter type 0, one IDAT deflated by node:zlib, chunk CRCs from the table below. Enough for the facet overview the house map shows; no dependency.
+// png.mts — a minimal PNG encoder on node built-ins (issue #164): 8-bit RGB (or RGBA, issue #174), no interlace, every row filter type 0, one IDAT deflated by node:zlib, chunk CRCs from the table below. Enough for the facet overview the house map shows and the item art; no dependency.
 import { deflateSync } from "node:zlib";
 
 const TABLE = new Uint32Array(256).map((_, n) => {
@@ -22,15 +22,19 @@ function chunk(type: string, data: Buffer): Buffer {
 }
 
 // rgb: width * height * 3 bytes, rows top first.
-export function encodePng(width: number, height: number, rgb: Uint8Array): Buffer {
-  const stride = width * 3;
-  if (rgb.length !== stride * height) throw new Error(`a ${width} x ${height} RGB image is ${stride * height} bytes, not ${rgb.length}`);
+export const encodePng = (width: number, height: number, rgb: Uint8Array): Buffer => encode(width, height, rgb, 3, 2, "RGB");
+// rgba: width * height * 4 bytes, rows top first, not premultiplied.
+export const encodePngRgba = (width: number, height: number, rgba: Uint8Array): Buffer => encode(width, height, rgba, 4, 6, "RGBA");
+
+function encode(width: number, height: number, px: Uint8Array, channels: number, colourType: number, what: string): Buffer {
+  const stride = width * channels;
+  if (px.length !== stride * height) throw new Error(`a ${width} x ${height} ${what} image is ${stride * height} bytes, not ${px.length}`);
   const raw = Buffer.alloc((stride + 1) * height);
-  for (let y = 0; y < height; y++) raw.set(rgb.subarray(y * stride, (y + 1) * stride), y * (stride + 1) + 1);
+  for (let y = 0; y < height; y++) raw.set(px.subarray(y * stride, (y + 1) * stride), y * (stride + 1) + 1);
   const ihdr = Buffer.alloc(13);
   ihdr.writeUInt32BE(width, 0);
   ihdr.writeUInt32BE(height, 4);
   ihdr[8] = 8;   // bit depth
-  ihdr[9] = 2;   // colour type: RGB
+  ihdr[9] = colourType;   // 2 RGB, 6 RGBA
   return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk("IHDR", ihdr), chunk("IDAT", deflateSync(raw)), chunk("IEND", Buffer.alloc(0))]);
 }
