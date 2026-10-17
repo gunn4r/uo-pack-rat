@@ -366,6 +366,14 @@ document.addEventListener("builderchange", (e) => {
   const key = (e as CustomEvent<{ key: string }>).detail.key;
   if (["runs", "openRun", "job"].includes(key)) document.getElementById("b-myruns")?.replaceWith(runsCard());
 });
+// When each character last ran, for the character picker: its latest run's day and time, from the same list.
+async function lastRunDays(): Promise<Record<string, string>> {
+  let all: RunSummaryLike[];
+  try { all = await (allRuns ||= api<RunsListApiResponse>("/api/runs").then((r) => r.runs || [])); } catch { allRuns = null; return {}; }
+  const out: Record<string, string> = {};
+  for (const r of otherCharactersRuns(all, null, Infinity)) out[r.character!] = fmtRunDay(r.createdAt);
+  return out;
+}
 // The first-visit view's "Other characters' recent runs": the latest run of up to three other characters still scanned,
 // each opening its character with that run, as the drawer opens one; null with none.
 // Every character's runs, fetched once and kept until the runs change (loadRuns, a refresh).
@@ -402,4 +410,4 @@ export async function compareSelected(): Promise<void> {
   const titleOf = (r: SavedRunLike): string => { const i = list.findIndex((x) => x.id === r.id); return r.label || autoLabel(r, i >= 0 ? list[i + 1] : undefined).text; };
   commands.openRunCompare(runs, titleOf, (id) => { openRun(id); }, (id) => { session.compare = toggleCompare(session.compare, id, false).next; renderRuns(); });
 }
-provide({ loadRuns, openRunsDrawer, runsCard, otherRunsCard, startOver });
+provide({ loadRuns, openRunsDrawer, runsCard, otherRunsCard, startOver, lastRunDays });

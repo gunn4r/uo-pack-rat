@@ -78,12 +78,12 @@ const isManual = (): boolean => session.mode === "manual";
 // The character whose bonuses Manual's totals take: the builder's own, unless "No character" is picked (in Manual, or in Automatic).
 const manualCharacter = (): string | null => (noCharacter || session.character === NOBODY ? null : session.character);
 
-// Once, from initBuilder(): the mode switch in the top bar after the template picker, and Manual's screen.
+// Once, from initBuilder(): the mode switch in the top bar's second row, and Manual's screen.
 export function initManual(): void {
   seg = segmented({ label: "Builder mode", options: [{ value: "automatic", label: "Automatic" }, { value: "manual", label: "Manual" }], value: session.mode,
     onChange: (v) => setMode(v as BuilderMode) });
   seg.id = "b-mode";
-  $<HTMLElement>("#b-tpl-top")!.after(seg);
+  $<HTMLElement>("#b-mode-slot")!.replaceWith(seg);
   const root = $<HTMLElement>("#b-manual")!;
   // Esc closes the picker (or the buff picker) from anywhere on the screen (a slot card, a row, the search, the bare
   // page after a click on text) and gives its slot card (or Add buff) the focus; a popover, a drawer, a dialog or a
@@ -126,12 +126,11 @@ function setMode(m: BuilderMode): void {
 }
 // A saved run opened or compared from Manual's runs drawer is shown in Automatic's result view.
 const showAutomatic = (): void => setMode("automatic");
-// The character select ("No character", raw item totals, at its top in both modes): Manual's own choice in Manual.
+// The character picker shows No character (raw item totals, in both modes) when Manual's own choice is it, in Manual.
 function paintCharSelect(): void {
-  const sel = $<HTMLSelectElement>("#b-char")!;
-  sel.value = isManual() && !manualCharacter() ? NOBODY : session.character || "";
+  commands.showCharacter(isManual() && !manualCharacter() ? NOBODY : session.character || "");
 }
-// The select changed: "No character" (in either mode: Automatic's No character is Manual's too), or a character in
+// The picker changed: "No character" (in either mode: Automatic's No character is Manual's too), or a character in
 // Manual (which the caller selects when it is another one).
 function setManualFor(character: string | null): void {
   if (!isManual() && character) return;

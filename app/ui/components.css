@@ -276,6 +276,30 @@
 .pr .menu-item[aria-disabled="true"] { color: var(--color-text-muted); cursor: not-allowed; }
 .pr .menu-item[aria-disabled="true"]:hover { background: none; color: var(--color-text-muted); }
 
+/* ---- the combobox (combobox() in components.mts): the value on a button, then a search over grouped options */
+.cbx { display: inline-flex; align-items: center; gap: var(--space-2); min-width: 0; max-width: 100%; height: var(--control-lg); padding: 0 var(--space-2) 0 var(--space-1-5); border-radius: var(--radius-md); border: var(--border-width) solid var(--color-border-strong); background: var(--color-surface); color: var(--color-text); font: inherit; text-align: left; cursor: pointer; }
+.cbx:hover { border-color: var(--color-accent); }
+.cbx:focus-visible { outline: none; box-shadow: var(--ring-focus); }
+.cbx-text { display: flex; flex-direction: column; min-width: 0; line-height: var(--lh-sm); }
+.cbx-title { font-weight: var(--weight-semibold); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cbx-sub { font-size: var(--text-xs); color: var(--color-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cbx-chev { flex: none; margin-left: auto; color: var(--color-text-muted); }
+.pop.pop-cbx .pop-body { padding: 0; gap: 0; }
+.pr .input.cbx-q { height: var(--control-lg); border: 0; border-bottom: var(--border-width) solid var(--color-border); border-radius: 0; background: transparent; font-size: var(--text-md); }
+.pr .input.cbx-q:focus-visible { outline: none; box-shadow: inset 0 -2px 0 var(--color-focus); }
+.cbx-list { max-height: 360px; overflow-y: auto; padding: var(--space-1); }
+.cbx-grp { padding: var(--space-2) var(--space-2) var(--space-1); font-size: var(--text-xs); font-weight: var(--weight-semibold); color: var(--color-text-muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.cbx-opt { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-1-5) var(--space-2); border-radius: var(--radius-md); cursor: pointer; }
+.cbx-opt:hover, .cbx-opt[aria-selected="true"] { background: var(--color-row-hover); color: var(--color-on-row-hover); }
+.cbx-opt > .cbx-text { flex: 1 1 auto; }
+.cbx-opt .cbx-title { font-weight: var(--weight-medium); }
+.cbx-meta { flex: none; font-size: var(--text-xs); color: var(--color-text-muted); white-space: nowrap; }
+.cbx-check { flex: none; color: var(--color-accent); }
+.cbx-hit { background: none; color: inherit; font-weight: var(--weight-semibold); text-decoration: underline; text-underline-offset: 2px; }
+.cbx-empty { display: block; padding: var(--space-4); color: var(--color-text-muted); text-align: center; }
+.cbx-foot { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); padding: var(--space-1) var(--space-2); border-top: var(--border-width) solid var(--color-border); }
+.cbx-keys { margin-right: auto; font-size: var(--text-xs); color: var(--color-text-muted); }
+
 /* ---------------------------------------------------------------- forms (Import drawer, wizard, Settings) */
 /* a key hint inside a disabled button takes the disabled text colour, not the primary's on-accent white */
 .pr .btn[disabled] .kbd { background: transparent; color: var(--color-on-disabled); border-color: var(--color-on-disabled); }

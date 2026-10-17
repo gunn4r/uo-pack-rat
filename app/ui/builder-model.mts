@@ -13,6 +13,39 @@ import { delayText, MIN_TICKS } from "../swing.mts";
 import type { StrictResult, TieBreakResult } from "./api-types.mts";
 
 export const plural = (n: number, word: string, many = `${word}s`): string => `${n.toLocaleString("en-US")} ${n === 1 ? word : many}`;
+// ---------------------------------------------------------------- the header (issue #321)
+// The build picker's state line: which template the panel's settings came from and how they stand. `unsaved` counts the
+// settings that differ from the character's saved profile; `changed` those that differ from the template they came from
+// (all the old "modified" badge counted). Unsaved changes are named first, being what a template pick or a character
+// switch would lose. It never says a bare "modified".
+export interface BuildState { template: string | null; missing?: boolean | undefined; changed?: number | undefined; unsaved?: number | undefined }
+export function buildStateText({ template, missing = false, changed = 0, unsaved = 0 }: BuildState): string {
+  const from = !template ? "not from a template" : missing ? `from template “${template}”, which no longer exists` : `from template “${template}”`;
+  if (unsaved) return `${from} · ${plural(unsaved, "unsaved change")}`;
+  if (changed && template && !missing) return `${from}, with ${plural(changed, "setting")} changed`;
+  return from;
+}
+// The same in full, for the tooltip and a screen reader: what differs from the template, and what is not saved yet.
+export function buildStateDetail({ name, template, missing = false, changedLines = [], unsavedLines = [] }: { name: string; template: string | null; missing?: boolean; changedLines?: string[]; unsavedLines?: string[] }): string {
+  const tpl = !template ? "These settings are not from a template; Save as template stores them as one."
+    : missing ? `These settings came from a template named ${template}, which no longer exists.`
+    : changedLines.length ? `Changed from ${template}: ${changedLines.join(" · ")}.` : `These settings equal the ${template} template.`;
+  return `${tpl} ${unsavedLines.length ? `Not saved to ${who(name)}'s profile yet: ${unsavedLines.join(" · ")}.` : "No unsaved changes."}`;
+}
+// A character's top skills by value, for the character picker: "Swordsmanship 120 · Tactics 110.5 · Parry 110"; "" with none.
+export function topSkills(skills: Record<string, unknown> | null | undefined, n = 3): string {
+  const val = (v: unknown): number => { const x = (v as { value?: unknown } | null)?.value; return typeof x === "number" && Number.isFinite(x) ? x : 0; };
+  return Object.entries(skills || {}).map(([k, v]) => [k, val(v)] as const).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, n)
+    .map(([k, v]) => `${k} ${Number(v.toFixed(1))}`).join(" · ");
+}
+// A player's template's line in the build picker: its description, else the characters whose settings came from it
+// ("Used by Dorran and Kestrel"), else when it was saved, else "Your template".
+export function templateLine(t: { description?: string | undefined; savedAt?: string | undefined }, users: string[]): string {
+  if (t.description) return t.description;
+  if (users.length) return `Used by ${listWords(users.map(who))}`;
+  return t.savedAt ? `Saved ${new Date(t.savedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : "Your template";
+}
+
 // A Suit Builder character key as the page prints it: No character's pseudo name in words, a character's name as it is.
 export const who = (name: string): string => (name === NOBODY ? "No character" : name);
 const num = (n: number): string => n.toLocaleString("en-US", { maximumFractionDigits: 2 });

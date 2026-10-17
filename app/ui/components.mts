@@ -31,7 +31,7 @@ export const FLEX_CLASSES = [
   "btn", "field", "search", "check", "seg", "fchip", "token", "pill", "badge", "tag", "rar-tier", "card-head",
   "tbl-foot", "rowact", "overlay-head", "overlay-foot", "overlay-titles", "toast", "toasts", "msg", "msg-body", "msg-actions",
   "meter", "stepper", "step", "step-dot", "kv", "kv-k", "kv-v", "resist", "slot", "drawer", "drawer-body",
-  "dialog", "dialog-body", "dialog-foot", "pop-body", "tipwrap", "empty-state",
+  "dialog", "dialog-body", "dialog-foot", "pop-body", "tipwrap", "empty-state", "cbx", "cbx-text", "cbx-opt", "cbx-foot",
 ] as const;
 
 // ---------------------------------------------------------------- icons
@@ -617,6 +617,125 @@ export function menu(anchor: HTMLElement, items: Array<MenuItem | "divider">, { 
     buttons[to]!.focus();
   });
   return Object.assign(handle, { counts });
+}
+
+// ---------------------------------------------------------------- combobox
+// A typeahead picker (issue #321): a button showing the value (an icon, a title and a subtitle) that opens a popover
+// with a search box over grouped options, each a title, a subtitle and a right-hand meta, the typed text marked in them,
+// then an optional row of actions. ↑ and ↓ move the highlight, ↵ picks it, Esc closes with the focus back on the
+// button. The search box is the ARIA combobox and the list its listbox, options in labelled groups. `face` and `groups`
+// are read each time they are drawn, so the button and the list always show the data of the moment; `refresh()` redraws
+// both (the list only while it is open).
+export interface ComboOption {
+  value: string;
+  title: string;
+  subtitle?: string | undefined;
+  meta?: string | undefined;                  // a short right-hand note ("today, 10:40 PM")
+  icon?: (() => Node) | undefined;
+  match?: string | undefined;                 // what the search looks in, when not the title and subtitle
+  current?: boolean | undefined;              // the value shown on the button: checked, and highlighted on opening
+}
+export interface ComboGroup { label: string; options: ComboOption[] }
+export interface ComboAction { label: string; onSelect: () => void; icon?: IconName | undefined; disabled?: string | null | undefined }
+export interface ComboFace { value: string; title: string; subtitle?: string | undefined; icon?: Node | null | undefined }
+export interface ComboboxOptions {
+  label: string;                              // the picker's name ("Character"); the button reads "Character: Dorran"
+  placeholder: string;
+  face: () => ComboFace;
+  groups: () => ComboGroup[];
+  onPick: (value: string) => void;
+  actions?: (() => ComboAction[]) | undefined;
+  empty?: string | undefined;
+  width?: number | undefined;
+  attrs?: ElAttrs | undefined;                // on the button (id, class, aria-describedby)
+}
+export interface ComboboxHandle { button: HTMLButtonElement; refresh: () => void; isOpen: () => boolean }
+// The groups the typed text leaves: the options whose title and subtitle (or `match`) hold it, in any case; a group with
+// none left goes.
+export function filterGroups(groups: ComboGroup[], query: string): ComboGroup[] {
+  const q = query.trim().toLowerCase();
+  const hit = (o: ComboOption): boolean => !q || (o.match ?? `${o.title} ${o.subtitle ?? ""}`).toLowerCase().includes(q);
+  return groups.map((g) => ({ ...g, options: g.options.filter(hit) })).filter((g) => g.options.length > 0);
+}
+// A text cut around the first place the query occurs, in any case: [before, the match, after], or [text] when it does not.
+export function markParts(text: string, query: string): string[] {
+  const q = query.trim(), i = q ? text.toLowerCase().indexOf(q.toLowerCase()) : -1;
+  return i < 0 ? [text] : [text.slice(0, i), text.slice(i, i + q.length), text.slice(i + q.length)];
+}
+// The highlight after a key, over `n` options: ↓ and ↑ step and stop at the ends; -1 for a key that does not move it.
+export function comboStep(i: number, n: number, key: string): number {
+  if (n <= 0) return -1;
+  if (key === "ArrowDown") return Math.min(n - 1, i + 1);
+  if (key === "ArrowUp") return Math.max(0, i - 1);
+  return -1;
+}
+export function combobox(o: ComboboxOptions): ComboboxHandle {
+  const trigger = el("button", { ...(o.attrs || {}), type: "button", class: `cbx${o.attrs?.class ? ` ${String(o.attrs.class)}` : ""}`, "aria-haspopup": "dialog", "aria-expanded": "false" });
+  let handle: PopoverHandle | null = null, paint: (() => void) | null = null;
+  const paintFace = (): void => {
+    const f = o.face();
+    trigger.dataset.value = f.value;
+    trigger.setAttribute("aria-label", `${o.label}: ${f.title}`);
+    trigger.replaceChildren(...[f.icon, box("span", { class: "cbx-text" }, txt(f.title, "cbx-title"), f.subtitle ? txt(f.subtitle, "cbx-sub") : null), icon("chevron-down", { size: "sm", cls: "cbx-chev" })].filter((n): n is Node => !!n));
+  };
+  const marked = (text: string, q: string): Array<string | Node> => markParts(text, q).map((p, i) => (i === 1 ? el("mark", { class: "cbx-hit" }, p) : p));
+  function open(): void {
+    const listId = nextId("cbx");
+    const input = el("input", { class: "input cbx-q", type: "text", role: "combobox", "aria-expanded": "true", "aria-controls": listId, "aria-autocomplete": "list", "aria-label": `Search: ${o.label}`, placeholder: o.placeholder, autocomplete: "off", spellcheck: "false" });
+    const list = el("div", { class: "cbx-list", role: "listbox", id: listId, "aria-label": o.label });
+    let opts: ComboOption[] = [], active = -1;
+    const sync = (): void => {
+      list.querySelectorAll("[role=option]").forEach((n, j) => n.setAttribute("aria-selected", String(j === active)));
+      const on = active >= 0 ? document.getElementById(`${listId}-${active}`) : null;
+      if (on) { input.setAttribute("aria-activedescendant", on.id); on.scrollIntoView({ block: "nearest" }); } else input.removeAttribute("aria-activedescendant");
+    };
+    const pick = (v: string): void => { handle?.close(); o.onPick(v); };
+    paint = (): void => {
+      const q = input.value, groups = filterGroups(o.groups(), q);
+      opts = groups.flatMap((g) => g.options);
+      active = opts.length ? Math.min(Math.max(active, 0), opts.length - 1) : -1;
+      let i = 0;
+      list.replaceChildren(...(groups.length ? groups.map((g) => {
+        const gid = nextId("cbx-g");
+        return el("div", { class: "cbx-group", role: "group", "aria-labelledby": gid }, el("div", { class: "cbx-grp", id: gid }, g.label), ...g.options.map((x) => {
+          const n = box("div", { class: `cbx-opt${x.current ? " cbx-cur" : ""}`, role: "option", id: `${listId}-${i++}`, "data-value": x.value, "aria-selected": "false" },
+            x.icon ? x.icon() : null,
+            box("span", { class: "cbx-text" }, el("span", { class: "cbx-title" }, ...marked(x.title, q)), x.subtitle ? el("span", { class: "cbx-sub" }, ...marked(x.subtitle, q)) : null),
+            x.meta ? txt(x.meta, "cbx-meta") : null,
+            x.current ? icon("check", { size: "sm", cls: "cbx-check" }) : null,
+            x.current ? txt("(current)", "sr") : null);
+          n.addEventListener("pointerdown", (e) => e.preventDefault());   // keep the focus in the search box
+          n.addEventListener("click", () => pick(x.value));
+          return n;
+        }));
+      }) : [txt(o.empty ?? "Nothing matches.", "cbx-empty")]));
+      sync();
+    };
+    input.addEventListener("input", () => { active = 0; paint!(); });
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); const x = opts[active]; if (x) pick(x.value); return; }
+      const to = comboStep(active, opts.length, e.key);
+      if (to < 0) return;
+      e.preventDefault();
+      active = to;
+      sync();
+    });
+    // the actions: a disabled one stays in the tab order with its reason as its title, as a menu item does
+    const foot = box("div", { class: "cbx-foot" }, el("span", { class: "cbx-keys", "aria-hidden": "true" }, "↑↓ move · ↵ pick · Esc close"),
+      ...(o.actions?.() ?? []).map((a) => buttonFor(a)));
+    function buttonFor(a: ComboAction): HTMLButtonElement {
+      return button({ label: a.label, icon: a.icon, variant: "ghost", size: "sm", attrs: a.disabled ? { "aria-disabled": "true", title: a.disabled } : {},
+        onClick: () => { if (a.disabled) return; handle?.close(); a.onSelect(); } });
+    }
+    paint();
+    active = Math.max(0, opts.findIndex((x) => x.current));
+    handle = popover(trigger, [input, list, foot], { label: o.label, width: o.width ?? 380, onClose: () => { handle = null; paint = null; } });
+    handle.root.classList.add("pop-cbx");
+    sync();
+  }
+  trigger.addEventListener("click", () => { if (handle) handle.close(); else open(); });
+  paintFace();
+  return { button: trigger, refresh: () => { paintFace(); paint?.(); }, isOpen: () => !!handle };
 }
 
 // ---- builder

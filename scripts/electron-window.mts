@@ -89,6 +89,30 @@ export async function setRows(page: Page, view: "List" | "Grouped"): Promise<voi
   await page.keyboard.press("Escape");
 }
 
+// The Suit Builder's header pickers (issue #321), comboboxes whose button carries the value it shows (`data-value`).
+// A character picked by its key (No character is "_nobody").
+export async function pickCharacter(page: Page, name: string): Promise<void> {
+  await page.click("#b-char");
+  await page.click(`.pop [role=option][data-value="${name}"]`);
+  await page.waitForFunction((n) => document.querySelector("#b-char")?.getAttribute("data-value") === n, name, { timeout: 10_000 });
+}
+// The characters the picker lists, No character left out.
+export async function characterNames(page: Page): Promise<string[]> {
+  await page.click("#b-char");
+  const names = await page.$$eval(".pop [role=option]", (os) => os.map((o) => (o as HTMLElement).dataset.value!));
+  await page.keyboard.press("Escape");
+  return names.filter((n) => n !== "_nobody");
+}
+// A template picked in the build picker ("Start over from"), answering Replace when it asks first.
+export async function pickTemplate(page: Page, ref: string): Promise<void> {
+  await page.click("#b-tpl");
+  await page.click(`.pop [role=option][data-value="${ref}"]`);
+  await page.waitForTimeout(300);
+  const ask = page.locator("dialog[open] [data-confirm]");
+  if (await ask.count()) await ask.click();
+  await page.waitForFunction((r) => document.querySelector("#b-tpl")?.getAttribute("data-value") === r && !document.querySelector("dialog[open]"), ref, { timeout: 10_000 });
+}
+
 // The environment every Electron UI test launches the app with: the test's own process.env plus
 // PACKRAT_CLIENT_HOME, a throwaway folder the server searches for game clients instead of the real home
 // (app/vault-server.mts's defaultClientSearch). Without it a test run finds the machine's real client
