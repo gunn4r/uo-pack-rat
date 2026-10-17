@@ -115,8 +115,13 @@ export function buildSpecError(v: unknown, label: string, { template = false }: 
   }
   return null;
 }
-// profiles.json v3's characters and templates, each spec held to buildSpecError (the schema checks the file's shape).
+// A template's name: at most this long (a character's `template` naming it is held to the same, healEntry), and never
+// "builtin:…", which names the shard's own.
+export const TEMPLATE_NAME_MAX = 128;
+// profiles.json v3's characters and templates, each spec held to buildSpecError (the schema checks the file's shape), and
+// each template's name to TEMPLATE_NAME_MAX and the built-in prefix.
 export function profilesSpecError(doc: ProfilesV3): string | null {
+  for (const id of Object.keys(doc.templates)) if (id.length > TEMPLATE_NAME_MAX || id.startsWith(BUILTIN_PREFIX)) return `templates: a template's name is at most ${TEMPLATE_NAME_MAX} characters and can't start with "${BUILTIN_PREFIX}"`;
   for (const [name, c] of Object.entries(doc.characters)) { const e = buildSpecError(c.spec, `characters.${name}.spec`); if (e) return e; }
   for (const [id, t] of Object.entries(doc.templates)) { const e = buildSpecError(t.spec, `templates.${id}.spec`, { template: true }); if (e) return e; }
   return null;
@@ -301,7 +306,7 @@ function healEntry(e: Record<string, unknown>, where: string, healed: string[]):
     } else if (bad(k, v)) { say(k, v, "set to its default"); delete out[k]; }
   }
   if (e.race != null && !RACES.includes(e.race as string)) { say("race", e.race, "left out"); delete out.race; }
-  if (e.template != null && !(typeof e.template === "string" && e.template.length <= 128)) { say("template", e.template, "left out"); delete out.template; }
+  if (e.template != null && !(typeof e.template === "string" && e.template.length <= TEMPLATE_NAME_MAX)) { say("template", e.template, "left out"); delete out.template; }
   return out as FlatProfile;
 }
 export interface MigratedProfiles<P> { profiles: ProfilesV3; prefs: P; changed: boolean; prefsChanged: boolean; healed: string[] }

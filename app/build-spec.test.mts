@@ -385,3 +385,12 @@ test("[fast] built-in templates: every shipped file's templates pass the spec ch
   const shipped = (JSON.parse(readFileSync(join(dir, "uoalive.json"), "utf8")) as { templates: TemplateMap }).templates;
   assert.deepEqual(Object.keys(shipped).slice(0, 4), ["melee", "caster", "archer", "tank"], "first, before the build templates (#212)");
 });
+
+// Issue #336: a template's name is at most 128 characters and never "builtin:…", on the server as in the page.
+test("[fast] profilesSpecError refuses a template named past 128 characters or with the built-in prefix", () => {
+  const spec = templateSpecFrom({}, []);
+  const doc = (name: string) => ({ schemaVersion: 3, characters: {}, templates: { [name]: { spec } } }) as unknown as Parameters<typeof profilesSpecError>[0];
+  assert.equal(profilesSpecError(doc("x".repeat(128))), null);
+  assert.match(profilesSpecError(doc("x".repeat(129))) ?? "", /at most 128 characters/);
+  assert.match(profilesSpecError(doc("builtin:melee")) ?? "", /can't start with "builtin:"/);
+});

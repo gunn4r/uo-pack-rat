@@ -535,3 +535,5 @@
 .tm-chip.tm-cur { background: var(--color-accent-soft); color: var(--color-on-accent-soft); }
 .tm-more { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-2) var(--space-3) var(--space-3); border-top: var(--border-width) solid var(--color-border); }
 .tm-acts { display: flex; flex-wrap: wrap; gap: var(--space-1-5); }
+/* a long template name wraps inside its buttons rather than pushing the row past the drawer */
+.pr .tm-acts .btn { max-width: 100%; height: auto; min-height: var(--control-sm); white-space: normal; text-align: left; overflow-wrap: anywhere; }

@@ -6,7 +6,7 @@
 // snapshots are read from state, never from the DOM.
 import { NOBODY, PROP_LABELS, NOT_BUILDER_KEYS, importanceOf, weightOfImportance, GEAR_SLOTS, tagUnits, WEAPON_EXCLUDES, MELEE_SKILLS, WEAPON_MUST_HAVE, flagLabel, getRules, RESIST_KEYS, RESIST_CAP_LIMITS, resistCapsFor, templateFrom, settingsChanges, bagLabel, toOptItem, totalsOf, fcCapFor, CASTING_SCHOOLS, compileGoals, goalsActive, GOAL_LEFTOVERS, LEFTOVER_GROUPS, LEFTOVER_LABELS, GOAL_RANKS_MAX, GOAL_RANK_SIZE_MAX, STRATEGY_HELP, FEWEST_HELP } from "../vault-lib.mts";
 import { delayText, heldWeapon, ssiShareOf, swingOf, type SwingResult } from "../swing.mts";
-import { BUILTIN_PREFIX, characterBuffs, characterEntry, characterProfile, findTemplate, goalSsiCap, planBuild, specFromProfile, templateName, templateRefs, templateSettings, templateSpecFrom, type PlannedBuild } from "../build-spec.mts";
+import { BUILTIN_PREFIX, TEMPLATE_NAME_MAX, characterBuffs, characterEntry, characterProfile, findTemplate, goalSsiCap, planBuild, specFromProfile, templateName, templateRefs, templateSettings, templateSpecFrom, type PlannedBuild } from "../build-spec.mts";
 import type { FcCap, Goals, ResistCap, RunBuffs, RunSettings, Character, SettingsChange, SettingsGroup } from "../vault-lib.mts";
 import { BUFFS, BUFF_GROUPS, BUFF_INPUTS, buffAvailability, buffById, buffEffectTags, isSchool, gearNeedsText, overrideNote, planBuffs, normalizeBuffs, runBuffs, toggleBuff, buffPlanOf, type Buff, type BuffPlan } from "../buffs.mts";
 import { defaultStrLimit } from "../run-settings.mts";
@@ -398,7 +398,7 @@ function paintTemplatesDrawer(): void {
     const t = state.profiles!.templates[ref]!, saved = savedUsers(ref), open = openCard === ref, bodyId = `tm-${ref.replace(/[^\w-]/g, "_")}`;
     const me = session.character && session.profile?.template === ref ? session.character : null, users = me ? [me, ...saved.filter((u) => u !== me)] : saved;
     const chips = box("span", { class: "tm-users" }, ...(users.length ? users.map((u) => txt(u === me ? `${who(u)} (this build)` : who(u), `tm-chip${u === me ? " tm-cur" : ""}`)) : [txt("no one uses it", "tm-chip")]));
-    const head = box("button", { type: "button", class: "tm-head", "aria-expanded": String(open), "aria-controls": bodyId, "data-tm": `${ref}\u0000head`, onclick: () => { openCard = open ? null : ref; askDelete = null; paintTemplatesDrawer(); } },
+    const head = box("button", { type: "button", class: "tm-head", "aria-expanded": String(open), ...(open ? { "aria-controls": bodyId } : {}), "data-tm": `${ref}\u0000head`, onclick: () => { openCard = open ? null : ref; askDelete = null; paintTemplatesDrawer(); } },
       box("span", { class: "tm-titles" }, txt(ref, "strong"), txt([t.description, changed(t.savedAt)].filter(Boolean).join(" · ") || "Your template", "t-sm muted"), chips), icon(open ? "chevron-up" : "chevron-down", { size: "sm" }));
     const more = !open ? null : box("div", { class: "tm-more", id: bodyId }, txt(templateSummary(t), "t-sm muted"),
       askDelete === ref
@@ -406,9 +406,9 @@ function paintTemplatesDrawer(): void {
           actions: [button({ label: "Cancel", size: "sm", attrs: { "data-tm": `${ref}\u0000delete` }, onClick: () => { askDelete = null; paintTemplatesDrawer(); } }), button({ label: `Delete ${ref}`, size: "sm", variant: "danger", attrs: { "data-tm": `${ref}\u0000confirm` }, onClick: () => { void deleteTemplate(ref, true); } })] })
         : box("div", { class: "tm-acts" },
           button({ label: `Update ${ref} with the current build settings`, size: "sm", variant: "primary", disabled: !session.profile, attrs: { "data-tm": `${ref}\u0000update` }, onClick: () => { void updateTemplate(ref); } }),
-          button({ label: "Rename", size: "sm", attrs: { "data-tm": `${ref}\u0000rename` }, onClick: () => { void renameTemplate(ref); } }),
-          button({ label: "Duplicate", size: "sm", attrs: { "data-tm": `${ref}\u0000duplicate` }, onClick: () => { void duplicateTemplate(ref); } }),
-          button({ label: "Delete…", size: "sm", variant: "danger-outline", attrs: { "data-tm": `${ref}\u0000delete` }, onClick: () => { askDelete = ref; paintTemplatesDrawer(); } })));
+          button({ label: "Rename", size: "sm", attrs: { "aria-label": `Rename ${ref}`, "data-tm": `${ref}\u0000rename` }, onClick: () => { void renameTemplate(ref); } }),
+          button({ label: "Duplicate", size: "sm", attrs: { "aria-label": `Duplicate ${ref}`, "data-tm": `${ref}\u0000duplicate` }, onClick: () => { void duplicateTemplate(ref); } }),
+          button({ label: "Delete…", size: "sm", variant: "danger-outline", attrs: { "aria-label": `Delete ${ref}…`, "data-tm": `${ref}\u0000delete` }, onClick: () => { askDelete = ref; paintTemplatesDrawer(); } })));
     return box("section", { class: `tm-card${open ? " tm-open" : ""}`, "data-template": ref }, head, more);
   };
   const builtin = (ref: string): HTMLElement => box("section", { class: "tm-card", "data-template": ref },
@@ -435,6 +435,7 @@ async function askTemplateName(title: string, value: string, was = ""): Promise<
   const name = (await promptText({ title, value }))?.trim();
   if (!name || name === was) return null;
   if (name.startsWith(BUILTIN_PREFIX)) { toast(`A template's name can't start with "${BUILTIN_PREFIX}".`, "bad"); return null; }
+  if (name.length > TEMPLATE_NAME_MAX) { toast(`A template's name is at most ${TEMPLATE_NAME_MAX} characters.`, "bad"); return null; }
   if (Object.hasOwn(state.profiles!.templates, name)) { toast(`There is already a template named ${name}.`, "bad"); return null; }
   return name;
 }
@@ -457,7 +458,7 @@ async function duplicateTemplate(ref: string): Promise<void> {
   if (!from) return;
   const name = await askTemplateName(`Duplicate ${plainName(ref)}`, copyName(plainName(ref)));
   if (!name) return;
-  state.profiles!.templates[name] = { spec: from.spec, ...(from.description ? { description: from.description } : {}), savedAt: new Date().toISOString() };
+  state.profiles!.templates[name] = { spec: structuredClone(from.spec), ...(from.description ? { description: from.description } : {}), savedAt: new Date().toISOString() };
   openCard = name;
   renderPanel();
   paintTemplatesDrawer();
@@ -596,6 +597,7 @@ async function saveTemplateAs(): Promise<void> {
   const was = session.profile!.template || "";
   const name = await promptText({ title: "Template name", value: was.startsWith(BUILTIN_PREFIX) ? "" : was });
   if (name?.startsWith(BUILTIN_PREFIX)) { toast(`A template's name can't start with "${BUILTIN_PREFIX}".`, "bad"); return; }
+  if (name && name.length > TEMPLATE_NAME_MAX) { toast(`A template's name is at most ${TEMPLATE_NAME_MAX} characters.`, "bad"); return; }
   if (!name || (state.profiles!.templates[name] && !await confirmDialog({ title: `Overwrite the ${name} template?`, body: `The ${name} template is replaced with these settings.`, confirmLabel: `Overwrite ${name}` }))) return;
   state.profiles!.templates[name] = { spec: templateSpecFrom(readControls(), buffsOn()), savedAt: new Date().toISOString() };
   session.profile!.template = name;
@@ -616,6 +618,7 @@ async function deleteTemplate(name: string, confirmed = false): Promise<void> {
   if (!Object.hasOwn(state.profiles!.templates, name) || (!confirmed && !await confirmDialog({ title: `Delete the ${name} template?`, body: "Characters made from it keep their settings.", confirmLabel: `Delete ${name}` }))) return;
   delete state.profiles!.templates[name];
   askDelete = null;
+  if (openCard === name) openCard = null;
   renderPanel();
   paintTemplatesDrawer();
   await saveTemplates(`Template ${name} deleted.`);
