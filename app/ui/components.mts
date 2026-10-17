@@ -378,7 +378,8 @@ export function popoverPlacement(a: { top: number; bottom: number; left: number 
 export interface PopoverHandle { root: HTMLElement; close: () => void; isOpen: () => boolean }
 let openPopover: PopoverHandle | null = null;
 export function popover(anchor: HTMLElement, content: Kids, { label, width, minWidth, onClose, role = "dialog", beside }: { label: string; width?: number | undefined; minWidth?: number | undefined; onClose?: (() => void) | undefined; role?: "dialog" | "menu" | "listbox"; beside?: HTMLElement | undefined } = { label: "" }): PopoverHandle {
-  if (openPopover) { const was = openPopover.root.dataset.anchor === anchor.dataset.popAnchor; openPopover.close(); if (was) return openPopover; }
+  // a second press on the anchor of the open popover closes it and opens nothing: the caller gets that closed handle back
+  if (openPopover) { const prev = openPopover, was = prev.root.dataset.anchor === anchor.dataset.popAnchor; prev.close(); if (was) return prev; }
   anchor.dataset.popAnchor ||= nextId("pop");
   const root = box("div", { class: "pop", role, "aria-label": label, tabindex: "-1", "data-anchor": anchor.dataset.popAnchor, ...(width ? { style: `width:${width}px` } : minWidth ? { style: `min-width:${minWidth}px` } : {}) },
     box("div", { class: "pop-body" }, ...content));
@@ -732,10 +733,10 @@ export function combobox(o: ComboboxOptions): ComboboxHandle {
     }
     paint();
     active = Math.max(0, opts.findIndex((x) => x.current));
-    // another popover on the same button (the build picker's Manage templates menu): popover() closes it and opens nothing,
-    // so the click toggles that one closed
-    handle = popover(trigger, [input, list, foot], { label: o.label, width: o.width ?? 380, onClose: () => { handle = null; paint = null; } }) as PopoverHandle | null;
-    if (!handle) { paint = null; return; }
+    // another popover on the same button (the build picker's Manage templates menu): popover() closes it and hands back its
+    // closed handle, so the click toggles that one closed
+    handle = popover(trigger, [input, list, foot], { label: o.label, width: o.width ?? 380, onClose: () => { handle = null; paint = null; } });
+    if (!handle.isOpen()) { handle = null; paint = null; return; }
     handle.root.classList.add("pop-cbx");
     sync();
   }
