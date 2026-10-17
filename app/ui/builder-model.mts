@@ -10,7 +10,7 @@ import { paperdollCaps, suitResist } from "../evaluate.mts";
 import type { Diagnostic, DiagnosticAction, DiagnosticCode, GearChanges, ScoreShare, SwingResult } from "../runs-types.mts";
 import { listWords } from "./manual-model.mts";
 import { delayText, MIN_TICKS } from "../swing.mts";
-import type { TieBreakResult } from "./api-types.mts";
+import type { StrictResult, TieBreakResult } from "./api-types.mts";
 
 export const plural = (n: number, word: string, many = `${word}s`): string => `${n.toLocaleString("en-US")} ${n === 1 ? word : many}`;
 // A Suit Builder character key as the page prints it: No character's pseudo name in words, a character's name as it is.
@@ -43,6 +43,27 @@ export function rarityHelp(rarity: string | undefined): string {
 // no tier 0), from the tie costs the server stamped on them: a piece's rank for "lower", the ranks above it for "higher".
 export function rarityTotal(best: Record<string, { tieCost?: number | undefined } | null | undefined>, rarity: string | undefined, ladderLength: number): number {
   return Object.values(best).reduce((n, it) => (it && it.tieCost != null ? n + (rarity === "higher" ? ladderLength - it.tieCost : it.tieCost) : n), 0);
+}
+// A strict-order stage in words (issue #292), named by what it scores: "your requirements", its goals ("Hit chance and
+// Defense chance"), "getting closer to soft requirements", "fewest changes", "tagged pieces" or "spare points".
+export function stageName(st: { kind: string; keys: string[] | null }): string {
+  return st.kind === "requirements" ? "your requirements" : st.kind === "softPartial" ? "getting closer to soft requirements" : st.kind === "changes" ? "fewest changes"
+    : st.kind === "tags" ? "tagged pieces" : st.kind === "spare" ? "spare points" : andList((st.keys || []).map(propName));
+}
+// What a strict-order build is solving now, for the progress card: "Strict order: getting Hit chance and Defense chance
+// as high as they go", "Strict order: meeting your requirements", "Strict order: spare points".
+export function stageProgress(st: { kind: string; keys: string[] | null }): string {
+  if (st.kind === "goal") { const n = (st.keys || []).length; return `Strict order: getting ${stageName(st)} as high as ${n === 1 ? "it goes" : "they go"}`; }
+  return `Strict order: ${st.kind === "requirements" ? "meeting your requirements" : st.kind === "changes" ? "changing as few pieces as possible" : st.kind === "tags" ? "avoiding tagged pieces" : stageName(st)}`;
+}
+// A strict-order build's proof in words (issue #292): every stage proven best in turn, or the last one proven and where
+// the best found takes over; a build without Exact search proves nothing, and says how to.
+export function strictDetail(s: StrictResult, method?: string): string {
+  const n = s.stages.length;
+  if (s.proven >= n) return "Strict order: each goal proven best in turn, most important first";
+  if (s.proven <= 0) return `Strict order: the best found, not proven; ${method === "exact" ? "raise the time budget" : "turn on Exact search"} to prove it`;
+  const first = s.stages[s.proven - 1]!;
+  return `Strict order: proven ${first.kind === "requirements" ? "for your requirements only" : `best up to ${stageName(first)}`}; from ${stageName(s.stages[s.proven]!)} on, the best found (not proven)`;
 }
 // Solver details' Rarity row: "Lowest-rarity pieces among equal suits · rarity total 16", and when the second stage ran
 // out of time, that the rarity choice is not proven.

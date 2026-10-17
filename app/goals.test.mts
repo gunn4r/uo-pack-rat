@@ -64,7 +64,7 @@ test("[fast] goals: the check names what is wrong", () => {
   assert.equal(goalsError({ ranks: [], leftover: "none" }, "goals"), null, "no goals at all is fine");
   assert.equal(goalsError({ ranks: [["stamPool"], ["sk:magery", "physResist"]], leftover: "none" }, "goals"), null, "a pool, a skill bonus and a resist");
   const bad: Array<[unknown, RegExp]> = [
-    [[], /goals must be an object/], [{ ranks: [["ssi"]], leftover: "luck", strategy: "strict" }, /goals\.strategy is not a goals setting/],
+    [[], /goals must be an object/], [{ ranks: [["ssi"]], leftover: "luck", strategy: "lexicographic" }, /goals\.strategy must be one of value, strict/], [{ ranks: [["ssi"]], leftover: "luck", fewestChanges: "yes" }, /goals\.fewestChanges must be a boolean/], [{ ranks: [["ssi"]], leftover: "luck", order: "strict" }, /goals\.order is not a goals setting/],
     [{ ranks: [[]], leftover: "luck" }, /ranks must be a list of at most 40 ranks, each a list of 1 to 10 property names/], [{ ranks: [Array.from({ length: 11 }, (_, i) => `k${i}`)], leftover: "luck" }, /each a list of 1 to 10/],
     [{ ranks: [["tagPenalty"]], leftover: "luck" }, /names "tagPenalty", which is not a property the Suit Builder offers/], [{ ranks: [["__proto__"]], leftover: "luck" }, /names "__proto__"/],
     [{ ranks: [["SSI"], ["hitChance"]], leftover: "luck" }, /names "SSI", which is not a property/], [{ ranks: [["sk:basket weaving"]], leftover: "luck" }, /names "sk:basket weaving"/],

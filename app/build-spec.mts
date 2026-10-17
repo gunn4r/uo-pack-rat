@@ -218,7 +218,7 @@ export interface PlannedBuild {
   profile: EffectiveProfile;   // what the solvers score with (buffs.mts plannedProfile), with the character's `swing`
   buffs: RunBuffs | undefined; // the buffs a run keeps, absent with none on
   pool: PoolSettings;          // the candidate pool settings, as POST /api/optimize's by-character form takes them
-  opts: { restarts: number; exact: boolean; timeBudgetMs?: number; alternatives?: { count: number; tolerance: number }; tieBreak?: { rarity: RarityPreference; tolerance: number } };
+  opts: { restarts: number; exact: boolean; timeBudgetMs?: number; alternatives?: { count: number; tolerance: number }; tieBreak?: { rarity?: RarityPreference; tolerance: number; fewestChanges?: boolean }; strict?: { ranks: string[][]; fewestChanges?: boolean } };
   snapshot: RunSettings;       // the settings a saved run keeps (the runs drawer labels, compares and reopens runs from it)
 }
 // A spec turned into a build for a character: the profile the solvers score with and its buff plan, the pool settings,
@@ -232,7 +232,13 @@ export function planBuild(spec: BuildSpec, { character, worn, race, suit, goalSw
   const plan = suit ? manualPlan(character, worn, suit, character ? p.race! : null, on, edits) : buffPlanOf(character, worn, p.race, buffs, edits);
   const { intent } = spec, s = spec.search || {}, pool = poolFromSpec(spec, character);
   const exact = s.exact ?? RUN_DEFAULTS.exact, budgetMs = s.budgetMs ?? RUN_DEFAULTS.budgetMs, altCount = s.altCount ?? 0, altTol = s.altTol ?? 0;
-  const opts = { restarts: s.restarts ?? RUN_DEFAULTS.restarts, exact, ...(exact ? { timeBudgetMs: budgetMs } : {}), ...(exact && altCount > 0 ? { alternatives: { count: altCount, tolerance: altTol } } : {}), ...(intent.rarity ? { tieBreak: { rarity: intent.rarity, tolerance: 0 } } : {}) };
+  // goals in force can ask for strict order (one solve per stage, opts.strict) and the fewest changes: in Best value the
+  // tie-break's first part, before a rarity preference; in strict order a stage of its own, after the goals and before
+  // tagged pieces and spare points. Both are search options, so the run key follows them
+  const g = goalsActive(intent.goals) ? intent.goals : null, fewest = !!g?.fewestChanges, strict = g?.strategy === "strict";
+  const opts = { restarts: s.restarts ?? RUN_DEFAULTS.restarts, exact, ...(exact ? { timeBudgetMs: budgetMs } : {}), ...(exact && altCount > 0 ? { alternatives: { count: altCount, tolerance: altTol } } : {}),
+    ...(intent.rarity || (fewest && !strict) ? { tieBreak: { ...(intent.rarity ? { rarity: intent.rarity } : {}), tolerance: 0, ...(fewest && !strict ? { fewestChanges: true } : {}) } } : {}),
+    ...(strict ? { strict: { ranks: g!.ranks.map((r) => [...r]), ...(fewest ? { fewestChanges: true } : {}) } } : {}) };
   const snapshot: RunSettings = { ...pool, floors: intent.floors, softFloors: intent.softFloors, weights: intent.weights, race: p.race!, resistCaps: intent.resistCaps,
     restarts: s.restarts || RUN_DEFAULTS.restarts, exact, budgetMs: budgetMs || RUN_DEFAULTS.budgetMs, altCount, altTol, ...(buffs ? { buffs } : {}), ...(intent.swingSteps ? { swingSteps: true } : {}), ...(intent.castingSchool ? { castingSchool: intent.castingSchool } : {}), ...(intent.rarity ? { rarity: intent.rarity } : {}), ...(intent.goals ? { goals: intent.goals } : {}) };
   const { prof, r } = planBuffs(base, character, plan);

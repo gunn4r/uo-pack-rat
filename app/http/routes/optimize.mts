@@ -15,7 +15,7 @@ import type { Job } from "../../services/jobs.mts";
 import { isManualSuit } from "../../store/ui-prefs.mts";
 import { rarityRank } from "../../item-query.mts";
 import type { RulesV1RarityItem } from "../../schema/types.d.mts";
-import { GEAR_SLOTS, NOBODY, RARITY_PREFERENCES, RESIST_KEYS, buildPools, getRules, missingFlags, toOptItem, totalsOf, type Character, type Inventory, type Item, type OptItem, type Profile, type RarityPreference, type ResistStep, type RunBuffs } from "../../vault-lib.mts";
+import { GEAR_SLOTS, GOAL_RANKS_MAX, GOAL_RANK_SIZE_MAX, NOBODY, RARITY_PREFERENCES, RESIST_KEYS, buildPools, getRules, missingFlags, toOptItem, totalsOf, type Character, type Inventory, type Item, type OptItem, type Profile, type RarityPreference, type ResistStep, type RunBuffs } from "../../vault-lib.mts";
 import { characterProfile, planBuild, poolFromSpec, specFromRunSettings } from "../../build-spec.mts";
 import { safeAppendLog } from "../../log.mts";
 import { stepsFor } from "../../swing.mts";
@@ -105,10 +105,22 @@ function optsError(opts: Record<string, unknown>): string | null {
       }
       case "tieBreak": {
         if (!v || typeof v !== "object" || Array.isArray(v)) return "opts.tieBreak must be an object";
-        const { rarity, tolerance, ...extra } = v as Record<string, unknown>;
-        if (!RARITY_PREFERENCES.includes(rarity as RarityPreference)) return `opts.tieBreak.rarity must be one of ${RARITY_PREFERENCES.join(", ")}`;
+        // a rarity preference, the fewest changes (issue #292), or both
+        const { rarity, tolerance, fewestChanges, ...extra } = v as Record<string, unknown>;
+        if (rarity != null && !RARITY_PREFERENCES.includes(rarity as RarityPreference)) return `opts.tieBreak.rarity must be one of ${RARITY_PREFERENCES.join(", ")}`;
+        if (fewestChanges != null && typeof fewestChanges !== "boolean") return "opts.tieBreak.fewestChanges must be a boolean";
+        if (rarity == null && !fewestChanges) return "opts.tieBreak needs a rarity or fewestChanges";
         if (typeof tolerance !== "number" || !Number.isFinite(tolerance) || tolerance < 0) return "opts.tieBreak.tolerance must be a non-negative number";
         if (Object.keys(extra).length) return `opts.tieBreak.${short(Object.keys(extra)[0]!)} is not a tie-break setting`;
+        break;
+      }
+      case "strict": {
+        // strict order (issue #292): the goal ranks, most important first, each a list of property keys
+        const { ranks, fewestChanges, ...extra } = (v && typeof v === "object" && !Array.isArray(v) ? v : { ranks: null }) as Record<string, unknown>;
+        if (fewestChanges != null && typeof fewestChanges !== "boolean") return "opts.strict.fewestChanges must be a boolean";
+        if (!Array.isArray(ranks) || ranks.length > GOAL_RANKS_MAX || !ranks.every((r) => Array.isArray(r) && r.length > 0 && r.length <= GOAL_RANK_SIZE_MAX && r.every((k) => isBoundedString(k, 64))))
+          return `opts.strict.ranks must be a list of at most ${GOAL_RANKS_MAX} ranks, each a list of 1 to ${GOAL_RANK_SIZE_MAX} property names`;
+        if (Object.keys(extra).length) return `opts.strict.${short(Object.keys(extra)[0]!)} is not a strict-order setting`;
         break;
       }
       default: return `opts.${short(k)} is not a supported search option`;
@@ -272,10 +284,10 @@ export function routes(ctx: ServerContext): Route[] {
         const badPools = poolsError(pools) || currentError(current);
         if (badPools) return send(res, 400, { ok: false, error: badPools });
       }
-      const tieBreak = (opts as RunOpts).tieBreak as { rarity: RarityPreference } | undefined;
-      if (tieBreak) {
+      const rarity = ((opts as RunOpts).tieBreak as { rarity?: RarityPreference } | undefined)?.rarity;
+      if (rarity) {
         const { inv } = await getInventory(), ladder = getRules().rarity || [];
-        const stamp = (it: unknown): unknown => (it && typeof it === "object" ? stampTieCost(it as { serial: number }, inv, tieBreak.rarity, ladder) : it);
+        const stamp = (it: unknown): unknown => (it && typeof it === "object" ? stampTieCost(it as { serial: number }, inv, rarity, ladder) : it);
         pools = Object.fromEntries(Object.entries(pools).map(([slot, list]) => [slot, (list as unknown[]).map(stamp)]));
         current = Object.fromEntries(Object.entries(current).map(([slot, it]) => [slot, stamp(it)]));
       }
