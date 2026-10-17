@@ -19,12 +19,21 @@ export interface SettingsDoc {
   autoUpdateCheck?: boolean;
   uoFolder?: string | null;
   unravelKeep?: number[];
+  unravelBag?: Record<string, number>;
   [key: string]: unknown;
 }
 
 // The pieces the player said to keep (issue #271): never suggested for unraveling. Read off a possibly hand-edited file, so
 // anything that is not a serial is dropped. PUT /api/settings writes the whole list, at most UNRAVEL_KEEP_MAX serials.
 export const UNRAVEL_KEEP_MAX = 5000;
+// The bag each character gathers pieces to unravel into (issue #271): character name -> container serial. PUT /api/settings
+// writes the whole map, at most UNRAVEL_BAG_MAX characters.
+export const UNRAVEL_BAG_MAX = 200;
+export function unravelBagError(v: unknown): string | null {
+  const ok = !!v && typeof v === "object" && !Array.isArray(v) && Object.keys(v).length <= UNRAVEL_BAG_MAX
+    && Object.entries(v).every(([k, s]) => k.length > 0 && k.length <= 64 && isBoundedInt(s, 1, MAX_SERIAL));
+  return ok ? null : `settings.unravelBag must map at most ${UNRAVEL_BAG_MAX} character names to container serials`;
+}
 export function unravelKeep(doc: SettingsDoc): number[] {
   return Array.isArray(doc.unravelKeep) ? doc.unravelKeep.filter((s) => isBoundedInt(s, 1, MAX_SERIAL)) : [];
 }
