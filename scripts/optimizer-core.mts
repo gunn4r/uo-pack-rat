@@ -49,15 +49,16 @@ interface OptAssignment {
 // the hard cap past which extra points are worthless (resists 70, HCI/DCI 45, LMC 40 ...);
 // a property with no cap entry is uncapped. `floors[p]` is a whole-suit minimum that earns
 // `floorBonus` when met and partial credit `floorBonus * floorPartial * (total/floor)` when
-// not — the partial term is what gives the hill climber a gradient to follow toward a floor
-// it has not reached yet, while the jump at the floor is what makes reaching it decisive.
+// not (a hard floor's divided by the number of hard floors) — the partial term is what gives
+// the hill climber a gradient to follow toward a floor it has not reached yet, while the jump
+// at the floor is what makes reaching it decisive.
 interface OptProfile {
   weights?: Record<string, number> | undefined;   // optional: every read is `profile.weights || {}`
   caps: Record<string, number>;
   floors?: Record<string, number> | undefined;
   floorBonus?: number;
   floorPartial?: number;
-  hardFloors?: string[] | undefined;    // floors that act as requirements: their bonus is HARD_FLOOR_BONUS, so no mix of other gains can buy a miss
+  hardFloors?: string[] | undefined;    // floors that act as requirements: their bonus is HARD_FLOOR_BONUS, so no mix of other gains under 5e6 (the weights and soft floor bonuses together) can buy a miss
   // `mins[p]`: a value the property never falls below (a resist's Resisting Spells minimum): it scores weights[p] × max(min, min(total, cap)), and a floor at or under it is met by every suit, so it is dropped.
   mins?: Record<string, number> | undefined;
   // SSI scored by swing step (app/swing.mts stepTable): with a positive SSI weight, SSI is worth weights.ssi × the largest `credit` among the points the suit reaches (ssi total >= ssi and stamPool total >= stam; 0 when it reaches none) in place of weights.ssi × min(ssi, cap). SSI floors still read the plain total.
@@ -152,7 +153,7 @@ interface OptSpace {
   floor: number[];
   floorBonusArr: number[];  // per-dimension bonus (floorBonus, or HARD_FLOOR_BONUS for hard floors)
   floorBonus: number;
-  floorPartial: number;
+  partialArr: number[];     // per-dimension partial credit at the floor: bonus × floorPartial, a hard floor's shared among the hard floors
   zero: number[];
   vecCache: Map<OptItem, number[]>;
   evals: number;
@@ -286,6 +287,15 @@ function optBuildSpace(keys: string[], profile: OptProfile): OptSpace {
     floorBonusArr.push(hard[k] ? HARD_FLOOR_BONUS : baseBonus);
     zero.push(0);
   }
+  // Partial credit at the floor. The hard floors share theirs (each gets 1/n of it), so together it stays under half one
+  // floor's bonus and no mix of it can buy a miss of a floor some suit meets (issue #204), as long as the weights and soft
+  // floor bonuses together move a score by less than that half (5e6). n counts every hard floor, one each suit meets
+  // included: such a floor never earns partial credit, so counting it only makes the margin wider.
+  const partial = typeof profile.floorPartial === "number" ? profile.floorPartial : 0.5;
+  let nHard = 0;
+  for (let i = 0; i < keys.length; i++) if (hard[keys[i]!] && floor[i]! > 0) nHard++;
+  const partialArr: number[] = [];
+  for (let i = 0; i < keys.length; i++) partialArr.push(hard[keys[i]!] ? floorBonusArr[i]! * partial / Math.max(1, nHard) : floorBonusArr[i]! * partial);
   return {
     keys: keys,
     index: index,
@@ -295,7 +305,7 @@ function optBuildSpace(keys: string[], profile: OptProfile): OptSpace {
     floor: floor,
     floorBonusArr: floorBonusArr,
     floorBonus: baseBonus,
-    floorPartial: typeof profile.floorPartial === "number" ? profile.floorPartial : 0.5,
+    partialArr: partialArr,
     zero: zero,
     vecCache: new Map(),
     evals: 0,
@@ -366,7 +376,7 @@ function optScoreVector(totals: number[], space: OptSpace): number {
     if (f > 0) {
       const fb = space.floorBonusArr[i]!;
       if (t >= f || m >= f) s += fb;   // the total or the min reaches it (optFloorMetAt)
-      else s += fb * space.floorPartial * (t > 0 ? t / f : 0);
+      else s += space.partialArr[i]! * (t > 0 ? t / f : 0);
     }
   }
   return s;
@@ -784,7 +794,7 @@ function optBranchAndBound(slots: string[], cands: Record<string, (OptItem | nul
     const f = space.floor[d]!;
     if (!(f > 0)) return 0;
     const fb = space.floorBonusArr[d]!;
-    return optFloorMetAt(space, d, t, optMinAt(space, d, li)) ? fb : fb * space.floorPartial * (t > 0 ? t / f : 0);
+    return optFloorMetAt(space, d, t, optMinAt(space, d, li)) ? fb : space.partialArr[d]! * (t > 0 ? t / f : 0);
   };
   // The weight term's best over the reachable range [t + sufLo, t + sufHi] (w·max(min, min(t, cap)) is monotone,
   // so it is one of the two ends), and the floor term's best (always the top end).
