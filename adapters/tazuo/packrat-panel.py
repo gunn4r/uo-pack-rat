@@ -112,7 +112,7 @@ def script_prefix(self_name):
 
 
 ADAPTER_ID = "tazuo"
-ADAPTER_VERSION = "2.19.0"
+ADAPTER_VERSION = "2.20.0"
 
 SELF = "packrat-panel.py"
 BRIDGE, BLACKLIST = "packrat-bridge.py", "packrat-blacklist.py"
