@@ -4,10 +4,10 @@
 // is ui/runs.mts; they share the builder's state and call each other through ui/builder-session.mts. The panel is drawn
 // from the session's profile plus its Advanced knobs, so what a build sends, what a profile saves and what a run
 // snapshots are read from state, never from the DOM.
-import { NOBODY, PROP_LABELS, NOT_BUILDER_KEYS, importanceOf, weightOfImportance, GEAR_SLOTS, tagUnits, WEAPON_EXCLUDES, MELEE_SKILLS, WEAPON_MUST_HAVE, flagLabel, getRules, RESIST_KEYS, RESIST_CAP_LIMITS, resistCapsFor, templateFrom, settingsChanges, bagLabel, toOptItem, totalsOf, fcCapFor, CASTING_SCHOOLS, compileGoals, goalsActive, GOAL_LEFTOVERS, LEFTOVER_GROUPS, LEFTOVER_LABELS, GOAL_RANKS_MAX, GOAL_RANK_SIZE_MAX, STRATEGY_HELP, FEWEST_HELP } from "../vault-lib.mts";
+import { NOBODY, PROP_LABELS, NOT_BUILDER_KEYS, importanceOf, weightOfImportance, GEAR_SLOTS, tagUnits, WEAPON_EXCLUDES, MELEE_SKILLS, WEAPON_MUST_HAVE, flagLabel, getRules, RESIST_KEYS, RESIST_CAP_LIMITS, resistCapsFor, templateFrom, settingsChanges, changesList, bagLabel, toOptItem, totalsOf, fcCapFor, CASTING_SCHOOLS, compileGoals, goalsActive, GOAL_LEFTOVERS, LEFTOVER_GROUPS, LEFTOVER_LABELS, GOAL_RANKS_MAX, GOAL_RANK_SIZE_MAX, STRATEGY_HELP, FEWEST_HELP } from "../vault-lib.mts";
 import { delayText, heldWeapon, ssiShareOf, swingOf, type SwingResult } from "../swing.mts";
-import { BUILTIN_PREFIX, characterBuffs, characterEntry, characterLabel, characterProfile, findTemplate, goalSsiCap, planBuild, specFromProfile, templateName, templateRefs, templateSettings, templateSpecFrom, type PlannedBuild } from "../build-spec.mts";
-import type { FcCap, Goals, ResistCap, RunBuffs, RunSettings, Character, SettingsChange, SettingsGroup } from "../vault-lib.mts";
+import { BUILTIN_PREFIX, TEMPLATE_NAME_MAX, characterBuffs, characterEntry, characterLabel, characterProfile, findTemplate, goalSsiCap, planBuild, specFromProfile, templateName, templateRefs, templateSettings, templateSpecFrom, type PlannedBuild } from "../build-spec.mts";
+import type { FcCap, Goals, ResistCap, RunBuffs, RunSettings, Character, SettingsChange, SettingsGroup, UnsavedChange } from "../vault-lib.mts";
 import { BUFFS, BUFF_GROUPS, BUFF_INPUTS, buffAvailability, buffById, buffEffectTags, isSchool, gearNeedsText, overrideNote, planBuffs, normalizeBuffs, runBuffs, toggleBuff, buffPlanOf, type Buff, type BuffPlan } from "../buffs.mts";
 import { defaultStrLimit } from "../run-settings.mts";
 import { evaluateSuit } from "../evaluate.mts";
@@ -15,7 +15,7 @@ import { state, invStamp, goalsMeta } from "./store.mts";
 import type { BuilderJob, BuilderJobUi, FinishedBuild, BuildMeta } from "./store.mts";
 import { $, el, label, full, fmtN, fmtSecs, slotLabel, toast } from "./dom.mts";
 import { promptText } from "./dialog.mts";
-import { box, txt, button, kbd, badge, token, message, select, input, field, switchControl, check, segmented, filterChip, pill, popover, closePopover, menu, searchInput, stepper, progress, tooltip, refreshTooltips, icon, confirmDialog, modalOpen, rowActions, tipWrap, tag, bindDrawer, combobox, type DrawerHandle, type ComboboxHandle, type ComboGroup, type ComboOption, type ComboFace, type ComboAction, type MenuItem } from "./components.mts";
+import { box, txt, button, kbd, badge, token, message, select, input, field, switchControl, check, segmented, filterChip, pill, popover, closePopover, searchInput, stepper, progress, tooltip, refreshTooltips, icon, confirmDialog, modalOpen, rowActions, tipWrap, tag, bindDrawer, createDrawer, combobox, type DrawerHandle, type ComboboxHandle, type ComboGroup, type ComboOption, type ComboFace, type ComboAction } from "./components.mts";
 import { api } from "./api.mts";
 import { createBuffPicker, type BuffPicker, type BuffView, type PickerActions } from "./builder-buffs.mts";
 import { optimizeErrorMessage } from "./messages.mts";
@@ -25,7 +25,7 @@ import { putProfiles, setCharacterBuffs } from "./profiles.mts";
 import { session, commands, provide, readControls, type BuilderChange } from "./builder-session.mts";
 import { followJob, progressText, settingsCheck } from "./builder-parts.mts";
 import { characterNames } from "./roster.mts";
-import { needStatus, shownImportance, nextSwingStep, speedText, swingLines, propName, newWeight, editedValue, runSettingsDiff, plural, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistMinimumText, pruneResistCaps, floorCapWarning, weaponsChipText, weaponMustHaveChipText, withStoredRoots, weaponName, toggleWeapon, weightTradeoff, fcCapText, rarityHelp, templateBuffsLine, sourceTitle, who, buildStateText, buildStateDetail, topSkills, templateLine, goalRows, moveGoal, spareKeys, andList, linkGoal, removeGoal, addGoal, type KnobField } from "./builder-model.mts";
+import { needStatus, needsLine, topWeights, shownImportance, nextSwingStep, speedText, swingLines, propName, newWeight, editedValue, runSettingsDiff, plural, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistMinimumText, pruneResistCaps, floorCapWarning, weaponsChipText, weaponMustHaveChipText, withStoredRoots, weaponName, toggleWeapon, weightTradeoff, fcCapText, rarityHelp, templateBuffsLine, sourceTitle, who, buildStateText, buildStateDetail, topSkills, templateLine, goalRows, moveGoal, spareKeys, andList, linkGoal, removeGoal, addGoal, type KnobField } from "./builder-model.mts";
 import type { OptimizeResult, SavedRunLike, OptimizeStartApiResponse, OptimizeCancelApiResponse, UiPrefs } from "./api-types.mts";
 import { prefs } from "./prefs.mts";
 
@@ -282,7 +282,8 @@ let changesChip: HTMLButtonElement | null = null;
 function paintChangesChip(st: ReturnType<typeof buildState>): void {
   const chip = changesChip;
   if (!chip) return;
-  const n = st.changed.length, u = st.unsavedList.length;
+  // the popover's count (changesList), so the chip and the popover's header say the same number
+  const n = st.template && st.changed.length ? changesList(st.changed, st.unsavedList).count : 0, u = st.unsavedList.length;
   chip.hidden = !n && !u;
   chip.replaceChildren(...[icon("list", { size: "sm" }),
     n && st.template ? el("span", {}, `${plural(n, "change")} from `, el("strong", {}, st.template), " template") : null,
@@ -293,7 +294,7 @@ function paintChangesChip(st: ReturnType<typeof buildState>): void {
 const CHANGE_TAB: Record<SettingsGroup, Tab> = { requirements: "requirements", weights: "weights", pool: "pool", buffs: "buffs", character: "advanced", search: "advanced" };
 const CHANGE_SEC: Record<SettingsGroup, string> = { requirements: "req", weights: "weights", pool: "pool", buffs: "buffs", character: "char", search: "adv" };
 const CHANGE_HEAD: Record<SettingsGroup, string> = { requirements: "Requirements", weights: "Weights per point", pool: "Pool", buffs: "Buffs", character: "Character", search: "Search" };
-// The popover: a header with the count and whether any are unsaved; the unsaved edits first (saved → now), then the changes
+// The popover: a header with the count and whether any are unsaved; the unsaved edits first (template → saved → now), then the changes
 // from the template by group (template → this build), an added requirement marked and a soft one tagged; each row's name
 // opens Build Settings on that setting; Reset to the template (asks first) and Save as template at the foot.
 function openChangesPopover(anchor: HTMLButtonElement): void {
@@ -310,22 +311,25 @@ function openChangesPopover(anchor: HTMLButtonElement): void {
     else if (c.group === "character" && c.key && (RESIST_KEYS as readonly string[]).includes(c.key)) { focusIn("caps", `#b-cap-${c.key}`, true); document.getElementById(`b-cap-${c.key}`)?.closest(".rule-row")?.scrollIntoView({ block: "nearest" }); }
     else { openSettings(CHANGE_TAB[c.group]); document.getElementById(`b-sec-${CHANGE_SEC[c.group]}`)?.scrollIntoView({ block: "start" }); }
   };
-  const table = (rows: SettingsChange[], from: string, to: string): HTMLElement => el("table", { class: "b-diff" },
-    el("thead", {}, el("tr", {}, el("th", { scope: "col" }, txt("Setting", "sr")), el("th", { scope: "col" }, from), el("th", { scope: "col" }, txt("to", "sr")), el("th", { scope: "col" }, to))),
-    el("tbody", {}, ...rows.map((c) => el("tr", {},
-      el("td", {}, button({ label: c.label ?? c.text, variant: "ghost", size: "sm", cls: "b-diff-open", onClick: () => open(c) }), c.soft ? tag("soft") : null),
-      ...(c.from != null ? [el("td", { class: "b-diff-from" }, c.from), el("td", { class: "b-diff-arrow", "aria-hidden": "true" }, "→"), el("td", { class: c.added ? "b-diff-add" : "" }, c.to ?? "")]
-        : [el("td", { colspan: "3", class: "muted" }, c.label ? c.text : "")])))));
-  const section = (head: string, rows: SettingsChange[], from: string, to: string): HTMLElement[] => [el("h3", { class: "b-diff-h" }, `${head} · ${rows.length}`), table(rows, from, to)];
-  // an unsaved edit is listed once, in its own section: a template change of the same setting is left out of the groups
-  const same = (a: SettingsChange, b: SettingsChange): boolean => a.group === b.group && (a.key ? a.key === b.key : a.text === b.text);
-  const shown = st.changed.filter((c) => !st.unsavedList.some((x) => same(x, c)));
-  const groups = (Object.keys(CHANGE_HEAD) as SettingsGroup[]).flatMap((g) => { const rows = shown.filter((c) => c.group === g); return rows.length ? section(CHANGE_HEAD[g], rows, tplName, name) : []; });
-  const n = st.changed.length, u = st.unsavedList.length, fromTpl = !!tplName && n > 0;
+  // a table of changes, its value columns headed `cols` (template → saved → now for an unsaved edit with a template)
+  const table = (rows: UnsavedChange[], cols: string[]): HTMLElement => el("table", { class: "b-diff" },
+    el("thead", {}, el("tr", {}, el("th", { scope: "col" }, txt("Setting", "sr")), ...cols.flatMap((h, i) => [...(i ? [el("th", { scope: "col" }, txt("to", "sr"))] : []), el("th", { scope: "col" }, h)]))),
+    el("tbody", {}, ...rows.map((c) => {
+      const vals = c.from == null ? null : cols.length === 3 ? [c.template ?? "", c.from, c.to ?? ""] : [c.from, c.to ?? ""];
+      return el("tr", {},
+        el("td", {}, button({ label: c.label ?? c.text, variant: "ghost", size: "sm", cls: "b-diff-open", onClick: () => open(c) }), c.soft ? tag("soft") : null),
+        ...(vals ? vals.flatMap((v, i) => [...(i ? [el("td", { class: "b-diff-arrow", "aria-hidden": "true" }, "→")] : []), el("td", { class: i === vals.length - 1 ? (c.added ? "b-diff-add" : "") : "b-diff-from" }, v)])
+          : [el("td", { colspan: String(cols.length * 2 - 1), class: "muted" }, c.label ? c.text : "")]));
+    })));
+  const section = (head: string, rows: UnsavedChange[], cols: string[]): HTMLElement[] => [el("h3", { class: "b-diff-h" }, `${head} · ${rows.length}`), table(rows, cols)];
+  // an unsaved edit is listed and counted once, in its own section, with the template's value beside it (changesList)
+  const list = changesList(st.template ? st.changed : null, st.unsavedList);
+  const groups = (Object.keys(CHANGE_HEAD) as SettingsGroup[]).flatMap((g) => { const rows = list.others.filter((c) => c.group === g); return rows.length ? section(CHANGE_HEAD[g], rows, [tplName, name]) : []; });
+  const n = list.count, u = list.unsaved.length, fromTpl = !!tplName && st.changed.length > 0;
   const head = box("header", { class: "b-diff-head" },
     el("strong", {}, ...(fromTpl ? [`${plural(n, "change")} from `, el("b", {}, tplName), " template"] : [`${plural(u, "unsaved change")}`])),
     txt(u ? `${plural(u, "change")} not saved to ${name}'s profile yet, listed first.` : `Saved in ${name}'s build. No unsaved changes.`, "t-sm muted"));
-  const body = box("div", { class: "b-diff-body" }, ...(u ? section("Not saved yet", st.unsavedList, "Saved", "Now") : []), ...groups);
+  const body = box("div", { class: "b-diff-body" }, ...(u ? section("Not saved yet", list.unsaved, tplName ? [tplName, "Saved", "Now"] : ["Saved", "Now"]) : []), ...groups);
   const foot = box("footer", { class: "b-diff-foot" }, txt("Click a setting to open it.", "t-sm muted"),
     box("span", { class: "b-diff-acts" },
       tplName ? button({ label: `Reset to “${tplName}”…`, size: "sm", onClick: () => { closePopover(); void pickTemplate(session.profile!.template!, true); } }) : null,
@@ -368,18 +372,104 @@ function buildGroups(): ComboGroup[] {
   ];
 }
 // The template management that was the ⋯ menu's: Save as, and Manage templates, a menu with Update and Delete for each of
-// the player's templates (the build's own first), none of which applies the template. A built-in template
-// (app/data/templates/<shard>.json) is read-only, so it is not listed: Save as template makes the player's own copy.
+// the player's templates and the built-ins, in the Manage templates drawer (issue #336).
 function buildActions(): ComboAction[] {
-  const mine = Object.keys(state.profiles?.templates || {}).length > 0;
   return [{ label: "Save as template…", icon: "plus", onSelect: () => { void saveTemplateAs(); }, disabled: session.profile ? null : NO_CHARACTER },
-    { label: "Manage templates…", onSelect: manageTemplates, disabled: !session.profile ? NO_CHARACTER : mine ? null : "You have no saved templates yet. Save as template makes one." }];
+    { label: "Manage templates…", onSelect: () => openTemplatesDrawer(buildPicker!.button), disabled: session.profile ? null : NO_CHARACTER }];
 }
-function manageTemplates(): void {
-  const own = session.profile?.template || "", names = Object.keys(state.profiles!.templates).sort((a, b) => Number(b === own) - Number(a === own) || a.localeCompare(b));
-  const items: Array<MenuItem | "divider"> = names.flatMap((n, i) => [...(i ? ["divider" as const] : []),
-    { label: `Update ${n} with the current build settings`, onSelect: () => { void updateTemplate(n); } }, { label: `Delete ${n}…`, danger: true, onSelect: () => { void deleteTemplate(n); } }]);
-  menu(buildPicker!.button, items, { label: "Manage templates", width: 260 });
+// ---- the Manage templates drawer (issue #336): the shared drawer, like Saved runs. At its top, Save the current build settings
+// as a template; then the player's templates as cards (name, description, when it was changed, the characters that use it,
+// this build marked), each opening to a one-line summary and Update with the current build settings, Rename, Duplicate and
+// Delete, confirmed in the card with who uses it; then the built-ins, read-only, with Duplicate only. Redrawn after every change.
+let templatesDrawer: DrawerHandle | null = null;
+let openCard: string | null = null, askDelete: string | null = null;
+function openTemplatesDrawer(from: HTMLElement): void {
+  templatesDrawer ??= createDrawer({ id: "tpl-drawer", title: "Manage templates", wide: true });
+  openCard = session.profile?.template && Object.hasOwn(state.profiles!.templates, session.profile.template) ? session.profile.template : null;
+  askDelete = null;
+  paintTemplatesDrawer();
+  templatesDrawer!.open(from);
+}
+// The characters whose saved settings came from a template; the card adds this build when its settings did.
+const savedUsers = (ref: string): string[] => Object.keys(state.profiles!.characters).filter((c) => state.profiles!.characters[c]!.template === ref);
+// A template's settings in one line: what it needs, its top weights, its buffs.
+function templateSummary(t: NonNullable<ReturnType<typeof findTemplate>>): string {
+  const st = templateSettings(t), top = topWeights(st.weights || {}).rows.map((r) => propName(r.key)), buffs = (t.spec.buffs?.on ?? []).map((id) => buffById(id)?.name ?? id);
+  return [`Needs: ${needsLine(st.floors || {}, st.softFloors || [], label) || "nothing"}`, `Weights: ${top.join(", ") || "none"}`, `Buffs: ${buffs.join(", ") || "none"}`].join(" · ");
+}
+function paintTemplatesDrawer(): void {
+  if (!templatesDrawer) return;
+  const own = Object.keys(state.profiles!.templates).sort((a, b) => a.localeCompare(b)), builtins = templateRefs(state.profiles!, state.builtinTemplates).filter((r) => r.startsWith(BUILTIN_PREFIX));
+  const changed = (iso?: string): string => (iso ? `changed ${new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : "");
+  const card = (ref: string): HTMLElement => {
+    const t = state.profiles!.templates[ref]!, saved = savedUsers(ref), open = openCard === ref, bodyId = `tm-${ref.replace(/[^\w-]/g, "_")}`;
+    const me = session.character && session.profile?.template === ref ? session.character : null, users = me ? [me, ...saved.filter((u) => u !== me)] : saved;
+    const chips = box("span", { class: "tm-users" }, ...(users.length ? users.map((u) => txt(u === me ? `${who(u)} (this build)` : who(u), `tm-chip${u === me ? " tm-cur" : ""}`)) : [txt("no one uses it", "tm-chip")]));
+    const head = box("button", { type: "button", class: "tm-head", "aria-expanded": String(open), ...(open ? { "aria-controls": bodyId } : {}), "data-tm": `${ref}\u0000head`, onclick: () => { openCard = open ? null : ref; askDelete = null; paintTemplatesDrawer(); } },
+      box("span", { class: "tm-titles" }, txt(ref, "strong"), txt([t.description, changed(t.savedAt)].filter(Boolean).join(" · ") || "Your template", "t-sm muted"), chips), icon(open ? "chevron-up" : "chevron-down", { size: "sm" }));
+    const more = !open ? null : box("div", { class: "tm-more", id: bodyId }, txt(templateSummary(t), "t-sm muted"),
+      askDelete === ref
+        ? message({ tone: "warn", text: `Delete “${ref}”? ${saved.length ? `Characters made from it (${andList(saved.map(who))}) keep their settings; they just stop showing “from ${ref}”.` : "No one uses it."}`,
+          actions: [button({ label: "Cancel", size: "sm", attrs: { "data-tm": `${ref}\u0000delete` }, onClick: () => { askDelete = null; paintTemplatesDrawer(); } }), button({ label: `Delete ${ref}`, size: "sm", variant: "danger", attrs: { "data-tm": `${ref}\u0000confirm` }, onClick: () => { void deleteTemplate(ref, true); } })] })
+        : box("div", { class: "tm-acts" },
+          button({ label: `Update ${ref} with the current build settings`, size: "sm", variant: "primary", disabled: !session.profile, attrs: { "data-tm": `${ref}\u0000update` }, onClick: () => { void updateTemplate(ref); } }),
+          button({ label: "Rename", size: "sm", attrs: { "aria-label": `Rename ${ref}`, "data-tm": `${ref}\u0000rename` }, onClick: () => { void renameTemplate(ref); } }),
+          button({ label: "Duplicate", size: "sm", attrs: { "aria-label": `Duplicate ${ref}`, "data-tm": `${ref}\u0000duplicate` }, onClick: () => { void duplicateTemplate(ref); } }),
+          button({ label: "Delete…", size: "sm", variant: "danger-outline", attrs: { "aria-label": `Delete ${ref}…`, "data-tm": `${ref}\u0000delete` }, onClick: () => { askDelete = ref; paintTemplatesDrawer(); } })));
+    return box("section", { class: `tm-card${open ? " tm-open" : ""}`, "data-template": ref }, head, more);
+  };
+  const builtin = (ref: string): HTMLElement => box("section", { class: "tm-card", "data-template": ref },
+    box("div", { class: "tm-head tm-static" }, box("span", { class: "tm-titles" }, txt(plainName(ref), "strong"), txt("Ships with Pack Rat · read-only", "t-sm muted")),
+      button({ label: "Duplicate", size: "sm", attrs: { "aria-label": `Duplicate ${plainName(ref)}`, "data-tm": `${ref}\u0000duplicate` }, onClick: () => { void duplicateTemplate(ref); } })));
+  // the focus stays on the same control across the redraw (a dialog closing hands it back to one this replaces), else goes to
+  // the card shown open (Delete's Cancel or confirm, a new copy), else to Save as template
+  const body = templatesDrawer.body, was = (document.activeElement as HTMLElement | null)?.dataset?.tm ?? (body.contains(document.activeElement) || document.activeElement === document.body ? "" : null);
+  body.replaceChildren(
+    button({ label: "Save the current build settings as a template…", icon: "plus", disabled: !session.profile, attrs: { id: "tm-save", "data-tm": "\u0000save" }, onClick: () => { void saveTemplateAs(); } }),
+    el("h3", { class: "tm-h" }, `Your templates · ${own.length}`), ...(own.length ? own.map(card) : [txt("No templates of your own yet.", "muted")]),
+    el("h3", { class: "tm-h" }, `Built in · ${builtins.length}`), ...builtins.map(builtin));
+  if (was == null || !templatesDrawer.isOpen()) return;
+  const at = (k: string): HTMLElement | null => [...body.querySelectorAll<HTMLElement>("[data-tm]")].find((n) => n.dataset.tm === k) ?? null;
+  const ref = was.split("\u0000")[0]!;
+  (at(was) ?? (askDelete ? at(`${askDelete}\u0000delete`) : null) ?? (openCard ? at(`${openCard}\u0000head`) : null) ?? at(`${ref}\u0000head`) ?? body.querySelector<HTMLElement>("#tm-save"))?.focus();
+}
+// A free name for a copy: "<name> copy", then "<name> copy 2"…
+function copyName(base: string): string {
+  for (let i = 1; ; i++) { const n = i === 1 ? `${base} copy` : `${base} copy ${i}`; if (!Object.hasOwn(state.profiles!.templates, n)) return n; }
+}
+// The player's names: not empty, not built-in, not taken (unless it is the same one).
+async function askTemplateName(title: string, value: string, was = ""): Promise<string | null> {
+  const name = (await promptText({ title, value }))?.trim();
+  if (!name || name === was) return null;
+  if (name.startsWith(BUILTIN_PREFIX)) { toast(`A template's name can't start with "${BUILTIN_PREFIX}".`, "bad"); return null; }
+  if (name.length > TEMPLATE_NAME_MAX) { toast(`A template's name is at most ${TEMPLATE_NAME_MAX} characters.`, "bad"); return null; }
+  if (Object.hasOwn(state.profiles!.templates, name)) { toast(`There is already a template named ${name}.`, "bad"); return null; }
+  return name;
+}
+async function renameTemplate(ref: string): Promise<void> {
+  const name = await askTemplateName(`Rename ${ref}`, ref, ref);
+  if (!name) return;
+  const t = state.profiles!.templates;
+  t[name] = t[ref]!;
+  delete t[ref];
+  // the characters made from it, and this build, now say "from <new name>"
+  for (const c of Object.values(state.profiles!.characters)) if (c.template === ref) c.template = name;
+  if (session.profile?.template === ref) session.profile.template = name;
+  if (openCard === ref) openCard = name;
+  renderPanel();
+  paintTemplatesDrawer();
+  await saveTemplates(`Template ${ref} renamed to ${name}.`);
+}
+async function duplicateTemplate(ref: string): Promise<void> {
+  const from = findTemplate(state.profiles!, state.builtinTemplates, ref);
+  if (!from) return;
+  const name = await askTemplateName(`Duplicate ${plainName(ref)}`, copyName(plainName(ref)));
+  if (!name) return;
+  state.profiles!.templates[name] = { spec: structuredClone(from.spec), ...(from.description ? { description: from.description } : {}), savedAt: new Date().toISOString() };
+  openCard = name;
+  renderPanel();
+  paintTemplatesDrawer();
+  await saveTemplates(`Template ${name} saved.`);
 }
 function pickBuild(v: string): void {
   if (v === OWN) return;
@@ -510,13 +600,16 @@ async function pickTemplate(ref: string, again = false): Promise<void> {
   void saveProfile(`${plainName(ref)} saved as ${who(session.character!)}'s settings.`);
 }
 async function saveTemplateAs(): Promise<void> {
+  if (!session.profile) return;
   const was = session.profile!.template || "";
   const name = await promptText({ title: "Template name", value: was.startsWith(BUILTIN_PREFIX) ? "" : was });
   if (name?.startsWith(BUILTIN_PREFIX)) { toast(`A template's name can't start with "${BUILTIN_PREFIX}".`, "bad"); return; }
+  if (name && name.length > TEMPLATE_NAME_MAX) { toast(`A template's name is at most ${TEMPLATE_NAME_MAX} characters.`, "bad"); return; }
   if (!name || (state.profiles!.templates[name] && !await confirmDialog({ title: `Overwrite the ${name} template?`, body: `The ${name} template is replaced with these settings.`, confirmLabel: `Overwrite ${name}` }))) return;
   state.profiles!.templates[name] = { spec: templateSpecFrom(readControls(), buffsOn()), savedAt: new Date().toISOString() };
   session.profile!.template = name;
   renderPanel();
+  paintTemplatesDrawer();
   await saveTemplates(`Template ${name} saved.`);
 }
 async function updateTemplate(name: string): Promise<void> {
@@ -524,12 +617,17 @@ async function updateTemplate(name: string): Promise<void> {
   state.profiles!.templates[name] = { ...state.profiles!.templates[name], spec: templateSpecFrom(readControls(), buffsOn()), savedAt: new Date().toISOString() };
   session.profile!.template = name;
   updateTemplateBadge();
+  paintTemplatesDrawer();
   await saveTemplates(`Template ${name} updated.`);
 }
-async function deleteTemplate(name: string): Promise<void> {
-  if (!Object.hasOwn(state.profiles!.templates, name) || !await confirmDialog({ title: `Delete the ${name} template?`, body: "Characters made from it keep their settings.", confirmLabel: `Delete ${name}` })) return;
+// `confirmed`: asked already, in the Manage templates drawer's card.
+async function deleteTemplate(name: string, confirmed = false): Promise<void> {
+  if (!Object.hasOwn(state.profiles!.templates, name) || (!confirmed && !await confirmDialog({ title: `Delete the ${name} template?`, body: "Characters made from it keep their settings.", confirmLabel: `Delete ${name}` }))) return;
   delete state.profiles!.templates[name];
+  askDelete = null;
+  if (openCard === name) openCard = null;
   renderPanel();
+  paintTemplatesDrawer();
   await saveTemplates(`Template ${name} deleted.`);
 }
 

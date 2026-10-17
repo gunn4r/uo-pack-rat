@@ -37,10 +37,11 @@ export function routes(ctx: ServerContext): Route[] {
       if (typeof version === "number" && version < PROFILES_VERSION) return send(res, 400, { ok: false, error: OLD_PAGE });
       const { ok, errors } = validate(PROFILES_SCHEMA, body);
       if (!ok) return send(res, 400, { ok: false, error: `${errors[0]!.path} ${errors[0]!.msg}`, errors });
-      const bad = profilesSpecError(body as ProfilesV3);
-      if (bad) return send(res, 400, { ok: false, error: bad });
-      // the stored labels stay (PUT /api/profiles/label owns them); nothing awaits between this read and the write
+      // a template name already stored passes as it is; the stored labels stay (PUT /api/profiles/label owns them);
+      // nothing awaits between this read and the write
       const stored = await profilesStore.read();
+      const bad = profilesSpecError(body as ProfilesV3, stored);
+      if (bad) return send(res, 400, { ok: false, error: bad });
       keepLabels(body as ProfilesV3, stored);
       profilesStore.write(body as ProfilesV3);
       return send(res, 200, { ok: true });
