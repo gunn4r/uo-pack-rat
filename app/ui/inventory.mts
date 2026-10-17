@@ -1,6 +1,6 @@
 // ui/inventory.mts — the Inventory screen's Items view (design spec 4.2): one item browser (item-browser.mts) on
 // index.html's #inv-view-items, with the item peek (peek.mts) as its detail panel, its columns saved to ui-prefs,
-// and the Inventory's ids kept. Also what other screens' ways into the Items view do (nav.mts hands them here); the
+// and the Inventory's ids kept. Its rows can be ticked and moved (move-to.mts, issue #270). Also what other screens' ways into the Items view do (nav.mts hands them here); the
 // row actions and ⋯ menu live in item-parts.mts.
 import type { Item } from "../vault-lib.mts";
 import type { ItemQuery } from "../item-query.mts";
@@ -13,6 +13,7 @@ import { hideItemTip } from "./dom.mts";
 import { createItemBrowser } from "./item-browser.mts";
 import type { ItemBrowser } from "./item-browser.mts";
 import { itemActions, setItemNav } from "./item-parts.mts";
+import { attachMoveTo, selectionHooks } from "./move-to.mts";
 import { setItemsView, showItem, showContainer } from "./nav.mts";
 
 let inv: ItemBrowser;
@@ -37,7 +38,9 @@ export function initFilters(): void {
     detail: { open: peekOpen, serial: peekSerial, close: closePeek, refresh: peekRefresh },
     persist: true,
     globalIds: true,
+    selection: selectionHooks,
   });
+  attachMoveTo(inv);
   initPeek({
     step: (delta) => { inv.focusRow(inv.activeIndex + delta, false); openPeekAt(inv.activeIndex); },
     closed: (focusRowAfter) => { inv.markSelected(); if (focusRowAfter) inv.focusRow(inv.activeIndex); },
