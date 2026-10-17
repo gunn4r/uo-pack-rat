@@ -39,19 +39,39 @@ async function go(page: Page, hash: string, ready: string): Promise<void> {
   await page.waitForSelector(ready, { timeout: 30_000 });
 }
 const nameOf = (page: Page, serial: string): Promise<string | null> => page.evaluate(async (s) => ((await (await fetch(`/api/items/by-serial?serials=${s}`)).json()) as { items: Record<string, { name: string }> }).items[s]?.name ?? null, serial);
+// Resolves once the Inventory's virtual table has drawn the same rows for three animation frames running, so a row
+// is not replaced between being found and being hovered.
+const tableSettled = (page: Page): Promise<void> => page.evaluate(() => new Promise<void>((resolve) => {
+  const key = (): string => [...document.querySelectorAll("#inv-table tbody tr.item")].map((r) => r.getAttribute("data-serial")).join(",");
+  let last = key(), same = 0;
+  const tick = (): void => { const k = key(); same = k === last ? same + 1 : 0; last = k; if (same >= 3) resolve(); else requestAnimationFrame(tick); };
+  requestAnimationFrame(tick);
+}));
 // Hover `target` (from a pointer parked off every item; Playwright scrolls it into view first, `scroll` false leaves
 // that to the hover) and check #tip shows the item under the pointer once it appears, and that this is the target.
+// The table may still replace the row after it is found (the Windows runner did, twice): the attempt waits for the table
+// to settle first, and when the row detaches or another item ends up under the pointer it goes again, on a row found anew.
 async function tipShows(page: Page, target: Locator, where: string, { scroll = true }: { scroll?: boolean } = {}): Promise<void> {
-  await page.mouse.move(2, 2);
-  await page.waitForFunction(() => getComputedStyle(document.querySelector("#tip")!).display === "none", undefined, { timeout: 5_000 });
-  if (scroll) await target.scrollIntoViewIfNeeded();
-  const serial = await target.evaluate((e) => e.closest("[data-serial]")?.getAttribute("data-serial") ?? null);
-  assert.ok(serial, `${where}: the item carries data-serial`);
-  await page.evaluate(() => { const w = window as unknown as { tipAt?: number[] }; if (!w.tipAt) document.addEventListener("mousemove", (e) => { w.tipAt = [e.clientX, e.clientY]; }, true); });
-  await target.hover();
-  await page.waitForFunction(() => getComputedStyle(document.querySelector("#tip")!).display === "block", undefined, { timeout: 10_000 });
-  const under = await page.evaluate(() => { const [x, y] = (window as unknown as { tipAt: number[] }).tipAt; return document.elementFromPoint(x!, y!)?.closest("[data-serial]")?.getAttribute("data-serial") ?? null; });
+  let serial: string | null = null, under: string | null = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      await page.mouse.move(2, 2);
+      await page.waitForFunction(() => getComputedStyle(document.querySelector("#tip")!).display === "none", undefined, { timeout: 5_000 });
+      await tableSettled(page);
+      if (scroll) await target.scrollIntoViewIfNeeded();
+      serial = await target.evaluate((e) => e.closest("[data-serial]")?.getAttribute("data-serial") ?? null);
+      assert.ok(serial, `${where}: the item carries data-serial`);
+      await page.evaluate(() => { const w = window as unknown as { tipAt?: number[] }; if (!w.tipAt) document.addEventListener("mousemove", (e) => { w.tipAt = [e.clientX, e.clientY]; }, true); });
+      await target.hover();
+      await page.waitForFunction(() => getComputedStyle(document.querySelector("#tip")!).display === "block", undefined, { timeout: 10_000 });
+      under = await page.evaluate(() => { const [x, y] = (window as unknown as { tipAt: number[] }).tipAt; return document.elementFromPoint(x!, y!)?.closest("[data-serial]")?.getAttribute("data-serial") ?? null; });
+      if (under === serial) break;
+    } catch (e) {
+      if (attempt === 3 || !/not attached|detached|Timeout/i.test(String(e))) throw e;
+    }
+  }
   assert.equal(under, serial, `${where}: the pointer is on the item hovered`);
+  assert.ok(serial, `${where}: the item carries data-serial`);
   const name = await nameOf(page, serial);
   assert.ok(name, `${where}: ${serial} is a known item`);
   const shown = await page.locator("#tip .tip-name").innerText();
