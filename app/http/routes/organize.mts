@@ -27,8 +27,8 @@ export function routes(ctx: ServerContext): Route[] {
       if (listed) return send(res, 400, { ok: false, error: `container ${listed.serial} is blacklisted and cannot be labeled` });
       const saved = organizeStore.write(checked.config, base as string | undefined);
       if (!saved.ok) return send(res, 409, { ok: false, code: "stale", error: "the Organize setup was changed elsewhere since it was read; reload it", stamp: saved.stamp });
-      // Every other open page reloads, labels and rules included (the page that saved sent its own id).
-      eventBus.broadcast("changed", { what: "inventory", by: req.headers["x-client-id"], at: Date.now() });
+      // Every other open page reloads the setup only, not the inventory (the page that saved sent its own id).
+      eventBus.broadcast("changed", { what: "organize", by: req.headers["x-client-id"], at: Date.now() });
       return send(res, 200, { ok: true, stamp: saved.stamp });
     } },
     { method: "GET", path: "/api/organize/presets", handle: (_req, res) => send(res, 200, { ok: true, presets: PRESETS }) },
