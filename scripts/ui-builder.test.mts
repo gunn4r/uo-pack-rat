@@ -757,6 +757,8 @@ test("[slow] What changes: Gauges for what the build asks, Table with every prop
 
     // At phone width the page doesn't scroll sideways; the table scrolls inside its box.
     await fitWindow(app, page, { width: 420, height: 900 });
+    // the resized window's layout settles over a frame or two (the header's pickers reflow): measure once it has
+    await page.waitForFunction(() => document.documentElement.scrollWidth <= innerWidth, undefined, { timeout: 5_000 }).catch(() => {});
     const widths = await page.evaluate(() => { const r = document.querySelector(".b-results")!, b = document.querySelector(".b-chg-scroll")!; return [document.documentElement.scrollWidth, innerWidth, r.scrollWidth, r.clientWidth, b.scrollWidth, b.clientWidth]; });
     assert.ok(widths[0]! <= widths[1]! && widths[2]! <= widths[3]!, `no sideways page scroll: ${widths.join(", ")}`);
     assert.ok(widths[4]! > widths[5]!, "the table scrolls in its own box");
