@@ -1749,6 +1749,21 @@ export function settingsChanges(a: RunSettings = {}, b: RunSettings = {}): Setti
 }
 // The same, as short readable lines.
 export const settingsDiff = (a: RunSettings = {}, b: RunSettings = {}): string[] => settingsChanges(a, b).map((c) => c.text);
+// The What changed popover's rows (issue #336): each unsaved edit (saved → now) once, with the template's value beside it
+// when there is a template (from its own change of that setting, else the value now, which the edit brought back to the
+// template's); then the template's changes no unsaved edit covers. `count` is the rows listed, so the header and the
+// sections agree. A setting is one requirement, weight or cap (a floor's soft/hard switch apart from its value), or a line.
+export interface UnsavedChange extends SettingsChange { template?: string }
+export function changesList(changed: SettingsChange[] | null, unsaved: SettingsChange[]): { unsaved: UnsavedChange[]; others: SettingsChange[]; count: number } {
+  const id = (c: SettingsChange): string => (c.key ? `${c.group}|${c.key}|${c.from === "hard" || c.from === "soft" ? "soft" : "value"}` : `${c.group}|${c.text}`);
+  const tpl = new Map((changed ?? []).map((c) => [id(c), c]));
+  const rows: UnsavedChange[] = unsaved.map((c) => {
+    const value = tpl.get(id(c))?.from ?? c.to;
+    return changed && c.from != null && value != null ? { ...c, template: value } : c;
+  });
+  const mine = new Set(unsaved.map(id)), others = (changed ?? []).filter((c) => !mine.has(id(c)));
+  return { unsaved: rows, others, count: rows.length + others.length };
+}
 
 export function toOptItem(it: Item): OptItem {
   const props: PropMap = { ...it.props };

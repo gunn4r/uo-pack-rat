@@ -6,7 +6,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { NOBODY, setRules, resistCapsFor, settingsDiff, settingsChanges, importanceOf, roundImportance, weightOfImportance, PROP_LABELS, NOT_BUILDER_KEYS, labelOf, type Goals } from "./vault-lib.mts";
+import { NOBODY, setRules, resistCapsFor, settingsDiff, settingsChanges, changesList, importanceOf, roundImportance, weightOfImportance, PROP_LABELS, NOT_BUILDER_KEYS, labelOf, type Goals } from "./vault-lib.mts";
 import { buffSkillValues, runBuffs } from "./buffs.mts";
 import type { RulesV1 } from "./schema/types.d.mts";
 import {
@@ -672,4 +672,25 @@ test("[fast] settingsChanges: settingsDiff's lines, grouped, with the values of 
   assert.deepEqual([rm.from, rm.to, rm.soft, rm.added], ["300", "none", undefined, undefined]);
   assert.deepEqual([soft.from, soft.to, soft.soft], ["hard", "soft", true]);
   assert.deepEqual([w.key, w.from, w.to], ["dci", "100", "50"], "a weight's values are its importances");
+});
+
+// Issue #336: a setting both changed from the template and edited since the save is one row under Not saved yet, with
+// the template's value beside the saved one, and counted once, so the popover's header and its sections agree.
+test("[fast] changesList: an unsaved edit is listed and counted once, with the template's value", () => {
+  const tpl = { floors: { physResist: 60, luck: 100 }, weights: { dci: 10 } };
+  const saved = { floors: { physResist: 65, luck: 200 }, weights: { dci: 10 } };
+  const now = { floors: { physResist: 70, luck: 200 }, weights: { dci: 10 }, restarts: 3 };
+  const rows = changesList(settingsChanges(tpl, now), settingsChanges(saved, now));
+  assert.deepEqual(rows.unsaved.map((c) => [c.key ?? c.text, c.template, c.from, c.to]), [["physResist", "60", "65", "70"], ["restarts ? → 3", undefined, undefined, undefined]]);
+  assert.deepEqual(rows.others.map((c) => c.key), ["luck"], "the template's other change");
+  assert.deepEqual([rows.count, rows.unsaved.length + rows.others.length], [3, 3], "phys once, luck, restarts");
+  // an edit back to the template's value: its template value is the one now, and nothing else is listed
+  const back = changesList(settingsChanges(tpl, tpl), settingsChanges(saved, tpl));
+  assert.deepEqual(back.unsaved.map((c) => [c.key, c.template, c.from, c.to]), [["luck", "100", "200", "100"], ["physResist", "60", "65", "60"]]);
+  assert.deepEqual([back.others.length, back.count], [0, 2]);
+  // a floor made soft is its own setting, apart from its value
+  const soft = changesList(settingsChanges({ floors: { luck: 100 } }, { floors: { luck: 200 }, softFloors: ["luck"] }), settingsChanges({ floors: { luck: 200 } }, { floors: { luck: 200 }, softFloors: ["luck"] }));
+  assert.deepEqual([soft.unsaved.map((c) => c.to), soft.others.map((c) => c.to), soft.count], [["soft"], ["200"], 2]);
+  // with no template there is no template value
+  assert.equal(changesList(null, settingsChanges(saved, now)).unsaved[0]!.template, undefined);
 });

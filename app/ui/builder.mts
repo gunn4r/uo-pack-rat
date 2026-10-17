@@ -4,10 +4,10 @@
 // is ui/runs.mts; they share the builder's state and call each other through ui/builder-session.mts. The panel is drawn
 // from the session's profile plus its Advanced knobs, so what a build sends, what a profile saves and what a run
 // snapshots are read from state, never from the DOM.
-import { NOBODY, PROP_LABELS, NOT_BUILDER_KEYS, importanceOf, weightOfImportance, GEAR_SLOTS, tagUnits, WEAPON_EXCLUDES, MELEE_SKILLS, WEAPON_MUST_HAVE, flagLabel, getRules, RESIST_KEYS, RESIST_CAP_LIMITS, resistCapsFor, templateFrom, settingsChanges, bagLabel, toOptItem, totalsOf, fcCapFor, CASTING_SCHOOLS, compileGoals, goalsActive, GOAL_LEFTOVERS, LEFTOVER_GROUPS, LEFTOVER_LABELS, GOAL_RANKS_MAX, GOAL_RANK_SIZE_MAX, STRATEGY_HELP, FEWEST_HELP } from "../vault-lib.mts";
+import { NOBODY, PROP_LABELS, NOT_BUILDER_KEYS, importanceOf, weightOfImportance, GEAR_SLOTS, tagUnits, WEAPON_EXCLUDES, MELEE_SKILLS, WEAPON_MUST_HAVE, flagLabel, getRules, RESIST_KEYS, RESIST_CAP_LIMITS, resistCapsFor, templateFrom, settingsChanges, changesList, bagLabel, toOptItem, totalsOf, fcCapFor, CASTING_SCHOOLS, compileGoals, goalsActive, GOAL_LEFTOVERS, LEFTOVER_GROUPS, LEFTOVER_LABELS, GOAL_RANKS_MAX, GOAL_RANK_SIZE_MAX, STRATEGY_HELP, FEWEST_HELP } from "../vault-lib.mts";
 import { delayText, heldWeapon, ssiShareOf, swingOf, type SwingResult } from "../swing.mts";
 import { BUILTIN_PREFIX, TEMPLATE_NAME_MAX, characterBuffs, characterEntry, characterLabel, characterProfile, findTemplate, goalSsiCap, planBuild, specFromProfile, templateName, templateRefs, templateSettings, templateSpecFrom, type PlannedBuild } from "../build-spec.mts";
-import type { FcCap, Goals, ResistCap, RunBuffs, RunSettings, Character, SettingsChange, SettingsGroup } from "../vault-lib.mts";
+import type { FcCap, Goals, ResistCap, RunBuffs, RunSettings, Character, SettingsChange, SettingsGroup, UnsavedChange } from "../vault-lib.mts";
 import { BUFFS, BUFF_GROUPS, BUFF_INPUTS, buffAvailability, buffById, buffEffectTags, isSchool, gearNeedsText, overrideNote, planBuffs, normalizeBuffs, runBuffs, toggleBuff, buffPlanOf, type Buff, type BuffPlan } from "../buffs.mts";
 import { defaultStrLimit } from "../run-settings.mts";
 import { evaluateSuit } from "../evaluate.mts";
@@ -282,7 +282,8 @@ let changesChip: HTMLButtonElement | null = null;
 function paintChangesChip(st: ReturnType<typeof buildState>): void {
   const chip = changesChip;
   if (!chip) return;
-  const n = st.changed.length, u = st.unsavedList.length;
+  // the popover's count (changesList), so the chip and the popover's header say the same number
+  const n = st.template && st.changed.length ? changesList(st.changed, st.unsavedList).count : 0, u = st.unsavedList.length;
   chip.hidden = !n && !u;
   chip.replaceChildren(...[icon("list", { size: "sm" }),
     n && st.template ? el("span", {}, `${plural(n, "change")} from `, el("strong", {}, st.template), " template") : null,
@@ -293,7 +294,7 @@ function paintChangesChip(st: ReturnType<typeof buildState>): void {
 const CHANGE_TAB: Record<SettingsGroup, Tab> = { requirements: "requirements", weights: "weights", pool: "pool", buffs: "buffs", character: "advanced", search: "advanced" };
 const CHANGE_SEC: Record<SettingsGroup, string> = { requirements: "req", weights: "weights", pool: "pool", buffs: "buffs", character: "char", search: "adv" };
 const CHANGE_HEAD: Record<SettingsGroup, string> = { requirements: "Requirements", weights: "Weights per point", pool: "Pool", buffs: "Buffs", character: "Character", search: "Search" };
-// The popover: a header with the count and whether any are unsaved; the unsaved edits first (saved → now), then the changes
+// The popover: a header with the count and whether any are unsaved; the unsaved edits first (template → saved → now), then the changes
 // from the template by group (template → this build), an added requirement marked and a soft one tagged; each row's name
 // opens Build Settings on that setting; Reset to the template (asks first) and Save as template at the foot.
 function openChangesPopover(anchor: HTMLButtonElement): void {
@@ -310,22 +311,25 @@ function openChangesPopover(anchor: HTMLButtonElement): void {
     else if (c.group === "character" && c.key && (RESIST_KEYS as readonly string[]).includes(c.key)) { focusIn("caps", `#b-cap-${c.key}`, true); document.getElementById(`b-cap-${c.key}`)?.closest(".rule-row")?.scrollIntoView({ block: "nearest" }); }
     else { openSettings(CHANGE_TAB[c.group]); document.getElementById(`b-sec-${CHANGE_SEC[c.group]}`)?.scrollIntoView({ block: "start" }); }
   };
-  const table = (rows: SettingsChange[], from: string, to: string): HTMLElement => el("table", { class: "b-diff" },
-    el("thead", {}, el("tr", {}, el("th", { scope: "col" }, txt("Setting", "sr")), el("th", { scope: "col" }, from), el("th", { scope: "col" }, txt("to", "sr")), el("th", { scope: "col" }, to))),
-    el("tbody", {}, ...rows.map((c) => el("tr", {},
-      el("td", {}, button({ label: c.label ?? c.text, variant: "ghost", size: "sm", cls: "b-diff-open", onClick: () => open(c) }), c.soft ? tag("soft") : null),
-      ...(c.from != null ? [el("td", { class: "b-diff-from" }, c.from), el("td", { class: "b-diff-arrow", "aria-hidden": "true" }, "→"), el("td", { class: c.added ? "b-diff-add" : "" }, c.to ?? "")]
-        : [el("td", { colspan: "3", class: "muted" }, c.label ? c.text : "")])))));
-  const section = (head: string, rows: SettingsChange[], from: string, to: string): HTMLElement[] => [el("h3", { class: "b-diff-h" }, `${head} · ${rows.length}`), table(rows, from, to)];
-  // an unsaved edit is listed once, in its own section: a template change of the same setting is left out of the groups
-  const same = (a: SettingsChange, b: SettingsChange): boolean => a.group === b.group && (a.key ? a.key === b.key : a.text === b.text);
-  const shown = st.changed.filter((c) => !st.unsavedList.some((x) => same(x, c)));
-  const groups = (Object.keys(CHANGE_HEAD) as SettingsGroup[]).flatMap((g) => { const rows = shown.filter((c) => c.group === g); return rows.length ? section(CHANGE_HEAD[g], rows, tplName, name) : []; });
-  const n = st.changed.length, u = st.unsavedList.length, fromTpl = !!tplName && n > 0;
+  // a table of changes, its value columns headed `cols` (template → saved → now for an unsaved edit with a template)
+  const table = (rows: UnsavedChange[], cols: string[]): HTMLElement => el("table", { class: "b-diff" },
+    el("thead", {}, el("tr", {}, el("th", { scope: "col" }, txt("Setting", "sr")), ...cols.flatMap((h, i) => [...(i ? [el("th", { scope: "col" }, txt("to", "sr"))] : []), el("th", { scope: "col" }, h)]))),
+    el("tbody", {}, ...rows.map((c) => {
+      const vals = c.from == null ? null : cols.length === 3 ? [c.template ?? "", c.from, c.to ?? ""] : [c.from, c.to ?? ""];
+      return el("tr", {},
+        el("td", {}, button({ label: c.label ?? c.text, variant: "ghost", size: "sm", cls: "b-diff-open", onClick: () => open(c) }), c.soft ? tag("soft") : null),
+        ...(vals ? vals.flatMap((v, i) => [...(i ? [el("td", { class: "b-diff-arrow", "aria-hidden": "true" }, "→")] : []), el("td", { class: i === vals.length - 1 ? (c.added ? "b-diff-add" : "") : "b-diff-from" }, v)])
+          : [el("td", { colspan: String(cols.length * 2 - 1), class: "muted" }, c.label ? c.text : "")]));
+    })));
+  const section = (head: string, rows: UnsavedChange[], cols: string[]): HTMLElement[] => [el("h3", { class: "b-diff-h" }, `${head} · ${rows.length}`), table(rows, cols)];
+  // an unsaved edit is listed and counted once, in its own section, with the template's value beside it (changesList)
+  const list = changesList(st.template ? st.changed : null, st.unsavedList);
+  const groups = (Object.keys(CHANGE_HEAD) as SettingsGroup[]).flatMap((g) => { const rows = list.others.filter((c) => c.group === g); return rows.length ? section(CHANGE_HEAD[g], rows, [tplName, name]) : []; });
+  const n = list.count, u = list.unsaved.length, fromTpl = !!tplName && st.changed.length > 0;
   const head = box("header", { class: "b-diff-head" },
     el("strong", {}, ...(fromTpl ? [`${plural(n, "change")} from `, el("b", {}, tplName), " template"] : [`${plural(u, "unsaved change")}`])),
     txt(u ? `${plural(u, "change")} not saved to ${name}'s profile yet, listed first.` : `Saved in ${name}'s build. No unsaved changes.`, "t-sm muted"));
-  const body = box("div", { class: "b-diff-body" }, ...(u ? section("Not saved yet", st.unsavedList, "Saved", "Now") : []), ...groups);
+  const body = box("div", { class: "b-diff-body" }, ...(u ? section("Not saved yet", list.unsaved, tplName ? [tplName, "Saved", "Now"] : ["Saved", "Now"]) : []), ...groups);
   const foot = box("footer", { class: "b-diff-foot" }, txt("Click a setting to open it.", "t-sm muted"),
     box("span", { class: "b-diff-acts" },
       tplName ? button({ label: `Reset to “${tplName}”…`, size: "sm", onClick: () => { closePopover(); void pickTemplate(session.profile!.template!, true); } }) : null,

@@ -2246,9 +2246,17 @@ test("[slow] the What changed chip and its popover: unsaved first, by group, a r
     assert.equal(await chip.getAttribute("aria-expanded"), "true");
     assert.deepEqual((await pop.locator(".b-diff-h").allTextContents()), ["Not saved yet · 1"], "an unsaved edit is listed once, in its own section");
     assert.match(await pop.locator(".b-diff-head").innerText(), /1 change from Melee template\s+1 change not saved to Dorran's profile yet/);
+    // the header's count is the rows the sections list
+    const agree = async (): Promise<void> => {
+      const head = Number(/^(\d+)/.exec(await pop.locator(".b-diff-head strong").innerText())![1]);
+      const rows = (await pop.locator(".b-diff-h").allTextContents()).reduce((sum, h) => sum + Number(/· (\d+)$/.exec(h)![1]), 0);
+      assert.equal(head, rows, "the header counts what the sections list");
+    };
+    await agree();
+    assert.deepEqual(await pop.locator(".b-diff").first().locator("thead th:not(:has(.sr))").allInnerTexts(), ["Melee", "Saved", "Now"], "an unsaved edit shows the template's value too");
     const luck = pop.locator(".b-diff").first().locator("tr", { hasText: "Luck" });
-    assert.deepEqual(await luck.locator("td").allInnerTexts(), ["Luck", "none", "→", "300"]);
-    assert.match(await luck.locator("td").nth(3).getAttribute("class") ?? "", /b-diff-add/, "an added requirement is marked");
+    assert.deepEqual(await luck.locator("td").allInnerTexts(), ["Luck", "none", "→", "none", "→", "300"]);
+    assert.match(await luck.locator("td").last().getAttribute("class") ?? "", /b-diff-add/, "an added requirement is marked");
     await page.keyboard.press("Escape");
     assert.equal(await page.locator(".pop").count(), 0);
     assert.equal(await page.evaluate(() => document.activeElement?.id), "b-chg", "Esc gives the focus back to the chip");
@@ -2262,6 +2270,7 @@ test("[slow] the What changed chip and its popover: unsaved first, by group, a r
     assert.equal(await chip.getAttribute("aria-label"), null, "its name is its visible text");
     await chip.click();
     assert.deepEqual((await pop.locator(".b-diff-h").allTextContents()), ["Requirements · 1"], "saved, it is a change from the template");
+    await agree();
     await page.keyboard.press("Escape");
     // a row opens Build Settings on its setting
     await chip.click();
