@@ -21,6 +21,7 @@ import { bridgeNote, renderDataDirNotice } from "./bridge.mts";
 import { adapterCopy } from "./adapter-copy.mts";
 import { copiedScanner, loadScanner, scannerCopy } from "./paste-scanner.mts";
 import { clientErrorMessage, uoFolderErrorMessage, dataDirNotice, errorText, hostErrorMessage, installedIntoNote, pathsFileNote, relativeWhen } from "./messages.mts";
+import { forgetMissingArt } from "./item-art.mts";
 import { autostartNote, hotkeyLabel, panelControls } from "./tazuo-panel.mts";
 import { exportKinds, importKinds } from "./kinds.mts";
 import { tiledataNote } from "./house-map-model.mts";
@@ -204,7 +205,7 @@ function uoFolderCard(from: TiledataFrom, error: string | null): HTMLElement {
   const path = input({ value: uoDraft ?? state.settings?.uoFolder ?? "", placeholder: "The folder holding tiledata.mul", attrs: { id: "set-uofolder-path", class: "input set-uofolder-path" } });
   path.addEventListener("input", () => { uoDraft = path.value; });
   const save = async (folder: string | null): Promise<void> => {
-    try { state.settings = (await api<SettingsApiResponse>("/api/settings", { method: "PUT", body: { uoFolder: folder } })).settings; uoDraft = null; void syncUoFolderCard(); }
+    try { state.settings = (await api<SettingsApiResponse>("/api/settings", { method: "PUT", body: { uoFolder: folder } })).settings; uoDraft = null; forgetMissingArt(); void syncUoFolderCard(); }
     catch (e) { void syncUoFolderCard(uoFolderErrorMessage(e)); }
   };
   const pick = async (): Promise<void> => {
