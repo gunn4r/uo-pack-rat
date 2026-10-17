@@ -5,12 +5,12 @@
 // Same launch as scripts/ui-smoke.test.mts. The builders' structure is unit-tested in app/ui-components.test.mts on a fake DOM; what needs a browser is here. Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
-import { testEnv, noUpdateCheck } from "./electron-window.mts";
+import { testEnv, noUpdateCheck, removeTempDir } from "./electron-window.mts";
 import type { ElectronApplication, Page } from "playwright";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -156,6 +156,6 @@ test("[slow] components: confirm dialog, drawer, popover, toasts and tooltip beh
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });

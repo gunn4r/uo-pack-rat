@@ -5,12 +5,12 @@
 // Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
-import { fitWindow, testEnv, noUpdateCheck } from "./electron-window.mts";
+import { fitWindow, testEnv, noUpdateCheck, removeTempDir } from "./electron-window.mts";
 import { writeScrollScans } from "./scrolls-fixture.mts";
 import type { Page } from "playwright";
 
@@ -129,6 +129,6 @@ test("[slow] the Scrolls view rolls power scrolls and Scrolls of Transcendence u
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });
