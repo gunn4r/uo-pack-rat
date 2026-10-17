@@ -3,10 +3,11 @@
 // #/characters/<Name> (the sheet itself is sheet.mts's sheetNode, shared with the Suit Builder).
 import { state } from "./store.mts";
 import { $, el, toast, tipNode, hideItemTip, compactChildren } from "./dom.mts";
-import { txt, box, badge, button, meter, table, searchInput, message, popover, menu, confirmDialog, tooltip, type Column } from "./components.mts";
+import { txt, box, badge, button, input, meter, table, searchInput, message, popover, menu, confirmDialog, tooltip, type Column } from "./components.mts";
 import { api } from "./api.mts";
 import { reload } from "./inventory-data.mts";
-import { putProfiles } from "./profiles.mts";
+import { putProfiles, setCharacterLabel } from "./profiles.mts";
+import { characterLabel, LABEL_MAX } from "../build-spec.mts";
 import { selectCharacter } from "./builder.mts";
 import { session } from "./builder-session.mts";
 import { registerScreen, showCharacterItems, showItem } from "./nav.mts";
@@ -34,6 +35,7 @@ function rosterRows(): RosterRow[] {
       resists: c ? resistFigures(name, wornSet(name)) : null,
       worn: (state.inv!.worn[name] || []).length,
       lowDurability: lowDurabilityCount(state.inv!.worn[name] || []),
+      label: characterLabel(state.profiles, name),
     };
   });
 }
@@ -95,16 +97,40 @@ function resistCell(f: ResistFigure): HTMLElement {
   return box("span", { class: "res-cell" }, txt(f.value, full ? "strong at-cap" : ""), meter(f.value, f.cap, { tone: full ? "ok" : undefined, label: `${f.label} resist ${f.value} of ${f.cap}` }));
 }
 // The Character cell: the name, and a "2 low" badge beside it when worn pieces are low on durability, so the
-// warning stays in the sticky column however far the table scrolls. Its sentence is the badge's name and tooltip.
+// warning stays in the sticky column however far the table scrolls (its sentence is the badge's name and tooltip);
+// under it the build label with Edit, or "No build label" with Add label.
 function nameCell(r: RosterRow): HTMLElement {
   const link = el("a", { class: "char-link strong", href: sheetHash(r.name) }, r.name);
   const summary = lowDurabilitySummary(r.lowDurability);
-  if (!summary) return link;
-  const low = badge(`${r.lowDurability} low`, "warn");
-  low.tabIndex = 0;
-  low.setAttribute("role", "img");
-  low.setAttribute("aria-label", summary);
-  return box("span", { class: "char-name" }, link, tooltip(low, summary));
+  let top: HTMLElement = link;
+  if (summary) {
+    const low = badge(`${r.lowDurability} low`, "warn");
+    low.tabIndex = 0;
+    low.setAttribute("role", "img");
+    low.setAttribute("aria-label", summary);
+    top = box("span", { class: "char-name" }, link, tooltip(low, summary));
+  }
+  return box("div", { class: "char-cell" }, top, labelLine(r.name));
+}
+// The build label line (issue #336). Edit and Add label turn it into a box with Save in place: ↵ saves, Esc puts it
+// back, and the focus returns to the line's button either way.
+let editingLabel: string | null = null;
+function labelLine(name: string): HTMLElement {
+  const label = characterLabel(state.profiles, name);
+  const focusButton = (): void => { $<HTMLElement>(`#char-table tr[data-name="${CSS.escape(name)}"] .char-label button`)?.focus(); };
+  const done = (): void => { editingLabel = null; renderRoster(); focusButton(); };
+  if (editingLabel !== name) {
+    return box("span", { class: "char-label" }, label ? txt(label, "char-label-text") : txt("No build label", "muted"),
+      box("button", { type: "button", class: "char-label-btn", "aria-label": label ? `Edit ${name}'s build label` : `Add a build label for ${name}`,
+        onclick: () => { editingLabel = name; renderRoster(); $<HTMLInputElement>("#char-label-input")?.focus(); } }, txt(label ? "Edit" : "Add label")));
+  }
+  const field = input({ value: label ?? "", placeholder: "e.g. Main Crafter", size: "sm", attrs: { id: "char-label-input", "aria-label": `Build label for ${name}`, maxlength: LABEL_MAX } });
+  const save = async (): Promise<void> => { if (await setCharacterLabel(name, field.value)) done(); };
+  field.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); void save(); }
+    else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); done(); }
+  });
+  return box("span", { class: "char-label editing" }, field, box("button", { type: "button", class: "char-label-btn", onclick: () => { void save(); } }, txt("Save")));
 }
 function renderRoster(): void {
   const all = rosterRows();
@@ -137,7 +163,7 @@ function renderRoster(): void {
   t.querySelector("thead th:last-child span")?.classList.add("sr");
   const tbody = t.querySelector("tbody")!;
   if (!rows.length) tbody.append(el("tr", {}, el("td", { colspan: ROSTER_COLS.length, class: "no-match" },
-    box("div", { class: "empty-state" }, el("h2", {}, "No characters match"), txt(`None of the ${plural(all.length, "character")} has “${query.trim()}” in their name.`, "muted"),
+    box("div", { class: "empty-state" }, el("h2", {}, "No characters match"), txt(`None of the ${plural(all.length, "character")} has “${query.trim()}” in their name or build label.`, "muted"),
       button({ label: "Clear search", onClick: () => { search.input.value = ""; query = ""; renderRoster(); search.input.focus(); } })))));
   const cap = rows[0]?.resists?.[0]?.cap ?? all.find((r) => r.resists)?.resists?.[0]?.cap ?? 70;
   const foot = box("div", { class: "tbl-foot" }, txt(rows.length === all.length ? plural(all.length, "character") : `${rows.length} of ${plural(all.length, "character")}`),
