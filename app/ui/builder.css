@@ -6,13 +6,32 @@
 /* ---------------------------------------------------------------- layout: the result full width */
 /* the screen never scrolls: the results column scrolls inside its own box, the Build Settings drawer's body inside the drawer */
 #tab-builder .page.b-page { position: relative; flex-direction: row; align-items: stretch; gap: var(--space-4); overflow: hidden; }
-/* one line that wraps on a narrow window: title · character · template · mode · Settings · Saved runs · Build */
-#b-topbar { height: auto; min-height: var(--topbar-h); flex-wrap: wrap; gap: var(--space-2); padding-top: var(--space-2); padding-bottom: var(--space-2); }
+/* the sentence bar (issue #321): "Best suit for [character] using [build]", Build Settings and Build held right as one group
+   that never splits; on a narrow window the pickers wrap and the group keeps to the right. Under it a quieter row: Automatic |
+   Manual with its hint, and Saved runs at the right */
+#b-topbar { height: auto; flex-direction: column; align-items: stretch; gap: 0; padding: 0; }
+.b-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); padding: var(--space-2) var(--gutter); }
+.b-sent { flex: 1 1 30rem; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); font-size: var(--text-md); }
+.b-w { white-space: nowrap; }
 .b-tpl-top { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
-.pr .b-tpl-top .select { width: 140px; }
+.b-pick { width: 17rem; }
 .b-top-acts { flex: none; display: flex; align-items: center; gap: var(--space-2); margin-left: auto; }
-/* Manual's fill plans with the drawer's settings, and has its own button; the template is the drawer's too */
-#tab-builder.manual #b-settings, #tab-builder.manual #b-run, #tab-builder.manual #b-tpl-top { display: none; }
+.b-subbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-3); padding: var(--space-1) var(--gutter); border-top: var(--border-width) solid var(--color-border); background: var(--color-surface-subtle); }
+#b-runs-open { margin-left: auto; }
+/* a character's initial on a tint of its color; No character's and the build's icon on a sunken tile */
+.b-av { flex: none; width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: var(--text-sm); font-weight: var(--weight-semibold); color: var(--color-text); background: color-mix(in srgb, var(--av) 22%, var(--color-surface)); box-shadow: inset 0 0 0 2px var(--av); }
+.b-av[data-hue="1"] { --av: var(--color-area-1); }
+.b-av[data-hue="2"] { --av: var(--color-area-2); }
+.b-av[data-hue="3"] { --av: var(--color-area-3); }
+.b-av[data-hue="4"] { --av: var(--color-area-4); }
+.b-av[data-hue="5"] { --av: var(--color-area-5); }
+.b-av[data-hue="6"] { --av: var(--color-area-6); }
+.b-av[data-hue="7"] { --av: var(--color-area-7); }
+.b-av[data-hue="8"] { --av: var(--color-area-8); }
+.b-av-none, .b-ic { --av: var(--color-border-strong); color: var(--color-text-muted); }
+.b-ic { flex: none; width: 28px; height: 28px; border-radius: var(--radius-md); display: inline-flex; align-items: center; justify-content: center; background: var(--color-surface-sunken); }
+/* Manual's fill plans with the drawer's settings, and has its own button; the build is the drawer's too */
+#tab-builder.manual #b-settings, #tab-builder.manual #b-run, #tab-builder.manual #b-tpl-top, #tab-builder.manual .b-w-for { display: none; }
 /* open, the Build Settings button reads pressed */
 .pr #b-settings[aria-expanded="true"] { background: var(--color-chip-set); color: var(--color-on-chip-set); }
 /* the Build Settings drawer (the shared .drawer component, index.html): its template line, tabs and footer */
@@ -38,7 +57,6 @@
 .b-crumb { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
 .pr .b-crumb a { color: var(--color-text-muted); text-decoration: none; font-size: var(--text-md); white-space: nowrap; }
 .pr .b-crumb a:hover { color: var(--color-text); text-decoration: underline; }
-.pr .topbar .b-topbar-char { width: 128px; }
 
 /* ---------------------------------------------------------------- panel sections */
 .b-sec { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-4) var(--space-5); border-bottom: var(--border-width) solid var(--color-border); }
@@ -376,13 +394,13 @@
   .b-resists, .b-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .b-gauges { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
-/* a phone-width top bar: the selects' and Saved runs' words and the key hints go (still named for a screen reader), the
-   selects take the room left; the result's gauges go two to a row and its table packs tighter */
+/* a phone-width top bar: the sentence's words and the key hints go (the pickers and buttons keep their names), each picker
+   takes a full row, and Build Settings and Build share one; the result's gauges go two to a row and its table packs tighter */
 @media (max-width: 720px) {
-  #b-topbar .b-top-l { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-  #b-topbar .kbd { display: none; }
-  .pr .topbar .b-topbar-char, .pr .b-tpl-top .select { flex: 1 1 auto; width: auto; min-width: 0; }
-  .b-tpl-top { flex: 1 1 100%; }
+  #b-topbar .kbd, .b-w, .b-mode-hint { display: none; }
+  .b-sent > .b-pick, .b-tpl-top, .b-tpl-top > .b-pick { flex: 1 1 100%; width: auto; }
+  .b-top-acts { flex: 1 1 100%; }
+  #b-settings, #b-run { flex: 1 1 0; }
   .b-gauges { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .b-chg-tbl th, .b-chg-tbl td { padding: 0 var(--space-2); }   /* the names and the first numbers side by side */
 }

@@ -52,7 +52,7 @@ function draw(name: string): void {
 // ---- the main column: the question, the template cards, the summary and Build
 function mainColumn(name: string): HTMLElement {
   const nobody = name === NOBODY, builtins = Object.keys(state.builtinTemplates).length;
-  const all = button({ label: `All ${builtins} built-in templates`, variant: "ghost", size: "sm", cls: "b-link", onClick: () => $<HTMLSelectElement>("#b-tpl")?.focus() });
+  const all = button({ label: `All ${builtins} built-in templates`, variant: "ghost", size: "sm", cls: "b-link", onClick: () => $<HTMLButtonElement>("#b-tpl")?.click() });
   const build = button({ label: nobody ? "Build the suit" : `Build ${name}'s suit`, variant: "primary", size: "lg", attrs: { id: "b-start-build", "data-k": "build", "aria-keyshortcuts": "Meta+Enter Control+Enter" }, onClick: () => commands.build() });
   return box("div", { class: "b-arrive-main" },
     box("div", {}, el("h2", { class: "t-xl", tabindex: "-1", "data-k": "head" }, nobody ? "What should the suit be for?" : `What should ${name}'s suit be for?`),

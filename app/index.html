@@ -108,18 +108,28 @@
 
     <!-- ========================================================== Suit Builder (ui/builder.mts, ui/runs.mts, ui/builder.css) -->
     <main class="screen" id="tab-builder" aria-labelledby="h-builder" hidden>
-      <header class="topbar" id="b-topbar">
-        <h1 id="h-builder">Suit Builder</h1>
-        <label class="t-sm muted b-top-l" for="b-char">Character</label>
-        <select id="b-char" class="select input-sm b-topbar-char"></select>
-        <!-- the template picker, its state badge and its actions menu (ui/builder.mts); the mode switch follows it -->
-        <span class="b-tpl-top" id="b-tpl-top"></span>
-        <!-- the actions, one group that never splits, held to the right; the selects before it wrap -->
-        <span class="b-top-acts">
-        <button class="btn btn-sm" type="button" id="b-settings" aria-expanded="false" aria-controls="b-drawer" aria-keyshortcuts="Meta+Comma Control+Comma"><span>Build Settings</span><kbd class="kbd" aria-hidden="true">⌘,</kbd></button>
-        <button class="btn btn-sm" type="button" id="b-runs-open" title="Saved runs"><svg class="i i-sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg><span class="b-top-l">Saved runs</span><span class="badge" id="b-runs-count">0</span></button>
-        <button class="btn btn-sm btn-primary" type="button" id="b-run" aria-keyshortcuts="Meta+Enter Control+Enter"><span>Build</span><kbd class="kbd" aria-hidden="true">⌘↵</kbd></button>
-        </span>
+      <!-- The sentence bar (issue #321): "Best suit for [character] using [build]", then Build Settings and Build; under it
+           Automatic | Manual and Saved runs. The two pickers are components.mts comboboxes, made by ui/builder.mts. -->
+      <header class="topbar b-topbar" id="b-topbar">
+        <h1 id="h-builder" class="sr">Suit Builder</h1>
+        <div class="b-bar">
+          <span class="b-sent">
+            <span class="b-w b-w-for">Best suit for</span>
+            <span class="b-pick-slot" id="b-char-slot"></span>
+            <!-- the build picker, with the word before it (ui/builder.mts); hidden in Manual -->
+            <span class="b-tpl-top" id="b-tpl-top"></span>
+          </span>
+          <span class="b-top-acts">
+            <button class="btn btn-lg" type="button" id="b-settings" aria-expanded="false" aria-controls="b-drawer" aria-keyshortcuts="Meta+Comma Control+Comma"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"></path></svg><span>Build Settings</span><kbd class="kbd" aria-hidden="true">⌘,</kbd></button>
+            <button class="btn btn-lg btn-primary" type="button" id="b-run" aria-keyshortcuts="Meta+Enter Control+Enter"><span>Build</span><kbd class="kbd" aria-hidden="true">⌘↵</kbd></button>
+          </span>
+        </div>
+        <!-- the quieter row: the mode switch (ui/builder-manual.mts puts it in its slot) with its hint, and Saved runs -->
+        <div class="b-subbar">
+          <span id="b-mode-slot"></span>
+          <span class="t-sm muted b-mode-hint">Automatic finds the best suit; Manual lets you pick pieces.</span>
+          <button class="btn btn-sm btn-ghost" type="button" id="b-runs-open" title="Saved runs"><svg class="i i-sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg><span>Saved runs</span><span class="badge" id="b-runs-count">0</span></button>
+        </div>
       </header>
       <header class="topbar" id="b-cmp-topbar" hidden></header>
       <div class="page b-page">

@@ -75,7 +75,7 @@ Profiles, buffs, pools, solvers, saved runs and Manual. `docs/solver.md` describ
 | `app/bench/mip-spike.mts` | The HiGHS spike, superseded by `app/mip.mts`; kept as evidence for `app/bench/REPORT.md`. | — |
 | `app/ui/builder-session.mts` | The Suit Builder's one session: the state its five modules share (character, profile, result, job, saved runs and compare picks, Automatic or Manual, the knobs), with setters that fire `builderchange`, and the commands they call on each other, registered with `provide()`. | `session`, `commands`, `provide`, `readControls`, `applyKnobs` |
 | `app/ui/builder-parts.mts` | What more than one builder module draws or reads: key properties, the item tooltip, the verdict, the Fetch list and Grab all, an optimize job's events and progress words. | `fetchCard`, `grabAllButton`, `verdict`, `followJob`, `progressText` |
-| `app/ui/builder.mts` | The Suit Builder screen: the top bar's template controls, the Build Settings drawer and its tabs, the optimize job over SSE. Provides the panel commands. | `initBuilder`, `applyPanelPrefs`, `selectCharacter`, `cancelJob` |
+| `app/ui/builder.mts` | The Suit Builder screen: the sentence bar's character and build pickers, the Build Settings drawer and its tabs, the optimize job over SSE. Provides the panel commands. | `initBuilder`, `applyPanelPrefs`, `selectCharacter`, `cancelJob` |
 | `app/ui/builder-start.mts` | The first-visit view: template cards, the read-only summary, Build, what the character wears now. Provides the first-visit commands. | — |
 | `app/ui/builder-result.mts` | The result under the Build Settings drawer, with the character's runs beside it, and the compare view. Provides the result commands. | `applyResultPrefs` |
 | `app/ui/builder-manual.mts` | Manual mode: slot cards, picker, totals, undo, Fill the rest, Save as run; the builder's ui-prefs. Provides the Manual and buff-number commands. | `initManual`, `applyBuilderPrefs`, `savePrefs` |
@@ -281,7 +281,7 @@ The page is `app/index.html` plus `app/ui/`, compiled by `scripts/build-ui.mts` 
 
 | Module | Role | Owns |
 |---|---|---|
-| `app/ui/components.mts` | The component primitives as DOM builders, styled by `app/ui/components.css`. `box()` refuses a bare text child. | `box`, `txt`, `button`, `input`, `select`, `popover`, `createDrawer`, `openDialog`, `confirmDialog`, `table`, `menu`, `FLEX_CLASSES` |
+| `app/ui/components.mts` | The component primitives as DOM builders, styled by `app/ui/components.css`. `box()` refuses a bare text child. | `box`, `txt`, `button`, `input`, `select`, `popover`, `combobox`, `createDrawer`, `openDialog`, `confirmDialog`, `table`, `menu`, `FLEX_CLASSES` |
 | `app/ui/dialog.mts` | A one-field prompt (Electron has no `window.prompt`). | `promptText` |
 | `app/ui/item-parts.mts` | The item widgets every screen shares: rarity, tags and location elements, the row actions and the ⋯ menu, and the filter wording's context. | `rarityEl`, `tagEls`, `locationEl`, `tagWords`, `itemActions`, `itemMenu`, `filterContext`, `setItemNav` |
 | `app/ui/item-browser.mts` | The item browser: filter toolbar, filter strip, column popover and virtual table, mounted more than once, over a data source (`GET /api/items` and the inventory's facets by default). | `createItemBrowser`, `itemsSource` |
