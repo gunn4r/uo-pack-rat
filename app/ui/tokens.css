@@ -123,6 +123,7 @@
   --color-map-wall: #6f6c66; --color-map-window: #a2b7c9; --color-map-roof: #a88f55; --color-map-stair: #b7ad9a; --color-map-step: #918877; --color-map-lip: #8f5642; --color-map-wall-edge: rgb(23 34 36 / 0.35);
   --color-map-block: #8a7a63; --color-map-door: #6b4a2b; --color-map-teleporter: #7fd0ff; --color-map-spot: #2d6aa8; --color-map-shade: #000;
   --color-map-chest: #9aa3ad; --color-map-chest-empty: #ece9e2; --color-map-unopened: #f6f4ef;
+  --color-art-backing: transparent;  /* behind an item's in-game art (ui/item-art.mts, issue #174): none in light mode */
   --color-map-free-empty: #9ad3a9; --color-map-free-half: #4f9a5c; --color-map-free-filling: #d29a1e; --color-map-free-full: #c2483d; --color-map-free-unknown: #b9b4a8;
   --color-map-marker: #e5382b; --color-map-marker-other: #ffd23f; --color-map-marker-edge: #ffffff; --color-map-marker-ink: #1b1b1b;  /* on the game's own world map, the same in both modes */
   --color-area-1: #7c4dff; --color-area-2: #f07c1a; --color-area-3: #00a693; --color-area-4: #d6339b; --color-area-5: #2563eb; --color-area-6: #b5b800; --color-area-7: #2e9e3a; --color-area-8: #b3261e;  /* the player's drawn areas on the House map (issue #10) */
@@ -187,6 +188,7 @@
   --color-map-wall: #aaa69d; --color-map-window: #6f89a1; --color-map-roof: #7e6b41; --color-map-stair: #6c6558; --color-map-step: #504a40; --color-map-lip: #9b6751; --color-map-wall-edge: rgb(0 0 0 / 0.45);
   --color-map-block: #9a8a72; --color-map-door: #a47b50; --color-map-teleporter: #4fa8d8; --color-map-spot: #7fb2ff; --color-map-shade: #000;
   --color-map-chest: #8e98a2; --color-map-chest-empty: #3b3e41; --color-map-unopened: #262b2d;
+  --color-art-backing: rgb(255 255 255 / 0.18);  /* a light tile in dark mode, so black metal and near-black hues keep their outline */
   --color-map-free-empty: #3f7a52; --color-map-free-half: #5fae6c; --color-map-free-filling: #d9a640; --color-map-free-full: #e0645a; --color-map-free-unknown: #6c6860;
   --color-map-marker: #e5382b; --color-map-marker-other: #ffd23f; --color-map-marker-edge: #ffffff; --color-map-marker-ink: #1b1b1b;  /* on the game's own world map, the same in both modes */
   --color-area-1: #b39dff; --color-area-2: #ffa04d; --color-area-3: #3fd6c2; --color-area-4: #ff6ac8; --color-area-5: #5b8cff; --color-area-6: #d4f04a; --color-area-7: #5fd35a; --color-area-8: #e8484f;  /* the player's drawn areas on the House map (issue #10) */

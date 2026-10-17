@@ -31,7 +31,7 @@ export const FLEX_CLASSES = [
   "btn", "field", "search", "check", "seg", "fchip", "token", "pill", "badge", "tag", "rar-tier", "card-head",
   "tbl-foot", "rowact", "overlay-head", "overlay-foot", "overlay-titles", "toast", "toasts", "msg", "msg-body", "msg-actions",
   "meter", "stepper", "step", "step-dot", "kv", "kv-k", "kv-v", "resist", "slot", "drawer", "drawer-body",
-  "dialog", "dialog-body", "dialog-foot", "pop-body", "tipwrap", "empty-state", "cbx", "cbx-text", "cbx-opt", "cbx-foot",
+  "dialog", "dialog-body", "dialog-foot", "pop-body", "tipwrap", "empty-state", "art-tile", "cbx", "cbx-text", "cbx-opt", "cbx-foot",
 ] as const;
 
 // ---------------------------------------------------------------- icons
