@@ -1301,7 +1301,7 @@ test("[fast] /api/optimize: a rarity preference stamps tie costs, keys apart fro
 // Issue #311: the route sets the hard-floor bonus before the run key, so a hand-built request with six soft floors at 1e6
 // gets the ring that meets its hard floor (at the fixed 1e7 the ring meeting the six wins); past the cap it builds at the
 // cap and says so, before the search and on the result; a floorPartial above 0.5 is refused.
-test("[fast] POST /api/optimize: the hard-floor bonus outweighs large soft floors, says when it is capped, and refuses a floorPartial over 0.5", async () => {
+test("[fast] POST /api/optimize: the hard-floor bonus outweighs large soft floors, says when it is capped, and refuses a floorPartial over 0.5 and a negative floorBonus", async () => {
   const soft = ["s1", "s2", "s3", "s4", "s5", "s6"];
   const meets = { serial: 93111, name: "Meets", slot: "ring", props: { hci: 10 } };
   const near = { serial: 93112, name: "Near", slot: "ring", props: { hci: 9, luck: 0, ...Object.fromEntries(soft.map((k) => [k, 1])) } };
@@ -1331,4 +1331,8 @@ test("[fast] POST /api/optimize: the hard-floor bonus outweighs large soft floor
   const bad = await post({ ...profile, floorPartial: 0.9 }, "c311-c");
   assert.equal(bad.status, 400);
   assert.equal(asJson<ErrorBody>(bad.json()).error, "profile.floorPartial must be a number from 0 to 0.5");
+  // issue #315: a negative soft-floor bonus is refused (the exact solver had no model for one)
+  const negative = await post({ ...profile, floorBonus: -1 }, "c311-d");
+  assert.equal(negative.status, 400);
+  assert.equal(asJson<ErrorBody>(negative.json()).error, "profile.floorBonus must be a number from 0 to 1000000");
 });

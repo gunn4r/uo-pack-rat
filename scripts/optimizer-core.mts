@@ -77,6 +77,13 @@ function optHardBonus(profile: OptProfile): number {
 // Strict order's stage values count as equal within this (== app/mip.mts TIE_SLACK): optStrictStages scales a stage so two
 // different values sit far further apart.
 const LEX_EPS = 1e-3;
+// Two scores closer than `base` count as equal, or than SCORE_REL of the larger when that is more (issue #316): a score
+// near 1e10 carries float rounding of about 1e-5 from summing in another order, above every absolute slack here.
+// == app/mip.mts SCORE_REL and slackAt.
+const SCORE_REL = 1e-12;
+function optSlack(base: number, a: number, b: number): number {
+  return Math.max(base, SCORE_REL * Math.max(Math.abs(a), Math.abs(b)));
+}
 // What one changed slot costs at least with the tie-break's fewestChanges (== app/mip.mts CHANGE_COST); optChangeCost
 // raises it above any suit's summed tie cost, so fewer changes always come first.
 const CHANGE_COST = 1000;
@@ -523,14 +530,15 @@ function optLexOf(totals: number[], lex: OptSpace[]): number[] {
 // 1 when a beats b in strict order, -1 when b beats a, 0 when every stage is equal (within LEX_EPS).
 function optLexCmp(a: number[], b: number[]): number {
   for (let i = 0; i < a.length; i++) {
-    if (a[i]! > b[i]! + LEX_EPS) return 1;
-    if (a[i]! < b[i]! - LEX_EPS) return -1;
+    const e = optSlack(LEX_EPS, a[i]!, b[i]!);
+    if (a[i]! > b[i]! + e) return 1;
+    if (a[i]! < b[i]! - e) return -1;
   }
   return 0;
 }
 // Whether every stage of `v` reaches `mins` (within LEX_EPS).
 function optLexHolds(v: number[], mins: number[]): boolean {
-  for (let i = 0; i < v.length; i++) if (v[i]! < mins[i]! - LEX_EPS) return false;
+  for (let i = 0; i < v.length; i++) if (v[i]! < mins[i]! - optSlack(LEX_EPS, v[i]!, mins[i]!)) return false;
   return true;
 }
 
@@ -1036,9 +1044,10 @@ function optBranchAndBound(slots: string[], cands: Record<string, (OptItem | nul
     for (let s = 0; s < stageBounds!.length; s++) {
       const B = stageBounds![s]!, ref = tie ? tie.lexMins![s]! : cutVec![s]!;
       let b = B.loose(k);
-      if (b >= ref - LEX_EPS && n - k >= 2) b = Math.min(b, B.tight(k));
-      if (b < ref - LEX_EPS) return true;
-      if (!tie && b > ref + LEX_EPS) return false;
+      const e = optSlack(LEX_EPS, b, ref);
+      if (b >= ref - e && n - k >= 2) b = Math.min(b, B.tight(k));
+      if (b < ref - e) return true;
+      if (!tie && b > ref + e) return false;
     }
     return !tie && (!alt || altList.length >= altMax);
   };
@@ -1301,8 +1310,8 @@ function optimizeSuit(pools: Record<string, OptItem[]>, current: OptAssignment, 
     return own + changeCost * -changeOf(it);
   };
   if (tb) {
-    // scores within 1e-3 count as equal, the exact solver's precision (app/mip.mts TIE_SLACK)
-    const min = topScore - tb.tolerance, EPS = 1e-3;
+    // scores within 1e-3 count as equal, the exact solver's precision (app/mip.mts TIE_SLACK), or within SCORE_REL of a large one
+    const EPS = optSlack(1e-3, topScore, 0), min = topScore - tb.tolerance;
     if (opts.tieBreak!.topStart) {
       const ts = fromSerials(opts.tieBreak!.topStart);
       if (lex ? optLexCmp(lexAt(ts), bestVec!) >= 0 : optScoreVector(optTotalsOf(ts, slots, space), space) >= topScore - EPS) tieRef = ts;

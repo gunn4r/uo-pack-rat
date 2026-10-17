@@ -46,6 +46,7 @@ test("[fast] build spec: a full spec, a template's and an empty one pass; each k
     [{ ...spec, intent: { ...spec.intent, race: "elf" } }, /^spec\.intent\.race is not a intent setting$/],
     [{ ...spec, intent: { ...spec.intent, floors: { hci: "45" } } }, /^spec\.intent\.floors\.hci must be a number/],
     [{ ...spec, intent: { ...spec.intent, floorBonus: "x" } }, /^spec\.intent\.floorBonus must be a number/],
+    [{ ...spec, intent: { ...spec.intent, floorBonus: -1 } }, /^spec\.intent\.floorBonus must be a number from 0 to 1000000$/],   // issue #315
     [{ ...spec, intent: { ...spec.intent, resistCaps: { fireResist: 200 } } }, /^spec\.intent\.resistCaps/],
     [{ ...spec, pool: { ...spec.pool, strLimit: 0 } }, /^spec\.pool\.strLimit must be "character" or a whole number from 1 to 1000$/],
     [{ ...spec, pool: { ...spec.pool, strLimit: "mine" } }, /^spec\.pool\.strLimit must be "character"/],
