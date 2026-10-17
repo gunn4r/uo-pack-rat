@@ -1,6 +1,6 @@
 // organize.mts — Organize: GET|PUT /api/organize, GET /api/organize/presets, POST /api/organize/match and /api/organize/propose, GET /api/organize/plan and POST /api/organize/trip; and Move to (issue #270), which runs as Organize trips: POST /api/move/plan and /api/move/trip.
 import { isBoundedInt, isBoundedString, MAX_SERIAL } from "../../guards.mts";
-import { againstRules, backSteps, destProblem, MAX_SELECTION, planMoves, resolveSelection, type LeftReason, type MoveStep, type Selection } from "../../move.mts";
+import { againstRules, backSteps, destProblem, leftReason, MAX_SELECTION, planMoves, resolveSelection, type LeftReason, type MoveStep, type Selection } from "../../move.mts";
 import { applyOverlay } from "../../organize.mts";
 import { checkOrganizeConfig, LIMITS, matchProblem, MAX_SETUP_BYTES, salvagedRefusal, type RuleMatch } from "../../organize-config.mts";
 import { PRESETS } from "../../organize-presets.mts";
@@ -24,7 +24,7 @@ function selectionOf(v: unknown): Selection | string {
 // Move back's request: the serials a Move moved and its trip ids, or why it is refused.
 function backOf(v: unknown): { serials: number[]; trips: string[] } | string {
   const b = (v && typeof v === "object" && !Array.isArray(v) ? v : {}) as Record<string, unknown>;
-  if (serialList(b.serials) && b.serials.length && Array.isArray(b.trips) && b.trips.length && b.trips.length <= 500 && b.trips.every((t) => isBoundedString(t, 64))) return { serials: b.serials, trips: b.trips as string[] };
+  if (serialList(b.serials) && b.serials.length && Array.isArray(b.trips) && b.trips.length && b.trips.length <= MAX_SELECTION && b.trips.every((t) => isBoundedString(t, 64))) return { serials: b.serials, trips: b.trips as string[] };
   return "back must be {serials: [the moved serials], trips: [the Move's trip ids]}";
 }
 
@@ -108,7 +108,7 @@ export function routes(ctx: ServerContext): Route[] {
     { method: "POST", path: "/api/move/plan", handle: async (req, res) => {
       // What Move to would do with the selection (issue #270): how many items it holds and how many are worn, how many of
       // them sit directly in each container (the picker's "already here"), and, with `to`, the plan into that container:
-      // how many move and in how many trips, which stay and why, and which of the moved ones Organize would take out again.
+      // how many move (and which: `serials`, what the page then sends so the run moves only what was shown) and in how many trips, which stay and why, and which of the moved ones Organize would take out again.
       // With `back` instead (Move back's request), how many items would go back and which are skipped. Read-only.
       const { selection, to, back } = asObject(await readBody(req, { limit: 256e3 }));
       if (back !== undefined) {
@@ -124,9 +124,15 @@ export function routes(ctx: ServerContext): Route[] {
       const { inv } = await getInventory();
       const items = resolveSelection(inv, sel, appSettings.rules().rarity);
       const worn = items.filter((it) => it.equippedBy);
-      const here: Record<string, number> = {};
-      for (const it of items) if (!it.equippedBy && it.container != null) here[it.container] = (here[it.container] ?? 0) + 1;
-      const base = { ok: true, selected: items.length, worn: worn.length, wornNames: worn.slice(0, 3).map((it) => it.name), here };
+      // `movable`: the items a trip can take (in its destination's house or not); `here` counts only those.
+      const black = new Set(blacklist()), here: Record<string, number> = {};
+      let movable = 0;
+      for (const it of items) {
+        if (leftReason(inv, it, black)) continue;
+        movable++;
+        here[it.container!] = (here[it.container!] ?? 0) + 1;
+      }
+      const base = { ok: true, selected: items.length, worn: worn.length, wornNames: worn.slice(0, 3).map((it) => it.name), movable, here };
       if (to === undefined) return send(res, 200, base);
       const { fold, config, state } = await organizeService.organizeInputs();
       const view = applyOverlay(fold, state.moves).inv;
@@ -137,7 +143,7 @@ export function routes(ctx: ServerContext): Route[] {
       for (const l of plan.left) left[l.why] = (left[l.why] ?? 0) + 1;
       const moved = plan.moves.map((m) => m.serial);
       const against = againstRules(view, config, moved, to, { now: Date.now(), rarity: appSettings.rules().rarity, suitPieces: organizeService.suitsFor(config.rules.map((r) => r.match)), blacklist: blacklist(), seen: state.seen });
-      return send(res, 200, { ...base, problem: null, plan: { moving: moved.length, trips: plan.trips.length, already: plan.already.length, noRoom: plan.noRoom.length, left, against } });
+      return send(res, 200, { ...base, problem: null, plan: { moving: moved.length, serials: moved, trips: plan.trips.length, already: plan.already.length, noRoom: plan.noRoom.length, left, against } });
     } },
     { method: "POST", path: "/api/move/trip", handle: async (req, res) => {
       // The next trip of a Move, planned now and queued like an Organize trip: `selection` and `to` (Move to), or `back`, the
@@ -165,11 +171,13 @@ export function routes(ctx: ServerContext): Route[] {
       if (waiting) return send(res, 409, { ok: false, error: `trip ${waiting.index} has not reported back yet` });
       const plan = planMoves(fold, state.moves, steps, { blacklist: blacklist() });
       const trip = plan.trips[0];
-      if (!trip) return send(res, 200, { ok: true, id: null, remaining: 0, skipped });
+      // `noRoom`: the items no container on their way has room for (Move back's sources filled up since).
+      const noRoom = plan.noRoom.map((serial) => ({ serial, name: fold.items[serial]?.name ?? `0x${serial.toString(16)}` }));
+      if (!trip) return send(res, 200, { ok: true, id: null, remaining: 0, skipped, noRoom });
       const queued = organizeService.queuePlanTrip(adapter, fold, state, plan, trip.index);
       if (!queued.ok) return send(res, 409, { ok: false, error: queued.error });
       const names = Object.fromEntries(plan.moves.filter((m) => m.trip === trip.index).map((m) => [m.serial, m.name]));
-      return send(res, 200, { ok: true, id: queued.id, index: trip.index, names, remaining: plan.moves.length, skipped });
+      return send(res, 200, { ok: true, id: queued.id, index: trip.index, names, remaining: plan.moves.length, skipped, noRoom });
     } },
   ];
 }

@@ -7,7 +7,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { parseItemQuery, type ItemQuery } from "./item-query.mts";
 import type { Container, Item } from "./vault-lib.mts";
-import { emptySelection, isSelected, selectedCount, toggleRows, toggleLoaded, loadedState, selectAllMatching, selectionBody, grabItems, destGroups, roomText, pickedText, leftText, movedText, againstText, skippedText, wornNote, GRAB_MAX, OUTSIDE, type Matches } from "./ui/move-model.mts";
+import { emptySelection, isSelected, selectedCount, toggleRows, toggleLoaded, loadedState, selectAllMatching, selectionBody, grabItems, destGroups, roomText, pickedText, leftText, movedText, againstText, skippedText, noRoomText, wornNote, GRAB_MAX, OUTSIDE, type Matches } from "./ui/move-model.mts";
 
 const item = (serial: number, name: string, worn = false): Item => ({ serial, name, ...(worn ? { equippedBy: "Tester" } : {}) }) as unknown as Item;
 const ROWS = [item(1, "Gold Ring"), item(2, "Silver Ring", true), item(3, "Jade Ring"), item(4, "Ruby Ring"), item(5, "Onyx Ring")];
@@ -27,7 +27,7 @@ test("[fast] a ticked row is selected; shift-click ticks every loaded row from t
   assert.equal(toggleRows(sel, ROWS, 4, true, false, none).sel.anchor, 4);
 });
 
-test("[fast] the header ticks every row loaded so far (naming the worn ones), shows some or all, and unticking it clears everything", () => {
+test("[fast] the header ticks every row loaded so far (naming the worn ones), shows some or all, and unticking it unticks only them", () => {
   const sparse = [ROWS[0], undefined, ROWS[1], ROWS[2]];
   const { sel, worn } = toggleLoaded(emptySelection(), sparse, true, none);
   assert.deepEqual([[...sel.items.keys()], worn], [[1, 3], ["Silver Ring"]]);
@@ -35,6 +35,9 @@ test("[fast] the header ticks every row loaded so far (naming the worn ones), sh
   assert.equal(loadedState(toggleRows(sel, sparse, 0, false, false, none).sel, sparse, none), "some");
   assert.equal(loadedState(emptySelection(), sparse, none), "none");
   assert.equal(selectedCount(toggleLoaded(sel, sparse, false, none).sel), 0);
+  // Unticking the header unticks the loaded rows only: a row ticked under another filter stays.
+  const elsewhere = toggleRows(sel, [item(50, "Black Pearl")], 0, true, false, none).sel;
+  assert.deepEqual([...toggleLoaded(elsewhere, sparse, false, none).sel.items.keys()], [50]);
 });
 
 test("[fast] all matching counts every match but the unticked ones, keeps ticks outside the filter, and survives the rows changing", () => {
@@ -83,7 +86,7 @@ test("[fast] a container's room line and the picked container's sentence say wha
   assert.deepEqual(roomText({ items: 121, max: 125 }, 9, 0), { text: "Room for 4", short: true });
   assert.deepEqual(roomText({ items: 40, max: 125 }, 9, 4), { text: "4 already here", short: false });
   assert.deepEqual(roomText({ items: 40, max: 125 }, 9, 0), { text: "Room for all", short: false });
-  const plan = { moving: 4, trips: 1, already: 0, noRoom: 5, left: {}, against: [] };
+  const plan = { moving: 4, serials: [], trips: 1, already: 0, noRoom: 5, left: {}, against: [] };
   assert.deepEqual(pickedText("Gem Chest", plan, { items: 121, max: 125 }), { text: "Gem Chest has room for 4 of 9. The other 5 stay where they are.", short: true, button: "Move the 4 that fit" });
   assert.deepEqual(pickedText("Gem Chest", { ...plan, noRoom: 0, already: 1 }, { items: 40, max: 125 }), { text: "Gem Chest will hold 44/125 items after this. 1 item already there is skipped.", short: false, button: "Move 4 items" });
   assert.equal(pickedText("Gem Chest", { ...plan, moving: 0, noRoom: 2 }, { items: 125, max: 125 }).button, null);
@@ -91,9 +94,11 @@ test("[fast] a container's room line and the picked container's sentence say wha
   assert.equal(leftText({}, 0), null);
 });
 
-test("[fast] the result line says what moved, what didn't fit, what Organize would undo, and what Move back skipped", () => {
+test("[fast] the result line says what moved, what didn't fit, what Organize would undo, and what Move back skipped or had no room for", () => {
   assert.equal(movedText(6, "Suit Chest · Marble Workshop", false, { noRoom: 3 }), "Moved 6 items to Suit Chest · Marble Workshop. 3 didn't fit and stayed put.");
   assert.equal(movedText(2, "Gem Chest", false, { stopped: true }), "Stopped. 2 items moved to Gem Chest; the rest stay where they are.");
+  assert.equal(movedText(3, "Gem Chest", true, { noRoom: 2 }), "Moved 3 items back to where each one came from. 2 didn't fit back and stayed put.");
+  assert.equal(noRoomText(["Ruby", "Pearl"]), "No room left for Ruby, Pearl where they came from.");
   assert.equal(movedText(1, "Gem Chest", true, { failed: 1 }), "Moved 1 item back to where it came from. 1 item could not be moved.");
   const name = (s: number) => (s === 1 ? "Jewelry Box" : "Gem Chest");
   assert.equal(againstText([{ target: 1 }, { target: 1 }], name), "2 of these go back on the next Organize run, because a rule files them in Jewelry Box.");

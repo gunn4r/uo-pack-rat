@@ -50,6 +50,18 @@ export interface MovePlan {
   left: Array<{ serial: number; name: string; why: LeftReason }>;
 }
 
+// Why a trip cannot take this item (`inv` with the overlay applied), or null when it can. Whether it is in its destination's house is planMoves' to say.
+export function leftReason(inv: Inventory, it: Item | undefined, black: ReadonlySet<number>): Exclude<LeftReason, "site"> | null {
+  if (!it) return "gone";
+  if (it.equippedBy) return "worn";
+  if (inv.containers[it.serial] || it.kind === "container" || TRASH_RE.test(it.name)) return "bag";
+  const root = it.root == null ? undefined : inv.containers[it.root];
+  if (!root || root.kind !== "ground" || it.container == null) return "pack";
+  const chain = ancestry(inv, it.container);
+  if (!chain || chain.at(-1) !== +it.root! || !posOk(root.pos) || chain.some((s) => black.has(s) || inv.containers[s]!.opened === false)) return "unreachable";
+  return null;
+}
+
 // The trips that carry out `steps`, Organize's way: takes then puts, at most a trip's items, stones and bytes each, never across houses, with the destination's room simulated take by take and put by put. `inv` is the fold; the overlay is applied here.
 export function planMoves(inv: Inventory, overlay: OverlayMove[], steps: MoveStep[], { blacklist = [] }: { blacklist?: readonly number[] } = {}): MovePlan {
   const placed = applyOverlay(inv, overlay), view = placed.inv;
@@ -66,16 +78,7 @@ export function planMoves(inv: Inventory, overlay: OverlayMove[], steps: MoveSte
     if (seen.has(serial)) continue;
     seen.add(serial);
     const it = view.items[serial];
-    const why = ((): LeftReason | null => {
-      if (!it) return "gone";
-      if (it.equippedBy) return "worn";
-      if (view.containers[serial] || it.kind === "container" || TRASH_RE.test(it.name)) return "bag";
-      const root = it.root == null ? undefined : view.containers[it.root];
-      if (!root || root.kind !== "ground" || it.container == null) return "pack";
-      const chain = ancestry(view, it.container);
-      if (!chain || chain.at(-1) !== +it.root! || !posOk(root.pos) || chain.some((s) => black.has(s) || view.containers[s]!.opened === false)) return "unreachable";
-      return null;
-    })();
+    const why = leftReason(view, it, black);
     if (why) { left.push({ serial, name: it?.name ?? `0x${serial.toString(16)}`, why }); continue; }
     if (+it!.container! === to) { already.push(serial); continue; }
     const dest = rootOf(to);

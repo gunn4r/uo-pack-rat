@@ -12,7 +12,7 @@ import { bridgeFeatureSet, currentAdapter, grabAll, BRIDGE_OFFLINE } from "./bri
 import { tripGate, stepWatch, failedSteps, pinnedWith, type TripWatch } from "./organize-model.mts";
 import { loadOrganize, saveConfig } from "./organize-data.mts";
 import { emptySelection, isSelected, isWorn, selectedCount, toggleRows, toggleLoaded, loadedState, selectAllMatching, selectionBody, grabItems, destGroups, matchesDest, roomText, leftText, pickedText,
-  selectedText, wornNote, loadedNote, allOffer, allNote, movingText, movedText, againstText, pinnedText, skippedText, GRAB_TOO_MANY, WORN_LOCK, OUTSIDE, type Matches, type Selection, type DestRow } from "./move-model.mts";
+  selectedText, wornNote, loadedNote, allOffer, allNote, movingText, movedText, againstText, pinnedText, skippedText, noRoomText, GRAB_TOO_MANY, WORN_LOCK, OUTSIDE, type Matches, type Selection, type DestRow } from "./move-model.mts";
 import type { ItemBrowser, SelectionHooks } from "./item-browser.mts";
 import type { BridgeStatusApiResponse, MoveBackApiResponse, MovePlanApiResponse, MovePlanSummary, MoveTripApiResponse } from "./api-types.mts";
 
@@ -107,7 +107,8 @@ async function openPicker(): Promise<void> {
   let counted: MovePlanApiResponse;
   try { counted = await api<MovePlanApiResponse>("/api/move/plan", { method: "POST", body: { selection } }); }
   catch (e) { toast(errorText(e), "bad"); return; }
-  const need = counted.selected - counted.worn;
+  // The room lines count only what a trip can take (never worn, packed or a bag); the picked container's sentence is the exact plan.
+  const need = counted.movable;
   const groups = destGroups(state.inv?.containers || {}, (root) => houseOfContainer(root)?.name ?? null, nameOf, state.organize.blacklist);
   const find = searchInput({ label: "Search containers and houses", placeholder: "Search containers and houses", attrs: { id: "mv-q" } });
   const list = box("div", { class: "mv-list", id: "mv-list", role: "radiogroup", "aria-label": "Containers" });
@@ -166,7 +167,8 @@ async function openPicker(): Promise<void> {
     if (!picked || !plan || go.disabled) return;
     d.close();
     clearSelection();
-    void startRun({ kind: "to", dest: placeOf(picked.serial), body: { selection, to: picked.serial }, total: plan.moving, noRoom: plan.noRoom, against: plan.against });
+    // The run moves exactly the items this plan showed: a scan landing mid-run adds nothing the player did not confirm.
+    void startRun({ kind: "to", dest: placeOf(picked.serial), body: { selection: { serials: plan.serials }, to: picked.serial }, total: plan.moving, noRoom: plan.noRoom, against: plan.against });
   });
 }
 
@@ -177,6 +179,7 @@ interface Run {
   body: Record<string, unknown>;
   total: number;
   noRoom: number;
+  noRoomNames: string[];
   against: MovePlanSummary["against"];
   moved: number[];
   failed: Array<{ name: string; msg: string }>;
@@ -194,18 +197,23 @@ interface Run {
 let run: Run | null = null;
 let lastStatus: BridgeStatusApiResponse | null = null, lastStatusAt = 0;
 async function startRun(r: Pick<Run, "kind" | "dest" | "body" | "total" | "noRoom" | "against">): Promise<void> {
-  run = { ...r, moved: [], failed: [], trips: [], names: new Map(), watch: null, stopping: false, stopped: false, done: false, lost: null, skipped: [], pinned: false, canBack: false };
+  run = { ...r, moved: [], failed: [], trips: [], names: new Map(), watch: null, stopping: false, stopped: false, done: false, lost: null, skipped: [], noRoomNames: [], pinned: false, canBack: false };
   paintResult();
   await queueNext(run);
 }
 async function queueNext(r: Run): Promise<void> {
+  if (r.stopping || (r.trips.length && r.moved.length >= r.total)) { r.stopped = r.stopping; return finish(r); }
   let res: MoveTripApiResponse;
   try { res = await api<MoveTripApiResponse>("/api/move/trip", { method: "POST", body: r.body }); }
   catch (e) { r.lost = errorText(e); return finish(r); }
   if (r !== run) return;
-  if (!r.trips.length) r.skipped = res.skipped.map((s) => s.name);
+  if (!r.trips.length) {
+    r.skipped = res.skipped.map((s) => s.name);
+    if (r.kind === "back") { r.total = res.remaining; r.noRoom = res.noRoom.length; r.noRoomNames = res.noRoom.map((s) => s.name); }
+  }
   if (!res.id) return finish(r);
-  if (!r.trips.length && r.kind === "back") r.total = res.remaining;
+  // Stop pressed while this trip was being queued: the flag written then is older than the trip, which the bridge would clear, so write it again.
+  if (r.stopping) void api("/api/bridge/stop", { method: "POST", body: {} }).catch(() => undefined);
   for (const [s, name] of Object.entries(res.names ?? {})) r.names.set(+s, name);
   r.trips.push(res.id);
   const now = Date.now();
@@ -293,7 +301,7 @@ function paintResult(): void {
   const against = r.against.filter((a) => moved.has(a.serial));
   const why = gate(), backBtn = r.canBack ? button({ label: "Move back", size: "sm", attrs: { id: "mv-back" }, disabled: !!why, onClick: () => moveBack(r) }) : null;
   host.replaceChildren(line(r.failed.length || r.lost ? "warn" : "ok", movedText(r.moved.length, r.dest, back, { noRoom: r.noRoom, failed: r.failed.length, stopped: r.stopped }),
-    [r.pinned ? pinnedText(against.length, r.dest) : againstText(against, placeOf), back ? skippedText(r.skipped) : null, r.failed.length ? r.failed.slice(0, 3).map((f) => `${f.name}: ${f.msg}`).join(" · ") : null, r.lost],
+    [r.pinned ? pinnedText(against.length, r.dest) : againstText(against, placeOf), back ? skippedText(r.skipped) : null, back ? noRoomText(r.noRoomNames) : null, r.failed.length ? r.failed.slice(0, 3).map((f) => `${f.name}: ${f.msg}`).join(" · ") : null, r.lost],
     [against.length && !r.pinned ? button({ label: `Pin ${against.length === 1 ? "it" : "them"} here`, size: "sm", attrs: { id: "mv-pin" }, onClick: () => { void pinMoved(r, against.map((a) => a.serial)); } }) : null,
       backBtn && why ? tipWrap(backBtn, why) : backBtn, dismiss]));
 }

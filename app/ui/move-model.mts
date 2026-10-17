@@ -42,15 +42,14 @@ export function toggleRows(sel: Selection, rows: ReadonlyArray<Item | undefined>
   }
   return { sel: { ...next, anchor: index }, worn: on ? worn : [] };
 }
-// The header checkbox: on ticks every row loaded so far (the worn ones named), off clears the whole selection.
+// The header checkbox: on ticks every row loaded so far (the worn ones named), off unticks them; ticks under other filters stay (Clear takes everything).
 export function toggleLoaded(sel: Selection, rows: ReadonlyArray<Item | undefined>, on: boolean, matches: Matches): { sel: Selection; worn: string[] } {
-  if (!on) return { sel: emptySelection(), worn: [] };
   let next = sel;
   const worn: string[] = [];
   for (const it of rows) {
     if (!it) continue;
-    if (isWorn(it)) worn.push(it.name);
-    else next = setOne(next, it, true, matches);
+    if (isWorn(it)) { if (on) worn.push(it.name); }
+    else next = setOne(next, it, on, matches);
   }
   return { sel: next, worn };
 }
@@ -144,7 +143,7 @@ export const movingText = (n: number, dest: string, back: boolean): string => (b
 export function movedText(moved: number, dest: string, back: boolean, { noRoom = 0, failed = 0, stopped = false }: { noRoom?: number; failed?: number; stopped?: boolean } = {}): string {
   const head = stopped ? `Stopped. ${plural(moved, "item")} moved${back ? " back" : ` to ${dest}`}; the rest stay where they are.`
     : back ? `Moved ${plural(moved, "item")} back to where ${moved === 1 ? "it" : "each one"} came from.` : `Moved ${plural(moved, "item")} to ${dest}.`;
-  return head + (noRoom && !stopped ? ` ${noRoom.toLocaleString("en-US")} didn't fit and stayed put.` : "") + (failed ? ` ${plural(failed, "item")} could not be moved.` : "");
+  return head + (noRoom && !stopped ? ` ${noRoom.toLocaleString("en-US")} didn't fit${back ? " back" : ""} and stayed put.` : "") + (failed ? ` ${plural(failed, "item")} could not be moved.` : "");
 }
 // The moved items the next Organize run takes out again (POST /api/move/plan's `against`), as one sentence.
 export function againstText(against: ReadonlyArray<{ target: number }>, nameOf: (serial: number) => string): string | null {
@@ -155,6 +154,11 @@ export function againstText(against: ReadonlyArray<{ target: number }>, nameOf: 
   return `${n === 1 ? "1 of these goes" : `${n.toLocaleString("en-US")} of these go`} back on the next Organize run, because ${targets.length === 1 ? "a rule files" : "rules file"} ${n === 1 ? "it" : "them"} ${where}.`;
 }
 export const pinnedText = (n: number, dest: string): string => `Pinned in ${dest}. Organize will leave ${n === 1 ? "it" : "them"} there.`;
+// Move back's items whose container has no room for them now.
+export function noRoomText(names: readonly string[]): string | null {
+  if (!names.length) return null;
+  return `No room left for ${names.slice(0, 3).join(", ")}${names.length > 3 ? ` and ${names.length - 3} more` : ""} where ${names.length === 1 ? "it" : "they"} came from.`;
+}
 export function skippedText(names: readonly string[]): string | null {
   if (!names.length) return null;
   const shown = names.slice(0, 3).join(", ") + (names.length > 3 ? ` and ${names.length - 3} more` : "");
