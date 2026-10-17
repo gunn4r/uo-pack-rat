@@ -9,7 +9,7 @@ import { box, txt, button, message, tipWrap, tooltip, copyText } from "./compone
 import { CLIENT_ID } from "./api.mts";
 import { bridgeActionReason, runBridgeAction, grabAll, grabbable } from "./bridge.mts";
 import { splitSerial } from "./item-parts.mts";
-import { locationCrumbs, plural, handledAction, actionWords, actionApplies, applyAction } from "./builder-model.mts";
+import { locationCrumbs, plural, handledAction, actionWords, actionApplies, applyAction, strictDetail } from "./builder-model.mts";
 import { session, commands } from "./builder-session.mts";
 import type { Diagnostic } from "../runs-types.mts";
 import type { OptimizeResult, OptimizeProgress, JobSnapshotEvent, JobDoneEvent, JobFailedEvent, JobCancelledEvent } from "./api-types.mts";
@@ -34,7 +34,7 @@ export function verdict(res: OptimizeResult): { text: string; tone?: "ok" | "war
   if (res.method === "exact" && res.proven) return { text: "Proven optimal", tone: "ok" };
   // A saved run whose proof the server withdrew (app/migrate.mts): no verdict, rather than a different one.
   if (res.method === "exact" && res.proven == null) return { text: "" };
-  if (res.method === "exact") return { text: "Best within budget", tone: "warn", detail: res.gapPoints == null ? "No bound was established: raise the time budget to finish the proof." : `At most ${fmtN(res.gapPoints)} points from the bound: raise the time budget to finish the proof.` };
+  if (res.method === "exact") return { text: "Best within budget", tone: "warn", detail: res.strict ? `${strictDetail(res.strict)}.` : res.gapPoints == null ? "No bound was established: raise the time budget to finish the proof." : `At most ${fmtN(res.gapPoints)} points from the bound: raise the time budget to finish the proof.` };
   return { text: "Heuristic" };
 }
 
@@ -161,8 +161,10 @@ export function followJob(id: string, on: JobEvents): EventSource {
 export function progressText(p: OptimizeProgress): { frac: number; text: string; detail: string } {
   const clamp = (f: number): number => Math.max(0, Math.min(1, f));
   if (p.phase === "heuristic") return { frac: clamp(p.restarts ? p.restartsDone! / p.restarts : 0), text: `Restart ${fmtN(p.restartsDone)} of ${fmtN(p.restarts)}`, detail: `${fmtN(p.candidates)} candidate items` };
+  // strict order solves one stage at a time: the requirements, then each goal rank, then spare points
+  if (p.phase === "exact" && p.stage) return { frac: clamp(p.budgetMs ? p.elapsedMs! / p.budgetMs : 0), text: `Strict order: stage ${p.stage.at} of ${p.stage.of}`, detail: p.nodes != null ? `${fmtN(p.nodes)} search nodes · ${fmtN(p.candidates)} candidates` : `${fmtN(p.candidates)} candidates` };
   if (p.phase === "exact") return { frac: clamp(p.budgetMs ? p.elapsedMs! / p.budgetMs : 0), text: p.gapPoints == null ? "Proving: no bound yet" : `Proving: at most ${fmtN(p.gapPoints)} points from the bound`, detail: `${fmtN(p.nodes)} search nodes · ${fmtN(p.candidates)} candidates` };
-  if (p.phase === "tie-break") return { frac: clamp(p.budgetMs ? p.elapsedMs! / p.budgetMs : 0), text: "Choosing pieces by rarity among equally good suits", detail: "" };
+  if (p.phase === "tie-break") return { frac: clamp(p.budgetMs ? p.elapsedMs! / p.budgetMs : 0), text: "Choosing among equally good suits", detail: "" };
   if (p.phase === "alternatives") return { frac: clamp(p.wanted ? p.found! / p.wanted : 1), text: `${fmtN(p.found)} of ${fmtN(p.wanted)} other suits found`, detail: "" };
   return { frac: 1, text: "Finishing…", detail: "" };
 }

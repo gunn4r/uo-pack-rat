@@ -732,7 +732,7 @@ function goalsSection(): HTMLElement {
       } });
       return [el("p", { class: "help b-goals-off" }, txt("Using your own weights."), " ", again)];
     }
-    const rows = goalRows(g), last = g.ranks.length, row = (k: string): string => `.b-goal[data-key="${CSS.escape(k)}"]`;
+    const rows = goalRows(g), last = g.ranks.length, row = (k: string): string => `.b-goal[data-key="${CSS.escape(k)}"]`, strict = g.strategy === "strict";
     const items = rows.map((r, i) => {
       const nm = propName(r.key), rank = andList(g.ranks[r.rank - 1]!.map(propName));
       // "=" links to the rank above, unless that rank is full (the most a rank holds, GOAL_RANK_SIZE_MAX)
@@ -747,7 +747,8 @@ function goalsSection(): HTMLElement {
       const next = rows[i + 1] ?? rows[i - 1];
       return box("li", { class: `b-goal${r.linked ? " linked" : ""}`, "data-key": r.key }, link,
         box("span", { class: "b-goal-name", tabindex: "-1" }, txt(`${r.rank}.`, "b-goal-rank"), txt(nm)),
-        txt(`counts ${r.counts}${goalCapText(g, r.key)}`, "t-sm muted b-goal-counts"),
+        // what a goal counts matters only in Best value: Strict order compares the ranks one by one
+        ((s) => (s ? txt(s, "t-sm muted b-goal-counts") : null))(strict ? goalCapText(g, r.key).replace(/^ · /, "") : `counts ${r.counts}${goalCapText(g, r.key)}`),
         rowActions([move(-1, "up"), move(1, "down"), { label: `Remove goal: ${nm}`, icon: "close", onClick: () => setGoals(removeGoal(g, r.key), next ? `${row(next.key)} .rowact > :last-child` : "#b-addgoal") }]),
         r.key === "ssi" ? swingGoal(g) : null);
     });
@@ -762,11 +763,19 @@ function goalsSection(): HTMLElement {
     const spare = spareKeys(g).map(propName), group = LEFTOVER_GROUPS[g.leftover];
     const spareHelp = spare.length ? `${spare.join(", ")}: counts a little, after the goals.` : group.length ? `${andList(group.map(propName))} ${group.length === 1 ? "is already a goal" : "are already goals"}, so spare points add nothing.` : "Nothing past the goals.";
     const fine = switchControl({ label: "Show the weights these goals set", checked: fineTune, attrs: { id: "b-finetune" }, onChange: (v) => { fineTune = v; prefs.set({ builderFineTune: v ? "on" : "off" }, { quiet: true }); redraw("weights"); } });
+    // Best value (stored as no strategy) or Strict order (issue #292), each with what it means as the tab's subtitle
+    const strategy = segmented({ label: "Strategy", size: "sm", options: [{ value: "value", label: "Best value" }, { value: "strict", label: "Strict order" }], value: strict ? "strict" : "value",
+      onChange: (v) => { const { strategy: _s, ...rest } = g; setGoals(v === "strict" ? { ...rest, strategy: "strict" } : rest, `#b-strategy [data-value="${v}"]`); } });
+    strategy.id = "b-strategy";
+    const fewest = check({ label: "Change as few pieces as possible", checked: !!g.fewestChanges, attrs: { id: "b-fewest" },
+      onChange: (v) => { const { fewestChanges: _f, ...rest } = g; setGoals(v ? { ...rest, fewestChanges: true } : rest, "#b-fewest"); } });
     return [el("h3", { class: "t-md strong", id: "b-goals-h", tabindex: "-1" }, "What should this suit be best at?"),
-      el("p", { class: "help" }, txt("Most important first. Higher goals count more, but a small loss up top can buy a big gain lower down.")),
+      box("div", { class: "field b-strategy" }, el("span", { class: "label" }, "Strategy"), strategy),
+      el("p", { class: "help", id: "b-strategy-help" }, txt(strict ? "Most important first. A higher goal is never given up for a lower one." : "Most important first. Higher goals count more, but a small loss up top can buy a big gain lower down.")),
       rows.length ? box("ol", { class: "b-goals", "aria-labelledby": "b-goals-h" }, ...items) : el("p", { class: "t-sm muted" }, txt("No goals yet.")), add.disabled ? tipWrap(add, `Goals hold at most ${GOAL_RANKS_MAX} ranks.`) : add,
       box("div", { class: "field b-leftover" }, el("span", { class: "label" }, "After that, put spare points into:"), leftover,
         el("p", { class: "help" }, txt(spareHelp))),
+      box("div", { class: "field b-fewest" }, fewest.root, el("p", { class: "help" }, txt("Finally, among suits that do as well, keep the most of what you wear now."))),
       fine.root];
   });
   sec.hidden = !stored;

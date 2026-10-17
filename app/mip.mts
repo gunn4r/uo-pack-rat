@@ -58,6 +58,7 @@ export interface BuildSuitMipOptions {
   optionalSlots?: string[] | undefined;
   slots?: string[] | undefined;
   hardAsSoft?: boolean | undefined;
+  parts?: boolean | undefined;   // also keep the objective split by property (BuiltMip.parts)
 }
 
 export type MipSense = "maximize" | "minimize";
@@ -124,7 +125,13 @@ export interface BuiltMip {
   stepCols: StepCol[];   // SSI by step: one binary per point, empty when steps are off
   resistStepCols: ResistStepCol[];   // Resisting Spells steps: one binary per step the pool's bonus reaches, empty with none
   model: MipModel;
+  parts?: ObjectiveParts | undefined;   // with BuildSuitMipOptions.parts
 }
+// The objective split by what each term scores (BuildSuitMipOptions.parts, issue #292's strict order): each weighted
+// property's terms and constant, and the floors' (their bonuses, partial credit and the hard floors' constant). Together
+// they are the model's colCost and scoreOffset; a column can sit in a part more than once (its costs add).
+export interface ObjectivePart { cols: number[]; costs: number[]; offset: number }
+export interface ObjectiveParts { weights: Record<string, ObjectivePart>; floors: ObjectivePart }
 export interface StepCol { col: number; ssi: number; stam: number }
 // h = 1 when the suit's Resisting Spells bonus total reaches `at` (less RESIST_STEP_SLACK).
 export interface ResistStepCol { col: number; at: number }
@@ -182,7 +189,10 @@ export function withReachableResistSteps<P extends { resistSteps?: ResistStep[] 
   return (kept.length ? { ...rest, resistSteps: kept } : rest) as P;
 }
 
-export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots = DEFAULT_OPTIONAL_SLOTS, slots = DEFAULT_SLOTS, hardAsSoft = false }: BuildSuitMipOptions): BuiltMip {
+export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots = DEFAULT_OPTIONAL_SLOTS, slots = DEFAULT_SLOTS, hardAsSoft = false, parts: withParts = false }: BuildSuitMipOptions): BuiltMip {
+  // with `parts`, every objective term is also put in the part it scores for (its property's weight, or the floors)
+  const parts: ObjectiveParts | null = withParts ? { weights: {}, floors: { cols: [], costs: [], offset: 0 } } : null;
+  let part: ObjectivePart | null = null;
   const optional = new Set(optionalSlots);
   const W = profile.weights || {}, CAPS = profile.caps || {}, FL = profile.floors || {}, MINS = profile.mins || {};
   const hard = new Set(profile.hardFloors || []);
@@ -194,7 +204,12 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
 
   // ---- columns ----
   const cols: MipCol[] = [], colCost: number[] = [], colLower: number[] = [], colUpper: number[] = [], integrality: number[] = [];
-  const addCol = (col: MipCol, cost: number, lo: number, hi: number, integer: boolean): number => { cols.push(col); colCost.push(cost); colLower.push(lo); colUpper.push(hi); integrality.push(integer ? 1 : 0); return cols.length - 1; };
+  const addCol = (col: MipCol, cost: number, lo: number, hi: number, integer: boolean): number => {
+    cols.push(col); colCost.push(cost); colLower.push(lo); colUpper.push(hi); integrality.push(integer ? 1 : 0);
+    if (part && cost) { part.cols.push(cols.length - 1); part.costs.push(cost); }
+    return cols.length - 1;
+  };
+  const addCost = (j: number, v: number): void => { colCost[j]! += v; if (part) { part.cols.push(j); part.costs.push(v); } };
   const xIndex: Record<string, number[]> = {};
   for (const [s, list] of Object.entries(slotCandidates(pools, current, slots))) xIndex[s] = list.map((it, i) => addCol({ name: `x_${s}_${i}`, kind: "x", slot: s, item: it }, 0, 0, 1, true));
   const allX: number[] = Object.values(xIndex).flat();
@@ -213,6 +228,7 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
   const rowLower: number[] = [], rowUpper: number[] = [], starts: number[] = [0], indices: number[] = [], values: number[] = [];
   const addRow = (entries: Term[], lo: number, hi: number): number => { for (const [j, v] of entries) { indices.push(j); values.push(v); } starts.push(indices.length); rowLower.push(lo); rowUpper.push(hi); return rowLower.length - 1; };
   let scoreOffset = 0;
+  const addOffset = (v: number): void => { scoreOffset += v; if (part) part.offset += v; };
   const reach = propertyReach(pools, current, optionalSlots, slots, dims);
   const unreachableFloors: string[] = [], hardRows: Record<string, number> = {}, capCols: Record<string, CapCol> = {}, minCols: Record<string, MinCol> = {}, floorCols: Record<string, FloorCol> = {}, stepCols: StepCol[] = [];
   // Resisting Spells steps (MipProfile.resistSteps): the min a resist is held at rises with the suit's Resisting Spells
@@ -242,6 +258,7 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
   // every hard floor counts in the share, one each suit meets included, as in the core
   const nHard = dims.filter((d) => hard.has(d) && floorOf(d) > 0).length;
   for (const d of dims) {
+    part = parts ? (parts.weights[d] = { cols: [], costs: [], offset: 0 }) : null;
     const w = W[d] || 0, cap = CAPS[d], m = MINS[d], f = floorOf(d);
     // Every j in allX is an x column, which always carries `item` (set in the loop above) — the two
     // `!` below are in range by construction, not an unchecked assumption about caller input.
@@ -269,8 +286,8 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
       // a binary b: b = 1 holds v ≤ top and v ≤ t, b = 0 holds v ≤ M, each with the other side relaxed by its widest gap.
       const top = Math.min(cap ?? INF, reachD), mMax = lifts[lifts.length - 1]!;
       if (top <= m0) {
-        scoreOffset += w * m0;
-        for (const [j, v] of liftTerms()) colCost[j]! -= w * v;
+        addOffset(w * m0);
+        for (const [j, v] of liftTerms()) addCost(j, -w * v);
         minCols[d] = { col: -1, b: null, min: m0, cap: cap ?? INF, lifts };
       } else {
         const v = addCol({ name: `v_${d}`, kind: "v", dim: d }, w, -INF, INF, false);
@@ -285,7 +302,7 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
       // A min some suit could fall under: w·max(m, min(t, cap)). It is the constant w·m when no suit gets past m, which
       // includes a cap at or under m whatever the totals (min(t, cap) never passes it).
       const lift = m != null && minReach < m, top = Math.min(cap ?? INF, reachD), mm = m ?? 0;
-      if (m != null && top <= mm && !lifts) scoreOffset += w * mm;
+      if (m != null && top <= mm && !lifts) addOffset(w * mm);
       else if (lift && w > 0) {
         // maximising a max needs a binary b: b = 1 lets v reach min(t, cap) (v ≤ t, v ≤ top), b = 0 holds v ≤ m; the
         // better of the two is max(m, min(t, cap)). Written v ≤ m + (top − m)·b and v − t ≤ (m − minReach)·(1 − b).
@@ -326,16 +343,17 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
         } else if (v != null) {
           addRow([[v, 1], ...xs.map(([j, val]): Term => [j, -val])], 0, INF);
         } else {                                                    // uncapped: linear, aggregated per column
-          for (const [j, v] of xs) colCost[j]! += w * v;
+          for (const [j, v] of xs) addCost(j, w * v);
         }
       }
     }
     if (f <= 0) continue;
+    part = parts ? parts.floors : null;
     // a Resisting Spells step whose min meets the floor meets it whatever the total: its binary h lifts the met row by f − minReach
     const li = lifts ? lifts.findIndex((L) => L >= f) : -1, h = li >= 0 ? resistStepCols[li]!.col : null, hLift: Term[] = h != null ? [[h, Math.max(0, f - minReach)]] : [];
     // a floor above the per-slot maxima (and every step's min) can never be met, so its met-indicator is 0 for every suit
     const isHard = hard.has(d), unreachable = reachD < f && h == null;
-    if (isHard && !hardAsSoft && !unreachable) { hardRows[d] = addRow([...xs, ...hLift], f, INF); scoreOffset += HARD_FLOOR_BONUS; continue; }
+    if (isHard && !hardAsSoft && !unreachable) { hardRows[d] = addRow([...xs, ...hLift], f, INF); addOffset(HARD_FLOOR_BONUS); continue; }
     if (unreachable && isHard) unreachableFloors.push(d);
     // soft floor (or an unreachable / hardAsSoft hard floor): bonus·y + s with t ≥ f·y, s ≤ k·t, s ≤ bonus·partial·(1 − y)
     // a hard floor's partial credit is shared among the hard floors, as the core's (issue #204)
@@ -362,12 +380,13 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
     }
     floorCols[d] = { f, k, sMax, y, s: sv, u, ...(h != null ? { h } : {}) };
   }
+  part = null;
   for (const s of Object.keys(xIndex)) addRow(xIndex[s]!.map((j) => [j, 1]), isRequired(s) ? 1 : -INF, 1);   // one per slot: = 1 when required and worn, else ≤ 1
   if (hands) addRow([...twoH, ...oneH].map((j) => [j, 1]), -INF, 1);   // a two-hander forbids the one-hand slot
 
   const model: MipModel = { numCols: cols.length, numRows: rowLower.length, sense: "maximize", offset: 0, colCost, colLower, colUpper, rowLower, rowUpper,
     matrix: { format: "csr", numRows: rowLower.length, numCols: cols.length, starts, indices, values }, integrality };
-  return { cols, xIndex, dims, unreachableFloors, reach, hardRows, scoreOffset, capCols, minCols, floorCols, stepCols, resistStepCols, model };
+  return { cols, xIndex, dims, unreachableFloors, reach, hardRows, scoreOffset, capCols, minCols, floorCols, stepCols, resistStepCols, model, ...(parts ? { parts } : {}) };
 }
 
 // ---- the tie-break's second stage (issue #262) ----
@@ -385,25 +404,58 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
 // in the core's tie-break (scripts/optimizer-core.mts keeps its own copy) and in the exact solver's guards. With 1e-6
 // HiGHS's presolve called a row the suit meets exactly infeasible.
 export const TIE_SLACK = 1e-3;
-export function tieBreakModel(built: BuiltMip, start: ArrayLike<number>, tolerance: number): BuiltMip {
-  const m = built.model, cost = m.colCost, isY = (j: number): boolean => built.cols[j]!.kind === "y";
-  const colCost = built.cols.map((c) => (c.kind === "x" ? c.item!.tieCost || 0 : 0));
-  const colLower = m.colLower.map((lo, j) => (isY(j) && start[j]! > 0.5 ? 1 : lo));
-  const terms: Term[] = [];
-  let score = 0;
-  for (let j = 0; j < m.numCols; j++) {
-    if (cost[j] === 0 || (isY(j) && (colLower[j]! >= 1 || cost[j]! >= HARD_FLOOR_BONUS))) continue;
-    terms.push([j, cost[j]!]); score += cost[j]! * start[j]!;
-  }
+export function tieBreakModel(built: BuiltMip, start: ArrayLike<number>, tolerance: number, costs: number[] = tieCosts(built)): BuiltMip {
+  return heldModel(built, start, [built.model.colCost], costs, "minimize", { fixMet: true, tolerance });
+}
+// The suits that hold what `start` scores on each of `held` (an objective over the model's columns), with `objective` in
+// place of the model's (issue #292: strict order's later stages, and the tie-break): one row per entry, Σ c_j·v_j ≥ its
+// value at `start` less `tolerance` and TIE_SLACK, none when no column is left. With `fixMet` (the tie-break), each
+// floor-met indicator at 1 in `start` is fixed at 1 and the rows leave out the y's tieBreakModel's note names; without
+// it every term stays in, so a later strict-order stage may meet other floors for the same requirements score, as the
+// core's stage-by-stage compare allows.
+export function heldModel(built: BuiltMip, start: ArrayLike<number>, held: ReadonlyArray<ArrayLike<number>>, objective: number[], sense: MipSense, { fixMet = false, tolerance = 0 }: { fixMet?: boolean; tolerance?: number } = {}): BuiltMip {
+  const m = built.model, isY = (j: number): boolean => built.cols[j]!.kind === "y";
+  const colLower = fixMet ? m.colLower.map((lo, j) => (isY(j) && start[j]! > 0.5 ? 1 : lo)) : m.colLower;
   const rowLower = [...m.rowLower], rowUpper = [...m.rowUpper], starts = [...m.matrix.starts], indices = [...m.matrix.indices], values = [...m.matrix.values];
-  if (terms.length) {
+  for (const cost of held) {
+    const terms: Term[] = [];
+    let score = 0;
+    for (let j = 0; j < m.numCols; j++) {
+      if (cost[j] === 0 || (fixMet && isY(j) && (colLower[j]! >= 1 || cost[j]! >= HARD_FLOOR_BONUS))) continue;
+      terms.push([j, cost[j]!]); score += cost[j]! * start[j]!;
+    }
+    if (!terms.length) continue;
     for (const [j, v] of terms) { indices.push(j); values.push(v); }
     starts.push(indices.length);
     rowLower.push(score - Math.max(0, tolerance) - TIE_SLACK);
     rowUpper.push(INF);
   }
   const numRows = rowLower.length;
-  return { ...built, model: { ...m, sense: "minimize", offset: 0, colCost, colLower, numRows, rowLower, rowUpper, matrix: { format: "csr", numRows, numCols: m.numCols, starts, indices, values } } };
+  return { ...built, model: { ...m, sense, offset: 0, colCost: objective, colLower, numRows, rowLower, rowUpper, matrix: { format: "csr", numRows, numCols: m.numCols, starts, indices, values } } };
+}
+// What one changed slot costs with fewest changes (== scripts/optimizer-core.mts CHANGE_COST): above any suit's summed
+// rarity tie cost (at most the rarity ladder's length in each of the nineteen slots), so fewer changes always come first.
+export const CHANGE_COST = 1000;
+// The tie-break's cost on each x column: the piece's tieCost and, with `current` (fewest changes), CHANGE_COST for a piece
+// in a slot nobody wears, -CHANGE_COST for the worn piece and 0 for another piece in a worn slot. A suit's sum is then its
+// tie cost plus CHANGE_COST for each slot it changes (an empty slot that was worn included), less a constant.
+export function tieCosts(built: BuiltMip, current: Partial<Record<string, OptItem | null>> | null = null): number[] {
+  return built.cols.map((c) => {
+    if (c.kind !== "x") return 0;
+    const own = c.item!.tieCost || 0, worn = current ? current[c.slot!] : undefined;
+    return !current ? own : own + (!worn ? CHANGE_COST : worn.serial === c.item!.serial ? -CHANGE_COST : 0);
+  });
+}
+// One strict-order stage's objective (scripts/optimizer-core.mts optStrictStages) from a model built with `parts`: the
+// floors' terms (`keys` null), else the named properties' weight terms times `scale`; `offset` is its constant.
+export function stageObjective(built: BuiltMip, stage: { keys: string[] | null; scale: number }): { cost: number[]; offset: number } {
+  const cost = new Array<number>(built.model.numCols).fill(0), parts = built.parts!;
+  let offset = 0;
+  for (const p of stage.keys ? stage.keys.flatMap((k) => (parts.weights[k] ? [parts.weights[k]] : [])) : [parts.floors]) {
+    for (let i = 0; i < p.cols.length; i++) cost[p.cols[i]!]! += stage.scale * p.costs[i]!;
+    offset += stage.scale * p.offset;
+  }
+  return { cost, offset };
 }
 
 // ---- MIP start, extraction, and no-good cut ----

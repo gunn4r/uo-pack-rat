@@ -49,7 +49,8 @@ export interface RunKeyInput {
 // 9: a suit's own Resisting Spells bonus lifts that minimum (`resistSteps`, #265).
 // 10: every result and each other suit carries `shares` (#273).
 // 11: hard floors share their partial credit, so it never buys a miss of a reachable one (#204).
-export const SOLVER_VERSION = 11;
+// 12: goals can ask for strict order (one solve per rank) and the fewest changes (the tie-break's first part) (#292).
+export const SOLVER_VERSION = 12;
 // The first SOLVER_VERSION whose saved diagnostics are in the player's terms as the page shows them now: before 8 a
 // resist's numbers counted the Resisting Spells bonus (#261), so an older run's are dropped when read and it falls back
 // as a run saved before diagnostics does.

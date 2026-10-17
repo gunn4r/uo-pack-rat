@@ -10,7 +10,7 @@ import { paperdollCaps, suitResist } from "../evaluate.mts";
 import type { Diagnostic, DiagnosticAction, DiagnosticCode, GearChanges, ScoreShare, SwingResult } from "../runs-types.mts";
 import { listWords } from "./manual-model.mts";
 import { delayText, MIN_TICKS } from "../swing.mts";
-import type { TieBreakResult } from "./api-types.mts";
+import type { StrictResult, TieBreakResult } from "./api-types.mts";
 
 export const plural = (n: number, word: string, many = `${word}s`): string => `${n.toLocaleString("en-US")} ${n === 1 ? word : many}`;
 // A Suit Builder character key as the page prints it: No character's pseudo name in words, a character's name as it is.
@@ -46,6 +46,15 @@ export function rarityTotal(best: Record<string, { tieCost?: number | undefined 
 }
 // Solver details' Rarity row: "Lowest-rarity pieces among equal suits · rarity total 16", and when the second stage ran
 // out of time, that the rarity choice is not proven.
+// A strict-order build's proof in words (issue #292): every stage proven best in turn, or the last one proven and where
+// the best found takes over. A stage is named by its goals ("Hit chance = Defense chance"), the first by the requirements.
+export function strictDetail(s: StrictResult): string {
+  const name = (i: number): string => { const k = s.stages[i]!.keys; return k ? k.map(propName).join(" = ") : "your requirements"; };
+  const n = s.stages.length;
+  if (s.proven >= n) return "Strict order: each goal proven best in turn, most important first";
+  if (s.proven <= 0) return "Strict order: the best found, not proven; raise the time budget to prove it";
+  return `Strict order: proven through ${name(s.proven - 1)}; from ${name(s.proven)} on it is the best found, not proven`;
+}
 export function rarityDetail(tb: TieBreakResult, total: number): string {
   const most = tb.rarity === "higher" ? "highest" : "lowest";
   return `${most[0]!.toUpperCase()}${most.slice(1)}-rarity pieces among equal suits · rarity total ${total.toLocaleString("en-US")}${tb.costProven ? "" : ` (the ${most} found, not proven)`}`;

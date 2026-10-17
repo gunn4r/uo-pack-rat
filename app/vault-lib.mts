@@ -317,7 +317,11 @@ export const GOAL_LEFTOVERS = ["luck", "melee", "caster", "none"] as const;
 export type GoalLeftover = (typeof GOAL_LEFTOVERS)[number];
 export const SWING_GOALS = ["fastest", "every"] as const;
 export interface GoalSwing { mode: (typeof SWING_GOALS)[number]; seconds?: number | undefined }
-export interface Goals { ranks: string[][]; swing?: GoalSwing | undefined; leftover: GoalLeftover; ownWeights?: boolean | undefined }
+// strategy: "value" (absent means it too) can trade a small loss up top for a big gain lower down, through the compiled
+// weights; "strict" never gives up a higher goal for a lower one (a staged solve, opts.strict). fewestChanges: among
+// suits as good, the fewest slots changed from what is worn now (the tie-break's first part).
+export const GOAL_STRATEGIES = ["value", "strict"] as const;
+export interface Goals { ranks: string[][]; swing?: GoalSwing | undefined; leftover: GoalLeftover; strategy?: (typeof GOAL_STRATEGIES)[number] | undefined; fewestChanges?: boolean | undefined; ownWeights?: boolean | undefined }
 // What a rank counts on the importance scale: the first 100, the second 80, and so on, 15 for every rank from the ninth.
 export const RANK_IMPORTANCE: readonly number[] = [100, 80, 65, 50, 40, 30, 25, 20, 15];
 export const rankImportance = (rank: number): number => RANK_IMPORTANCE[Math.min(rank, RANK_IMPORTANCE.length - 1)]!;
@@ -341,7 +345,7 @@ export function compileGoals(g: Goals, kept: Readonly<Record<string, number>> = 
 }
 // Goals in a line, for a settings diff: "Swing speed every 1.5 s › Hit chance = Defense chance › Damage, spare points to luck".
 export function goalsText(g: Goals): string {
-  return `${g.ranks.map((r) => r.map((k) => goalLabel(g, k)).join(" = ")).join(" › ") || "no goals"}, spare points to ${LEFTOVER_LABELS[g.leftover].toLowerCase()}`;
+  return `${g.ranks.map((r) => r.map((k) => goalLabel(g, k)).join(" = ")).join(" › ") || "no goals"}, spare points to ${LEFTOVER_LABELS[g.leftover].toLowerCase()}${g.strategy === "strict" ? ", strict order" : ""}${g.fewestChanges ? ", fewest changes" : ""}`;
 }
 // The most ranks goals hold, and the most properties one rank holds (the Goals tab stops at both).
 export const GOAL_RANKS_MAX = 40, GOAL_RANK_SIZE_MAX = 10;
@@ -354,7 +358,7 @@ export const isGoalProperty = (k: string): boolean => (Object.hasOwn(PROP_LABELS
 export function goalsError(v: unknown, label: string): string | null {
   const obj = (x: unknown): x is Record<string, unknown> => !!x && typeof x === "object" && !Array.isArray(x);
   if (!obj(v)) return `${label} must be an object`;
-  const extra = Object.keys(v).find((k) => !["ranks", "swing", "leftover", "ownWeights"].includes(k));
+  const extra = Object.keys(v).find((k) => !["ranks", "swing", "leftover", "strategy", "fewestChanges", "ownWeights"].includes(k));
   if (extra) return `${label}.${extra.slice(0, 64)} is not a goals setting`;
   if (!Array.isArray(v.ranks) || v.ranks.length > GOAL_RANKS_MAX || !v.ranks.every((r) => Array.isArray(r) && r.length > 0 && r.length <= GOAL_RANK_SIZE_MAX && r.every((k) => typeof k === "string")))
     return `${label}.ranks must be a list of at most ${GOAL_RANKS_MAX} ranks, each a list of 1 to ${GOAL_RANK_SIZE_MAX} property names`;
@@ -362,6 +366,8 @@ export function goalsError(v: unknown, label: string): string | null {
   if (unknown != null) return `${label}.ranks names ${JSON.stringify(unknown.slice(0, 64))}, which is not a property the Suit Builder offers (property keys such as "ssi", "hci", "luck" or "sk:magery")`;
   if (new Set(keys).size !== keys.length) return `${label}.ranks names a property twice`;
   if (!(GOAL_LEFTOVERS as readonly unknown[]).includes(v.leftover)) return `${label}.leftover must be one of ${GOAL_LEFTOVERS.join(", ")}`;
+  if (v.strategy != null && !(GOAL_STRATEGIES as readonly unknown[]).includes(v.strategy)) return `${label}.strategy must be one of ${GOAL_STRATEGIES.join(", ")}`;
+  if (v.fewestChanges != null && typeof v.fewestChanges !== "boolean") return `${label}.fewestChanges must be a boolean`;
   if (v.ownWeights != null && typeof v.ownWeights !== "boolean") return `${label}.ownWeights must be a boolean`;
   if (v.swing != null) {
     const s = v.swing;
