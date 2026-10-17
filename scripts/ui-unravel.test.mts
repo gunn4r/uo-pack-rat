@@ -1,6 +1,6 @@
 // ui-unravel.test.mts — [slow]: the Inventory's Unravel view (issue #271) in the real Electron window.
 //
-// `[slow]`: the Inventory's Unravel view (issue #271) in the real Electron window at 1024 × 768, over the demo scans with Kestrel at Imbuing 70: the picker on the highest Imbuing, the three forecast cards, the groups in their order (Wait for Imbuing 95, Enchanted Essence, Magical Residue) with each row's chance line at 70, a maybe tag with its title, Keep taking a row out and writing settings.json's unravelKeep, Change showing a chip per reason with its count, the Kept chip bringing the kept row back with Unkeep, which puts it back on the list, a row's checkbox, a shift-click range (none across a redraw) and Select these with the selection bar, the cards for a character below Imbuing 45, and no sideways scroll at 420 px. Issue #332: a group folded and unfolded (its count on the heading, Select these still taking its rows), condensed one-line rows with the place in the row's title, both kept in ui-prefs.json across a reload, the top staying put while only the list scrolls, and at 420 px the whole view scrolling with nothing sideways.
+// `[slow]`: the Inventory's Unravel view (issue #271) in the real Electron window at 1024 × 768, over the demo scans with Kestrel at Imbuing 70: the picker on the highest Imbuing, the three forecast cards, the groups in their order (Wait for Imbuing 95, Enchanted Essence, Magical Residue) with each row's chance line at 70, a maybe tag with its title, Keep taking a row out and writing settings.json's unravelKeep, Change showing a chip per reason with its count, the Kept chip bringing the kept row back with Unkeep, which puts it back on the list, a row's checkbox, a shift-click range (none across a redraw) and Select these with the selection bar, the cards for a character below Imbuing 45, and no sideways scroll at 420 px. Issue #332: a group folded and unfolded (its count on the heading, Select these still taking its rows, a shift-click range across it ticking none of its pieces), condensed one-line rows with the place and the chance in the row's title, still one line at 420 px, both kept in ui-prefs.json across a reload, the top staying put while only the list scrolls, and at 420 px the whole view scrolling with nothing sideways.
 //
 // Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
 import test from "node:test";
@@ -177,6 +177,16 @@ test("[slow] the Unravel view folds its groups, condenses its rows, and keeps it
     assert.equal(await top(), before, "the forecast stays where it was");
     await page.evaluate(() => { document.querySelector<HTMLElement>("#unr-list")!.scrollTop = 0; });
 
+    // A shift-click range across a folded group ticks none of its pieces.
+    await page.locator('[data-fold="essence"]').click();
+    await page.locator(".unr-group.held .unr-cb").first().click();
+    await page.locator(".unr-group.residue .unr-cb").first().click({ modifiers: ["Shift"] });
+    const range = await page.locator("#unr-selbar").innerText();
+    assert.match(range, /held for 95[\s\S]*Residue/);
+    assert.doesNotMatch(range, /Essence/);
+    await page.locator("#unr-selbar").getByRole("button", { name: "Clear" }).click();
+    await page.locator('[data-fold="essence"]').click();
+
     // Fold "Wait for Imbuing 95": its rows go, its heading shows the count, and the choice is saved.
     const fold = page.locator('[data-fold="held"]');
     const held = await page.locator(".unr-group.held .unr-row").count();
@@ -197,7 +207,7 @@ test("[slow] the Unravel view folds its groups, condenses its rows, and keeps it
     assert.equal(await page.locator("#unr-list.condensed").count(), 1);
     const row = page.locator(".unr-group.essence .unr-row").first();
     assert.ok((await row.boundingBox())!.height < fullHeight, "a condensed row is shorter");
-    assert.ok(((await row.getAttribute("title")) ?? "").length > 0, "the place is the row's title");
+    assert.match((await row.getAttribute("title")) ?? "", / · 50% at 70, else Residue$/, "the place and the chance are the row's title");
     assert.equal(await row.locator(".unr-where").isVisible(), false);
     await until(() => uiPrefs().unravelRows === "condensed", "unravelRows saved");
 
@@ -215,6 +225,10 @@ test("[slow] the Unravel view folds its groups, condenses its rows, and keeps it
     const w = await page.evaluate(() => [document.documentElement.scrollWidth, innerWidth]);
     assert.ok(w[0]! <= w[1]!, `no sideways scroll at 420 (${w.join(", ")})`);
     assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector("#tab-unravel")!).overflowY), "auto");
+    // Condensed rows stay one line there too: the name and the ingredient side by side.
+    const narrow = page.locator(".unr-group.essence .unr-row").first();
+    const [name, ing] = [await narrow.locator(".unr-name").boundingBox(), await narrow.locator(".unr-ing").boundingBox()];
+    assert.ok(Math.abs(name!.y - ing!.y) < 8 && ing!.x > name!.x, `one line at 420 (${JSON.stringify([name, ing])})`);
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
