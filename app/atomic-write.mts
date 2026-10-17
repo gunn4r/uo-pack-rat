@@ -7,6 +7,7 @@
 // <file>.corrupt before the server starts that file afresh.
 import { closeSync, constants, existsSync, fstatSync, lstatSync, openSync, readSync, renameSync, unlinkSync, writeFileSync, type Stats } from "node:fs";
 import { randomBytes } from "node:crypto";
+import { basename } from "node:path";
 
 // The temp name is random, not a fixed "<dest>.new"/"<dest>.tmp". A fixed, published temp name is a
 // path an attacker can pre-plant a symlink at, and copyFileSync/writeFileSync follow one — the write
@@ -73,25 +74,24 @@ export function moveAside(file: string): string {
   return aside;
 }
 
-// The lstat refuses a name that is not a regular file before anything is opened — the only symlink
-// check win32 gets: neither O_NOFOLLOW nor O_NONBLOCK exists there (`?? 0` leaves the open plain), and
-// CreateFile DOES traverse a file symlink (a CI run on windows-latest read straight through one).
-// Elsewhere O_NOFOLLOW refuses a symlink at the final component, O_NONBLOCK keeps a FIFO from parking
-// this (single-threaded) process forever, and the fstat makes both TOCTOU-proof: it describes the fd
-// actually opened, not a name that could have changed since the lstat. Windows has no
-// FIFO-in-a-directory case. null means "not readable as a regular file", which every caller treats the
-// same as absent. At most `max` bytes are read, and no buffer larger than the file is allocated.
-export function readRegularFile(path: string, max: number): string | null {
-  try { if (!lstatSync(path).isFile()) return null; } catch { return null; }
-  const flags = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0);
-  let fd: number;
-  try { fd = openSync(path, flags); } catch { return null; }
+// The one bounded read of a file this app does not trust. Opened with O_NONBLOCK so a FIFO cannot park this
+// (single-threaded) process in the open, then fstat on the descriptor actually opened: anything that is not a
+// regular file is refused with code ENOTREG, a symlink to a regular file reads as the file. `follow: false` is
+// for a folder the player chose, where a link is refused outright: the lstat is the only symlink check win32
+// gets (CreateFile traverses a file symlink, and neither O_NOFOLLOW nor O_NONBLOCK exists there, so `?? 0`
+// leaves the open plain), and elsewhere O_NOFOLLOW refuses it at the final component. At most `max` bytes come
+// back; one more is read so `tooBig` can say the file goes on, and no buffer larger than the file is allocated.
+// Failures keep the open/fstat/read error's own code and message (ENOENT for a missing file).
+export function readBounded(path: string, max: number, { follow = true }: { follow?: boolean } = {}): { text: string; tooBig: boolean } {
+  const notRegular = (): Error => Object.assign(new Error(`${basename(path)} is not a regular file`), { code: "ENOTREG" });
+  if (!follow && !lstatSync(path).isFile()) throw notRegular();
+  const fd = openSync(path, constants.O_RDONLY | (follow ? 0 : (constants.O_NOFOLLOW ?? 0)) | (constants.O_NONBLOCK ?? 0));
   try {
     const st = fstatSync(fd);
-    if (!st.isFile()) return null;
-    const buf = Buffer.allocUnsafe(Math.min(max, st.size));
-    const n = readSync(fd, buf, 0, buf.length, 0);
-    return buf.toString("utf8", 0, n);
-  } catch { return null; }
-  finally { closeSync(fd); }
+    if (!st.isFile()) throw notRegular();
+    const buf = Buffer.allocUnsafe(Math.min(max + 1, st.size));
+    let n = 0;
+    for (let r = 1; r > 0 && n < buf.length; n += r) r = readSync(fd, buf, n, buf.length - n, n);
+    return { text: buf.toString("utf8", 0, Math.min(n, max)), tooBig: n > max };
+  } finally { closeSync(fd); }
 }

@@ -1849,7 +1849,7 @@ const KIND_RULES: Array<[string, RegExp]> = [
   // The tools a crafting menu opens from, and the stations; gathering tools, scissors and instruments stay tools.
   ["crafting", /\b(hammer|tongs|sewing kit|tinker'?s tools|tool kit|mortar|pestle|fletcher'?s tools|saw|jointing plane|moulding planes?|smoothing plane|draw knife|froe|inshave|scorp|pen|rolling pin|flour sifter|skillet|blowpipe|mallet and chisel|loom|spinning wheel|anvil|forge)\b/i],
   ["gem", /\b(diamond|ruby|sapphire|star sapphire|emerald|amethyst|citrine|tourmaline|amber|gem|gems|jewel)\b/i],
-  ["ammo", /\b(arrow|arrows|bolts?(?! of\b)|crossbow bolt|shuriken|fukiya dart|throwing)\b/i],
+  ["ammo", /\b(arrow|arrows|bolts?(?!\s+of\b)|crossbow bolt|shuriken|fukiya dart|throwing)\b/i],
   ["resource", /\b(ingot|ingots|ore|log|logs|board|boards|leather|hides|hide|cloth|bolt of cloth|yarn|thread|feather|feathers|shaft|shafts|cotton|wool|flax|kindling|granite|sand|bone|bones|scale|scales|blank map|fabric|silk|pelt|fur|resin|sap|bark|wood|essence|powder|dust|crystal|shard|fragment|ectoplasm|glass|bottle|bottles|empty bottle|jar|nails|hinge|gear|axle|springs?|clock parts|clock frames?|sextant parts|barrel|pile of|stack of|bundle)\b/i],
   ["food", /\b(fish|steak|steaks|bread|cheese|apple|apples|meat|ham|egg|eggs|cake|pie|ribs|sausage|bacon|wine|ale|beer|liquor|milk|water|pitcher|cookie|cookies|grapes|pear|peach|banana|carrot|onion|cabbage|lettuce|pumpkin|squash|watermelon|honey|cooked|raw|muffin|chicken|lamb|bird|turkey|fruit|vegetable|dough|flour|jerky|stew|soup|candy|pretzel)\b/i],
   // A conjured Healing Stone (Mysticism) is used up like a tool; on a scroll graphic it is the spell (isSpellScroll).

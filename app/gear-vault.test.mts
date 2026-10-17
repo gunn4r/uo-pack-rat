@@ -359,7 +359,7 @@ test("[smoke] medableOf: materials, Mage Armor and Spell Channeling decide medit
 });
 
 test("[fast] kindOf: a Bolt of Cloth is a resource like Cloth, Folded Cloth and Cut Cloth, and crossbow bolts stay ammo (#208)", () => {
-  for (const name of ["Bolt Of Cloth", "Bolt of Cloth", "Bolts Of Cloth", "Bolt Of Cloth (Dark Blue)", "Cloth", "Folded Cloth", "Cut Cloth"]) assert.equal(kindOf(name), "resource", name);
+  for (const name of ["Bolt Of Cloth", "Bolt of Cloth", "Bolts Of Cloth", "Bolts  of Cloth", "Bolt Of Cloth (Dark Blue)", "Cloth", "Folded Cloth", "Cut Cloth"]) assert.equal(kindOf(name), "resource", name);
   for (const name of ["Bolt", "Bolts", "Crossbow Bolt", "Crossbow Bolts", "Arrow", "Arrows"]) assert.equal(kindOf(name), "ammo", name);
 });
 

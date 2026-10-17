@@ -8,7 +8,7 @@ import {
 } from "node:fs";
 import { basename, join, resolve, dirname, isAbsolute } from "node:path";
 import { fileURLToPath } from "node:url";
-import { atomicReplace, readRegularFile, writeFileAtomic } from "./atomic-write.mts";
+import { atomicReplace, readBounded, writeFileAtomic } from "./atomic-write.mts";
 import type { DataDirCheckInfo } from "./data-dir-notice.mts";
 import type { AdapterManifestV1, AdapterManifestV1Install, AdapterManifestV1InstallRetiredItem } from "./schema/types.d.mts";
 
@@ -83,7 +83,10 @@ function copyFileAtomic(src: string, dest: string): void {
 // A bounded read is what keeps an ordinary huge file under one of those names from being a
 // memory-exhaustion variant of the FIFO hang readHead's own flags close off.
 const HEAD_READ_BYTES = 64 * 1024;
-const readHead = (path: string, max: number = HEAD_READ_BYTES): string | null => readRegularFile(path, max);
+// null means "not readable as a regular file", which every caller treats the same as absent.
+function readHead(path: string, max: number = HEAD_READ_BYTES): string | null {
+  try { return readBounded(path, max, { follow: false }).text; } catch { return null; }
+}
 
 // A plain object index here once resolved every key on Object.prototype ("constructor", "__proto__",
 // "toString", …) to something truthy: validateScriptsDir(dir, "constructor") threw "suffixes.map is not a

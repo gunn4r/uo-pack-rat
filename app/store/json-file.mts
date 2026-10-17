@@ -3,14 +3,14 @@
 // - "empty": a missing, oversized, unreadable or unparsable file reads as `salvage(undefined)`, and a parsed one as `salvage(doc)`; a salvage that throws on the parsed document reads as an empty file too. Nothing on disk changes.
 // - "aside": a bad file (oversized, unparsable, unreadable, or refused by `check`) is moved aside as <file>.corrupt and reported, so the next write cannot overwrite what was in it. A missing file reads as `{missing: true}`. With `ioErrors: "throw"`, a failed read (a missing file included) throws instead, since it says nothing about the file's contents.
 // - "skip": any failure throws, for a reader that skips that file and says why (one scan or run in a folder).
-import { lstatSync, mkdirSync, readFileSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { basename, dirname } from "node:path";
-import { moveAside, readRegularFile, writeFileAtomic } from "../atomic-write.mts";
+import { moveAside, readBounded, writeFileAtomic } from "../atomic-write.mts";
 import { DATA_DIR_MODE, DATA_FILE_MODE } from "../config.mts";
 import { newerNotice, type DocKind } from "../migrate.mts";
 import type { HttpError } from "../read-body.mts";
 
-// The read bound for a reader that names no maxBytes (the profiles file): far above any file the app writes.
+// The read bound for a reader that names no maxBytes (profiles, settings, UI prefs): far above any file the app writes.
 const MAX_UNCAPPED_BYTES = 256 * 1024 * 1024;
 
 // Why a file was not taken: over maxBytes (lstat's size), JSON.parse refused it, the read failed, or check() refused the parsed document.
@@ -23,14 +23,9 @@ export function readJsonFile(path: string, opts: { maxBytes?: number; onBad: "sk
 export function readJsonFile(path: string, opts: { maxBytes?: number; onBad: "empty" | "aside" | "skip"; salvage?: (doc: unknown) => unknown; check?: (doc: unknown) => string | null; ioErrors?: "bad" | "throw" }): unknown {
   let doc: unknown, bad: BadJson | null = null;
   try {
-    if (opts.maxBytes !== undefined && lstatSync(path).size > opts.maxBytes) bad = { why: "too-big" };
-    else if (opts.onBad === "skip") doc = JSON.parse(readFileSync(path, "utf8"));   // one file of a folder: a saved run or scan may be a link
-    else {
-      // The single data files: a regular file only, read to the cap, so a symlink or FIFO under the name is refused rather than followed or waited on.
-      const text = readRegularFile(path, opts.maxBytes ?? MAX_UNCAPPED_BYTES);
-      if (text === null) { lstatSync(path); throw new Error("not a regular file"); }   // the lstat throws ENOENT for a missing file
-      doc = JSON.parse(text);
-    }
+    const read = readBounded(path, opts.maxBytes ?? MAX_UNCAPPED_BYTES);
+    if (read.tooBig) bad = { why: "too-big" };
+    else doc = JSON.parse(read.text);
   } catch (e) {
     if (opts.onBad === "empty") return opts.salvage!(undefined);
     if (opts.onBad === "skip" || (opts.ioErrors === "throw" && !(e instanceof SyntaxError))) throw e;
@@ -38,7 +33,7 @@ export function readJsonFile(path: string, opts: { maxBytes?: number; onBad: "em
     bad = e instanceof SyntaxError ? { why: "syntax", error: e } : { why: "io", error: e as Error };
   }
   if (opts.onBad === "empty") { if (bad) return opts.salvage!(undefined); try { return opts.salvage!(doc); } catch { return opts.salvage!(undefined); } }
-  if (bad && opts.onBad === "skip") throw new Error(`it is over ${opts.maxBytes} bytes`);
+  if (bad && opts.onBad === "skip") throw new Error(`it is over ${opts.maxBytes ?? MAX_UNCAPPED_BYTES} bytes`);
   if (!bad && opts.onBad === "skip") return doc;
   if (!bad) { const reason = opts.check?.(doc); if (reason) bad = { why: "check", reason }; }
   if (!bad) return { doc };
@@ -55,7 +50,7 @@ export function writeJsonFile(path: string, doc: unknown, { indent, newline = tr
 // save from this build would lose what it cannot read. A file that is missing or does not parse says nothing.
 export function newerOnDisk(path: string, kind: DocKind): string | null {
   let doc: unknown;
-  try { doc = JSON.parse(readFileSync(path, "utf8")); } catch { return null; }
+  try { doc = JSON.parse(readBounded(path, MAX_UNCAPPED_BYTES).text); } catch { return null; }
   return newerNotice(basename(path), kind, doc);
 }
 // newerOnDisk as a 409, which the server's request handler answers with its message.

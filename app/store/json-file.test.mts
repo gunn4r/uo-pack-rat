@@ -5,7 +5,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, statSync, symlinkSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { tmpdir } from "node:os";
 import { readJsonFile, writeJsonFile } from "./json-file.mts";
 
@@ -73,16 +73,24 @@ test("[fast] json-file: writeJsonFile creates the folder and writes the indent, 
   }
 });
 
-test("[fast] json-file: a symlink or FIFO under the name is refused, not followed or waited on", { skip: process.platform === "win32" ? "no FIFOs on Windows" : false }, () => {
-  const d = dir(), real = join(d, "real.json"), link = join(d, "link.json"), fifo = join(d, "fifo.json");
+test("[fast] json-file: a symlink to a regular file reads as the file, a FIFO (or a link to one) is refused naming the file, and a file over the cap is too big", { skip: process.platform === "win32" ? "no FIFOs on Windows" : false }, () => {
+  const d = dir(), real = join(d, "real.json"), link = join(d, "link.json"), fifo = join(d, "fifo.json"), fifoLink = join(d, "fifo-link.json");
   writeFileSync(real, "{\"x\":1}");
   symlinkSync(real, link);
   execFileSync("mkfifo", [fifo]);
+  execFileSync("mkfifo", [join(d, "target.fifo")]);
+  symlinkSync(join(d, "target.fifo"), fifoLink);
   const salvage = (doc: unknown) => ({ got: doc });
-  for (const f of [link, fifo]) {
+  assert.deepEqual(readJsonFile(link, { maxBytes: 100, onBad: "empty", salvage }), { got: { x: 1 } });
+  assert.deepEqual(readJsonFile(link, { onBad: "skip" }), { x: 1 });
+  for (const f of [fifo, fifoLink]) {
     assert.deepEqual(readJsonFile(f, { maxBytes: 100, onBad: "empty", salvage }), { got: undefined });
+    assert.throws(() => readJsonFile(f, { onBad: "skip" }), /is not a regular file/);
+    assert.throws(() => readJsonFile(f, { onBad: "aside", ioErrors: "throw" }), { code: "ENOTREG", message: `${basename(f)} is not a regular file` });
     const got = readJsonFile(f, { maxBytes: 100, onBad: "aside" });
     assert.ok("bad" in got && got.bad.why === "io", JSON.stringify(got));
   }
-  assert.deepEqual(readJsonFile(real, { maxBytes: 100, onBad: "empty", salvage }), { got: { x: 1 } });
+  writeFileSync(real, "{\"x\":\"" + "y".repeat(50) + "\"}");
+  const big = readJsonFile(real, { maxBytes: 20, onBad: "aside" });
+  assert.ok("bad" in big && big.bad.why === "too-big", "a file past the cap is too big, not a corrupt prefix");
 });
