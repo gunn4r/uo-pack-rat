@@ -321,7 +321,7 @@ function buildActions(): ComboAction[] {
 function manageTemplates(): void {
   const own = session.profile?.template || "", names = Object.keys(state.profiles!.templates).sort((a, b) => Number(b === own) - Number(a === own) || a.localeCompare(b));
   const items: Array<MenuItem | "divider"> = names.flatMap((n, i) => [...(i ? ["divider" as const] : []),
-    { label: `Update “${n}” with these settings`, onSelect: () => { void updateTemplate(n); } }, { label: `Delete “${n}”…`, danger: true, onSelect: () => { void deleteTemplate(n); } }]);
+    { label: `Update ${n} with the current build settings`, onSelect: () => { void updateTemplate(n); } }, { label: `Delete ${n}…`, danger: true, onSelect: () => { void deleteTemplate(n); } }]);
   menu(buildPicker!.button, items, { label: "Manage templates", width: 260 });
 }
 function pickBuild(v: string): void {
