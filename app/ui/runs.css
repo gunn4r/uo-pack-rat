@@ -17,5 +17,3 @@
 .run-badges { grid-column: 2 / 4; display: flex; flex-wrap: wrap; gap: var(--space-1-5); }
 .run-diff { overflow-wrap: anywhere; }
 .runs-empty { list-style: none; }
-/* a run's ⋯ menu is a popover on <body>: it must sit above the drawer it was opened from */
-.pop.pop-over-drawer { z-index: calc(var(--z-drawer) + 1); }

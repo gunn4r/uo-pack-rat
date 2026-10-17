@@ -114,6 +114,16 @@ test("[slow] components: confirm dialog, drawer, popover, toasts and tooltip beh
     await page.keyboard.press("Escape");
     assert.deepEqual(await page.evaluate(() => { const r = document.getElementById("test-drawer")!; return [r.hidden, r.inert]; }), [true, true], "Esc closes it back to hidden + inert");
     assert.equal(await activeId(page), "opener", "focus returns to the opener");
+    // A popover opened from inside it sits above the drawer and its scrim: a click in it leaves the drawer open, a click
+    // on the scrim closes both (issue #320).
+    await page.evaluate(() => (window as unknown as { D: { open: (o: Element | null) => void } }).D.open(document.getElementById("opener")));
+    await page.evaluate(() => { const C = (window as unknown as { C: Record<string, (...a: unknown[]) => unknown> }).C; C.popover!(document.getElementById("d-one"), [C.button!({ label: "In the drawer's popover", attrs: { id: "dpop-in" } })], { label: "From the drawer" }); });
+    assert.equal(await page.locator(".pop.pop-over-drawer").count(), 1, "raised over the drawer");
+    await page.click("#dpop-in");
+    assert.equal(await page.evaluate(() => document.getElementById("test-drawer")!.hidden), false, "a click in the popover is no click away");
+    await page.mouse.click(20, 400);
+    assert.deepEqual(await page.evaluate(() => [document.getElementById("test-drawer")!.hidden, document.querySelectorAll(".pop").length]), [true, 0], "the scrim closes the drawer and the popover");
+    assert.equal(await activeId(page), "opener", "focus returns to the opener");
 
     // --- popover: opens anchored, Esc closes and returns focus, a click outside closes it
     await page.evaluate(() => {
