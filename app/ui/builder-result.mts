@@ -166,7 +166,7 @@ function whatChanges(rows: ChangeRow[], matter: string[], nextSsi: number | null
 // One gauge: the short name (the full one for a screen reader), the suit's total against its cap and the change in what counts, a track filled to the suit's total with a tick at what is worn now, and its note. A change against the build (builder-model.mts worse) is muted, not red.
 function gauge(r: ChangeRow, nextSsi: number | null, past: string | undefined): HTMLElement {
   const note = gaugeNote(r, nextSsi), t = gaugeTrack(r), loss = worse(r);
-  return box("li", { class: `b-gauge${loss ? " loss" : ""}` },
+  return box("li", { class: `b-gauge${loss ? " loss" : ""}`, "data-key": r.key },
     box("span", { class: "b-gauge-top" }, el("span", { class: "b-gauge-name muted", title: propName(r.key), "aria-hidden": "true" }, label(r.key)), txt(propName(r.key), "sr"), txt(numText(r.suit), "b-gauge-val"), r.cap != null ? txt(`/ ${numText(r.cap)}`, "muted") : null,
       el("span", { class: "spacer" }), txt(r.delta ? signed(r.delta) : "0", `b-gauge-delta ${loss || !r.delta ? "muted" : "tone-ok"}`), txt(`, was ${numText(r.now)}`, "sr")),
     box("span", { class: "b-gauge-track", "aria-hidden": "true" }, el("i", { style: `width:${t.fill}%` }), el("s", { style: `left:${t.tick}%` })),

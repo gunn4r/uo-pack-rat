@@ -668,11 +668,14 @@ test("[slow] What changes: Gauges for what the build asks, Table with every prop
     assert.ok(rows.some((r) => r[4] === "0"), "an unchanged property is listed too");
     const moved = rows.filter((r) => r[4] !== "0" && !/ resist$/.test(r[0]!)).map((r) => r[0]!);
     assert.ok(gauges.every((g) => moved.includes(g)), "a gauge only for a property that moves");
-    // only what the build asks for: a non-zero weight or a requirement; a pool never beside its bonus
-    const asked = await page.evaluate(() => [...document.querySelectorAll<HTMLInputElement>("#b-sec-weights .rule-row input[type=number], #b-sec-req .rule-row input[type=number]")]
-      .filter((i) => !/ weight$/.test(i.getAttribute("aria-label") ?? "") || Number(i.value) !== 0).map((i) => (i.getAttribute("aria-label") ?? "").replace(/ (weight|minimum)$/, "")));
-    assert.ok(gauges.every((g) => asked.includes(g)), `every gauge is weighted or required: ${gauges.join(", ")}`);
-    assert.ok(!(gauges.includes("Stamina increase") && gauges.includes("Stam pool")), "no pool beside its bonus");
+    // only what the build asks for: a non-zero weight or a requirement; a pool never beside its bonus (by property key: the
+    // weight rows name a property as the goals do, the gauges and requirement rows by its full name, issue #302)
+    const gaugeKeys = await page.locator(".b-gauge[data-key]").evaluateAll((es) => es.map((e) => e.getAttribute("data-key") ?? ""));
+    assert.equal(gaugeKeys.length, gauges.length);
+    const asked = await page.evaluate(() => [...document.querySelectorAll<HTMLElement>("#b-sec-weights .rule-row[data-key], #b-sec-req .rule-row[data-key]")]
+      .filter((row) => { const i = row.querySelector<HTMLInputElement>("input[type=number]"); return !!i && (!row.closest("#b-sec-weights") || Number(i.value) !== 0); }).map((row) => row.dataset.key ?? ""));
+    assert.ok(gaugeKeys.every((k) => asked.includes(k)), `every gauge is weighted or required: ${gaugeKeys.join(", ")}`);
+    assert.ok(!(gaugeKeys.includes("stamInc") && gaugeKeys.includes("stamPool")), "no pool beside its bonus");
     assert.ok(moved.length > gauges.length, "the build moves more than it asks for");
     assert.equal(more, moved.length - gauges.length, "the link counts the moved properties with no gauge");
     const saved = (): boolean => { try { return (JSON.parse(readFileSync(join(dataDir, "ui-prefs.json"), "utf8")) as { builderChanges?: string }).builderChanges === "table"; } catch { return false; } };
