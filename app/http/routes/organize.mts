@@ -124,26 +124,28 @@ export function routes(ctx: ServerContext): Route[] {
       const { inv } = await getInventory();
       const items = resolveSelection(inv, sel, appSettings.rules().rarity);
       const worn = items.filter((it) => it.equippedBy);
-      // `movable`: the items a trip can take (in its destination's house or not); `here` counts only those.
-      const black = new Set(blacklist()), here: Record<string, number> = {};
+      // `movable`: the items a trip can take (in its destination's house or not); `here` counts only those; `left` counts the
+      // others by why they stay (worn ones too, which `worn` also counts).
+      const black = new Set(blacklist()), here: Record<string, number> = {}, left: Partial<Record<LeftReason, number>> = {};
       let movable = 0;
       for (const it of items) {
-        if (leftReason(inv, it, black)) continue;
+        const why = leftReason(inv, it, black);
+        if (why) { left[why] = (left[why] ?? 0) + 1; continue; }
         movable++;
         here[it.container!] = (here[it.container!] ?? 0) + 1;
       }
-      const base = { ok: true, selected: items.length, worn: worn.length, wornNames: worn.slice(0, 3).map((it) => it.name), movable, here };
+      const base = { ok: true, selected: items.length, worn: worn.length, wornNames: worn.slice(0, 3).map((it) => it.name), movable, here, left };
       if (to === undefined) return send(res, 200, base);
       const { fold, config, state } = await organizeService.organizeInputs();
       const view = applyOverlay(fold, state.moves).inv;
       const problem = destProblem(view, to, blacklist());
       if (problem) return send(res, 200, { ...base, problem, plan: null });
       const plan = planMoves(fold, state.moves, items.map((it) => ({ serial: +it.serial, to })), { blacklist: blacklist() });
-      const left: Partial<Record<LeftReason, number>> = {};
-      for (const l of plan.left) left[l.why] = (left[l.why] ?? 0) + 1;
+      const planLeft: Partial<Record<LeftReason, number>> = {};
+      for (const l of plan.left) planLeft[l.why] = (planLeft[l.why] ?? 0) + 1;
       const moved = plan.moves.map((m) => m.serial);
       const against = againstRules(view, config, moved, to, { now: Date.now(), rarity: appSettings.rules().rarity, suitPieces: organizeService.suitsFor(config.rules.map((r) => r.match)), blacklist: blacklist(), seen: state.seen });
-      return send(res, 200, { ...base, problem: null, plan: { moving: moved.length, serials: moved, trips: plan.trips.length, already: plan.already.length, noRoom: plan.noRoom.length, left, against } });
+      return send(res, 200, { ...base, problem: null, plan: { moving: moved.length, serials: moved, trips: plan.trips.length, already: plan.already.length, noRoom: plan.noRoom.length, left: planLeft, against } });
     } },
     { method: "POST", path: "/api/move/trip", handle: async (req, res) => {
       // The next trip of a Move, planned now and queued like an Organize trip: `selection` and `to` (Move to), or `back`, the

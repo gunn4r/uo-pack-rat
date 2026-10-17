@@ -145,6 +145,14 @@ export function movedText(moved: number, dest: string, back: boolean, { noRoom =
     : back ? `Moved ${plural(moved, "item")} back to where ${moved === 1 ? "it" : "each one"} came from.` : `Moved ${plural(moved, "item")} to ${dest}.`;
   return head + (noRoom && !stopped ? ` ${noRoom.toLocaleString("en-US")} didn't fit${back ? " back" : ""} and stayed put.` : "") + (failed ? ` ${plural(failed, "item")} could not be moved.` : "");
 }
+// Gather into a bag (the Unravel view, issue #271): the same counts, in pieces gathered into the bag, and what to do with it next.
+export function gatheredText(moved: number, dest: string, counts: { noRoom?: number; failed?: number; stopped?: boolean } = {}): string {
+  if (counts.stopped) return movedText(moved, dest, false, counts);
+  const { noRoom = 0, failed = 0 } = counts;
+  return `Moved ${plural(moved, "piece")} into ${dest}.` + (noRoom ? ` ${noRoom.toLocaleString("en-US")} didn't fit and stayed put.` : "") + (failed ? ` ${plural(failed, "piece")} could not be moved.` : "");
+}
+export const GATHER_NOTE = "At a soul forge, use Unravel Container on it.";
+
 // The moved items the next Organize run takes out again (POST /api/move/plan's `against`), as one sentence.
 export function againstText(against: ReadonlyArray<{ target: number }>, nameOf: (serial: number) => string): string | null {
   const n = against.length;

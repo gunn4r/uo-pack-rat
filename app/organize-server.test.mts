@@ -234,7 +234,7 @@ test("[fast] Move to: POST /api/move/plan counts the selection and plans into th
     assert.equal((await call(s, "/api/organize", body("PUT", CONFIG_DOC))).status, 200);
     const selection = { serials: [PEARL, GEM] };
     const counted = await call(s, "/api/move/plan", body("POST", { selection }));
-    assert.deepEqual(counted.body, { ok: true, selected: 2, worn: 0, wornNames: [], movable: 2, here: { [B]: 2 } });
+    assert.deepEqual(counted.body, { ok: true, selected: 2, worn: 0, wornNames: [], movable: 2, here: { [B]: 2 }, left: {} });
     // The pearl belongs in A; the gems rule files the ruby in B, so the next Organize run would take it out again.
     const plan = await call<{ plan: { moving: number; trips: number; against: { serial: number; target: number }[] } }>(s, "/api/move/plan", body("POST", { selection, to: A }));
     assert.deepEqual([plan.body.plan.moving, plan.body.plan.trips], [2, 1]);

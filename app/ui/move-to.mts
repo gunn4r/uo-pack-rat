@@ -1,4 +1,4 @@
-// ui/move-to.mts — the Inventory's selection and Move to (issue #270): the checkboxes' hooks for the item browser, the selection bar (#inv-selbar: the count, why worn rows were left out, Select all matching, Grab, Move to… and Clear), the Move to… picker, and the result line (#inv-move-result) that follows a Move's trips, with Stop, Pin them here and Move back. The rules and every word come from ui/move-model.mts; this file draws them and talks to the server (POST /api/move/plan, /api/move/trip, /api/bridge/stop). A Move runs as Organize trips, one at a time: each trip that reports back clean asks the server for the next.
+// ui/move-to.mts — the Inventory's selection and Move to (issue #270): the checkboxes' hooks for the item browser, the selection bar (#inv-selbar: the count, why worn rows were left out, Select all matching, Grab, Move to… and Clear), the Move to… picker, and the result line (#inv-move-result) that follows a Move's trips, with Stop, Pin them here and Move back. The rules and every word come from ui/move-model.mts; this file draws them and talks to the server (POST /api/move/plan, /api/move/trip, /api/bridge/stop). A Move runs as Organize trips, one at a time: each trip that reports back clean asks the server for the next. Another view can start a Move with its own selection and result line (`openPicker`, `startMove`): the Unravel view's Gather into a bag (issue #271).
 import { applyItemQuery } from "../item-query.mts";
 import { bagLabel, type Container, type Item } from "../vault-lib.mts";
 import { state, bridge } from "./store.mts";
@@ -12,7 +12,7 @@ import { bridgeFeatureSet, currentAdapter, grabAll, BRIDGE_OFFLINE } from "./bri
 import { tripGate, stepWatch, failedSteps, pinnedWith, type TripWatch } from "./organize-model.mts";
 import { loadOrganize, saveConfig } from "./organize-data.mts";
 import { emptySelection, isSelected, isWorn, selectedCount, toggleRows, toggleLoaded, loadedState, selectAllMatching, selectionBody, grabItems, destGroups, matchesDest, roomText, leftText, pickedText,
-  selectedText, wornNote, loadedNote, allOffer, allNote, movingText, movedText, againstText, pinnedText, skippedText, noRoomText, GRAB_TOO_MANY, WORN_LOCK, OUTSIDE, type Matches, type Selection, type DestRow } from "./move-model.mts";
+  selectedText, wornNote, loadedNote, allOffer, allNote, movingText, movedText, gatheredText, GATHER_NOTE, againstText, pinnedText, skippedText, noRoomText, GRAB_TOO_MANY, WORN_LOCK, OUTSIDE, type Matches, type Selection, type DestRow } from "./move-model.mts";
 import type { ItemBrowser, SelectionHooks } from "./item-browser.mts";
 import type { BridgeStatusApiResponse, MoveBackApiResponse, MovePlanApiResponse, MovePlanSummary, MoveTripApiResponse } from "./api-types.mts";
 
@@ -68,7 +68,7 @@ function paintBar(): void {
   b.replaceChildren(
     box("div", { class: "mv-what" }, txt(n ? selectedText(n) : "Nothing selected", "strong mv-count"), note ? txt(note, "t-sm muted mv-note") : null, offer),
     box("div", { class: "mv-acts" }, n && !grab ? tipWrap(grabBtn, GRAB_TOO_MANY) : grabBtn,
-      button({ label: "Move to…", variant: "primary", size: "sm", disabled: !n, attrs: { id: "mv-move" }, onClick: () => { void openPicker(); } }),
+      button({ label: "Move to…", variant: "primary", size: "sm", disabled: !n, attrs: { id: "mv-move" }, onClick: () => { void openPicker({ selection: selectionBody(sel), host: "inv-move-result", onRun: clearSelection }); } }),
       button({ label: "Clear", size: "sm", attrs: { id: "mv-clear" }, onClick: clearSelection })));
 }
 // "Select all N matching": the filter as the table has it now, counted by the server (worn items left out) without loading its rows.
@@ -92,18 +92,23 @@ async function grabSelected(): Promise<void> {
 
 // ---------------------------------------------------------------- the picker
 const nameOf = (c: Container): string => state.organize.config?.labels[String(c.serial)]?.name ?? c.label ?? bagLabel(c);
-const placeOf = (serial: number): string => {
+export const placeOf = (serial: number): string => {
   const c = state.inv?.containers[serial];
   if (!c) return `0x${serial.toString(16)}`;
   const house = houseOfContainer(+c.root)?.name;
   return house && house !== OUTSIDE ? `${nameOf(c)} · ${house}` : nameOf(c);
 };
-const gate = (): string | null => {
+// Why no trip can run now (no client that runs trips, the bridge offline, a Move running), or null.
+export const gate = (): string | null => {
   const a = currentAdapter();
   return tripGate({ client: a ? a.name || a.id : null, canTrip: bridgeFeatureSet().has("trip"), online: bridge.online, running: !!run && !run.done }, BRIDGE_OFFLINE);
 };
-async function openPicker(): Promise<void> {
-  const selection = selectionBody(sel);
+// Where a Move is started and its result line drawn: the Inventory's Items view, or another view handing over its own selection
+// (the Unravel view's Gather into a bag, issue #271). `gather` words the result line for a bag to unravel; `onRun` is told the
+// container the Move goes to, once it starts.
+export interface MoveFrom { selection: ReturnType<typeof selectionBody>; host: string; gather?: boolean | undefined; onRun?: ((to: number) => void) | undefined }
+export function openPicker(from: MoveFrom): Promise<void> { return pickAndMove(from); }
+async function pickAndMove({ selection, host, gather, onRun }: MoveFrom): Promise<void> {
   let counted: MovePlanApiResponse;
   try { counted = await api<MovePlanApiResponse>("/api/move/plan", { method: "POST", body: { selection } }); }
   catch (e) { toast(errorText(e), "bad"); return; }
@@ -166,15 +171,21 @@ async function openPicker(): Promise<void> {
   go.addEventListener("click", () => {
     if (!picked || !plan || go.disabled) return;
     d.close();
-    clearSelection();
-    // The run moves exactly the items this plan showed: a scan landing mid-run adds nothing the player did not confirm.
-    void startRun({ kind: "to", dest: placeOf(picked.serial), body: { selection: { serials: plan.serials }, to: picked.serial }, total: plan.moving, noRoom: plan.noRoom, against: plan.against });
+    startMove({ selection, host, gather, onRun }, picked.serial, plan);
   });
+}
+// A Move into `to` as `plan` showed it: the run moves exactly the items that plan listed, so a scan landing mid-run adds
+// nothing the player did not confirm. The Unravel view calls it for the bag it remembers, the picker for the one picked.
+export function startMove({ host, gather, onRun }: MoveFrom, to: number, plan: MovePlanSummary): void {
+  onRun?.(to);
+  void startRun({ kind: "to", dest: placeOf(to), body: { selection: { serials: plan.serials }, to }, total: plan.moving, noRoom: plan.noRoom, against: plan.against, host, gather: !!gather });
 }
 
 // ---------------------------------------------------------------- running a Move
 interface Run {
   kind: "to" | "back";
+  host: string;            // the result line's element id
+  gather: boolean;         // a bag to unravel (issue #271): the result line says what to do with it
   dest: string;
   body: Record<string, unknown>;
   total: number;
@@ -196,7 +207,8 @@ interface Run {
 }
 let run: Run | null = null;
 let lastStatus: BridgeStatusApiResponse | null = null, lastStatusAt = 0;
-async function startRun(r: Pick<Run, "kind" | "dest" | "body" | "total" | "noRoom" | "against">): Promise<void> {
+async function startRun(r: Pick<Run, "kind" | "dest" | "body" | "total" | "noRoom" | "against" | "host" | "gather">): Promise<void> {
+  if (run && run.host !== r.host) { const old = $<HTMLElement>(`#${run.host}`); if (old) { old.hidden = true; old.replaceChildren(); } }
   run = { ...r, moved: [], failed: [], trips: [], names: new Map(), watch: null, stopping: false, stopped: false, done: false, lost: null, skipped: [], noRoomNames: [], pinned: false, canBack: false };
   paintResult();
   await queueNext(run);
@@ -270,11 +282,11 @@ async function pinMoved(r: Run, serials: number[]): Promise<void> {
   paintResult();
 }
 function moveBack(r: Run): void {
-  void startRun({ kind: "back", dest: r.dest, body: { back: { serials: r.moved, trips: r.trips } }, total: r.moved.length, noRoom: 0, against: [] });
+  void startRun({ kind: "back", dest: r.dest, body: { back: { serials: r.moved, trips: r.trips } }, total: r.moved.length, noRoom: 0, against: [], host: r.host, gather: false });
 }
 
 // ---------------------------------------------------------------- the result line
-const result = (): HTMLElement => $<HTMLElement>("#inv-move-result")!;
+const result = (): HTMLElement | null => (run ? $<HTMLElement>(`#${run.host}`) : null);
 // One line in the mockup's look: the head and its notes on the left, the actions on the right.
 function line(tone: "info" | "ok" | "warn" | "bad", head: string, notes: Array<string | null>, actions: Array<HTMLElement | null>): HTMLElement {
   return box("div", { class: `mv-result ${tone}`, role: tone === "bad" ? "alert" : "status" },
@@ -283,9 +295,8 @@ function line(tone: "info" | "ok" | "warn" | "bad", head: string, notes: Array<s
 }
 function paintResult(): void {
   const host = result(), r = run;
-  if (!host) return;
-  host.hidden = !r;
-  if (!r) { host.replaceChildren(); return; }
+  if (!host || !r) { for (const id of ["inv-move-result", "unr-move-result"]) { const h = $<HTMLElement>(`#${id}`); if (h) { h.hidden = true; h.replaceChildren(); } } return; }
+  host.hidden = false;
   const back = r.kind === "back", dismiss = button({ label: "Dismiss", icon: "close", iconOnly: true, variant: "ghost", size: "sm", attrs: { id: "mv-dismiss" }, onClick: () => { run = null; paintResult(); } });
   if (!r.done) {
     const stop = button({ label: r.stopping ? "Stopping…" : "Stop", size: "sm", variant: "danger-outline", disabled: r.stopping, attrs: { id: "mv-stop" }, onClick: () => { void stopRun(); } });
@@ -300,8 +311,9 @@ function paintResult(): void {
   const moved = new Set(r.moved);
   const against = r.against.filter((a) => moved.has(a.serial));
   const why = gate(), backBtn = r.canBack ? button({ label: "Move back", size: "sm", attrs: { id: "mv-back" }, disabled: !!why, onClick: () => moveBack(r) }) : null;
-  host.replaceChildren(line(r.failed.length || r.lost ? "warn" : "ok", movedText(r.moved.length, r.dest, back, { noRoom: r.noRoom, failed: r.failed.length, stopped: r.stopped }),
-    [r.pinned ? pinnedText(against.length, r.dest) : againstText(against, placeOf), back ? skippedText(r.skipped) : null, back ? noRoomText(r.noRoomNames) : null, r.failed.length ? r.failed.slice(0, 3).map((f) => `${f.name}: ${f.msg}`).join(" · ") : null, r.lost],
+  const counts = { noRoom: r.noRoom, failed: r.failed.length, stopped: r.stopped };
+  host.replaceChildren(line(r.failed.length || r.lost ? "warn" : "ok", r.gather && !back ? gatheredText(r.moved.length, r.dest, counts) : movedText(r.moved.length, r.dest, back, counts),
+    [r.gather && !back && !r.stopped ? GATHER_NOTE : null, r.pinned ? pinnedText(against.length, r.dest) : againstText(against, placeOf), back ? skippedText(r.skipped) : null, back ? noRoomText(r.noRoomNames) : null, r.failed.length ? r.failed.slice(0, 3).map((f) => `${f.name}: ${f.msg}`).join(" · ") : null, r.lost],
     [against.length && !r.pinned ? button({ label: `Pin ${against.length === 1 ? "it" : "them"} here`, size: "sm", attrs: { id: "mv-pin" }, onClick: () => { void pinMoved(r, against.map((a) => a.serial)); } }) : null,
       backBtn && why ? tipWrap(backBtn, why) : backBtn, dismiss]));
 }

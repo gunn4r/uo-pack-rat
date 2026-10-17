@@ -1,13 +1,13 @@
 // ui-move.test.mts — `app/ui/move-model.mts`, Move to's pure rules (issue #270).
 //
-// `app/ui/move-model.mts`, Move to's pure rules: the selection (a ticked row, a shift-click range that leaves worn rows out and names them, unticking a range, the header ticking the rows loaded and clearing everything, then every item matching the filter with its exceptions and the ticks outside it kept, all of it surviving a change of the rows shown, worn rows never selected), what the server is sent, Grab's limit, the containers the picker offers (on the ground with a known fill, never blacklisted or trash, grouped by house), the room line and the picked container's sentence, and the result line's words (moved, stopped, didn't fit, the Organize rule note, Move back's skipped items). All `[fast]`.
+// `app/ui/move-model.mts`, Move to's pure rules: the selection (a ticked row, a shift-click range that leaves worn rows out and names them, unticking a range, the header ticking the rows loaded and clearing everything, then every item matching the filter with its exceptions and the ticks outside it kept, all of it surviving a change of the rows shown, worn rows never selected), what the server is sent, Grab's limit, the containers the picker offers (on the ground with a known fill, never blacklisted or trash, grouped by house), the room line and the picked container's sentence, and the result line's words (moved, stopped, didn't fit, the Organize rule note, Move back's skipped items). All `[fast]`. Gather into a bag's result line (issue #271): pieces moved into the bag, and the note to use Unravel Container on it.
 //
 // The rendered screen is driven by scripts/ui-move.test.mts.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { parseItemQuery, type ItemQuery } from "./item-query.mts";
 import type { Container, Item } from "./vault-lib.mts";
-import { emptySelection, isSelected, selectedCount, toggleRows, toggleLoaded, loadedState, selectAllMatching, selectionBody, grabItems, destGroups, roomText, pickedText, leftText, movedText, againstText, skippedText, noRoomText, wornNote, GRAB_MAX, OUTSIDE, type Matches } from "./ui/move-model.mts";
+import { emptySelection, isSelected, selectedCount, toggleRows, toggleLoaded, loadedState, selectAllMatching, selectionBody, grabItems, destGroups, roomText, pickedText, leftText, movedText, gatheredText, GATHER_NOTE, againstText, skippedText, noRoomText, wornNote, GRAB_MAX, OUTSIDE, type Matches } from "./ui/move-model.mts";
 
 const item = (serial: number, name: string, worn = false): Item => ({ serial, name, ...(worn ? { equippedBy: "Tester" } : {}) }) as unknown as Item;
 const ROWS = [item(1, "Gold Ring"), item(2, "Silver Ring", true), item(3, "Jade Ring"), item(4, "Ruby Ring"), item(5, "Onyx Ring")];
@@ -97,6 +97,12 @@ test("[fast] a container's room line and the picked container's sentence say wha
 test("[fast] the result line says what moved, what didn't fit, what Organize would undo, and what Move back skipped or had no room for", () => {
   assert.equal(movedText(6, "Suit Chest · Marble Workshop", false, { noRoom: 3 }), "Moved 6 items to Suit Chest · Marble Workshop. 3 didn't fit and stayed put.");
   assert.equal(movedText(2, "Gem Chest", false, { stopped: true }), "Stopped. 2 items moved to Gem Chest; the rest stay where they are.");
+  // Gather into a bag (issue #271): pieces gathered into the bag, and what to do with it.
+  assert.equal(gatheredText(3, "Bag · Workshop"), "Moved 3 pieces into Bag · Workshop.");
+  assert.equal(gatheredText(1, "Bag"), "Moved 1 piece into Bag.");
+  assert.equal(gatheredText(4, "Bag", { noRoom: 2, failed: 1 }), "Moved 4 pieces into Bag. 2 didn't fit and stayed put. 1 piece could not be moved.");
+  assert.equal(gatheredText(2, "Bag", { stopped: true }), "Stopped. 2 items moved to Bag; the rest stay where they are.");
+  assert.equal(GATHER_NOTE, "At a soul forge, use Unravel Container on it.");
   assert.equal(movedText(3, "Gem Chest", true, { noRoom: 2 }), "Moved 3 items back to where each one came from. 2 didn't fit back and stayed put.");
   assert.equal(noRoomText(["Ruby", "Pearl"]), "No room left for Ruby, Pearl where they came from.");
   assert.equal(movedText(1, "Gem Chest", true, { failed: 1 }), "Moved 1 item back to where it came from. 1 item could not be moved.");
