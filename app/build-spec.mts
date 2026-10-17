@@ -84,7 +84,8 @@ export function buildSpecError(v: unknown, label: string, { template = false }: 
   const intent = only("intent", INTENT_KEYS);
   if (intent) return intent;
   const { floorBonus, ...rest } = v.intent as Record<string, unknown>;
-  if (floorBonus != null && (typeof floorBonus !== "number" || !Number.isFinite(floorBonus) || Math.abs(floorBonus) > 1e6)) return `${label}.intent.floorBonus must be a number between -1000000 and 1000000`;
+  // a soft floor's bonus rewards reaching it, so it is never negative (issue #315: the exact solver had no model for one)
+  if (floorBonus != null && (typeof floorBonus !== "number" || !Number.isFinite(floorBonus) || floorBonus < 0 || floorBonus > 1e6)) return `${label}.intent.floorBonus must be a number from 0 to 1000000`;
   const intentRules = runSettingsError(rest, `${label}.intent`);
   if (intentRules) return intentRules;
   const pool = only("pool", POOL_KEYS);
