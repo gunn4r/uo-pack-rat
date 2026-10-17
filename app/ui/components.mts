@@ -80,6 +80,7 @@ const ICONS = {
   house: [P("M3 11 12 4l9 7"), P("M5 10v10h14V10M10 20v-6h4v6")],
   label: [P("M3 12V4h8l10 10-8 8z"), ["circle", { cx: "7.5", cy: "7.5", r: "1.5" }]],
   spark: [P("M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6")],
+  list: [P("M4 7h10M4 12h16M4 17h12")],
 } satisfies Record<string, Shape[]>;
 export type IconName = keyof typeof ICONS;
 const SVG_NS = "http://www.w3.org/2000/svg";
