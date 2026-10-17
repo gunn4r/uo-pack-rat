@@ -275,7 +275,7 @@ function rowEl(r: UnravelRow, skill: number, index: number): HTMLElement {
   cb.checked = on;
   const name = itemTip(txt(r.name, "unr-name"), r, { focus: false });
   const where = whereText(r.location?.text) || "Unknown place";
-  return box("div", { class: `unr-row${on ? " sel" : ""}`, "data-serial": String(r.serial), "data-index": String(index), ...(condensed ? { title: where } : {}) },
+  return box("div", { class: `unr-row${on ? " sel" : ""}`, "data-serial": String(r.serial), "data-index": String(index), ...(condensed ? { title: `${where} · ${t.why}` } : {}) },
     cb,
     box("span", { class: "unr-nm" }, name, box("span", { class: "unr-sub" }, rarityEl(r.rarity), ...reasons.map((x) => txt(REASON_CHIP[x], "unr-tag")))),
     txt(where, "unr-where"),

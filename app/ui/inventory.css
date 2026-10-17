@@ -283,10 +283,15 @@
   .unr-selbar { position: sticky; top: 0; z-index: 1; }
 }
 @media (max-width: 720px) {
-  .unr-list.condensed .unr-row { grid-template-columns: 28px minmax(0, 1fr) auto; }
   .unr-row { grid-template-columns: 28px minmax(0, 1fr) auto; }
   .unr-row .unr-where, .unr-row .unr-yield { grid-column: 2 / 4; }
   .unr-row .unr-keep { grid-column: 3; grid-row: 1; }
+  /* Condensed stays one line: name and ingredient share it; the rarity and the chance go (the chance is in the row's title). */
+  .unr-list.condensed .unr-row { grid-template-columns: 28px minmax(0, 1fr) minmax(0, 1fr) auto; }
+  .unr-list.condensed .unr-row .unr-yield, .unr-list.condensed .unr-row .unr-keep { grid-column: auto; grid-row: auto; }
+  .unr-list.condensed .unr-sub, .unr-list.condensed .unr-why { display: none; }
+  .unr-list.condensed .unr-ing-line { flex: 0 1 auto; min-width: 0; }
+  .unr-list.condensed .unr-ing { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
 /* Move to (issue #270): the checkbox column, the ticked rows, the selection bar, the result line and the picker. */
 .inv-tbl th.sel-cell, .inv-tbl td.sel-cell { padding: 0; text-align: center; }
