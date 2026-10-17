@@ -76,7 +76,7 @@ test("[slow] build labels: added, edited and removed on the Characters page, sho
     assert.equal(saved(), "Archer-Bard");
     await page.keyboard.press("Enter");
     await page.fill("#char-label-input", "   ");
-    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await page.locator(".char-label.editing button").click();
     await page.getByRole("button", { name: "Add a build label for Kestrel" }).waitFor({ timeout: 10_000 });
     assert.equal(saved(), undefined, "a blank label leaves no key");
 
@@ -87,7 +87,9 @@ test("[slow] build labels: added, edited and removed on the Characters page, sho
     await page.getByRole("button", { name: "Edit Kestrel's build label" }).waitFor({ timeout: 10_000 });
     await page.getByRole("button", { name: "Edit Kestrel's build label" }).click();
     assert.equal(await sidewaysAt(app, page, { width: 420, height: 800 }), 0, "no sideways scroll at 420 px with the label box open");
+    await page.focus("#char-label-input");
     await page.keyboard.press("Escape");
+    await page.getByRole("button", { name: "Edit Kestrel's build label" }).waitFor();
     await fitWindow(app, page, { width: 1440, height: 900 });
 
     // The Suit Builder's character picker: the label in place of the top skills, on the button and in the list.
