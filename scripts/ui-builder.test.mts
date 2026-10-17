@@ -2141,12 +2141,18 @@ test("[slow] the result scrolls on its own and the side column stays put; stacke
     await openBuilder(page);
     await pressBuild(page);
     await built(page);
-    const tops = (): Promise<number[]> => page.evaluate(() => [".b-arrive-side", ".b-arrive-main"].map((s) => Math.round(document.querySelector(s)!.getBoundingClientRect().top)));
-    const [side, main] = await tops();
-    const scrolled = await page.evaluate(() => { const r = document.querySelector(".b-results")!; r.scrollTop = 400; return r.scrollTop; });
-    assert.ok(scrolled > 100, `the result scrolls: ${scrolled}`);
-    await page.waitForFunction((m) => Math.round(document.querySelector(".b-arrive-main")!.getBoundingClientRect().top) < m, main!, { timeout: 5_000 });
-    assert.equal((await tops())[0], side, "the side column stays where it was");
+    // side by side only where the results box is 1000 px wide or more: a CI screen smaller than 1440 stacks the columns
+    const sticky = async (): Promise<string> => page.evaluate(() => getComputedStyle(document.querySelector(".b-arrive-side")!).position);
+    const boxWide = await page.evaluate(() => document.querySelector(".b-results")!.clientWidth >= 1000);
+    assert.equal(await sticky(), boxWide ? "sticky" : "static", "sticky exactly when side by side");
+    if (boxWide) {
+      const tops = (): Promise<number[]> => page.evaluate(() => [".b-arrive-side", ".b-arrive-main"].map((s) => Math.round(document.querySelector(s)!.getBoundingClientRect().top)));
+      const [side, main] = await tops();
+      const scrolled = await page.evaluate(() => { const r = document.querySelector(".b-results")!; r.scrollTop = 400; return r.scrollTop; });
+      assert.ok(scrolled > 100, `the result scrolls: ${scrolled}`);
+      await page.waitForFunction((m) => Math.round(document.querySelector(".b-arrive-main")!.getBoundingClientRect().top) < m, main!, { timeout: 5_000 });
+      assert.equal((await tops())[0], side, "the side column stays where it was");
+    }
     await fitWindow(app, page, { width: 420, height: 900 });
     await page.waitForFunction(() => document.documentElement.scrollWidth <= innerWidth, undefined, { timeout: 5_000 }).catch(() => {});
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), "no sideways scroll at 420");
