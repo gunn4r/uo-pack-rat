@@ -1,6 +1,6 @@
 // ui-builder.test.mts — [slow]: the Suit Builder's keyboard, hover and panel behavior in the real Electron window.
 //
-// `[slow]`: the Suit Builder's keyboard and hover behaviour in the real Electron window, on a writable `--data` directory seeded with the demo scans: Goals (issue #292): a template's ranked goals with what each counts, ↓ moving a rank and its counts, = linking a row, another spare-points choice counted as one change, How the goals went after a build, a weight edited under the fine-tune switch folding the goals until Start from goals again, no sideways scroll at 420 px, and a profile with no goals opening on its weights; the Settings drawer (issue #272): ⌘, (Ctrl+,) and its button open it with the focus on its tab, Esc closes it onto the button, ← and → move between the tabs, each showing its own controls, a bad requirement opens it on Requirements when Build is pressed, its footer counts the settings changed since the shown run (none, then one after a weight edit), and its tab is remembered across a reload; the result's What changes (issue #272): Gauges by default with one gauge per moved non-resist property and a loss muted, Table with every property and no score breakdown, the choice kept across a reload, a breakdown row opening its weight in the drawer (Esc back to the row), a buff's past-cap note kept, and no sideways page scroll at 420 px; a raised resist cap (Fire 95) marked in the Resist caps group, built with, shown on the result's Fire tile and the saved run's badge, kept by Save profile across a reload, refused out of range with the error under the field, and reset to the shard's cap; ⌘↵ (Ctrl+Enter) builds with focus on the page body and while typing in a field in the drawer, and does nothing behind the Saved runs drawer; the Fetch list's pieces show the item tooltip on hover and after Tab focus, and so do both names in a Plan row, each its own piece's (issue #75; the row itself and its Slot cell show none, a kept row's worn name still does); a Fetch list row shows a deep bag path in full (nothing cut or ellipsised) and its copy button puts the container serial on the clipboard; STR limit is beside Race under Advanced, and a bad value there opens the drawer on it; a switch's on track is at least 3:1 against its off track, with the knob moved right, in Default and Britannia, light and dark; two excluded weapon skills show on the Weapons chip and survive Save profile and a reload; Check your settings (issue #217): a hard Luck requirement no suit reaches is named with the best possible above the progress panel and in the result, and Lower and Make soft edit the panel's floor and the template badge without starting a build; a weight row's weight row shows its importance and its hover follows the typed weight (the trade-off with the top property, or that it is the top one), and Set weight (a Luck weight that swamps the rest) edits the panel and the template badge, but not once the weight was changed since the build. Swing steps (issue #217), with Kestrel's worn weapon made the pool's best: the SSI weight's switch shows the worn weapon's steps and marks the template changed; the result says SSI was scored per point with Lock Weapon (1H) and shows the swing line, Next step follows the result's swing (none before the build); Lock starts no build and the next build scores by step; the switch is kept in the saved run's settings and by Save profile across a reload. Casting school (issue #213): the Faster Casting cap and its source beside the select, raised to 4 by naming Chivalry, which marks the template changed, and on a new FC requirement row that starts at the cap. Rarity (issue #262): Lower marks the template changed and shows a help line, the result's Solver details carry the Rarity row with the rarity total, Save profile keeps it, and applying a template without one clears it. Templates (issue #212): the built-ins listed first under their own names, a built-in's badge, description, buffs and source under the picker; Apply sets Manual's buffs as one undo step that Undo takes back; the badge counts a buff changed since; Save as keeps the buffs. Manual mode (issue #12): a slot opens the picker on its pieces, a row picked with the keyboard (focus, Enter) fills the slot, moves the totals and says so in the status line, the picker stays on that slot with the picked row marked "In this slot", the undo key empties the slot again (the status line saying what was undone) and redo puts the piece back, Esc closes it with focus back on the slot card, and the mode and the suit are in `ui-prefs.json`; and the hand-offs: another character picked mid-fill cancels the fill and leaves the suit alone, Fill the rest automatically fills empty slots around a placed ring in one undo step and shows the fetch list, Save as run puts a Manual run in the drawer that opens in the result view with Open in Manual, and an Automatic result's Start from this result loads it into Manual as one undo step. No character in Automatic (issue #12): no Race row, the buff picker speaking of no character, no "_nobody" anywhere in the page text, the Caster template's requirements, a build headed "Best suit · No character" with Grab disabled and its reason while no bridge is online, and with a bridge online on Kestrel (stubbed) Grab all queueing one grab per piece and the toast naming her, a Suit totals card, its run in its own drawer, Save profile kept across a reload, Manual on its No character, and Kestrel picked back with her own panel. Only containers (issue #12): the chip lists the same containers as Skip containers, counts the one checked, the build's saved run keeps the list, Save profile keeps it across a reload, and cleared it leaves the saved profile. The drawer's extras (issue #272): a weight's notched slider steps by 5 with its field following and never resizes another row, a value past 100 tagged, ± in the warn tone; the buffs by school with the character's skill, castable ones first and the rest greyed with their need; each requirement's status from the last build; no sideways scroll at 420 px. Arriving (issue #272): the first-visit view's four template cards, summary and Build, a card applying its template and saving it as the character's settings without any card moving, a result staying put through a scans refresh and a character switch and back, a reload with nothing changed coming back to the latest run with no settings changed and staying through a scans refresh, New build, another character's run opened from the first-visit view, and a newer scan's gear-changed banner (live and after a reload) whose Build again builds the run's settings. A card asks before it replaces tuned, saved settings (Cancel leaves the saved profile on disk as it was, Replace saves the card's template), and a runs list refreshed right after a character switch still lets the first-visit view or a run come up. Goals runs (issue #302): the first-visit summary listing the goals by rank under their names with "Spare points: Luck" on its own line, the run's banner naming its goals by those names, and a run reopened after a newer scan swaps the worn weapon keeping its Swing speed line, with no sideways scroll at 420 px. What changed in the gear (issue #291): a run reopened after newer scans lists a new piece, a piece of the suit moved into another container, one now worn by Kestrel and one gone, and the Plan marks them ("Now in", "Now worn by Kestrel", "No longer in the scans" with no Grab), a later scan putting the gone piece back updating the banner and the Plan together, the mark under the name at 420 px with no sideways scroll. Build Settings (issue #320) is the shared modal drawer: a click away on the scrim closes it with the focus back on its button, and a click in a popover opened from it does not. The sentence bar (issue #321): both pickers by keyboard alone (typing filters and marks the match, ↓ ↑ and ↵ pick, Esc closes onto the button), the build's state in words (unsaved changes, then settings changed from the template, never "modified"), going back to the saved build and starting over from a built-in after a yes, and at 420 px the words gone, the pickers full width and no sideways scroll, their lists open included. What changed (issue #336): the chip beside the build picker, hidden with nothing changed, "1 unsaved" with a dot, "1 change from **Melee** template" once saved; its popover with the unsaved edits first and the changes by group, an added requirement marked, Esc back onto the chip, a row opening Build Settings on its setting, Reset asking first, and no sideways scroll at 420.
+// `[slow]`: the Suit Builder's keyboard and hover behaviour in the real Electron window, on a writable `--data` directory seeded with the demo scans: Goals (issue #292): a template's ranked goals with what each counts, ↓ moving a rank and its counts, = linking a row, another spare-points choice counted as one change, How the goals went after a build, a weight edited under the fine-tune switch folding the goals until Start from goals again, no sideways scroll at 420 px, and a profile with no goals opening on its weights; the Settings drawer (issue #272): ⌘, (Ctrl+,) and its button open it with the focus on its tab, Esc closes it onto the button, ← and → move between the tabs, each showing its own controls, a bad requirement opens it on Requirements when Build is pressed, its footer counts the settings changed since the shown run (none, then one after a weight edit), and its tab is remembered across a reload; the result's What changes (issue #272): Gauges by default with one gauge per moved non-resist property and a loss muted, Table with every property and no score breakdown, the choice kept across a reload, a breakdown row opening its weight in the drawer (Esc back to the row), a buff's past-cap note kept, and no sideways page scroll at 420 px; a raised resist cap (Fire 95) marked in the Resist caps group, built with, shown on the result's Fire tile and the saved run's badge, kept by Save profile across a reload, refused out of range with the error under the field, and reset to the shard's cap; ⌘↵ (Ctrl+Enter) builds with focus on the page body and while typing in a field in the drawer, and does nothing behind the Saved runs drawer; the Fetch list's pieces show the item tooltip on hover and after Tab focus, and so do both names in a Plan row, each its own piece's (issue #75; the row itself and its Slot cell show none, a kept row's worn name still does); a Fetch list row shows a deep bag path in full (nothing cut or ellipsised) and its copy button puts the container serial on the clipboard; STR limit is beside Race under Advanced, and a bad value there opens the drawer on it; a switch's on track is at least 3:1 against its off track, with the knob moved right, in Default and Britannia, light and dark; two excluded weapon skills show on the Weapons chip and survive Save profile and a reload; Check your settings (issue #217): a hard Luck requirement no suit reaches is named with the best possible above the progress panel and in the result, and Lower and Make soft edit the panel's floor and the template badge without starting a build; a weight row's weight row shows its importance and its hover follows the typed weight (the trade-off with the top property, or that it is the top one), and Set weight (a Luck weight that swamps the rest) edits the panel and the template badge, but not once the weight was changed since the build. Swing steps (issue #217), with Kestrel's worn weapon made the pool's best: the SSI weight's switch shows the worn weapon's steps and marks the template changed; the result says SSI was scored per point with Lock Weapon (1H) and shows the swing line, Next step follows the result's swing (none before the build); Lock starts no build and the next build scores by step; the switch is kept in the saved run's settings and by Save profile across a reload. Casting school (issue #213): the Faster Casting cap and its source beside the select, raised to 4 by naming Chivalry, which marks the template changed, and on a new FC requirement row that starts at the cap. Rarity (issue #262): Lower marks the template changed and shows a help line, the result's Solver details carry the Rarity row with the rarity total, Save profile keeps it, and applying a template without one clears it. Templates (issue #212): the built-ins listed first under their own names, a built-in's badge, description, buffs and source under the picker; Apply sets Manual's buffs as one undo step that Undo takes back; the badge counts a buff changed since; Save as keeps the buffs. Manual mode (issue #12): a slot opens the picker on its pieces, a row picked with the keyboard (focus, Enter) fills the slot, moves the totals and says so in the status line, the picker stays on that slot with the picked row marked "In this slot", the undo key empties the slot again (the status line saying what was undone) and redo puts the piece back, Esc closes it with focus back on the slot card, and the mode and the suit are in `ui-prefs.json`; and the hand-offs: another character picked mid-fill cancels the fill and leaves the suit alone, Fill the rest automatically fills empty slots around a placed ring in one undo step and shows the fetch list, Save as run puts a Manual run in the drawer that opens in the result view with Open in Manual, and an Automatic result's Start from this result loads it into Manual as one undo step. No character in Automatic (issue #12): no Race row, the buff picker speaking of no character, no "_nobody" anywhere in the page text, the Caster template's requirements, a build headed "Best suit · No character" with Grab disabled and its reason while no bridge is online, and with a bridge online on Kestrel (stubbed) Grab all queueing one grab per piece and the toast naming her, a Suit totals card, its run in its own drawer, Save profile kept across a reload, Manual on its No character, and Kestrel picked back with her own panel. Only containers (issue #12): the chip lists the same containers as Skip containers, counts the one checked, the build's saved run keeps the list, Save profile keeps it across a reload, and cleared it leaves the saved profile. The drawer's extras (issue #272): a weight's notched slider steps by 5 with its field following and never resizes another row, a value past 100 tagged, ± in the warn tone; the buffs by school with the character's skill, castable ones first and the rest greyed with their need; each requirement's status from the last build; no sideways scroll at 420 px. Arriving (issue #272): the first-visit view's four template cards, summary and Build, a card applying its template and saving it as the character's settings without any card moving, a result staying put through a scans refresh and a character switch and back, a reload with nothing changed coming back to the latest run with no settings changed and staying through a scans refresh, New build, another character's run opened from the first-visit view, and a newer scan's gear-changed banner (live and after a reload) whose Build again builds the run's settings. A card asks before it replaces tuned, saved settings (Cancel leaves the saved profile on disk as it was, Replace saves the card's template), and a runs list refreshed right after a character switch still lets the first-visit view or a run come up. Goals runs (issue #302): the first-visit summary listing the goals by rank under their names with "Spare points: Luck" on its own line, the run's banner naming its goals by those names, and a run reopened after a newer scan swaps the worn weapon keeping its Swing speed line, with no sideways scroll at 420 px. What changed in the gear (issue #291): a run reopened after newer scans lists a new piece, a piece of the suit moved into another container, one now worn by Kestrel and one gone, and the Plan marks them ("Now in", "Now worn by Kestrel", "No longer in the scans" with no Grab), a later scan putting the gone piece back updating the banner and the Plan together, the mark under the name at 420 px with no sideways scroll. Build Settings (issue #320) is the shared modal drawer: a click away on the scrim closes it with the focus back on its button, and a click in a popover opened from it does not. The sentence bar (issue #321): both pickers by keyboard alone (typing filters and marks the match, ↓ ↑ and ↵ pick, Esc closes onto the button), the build's state in words (unsaved changes, then settings changed from the template, never "modified"), going back to the saved build and starting over from a built-in after a yes, and at 420 px the words gone, the pickers full width and no sideways scroll, their lists open included. Independent scrolling (issue #333): the result scrolls with its side column staying put, and at 420 px the side column stacks with no sideways scroll. What changed (issue #336): the chip beside the build picker, hidden with nothing changed, "1 unsaved" with a dot, "1 change from **Melee** template" once saved; its popover with the unsaved edits first and the changes by group, an added requirement marked, Esc back onto the chip, a row opening Build Settings on its setting, Reset asking first, and no sideways scroll at 420.
 //
 // Each of the older cases is maintainer feedback on the redesign (PR #43), plus the resist cap overrides (issue #44), the weapon exclusions (issue #45) and the Weapon must have chip (issue #214). Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
 import test from "node:test";
@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
-import { fitWindow, noUpdateCheck, removeTempDir, pickCharacter, pickTemplate } from "./electron-window.mts";
+import { fitWindow, noUpdateCheck, removeTempDir, pickCharacter, pickTemplate, settle, sideways, sidewaysAt } from "./electron-window.mts";
 import type { ElectronApplication, Locator, Page } from "playwright";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -228,14 +228,17 @@ test("[slow] the Settings drawer: ⌘, and its button, Esc, the tabs, an error's
     // The sentence bar (issue #321): one line at 1366 (where the screen allows that width), Saved runs on the quieter row
     // under it; at 1024 the pickers wrap and Build Settings and Build stay one group at the right of its row.
     const top = (sel: string): Promise<number> => page.locator(sel).evaluate((n) => Math.round(n.getBoundingClientRect().top));
+    const tops = (...sels: string[]): Promise<number[]> => Promise.all(sels.map(top));
     if ((await fitWindow(app, page, { width: 1366, height: 900 })).width === 1366) {
-      assert.equal(await top("#b-run"), await top("#b-char"), "one line at 1366");
-      assert.equal(await top("#b-tpl"), await top("#b-char"));
+      const [run, tpl, char] = await settle(() => tops("#b-run", "#b-tpl", "#b-char"), ([r, t, c]) => r === c && t === c);
+      assert.equal(run, char, "one line at 1366");
+      assert.equal(tpl, char);
     }
     assert.ok(await top("#b-runs-open") > await top("#b-run"), "Saved runs on the second row");
     await fitWindow(app, page, { width: 1024, height: 768 });
-    assert.equal(await top("#b-settings"), await top("#b-run"));
-    const bar = (await page.locator("#b-topbar").boundingBox())!, run = (await page.locator("#b-run").boundingBox())!;
+    const [settingsTop, runTop] = await settle(() => tops("#b-settings", "#b-run"), ([s, r]) => s === r);
+    assert.equal(settingsTop, runTop);
+    const bar = (await settle(async () => (await page.locator("#b-topbar").boundingBox())!, (b) => b.height < 170)), run = (await page.locator("#b-run").boundingBox())!;
     assert.ok(bar.x + bar.width - (run.x + run.width) < 40, "Build at the bar's right end");
     assert.ok(bar.height < 170, `the pickers wrap once at most, got ${bar.height}`);
     assert.deepEqual(errors, []);
@@ -491,7 +494,7 @@ test("[slow] goals: the ranked list, its counts, =, spare points, How the goals 
       await page.click("#b-runs-open");
       await page.locator("#b-runs .run-card button[aria-haspopup=menu]").first().click();
       await page.click('.pop-over-drawer [role="menuitem"]:has-text("Open")');
-      await page.waitForSelector("#b-run-banner .saved-run, #b-run-banner .b-gear-changed", { timeout: 10_000 });
+      await page.waitForSelector("#b-run-banner .saved-run, #b-run-banner .b-gear-changed", { timeout: 30_000 });   // a slow Windows runner took over 10 s (issue #330)
       await closeSettings(page);
       await page.locator("#b-run-banner").getByRole("button", { name: "Load these settings" }).click();
     };
@@ -501,9 +504,8 @@ test("[slow] goals: the ranked list, its counts, =, spare points, How the goals 
     await count("No changes since the last build");
 
     // at phone width the drawer fits without a sideways scroll
-    await fitWindow(app, page, { width: 420, height: 900 });
-    const widths = await page.evaluate(() => [document.documentElement.scrollWidth, innerWidth, document.querySelector("#b-drawer .b-drawer-body")!.scrollWidth, document.querySelector("#b-drawer .b-drawer-body")!.clientWidth]);
-    assert.ok(widths[0]! <= widths[1]! && widths[2]! <= widths[3]!, `no sideways scroll: ${widths.join(", ")}`);
+    const drawerOver = await sidewaysAt(app, page, { width: 420, height: 900 }, ["#b-drawer .b-drawer-body"]);
+    assert.ok(drawerOver <= 0, `no sideways scroll: ${drawerOver}`);
     await fitWindow(app, page, { width: 1440, height: 900 });
 
     // a profile saved with weights and no goals opens on its weights; a run built from it, loaded over goals, leaves goal mode
@@ -540,9 +542,8 @@ test("[slow] strict order: the strategy's subtitle, a strict build without trade
   const { app, page, errors } = await launch(dataDir);
   const text = (sel: string, re: RegExp): Promise<unknown> => page.waitForFunction(([q, src]) => new RegExp(src!).test(document.querySelector(q!)?.textContent || ""), [sel, re.source], { timeout: 10_000 });
   const noSideways = async (what: string): Promise<void> => {
-    await fitWindow(app, page, { width: 420, height: 900 });
-    const w = await page.evaluate(() => [document.documentElement.scrollWidth, innerWidth]);
-    assert.ok(w[0]! <= w[1]!, `${what}: no sideways scroll at 420 (${w.join(", ")})`);
+    const over = await sidewaysAt(app, page, { width: 420, height: 900 });
+    assert.ok(over <= 0, `${what}: no sideways scroll at 420 (${over} px)`);
     await fitWindow(app, page, { width: 1440, height: 900 });
   };
   try {
@@ -605,9 +606,7 @@ test("[slow] goals runs: the first-visit goals, the run line in goal names, and 
     const sum = await page.locator("#b-start .b-start-sum").innerText();
     assert.match(sum, /Spare points: Luck\s+Goals in Build Settings/);
     assert.doesNotMatch(sum, /more in Build Settings/, "the spare points are no extra row");
-    await fitWindow(app, page, { width: 420, height: 900 });
-    const fits = await page.waitForFunction(() => document.documentElement.scrollWidth - document.documentElement.clientWidth <= 0, undefined, { timeout: 5_000 }).then(() => true, () => false);
-    assert.ok(fits, "no sideways scroll at 420 on the first-visit view");
+    assert.ok(await sidewaysAt(app, page, { width: 420, height: 900 }) <= 0, "no sideways scroll at 420 on the first-visit view");
     await fitWindow(app, page, { width: 1440, height: 900 });
 
     // a swing time: the worn weapon's fastest step
@@ -640,9 +639,7 @@ test("[slow] goals runs: the first-visit goals, the run line in goal names, and 
     assert.doesNotMatch(banner, /SSI|HCI|DCI/, "goal names, not abbreviations");
     assert.equal(await swingRow(), before, "the reopened run's Swing speed line is the build's");
     assert.doesNotMatch(await page.locator("#b-goals-went").innerText(), /Practice Staff/, "not the weapon worn now");
-    await fitWindow(app, page, { width: 420, height: 900 });
-    const fitsRun = await page.waitForFunction(() => document.documentElement.scrollWidth - document.documentElement.clientWidth <= 0, undefined, { timeout: 5_000 }).then(() => true, () => false);
-    assert.ok(fitsRun, "no sideways scroll at 420 on the reopened run");
+    assert.ok(await sidewaysAt(app, page, { width: 420, height: 900 }) <= 0, "no sideways scroll at 420 on the reopened run");
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
@@ -756,12 +753,10 @@ test("[slow] What changes: Gauges for what the build asks, Table with every prop
     assert.ok(saved(), "the choice is in ui-prefs.json");
 
     // At phone width the page doesn't scroll sideways; the table scrolls inside its box.
-    await fitWindow(app, page, { width: 420, height: 900 });
-    // the resized window's layout settles over a frame or two (the header's pickers reflow): measure once it has
-    await page.waitForFunction(() => document.documentElement.scrollWidth <= innerWidth, undefined, { timeout: 5_000 }).catch(() => {});
-    const widths = await page.evaluate(() => { const r = document.querySelector(".b-results")!, b = document.querySelector(".b-chg-scroll")!; return [document.documentElement.scrollWidth, innerWidth, r.scrollWidth, r.clientWidth, b.scrollWidth, b.clientWidth]; });
-    assert.ok(widths[0]! <= widths[1]! && widths[2]! <= widths[3]!, `no sideways page scroll: ${widths.join(", ")}`);
-    assert.ok(widths[4]! > widths[5]!, "the table scrolls in its own box");
+    const resultsOver = await sidewaysAt(app, page, { width: 420, height: 900 }, [".b-results"]);
+    assert.ok(resultsOver <= 0, `no sideways page scroll: ${resultsOver}`);
+    const [boxW, boxClient] = await page.locator(".b-chg-scroll").evaluate((b) => [b.scrollWidth, b.clientWidth]);
+    assert.ok(boxW! > boxClient!, "the table scrolls in its own box");
     const box = page.locator(".b-chg-scroll");
     assert.deepEqual([await box.getAttribute("role"), await box.getAttribute("tabindex"), await box.evaluate((e) => e.classList.contains("more-right"))], ["region", "0", true], "a labelled region the keyboard can scroll, marked when more is on the right");
     const [nameLeft, boxLeft] = await page.evaluate(() => { const b = document.querySelector(".b-chg-scroll")!; b.scrollLeft = b.scrollWidth; return [document.querySelector(".b-chg-tbl tbody td")!.getBoundingClientRect().left, b.getBoundingClientRect().left]; });
@@ -960,7 +955,7 @@ test("[slow] drawer extras: notched weight sliders, buffs by school, each requir
     await fitWindow(app, page, { width: 420, height: 900 });
     for (const tab of ["weights", "buffs", "requirements"] as const) {
       await settings(page, tab);
-      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), 0, `no sideways scroll on ${tab} at 420`);
+      assert.ok(await sideways(page) <= 0, `no sideways scroll on ${tab} at 420`);
     }
     assert.deepEqual(errors, []);
   } finally {
@@ -1667,14 +1662,14 @@ test("[slow] templates: built-ins first with their description, Apply sets Manua
     await page.click("#b-tpl");
     await page.locator(".pop").getByRole("button", { name: "Manage templates…" }).click();
     const manage = page.getByRole("menu", { name: "Manage templates" });
-    assert.deepEqual((await manage.getByRole("menuitem").allInnerTexts()).map((x) => x.trim()), ["Update “Mine” with these settings", "Delete “Mine”…", "Update “Spare” with these settings", "Delete “Spare”…"], "the build's own first");
+    assert.deepEqual((await manage.getByRole("menuitem").allInnerTexts()).map((x) => x.trim()), ["Update Mine with the current build settings", "Delete Mine…", "Update Spare with the current build settings", "Delete Spare…"], "the build's own first");
     // a click on the build picker's button with the menu open closes the menu, with no error (re-review R1)
     await page.click("#b-tpl");
     assert.equal(await page.locator(".pop").count(), 0, "the menu closed");
     assert.deepEqual(errors, []);
     await page.click("#b-tpl");
     await page.locator(".pop").getByRole("button", { name: "Manage templates…" }).click();
-    await manage.getByRole("menuitem", { name: "Delete “Spare”…" }).click();
+    await manage.getByRole("menuitem", { name: "Delete Spare…" }).click();
     await page.locator("dialog[open]").getByRole("button", { name: "Delete Spare" }).click();
     await page.waitForFunction(() => /Template Spare deleted/.test(document.body.textContent || ""), undefined, { timeout: 10_000 });
     assert.equal(Object.hasOwn(profiles().templates, "Spare"), false);
@@ -1807,9 +1802,7 @@ test("[slow] arriving: the first-visit view, coming back to the latest run, othe
     assert.match(await page.locator("#b-start .b-start-sum").innerText(), /Melee will build for\s+Needs\s+Resists 65[\s\S]*What matters most/);
     assert.equal(await page.locator("#b-start-build").innerText(), "Build Dorran's suit");
     assert.match(await page.locator("#b-wearing").innerText(), /^Dorran is wearing now/);
-    await fitWindow(app, page, { width: 420, height: 900 });
-    // polled: the sidebar folds as the window narrows, so a read in the middle of the resize can catch it wider
-    const fits = await page.waitForFunction(() => document.documentElement.scrollWidth - document.documentElement.clientWidth <= 0, undefined, { timeout: 5_000 }).then(() => true, () => false);
+    const fits = await sidewaysAt(app, page, { width: 420, height: 900 }) <= 0;
     assert.ok(fits, `no sideways scroll at 420: ${await page.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth, ...[...document.querySelectorAll("body *")].filter((e) => e.getBoundingClientRect().right > innerWidth + 0.5).slice(0, 5).map((e) => `${e.tagName}.${e.className}#${e.id}`)].join(" "))}`);
     await fitWindow(app, page, { width: 1440, height: 900 });
 
@@ -1955,8 +1948,7 @@ test("[slow] gear changed since a run: the banner lists the changes, the Plan ma
     await page.waitForFunction(() => !/No longer in the scans/.test(document.querySelector(".b-plan")?.textContent || ""), undefined, { timeout: 10_000 });
     assert.match(await row(labels[0]).innerText(), /Now in Metal Chest/);
     assert.equal(await row(labels[0]).getByRole("button", { name: /^Grab / }).count(), 1);
-    await fitWindow(app, page, { width: 420, height: 900 });
-    const fits = await page.waitForFunction(() => document.documentElement.scrollWidth - document.documentElement.clientWidth <= 0, undefined, { timeout: 5_000 }).then(() => true, () => false);
+    const fits = await sidewaysAt(app, page, { width: 420, height: 900 }) <= 0;
     assert.ok(fits, `no sideways scroll at 420: ${await page.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth, ...[...document.querySelectorAll("body *")].filter((e) => e.getBoundingClientRect().right > innerWidth + 0.5).slice(0, 5).map((e) => `${e.tagName}.${e.className}#${e.id}`)].join(" "))}`);
     // narrow, the Plan has no Where column: the mark shows under the piece's name
     assert.equal(await row(labels[2]).locator(".b-mark-narrow").innerText(), "Now worn by Kestrel");
@@ -2109,17 +2101,17 @@ test("[slow] the sentence bar: typeahead pickers by keyboard, the build's state 
     await face(/^from template “Caster”$/);
 
     // At phone width: the words go, each picker takes the width, Build Settings and Build share a row, no sideways scroll.
-    await fitWindow(app, page, { width: 420, height: 900 });
-    const sideways = (): Promise<number> => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    const narrow = await sidewaysAt(app, page, { width: 420, height: 900 });
     assert.equal(await page.locator(".b-w-for").isVisible(), false);
     const top = (sel: string): Promise<number> => page.locator(sel).evaluate((n) => Math.round(n.getBoundingClientRect().top));
-    assert.equal(await top("#b-settings"), await top("#b-run"));
-    assert.ok(await top("#b-tpl") > await top("#b-char"), "the pickers on rows of their own");
-    assert.ok(await sideways() <= 0, `no sideways scroll at 420: ${await sideways()}`);
+    const [settingsTop, runTop, tplTop, charTop] = await settle(() => Promise.all(["#b-settings", "#b-run", "#b-tpl", "#b-char"].map(top)), ([s, r, t, c]) => s === r && t! > c!);
+    assert.equal(settingsTop, runTop);
+    assert.ok(tplTop! > charTop!, "the pickers on rows of their own");
+    assert.ok(narrow <= 0, `no sideways scroll at 420: ${narrow}`);
     for (const pick of ["#b-char", "#b-tpl"]) {
       await page.click(pick);
       await page.locator(".pop [role=combobox]").waitFor();
-      assert.ok(await sideways() <= 0, `no sideways scroll with ${pick}'s list open`);
+      assert.ok(await sideways(page) <= 0, `no sideways scroll with ${pick}'s list open`);
       await page.keyboard.press("Escape");
     }
     await fitWindow(app, page, { width: 1440, height: 900 });
@@ -2129,6 +2121,37 @@ test("[slow] the sentence bar: typeahead pickers by keyboard, the build's state 
     removeTempDir(dataDir);
   }
 });
+
+// Issue #333: side by side, the result's main column scrolls and its side column ("How the goals went", the character's
+// runs) stays put; at 420 px the side column stacks under the result and nothing scrolls sideways.
+test("[slow] the result scrolls on its own and the side column stays put; stacked at 420 with no sideways scroll", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = seedDataDir("packrat-ui-scroll-");
+  const { app, page, errors } = await launch(dataDir);
+  try {
+    await openBuilder(page);
+    await pressBuild(page);
+    await built(page);
+    // side by side needs a results box 1000 px wide; a CI screen can be smaller than 1440, so zoom out until the page is wide
+    // enough (0.7 makes even a 1024 px screen 1460 CSS px), and fail rather than skip when it is not
+    const zoom = (f: number): Promise<void> => app.evaluate(({ BrowserWindow }, z) => { BrowserWindow.getAllWindows()[0]!.webContents.setZoomFactor(z); }, f);
+    await zoom(0.7);
+    await page.waitForFunction(() => document.querySelector(".b-results")!.clientWidth >= 1000, undefined, { timeout: 5_000 });
+    assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector(".b-arrive-side")!).position), "sticky", "sticky side by side");
+    {
+      const tops = (): Promise<number[]> => page.evaluate(() => [".b-arrive-side", ".b-arrive-main"].map((s) => Math.round(document.querySelector(s)!.getBoundingClientRect().top)));
+      const [side, main] = await tops();
+      const scrolled = await page.evaluate(() => { const r = document.querySelector(".b-results")!; r.scrollTop = 400; return r.scrollTop; });
+      assert.ok(scrolled > 100, `the result scrolls: ${scrolled}`);
+      await page.waitForFunction((m) => Math.round(document.querySelector(".b-arrive-main")!.getBoundingClientRect().top) < m, main!, { timeout: 5_000 });
+      assert.equal((await tops())[0], side, "the side column stays where it was");
+    }
+    await zoom(1);
+    await fitWindow(app, page, { width: 420, height: 900 });
+    await page.waitForFunction(() => document.documentElement.scrollWidth <= innerWidth, undefined, { timeout: 5_000 }).catch(() => {});
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), "no sideways scroll at 420");
+    assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector(".b-arrive-side")!).position), "static", "stacked, it scrolls with the result");
 
 // Issue #336, part 1: the What changed chip beside the build picker, in place of its tooltip. With nothing changed it is
 // hidden; an unsaved requirement shows a dot and "1 unsaved"; saved, it reads "1 change from **Melee** template". Its
