@@ -285,10 +285,10 @@ function paintChangesChip(st: ReturnType<typeof buildState>): void {
     n && st.template ? el("span", {}, `${plural(n, "change")} from `, el("strong", {}, st.template), " template") : null,
     n && st.template && u ? txt("·", "faint") : null,
     u ? el("span", { class: "b-chg-dot", "aria-hidden": "true" }) : null, u ? txt(`${u} unsaved`) : null].filter((x): x is HTMLSpanElement | SVGSVGElement => !!x));
-  chip.setAttribute("aria-label", [n && st.template ? `${plural(n, "change")} from the ${st.template} template` : "", u ? `${u} unsaved` : ""].filter(Boolean).join(", ") + ". Show the changes");
 }
 // Which Build Settings tab a change lives on, and the group's heading in the popover.
 const CHANGE_TAB: Record<SettingsGroup, Tab> = { requirements: "requirements", weights: "weights", pool: "pool", buffs: "buffs", character: "advanced", search: "advanced" };
+const CHANGE_SEC: Record<SettingsGroup, string> = { requirements: "req", weights: "weights", pool: "pool", buffs: "buffs", character: "char", search: "adv" };
 const CHANGE_HEAD: Record<SettingsGroup, string> = { requirements: "Requirements", weights: "Weights per point", pool: "Pool", buffs: "Buffs", character: "Character", search: "Search" };
 // The popover: a header with the count and whether any are unsaved; the unsaved edits first (saved → now), then the changes
 // from the template by group (template → this build), an added requirement marked and a soft one tagged; each row's name
@@ -296,12 +296,16 @@ const CHANGE_HEAD: Record<SettingsGroup, string> = { requirements: "Requirements
 function openChangesPopover(anchor: HTMLButtonElement): void {
   if (!session.profile || !session.character) return;
   const st = buildState(), name = who(session.character), tplName = st.template ?? "";
+  // a row opens its setting: a weight through tuneWeight (Add weight when it was removed), a requirement's field (Add requirement
+  // when it was removed), a resist cap's field; anything else opens its tab with its group scrolled into view
   const open = (c: SettingsChange): void => {
     closePopover();
     if (c.group === "weights" && c.key) { tuneWeight(c.key, anchor); return; }
     opener = anchor;
-    if (c.group === "requirements" && c.key) focusIn("req", `.rule-row[data-key="${CSS.escape(c.key)}"] input[type=number]`, true);
-    else openSettings(CHANGE_TAB[c.group]);
+    const req = c.key ? `.rule-row[data-key="${CSS.escape(c.key)}"] input[type=number]` : "";
+    if (c.group === "requirements" && c.key) focusIn("req", document.querySelector(`#b-sec-req ${req}`) ? req : "#b-addfloor", true);
+    else if (c.group === "character" && c.key && (RESIST_KEYS as readonly string[]).includes(c.key)) { focusIn("caps", `#b-cap-${c.key}`, true); document.getElementById(`b-cap-${c.key}`)?.closest(".rule-row")?.scrollIntoView({ block: "nearest" }); }
+    else { openSettings(CHANGE_TAB[c.group]); document.getElementById(`b-sec-${CHANGE_SEC[c.group]}`)?.scrollIntoView({ block: "start" }); }
   };
   const table = (rows: SettingsChange[], from: string, to: string): HTMLElement => el("table", { class: "b-diff" },
     el("thead", {}, el("tr", {}, el("th", { scope: "col" }, txt("Setting", "sr")), el("th", { scope: "col" }, from), el("th", { scope: "col" }, txt("to", "sr")), el("th", { scope: "col" }, to))),
@@ -310,16 +314,20 @@ function openChangesPopover(anchor: HTMLButtonElement): void {
       ...(c.from != null ? [el("td", { class: "b-diff-from" }, c.from), el("td", { class: "b-diff-arrow", "aria-hidden": "true" }, "→"), el("td", { class: c.added ? "b-diff-add" : "" }, c.to ?? "")]
         : [el("td", { colspan: "3", class: "muted" }, c.label ? c.text : "")])))));
   const section = (head: string, rows: SettingsChange[], from: string, to: string): HTMLElement[] => [el("h3", { class: "b-diff-h" }, `${head} · ${rows.length}`), table(rows, from, to)];
-  const groups = (Object.keys(CHANGE_HEAD) as SettingsGroup[]).flatMap((g) => { const rows = st.changed.filter((c) => c.group === g); return rows.length ? section(CHANGE_HEAD[g], rows, tplName, name) : []; });
-  const n = st.changed.length, u = st.unsavedList.length;
+  // an unsaved edit is listed once, in its own section: a template change of the same setting is left out of the groups
+  const same = (a: SettingsChange, b: SettingsChange): boolean => a.group === b.group && (a.key ? a.key === b.key : a.text === b.text);
+  const shown = st.changed.filter((c) => !st.unsavedList.some((x) => same(x, c)));
+  const groups = (Object.keys(CHANGE_HEAD) as SettingsGroup[]).flatMap((g) => { const rows = shown.filter((c) => c.group === g); return rows.length ? section(CHANGE_HEAD[g], rows, tplName, name) : []; });
+  const n = st.changed.length, u = st.unsavedList.length, fromTpl = !!tplName && n > 0;
   const head = box("header", { class: "b-diff-head" },
-    el("strong", {}, ...(tplName ? [`${plural(n, "change")} from `, el("b", {}, tplName), " template"] : [`${plural(u, "unsaved change")}`])),
+    el("strong", {}, ...(fromTpl ? [`${plural(n, "change")} from `, el("b", {}, tplName), " template"] : [`${plural(u, "unsaved change")}`])),
     txt(u ? `${plural(u, "change")} not saved to ${name}'s profile yet, listed first.` : `Saved in ${name}'s build. No unsaved changes.`, "t-sm muted"));
   const body = box("div", { class: "b-diff-body" }, ...(u ? section("Not saved yet", st.unsavedList, "Saved", "Now") : []), ...groups);
-  const foot = box("footer", { class: "b-diff-foot" }, txt("Click a setting to open it in Build Settings.", "t-sm muted"),
-    tplName ? button({ label: `Reset to “${tplName}”…`, size: "sm", onClick: () => { closePopover(); void pickTemplate(session.profile!.template!, true); } }) : null,
-    button({ label: "Save as template…", size: "sm", onClick: () => { closePopover(); void saveTemplateAs(); } }));
-  const h = popover(anchor, [head, body, foot], { label: tplName ? `Changes from the ${tplName} template` : "Unsaved changes", width: 480 });
+  const foot = box("footer", { class: "b-diff-foot" }, txt("Click a setting to open it.", "t-sm muted"),
+    box("span", { class: "b-diff-acts" },
+      tplName ? button({ label: `Reset to “${tplName}”…`, size: "sm", onClick: () => { closePopover(); void pickTemplate(session.profile!.template!, true); } }) : null,
+      button({ label: "Save as template…", size: "sm", onClick: () => { closePopover(); void saveTemplateAs(); } })));
+  const h = popover(anchor, [head, body, foot], { label: fromTpl ? `Changes from the ${tplName} template` : "Unsaved changes", width: 480 });
   if (h.isOpen()) h.root.classList.add("pop-diff");
 }
 // A character picked. "No character" (NOBODY) is Manual's in both modes, and Automatic's own when picked there; picked in

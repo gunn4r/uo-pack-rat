@@ -666,4 +666,10 @@ test("[fast] settingsChanges: settingsDiff's lines, grouped, with the values of 
   assert.equal(c.find((x) => /Cursed/.test(x.text))!.group, "pool");
   assert.equal(c.find((x) => /^race/.test(x.text))!.group, "character");
   assert.deepEqual(settingsChanges({ restarts: 1 }, { restarts: 2 }).map((x) => x.group), ["search"]);
+  // a removed requirement (never tagged soft), a requirement made soft, a weight as importances
+  const r = settingsChanges({ floors: { luck: 300, dci: 45 }, softFloors: ["luck"], weights: { dci: 10 } }, { floors: { dci: 45 }, softFloors: ["luck", "dci"], weights: { dci: 5 } });
+  const rm = r.find((x) => x.key === "luck")!, soft = r.find((x) => x.key === "dci" && x.group === "requirements")!, w = r.find((x) => x.group === "weights")!;
+  assert.deepEqual([rm.from, rm.to, rm.soft, rm.added], ["300", "none", undefined, undefined]);
+  assert.deepEqual([soft.from, soft.to, soft.soft], ["hard", "soft", true]);
+  assert.deepEqual([w.key, w.from, w.to], ["dci", "100", "50"], "a weight's values are its importances");
 });

@@ -2212,9 +2212,9 @@ test("[slow] the What changed chip and its popover: unsaved first, by group, a r
     const pop = page.getByRole("dialog", { name: "Changes from the Melee template" });
     await pop.waitFor();
     assert.equal(await chip.getAttribute("aria-expanded"), "true");
-    assert.deepEqual((await pop.locator(".b-diff-h").allTextContents()), ["Not saved yet · 1", "Requirements · 1"], "unsaved first, then by group");
+    assert.deepEqual((await pop.locator(".b-diff-h").allTextContents()), ["Not saved yet · 1"], "an unsaved edit is listed once, in its own section");
     assert.match(await pop.locator(".b-diff-head").innerText(), /1 change from Melee template\s+1 change not saved to Dorran's profile yet/);
-    const luck = pop.locator(".b-diff").nth(1).locator("tr", { hasText: "Luck" });
+    const luck = pop.locator(".b-diff").first().locator("tr", { hasText: "Luck" });
     assert.deepEqual(await luck.locator("td").allInnerTexts(), ["Luck", "none", "→", "300"]);
     assert.match(await luck.locator("td").nth(3).getAttribute("class") ?? "", /b-diff-add/, "an added requirement is marked");
     await page.keyboard.press("Escape");
@@ -2227,6 +2227,10 @@ test("[slow] the What changed chip and its popover: unsaved first, by group, a r
     await closeSettings(page);
     await page.waitForFunction(() => !/unsaved/.test(document.querySelector("#b-chg")?.textContent || ""), undefined, { timeout: 10_000 });
     assert.equal((await chip.innerText()).trim(), "1 change from Melee template");
+    assert.equal(await chip.getAttribute("aria-label"), null, "its name is its visible text");
+    await chip.click();
+    assert.deepEqual((await pop.locator(".b-diff-h").allTextContents()), ["Requirements · 1"], "saved, it is a change from the template");
+    await page.keyboard.press("Escape");
     // a row opens Build Settings on its setting
     await chip.click();
     await pop.locator("button", { hasText: "Luck" }).click();
