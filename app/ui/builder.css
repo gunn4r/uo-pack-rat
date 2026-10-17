@@ -1,10 +1,10 @@
 /* ui/builder.css — the Suit Builder screen (ui/builder.mts, ui/builder-result.mts; design spec 4.6, 4.7): the
-   one-line top bar, the Settings drawer with its tabs and footer, the running build's progress card, the result, the
+   one-line top bar, the Build Settings drawer with its tabs and footer, the running build's progress card, the result, the
    compare view.
    Tokens only (docs/ui.md). Every flex/grid box here holds element children only (the one-span rule). */
 
-/* ---------------------------------------------------------------- layout: the result full width, the drawer over it */
-/* the screen never scrolls: the results column scrolls inside its own box, the drawer's body inside the drawer */
+/* ---------------------------------------------------------------- layout: the result full width */
+/* the screen never scrolls: the results column scrolls inside its own box, the Build Settings drawer's body inside the drawer */
 #tab-builder .page.b-page { position: relative; flex-direction: row; align-items: stretch; gap: var(--space-4); overflow: hidden; }
 /* one line that wraps on a narrow window: title · character · template · mode · Settings · Saved runs · Build */
 #b-topbar { height: auto; min-height: var(--topbar-h); flex-wrap: wrap; gap: var(--space-2); padding-top: var(--space-2); padding-bottom: var(--space-2); }
@@ -13,11 +13,9 @@
 .b-top-acts { flex: none; display: flex; align-items: center; gap: var(--space-2); margin-left: auto; }
 /* Manual's fill plans with the drawer's settings, and has its own button; the template is the drawer's too */
 #tab-builder.manual #b-settings, #tab-builder.manual #b-run, #tab-builder.manual #b-tpl-top { display: none; }
-/* open, the Settings button reads pressed */
+/* open, the Build Settings button reads pressed */
 .pr #b-settings[aria-expanded="true"] { background: var(--color-chip-set); color: var(--color-on-chip-set); }
-/* the Settings drawer: not modal, over the result's right side (the popovers opened from it sit above it) */
-.b-drawer { z-index: var(--z-peek); width: min(var(--drawer-w-wide), 100%); }
-.b-drawer-titles { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; }
+/* the Build Settings drawer (the shared .drawer component, index.html): its template line, tabs and footer */
 #b-tpl-info { padding: var(--space-3) var(--space-5) 0; }
 .b-tabs { flex: none; display: flex; gap: var(--space-1); padding: 0 var(--space-3); border-bottom: var(--border-width) solid var(--color-border); overflow-x: auto; }
 .pr .b-tab { flex: none; padding: var(--space-2) var(--space-2); border: 0; border-bottom: 2px solid transparent; background: none; color: var(--color-text-muted); font-weight: var(--weight-medium); cursor: pointer; }
@@ -36,7 +34,7 @@
 /* a previous result stays on screen, dimmed and out of reach (inert, aria-hidden), until the new one lands */
 #b-result.b-stale { opacity: 0.45; }
 .b-compare-view { flex: 1 1 auto; min-width: 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--space-4); }
-#tab-builder.comparing .b-drawer, #tab-builder.comparing .b-results { display: none; }
+#tab-builder.comparing .b-results { display: none; }
 .b-crumb { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
 .pr .b-crumb a { color: var(--color-text-muted); text-decoration: none; font-size: var(--text-md); white-space: nowrap; }
 .pr .b-crumb a:hover { color: var(--color-text); text-decoration: underline; }
@@ -244,7 +242,7 @@
 /* ---------------------------------------------------------------- Manual mode (ui/builder-manual.mts) */
 /* the mode switch replaces the panel and results with the totals strip on top and, under it, the slot cards
    beside the hint or the picker; each column scrolls inside its own box */
-#tab-builder.manual .b-drawer, #tab-builder.manual .b-results { display: none; }
+#tab-builder.manual .b-results { display: none; }
 /* Manual is fluid: the picker's table wants every pixel, so the page's --page-max does not apply (Automatic keeps it) */
 #tab-builder.manual > .page { max-width: none; }
 /* On a short window the slot cards and the picker keep a usable height (about six picker rows), and the screen

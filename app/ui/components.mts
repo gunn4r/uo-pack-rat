@@ -373,6 +373,8 @@ export function popoverPlacement(a: { top: number; bottom: number; left: number 
 // Anchored, non-modal: opens under its anchor (above when there's no room), or beside the `beside` element, closes on
 // a click outside, on Esc and on a second click of the anchor, and hands focus back to the anchor when it closed with
 // focus inside.
+// It lives on <body>, so one opened from inside a drawer (anchored or placed beside it) is raised over that drawer
+// and its scrim: a click in it lands in it, not on the scrim, and so never closes the drawer.
 export interface PopoverHandle { root: HTMLElement; close: () => void; isOpen: () => boolean }
 let openPopover: PopoverHandle | null = null;
 export function popover(anchor: HTMLElement, content: Kids, { label, width, minWidth, onClose, role = "dialog", beside }: { label: string; width?: number | undefined; minWidth?: number | undefined; onClose?: (() => void) | undefined; role?: "dialog" | "menu" | "listbox"; beside?: HTMLElement | undefined } = { label: "" }): PopoverHandle {
@@ -380,6 +382,7 @@ export function popover(anchor: HTMLElement, content: Kids, { label, width, minW
   anchor.dataset.popAnchor ||= nextId("pop");
   const root = box("div", { class: "pop", role, "aria-label": label, tabindex: "-1", "data-anchor": anchor.dataset.popAnchor, ...(width ? { style: `width:${width}px` } : minWidth ? { style: `min-width:${minWidth}px` } : {}) },
     box("div", { class: "pop-body" }, ...content));
+  if (anchor.closest(".drawer-root") || beside?.closest(".drawer-root")) root.classList.add("pop-over-drawer");
   document.body.append(root);
   anchor.setAttribute("aria-expanded", "true");
   const place = (): void => {
@@ -466,7 +469,7 @@ export function tipWrap(control: HTMLElement, text: string): HTMLSpanElement {
 
 // ---------------------------------------------------------------- drawer
 // A right-side modal drawer over a scrim: focus trapped inside, Esc and the scrim close it, focus returns to
-// whatever opened it. Closed, the whole thing is hidden and inert, so nothing of it (not its shadow either)
+// whatever opened it, and a popover opened from it closes with it. Closed, the whole thing is hidden and inert, so nothing of it (not its shadow either)
 // reaches the page. createDrawer() builds the markup; bindDrawer() adds the behaviour to markup that is
 // already in index.html (same structure).
 export interface DrawerHandle { root: HTMLElement; panel: HTMLElement; body: HTMLElement; open: (opener?: HTMLElement | null) => void; close: () => void; isOpen: () => boolean }
@@ -500,6 +503,7 @@ export function bindDrawer(root: HTMLElement): DrawerHandle {
   }
   function close(): void {
     if (!isOpen()) return;
+    closePopover();
     root.classList.remove("open");
     root.hidden = true; root.inert = true;
     setBackgroundInert(false);

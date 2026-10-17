@@ -112,7 +112,7 @@
         <span class="b-tpl-top" id="b-tpl-top"></span>
         <!-- the actions, one group that never splits, held to the right; the selects before it wrap -->
         <span class="b-top-acts">
-        <button class="btn btn-sm" type="button" id="b-settings" aria-expanded="false" aria-controls="b-drawer" aria-keyshortcuts="Meta+Comma Control+Comma"><span>Settings</span><kbd class="kbd" aria-hidden="true">⌘,</kbd></button>
+        <button class="btn btn-sm" type="button" id="b-settings" aria-expanded="false" aria-controls="b-drawer" aria-keyshortcuts="Meta+Comma Control+Comma"><span>Build Settings</span><kbd class="kbd" aria-hidden="true">⌘,</kbd></button>
         <button class="btn btn-sm" type="button" id="b-runs-open" title="Saved runs"><svg class="i i-sm" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg><span class="b-top-l">Saved runs</span><span class="badge" id="b-runs-count">0</span></button>
         <button class="btn btn-sm btn-primary" type="button" id="b-run" aria-keyshortcuts="Meta+Enter Control+Enter"><span>Build</span><kbd class="kbd" aria-hidden="true">⌘↵</kbd></button>
         </span>
@@ -120,30 +120,6 @@
       <header class="topbar" id="b-cmp-topbar" hidden></header>
       <div class="page b-page">
         <div class="b-results" id="b-results"><div id="b-msg"></div><div id="b-result"></div></div>
-        <!-- The Settings drawer (ui/builder.mts): over the result's right side, which stays where it is; not modal, so the
-             header's Build and the result stay in reach. One tab panel per tab, each drawn from the session's profile. -->
-        <aside class="drawer b-drawer" id="b-drawer" role="dialog" aria-labelledby="b-drawer-title" hidden>
-          <header class="overlay-head">
-            <span class="b-drawer-titles"><h2 id="b-drawer-title">Settings</h2><span class="t-sm muted" id="b-drawer-tpl"></span></span>
-            <span class="spacer"></span>
-            <button class="btn btn-ghost btn-icon" type="button" id="b-drawer-close" aria-label="Close settings (Esc)"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"></path></svg></button>
-          </header>
-          <div id="b-tpl-info" hidden></div>
-          <div class="b-tabs" role="tablist" aria-label="Settings">
-            <button class="b-tab" type="button" role="tab" id="b-tab-requirements" data-tab="requirements" aria-controls="b-tabp-requirements">Requirements</button>
-            <button class="b-tab" type="button" role="tab" id="b-tab-weights" data-tab="weights" aria-controls="b-tabp-weights">Goals</button>
-            <button class="b-tab" type="button" role="tab" id="b-tab-buffs" data-tab="buffs" aria-controls="b-tabp-buffs">Buffs</button>
-            <button class="b-tab" type="button" role="tab" id="b-tab-pool" data-tab="pool" aria-controls="b-tabp-pool">Pool</button>
-            <button class="b-tab" type="button" role="tab" id="b-tab-advanced" data-tab="advanced" aria-controls="b-tabp-advanced">Advanced</button>
-          </div>
-          <div class="drawer-body b-drawer-body" id="b-panel-body"></div>
-          <footer class="overlay-foot b-drawer-foot">
-            <button class="btn" type="button" id="b-save"><span>Save profile</span></button>
-            <button class="btn" type="button" id="b-save-tpl"><span>Save as template</span></button>
-            <span class="t-sm muted b-changes" id="b-changes"></span>
-            <button class="btn btn-primary" type="button" id="b-run-foot"><span>Build</span></button>
-          </footer>
-        </aside>
         <div class="b-compare-view" id="b-compare-view" hidden></div>
         <!-- Manual mode (ui/builder-manual.mts): the totals strip, the slot cards and, beside them, the hint or the picker -->
         <div class="b-manual" id="b-manual" hidden>
@@ -208,6 +184,33 @@
     </header>
     <div class="drawer-body" id="import-body"><div class="panel empty">loading…</div></div>
     <footer class="overlay-foot" id="import-foot"></footer>
+  </aside>
+</div>
+
+<!-- Build Settings drawer (ui/builder.mts, ui/builder.css): one tab panel per tab, each drawn from the session's profile -->
+<div class="drawer-root" id="b-drawer-root" hidden inert>
+  <div class="scrim" data-drawer-close></div>
+  <aside class="drawer drawer-wide" id="b-drawer" role="dialog" aria-modal="true" aria-labelledby="b-drawer-title">
+    <header class="overlay-head">
+      <span class="overlay-titles"><h2 id="b-drawer-title">Build Settings</h2><span class="t-sm muted overlay-sub" id="b-drawer-tpl"></span></span>
+      <span class="spacer"></span>
+      <button class="btn btn-ghost btn-icon" type="button" id="b-drawer-close" data-drawer-close aria-label="Close Build Settings (Esc)"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"></path></svg></button>
+    </header>
+    <div id="b-tpl-info" hidden></div>
+    <div class="b-tabs" role="tablist" aria-label="Build Settings">
+      <button class="b-tab" type="button" role="tab" id="b-tab-requirements" data-tab="requirements" aria-controls="b-tabp-requirements">Requirements</button>
+      <button class="b-tab" type="button" role="tab" id="b-tab-weights" data-tab="weights" aria-controls="b-tabp-weights">Goals</button>
+      <button class="b-tab" type="button" role="tab" id="b-tab-buffs" data-tab="buffs" aria-controls="b-tabp-buffs">Buffs</button>
+      <button class="b-tab" type="button" role="tab" id="b-tab-pool" data-tab="pool" aria-controls="b-tabp-pool">Pool</button>
+      <button class="b-tab" type="button" role="tab" id="b-tab-advanced" data-tab="advanced" aria-controls="b-tabp-advanced">Advanced</button>
+    </div>
+    <div class="drawer-body b-drawer-body" id="b-panel-body"></div>
+    <footer class="overlay-foot b-drawer-foot">
+      <button class="btn" type="button" id="b-save"><span>Save profile</span></button>
+      <button class="btn" type="button" id="b-save-tpl"><span>Save as template</span></button>
+      <span class="t-sm muted b-changes" id="b-changes"></span>
+      <button class="btn btn-primary" type="button" id="b-run-foot"><span>Build</span></button>
+    </footer>
   </aside>
 </div>
 

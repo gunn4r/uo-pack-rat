@@ -184,8 +184,7 @@ function runCard(run: RunSummaryLike, title: string, diff: string[], badges: Arr
   const li = box("li", { class: `card run-card${showing ? " showing" : ""}`, "data-run": run.id }, tick, main, more,
     badges.length ? box("div", { class: "run-badges" }, ...badges.map((b) => badge(b.text, b.tone))) : null);
   more.onclick = () => {
-    const m = menu(more, [{ label: "Open", onSelect: () => openRun(run.id) }, { label: "Open in Manual", onSelect: () => { void runToManual(run.id); } }, { label: "Rename", onSelect: () => renameRun(run, main) }, { label: "Delete…", onSelect: () => deleteRun(run, title), danger: true }], { label: "Run actions", width: 180 });
-    m.root.classList.add("pop-over-drawer");   // the popover lives on <body>: it must sit above the drawer
+    menu(more, [{ label: "Open", onSelect: () => openRun(run.id) }, { label: "Open in Manual", onSelect: () => { void runToManual(run.id); } }, { label: "Rename", onSelect: () => renameRun(run, main) }, { label: "Delete…", onSelect: () => deleteRun(run, title), danger: true }], { label: "Run actions", width: 180 });
   };
   return li;
 }

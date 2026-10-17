@@ -87,6 +87,7 @@ test("[slow] ⌘↵ builds from anywhere on the Builder screen, and not from beh
     assert.equal(starts, 2, "a second build from a requirement field");
 
     // Behind the Saved runs drawer the screen is inert: no build.
+    await closeSettings(page);
     await page.click("#b-runs-open");
     await page.waitForSelector("#runs-drawer:not([hidden])");
     await page.keyboard.press("ControlOrMeta+Enter");
@@ -169,11 +170,12 @@ test("[slow] the Settings drawer: ⌘, and its button, Esc, the tabs, an error's
     await count("No changes since the last build");
     // Another time budget, built: whether the server answers from the earlier run or not, nothing differs from what was asked.
     await page.fill("#b-budget", "3");
-    await page.click("#b-run");
+    await page.click("#b-run-foot");
     await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>("#b-run")?.disabled && !document.querySelector("#b-msg .b-progress"), undefined, { timeout: 60_000 });
     await count("No changes since the last build");
     // That run reopened from Saved runs is no longer the build just shown: the footer counts what the run's banner names,
     // and Load these settings leaves nothing.
+    await closeSettings(page);
     await page.click("#b-runs-open");
     await page.locator("#b-runs .run-card.showing button[aria-haspopup=menu]").click();
     await page.click('.pop-over-drawer [role="menuitem"]:has-text("Open")');
@@ -184,20 +186,27 @@ test("[slow] the Settings drawer: ⌘, and its button, Esc, the tabs, an error's
     await page.locator("#b-run-banner .saved-run").getByRole("button", { name: "Load these settings" }).click();
     await count("No changes since the last build");
 
-    // Esc closes it from anywhere on the screen: after a click on the drawer's blank space, and from the result.
+    // Esc closes it after a click on the drawer's blank space (the focus fallen to <body>).
     await settings(page, "advanced");
     await page.click("#b-sec-adv-h");
     await page.keyboard.press("Escape");
     await drawer.waitFor({ state: "hidden" });
     assert.equal(await focused(), "b-settings");
+    // It is modal, as Saved runs is (issue #320): a click away, on the scrim over the result, closes it, the focus back
+    // on the button.
     await page.click("#b-settings");
-    await page.click("#b-result h2");
-    await page.keyboard.press("Escape");
+    await page.mouse.click(20, 450);
     await drawer.waitFor({ state: "hidden" });
-    // ⌘, with a popover open from the drawer closes both, the focus back on Settings.
+    assert.equal(await focused(), "b-settings", "a click away gives the focus back to the button");
+    // A popover opened from it sits above the scrim: a click in it leaves the drawer open. ⌘, with the popover open
+    // closes both, the focus back on Build Settings.
     await settings(page, "requirements");
     await page.click("#b-addfloor");
     await page.waitForSelector(".pop .b-pick-list");
+    const pop = (await page.locator(".pop").boundingBox())!;
+    await page.mouse.click(pop.x + 8, pop.y + 8);   // its padding, not an option
+    assert.equal(await page.locator(".pop").count(), 1, "the popover stays");
+    assert.equal(await drawer.isVisible(), true, "a click in the popover is no click away");
     await page.keyboard.press("ControlOrMeta+Comma");
     await drawer.waitFor({ state: "hidden" });
     assert.equal(await page.locator(".pop").count(), 0, "the popover closed with it");
@@ -369,7 +378,7 @@ test("[slow] Check your settings: the block shows before and after the build, an
     await luckRow.locator("input").fill("100000");
     let starts = 0;
     page.on("request", (r) => { if (r.method() === "POST" && new URL(r.url()).pathname === "/api/optimize") starts++; });
-    await page.click("#b-run");
+    await page.click("#b-run-foot");
     // before the search ends: the block sits right above the progress card
     // read in the same poll that finds it, so a quick build can't replace it between the wait and the read
     const preText = await (await page.waitForFunction(() => document.querySelector("#b-msg .b-check:has(+ .b-progress)")?.textContent || null, undefined, { timeout: 15_000 })).jsonValue();
@@ -473,6 +482,7 @@ test("[slow] goals: the ranked list, its counts, =, spare points, How the goals 
     await page.getByRole("button", { name: "Move Swing speed down", exact: true }).click();
     await count("1 change since the last build");
     const loadRun = async (): Promise<void> => {
+      await closeSettings(page);
       await page.click("#b-runs-open");
       await page.locator("#b-runs .run-card button[aria-haspopup=menu]").first().click();
       await page.click('.pop-over-drawer [role="menuitem"]:has-text("Open")');
@@ -492,15 +502,18 @@ test("[slow] goals: the ranked list, its counts, =, spare points, How the goals 
     await fitWindow(app, page, { width: 1440, height: 900 });
 
     // a profile saved with weights and no goals opens on its weights; a run built from it, loaded over goals, leaves goal mode
+    await closeSettings(page);
     await page.selectOption("#b-char", "Kestrel");
+    await settings(page, "weights", { weights: false });
     await page.waitForSelector('#b-sec-weights .rule-row[data-key="dci"]');
     assert.equal(await page.locator("#b-sec-goals").isHidden(), true);
     assert.equal(await page.locator("#b-sec-weights").isVisible(), true);
     await page.click("#b-run-foot");
     await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>("#b-run")?.disabled && /Best suit for Kestrel/.test(document.querySelector("#b-result h2")?.textContent || ""), undefined, { timeout: 60_000 });
+    await closeSettings(page);
     await page.click("#b-tpl-menu");
     await page.click('[role="menuitem"]:has-text("Apply to these settings")');
-    await page.waitForSelector("#b-goals-h");
+    await page.waitForSelector("#b-goals-h", { state: "attached" });
     await loadRun();
     await settings(page, "weights", { weights: false });
     await page.waitForSelector('#b-sec-weights .rule-row[data-key="dci"]');
@@ -586,8 +599,8 @@ test("[slow] goals runs: the first-visit goals, the run line in goal names, and 
     const most = await page.locator("#b-start .b-start-sum .b-imps").innerText();
     assert.match(most, /^1\. Swing speed\s+100\s+2\. Hit chance = Defense chance\s+80\s+3\. Damage\s+65$/);
     const sum = await page.locator("#b-start .b-start-sum").innerText();
-    assert.match(sum, /Spare points: Luck\s+Goals in Settings/);
-    assert.doesNotMatch(sum, /more in Settings/, "the spare points are no extra row");
+    assert.match(sum, /Spare points: Luck\s+Goals in Build Settings/);
+    assert.doesNotMatch(sum, /more in Build Settings/, "the spare points are no extra row");
     await fitWindow(app, page, { width: 420, height: 900 });
     const fits = await page.waitForFunction(() => document.documentElement.scrollWidth - document.documentElement.clientWidth <= 0, undefined, { timeout: 5_000 }).then(() => true, () => false);
     assert.ok(fits, "no sideways scroll at 420 on the first-visit view");
@@ -663,7 +676,7 @@ test("[slow] weight scale: the row shows importance with a trade-off hover, and 
     await field.fill("");
     await hover("^Luck has the highest weight");
     await field.fill("2000");
-    await page.click("#b-run");
+    await page.click("#b-run-foot");
     await built(page);
     const block = page.locator(".b-head-card .b-check");
     const to = /Luck makes up \d+% of this suit's score: at weight 2000, it counts [\d.]+ times the median of your other weights\. Try ([\d.]+)\./.exec(await block.innerText())?.[1];
@@ -677,7 +690,7 @@ test("[slow] weight scale: the row shows importance with a trade-off hover, and 
     assert.equal(await setLuck.isDisabled(), true);
     await settings(page, "weights");
     await field.fill("2000");
-    await page.click("#b-run");
+    await page.click("#b-run-foot");
     await built(page);
     await closeSettings(page);
     await block.getByRole("button", { name: `Set Luck to ${to}` }).click();
@@ -918,7 +931,7 @@ test("[slow] drawer extras: notched weight sliders, buffs by school, each requir
       await page.keyboard.type(v);
     }
     await page.locator("#b-sec-req .rule-row[data-key=dci] [data-value=soft]").click();
-    await page.click("#b-run");
+    await page.click("#b-run-foot");
     await built(page);
     // each resist need says the number its tile shows, held at the cap of 70 (the Melee floor is 65)
     for (const [k, name] of [["physResist", "Physical"], ["fireResist", "Fire"]] as const) {
@@ -981,7 +994,7 @@ test("[slow] swing steps: the switch, the swing line, Next step from the result,
     assert.equal(await page.locator("#b-sec-req .b-next-step").count(), 0, "the worn suit is at its fastest step: no Next step before the build");
     let starts = 0;
     page.on("request", (r) => { if (r.method() === "POST" && new URL(r.url()).pathname === "/api/optimize") starts++; });
-    await page.click("#b-run");
+    await page.click("#b-run-foot");
     await built(page);
     // read in the same poll that finds them, so a redraw can't land between the wait and the read
     const read = async (sel: string): Promise<string> => String(await (await page.waitForFunction((s) => document.querySelector(s)?.textContent || null, sel, { timeout: 10_000 })).jsonValue());
@@ -1066,7 +1079,7 @@ test("[slow] rarity preference: the segmented control, its help line, the result
     await page.click('#b-rarity [data-value="lower"]');
     await text("#b-rarity-help", /^Among equally good suits, use the lowest-rarity pieces\. Requirements come first\.$/);
     await text("#b-tpl-state", /prefer lower rarity/);
-    await page.click("#b-run");
+    await page.click("#b-run-foot");
     await built(page);
     await closeSettings(page);
     await page.click("#b-result .b-disclose");
@@ -1169,7 +1182,7 @@ test("[slow] a raised resist cap is marked, built with, shown in the result and 
     // Out of range: the build does not run, and the field says why and takes focus.
     await fire.fill("200");
     assert.equal(await page.locator("#b-cap-fireResist-err").innerText(), "Enter a whole number from 0 to 150.");
-    await page.click("#b-run");
+    await page.click("#b-run-foot");
     assert.equal(await page.evaluate(() => document.activeElement?.id), "b-cap-fireResist");
     assert.equal(await page.locator("#b-run").isDisabled(), false, "no build started");
 
@@ -1605,13 +1618,14 @@ test("[slow] templates: built-ins first with their description, Apply sets Manua
     await page.reload();
     await page.waitForSelector("#tab-builder:not([hidden]) #b-tpl", { timeout: 30_000 });
     await page.selectOption("#b-char", "Kestrel");
-    await settings(page, "buffs");   // the template's description shows at the drawer's top
     assert.deepEqual(await page.$$eval("#b-tpl optgroup", (els) => els.map((e) => (e as HTMLOptGroupElement).label)), ["Built-in"]);
     assert.deepEqual(await page.$$eval("#b-tpl optgroup option", (els) => els.map((e) => e.textContent)), ["Melee", "Caster", "Archer", "Tank", "Sampire", "Paladin (Lazy Pally)", "Summoner", "Tamer (Archer)", "Archer (Chivalry)", "Archer-Bard", "Necro-Mage", "Mystic-Mage", "Spellweaver (Necroweaver)", "Thrower (Gargoyle)", "Tank (Mystic)", "Horrific Beast Wrestler", "Hemomancer"]);
     await page.selectOption("#b-tpl", "builtin:melee");
+    await settings(page, "buffs");   // the template's description shows at the drawer's top
     await page.waitForFunction(() => /Loads: Divine Fury/.test(document.querySelector("#b-tpl-info")?.textContent || ""));
     assert.match(await page.locator("#b-tpl-info").innerText(), /Built-in\s+A test build\.\s+Loads: Divine Fury\s+Source: Lazy Pally/);
     assert.equal(await page.locator("#b-tpl-info a").getAttribute("href"), SOURCE);
+    await closeSettings(page);
     await page.selectOption("#b-tpl", "builtin:caster");
     await page.waitForFunction(() => document.querySelector("#b-tpl-info")?.hasAttribute("hidden"));
     await page.selectOption("#b-tpl", "builtin:melee");
@@ -1619,6 +1633,7 @@ test("[slow] templates: built-ins first with their description, Apply sets Manua
     await page.click("#b-tpl-menu");
     await page.getByRole("menuitem", { name: "Apply to these settings" }).click();
     await page.waitForFunction(() => /^matches/.test(document.querySelector("#b-tpl-state")?.textContent || ""));
+    await settings(page, "buffs");
     assert.equal(await page.locator("#b-bf-divineFury").isChecked(), true);
     // a buff turned on since marks the template changed
     await page.click("#b-buff-add");
@@ -1626,6 +1641,7 @@ test("[slow] templates: built-ins first with their description, Apply sets Manua
     await page.keyboard.press("Escape");
     await page.waitForFunction(() => /^modified[\s\S]*Buffs: \+Bless/.test(document.querySelector("#b-tpl-state")?.textContent || ""));
     // Save as keeps the buffs with the copy
+    await closeSettings(page);
     await page.click("#b-tpl-menu");
     await page.getByRole("menuitem", { name: "Save as…" }).click();
     const dialog = page.locator(".prompt-dialog[open]");
@@ -1687,6 +1703,7 @@ test("[slow] No character: built in Automatic from its own profile, saved as a r
     await page.keyboard.press("Escape");
     await settings(page, "advanced");
     assert.ok(await page.locator("#b-str").isVisible(), "STR limit stays");
+    await closeSettings(page);
     await page.selectOption("#b-tpl", "builtin:caster");
     await page.click("#b-tpl-menu");
     await page.getByRole("menuitem", { name: "Apply to these settings" }).click();
@@ -1694,7 +1711,7 @@ test("[slow] No character: built in Automatic from its own profile, saved as a r
     await page.locator("#b-sec-req .rule-row[data-key=lrc]").waitFor();
     assert.equal(await page.locator("#b-sec-req .rule-row[data-key=lrc] input[type=number]").inputValue(), "100");
     assert.equal(await page.locator("#b-sec-req .rule-row[data-key=lmc] input[type=number]").inputValue(), "40");
-    await page.click("#b-run");
+    await page.click("#b-run-foot");
     await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>("#b-run")?.disabled && document.querySelector("#b-result h2")?.textContent === "Best suit · No character", undefined, { timeout: 60_000 });
     assert.equal(await page.locator("#b-grab-all").isDisabled(), true);
     await closeSettings(page);
