@@ -1083,7 +1083,8 @@ function optBranchAndBound(slots: string[], cands: Record<string, (OptItem | nul
         for (let i = 0; i < n; i++) a[order[i]!] = pick[i] as OptItem | null;
         best = a;
       }
-      if (alt && sc >= altThr() - EPS && (altList.length < altMax || sc > altMin + EPS)) {
+      // the slack from the suit's own score: the threshold and the list's lowest start infinite
+      if (alt && sc >= altThr() - optSlack(EPS, sc, 0) && (altList.length < altMax || sc > altMin + optSlack(EPS, sc, 0))) {
         const a: OptAssignment = {};
         for (let i = 0; i < n; i++) a[order[i]!] = pick[i] as OptItem | null;
         if (altList.length < altMax) altList.push({ a: a, score: sc });
@@ -1414,7 +1415,7 @@ function optimizeSuit(pools: Record<string, OptItem[]>, current: OptAssignment, 
     alternatives = [];
     for (let i = 0; i < list.length && alternatives.length < alt.count; i++) {
       const e = list[i]!;
-      if (!lex && e.score < topScore - altTol - 1e-9) break;   // ranked against the best score, which a tie-break's suit may sit under
+      if (!lex && e.score < topScore - altTol - optSlack(1e-9, e.score, topScore)) break;   // ranked against the best score, which a tie-break's suit may sit under
       const k = sigOf(e.best);
       if (seen[k]) continue;
       seen[k] = true;

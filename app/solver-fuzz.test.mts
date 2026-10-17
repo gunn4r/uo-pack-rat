@@ -8,10 +8,10 @@ import assert from "node:assert/strict";
 import { solveExact, type OptPools, type OptAssignment, type OptProfile } from "./exact-solver.mts";
 import { core, fuzzSlots } from "./solver-fixture.mts";
 import { HARD_FLOOR_BONUS_MAX, hardFloorBonusFor, propertyReach, slackAt, withHardFloorBonus } from "./mip.mts";
-const SCORE_SLACK = 1e-6;   // == app/exact-solver.mts SCORE_EPS
 import { requirementScaleDiagnostics } from "./diagnostics.mts";
 import { stepTable, swingTicks } from "./swing.mts";
 import type { OptItem } from "./vault-lib.mts";
+const SCORE_SLACK = 1e-6;   // == app/exact-solver.mts SCORE_EPS
 
 type OptOptions = Parameters<typeof solveExact>[0]["opts"];
 type Item = NonNullable<OptPools[string]>[number];
