@@ -245,11 +245,11 @@ test("[slow] Save as… in the suit builder opens an in-page dialog and saves th
     await page.click('[data-nav="builder"]');
     await page.waitForSelector("#tab-builder:not([hidden])", { timeout: 10_000 });
     // buildBuilder() auto-selects the first character from the demo fixtures (Dorran/Kestrel) once
-    // its <option>s exist — the "Save as…" button needs a selected character's settings to snapshot.
-    await page.waitForFunction(() => document.querySelector<HTMLSelectElement>("#b-char")?.value, { timeout: 10_000 });
+    // it is picked — Save as template needs a selected character's settings to snapshot.
+    await page.waitForFunction(() => document.querySelector("#b-char")?.getAttribute("data-value"), { timeout: 10_000 });
 
-    await page.click("#b-tpl-menu");   // Save as… lives in the template's ⋯ menu
-    await page.getByRole("menuitem", { name: "Save as…" }).click();
+    await page.click("#b-tpl");   // Save as template… is an action in the build picker (issue #321)
+    await page.locator(".pop").getByRole("button", { name: "Save as template…" }).click();
     const dialog = page.locator(".prompt-dialog[open]");
     await dialog.waitFor({ timeout: 10_000 });
     const input = dialog.locator("input[type=text]");

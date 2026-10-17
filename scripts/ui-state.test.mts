@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
-import { fitWindow, openFacet, testEnv, noUpdateCheck, completeLines, removeTempDir } from "./electron-window.mts";
+import { fitWindow, openFacet, testEnv, noUpdateCheck, completeLines, removeTempDir, pickCharacter, characterNames } from "./electron-window.mts";
 import type { ElectronApplication, Page } from "playwright";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -135,9 +135,9 @@ test("[slow] refresh, Clear all, the virtual table and Forget keep the page's st
     // Pick the second character in the builder, so a Forget that reloads the whole page (and snaps
     // the builder back to the first character) shows up.
     await openTab(page, "builder");
-    await page.waitForFunction(() => document.querySelector<HTMLSelectElement>("#b-char")?.value, { timeout: 10_000 });
-    const names = (await page.locator("#b-char option").allInnerTexts()).filter((n) => n !== "No character");
-    await page.selectOption("#b-char", names[1]!);
+    await page.waitForFunction(() => document.querySelector("#b-char")?.getAttribute("data-value"), { timeout: 10_000 });
+    const names = await characterNames(page);
+    await pickCharacter(page, names[1]!);
     // The Weapons chip's choices, counted in its popover: wiring the panel twice would draw a second chip. It is in the
     // Build Settings drawer's Pool tab (issue #272).
     const weaponChoices = async (): Promise<number> => {
@@ -168,7 +168,7 @@ test("[slow] refresh, Clear all, the virtual table and Forget keep the page's st
     assert.ok(await page.locator("#inv-table tbody tr.item").count() > 0, "rows are shown after the Forget");
     await openTab(page, "builder");
     assert.equal(await weaponChoices(), weaponOptions, "Forget does not add another set of weapon options");
-    assert.equal(await page.locator("#b-char").inputValue(), names[1], "Forget does not move the builder to another character");
+    assert.equal(await page.getAttribute("#b-char", "data-value"), names[1], "Forget does not move the builder to another character");
 
     assert.deepEqual(errors, []);
   } finally {
@@ -264,15 +264,15 @@ test("[slow] a build finished for one character is never shown under another", a
   try {
     await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
     await openTab(page, "builder");
-    await page.waitForFunction(() => document.querySelector<HTMLSelectElement>("#b-char")?.value, { timeout: 10_000 });
-    const [builtFor, other] = (await page.locator("#b-char option").allInnerTexts()).filter((n) => n !== "No character") as [string, string];
-    await page.selectOption("#b-char", builtFor);
+    await page.waitForFunction(() => document.querySelector("#b-char")?.getAttribute("data-value"), { timeout: 10_000 });
+    const [builtFor, other] = await characterNames(page) as [string, string];
+    await pickCharacter(page, builtFor);
     await page.click("#b-settings");   // the time budget is under Advanced, in the Settings drawer
     await page.click("#b-tab-advanced");
     await page.fill("#b-budget", "3");
     await page.click("#b-drawer-close");
     await page.click("#b-run");
-    await page.selectOption("#b-char", other);
+    await pickCharacter(page, other);
     // The job ends when Build is enabled again.
     await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>("#b-run")?.disabled, undefined, { timeout: 60_000 });
     const shown = await page.locator("#b-result").innerText();
@@ -281,7 +281,7 @@ test("[slow] a build finished for one character is never shown under another", a
     assert.match(msg, new RegExp(`${builtFor}'s build finished`), `the message says whose build finished, got ${msg}`);
 
     // Switching back shows it, under the right name.
-    await page.selectOption("#b-char", builtFor);
+    await pickCharacter(page, builtFor);
     // the other character's first-visit heading is still there until the parked result draws: wait for it to go
     await page.waitForFunction((n) => document.querySelector("#b-result h2")?.textContent === `Best suit for ${n}`, builtFor, { timeout: 10_000 });
     await page.locator("#b-result").getByRole("button", { name: "Full sheet" }).click();
@@ -306,8 +306,8 @@ test("[slow] focus moves on, not to the page body, when a build finishes, is can
   try {
     await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
     await openTab(page, "builder");
-    await page.waitForFunction(() => document.querySelector<HTMLSelectElement>("#b-char")?.value, { timeout: 10_000 });
-    const name = await page.locator("#b-char").inputValue();
+    await page.waitForFunction(() => document.querySelector("#b-char")?.getAttribute("data-value"), { timeout: 10_000 });
+    const name = await page.getAttribute("#b-char", "data-value");
     await page.click("#b-settings");
     await page.click("#b-tab-advanced");
     await page.fill("#b-budget", "2");
@@ -356,6 +356,10 @@ test("[slow] with no character, Build, Save profile and Save as template are dis
       assert.match(await page.locator(id).getAttribute("title") || "", /no character to build for/);
       assert.equal(await page.locator(id).getAttribute("aria-describedby"), "b-no-char");
     }
+    // the build picker's tooltip has nothing to read with no character, and says why (issue #321)
+    assert.equal(await page.locator("#b-tpl .cbx-title").innerText(), "No build yet");
+    await page.focus("#b-tpl");
+    await page.waitForFunction(() => [...document.querySelectorAll(".tip")].some((e) => /no character to build for/.test(e.textContent || "")), undefined, { timeout: 5_000 });
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
@@ -407,7 +411,8 @@ test("[slow] a character's sheet opens from the roster, and a character can be f
     const locs = await page.locator(".pop input[type=checkbox]").evaluateAll((is) => is.map((i) => (i as HTMLInputElement).value));
     await page.keyboard.press("Escape");
     assert.ok(!locs.includes(`loc:Worn by ${gone}`), `no "Worn by ${gone}" location is left, got ${JSON.stringify(locs)}`);
-    assert.doesNotMatch(await page.locator("#b-char").innerText(), new RegExp(gone));
+    await openTab(page, "builder");
+    assert.doesNotMatch((await characterNames(page)).join(" "), new RegExp(gone), "the Suit Builder's character picker no longer lists it");
 
     // "Show <name>'s items" narrows the Inventory with its Character filter, not a text search.
     await page.evaluate(() => { location.hash = "#/characters"; });
@@ -643,9 +648,9 @@ test("[slow] a saved run or run list that lands after a character switch is not 
   try {
     await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
     await openTab(page, "builder");
-    await page.waitForFunction(() => document.querySelector<HTMLSelectElement>("#b-char")?.value, { timeout: 10_000 });
-    const [builtFor, other] = (await page.locator("#b-char option").allInnerTexts()).filter((n) => n !== "No character") as [string, string];
-    await page.selectOption("#b-char", builtFor);
+    await page.waitForFunction(() => document.querySelector("#b-char")?.getAttribute("data-value"), { timeout: 10_000 });
+    const [builtFor, other] = await characterNames(page) as [string, string];
+    await pickCharacter(page, builtFor);
     await page.click("#b-settings");   // the time budget is under Advanced, in the Settings drawer
     await page.click("#b-tab-advanced");
     await page.fill("#b-budget", "3");
@@ -659,15 +664,15 @@ test("[slow] a saved run or run list that lands after a character switch is not 
     await page.click("#b-runs-open");
     await page.click("#b-runs .run-card button[aria-haspopup=menu]");
     await page.getByRole("menuitem", { name: "Open", exact: true }).click();
-    await page.selectOption("#b-char", other);
+    await pickCharacter(page, other);
     await page.waitForTimeout(3000);
     assert.doesNotMatch(await page.locator("#b-result").innerText(), /Best suit for/, "the run opened for one character is not drawn under the other");
     await page.unroute("**/api/runs/*");
 
     // A slow run list for the old character must not fill the drawer under the new one.
     await page.route(`**/api/runs?character=${encodeURIComponent(builtFor)}`, async (route) => { await new Promise((r) => setTimeout(r, 1500)); await route.continue(); });
-    await page.selectOption("#b-char", builtFor);
-    await page.selectOption("#b-char", other);
+    await pickCharacter(page, builtFor);
+    await pickCharacter(page, other);
     await page.waitForTimeout(3000);
     assert.equal(await page.locator("#b-runs .run-main").count(), 0, `${other} has no saved runs; ${builtFor}'s late list must not show under ${other}`);
 

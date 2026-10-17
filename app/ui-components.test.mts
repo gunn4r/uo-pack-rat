@@ -199,3 +199,22 @@ test("[fast] besidePlacement: right of the column (or left of it at the window's
   assert.deepEqual(C.besidePlacement({ top: 220 }, { left: 400, right: 880 }, size, { width: 880, height: 900 }), { top: 220, left: 392, maxHeight: 884 }, "no room on either side: over the column");
 });
 
+// Issue #321: the combobox's pure parts. What the typed text keeps (title and subtitle, or `match`, in any case; an emptied
+// group goes), where it is marked, and how ↑ and ↓ move the highlight.
+test("[fast] combobox: filtering and grouping, the marked match, the keyboard model", () => {
+  const groups = [
+    { label: "Characters", options: [{ value: "a", title: "Dorran", subtitle: "Swordsmanship 120" }, { value: "b", title: "Kestrel", subtitle: "Archery 110" }] },
+    { label: "Own", options: [{ value: "own", title: "Dorran's build", subtitle: "from template “Archer”", match: "Dorran's build" }] },
+    { label: "Empty", options: [] },
+  ];
+  assert.deepEqual(C.filterGroups(groups, "").map((g) => g.label), ["Characters", "Own"], "no query keeps every group with options");
+  assert.deepEqual(C.filterGroups(groups, "ARCH").map((g) => [g.label, g.options.map((o) => o.value)]), [["Characters", ["b"]]], "the subtitle is searched, any case; `match` replaces it");
+  assert.deepEqual(C.filterGroups(groups, "  dorran ").map((g) => g.options.map((o) => o.value)), [["a"], ["own"]], "trimmed, across groups");
+  assert.deepEqual(C.filterGroups(groups, "zz"), [], "nothing left");
+  assert.deepEqual(C.markParts("Swordsmanship 120", "MAN"), ["Swords", "man", "ship 120"]);
+  assert.deepEqual(C.markParts("Kestrel", "zz"), ["Kestrel"]);
+  assert.deepEqual(C.markParts("Kestrel", "  "), ["Kestrel"]);
+  assert.deepEqual(C.markParts("Kestrel", "kes"), ["", "Kes", "trel"], "the text's own case is kept");
+  assert.deepEqual([C.comboStep(0, 3, "ArrowDown"), C.comboStep(2, 3, "ArrowDown"), C.comboStep(2, 3, "ArrowUp"), C.comboStep(0, 3, "ArrowUp")], [1, 2, 1, 0], "↓ and ↑ stop at the ends");
+  assert.deepEqual([C.comboStep(0, 0, "ArrowDown"), C.comboStep(1, 3, "a"), C.comboStep(1, 3, "Enter")], [-1, -1, -1], "no options, or a key that does not move it");
+});
