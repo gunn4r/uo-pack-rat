@@ -90,6 +90,23 @@ test("[fast] POST /api/forget and DELETE /api/runs/<id> stream a changed event t
   }
 });
 
+// An Organize setup save only changes the setup, so open tabs are told to reload that and keep the inventory they have.
+test("[fast] PUT /api/organize streams a changed event of kind organize, not inventory", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-organize-event-"));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
+  const sse = sseReader(await fetch(s2.url + "/api/events"));
+  try {
+    await sse.readUntil((b) => b.includes("event: hello"));
+    const body = { version: 1, catchAll: null, pinnedItems: [], labels: {}, rules: [] };
+    assert.equal((await fetch(s2.url + "/api/organize", { method: "PUT", headers: { ...JSON_HEADERS, "x-client-id": "tab-a" }, body: JSON.stringify(body) })).status, 200);
+    const heard = await sse.readUntil((b) => b.includes('event: changed\ndata: {"what":"organize","by":"tab-a"'));
+    assert.ok(!heard.includes('"what":"inventory"'), "no inventory reload is asked for");
+  } finally {
+    await sse.cancel();
+    await s2.close();
+  }
+});
+
 // readScans() (app/vault-server.mts) upgrades and schema-validates every scan file on read; a file
 // that fails either step must be logged (console.warn) and skipped, never crash the server or the
 // rest of the fold. Uses a non-demo server (--demo redirects paths.scans to app/fixtures, which this

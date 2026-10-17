@@ -481,11 +481,11 @@ export interface RejectedEvent {
   reason: string;
   at: number;
 }
-// eventBus.broadcast("changed", …): a forget / forget-character, an Organize setup save (PUT /api/organize) or an
-// Organize trip reporting back ("inventory"), or a run deletion ("runs") — every tab reloads that data.
+// eventBus.broadcast("changed", …): a forget / forget-character, or an Organize trip reporting back ("inventory"), an Organize
+// setup save (PUT /api/organize, "organize": the tabs reload the setup only), or a run deletion ("runs") — every tab reloads that data.
 export interface ChangedEvent {
-  what: "inventory" | "runs";
-  by?: string;   // an inventory change's x-client-id: the tab that made it has already reloaded
+  what: "inventory" | "organize" | "runs";
+  by?: string;   // an inventory or Organize change's x-client-id: the tab that made it has already reloaded
   at: number;
 }
 
