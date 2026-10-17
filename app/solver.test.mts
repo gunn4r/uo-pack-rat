@@ -48,9 +48,10 @@ test("[fast] an unreachable hard floor scores the core's partial credit", async 
 
 // Issue #204: one hard floor in reach and two out of it. The ring that misses the reachable floor by a point comes near
 // the other two; their partial credit, 1e7 × 0.5 × 0.9 each when every hard floor had its own, outscored meeting the
-// floor, so the core took that ring while HiGHS, holding the floor as a row, proved the other one.
+// floor, so the core took that ring while HiGHS, holding the floor as a row, proved the other one. The ring that meets
+// it is part of the way to DCI too, so HiGHS's score equals the core's only when the MIP shares that credit as well.
 test("[fast] partial credit on unreachable hard floors never buys a miss of a reachable one", async () => {
-  const meets = { serial: 90101, name: "Meets", slot: "ring", props: { hci: 10 } };
+  const meets = { serial: 90101, name: "Meets", slot: "ring", props: { hci: 10, dci: 30 } };
   const near = { serial: 90102, name: "Near", slot: "ring", props: { hci: 9, dci: 90, luck: 90 } };
   const profile = { weights: {}, caps: {}, floors: { hci: 10, dci: 100, luck: 100 }, hardFloors: ["hci", "dci", "luck"], floorBonus: 1000 };
   const opts: OptOptions = { exact: true, timeBudgetMs: 5000, restarts: 2, seed: 1, slots: ["ring"], optionalSlots: [] };

@@ -239,6 +239,7 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
   };
   // a floor at or under the property's min is met by every suit: dropped, as the core drops it
   const floorOf = (d: string): number => (MINS[d] != null && (FL[d] || 0) <= MINS[d]! ? 0 : FL[d] || 0);
+  // every hard floor counts in the share, one each suit meets included, as in the core
   const nHard = dims.filter((d) => hard.has(d) && floorOf(d) > 0).length;
   for (const d of dims) {
     const w = W[d] || 0, cap = CAPS[d], m = MINS[d], f = floorOf(d);
