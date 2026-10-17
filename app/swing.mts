@@ -123,9 +123,9 @@ export function stepsFor(profile: Pick<EffectiveProfile, "swing" | "weights" | "
   if (!sw?.steps || !((profile.weights?.ssi ?? 0) > 0)) return { ssiSteps: null, note: null };
   const { speed, reason } = weaponSpeedOf(pools, current, optionalSlots);
   if (speed == null) return { ssiSteps: null, note: reason };
-  // a Swing speed goal's cap (issue #292) is an SSI cap under the gear's share of the formula's 60: no point needs more item SSI
-  // than it, and none credits more, so a faster swing counts nothing, through more stamina too. With no such goal the table
-  // is as it was: every point is within the formula's cap, and a delay reached by more stamina keeps its full price.
-  const share = ssiShareOf(profile), cap = profile.caps?.ssi, goal = cap != null && cap < SSI_CAP - share ? cap : Infinity;
+  // a Swing speed goal's cap (issue #292), stored with the swing (`goalSsi`, issue #302: one at the formula's 60 too): no point
+  // needs more item SSI than it, and none credits more, so a faster swing counts nothing, through more stamina too. With no
+  // such goal the table is as it was: every point is within the formula's cap, and a delay reached by more stamina keeps its full price.
+  const share = ssiShareOf(profile), goal = sw.goalSsi ?? Infinity;
   return { ssiSteps: stepTable({ speedS: speed, stamBase: sw.stamBase, refStamina: sw.refStamina, share, stamRange, ssiMax: Math.min(ssiMax ?? Infinity, goal), creditMax: goal }), note: null };
 }

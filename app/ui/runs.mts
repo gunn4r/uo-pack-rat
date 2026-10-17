@@ -8,7 +8,7 @@ import { NOBODY, RESIST_KEYS, RESIST_SKILL_KEY, resistMinimum, resistSkillOf, re
 import { planBuild, specFromRunSettings } from "../build-spec.mts";
 import { buffById, plannedProfile, savedBuffs } from "../buffs.mts";
 import type { RunSettings, OptItem, PropMap, Character, EffectiveProfile } from "../vault-lib.mts";
-import { state } from "./store.mts";
+import { state, goalsMeta } from "./store.mts";
 import { $, el, fmtSecs, fmtRunTime, fmtRunDay, toast } from "./dom.mts";
 import { api } from "./api.mts";
 import { bindDrawer, box, txt, button, badge, message, input, confirmDialog, menu, type DrawerHandle } from "./components.mts";
@@ -37,10 +37,11 @@ export function applySettings(st: RunSettings): void {
 }
 // The profile a run was built with, its buffs planned as they were (effectiveProfile's own default parameter already
 // treats an omitted character the same as null). A run built from goals is planned again as a build is (build-spec.mts
-// planBuild), so a swing-time goal's SSI cap and the character's swing are on it, as "How the goals went" reads them.
+// planBuild), so a swing-time goal's SSI cap and the character's swing are on it, as "How the goals went" reads them; the cap
+// is worked out for the weapon and stamina the run kept (`goalSwing`), or the weapon worn now in a run saved before them.
 export function profileFromSettings(st: RunSettings): EffectiveProfile {
   const name = session.character!, character = state.inv!.characters[name] as Character | null;
-  if (goalsActive(st.goals)) return planBuild(specFromRunSettings(st), { character: name === NOBODY ? null : character, worn: state.inv!.worn[name] || [], race: st.race }).profile;
+  if (goalsActive(st.goals)) return planBuild(specFromRunSettings(st), { character: name === NOBODY ? null : character, worn: state.inv!.worn[name] || [], race: st.race, goalSwing: st.goalSwing }).profile;
   return plannedProfile(st, character, commands.buffPlan(name, st.race, savedBuffs(st)));
 }
 
@@ -291,7 +292,7 @@ export async function openRun(id: string, auto = false): Promise<boolean> {
   session.result = run.result;
   // run.ms is `number | null` (a saved run's on-disk shape); run.skipped is whatever that run stored (live
   // arrays or plain counts), which the Solver details' counter reads either way.
-  await commands.renderResult(run.result, current, profileFromSettings(run.settings), name, { ms: run.ms ?? 0, poolSize: run.poolSize, skipped: run.skipped as Record<string, unknown> | undefined, reused: null, ...(goalsActive(run.settings.goals) ? { goals: run.settings.goals } : {}) });
+  await commands.renderResult(run.result, current, profileFromSettings(run.settings), name, { ms: run.ms ?? 0, poolSize: run.poolSize, skipped: run.skipped as Record<string, unknown> | undefined, reused: null, ...goalsMeta(run.settings) });
   if (session.openRun !== id) return false;
   paintRunBanner(run, diff);
   return true;

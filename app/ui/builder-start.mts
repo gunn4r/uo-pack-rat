@@ -4,8 +4,8 @@
 // drawer on its tab, and a big Build; beside it what the character wears now and the other characters' latest runs. It is
 // drawn from the panel's state (the session's profile and knobs), so an edit in the drawer redraws it. The numbers and
 // words come from ui/builder-model.mts; it shares the builder's state through ui/builder-session.mts.
-import { NOBODY, RESIST_KEYS, RESIST_SKILL_KEY, GEAR_SLOTS, resistMinimum, resistCapsFor, fcCapFor, totalsOf, roundImportance } from "../vault-lib.mts";
-import type { OptItem } from "../vault-lib.mts";
+import { NOBODY, RESIST_KEYS, RESIST_SKILL_KEY, GEAR_SLOTS, resistMinimum, resistCapsFor, fcCapFor, totalsOf, roundImportance, goalsActive } from "../vault-lib.mts";
+import type { Goals, OptItem } from "../vault-lib.mts";
 import { BUILTIN_PREFIX, characterBuffs, findTemplate, templateName, templateRefs, templateSettings, type TemplateEntry } from "../build-spec.mts";
 import { buffById } from "../buffs.mts";
 import { state, invStamp } from "./store.mts";
@@ -14,7 +14,7 @@ import { box, txt, button, badge } from "./components.mts";
 import { api } from "./api.mts";
 import { session, commands, provide } from "./builder-session.mts";
 import { RESIST_NAMES } from "./builder-parts.mts";
-import { paperdollCaps, needsLine, topWeights, poolLine, searchLine, suggestTemplates, propName, who } from "./builder-model.mts";
+import { paperdollCaps, needsLine, topWeights, goalSummary, poolLine, searchLine, suggestTemplates, propName, who } from "./builder-model.mts";
 import type { ItemsApiResponse } from "./api-types.mts";
 
 // The character the view is drawn for; the other characters' runs card (fetched once per character shown) and the gear
@@ -97,8 +97,9 @@ function templateCards(name: string): HTMLElement {
   return box("div", { class: "b-tpl-cards", role: "group", "aria-label": "Templates" }, ...refs.map(card));
 }
 
-// What Build will build for (Needs, Buffs, Pool, Search) and the weights that matter most, each line opening the drawer on
-// its tab; read-only, the drawer is where they change.
+// What Build will build for (Needs, Buffs, Pool, Search) and what matters most, each line opening the drawer on its tab:
+// with goals in force, the goals by rank and where spare points go (builder-model.mts goalSummary), else the weights that
+// matter most; read-only, the drawer is where they change.
 function summaryCard(name: string): HTMLElement {
   const p = session.profile!, k = session.knobs, ref = p.template;
   const buffs = characterBuffs(state.profiles!, name).on.map((id) => buffById(id)?.name ?? id);
@@ -114,9 +115,17 @@ function summaryCard(name: string): HTMLElement {
     box("div", { class: "b-sum-half" }, el("h3", { class: "t-md strong" }, `${ref ? templateName(state.builtinTemplates, ref) : "These settings"} will build for`),
       box("dl", { class: "b-sum" }, ...line("requirements", "Needs", needsLine(p.floors || {}, p.softFloors || [], label)), ...line("buffs", "Buffs", buffs.join(", ") || "None"),
         ...line("pool", "Pool", poolLine(p.excludeWeapons, p.ubwsAnyWeapon !== false, pieces?.n ?? null, p.rarity)), ...line("advanced", "Search", searchLine(k)))),
-    box("div", { class: "b-sum-half" }, el("h3", { class: "t-md strong" }, "What matters most"),
+    box("div", { class: "b-sum-half" }, el("h3", { class: "t-md strong" }, "What matters most"), ...(goalsActive(p.goals) ? goalsMost(p.goals, open) : [
       top.rows.length ? box("ul", { class: "b-imps" }, ...top.rows.map(weightRow)) : el("p", { class: "muted" }, "No weights yet."),
-      open("weights", top.more ? `+ ${top.more} more in Settings` : "Weights in Settings")));
+      open("weights", top.more ? `+ ${top.more} more in Settings` : "Weights in Settings")])));
+}
+// The goals by rank, each a row that opens the Goals tab with what it counts as a bar, then the spare-points line.
+function goalsMost(g: Goals, open: (tab: string, text: string) => HTMLElement): HTMLElement[] {
+  const s = goalSummary(g);
+  const row = (r: (typeof s.rows)[number]): HTMLElement => box("li", {}, box("button", { type: "button", class: "b-imp b-imp-goal", "data-k": `g:${r.rank}`, "aria-label": `${r.rank}. ${r.names}, counts ${r.counts}`, onclick: () => commands.openSettingsTab("weights") },
+    el("span", { class: "b-imp-gname" }, txt(`${r.rank}.`, "muted"), ` ${r.names}`), el("span", { class: "b-wbar", style: `--fill:${r.counts}%`, "aria-hidden": "true" }), txt(String(r.counts), "b-imp-n")));
+  return [s.rows.length ? box("ol", { class: "b-imps" }, ...s.rows.map(row)) : el("p", { class: "muted" }, "No goals yet."),
+    el("p", { class: "t-sm b-imp-spare" }, s.spare), open("weights", s.more ? `+ ${s.more} more ${s.more === 1 ? "goal" : "goals"} in Settings` : "Goals in Settings")];
 }
 
 // ---- the side column: what the character wears now, its five resists and the top weighted other properties
