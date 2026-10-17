@@ -1506,6 +1506,15 @@ test("[fast] runs: the runs migration withdraws the proof of a run saved before 
   assert.equal(normalizeRun({ id: "n", solverVersion: SOLVER_VERSION, result: { method: "exact", proven: true } }).result!.proven, true);
   assert.equal(normalizeRun({ id: "u", result: { method: "exact", proven: false } }).result!.proven, false, "an unproven run keeps its verdict");
 });
+// Issue #204: before SOLVER_VERSION 11 each hard floor had its own partial credit, so with one out of reach or in conflict
+// a suit missing a reachable one could be proved best; a run whose hard floors were all in reach keeps its proof.
+test("[fast] runs: the runs migration withdraws an older proof made with a hard floor out of reach or in conflict", () => {
+  const run = (solverVersion: number, extra: object) => normalizeRun({ id: "h", solverVersion, result: { method: "exact", proven: true, ...extra } }).result!.proven;
+  assert.equal(run(10, { unreachableFloors: ["luck"] }), undefined);
+  assert.equal(run(10, { unreachableFloors: [], floorsConflict: true }), undefined);
+  assert.equal(run(10, { unreachableFloors: [] }), true, "every hard floor in reach");
+  assert.equal(run(SOLVER_VERSION, { unreachableFloors: ["luck"] }), true, "saved under the new scoring");
+});
 test("[fast] runs: suitPieces is every piece of every saved suit, empty slots and runs with no result skipped (issue #133)", () => {
   const runs: SavedRun[] = [{ id: "a", result: { best: { ring: { serial: 1 }, arms: null, chest: { serial: 2 } } } }, { id: "b", result: { best: { ring: { serial: 1 }, legs: { serial: 3 } } } }, { id: "c" }, { id: "d", result: {} }];
   assert.deepEqual([...suitPieces(runs)].sort(), [1, 2, 3]);

@@ -48,7 +48,8 @@ export interface RunKeyInput {
 // 8: Resisting Spells is a minimum under each resist (`mins`), not a bonus taken off the resist caps and floors (#261).
 // 9: a suit's own Resisting Spells bonus lifts that minimum (`resistSteps`, #265).
 // 10: every result and each other suit carries `shares` (#273).
-export const SOLVER_VERSION = 10;
+// 11: hard floors share their partial credit, so it never buys a miss of a reachable one (#204).
+export const SOLVER_VERSION = 11;
 // The first SOLVER_VERSION whose saved diagnostics are in the player's terms as the page shows them now: before 8 a
 // resist's numbers counted the Resisting Spells bonus (#261), so an older run's are dropped when read and it falls back
 // as a run saved before diagnostics does.
@@ -56,6 +57,10 @@ export const DIAGNOSTICS_SOUND_SINCE = 8;
 // The first SOLVER_VERSION whose "proven optimal" holds: before 2 a soft floor ruled out every suit with a
 // negative total, so HiGHS could prove a worse suit optimal.
 export const PROOF_SOUND_SINCE = 2;
+// The first SOLVER_VERSION whose proof holds with a hard floor out of reach or in conflict: before 11 every hard floor
+// had its own partial credit (#204), so a suit missing a reachable one could be proved best. A suit meeting every hard
+// floor stays best under the new scoring, so only those runs lose their proof.
+export const HARD_PARTIAL_SOUND_SINCE = 11;
 
 // Everything that shapes the answer: the candidate pools, the worn suit, the scoring profile, the
 // search options, and the solver version. A profile's `buffs` (app/buffs.mts plannedProfile: which buffs were planned

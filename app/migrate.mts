@@ -4,7 +4,7 @@
 import { upgradeScan } from "./scan-schema.mts";
 import { migrateProfiles, migrateWeaponSetting } from "./vault-lib.mts";
 import { migrateProfilesV3, PROFILES_VERSION } from "./build-spec.mts";
-import { PROOF_SOUND_SINCE } from "./runs-lib.mts";
+import { HARD_PARTIAL_SOUND_SINCE, PROOF_SOUND_SINCE } from "./runs-lib.mts";
 import type { LegacyBuffPrefs } from "./store/ui-prefs.mts";
 
 type Doc = Record<string, unknown>;
@@ -63,6 +63,11 @@ export const DOC_KINDS = {
     { from: 1, to: 1, what: "a proof claimed by a solver older than PROOF_SOUND_SINCE is withdrawn (no verdict)", run: (d) => {
       const result = d.result as { proven?: unknown } | undefined;
       return result?.proven && ((d.solverVersion as number | undefined) ?? 1) < PROOF_SOUND_SINCE ? { ...d, result: { ...result, proven: undefined } } : d;
+    } },
+    { from: 1, to: 1, what: "a proof with a hard floor out of reach or in conflict, older than HARD_PARTIAL_SOUND_SINCE, is withdrawn (no verdict)", run: (d) => {
+      const result = d.result as { proven?: unknown; unreachableFloors?: unknown; floorsConflict?: unknown } | undefined;
+      const touched = (Array.isArray(result?.unreachableFloors) && result.unreachableFloors.length > 0) || result?.floorsConflict === true;
+      return result?.proven && touched && ((d.solverVersion as number | undefined) ?? 1) < HARD_PARTIAL_SOUND_SINCE ? { ...d, result: { ...result, proven: undefined } } : d;
     } },
   ] },
   organize: { field: "version", current: 1, missing: null, steps: [] },
