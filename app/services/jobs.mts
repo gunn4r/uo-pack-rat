@@ -2,7 +2,7 @@
 import type http from "node:http";
 import { Worker } from "node:worker_threads";
 import { randomUUID } from "node:crypto";
-import { runRecord, stripOpts, type RunOpts, type RunSettingsRaw } from "../runs-lib.mts";
+import { poolPart, runRecord, stripOpts, type PoolSnapshot, type RunOpts, type RunSettingsRaw } from "../runs-lib.mts";
 import type { WorkerMessage, WorkerDoneMessage } from "../optimize-worker.mts";
 import type { OptResult, ExactSolveResult, SolveProgress } from "../exact-solver.mts";
 import { sse } from "./events.mts";
@@ -18,7 +18,7 @@ import type { Diagnostic } from "../runs-types.mts";
 // body they came from — runKey (runs-lib.mts) and the Worker constructor's own workerData option
 // (typed `any` by @types/node) are the only two places that ever touch them, and neither requires a
 // narrower type. meta is the caller's own free-form bookkeeping object (poolSize/skipped/character/
-// settings/warning are added to it by the server; nothing beyond that is read off it besides what a
+// settings/warning are added to it by the server, and pool, the build's pool kept for the saved run (runs-lib.mts poolSnapshot); nothing beyond that is read off it besides what a
 // caller chooses to stash there, e.g. a saved run's inventoryStamp).
 export interface JobInput {
   pools: unknown;
@@ -167,7 +167,7 @@ export function createJobsService({ coreUrl, timings = {}, runStore, log, create
     const run = runRecord({ id: job.id, key: job.key, character: (meta.character as string) || "?", createdAt: new Date().toISOString(),
       settings: (meta.settings as RunSettingsRaw) || {}, inventoryStamp: meta.inventoryStamp || null, poolSize: (meta.poolSize as number) ?? null, skipped: meta.skipped || {},
       search: { opts: stripOpts(job.input.opts), budgetMs: job.input.opts.timeBudgetMs ?? null, explored: job.progress?.explored ?? null },
-      result: job.result, ms: job.ms });
+      result: job.result, ms: job.ms, pool: meta.pool ? poolPart(meta.pool as PoolSnapshot, job.result?.best) : undefined });
     runStore.write(run);
     return run;
   }

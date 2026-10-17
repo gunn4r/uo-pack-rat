@@ -5,11 +5,11 @@ import { isBoundedInt, isBoundedString, short } from "../../guards.mts";
 import { optionalSlotsFor, withReachableResistSteps } from "../../mip.mts";
 import { onlyRootsDiagnostics, preBuildDiagnostics, scoreShares, weaponFlagDiagnostics, type Diagnostic, type DiagnosticsProfile } from "../../diagnostics.mts";
 import { readBody } from "../../read-body.mts";
-import { runKey, reusableRun, runSummary, manualRun, type RunOpts, type SavedRun } from "../../runs-lib.mts";
+import { gearChanges, runKey, reusableRun, runSummary, manualRun, poolSerials, poolSnapshot, type RunOpts, type SavedRun } from "../../runs-lib.mts";
 import { OPTS_LIMITS, RUN_DEFAULTS, runSettingsError, type RunSettings } from "../../run-settings.mts";
 import { manualBase, manualPlan } from "../../buffs.mts";
 import { evaluateSuit } from "../../evaluate.mts";
-import type { RunBody, RunsListBody, RunSummary, ScoreShare } from "../../runs-types.mts";
+import type { GearChanges, RunBody, RunsListBody, RunSummary, ScoreShare } from "../../runs-types.mts";
 import { sse } from "../../services/events.mts";
 import type { Job } from "../../services/jobs.mts";
 import { isManualSuit } from "../../store/ui-prefs.mts";
@@ -123,6 +123,22 @@ function stampTieCost<T extends { serial: number }>(it: T, inv: Inventory, rarit
   const rank = rarityRank(ladder, inv.items[it.serial]?.rarity);
   return { ...it, tieCost: rarity === "lower" ? rank : ladder.length - rank };
 }
+// A build's settings with their nulls dropped: a `null` in an optional field (as a saved run's settings can carry, e.g.
+// re-posted from the runs drawer) means "use the default", exactly like an absent field.
+const givenSettings = (settings: Record<string, unknown> | undefined): Record<string, unknown> => Object.fromEntries(Object.entries(settings || {}).filter(([, v]) => v != null));
+// The scanned character a build's pool is for: No character (NOBODY) builds from the pieces nobody wears, as a fill with no character does.
+const scannedWho = (character: string | null): string | null => (character === NOBODY ? null : character);
+// buildPools' options from a build's settings (`s`, givenSettings) for `character` (NOBODY: the pieces nobody wears;
+// null: a fill with no character), with the pool settings they come from; `pins`: a fill's placed pieces. A build uses
+// them, and a saved run's gear changes rebuild its pool with them (issue #291).
+function poolOptions(inv: Inventory, character: string | null, s: Record<string, unknown>, pins?: Record<string, number>) {
+  const who = scannedWho(character);
+  // runSettingsError checked every field of `s`. What it leaves out takes the build spec's default
+  // (app/build-spec.mts poolFromSpec, as planBuild), as the page and build_suit do: a missing strLimit is the character's STR, else 125.
+  const pool = poolFromSpec(specFromRunSettings(s as RunSettings), who ? inv.characters[who] as Character : null);
+  const { allowOthersWorn, strLimit, excludeTags, excludeRoots, allowGargoyle, medOnly, excludeWeapons, ubwsAnyWeapon, excludeSkills, lockedSlots, weaponMustHave } = pool;
+  return { pool, poolOpts: { allowOthersWorn: allowOthersWorn && !!character, strength: strLimit, excludeTags, excludeRoots, excludeGargoyle: !allowGargoyle, medOnly, excludeWeapons, ubwsAnyWeapon, excludeSkills, weaponMustHave, lockedSlots: pins ? [] : lockedSlots, ...(pins ? { pinned: pins } : {}) } };
+}
 // meta is the caller's own bookkeeping, and saveRun() used to persist it verbatim into
 // <data>/runs/<uuid>.json — a megabyte of padding in meta.settings became a megabyte on disk that
 // every later runStore.all() re-parsed, on the two hottest routes. Copy only the fields saveRun actually
@@ -148,6 +164,17 @@ export function routes(ctx: ServerContext): Route[] {
     const ping = setInterval(() => sse(res, "ping", { at: Date.now() }), 5000);
     ping.unref(); timers.add(ping);
     res.on("close", () => { clearInterval(ping); timers.delete(ping); job.clients.delete(res); });
+  }
+  // A saved run's gear changes (issue #291): its pool rebuilt from its settings, at the STR limit it was built with, against
+  // the scans now, compared with the pool it kept. A rebuild that fails is logged and gives none (the plain banner).
+  async function gearChangesOf(run: SavedRun): Promise<GearChanges | null> {
+    if (!run.poolSerials) return null;
+    const { inv } = await getInventory();
+    return gearChanges(run, inv, () => {
+      const { pool, poolOpts } = poolOptions(inv, run.character!, givenSettings(run.settings));
+      const built = buildPools(inv, scannedWho(run.character!), { ...poolOpts, ...(typeof run.poolStrength === "number" ? { strength: run.poolStrength } : {}), onlyRoots: pool.onlyRoots });
+      return poolSerials(built.pools, built.current);
+    }, (e) => safeAppendLog(ctx.config.paths.log, `${new Date().toISOString()} run ${run.id} gear changes failed, shown without them: ${String((e as Error)?.stack || e)}\n`));
   }
   return [
     { method: "POST", path: "/api/optimize", handle: async (req, res) => {
@@ -200,25 +227,23 @@ export function routes(ctx: ServerContext): Route[] {
         // null": runSettingsError skips it, and normalising both to absent here lets the destructuring
         // defaults treat null and undefined alike (post-review fix — null used to reach buildPools as a
         // literal `strLimit: null` or throw when an array field's null hit code expecting an array).
-        const s = Object.fromEntries(Object.entries(settings || {}).filter(([, v]) => v != null));
+        const s = givenSettings(settings);
         const { inv } = await getInventory();
         // No character (NOBODY) builds as a fill with no character does, from the pieces nobody wears, but is saved and
         // reused under its own name like a character's build: `who` is the scanned character, `character` the run's key.
-        const who = character === NOBODY ? null : character as string | null;
+        const who = scannedWho(character as string | null);
         // buildPools would happily build pools from every other character's gear and save the run
         // under a name the inventory has never seen.
         if (who && !Object.hasOwn(inv.characters, who)) return send(res, 404, { ok: false, error: `no scans for character ${JSON.stringify(character)}` });
-        // runSettingsError checked every field of `s` above. What it leaves out takes the build spec's default
-        // (app/build-spec.mts poolFromSpec, as planBuild), as the page and build_suit do: a missing strLimit is the character's STR, else 125.
-        const pool = poolFromSpec(specFromRunSettings(s as RunSettings), who ? inv.characters[who] as Character : null);
-        const { allowOthersWorn, strLimit, excludeTags, excludeRoots, onlyRoots, allowGargoyle, medOnly, excludeWeapons, ubwsAnyWeapon, excludeSkills, lockedSlots, weaponMustHave } = pool;
         const pins = (pinned || {}) as Record<string, number>;
+        const { pool: { onlyRoots, lockedSlots, weaponMustHave, strLimit }, poolOpts } = poolOptions(inv, character as string | null, s, fill ? pins : undefined);
         const badPin = manualSuitError(inv, pins, "pinned");
         if (badPin) return send(res, 400, { ok: false, error: badPin });
         // a fill keeps the placed pieces in place of the locked slots: they are the only slots that keep their piece
         const keep = fill ? Object.keys(pins) : lockedSlots;
-        const poolOpts = { allowOthersWorn: allowOthersWorn && !!character, strength: strLimit, excludeTags, excludeRoots, excludeGargoyle: !allowGargoyle, medOnly, excludeWeapons, ubwsAnyWeapon, excludeSkills, weaponMustHave, lockedSlots: fill ? [] : lockedSlots, ...(fill ? { pinned: pins } : {}) };
         const built = buildPools(inv, who || null, { ...poolOpts, onlyRoots });
+        // the pool a saved run keeps, to say later which pieces came and went (issue #291)
+        if (!fill) meta.pool = poolSnapshot(inv, built.pools, built.current, strLimit);
         pools = built.pools; current = built.current; blocked = built.blocked;
         // the weapon properties the build requires: a locked weapon without them, or no weapon with them (app/diagnostics.mts)
         mustHave = weaponMustHave; only = onlyRoots;
@@ -361,7 +386,11 @@ export function routes(ctx: ServerContext): Route[] {
       const DAMAGED_RUN = "that saved run's file is damaged and cannot be read; delete it";
       if (req.method === "GET") {
         const run = readRun();
-        return run ? send(res, 200, { ok: true, run } satisfies RunBody) : send(res, 404, { ok: false, error: DAMAGED_RUN });
+        if (!run) return send(res, 404, { ok: false, error: DAMAGED_RUN });
+        const gear = await gearChangesOf(run);
+        // the kept pool answers gearChanges; the page never reads it
+        const { poolSerials: _serials, picked: _picked, poolStrength: _strength, ...shown } = run;
+        return send(res, 200, { ok: true, run: shown, ...(gear ? { gearChanges: gear } : {}) } satisfies RunBody);
       }
       if (req.method === "DELETE") { runStore.remove(id); eventBus.broadcast("changed", { what: "runs", at: Date.now() }); return send(res, 200, { ok: true }); }
       if (req.method === "PUT") {
