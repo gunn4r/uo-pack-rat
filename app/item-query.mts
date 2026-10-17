@@ -14,7 +14,8 @@
 // property column; alphabetical is the useful default for a name column), reproduced exactly, not fixed.
 import { itemSearchBlob, itemOwnBlob, groupByName, compareNames, KINDS, SLOT_LABELS, propertyKeys, extraKeys, flagKeys, flagKey, gearSkills, weaponSkillsOf, WEAPON_SKILLS, PROPERTIES } from "./vault-lib.mts";
 import type { Item, ItemGroup } from "./vault-lib.mts";
-import type { RulesV1RarityItem } from "./schema/types.d.mts";
+import type { RulesV1, RulesV1RarityItem } from "./schema/types.d.mts";
+import { unravelInfo, LEFT_OUT, type LeftOut, type UnravelInfo } from "./unravel.mts";
 
 // Columns computed from an item but not stored under item.props: vault-lib.mts's "extra" properties, [label, full name].
 export const EXTRA_COLS: Record<string, [string, string]> = Object.fromEntries(PROPERTIES.filter((p) => p.kind === "extra").map((p) => [p.key, [p.label, p.full]]));
@@ -53,16 +54,19 @@ export interface PropFilter { key: string; min: number; op?: PropOp | undefined;
 // `hideTags` drops an item with any of its tags, `tags` (issue #133) keeps only an item with any of its tags.
 // `flags` (issue #182) keeps only an item with EVERY one of its yes/no properties, like the property rules it sits beside.
 // `wskill` (issue #188) is a list filter too: a weapon counting under any of its skills (vault-lib.mts's weaponSkillsOf).
+// `unravel` (issue #271) keeps only pieces that unravel into something, each row carrying what (`UnravelRow`), less the ones
+// left out by default (unravel.mts's LEFT_OUT) unless `unravelShow` names their reasons; sort `unravel` is by weight.
 export interface ItemQuery {
   q: string; chars: string[]; slot: string[]; loc: string[]; roots: number[]; rarity: string; rarityMin: string; rarityMax: string; kind: string[];
   seenDays: number; slayer: string; nogarg: boolean; med: boolean; hideTags: string[]; tags: string[]; props: PropFilter[]; flags: string[]; wskill: string[]; group: boolean;
   sort: string; dir: 1 | -1; offset: number; limit: number;
+  unravel?: boolean | undefined; unravelShow?: LeftOut[] | undefined;
 }
 
 // An Organize rule's query (issue #11): the Inventory's filters on the item itself. Location, character and
 // seen filters are left out, and so are the view and paging, because a rule must keep matching an item after
 // it moves. `tags`, `flags` and `wskill` are optional: rules saved before them (issues #133, #182, #188) have none.
-export type RuleQuery = Omit<ItemQuery, "loc" | "roots" | "chars" | "seenDays" | "group" | "sort" | "dir" | "offset" | "limit" | "tags" | "flags" | "wskill"> & { tags?: string[]; flags?: string[]; wskill?: string[] };
+export type RuleQuery = Omit<ItemQuery, "loc" | "roots" | "chars" | "seenDays" | "group" | "sort" | "dir" | "offset" | "limit" | "tags" | "flags" | "wskill" | "unravel" | "unravelShow"> & { tags?: string[]; flags?: string[]; wskill?: string[] };
 
 // Reads every filter/sort/paging knob off a URLSearchParams (GET /api/items' query string, or the page's
 // own future use of the same parser). `hide`, `tag`, `prop`, `slot`, `kind` and `wskill` accept either a single
@@ -70,7 +74,8 @@ export type RuleQuery = Omit<ItemQuery, "loc" | "roots" | "chars" | "seenDays" |
 // `char` and `loc` are repeated params only: a character or container name may itself hold a comma.
 // `flag` (issue #182) is repeated only too, one yes/no property each (`flag=spell channeling`), lower-cased as
 // parseTooltip keeps them: a separate param rather than a `prop` op, because a prop rule is a number on a key.
-// A prop rule is `key:min` (at least) or `key:op:min` with op one of ge, le, eq.
+// A prop rule is `key:min` (at least) or `key:op:min` with op one of ge, le, eq. `unravel=1` lists unravel candidates and
+// `unravelShow` (comma-separated or repeated) the reasons not to leave out, or `all`.
 export function parseItemQuery(searchParams: URLSearchParams): ItemQuery {
   const sp = searchParams;
   const splitAll = (name: string) => sp.getAll(name).flatMap((v) => String(v).split(",")).map((s) => s.trim()).filter(Boolean);
@@ -115,6 +120,7 @@ export function parseItemQuery(searchParams: URLSearchParams): ItemQuery {
     dir: sp.get("dir") === "-1" ? -1 : 1,
     offset,
     limit,
+    ...(sp.get("unravel") === "1" ? { unravel: true, unravelShow: splitAll("unravelShow").includes("all") ? [...LEFT_OUT] : LEFT_OUT.filter((r) => splitAll("unravelShow").includes(r)) } : {}),
   };
 }
 
@@ -169,6 +175,7 @@ function sortValue(it: Item, key: string, ladder: RulesV1RarityItem[] | undefine
   if (key === "slot") return SLOT_LABELS[it.slot as string] || it.slot || "?";
   if (key === "location") return it.location?.text || "";
   if (key === "med") return it.gear ? (it.medable ? 2 : 1) : 0;
+  if (key === "unravel") return (it as UnravelRow).unravel?.weight ?? 0;
   return colVal(it, key);
 }
 
@@ -177,16 +184,21 @@ interface ItemGroupJson { name: string; kind: string; slot: string | null; amoun
 const groupJson = (g: ItemGroup): ItemGroupJson => ({ name: g.name, kind: g.kind, slot: g.slot, amount: g.amount, stacks: g.stacks, locations: [...g.locations.entries()], serial: g.items[0]!.serial });
 
 export interface ItemQueryRows { rows: Item[]; total: number; pieces: number; }
+// An unravel candidate's row (query.unravel): the item and what unraveling it gives.
+export type UnravelRow = Item & { unravel: UnravelInfo };
+// What applyItemQuery needs for query.unravel: the rules' unravel block, and why each piece is left out.
+export interface UnravelContext { rules: Pick<RulesV1, "unravel">; leftOut: (it: Item) => LeftOut[] }
 // In group mode `total` counts names; `stacks` and `pieces` are the matching stacks and pieces behind them.
 export interface ItemQueryGroups { groups: ItemGroupJson[]; total: number; stacks: number; pieces: number; }
 
 // applyItemQuery(items, query, {rarity, now}) → {rows, total, pieces} normally, or {groups, total} when
 // query.group is set — see the module header for the exact page behavior this reproduces.
-export function applyItemQuery(items: Item[], query: ItemQuery, { rarity = [], now = Date.now() }: { rarity?: RulesV1RarityItem[]; now?: number } = {}): ItemQueryRows | ItemQueryGroups {
+export function applyItemQuery(items: Item[], query: ItemQuery, { rarity = [], now = Date.now(), unravel }: { rarity?: RulesV1RarityItem[]; now?: number; unravel?: UnravelContext } = {}): ItemQueryRows | ItemQueryGroups {
   const seenCut = query.seenDays ? now - query.seenDays * 864e5 : 0;
   const minRank = query.rarityMin ? rarityRank(rarity, query.rarityMin) : 0;
   const maxRank = query.rarityMax ? rarityRank(rarity, query.rarityMax) : 0;
-  const found = items.filter((it) => matches(it, query, seenCut, minRank, maxRank, rarity));
+  let found = items.filter((it) => matches(it, query, seenCut, minRank, maxRank, rarity));
+  if (query.unravel) found = unravelRows(found, query.unravelShow ?? [], unravel);
   const pieces = found.reduce((a, i) => a + (i.amount || 1), 0);
   const k = query.sort, d = query.dir;
   const sorted = [...found].sort((a, b) => {
@@ -200,6 +212,19 @@ export function applyItemQuery(items: Item[], query: ItemQuery, { rarity = [], n
     return { groups: groups.slice(query.offset, query.offset + query.limit).map(groupJson), total: groups.length, stacks: found.length, pieces };
   }
   return { rows: sorted.slice(query.offset, query.offset + query.limit), total: sorted.length, pieces };
+}
+
+// The pieces that unravel into something, each with what it gives; a piece left out for a reason `show` does not name is dropped.
+function unravelRows(items: Item[], show: LeftOut[], ctx: UnravelContext | undefined): UnravelRow[] {
+  if (!ctx) return [];
+  const out: UnravelRow[] = [];
+  for (const it of items) {
+    const leftOut = ctx.leftOut(it);
+    if (leftOut.some((r) => !show.includes(r))) continue;
+    const info = unravelInfo(it, ctx.rules, leftOut);
+    if (info) out.push({ ...it, unravel: info });
+  }
+  return out;
 }
 
 export interface Place { text: string; character: string; kind: string; root: number | null; rootName: string; count: number; }

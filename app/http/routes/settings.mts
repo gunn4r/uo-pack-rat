@@ -1,12 +1,12 @@
 // settings.mts — GET|PUT /api/settings, POST /api/retention/cleanup and GET /api/rules.
 import { statSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { isBoundedString } from "../../guards.mts";
+import { isBoundedString, isBoundedInt, MAX_SERIAL } from "../../guards.mts";
 import { validateScriptsDir, badPathShape } from "../../installer.mts";
 import { readBody } from "../../read-body.mts";
 import { retentionError, retentionOf } from "../../retention.mts";
 import { loadRules, listRules } from "../../rules.mts";
-import type { ClientSettings, SettingsDoc } from "../../store/settings.mts";
+import { UNRAVEL_KEEP_MAX, type ClientSettings, type SettingsDoc } from "../../store/settings.mts";
 import { send, asObject } from "../respond.mts";
 import { MAX_PATH_LEN, NO_CLIENT_FOLDER } from "./setup.mts";
 import type { Route } from "../router.mts";
@@ -43,6 +43,11 @@ export function routes(ctx: ServerContext): Route[] {
       }
       if (Object.prototype.hasOwnProperty.call(body, "autoUpdateCheck") && typeof body.autoUpdateCheck !== "boolean") {
         return send(res, 400, { ok: false, error: "settings.autoUpdateCheck must be a boolean" });
+      }
+      // unravelKeep (issue #271): the Unravel view's Keep list, written whole.
+      const hasKeep = Object.prototype.hasOwnProperty.call(body, "unravelKeep");
+      if (hasKeep && !(Array.isArray(body.unravelKeep) && body.unravelKeep.length <= UNRAVEL_KEEP_MAX && body.unravelKeep.every((s) => isBoundedInt(s, 1, MAX_SERIAL)) && new Set(body.unravelKeep).size === body.unravelKeep.length)) {
+        return send(res, 400, { ok: false, error: `settings.unravelKeep must be a list of at most ${UNRAVEL_KEEP_MAX} distinct item serials` });
       }
       const hasRetention = Object.prototype.hasOwnProperty.call(body, "retention");
       const retentionBad = hasRetention ? retentionError(body.retention) : null;
@@ -101,6 +106,7 @@ export function routes(ctx: ServerContext): Route[] {
       if (Object.prototype.hasOwnProperty.call(body, "autoUpdateCheck")) changes.autoUpdateCheck = body.autoUpdateCheck as boolean;
       if (nextClient !== undefined) changes.client = nextClient;
       if (nextUoFolder !== undefined) changes.uoFolder = nextUoFolder;
+      if (hasKeep) changes.unravelKeep = body.unravelKeep as number[];
       if (hasRetention) changes.retention = { ...retentionOf(appSettings.saved().retention), ...(body.retention as object) };
       appSettings.save(changes);
       appSettings.applyRules(nextRules, nextFallback);

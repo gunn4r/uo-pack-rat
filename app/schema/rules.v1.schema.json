@@ -1,5 +1,5 @@
 {
-  "$comment": "Pack Rat shard rules file schema v1. Draft-07 style, restricted to the keyword subset app/schema/validate.mts supports. A rules file carries everything that is shard-specific rather than OSI-standard: property caps, the Resisting Spells resist minimum, race-specific cap overrides, tag-penalty units, the rarity ladder (name + colour, in ascending order), the gargoyle race-lock policy the free-skill list shown on character cards and, optionally, the Scroll Binder's recipes (scrollBinder, issue #181) and the Slayer filter's grouping (slayerGroups, issue #189). app/rules.mts validates every builtin and user rules file against this schema before it reaches setRules().",
+  "$comment": "Pack Rat shard rules file schema v1. Draft-07 style, restricted to the keyword subset app/schema/validate.mts supports. A rules file carries everything that is shard-specific rather than OSI-standard: property caps, the Resisting Spells resist minimum, race-specific cap overrides, tag-penalty units, the rarity ladder (name + colour, in ascending order), the gargoyle race-lock policy the free-skill list shown on character cards and, optionally, the Scroll Binder's recipes (scrollBinder, issue #181) the Slayer filter's grouping (slayerGroups, issue #189) and unraveling's thresholds (unravel, issue #271). app/rules.mts validates every builtin and user rules file against this schema before it reaches setRules().",
   "type": "object",
   "additionalProperties": true,
   "required": ["schemaVersion", "id", "name", "caps", "raceCaps", "tagUnits", "rarity", "raceLock", "freeSkills"],
@@ -64,6 +64,28 @@
           "properties": {
             "usableAt": { "type": "array", "minItems": 1, "items": { "type": "number", "minimum": 0.1 } }
           }
+        }
+      }
+    },
+    "unravel": {
+      "$comment": "Unraveling at a soul forge (issue #271, app/unravel.mts). An item's imbuing weight up to residueMax gives Magical Residue, from relicMin a Relic Fragment, between them Enchanted Essence. Essence needs Imbuing essenceSkill and a Relic relicSkill, else the forge refuses; each roll is a chance from the first number of its range (none) to the second (always), and a miss gives the ingredient below. A weight within maybeMargin of a line could go either way. baseResist is the resist total an armor piece, hat or shield has before any magic, which does not count toward its weight.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["residueMax", "relicMin", "essenceSkill", "relicSkill", "residueRoll", "essenceRoll", "relicRoll", "maybeMargin", "baseResist"],
+      "properties": {
+        "residueMax": { "type": "number", "minimum": 0 },
+        "relicMin": { "type": "number", "minimum": 0 },
+        "essenceSkill": { "type": "number", "minimum": 0 },
+        "relicSkill": { "type": "number", "minimum": 0 },
+        "residueRoll": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "type": "number", "minimum": 0 } },
+        "essenceRoll": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "type": "number", "minimum": 0 } },
+        "relicRoll": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "type": "number", "minimum": 0 } },
+        "maybeMargin": { "type": "number", "minimum": 0 },
+        "baseResist": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["armor", "hat", "shield"],
+          "properties": { "armor": { "type": "number", "minimum": 0 }, "hat": { "type": "number", "minimum": 0 }, "shield": { "type": "number", "minimum": 0 } }
         }
       }
     }

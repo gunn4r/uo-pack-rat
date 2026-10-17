@@ -4,6 +4,7 @@ import { DEFAULT_SHARD } from "../rules.mts";
 import { jsonErrorReason } from "../paste-scan.mts";
 import { migrate } from "../migrate.mts";
 import { readJsonFile, writeJsonFile } from "./json-file.mts";
+import { isBoundedInt, MAX_SERIAL } from "../guards.mts";
 
 // settings.json is user-editable, on-disk data with no schema check at read time (PUT /api/settings
 // validates each field it writes; a hand-edited file is trusted here the same way profiles.json
@@ -17,7 +18,15 @@ export interface SettingsDoc {
   retention?: unknown;
   autoUpdateCheck?: boolean;
   uoFolder?: string | null;
+  unravelKeep?: number[];
   [key: string]: unknown;
+}
+
+// The pieces the player said to keep (issue #271): never suggested for unraveling. Read off a possibly hand-edited file, so
+// anything that is not a serial is dropped. PUT /api/settings writes the whole list, at most UNRAVEL_KEEP_MAX serials.
+export const UNRAVEL_KEEP_MAX = 5000;
+export function unravelKeep(doc: SettingsDoc): number[] {
+  return Array.isArray(doc.unravelKeep) ? doc.unravelKeep.filter((s) => isBoundedInt(s, 1, MAX_SERIAL)) : [];
 }
 
 // The shard picker: <data>/settings.json ({schemaVersion, shard}) names which app/rules/<shard>.json

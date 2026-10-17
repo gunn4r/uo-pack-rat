@@ -22,6 +22,8 @@ export function routes(_ctx: ServerContext): Route[] {
     { method: "GET", path: "/logo-mark.png", handle: (_req, res) => send(res, 200, readFileSync(join(HERE, "assets", "logo-mark.png")), "image/png") },
     { method: "GET", path: "/vault-lib.mjs", handle: (_req, res) => send(res, 200, readFileSync(join(WEB, "vault-lib.mjs"), "utf8"), "text/javascript") },
     { method: "GET", path: "/item-query.mjs", handle: (_req, res) => send(res, 200, readFileSync(join(WEB, "item-query.mjs"), "utf8"), "text/javascript") },
+    // item-query.mts's unravel candidates and the Inventory's Unravel view read the same weights (app/unravel.mts, issue #271).
+    { method: "GET", path: "/unravel.mjs", handle: (_req, res) => send(res, 200, readFileSync(join(WEB, "unravel.mjs"), "utf8"), "text/javascript") },
     // The rule editor opens an Auto rule as the planner reads it (organize-config.mts's ruleMatchOf, issue #150).
     { method: "GET", path: "/organize-config.mjs", handle: (_req, res) => send(res, 200, readFileSync(join(WEB, "organize-config.mjs"), "utf8"), "text/javascript") },
     // Manual's buffs read the same catalog the server checks ui-prefs with (app/buffs.mts, issue #12).
