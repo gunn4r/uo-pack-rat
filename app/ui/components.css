@@ -203,6 +203,8 @@
 /* ---------------------------------------------------------------- overlays */
 .pop { position: fixed; width: var(--popover-w); max-width: calc(100vw - 16px); max-height: calc(100vh - 16px); overflow: auto; background: var(--color-surface-raised); color: var(--color-text); border: var(--border-width-frame) solid var(--color-border); border-image: var(--frame-image); border-radius: var(--radius-lg); box-shadow: var(--shadow-2); z-index: var(--z-popover); }
 .pop:focus { outline: none; }
+/* a popover opened from a drawer sits above it and its scrim (components.mts popover) */
+.pop.pop-over-drawer { z-index: calc(var(--z-drawer) + 1); }
 .pop-body { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-4); }
 @media (prefers-reduced-motion: no-preference) { .pop, .tip { animation: pop-in var(--duration-fast) var(--ease-standard); } }
 @keyframes pop-in { from { opacity: 0; transform: scale(0.98); } }

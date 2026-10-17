@@ -8,7 +8,7 @@ import { api, onReadOnly } from "./api.mts";
 import { pollBridge } from "./bridge.mts";
 import { initFilters, applyUiPrefs, inventoryFailed } from "./inventory.mts";
 import { showCharacter } from "./characters.mts";
-import { applyPanelPrefs, initBuilder } from "./builder.mts";
+import { applyPanelPrefs, initBuilder, closeSettings } from "./builder.mts";
 import { applyBuilderPrefs, initManual } from "./builder-manual.mts";
 import { applyResultPrefs } from "./builder-result.mts";   // also provides the result commands to ui/builder-session.mts
 import "./builder-start.mts";   // provides the first-visit view's commands to ui/builder-session.mts
@@ -110,6 +110,7 @@ function showTab(tab: string): void {
   if (isInvView(tab)) showInventoryView(tab === "inventory" ? "items" : tab as InvView);
   if (tab !== "import") lastScreen = screen;
   if (tab === "import") importDrawer.open(); else importDrawer.close();
+  if (tab !== "builder") closeSettings();   // Build Settings is the builder's own drawer
   if (tab === "runs") openRunsDrawer(); else if (screen !== "builder") closeRunsDrawer();
 }
 function applyRoute(): void {

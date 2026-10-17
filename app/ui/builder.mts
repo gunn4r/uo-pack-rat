@@ -1,5 +1,5 @@
 // ui/builder.mts — the Suit Builder screen (design spec 4.6, issue #272): the one-line top bar (the character and
-// template selects, Settings, Build), the Settings drawer (its tabs: Requirements, Goals, Buffs, Pool, Advanced) with
+// template selects, Build Settings, Build), the Build Settings drawer (its tabs: Requirements, Goals, Buffs, Pool, Advanced) with
 // its footer and the optimize job (inline progress card over SSE). The first-visit view is ui/builder-start.mts; the result, the compare view and the Solver details are ui/builder-result.mts; the saved-runs drawer
 // is ui/runs.mts; they share the builder's state and call each other through ui/builder-session.mts. The panel is drawn
 // from the session's profile plus its Advanced knobs, so what a build sends, what a profile saves and what a run
@@ -15,7 +15,7 @@ import { state, invStamp, goalsMeta } from "./store.mts";
 import type { BuilderJob, BuilderJobUi, FinishedBuild, BuildMeta } from "./store.mts";
 import { $, el, label, full, fmtN, fmtSecs, slotLabel, toast } from "./dom.mts";
 import { promptText } from "./dialog.mts";
-import { box, txt, button, kbd, badge, token, message, select, input, field, switchControl, check, segmented, filterChip, pill, popover, closePopover, menu, searchInput, stepper, progress, tooltip, refreshTooltips, icon, confirmDialog, modalOpen, rowActions, tipWrap } from "./components.mts";
+import { box, txt, button, kbd, badge, token, message, select, input, field, switchControl, check, segmented, filterChip, pill, popover, closePopover, menu, searchInput, stepper, progress, tooltip, refreshTooltips, icon, confirmDialog, modalOpen, rowActions, tipWrap, bindDrawer, type DrawerHandle } from "./components.mts";
 import { api } from "./api.mts";
 import { createBuffPicker, type BuffPicker, type BuffView, type PickerActions } from "./builder-buffs.mts";
 import { optimizeErrorMessage } from "./messages.mts";
@@ -30,7 +30,7 @@ import type { OptimizeResult, SavedRunLike, OptimizeStartApiResponse, OptimizeCa
 import { prefs } from "./prefs.mts";
 
 // ---------------------------------------------------------------- panel state
-// The solver knobs as typed (ui/builder-session.mts), and the Settings drawer's tab (ui-prefs `builderTab`).
+// The solver knobs as typed (ui/builder-session.mts), and the Build Settings drawer's tab (ui-prefs `builderTab`).
 const knobs = session.knobs;
 type Tab = NonNullable<UiPrefs["builderTab"]>;
 const TABS: Tab[] = ["requirements", "weights", "buffs", "pool", "advanced"];
@@ -71,20 +71,22 @@ export function initBuilder(): void {
   document.addEventListener("keydown", (e) => {
     if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey || e.key !== "Enter") return;
     const run = $<HTMLButtonElement>("#b-run")!;
-    if (run.disabled || session.job || !run.getClientRects().length || run.closest("[inert]") || modalOpen()) return;
+    if (run.disabled || session.job || !run.getClientRects().length || (run.closest("[inert]") && !drawerOpen()) || modalOpen()) return;
     e.preventDefault();
     runBuild();
   });
-  // The Settings drawer: its button and ⌘, (Ctrl+, off the Mac) toggle it while the builder's top bar shows the button
-  // (not in Manual, the compare view or another screen, nor behind a drawer or dialog); its × closes it, and so does Esc
-  // from anywhere on the screen, an open popover closing first (one with the focus, the progress card and the Saved runs
-  // drawer take their own Esc).
-  $<HTMLButtonElement>("#b-settings")!.onclick = () => (drawerOpen() ? closeSettings() : openSettings());
-  $<HTMLButtonElement>("#b-drawer-close")!.onclick = closeSettings;
+  // The Build Settings drawer, the shared modal drawer (components.mts bindDrawer): its ×, the scrim and Esc close it.
+  // Its button and ⌘, (Ctrl+, off the Mac) open it while the builder's top bar shows the button (not in Manual, the
+  // compare view or another screen, nor behind a drawer or dialog), and ⌘, closes it again. Esc with the focus fallen
+  // to <body> closes it too, an open popover closing first.
+  settingsDrawer = bindDrawer($<HTMLElement>("#b-drawer-root")!);
+  settingsDrawer.root.addEventListener("drawerclose", () => $<HTMLButtonElement>("#b-settings")!.setAttribute("aria-expanded", "false"));
+  $<HTMLButtonElement>("#b-settings")!.onclick = () => openSettings();
   const settingsShown = (): boolean => { const b = $<HTMLButtonElement>("#b-settings")!; return !!b.getClientRects().length && !b.closest("[inert]") && !modalOpen(); };
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && !e.defaultPrevented && drawerOpen() && settingsShown()) { e.preventDefault(); if (document.querySelector(".pop")) closePopover(); else closeSettings(); return; }
-    if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey || e.key !== "," || !settingsShown()) return;
+    if (e.key === "Escape" && !e.defaultPrevented && drawerOpen() && !modalOpen()) { e.preventDefault(); if (document.querySelector(".pop")) closePopover(); else closeSettings(); return; }
+    if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey || e.key !== ",") return;
+    if (drawerOpen() ? modalOpen() : !settingsShown()) return;
     e.preventDefault();
     if (drawerOpen()) closeSettings(); else openSettings();
   });
@@ -107,37 +109,29 @@ export function initBuilder(): void {
     if (key === "openRun" || key === "character") builtWith = null;
     if (["openRun", "runs", "result"].includes(key)) paintChanges();
   });
-  // Manual has no Settings button: the drawer closes on the way in
+  // Manual has no Build Settings button: the drawer closes on the way in
   document.addEventListener("builderchange", (e) => { if ((e as BuilderChange).detail.key === "mode" && session.mode === "manual") closeSettings(); });
 }
 // The drawer's tab and whether the Goals tab shows its weights, at load, from ui-prefs (app.mts applies it before initBuilder runs).
 export function applyPanelPrefs(p: UiPrefs | null): void { if (p?.builderTab && TABS.includes(p.builderTab)) tab = p.builderTab; fineTune = p?.builderFineTune === "on"; }
-const drawerOpen = (): boolean => !$<HTMLElement>("#b-drawer")!.hidden;
+let settingsDrawer: DrawerHandle | null = null;
+const drawerOpen = (): boolean => !!settingsDrawer?.isOpen();
+// The result's breakdown row or share that opens the drawer (tuneWeight), which takes the focus back when it closes.
+let opener: HTMLElement | null = null;
 // Open the drawer on `on` (else the tab it had) with the focus on that tab; `focus` false when the caller focuses a
-// control in it next.
+// control in it next. Closing it gives the focus back to the Build Settings button, or to the result row that opened it.
 function openSettings(on: Tab = tab, focus = true): void {
-  const d = $<HTMLElement>("#b-drawer")!;
   if (on !== tab) showTab(on);
-  if (d.hidden) {
-    d.hidden = false;
-    $<HTMLButtonElement>("#b-settings")!.setAttribute("aria-expanded", "true");
+  if (!drawerOpen()) {
+    const b = $<HTMLButtonElement>("#b-settings")!;
+    settingsDrawer!.open(opener?.isConnected ? opener : b);
+    b.setAttribute("aria-expanded", "true");
   }
+  opener = null;
   if (focus) $<HTMLElement>(`#b-tab-${tab}`)!.focus();
 }
-// The result's breakdown row or share that opened the drawer (tuneWeight), which takes the focus back when it closes.
-let opener: HTMLElement | null = null;
-// Close it, the focus back on the Settings button (or the result row that opened it, still on screen) when it was in the
-// drawer, in a popover (closed with it) or had fallen to <body>.
-function closeSettings(): void {
-  const d = $<HTMLElement>("#b-drawer")!, from = document.activeElement;
-  if (d.hidden) return;
-  closePopover();   // a checklist or picker opened from it
-  d.hidden = true;
-  const b = $<HTMLButtonElement>("#b-settings")!, back = opener?.isConnected ? opener : b;
-  opener = null;
-  b.setAttribute("aria-expanded", "false");
-  if (!from || from === document.body || d.contains(from) || from.closest(".pop")) back.focus();
-}
+// Close it (a popover opened from it closes with it).
+export function closeSettings(): void { settingsDrawer?.close(); }
 // Show one tab's panel; the choice is kept for the next launch.
 function showTab(to: Tab, focus = false): void {
   const changed = to !== tab;
@@ -328,6 +322,8 @@ function paintChanges(): void {
   clearTimeout(changesTimer);
   changesTimer = setTimeout(() => {
     const out = $<HTMLElement>("#b-changes")!, run = session.openRun ? session.runs.find((r) => r.id === session.openRun) : null;
+    // the progress card and its Cancel are behind the drawer's scrim: say how to reach them
+    if (session.job) { out.textContent = "Building… Close Build Settings (Esc) to see its progress or cancel it."; return; }
     if (!run || !session.profile) { out.textContent = ""; return; }
     const n = runSettingsDiff(builtWith?.runId === run.id ? builtWith.settings : run.settings, panelBuild().snapshot).length;
     out.textContent = n ? `${plural(n, "change")} since the last build` : "No changes since the last build";
@@ -950,7 +946,7 @@ function focusIn(sec: string, sel: string, selectText = false): void {
   e?.focus();
   if (selectText) e?.select();
 }
-// A score breakdown row's property in the Settings drawer: its weight's field, else Add weight; Other (null) opens the Weights tab. Closing the drawer then puts the focus back on the row (`from`). With goals setting the weights, the weights are shown under them first (fineTune).
+// A score breakdown row's property in the Build Settings drawer: its weight's field, else Add weight; Other (null) opens the Weights tab. Closing the drawer then puts the focus back on the row (`from`). With goals setting the weights, the weights are shown under them first (fineTune).
 function tuneWeight(key: string | null, from: HTMLElement): void {
   opener = from;
   if (goalsActive(session.profile?.goals) && !fineTune) { fineTune = true; prefs.set({ builderFineTune: "on" }, { quiet: true }); redraw("goals"); redraw("weights"); }
@@ -1247,6 +1243,7 @@ function setBuilding(on: boolean): void {
     b.querySelector(".kbd")?.setAttribute("aria-hidden", "true");
   }
   setNavBusy("builder", on);
+  paintChanges();
   const res = $<HTMLElement>("#b-result")!;
   const stale = on && !!session.result;
   res.classList.toggle("b-stale", stale);
