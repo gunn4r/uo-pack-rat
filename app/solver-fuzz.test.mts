@@ -1,13 +1,13 @@
 // solver-fuzz.test.mts — a seeded brute-force equivalence check of all three searches over small generated inventories.
 //
-// a seeded brute-force equivalence check: five fixed seeds × 400 generated inventories of two to six of the nineteen gear slots (`solver-fixture.mts`'s `fuzzSlots`, the hand pair together in about half; 1–4 candidates each, negative property values, negative weights on capped and floored properties, soft and hard floors, worn and locked slots, a random warm start (which must never empty a locked slot), shields and two-handers), each enumerated outright so the maximum of the core's `scoreSet` is the oracle. The heuristic must return a valid suit scoring its own re-score and never above the oracle; the core's exact search and `solveExact` (HiGHS) must both prove and equal the oracle, with HiGHS's bound never below its score. A second loop does the same with SSI scored by swing step (a step table from `app/swing.mts` over random weapon speeds, stamina, reference stamina and buff shares, on pools carrying SSI and the Stamina pool), with an oracle that prices each suit's own swing from the formula rather than the table, and checks the core's `scoreSet` against it suit by suit. A third loop (issue #262) gives every piece a tie cost 0-8, leans the generator toward ties (capped properties, copies of a piece at another cost), draws the floor bonus from 5-60 two times in three so a soft floor can be traded within the tolerance, and takes tolerances 0, 3, 50, 200, 700 and 1500: its oracle is the best score, then the lowest summed cost among suits within the tolerance that meet every floor a best suit meets; the core's exact search and `solveExact` must prove and equal it (HiGHS with its rarity choice proven too, and no warning), and the heuristic must return a valid suit within the tolerance of its own best, never cheaper than the oracle when its best is the true one. The first two loops are `[fast]` (about 10 s), the third `[slow]`; the first loop is what caught the soft-floor met row forbidding negative totals and the core's pruning on negatively weighted floors.
+// a seeded brute-force equivalence check: five fixed seeds × 400 generated inventories of two to six of the nineteen gear slots (`solver-fixture.mts`'s `fuzzSlots`, the hand pair together in about half; 1–4 candidates each, negative property values, negative weights on capped and floored properties, soft and hard floors, worn and locked slots, a random warm start (which must never empty a locked slot), shields and two-handers), each enumerated outright so the maximum of the core's `scoreSet` is the oracle. The heuristic must return a valid suit scoring its own re-score and never above the oracle; the core's exact search and `solveExact` (HiGHS) must both prove and equal the oracle, with HiGHS's bound never below its score. A second loop does the same with SSI scored by swing step (a step table from `app/swing.mts` over random weapon speeds, stamina, reference stamina and buff shares, on pools carrying SSI and the Stamina pool), with an oracle that prices each suit's own swing from the formula rather than the table, and checks the core's `scoreSet` against it suit by suit. A third loop (issue #262) gives every piece a tie cost 0-8, leans the generator toward ties (capped properties, copies of a piece at another cost), draws the floor bonus from 5-60 two times in three so a soft floor can be traded within the tolerance, and takes tolerances 0, 3, 50, 200, 700 and 1500: its oracle is the best score, then the lowest summed cost among suits within the tolerance that meet every floor a best suit meets; the core's exact search and `solveExact` must prove and equal it (HiGHS with its rarity choice proven too, and no warning), and the heuristic must return a valid suit within the tolerance of its own best, never cheaper than the oracle when its best is the true one. A fourth loop (issue #311) takes soft-floor bonuses up to 1e6 and weights up to 9e5 per point, runs the profile through `withHardFloorBonus`, and checks over every suit that one meeting more hard floors scores strictly higher, with both exact searches proving the brute-force best, and that the fixed 1e7 alone breaks that order in some instances. The first two loops and the fourth are `[fast]` (about 10 s and 2 s), the third `[slow]`; the first loop is what caught the soft-floor met row forbidding negative totals and the core's pruning on negatively weighted floors.
 //
 // The three searches are the core's heuristic (a valid suit, never above the oracle), the core's exact branch-and-bound (proven, equal to the oracle), and `solveExact` through HiGHS (proven, equal to the oracle, bound never below its own score). The generator leans on the cases that broke before.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { solveExact, type OptPools, type OptAssignment, type OptProfile } from "./exact-solver.mts";
 import { core, fuzzSlots } from "./solver-fixture.mts";
-import { propertyReach } from "./mip.mts";
+import { propertyReach, withHardFloorBonus } from "./mip.mts";
 import { stepTable, swingTicks } from "./swing.mts";
 import type { OptItem } from "./vault-lib.mts";
 
@@ -281,5 +281,50 @@ for (const seed of TIE_SEEDS) {
       assert.ok(r.proven && r.tieBreak?.costProven, `${label}: HiGHS did not prove (score ${r.score}, ${JSON.stringify(r.tieBreak)}, ${r.mipMs} ms)`);
       assertTieResult(inst, cands, r, o, tolerance, `${label} HiGHS`);
     }
+  });
+}
+
+// Issue #311: the hard-floor bonus at the boundary. Floor bonuses (up to 1e6) and weights (up to 9e5 per point) as large as the
+// settings allow, so at the fixed 1e7 the rest of the score can outweigh a hard floor; withHardFloorBonus raises the bonus
+// for the pool. Over every suit, one meeting more hard floors scores strictly higher, and both exact searches prove the
+// brute-force best. The fixed scale must break the order in some instances, so the loop reaches the boundary.
+const BIG_SEEDS = [5, 17, 2026];
+for (const seed of BIG_SEEDS) {
+  test(`[fast] a suit meeting more hard floors always scores higher, with bonuses and weights as large as the settings allow (seed ${seed})`, async () => {
+    const rnd = core.optMulberry32(seed);
+    let brokenAtFixed = 0;
+    for (let i = 0; i < 200; i++) {
+      const inst = generate(rnd, seed * 100000 + i * 100), label = `seed ${seed} instance ${i}`, p = inst.profile;
+      const floored = Object.keys(p.floors || {});
+      if (!floored.length) continue;
+      if (!p.hardFloors!.length) p.hardFloors = [floored[0]!];
+      p.floorBonus = [1e3, 1e5, 3e5, 1e6][Math.floor(rnd() * 4)]!;
+      const factor = [1, 1e3, 1e5, 3e5][Math.floor(rnd() * 4)]!;
+      for (const d of Object.keys(p.weights!)) p.weights![d]! *= factor;
+      const profile = withHardFloorBonus(p, inst.pools as never, inst.current as never, inst.optionalSlots, inst.slots) as OptProfile;
+      const cands = candidates(inst), suits: OptAssignment[] = [], pick: OptAssignment = {};
+      const rec = (k: number): void => {
+        if (k === inst.slots.length) { if (!(pick.twoHanded?.twoHanded === true && pick.oneHanded)) suits.push({ ...pick }); return; }
+        for (const it of cands[inst.slots[k]!]!) { pick[inst.slots[k]!] = it; rec(k + 1); }
+      };
+      rec(0);
+      const met = (a: OptAssignment): number => profile.hardFloors!.filter((d) => Object.values(a).reduce((n, it) => n + (it?.props[d] || 0), 0) >= profile.floors![d]!).length;
+      // per met count, the lowest and highest score: each count's lowest must beat every fewer count's highest
+      const ordered = (pr: OptProfile): boolean => {
+        const lo = new Map<number, number>(), hi = new Map<number, number>();
+        for (const a of suits) { const c = met(a), s = core.scoreSet(a, pr); lo.set(c, Math.min(lo.get(c) ?? Infinity, s)); hi.set(c, Math.max(hi.get(c) ?? -Infinity, s)); }
+        return [...lo].every(([c, l]) => [...hi].every(([c2, h]) => c2 >= c || l > h));
+      };
+      if (!ordered(p)) brokenAtFixed++;
+      assert.ok(ordered(profile), `${label}: a suit meeting fewer hard floors scores as high (bonus ${profile.hardFloorBonus ?? 1e7})`);
+      const oracle = Math.max(...suits.map((a) => core.scoreSet(a, profile))), tol = 1e-9 * Math.max(1, Math.abs(oracle));
+      const opts: OptOptions = { seed: 1, restarts: 2, slots: inst.slots, optionalSlots: inst.optionalSlots, exact: true, timeBudgetMs: 5000 };
+      const exact = core.optimizeSuit(inst.pools, inst.current, profile, opts);
+      assert.ok(exact.proven && Math.abs(exact.score - oracle) <= tol, `${label}: core exact ${exact.score} vs brute force ${oracle}`);
+      const warned: string[] = [];
+      const r = await solveExact({ core, ...inst, profile, opts: { ...opts, timeBudgetMs: 10000 }, onProgress: () => {}, onWarn: (m) => warned.push(m) });
+      assert.ok(r.proven && Math.abs(r.score - oracle) <= tol, `${label}: HiGHS ${r.score} (proven ${r.proven}, ${r.solver}) vs brute force ${oracle}: ${warned.join("; ")}`);
+    }
+    assert.ok(brokenAtFixed > 0, `the fixed 1e7 broke the order in ${brokenAtFixed} instances`);
   });
 }

@@ -2,7 +2,7 @@
 import { randomUUID } from "node:crypto";
 import http from "node:http";
 import { isBoundedInt, isBoundedString, short } from "../../guards.mts";
-import { optionalSlotsFor, withReachableResistSteps } from "../../mip.mts";
+import { optionalSlotsFor, withHardFloorBonus, withReachableResistSteps, type MipProfile } from "../../mip.mts";
 import { onlyRootsDiagnostics, preBuildDiagnostics, scoreShares, weaponFlagDiagnostics, type Diagnostic, type DiagnosticsProfile } from "../../diagnostics.mts";
 import { readBody } from "../../read-body.mts";
 import { gearChanges, runKey, reusableRun, runSummary, manualRun, poolSerials, poolSnapshot, type RunOpts, type SavedRun } from "../../runs-lib.mts";
@@ -300,6 +300,8 @@ export function routes(ctx: ServerContext): Route[] {
       const fullOpts = Object.assign({ seed: RUN_DEFAULTS.seed, restarts: RUN_DEFAULTS.restarts }, opts as RunOpts);
       // only the Resisting Spells steps this pool reaches, before the key: a pool without such pieces keys as before them
       profile = withReachableResistSteps(profile as { resistSteps?: ResistStep[] }, pools as Partial<Record<string, OptItem[]>>, current as Partial<Record<string, OptItem | null>>, fullOpts.optionalSlots as string[] | undefined);
+      // a hard floor's bonus large enough that nothing else in the score outweighs it (issue #311); a usual profile carries none
+      profile = withHardFloorBonus(profile as MipProfile, pools as Partial<Record<string, OptItem[]>>, current as Partial<Record<string, OptItem | null>>, fullOpts.optionalSlots as string[] | undefined, fullOpts.slots as string[] | undefined);
       const key = runKey({ pools, current, profile, opts: fullOpts, weaponMustHave: mustHave, onlyRoots: only });
       const runs = runStore.all();
       const hit = fill ? null : reusableRun(runs, key, fullOpts as { timeBudgetMs?: number });

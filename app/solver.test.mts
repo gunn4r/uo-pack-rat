@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { effectiveProfile, GEAR_SLOTS } from "./vault-lib.mts";
 import { buffSkillValues, plannedProfile } from "./buffs.mts";
 import { solveExact, type OptPools, type OptAssignment, type OptProfile } from "./exact-solver.mts";
-import { DEFAULT_SLOTS, DEFAULT_OPTIONAL_SLOTS, buildSuitMip } from "./mip.mts";
+import { DEFAULT_SLOTS, DEFAULT_OPTIONAL_SLOTS, buildSuitMip, withHardFloorBonus } from "./mip.mts";
 import { solveModel as realSolveModel, type Handle, type SolveModelOptions } from "./mip-solve.mts";
 import { BASE_OPTS, cell, core, defaultProfiles, runBoth, sig, STARTERS_BEFORE_GOALS, templateNames, type OptOptions } from "./solver-fixture.mts";
 
@@ -62,6 +62,29 @@ test("[fast] partial credit on unreachable hard floors never buys a miss of a re
   assert.deepEqual([r.best.ring?.serial, r.proven, warned], [meets.serial, true, []]);
   assert.deepEqual(r.unreachableFloors, ["dci", "luck"]);
   assert.ok(Math.abs(r.score - c.score) < 1e-3 && c.score > core.scoreSet({ ring: near }, profile), `${r.score} vs ${c.score}`);
+});
+
+// Issue #311: six soft floors at the largest bonus the settings allow (1e6 each) against one hard floor. At the fixed
+// 1e7 the ring meeting all six and missing the hard floor by a point scored 1.05e7, above the 1e7 for meeting it, in
+// Best value and in Strict order's requirements stage. withHardFloorBonus raises the bonus for this pool (2 × 6e6 × 1.5
+// + 1), so both solvers take the ring that meets the hard floor, in both orders.
+test("[fast] a hard floor's bonus outweighs six soft floors at 1e6 in Best value and Strict order", async () => {
+  const soft = ["s1", "s2", "s3", "s4", "s5", "s6"];
+  const meets = { serial: 90111, name: "Meets", slot: "ring", props: { hci: 10 } };
+  const near = { serial: 90112, name: "Near", slot: "ring", props: { hci: 9, ...Object.fromEntries(soft.map((k) => [k, 1])) } };
+  const pools = { ring: [meets, near] }, current = { ring: meets };
+  const raw: OptProfile = { weights: {}, caps: {}, floors: { hci: 10, ...Object.fromEntries(soft.map((k) => [k, 1])) }, hardFloors: ["hci"], floorBonus: 1e6 };
+  const profile = withHardFloorBonus(raw, pools, current, [], ["ring"]);
+  assert.equal(profile.hardFloorBonus, 2 * 6e6 * 1.5 + 1);
+  assert.ok(core.scoreSet({ ring: near }, raw) > core.scoreSet({ ring: meets }, raw), "at the fixed 1e7 the six soft floors win");
+  for (const strict of [undefined, { ranks: [] }]) {
+    const opts: OptOptions = { exact: true, timeBudgetMs: 5000, restarts: 2, seed: 1, slots: ["ring"], optionalSlots: [], strict };
+    const c = core.optimizeSuit(pools, current, profile, opts);
+    const warned: string[] = [];
+    const r = await solveExact({ core, pools, current, profile, opts, onProgress: () => {}, onWarn: (m) => warned.push(m) });
+    assert.deepEqual([c.best.ring?.serial, c.proven, r.best.ring?.serial, r.proven, warned], [meets.serial, true, meets.serial, true, []], strict ? "Strict order" : "Best value");
+  }
+  assert.equal(withHardFloorBonus({ ...raw, floorBonus: 1000 }, pools, current, [], ["ring"]).hardFloorBonus, undefined, "a usual bonus keeps the fixed scale");
 });
 
 // Synthetic pools, deliberately not the fixture: a ring item that meets the physResist floor but

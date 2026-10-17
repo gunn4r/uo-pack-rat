@@ -49,6 +49,7 @@ export interface MipProfile {
   mins?: Record<string, number> | undefined;   // a value the property never falls below (scripts/optimizer-core.mts OptProfile.mins)
   ssiSteps?: Array<{ ssi: number; stam: number; credit: number }> | undefined;   // SSI by swing step (scripts/optimizer-core.mts OptProfile)
   resistSteps?: ResistStep[] | undefined;   // the minimums a suit's own Resisting Spells bonus lifts each resist to (vault-lib.mts EffectiveProfile)
+  hardFloorBonus?: number | undefined;   // a hard floor's bonus when above HARD_FLOOR_BONUS (withHardFloorBonus, issue #311)
 }
 
 export interface BuildSuitMipOptions {
@@ -119,6 +120,7 @@ export interface BuiltMip {
   reach: Record<string, { max: number; min: number }>;   // propertyReach for every dimension: what the floors were tested against
   hardRows: Record<string, number>;
   scoreOffset: number;
+  hardBonus: number;   // a met hard floor's bonus (hardBonusOf)
   capCols: Record<string, CapCol>;
   minCols: Record<string, MinCol>;
   floorCols: Record<string, FloorCol>;
@@ -190,6 +192,34 @@ export function withReachableResistSteps<P extends { resistSteps?: ResistStep[] 
   return (kept.length ? { ...rest, resistSteps: kept } : rest) as P;
 }
 
+// A hard floor's bonus (issue #311): HARD_FLOOR_BONUS, or more when the rest of the score could move by half of it in this
+// pool. The hard floors' partial credit together stays under half the bonus (it is shared among them, #204), so a suit
+// meeting one more hard floor wins whenever the rest moves by less than the other half: the soft floors (each between 0
+// and its bonus, partial credit included) and each weighted property's term over the totals the pool reaches
+// (propertyReach), held at a min where there is one, or an SSI step's credit. The bonus is twice that, plus a point.
+export function hardFloorBonusFor(profile: MipProfile, pools: Partial<Record<string, OptItem[]>>, current: Partial<Record<string, OptItem | null | undefined>>, optionalSlots: string[] = DEFAULT_OPTIONAL_SLOTS, slots: string[] = DEFAULT_SLOTS): number {
+  const W = profile.weights || {}, CAPS = profile.caps || {}, FL = profile.floors || {}, MINS = profile.mins || {}, hard = new Set(profile.hardFloors || []);
+  const floorOf = (d: string): number => (MINS[d] != null && (FL[d] || 0) <= MINS[d]! ? 0 : FL[d] || 0);
+  if (!Object.keys(FL).some((d) => hard.has(d) && floorOf(d) > 0)) return HARD_FLOOR_BONUS;
+  const FB = typeof profile.floorBonus === "number" ? profile.floorBonus : 1000, PARTIAL = typeof profile.floorPartial === "number" ? profile.floorPartial : 0.5;
+  const weighted = Object.keys(W).filter((d) => W[d]), reach = propertyReach(pools, current, optionalSlots, slots, weighted);
+  let spread = Object.keys(FL).filter((d) => !hard.has(d) && floorOf(d) > 0).length * Math.abs(FB) * (1 + Math.abs(PARTIAL));
+  for (const d of weighted) {
+    const cap = CAPS[d] ?? INF, mins = [MINS[d], ...(profile.resistSteps || []).map((st) => st.mins[d])].filter((m): m is number => typeof m === "number");
+    spread += Math.abs(W[d]!) * (Math.max(Math.min(reach[d]!.max, cap), ...mins) - Math.min(reach[d]!.min, cap));
+  }
+  if (Array.isArray(profile.ssiSteps) && (W.ssi || 0) > 0) spread += W.ssi! * Math.max(0, ...profile.ssiSteps.map((p) => Math.abs(p.credit)));
+  return Math.max(HARD_FLOOR_BONUS, 2 * spread + 1);
+}
+// The profile with its hard-floor bonus for this pool: the field only when it is above HARD_FLOOR_BONUS (a caller's own
+// value is replaced), so a usual profile builds, scores and keys exactly as before it existed.
+export function withHardFloorBonus<P extends MipProfile>(profile: P, pools: Partial<Record<string, OptItem[]>>, current: Partial<Record<string, OptItem | null | undefined>>, optionalSlots: string[] = DEFAULT_OPTIONAL_SLOTS, slots: string[] = DEFAULT_SLOTS): P {
+  const { hardFloorBonus: _given, ...rest } = profile, bonus = hardFloorBonusFor(rest, pools, current, optionalSlots, slots);
+  return (bonus > HARD_FLOOR_BONUS ? { ...rest, hardFloorBonus: bonus } : rest) as P;
+}
+// The bonus a profile carries (== scripts/optimizer-core.mts optHardBonus).
+export const hardBonusOf = (profile: MipProfile): number => (typeof profile.hardFloorBonus === "number" && profile.hardFloorBonus > HARD_FLOOR_BONUS ? profile.hardFloorBonus : HARD_FLOOR_BONUS);
+
 export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots = DEFAULT_OPTIONAL_SLOTS, slots = DEFAULT_SLOTS, hardAsSoft = false, parts: withParts = false }: BuildSuitMipOptions): BuiltMip {
   // with `parts`, every objective term is also put in the part it scores for (its property's weight, or the floors)
   const parts: ObjectiveParts | null = withParts ? { weights: {}, floors: { cols: [], costs: [], offset: 0 }, softPartial: { cols: [], costs: [], offset: 0 } } : null;
@@ -198,7 +228,7 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
   const W = profile.weights || {}, CAPS = profile.caps || {}, FL = profile.floors || {}, MINS = profile.mins || {};
   const hard = new Set(profile.hardFloors || []);
   const FB = typeof profile.floorBonus === "number" ? profile.floorBonus : 1000;
-  const PARTIAL = typeof profile.floorPartial === "number" ? profile.floorPartial : 0.5;
+  const PARTIAL = typeof profile.floorPartial === "number" ? profile.floorPartial : 0.5, HB = hardBonusOf(profile);
   // SSI by step (scripts/optimizer-core.mts optScoreVector): with a positive SSI weight, the SSI term is w × the best credit among the points the suit reaches, in place of w·min(t, cap). It needs the Stamina pool's total too.
   const steps = Array.isArray(profile.ssiSteps) && (W.ssi || 0) > 0 ? profile.ssiSteps : null;
   const dims = [...new Set([...Object.keys(W), ...Object.keys(CAPS), ...Object.keys(FL), ...(steps ? ["ssi", "stamPool"] : [])])];
@@ -354,11 +384,11 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
     const li = lifts ? lifts.findIndex((L) => L >= f) : -1, h = li >= 0 ? resistStepCols[li]!.col : null, hLift: Term[] = h != null ? [[h, Math.max(0, f - minReach)]] : [];
     // a floor above the per-slot maxima (and every step's min) can never be met, so its met-indicator is 0 for every suit
     const isHard = hard.has(d), unreachable = reachD < f && h == null;
-    if (isHard && !hardAsSoft && !unreachable) { hardRows[d] = addRow([...xs, ...hLift], f, INF); addOffset(HARD_FLOOR_BONUS); continue; }
+    if (isHard && !hardAsSoft && !unreachable) { hardRows[d] = addRow([...xs, ...hLift], f, INF); addOffset(HB); continue; }
     if (unreachable && isHard) unreachableFloors.push(d);
     // soft floor (or an unreachable / hardAsSoft hard floor): bonus·y + s with t ≥ f·y, s ≤ k·t, s ≤ bonus·partial·(1 − y)
     // a hard floor's partial credit is shared among the hard floors, as the core's (issue #204)
-    const bonus = isHard ? HARD_FLOOR_BONUS : FB, sMax = bonus * PARTIAL / (isHard ? nHard : 1), k = sMax / f;
+    const bonus = isHard ? HB : FB, sMax = bonus * PARTIAL / (isHard ? nHard : 1), k = sMax / f;
     const y = unreachable ? null : addCol({ name: `y_${d}`, kind: "y", dim: d }, bonus, 0, 1, true);
     // a soft floor's partial credit is a part of its own, which strict order's requirements stage leaves out (scripts/optimizer-core.mts optLexSpaces)
     if (parts && !isHard) part = parts.softPartial;
@@ -390,7 +420,7 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
 
   const model: MipModel = { numCols: cols.length, numRows: rowLower.length, sense: "maximize", offset: 0, colCost, colLower, colUpper, rowLower, rowUpper,
     matrix: { format: "csr", numRows: rowLower.length, numCols: cols.length, starts, indices, values }, integrality };
-  return { cols, xIndex, dims, unreachableFloors, reach, hardRows, scoreOffset, capCols, minCols, floorCols, stepCols, resistStepCols, model, ...(parts ? { parts } : {}) };
+  return { cols, xIndex, dims, unreachableFloors, reach, hardRows, scoreOffset, hardBonus: HB, capCols, minCols, floorCols, stepCols, resistStepCols, model, ...(parts ? { parts } : {}) };
 }
 
 // ---- the tie-break's second stage (issue #262) ----
@@ -427,7 +457,7 @@ export function heldModel(built: BuiltMip, start: ArrayLike<number>, held: Reado
     const terms: Term[] = [];
     let score = 0;
     for (let j = 0; j < m.numCols; j++) {
-      if (cost[j] === 0 || (fixMet && isY(j) && (colLower[j]! >= 1 || cost[j]! >= HARD_FLOOR_BONUS))) continue;
+      if (cost[j] === 0 || (fixMet && isY(j) && (colLower[j]! >= 1 || cost[j]! >= built.hardBonus))) continue;
       terms.push([j, cost[j]!]); score += cost[j]! * start[j]!;
     }
     if (!terms.length) continue;
