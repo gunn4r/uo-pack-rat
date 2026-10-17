@@ -17,14 +17,15 @@ export interface RosterRow {
   resists: ResistFigure[] | null;
   worn: number;
   lowDurability: number;   // worn pieces low on durability (sheet.mts's lowDurability)
+  label?: string | null | undefined;   // the build label (issue #336), which the search looks in too
 }
 export type RosterSort = { key: "name" | "scan" | "physResist" | "fireResist" | "coldResist" | "poisonResist" | "energyResist"; dir: 1 | -1 };
-// Filter by the top-bar search (case-insensitive, anywhere in the name), then sort. Names break ties;
+// Filter by the top-bar search (case-insensitive, anywhere in the name or the build label), then sort. Names break ties;
 // an unscanned character sorts after every scanned one whichever way the column runs.
 export function rosterView(rows: RosterRow[], q: string, sort: RosterSort): RosterRow[] {
   const needle = q.trim().toLowerCase();
   const val = (r: RosterRow): number | null => sort.key === "scan" ? (r.scannedAt ? Date.parse(r.scannedAt) : null) : sort.key === "name" ? null : r.resists?.find((f) => f.key === sort.key)?.value ?? null;
-  return rows.filter((r) => !needle || r.name.toLowerCase().includes(needle)).sort((a, b) => {
+  return rows.filter((r) => !needle || r.name.toLowerCase().includes(needle) || !!r.label?.toLowerCase().includes(needle)).sort((a, b) => {
     if (sort.key !== "name") {
       const va = val(a), vb = val(b);
       if (va == null || vb == null) { if (va !== vb) return va == null ? 1 : -1; }

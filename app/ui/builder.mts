@@ -6,7 +6,7 @@
 // snapshots are read from state, never from the DOM.
 import { NOBODY, PROP_LABELS, NOT_BUILDER_KEYS, importanceOf, weightOfImportance, GEAR_SLOTS, tagUnits, WEAPON_EXCLUDES, MELEE_SKILLS, WEAPON_MUST_HAVE, flagLabel, getRules, RESIST_KEYS, RESIST_CAP_LIMITS, resistCapsFor, templateFrom, settingsChanges, bagLabel, toOptItem, totalsOf, fcCapFor, CASTING_SCHOOLS, compileGoals, goalsActive, GOAL_LEFTOVERS, LEFTOVER_GROUPS, LEFTOVER_LABELS, GOAL_RANKS_MAX, GOAL_RANK_SIZE_MAX, STRATEGY_HELP, FEWEST_HELP } from "../vault-lib.mts";
 import { delayText, heldWeapon, ssiShareOf, swingOf, type SwingResult } from "../swing.mts";
-import { BUILTIN_PREFIX, characterBuffs, characterEntry, characterProfile, findTemplate, goalSsiCap, planBuild, specFromProfile, templateName, templateRefs, templateSettings, templateSpecFrom, type PlannedBuild } from "../build-spec.mts";
+import { BUILTIN_PREFIX, characterBuffs, characterEntry, characterLabel, characterProfile, findTemplate, goalSsiCap, planBuild, specFromProfile, templateName, templateRefs, templateSettings, templateSpecFrom, type PlannedBuild } from "../build-spec.mts";
 import type { FcCap, Goals, ResistCap, RunBuffs, RunSettings, Character, SettingsChange, SettingsGroup } from "../vault-lib.mts";
 import { BUFFS, BUFF_GROUPS, BUFF_INPUTS, buffAvailability, buffById, buffEffectTags, isSchool, gearNeedsText, overrideNote, planBuffs, normalizeBuffs, runBuffs, toggleBuff, buffPlanOf, type Buff, type BuffPlan } from "../buffs.mts";
 import { defaultStrLimit } from "../run-settings.mts";
@@ -149,6 +149,7 @@ registerScreen({ name: "builder", show: (r) => {
   if (!state.inv) return;
   if (r.character && r.character !== session.character && (state.inv.characters[r.character] || (r.character === NOBODY && Object.keys(state.inv.characters).length > 0))) selectCharacter(r.character);
   else if (!r.character && session.character) history.replaceState(null, "", routeFor("builder"));
+  charPicker?.refresh();   // a build label edited on the Characters page shows at once
 } });
 export function syncBuilderCharacters(): void {
   const names = characterNames(state.inv!.characters, state.profiles!.characters);
@@ -254,13 +255,15 @@ const buildIcon = (): HTMLElement => box("span", { class: "b-ic", "aria-hidden":
 // The build picker's own rows: the panel as it is, and (with unsaved changes) the character's saved settings to go back to.
 const OWN = "\u0000own", SAVED = "\u0000saved";
 function initPickers(): void {
+  // the subline: the character's build label, else their top skills; the search looks in both
   const skills = (n: string): string => (n === NOBODY ? NOBODY_LINE : topSkills(state.inv?.characters[n]?.skills));
-  charPicker = combobox({ label: "Character", placeholder: "Find a character or skill…", width: 400, empty: "No character matches.", attrs: { id: "b-char", class: "b-pick" },
-    face: () => (shownCharacter ? { value: shownCharacter, title: who(shownCharacter), subtitle: skills(shownCharacter) || "No skills in the scan", icon: avatar(shownCharacter) }
+  const subline = (n: string): string => (n === NOBODY ? NOBODY_LINE : characterLabel(state.profiles, n) ?? skills(n));
+  charPicker = combobox({ label: "Character", placeholder: "Find a character, label or skill…", width: 400, empty: "No character matches.", attrs: { id: "b-char", class: "b-pick" },
+    face: () => (shownCharacter ? { value: shownCharacter, title: who(shownCharacter), subtitle: subline(shownCharacter) || "No skills in the scan", icon: avatar(shownCharacter) }
       : { value: "", title: "No characters yet", subtitle: "Import a scan first" }),
     groups: () => {
       const names = state.inv && state.profiles ? characterNames(state.inv.characters, state.profiles.characters) : [];
-      const row = (n: string): ComboOption => ({ value: n, title: who(n), subtitle: skills(n), meta: lastRuns ? lastRuns[n] ?? "no runs" : undefined, icon: () => avatar(n), current: n === shownCharacter });
+      const row = (n: string): ComboOption => ({ value: n, title: who(n), subtitle: subline(n), match: `${who(n)} ${characterLabel(state.profiles, n) ?? ""} ${skills(n)}`, meta: lastRuns ? lastRuns[n] ?? "no runs" : undefined, icon: () => avatar(n), current: n === shownCharacter });
       return names.length ? [{ label: "Characters", options: names.map(row) }, { label: "Without a character", options: [row(NOBODY)] }] : [];
     },
     onPick: pickCharacter });

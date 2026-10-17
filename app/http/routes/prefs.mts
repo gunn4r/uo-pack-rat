@@ -1,8 +1,9 @@
-// prefs.mts — the player's saved choices: GET|PUT /api/profiles, /api/ui-prefs and /api/tazuo-panel.
+// prefs.mts — the player's saved choices: GET|PUT /api/profiles, PUT /api/profiles/label, /api/ui-prefs and /api/tazuo-panel.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { isBuffList, isBuffSkills } from "../../buffs.mts";
-import { PROFILES_VERSION, profilesSpecError, type ProfilesV3 } from "../../build-spec.mts";
+import { PROFILES_VERSION, characterBuffs, characterEntry, characterProfile, keepLabels, labelError, profilesSpecError, type ProfilesV3 } from "../../build-spec.mts";
+import { isPseudoCharacter } from "../../scan-schema.mts";
 import { isBoundedString } from "../../guards.mts";
 import { readBody } from "../../read-body.mts";
 import { validate, type ValidatorSchema } from "../../schema/validate.mts";
@@ -20,7 +21,7 @@ const PROFILES_SCHEMA = JSON.parse(readFileSync(join(HERE, "schema", "profiles.v
 const OLD_PAGE = "profiles are saved in a newer shape now; reload the page and make the change again";
 
 export function routes(ctx: ServerContext): Route[] {
-  const { config: CONFIG, panelPrefsFile: PANEL_PREFS, profilesStore, savePanel, uiPrefsStore } = ctx;
+  const { config: CONFIG, panelPrefsFile: PANEL_PREFS, profilesStore, savePanel, uiPrefsStore, getInventory } = ctx;
   return [
     // The player's profiles, and the shard's built-in templates beside them (read-only, never written into the file).
     // `readOnly`: why the file cannot be saved (a newer Pack Rat made it), when it cannot; every PUT is then a 409.
@@ -38,8 +39,33 @@ export function routes(ctx: ServerContext): Route[] {
       if (!ok) return send(res, 400, { ok: false, error: `${errors[0]!.path} ${errors[0]!.msg}`, errors });
       const bad = profilesSpecError(body as ProfilesV3);
       if (bad) return send(res, 400, { ok: false, error: bad });
+      // the stored labels stay (PUT /api/profiles/label owns them); nothing awaits between this read and the write
+      const stored = await profilesStore.read();
+      keepLabels(body as ProfilesV3, stored);
       profilesStore.write(body as ProfilesV3);
       return send(res, 200, { ok: true });
+    } },
+    // One character's build label (issue #336), changed in the file on the server so no other saved setting rides along:
+    // {character, label}, the label trimmed and a blank one removed. A character with no saved settings gets the ones
+    // the Suit Builder shows it (as a buff toggle does). Answers the character's entry as saved (null when none).
+    { method: "PUT", path: "/api/profiles/label", handle: async (req, res) => {
+      const body = asObject(await readBody(req, { limit: 4e3 }));
+      const readOnly = profilesStore.readOnly();
+      if (readOnly) return send(res, 409, { ok: false, error: readOnly });
+      const name = body.character, label = body.label;
+      if (!isBoundedString(name, 64) || !name) return send(res, 400, { ok: false, error: "character must be a character's name" });
+      const bad = labelError(label);
+      if (bad) return send(res, 400, { ok: false, error: bad });
+      const { inv } = await getInventory();
+      const profiles = await profilesStore.read();
+      // from here to the write nothing awaits, so no other save can come between them
+      const had = Object.hasOwn(profiles.characters, name), text = (label as string).trim();
+      if (isPseudoCharacter(name) || (!had && !Object.hasOwn(inv.characters, name))) return send(res, 404, { ok: false, error: `no character named ${name}` });
+      if (!had && !text) return send(res, 200, { ok: true, entry: null });
+      const { label: _old, ...entry } = had ? profiles.characters[name]! : characterEntry(characterProfile(profiles, name, profilesStore.builtins()), characterBuffs(profiles, name));
+      profiles.characters[name] = text ? { ...entry, label: text } : entry;
+      profilesStore.write(profiles);
+      return send(res, 200, { ok: true, entry: profiles.characters[name] });
     } },
     { method: "GET", path: "/api/ui-prefs", handle: (_req, res) => {
       const { autoBuffs: _on, buffSkills: _skills, ...prefs } = uiPrefsStore.read();   // moved to profiles.json, waiting for its migration
