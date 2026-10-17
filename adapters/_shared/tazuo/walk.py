@@ -119,6 +119,7 @@ def scan_root(root_serial, kind, label, containers, items, seen):
             cname = lines[0] if lines else str(it.Name or "")
             containers[s] = {"serial": s, "name": cname, "parent": parent, "root": root_serial,
                              "kind": "container", "tooltip": lines}
+            containers[s].update(look(it))
             if s in unopened:
                 containers[s]["opened"] = False
             if s in unopened and s not in BLACKLIST:

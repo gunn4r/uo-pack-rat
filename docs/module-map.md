@@ -133,7 +133,7 @@ Profiles, buffs, pools, solvers, saved runs and Manual. `docs/solver.md` describ
 | `app/ui/houses-data.mts` | The House map's data: the house list and names fetched per visit, each model kept by id and capture stamp, and the house entry save. | `houses`, `housesData` |
 | `app/ui/house-map-model.mts` | Pure: projection, painter's order, fit, container joins with the inventory, color modes, callouts, totals, house picker. | `project`, `paintOrder`, `chestViews`, `pickHouse` |
 | `app/ui/house-links.mts` | Which house holds each container, for "Show on map". | `houseOfContainer`, `houseOfItem`, `showOnMap` |
-| `app/ui/item-art.mts` | A container's in-game art from `GET /api/item-art` in a square tile, with its fallback when there is none. | `artTile`, `artUrl` |
+| `app/ui/item-art.mts` | A container's in-game art from `GET /api/item-art` in a square tile, with its fallback when there is none, and by a scanned container's serial. | `artTile`, `artUrl`, `containerArt` |
 | `app/ui/world-map.mts` | The world map lightbox. | `openWorldMap` |
 | `app/ui/world-map-model.mts` | Pure: the lightbox's zoom and pan. | `MAX_PX_PER_TILE`, `zoomView`, `panView` |
 

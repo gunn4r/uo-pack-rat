@@ -8,6 +8,7 @@
 import { state } from "./store.mts";
 import { $, el, toast, safeColor, compactChildren } from "./dom.mts";
 import { box, txt, button, meter, message, field, input, select, textarea, pill, check, token, createDrawer, confirmDialog, showToast, type DrawerHandle } from "./components.mts";
+import { containerArt } from "./item-art.mts";
 import { errorText } from "./messages.mts";
 import { filterContext } from "./item-parts.mts";
 import { loadOrganize, loadPresets, matchCount, refreshPlaces, saveConfig } from "./organize-data.mts";
@@ -20,7 +21,7 @@ import type { Build, SpellSchool, OrganizeMatchApiResponse, OrganizeRule, Origin
 export function targetChip(t: TargetView): HTMLElement {
   const colour = t.color ? safeColor(t.color) : null;
   return box("span", { class: `org-target${t.gone ? " gone" : ""}` },
-    colour ? el("span", { class: "org-swatch", style: `background:${colour}`, "aria-hidden": "true" }) : null,
+    containerArt(t.serial, 24, colour ? el("span", { class: "org-swatch", style: `background:${colour}`, "aria-hidden": "true" }) : null),
     txt(t.name, "ellip"),
     t.fill && !t.gone ? meter(t.fill.items, t.fill.max, { tone: fillTone(t.fill), label: `${t.name}: ${fillText(t)} items` }) : null,
     txt(fillText(t), "t-sm muted num"));
