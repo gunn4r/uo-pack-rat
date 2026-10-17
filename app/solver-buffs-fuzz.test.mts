@@ -1,6 +1,6 @@
 // solver-buffs-fuzz.test.mts — Automatic's buffs (issue #12) under a seeded fuzz, the pattern of solver-fuzz.test.mts.
 //
-// Automatic's buffs (issue #12) fuzzed the same way: three seeds × 400 instances of random buff sets (forms one at a time), random input values, raw stats, race, worn Enhance Potions and Resisting Spells, random requirements, weights and resist cap overrides over the whole 0-150 range, and small pools with negative values in two to four of the nineteen gear slots. For `plannedProfile`'s profile the core's exact search must prove the brute-force maximum and HiGHS must reach it; over every suit, what the solver is paid for weighted properties must differ by one constant from what the character really has with the buffs (`applyBuffs`' buffed caps and shares, the 150 stat headroom included, a resist override above the shard's cap set aside where a buff has a negative in-cap share, derived on its own), and a requirement must be met by gear exactly when gear plus bonus plus share reaches it. HiGHS may report a few instances unproven only where it ran out of time (a finished solve that disagrees with the core fails the test); each is named in a diagnostic and capped at 2% of a seed. `[fast]` (about 3 s).
+// Automatic's buffs (issue #12) fuzzed the same way: three seeds × 400 instances of random buff sets (forms one at a time), random input values, raw stats, race, worn Enhance Potions and Resisting Spells, random requirements, weights and resist cap overrides over the whole 0-150 range, and small pools with negative values in two to four of the nineteen gear slots. For `plannedProfile`'s profile the core's exact search must prove the brute-force maximum and HiGHS must reach it; over every suit, what the solver is paid for weighted properties must differ by one constant from what the character really has with the buffs (`applyBuffs`' buffed caps and shares, the 150 stat headroom included, a resist override above the shard's cap set aside where a buff has a negative in-cap share, derived on its own), and a requirement must be met by gear exactly when gear plus bonus plus share reaches it. HiGHS must prove every instance: an unproven one, a finished solve that disagrees with the core or a timeout, fails the test (issue #204 allowed 2% of a seed). `[fast]` (about 3 s).
 //
 // What is checked, in detail: the core's exact search and HiGHS both prove the brute-force maximum of the core's own scoreSet; over every suit, what the solver is paid for weighted properties differs from what the character really has with the buffs (max(the Resisting Spells minimum, min(gear + in-cap share, buffed cap)), applyBuffs' numbers) by one constant, so no suit is ever paid for points past a real cap, and the best suit's paid totals stay within the real caps; a requirement is met by a suit's gear exactly when gear + bonus + share reaches it (a resist's up to its buffed cap), for every gear total the solvers can tell apart (a floor at 0 reads as none, which a negative gear total below it would really miss: no real suit carries one).
 //
@@ -88,7 +88,6 @@ for (const seed of SEEDS) {
   test(`[fast] buffs fuzz: both solvers prove the brute-force best of the planned profile, which pays only for real capped totals (seed ${seed})`, async (t) => {
     const rnd = core.optMulberry32(seed), rnd2 = core.optMulberry32(seed + 265);
     let shifted = 0, lifted = 0, stepped = 0, mattered = 0;
-    const unproven: string[] = [];
     for (let i = 0; i < PER_SEED; i++) {
       const inst = generate(rnd, seed * 100000 + i * 100, rnd2), label = `seed ${seed} instance ${i} (${inst.plan.on.join(", ") || "no buffs"})`;
       // half the time with only the steps the pool reaches, as the server sends them; else every step, which the solvers must read alike
@@ -153,9 +152,9 @@ for (const seed of SEEDS) {
       const warned: string[] = [];
       const h = await solveExact({ core, pools: inst.pools, current: inst.current, profile: prof, opts: { ...opts, exact: true, timeBudgetMs: 10000 }, onProgress: () => {}, onWarn: (w: string) => warned.push(w) });
       assert.equal(h.solver === "highs" || h.solver === "none", true, `${label}: solver ${h.solver} (${h.fallbackReason})`);
-      // HiGHS proves, and the score is the brute-force best. Unproven only where HiGHS ran out of time: a finished solve (status optimal) that still loses to the core is a
-      // model the core disagrees with, the Resisting Spells minimum's included.
-      if (!h.proven) { unproven.push(label); assert.ok(!warned.some((m) => m.includes("HiGHS status optimal")), `${label}: HiGHS finished but disagrees with the core: ${warned.join("; ")}`); }
+      // HiGHS proves, and the score is the brute-force best: an unproven solve that still loses to the core is a model the core
+      // disagrees with, the Resisting Spells minimum's included
+      assert.equal(h.proven, true, `${label}: HiGHS unproven: ${warned.join("; ")}`);
       assert.ok(Math.abs(h.score - oracle) < 1e-3, `${label}: HiGHS ${h.score} != brute force ${oracle}`);
       // the best suit's paid totals, with the shares, never pass a real cap
       for (const [k, c] of Object.entries(planned.caps)) {
@@ -166,8 +165,6 @@ for (const seed of SEEDS) {
     assert.ok(shifted > PER_SEED / 3, `the buffs moved the profile in ${shifted} of ${PER_SEED} instances`);
     assert.ok(lifted > PER_SEED && stepped > PER_SEED / 10 && mattered > PER_SEED / 50, `${lifted} suits carried a Resisting Spells bonus; ${stepped} instances could reach a step, in ${mattered} it changed the best score`);
     t.diagnostic(`${stepped} instances could reach a Resisting Spells step, in ${mattered} it changed the best score`);
-    if (unproven.length) t.diagnostic(`HiGHS unproven, the core's best reported: ${unproven.join("; ")}`);
-    assert.ok(unproven.length <= PER_SEED / 50, `HiGHS unproven in ${unproven.length} instances`);
   });
 }
 

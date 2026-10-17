@@ -46,6 +46,23 @@ test("[fast] an unreachable hard floor scores the core's partial credit", async 
   void ref;
 });
 
+// Issue #204: one hard floor in reach and two out of it. The ring that misses the reachable floor by a point comes near
+// the other two; their partial credit, 1e7 × 0.5 × 0.9 each when every hard floor had its own, outscored meeting the
+// floor, so the core took that ring while HiGHS, holding the floor as a row, proved the other one.
+test("[fast] partial credit on unreachable hard floors never buys a miss of a reachable one", async () => {
+  const meets = { serial: 90101, name: "Meets", slot: "ring", props: { hci: 10 } };
+  const near = { serial: 90102, name: "Near", slot: "ring", props: { hci: 9, dci: 90, luck: 90 } };
+  const profile = { weights: {}, caps: {}, floors: { hci: 10, dci: 100, luck: 100 }, hardFloors: ["hci", "dci", "luck"], floorBonus: 1000 };
+  const opts: OptOptions = { exact: true, timeBudgetMs: 5000, restarts: 2, seed: 1, slots: ["ring"], optionalSlots: [] };
+  const c = core.optimizeSuit({ ring: [meets, near] }, { ring: meets }, profile, opts);
+  const warned: string[] = [];
+  const r = await solveExact({ core, pools: { ring: [meets, near] }, current: { ring: meets }, profile, opts, onProgress: () => {}, onWarn: (m) => warned.push(m) });
+  assert.deepEqual([c.best.ring?.serial, c.proven], [meets.serial, true]);
+  assert.deepEqual([r.best.ring?.serial, r.proven, warned], [meets.serial, true, []]);
+  assert.deepEqual(r.unreachableFloors, ["dci", "luck"]);
+  assert.ok(Math.abs(r.score - c.score) < 1e-3 && c.score > core.scoreSet({ ring: near }, profile), `${r.score} vs ${c.score}`);
+});
+
 // Synthetic pools, deliberately not the fixture: a ring item that meets the physResist floor but
 // craters fireResist, and a bracelet item that meets the fireResist floor but craters physResist —
 // each floor's per-slot maxima (buildSuitMip's own "reach" check, which optimistically assumes every

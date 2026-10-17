@@ -237,9 +237,11 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
     forced = true;
     for (const { col, at } of resistStepCols) addRow([...rsXs, [col, -(rsReach.max - (at - RESIST_STEP_SLACK))]], -INF, at - RESIST_STEP_SLACK);
   };
+  // a floor at or under the property's min is met by every suit: dropped, as the core drops it
+  const floorOf = (d: string): number => (MINS[d] != null && (FL[d] || 0) <= MINS[d]! ? 0 : FL[d] || 0);
+  const nHard = dims.filter((d) => hard.has(d) && floorOf(d) > 0).length;
   for (const d of dims) {
-    // a floor at or under the property's min is met by every suit: dropped, as the core drops it
-    const w = W[d] || 0, cap = CAPS[d], m = MINS[d], f = m != null && (FL[d] || 0) <= m ? 0 : FL[d] || 0;
+    const w = W[d] || 0, cap = CAPS[d], m = MINS[d], f = floorOf(d);
     // Every j in allX is an x column, which always carries `item` (set in the loop above) — the two
     // `!` below are in range by construction, not an unchecked assumption about caller input.
     const xs: Term[] = allX.map((j): Term => [j, cols[j]!.item!.props[d] || 0]).filter(([, v]) => v !== 0);
@@ -335,7 +337,8 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
     if (isHard && !hardAsSoft && !unreachable) { hardRows[d] = addRow([...xs, ...hLift], f, INF); scoreOffset += HARD_FLOOR_BONUS; continue; }
     if (unreachable && isHard) unreachableFloors.push(d);
     // soft floor (or an unreachable / hardAsSoft hard floor): bonus·y + s with t ≥ f·y, s ≤ k·t, s ≤ bonus·partial·(1 − y)
-    const bonus = isHard ? HARD_FLOOR_BONUS : FB, k = bonus * PARTIAL / f, sMax = bonus * PARTIAL;
+    // a hard floor's partial credit is shared among the hard floors, as the core's (issue #204)
+    const bonus = isHard ? HARD_FLOOR_BONUS : FB, sMax = bonus * PARTIAL / (isHard ? nHard : 1), k = sMax / f;
     const y = unreachable ? null : addCol({ name: `y_${d}`, kind: "y", dim: d }, bonus, 0, 1, true);
     const sv = addCol({ name: `s_${d}`, kind: "s", dim: d }, 1, 0, sMax, false);
     // "met" row, t ≥ f·y written as t − (f − minReach)·y ≥ minReach: y = 1 still forces t ≥ f, and
