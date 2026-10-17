@@ -167,6 +167,9 @@
 /* "Planned with [chips] · Show without buffs", and the note on numbers taken from the suit worn now */
 .b-planned { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-1-5); }
 .b-planned-note { flex: 1 1 100%; }
+/* a saved run's piece that moved or is gone (issue #291): its mark wraps rather than being cut; the copy under the name shows only while Where is hidden */
+.b-plan .b-mark { display: block; white-space: normal; overflow-wrap: anywhere; }
+.b-plan .b-mark-narrow { display: none; }
 .b-resists { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--space-3); }
 .b-resist-val { display: flex; align-items: baseline; gap: var(--space-1-5); min-width: 0; }
 .b-resist-val .i { align-self: center; color: var(--color-text-muted); }
@@ -360,6 +363,7 @@
   /* before → after / cap needs about 140 px a tile; the Plan drops its Where column (the Fetch list says where) */
   .b-head-card .b-resists { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .b-plan col:nth-child(4), .b-plan th:nth-child(4), .b-plan td:nth-child(4) { display: none; }
+  .b-plan .b-mark-narrow { display: block; }
 }
 @media (max-width: 1279px) {
   .b-after { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -466,9 +470,10 @@
 .b-wear-tile { display: flex; flex-direction: column; align-items: center; min-width: 0; padding: var(--space-2) 0; border-radius: var(--radius-md); background: var(--color-surface-subtle); }
 .b-wear-val { font-size: var(--text-lg); font-weight: var(--weight-semibold); font-variant-numeric: tabular-nums; }
 #b-wearing .b-gauges { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-/* the saved run's banner when the gear changed since: the sentence, then how the settings differ */
+/* the saved run's banner when the gear changed since: the sentence, the changes listed (issue #291), then how the settings differ */
 #b-run-banner:empty { display: none; }
 .b-gear-changed { display: flex; flex-direction: column; gap: var(--space-0-5); }
+.b-gear-lines { margin: 0; padding-left: var(--space-4); }
 @media (max-width: 1023px) {
   .b-tpl-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

@@ -1,8 +1,8 @@
-// runs-lib.mts — saved suit-builder runs: the cache key, the reuse rule, and the list summary.
+// runs-lib.mts — saved suit-builder runs: the cache key, the reuse rule, the list summary, and what changed in the gear since a run.
 // Server-side only (uses node:crypto); the page never imports it.
 import { createHash } from "node:crypto";
-import { totalsOf, type OptItem } from "./vault-lib.mts";
-import type { RunResult, RunSettingsRaw, RunSummary, SavedRun, ScoreShare } from "./runs-types.mts";
+import { locationOf, totalsOf, type Inventory, type Item, type OptItem } from "./vault-lib.mts";
+import type { GearChanges, PiecePlace, RunResult, RunSettingsRaw, RunSummary, SavedRun, ScoreShare } from "./runs-types.mts";
 export type { RunResult, RunSettingsRaw, RunSummary, SavedRun } from "./runs-types.mts";
 
 // The optimizer search options a saved run was made with. Loosely shaped (an index signature) because
@@ -114,9 +114,10 @@ export interface RunRecordInput<R> {
   id: string; key: string; character: string; createdAt: string; settings: RunSettingsRaw; inventoryStamp: unknown;
   poolSize: number | null; skipped: unknown; ms: number | null; result: R;
   search?: { opts: unknown; budgetMs: number | null; explored: unknown } | undefined;
+  pool?: ReturnType<typeof poolPart> | undefined;   // a search's pool serials and its suit's places (issue #291), after skipped
 }
-export function runRecord<R>({ id, key, character, createdAt, settings, inventoryStamp, poolSize, skipped, ms, result, search }: RunRecordInput<R>) {
-  const head = { id, key, character, createdAt, label: "" }, versions = { schemaVersion: 1, solverVersion: SOLVER_VERSION }, source = { inventoryStamp, poolSize, skipped };
+export function runRecord<R>({ id, key, character, createdAt, settings, inventoryStamp, poolSize, skipped, ms, result, search, pool }: RunRecordInput<R>) {
+  const head = { id, key, character, createdAt, label: "" }, versions = { schemaVersion: 1, solverVersion: SOLVER_VERSION }, source = { inventoryStamp, poolSize, skipped, ...pool };
   return search ? { ...head, ...versions, settings, ...source, ...search, result, ms } : { ...head, settings, ...versions, ...source, ms, result };
 }
 
@@ -152,4 +153,51 @@ export function suitPieces(runs: SavedRun[]): Set<number> {
   const out = new Set<number>();
   for (const r of runs) for (const it of Object.values((r.result?.best ?? {}) as Record<string, { serial?: unknown } | null>)) if (typeof it?.serial === "number") out.add(it.serial);
   return out;
+}
+
+// ---- what changed in the gear since a run (issue #291)
+// Where a piece is, as a run keeps it: the character it is on (worn, or in their backpack or bank) and its container.
+export function placeOf(it: Item, inv: Inventory): PiecePlace {
+  if (it.equippedBy) return { character: it.equippedBy, container: null };
+  const root = inv.containers[it.root as number];
+  return { character: root && (root.kind === "backpack" || root.kind === "bank") ? root.scannedBy : null, container: it.container };
+}
+// The serials of every piece in a build's pools and worn suit, sorted: what a run keeps of its pool, and what it is compared with.
+export function poolSerials(pools: Partial<Record<string, OptItem[]>>, current: Partial<Record<string, OptItem | null>> = {}): number[] {
+  const out = new Set<number>();
+  for (const list of Object.values(pools)) for (const it of list || []) out.add(it.serial);
+  for (const it of Object.values(current)) if (it) out.add(it.serial);
+  return [...out].sort((a, b) => a - b);
+}
+// A build's pool as its job keeps it until the run is saved: its serials and where each piece is (poolPart cuts the places to the suit's).
+export interface PoolSnapshot { serials: number[]; places: Record<number, PiecePlace> }
+export function poolSnapshot(inv: Inventory, pools: Partial<Record<string, OptItem[]>>, current: Partial<Record<string, OptItem | null>>): PoolSnapshot {
+  const serials = poolSerials(pools, current), places: Record<number, PiecePlace> = {};
+  for (const s of serials) { const it = inv.items[s]; if (it) places[s] = placeOf(it, inv); }
+  return { serials, places };
+}
+// What a saved run keeps: the pool's serials and where each piece of its suit (`best`) was.
+export function poolPart(snap: PoolSnapshot, best: unknown): { poolSerials: number[]; picked: Record<string, PiecePlace> } {
+  const picked: Record<string, PiecePlace> = {};
+  for (const it of Object.values((best ?? {}) as Record<string, { serial?: unknown } | null>)) if (typeof it?.serial === "number" && snap.places[it.serial]) picked[it.serial] = snap.places[it.serial]!;
+  return { poolSerials: snap.serials, picked };
+}
+// A run's gear changes against the inventory now and its pool now (`now`, poolSerials of the same settings): the pieces
+// the pool takes that it did not then, and the suit's pieces that moved or are gone. A piece the run's character now wears
+// is where the suit puts it, so it has not moved. Null for a run that kept no pool (a manual run, one saved before it).
+export function gearChanges(run: SavedRun, inv: Inventory, now: readonly number[]): GearChanges | null {
+  if (!run.poolSerials || !run.picked) return null;
+  const then = new Set(run.poolSerials), added = now.filter((s) => !then.has(s) && inv.items[s]);
+  const places = [...new Set(added.map((s) => locationOf(inv.items[s]!, inv).text))];
+  const moved: GearChanges["moved"] = [], gone: GearChanges["gone"] = [];
+  for (const [slot, piece] of Object.entries((run.result?.best ?? {}) as Record<string, { serial: number; name: string } | null>)) {
+    if (!piece) continue;
+    const it = inv.items[piece.serial], was = run.picked[piece.serial];
+    if (!it) { gone.push({ slot, serial: piece.serial, name: piece.name }); continue; }
+    if (!was || (it.equippedBy && it.equippedBy === run.character)) continue;
+    const at = placeOf(it, inv);
+    if (at.character === was.character && at.container === was.container) continue;
+    moved.push({ slot, serial: piece.serial, name: it.name, character: at.character !== was.character ? at.character : null, place: locationOf(it, inv).text });
+  }
+  return { added: added.length, addedPlaces: places.length <= 2 ? places : [], moved, gone };
 }

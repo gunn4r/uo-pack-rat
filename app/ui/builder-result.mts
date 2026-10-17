@@ -18,9 +18,9 @@ import { session, commands, provide } from "./builder-session.mts";
 import { RESIST_NAMES, keyProps, tipTarget, verdict, grabAllButton, fetchCard, settingsCheck } from "./builder-parts.mts";
 import { savedBuffs, plannedFromWorn, buffById, buffsDiff, runBuffs, signed } from "../buffs.mts";
 import type { RunBuffs } from "../vault-lib.mts";
-import { slotsOf, paperdollCaps, pastCapNotes, runSettingsDiff, withBuffs, afterChange, compareModel, hiddenRowsNote, changeRows, gaugeRows, worse, gaugeNote, gaugeTrack, changesSummary, nextSwingStep, sharePct, plural, resistOutcome, toggleCompare, propName, capNote, capsLine, anyOverridden, effectiveFloor, resultChecks, shareRows, swingLines, who, rarityDetail, rarityTotal, goalOutcomes, goalTrades, goalVerdict, swingOutcome, tradeText, spareLine, type ChangeRow, type CompareMember } from "./builder-model.mts";
+import { slotsOf, paperdollCaps, pastCapNotes, runSettingsDiff, withBuffs, afterChange, compareModel, hiddenRowsNote, changeRows, gaugeRows, worse, gaugeNote, gaugeTrack, changesSummary, nextSwingStep, sharePct, plural, resistOutcome, toggleCompare, propName, capNote, capsLine, anyOverridden, effectiveFloor, resultChecks, shareRows, swingLines, who, rarityDetail, rarityTotal, goalOutcomes, goalTrades, goalVerdict, swingOutcome, tradeText, spareLine, pieceMark, GONE_MARK, type ChangeRow, type CompareMember } from "./builder-model.mts";
 import { heldWeapon, ssiShareOf, swingOf, swingSeconds, SSI_CAP } from "../swing.mts";
-import type { ScoreShare, SwingResult } from "../runs-types.mts";
+import type { GearChanges, ScoreShare, SwingResult } from "../runs-types.mts";
 import type { OptSuit, OptimizeResult, SavedRunLike, UiPrefs } from "./api-types.mts";
 
 // One resist tile: its name in its resist colour, the value (before → after when there is a before) against
@@ -79,7 +79,7 @@ async function renderResult(res: OptimizeResult, current: OptSuit, prof: Effecti
   const fetchItems = changes.map((sl) => (suit[sl] ? resolved[suit[sl]!.serial] : undefined)).filter((it): it is Item => !!it && it.equippedBy !== name);
   const nodes = [
     headlineCard(res, current, suit, prof, name, view, changes.length, fetchItems, meta),
-    planCard(current, suit, name, slots, changes, resolved),
+    planCard(current, suit, name, slots, changes, resolved, meta?.gearChanges),
     fetchCard(fetchItems, name === NOBODY ? null : name),
     res.altTolerance != null ? otherSuitsCard(res, view) : null,
     afterCard(name, current, suit, prof),
@@ -271,7 +271,8 @@ function plannedWith(prof: EffectiveProfile, name: string): HTMLElement | null {
 }
 
 // ---- 2. plan: the slots that change, with lock / highlight / grab
-function planCard(current: OptSuit, suit: OptSuit, name: string, all: string[], changes: string[], resolved: Record<number, Item>): HTMLElement {
+// A saved run's piece that moved since or is gone is marked in Where (issue #291, `gear`); a gone one has nothing to grab.
+function planCard(current: OptSuit, suit: OptSuit, name: string, all: string[], changes: string[], resolved: Record<number, Item>, gear: GearChanges | undefined): HTMLElement {
   const p = session.profile;
   const unchanged = all.filter((sl) => !changes.includes(sl));
   const slots = showUnchanged ? all : changes;
@@ -290,10 +291,13 @@ function planCard(current: OptSuit, suit: OptSuit, name: string, all: string[], 
     }
     const ra = rowActions(acts);
     if (locked) ra.querySelector(".btn")?.classList.add("on");
-    const where = !changed ? txt("") : item ? txt(item.equippedBy ? `worn by ${item.equippedBy}` : whereText(item.location?.text), "t-sm muted") : next ? txt("not in the current inventory", "t-sm faint") : txt("");
+    // a saved run's piece that moved or is gone: its mark in Where, and under the piece's name while Where is hidden (narrow)
+    const mark = pieceMark(gear, (changed ? next : now)?.serial, whereText), markCls = `t-sm b-mark ${mark === GONE_MARK ? "faint" : "tone-warn"}`;
+    const where = mark ? txt(mark, markCls) : !changed ? txt("") : item ? txt(item.equippedBy ? `worn by ${item.equippedBy}` : whereText(item.location?.text), "t-sm muted") : next ? txt(GONE_MARK, "t-sm faint") : txt("");
+    const instead = !changed ? txt("keep", "muted") : next ? tipTarget(txt(next.name, "strong"), next) : txt("nothing", "faint");
     // each piece's name answers for its own tooltip, the worn one and its replacement
     return { cells: [slotLabel(slot), now ? tipTarget(txt(now.name, changed ? "muted" : ""), now) : txt("Empty", "faint"),
-      !changed ? txt("keep", "muted") : next ? tipTarget(txt(next.name, "strong"), next) : txt("nothing", "faint"),
+      mark ? box("span", {}, instead, txt(mark, `${markCls} b-mark-narrow`)) : instead,
       where, next && changed ? txt(keyProps(next.props) || "no properties", keyProps(next.props) ? "muted" : "faint") : txt(""), ra] };
   });
   const sw = switchControl({ label: "Show unchanged slots", checked: showUnchanged, onChange: (v) => { showUnchanged = v; rerender(); } });

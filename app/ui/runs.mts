@@ -9,13 +9,14 @@ import { planBuild, specFromRunSettings } from "../build-spec.mts";
 import { buffById, plannedProfile, savedBuffs } from "../buffs.mts";
 import type { RunSettings, OptItem, PropMap, Character, EffectiveProfile } from "../vault-lib.mts";
 import { state, goalsMeta } from "./store.mts";
-import { $, el, fmtSecs, fmtRunTime, fmtRunDay, toast } from "./dom.mts";
+import { $, el, fmtSecs, fmtRunTime, fmtRunDay, toast, whereText } from "./dom.mts";
 import { api } from "./api.mts";
 import { bindDrawer, box, txt, button, badge, message, input, confirmDialog, menu, type DrawerHandle } from "./components.mts";
 import { renderNavCounts } from "./shell.mts";
 import { resolveItems } from "./items.mts";
 import { session, commands, provide, applyKnobs } from "./builder-session.mts";
-import { paperdollCaps, slotsOf, runAutoLabel, runBadges, runSettingsDiff, toggleCompare, plural, who, withBuffs, latestShownRun, otherCharactersRuns, gearChangedSince } from "./builder-model.mts";
+import { paperdollCaps, slotsOf, runAutoLabel, runBadges, runSettingsDiff, toggleCompare, plural, who, withBuffs, latestShownRun, otherCharactersRuns, gearChangedSince, gearChangeLines } from "./builder-model.mts";
+import type { GearChanges } from "../runs-types.mts";
 import type { RunsListApiResponse, RunApiResponse, RunPutApiResponse, RunSummaryLike, SavedRunLike } from "./api-types.mts";
 
 // ---------------------------------------------------------------- settings snapshot / apply
@@ -229,15 +230,16 @@ function startOver(): void {
 // GET /api/runs/<id> only resolves here as a real 200 (api.mts throws for anything else, caught into the
 // synthetic `{ok:false}` branch).
 type RunFetch = (RunApiResponse & { ok: true }) | { ok: false; error?: string | undefined };
-async function fetchRun(id: string): Promise<SavedRunLike | null> {
+// The run, and what changed in the gear since it was built (none for a run that kept no pool).
+async function fetchRun(id: string): Promise<{ run: SavedRunLike; gear: GearChanges | null } | null> {
   let r: RunFetch;
   try { r = (await api<RunApiResponse>(`/api/runs/${id}`)) as RunApiResponse & { ok: true }; } catch (e) { r = { ok: false, error: (e as Error).message }; }
   if (!r.ok) { toast(r.error!, "bad"); return null; }
-  return r.run;
+  return { run: r.run, gear: r.gearChanges ?? null };
 }
 // A saved run's suit into Manual (one undo step there), with the buffs it was planned with.
 async function runToManual(id: string): Promise<void> {
-  const name = session.character, run = await fetchRun(id);
+  const name = session.character, run = (await fetchRun(id))?.run;
   if (!run || session.character !== name) return;
   closeRunsDrawer();
   await commands.openInManual(run.result.best, slotsOf(run.result.best), savedBuffs(run.settings), `Open the run from ${fmtRunTime(run.createdAt)}`);
@@ -251,8 +253,9 @@ export async function openRun(id: string, auto = false): Promise<boolean> {
   // dropped rather than drawn (with its Fetch list and Grab all) under that one.
   const name = session.character;
   if (!name) return false;
-  const run = await fetchRun(id);
-  if (!run || session.character !== name || (auto && (session.result || session.job || session.openRun))) return false;
+  const got = await fetchRun(id);
+  if (!got || session.character !== name || (auto && (session.result || session.job || session.openRun))) return false;
+  const { run } = got;
   // a run file that kept no result (a hand-written or damaged one) has no suit to show
   if (!run.result) { if (!auto) toast("That saved run has no suit to show.", "bad"); return false; }
   session.openRun = id; renderRuns();
@@ -292,32 +295,46 @@ export async function openRun(id: string, auto = false): Promise<boolean> {
   session.result = run.result;
   // run.ms is `number | null` (a saved run's on-disk shape); run.skipped is whatever that run stored (live
   // arrays or plain counts), which the Solver details' counter reads either way.
-  await commands.renderResult(run.result, current, profileFromSettings(run.settings), name, { ms: run.ms ?? 0, poolSize: run.poolSize, skipped: run.skipped as Record<string, unknown> | undefined, reused: null, ...goalsMeta(run.settings) });
+  await commands.renderResult(run.result, current, profileFromSettings(run.settings), name, { ms: run.ms ?? 0, poolSize: run.poolSize, skipped: run.skipped as Record<string, unknown> | undefined, reused: null, ...goalsMeta(run.settings), ...(got.gear ? { gearChanges: got.gear } : {}) });
   if (session.openRun !== id) return false;
-  paintRunBanner(run, diff);
+  paintRunBanner(run, diff, got.gear);
   return true;
 }
 // The saved run's one banner over the result: its time and name and how the panel's settings differ, with Load these
 // settings; when the inventory changed since the run (gearChangedSince, the drawer's "Inventory changed"), it leads with
 // that instead, the settings changed counted as the drawer's footer counts them, and Build again, which loads the run's
-// settings into the panel and builds them (issue #272). The item-level gear changes are #291's.
-let bannerRun: SavedRunLike | null = null;
-function paintRunBanner(run: SavedRunLike, diff: string[]): void {
-  bannerRun = run;
+// settings into the panel and builds them (issue #272). For a run that kept its pool it lists what changed (`gear`, issue
+// #291): the new pieces, and the suit's pieces that moved or are gone; else, or with none of those, "newer scans came in".
+let bannerRun: SavedRunLike | null = null, bannerGear: GearChanges | null = null;
+function paintRunBanner(run: SavedRunLike, diff: string[], gear: GearChanges | null): void {
+  bannerRun = run; bannerGear = gear;
   const load = button({ label: "Load these settings", size: "sm", onClick: () => applySettings(run.settings) });
   const since = diff.length ? `Your settings → this run: ${diff.join(" · ")}` : "Same settings as the panel.";
   const banner = !gearChangedSince(state.inv?.scans || [], run)
     ? message({ tone: "info", title: `Saved run · ${fmtRunDay(run.createdAt)}${run.label ? " · " + run.label : ""}`, text: since, actions: [load], attrs: { class: "msg info saved-run" } })
     : message({ tone: "warn", title: `This is your build from ${fmtRunDay(run.createdAt)}${run.label ? ` (${run.label})` : ""}.`,
-      text: box("span", { class: "b-gear-changed" }, txt(`Your gear changed since: newer scans came in${diff.length ? `, and ${plural(diff.length, "setting")} changed` : ""}.`), diff.length ? el("span", { class: "t-sm muted" }, since) : null),
+      text: gearText(gear ? gearChangeLines(gear, whereText) : [], diff, since),
       actions: [button({ label: "Build again", kbd: "⌘↵", variant: "primary", size: "sm", attrs: { "aria-keyshortcuts": "Meta+Enter Control+Enter" }, onClick: () => { applySettings(run.settings); commands.build(); } }), ...(diff.length ? [load] : [])], attrs: { class: "msg warn saved-run" } });
   banner.querySelector(".kbd")?.setAttribute("aria-hidden", "true");
   document.getElementById("b-run-banner")?.replaceChildren(banner);
 }
-// A scan landing while a saved run's banner is up: the banner says so.
+// The banner's text when the gear changed: the changes as a list (or "newer scans came in" with none to list), then how many
+// settings changed and how.
+function gearText(lines: string[], diff: string[], since: string): HTMLElement {
+  const settings = diff.length ? `${plural(diff.length, "setting")} changed` : "";
+  return box("div", { class: "b-gear-changed" },
+    lines.length ? txt("Your gear changed since:") : txt(`Your gear changed since: newer scans came in${settings ? `, and ${settings}` : ""}.`),
+    lines.length ? box("ul", { class: "b-gear-lines" }, ...lines.map((l) => el("li", {}, l))) : null,
+    lines.length && settings ? txt(`And ${settings}.`) : null,
+    diff.length ? el("span", { class: "t-sm muted" }, since) : null);
+}
+// A scan landing while a saved run's banner is up: the banner says so, with the run's gear changes against it.
 document.addEventListener("inventorychange", () => {
   const run = bannerRun;
-  if (run && session.openRun === run.id && !session.job && document.querySelector("#b-run-banner .saved-run")) paintRunBanner(run, runSettingsDiff(settingsSnapshot(), run.settings));
+  if (!run) return;
+  const up = (): boolean => bannerRun === run && session.openRun === run.id && !session.job && !!document.querySelector("#b-run-banner .saved-run");
+  if (!up()) return;
+  void api<RunApiResponse>(`/api/runs/${run.id}`).then((r) => r.gearChanges ?? null, () => bannerGear).then((gear) => { if (up()) paintRunBanner(run, runSettingsDiff(settingsSnapshot(), run.settings), gear); });
 });
 
 // ---------------------------------------------------------------- arriving (issue #272)
