@@ -21,7 +21,7 @@ test("[smoke] electron-app: the Electron UI tests launch, skip, fake the bridge 
   const found: string[] = [];
   for (const f of files) {
     // comments may name what a test does without doing it
-    const code = readFileSync(join(SCRIPTS, f), "utf8").split("\n").map((l) => l.replace(/^\s*\/\/.*$/, ""));
+    const code = readFileSync(join(SCRIPTS, f), "utf8").split(/\r?\n/).map((l) => l.replace(/^\s*\/\/.*$/, ""));
     code.forEach((line, i) => { for (const [re, use] of RULES) if (re.test(line)) found.push(`${f}:${i + 1}: ${use}`); });
   }
   assert.deepEqual(found, []);
