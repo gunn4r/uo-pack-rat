@@ -38,9 +38,9 @@ export const itemArtName = (graphic: number): string => `build/artlegacymul/${St
 export type ReadAt = (position: number, length: number) => Uint8Array | null;
 // A UOP file's table, its entries sorted by name hash; empty entries (offset 0) left out. `at` is where an entry's data starts (its offset plus its header).
 export interface UopTable { hashes: BigUint64Array; at: Float64Array; stored: Int32Array; size: Int32Array; flag: Int16Array }
-const UOP_MAGIC = 0x0050594d, HEADER = 28, BLOCK_HEAD = 12, ENTRY = 34, MAX_ENTRIES = 1 << 20;
+const UOP_MAGIC = 0x0050594d, HEADER = 28, BLOCK_HEAD = 12, ENTRY = 34, MAX_ENTRIES = 1 << 20, MAX_BLOCKS = 1 << 14;
 
-// The header (magic "MYP\0", version up to 5, signature, the first table block, block size, file count), then the chain of table blocks: a count, the next block (0 ends it), `count` entries of offset, header length, stored and decompressed lengths, name hash, adler32 and flag. Null when the chain loops, a block or an entry reaches past the file, or a number does not make sense.
+// The header (magic "MYP\0", version up to 5, signature, the first table block, block size, file count), then the chain of table blocks: a count, the next block (0 ends it), `count` entries of offset, header length, stored and decompressed lengths, name hash, adler32 and flag. Null when the chain loops or runs past MAX_BLOCKS blocks (a real file has under a hundred), a block or an entry reaches past the file, or a number does not make sense.
 export function readUopTable(read: ReadAt, fileSize: number): UopTable | null {
   const head = read(0, HEADER);
   if (!head || head.length < HEADER) return null;
@@ -50,7 +50,7 @@ export function readUopTable(read: ReadAt, fileSize: number): UopTable | null {
   const seen = new Set<number>();
   let next = Number(hv.getBigUint64(12, true));
   while (next !== 0) {
-    if (seen.has(next) || next < HEADER || next + BLOCK_HEAD > fileSize) return null;
+    if (seen.has(next) || seen.size >= MAX_BLOCKS || next < HEADER || next + BLOCK_HEAD > fileSize) return null;
     seen.add(next);
     const bh = read(next, BLOCK_HEAD);
     if (!bh || bh.length < BLOCK_HEAD) return null;

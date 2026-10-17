@@ -61,11 +61,11 @@ export function createHousesService({ settings }: { settings: () => SettingsDoc 
     facetPngBytes += out.length;
     return out;
   }
-  // Item art (issue #174): the UO folder's artLegacyMUL.uop table (its table blocks only, never the payload) and hues.mul, each read once while the file stays the same, and an entry read only when its graphic is asked for. The PNGs are kept by file stamps, graphic and hue up to 4 MB in all, the oldest dropped first, and never written to disk. `etag` names the files' stamps, graphic and hue (hashed, so never the path). A hue the hues.mul does not have, or with no hues.mul, draws the art unhued. `reason` as for the facet: no folder, the art file missing or not a UOP table, or no art for that graphic.
-  let artMemo: { key: string; table: UopTable | null } | null = null, hueMemo: { key: string; hues: Hues | null } | null = null;
+  // Item art (issue #174): the UO folder's artLegacyMUL.uop table (its table blocks only, never the payload) and hues.mul, each read once while the file stays the same, and an entry read only when its graphic is asked for. A table that does not read is tried again after 30 s (a passing read error), sooner when the file changes. The PNGs are kept by file stamps, graphic and hue up to 4 MB in all, the least recently used dropped first, and never written to disk. `etag` names the files' stamps, graphic and hue (hashed, so never the path). A hue the hues.mul does not have, or with no hues.mul, draws the art unhued. `reason` as for the facet: no folder, the art file missing or not a UOP table, or no art for that graphic.
+  let artMemo: { key: string; table: UopTable | null; at: number } | null = null, hueMemo: { key: string; hues: Hues | null } | null = null;
   const artPngs = new Map<string, Buffer>();
   let artPngBytes = 0;
-  const ART_PNG_BYTES = 4 * 1024 * 1024;
+  const ART_PNG_BYTES = 4 * 1024 * 1024, ART_RETRY_MS = 30_000;
   const stamp = (path: string): string | null => { try { const st = statSync(path); return st.isFile() ? `${path}:${st.mtimeMs}:${st.size}` : null; } catch { return null; } };
   function itemArt(graphic: number, hue: number): { png: Buffer; etag: string } | { reason: string } {
     const at = uoFolder();
@@ -76,12 +76,12 @@ export function createHousesService({ settings }: { settings: () => SettingsDoc 
     const huesPath = join(at.folder, "hues.mul"), huesKey = hue & 0x3fff ? stamp(huesPath) : null;
     const key = `${artKey}|${huesKey ?? ""}|${graphic}|${hue}`, etag = `"${createHash("sha1").update(key).digest("hex").slice(0, 20)}"`;
     const kept = artPngs.get(key);
-    if (kept) return { png: kept, etag };
+    if (kept) { artPngs.delete(key); artPngs.set(key, kept); return { png: kept, etag }; }
     let fd: number;
     try { fd = openSync(artPath, "r"); } catch { return { reason: "missing" }; }
     try {
       const read: ReadAt = (position, length) => { const b = Buffer.alloc(length); return readSync(fd, b, 0, length, position) === length ? b : null; };
-      if (artMemo?.key !== artKey) { let table: UopTable | null; try { table = readUopTable(read, fstatSync(fd).size); } catch { table = null; } artMemo = { key: artKey, table }; }
+      if (artMemo?.key !== artKey || (!artMemo.table && Date.now() - artMemo.at > ART_RETRY_MS)) { let table: UopTable | null; try { table = readUopTable(read, fstatSync(fd).size); } catch { table = null; } artMemo = { key: artKey, table, at: Date.now() }; }
       if (!artMemo.table) return { reason: "unreadable" };
       let art: StaticArt | null;
       try { const raw = readUopEntry(artMemo.table, itemArtName(graphic), read); art = raw && decodeStatic(raw); } catch { art = null; }
@@ -90,9 +90,11 @@ export function createHousesService({ settings }: { settings: () => SettingsDoc 
       const hues = huesKey ? hueMemo?.hues : null, img = toRgba(art, hues ? hueOf(hues, hue) : null);
       if (!img) return { reason: "no-art" };
       const png = encodePngRgba(img.width, img.height, img.rgba);
-      for (const [k, v] of artPngs) { if (artPngBytes + png.length <= ART_PNG_BYTES) break; artPngs.delete(k); artPngBytes -= v.length; }
-      artPngs.set(key, png);
-      artPngBytes += png.length;
+      if (png.length <= ART_PNG_BYTES) {
+        for (const [k, v] of artPngs) { if (artPngBytes + png.length <= ART_PNG_BYTES) break; artPngs.delete(k); artPngBytes -= v.length; }
+        artPngs.set(key, png);
+        artPngBytes += png.length;
+      }
       return { png, etag };
     } finally { closeSync(fd); }
   }

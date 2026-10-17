@@ -1,6 +1,6 @@
 // art.test.mts — `app/art.mts` (issue #174), the item art decoder, on synthetic client files.
 //
-// `app/art.mts` (issue #174) on synthetic files from `app/art-fixture.mts`: the lookup3 hash against its published vectors and the item art entry names; a UOP table read across chained blocks with a stored and a deflated entry, empty entries left out, only the table read until an entry is asked for, and malformed tables (bad magic or version, a looping chain, a block or an entry past the end) refused; an entry packed another way, too big, or inflating to the wrong length refused; static art decoded, a run past the width, a row start or run past the buffer, a missing row end and a zero or huge size refused; hues.mul groups, a hue out of range or 0 giving none; full and partial hues; the cut to the opaque box and art with no opaque pixel. All `[fast]`.
+// `app/art.mts` (issue #174) on synthetic files from `app/art-fixture.mts`: the lookup3 hash against its published vectors and the item art entry names; a UOP table read across chained blocks with a stored and a deflated entry, empty entries left out, only the table read until an entry is asked for, and malformed tables (bad magic or version, a looping chain, a chain past the block cap, a block or an entry past the end) refused; an entry packed another way, too big, or inflating to the wrong length refused; static art decoded, a run past the width, a row start or run past the buffer, a missing row end and a zero or huge size refused; hues.mul groups, a hue out of range or 0 giving none; full and partial hues; the cut to the opaque box and art with no opaque pixel. All `[fast]`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { decodeStatic, hueOf, itemArtName, readHues, readUopEntry, readUopTable, toRgba, uopHash, type ReadAt } from "./art.mts";
@@ -44,6 +44,14 @@ test("[fast] art: an empty entry is left out; a bad magic or version, a looping 
   assert.equal(table(bad((b) => b.writeUInt32LE(0x12345678, 0))), null, "magic");
   assert.equal(table(bad((b) => b.writeUInt32LE(6, 4))), null, "version");
   assert.equal(table(bad((b) => b.writeBigUInt64LE(28n, 28 + 4))), null, "a block whose next block is itself");
+  const chain = (n: number): Buffer => {   // n empty blocks chained 12 bytes apart
+    const b = Buffer.alloc(28 + 12 * n);
+    b.writeUInt32LE(0x0050594d, 0); b.writeBigUInt64LE(28n, 12);
+    for (let k = 0; k + 1 < n; k++) b.writeBigUInt64LE(BigInt(28 + 12 * (k + 1)), 28 + 12 * k + 4);
+    return b;
+  };
+  assert.equal(table(chain(20000)), null, "a chain of more blocks than any real file has");
+  assert.equal(table(chain(100))!.hashes.length, 0, "a hundred empty blocks are fine");
   assert.equal(table(bad((b) => b.writeBigUInt64LE(BigInt(file.length), 12))), null, "the first block past the end");
   assert.equal(table(bad((b) => b.writeUInt32LE(1000, 28))), null, "more entries than the file holds");
   assert.equal(table(bad((b) => b.writeInt32LE(1000, 28 + 12 + 12))), null, "an entry's data past the end");
