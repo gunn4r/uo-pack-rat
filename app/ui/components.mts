@@ -663,6 +663,7 @@ export function markParts(text: string, query: string): string[] {
   return i < 0 ? [text] : [text.slice(0, i), text.slice(i, i + q.length), text.slice(i + q.length)];
 }
 // The highlight after a key, over `n` options: ↓ and ↑ step and stop at the ends; -1 for a key that does not move it.
+// Home and End are left to the search box's caret, as an editable combobox has them (ARIA APG).
 export function comboStep(i: number, n: number, key: string): number {
   if (n <= 0) return -1;
   if (key === "ArrowDown") return Math.min(n - 1, i + 1);
@@ -698,13 +699,15 @@ export function combobox(o: ComboboxOptions): ComboboxHandle {
       list.replaceChildren(...(groups.length ? groups.map((g) => {
         const gid = nextId("cbx-g");
         return el("div", { class: "cbx-group", role: "group", "aria-labelledby": gid }, el("div", { class: "cbx-grp", id: gid }, g.label), ...g.options.map((x) => {
-          const n = box("div", { class: `cbx-opt${x.current ? " cbx-cur" : ""}`, role: "option", id: `${listId}-${i++}`, "data-value": x.value, "aria-selected": "false" },
+          const at = i++;
+          const n = box("div", { class: `cbx-opt${x.current ? " cbx-cur" : ""}`, role: "option", id: `${listId}-${at}`, "data-value": x.value, "aria-selected": "false" },
             x.icon ? x.icon() : null,
             box("span", { class: "cbx-text" }, el("span", { class: "cbx-title" }, ...marked(x.title, q)), x.subtitle ? el("span", { class: "cbx-sub" }, ...marked(x.subtitle, q)) : null),
             x.meta ? txt(x.meta, "cbx-meta") : null,
             x.current ? icon("check", { size: "sm", cls: "cbx-check" }) : null,
             x.current ? txt("(current)", "sr") : null);
           n.addEventListener("pointerdown", (e) => e.preventDefault());   // keep the focus in the search box
+          n.addEventListener("pointermove", () => { if (active !== at) { active = at; sync(); } });   // the pointer moves the one highlight ↵ picks
           n.addEventListener("click", () => pick(x.value));
           return n;
         }));

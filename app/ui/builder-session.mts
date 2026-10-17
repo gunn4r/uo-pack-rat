@@ -120,7 +120,7 @@ export interface BuilderCommands {
   runsCard(): HTMLElement;
   otherRunsCard(name: string): Promise<HTMLElement | null>;
   startOver(): void;
-  lastRunDays(): Promise<Record<string, string>>;   // each character's latest run, as "today, 10:40 PM"
+  lastRunDays(): Promise<Record<string, string> | null>;   // each character's latest run, as "today, 10:40 PM"; null when unknown
 }
 // Filled by each module as it loads (app.mts imports all five), so every command is there before the page calls one.
 export const commands = {} as BuilderCommands;

@@ -15,7 +15,7 @@ import { state, invStamp, goalsMeta } from "./store.mts";
 import type { BuilderJob, BuilderJobUi, FinishedBuild, BuildMeta } from "./store.mts";
 import { $, el, label, full, fmtN, fmtSecs, slotLabel, toast } from "./dom.mts";
 import { promptText } from "./dialog.mts";
-import { box, txt, button, kbd, badge, token, message, select, input, field, switchControl, check, segmented, filterChip, pill, popover, closePopover, searchInput, stepper, progress, tooltip, refreshTooltips, icon, confirmDialog, modalOpen, rowActions, tipWrap, bindDrawer, combobox, type DrawerHandle, type ComboboxHandle, type ComboGroup, type ComboOption, type ComboFace, type ComboAction } from "./components.mts";
+import { box, txt, button, kbd, badge, token, message, select, input, field, switchControl, check, segmented, filterChip, pill, popover, closePopover, menu, searchInput, stepper, progress, tooltip, refreshTooltips, icon, confirmDialog, modalOpen, rowActions, tipWrap, bindDrawer, combobox, type DrawerHandle, type ComboboxHandle, type ComboGroup, type ComboOption, type ComboFace, type ComboAction, type MenuItem } from "./components.mts";
 import { api } from "./api.mts";
 import { createBuffPicker, type BuffPicker, type BuffView, type PickerActions } from "./builder-buffs.mts";
 import { optimizeErrorMessage } from "./messages.mts";
@@ -243,8 +243,8 @@ function group(id: string, title: string | null, body: () => Array<Node | null>)
 let charPicker: ComboboxHandle | null = null, buildPicker: ComboboxHandle | null = null;
 // The character the picker shows (builder-manual.mts's paintCharSelect decides: No character when it is Manual's choice).
 let shownCharacter = "";
-// When each character last ran ("today, 10:40 PM"), fetched as the picker opens; it redraws when they are in.
-let lastRuns: Record<string, string> = {};
+// When each character last ran ("today, 10:40 PM"), fetched as the picker opens; it redraws when they are in. Null until known.
+let lastRuns: Record<string, string> | null = null;
 const NOBODY_LINE = "Raw item totals, no character's bonuses";
 // A character's initial on a tint of one of eight colors, the same for a name every time; a box icon for No character.
 const hueOf = (name: string): number => ([...name].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7) % 8) + 1;
@@ -260,15 +260,17 @@ function initPickers(): void {
       : { value: "", title: "No characters yet", subtitle: "Import a scan first" }),
     groups: () => {
       const names = state.inv && state.profiles ? characterNames(state.inv.characters, state.profiles.characters) : [];
-      const row = (n: string): ComboOption => ({ value: n, title: who(n), subtitle: skills(n), meta: lastRuns[n] ?? "no runs", icon: () => avatar(n), current: n === shownCharacter });
+      const row = (n: string): ComboOption => ({ value: n, title: who(n), subtitle: skills(n), meta: lastRuns ? lastRuns[n] ?? "no runs" : undefined, icon: () => avatar(n), current: n === shownCharacter });
       return names.length ? [{ label: "Characters", options: names.map(row) }, { label: "Without a character", options: [row(NOBODY)] }] : [];
     },
     onPick: pickCharacter });
   $<HTMLElement>("#b-char-slot")!.replaceWith(charPicker.button);
-  charPicker.button.addEventListener("click", () => { void commands.lastRunDays().then((d) => { lastRuns = d; charPicker!.refresh(); }); });
+  charPicker.button.addEventListener("click", () => { void commands.lastRunDays().then((d) => { if (d) { lastRuns = d; charPicker!.refresh(); } }); });
   buildPicker = combobox({ label: "Build", placeholder: "Find a template…", width: 420, empty: "No template matches.", attrs: { id: "b-tpl", class: "b-pick", "aria-describedby": "b-tpl-state" },
     face: buildFace, groups: buildGroups, actions: buildActions, onPick: pickBuild });
-  tooltip(buildPicker.button, () => buildState().detail);
+  // the full state shows as a tooltip; a screen reader gets it once, from #b-tpl-state (the tooltip's describer is taken back off)
+  tooltip(buildPicker.button, () => (session.profile && session.character ? buildState().detail : NO_CHARACTER));
+  buildPicker.button.setAttribute("aria-describedby", "b-tpl-state");
   $<HTMLElement>("#b-tpl-top")!.replaceChildren(txt("using", "b-w"), buildPicker.button, el("span", { class: "sr", id: "b-tpl-state" }));
 }
 // A character picked. "No character" (NOBODY) is Manual's in both modes, and Automatic's own when picked there; picked in
@@ -300,18 +302,24 @@ function buildGroups(): ComboGroup[] {
   };
   return [
     { label: `${who(name)}'s own`, options: [{ value: OWN, title: face.title, subtitle: face.subtitle, match: face.title, icon: buildIcon, current: true },
-      ...(unsaved ? [{ value: SAVED, title: `${who(name)}'s saved build`, subtitle: `Go back to it, dropping ${plural(unsaved, "unsaved change")}`, match: face.title, icon: buildIcon }] : [])] },
+      ...(unsaved ? [{ value: SAVED, title: `${who(name)}'s saved build`, subtitle: `Go back to it, dropping ${plural(unsaved, "unsaved change")}`, match: `${who(name)}'s saved build`, icon: buildIcon }] : [])] },
     { label: "Start over from a saved template", options: refs.filter((r) => !builtin(r)).map(tpl) },
     { label: "Start over from a built-in template", options: refs.filter(builtin).map(tpl) },
   ];
 }
-// The template management that was the ⋯ menu's: Save as, and Update and Delete for the player's template the build came from.
+// The template management that was the ⋯ menu's: Save as, and Manage templates, a menu with Update and Delete for each of
+// the player's templates (the build's own first), none of which applies the template. A built-in template
+// (app/data/templates/<shard>.json) is read-only, so it is not listed: Save as template makes the player's own copy.
 function buildActions(): ComboAction[] {
-  const ref = session.profile?.template || "", mine = !!ref && Object.hasOwn(state.profiles?.templates || {}, ref);
-  const why = !session.profile ? NO_CHARACTER : ref.startsWith(BUILTIN_PREFIX) ? BUILTIN_READ_ONLY : mine ? null : "This build is not from one of your templates.";
+  const mine = Object.keys(state.profiles?.templates || {}).length > 0;
   return [{ label: "Save as template…", icon: "plus", onSelect: () => { void saveTemplateAs(); }, disabled: session.profile ? null : NO_CHARACTER },
-    { label: mine ? `Update “${ref}”` : "Update template", onSelect: () => { void updateTemplate(); }, disabled: why },
-    { label: mine ? `Delete “${ref}”…` : "Delete template…", onSelect: () => { void deleteTemplate(); }, disabled: why }];
+    { label: "Manage templates…", onSelect: manageTemplates, disabled: !session.profile ? NO_CHARACTER : mine ? null : "You have no saved templates yet. Save as template makes one." }];
+}
+function manageTemplates(): void {
+  const own = session.profile?.template || "", names = Object.keys(state.profiles!.templates).sort((a, b) => Number(b === own) - Number(a === own) || a.localeCompare(b));
+  const items: Array<MenuItem | "divider"> = names.flatMap((n, i) => [...(i ? ["divider" as const] : []),
+    { label: `Update “${n}” with these settings`, onSelect: () => { void updateTemplate(n); } }, { label: `Delete “${n}”…`, danger: true, onSelect: () => { void deleteTemplate(n); } }]);
+  menu(buildPicker!.button, items, { label: "Manage templates", width: 260 });
 }
 function pickBuild(v: string): void {
   if (v === OWN) return;
@@ -405,8 +413,6 @@ function paintChanges(): void {
     out.textContent = n ? `${plural(n, "change")} since the last build` : "No changes since the last build";
   }, 150);
 }
-// A built-in template (app/data/templates/<shard>.json) is read-only: Save as… makes the player's own copy.
-const BUILTIN_READ_ONLY = "Built-in templates can't be changed. Save as template makes your own copy.";
 async function saveTemplates(done: string): Promise<void> {
   const r = await putProfiles();
   // putProfiles()'s only `ok: false` path is its own catch, which always sets `error`.
@@ -451,16 +457,14 @@ async function saveTemplateAs(): Promise<void> {
   renderPanel();
   await saveTemplates(`Template ${name} saved.`);
 }
-async function updateTemplate(): Promise<void> {
-  const name = session.profile!.template || "";
+async function updateTemplate(name: string): Promise<void> {
   if (!Object.hasOwn(state.profiles!.templates, name) || !await confirmDialog({ title: `Update the ${name} template?`, body: `The ${name} template is overwritten with these settings.`, confirmLabel: `Update ${name}` })) return;
   state.profiles!.templates[name] = { ...state.profiles!.templates[name], spec: templateSpecFrom(readControls(), buffsOn()), savedAt: new Date().toISOString() };
   session.profile!.template = name;
   updateTemplateBadge();
   await saveTemplates(`Template ${name} updated.`);
 }
-async function deleteTemplate(): Promise<void> {
-  const name = session.profile!.template || "";
+async function deleteTemplate(name: string): Promise<void> {
   if (!Object.hasOwn(state.profiles!.templates, name) || !await confirmDialog({ title: `Delete the ${name} template?`, body: "Characters made from it keep their settings.", confirmLabel: `Delete ${name}` })) return;
   delete state.profiles!.templates[name];
   renderPanel();
@@ -1435,10 +1439,13 @@ async function saveProfile(said?: string): Promise<void> {
   // A copy (later panel edits must not ride along with a template save), keeping what the panel doesn't edit: any
   // other field of the entry, and the spec's goal and search.
   const name = session.character!, chars = state.profiles!.characters, entry = characterEntry(readControls(), characterBuffs(state.profiles!, name));
-  const { race: _race, template: _template, spec: was, ...rest } = Object.hasOwn(chars, name) ? chars[name]! : { spec: undefined };
+  const had = Object.hasOwn(chars, name), before = chars[name];
+  const { race: _race, template: _template, spec: was, ...rest } = had ? chars[name]! : { spec: undefined };
   chars[name] = { ...rest, ...entry, spec: { ...was, ...entry.spec } };
   const r = await putProfiles();
   toast(r.ok ? said ?? `Profile for ${who(name)} saved.` : r.error!, r.ok ? "good" : "bad");
-  updateTemplateBadge();   // nothing unsaved now
+  // a refused save leaves the profile as it was, so the build's line still counts the changes as unsaved
+  if (!r.ok) { if (had) chars[name] = before!; else delete chars[name]; }
+  updateTemplateBadge();
 }
 provide({ showCharacter, renderPanel, clearCapDrafts, panelBuild, buffPlan, loadRunBuffs, tuneWeight, pickTemplate: (ref) => { void pickTemplate(ref); }, selectCharacter, build: () => { void runBuild(); }, openSettingsTab: (t) => openSettings(t as Tab) });

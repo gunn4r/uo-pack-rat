@@ -356,6 +356,10 @@ test("[slow] with no character, Build, Save profile and Save as template are dis
       assert.match(await page.locator(id).getAttribute("title") || "", /no character to build for/);
       assert.equal(await page.locator(id).getAttribute("aria-describedby"), "b-no-char");
     }
+    // the build picker's tooltip has nothing to read with no character, and says why (issue #321)
+    assert.equal(await page.locator("#b-tpl .cbx-title").innerText(), "No build yet");
+    await page.focus("#b-tpl");
+    await page.waitForFunction(() => [...document.querySelectorAll(".tip")].some((e) => /no character to build for/.test(e.textContent || "")), undefined, { timeout: 5_000 });
     assert.deepEqual(errors, []);
   } finally {
     await app.close();

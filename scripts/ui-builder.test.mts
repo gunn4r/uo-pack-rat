@@ -1657,6 +1657,21 @@ test("[slow] templates: built-ins first with their description, Apply sets Manua
     await page.click("#b-tpl");
     assert.deepEqual(await groups(), ["Kestrel's own", "Start over from a saved template", "Start over from a built-in template"]);
     await page.keyboard.press("Escape");
+    // Manage templates reaches any saved template without applying it: a second one, deleted after its confirmation, leaves
+    // the build on Mine and Kestrel's saved profile as it was (review M2)
+    const profiles = (): { templates: Record<string, unknown>; characters: Record<string, { template?: string }> } => JSON.parse(readFileSync(join(dataDir, "profiles.json"), "utf8"));
+    await page.evaluate(async (url) => { const { state } = await import(url); state.profiles.templates.Spare = { spec: state.profiles.templates.Mine.spec }; }, "/ui/store.mjs");
+    const kestrelBefore = JSON.stringify(profiles().characters.Kestrel);
+    await page.click("#b-tpl");
+    await page.locator(".pop").getByRole("button", { name: "Manage templates…" }).click();
+    const manage = page.getByRole("menu", { name: "Manage templates" });
+    assert.deepEqual((await manage.getByRole("menuitem").allInnerTexts()).map((x) => x.trim()), ["Update “Mine” with these settings", "Delete “Mine”…", "Update “Spare” with these settings", "Delete “Spare”…"], "the build's own first");
+    await manage.getByRole("menuitem", { name: "Delete “Spare”…" }).click();
+    await page.locator("dialog[open]").getByRole("button", { name: "Delete Spare" }).click();
+    await page.waitForFunction(() => /Template Spare deleted/.test(document.body.textContent || ""), undefined, { timeout: 10_000 });
+    assert.equal(Object.hasOwn(profiles().templates, "Spare"), false);
+    assert.equal(await page.getAttribute("#b-tpl", "data-value"), "Mine", "the build still comes from Mine");
+    assert.equal(JSON.stringify(profiles().characters.Kestrel), kestrelBefore, "Kestrel's saved profile untouched");
     // Manual: the template's buffs, counted, one undo step; Undo puts Bless and the switch back
     await page.click('#b-mode [data-value="manual"]');
     await page.waitForSelector("#b-manual:not([hidden]) #mb-suit .mb-slot");

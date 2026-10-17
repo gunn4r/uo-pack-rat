@@ -366,10 +366,11 @@ document.addEventListener("builderchange", (e) => {
   const key = (e as CustomEvent<{ key: string }>).detail.key;
   if (["runs", "openRun", "job"].includes(key)) document.getElementById("b-myruns")?.replaceWith(runsCard());
 });
-// When each character last ran, for the character picker: its latest run's day and time, from the same list.
-async function lastRunDays(): Promise<Record<string, string>> {
+// When each character last ran, for the character picker: its latest run's day and time, from the same list; null when the
+// list could not be fetched (the picker then says nothing rather than "no runs").
+async function lastRunDays(): Promise<Record<string, string> | null> {
   let all: RunSummaryLike[];
-  try { all = await (allRuns ||= api<RunsListApiResponse>("/api/runs").then((r) => r.runs || [])); } catch { allRuns = null; return {}; }
+  try { all = await (allRuns ||= api<RunsListApiResponse>("/api/runs").then((r) => r.runs || [])); } catch { allRuns = null; return null; }
   const out: Record<string, string> = {};
   for (const r of otherCharactersRuns(all, null, Infinity)) out[r.character!] = fmtRunDay(r.createdAt);
   return out;
