@@ -34,7 +34,7 @@ async function route(page: Page, hash: string, ready: string): Promise<void> {
   await page.waitForSelector(ready, { timeout: 15_000 });
   await page.waitForTimeout(250);
 }
-// The Suit Builder's Settings drawer (issue #272) open on one of its tabs.
+// The Suit Builder's Build Settings drawer (issue #272) open on one of its tabs.
 async function settingsTab(page: Page, tab: string): Promise<void> {
   if (await page.locator("#b-drawer").isHidden()) await page.click("#b-settings");
   await page.click(`#b-tab-${tab}`);
@@ -161,7 +161,7 @@ const SCENES: Scene[] = [
   { name: "builder resist caps", enter: async (p) => {
     await settingsTab(p, "advanced");
     await p.fill("#b-cap-fireResist", "95");
-    await p.click("#b-run");
+    await p.click("#b-run-foot");
     await p.waitForFunction(() => !document.querySelector<HTMLButtonElement>("#b-run")?.disabled && /raised from 70/.test(document.querySelector("#b-result .b-head-card")?.textContent || ""), undefined, { timeout: 60_000 });
     await p.fill("#b-cap-coldResist", "200");
     await p.waitForSelector("#b-cap-coldResist-err");
@@ -185,7 +185,7 @@ const SCENES: Scene[] = [
   } },
   { name: "builder planned with buffs", enter: async (p) => {
     await p.keyboard.press("Escape");
-    await p.click("#b-run");
+    await p.click("#b-run-foot");
     await p.waitForFunction(() => !document.querySelector<HTMLButtonElement>("#b-run")?.disabled && document.querySelector("#b-result .b-planned"), undefined, { timeout: 60_000 });
   } },
   // Manual's hand-offs (issue #12): the result taken into Manual, a slot cleared and filled again by the search (its
@@ -340,7 +340,7 @@ const SCENES: Scene[] = [
   { name: "builder advanced field error", enter: async (p) => {
     await settingsTab(p, "advanced");
     await p.fill("#b-restarts", "300000");
-    await p.click("#b-run");
+    await p.click("#b-run-foot");
     await p.waitForSelector("#b-restarts-err");
   }, leave: async (p) => { await p.fill("#b-restarts", "200"); } },
   { name: "builder running", enter: async (p) => {
