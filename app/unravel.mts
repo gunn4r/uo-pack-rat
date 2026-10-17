@@ -4,7 +4,7 @@
 // rules' `unravel` block, so a correction is a data change. Also why a piece is left out of the suggestions by default
 // (leftOutReasons) and how many ingredients a list of stacks holds (onHand). No DOM, no node: imports: served to the browser
 // as it stands, like item-query.mts.
-import { SKILL_NAMES } from "./vault-lib.mts";
+import { SKILL_NAMES, SLOT_GROUP } from "./vault-lib.mts";
 import type { Item } from "./vault-lib.mts";
 import type { RulesV1 } from "./schema/types.d.mts";
 
@@ -13,8 +13,6 @@ export const INGREDIENTS = ["Relic Fragment", "Enchanted Essence", "Magical Resi
 export type Ingredient = typeof INGREDIENTS[number];
 
 // ---------------------------------------------------------------- which pieces
-const JEWEL_SLOTS = new Set(["ring", "bracelet", "earrings"]);
-const ARMOR_SLOTS = new Set(["helmet", "neck", "chest", "arms", "hands", "legs"]);
 const NOT_GEAR_RE = /\b(spellbook|book|tome|grimoire|compendium|talisman|totem|quiver)\b/i;
 const NECKLACE_RE = /\b(necklace|amulet|pendant|beads)\b/i;
 const SHIELD_RE = /\b(shield|buckler)\b/i;
@@ -26,10 +24,11 @@ export function unravelType(it: Pick<Item, "gear" | "name" | "slot" | "extras" |
   if (!it.gear || NOT_GEAR_RE.test(it.name) || it.flags?.some((f) => /^\d[\d,]* spells$/.test(f))) return null;
   if (it.extras?.["weapon speed"] != null || it.skillReq) return /^(archery|throwing)$/.test(it.skillReq || "") ? "ranged" : "weapon";
   if (SHIELD_RE.test(it.name)) return "shield";
-  const slot = it.slot || "";
-  if (JEWEL_SLOTS.has(slot) || (slot === "neck" && NECKLACE_RE.test(it.name))) return "jewel";
+  // The slot's group (vault-lib.mts): a talisman's slot is in Jewelry, and the neck in Armor, holding a necklace too.
+  const slot = it.slot || "", group = SLOT_GROUP[slot];
+  if ((group === "Jewelry" && slot !== "talisman") || (slot === "neck" && NECKLACE_RE.test(it.name))) return "jewel";
   if (slot === "helmet" && HAT_RE.test(it.name) && !/\bleather cap\b/i.test(it.name)) return "hat";
-  return ARMOR_SLOTS.has(slot) ? "armor" : null;
+  return group === "Armor" ? "armor" : null;
 }
 
 // ---------------------------------------------------------------- the property weights

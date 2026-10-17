@@ -34,6 +34,7 @@ test("[fast] unravelType: weapons, ranged, shields, jewelry, hats and armor; clo
   for (const slot of ["chest", "arms", "hands", "legs"]) assert.equal(unravelType(mk({ name: "Platemail", slot })), "armor", slot);
   for (const [name, slot] of [["Robe", "robe"], ["Cloak", "cloak"], ["Elven Shirt", "shirt"], ["Doublet", "tunic"], ["Thigh Boots", "feet"], ["Kilt", "outerLegs"], ["Elven Quiver", "cloak"]] as const) assert.equal(unravelType(mk({ name, slot })), null, name);
   assert.equal(unravelType(mk({ name: "Talisman", slot: "talisman" })), null);
+  assert.equal(unravelType(mk({ name: "Charm Of Luck", slot: "talisman" })), null, "the talisman slot, whatever its name");
   assert.equal(unravelType(mk({ name: "Spellbook", slot: "oneHanded", flags: ["64 spells"] })), null);
   assert.equal(unravelType(mk({ name: "Book Of Chivalry", slot: "oneHanded" })), null);
   assert.equal(unravelType(mk({ name: "Necromancer Spellbook", slot: "oneHanded" })), null);
