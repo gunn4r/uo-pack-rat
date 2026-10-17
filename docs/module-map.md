@@ -339,6 +339,7 @@ Stylesheets (`app/ui/tokens.css`, `app/ui/britannia.css`, `app/ui/components.css
 | `scripts/start.mts` | `npm start`: builds, then runs the bare server. | — |
 | `scripts/electron-app.mts` | How an Electron UI test launches the app: the skip, a temp data folder, the launch and teardown, a stand-in bridge and a poll. | `skipWithoutElectron`, `tempDataDir`, `launchApp`, `fakeBridge`, `until` |
 | `scripts/electron-window.mts` | How the Electron UI tests size the window. | `fitWindow`, `testEnv` |
+| `scripts/builder-ui.mts` | The Suit Builder Electron tests' shared steps: the launch, Build Settings on a tab, the builder opened with a quick budget, Build and its result. | `launch`, `settings`, `openBuilder`, `pressBuild`, `built` |
 | `scripts/contrast-probe.mts` | Measures WCAG contrast on the rendered page. | `probeContrast` |
 | `scripts/localstorage-shim-for-tests.mts` | A `localStorage` stub installed on import, for tests of modules that use it. | — |
 | `app/timing-fixture.mts` | Speed checks that keep the fastest of several samples. | `fastestMs` |
