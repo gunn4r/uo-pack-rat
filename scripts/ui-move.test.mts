@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
-import { fitWindow, type RealSize, testEnv, noUpdateCheck, completeLines, removeTempDir } from "./electron-window.mts";
+import { fitWindow, sideways, type RealSize, testEnv, noUpdateCheck, completeLines, removeTempDir } from "./electron-window.mts";
 import { houseScan } from "../app/organize-fixture.mts";
 import type { ElectronApplication, Page } from "playwright";
 
@@ -167,18 +167,17 @@ for (const scheme of ["light", "dark"] as const) {
     if (why) return t.skip(why);
     const dir = dataDir(), bridge = standInBridge(dir);
     const { app, page, errors } = await launch(dir, { width: 420, height: 860 }, scheme);
-    const sideways = () => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     try {
       await search(page, "gem");
       await box(page, 0).click();
       await box(page, 2).click({ modifiers: ["Shift"] });
       assert.match(await barText(page), /3 items selected/);
       assert.equal(await page.locator("#mv-move").isVisible(), true);
-      assert.equal(await sideways(), 0);
+      assert.ok(await sideways(page) <= 0);
       await page.click("#mv-move");
       await page.locator(`.mv-dest[data-serial="${SPARE}"]`).click();
       await until(() => page.locator("#mv-go").innerText(), (s) => s === "Move 3 items", "the Move button");
-      assert.equal(await sideways(), 0);
+      assert.ok(await sideways(page) <= 0);
       assert.deepEqual(errors, []);
     } finally {
       bridge.stop();

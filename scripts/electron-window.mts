@@ -71,6 +71,21 @@ export async function fitWindow(app: ElectronApplication, page: Page, want: Real
   return last;
 }
 
+// How far the page, and each element `inside` names, scrolls sideways (scrollWidth − clientWidth, the largest; 0 or less = none),
+// once the layout has settled. A resize reaches the layout over a frame or two (the sidebar folds, a header's pickers reflow), so a
+// read right after it can catch the old width: this waits up to 5 s for nothing to scroll sideways, then measures, so a real overflow
+// still fails with its number. Every narrow-window check goes through it (issue #330).
+export async function sideways(page: Page, inside: string[] = []): Promise<number> {
+  const over = (sels: string[]): number => Math.max(...[document.documentElement, ...sels.map((s) => document.querySelector(s))].map((e) => (e ? e.scrollWidth - e.clientWidth : 0)));
+  await page.waitForFunction((sels) => [document.documentElement, ...sels.map((s) => document.querySelector(s))].every((e) => !e || e.scrollWidth <= e.clientWidth), inside, { timeout: 5_000 }).catch(() => {});
+  return page.evaluate(over, inside);
+}
+// Resize the window (fitWindow), then sideways().
+export async function sidewaysAt(app: ElectronApplication, page: Page, want: RealSize, inside: string[] = []): Promise<number> {
+  await fitWindow(app, page, want);
+  return sideways(page, inside);
+}
+
 // The Inventory's facet chips fold into "+ Filter" below 1180 px (spec 3.7) unless they hold a value. Opens
 // the facet's panel whichever way this width shows it.
 export async function openFacet(page: Page, id: string, name: string): Promise<void> {

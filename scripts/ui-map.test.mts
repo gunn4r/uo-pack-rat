@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
-import { fitWindow, type RealSize, testEnv, noUpdateCheck, removeTempDir } from "./electron-window.mts";
+import { fitWindow, sideways as sidewaysOf, type RealSize, testEnv, noUpdateCheck, removeTempDir } from "./electron-window.mts";
 import { probeContrast, failures, describeFailures, type ContrastRow } from "./contrast-probe.mts";
 import { houseScan } from "../app/organize-fixture.mts";
 import { claimHouses, vaultHouse, courtyardHouse, castleHouse, fixtureTileData, FIXTURE_TILES } from "../app/house-fixture.mts";
@@ -111,6 +111,8 @@ async function launch(dataDir: string, { want = { width: 1440, height: 900 }, de
     const page = await app.firstWindow();
     const errors: string[] = [];
     page.on("pageerror", (e) => errors.push(String(e)));
+    // go() sets the hash: on a page still loading, the document that replaces it would drop it (issue #330).
+    await page.waitForLoadState("load");
     const size = await fitWindow(app, page, want);
     return { app, page, errors, size };
   } catch (e) {
@@ -431,7 +433,6 @@ test("[slow] House map: the panel lists a vault stack top first with its label, 
 test("[slow] House map: a chest's art from the client's files shows at 32 px in the panel with its swatch in the corner, small art twice its size; a chest with no art, or no art file, keeps the swatch with no broken image; no sideways scroll at 420 px (issue #174)", async (t) => {
   const why = unavailable();
   if (why) return t.skip(why);
-  const sideways = (page: Page): Promise<number> => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   const pick = async (page: Page, x: number, y: number): Promise<void> => {
     await page.locator(`#map-svg [data-stack="${letter(courtModel, x, y)}"]`).focus();
     await page.keyboard.press("Enter");
@@ -448,7 +449,7 @@ test("[slow] House map: a chest's art from the client's files shows at 32 px in 
         await page.waitForFunction((s) => { const i = document.querySelector<HTMLImageElement>(`#map-panel li[data-chest="${s}"] .art-tile img`); return !!i && i.complete && i.naturalWidth === 10 && i.classList.contains("art-2x"); }, SEEN_ONLY, { timeout: 15_000 });
         const box = await row.locator(".art-tile").evaluate((e) => { const r = e.getBoundingClientRect(), i = e.querySelector("img")!.getBoundingClientRect(); return { w: r.width, h: r.height, iw: i.width, ih: i.height, swatch: !!e.querySelector(".map-swatch") }; });
         assert.deepEqual(box, { w: 32, h: 32, iw: 20, ih: 24, swatch: true }, "a 32 px tile, the 10 x 12 art at 2x, the swatch in its corner");
-        assert.equal(await sideways(page), 0, `${width} px: no sideways scroll`);
+        assert.ok(await sidewaysOf(page) <= 0, `${width} px: no sideways scroll`);
       } else {
         await page.waitForFunction((s) => !document.querySelector(`#map-panel li[data-chest="${s}"] img`), SEEN_ONLY, { timeout: 15_000 });
         assert.equal(await row.locator(":scope > .map-swatch").count(), 1, "the swatch, as before");
@@ -609,16 +610,15 @@ const readAreas = (dir: string): Array<{ id: string; name: string; color: string
 test("[slow] House map: Unclaim this house asks in the page, then the house leaves the picker, its claim goes and it stays gone after a reload, at 1440 and 420 px with no sideways scroll (issue #299)", async (t) => {
   const why = unavailable();
   if (why) return t.skip(why);
-  const sideways = (page: Page): Promise<number> => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   for (const width of [1440, 420]) {
     const { dir } = seed();
     const { app, page, errors } = await launch(dir, { want: { width, height: 900 } });
     try {
       await go(page, `#/map/${COURT}`, "#map-panel #map-unclaim");
-      assert.equal(await sideways(page), 0, `${width} px: no sideways scroll`);
+      assert.ok(await sidewaysOf(page) <= 0, `${width} px: no sideways scroll`);
       await page.locator("#map-unclaim").click();
       await page.waitForSelector("dialog[open] [data-confirm]");
-      assert.equal(await sideways(page), 0, `${width} px: no sideways scroll with the dialog open`);
+      assert.ok(await sidewaysOf(page) <= 0, `${width} px: no sideways scroll with the dialog open`);
       await page.locator("dialog[open] [data-cancel]").click();
       assert.equal(await page.locator(`#map-house option[value="${COURT}"]`).count(), 1, "Cancel keeps it");
       await page.waitForFunction(() => document.activeElement?.id === "map-unclaim", undefined, { timeout: 5_000 });

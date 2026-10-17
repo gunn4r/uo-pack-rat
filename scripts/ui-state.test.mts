@@ -570,7 +570,8 @@ test("[slow] a worn piece low on durability is badged on the sheet and beside it
     assert.ok(cb && lb && lb.x >= cb.x && lb.x + lb.width <= cb.x + cb.width + 0.5 && lb.x + lb.width <= viewport.width,
       `the badge is inside the sticky Character cell and on screen without scrolling (cell ${JSON.stringify(cb)}, badge ${JSON.stringify(lb)}, viewport ${JSON.stringify(viewport)})`);
     await low.focus();
-    assert.equal(await page.getByRole("tooltip").innerText(), "1 worn piece is low on durability");
+    // The badge's own tooltip: one left from an earlier hover can still be in the page (issue #330).
+    await page.getByRole("tooltip").filter({ hasText: /^1 worn piece is low on durability$/ }).waitFor();
     assert.equal(await page.locator('#char-table tr[data-name="Kestrel"] .badge').count(), 0, "nothing low, no badge");
     assert.deepEqual(errors, []);
   } finally {
