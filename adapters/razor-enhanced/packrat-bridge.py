@@ -69,7 +69,7 @@ def rfc3339_now():
 
 
 ADAPTER_ID = "razor-enhanced"
-ADAPTER_VERSION = "1.12.1"
+ADAPTER_VERSION = "1.13.0"
 # Keep this literal in sync with capabilities.json and packrat-scanner.py's own copy.
 CAPABILITIES = {
     "layers": ["RightHand", "LeftHand", "Shoes", "Pants", "Shirt", "Head", "Gloves", "Ring",

@@ -55,14 +55,16 @@
           <button type="button" role="radio" data-view="unravel" aria-checked="false" tabindex="-1"><span>Unravel</span></button>
         </div>
         <span class="spacer"></span>
-        <a class="btn btn-sm" href="#/import" id="inv-import"><svg class="i i-sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5"></path><path d="M4 17v3h16v-3"></path></svg><span>Import scans</span></a>
+        <a class="btn btn-sm" href="#/import" id="inv-import" aria-label="Import scans"><svg class="i i-sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5"></path><path d="M4 17v3h16v-3"></path></svg><span>Import scans</span></a>
       </header>
       <div class="page">
         <div id="inv-view-items" class="inv-view">
           <div class="inv-toolbar" id="inv-toolbar" role="toolbar" aria-label="Filters" aria-controls="inv-table"></div>
           <div class="inv-active" id="inv-active" role="group" aria-label="Active filters" hidden></div>
+          <div class="inv-move-result" id="inv-move-result" aria-live="polite" hidden></div>
           <div class="inv-body" id="inv-body">
             <section class="card inv-card" id="inv-card" aria-label="Items">
+              <div class="inv-selbar" id="inv-selbar" role="region" aria-label="Selection" hidden></div>
               <div class="inv-scroll" id="inv-scroll">
                 <table class="tbl inv-tbl" id="inv-table" role="grid" aria-label="Items"><colgroup></colgroup><thead></thead><tbody></tbody></table>
                 <div class="inv-state" id="inv-state" hidden></div>

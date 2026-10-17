@@ -89,11 +89,12 @@ Profiles, buffs, pools, solvers, saved runs and Manual. `docs/solver.md` describ
 | Module | Role | Owns |
 |---|---|---|
 | `app/organize-config.mts` | Organize's saved setup, `<data>/organize.json`: labels, ordered rules, catch-all, pinned items. Pure. | `OrganizeConfig`, `checkOrganizeConfig`, `salvageOrganizeConfig`, `salvagedRefusal`, `ruleMatchOf`, `CATCH_ALL_ID`, `EMPTY_BAGS_ID`, `BUILDS`, `SCHOOLS`, `LIMITS` |
-| `app/organize.mts` | The planner: which item goes where, in which trip, and what does not fit. Pure and deterministic. | `planOrganize`, `tripCommand`, `scopeOf`, `claimOf`, `buildOf`, `CASTER_PROPS`, `MELEE_PROPS`, `TRIP_DEFAULTS` |
+| `app/organize.mts` | The planner: which item goes where, in which trip, and what does not fit. Pure and deterministic. | `planOrganize`, `tripCommand`, `packSite`, `scopeOf`, `claimOf`, `buildOf`, `CASTER_PROPS`, `MELEE_PROPS`, `TRIP_DEFAULTS` |
 | `app/organize-presets.mts` | Ready-made rule filters. | `PRESETS`, `ruleFromPreset` |
 | `app/organize-strategies.mts` | Auto organize: the Simple, Detailed and By build strategies and the proposal. | `STRATEGIES`, `groupItems`, `assignGroups`, `proposeOrganize` |
 | `app/organize-types.mts` | The plan's and the proposal's shapes, and the `GET /api/organize/plan` and `POST /api/organize/propose` responses. Types only, importing only `app/organize-config.mts`'s types: `app/organize.mts` and `app/organize-strategies.mts` re-export them, the routes `satisfies` them, and `app/ui/api-types.mts` re-exports them. | `Plan`, `PlanMove`, `PlanTrip`, `PlanWarning`, `WarningKind`, `RuleReport`, `RoomReport`, `Carried`, `EmptyBag`, `Proposal`, `ProposeResult`, `StrategyId`, `Family`, `Candidate`, `GroupReport`, `Layout`, `OrganizePlanApiResponse`, `OrganizeProposeApiResponse` |
 | `app/organize-state.mts` | The results overlay, `<data>/organize-state.json`: pending trips and grabs, confirmed moves. | `OrganizeState`, `harvestTrips`, `addGrab`, `pruneOverlay`, `noteSeen` |
+| `app/move.mts` | Move to (issue #270): the selection resolved, which containers can be filled, the trips into one container (or each back where a Move took it from) through the Organize planner's `packSite`, and the moved items an Organize rule would take out again. Pure. | `resolveSelection`, `destProblem`, `planMoves`, `backSteps`, `againstRules`, `Selection` |
 | `app/put-away.mts` | Put away: the panel's request file checked field by field, and the reply's words. | `PUT_AWAY_REQUEST`, `PUT_AWAY_REPLY`, `checkPutAwayRequest` |
 | `app/organize-fixture.mts` | Test fixture: hand-built house scans for the Organize tests. | `houseScan` |
 | `app/ui/organize.mts` | The Organize screen: the Rules card and the Plan card with Run trip / Run all / Stop. | `showOrganize` |
@@ -132,7 +133,7 @@ Profiles, buffs, pools, solvers, saved runs and Manual. `docs/solver.md` describ
 | `app/ui/houses-data.mts` | The House map's data: the house list and names fetched per visit, each model kept by id and capture stamp, and the house entry save. | `houses`, `housesData` |
 | `app/ui/house-map-model.mts` | Pure: projection, painter's order, fit, container joins with the inventory, color modes, callouts, totals, house picker. | `project`, `paintOrder`, `chestViews`, `pickHouse` |
 | `app/ui/house-links.mts` | Which house holds each container, for "Show on map". | `houseOfContainer`, `houseOfItem`, `showOnMap` |
-| `app/ui/item-art.mts` | A container's in-game art from `GET /api/item-art` in a square tile, with its fallback when there is none. | `artTile`, `artUrl` |
+| `app/ui/item-art.mts` | A container's in-game art from `GET /api/item-art` in a square tile, with its fallback when there is none, and by a scanned container's serial. | `artTile`, `artUrl`, `containerArt` |
 | `app/ui/world-map.mts` | The world map lightbox. | `openWorldMap` |
 | `app/ui/world-map-model.mts` | Pure: the lightbox's zoom and pan. | `MAX_PX_PER_TILE`, `zoomView`, `panView` |
 
@@ -191,7 +192,7 @@ The thresholds are the shard rules' `unravel` (Shard rules, above); `GET /api/it
 | `app/http/routes/blacklist.mts` | `GET\|POST /api/blacklist`, `DELETE /api/blacklist/<serial>`. | `routes` |
 | `app/http/routes/houses.mts` | `GET /api/houses[/<id>]`, `/api/facet-map/<facet>.png`, `/api/item-art/<graphic>.png`, `GET /api/house-map`, `PUT /api/house-map/<id>` (`readNames` logs a names problem once). | `routes` |
 | `app/http/routes/kinds.mts` | `GET\|POST /api/item-kinds`, `POST /api/item-kinds/import`. | `routes` |
-| `app/http/routes/organize.mts` | The Organize routes: setup, presets, match, propose, plan and trip. | `routes` |
+| `app/http/routes/organize.mts` | The Organize routes: setup, presets, match, propose, plan and trip; and Move to's plan and trip (issue #270). | `routes` |
 | `app/store/json-file.mts` | The one way a store reads and writes a JSON data file: each reader's bad-file policy named (`empty`, `aside`, `skip`), the writer's folder, atomic write, indent and trailing newline, and the 409 for a file a newer Pack Rat made. | `readJsonFile`, `writeJsonFile`, `newerOnDisk`, `refuseNewer` |
 | `app/store/settings.mts` | `<data>/settings.json`: read with the move-aside-and-default fallback, written whole. | `createSettingsStore`, `SettingsDoc`, `ClientSettings` |
 | `app/store/profiles.mts` | `<data>/profiles.json`: seeded from the defaults, a damaged file moved aside and reseeded, an old shape migrated (with `<data>/ui-prefs.json` beside it) after a dated backup of each, a newer one read-only, and the shard's built-in templates read. | `createProfilesStore` |
@@ -303,6 +304,7 @@ The page is `app/index.html` plus `app/ui/`, compiled by `scripts/build-ui.mts` 
 | Module | Role | Owns |
 |---|---|---|
 | `app/ui/inventory.mts` | The Inventory's Items view, and what `app/ui/nav.mts`'s ways into it do. | `initFilters`, `fetchItems` |
+| `app/ui/move-to.mts` | The Inventory's selection bar, the Move to… picker and the result line that follows a Move's trips, with Pin them here and Move back (issue #270). | `selectionHooks`, `attachMoveTo` |
 | `app/ui/containers.mts` | The Inventory's Containers view. | `renderContainers`, `labelContainer` |
 | `app/ui/peek.mts` | The item peek beside the table. | `openPeek`, `closePeek` |
 | `app/ui/kinds.mts` | Classify this…, and the kinds file's export and import. | `openClassify`, `exportKinds`, `importKinds` |
@@ -316,6 +318,7 @@ The page is `app/index.html` plus `app/ui/`, compiled by `scripts/build-ui.mts` 
 | Module | Role | Owns |
 |---|---|---|
 | `app/ui/inv-model.mts` | The Inventory's query string, filter tokens, counts, row window and keyboard model. | `DEFAULT_COLS`, `ITEM_COLS`, `COL_GROUPS`, `queryParams`, `activeFilters` |
+| `app/ui/move-model.mts` | Move to's selection (ticks, ranges, the rows loaded, every match), the containers the picker offers and the words of the bar, the picker and the result. | `Selection`, `toggleRows`, `selectAllMatching`, `selectionBody`, `destGroups` |
 | `app/ui/roster.mts` | The Characters roster's filter and sort, the sheet's scan summary, and the page's character list (no pseudo names). | `rosterView`, `sheetMeta`, `characterNames` |
 | `app/ui/import-preview.mts` | The Import drawer's preview card as data. | `scanPreview` |
 

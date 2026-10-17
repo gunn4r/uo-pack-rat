@@ -2,8 +2,8 @@
 // they would give. A character picker (Unraveled by, the highest Imbuing first), three forecast cards (what every candidate is
 // expected to give at that skill, and what is on hand), a line saying what is left out (Change opens a chip per reason), and the
 // candidates grouped by ingredient: Relic Fragment, Wait for Imbuing 95, Enchanted Essence, Magical Residue, highest weight
-// first. Each row has a checkbox and Keep (Unkeep on a kept piece); the selection bar keeps or grabs the selected pieces. The
-// candidates are one GET /api/items query with `unravel` (the server works out each piece's weight and why it is left out), the
+// first. Each row has a checkbox (the Items view's selection model, ui/move-model.mts) and Keep (Unkeep on a kept piece);
+// the selection bar keeps or grabs the selected pieces. The candidates are one GET /api/items query with `unravel` (the server works out each piece's weight and why it is left out), the
 // ingredients on hand three more; the math is app/unravel.mts. The Keep list is settings.json's unravelKeep (PUT /api/settings).
 import type { Item } from "../vault-lib.mts";
 import { unravelYield, expectedYield, onHand, LEFT_OUT, INGREDIENTS, type Ingredient, type LeftOut, type UnravelYield } from "../unravel.mts";
@@ -17,6 +17,7 @@ import { plural } from "./inv-model.mts";
 import { parseRoute, registerScreen } from "./nav.mts";
 import { rarityEl } from "./item-parts.mts";
 import { grabAll } from "./bridge.mts";
+import { emptySelection, isSelected, isWorn, toggleRows, toggleLoaded, grabItems, wornNote, GRAB_TOO_MANY, WORN_LOCK, type Matches, type Selection } from "./move-model.mts";
 import type { ItemsApiResponse, SettingsApiResponse } from "./api-types.mts";
 
 type Group = "relic" | "held" | "essence" | "residue";
@@ -27,7 +28,11 @@ let built = false;
 let character: string | null = null;   // the picked "Unraveled by"; null until the player picks one
 const shownReasons = new Set<LeftOut>();   // reasons the player chose to show instead of leaving out
 let chipsOpen = false;
-const selected = new Set<number>();
+// The Inventory's selection model (ui/move-model.mts, issue #270): a row's checkbox, shift for a range from the last one,
+// worn pieces never ticked. `order` is the rows as drawn, group by group, which a range runs over.
+let sel: Selection = emptySelection();
+let order: UnravelRow[] = [];
+const noQuery: Matches = () => false;
 
 const root = (): HTMLElement => $<HTMLElement>("#tab-unravel")!;
 const rules = () => state.rules!;
@@ -150,7 +155,8 @@ function render(): void {
     return;
   }
   const shown = rows.filter(isShown);
-  for (const s of [...selected]) if (!shown.some((r) => r.serial === s)) selected.delete(s);
+  const showing = new Set(shown.map((r) => r.serial));
+  sel = { ...sel, items: new Map([...sel.items].filter(([s]) => showing.has(s))) };
   drawForecast(shown, skill);
   drawExcluded();
   drawGroups(shown, skill);
@@ -221,6 +227,7 @@ function drawGroups(shown: UnravelRow[], skill: number): void {
   }
   const by = new Map<Group, UnravelRow[]>(GROUP_ORDER.map((g) => [g, []]));
   for (const r of shown) by.get(groupOf(r, skill))!.push(r);
+  order = GROUP_ORDER.flatMap((g) => by.get(g)!);
   const out: HTMLElement[] = [];
   for (const g of GROUP_ORDER) {
     const list = by.get(g)!;
@@ -231,17 +238,17 @@ function drawGroups(shown: UnravelRow[], skill: number): void {
         el("h3", {}, el("span", { class: "unr-dot", "aria-hidden": "true" }), h.title),
         txt(h.note, "unr-gs"),
         linkButton("Select these", { "data-select": g })),
-      ...list.map((r) => rowEl(r, skill))));
+      ...list.map((r) => rowEl(r, skill, order.indexOf(r)))));
   }
   listEl.replaceChildren(...out);
 }
-function rowEl(r: UnravelRow, skill: number): HTMLElement {
+function rowEl(r: UnravelRow, skill: number, index: number): HTMLElement {
   const y = unravelYield(r.unravel.weight, skill, rules())!;
-  const t = yieldText(y, skill), on = selected.has(r.serial), reasons = reasonsOf(r), kept = reasons.includes("kept");
-  const cb = el("input", { type: "checkbox", class: "unr-cb", "aria-label": `Select ${r.name}`, "data-serial": String(r.serial) });
+  const t = yieldText(y, skill), on = isSelected(sel, r, noQuery), reasons = reasonsOf(r), kept = reasons.includes("kept");
+  const cb = el("input", { type: "checkbox", class: "unr-cb", "aria-label": `Select ${r.name}`, "data-serial": String(r.serial), ...(isWorn(r) ? { disabled: "", title: WORN_LOCK } : {}) });
   cb.checked = on;
   const name = itemTip(txt(r.name, "unr-name"), r, { focus: false });
-  return box("div", { class: `unr-row${on ? " sel" : ""}`, "data-serial": String(r.serial) },
+  return box("div", { class: `unr-row${on ? " sel" : ""}`, "data-serial": String(r.serial), "data-index": String(index) },
     cb,
     box("span", { class: "unr-nm" }, name, box("span", { class: "unr-sub" }, rarityEl(r.rarity), ...reasons.map((x) => txt(REASON_CHIP[x], "unr-tag")))),
     txt(whereText(r.location?.text) || "Unknown place", "unr-where"),
@@ -252,7 +259,7 @@ function rowEl(r: UnravelRow, skill: number): HTMLElement {
 }
 function drawSelbar(shown: UnravelRow[], skill: number): void {
   const bar = $<HTMLElement>("#unr-selbar")!;
-  const picked = shown.filter((r) => selected.has(r.serial));
+  const picked = shown.filter((r) => isSelected(sel, r, noQuery)), grab = grabItems(sel);
   bar.hidden = !picked.length;
   if (!picked.length) { bar.replaceChildren(); return; }
   const count = (g: Group): number => picked.filter((r) => groupOf(r, skill) === g).length;
@@ -263,8 +270,8 @@ function drawSelbar(shown: UnravelRow[], skill: number): void {
     txt(`${picked.length.toLocaleString("en-US")} selected`, "unr-sel-n"), txt(summary, "unr-sel-sum"),
     box("span", { class: "unr-sel-acts" },
       button({ label: "Keep", size: "sm", attrs: { id: "unr-keep-sel" }, onClick: () => { void setKept(picked.map((r) => r.serial), true); } }),
-      button({ label: "Grab", icon: "grab", size: "sm", disabled: !me, attrs: { id: "unr-grab-sel" }, onClick: () => { if (me) void grabAll(picked, me); } }),
-      button({ label: "Clear", size: "sm", variant: "ghost", onClick: () => { selected.clear(); render(); } })));
+      button({ label: "Grab", icon: "grab", size: "sm", disabled: !me || !grab, attrs: { id: "unr-grab-sel", ...(grab ? {} : { title: GRAB_TOO_MANY }) }, onClick: () => { if (me && grab) void grabAll(grab, me); } }),
+      button({ label: "Clear", size: "sm", variant: "ghost", onClick: () => { sel = emptySelection(); render(); } })));
 }
 
 // ---------------------------------------------------------------- selection and Keep
@@ -275,17 +282,27 @@ function onListClick(e: MouseEvent): void {
   const grp = t.closest<HTMLElement>("[data-select]");
   if (grp) {
     const skill = who()?.skill ?? 0;
-    for (const r of rows!.filter(isShown)) if (groupOf(r, skill) === grp.dataset.select) selected.add(r.serial);
+    const r = toggleLoaded(sel, order.filter((x) => groupOf(x, skill) === grp.dataset.select), true, noQuery);
+    sel = r.sel;
+    const worn = wornNote(r.worn);
+    if (worn) toast(worn);
     render();
     return;
   }
-  // One row toggled: that row and the selection bar, not the whole list.
+  // A row toggled (shift: every row from the last one to it): those rows and the selection bar, not the whole list.
   const row = t.closest<HTMLElement>(".unr-row");
   if (!row || t.closest("button")) return;
-  const s = +row.dataset.serial!, on = !selected.has(s);
-  if (on) selected.add(s); else selected.delete(s);
-  row.classList.toggle("sel", on);
-  row.querySelector<HTMLInputElement>(".unr-cb")!.checked = on;
+  const index = +row.dataset.index!, it = order[index];
+  if (!it || isWorn(it)) { if (t.closest(".unr-cb")) e.preventDefault(); return; }
+  const shift = e.shiftKey && sel.anchor != null, next = toggleRows(sel, order, index, !isSelected(sel, it, noQuery), shift, noQuery);
+  sel = next.sel;
+  const worn = wornNote(next.worn);
+  if (worn) toast(worn);
+  for (const el of $<HTMLElement>("#unr-list")!.querySelectorAll<HTMLElement>(".unr-row")) {
+    const r = order[+el.dataset.index!], on = !!r && isSelected(sel, r, noQuery);
+    el.classList.toggle("sel", on);
+    el.querySelector<HTMLInputElement>(".unr-cb")!.checked = on;
+  }
   drawSelbar(rows!.filter(isShown), who()?.skill ?? 0);
 }
 // Keep or Unkeep: the whole list goes to settings.json, and the rows follow.
@@ -295,6 +312,7 @@ async function setKept(serials: number[], keep: boolean): Promise<void> {
   try {
     state.settings = (await api<SettingsApiResponse>("/api/settings", { method: "PUT", body: { unravelKeep: [...now] } })).settings;
   } catch (e) { toast(`Could not save the Keep list: ${errorText(e)}`, "bad"); return; }
-  for (const s of serials) selected.delete(s);
+  const gone = new Set(serials);
+  sel = { ...sel, items: new Map([...sel.items].filter(([s]) => !gone.has(s))) };
   render();
 }

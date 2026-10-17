@@ -14,6 +14,8 @@ Issue #298: a TazUO scan whose player moves more than 15 tiles away or to anothe
 
 Claimed houses (issue #299): the TazUO tests write a claim over the house home() builds (DataDir.claim). A scan opens ground containers and captures the house only inside a claimed house, a customized one whose footprint overlaps the claim included; in an unclaimed house, under a claim on another facet, outside any house, or with a missing or broken claims file it reads only the pack and equipped items and says why; the house map refresh writes nothing in an unclaimed house and asks the server nothing to find out. A bag whose tooltip never arrives is checked for trash for at most 2 s.
 
+Issue #174: every container record (a ground root, the backpack, a nested bag) carries its graphic and hue in the TazUO and Razor Enhanced scanners and the TazUO refresh, and a TazUO house row carries the hue as its sixth element.
+
 The Razor scanner records a worn piece on its own layer (`GetItemOnLayer` in the fake answers an item added with `Layer=`); that test's world is the one `adapters/razor-enhanced/fixture.scan.json` is made from. With `PACKRAT_TEST_OUTPUTS` set to a folder, `fake_clients.py`'s `run_script` copies every scan a script writes into it, for `app/adapter-outputs.test.mts`.
 
 Run: python3 adapters/test_scanners.py  (app/adapters.test.mts also spawns it, so `npm test` does).
@@ -504,6 +506,26 @@ class TazUOScanner(DataDir, unittest.TestCase):
         self.assertNotIn("tooltip", pack)
         self.assertIsNone(pack["pos"])
 
+    def test_every_container_record_and_house_row_carries_its_graphic_and_hue(self):
+        w = World(); home(w); w.multis = house_tiles(5, 5, 12, 12)
+        w.items[CHEST].Hue = 1153
+        w.items[BAG].Graphic, w.items[BAG].Hue = 0x0E79, 2500
+        self.scan(w)
+        [s] = self.scans("tazuo")
+        look = lambda serial: {k: s["containers"][str(serial)].get(k) for k in ("graphic", "hue")}
+        self.assertEqual(look(CHEST), {"graphic": 0x0E75, "hue": 1153})
+        self.assertEqual(look(BAG), {"graphic": 0x0E79, "hue": 2500})
+        self.assertEqual(look(PACK)["graphic"], w.items[PACK].Graphic)
+        self.assertEqual(s["house"]["containers"], [[CHEST, 0x0E75, 11, 10, 0]], "the rows keep five numbers")
+        self.assertEqual(s["house"]["containerHues"], [[CHEST, 1153]], "the hue is in a key of its own")
+
+    def test_a_graphic_or_hue_out_of_range_is_left_out(self):
+        w = World(); home(w)
+        w.items[BAG].Hue = 0x10000
+        self.scan(w)
+        [s] = self.scans("tazuo")
+        self.assertNotIn("graphic", s["containers"][str(BAG)])
+
     def test_the_facet_is_left_out_when_the_client_cannot_say(self):
         def stub_ahead_of_build():
             raise RuntimeError("GetMap is in the stub, not in this build")
@@ -588,6 +610,7 @@ class TazUOScanner(DataDir, unittest.TestCase):
         self.scan(w)
         [s] = self.scans("tazuo")
         self.assertEqual(s["house"]["containers"], [[CHEST, 0x0E75, 11, 10, 0], [0x40000050, 0x0E7C, 15, 15, 7]])
+        self.assertNotIn("containerHues", s["house"], "no hue other than 0, no list")
         self.assertNotIn(0x40000050, self.opened(w))
         self.assertNotIn(0x40000050, [r["serial"] for r in s["roots"]])
         self.assertEqual(s["house"]["items"], [], "a container is never furniture")
@@ -794,6 +817,7 @@ class TazUORefresh(DataDir, unittest.TestCase):
         run_script(self.SCRIPT, w, api=tazuo_api(w, PACK))
         [s] = self.scans("tazuo")
         self.assertIs(s["containers"][str(BAG + 0x100)]["opened"], False)
+        self.assertEqual([s["containers"][str(BAG + 0x100)].get(k) for k in ("graphic", "hue")], [0x0E75, 0])
         self.assertIn(RING2, [i["serial"] for i in s["items"]])
 
     def test_it_closes_the_bags_it_opened_and_leaves_the_open_backpack_open(self):
@@ -963,6 +987,17 @@ class RazorScanner(DataDir, unittest.TestCase):
         [s] = self.scans("razor-enhanced")
         self.assertTrue(self.root(s, CHEST)["opened"])
         self.assertEqual(sorted(i["serial"] for i in s["items"]), [RING, RING2])
+
+    def test_every_container_record_carries_its_graphic_and_hue(self):
+        w = World(); home(w)
+        w.items[CHEST].Hue = 1153
+        w.items[BAG].Graphic, w.items[BAG].Hue = 0x0E79, 2500
+        self.scan(w)
+        [s] = self.scans("razor-enhanced")
+        look = lambda serial: [s["containers"][str(serial)].get(k) for k in ("graphic", "hue")]
+        self.assertEqual(look(CHEST), [0x0E75, 1153])
+        self.assertEqual(look(BAG), [0x0E79, 2500])
+        self.assertEqual(look(PACK)[0], w.items[PACK].Graphic)
 
     def test_a_root_whose_contents_never_arrive_is_recorded_not_opened(self):
         w = World(); home(w); w.locked.add(CHEST)

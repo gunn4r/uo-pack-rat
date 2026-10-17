@@ -1,6 +1,6 @@
 // ui-unravel.test.mts — [slow]: the Inventory's Unravel view (issue #271) in the real Electron window.
 //
-// `[slow]`: the Inventory's Unravel view (issue #271) in the real Electron window at 1024 × 768, over the demo scans with Kestrel at Imbuing 70: the picker on the highest Imbuing, the three forecast cards, the groups in their order (Wait for Imbuing 95, Enchanted Essence, Magical Residue) with each row's chance line at 70, a maybe tag with its title, Keep taking a row out and writing settings.json's unravelKeep, Change showing a chip per reason with its count, the Kept chip bringing the kept row back with Unkeep, which puts it back on the list, a row's checkbox and Select these with the selection bar, the cards for a character below Imbuing 45, and no sideways scroll at 420 px.
+// `[slow]`: the Inventory's Unravel view (issue #271) in the real Electron window at 1024 × 768, over the demo scans with Kestrel at Imbuing 70: the picker on the highest Imbuing, the three forecast cards, the groups in their order (Wait for Imbuing 95, Enchanted Essence, Magical Residue) with each row's chance line at 70, a maybe tag with its title, Keep taking a row out and writing settings.json's unravelKeep, Change showing a chip per reason with its count, the Kept chip bringing the kept row back with Unkeep, which puts it back on the list, a row's checkbox, a shift-click range and Select these with the selection bar, the cards for a character below Imbuing 45, and no sideways scroll at 420 px.
 //
 // Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
 import test from "node:test";
@@ -98,12 +98,16 @@ test("[slow] the Unravel view forecasts, groups the candidates by ingredient, ke
     for (let i = 0; i < 50 && JSON.stringify(kept()) !== "[]"; i++) await page.waitForTimeout(100);
     assert.deepEqual(kept(), []);
 
-    // A row's checkbox selects it alone, and the selection bar follows; clearing it hides the bar.
-    const cb = page.locator(".unr-group.residue .unr-cb").first();
-    await cb.click();
-    assert.match(await page.locator("#unr-selbar").innerText(), /^1 selected\s*1 Residue/);
-    assert.equal(await cb.isChecked(), true);
-    await cb.click();
+    // A row's checkbox selects it alone, shift-click the rows from it to another (the Inventory's selection model), and
+    // Clear hides the bar.
+    const cbs = page.locator(".unr-group.essence .unr-cb");
+    await cbs.nth(0).click();
+    assert.match(await page.locator("#unr-selbar").innerText(), /^1 selected\s*1 Essence/);
+    assert.equal(await cbs.nth(0).isChecked(), true);
+    await cbs.nth(2).click({ modifiers: ["Shift"] });
+    assert.match(await page.locator("#unr-selbar").innerText(), /^3 selected\s*3 Essence/);
+    assert.equal(await cbs.nth(1).isChecked(), true);
+    await page.locator("#unr-selbar").getByRole("button", { name: "Clear" }).click();
     await page.locator("#unr-selbar").waitFor({ state: "hidden" });
 
     // Select these: the whole Essence group, and the selection bar says so.
