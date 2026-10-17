@@ -121,17 +121,19 @@ Profiles, buffs, pools, solvers, saved runs and Manual. `docs/solver.md` describ
 |---|---|---|
 | `app/tiledata.mts` | Reads the client's tiledata.mul and classifies tiles. | `readTileData`, `classify` (tiles), `FLAG`, `uoFolderFromTazuo`, `loadTileData` |
 | `app/facet-map.mts` | Decodes a facetNN.mul world-map overview and renders a region. Pure. | `decodeFacet`, `renderRegion`, `MAX_SIDE` |
-| `app/png.mts` | A minimal PNG encoder for the facet image. | `encodePng`, `crc32` |
+| `app/art.mts` | Reads item art from the client's artLegacyMUL.uop (the UOP table, lookup3 names, static art) and hues.mul, and cuts it to RGBA. Pure but for the read callback. | `readUopTable`, `readUopEntry`, `uopHash`, `decodeStatic`, `readHues`, `hueOf`, `toRgba` |
+| `app/png.mts` | A minimal PNG encoder for the facet image (RGB) and the item art (RGBA). | `encodePng`, `encodePngRgba`, `crc32` |
 | `app/house-capture.mts` | The houses the scans captured: ids and the newest tiles with furniture merged. | `houseIdOf`, `latestHouses`, `houseGroups`, `HOUSE_ITEM_REACH` |
 | `app/house-model.mts` | A house as the map draws it: levels, cells, rooms, furniture, stacks, spots. Pure. | `buildHouseModel`, `plotBounds` |
 | `app/house-model-types.mts` | The house model's shapes and the `GET /api/houses` responses. Types only, no imports: `app/house-model.mts` re-exports them, the routes `satisfies` them, and `app/ui/api-types.mts` re-exports them. | `HouseModel`, `Level`, `Cell`, `Furniture`, `Stack`, `Spot`, `HouseSummary`, `HousesApiResponse`, `HouseApiResponse` |
 | `app/house-names.mts` | `<data>/house-map.json`: house names and drawn areas, with its own reads and saves. A file that does not parse is moved aside as `.corrupt`, a newer one is read-only; a save that would grow the map past 500 names or 1 MB is refused (the route answers 409). | `checkHouseEntry`, `readHouseMap`, `saveHouseEntry`, `NAME_MAX`, `MAX_AREAS`, `AREA_COLORS` |
 | `app/house-areas.mts` | Which drawn area a stack of containers sits in. Pure, page and server alike: the House map and MCP's `list_containers` both go by it. | `areaOfStack`, `inRects` |
-| `app/house-fixture.mts`, `app/tiledata-fixture.mts`, `app/facet-fixture.mts` | Test fixtures: synthetic houses, tiledata and facet files. | `syntheticTileData`, `syntheticFacet` |
+| `app/house-fixture.mts`, `app/tiledata-fixture.mts`, `app/facet-fixture.mts`, `app/art-fixture.mts` | Test fixtures: synthetic houses, tiledata, facet, UOP art and hues files. | `syntheticTileData`, `syntheticFacet`, `syntheticUop`, `syntheticArt`, `syntheticHues` |
 | `app/ui/house-map.mts` | The House map screen: SVG levels, callouts, cut-away, pan and zoom, the detail panel. | `showMap`, `applyMapPrefs` |
 | `app/ui/houses-data.mts` | The House map's data: the house list and names fetched per visit, each model kept by id and capture stamp, and the house entry save. | `houses`, `housesData` |
 | `app/ui/house-map-model.mts` | Pure: projection, painter's order, fit, container joins with the inventory, color modes, callouts, totals, house picker. | `project`, `paintOrder`, `chestViews`, `pickHouse` |
 | `app/ui/house-links.mts` | Which house holds each container, for "Show on map". | `houseOfContainer`, `houseOfItem`, `showOnMap` |
+| `app/ui/item-art.mts` | A container's in-game art from `GET /api/item-art` in a square tile, with its fallback when there is none. | `artTile`, `artUrl` |
 | `app/ui/world-map.mts` | The world map lightbox. | `openWorldMap` |
 | `app/ui/world-map-model.mts` | Pure: the lightbox's zoom and pan. | `MAX_PX_PER_TILE`, `zoomView`, `panView` |
 
@@ -179,7 +181,7 @@ The recipes are the shard rules' `scrollBinder` (Shard rules, above).
 | `app/http/routes/bridge.mts` | `POST /api/bridge`, `/api/bridge/stop`, `GET /api/bridge/status`. | `routes` |
 | `app/http/routes/forget.mts` | `POST /api/forget`, `/api/forget-character` (tombstone scans). | `routes` |
 | `app/http/routes/blacklist.mts` | `GET\|POST /api/blacklist`, `DELETE /api/blacklist/<serial>`. | `routes` |
-| `app/http/routes/houses.mts` | `GET /api/houses[/<id>]`, `/api/facet-map/<facet>.png`, `GET /api/house-map`, `PUT /api/house-map/<id>` (`readNames` logs a names problem once). | `routes` |
+| `app/http/routes/houses.mts` | `GET /api/houses[/<id>]`, `/api/facet-map/<facet>.png`, `/api/item-art/<graphic>.png`, `GET /api/house-map`, `PUT /api/house-map/<id>` (`readNames` logs a names problem once). | `routes` |
 | `app/http/routes/kinds.mts` | `GET\|POST /api/item-kinds`, `POST /api/item-kinds/import`. | `routes` |
 | `app/http/routes/organize.mts` | The Organize routes: setup, presets, match, propose, plan and trip; and Move to's plan and trip (issue #270). | `routes` |
 | `app/store/json-file.mts` | The one way a store reads and writes a JSON data file: each reader's bad-file policy named (`empty`, `aside`, `skip`), the writer's folder, atomic write, indent and trailing newline, and the 409 for a file a newer Pack Rat made. | `readJsonFile`, `writeJsonFile`, `newerOnDisk`, `refuseNewer` |
@@ -201,7 +203,7 @@ The services below are factories with explicit dependencies (stores, getters, a 
 | `app/services/settings.mts` | The settings this run uses: settings.json as saved, with the unknown-client and unloadable-shard fallbacks laid over it in memory only; the current rules, handed to vault-lib; a save that merges only the changed fields; the bridge adapter. | `createSettingsService` |
 | `app/services/events.mts` | Server-Sent Events: one frame written, and the bus behind `GET /api/events`. | `sse`, `createEventBus` |
 | `app/services/setup.mts` | The adapters this install ships (read from disk on every call), which bridge runs trips, and the data-folder check. | `createSetupService` |
-| `app/services/houses.mts` | The house map's client files and models: the UO folder, tiledata, the facet bitmaps and PNG cache, the house model memo. | `createHousesService` |
+| `app/services/houses.mts` | The house map's client files and models: the UO folder, tiledata, the facet bitmaps and PNG cache, the item art table, hues and PNG cache, the house model memo. | `createHousesService` |
 | `app/services/inventory.mts` | `getInventory`: the fold cached by the scans folder, shard and item-kinds.json, and the overlay cached by organize-state.json and the hour. | `createInventoryService`, `FoldValue`, `InvValue` |
 | `app/services/organize.mts` | Organize: finished trips harvested, what a plan starts from, the plan, a trip queued, Put away's requests, the saved suits a rule skips. | `createOrganizeService` |
 | `app/services/jobs.mts` | Optimizer jobs: worker threads, the per-job broadcast, one build per client with a server-wide ceiling, the stuck and retention timers, a finished build saved as a run. | `createJobsService`, `Job`, `JobTimings` |

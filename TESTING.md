@@ -53,6 +53,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `app/adapter-copy.test.mts` — what the page says about each game client (`app/ui/adapter-copy.mts`, design spec 4.10, section 5).
 - `app/adapter-outputs.test.mts` — what the Python adapters really write, checked against the schemas they claim to meet.
 - `app/adapters.test.mts` — runs every adapter's Python test file and holds the manifest-versus-source contract for `capabilities.json`'s `actions` list.
+- `app/art.test.mts` — `app/art.mts` (issue #174), the item art decoder, on synthetic client files.
 - `app/atomic-write.test.mts` — `app/atomic-write.mts`'s `renameRetrying` and its Windows retry.
 - `app/bridge-adapter-fallback.test.mts` — `app/ui/bridge.mts`'s `currentAdapter()`/`bridgeNote()` falling back to the server's bridge adapter when no client is set.
 - `app/bridge-status.test.mts` — the bridge reporting itself: `readBridgeStatus` (`app/bridge-status.mts`), the one reader of status.json, and `bridgeFeatures` (`app/vault-lib.mts`), what a bridge can do.
@@ -119,7 +120,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `app/server-setup.test.mts` — HTTP tests of the setup wizard's routes, the TazUO panel, the update check and the client search.
 - `app/server.test.mts` — HTTP tests of what every route shares, on a real listening server (ephemeral port, temp data folder).
 - `app/services/events.test.mts` — `app/services/events.mts` on its own: event frames, the broadcast and `close()`.
-- `app/services/houses.test.mts` — `app/services/houses.mts` on its own: why there is no tiledata.mul or facet, and the facet PNG cache.
+- `app/services/houses.test.mts` — `app/services/houses.mts` on its own: why there is no tiledata.mul, facet or item art, and the facet and item art PNG caches.
 - `app/services/inventory.test.mts` — `app/services/inventory.mts` on its own: when the fold and the overlay are cached and when they are made again.
 - `app/services/jobs.test.mts` — `app/services/jobs.mts` on its own, with stand-in workers: supersede, the ceiling, cancel, saved runs and failure logging.
 - `app/services/organize.test.mts` — `app/services/organize.mts` on its own, with stand-in stores.

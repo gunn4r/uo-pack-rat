@@ -1,6 +1,6 @@
 // house-server.test.mts — the house routes (issue #10) and the facet overview (issue #164) on a real server and temp data folder.
 //
-// `GET /api/houses` and `GET /api/houses/<id>` (issue #10) on a real server and temp data folder: a scan with a house capture listed with its size and chest count and served as a model holding all its ground chests (a backpack root with a position left out), the same model served again while nothing changes and a newer capture replacing it, a footprint grown west replacing the old house so a chest inside both counts once, a house holding no ground chest listed with 0 containers, the tiledata.mul found through a temp TazUO launcher profile, the model still built without one, and an unknown, path-like or malformed id answered 404; a chest a capture saw and no scan opened served as not opened with its tiledata name and kept out of `GET /api/inventory`; the `uoFolder` setting (it wins over TazUO's launcher, `tiledataFrom` names the reason when there is no tiledata: override-missing, unreadable, no-client; PUT refuses a relative path, a UNC path and a folder without tiledata.mul without echoing it, a hand-edited UNC or relative one reads as override-missing without touching the filesystem, and a TazUO client with no launcher profile reports no-tazuo-profile). All `[fast]`. A house-only file (issue #10) moves the served house's `capturedAt` on while `GET /api/inventory` stays identical (the card, its stats and its worn set included) but for `snapshotCount`. The areas (issue #10): a PUT with 32 areas of 16 rectangles (past the old 8 kB body cap) saved and read back, an area-only house giving no name in the houses list or the model, a bad colour a 400, and no name with no areas removing the entry. Also the house names (issue #164): `GET /api/house-map` empty, a `PUT /api/house-map/<id>` stored trimmed and shown in the houses list and the model, an empty name removing it, and a bad name, a malformed id or a non-JSON body refused. A trash container an earlier capture listed in `trash` (issue #162) is no stack and not unopened when a later far capture lists it, while an opened chest in the same list is still drawn. Claimed houses (issue #299): a house never claimed hidden from the list and the model, one whose bounds overlap a claim on its facet served (a claim made before it was customized included), `GET /api/house-claims` listing the claims, `DELETE /api/house-claims/<id>` removing every claim over that house and keeping the rest, a malformed id a 400, a newer capture not bringing an unclaimed house back; the first start with claims claiming the houses named or given areas (their saved bounds, else the id's corner tile), less the ones removed before (`forgotten`), never again once the file exists, and writing nothing when there is nothing to claim. The facet overview (issue #164): each listed house's `plot` (its bounds without the front steps), `GET /api/facet-map/<facet>.png` from a temp UO folder holding a synthetic `facet01.mul` (a PNG of a region, never larger than asked or than the region, the aspect ratio kept, `x-region` naming the region drawn; a region reaching past the facet slid inside it, and one larger than the facet cut to it), a 400 for a facet outside 0 to 5, a missing, malformed or partial region or a bad size, and a 404 `{ok:false, reason}` for a missing (`missing`) or undecodable (`unreadable`) file, a UO folder set in Settings that is gone (`override-missing`) and without a client (`no-client`), the folder never in the answer; an image at most 2048 pixels on either side (1024 by default, a tall region capped by its height).
+// `GET /api/houses` and `GET /api/houses/<id>` (issue #10) on a real server and temp data folder: a scan with a house capture listed with its size and chest count and served as a model holding all its ground chests (a backpack root with a position left out), the same model served again while nothing changes and a newer capture replacing it, a footprint grown west replacing the old house so a chest inside both counts once, a house holding no ground chest listed with 0 containers, the tiledata.mul found through a temp TazUO launcher profile, the model still built without one, and an unknown, path-like or malformed id answered 404; a chest a capture saw and no scan opened served as not opened with its tiledata name and kept out of `GET /api/inventory`; the `uoFolder` setting (it wins over TazUO's launcher, `tiledataFrom` names the reason when there is no tiledata: override-missing, unreadable, no-client; PUT refuses a relative path, a UNC path and a folder without tiledata.mul without echoing it, a hand-edited UNC or relative one reads as override-missing without touching the filesystem, and a TazUO client with no launcher profile reports no-tazuo-profile). All `[fast]`. A house-only file (issue #10) moves the served house's `capturedAt` on while `GET /api/inventory` stays identical (the card, its stats and its worn set included) but for `snapshotCount`. The areas (issue #10): a PUT with 32 areas of 16 rectangles (past the old 8 kB body cap) saved and read back, an area-only house giving no name in the houses list or the model, a bad colour a 400, and no name with no areas removing the entry. Also the house names (issue #164): `GET /api/house-map` empty, a `PUT /api/house-map/<id>` stored trimmed and shown in the houses list and the model, an empty name removing it, and a bad name, a malformed id or a non-JSON body refused. A trash container an earlier capture listed in `trash` (issue #162) is no stack and not unopened when a later far capture lists it, while an opened chest in the same list is still drawn. Claimed houses (issue #299): a house never claimed hidden from the list and the model, one whose bounds overlap a claim on its facet served (a claim made before it was customized included), `GET /api/house-claims` listing the claims, `DELETE /api/house-claims/<id>` removing every claim over that house and keeping the rest, a malformed id a 400, a newer capture not bringing an unclaimed house back; the first start with claims claiming the houses named or given areas (their saved bounds, else the id's corner tile), less the ones removed before (`forgotten`), never again once the file exists, and writing nothing when there is nothing to claim. The facet overview (issue #164): each listed house's `plot` (its bounds without the front steps), `GET /api/facet-map/<facet>.png` from a temp UO folder holding a synthetic `facet01.mul` (a PNG of a region, never larger than asked or than the region, the aspect ratio kept, `x-region` naming the region drawn; a region reaching past the facet slid inside it, and one larger than the facet cut to it), a 400 for a facet outside 0 to 5, a missing, malformed or partial region or a bad size, and a 404 `{ok:false, reason}` for a missing (`missing`) or undecodable (`unreadable`) file, a UO folder set in Settings that is gone (`override-missing`) and without a client (`no-client`), the folder never in the answer; an image at most 2048 pixels on either side (1024 by default, a tall region capped by its height). Item art (issue #174): `GET /api/item-art/<graphic>.png` from a temp UO folder holding a synthetic `artLegacyMUL.uop`, an ETag answered 304 on a repeat, a 400 for a graphic or hue that is not a whole number to 65535, and a 404 reason (`no-art`, `missing`, `no-client`), the folder never in the answer.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -14,6 +14,8 @@ import { claimHouses, vaultHouse, G } from "./house-fixture.mts";
 import { syntheticTileData } from "./tiledata-fixture.mts";
 import { syntheticFacet, rgb555, type Run } from "./facet-fixture.mts";
 import { FLAG } from "./tiledata.mts";
+import { itemArtName } from "./art.mts";
+import { syntheticArt, syntheticUop } from "./art-fixture.mts";
 import type { HouseModel } from "./house-model.mts";
 
 const PACK = 0x40020001;
@@ -457,6 +459,35 @@ test("[fast] facet map: a bad facet, region or size is a 400; a missing or unrea
   const { s: bare } = await serve(false);
   try {
     assert.deepEqual(await get(bare, `/api/facet-map/1.png?${R}`), { status: 404, body: { ok: false, reason: "no-client" } });
+  } finally { await bare.close(); }
+});
+
+test("[fast] item art: a graphic's art is a PNG with an ETag (a 304 on a repeat); a bad graphic or hue a 400; no art, no art file or no UO folder a 404 with a reason and never the path", async () => {
+  const { s } = await serve(true);
+  const uo = uoFolderWith(syntheticTileData([]));
+  writeFileSync(join(uo, "artLegacyMUL.uop"), syntheticUop([{ name: itemArtName(0x0e40), data: syntheticArt(2, 1, [[[0, rgb555(31, 0, 0), rgb555(0, 31, 0)]]]) }]));
+  try {
+    assert.equal((await put(s, { uoFolder: uo })).status, 200);
+    const r = await fetch(`${s.url}/api/item-art/${0x0e40}.png`);
+    assert.equal(r.status, 200);
+    assert.equal(r.headers.get("content-type"), "image/png");
+    const etag = r.headers.get("etag")!;
+    assert.match(etag, /^"[0-9a-f]+"$/);
+    assert.deepEqual(ihdrSize(Buffer.from(await r.arrayBuffer())), [2, 1]);
+    const again = await fetch(`${s.url}/api/item-art/${0x0e40}.png?hue=0`, { headers: { "if-none-match": etag } });
+    assert.equal(again.status, 304);
+    for (const path of ["/api/item-art/65536.png", "/api/item-art/-1.png", "/api/item-art/1.5.png", "/api/item-art/x.png", "/api/item-art/1", "/api/item-art/1.png?hue=65536", "/api/item-art/1.png?hue=-1", "/api/item-art/1.png?hue=a"]) {
+      assert.equal((await get(s, path)).status, 400, path);
+    }
+    const none = await fetch(`${s.url}/api/item-art/1.png`), text = await none.text();
+    assert.deepEqual([none.status, JSON.parse(text)], [404, { ok: false, reason: "no-art" }]);
+    assert.ok(!text.includes(uo));
+    rmSync(join(uo, "artLegacyMUL.uop"));
+    assert.deepEqual(await get(s, "/api/item-art/1.png"), { status: 404, body: { ok: false, reason: "missing" } });
+  } finally { await s.close(); rmSync(uo, { recursive: true, force: true }); }
+  const { s: bare } = await serve(false);
+  try {
+    assert.deepEqual(await get(bare, "/api/item-art/1.png"), { status: 404, body: { ok: false, reason: "no-client" } });
   } finally { await bare.close(); }
 });
 

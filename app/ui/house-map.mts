@@ -13,6 +13,7 @@ import { errorText } from "./messages.mts";
 import { openWorldMap, fetchFacetImage, type FacetImage } from "./world-map.mts";
 import { plural } from "./inv-model.mts";
 import { fillTone } from "./organize-model.mts";
+import { artTile } from "./item-art.mts";
 import { PLAIN, pickHouse, plainGrid, chestCount, houseLabel, houseName, carryOver, carryOverText, tiledataNote, chestViews, colourOf, chestLabel, sceneOf, boundsOf, fit, vbText,
   cutAway, calloutLines, nearestInDirection, houseTotals, legendOf, stackWhere, anchorOf, zoomAt, fillWords, whereOf, whereTitle, cropAround, facetMapUrl, markersOf, facetMapNote, markerRadii,
   drawerChest, drawerMeta, slotsText, drawerPicker, DRAWER_W, DRAWER_MIN, drawerMax, clampDrawer, drawerKey, contentsOf, contentsSummary, filterContents, areaOfStack, levelAreas, tileAt, clampTile, rectOf, sizeText, unionTiles, coveredCells, outlineOf, pillsOf, fitLabel, placePill as pillBox, LABEL_FIT, type AreaPill,
@@ -1342,7 +1343,7 @@ function chestTarget(m: HouseModel, s: Stack, c: ChestView): { it: BridgeTarget;
   return { it: { serial: c.serial, name: c.name, container: null, root: c.opened ? c.serial : null }, opts: c.opened ? {} : { pos: { x: s.x, y: s.y, z: c.z, ...(m.facet != null ? { facet: m.facet } : {}) } } };
 }
 const stackReason = (m: HouseModel, s: Stack, chests: ChestView[]): string | null => chests.map((c) => bridgeActionReason("highlight", chestTarget(m, s, c).it)).find((r) => r) ?? null;
-// One chest of the selected stack: its code and name (the in-game name too when a label renames it), its fill and item count or why they are not known yet, and Highlight, Label… and Show items. Label… and Show items wait for a scan that opens the chest.
+// One chest of the selected stack: its art with its color swatch in the corner (the swatch alone without art, ui/item-art.mts), its code and name (the in-game name too when a label renames it), its fill and item count or why they are not known yet, and Highlight, Label… and Show items. Label… and Show items wait for a scan that opens the chest.
 function chestRow(m: HouseModel, s: Stack, c: ChestView): HTMLElement {
   const { it, opts } = chestTarget(m, s, c);
   const notOpened = s.spot == null ? "Not opened yet: no standing spot reaches it — scan from beside it to label it and list what is in it." : `Not opened yet: scan from standing spot ${s.spot + 1} to label it and list what is in it.`;
@@ -1354,7 +1355,7 @@ function chestRow(m: HouseModel, s: Stack, c: ChestView): HTMLElement {
   const items = button({ label: "Show items", size: "sm", disabled: !c.opened, attrs: { "data-act": "items" }, onClick: () => openDrawer(c.serial) });
   const open = D?.chest === c.serial;
   return box("li", { class: `map-chest-row${c.opened ? "" : " unopened"}${open ? " open" : ""}`, "data-chest": String(c.serial), ...(open ? { "aria-current": "true" } : {}) },
-    swatchEl(colourOf(c, S.mode)),
+    artTile(c.graphic, { size: 32, badge: swatchEl(colourOf(c, S.mode)) }),
     box("div", { class: "map-chest-text" },
       box("span", { class: "map-chest-name" }, txt(c.code, "mono strong"), txt(c.name, "ellip strong")),
       c.name !== c.inGame ? txt(`In game: ${c.inGame}`, "t-sm muted ellip") : null,
