@@ -5,10 +5,13 @@
 // - "skip": any failure throws, for a reader that skips that file and says why (one scan or run in a folder).
 import { lstatSync, mkdirSync, readFileSync } from "node:fs";
 import { basename, dirname } from "node:path";
-import { moveAside, writeFileAtomic } from "../atomic-write.mts";
+import { moveAside, readRegularFile, writeFileAtomic } from "../atomic-write.mts";
 import { DATA_DIR_MODE, DATA_FILE_MODE } from "../config.mts";
 import { newerNotice, type DocKind } from "../migrate.mts";
 import type { HttpError } from "../read-body.mts";
+
+// The read bound for a reader that names no maxBytes (profiles, runs, scans): far above any file the app writes.
+const MAX_UNCAPPED_BYTES = 256 * 1024 * 1024;
 
 // Why a file was not taken: over maxBytes (lstat's size), JSON.parse refused it, the read failed, or check() refused the parsed document.
 export type BadJson = { why: "too-big" } | { why: "syntax"; error: SyntaxError } | { why: "io"; error: Error } | { why: "check"; reason: string };
@@ -21,7 +24,12 @@ export function readJsonFile(path: string, opts: { maxBytes?: number; onBad: "em
   let doc: unknown, bad: BadJson | null = null;
   try {
     if (opts.maxBytes !== undefined && lstatSync(path).size > opts.maxBytes) bad = { why: "too-big" };
-    else doc = JSON.parse(readFileSync(path, "utf8"));
+    else {
+      // A regular file only, read to the cap: a symlink or FIFO under the name is refused rather than followed or waited on.
+      const text = readRegularFile(path, opts.maxBytes ?? MAX_UNCAPPED_BYTES);
+      if (text === null) { lstatSync(path); throw new Error("not a regular file"); }   // the lstat throws ENOENT for a missing file
+      doc = JSON.parse(text);
+    }
   } catch (e) {
     if (opts.onBad === "empty") return opts.salvage!(undefined);
     if (opts.onBad === "skip" || (opts.ioErrors === "throw" && !(e instanceof SyntaxError))) throw e;

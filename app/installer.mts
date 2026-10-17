@@ -4,11 +4,11 @@
 // takes an injectable fetchImpl so callers (and tests) never depend on a real fetch global.
 import {
   existsSync, statSync, lstatSync, readdirSync, readFileSync, copyFileSync, realpathSync,
-  openSync, readSync, closeSync, fstatSync, unlinkSync, constants, type Dirent, type Stats,
+  unlinkSync, constants, type Dirent, type Stats,
 } from "node:fs";
 import { basename, join, resolve, dirname, isAbsolute } from "node:path";
 import { fileURLToPath } from "node:url";
-import { atomicReplace, writeFileAtomic } from "./atomic-write.mts";
+import { atomicReplace, readRegularFile, writeFileAtomic } from "./atomic-write.mts";
 import type { DataDirCheckInfo } from "./data-dir-notice.mts";
 import type { AdapterManifestV1, AdapterManifestV1Install, AdapterManifestV1InstallRetiredItem } from "./schema/types.d.mts";
 
@@ -83,28 +83,7 @@ function copyFileAtomic(src: string, dest: string): void {
 // A bounded read is what keeps an ordinary huge file under one of those names from being a
 // memory-exhaustion variant of the FIFO hang readHead's own flags close off.
 const HEAD_READ_BYTES = 64 * 1024;
-
-// The lstat refuses a name that is not a regular file before anything is opened — the only symlink
-// check win32 gets: neither O_NOFOLLOW nor O_NONBLOCK exists there (`?? 0` leaves the open plain), and
-// CreateFile DOES traverse a file symlink (a CI run on windows-latest read straight through one).
-// Elsewhere O_NOFOLLOW refuses a symlink at the final component, O_NONBLOCK keeps a FIFO from parking
-// this (single-threaded) process forever, and the fstat makes both TOCTOU-proof: it describes the fd
-// actually opened, not a name that could have changed since the lstat. Windows has no
-// FIFO-in-a-directory case. null means "not readable as a regular file", which every caller treats the
-// same as absent.
-function readHead(path: string, max: number = HEAD_READ_BYTES): string | null {
-  try { if (!lstatSync(path).isFile()) return null; } catch { return null; }
-  const flags = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0);
-  let fd: number;
-  try { fd = openSync(path, flags); } catch { return null; }
-  try {
-    if (!fstatSync(fd).isFile()) return null;
-    const buf = Buffer.allocUnsafe(max);
-    const n = readSync(fd, buf, 0, max, 0);
-    return buf.toString("utf8", 0, n);
-  } catch { return null; }
-  finally { closeSync(fd); }
-}
+const readHead = (path: string, max: number = HEAD_READ_BYTES): string | null => readRegularFile(path, max);
 
 // A plain object index here once resolved every key on Object.prototype ("constructor", "__proto__",
 // "toString", …) to something truthy: validateScriptsDir(dir, "constructor") threw "suffixes.map is not a

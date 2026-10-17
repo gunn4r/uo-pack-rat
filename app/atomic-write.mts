@@ -5,7 +5,7 @@
 // the server keeps in its own data directory (settings, profiles, saved runs, accepted scans,
 // tombstones, a pasted scan's inbox file). moveAside sets an unreadable data file aside as
 // <file>.corrupt before the server starts that file afresh.
-import { existsSync, lstatSync, renameSync, unlinkSync, writeFileSync, type Stats } from "node:fs";
+import { closeSync, constants, existsSync, fstatSync, lstatSync, openSync, readSync, renameSync, unlinkSync, writeFileSync, type Stats } from "node:fs";
 import { randomBytes } from "node:crypto";
 
 // The temp name is random, not a fixed "<dest>.new"/"<dest>.tmp". A fixed, published temp name is a
@@ -71,4 +71,27 @@ export function moveAside(file: string): string {
   if (existsSync(aside)) aside = `${file}.corrupt-${Date.now()}`;
   renameSync(file, aside);
   return aside;
+}
+
+// The lstat refuses a name that is not a regular file before anything is opened — the only symlink
+// check win32 gets: neither O_NOFOLLOW nor O_NONBLOCK exists there (`?? 0` leaves the open plain), and
+// CreateFile DOES traverse a file symlink (a CI run on windows-latest read straight through one).
+// Elsewhere O_NOFOLLOW refuses a symlink at the final component, O_NONBLOCK keeps a FIFO from parking
+// this (single-threaded) process forever, and the fstat makes both TOCTOU-proof: it describes the fd
+// actually opened, not a name that could have changed since the lstat. Windows has no
+// FIFO-in-a-directory case. null means "not readable as a regular file", which every caller treats the
+// same as absent. At most `max` bytes are read, and no buffer larger than the file is allocated.
+export function readRegularFile(path: string, max: number): string | null {
+  try { if (!lstatSync(path).isFile()) return null; } catch { return null; }
+  const flags = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0);
+  let fd: number;
+  try { fd = openSync(path, flags); } catch { return null; }
+  try {
+    const st = fstatSync(fd);
+    if (!st.isFile()) return null;
+    const buf = Buffer.allocUnsafe(Math.min(max, st.size));
+    const n = readSync(fd, buf, 0, buf.length, 0);
+    return buf.toString("utf8", 0, n);
+  } catch { return null; }
+  finally { closeSync(fd); }
 }
