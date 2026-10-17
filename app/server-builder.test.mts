@@ -102,6 +102,26 @@ test("[fast] PUT /api/profiles: stored over-long and built-in-prefixed template 
   } finally { await s.close(); rmSync(dir, { recursive: true, force: true }); }
 });
 
+// Issue #336: a character made from a template an older version named past 128 characters keeps its link when the file
+// loads and when it is saved again.
+test("[fast] GET|PUT /api/profiles: a 130-character template a character uses loads, keeps the link and saves", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-tpllink-")), long = "t".repeat(130);
+  const stored = { schemaVersion: 3, characters: { Dorran: { template: long, spec: specFromProfile({}) } }, templates: { [long]: { spec: templateSpecFrom({}, []) } } };
+  const cfg = ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {}));
+  writeFileSync(join(dir, "profiles.json"), JSON.stringify(stored));
+  const s = await startServer(cfg);
+  try {
+    const read = asJson<ProfilesResponse>(await (await fetch(`${s.url}/api/profiles`)).json()).profiles;
+    assert.equal(read.characters.Dorran!.template, long, "loaded with its link");
+    const next = { ...read, characters: { Dorran: { ...read.characters.Dorran!, spec: specFromProfile({ floors: { luck: 100 } }) } } };
+    const put = await fetch(`${s.url}/api/profiles`, { method: "PUT", headers: JSON_HEADERS, body: JSON.stringify(next) });
+    assert.equal(put.status, 200, await put.clone().text());
+    const disk = JSON.parse(readFileSync(join(dir, "profiles.json"), "utf8")) as ProfilesV3;
+    assert.equal(disk.characters.Dorran!.template, long, "saved with its link");
+    assert.equal(disk.characters.Dorran!.spec.intent.floors?.luck, 100, "and the change");
+  } finally { await s.close(); rmSync(dir, { recursive: true, force: true }); }
+});
+
 test("[fast] two POST /api/optimize from the same X-Client-Id: the second supersedes the first, whose status becomes cancelled", async () => {
   const inv = asJson<InventoryResponse>((await rawReq(`${tsrv.url}/api/inventory`, { headers: authHost() })).json());
   const profiles = asJson<ProfilesResponse>((await rawReq(`${tsrv.url}/api/profiles`, { headers: authHost() })).json());
