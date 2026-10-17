@@ -11,7 +11,7 @@
 import { constants, copyFileSync, existsSync, lstatSync, readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { basename, dirname, join } from "node:path";
-import { atomicReplace, writeFileAtomic } from "./atomic-write.mts";
+import { atomicReplace, readBounded, writeFileAtomic } from "./atomic-write.mts";
 import { panelPrefsOf, type AutostartOutcome, type PanelPrefs } from "./tazuo-panel-prefs.mts";
 
 export const PANEL_SCRIPT = "packrat-panel.py";
@@ -22,7 +22,7 @@ export { HOTKEY_KEYS, HOTKEY_MODS, PANEL_DEFAULTS, panelPrefsError, panelPrefsOf
 const MAX_PANEL_FILE_BYTES = 64 * 1024;
 export function readPanelPrefs(path: string): PanelPrefs {
   let raw: unknown = null;
-  try { if (lstatSync(path).size <= MAX_PANEL_FILE_BYTES) raw = JSON.parse(readFileSync(path, "utf8")); } catch { /* missing or unreadable: the defaults */ }
+  try { const r = readBounded(path, MAX_PANEL_FILE_BYTES); if (!r.tooBig) raw = JSON.parse(r.text); } catch { /* missing or unreadable: the defaults */ }
   return panelPrefsOf(raw);
 }
 // Written normalised: only hotkey and showAtLogin reach the file.

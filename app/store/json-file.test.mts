@@ -1,10 +1,11 @@
 // json-file.test.mts — `app/store/json-file.mts`: each bad-file policy and the writer.
 //
-// `app/store/json-file.mts`: each bad-file policy on a missing, oversized, unparsable or refused file (`empty` hands the salvage undefined, also when the salvage throws, and moves nothing; `aside` moves the file to `.corrupt`, a newer one to a timestamped name, and says why, with `ioErrors: "throw"` throwing a failed read; `skip` throws), and the writer creating the folder with the indent, trailing newline and the data folder's file and folder modes. All `[fast]`.
+// `app/store/json-file.mts`: a symlink or FIFO under the name is refused (not followed, never waited on), and each bad-file policy on a missing, oversized, unparsable or refused file (`empty` hands the salvage undefined, also when the salvage throws, and moves nothing; `aside` moves the file to `.corrupt`, a newer one to a timestamped name, and says why, with `ioErrors: "throw"` throwing a failed read; `skip` throws), and the writer creating the folder with the indent, trailing newline and the data folder's file and folder modes. All `[fast]`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { basename, join } from "node:path";
 import { tmpdir } from "node:os";
 import { readJsonFile, writeJsonFile } from "./json-file.mts";
 
@@ -45,7 +46,7 @@ test("[fast] json-file: aside moves a bad file to .corrupt and says why, and rea
 test("[fast] json-file: aside with ioErrors throw throws a failed read, a missing file included, but still sets a bad file aside", () => {
   const d = dir(), f = join(d, "a.json");
   assert.throws(() => readJsonFile(f, { onBad: "aside", ioErrors: "throw" }), { code: "ENOENT" });
-  assert.throws(() => readJsonFile(d, { onBad: "aside", ioErrors: "throw" }), { code: "EISDIR" });
+  assert.throws(() => readJsonFile(d, { onBad: "aside", ioErrors: "throw" }), /not a regular file/);
   writeFileSync(f, "{oops");
   const r = readJsonFile(f, { onBad: "aside", ioErrors: "throw" });
   assert.ok("bad" in r && r.bad.why === "syntax" && "aside" in r);
@@ -70,4 +71,26 @@ test("[fast] json-file: writeJsonFile creates the folder and writes the indent, 
     assert.equal(statSync(f).mode & 0o777, 0o600);
     assert.equal(statSync(join(d, "sub")).mode & 0o777, 0o700);
   }
+});
+
+test("[fast] json-file: a symlink to a regular file reads as the file, a FIFO (or a link to one) is refused naming the file, and a file over the cap is too big", { skip: process.platform === "win32" ? "no FIFOs on Windows" : false }, () => {
+  const d = dir(), real = join(d, "real.json"), link = join(d, "link.json"), fifo = join(d, "fifo.json"), fifoLink = join(d, "fifo-link.json");
+  writeFileSync(real, "{\"x\":1}");
+  symlinkSync(real, link);
+  execFileSync("mkfifo", [fifo]);
+  execFileSync("mkfifo", [join(d, "target.fifo")]);
+  symlinkSync(join(d, "target.fifo"), fifoLink);
+  const salvage = (doc: unknown) => ({ got: doc });
+  assert.deepEqual(readJsonFile(link, { maxBytes: 100, onBad: "empty", salvage }), { got: { x: 1 } });
+  assert.deepEqual(readJsonFile(link, { onBad: "skip" }), { x: 1 });
+  for (const f of [fifo, fifoLink]) {
+    assert.deepEqual(readJsonFile(f, { maxBytes: 100, onBad: "empty", salvage }), { got: undefined });
+    assert.throws(() => readJsonFile(f, { onBad: "skip" }), /is not a regular file/);
+    assert.throws(() => readJsonFile(f, { onBad: "aside", ioErrors: "throw" }), { code: "ENOTREG", message: `${basename(f)} is not a regular file` });
+    const got = readJsonFile(f, { maxBytes: 100, onBad: "aside" });
+    assert.ok("bad" in got && got.bad.why === "io", JSON.stringify(got));
+  }
+  writeFileSync(real, "{\"x\":\"" + "y".repeat(50) + "\"}");
+  const big = readJsonFile(real, { maxBytes: 20, onBad: "aside" });
+  assert.ok("bad" in big && big.bad.why === "too-big", "a file past the cap is too big, not a corrupt prefix");
 });
