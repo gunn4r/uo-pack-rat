@@ -6,6 +6,7 @@
 import { toast } from "./dom.mts";
 import { reload } from "./inventory-data.mts";
 import { loadRuns } from "./runs.mts";
+import { loadOrganize, refreshPlaces } from "./organize-data.mts";
 import { CLIENT_ID } from "./api.mts";
 import type { InventoryEvent, RejectedEvent, ChangedEvent } from "./api-types.mts";
 
@@ -44,6 +45,13 @@ async function runReload(): Promise<void> {
   }
 }
 
+// An Organize setup saved elsewhere: only the setup is read again, then the views that show labels redraw (organizechange).
+async function reloadOrganize(): Promise<void> {
+  try { await loadOrganize(); } catch { return; }   // the setup as the page had it
+  refreshPlaces();
+  document.dispatchEvent(new Event("organizechange"));
+}
+
 // Idempotent: a second call (e.g. a stray re-invocation from a future code path) must not open a
 // second connection and double-fire every toast/reload.
 export function connectEvents(): EventSource {
@@ -65,6 +73,7 @@ export function connectEvents(): EventSource {
     const data = parse(e.data) as Partial<ChangedEvent>;
     if (data.by === CLIENT_ID) return;   // this tab made the change and reloads on its own
     if (data.what === "inventory") scheduleReload();
+    else if (data.what === "organize") void reloadOrganize();
     else if (data.what === "runs") void loadRuns();
   });
   return source;

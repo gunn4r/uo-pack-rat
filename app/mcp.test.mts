@@ -815,7 +815,7 @@ test("[fast] label_containers adds, renames, pins and removes labels through the
     ]);
     assert.equal(r.data.labels, 3);
     assert.equal(r.data.saved, true);
-    await sse.readUntil((b) => b.includes('event: changed\ndata: {"what":"inventory","by":"mcp"'));
+    await sse.readUntil((b) => b.includes('event: changed\ndata: {"what":"organize","by":"mcp"'));
     const labels = savedLabels(sv.dir);
     assert.deepEqual([labels[String(C)], labels[String(A)]], [{ serial: C, name: "Gems", origin: "manual" }, { serial: A, name: "Overflow", pinned: true, origin: "manual" }]);
     const cfg = (await app<{ config: OrganizeConfig }>(sv, "/api/organize")).body.config;
