@@ -3,6 +3,7 @@
 // app/bench/mip-spike.mts, which was validated to the decimal against the core's proven optima —
 // see docs/solver.md for the model and app/bench/REPORT.md for the evidence.
 import { GEAR_SLOTS, REQUIRED_SLOTS, RESIST_SKILL_KEY, RESIST_STEP_SLACK, type OptItem, type ResistStep } from "./vault-lib.mts";
+import { stepsFor } from "./swing.mts";
 
 export const HARD_FLOOR_BONUS = 1e7;   // == scripts/optimizer-core.mts HARD_FLOOR_BONUS
 // Every gear slot (issue #202); all but the five armor pieces may be left empty. The core keeps its own copy (it
@@ -192,29 +193,48 @@ export function withReachableResistSteps<P extends { resistSteps?: ResistStep[] 
   return (kept.length ? { ...rest, resistSteps: kept } : rest) as P;
 }
 
+// stepsFor over a whole pool, the stamina and SSI ranges from propertyReach: the table the optimize worker scores with,
+// and the one the optimize route counts in the hard-floor bonus (mip.mts withHardFloorBonus, issue #311).
+export function poolStepsFor(profile: Parameters<typeof stepsFor>[0], pools: Partial<Record<string, OptItem[]>>, current: Partial<Record<string, OptItem | null>>, optionalSlots: string[] = DEFAULT_OPTIONAL_SLOTS, slots: string[] = DEFAULT_SLOTS): ReturnType<typeof stepsFor> {
+  const reach = propertyReach(pools, current, optionalSlots, slots, ["stamPool", "ssi"]);
+  return stepsFor(profile, pools as Parameters<typeof stepsFor>[1], current as Parameters<typeof stepsFor>[2], reach.stamPool!, optionalSlots, reach.ssi!.max);
+}
 // A hard floor's bonus (issue #311): HARD_FLOOR_BONUS, or more when the rest of the score could move by half of it in this
-// pool. The hard floors' partial credit together stays under half the bonus (it is shared among them, #204), so a suit
-// meeting one more hard floor wins whenever the rest moves by less than the other half: the soft floors (each between 0
-// and its bonus, partial credit included) and each weighted property's term over the totals the pool reaches
-// (propertyReach), held at a min where there is one, or an SSI step's credit. The bonus is twice that, plus a point.
-export function hardFloorBonusFor(profile: MipProfile, pools: Partial<Record<string, OptItem[]>>, current: Partial<Record<string, OptItem | null | undefined>>, optionalSlots: string[] = DEFAULT_OPTIONAL_SLOTS, slots: string[] = DEFAULT_SLOTS): number {
+// pool. The hard floors' partial credit together stays under half the bonus (it is shared among them, #204, and
+// floorPartial is at most 0.5), so a suit meeting one more hard floor wins whenever the rest moves by less than the other
+// half. hardFloorSpread is how far each part of the rest can move a score: `soft`, the soft floors (each between 0 and its
+// bonus, partial credit included), and `weights`, each weighted property's term over the totals the pool reaches
+// (propertyReach), held at a min where there is one, plus an SSI step's largest credit when the profile carries the step
+// table (the optimize route passes the one the worker will score with). null with no hard floor.
+export interface HardFloorSpread { soft: number; weights: Record<string, number> }
+export function hardFloorSpread(profile: MipProfile, pools: Partial<Record<string, OptItem[]>>, current: Partial<Record<string, OptItem | null | undefined>>, optionalSlots: string[] = DEFAULT_OPTIONAL_SLOTS, slots: string[] = DEFAULT_SLOTS): HardFloorSpread | null {
   const W = profile.weights || {}, CAPS = profile.caps || {}, FL = profile.floors || {}, MINS = profile.mins || {}, hard = new Set(profile.hardFloors || []);
   const floorOf = (d: string): number => (MINS[d] != null && (FL[d] || 0) <= MINS[d]! ? 0 : FL[d] || 0);
-  if (!Object.keys(FL).some((d) => hard.has(d) && floorOf(d) > 0)) return HARD_FLOOR_BONUS;
+  if (!Object.keys(FL).some((d) => hard.has(d) && floorOf(d) > 0)) return null;
   const FB = typeof profile.floorBonus === "number" ? profile.floorBonus : 1000, PARTIAL = typeof profile.floorPartial === "number" ? profile.floorPartial : 0.5;
-  const weighted = Object.keys(W).filter((d) => W[d]), reach = propertyReach(pools, current, optionalSlots, slots, weighted);
-  let spread = Object.keys(FL).filter((d) => !hard.has(d) && floorOf(d) > 0).length * Math.abs(FB) * (1 + Math.abs(PARTIAL));
+  const weighted = Object.keys(W).filter((d) => W[d]), reach = propertyReach(pools, current, optionalSlots, slots, weighted), weights: Record<string, number> = {};
   for (const d of weighted) {
     const cap = CAPS[d] ?? INF, mins = [MINS[d], ...(profile.resistSteps || []).map((st) => st.mins[d])].filter((m): m is number => typeof m === "number");
-    spread += Math.abs(W[d]!) * (Math.max(Math.min(reach[d]!.max, cap), ...mins) - Math.min(reach[d]!.min, cap));
+    weights[d] = Math.abs(W[d]!) * (Math.max(Math.min(reach[d]!.max, cap), ...mins) - Math.min(reach[d]!.min, cap));
   }
-  if (Array.isArray(profile.ssiSteps) && (W.ssi || 0) > 0) spread += W.ssi! * Math.max(0, ...profile.ssiSteps.map((p) => Math.abs(p.credit)));
-  return Math.max(HARD_FLOOR_BONUS, 2 * spread + 1);
+  if (Array.isArray(profile.ssiSteps) && (W.ssi || 0) > 0) weights.ssi = (weights.ssi || 0) + W.ssi! * Math.max(0, ...profile.ssiSteps.map((p) => Math.abs(p.credit)));
+  return { soft: Object.keys(FL).filter((d) => !hard.has(d) && floorOf(d) > 0).length * Math.abs(FB) * (1 + Math.abs(PARTIAL)), weights };
 }
-// The profile with its hard-floor bonus for this pool: the field only when it is above HARD_FLOOR_BONUS (a caller's own
-// value is replaced), so a usual profile builds, scores and keys exactly as before it existed.
-export function withHardFloorBonus<P extends MipProfile>(profile: P, pools: Partial<Record<string, OptItem[]>>, current: Partial<Record<string, OptItem | null | undefined>>, optionalSlots: string[] = DEFAULT_OPTIONAL_SLOTS, slots: string[] = DEFAULT_SLOTS): P {
-  const { hardFloorBonus: _given, ...rest } = profile, bonus = hardFloorBonusFor(rest, pools, current, optionalSlots, slots);
+// The bonus the spread needs, twice it plus a point, or HARD_FLOOR_BONUS when that is larger; not capped.
+export function hardFloorBonusFor(profile: MipProfile, pools: Partial<Record<string, OptItem[]>>, current: Partial<Record<string, OptItem | null | undefined>>, optionalSlots: string[] = DEFAULT_OPTIONAL_SLOTS, slots: string[] = DEFAULT_SLOTS): number {
+  const sp = hardFloorSpread(profile, pools, current, optionalSlots, slots);
+  return sp ? Math.max(HARD_FLOOR_BONUS, 2 * Object.values(sp.weights).reduce((n, v) => n + v, sp.soft) + 1) : HARD_FLOOR_BONUS;
+}
+// The largest bonus a profile carries: past about 5e9 the exact solver's score comparisons, absolute to 1e-6, start to
+// read float rounding as a better suit. A profile needing more builds at this one, and the optimize route says so
+// (diagnostics.mts requirementScaleDiagnostics).
+export const HARD_FLOOR_BONUS_MAX = 1e9;
+// The profile with its hard-floor bonus for this pool, capped at HARD_FLOOR_BONUS_MAX: the field only when it is above
+// HARD_FLOOR_BONUS (a caller's own value is replaced), so a usual profile builds, scores and keys exactly as before it
+// existed. `ssiSteps` is the step table the solvers will score SSI with, counted in the bound but not put on the profile.
+export function withHardFloorBonus<P extends MipProfile>(profile: P, pools: Partial<Record<string, OptItem[]>>, current: Partial<Record<string, OptItem | null | undefined>>, optionalSlots: string[] = DEFAULT_OPTIONAL_SLOTS, slots: string[] = DEFAULT_SLOTS, ssiSteps?: MipProfile["ssiSteps"] | null): P {
+  const { hardFloorBonus: _given, ...rest } = profile;
+  const bonus = Math.min(HARD_FLOOR_BONUS_MAX, hardFloorBonusFor(ssiSteps ? { ...rest, ssiSteps } : rest, pools, current, optionalSlots, slots));
   return (bonus > HARD_FLOOR_BONUS ? { ...rest, hardFloorBonus: bonus } : rest) as P;
 }
 // The bonus a profile carries (== scripts/optimizer-core.mts optHardBonus).

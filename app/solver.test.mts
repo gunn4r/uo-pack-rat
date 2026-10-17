@@ -8,7 +8,8 @@ import assert from "node:assert/strict";
 import { effectiveProfile, GEAR_SLOTS } from "./vault-lib.mts";
 import { buffSkillValues, plannedProfile } from "./buffs.mts";
 import { solveExact, type OptPools, type OptAssignment, type OptProfile } from "./exact-solver.mts";
-import { DEFAULT_SLOTS, DEFAULT_OPTIONAL_SLOTS, buildSuitMip, withHardFloorBonus } from "./mip.mts";
+import { DEFAULT_SLOTS, DEFAULT_OPTIONAL_SLOTS, HARD_FLOOR_BONUS_MAX, buildSuitMip, hardFloorBonusFor, withHardFloorBonus } from "./mip.mts";
+import { requirementScaleDiagnostics } from "./diagnostics.mts";
 import { solveModel as realSolveModel, type Handle, type SolveModelOptions } from "./mip-solve.mts";
 import { BASE_OPTS, cell, core, defaultProfiles, runBoth, sig, STARTERS_BEFORE_GOALS, templateNames, type OptOptions } from "./solver-fixture.mts";
 
@@ -85,6 +86,39 @@ test("[fast] a hard floor's bonus outweighs six soft floors at 1e6 in Best value
     assert.deepEqual([c.best.ring?.serial, c.proven, r.best.ring?.serial, r.proven, warned], [meets.serial, true, meets.serial, true, []], strict ? "Strict order" : "Best value");
   }
   assert.equal(withHardFloorBonus({ ...raw, floorBonus: 1000 }, pools, current, [], ["ring"]).hardFloorBonus, undefined, "a usual bonus keeps the fixed scale");
+});
+
+// Issue #311 review: with SSI by step a step's credit (60 here) can pass the SSI a suit carries (5), so the bound counts the
+// step table the worker scores with. Without it the bonus stayed near 1e7 and the 5-SSI ring missing the hard floor won.
+test("[fast] the hard-floor bonus counts the SSI step table", async () => {
+  const meets = { serial: 90121, name: "Meets", slot: "ring", props: { hci: 10 } };
+  const fast = { serial: 90122, name: "Fast", slot: "ring", props: { hci: 9, ssi: 5 } };
+  const pools = { ring: [meets, fast] }, current = { ring: meets }, ssiSteps = [{ ssi: 5, stam: 0, credit: 60 }];
+  const raw: OptProfile = { weights: { ssi: 1e6 }, caps: { ssi: 60 }, floors: { hci: 10 }, hardFloors: ["hci"] };
+  const without = { ...withHardFloorBonus(raw, pools, current, [], ["ring"]), ssiSteps };
+  assert.ok(core.scoreSet({ ring: fast }, without) > core.scoreSet({ ring: meets }, without), "the bound without the steps loses the floor");
+  const profile = { ...withHardFloorBonus(raw, pools, current, [], ["ring"], ssiSteps), ssiSteps };
+  assert.equal(profile.ssiSteps, ssiSteps);
+  assert.equal(profile.hardFloorBonus, 2 * (1e6 * 5 + 1e6 * 60) + 1);
+  const opts: OptOptions = { exact: true, timeBudgetMs: 5000, restarts: 2, seed: 1, slots: ["ring"], optionalSlots: [] };
+  const c = core.optimizeSuit(pools, current, profile, opts), warned: string[] = [];
+  const r = await solveExact({ core, pools, current, profile, opts, onProgress: () => {}, onWarn: (m) => warned.push(m) });
+  assert.deepEqual([c.best.ring?.serial, c.proven, r.best.ring?.serial, r.proven, warned], [meets.serial, true, meets.serial, true, []]);
+});
+
+// Issue #311 review: past HARD_FLOOR_BONUS_MAX the bonus stops at it (the exact solver's absolute score comparisons
+// misread rounding above about 5e9), and requirement_outweighed says so, offering the largest weight scaled down.
+test("[fast] a bonus past the cap stops at it and says which weight to scale down", () => {
+  const big = { serial: 90131, name: "Lucky", slot: "ring", props: { luck: 5000, hci: 9 } };
+  const meets = { serial: 90132, name: "Meets", slot: "ring", props: { hci: 10 } };
+  const pools = { ring: [big, meets] }, current = { ring: meets };
+  const raw: OptProfile = { weights: { luck: 1e6, hci: 1 }, caps: {}, floors: { hci: 10 }, hardFloors: ["hci"] };
+  assert.equal(hardFloorBonusFor(raw, pools, current, [], ["ring"]), 2 * (1e6 * 5000 + 10) + 1);
+  assert.equal(withHardFloorBonus(raw, pools, current, [], ["ring"]).hardFloorBonus, HARD_FLOOR_BONUS_MAX);
+  const [d, ...rest] = requirementScaleDiagnostics({ pools, current, optionalSlots: [], slots: ["ring"], profile: raw });
+  assert.deepEqual([d?.code, d?.property, d?.actions[0]?.kind, rest.length], ["requirement_outweighed", "luck", "setWeight", 0]);
+  assert.match(d!.message, /Your weights are so large that a requirement could lose to them, Luck most of all\. Scale the weights down\./);
+  assert.deepEqual(requirementScaleDiagnostics({ pools, current, optionalSlots: [], slots: ["ring"], profile: { ...raw, weights: { luck: 1 } } }), [], "under the cap: nothing to say");
 });
 
 // Synthetic pools, deliberately not the fixture: a ring item that meets the physResist floor but
