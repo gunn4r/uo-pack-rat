@@ -499,25 +499,28 @@ export function gearChangedSince(scans: ReadonlyArray<{ scannedAt: string }>, ru
   const at = stampMs(run.createdAt);
   return at > -Infinity && scans.some((s) => stampMs(s.scannedAt) > at);
 }
-// What changed in the gear since a run, as its banner lists it (issue #291): the new pieces its pool takes (where, when one or
-// two places), the suit's pieces that moved, then those gone; past `max` lines the rest as "and N more". `where` words a
-// location text as the page does (dom.mts whereText).
+// Where a moved piece of a run's suit is now, as the banner and the Plan word it: "worn by Kestrel", "in Kestrel's bank",
+// "in Kestrel's backpack › Pouch", "in Armor box". `where` words a location text as the page does (dom.mts whereText).
+const nowAt = (m: GearChanges["moved"][number], where: (text: string) => string): string => (m.wornBy ? `worn by ${m.wornBy}` : `in ${where(m.place)}`);
+// What changed in the gear since a run, as its banner lists it (issue #291): the new pieces its pool takes (with the
+// containers they are in, when one or two), the suit's pieces that moved, then those gone; past `max` lines the rest as
+// "and N more".
 export function gearChangeLines(g: GearChanges, where: (text: string) => string, max = 3): string[] {
   const lines = [
-    ...(g.added ? [`${plural(g.added, "new piece")} scanned${g.addedPlaces.length ? ` in ${listWords(g.addedPlaces.map(where))}` : ""}`] : []),
-    ...g.moved.map((m) => `${m.name} is now ${m.character ? `on ${m.character}` : `in ${where(m.place)}`}`),
+    ...(g.added ? [`${plural(g.added, "new piece")} you could use${g.addedPlaces.length ? ` in ${listWords(g.addedPlaces.map(where))}` : ""}`] : []),
+    ...g.moved.map((m) => `${m.name} is now ${nowAt(m, where)}`),
     ...g.gone.map((p) => `${p.name} is no longer in the scans`),
   ];
   return lines.length > max + 1 ? [...lines.slice(0, max), `and ${lines.length - max} more`] : lines;
 }
 export const GONE_MARK = "No longer in the scans";
-// A piece of the run's suit as the slot table marks it: "Now on <character>" or "Now in <place>" when it moved, "No longer in
-// the scans" when it is gone, else null.
+// A piece of the run's suit as the Plan marks it: "Now worn by <character>" or "Now in <place>" when it moved, "No longer
+// in the scans" when it is gone, else null.
 export function pieceMark(g: GearChanges | null | undefined, serial: number | undefined, where: (text: string) => string): string | null {
   if (!g || !serial) return null;
   if (g.gone.some((p) => p.serial === serial)) return GONE_MARK;
   const m = g.moved.find((p) => p.serial === serial);
-  return m ? (m.character ? `Now on ${m.character}` : `Now in ${where(m.place)}`) : null;
+  return m ? `Now ${nowAt(m, where)}` : null;
 }
 // The run to come back to: the newest that kept a suit (a run file whose result is gone lists with no method).
 export const latestShownRun = <R extends RunStamp & { method?: string | null | undefined }>(runs: readonly R[]): R | null => latestRun(runs.filter((r) => r.method != null));

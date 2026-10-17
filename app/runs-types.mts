@@ -47,11 +47,11 @@ export interface RunSettingsRaw {
 }
 // Where a piece of a run's suit was when the run was built (issue #291): the character it was on (worn, or in their backpack or bank; null in a house container) and the container it sat in (null while worn).
 export interface PiecePlace { character: string | null; container: number | null }
-// What changed in the gear since a run was built (GET /api/runs/<id>, issue #291): how many pieces the run's pool takes now that it did not then and where they are (`addedPlaces`, only when one or two places), and the suit's pieces that moved (`character` set when they are on another character now; `place` their location text) or are gone from the scans.
+// What changed in the gear since a run was built (GET /api/runs/<id>, issue #291): how many pieces the run's pool takes now that it did not then and where they are (`addedPlaces`, only when one or two containers), and the suit's pieces that moved (`wornBy` the character wearing one now, else `place`, its location text) or are gone from the scans.
 export interface GearChanges {
   added: number;
   addedPlaces: string[];
-  moved: Array<{ slot: string; serial: number; name: string; character: string | null; place: string }>;
+  moved: Array<{ slot: string; serial: number; name: string; wornBy: string | null; place: string }>;
   gone: Array<{ slot: string; serial: number; name: string }>;
 }
 export interface SavedRun {
@@ -67,6 +67,7 @@ export interface SavedRun {
   poolSize?: number | null | undefined;
   poolSerials?: number[] | undefined;                    // the serials of its pool, sorted (issue #291); absent on manual runs and runs saved before it
   picked?: Record<string, PiecePlace> | undefined;       // where each piece of its suit was, by serial (issue #291); with poolSerials
+  poolStrength?: number | undefined;                     // the STR limit its pool was built with, resolved (issue #291); with poolSerials
   skipped?: unknown;
   ms?: number | null | undefined;
   budgetMs?: number | null | undefined;
@@ -98,5 +99,5 @@ export interface RunSummary {
 // GET /api/runs (the list, newest first).
 export interface RunsListBody<S = RunSummary> { ok: boolean; runs: S[] }
 // GET /api/runs/<id> answers the whole run; PUT /api/runs/<id> and POST /api/runs answer its summary (R = RunSummary).
-// GET's `gearChanges` is the run's against the scans now, for a run that kept its pool.
+// GET's `gearChanges` is the run's against the scans now, for a run that kept its pool; GET leaves the kept pool (poolSerials, picked, poolStrength) out of `run`.
 export interface RunBody<R = SavedRun> { ok: boolean; run: R; gearChanges?: GearChanges | undefined }

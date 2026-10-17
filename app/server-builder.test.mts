@@ -1,6 +1,6 @@
 // server-builder.test.mts — HTTP tests of the Suit Builder: `POST /api/optimize`, the saved runs and `GET|PUT /api/profiles`.
 //
-// `POST /api/optimize`: one running job per client (a second `POST` supersedes the first) and none between callers with no client id, the events route's `?client=` check, the server-wide ceiling, a job that throws logging its stack under the ref the client sees, an exact build proven by HiGHS with the saved run's score, the by-character form building the client's pools, keeping the page's settings snapshot, treating null fields as absent and refusing a bad settings type, the time budget capping restarts, resist cap overrides, weapon exclusions and required weapon properties (the lock wins, an empty pool said), malformed pools, current, profile or opts refused, only known meta fields saved, a character with no scans a 404, and Manual's hand-offs (issue #12: `pinned` keeping the placed pieces, no run saved, and with no character only pieces nobody wears; No character's `_nobody` build from pieces nobody wears, saved, reused and listed under its name, others' worn gear on request, another pseudo name a 404, and its manual run; Only containers, `settings.onlyRoots`: a bad list 400, the pool narrowed to the listed container, the slots it leaves with nothing from a container and a hard floor it puts out of reach said before the search, and a No character build saved with the list and never answering one without it); SSI scored by swing step through the real worker (issue #217: per point with the reason while the weapon is not fixed, scoring what steps off scores, and the result's swing once the one-handed slot is locked); the job lifecycle (`jobTimings`, a parked core: a build past the retention kept, one past its budget cancelled, closing mid-build logging no failure); `GET|PUT|DELETE /api/runs/<id>` (a label type-checked, a truncated run a 404 that can still be deleted) and `POST /api/runs` saving a manual run with its checks; `POST /api/evaluate` answering what `evaluateSuit` computes from the same fixtures (the saved profile, a given profile with Divine Fury, a run's settings bringing their buffs, No character) and its checks; `PUT /api/profiles` (413 by bytes, 400 naming the schema path) and a truncated `profiles.json` moved aside and reseeded. A rarity preference (issue #262): `POST /api/optimize` stamps tie costs on pooled and worn pieces in both forms (an unknown serial ranking 0), keys each preference apart from none, and refuses a bad `opts.tieBreak`. What made up the score (issue #273): the best suit, each other suit and the saved run carry the shares, and a manual run stores its own. What changed in the gear (issue #291): a build by character saves its pool's serials and its suit's places, and `GET /api/runs/<id>` against the same scans finds no changes.
+// `POST /api/optimize`: one running job per client (a second `POST` supersedes the first) and none between callers with no client id, the events route's `?client=` check, the server-wide ceiling, a job that throws logging its stack under the ref the client sees, an exact build proven by HiGHS with the saved run's score, the by-character form building the client's pools, keeping the page's settings snapshot, treating null fields as absent and refusing a bad settings type, the time budget capping restarts, resist cap overrides, weapon exclusions and required weapon properties (the lock wins, an empty pool said), malformed pools, current, profile or opts refused, only known meta fields saved, a character with no scans a 404, and Manual's hand-offs (issue #12: `pinned` keeping the placed pieces, no run saved, and with no character only pieces nobody wears; No character's `_nobody` build from pieces nobody wears, saved, reused and listed under its name, others' worn gear on request, another pseudo name a 404, and its manual run; Only containers, `settings.onlyRoots`: a bad list 400, the pool narrowed to the listed container, the slots it leaves with nothing from a container and a hard floor it puts out of reach said before the search, and a No character build saved with the list and never answering one without it); SSI scored by swing step through the real worker (issue #217: per point with the reason while the weapon is not fixed, scoring what steps off scores, and the result's swing once the one-handed slot is locked); the job lifecycle (`jobTimings`, a parked core: a build past the retention kept, one past its budget cancelled, closing mid-build logging no failure); `GET|PUT|DELETE /api/runs/<id>` (a label type-checked, a truncated run a 404 that can still be deleted) and `POST /api/runs` saving a manual run with its checks; `POST /api/evaluate` answering what `evaluateSuit` computes from the same fixtures (the saved profile, a given profile with Divine Fury, a run's settings bringing their buffs, No character) and its checks; `PUT /api/profiles` (413 by bytes, 400 naming the schema path) and a truncated `profiles.json` moved aside and reseeded. A rarity preference (issue #262): `POST /api/optimize` stamps tie costs on pooled and worn pieces in both forms (an unknown serial ranking 0), keys each preference apart from none, and refuses a bad `opts.tieBreak`. What made up the score (issue #273): the best suit, each other suit and the saved run carry the shares, and a manual run stores its own. What changed in the gear (issue #291): a build by character saves its pool's serials, its suit's places and its STR limit, `GET /api/runs/<id>` leaves them out and against the same scans finds no changes, and a run whose settings the rebuild cannot use still opens, without changes, logging why.
 import { test, before, after, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, rmSync } from "node:fs";
@@ -456,24 +456,43 @@ test("[fast] /api/optimize by character: the saved run keeps the page's settings
   assert.equal(run.settings.strLimit, 120, "the pool settings the run actually used win over the snapshot's");
 });
 
-// Issue #291: the saved run keeps its pool, and reopened against the same scans its rebuilt pool matches it: no gear changes.
-test("[fast] /api/optimize by character: the saved run keeps its pool and its suit's places; GET /api/runs/<id> finds no gear changes", async () => {
-  const inv = asJson<InventoryResponse>(await (await get("/api/inventory")).json());
-  const profiles = asJson<ProfilesResponse>(await (await get("/api/profiles")).json());
-  const rules = asJson<RulesResponse>(await (await get("/api/rules")).json());
-  const character = Object.keys(inv.inventory.characters)[0]!;
-  const r = await fetch(srv.url + "/api/optimize", {
-    method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ character, settings: { strLimit: 111 }, profile: { ...firstTemplate(profiles), caps: rules.rules.caps }, opts: { exact: false, restarts: 3 }, meta: { character, settings: {} } }),
-  });
-  const j = asJson<OptimizeJobResponse>(await r.json());
-  assert.equal(r.status, 200, JSON.stringify(j));
-  const done = await pollJob(srv.url, j.id!, (s) => s.state === "done", 30_000);
-  const body = asJson<{ run: { poolSerials: number[]; picked: Record<string, unknown>; poolSize: number; result: { best: Record<string, { serial: number } | null> } }; gearChanges: unknown }>(await (await get(`/api/runs/${done.runId}`)).json());
-  const suit = Object.values(body.run.result.best).filter((p): p is { serial: number } => !!p).map((p) => String(p.serial)).sort();
-  assert.ok(body.run.poolSerials.length > 0 && body.run.poolSerials.length <= body.run.poolSize);
-  assert.deepEqual(Object.keys(body.run.picked).sort(), suit, "a place for every piece of the suit, and only those");
-  assert.deepEqual(body.gearChanges, { added: 0, addedPlaces: [], moved: [], gone: [] });
+// Issue #291: the saved run keeps its pool and its STR limit, GET leaves them out, and reopened against the same scans its
+// rebuilt pool matches it: no gear changes. A run whose settings the rebuild cannot use still opens, with none.
+test("[fast] /api/optimize by character: the saved run keeps its pool; GET /api/runs/<id> leaves it out, finds no gear changes, and opens a run it cannot compare", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-gear-changes-"));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {})));
+  try {
+    const at = (p: string): Promise<Response> => fetch(s2.url + p);
+    const inv = asJson<InventoryResponse>(await (await at("/api/inventory")).json());
+    const profiles = asJson<ProfilesResponse>(await (await at("/api/profiles")).json());
+    const rules = asJson<RulesResponse>(await (await at("/api/rules")).json());
+    const character = Object.keys(inv.inventory.characters)[0]!;
+    const r = await fetch(s2.url + "/api/optimize", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ character, settings: { strLimit: 111 }, profile: { ...firstTemplate(profiles), caps: rules.rules.caps }, opts: { exact: false, restarts: 3 }, meta: { character, settings: {} } }),
+    });
+    const j = asJson<OptimizeJobResponse>(await r.json());
+    assert.equal(r.status, 200, JSON.stringify(j));
+    const done = await pollJob(s2.url, j.id!, (st) => st.state === "done", 30_000);
+    const file = join(dir, "runs", `${done.runId}.json`);
+    const saved = JSON.parse(readFileSync(file, "utf8")) as { poolSerials: number[]; picked: Record<string, unknown>; poolStrength: number; poolSize: number; settings: Record<string, unknown>; result: { best: Record<string, { serial: number } | null> } };
+    const suit = Object.values(saved.result.best).filter((p): p is { serial: number } => !!p).map((p) => String(p.serial)).sort();
+    assert.ok(saved.poolSerials.length > 0 && saved.poolSerials.length <= saved.poolSize);
+    assert.deepEqual(Object.keys(saved.picked).sort(), suit, "a place for every piece of the suit, and only those");
+    assert.equal(saved.poolStrength, 111, "the STR limit it was built with");
+    const body = asJson<{ run: Record<string, unknown>; gearChanges: unknown }>(await (await at(`/api/runs/${done.runId}`)).json());
+    assert.deepEqual(["poolSerials", "picked", "poolStrength"].filter((k) => k in body.run), [], "the kept pool stays on the server");
+    assert.deepEqual(body.gearChanges, { added: 0, addedPlaces: [], moved: [], gone: [] });
+    // settings the rebuild cannot use: the run still opens, with no gear changes, and the log says why
+    writeFileSync(file, JSON.stringify({ ...saved, settings: { ...saved.settings, goals: 5 } }));
+    const bad = await at(`/api/runs/${done.runId}`);
+    assert.equal(bad.status, 200);
+    assert.equal("gearChanges" in asJson<Record<string, unknown>>(await bad.json()), false);
+    assert.match(logText(dir), /gear changes failed, shown without them/);
+  } finally {
+    await s2.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 // Issue #218: settings and meta.settings are held to the one rule a manual run's settings are (app/run-settings.mts).

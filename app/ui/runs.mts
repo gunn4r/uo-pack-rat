@@ -295,9 +295,10 @@ export async function openRun(id: string, auto = false): Promise<boolean> {
   session.result = run.result;
   // run.ms is `number | null` (a saved run's on-disk shape); run.skipped is whatever that run stored (live
   // arrays or plain counts), which the Solver details' counter reads either way.
-  await commands.renderResult(run.result, current, profileFromSettings(run.settings), name, { ms: run.ms ?? 0, poolSize: run.poolSize, skipped: run.skipped as Record<string, unknown> | undefined, reused: null, ...goalsMeta(run.settings), ...(got.gear ? { gearChanges: got.gear } : {}) });
+  const gear = shownGear(run, got.gear);
+  await commands.renderResult(run.result, current, profileFromSettings(run.settings), name, { ms: run.ms ?? 0, poolSize: run.poolSize, skipped: run.skipped as Record<string, unknown> | undefined, reused: null, ...goalsMeta(run.settings), ...(gear ? { gearChanges: gear } : {}) });
   if (session.openRun !== id) return false;
-  paintRunBanner(run, diff, got.gear);
+  paintRunBanner(run, diff, gear);
   return true;
 }
 // The saved run's one banner over the result: its time and name and how the panel's settings differ, with Load these
@@ -305,6 +306,8 @@ export async function openRun(id: string, auto = false): Promise<boolean> {
 // that instead, the settings changed counted as the drawer's footer counts them, and Build again, which loads the run's
 // settings into the panel and builds them (issue #272). For a run that kept its pool it lists what changed (`gear`, issue
 // #291): the new pieces, and the suit's pieces that moved or are gone; else, or with none of those, "newer scans came in".
+// The banner and the Plan's marks show the same changes, and only while the banner says the gear changed.
+const shownGear = (run: SavedRunLike, gear: GearChanges | null): GearChanges | null => (gear && gearChangedSince(state.inv?.scans || [], run) ? gear : null);
 let bannerRun: SavedRunLike | null = null, bannerGear: GearChanges | null = null;
 function paintRunBanner(run: SavedRunLike, diff: string[], gear: GearChanges | null): void {
   bannerRun = run; bannerGear = gear;
@@ -325,16 +328,22 @@ function gearText(lines: string[], diff: string[], since: string): HTMLElement {
   return box("div", { class: "b-gear-changed" },
     lines.length ? txt("Your gear changed since:") : txt(`Your gear changed since: newer scans came in${settings ? `, and ${settings}` : ""}.`),
     lines.length ? box("ul", { class: "b-gear-lines" }, ...lines.map((l) => el("li", {}, l))) : null,
-    lines.length && settings ? txt(`And ${settings}.`) : null,
+    lines.length && settings ? txt(`${settings} too.`) : null,
     diff.length ? el("span", { class: "t-sm muted" }, since) : null);
 }
-// A scan landing while a saved run's banner is up: the banner says so, with the run's gear changes against it.
+// A scan landing while a saved run's banner is up: the banner says so, with the run's gear changes against it, and the
+// Plan's marks follow them.
 document.addEventListener("inventorychange", () => {
   const run = bannerRun;
   if (!run) return;
   const up = (): boolean => bannerRun === run && session.openRun === run.id && !session.job && !!document.querySelector("#b-run-banner .saved-run");
   if (!up()) return;
-  void api<RunApiResponse>(`/api/runs/${run.id}`).then((r) => r.gearChanges ?? null, () => bannerGear).then((gear) => { if (up()) paintRunBanner(run, runSettingsDiff(settingsSnapshot(), run.settings), gear); });
+  void api<RunApiResponse>(`/api/runs/${run.id}`).then((r) => r.gearChanges ?? null, () => bannerGear).then(async (got) => {
+    if (!up()) return;
+    const gear = shownGear(run, got);
+    if (JSON.stringify(gear) !== JSON.stringify(bannerGear)) await commands.setResultGear(gear);
+    if (up()) paintRunBanner(run, runSettingsDiff(settingsSnapshot(), run.settings), gear);
+  });
 });
 
 // ---------------------------------------------------------------- arriving (issue #272)

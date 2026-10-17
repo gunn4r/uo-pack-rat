@@ -50,6 +50,13 @@ let showUnchanged = false, sheetOpen = false, detailsOpen = false;
 let withoutBuffs = false;
 let picked = new Set<string>();   // the other suits ticked for comparison: "0" is the best, "n" is suit #n+1
 let pickRefused: string | null = null;
+// A saved run's gear changes refreshed by a scan (ui/runs.mts): the Plan redrawn with their marks.
+function setResultGear(gear: GearChanges | null): Promise<void> {
+  if (!last) return Promise.resolve();
+  const { gearChanges: _old, ...meta } = last.meta ?? ({} as BuildMeta);
+  last = { ...last, meta: { ...meta, ...(gear ? { gearChanges: gear } : {}) } as BuildMeta };
+  return rerender();
+}
 function resetResultView(): void { renderSeq++; last = null; picked = new Set(); pickRefused = null; session.outcome = null; }
 function resultLoadError(e: unknown): void {
   $<HTMLElement>("#b-result")!.replaceChildren(message({ tone: "bad", title: "Could not load the suit's items", text: (e as Error).message }));
@@ -508,4 +515,4 @@ function openRunCompare(runs: SavedRunLike[], titleOf: (r: SavedRunLike) => stri
       onRemove: (i) => { const gone = list[i]!; list = list.filter((_, j) => j !== i); onRemove(gone.id); if (list.length < 2) closeCompare(); else showCompare(openSpec!); } };
   });
 }
-provide({ renderResult, resetResultView, resultLoadError, closeCompare, openRunCompare });
+provide({ renderResult, resetResultView, setResultGear, resultLoadError, closeCompare, openRunCompare });
