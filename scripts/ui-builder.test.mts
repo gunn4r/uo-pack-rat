@@ -2152,6 +2152,13 @@ test("[slow] the result scrolls on its own and the side column stays put; stacke
     await page.waitForFunction(() => document.documentElement.scrollWidth <= innerWidth, undefined, { timeout: 5_000 }).catch(() => {});
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), "no sideways scroll at 420");
     assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector(".b-arrive-side")!).position), "static", "stacked, it scrolls with the result");
+    await fitWindow(app, page, { width: 1440, height: 900 });
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    removeTempDir(dataDir);
+  }
+});
 
 // Issue #336, part 1: the What changed chip beside the build picker, in place of its tooltip. With nothing changed it is
 // hidden; an unsaved requirement shows a dot and "1 unsaved"; saved, it reads "1 change from **Melee** template". Its
