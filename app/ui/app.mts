@@ -24,7 +24,7 @@ import { openRunsDrawer, closeRunsDrawer } from "./runs.mts";
 import { session } from "./builder-session.mts";
 import "./organize.mts";   // registers its route and its inventorychange listener; nothing else imports it
 import "./scrolls.mts";    // the same for the Scrolls view
-import "./unravel.mts";    // and for the Unravel view
+import { applyUnravelPrefs } from "./unravel.mts";    // and for the Unravel view, which also takes its ui-prefs
 import { applyMapPrefs } from "./house-map.mts";
 import { parseRoute, routeFor, showRoute } from "./nav.mts";
 import { get, reload, setPageLoad } from "./inventory-data.mts";
@@ -70,6 +70,7 @@ async function load(): Promise<void> {
   applyLook(prefs ? prefs.prefs : null);
   applyShellPrefs(prefs ? prefs.prefs : null);
   applyMapPrefs(prefs ? prefs.prefs : null);
+  applyUnravelPrefs(prefs ? prefs.prefs : null);
   applyBuilderPrefs(prefs ? prefs.prefs : null);
   applyPanelPrefs(prefs ? prefs.prefs : null);
   applyResultPrefs(prefs ? prefs.prefs : null);
