@@ -2,7 +2,8 @@
 // to an adapter's bridge queue; writeBridgeStop writes the flag packrat-bridge.py checks between a
 // trip's steps. Deliberately not a route: POST /api/bridge's command schema has no trip action, and
 // the Organize endpoint that builds a trip from the current plan (after checking the plan's stamp and
-// that the adapter declares "trip") is the only caller, so the page can never hand the bridge a trip
+// that the adapter declares "trip") and Move to's (issue #270), which builds one from the player's
+// selection with the same planner, are the only callers, so the page can never hand the bridge a trip
 // of its own making. The line is checked against app/schema/bridge-trip.v1.schema.json here and again,
 // field by field, by check_trip in every packrat-bridge.py: the queue file is not the server's to guard.
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";

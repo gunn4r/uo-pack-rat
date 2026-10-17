@@ -65,6 +65,15 @@ export const itemsSource: ItemSource = {
   fetch: (query, offset, limit) => api<ItemsApiResponse>(`/api/items?${queryParams({ ...query, offset, limit }).toString()}`),
   facets: () => state.facets,
 };
+// A checkbox before each list row and a header checkbox for the rows loaded (the Inventory's selection, issue #270: ui/move-to.mts
+// keeps it). `locked` says why a row cannot be ticked (a worn item); `header` is the header checkbox's look.
+export interface SelectionHooks {
+  checked: (it: Item) => boolean;
+  locked: (it: Item) => string | null;
+  toggle: (index: number, on: boolean, shift: boolean) => void;
+  header: () => "all" | "some" | "none";
+  toggleLoaded: (on: boolean) => void;
+}
 export interface ItemBrowserOptions {
   // Always applied (e.g. `{ slot: ["ring"] }`), overriding the player's value of any field it names. Only the matching
   // chips are hidden: the search box and the "+ Filter" entries for property rules, tags and gargoyle/meditation stay.
@@ -84,6 +93,8 @@ export interface ItemBrowserOptions {
   globalIds?: boolean;
   // The rows and the facets (itemsSource when left out).
   source?: ItemSource;
+  // List rows can be ticked (the Inventory's).
+  selection?: SelectionHooks;
 }
 export interface ItemBrowser {
   readonly query: ItemQuery;
@@ -101,6 +112,8 @@ export interface ItemBrowser {
   applyPrefs: (prefs: UiPrefs | null) => void;
   focusRow: (i: number, focus?: boolean) => void;
   markSelected: () => void;
+  // The checkboxes and the ticked rows' look redrawn after the selection changed.
+  markPicked: () => void;
   // Activate the item with this serial once its row has landed (the next query's first chunk).
   reveal: (serial: number) => void;
 }
@@ -252,6 +265,7 @@ function openPanel(anchor: HTMLElement, title: string, body: (close: () => void)
 // ---------------------------------------------------------------- the table: cells
 interface ColDef { key: string; label: string; title: string; num: boolean; width: number; sortable: boolean }
 const EXTRA = "__extra";   // the extra column's key: no property is named this
+const SEL = "__sel";       // the checkbox column's
 const cap = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
 function cell(col: ColDef, it: Item): HTMLTableCellElement {
   const td = el("td", col.num ? { class: "num" } : {});
@@ -645,7 +659,8 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
     const tags = view.cols.includes("tags") ? [{ ...c("tags", "Tags", 108), sortable: false }] : [];
     // Fixed to one slot (the Suit Builder's picker), every row would read the same in a Slot column.
     const slot = fixed.slot?.length === 1 ? [] : [c("slot", "Slot", 120)];
-    return [c("name", "Name", 250), ...extra, ...tags, c("rarity", "Rarity", 156), ...slot, c("location", "Location", 180),
+    const sel: ColDef[] = opts.selection ? [{ key: SEL, label: "", title: "", num: false, width: 36, sortable: false }] : [];
+    return [...sel, c("name", "Name", 250), ...extra, ...tags, c("rarity", "Rarity", 156), ...slot, c("location", "Location", 180),
       ...view.cols.filter((k) => k !== "tags").map((k) => c(k, colShort(k, label), width(k), !["kind", "seen", "med"].includes(k), colFull(k, full)))];
   }
   // Numbers sort highest first at dir 1 and names A to Z (item-query.mts), so the arrow follows the kind.
@@ -663,6 +678,40 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
   function extraCell(it: Item): HTMLTableCellElement {
     const kid = opts.extraColumn!.cell(it);
     return el("td", { class: "num" }, kid);
+  }
+  // A row's checkbox, or a lock with the reason it cannot be ticked.
+  function selCell(it: Item, i: number): HTMLTableCellElement {
+    const s = opts.selection!, why = s.locked(it);
+    if (why) return el("td", { class: "sel-cell", "data-no-tip": "" }, box("span", { class: "sel-lock", role: "img", title: why, "aria-label": `${it.name}: ${why}` }, icon("lock", { size: "sm" })));
+    const cb = el("input", { type: "checkbox", class: "sel-cb", "aria-label": `Select ${it.name}` });
+    cb.checked = s.checked(it);
+    cb.addEventListener("click", (e) => s.toggle(i, cb.checked, e.shiftKey));
+    return el("td", { class: "sel-cell", "data-no-tip": "" }, cb);
+  }
+  function headerBox(): HTMLInputElement {
+    const cb = el("input", { type: "checkbox", class: "sel-cb", "aria-label": "Select the rows loaded" });
+    cb.addEventListener("click", () => opts.selection!.toggleLoaded(cb.checked));
+    return cb;
+  }
+  function syncHeaderBox(): void {
+    const h = table.tHead?.querySelector<HTMLInputElement>("input.sel-cb"), s = opts.selection;
+    if (!h || !s) return;
+    const st = s.header();
+    h.checked = st === "all";
+    h.indeterminate = st === "some";
+  }
+  function markPicked(): void {
+    const s = opts.selection;
+    if (!s || page.groups) return;
+    for (const tr of rowCache.values()) {
+      const it = tr.classList.contains("item") ? page.rows[+tr.dataset.index!] : undefined;
+      if (!it) continue;
+      const on = s.checked(it);
+      tr.classList.toggle("picked", on);
+      const cb = tr.querySelector<HTMLInputElement>("input.sel-cb");
+      if (cb) cb.checked = on;
+    }
+    syncHeaderBox();
   }
 
   // ---------------------------------------------------------------- the table: rows
@@ -683,9 +732,9 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
       const it = p.rows[i];
       if (!it) return skeletonRow(cols, i);
       state.itemCache.set(it.serial, it);   // a drawn row IS the full record: seed the cache so the tooltip and builder never re-fetch it
-      const sel = opts.detail?.serial() === it.serial;
-      tr = el("tr", { class: `item${sel ? " sel" : ""}`, "data-serial": it.serial, "data-index": i, "aria-rowindex": i + 2, "aria-selected": String(sel), tabindex: "-1" },
-        ...cols.map((c) => (c.key === EXTRA ? extraCell(it) : cell(c, it))), el("td", { class: "act-cell", "data-no-tip": "" }, opts.rowActions(it)));
+      const sel = opts.detail?.serial() === it.serial, picked = !!opts.selection?.checked(it);
+      tr = el("tr", { class: `item${sel ? " sel" : ""}${picked ? " picked" : ""}`, "data-serial": it.serial, "data-index": i, "aria-rowindex": i + 2, "aria-selected": String(sel), tabindex: "-1" },
+        ...cols.map((c) => (c.key === EXTRA ? extraCell(it) : c.key === SEL ? selCell(it, i) : cell(c, it))), el("td", { class: "act-cell", "data-no-tip": "" }, opts.rowActions(it)));
     }
     rowCache.set(i, tr);
     return tr;
@@ -761,12 +810,14 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
     const t = table;
     const cols = columns(), isGrouped = grouped();
     t.classList.toggle("tbl-regular", view.density === "regular");
+    t.classList.toggle("inv-selectable", !!opts.selection && !isGrouped);
     rowH = view.density === "regular" ? 40 : 32;
     t.setAttribute("aria-colcount", String(cols.length));
     const widths = cols.map((c) => c.width), colEls = cols.map((c) => el("col", { style: `width:${c.width}px` }));
     t.style.minWidth = `${widths.reduce((a, w) => a + w, 0)}px`;
     t.querySelector("colgroup")!.replaceChildren(...colEls, ...(isGrouped ? [] : [el("col", { class: "act-col" })]));
     t.querySelector("thead")!.replaceChildren(el("tr", { "aria-rowindex": 1 }, ...cols.map((c, i) => {
+      if (c.key === SEL) return el("th", { class: "sel-cell", scope: "col" }, headerBox());
       const sort = c.sortable ? sortState(c) : null;
       const inner = c.sortable
         ? box("button", { type: "button", ...(c.title ? { title: c.title } : {}), onclick: () => {
@@ -854,6 +905,7 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
     // The spacers must match the real row height exactly: measure it once rows exist.
     const real = rows[0]?.getBoundingClientRect().height;
     if (real && Math.abs(real - rowH) > 0.5) { rowH = real; scheduleRender(); }
+    syncHeaderBox();
     renderFoot();
   }
   function showState(node: HTMLElement): void {
@@ -995,7 +1047,7 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
     });
     body.addEventListener("click", (e) => {
       const t = e.target as HTMLElement;
-      if (t.closest(".act-cell")) return;
+      if (t.closest(".act-cell, .sel-cell")) return;
       const tr = t.closest<HTMLTableRowElement>("tr.item");
       if (!tr) return;
       activeIndex = +tr.dataset.index!;
@@ -1040,6 +1092,7 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
     applyPrefs,
     focusRow,
     markSelected,
+    markPicked,
     reveal: (serial) => { wanted = serial; },
   };
 }

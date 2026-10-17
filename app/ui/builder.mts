@@ -398,6 +398,8 @@ function paintChanges(): void {
   clearTimeout(changesTimer);
   changesTimer = setTimeout(() => {
     const out = $<HTMLElement>("#b-changes")!, run = session.openRun ? session.runs.find((r) => r.id === session.openRun) : null;
+    // the progress card and its Cancel are behind the drawer's scrim: say how to reach them
+    if (session.job) { out.textContent = "Building… Close Build Settings (Esc) to see its progress or cancel it."; return; }
     if (!run || !session.profile) { out.textContent = ""; return; }
     const n = runSettingsDiff(builtWith?.runId === run.id ? builtWith.settings : run.settings, panelBuild().snapshot).length;
     out.textContent = n ? `${plural(n, "change")} since the last build` : "No changes since the last build";
@@ -1306,6 +1308,7 @@ function setBuilding(on: boolean): void {
     b.querySelector(".kbd")?.setAttribute("aria-hidden", "true");
   }
   setNavBusy("builder", on);
+  paintChanges();
   const res = $<HTMLElement>("#b-result")!;
   const stale = on && !!session.result;
   res.classList.toggle("b-stale", stale);

@@ -206,3 +206,44 @@
 .scr-list > li > .badge { flex: none; width: 44px; justify-content: center; font-variant-numeric: tabular-nums; }
 .scr-list > li > .tag { flex: none; margin-left: 0; }
 .scr-peek .scr-acts { grid-template-columns: minmax(0, 1fr); }
+/* Move to (issue #270): the checkbox column, the ticked rows, the selection bar, the result line and the picker. */
+.inv-tbl th.sel-cell, .inv-tbl td.sel-cell { padding: 0; text-align: center; }
+.inv-tbl .sel-cb { width: 16px; height: 16px; margin: 0; vertical-align: middle; accent-color: var(--color-accent); cursor: pointer; }
+.inv-tbl .sel-lock { display: inline-flex; color: var(--color-text-faint); cursor: help; vertical-align: middle; }
+.inv-tbl.inv-selectable th:nth-child(2), .inv-tbl.inv-selectable td:nth-child(2) { position: sticky; left: 36px; z-index: 1; background: var(--color-surface); color: var(--color-text); }
+.inv-tbl.inv-selectable th:nth-child(2) { z-index: calc(var(--z-sticky) + 1); background: var(--color-surface-subtle); }
+.inv-scroll.scrolled-x .inv-tbl.inv-selectable th:first-child, .inv-scroll.scrolled-x .inv-tbl.inv-selectable td:first-child { box-shadow: none; }
+.inv-scroll.scrolled-x .inv-tbl.inv-selectable th:nth-child(2), .inv-scroll.scrolled-x .inv-tbl.inv-selectable td:nth-child(2) { box-shadow: 1px 0 0 var(--color-border); }
+.inv-tbl tr.item.picked:not(.sel) td { background: var(--color-accent-soft); color: var(--color-on-accent-soft); }
+.inv-selbar { position: relative; z-index: 3; display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-3); background: var(--color-accent-soft); color: var(--color-on-accent-soft); border-bottom: var(--border-width) solid var(--color-border); }
+.mv-what { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: var(--space-3); row-gap: var(--space-0-5); flex: 1 1 auto; min-width: 0; }
+.mv-count { flex: none; }
+.mv-offer { display: inline-flex; flex-wrap: wrap; align-items: baseline; column-gap: var(--space-1); font-size: var(--text-sm); }
+.mv-acts { display: flex; gap: var(--space-2); flex: none; }
+.inv-move-result { margin-bottom: var(--space-3); }
+.mv-result { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); background: var(--color-accent-soft); color: var(--color-on-accent-soft); }
+.mv-result.ok { background: var(--color-success-soft); color: var(--color-on-success-soft); }
+.mv-result.warn { background: var(--color-warning-soft); color: var(--color-on-warning-soft); }
+.mv-result.bad { background: var(--color-danger-soft); color: var(--color-on-danger-soft); }
+.mv-lines { display: flex; flex-direction: column; gap: var(--space-0-5); flex: 1 1 auto; min-width: 0; }
+.mv-pick { display: flex; flex-direction: column; gap: var(--space-3); }
+.mv-list { display: flex; flex-direction: column; max-height: min(52vh, 480px); overflow-y: auto; margin: 0 calc(-1 * var(--space-2)); padding: 0 var(--space-2); }
+.mv-group { padding: var(--space-3) var(--space-1) var(--space-1); }
+.mv-dest { display: grid; grid-template-columns: auto minmax(0, 1fr) 132px; align-items: center; gap: var(--space-3); padding: var(--space-2); border: var(--border-width) solid transparent; border-radius: var(--radius-md); cursor: pointer; }
+.mv-dest:hover { background: var(--color-row-hover); color: var(--color-on-row-hover); }
+.mv-dest.on { background: var(--color-accent-soft); color: var(--color-on-accent-soft); border-color: var(--color-accent); }
+.mv-dest.off { cursor: default; color: var(--color-text-muted); }
+.mv-dest-name { display: flex; flex-direction: column; min-width: 0; }
+.mv-fill { display: flex; flex-direction: column; align-items: flex-end; gap: var(--space-0-5); text-align: right; font-variant-numeric: tabular-nums; }
+.mv-meter { display: block; width: 100%; }
+.mv-short { color: var(--color-warning); font-weight: var(--weight-medium); }
+.mv-msg { min-height: 2.5em; }
+@media (max-width: 720px) {
+  #inv-import > span { display: none; }
+  .inv-card > .inv-scroll { order: -1; }
+  .inv-selbar { flex-direction: column; align-items: stretch; gap: var(--space-2); padding: var(--space-3); border-top: var(--border-width) solid var(--color-border); border-bottom: 0; }
+  .inv-selbar .mv-acts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .mv-result { flex-direction: column; align-items: stretch; }
+  .mv-result .mv-acts { flex-wrap: wrap; }
+  .mv-dest { grid-template-columns: auto minmax(0, 1fr) 96px; }
+}
