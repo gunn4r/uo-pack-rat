@@ -21,7 +21,7 @@ export async function reload(): Promise<void> {
   // The Organize setup comes with the inventory (labels change how locations read); a failed one leaves the
   // locations unlabelled, and the Organize screen says why when it is opened.
   const [inv, prof] = await Promise.all([get<InventoryApiResponse>("/api/inventory"), get<ProfilesApiResponse>("/api/profiles"), loadOrganize().catch(() => undefined)]);
-  state.inv = inv.inventory; state.profiles = prof.profiles; state.builtinTemplates = prof.builtinTemplates || {};
+  state.inv = inv.inventory; state.profiles = prof.profiles; state.profilesStamp = prof.stamp; state.builtinTemplates = prof.builtinTemplates || {};
   void loadHouseLinks();   // Show on map, on item rows and in the Containers view
   state.itemCache.clear();   // a rescan can move or drop a piece — stale by-serial lookups must not survive it
   forgetTipMisses();

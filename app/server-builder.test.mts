@@ -19,7 +19,7 @@ import { swingSeconds } from "./swing.mts";
 import * as core from "../scripts/optimizer-core.mts";
 import { buildUi } from "../scripts/build-ui.mts";
 import { buildSchemaTypes } from "../scripts/build-schema-types.mts";
-import { asJson, HERE, UOALIVE, foldFixtures, rawReq, JSON_HEADERS, logText, type InventoryResponse, type ProfilesResponse, firstTemplate, type RulesResponse, type ItemsPageResponse, type OptimizeJobResponse, type ErrorBody } from "./server-routes-fixture.mts";
+import { asJson, HERE, UOALIVE, foldFixtures, rawReq, JSON_HEADERS, putProfiles, logText, type InventoryResponse, type ProfilesResponse, firstTemplate, type RulesResponse, type ItemsPageResponse, type OptimizeJobResponse, type ErrorBody } from "./server-routes-fixture.mts";
 
 // Order matters: build the schema types before buildUi() runs, not because tsconfig.browser.json's
 // `include` enforces it (a missing literal entry there is silently dropped, not an error — verified)
@@ -90,7 +90,7 @@ test("[fast] PUT /api/profiles: stored over-long and built-in-prefixed template 
   writeFileSync(join(dir, "profiles.json"), JSON.stringify(stored));
   const s = await startServer(cfg);
   try {
-    const put = (doc: unknown) => fetch(`${s.url}/api/profiles`, { method: "PUT", headers: JSON_HEADERS, body: JSON.stringify(doc) });
+    const put = (doc: unknown) => putProfiles(s.url, doc);
     const read = asJson<ProfilesResponse>(await (await fetch(`${s.url}/api/profiles`)).json()).profiles;
     assert.deepEqual(Object.keys(read.templates).sort(), [long, "builtin:old"].sort(), "read as stored");
     const same = await put({ ...read, templates: { ...read.templates, Mine: { spec } } });
@@ -114,11 +114,59 @@ test("[fast] GET|PUT /api/profiles: a 130-character template a character uses lo
     const read = asJson<ProfilesResponse>(await (await fetch(`${s.url}/api/profiles`)).json()).profiles;
     assert.equal(read.characters.Dorran!.template, long, "loaded with its link");
     const next = { ...read, characters: { Dorran: { ...read.characters.Dorran!, spec: specFromProfile({ floors: { luck: 100 } }) } } };
-    const put = await fetch(`${s.url}/api/profiles`, { method: "PUT", headers: JSON_HEADERS, body: JSON.stringify(next) });
+    const put = await putProfiles(s.url, next);
     assert.equal(put.status, 200, await put.clone().text());
     const disk = JSON.parse(readFileSync(join(dir, "profiles.json"), "utf8")) as ProfilesV3;
     assert.equal(disk.characters.Dorran!.template, long, "saved with its link");
     assert.equal(disk.characters.Dorran!.spec.intent.floors?.luck, 100, "and the change");
+  } finally { await s.close(); rmSync(dir, { recursive: true, force: true }); }
+});
+
+// Quality pass 1, W1a: a save names the stamp it read, so a window holding a stale copy can't drop or revert what another
+// window saved since; it is told so (409 "stale" with the stamp now), reloads, and saves its own change on top.
+test("[fast] PUT /api/profiles: a stale window's save is refused and drops nothing; reloaded, it lands beside the other", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-stamp-"));
+  const stored = { schemaVersion: 3, characters: { Dorran: { spec: specFromProfile({}) }, Kestrel: { spec: specFromProfile({}) } }, templates: { mine: { spec: templateSpecFrom({}, []) } } };
+  const cfg = ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {}));
+  writeFileSync(join(dir, "profiles.json"), JSON.stringify(stored));
+  const s = await startServer(cfg);
+  const get = async (): Promise<ProfilesResponse & { stamp: string }> => asJson<ProfilesResponse & { stamp: string }>(await (await fetch(`${s.url}/api/profiles`)).json());
+  const put = (doc: object, base?: string): Promise<Response> => fetch(`${s.url}/api/profiles`, { method: "PUT", headers: JSON_HEADERS, body: JSON.stringify({ ...doc, ...(base === undefined ? {} : { base }) }) });
+  const disk = (): ProfilesV3 => JSON.parse(readFileSync(join(dir, "profiles.json"), "utf8")) as ProfilesV3;
+  try {
+    const one = await get(), two = await get();
+    assert.match(one.stamp, /^[0-9a-f]{16}$/);
+    assert.equal(one.stamp, two.stamp, "the same file, the same stamp");
+    // window one: Dorran's settings
+    const luck = specFromProfile({ floors: { luck: 100 } });
+    const saved = await put({ ...one.profiles, characters: { ...one.profiles.characters, Dorran: { spec: luck } } }, one.stamp);
+    assert.equal(saved.status, 200);
+    const stamp1 = asJson<{ stamp: string }>(await saved.json()).stamp;
+    assert.notEqual(stamp1, one.stamp, "a save changes the stamp");
+    // window two, still on the first copy: Kestrel's settings, a deleted template and a new one; refused, the file as window one left it
+    const theirs = { ...two.profiles, characters: { ...two.profiles.characters, Kestrel: { spec: luck } }, templates: { spare: { spec: templateSpecFrom({}, []) } } };
+    const stale = await put(theirs, two.stamp);
+    assert.equal(stale.status, 409);
+    const refused = asJson<{ code: string; stamp: string }>(await stale.json());
+    assert.deepEqual([refused.code, refused.stamp], ["stale", stamp1]);
+    assert.deepEqual(disk().characters.Dorran!.spec, luck, "window one's save stays");
+    assert.deepEqual([Object.keys(disk().templates), disk().characters.Kestrel!.spec.intent.floors], [["mine"], {}], "nothing of window two's");
+    // window two reloads and makes its change again: both land
+    const again = await get();
+    assert.equal(again.stamp, stamp1);
+    assert.equal((await put({ ...again.profiles, characters: { ...again.profiles.characters, Kestrel: { spec: luck } } }, again.stamp)).status, 200);
+    assert.deepEqual([disk().characters.Dorran!.spec, disk().characters.Kestrel!.spec, Object.keys(disk().templates)], [luck, luck, ["mine"]]);
+    // a save without a stamp (a page from before them) is refused; so is one with a bad stamp
+    const before = readFileSync(join(dir, "profiles.json"), "utf8");
+    assert.match(asJson<ErrorBody>(await (await put(again.profiles)).json()).error, /reload the page/);
+    assert.equal((await put(again.profiles, "x".repeat(65))).status, 400);
+    assert.equal(readFileSync(join(dir, "profiles.json"), "utf8"), before, "neither wrote");
+    // a label save answers the stamp it saved over and the one after; a whole-file save from before it is stale
+    const old = await get();
+    const label = asJson<{ was: string; stamp: string }>(await (await fetch(`${s.url}/api/profiles/label`, { method: "PUT", headers: JSON_HEADERS, body: JSON.stringify({ character: "Dorran", label: "Main" }) })).json());
+    assert.deepEqual([label.was === old.stamp, label.stamp === old.stamp], [true, false]);
+    assert.equal((await put(old.profiles, old.stamp)).status, 409, "the label is not dropped");
+    assert.equal(disk().characters.Dorran!.label, "Main");
   } finally { await s.close(); rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -587,7 +635,7 @@ test("[fast] /api/optimize heuristic-only: the time budget caps the random resta
 test("[fast] resist cap overrides: profiles and saved runs keep them, and a bad one is refused with 400", async () => {
   const dir = mkdtempSync(join(tmpdir(), "qm-"));
   const s2 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {})));
-  const put = (body: unknown): Promise<Response> => fetch(s2.url + "/api/profiles", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const put = (body: unknown): Promise<Response> => putProfiles(s2.url, body);
   try {
     const got = asJson<ProfilesResponse>(await (await fetch(s2.url + "/api/profiles")).json()), profiles = got.profiles, tpl = firstTemplate(got);
     const character = Object.keys(asJson<InventoryResponse>(await (await fetch(s2.url + "/api/inventory")).json()).inventory.characters)[0]!;
@@ -936,7 +984,7 @@ test("[fast] GET/PUT /api/profiles v3: a v2 folder migrates on the first read, b
   const dir = mkdtempSync(join(tmpdir(), "qm-profiles-v3-")), gold = join(HERE, "fixtures", "profiles-v2");
   for (const n of ["profiles.json", "ui-prefs.json"]) writeFileSync(join(dir, n), readFileSync(join(gold, n)));
   const s2 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {})));
-  const put = (body: unknown): Promise<Response> => fetch(s2.url + "/api/profiles", { method: "PUT", headers: JSON_HEADERS, body: JSON.stringify(body) });
+  const put = (body: unknown): Promise<Response> => putProfiles(s2.url, body);
   try {
     const got = asJson<ProfilesResponse>(await (await fetch(s2.url + "/api/profiles")).json());
     // the demo scans have none of the golden characters: Corwin, who had only buffs, gets no profile (its buffs stay in the ui-prefs backup)

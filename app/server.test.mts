@@ -17,7 +17,7 @@ import { startTestServer as startServer } from "./server-fixture.mts";
 import { buildPools, setRules } from "./vault-lib.mts";
 import { buildUi } from "../scripts/build-ui.mts";
 import { buildSchemaTypes } from "../scripts/build-schema-types.mts";
-import { asJson, HERE, UOALIVE, foldFixtures, rawReq, sseReader, JSON_HEADERS, logText, type InventoryResponse, type ProfilesResponse, type RulesResponse, type OptimizeJobResponse, type ErrorBody } from "./server-routes-fixture.mts";
+import { asJson, HERE, UOALIVE, foldFixtures, rawReq, sseReader, JSON_HEADERS, putProfiles, logText, type InventoryResponse, type ProfilesResponse, type RulesResponse, type OptimizeJobResponse, type ErrorBody } from "./server-routes-fixture.mts";
 
 // Order matters: build the schema types before buildUi() runs, not because tsconfig.browser.json's
 // `include` enforces it (a missing literal entry there is silently dropped, not an error — verified)
@@ -384,7 +384,7 @@ test("[fast] settings, profiles and tombstones are replaced through a renamed te
     const files = [join(dir, "settings.json"), join(dir, "profiles.json"), join(dir, "scans", "_forget-1234.json")];
     const before = files.map((f) => statSync(f).ino);
     assert.equal((await fetch(s2.url + "/api/settings", { method: "PUT", headers: JSON_HEADERS, body: JSON.stringify({ setupDone: true }) })).status, 200);
-    assert.equal((await fetch(s2.url + "/api/profiles", { method: "PUT", headers: JSON_HEADERS, body: JSON.stringify(profiles) })).status, 200);
+    assert.equal((await putProfiles(s2.url, profiles)).status, 200);
     assert.equal((await forget()).status, 200);
     files.forEach((f, i) => {
       assert.notEqual(statSync(f).ino, before[i], `${f} was rewritten in place`);

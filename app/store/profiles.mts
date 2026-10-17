@@ -6,7 +6,7 @@ import { writeFileAtomic } from "../atomic-write.mts";
 import { DATA_DIR_MODE, DATA_FILE_MODE } from "../config.mts";
 import { jsonErrorReason } from "../paste-scan.mts";
 import { migrate } from "../migrate.mts";
-import { newerOnDisk, readJsonFile, refuseNewer, writeJsonFile } from "./json-file.mts";
+import { fileStamp, newerOnDisk, readJsonFile, refuseNewer, writeJsonFile } from "./json-file.mts";
 import type { UiPrefsFile } from "./ui-prefs.mts";
 
 // A copy of `file` kept before a migration rewrites it, as <name>.backup-<date>.json beside it (-2, -3… when that day
@@ -95,10 +95,16 @@ export function createProfilesStore({ file, defaults, templatesDir, shard, log, 
     })().finally(() => { migration = null; });
     return migration;
   }
-  // PUT /api/profiles: the whole file, already checked against the schema and app/build-spec.mts's buildSpecError.
-  function write(doc: ProfilesV3): void {
+  // The file's content stamp, which GET /api/profiles answers with (Organize's pattern, json-file.mts's fileStamp).
+  const stamp = (): string => fileStamp(file);
+  // The whole file, already checked against the schema and app/build-spec.mts's buildSpecError. Given the stamp it was
+  // read at (`base`), a file changed since is left alone (ok false, with the stamp it has now): a page's stale copy can't
+  // drop or revert what another window saved. The check and the write run with no await between them.
+  function write(doc: ProfilesV3, base?: string): { ok: boolean; stamp: string } {
+    if (base !== undefined && stamp() !== base) return { ok: false, stamp: stamp() };
     refuseNewer(file, "profiles");
     writeJsonFile(file, doc, { indent: 2 });
+    return { ok: true, stamp: stamp() };
   }
   // Why profiles.json may not be saved (a newer Pack Rat made it), or null.
   const readOnly = (): string | null => newerOnDisk(file, "profiles");
@@ -116,5 +122,5 @@ export function createProfilesStore({ file, defaults, templatesDir, shard, log, 
     }
     return out;
   }
-  return { read, write, readOnly, builtins };
+  return { read, stamp, write, readOnly, builtins };
 }

@@ -6,7 +6,7 @@ import { $, el, toast, tipNode, hideItemTip, compactChildren } from "./dom.mts";
 import { txt, box, badge, button, input, meter, table, searchInput, message, popover, menu, confirmDialog, tooltip, type Column } from "./components.mts";
 import { api } from "./api.mts";
 import { reload } from "./inventory-data.mts";
-import { putProfiles, setCharacterLabel } from "./profiles.mts";
+import { saveProfiles, setCharacterLabel } from "./profiles.mts";
 import { characterLabel, LABEL_MAX } from "../build-spec.mts";
 import { selectCharacter } from "./builder.mts";
 import { session } from "./builder-session.mts";
@@ -220,10 +220,8 @@ export async function forgetCharacter(name: string): Promise<void> {
   if (!await confirmDialog({ title: `Forget ${name}?`, body: `Their card, worn gear, backpack and bank leave the inventory, and their saved Suit Builder profile is deleted. Their saved runs stay. Scanning ${name} again brings the scanned parts back.`, confirmLabel: `Forget ${name}` })) return;
   try {
     if (state.inv!.characters[name]) await api("/api/forget-character", { method: "POST", body: { character: name } });
-    const profiles = state.profiles!;
-    if (profiles.characters?.[name]) {
-      delete profiles.characters[name];
-      const r = await putProfiles();
+    if (state.profiles!.characters?.[name]) {
+      const r = await saveProfiles((p) => { delete p.characters[name]; });
       if (!r.ok) throw new Error(r.error);
     }
     if (current === name) { current = null; history.replaceState(null, "", "#/characters"); }
