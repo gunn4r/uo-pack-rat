@@ -649,6 +649,8 @@ test("[slow] What changes: Gauges for what the build asks, Table with every prop
     assert.equal(await view(), "Gauges", "Gauges by default");
     assert.match(await page.locator(".b-chg-head").first().innerText(), /\d+ up/);
     const gauges = (await page.locator(".b-gauge .b-gauge-top > span[title]").evaluateAll((es) => es.map((e) => e.getAttribute("title") ?? ""))).sort();
+    const gaugeKeys = await page.locator(".b-gauge[data-key]").evaluateAll((es) => es.map((e) => e.getAttribute("data-key") ?? ""));
+    assert.equal(gaugeKeys.length, gauges.length);
     assert.ok(gauges.length > 0);
     const loss = page.locator(".b-gauge.loss").first();
     assert.ok(await page.locator(".b-gauge.loss").count(), "the suit gives something up");
@@ -670,8 +672,6 @@ test("[slow] What changes: Gauges for what the build asks, Table with every prop
     assert.ok(gauges.every((g) => moved.includes(g)), "a gauge only for a property that moves");
     // only what the build asks for: a non-zero weight or a requirement; a pool never beside its bonus (by property key: the
     // weight rows name a property as the goals do, the gauges and requirement rows by its full name, issue #302)
-    const gaugeKeys = await page.locator(".b-gauge[data-key]").evaluateAll((es) => es.map((e) => e.getAttribute("data-key") ?? ""));
-    assert.equal(gaugeKeys.length, gauges.length);
     const asked = await page.evaluate(() => [...document.querySelectorAll<HTMLElement>("#b-sec-weights .rule-row[data-key], #b-sec-req .rule-row[data-key]")]
       .filter((row) => { const i = row.querySelector<HTMLInputElement>("input[type=number]"); return !!i && (!row.closest("#b-sec-weights") || Number(i.value) !== 0); }).map((row) => row.dataset.key ?? ""));
     assert.ok(gaugeKeys.every((k) => asked.includes(k)), `every gauge is weighted or required: ${gaugeKeys.join(", ")}`);
