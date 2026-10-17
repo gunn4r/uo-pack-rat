@@ -9,7 +9,7 @@
 import { withCurrentActions, BRIDGE_ACTION_LABELS, BRIDGE_OFFLINE, GEAR_SLOTS, bridgeFeatures, bridgeRefusal, containerChain, newestScanAdapter, fullOf, isPseudoCharacter, NOBODY, RESIST_SKILL_KEY, resistMinimum, toOptItem, totalsOf, TRASH_RE, compileGoals, goalsError, GOAL_LEFTOVERS, GOAL_STRATEGIES, STRATEGY_HELP, SWING_GOALS, RANK_IMPORTANCE, LEFTOVER_IMPORTANCE } from "./vault-lib.mts";
 import type { BridgeAction, Character, Container, ContainerCapacity, Item, OptItem, Profile, PropMap, Goals } from "./vault-lib.mts";
 import { buffPlanOf, normalizeBuffs, savedBuffs, BUFFS } from "./buffs.mts";
-import { BUILTIN_PREFIX, characterBuffs, characterProfile, findTemplate, planBuild, specFromProfile, templateRefs, templateSettings, type PlannedBuild, type ProfilesV3, type TemplateMap } from "./build-spec.mts";
+import { BUILTIN_PREFIX, characterBuffs, characterLabel, characterProfile, findTemplate, planBuild, specFromProfile, templateRefs, templateSettings, type PlannedBuild, type ProfilesV3, type TemplateMap } from "./build-spec.mts";
 import { evaluateSuit } from "./evaluate.mts";
 import type { Diagnostic } from "./runs-types.mts";
 import { EXTRA_COLS, parseItemQuery, type UnravelRow } from "./item-query.mts";
@@ -406,28 +406,28 @@ export const TOOLS: Tool[] = [
   },
   {
     name: "list_characters",
-    description: "Every scanned character: when they were last scanned, their stats, how many pieces they wear, and their backpack and bank serials (for container_contents).",
+    description: "Every scanned character: their build label (the player's name for the build, such as \"Main Crafter\"; null for none), when they were last scanned, their stats, how many pieces they wear, and their backpack and bank serials (for container_contents).",
     inputSchema: { type: "object", additionalProperties: false, properties: {} },
     annotations: { title: "Characters", ...READ },
     async handler(_a, ctx) {
-      const inv = await inventory(ctx);
+      const [inv, { profiles }] = await Promise.all([inventory(ctx), ctx.api<{ profiles: ProfilesV3 }>("/api/profiles")]);
       const roots = (name: string): Record<string, number> => Object.fromEntries(Object.values(inv.containers)
         .filter((c) => c.parent == null && (c.kind === "backpack" || c.kind === "bank") && c.scannedBy === name).map((c) => [c.kind!, c.serial]));
       return { characters: Object.values(inv.characters).filter((c) => !isPseudoCharacter(c.name)).sort((x, y) => x.name.localeCompare(y.name)).map((c) => ({
-        name: c.name, scannedAt: c.scannedAt, stats: c.stats, wearing: (inv.worn[c.name] || []).length, ...roots(c.name) })) };
+        name: c.name, label: characterLabel(profiles, c.name), scannedAt: c.scannedAt, stats: c.stats, wearing: (inv.worn[c.name] || []).length, ...roots(c.name) })) };
     },
   },
   {
     name: "character_sheet",
-    description: "One character's sheet: stats, maximum pools, resists as scanned, skills (non-zero, highest first), the Resisting Spells resist minimum in the worn suit (resistMinimum: no resist falls below it, and it adds nothing to gear; null for none), every worn piece with its properties, and the worn suit's property totals.",
+    description: "One character's sheet: their build label (null for none), stats, maximum pools, resists as scanned, skills (non-zero, highest first), the Resisting Spells resist minimum in the worn suit (resistMinimum: no resist falls below it, and it adds nothing to gear; null for none), every worn piece with its properties, and the worn suit's property totals.",
     inputSchema: { type: "object", additionalProperties: false, required: ["character"], properties: { character: CHARACTER } },
     annotations: { title: "Character sheet", ...READ },
     async handler(a, ctx) {
-      const inv = await inventory(ctx);
+      const [inv, { profiles }] = await Promise.all([inventory(ctx), ctx.api<{ profiles: ProfilesV3 }>("/api/profiles")]);
       const c = scannedCharacter(inv, a.character as string);
       const worn = inv.worn[c.name] || [], wornTotals = totalsOf(Object.fromEntries(worn.map((i) => [String(i.serial), toOptItem(i)])));
       const skills = Object.entries(c.skills || {}).map(([k, v]) => [k, Number((v as { value?: unknown })?.value) || 0] as const).filter(([, v]) => v > 0).sort((x, y) => y[1] - x[1]);
-      return { name: c.name, scannedAt: c.scannedAt, stats: c.stats, maxes: c.maxes, resists: c.resists, resistMinimum: resistMinimum(c.skills, wornTotals[RESIST_SKILL_KEY]), skills: Object.fromEntries(skills),
+      return { name: c.name, label: characterLabel(profiles, c.name), scannedAt: c.scannedAt, stats: c.stats, maxes: c.maxes, resists: c.resists, resistMinimum: resistMinimum(c.skills, wornTotals[RESIST_SKILL_KEY]), skills: Object.fromEntries(skills),
         worn: worn.map((i) => ({ slot: i.slot, serial: i.serial, name: i.name, props: i.props })), wornTotals: nonZero(wornTotals) };
     },
   },
