@@ -1,10 +1,10 @@
 // png.test.mts — `app/png.mts` (issue #164), the PNG writer.
 //
-// `app/png.mts` (issue #164): the CRC-32 check value, the PNG signature, IHDR (size, 8-bit RGB), every chunk's CRC, IDAT inflated back to rows each led by filter type 0, and pixel data of the wrong length refused. All `[fast]`.
+// `app/png.mts` (issue #164): the CRC-32 check value, the PNG signature, IHDR (size, 8-bit RGB), every chunk's CRC, IDAT inflated back to rows each led by filter type 0, and pixel data of the wrong length refused; the RGBA variant (issue #174) as colour type 6 with four bytes a pixel. All `[fast]`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { inflateSync } from "node:zlib";
-import { encodePng, crc32 } from "./png.mts";
+import { encodePng, encodePngRgba, crc32 } from "./png.mts";
 
 function chunks(png: Buffer): Array<{ type: string; data: Buffer; crc: number }> {
   const out = [];
@@ -38,4 +38,12 @@ test("[fast] png: signature, IHDR, IDAT and IEND, each chunk's CRC over its type
 
 test("[fast] png: refuses pixel data of the wrong length", () => {
   assert.throws(() => encodePng(2, 2, Buffer.alloc(11)), /12 bytes/);
+});
+
+test("[fast] png: RGBA is colour type 6, each row four bytes a pixel after its filter byte", () => {
+  const rgba = Buffer.from([1, 2, 3, 0, 4, 5, 6, 255]);
+  const cs = chunks(encodePngRgba(1, 2, rgba));
+  assert.deepEqual([...cs[0]!.data.subarray(8)], [8, 6, 0, 0, 0]);
+  assert.deepEqual([...inflateSync(cs[1]!.data)], [0, 1, 2, 3, 0, 0, 4, 5, 6, 255]);
+  assert.throws(() => encodePngRgba(2, 1, Buffer.alloc(6)), /RGBA image is 8 bytes/);
 });
