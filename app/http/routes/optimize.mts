@@ -299,7 +299,9 @@ export function routes(ctx: ServerContext): Route[] {
       if (resistSteps != null && !resistStepsValid(resistSteps)) return send(res, 400, { ok: false, error: "profile.resistSteps must be an array of {at, mins}: at in (0, 1000] and strictly increasing, mins a finite number for every resist" });
       // a hard floor's shared partial credit stays under half its bonus only up to 0.5 (mip.mts hardFloorSpread); the page
       // and MCP never send one, so this is a hand-built request's field
-      const { floorPartial } = profile as { floorPartial?: unknown };
+      const { floorPartial, floorBonus } = profile as { floorPartial?: unknown; floorBonus?: unknown };
+      // a soft floor's bonus rewards reaching it: a negative one has no use, and the exact solver has no model for it (issue #315)
+      if (floorBonus != null && (typeof floorBonus !== "number" || !Number.isFinite(floorBonus) || floorBonus < 0 || floorBonus > 1e6)) return send(res, 400, { ok: false, error: "profile.floorBonus must be a number from 0 to 1000000" });
       if (floorPartial != null && (typeof floorPartial !== "number" || !Number.isFinite(floorPartial) || floorPartial < 0 || floorPartial > 0.5)) return send(res, 400, { ok: false, error: "profile.floorPartial must be a number from 0 to 0.5" });
       const fullOpts = Object.assign({ seed: RUN_DEFAULTS.seed, restarts: RUN_DEFAULTS.restarts }, opts as RunOpts);
       // only the Resisting Spells steps this pool reaches, before the key: a pool without such pieces keys as before them

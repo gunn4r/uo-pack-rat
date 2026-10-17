@@ -458,6 +458,11 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
 // in the core's tie-break (scripts/optimizer-core.mts keeps its own copy) and in the exact solver's guards. With 1e-6
 // HiGHS's presolve called a row the suit meets exactly infeasible.
 export const TIE_SLACK = 1e-3;
+// Two scores closer than `base` count as equal, or than SCORE_REL of the largest when that is more (issue #316): a score
+// near 1e10 carries float rounding of about 1e-5 from summing in another order, above every absolute slack. Every score
+// comparison in app/exact-solver.mts and every score row here goes through it. == scripts/optimizer-core.mts optSlack.
+export const SCORE_REL = 1e-12;
+export const slackAt = (base: number, ...scores: number[]): number => Math.max(base, SCORE_REL * Math.max(0, ...scores.map(Math.abs)));
 export function tieBreakModel(built: BuiltMip, start: ArrayLike<number>, tolerance: number, costs: number[] = tieCosts(built)): BuiltMip {
   return heldModel(built, start, [built.model.colCost], costs, "minimize", { fixMet: true, tolerance });
 }
@@ -483,7 +488,8 @@ export function heldModel(built: BuiltMip, start: ArrayLike<number>, held: Reado
     if (!terms.length) continue;
     for (const [j, v] of terms) { indices.push(j); values.push(v); }
     starts.push(indices.length);
-    rowLower.push((at ? at[h]! : score) - Math.max(0, tolerance) - TIE_SLACK);
+    const held = at ? at[h]! : score;
+    rowLower.push(held - Math.max(0, tolerance) - slackAt(TIE_SLACK, held));
     rowUpper.push(INF);
   }
   const numRows = rowLower.length;

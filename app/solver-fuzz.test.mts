@@ -1,16 +1,17 @@
 // solver-fuzz.test.mts — a seeded brute-force equivalence check of all three searches over small generated inventories.
 //
-// a seeded brute-force equivalence check: five fixed seeds × 400 generated inventories of two to six of the nineteen gear slots (`solver-fixture.mts`'s `fuzzSlots`, the hand pair together in about half; 1–4 candidates each, negative property values, negative weights on capped and floored properties, soft and hard floors, worn and locked slots, a random warm start (which must never empty a locked slot), shields and two-handers), each enumerated outright so the maximum of the core's `scoreSet` is the oracle. The heuristic must return a valid suit scoring its own re-score and never above the oracle; the core's exact search and `solveExact` (HiGHS) must both prove and equal the oracle, with HiGHS's bound never below its score. A second loop does the same with SSI scored by swing step (a step table from `app/swing.mts` over random weapon speeds, stamina, reference stamina and buff shares, on pools carrying SSI and the Stamina pool), with an oracle that prices each suit's own swing from the formula rather than the table, and checks the core's `scoreSet` against it suit by suit. A third loop (issue #262) gives every piece a tie cost 0-8, leans the generator toward ties (capped properties, copies of a piece at another cost), draws the floor bonus from 5-60 two times in three so a soft floor can be traded within the tolerance, and takes tolerances 0, 3, 50, 200, 700 and 1500: its oracle is the best score, then the lowest summed cost among suits within the tolerance that meet every floor a best suit meets; the core's exact search and `solveExact` must prove and equal it (HiGHS with its rarity choice proven too, and no warning), and the heuristic must return a valid suit within the tolerance of its own best, never cheaper than the oracle when its best is the true one. A fourth loop (issue #311) takes soft-floor bonuses up to 1e6, fractional weights up to about 1e6 per point, SSI step tables, the rarity and fewest-changes tie-breaks and all-hard (often conflicting) floors, runs the profile through `withHardFloorBonus`, and checks over every suit that one meeting more hard floors scores strictly higher, with both exact searches proving the brute-force best on a suit meeting the most hard floors, that the fixed 1e7 alone breaks that order in some instances, and that a bound past the cap builds at it with requirement_outweighed. The first two loops and the fourth are `[fast]` (about 10 s and 2 s), the third `[slow]`; the first loop is what caught the soft-floor met row forbidding negative totals and the core's pruning on negatively weighted floors.
+// a seeded brute-force equivalence check: five fixed seeds × 400 generated inventories of two to six of the nineteen gear slots (`solver-fixture.mts`'s `fuzzSlots`, the hand pair together in about half; 1–4 candidates each, negative property values, negative weights on capped and floored properties, soft and hard floors, worn and locked slots, a random warm start (which must never empty a locked slot), shields and two-handers), each enumerated outright so the maximum of the core's `scoreSet` is the oracle. The heuristic must return a valid suit scoring its own re-score and never above the oracle; the core's exact search and `solveExact` (HiGHS) must both prove and equal the oracle, with HiGHS's bound never below its score. A second loop does the same with SSI scored by swing step (a step table from `app/swing.mts` over random weapon speeds, stamina, reference stamina and buff shares, on pools carrying SSI and the Stamina pool), with an oracle that prices each suit's own swing from the formula rather than the table, and checks the core's `scoreSet` against it suit by suit. A third loop (issue #262) gives every piece a tie cost 0-8, leans the generator toward ties (capped properties, copies of a piece at another cost), draws the floor bonus from 5-60 two times in three so a soft floor can be traded within the tolerance, and takes tolerances 0, 3, 50, 200, 700 and 1500: its oracle is the best score, then the lowest summed cost among suits within the tolerance that meet every floor a best suit meets; the core's exact search and `solveExact` must prove and equal it (HiGHS with its rarity choice proven too, and no warning), and the heuristic must return a valid suit within the tolerance of its own best, never cheaper than the oracle when its best is the true one. A fourth loop (issue #311) takes soft-floor bonuses up to 1e6, fractional weights up to about 1e6 per point, SSI step tables, the rarity and fewest-changes tie-breaks and all-hard (often conflicting) floors, runs the profile through `withHardFloorBonus`, and checks over every suit that one meeting more hard floors scores strictly higher, with both exact searches proving the brute-force best on a suit meeting the most hard floors, that the fixed 1e7 alone breaks that order in some instances, and that a bound past the cap builds at it with requirement_outweighed. A fifth loop (issue #316) scores past 1e10, from eleven hard floors at a bonus near the cap or from weights near 1e6 a point alone, in Best value and Strict order, and both exact searches must prove and agree to the relative slack (`slackAt`). The first two loops, the fourth and the fifth are `[fast]` (about 10 s and 2 s), the third `[slow]`; the first loop is what caught the soft-floor met row forbidding negative totals and the core's pruning on negatively weighted floors.
 //
 // The three searches are the core's heuristic (a valid suit, never above the oracle), the core's exact branch-and-bound (proven, equal to the oracle), and `solveExact` through HiGHS (proven, equal to the oracle, bound never below its own score). The generator leans on the cases that broke before.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { solveExact, type OptPools, type OptAssignment, type OptProfile } from "./exact-solver.mts";
 import { core, fuzzSlots } from "./solver-fixture.mts";
-import { HARD_FLOOR_BONUS_MAX, hardFloorBonusFor, propertyReach, withHardFloorBonus } from "./mip.mts";
+import { HARD_FLOOR_BONUS_MAX, hardFloorBonusFor, propertyReach, slackAt, withHardFloorBonus } from "./mip.mts";
 import { requirementScaleDiagnostics } from "./diagnostics.mts";
 import { stepTable, swingTicks } from "./swing.mts";
 import type { OptItem } from "./vault-lib.mts";
+const SCORE_SLACK = 1e-6;   // == app/exact-solver.mts SCORE_EPS
 
 type OptOptions = Parameters<typeof solveExact>[0]["opts"];
 type Item = NonNullable<OptPools[string]>[number];
@@ -354,3 +355,55 @@ for (const seed of BIG_SEEDS) {
     assert.ok(brokenAtFixed > 0, `the fixed 1e7 broke the order in ${brokenAtFixed} instances`);
   });
 }
+
+// Issue #316: scores past 1e10, where float rounding passes every absolute slack. Two shapes, each on six slots of three
+// pieces: eleven hard floors (one out of reach) at a bonus near HARD_FLOOR_BONUS_MAX, and weights alone near 1e6 a point
+// on Luck in the thousands, with only an unreachable hard floor, so no requirement can be traded. Fractional weights so sums
+// round; a third of the instances in Strict order. Both exact searches must prove, and agree with brute force, to the
+// relative slack (mip.mts slackAt). With absolute slacks HiGHS lost about one proof in five of the second shape.
+const HUGE_SEEDS = [5, 17, 2026];
+for (const seed of HUGE_SEEDS) {
+  test(`[fast] scores past 1e10: both exact searches prove and agree (seed ${seed})`, async () => {
+    const rnd = core.optMulberry32(seed), slots = ["ring", "bracelet", "helmet", "gloves", "neck", "legs"];
+    const hardKeys = Array.from({ length: 11 }, (_, k) => `h${k + 1}`);
+    let past = 0;
+    for (let i = 0; i < 30; i++) {
+      const many = i % 2 === 0, label = `seed ${seed} instance ${i} (${many ? "many hard floors" : "weights"})`;
+      const pools: OptPools = {}, current: OptAssignment = {};
+      let serial = seed * 100000 + i * 100;
+      for (const s of slots) {
+        pools[s] = Array.from({ length: 3 }, (): Item => {
+          const props: Record<string, number> = { luck: Math.floor(rnd() * 140 * (many ? 3 : 100)), lrc: Math.floor(rnd() * 9), dci: Math.floor(rnd() * 20) };
+          for (const h of hardKeys) props[h] = Math.floor(rnd() * 4);
+          return { serial: ++serial, name: `item${serial}`, slot: s, props };
+        });
+        current[s] = pools[s]![0]!;
+      }
+      const hard = many ? hardKeys : ["h1"], floors: Record<string, number> = { lrc: 19 };
+      for (const h of hard) floors[h] = 7 + Math.floor(rnd() * 3);
+      floors.h1 = 99;   // out of reach: fractional shared partial credit
+      const raw: OptProfile = { weights: { luck: 598765.4, lrc: -12345.6, dci: 333333.3 }, caps: { lrc: 40 }, floors, hardFloors: hard, floorBonus: 777.7 };
+      const profile = many ? withHardFloorBonus(raw, pools as never, current as never, [], slots) as OptProfile : raw;
+      const strict = rnd() < 0.33 ? { ranks: [["luck"], ["dci"]] } : undefined;
+      const opts: OptOptions = { seed: 1, restarts: 2, slots, optionalSlots: [], exact: true, timeBudgetMs: 8000, strict };
+      const c = core.optimizeSuit(pools, current, profile, opts);
+      const warned: string[] = [];
+      const r = await solveExact({ core, pools, current, profile, opts: { ...opts, timeBudgetMs: 15000 }, onProgress: () => {}, onWarn: (m) => warned.push(m) });
+      if (Math.abs(c.score) > 1e10) past++;
+      assert.ok(c.proven, `${label}: the core did not prove`);
+      assert.ok(r.proven && !warned.length, `${label}: HiGHS unproven (${r.score} vs the core's ${c.score}): ${warned.join("; ")}`);
+      assert.ok(Math.abs(r.score - c.score) <= slackAt(SCORE_SLACK, r.score, c.score), `${label}: HiGHS ${r.score} vs the core's ${c.score}`);
+    }
+    assert.ok(past >= 10, `${past} instances scored past 1e10`);
+  });
+}
+
+// Issue #316: the core's own copy of the slack (scripts/optimizer-core.mts optSlack, behind optLexCmp) matches slackAt.
+test("[fast] the relative score slack: 1e-3 for small scores, 1e-12 of a large one, the same in the core", () => {
+  assert.equal(slackAt(1e-3, 5, -7), 1e-3);
+  assert.equal(slackAt(1e-3, 3e10), 3e10 * 1e-12);
+  for (const [x, d, equal] of [[1e3, 5e-4, true], [1e3, 2e-3, false], [3e10, 2e-2, true], [3e10, 5e-2, false]] as const) {
+    assert.equal(core.optLexCmp([x + d], [x]) === 0, equal, `${x} + ${d}`);
+    assert.equal(Math.abs(d) <= slackAt(1e-3, x + d, x), equal, `${x} + ${d} by slackAt`);
+  }
+});
