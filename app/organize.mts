@@ -592,8 +592,8 @@ export const NEARLY_FULL = 0.9;
 // The bridge capability that says its trips take a container only once it has read it empty (issue #128).
 export const BAG_TAKES = "trip-bags";
 
-interface Want { it: Item; ruleId: string; alsoMatched: string[]; chain: number[]; from: number | null }
-interface Limits { items: number; stones: number; bytes: number }
+export interface Want { it: Item; ruleId: string; alsoMatched: string[]; chain: number[]; from: number | null }
+export interface Limits { items: number; stones: number; bytes: number }
 type Attempt = { ok: true; placed: Map<number, PutResult> } | { ok: false; failed: Set<number> };
 
 // Every take, then every put, as the bridge runs a trip: a chest that is both source and target frees its room
@@ -617,7 +617,7 @@ const stepsOf = (set: Want[], placed: Map<number, PutResult>): TripStep[] =>
 // drops any whose put has no room (and, one at a time from the end, any past the byte budget) until the rest work
 // together, and commits them; an item that fits nowhere is retried after the next trip frees room, and is no
 // room once nothing more can move.
-function packSite(inv: Inventory, sim: Sim, site: number, wants: Want[], lim: Limits, firstIndex: number): { trips: PlanTrip[]; moves: PlanMove[]; merged: Set<number>; noRoom: Want[]; seconds: number } {
+export function packSite(inv: Inventory, sim: Sim, site: number, wants: Want[], lim: Limits, firstIndex: number): { trips: PlanTrip[]; moves: PlanMove[]; merged: Set<number>; noRoom: Want[]; seconds: number } {
   let pending = wants;
   const movers = new Set(wants.map((w) => +w.it.serial));
   const blocked = new Set<number>();
@@ -662,8 +662,10 @@ function packSite(inv: Inventory, sim: Sim, site: number, wants: Want[], lim: Li
   return { trips, moves, merged, noRoom: pending, seconds };
 }
 
+// The newest scan's time: what a plan's identity starts from.
+export const inventoryStampOf = (inv: Inventory): string => inv.scans.reduce((best, s) => (stampMs(s.scannedAt) > stampMs(best) ? s.scannedAt : best), "");
 // The plan's identity: FNV-1a over the latest scan time and every move. Anything that changes a trip changes it.
-function planStamp(inventoryStamp: string, moves: PlanMove[]): string {
+export function planStamp(inventoryStamp: string, moves: PlanMove[]): string {
   const s = JSON.stringify([inventoryStamp, moves.map((m) => [m.serial, m.from, m.to, m.trip])]);
   let h = 0x811c9dc5;
   for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); }
@@ -812,7 +814,7 @@ export function planOrganize(inv: Inventory, cfg: OrganizeConfig, overlay: Overl
     const freeSlots = freeIn(chains.get(id)!.filter((t) => scope.usable.has(t)));
     return { ruleId: id, needSlots, freeSlots, shortfall: r.noRoom };
   });
-  const inventoryStamp = inv.scans.reduce((best, s) => (stampMs(s.scannedAt) > stampMs(best) ? s.scannedAt : best), "");
+  const inventoryStamp = inventoryStampOf(inv);
   const seenWarning = new Set<string>();
   return {
     inventoryStamp,
@@ -835,7 +837,7 @@ export function planOrganize(inv: Inventory, cfg: OrganizeConfig, overlay: Overl
 // The queue-ready trip for POST /api/organize/trip, built from the current plan's moves exactly as the plan built
 // it: `inv` is the fold with the overlay applied (applyOverlay's), so a chain through a bag a trip moved names the
 // chest the bag is in now (issue #153). Null when the plan has no such trip.
-export function tripCommand(inv: Inventory, plan: Plan, index: number): TripInput | null {
+export function tripCommand(inv: Inventory, plan: Pick<Plan, "moves" | "stamp">, index: number): TripInput | null {
   const steps = plan.moves.filter((m) => m.trip === index);
   return steps.length ? tripInputFrom(inv, index, plan.stamp, steps) : null;
 }
