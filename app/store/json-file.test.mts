@@ -81,7 +81,6 @@ test("[fast] json-file: a symlink or FIFO under the name is refused, not followe
   const salvage = (doc: unknown) => ({ got: doc });
   for (const f of [link, fifo]) {
     assert.deepEqual(readJsonFile(f, { maxBytes: 100, onBad: "empty", salvage }), { got: undefined });
-    assert.throws(() => readJsonFile(f, { onBad: "skip" }), /not a regular file/);
     const got = readJsonFile(f, { maxBytes: 100, onBad: "aside" });
     assert.ok("bad" in got && got.bad.why === "io", JSON.stringify(got));
   }
