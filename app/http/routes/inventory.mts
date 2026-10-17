@@ -1,12 +1,20 @@
 // inventory.mts — the inventory: GET /api/inventory, /api/missing, /api/items and /api/items/by-serial.
-import { parseItemQuery, applyItemQuery, facetsOf, wantsHits, hitRow, type ItemQueryRows, type ItemQueryGroups } from "../../item-query.mts";
+import { parseItemQuery, applyItemQuery, facetsOf, wantsHits, hitRow, type ItemQueryRows, type ItemQueryGroups, type UnravelContext } from "../../item-query.mts";
 import type { Item } from "../../vault-lib.mts";
+import { leftOutReasons } from "../../unravel.mts";
+import { suitPieces } from "../../runs-lib.mts";
+import { unravelKeep } from "../../store/settings.mts";
 import { send } from "../respond.mts";
 import type { Route } from "../router.mts";
 import type { ServerContext } from "../context.mts";
 
 export function routes(ctx: ServerContext): Route[] {
-  const { config: CONFIG, appSettings, blacklistStore, getInventory } = ctx;
+  const { config: CONFIG, appSettings, blacklistStore, getInventory, runStore, organizeStore } = ctx;
+  // An unravel query's context (issue #271): the pieces of every saved run's suit, Organize's pinned items and the Keep list.
+  function unravelContext(): UnravelContext {
+    const left = { suits: suitPieces(runStore.all()), pins: new Set(organizeStore.read().config.pinnedItems), kept: new Set(unravelKeep(appSettings.current())) };
+    return { rules: appSettings.rules(), leftOut: (it) => leftOutReasons(it, left) };
+  }
   return [
     { method: "GET", path: "/api/inventory", handle: async (_req, res) => {
       const { inv, missing, snapshotCount } = await getInventory();
@@ -35,7 +43,7 @@ export function routes(ctx: ServerContext): Route[] {
     { method: "GET", path: "/api/items", handle: async (_req, res, url) => {
       const { inv } = await getInventory();
       const query = parseItemQuery(url.searchParams);
-      const result = applyItemQuery(Object.values(inv.items), query, { rarity: appSettings.rules().rarity });
+      const result = applyItemQuery(Object.values(inv.items), query, { rarity: appSettings.rules().rarity, ...(query.unravel ? { unravel: unravelContext() } : {}) });
       if (wantsHits(url.searchParams)) return send(res, 200, { ok: true, total: result.total, offset: query.offset, limit: query.limit, rows: (result as ItemQueryRows).rows.map(hitRow) });
       // applyItemQuery returns the ItemQueryRows | ItemQueryGroups union; narrow at each call site
       // by query.group, same as app/item-query.test.mts does — `total` is common to both branches.

@@ -206,6 +206,62 @@
 .scr-list > li > .badge { flex: none; width: 44px; justify-content: center; font-variant-numeric: tabular-nums; }
 .scr-list > li > .tag { flex: none; margin-left: 0; }
 .scr-peek .scr-acts { grid-template-columns: minmax(0, 1fr); }
+
+/* A narrow window: the top bar's view switch and Import scans wrap onto a second line rather than off the side. */
+@media (max-width: 720px) { #tab-inventory > .topbar { flex-wrap: wrap; height: auto; min-height: var(--topbar-h); padding-top: var(--space-2); padding-bottom: var(--space-2); row-gap: var(--space-2); } }
+
+/* ---------------------------------------------------------------- Unravel view (ui/unravel.mts) */
+/* Its own scroller: the forecast and the lines above the list scroll away with it. Ingredients wear the rarity hue of the
+   tier they come from: Relic the artifact purple, Essence the magic blue; Residue is muted and a held piece a warning. */
+#tab-unravel { overflow-y: auto; --unr-relic: var(--rarity-lesser-artifact); --unr-essence: var(--rarity-major-magic); --unr-residue: var(--color-text-muted); --unr-held: var(--color-warning); }
+#tab-unravel > * { flex: none; }
+.unr-who { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); padding: var(--space-3) var(--space-4); background: var(--color-surface); color: var(--color-text); border: var(--border-width) solid var(--color-border); border-radius: var(--radius-lg); }
+.unr-who-pick { font-weight: var(--weight-medium); }
+.unr-note { flex: 1 1 260px; min-width: 0; color: var(--color-text-muted); font-size: var(--text-sm); }
+.unr-forecast { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--space-3); }
+.unr-fc { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-3) var(--space-4); background: var(--color-surface); color: var(--color-text); border: var(--border-width) solid var(--color-border); border-radius: var(--radius-lg); min-width: 0; }
+.unr-fc-k { display: flex; align-items: center; gap: var(--space-1-5); font-size: var(--text-xs); line-height: var(--lh-xs); font-weight: var(--weight-semibold); text-transform: uppercase; letter-spacing: var(--tracking-caps); }
+.unr-fc-v { font-family: var(--font-display); font-size: var(--text-xl); line-height: var(--lh-xl); font-weight: var(--weight-semibold); font-variant-numeric: tabular-nums; }
+.unr-fc-s { font-size: var(--text-sm); line-height: var(--lh-sm); color: var(--color-text-muted); }
+.unr-fc.relic .unr-fc-k, .unr-group.relic h3, .unr-ing.relic { color: var(--unr-relic); }
+.unr-fc.essence .unr-fc-k, .unr-group.essence h3, .unr-ing.essence { color: var(--unr-essence); }
+.unr-fc.residue .unr-fc-k, .unr-group.residue h3, .unr-ing.residue { color: var(--unr-residue); }
+.unr-group.held h3, .unr-ing.held { color: var(--unr-held); }
+.unr-dot { width: 8px; height: 8px; border-radius: var(--radius-full); background: currentColor; flex: none; }
+.unr-excl { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1-5) var(--space-2); font-size: var(--text-sm); }
+.pr .unr-link { padding: 0; border: 0; background: none; color: var(--color-link); font: inherit; font-weight: var(--weight-medium); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.pr .unr-link:hover { color: var(--color-link-hover); }
+.unr-chip .unr-chip-n { color: var(--color-text-muted); font-variant-numeric: tabular-nums; }
+.unr-chip[aria-pressed="true"] .unr-chip-n { color: inherit; }
+.unr-card { overflow: visible; }
+.unr-selbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); padding: var(--space-2) var(--space-3); background: var(--color-accent-soft); color: var(--color-on-accent-soft); border-bottom: var(--border-width) solid var(--color-border); position: sticky; top: 0; z-index: 1; }
+.unr-sel-n { font-weight: var(--weight-semibold); font-size: var(--text-md); }
+.unr-sel-sum { font-variant-numeric: tabular-nums; }
+.unr-sel-acts { display: flex; flex-wrap: wrap; gap: var(--space-1-5); margin-left: auto; }
+.unr-group-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) 10px; padding: 10px var(--space-3); background: var(--color-surface-subtle); border-bottom: var(--border-width) solid var(--color-border); }
+.unr-group-head h3 { margin: 0; display: flex; align-items: center; gap: var(--space-1-5); font-size: var(--text-base); }
+.unr-gs { flex: 1 1 240px; min-width: 0; color: var(--color-text-muted); font-size: var(--text-sm); }
+.unr-row { display: grid; grid-template-columns: 28px minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1.2fr) auto; align-items: center; gap: var(--space-1) var(--space-3); padding: var(--space-2) var(--space-3); border-bottom: var(--border-width) solid var(--color-border); cursor: pointer; }
+.unr-row:hover { background: var(--color-row-hover); color: var(--color-on-row-hover); }
+.unr-row.sel { background: var(--color-row-selected); color: var(--color-on-row-selected); }
+.unr-cb { width: 16px; height: 16px; margin: 0; accent-color: var(--color-accent); cursor: pointer; }
+.unr-nm { display: flex; flex-direction: column; min-width: 0; }
+.unr-name { font-weight: var(--weight-medium); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.unr-sub { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); font-size: var(--text-sm); }
+.unr-tag { font-size: 10px; font-weight: var(--weight-semibold); letter-spacing: .04em; text-transform: uppercase; color: var(--color-text-muted); border: var(--border-width) solid var(--color-border-strong); border-radius: var(--radius-sm); padding: 0 var(--space-1); }
+.unr-where { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-text-muted); font-size: var(--text-sm); }
+.unr-yield { display: flex; flex-direction: column; min-width: 0; font-size: var(--text-sm); }
+.unr-ing-line { display: flex; align-items: center; gap: var(--space-1); min-width: 0; }
+.unr-ing { font-weight: var(--weight-semibold); }
+.unr-why { color: var(--color-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.unr-maybe { font-size: 10px; font-weight: var(--weight-semibold); letter-spacing: .04em; text-transform: uppercase; color: var(--color-warning); border: var(--border-width) solid currentColor; border-radius: var(--radius-sm); padding: 0 var(--space-1); }
+.unr-keep { justify-self: end; }
+.unr-state { padding: var(--space-6) var(--space-4); text-align: center; }
+.unr-foot { flex-wrap: wrap; }
+@media (max-width: 720px) {
+  .unr-row { grid-template-columns: 28px minmax(0, 1fr) auto; }
+  .unr-row .unr-where, .unr-row .unr-yield { grid-column: 2 / 4; }
+  .unr-row .unr-keep { grid-column: 3; grid-row: 1; }
 /* Move to (issue #270): the checkbox column, the ticked rows, the selection bar, the result line and the picker. */
 .inv-tbl th.sel-cell, .inv-tbl td.sel-cell { padding: 0; text-align: center; }
 .inv-tbl .sel-cb { width: 16px; height: 16px; margin: 0; vertical-align: middle; accent-color: var(--color-accent); cursor: pointer; }

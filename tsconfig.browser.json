@@ -11,6 +11,7 @@
     "app/ui/**/*",
     "app/vault-lib.*",
     "app/item-query.*",
+    "app/unravel.*",
     "app/scan-schema.*",
     "app/paste-scan.*",
     "app/buffs.*",

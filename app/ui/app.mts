@@ -24,6 +24,7 @@ import { openRunsDrawer, closeRunsDrawer } from "./runs.mts";
 import { session } from "./builder-session.mts";
 import "./organize.mts";   // registers its route and its inventorychange listener; nothing else imports it
 import "./scrolls.mts";    // the same for the Scrolls view
+import "./unravel.mts";    // and for the Unravel view
 import { applyMapPrefs } from "./house-map.mts";
 import { parseRoute, routeFor, showRoute } from "./nav.mts";
 import { get, reload, setPageLoad } from "./inventory-data.mts";
@@ -87,11 +88,11 @@ async function load(): Promise<void> {
 
 // ---------------------------------------------------------------- screens (the routes are nav.mts)
 let lastScreen = "inventory";
-const isInvView = (tab: string): boolean => tab === "inventory" || tab === "containers" || tab === "scrolls";
+const isInvView = (tab: string): boolean => tab === "inventory" || tab === "containers" || tab === "scrolls" || tab === "unravel";
 const screenOf = (tab: string): string => (isInvView(tab) ? "inventory" : tab === "runs" ? "builder" : tab === "import" ? lastScreen : tab);
-// Inventory's Items | Containers | Scrolls switch (in its top bar) is a view of one screen, not a screen of its own.
-type InvView = "items" | "containers" | "scrolls";
-const invView = segmented({ label: "View", options: [{ value: "items", label: "Items" }, { value: "containers", label: "Containers" }, { value: "scrolls", label: "Scrolls" }], value: "items", onChange: (v) => { location.hash = v === "items" ? "#/inventory" : `#/${v}`; } });
+// Inventory's Items | Containers | Scrolls | Unravel switch (in its top bar) is a view of one screen, not a screen of its own.
+type InvView = "items" | "containers" | "scrolls" | "unravel";
+const invView = segmented({ label: "View", options: [{ value: "items", label: "Items" }, { value: "containers", label: "Containers" }, { value: "scrolls", label: "Scrolls" }, { value: "unravel", label: "Unravel" }], value: "items", onChange: (v) => { location.hash = v === "items" ? "#/inventory" : `#/${v}`; } });
 invView.id = "inv-view";
 $<HTMLElement>("#inv-view")!.replaceWith(invView);
 function showInventoryView(view: InvView): void {
@@ -99,6 +100,7 @@ function showInventoryView(view: InvView): void {
   $<HTMLElement>("#inv-view-items")!.hidden = view !== "items";
   $<HTMLElement>("#tab-containers")!.hidden = view !== "containers";
   $<HTMLElement>("#tab-scrolls")!.hidden = view !== "scrolls";
+  $<HTMLElement>("#tab-unravel")!.hidden = view !== "unravel";
 }
 function showTab(tab: string): void {
   const screen = screenOf(tab);

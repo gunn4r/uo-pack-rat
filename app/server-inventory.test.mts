@@ -1,6 +1,6 @@
 // server-inventory.test.mts — HTTP tests of the inventory routes, Forget and the blacklist.
 //
-// `GET /api/inventory` folding the demo fixtures (facets, worn gear and counts, every field the page's non-paged tabs read, no item list), a new scan picked up without a restart, `readScans()` skipping an invalid or unparsable scan file, missing items counted per root and listed by `GET /api/missing`, `GET /api/items` paging, sorting and searching, `GET /api/items/by-serial`; `POST /api/forget` (409 under `--demo`, a bad root, name bounds, only a schema-valid tombstone written, a boolean, unsafe integer or out-of-range serial refused) and its `changed` event (with a run deletion's) on open streams; `POST /api/forget-character` (refusals, one tombstone, the character dropped and given back on a newer scan, 409 under `--demo`); and `/api/blacklist` (issue #38: add, list, remove, bad bodies and entries dropped, Keep and Remove through the fold).
+// `GET /api/inventory` folding the demo fixtures (facets, worn gear and counts, every field the page's non-paged tabs read, no item list), a new scan picked up without a restart, `readScans()` skipping an invalid or unparsable scan file, missing items counted per root and listed by `GET /api/missing`, `GET /api/items` paging, sorting and searching, `GET /api/items/by-serial`; `POST /api/forget` (409 under `--demo`, a bad root, name bounds, only a schema-valid tombstone written, a boolean, unsafe integer or out-of-range serial refused) and its `changed` event (with a run deletion's) on open streams; `POST /api/forget-character` (refusals, one tombstone, the character dropped and given back on a newer scan, 409 under `--demo`); and `/api/blacklist` (issue #38: add, list, remove, bad bodies and entries dropped, Keep and Remove through the fold). Unravel candidates from `GET /api/items?unravel=1` (issue #271): their ingredient and weight, heaviest first, the pieces left out (worn, in a saved run, insured, pinned, kept) and `unravelShow`, and the Keep list through `PUT /api/settings`.
 //
 // Tags: [smoke] and [fast].
 import { test, before, after, afterEach } from "node:test";
@@ -443,6 +443,57 @@ test("[fast] /api/blacklist adds, lists and removes a container, and Keep and Re
       writeFileSync(file, doc);
       assert.deepEqual((await list()).map((e) => e.serial), want);
     }
+  } finally {
+    await s2.close();
+  }
+});
+
+// Issue #271: `GET /api/items?unravel=1` lists unravel candidates with what each gives, heaviest first, and leaves out a
+// piece worn, in a saved run, insured, pinned in Organize or kept, unless `unravelShow` names the reason; the Keep list
+// is settings.json's `unravelKeep`, written whole by `PUT /api/settings` and checked.
+test("[fast] /api/items?unravel=1 lists candidates with their ingredient and leaves out worn, built, insured, pinned and kept pieces", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-unravel-"));
+  mkdirSync(join(dir, "scans"), { recursive: true });
+  const ring = (serial: number, lines: string[]) => ({ serial, container: 5000, name: "Ring", nameSource: "opl", tooltip: ["Ring", ...lines] });
+  writeFileSync(join(dir, "scans", "unravel.json"), JSON.stringify({
+    schemaVersion: 2, character: "Dorran", scannedAt: new Date(Date.now() - 60_000).toISOString(), stats: {},
+    equipped: [{ serial: 5008, layer: "Ring", name: "Ring", nameSource: "opl", tooltip: ["Ring", "Luck 60"] }],
+    adapter: { id: "tazuo", version: "2.5.0", client: "TazUO", clientVersion: null, capabilities: { layers: ["Ring"], arms: true, bank: true, ground: true, nested: true, tooltips: "opl", bridge: [] } },
+    roots: [{ serial: 5000, kind: "ground", name: "Chest", opened: true }], containers: { 5000: { serial: 5000, kind: "ground", name: "Chest", parent: null, root: 5000 } },
+    items: [
+      ring(5001, ["Hit Chance Increase 15%", "Defense Chance Increase 15%"]),
+      ring(5002, ["Insured", "Luck 100"]),
+      ring(5003, ["Faster Casting 1", "Faster Cast Recovery 3", "Spell Damage Increase 12%", "Lower Mana Cost 8%", "Intelligence Bonus 8"]),
+      ring(5004, ["Luck 50"]),
+      ring(5005, ["Luck 80"]),
+      ring(5006, []),
+    ] }));
+  mkdirSync(join(dir, "runs"), { recursive: true });
+  writeFileSync(join(dir, "runs", "r1.json"), JSON.stringify({ id: "r1", key: "0".repeat(40), character: "Dorran", createdAt: new Date().toISOString(), solverVersion: 1, settings: {}, result: { method: "exact", best: { ring: { serial: 5003 } } } }));
+  writeFileSync(join(dir, "organize.json"), JSON.stringify({ version: 1, labels: {}, rules: [], catchAll: null, pinnedItems: [5004] }));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
+  type Row = { serial: number; unravel: { ingredient: string; weight: number; maybe: boolean; leftOut?: string[] } };
+  const rows = async (q: string): Promise<Row[]> => asJson<{ rows: Row[] }>(await (await fetch(`${s2.url}/api/items?unravel=1&sort=unravel&${q}`)).json()).rows;
+  const keep = (list: unknown): Promise<Response> => fetch(s2.url + "/api/settings", { method: "PUT", headers: JSON_HEADERS, body: JSON.stringify({ unravelKeep: list }) });
+  try {
+    assert.deepEqual((await rows("")).map((r) => [r.serial, r.unravel]), [
+      [5001, { ingredient: "Enchanted Essence", weight: 240, maybe: true }],
+      [5005, { ingredient: "Magical Residue", weight: 80, maybe: false }],
+    ], "the ring with no magic is no candidate; worn, built, insured and pinned pieces are left out");
+    assert.deepEqual((await rows("unravelShow=all")).map((r) => [r.serial, r.unravel.ingredient, r.unravel.leftOut ?? []]), [
+      [5003, "Relic Fragment", ["build"]], [5001, "Enchanted Essence", []], [5002, "Magical Residue", ["insured"]], [5005, "Magical Residue", []], [5008, "Magical Residue", ["worn"]], [5004, "Magical Residue", ["pinned"]],
+    ], "all of them, heaviest first, each saying why it is left out");
+    assert.deepEqual((await rows("unravelShow=insured,worn")).map((r) => r.serial), [5001, 5002, 5005, 5008]);
+    for (const bad of [[0], ["5005"], [5005, 5005], "5005", Array(5001).fill(0).map((_, i) => i + 1)]) assert.equal((await keep(bad)).status, 400, `${JSON.stringify(bad).slice(0, 40)} is refused`);
+    assert.equal((await keep([5005])).status, 200);
+    assert.deepEqual(asJson<{ settings: { unravelKeep: number[] } }>(await (await fetch(s2.url + "/api/settings")).json()).settings.unravelKeep, [5005]);
+    assert.deepEqual((await rows("")).map((r) => r.serial), [5001], "a kept piece is left out");
+    assert.deepEqual((await rows("unravelShow=kept")).find((r) => r.serial === 5005)?.unravel.leftOut, ["kept"]);
+    assert.deepEqual(JSON.parse(readFileSync(join(dir, "settings.json"), "utf8")).unravelKeep, [5005], "kept in settings.json");
+    assert.equal((await keep([])).status, 200);
+    assert.deepEqual((await rows("")).map((r) => r.serial), [5001, 5005], "Unkeep brings it back");
+    const plain = asJson<{ rows: Array<Record<string, unknown>> }>(await (await fetch(`${s2.url}/api/items?q=ring`)).json()).rows;
+    assert.ok(plain.length && plain.every((r) => !("unravel" in r)), "rows carry `unravel` only when asked");
   } finally {
     await s2.close();
   }
