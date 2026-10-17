@@ -152,7 +152,8 @@ The recipes are the shard rules' `scrollBinder` (Shard rules, above).
 | Module | Role | Owns |
 |---|---|---|
 | `app/unravel.mts` | Pure, served to the page too: which pieces can be unraveled, their imbuing weight and the property-weight table, what a weight gives at a skill, why a piece is left out by default, ingredients on hand. | `unravelType`, `unravelWeight`, `unravelYield`, `expectedYield`, `leftOutReasons`, `onHand`, `PROPERTY_WEIGHTS`, `LEFT_OUT` |
-| `app/ui/unravel.mts` | The Inventory's Unravel view: the picker, the forecast, what is left out, the candidates by ingredient, Keep and the selection bar. | the `unravel` screen |
+| `app/ui/unravel.mts` | The Inventory's Unravel view: the picker, the forecast, what is left out, the candidates by ingredient, Keep, the selection bar and Gather into a bag (through `app/ui/move-to.mts`'s `openPicker` and `startMove`). | the `unravel` screen |
+| `app/ui/unravel-model.mts` | Pure: the Gather into a bag dialog's words (total weight, its button, the loose and ground sentences). | `gatherWeight`, `gatherButton` |
 
 The thresholds are the shard rules' `unravel` (Shard rules, above); `GET /api/items?unravel=1` (`app/item-query.mts`) lists the candidates, and the Keep list is settings.json's `unravelKeep`.
 

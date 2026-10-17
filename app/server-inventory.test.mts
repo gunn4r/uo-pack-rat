@@ -1,6 +1,6 @@
 // server-inventory.test.mts — HTTP tests of the inventory routes, Forget and the blacklist.
 //
-// `GET /api/inventory` folding the demo fixtures (facets, worn gear and counts, every field the page's non-paged tabs read, no item list), a new scan picked up without a restart, `readScans()` skipping an invalid or unparsable scan file, missing items counted per root and listed by `GET /api/missing`, `GET /api/items` paging, sorting and searching, `GET /api/items/by-serial`; `POST /api/forget` (409 under `--demo`, a bad root, name bounds, only a schema-valid tombstone written, a boolean, unsafe integer or out-of-range serial refused) and its `changed` event (with a run deletion's) on open streams; `POST /api/forget-character` (refusals, one tombstone, the character dropped and given back on a newer scan, 409 under `--demo`); and `/api/blacklist` (issue #38: add, list, remove, bad bodies and entries dropped, Keep and Remove through the fold). Unravel candidates from `GET /api/items?unravel=1` (issue #271): their ingredient and weight, heaviest first, the pieces left out (worn, in a saved run, insured, pinned, kept) and `unravelShow`, and the Keep list through `PUT /api/settings`.
+// `GET /api/inventory` folding the demo fixtures (facets, worn gear and counts, every field the page's non-paged tabs read, no item list), a new scan picked up without a restart, `readScans()` skipping an invalid or unparsable scan file, missing items counted per root and listed by `GET /api/missing`, `GET /api/items` paging, sorting and searching, `GET /api/items/by-serial`; `POST /api/forget` (409 under `--demo`, a bad root, name bounds, only a schema-valid tombstone written, a boolean, unsafe integer or out-of-range serial refused) and its `changed` event (with a run deletion's) on open streams; `POST /api/forget-character` (refusals, one tombstone, the character dropped and given back on a newer scan, 409 under `--demo`); and `/api/blacklist` (issue #38: add, list, remove, bad bodies and entries dropped, Keep and Remove through the fold). Unravel candidates from `GET /api/items?unravel=1` (issue #271): their ingredient and weight, heaviest first, the pieces left out (worn, in a saved run, insured, pinned, kept) and `unravelShow`, and the Keep list through `PUT /api/settings`. Gather into a bag's remembered bag per character (`unravelBag`) checked and saved.
 //
 // Tags: [smoke] and [fast].
 import { test, before, after, afterEach } from "node:test";
@@ -490,6 +490,11 @@ test("[fast] /api/items?unravel=1 lists candidates with their ingredient and lea
     assert.deepEqual((await rows("")).map((r) => r.serial), [5001], "a kept piece is left out");
     assert.deepEqual((await rows("unravelShow=kept")).find((r) => r.serial === 5005)?.unravel.leftOut, ["kept"]);
     assert.deepEqual(JSON.parse(readFileSync(join(dir, "settings.json"), "utf8")).unravelKeep, [5005], "kept in settings.json");
+    // Gather into a bag's remembered bag per character, written whole and checked.
+    const bag = (v: unknown): Promise<Response> => fetch(s2.url + "/api/settings", { method: "PUT", headers: JSON_HEADERS, body: JSON.stringify({ unravelBag: v }) });
+    for (const bad of [[5000], { Dorran: 0 }, { Dorran: "5000" }, { "": 5000 }, { ["x".repeat(65)]: 5000 }, null]) assert.equal((await bag(bad)).status, 400, `${JSON.stringify(bad)} is refused`);
+    assert.equal((await bag({ Dorran: 5000 })).status, 200);
+    assert.deepEqual(JSON.parse(readFileSync(join(dir, "settings.json"), "utf8")).unravelBag, { Dorran: 5000 });
     assert.equal((await keep([])).status, 200);
     assert.deepEqual((await rows("")).map((r) => r.serial), [5001, 5005], "Unkeep brings it back");
     const plain = asJson<{ rows: Array<Record<string, unknown>> }>(await (await fetch(`${s2.url}/api/items?q=ring`)).json()).rows;
