@@ -1,6 +1,6 @@
 // unravel.test.mts — `app/unravel.mts`, what unraveling a piece at a soul forge gives (issue #271).
 //
-// The type classifier (weapons, ranged weapons, armor, shields, hats, jewelry; robes, cloaks, shoes, talismans, spellbooks and quivers null; a gorget is armor and a necklace jewelry; a leather cap armor), every row of the property-weight table at its imbuing max and truncated per property, the per-type maxes (HCI and DCI on ranged weapons, DI on jewelry and shields), Hit Life and Mana Leech from the weapon's speed and SSI (halved for ranged), Mage Weapon, extras, yes/no properties (Balanced by weapon kind), slayers (super and talisman slayers 130), skill bonuses at 9 a point, resists in full on jewelry and weapons and above the base total on armor, hats and shields, the research's two hand-checked bracelets, the rarity tier the same weight implies on a synthetic set of jewelry, every yield band with its gates and chances and amounts, the expected yield, the maybe margin, the left-out reasons and the ingredients on hand. All `[fast]`, against the shipped UO Alive rules.
+// The type classifier (weapons, ranged weapons, armor, shields, hats, jewelry; robes, cloaks, shoes, talismans, spellbooks and quivers null; a gorget is armor and a necklace jewelry by vault-lib's neck rule; hoods and toques are hats, and a hat or kilt named for an armor material is armor), every row of the property-weight table at its imbuing max and truncated per property, the per-type maxes (HCI and DCI on ranged weapons, DI on jewelry and shields), Hit Life and Mana Leech from the weapon's speed and SSI (halved for ranged), Mage Weapon, extras, yes/no properties (Balanced by weapon kind), slayers (ServUO's seven super slayers 130, the rest 100), skill bonuses at 9 a point, resists in full on jewelry and weapons and above the base total on armor, hats and shields, the research's two hand-checked bracelets, the rarity tier the same weight implies on a synthetic set of jewelry, every yield band with its gates and chances and amounts, the expected yield, the maybe margin, the left-out reasons and the ingredients on hand. All `[fast]`, against the shipped UO Alive rules.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { unravelType, unravelWeight, unravelIngredient, unravelMaybe, unravelYield, expectedYield, leftOutReasons, onHand, unravelInfo, PROPERTY_WEIGHTS, EXTRA_WEIGHTS, FLAG_WEIGHTS, RESIST_KEYS, LEFT_OUT } from "./unravel.mts";
@@ -29,10 +29,13 @@ test("[fast] unravelType: weapons, ranged, shields, jewelry, hats and armor; clo
   for (const slot of ["ring", "bracelet", "earrings"]) assert.equal(unravelType(mk({ slot })), "jewel", slot);
   assert.equal(unravelType(mk({ name: "Gargish Necklace", slot: "neck" })), "jewel");
   assert.equal(unravelType(mk({ name: "Studded Gorget", slot: "neck" })), "armor");
-  for (const name of ["Bandana", "Skullcap", "Wizard's Hat", "Tricorne Hat Of Sorcery", "Bear Mask", "Flower Garland", "Bonnet", "Kasa", "Cap"]) assert.equal(unravelType(mk({ name, slot: "helmet" })), "hat", name);
-  for (const name of ["Leather Cap", "Close Helmet", "Chainmail Coif", "Orc Helm", "Circlet"]) assert.equal(unravelType(mk({ name, slot: "helmet" })), "armor", name);
+  assert.equal(unravelType(mk({ name: "Armor Of Initiation", slot: "neck" })), "armor", "vault-lib's neck rule");
+  assert.equal(unravelType(mk({ name: "Star Of The Seas", slot: "neck" })), "jewel", "a necklace with no necklace word");
+  for (const name of ["Bandana", "Skullcap", "Wizard's Hat", "Tricorne Hat Of Sorcery", "Bear Mask", "Flower Garland", "Bonnet", "Kasa", "Cap", "Cloth Ninja Hood", "Chef's Toque", "Tricorne"]) assert.equal(unravelType(mk({ name, slot: "helmet" })), "hat", name);
+  for (const name of ["Leather Cap", "Leather Ninja Hood", "Close Helmet", "Chainmail Coif", "Orc Helm", "Circlet"]) assert.equal(unravelType(mk({ name, slot: "helmet" })), "armor", name);
   for (const slot of ["chest", "arms", "hands", "legs"]) assert.equal(unravelType(mk({ name: "Platemail", slot })), "armor", slot);
   for (const [name, slot] of [["Robe", "robe"], ["Cloak", "cloak"], ["Elven Shirt", "shirt"], ["Doublet", "tunic"], ["Thigh Boots", "feet"], ["Kilt", "outerLegs"], ["Elven Quiver", "cloak"]] as const) assert.equal(unravelType(mk({ name, slot })), null, name);
+  for (const name of ["Gargish Platemail Kilt", "Gargish Leather Kilt", "Gargish Stone Kilt", "Leather Skirt", "Studded Hakama", "Leather Hakama"]) assert.equal(unravelType(mk({ name, slot: "outerLegs" })), "armor", `${name}: armor in a clothing slot`);
   assert.equal(unravelType(mk({ name: "Talisman", slot: "talisman" })), null);
   assert.equal(unravelType(mk({ name: "Charm Of Luck", slot: "talisman" })), null, "the talisman slot, whatever its name");
   assert.equal(unravelType(mk({ name: "Spellbook", slot: "oneHanded", flags: ["64 spells"] })), null);
@@ -118,7 +121,9 @@ test("[fast] Mage Weapon, slayers and the extras", () => {
   assert.equal(w(sword({ slayers: ["Reptile"] })), 130, "a super slayer");
   assert.equal(w(sword({ slayers: ["Undead (Silver)"] })), 130, "Silver is a super slayer");
   assert.equal(w(sword({ slayers: ["Repond (humanoids)", "Dragon"] })), 230);
-  assert.equal(w(sword({ slayers: ["Bear"] })), 130, "a talisman slayer");
+  assert.equal(w(sword({ slayers: ["Exorcism (demons)"] })), 130);
+  assert.equal(w(sword({ slayers: ["Elemental Ban"] })), 130);
+  for (const lesser of ["Demon", "Elemental", "Undead", "Eodon", "Gargoyle"]) assert.equal(w(sword({ slayers: [lesser] })), 100, `${lesser} is no ServUO super slayer`);
   assert.equal(w(bow({ extras: { "weapon speed": 4.25, velocity: 25 } })), 70);
   assert.equal(w(mk({ extras: { "fire eater": 7, "lower requirements": 50 } })), 65 + 50);
 });

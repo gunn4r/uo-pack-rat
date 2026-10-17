@@ -186,8 +186,8 @@ const groupJson = (g: ItemGroup): ItemGroupJson => ({ name: g.name, kind: g.kind
 export interface ItemQueryRows { rows: Item[]; total: number; pieces: number; }
 // An unravel candidate's row (query.unravel): the item and what unraveling it gives.
 export type UnravelRow = Item & { unravel: UnravelInfo };
-// What applyItemQuery needs for query.unravel: the rules' unravel block and slayer groups, and why each piece is left out.
-export interface UnravelContext { rules: Pick<RulesV1, "unravel" | "slayerGroups">; leftOut: (it: Item) => LeftOut[] }
+// What applyItemQuery needs for query.unravel: the rules' unravel block, and why each piece is left out.
+export interface UnravelContext { rules: Pick<RulesV1, "unravel">; leftOut: (it: Item) => LeftOut[] }
 // In group mode `total` counts names; `stacks` and `pieces` are the matching stacks and pieces behind them.
 export interface ItemQueryGroups { groups: ItemGroupJson[]; total: number; stacks: number; pieces: number; }
 

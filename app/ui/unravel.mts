@@ -59,6 +59,13 @@ function load(): void {
 registerScreen({ name: "unravel", show: () => showUnravel() });
 document.addEventListener("inventorychange", () => { if (parseRoute().tab === "unravel") showUnravel(); });
 document.addEventListener("organizechange", () => { if (built && !root().hidden && !loading) load(); });
+// A run saved or removed (here or, through the events stream, in another window) changes which pieces are in a saved
+// build: fetch again now if the view shows, else when it is next shown.
+document.addEventListener("builderchange", (e) => {
+  if ((e as CustomEvent<{ key: string }>).detail?.key !== "runs") return;
+  loadedFor = null;
+  if (built && !root().hidden && !loading) load();
+});
 function showUnravel(): void {
   build();
   render();
@@ -170,10 +177,13 @@ function drawForecast(shown: UnravelRow[], skill: number): void {
     : `From ${plural(relics, "piece")}. ${onHandText("Relic Fragment")}`;
   const card = (cls: Group, title: string, value: string, note: string): HTMLElement =>
     box("div", { class: `unr-fc ${cls}` }, box("span", { class: "unr-fc-k" }, el("span", { class: "unr-dot", "aria-hidden": "true" }), txt(title)), txt(value, "unr-fc-v"), txt(note, "unr-fc-s"));
+  // Below the Essence gate every Essence piece is refused: they are held, and give no misses.
+  const essGate = u()!.essenceSkill, essHeld = skill < essGate;
+  const essNote = essHeld ? `${plural(n("Enchanted Essence"), "piece")} held for Imbuing ${fmt(essGate)}.` : `From ${plural(n("Enchanted Essence"), "piece")}${skill >= gate && relics ? " and Relic misses" : ""}.`;
   f.replaceChildren(
     card("relic", "Relic Fragment", skill < gate ? "0 now" : about(now["Relic Fragment"]), relicNote),
-    card("essence", "Enchanted Essence", about(now["Enchanted Essence"]), `From ${plural(n("Enchanted Essence"), "piece")}${skill >= gate && relics ? " and Relic misses" : ""}. ${onHandText("Enchanted Essence")}`),
-    card("residue", "Magical Residue", about(now["Magical Residue"]), `From ${plural(n("Magical Residue"), "piece")} and Essence misses. ${onHandText("Magical Residue")}`));
+    card("essence", "Enchanted Essence", essHeld ? "0 now" : about(now["Enchanted Essence"]), `${essNote} ${onHandText("Enchanted Essence")}`),
+    card("residue", "Magical Residue", about(now["Magical Residue"]), `From ${plural(n("Magical Residue"), "piece")}${essHeld ? "" : " and Essence misses"}. ${onHandText("Magical Residue")}`));
 }
 
 const REASON_CHIP: Record<LeftOut, string> = { worn: "Worn", build: "In a saved build", insured: "Insured", pinned: "Organize pins", imbued: "Imbued", blessed: "Blessed", kept: "Kept" };

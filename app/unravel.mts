@@ -4,7 +4,7 @@
 // rules' `unravel` block, so a correction is a data change. Also why a piece is left out of the suggestions by default
 // (leftOutReasons) and how many ingredients a list of stacks holds (onHand). No DOM, no node: imports: served to the browser
 // as it stands, like item-query.mts.
-import { SKILL_NAMES, SLOT_GROUP } from "./vault-lib.mts";
+import { SKILL_NAMES, SLOT_GROUP, isNeckArmor } from "./vault-lib.mts";
 import type { Item } from "./vault-lib.mts";
 import type { RulesV1 } from "./schema/types.d.mts";
 
@@ -14,21 +14,24 @@ export type Ingredient = typeof INGREDIENTS[number];
 
 // ---------------------------------------------------------------- which pieces
 const NOT_GEAR_RE = /\b(spellbook|book|tome|grimoire|compendium|talisman|totem|quiver)\b/i;
-const NECKLACE_RE = /\b(necklace|amulet|pendant|beads)\b/i;
 const SHIELD_RE = /\b(shield|buckler)\b/i;
-// Hats are clothing in ServUO (BaseHat), with a higher base resist than a helmet; a leather cap is armor.
-const HAT_RE = /\b(hat|bandana|skullcap|bonnet|garland|mask|kasa|cap)\b/i;
+// Hats are clothing in ServUO (BaseHat), with a higher base resist than a helmet; one named for an armor material (a
+// leather cap, a leather ninja hood) is armor.
+const HAT_RE = /\b(hat|bandana|skullcap|bonnet|garland|mask|kasa|cap|hood|toque|tricorne)\b/i;
+// Armor material words: a kilt, skirt or hakama in a clothing slot made of one is armor (a gargish kilt, a leather skirt).
+const ARMOR_MATERIAL_RE = /\b(leather|studded|plate|platemail|stone|chain|chainmail|ring|ringmail|bone|dragon|hide)\b/i;
 // A weapon, armor piece, shield, hat or piece of jewelry can be unraveled. Everything else is null: robes, cloaks, shirts,
 // shoes and other clothing, talismans, spellbooks and quivers.
 export function unravelType(it: Pick<Item, "gear" | "name" | "slot" | "extras" | "flags" | "skillReq">): UnravelType | null {
   if (!it.gear || NOT_GEAR_RE.test(it.name) || it.flags?.some((f) => /^\d[\d,]* spells$/.test(f))) return null;
   if (it.extras?.["weapon speed"] != null || it.skillReq) return /^(archery|throwing)$/.test(it.skillReq || "") ? "ranged" : "weapon";
   if (SHIELD_RE.test(it.name)) return "shield";
-  // The slot's group (vault-lib.mts): a talisman's slot is in Jewelry, and the neck in Armor, holding a necklace too.
-  const slot = it.slot || "", group = SLOT_GROUP[slot];
-  if ((group === "Jewelry" && slot !== "talisman") || (slot === "neck" && NECKLACE_RE.test(it.name))) return "jewel";
-  if (slot === "helmet" && HAT_RE.test(it.name) && !/\bleather cap\b/i.test(it.name)) return "hat";
-  return group === "Armor" ? "armor" : null;
+  // The slot's group (vault-lib.mts): a talisman's slot is in Jewelry, and the neck in Armor, holding a necklace unless
+  // vault-lib's neck rule calls it armor.
+  const slot = it.slot || "", group = SLOT_GROUP[slot], material = ARMOR_MATERIAL_RE.test(it.name);
+  if ((group === "Jewelry" && slot !== "talisman") || (slot === "neck" && !isNeckArmor(it.name))) return "jewel";
+  if (slot === "helmet" && HAT_RE.test(it.name) && !material) return "hat";
+  return group === "Armor" || (group === "Clothing" && material) ? "armor" : null;
 }
 
 // ---------------------------------------------------------------- the property weights
@@ -81,17 +84,19 @@ function leechMax(it: Pick<Item, "extras" | "props">, type: UnravelType): number
 const maxFor = (max: Max, it: Pick<Item, "extras" | "props">, type: UnravelType): number =>
   max === "leech" ? leechMax(it, type) : typeof max === "number" ? max : max[type] ?? max.other ?? 0;
 
-// The super slayers (a slayerGroups entry's `super`) and the talisman slayers (a titled group) weigh 130, the rest 100.
-function superSlayers(rules: Pick<RulesV1, "slayerGroups">): Set<string> {
-  const out = new Set<string>();
-  for (const g of rules.slayerGroups || []) for (const s of g.super ?? (g.heading ? g.slayers : [])) out.add(s.toLowerCase());
-  return out;
-}
+// ServUO's super slayers weigh 130, the rest 100. A tooltip names one bare ("Reptile"), with its group after it
+// ("Repond (humanoids)") or inside the brackets ("Undead (Silver)"). Talisman slayers weigh 130 too, but only talismans
+// carry them, and a talisman can't be unraveled.
+const SUPER_SLAYERS = ["silver", "repond", "reptile", "exorcism", "arachnid", "elemental ban", "fey"] as const;
+const isSuper = (slayer: string): boolean => {
+  const s = slayer.toLowerCase().trim();
+  return SUPER_SLAYERS.some((x) => s === x || s.startsWith(`${x} (`) || s.includes(`(${x})`));
+};
 
 // The imbuing weight unraveling reads: every positive property's trunc(weight / max × value), slayers, 9 per skill-bonus
 // point, and resists (on armor, a hat or a shield only the total above its type's base resist). 0 for a piece that can't
 // be unraveled. A Durability +N% bonus has a weight too, but the scans keep no number for it, so it is not counted.
-export function unravelWeight(it: Item, rules: Pick<RulesV1, "unravel" | "slayerGroups">): number {
+export function unravelWeight(it: Item, rules: Pick<RulesV1, "unravel">): number {
   const type = unravelType(it), u = rules.unravel;
   if (!type || !u) return 0;
   let w = 0;
@@ -111,8 +116,7 @@ export function unravelWeight(it: Item, rules: Pick<RulesV1, "unravel" | "slayer
     const fw = FLAG_WEIGHTS[f];
     if (fw != null) w += typeof fw === "number" ? fw : type === "ranged" ? fw.ranged : fw.melee;
   }
-  const supers = superSlayers(rules);
-  for (const s of it.slayers || []) w += supers.has(s.toLowerCase()) ? SUPER_SLAYER : SLAYER;
+  for (const s of it.slayers || []) w += isSuper(s) ? SUPER_SLAYER : SLAYER;
   // Each resist counts on its own, except on armor, a hat or a shield: only the total shows, so it counts above the type's base.
   const base = type === "armor" ? u.baseResist.armor : type === "hat" ? u.baseResist.hat : type === "shield" ? u.baseResist.shield : null;
   if (base == null) for (const k of RESIST_KEYS) w += part(RESIST.weight, RESIST.max, it.props[k] || 0);
@@ -196,7 +200,7 @@ export function onHand(items: Array<Pick<Item, "name" | "amount">>): Record<Ingr
 // What a candidate row carries (GET /api/items with `unravel`): the ingredient its weight gives, the weight, whether it sits
 // near a line, and why it is left out by default (only when it is).
 export interface UnravelInfo { ingredient: Ingredient; weight: number; maybe: boolean; leftOut?: LeftOut[] }
-export function unravelInfo(it: Item, rules: Pick<RulesV1, "unravel" | "slayerGroups">, leftOut: LeftOut[] = []): UnravelInfo | null {
+export function unravelInfo(it: Item, rules: Pick<RulesV1, "unravel">, leftOut: LeftOut[] = []): UnravelInfo | null {
   const weight = unravelWeight(it, rules), ingredient = unravelIngredient(weight, rules);
   if (!ingredient) return null;
   return { ingredient, weight, maybe: unravelMaybe(weight, rules), ...(leftOut.length ? { leftOut } : {}) };
