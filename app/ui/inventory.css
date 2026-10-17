@@ -262,6 +262,7 @@
   .unr-row { grid-template-columns: 28px minmax(0, 1fr) auto; }
   .unr-row .unr-where, .unr-row .unr-yield { grid-column: 2 / 4; }
   .unr-row .unr-keep { grid-column: 3; grid-row: 1; }
+}
 /* Move to (issue #270): the checkbox column, the ticked rows, the selection bar, the result line and the picker. */
 .inv-tbl th.sel-cell, .inv-tbl td.sel-cell { padding: 0; text-align: center; }
 .inv-tbl .sel-cb { width: 16px; height: 16px; margin: 0; vertical-align: middle; accent-color: var(--color-accent); cursor: pointer; }

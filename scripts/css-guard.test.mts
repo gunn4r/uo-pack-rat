@@ -2,6 +2,7 @@
 //
 // 1. A rule in a screen stylesheet (every `app/ui/*.css` but `components.css`, `tokens.css` and `britannia.css`) whose subject, the last compound of a selector, carries a component class is an override: it changes a component in one place only, so a component change has to be checked in every such file. The component classes are the ones `app/ui/components.css` styles on their own (`.btn`, `.badge.best`, `dialog.dialog`), less the text and icon utilities. Today's overrides are listed below, each under the reason it is there; a new one fails until it becomes a component option or joins the list with its reason, and a listed one that is gone fails too, so the list stays current.
 // 2. Every width in an `@media` rule of `app/ui/*.css` is one of `app/ui/breakpoints.mts`'s (a `min-width` one pixel above one), and no `app/ui/*.mts` but that module writes a `max-width`/`min-width` query of its own.
+// 3. Every stylesheet closes each block it opens: a lost `}` nests every later rule in the block above it.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
@@ -143,4 +144,19 @@ test("[smoke] css-guard: every @media width is a breakpoint", () => {
     if (/\((?:min|max)-width:/.test(readFileSync(join(UI, file), "utf8"))) bad.push(`${file} writes its own width query: use breakpoints.mts`);
   }
   assert.deepEqual(bad, []);
+});
+
+// A block left open (a lost `}` after a merge) nests every rule after it inside the block above, such as a narrow-window @media,
+// and the browser applies them only there without a word.
+test("[smoke] css-guard: every stylesheet closes each block it opens", () => {
+  const open: string[] = [];
+  for (const file of readdirSync(UI).filter((f) => f.endsWith(".css"))) {
+    let depth = 0;
+    for (const ch of read(file).replace(/"[^"]*"|'[^']*'/g, "")) {
+      depth += ch === "{" ? 1 : ch === "}" ? -1 : 0;
+      if (depth < 0) break;
+    }
+    if (depth) open.push(`${file}: ${depth > 0 ? `${depth} block(s) left open` : "a } with no block"}`);
+  }
+  assert.deepEqual(open, []);
 });
