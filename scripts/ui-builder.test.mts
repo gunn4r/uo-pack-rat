@@ -512,6 +512,65 @@ test("[slow] goals: the ranked list, its counts, =, spare points, How the goals 
   }
 });
 
+// Issue #292 part 2, on the first character with Melee's goals: the strategy choice switches the Goals tab's subtitle, and in Strict
+// order a goal row shows only its cap; a strict build's How the goals went says it made no trades and Solver details name
+// the strategy; the fewest-changes checkbox and the strategy are saved with the profile across a reload; no sideways
+// scroll at 420 px.
+test("[slow] strict order: the strategy's subtitle, a strict build without trades, and fewest changes saved with the profile", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = seedDataDir("packrat-ui-strict-");
+  const { app, page, errors } = await launch(dataDir);
+  const text = (sel: string, re: RegExp): Promise<unknown> => page.waitForFunction(([q, src]) => new RegExp(src!).test(document.querySelector(q!)?.textContent || ""), [sel, re.source], { timeout: 10_000 });
+  const noSideways = async (what: string): Promise<void> => {
+    await fitWindow(app, page, { width: 420, height: 900 });
+    const w = await page.evaluate(() => [document.documentElement.scrollWidth, innerWidth]);
+    assert.ok(w[0]! <= w[1]!, `${what}: no sideways scroll at 420 (${w.join(", ")})`);
+    await fitWindow(app, page, { width: 1440, height: 900 });
+  };
+  try {
+    await openBuilder(page);
+    await settings(page, "weights", { weights: false });
+    await page.waitForSelector("#b-strategy");
+    assert.equal(await page.locator('#b-strategy [data-value="value"]').getAttribute("aria-checked"), "true", "Best value by default");
+    assert.equal(await page.locator("#b-strategy-help").innerText(), "Most important first. Higher goals count more, but a small loss up top can buy a big gain lower down.");
+    assert.match(await page.locator('.b-goal[data-key="hci"] .b-goal-counts').innerText(), /^counts 80 · max 45$/);
+    await page.click('#b-strategy [data-value="strict"]');
+    await text("#b-strategy-help", /^Most important first\. A higher goal is never given up for a lower one\. Requirements come before every goal\.$/);
+    assert.equal(await page.locator('.b-goal[data-key="hci"] .b-goal-counts').innerText(), "max 45", "what a goal counts is Best value's");
+    await text("#b-tpl-state", /strict order/);
+    await noSideways("the Goals tab");
+
+    // a strict build: no trades in How the goals went, the strategy in Solver details
+    await page.click("#b-run-foot");
+    await built(page);
+    await closeSettings(page);
+    const went = await page.locator("#b-goals-went").innerText();
+    assert.match(went, /Strict order: no trades\. A higher goal is never given up for a lower one\./);
+    assert.doesNotMatch(went, /Trade made/);
+    await page.click("#b-result .b-disclose");
+    await text("#b-details", /Strategy\s*Strict order: /);
+    await noSideways("the result");
+
+    // fewest changes, saved with the strategy
+    await settings(page, "weights", { weights: false });
+    assert.equal(await page.locator("#b-fewest").isChecked(), false);
+    await page.locator("#b-fewest").check();
+    await text("#b-tpl-state", /fewest changes/);
+    await page.click("#b-save");
+    await page.waitForFunction(() => /Profile for .* saved/.test(document.body.textContent || ""), undefined, { timeout: 10_000 });
+    await page.reload();
+    await page.waitForSelector("#tab-builder:not([hidden]) #b-fewest", { state: "attached", timeout: 30_000 });
+    await settings(page, "weights", { weights: false });
+    assert.equal(await page.locator("#b-fewest").isChecked(), true, "fewest changes is saved with the profile");
+    assert.equal(await page.locator('#b-strategy [data-value="strict"]').getAttribute("aria-checked"), "true", "so is the strategy");
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    removeTempDir(dataDir);
+  }
+});
+
 // Issue #302, on Dorran with Melee's goals: the first-visit "What matters most" lists the goals by rank under their names
 // with the spare points on their own line (and fits at 420 px); a build with a swing time, then a goals change, and the run's
 // banner names the run's goals by their names; a newer scan that swaps the worn weapon for a slower one under another name,

@@ -67,6 +67,20 @@ interface OptProfile {
   resistSteps?: Array<{ at: number; mins: Record<string, number> }> | undefined;
 }
 const HARD_FLOOR_BONUS = 1e7;
+// Strict order's stage values count as equal within this (== app/mip.mts TIE_SLACK): optStrictStages scales a stage so two
+// different values sit far further apart.
+const LEX_EPS = 1e-3;
+// What one changed slot costs at least with the tie-break's fewestChanges (== app/mip.mts CHANGE_COST); optChangeCost
+// raises it above any suit's summed tie cost, so fewer changes always come first.
+const CHANGE_COST = 1000;
+// == app/mip.mts changeCostFor: the cost of one changed slot for pieces whose largest tie cost is `maxTie`, above what
+// the nineteen slots can sum to (a rules file's rarity ladder can be any length).
+function optChangeCost(maxTie: number): number {
+  return Math.max(CHANGE_COST, 19 * maxTie + 1);
+}
+// The dimension strict order's fewest-changes stage scores in: a piece worn in its slot counts 1, a piece in a slot
+// nobody wears -1, any other piece (and an empty slot) 0, so the total is the worn slots less the changes.
+const CHANGES_KEY = "\u0000changes";
 // == app/vault-lib.mts RESIST_SKILL_KEY and RESIST_STEP_SLACK
 const RESIST_SKILL_KEY = "sk:resisting spells";
 const RESIST_STEP_SLACK = 0.05;
@@ -90,7 +104,12 @@ interface OptOptions {
   // OptItem.tieCost, the higher score on equal cost. `rarity` is the caller's label for where the costs came from; the core never reads it.
   // `topStart` (slot -> serial): the best-scoring suit an exact search found, one more search start, so the best score here matches it; when it scores
   // as well as the best found here (within 1e-3), the floors it meets are the ones held, so both searches hold the same set when equal tops differ.
-  tieBreak?: { tolerance: number; rarity?: string | undefined; topStart?: Record<string, number | null> | undefined } | undefined;
+  // `fewestChanges`: before the tie costs, the fewest slots that differ from `current` (each change costs CHANGE_COST, above any sum of tie costs).
+  tieBreak?: { tolerance: number; rarity?: string | undefined; fewestChanges?: boolean | undefined; topStart?: Record<string, number | null> | undefined } | undefined;
+  // Strict order (issue #292): the score is a vector compared stage by stage (optStrictStages: the requirements, each of
+  // `ranks`' weighted properties, then every other weight), so no later stage ever buys a loss in an earlier one.
+  // `fewestChanges`: the fewest slots changed from `current`, as a stage after the goals and soft partial credit and before the tag penalty and spare points.
+  strict?: { ranks: string[][]; fewestChanges?: boolean | undefined } | undefined;
 }
 
 // Progress snapshot handed to onProgress. `explored` is the fraction of the exact search tree
@@ -140,7 +159,9 @@ interface OptResult {
   alternatives?: { best: OptAssignment; score: number }[] | undefined;   // other suits within altTolerance of the best, best first (never the best itself)
   altTolerance?: number | undefined;
   // with opts.tieBreak: the best score found, the returned suit's summed tie cost, the best suit whose floors were held (slot -> serial) and those floors
-  tieBreak?: { topScore: number; cost: number; top?: Record<string, number | null> | undefined; floors?: string[] | undefined } | undefined;
+  // (`changes`, with fewestChanges: how many slots differ from the worn suit)
+  tieBreak?: { topScore: number; cost: number; changes?: number | undefined; top?: Record<string, number | null> | undefined; floors?: string[] | undefined } | undefined;
+  lex?: number[] | undefined;   // with opts.strict: the returned suit's value in each stage (optStrictStages' order)
 }
 
 // Internal: a flattened property space so scoring is an array loop instead of object churn.
@@ -165,6 +186,9 @@ interface OptSpace {
   rs: number;
   rsTau: number[];
   rsMin: number[][];
+  // Strict order's fewest-changes stage (CHANGES_KEY): its dimension (-1 without it) and each piece's value there, set by optStrictSpaces.
+  chg: number;
+  changeOf?: ((it: OptItem) => number) | undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -314,7 +338,8 @@ function optBuildSpace(keys: string[], profile: OptProfile): OptSpace {
     steps: stepped ? { ssi: profile.ssiSteps!.map((p) => p.ssi), stam: profile.ssiSteps!.map((p) => p.stam), credit: profile.ssiSteps!.map((p) => p.credit) } : steps,
     rs: lifted ? index[RESIST_SKILL_KEY]! : -1,
     rsTau: lifted ? rSteps.map((st) => st.at - RESIST_STEP_SLACK) : [],
-    rsMin: lifted ? rSteps.map((st) => keys.map((k, i) => (typeof st.mins[k] === "number" ? st.mins[k] : min[i]!))) : []
+    rsMin: lifted ? rSteps.map((st) => keys.map((k, i) => (typeof st.mins[k] === "number" ? st.mins[k] : min[i]!))) : [],
+    chg: keys.indexOf(CHANGES_KEY)
   };
 }
 
@@ -357,6 +382,7 @@ function optVec(it: OptItem | null, space: OptSpace): number[] {
     if (idx === undefined) continue; // property outside the space contributes nothing
     v[idx]! += props[pk[i]!]!;
   }
+  if (space.chg >= 0 && space.changeOf) v[space.chg] = space.changeOf(it);
   space.vecCache.set(it, v);
   return v;
 }
@@ -411,6 +437,94 @@ function scoreSet(items: OptAssignment | (OptItem | null)[], profile: OptProfile
     for (let j = 0; j < totals.length; j++) totals[j]! += v[j]!;
   }
   return optScoreVector(totals, space);
+}
+
+// ---------------------------------------------------------------------------
+// Strict order (issue #292): the score as a vector, compared stage by stage
+// ---------------------------------------------------------------------------
+
+// A strict-order stage: what it scores (optStrictSpaces), its properties for a weights stage, and the factor its weights
+// are scaled by.
+type OptStageKind = "requirements" | "goal" | "softPartial" | "changes" | "tags" | "spare";
+interface OptStage { kind: OptStageKind; keys: string[] | null; scale: number }
+const TAG_KEY = "tagPenalty";
+// A strict-order build's stages, most important first: the requirements (each floor met, and a hard floor's partial
+// credit), each goal rank's weighted properties, a soft floor's partial credit (when there is a soft floor), the fewest
+// changes (`fewest`), the tag penalty, then every other weighted property (spare points). So a tagged piece is never
+// worn for spare points alone, and neither is a piece changed. A weights stage's weights are scaled so the smallest is
+// 1: with whole property totals, two different values of a stage then sit at least a small fraction of a point apart,
+// far above LEX_EPS. A rank with no weighted property is left out. app/exact-solver.mts builds its stages from this list.
+function optStrictStages(profile: OptProfile, ranks: string[][], fewest: boolean = false): OptStage[] {
+  const w = profile.weights || {}, used: Record<string, boolean> = {};
+  const out: OptStage[] = [{ kind: "requirements", keys: null, scale: 1 }];
+  const add = function (kind: OptStageKind, keys: string[]): void {
+    const live = keys.filter(function (k) { return typeof w[k] === "number" && w[k] !== 0; });
+    let least = Infinity;
+    for (let i = 0; i < live.length; i++) least = Math.min(least, Math.abs(w[live[i]!]!));
+    if (live.length) out.push({ kind: kind, keys: live, scale: 1 / least });
+  };
+  for (let i = 0; i < ranks.length; i++) { add("goal", ranks[i]!); for (let j = 0; j < ranks[i]!.length; j++) used[ranks[i]![j]!] = true; }
+  const hard = profile.hardFloors || [], floors = profile.floors || {};
+  if (Object.keys(floors).some(function (k) { return floors[k]! > 0 && hard.indexOf(k) < 0; })) out.push({ kind: "softPartial", keys: null, scale: 1 });
+  if (fewest) out.push({ kind: "changes", keys: null, scale: 1 });
+  if (!used[TAG_KEY]) add("tags", [TAG_KEY]);
+  add("spare", Object.keys(w).sort().filter(function (k) { return !used[k] && k !== TAG_KEY; }));
+  return out;
+}
+// One space per stage, over the search space's keys so the totals line up:
+// - requirements: the floors alone, a soft floor counting only when met, a hard floor with its partial credit too (it
+//   outweighs every weight in Best value as well);
+// - softPartial: a soft floor's partial credit alone, so getting closer to a soft requirement never costs a goal;
+// - changes: the CHANGES_KEY dimension, whose values `changeOf` gives;
+// - the weights stages: their properties' weight terms alone (scaled), with no floors.
+function optStrictSpaces(keys: string[], profile: OptProfile, stages: OptStage[], changeOf: (it: OptItem) => number): OptSpace[] {
+  const hard = profile.hardFloors || [];
+  return stages.map(function (st) {
+    const isHard = function (sp: OptSpace, i: number): boolean { return hard.indexOf(sp.keys[i]!) >= 0; };
+    let sp: OptSpace;
+    if (st.kind === "requirements" || st.kind === "softPartial") {
+      sp = optBuildSpace(keys, { ...profile, weights: {} });
+      const soft = st.kind === "softPartial";
+      sp.partialArr = sp.partialArr.map(function (p, i) { return isHard(sp, i) !== soft ? p : 0; });
+      if (soft) sp.floorBonusArr = sp.floorBonusArr.map(function () { return 0; });
+    } else if (st.kind === "changes") {
+      sp = optBuildSpace(keys, { ...profile, weights: { [CHANGES_KEY]: 1 }, floors: {}, hardFloors: [] });
+    } else {
+      const weights: Record<string, number> = {};
+      for (let i = 0; i < st.keys!.length; i++) weights[st.keys![i]!] = profile.weights![st.keys![i]!]! * st.scale;
+      sp = optBuildSpace(keys, { ...profile, weights: weights, floors: {}, hardFloors: [] });
+    }
+    sp.changeOf = changeOf;
+    return sp;
+  });
+}
+// A piece's value in the CHANGES_KEY dimension against the worn suit `cur`.
+function optChangeOf(cur: OptAssignment): (it: OptItem) => number {
+  return function (it) { const w = cur[it.slot]; return !w ? -1 : w.serial === it.serial ? 1 : 0; };
+}
+// A suit's stage values under opts.strict, for a caller holding the suit alone (app/exact-solver.mts's other suits).
+function optStrictScore(items: OptAssignment, current: OptAssignment, profile: OptProfile, strict: { ranks: string[][]; fewestChanges?: boolean | undefined }, slots?: string[]): number[] {
+  const sl = slots || optDefaultSlots(), cur = optSanitize(current || {}, sl), a = optSanitize(items, sl);
+  const stages = optStrictStages(profile, strict.ranks, !!strict.fewestChanges);
+  const keys = optCollectKeys({}, a, profile).concat(stages.some(function (s) { return s.kind === "changes"; }) ? [CHANGES_KEY] : []);
+  const base = optBuildSpace(keys, profile), lex = optStrictSpaces(base.keys, profile, stages, optChangeOf(cur));
+  return optLexOf(optTotalsOf(a, sl, lex[0]!), lex);
+}
+function optLexOf(totals: number[], lex: OptSpace[]): number[] {
+  return lex.map(function (sp) { return optScoreVector(totals, sp); });
+}
+// 1 when a beats b in strict order, -1 when b beats a, 0 when every stage is equal (within LEX_EPS).
+function optLexCmp(a: number[], b: number[]): number {
+  for (let i = 0; i < a.length; i++) {
+    if (a[i]! > b[i]! + LEX_EPS) return 1;
+    if (a[i]! < b[i]! - LEX_EPS) return -1;
+  }
+  return 0;
+}
+// Whether every stage of `v` reaches `mins` (within LEX_EPS).
+function optLexHolds(v: number[], mins: number[]): boolean {
+  for (let i = 0; i < v.length; i++) if (v[i]! < mins[i]! - LEX_EPS) return false;
+  return true;
 }
 
 // Plain property totals for an assignment, for reporting (zero-valued props omitted).
@@ -496,7 +610,8 @@ function optAddVec(totals: number[], v: number[], sign: number): void {
 // Exhaustively re-optimize the weapon pair (oneHanded x twoHanded) against a fixed rest of the
 // suit. This is the structural move: it is the only way to cross between "1H + shield" and
 // "2H weapon", and it is cheap enough (|1H| x |2H|) to just brute force.
-function optBestWeaponPair(totals: number[], a: OptAssignment, oneCands: (OptItem | null)[], twoCands: (OptItem | null)[], space: OptSpace): { one: OptItem | null; two: OptItem | null; score: number } {
+// With `lex` (strict order) the pair is the best in strict order, and `vec` its stage values.
+function optBestWeaponPair(totals: number[], a: OptAssignment, oneCands: (OptItem | null)[], twoCands: (OptItem | null)[], space: OptSpace, lex?: OptSpace[] | null): { one: OptItem | null; two: OptItem | null; score: number; vec: number[] | null } {
   const curOne = a["oneHanded"] || null;
   const curTwo = a["twoHanded"] || null;
   optAddVec(totals, optVec(curOne, space), -1);
@@ -504,6 +619,14 @@ function optBestWeaponPair(totals: number[], a: OptAssignment, oneCands: (OptIte
   let bestOne: OptItem | null = null;
   let bestTwo: OptItem | null = null;
   let bestScore = -Infinity;
+  let bestVec: number[] | null = null;
+  const better = function (s: number): boolean {
+    if (!lex) return s > bestScore;
+    const v = optLexOf(totals, lex);
+    if (bestVec && optLexCmp(v, bestVec) <= 0) return false;
+    bestVec = v;
+    return true;
+  };
   for (let i = 0; i < twoCands.length; i++) {
     const two = twoCands[i] as OptItem | null;
     const vTwo = optVec(two, space);
@@ -511,14 +634,14 @@ function optBestWeaponPair(totals: number[], a: OptAssignment, oneCands: (OptIte
     if (optIsTwoHandedWeapon(two)) {
       // A two-hander forbids the one-handed layer entirely: exactly one combination to score.
       const s = optScoreVector(totals, space);
-      if (s > bestScore) { bestScore = s; bestOne = null; bestTwo = two; }
+      if (better(s)) { bestScore = s; bestOne = null; bestTwo = two; }
     } else {
       for (let j = 0; j < oneCands.length; j++) {
         const one = oneCands[j] as OptItem | null;
         const vOne = optVec(one, space);
         optAddVec(totals, vOne, 1);
         const s = optScoreVector(totals, space);
-        if (s > bestScore) { bestScore = s; bestOne = one; bestTwo = two; }
+        if (better(s)) { bestScore = s; bestOne = one; bestTwo = two; }
         optAddVec(totals, vOne, -1);
       }
     }
@@ -527,23 +650,33 @@ function optBestWeaponPair(totals: number[], a: OptAssignment, oneCands: (OptIte
   // Restore the caller's totals exactly as handed in.
   optAddVec(totals, optVec(curOne, space), 1);
   optAddVec(totals, optVec(curTwo, space), 1);
-  return { one: bestOne, two: bestTwo, score: bestScore };
+  return { one: bestOne, two: bestTwo, score: bestScore, vec: bestVec };
 }
 
 // Steepest ascent: evaluate every single-slot swap plus the weapon-pair move, apply only the
 // single best strictly-improving one, repeat until nothing improves. Strict improvement plus
 // fixed iteration order keeps this deterministic (no tie-break coin flips).
-function optLocalSearch(a: OptAssignment, slots: string[], cands: Record<string, (OptItem | null)[]>, space: OptSpace, maxPasses: number): { assignment: OptAssignment; score: number } {
+// With `lex` (strict order) a move must improve the suit in strict order, and the best such move is taken.
+function optLocalSearch(a: OptAssignment, slots: string[], cands: Record<string, (OptItem | null)[]>, space: OptSpace, maxPasses: number, lex?: OptSpace[] | null): { assignment: OptAssignment; score: number; vec: number[] | null } {
   const EPS = 1e-9;
   const cur: OptAssignment = {};
   for (let i = 0; i < slots.length; i++) cur[slots[i]!] = a[slots[i]!] || null;
   const totals = optTotalsOf(cur, slots, space);
   let score = optScoreVector(totals, space);
+  let vec = lex ? optLexOf(totals, lex) : null;
   for (let pass = 0; pass < maxPasses; pass++) {
     let bestGain = EPS;
     let bestSlot = "";
     let bestItem: OptItem | null = null;
-    let bestPair: { one: OptItem | null; two: OptItem | null; score: number } | null = null;
+    let bestPair: { one: OptItem | null; two: OptItem | null; score: number; vec: number[] | null } | null = null;
+    let bestVec = vec;   // strict order: the best move's stage values, which must beat the suit's
+    const gains = function (s: number): boolean {
+      if (!lex) return s - score > bestGain;
+      const v = optLexOf(totals, lex);
+      if (optLexCmp(v, bestVec!) <= 0) return false;
+      bestVec = v;
+      return true;
+    };
     for (let i = 0; i < slots.length; i++) {
       const slot = slots[i]!;
       if (slot === "oneHanded" || slot === "twoHanded") continue; // handled by the pair move
@@ -557,17 +690,19 @@ function optLocalSearch(a: OptAssignment, slots: string[], cands: Record<string,
         const vC = optVec(cand, space);
         optAddVec(totals, vC, 1);
         const s = optScoreVector(totals, space);
+        const up = gains(s);
         optAddVec(totals, vC, -1);
-        if (s - score > bestGain) { bestGain = s - score; bestSlot = slot; bestItem = cand; bestPair = null; }
+        if (up) { bestGain = s - score; bestSlot = slot; bestItem = cand; bestPair = null; }
       }
       optAddVec(totals, vHave, 1);
     }
-    const pair = optBestWeaponPair(totals, cur, cands["oneHanded"] || [null], cands["twoHanded"] || [null], space);
-    if (pair.score - score > bestGain && (pair.one !== (cur["oneHanded"] || null) || pair.two !== (cur["twoHanded"] || null))) {
+    const pair = optBestWeaponPair(totals, cur, cands["oneHanded"] || [null], cands["twoHanded"] || [null], space, lex);
+    if ((lex ? optLexCmp(pair.vec!, bestVec!) > 0 : pair.score - score > bestGain) && (pair.one !== (cur["oneHanded"] || null) || pair.two !== (cur["twoHanded"] || null))) {
       bestGain = pair.score - score;
       bestPair = pair;
       bestSlot = "";
       bestItem = null;
+      bestVec = pair.vec;
     }
     if (bestPair) {
       optAddVec(totals, optVec(cur["oneHanded"] || null, space), -1);
@@ -585,8 +720,10 @@ function optLocalSearch(a: OptAssignment, slots: string[], cands: Record<string,
     } else {
       break; // local optimum
     }
+    vec = bestVec;
   }
-  return { assignment: cur, score: optScoreVector(optTotalsOf(cur, slots, space), space) };
+  const end = optTotalsOf(cur, slots, space);
+  return { assignment: cur, score: optScoreVector(end, space), vec: lex ? optLexOf(end, lex) : null };
 }
 
 // Greedy seed: walk the slots in order and take the best MARGINAL piece for each against what
@@ -655,6 +792,7 @@ function optSanitize(a: OptAssignment, slots: string[]): OptAssignment {
 // ---------------------------------------------------------------------------
 // +1 more is better, -1 less is better, 0 irrelevant, 2 neither (negative weight with a floor).
 function optDimSign(space: OptSpace, i: number): number {
+  if (i === space.chg) return 1;   // strict order's fewest changes: keeping the worn piece is better
   // with SSI by step, more stamina can reach a faster step: it counts as good unless its own weight is negative
   if (i === space.stepStam) return space.w[i]! < 0 ? 2 : 1;
   // with Resisting Spells steps, more bonus lifts the mins: good for a weighted or floored resist, bad for one weighted
@@ -719,18 +857,26 @@ function optDominancePrune(list: (OptItem | null)[], space: OptSpace, keepNull: 
   return out;
 }
 
-// A suit's summed tie cost (OptItem.tieCost; an empty slot costs 0).
-function optTieCost(a: OptAssignment, slots: string[]): number {
+// A suit's summed tie cost (OptItem.tieCost; an empty slot costs 0), or its sum under `costOf`.
+function optTieCost(a: OptAssignment, slots: string[], costOf?: (it: OptItem | null) => number): number {
   let c = 0;
-  for (let i = 0; i < slots.length; i++) { const it = a[slots[i]!]; if (it) c += it.tieCost || 0; }
+  for (let i = 0; i < slots.length; i++) { const it = a[slots[i]!]; if (costOf) c += costOf(it || null); else if (it) c += it.tieCost || 0; }
   return c;
+}
+// How many slots of `a` hold another piece than `cur` (an empty slot counts as no piece).
+function optChanges(a: OptAssignment, cur: OptAssignment, slots: string[]): number {
+  let n = 0;
+  for (let i = 0; i < slots.length; i++) { const x = a[slots[i]!], y = cur[slots[i]!]; if ((x ? x.serial : 0) !== (y ? y.serial : 0)) n++; }
+  return n;
 }
 
 // `tie`: the tie-break pass (OptOptions.tieBreak). A leaf counts when it scores at least `min` and meets the floors on
 // the dimensions in `met`, and wins on a lower summed tie cost (the higher score on an equal one); the incumbent's cost
 // is `cost`. A subtree is dropped when its score bound is under `min`, a floor in `met` is out of reach, or its cost so
-// far plus the cheapest piece of each remaining slot passes the incumbent's.
-function optBranchAndBound(slots: string[], cands: Record<string, (OptItem | null)[]>, space: OptSpace, incumbent: OptAssignment, incumbentScore: number, budgetMs: number, tick?: (nodes: number, bestScore: number, improvements: number, explored: number) => void, tickEveryMs?: number, alt?: { count: number; tolerance: number }, tie?: { min: number; met: number[]; cost: number }): { best: OptAssignment; score: number; proven: boolean; nodes: number; improvements: number; alts: { a: OptAssignment; score: number }[] } {
+// far plus the cheapest piece of each remaining slot passes the incumbent's. `costOf` replaces OptItem.tieCost as a piece's cost.
+// `lex` (strict order): leaves and bounds are compared stage by stage against the incumbent's values; in the tie pass a
+// leaf must hold every stage at `lexMins` in place of `min`, and other suits (`alt`) are the suits equal on every stage.
+function optBranchAndBound(slots: string[], cands: Record<string, (OptItem | null)[]>, space: OptSpace, incumbent: OptAssignment, incumbentScore: number, budgetMs: number, tick?: (nodes: number, bestScore: number, improvements: number, explored: number) => void, tickEveryMs?: number, alt?: { count: number; tolerance: number }, tie?: { min: number; met: number[]; cost: number; costOf?: ((it: OptItem | null) => number) | undefined; lexMins?: number[] | undefined }, lex?: OptSpace[] | null): { best: OptAssignment; score: number; proven: boolean; nodes: number; improvements: number; alts: { a: OptAssignment; score: number }[] } {
   // slot order: most constrained (fewest candidates) first; the weapon pair goes last so the
   // two-hander rule is a cheap local check (twoHanded is enumerated before oneHanded).
   const order = slots.filter((x) => x !== "oneHanded" && x !== "twoHanded").sort((a, b) => cands[a]!.length - cands[b]!.length);
@@ -738,7 +884,7 @@ function optBranchAndBound(slots: string[], cands: Record<string, (OptItem | nul
   if (slots.indexOf("oneHanded") >= 0) order.push("oneHanded");
   const n = order.length, dims = space.keys.length;
   // candidates sorted by their own capped contribution, best first, so good incumbents appear early
-  const costOf = function (it: OptItem | null): number { return it ? it.tieCost || 0 : 0; };
+  const costOf = tie && tie.costOf ? tie.costOf : function (it: OptItem | null): number { return it ? it.tieCost || 0 : 0; };
   const lists: (OptItem | null)[][] = order.map((s) => {
     const l = (cands[s] || [null]).slice();
     // the tie pass looks at cheap pieces first, so a low-cost incumbent appears early
@@ -765,82 +911,88 @@ function optBranchAndBound(slots: string[], cands: Record<string, (OptItem | nul
     }
     sufHi[k] = hi; sufLo[k] = lo;
   }
-  // Tighter bound for the capped weight terms. For a dimension whose weight is >= 0 and whose item values are all
-  // >= 0, w*min(t, cap) is concave, so the joint gain of several items is at most the sum of their separate
-  // gains. So the most the remaining slots can add on those dimensions is the sum, over slots, of the best single
-  // item's gain at the current totals. Unlike the per-dimension bound it never pretends one piece carries the
-  // best of every property at once. Both are valid upper bounds; the search takes the smaller one.
-  const concave: boolean[] = new Array(dims);
-  for (let d = 0; d < dims; d++) {
-    let ok = space.w[d]! >= 0 && d !== space.stepSsi;   // a step credit is not concave
-    for (let k = 0; k < n && ok; k++) for (let j = 0; j < lists[k]!.length && ok; j++) if (optVec(lists[k]![j] as OptItem | null, space)[d]! < 0) ok = false;
-    concave[d] = ok;
-  }
-  const sparse: number[][][] = lists.map((l) => l.map((it) => {
-    const v = optVec(it, space), out: number[] = [];
-    for (let d = 0; d < dims; d++) if (concave[d] && space.w[d]! > 0 && v[d]! > 0) out.push(d, v[d]!);
-    return out;
-  }));
-  const capped = function (d: number, t: number, m: number = space.min[d]!): number { const c = space.cap[d]!, v = t < c ? t : c; return space.w[d]! * (v < m ? m : v); };
-  // The highest Resisting Spells step the remaining slots can still reach (-1 for none, or no steps): its min bounds a
-  // positive weight's term and a floor from above. A negative weight's best is its own min, the lowest any step leaves.
-  const liftHi = function (k: number): number { return space.rs >= 0 ? optLiftIndex(space, totals[space.rs]! + sufHi[k]![space.rs]!) : -1; };
-  // ... and the step every completion reaches (the least the remaining slots can add).
-  const liftLo = function (k: number): number { return space.rs >= 0 ? optLiftIndex(space, totals[space.rs]! + sufLo[k]![space.rs]!) : -1; };
-  // w·min(t, cap) without the min. With a min the term is not concave, but its gain from any t never passes this one's
-  // (under the min it is 0 until the total reaches it, then the same), which is concave: the sparse bound takes it.
-  const cappedRaw = function (d: number, t: number): number { const c = space.cap[d]!; return space.w[d]! * (t < c ? t : c); };
-  const floorTerm = function (d: number, t: number, li: number): number {
-    const f = space.floor[d]!;
-    if (!(f > 0)) return 0;
-    const fb = space.floorBonusArr[d]!;
-    return optFloorMetAt(space, d, t, optMinAt(space, d, li)) ? fb : space.partialArr[d]! * (t > 0 ? t / f : 0);
-  };
-  // The weight term's best over the reachable range [t + sufLo, t + sufHi] (w·max(min, min(t, cap)) is monotone,
-  // so it is one of the two ends), and the floor term's best (always the top end).
-  const weightBest = function (d: number, k: number, li: number): number {
-    const t = totals[d]!;
-    if (d === space.stepSsi) { const m = space.stepStam; return space.w[d]! * optStepCredit(space, t + sufHi[k]![d]!, totals[m]! + sufHi[k]![m]!); }
-    return space.w[d]! < 0 ? capped(d, t + sufLo[k]![d]!) : capped(d, t + sufHi[k]![d]!, optMinAt(space, d, li));
-  };
-  const looseBound = function (k: number): number {
-    space.evals++;
-    let s = 0;
-    const li = liftHi(k);
-    for (let d = 0; d < dims; d++) s += weightBest(d, k, li) + floorTerm(d, totals[d]! + sufHi[k]![d]!, li);
-    return s;
-  };
-  // With Resisting Spells steps, a concave term's min is the one every completion reaches (with none, the highest's), and
-  // what a higher step could add is counted apart: w·max(hi, x) ≤ w·max(lo, x) + w·(hi − max(lo, x0))⁺, x0 the least
-  // capped total any completion has, so nothing is added once the totals are past the highest min.
-  const tightBound = function (k: number): number {
-    let s = 0, gainA = 0;
-    const li = liftHi(k), lo = liftLo(k);
+  // The bounds for one space: the search's own, and with strict order each stage's (the same keys, so the same totals and
+  // suffix ranges).
+  const boundsFor = function (space: OptSpace): { loose: (k: number) => number; tight: (k: number) => number; liftHi: (k: number) => number } {
+    // Tighter bound for the capped weight terms. For a dimension whose weight is >= 0 and whose item values are all
+    // >= 0, w*min(t, cap) is concave, so the joint gain of several items is at most the sum of their separate
+    // gains. So the most the remaining slots can add on those dimensions is the sum, over slots, of the best single
+    // item's gain at the current totals. Unlike the per-dimension bound it never pretends one piece carries the
+    // best of every property at once. Both are valid upper bounds; the search takes the smaller one.
+    const concave: boolean[] = new Array(dims);
     for (let d = 0; d < dims; d++) {
+      let ok = space.w[d]! >= 0 && d !== space.stepSsi;   // a step credit is not concave
+      for (let k = 0; k < n && ok; k++) for (let j = 0; j < lists[k]!.length && ok; j++) if (optVec(lists[k]![j] as OptItem | null, space)[d]! < 0) ok = false;
+      concave[d] = ok;
+    }
+    const sparse: number[][][] = lists.map((l) => l.map((it) => {
+      const v = optVec(it, space), out: number[] = [];
+      for (let d = 0; d < dims; d++) if (concave[d] && space.w[d]! > 0 && v[d]! > 0) out.push(d, v[d]!);
+      return out;
+    }));
+    const capped = function (d: number, t: number, m: number = space.min[d]!): number { const c = space.cap[d]!, v = t < c ? t : c; return space.w[d]! * (v < m ? m : v); };
+    // The highest Resisting Spells step the remaining slots can still reach (-1 for none, or no steps): its min bounds a
+    // positive weight's term and a floor from above. A negative weight's best is its own min, the lowest any step leaves.
+    const liftHi = function (k: number): number { return space.rs >= 0 ? optLiftIndex(space, totals[space.rs]! + sufHi[k]![space.rs]!) : -1; };
+    // ... and the step every completion reaches (the least the remaining slots can add).
+    const liftLo = function (k: number): number { return space.rs >= 0 ? optLiftIndex(space, totals[space.rs]! + sufLo[k]![space.rs]!) : -1; };
+    // w·min(t, cap) without the min. With a min the term is not concave, but its gain from any t never passes this one's
+    // (under the min it is 0 until the total reaches it, then the same), which is concave: the sparse bound takes it.
+    const cappedRaw = function (d: number, t: number): number { const c = space.cap[d]!; return space.w[d]! * (t < c ? t : c); };
+    const floorTerm = function (d: number, t: number, li: number): number {
+      const f = space.floor[d]!;
+      if (!(f > 0)) return 0;
+      const fb = space.floorBonusArr[d]!;
+      return optFloorMetAt(space, d, t, optMinAt(space, d, li)) ? fb : space.partialArr[d]! * (t > 0 ? t / f : 0);
+    };
+    // The weight term's best over the reachable range [t + sufLo, t + sufHi] (w·max(min, min(t, cap)) is monotone,
+    // so it is one of the two ends), and the floor term's best (always the top end).
+    const weightBest = function (d: number, k: number, li: number): number {
       const t = totals[d]!;
-      if (concave[d]) {
-        const mHi = optMinAt(space, d, li), reached = optMinAt(space, d, lo), mLo = reached > -Infinity ? reached : mHi, now = capped(d, t, mLo);
-        const c = space.cap[d]!, x0 = t + sufLo[k]![d]!, held = Math.max(mLo, x0 < c ? x0 : c);
-        s += now + (mHi > held ? space.w[d]! * (mHi - held) : 0);
-        gainA += capped(d, t + sufHi[k]![d]!, mLo) - now;
+      if (d === space.stepSsi) { const m = space.stepStam; return space.w[d]! * optStepCredit(space, t + sufHi[k]![d]!, totals[m]! + sufHi[k]![m]!); }
+      return space.w[d]! < 0 ? capped(d, t + sufLo[k]![d]!) : capped(d, t + sufHi[k]![d]!, optMinAt(space, d, li));
+    };
+    const looseBound = function (k: number): number {
+      space.evals++;
+      let s = 0;
+      const li = liftHi(k);
+      for (let d = 0; d < dims; d++) s += weightBest(d, k, li) + floorTerm(d, totals[d]! + sufHi[k]![d]!, li);
+      return s;
+    };
+    // With Resisting Spells steps, a concave term's min is the one every completion reaches (with none, the highest's), and
+    // what a higher step could add is counted apart: w·max(hi, x) ≤ w·max(lo, x) + w·(hi − max(lo, x0))⁺, x0 the least
+    // capped total any completion has, so nothing is added once the totals are past the highest min.
+    const tightBound = function (k: number): number {
+      let s = 0, gainA = 0;
+      const li = liftHi(k), lo = liftLo(k);
+      for (let d = 0; d < dims; d++) {
+        const t = totals[d]!;
+        if (concave[d]) {
+          const mHi = optMinAt(space, d, li), reached = optMinAt(space, d, lo), mLo = reached > -Infinity ? reached : mHi, now = capped(d, t, mLo);
+          const c = space.cap[d]!, x0 = t + sufLo[k]![d]!, held = Math.max(mLo, x0 < c ? x0 : c);
+          s += now + (mHi > held ? space.w[d]! * (mHi - held) : 0);
+          gainA += capped(d, t + sufHi[k]![d]!, mLo) - now;
+        }
+        else s += weightBest(d, k, li);
+        s += floorTerm(d, t + sufHi[k]![d]!, li);
       }
-      else s += weightBest(d, k, li);
-      s += floorTerm(d, t + sufHi[k]![d]!, li);
-    }
-    let gainB = 0;
-    for (let lvl = k; lvl < n && gainB < gainA; lvl++) {
-      const sp = sparse[lvl]!;
-      let best = 0;   // every gain here is >= 0, so 0 never underestimates the best choice
-      for (let j = 0; j < sp.length; j++) {
-        const e = sp[j]!;
-        let gain = 0;
-        for (let q = 0; q < e.length; q += 2) { const d = e[q]!, t = totals[d]!; gain += cappedRaw(d, t + e[q + 1]!) - cappedRaw(d, t); }
-        if (gain > best) best = gain;
+      let gainB = 0;
+      for (let lvl = k; lvl < n && gainB < gainA; lvl++) {
+        const sp = sparse[lvl]!;
+        let best = 0;   // every gain here is >= 0, so 0 never underestimates the best choice
+        for (let j = 0; j < sp.length; j++) {
+          const e = sp[j]!;
+          let gain = 0;
+          for (let q = 0; q < e.length; q += 2) { const d = e[q]!, t = totals[d]!; gain += cappedRaw(d, t + e[q + 1]!) - cappedRaw(d, t); }
+          if (gain > best) best = gain;
+        }
+        gainB += best;
       }
-      gainB += best;
-    }
-    return s + (gainB < gainA ? gainB : gainA);
+      return s + (gainB < gainA ? gainB : gainA);
+    };
+    return { loose: looseBound, tight: tightBound, liftHi: liftHi };
   };
+  const bounds = boundsFor(space), stageBounds = lex ? lex.map(boundsFor) : null;
   const totals: number[] = space.zero.slice();
   const pick: (OptItem | null)[] = new Array(n).fill(null);
   // idx[k] = position within lists[k] on the current path; with the cumulative list sizes it gives
@@ -868,10 +1020,31 @@ function optBranchAndBound(slots: string[], cands: Record<string, (OptItem | nul
   let altMin = -Infinity;
   const altThr = function (): number { const base = cut - altTol; return altList.length >= altMax && altMin > base ? altMin : base; };
   const pruneAt = function (b: number): boolean { return tie ? b < tie.min - EPS : alt ? b < altThr() - EPS : b <= cut + EPS; };
+  // Strict order: the incumbent's stage values, and whether a subtree can't beat them: the first stage whose bound is not
+  // equal to the incumbent's decides, and a subtree equal on every stage can't do better (other suits keep it: they are
+  // the suits equal on every stage). In the tie pass a subtree goes as soon as one stage can't reach what it must hold.
+  let cutVec = lex ? optLexOf(optTotalsOf(incumbent, order, space), lex) : null;
+  const lexPrune = function (k: number): boolean {
+    for (let s = 0; s < stageBounds!.length; s++) {
+      const B = stageBounds![s]!, ref = tie ? tie.lexMins![s]! : cutVec![s]!;
+      let b = B.loose(k);
+      if (b >= ref - LEX_EPS && n - k >= 2) b = Math.min(b, B.tight(k));
+      if (b < ref - LEX_EPS) return true;
+      if (!tie && b > ref + LEX_EPS) return false;
+    }
+    return !tie && (!alt || altList.length >= altMax);
+  };
+  const pickNow = function (): OptAssignment { const a: OptAssignment = {}; for (let i = 0; i < n; i++) a[order[i]!] = pick[i] as OptItem | null; return a; };
   const rec = function (k: number): boolean {   // returns false when the budget is exhausted
+    if (k === n && lex && !tie) {
+      const vec = optLexOf(totals, lex), c = optLexCmp(vec, cutVec!), sc = optScoreVector(totals, space);
+      if (c > 0) { cutVec = vec; bestScore = sc; cut = sc; improvements++; best = pickNow(); altList.length = 0; }
+      if (alt && c >= 0 && altList.length < altMax) altList.push({ a: pickNow(), score: sc });
+      return true;
+    }
     if (k === n && tie) {
       const sc = optScoreVector(totals, space);
-      let ok = sc >= tie.min - EPS;
+      let ok = lex ? optLexHolds(optLexOf(totals, lex), tie.lexMins!) : sc >= tie.min - EPS;
       for (let i = 0; i < tie.met.length && ok; i++) if (!optFloorMet(space, totals, tie.met[i]!)) ok = false;
       if (ok && (costSoFar < bestCost - EPS || (costSoFar <= bestCost + EPS && sc > bestScore + EPS))) {
         bestScore = sc;
@@ -909,11 +1082,12 @@ function optBranchAndBound(slots: string[], cands: Record<string, (OptItem | nul
     }
     if (tie) {
       if (costSoFar + sufCost[k]! > bestCost + EPS) return true;   // cannot get as cheap as the incumbent
-      const li = liftHi(k);
+      const li = bounds.liftHi(k);
       for (let i = 0; i < tie.met.length; i++) { const d = tie.met[i]!; if (!optFloorMetAt(space, d, totals[d]! + sufHi[k]![d]!, optMinAt(space, d, li))) return true; }   // a floor out of reach
     }
-    if (pruneAt(looseBound(k))) return true;                   // subtree cannot beat the incumbent (or reach the alternatives list)
-    if (n - k >= 2 && pruneAt(tightBound(k))) return true;     // ... nor under the tighter, item-coupled bound
+    if (lex) { if (lexPrune(k)) return true; }                  // strict order: the stages decide
+    else if (pruneAt(bounds.loose(k))) return true;             // subtree cannot beat the incumbent (or reach the alternatives list)
+    else if (n - k >= 2 && pruneAt(bounds.tight(k))) return true;   // ... nor under the tighter, item-coupled bound
     const slot = order[k], list = lists[k]!;
     const twoH = slot === "oneHanded" && k > 0 && order[k - 1] === "twoHanded" && optIsTwoHandedWeapon(pick[k - 1] as OptItem | null);
     for (let j = 0; j < list.length; j++) {
@@ -949,9 +1123,16 @@ function optimizeSuit(pools: Record<string, OptItem[]>, current: OptAssignment, 
   for (let i = 0; i < optionalList.length; i++) optional[optionalList[i]!] = true;
 
   const cur = optSanitize(current || {}, slots);
-  const keys = optCollectKeys(pools || {}, cur, profile);
+  // strict order: a space per stage; every comparison below is then stage by stage, and `score` stays the plain score. With
+  // its fewest-changes stage every space carries the CHANGES_KEY dimension (weight 0 outside that stage).
+  const stages = opts.strict ? optStrictStages(profile, opts.strict.ranks, !!opts.strict.fewestChanges) : null;
+  const keys = optCollectKeys(pools || {}, cur, profile).concat(stages && stages.some(function (s) { return s.kind === "changes"; }) ? [CHANGES_KEY] : []);
   const space = optBuildSpace(keys, profile);
   const gradSpace = optBuildSpace(keys, optGradientProfile(profile));
+  const changeOf = optChangeOf(cur);
+  space.changeOf = changeOf; gradSpace.changeOf = changeOf;
+  const lex = stages ? optStrictSpaces(space.keys, profile, stages, changeOf) : null;
+  const lexAt = function (a: OptAssignment): number[] { return optLexOf(optTotalsOf(a, slots, space), lex!); };
 
   const cands: Record<string, (OptItem | null)[]> = {};
   for (let i = 0; i < slots.length; i++) cands[slots[i]!] = optCandidatesFor(slots[i]!, pools || {}, cur, optional);
@@ -1008,11 +1189,12 @@ function optimizeSuit(pools: Record<string, OptItem[]>, current: OptAssignment, 
   // With a tie-break, every start's climbed suit (and the warm start as given) is a candidate for the second stage.
   const tb = opts.tieBreak ? { tolerance: Math.max(0, opts.tieBreak.tolerance || 0) } : null;
   const tieCands: OptAssignment[] = [];
+  let bestVec = lex ? lexAt(cur) : null;
   const consider = function (start: OptAssignment): void {
     if (yieldFn && ++sinceYield >= yieldEvery) { sinceYield = 0; yieldFn(); }
-    const r = optLocalSearch(start, slots, cands, space, maxPasses);
+    const r = optLocalSearch(start, slots, cands, space, maxPasses, lex);
     if (tb) tieCands.push(r.assignment);
-    if (r.score > bestScore) { bestScore = r.score; best = r.assignment; prog.improvements++; noteBest(best, bestScore); }
+    if (lex ? optLexCmp(r.vec!, bestVec!) > 0 : r.score > bestScore) { bestScore = r.score; bestVec = r.vec; best = r.assignment; prog.improvements++; noteBest(best, bestScore); }
   };
   emit(true);
   consider(cur);
@@ -1051,6 +1233,7 @@ function optimizeSuit(pools: Record<string, OptItem[]>, current: OptAssignment, 
 
   best = optSanitize(best, slots);
   bestScore = optScoreVector(optTotalsOf(best, slots, space), space);
+  if (lex) bestVec = lexAt(best);
 
   let method = "heuristic", proven: boolean | undefined = undefined, nodes: number | undefined = undefined;
   let pruned: { before: number; after: number } | undefined = undefined;
@@ -1079,8 +1262,9 @@ function optimizeSuit(pools: Record<string, OptItem[]>, current: OptAssignment, 
       emit(true);
     };
     // with a tie-break, the score pass keeps a quarter of the budget for the tie pass below
-    const bb = optBranchAndBound(slots, pcands, space, best, bestScore, tb ? budgetMs * 0.75 : budgetMs, opts.onProgress ? tick : undefined, progressEvery, alt || undefined);
-    if (bb.score > bestScore) { best = optSanitize(bb.best, slots); bestScore = bb.score; noteBest(best, bestScore); }
+    const bb = optBranchAndBound(slots, pcands, space, best, bestScore, tb ? budgetMs * 0.75 : budgetMs, opts.onProgress ? tick : undefined, progressEvery, alt || undefined, undefined, lex);
+    const bbBest = optSanitize(bb.best, slots);
+    if (lex ? optLexCmp(lexAt(bbBest), bestVec!) > 0 : bb.score > bestScore) { best = bbBest; bestScore = bb.score; noteBest(best, bestScore); if (lex) bestVec = lexAt(best); }
     method = "exact"; proven = bb.proven; nodes = bb.nodes; pruned = { before: before, after: after };
     bbAlts = bb.alts;
     prog.improvements = heuristicImprovements + bb.improvements;
@@ -1092,29 +1276,43 @@ function optimizeSuit(pools: Record<string, OptItem[]>, current: OptAssignment, 
   // single-slot swap or weapon pair that lowers the cost most and keeps the suit qualifying (ties to the higher score),
   // until none does. The exact phase then proves it with a tie pass of the branch-and-bound over every candidate.
   const topScore = bestScore;
-  let tieInfo: { topScore: number; cost: number; top: Record<string, number | null>; floors: string[] } | undefined = undefined;
+  let tieInfo: { topScore: number; cost: number; changes?: number; top: Record<string, number | null>; floors: string[] } | undefined = undefined;
   let tieRef: OptAssignment = best, tieMet: number[] = [];
   let tieKeeps: ((a: OptAssignment) => boolean) | null = null;   // the trim below must not give up a floor the best suit meets
+  // With the tie-break's fewestChanges a piece also costs the change cost in a slot nobody wears, and the worn piece costs
+  // it less than nothing (any other piece, and an empty slot, 0), so a suit's cost is its tie cost plus the change cost for
+  // each slot it changes, less a constant. The change cost (optChangeCost) is above any suit's summed tie cost, so one
+  // changed slot more always costs more than any rarity can save.
+  const fewest = !!(opts.tieBreak && opts.tieBreak.fewestChanges);
+  let maxTie = 0;
+  for (let i = 0; i < slots.length; i++) { const l = cands[slots[i]!]!; for (let j = 0; j < l.length; j++) { const c = l[j]; if (c && (c.tieCost || 0) > maxTie) maxTie = c.tieCost || 0; } }
+  const changeCost = optChangeCost(maxTie);
+  const costOf = function (it: OptItem | null): number {
+    const own = it ? it.tieCost || 0 : 0;
+    if (!fewest || !it) return own;
+    return own + changeCost * -changeOf(it);
+  };
   if (tb) {
     // scores within 1e-3 count as equal, the exact solver's precision (app/mip.mts TIE_SLACK)
     const min = topScore - tb.tolerance, EPS = 1e-3;
     if (opts.tieBreak!.topStart) {
       const ts = fromSerials(opts.tieBreak!.topStart);
-      if (optScoreVector(optTotalsOf(ts, slots, space), space) >= topScore - EPS) tieRef = ts;
+      if (lex ? optLexCmp(lexAt(ts), bestVec!) >= 0 : optScoreVector(optTotalsOf(ts, slots, space), space) >= topScore - EPS) tieRef = ts;
     }
     const topTv = optTotalsOf(tieRef, slots, space), met: number[] = tieMet;
+    // strict order: a suit qualifies when it holds every stage at the top suit's values (the tolerance plays no part)
+    const topVec = lex ? optLexOf(topTv, lex) : null;
     for (let i = 0; i < space.keys.length; i++) if (space.floor[i]! > 0 && optFloorMet(space, topTv, i)) met.push(i);
     const qualifies = function (tv: number[], sc: number): boolean {
-      if (sc < min - EPS) return false;
+      if (lex ? !optLexHolds(optLexOf(tv, lex), topVec!) : sc < min - EPS) return false;
       for (let i = 0; i < met.length; i++) if (!optFloorMet(space, tv, met[i]!)) return false;
       return true;
     };
-    const costOf = function (it: OptItem | null): number { return it ? it.tieCost || 0 : 0; };
     tieKeeps = function (a: OptAssignment): boolean { const tv = optTotalsOf(a, slots, space); for (let i = 0; i < met.length; i++) if (!optFloorMet(space, tv, met[i]!)) return false; return true; };
-    let pick = tieRef, pickScore = optScoreVector(topTv, space), pickCost = optTieCost(tieRef, slots);
+    let pick = tieRef, pickScore = optScoreVector(topTv, space), pickCost = optTieCost(tieRef, slots, costOf);
     tieCands.push(best);
     for (let i = 0; i < tieCands.length; i++) {
-      const a = optSanitize(tieCands[i]!, slots), tv = optTotalsOf(a, slots, space), sc = optScoreVector(tv, space), c = optTieCost(a, slots);
+      const a = optSanitize(tieCands[i]!, slots), tv = optTotalsOf(a, slots, space), sc = optScoreVector(tv, space), c = optTieCost(a, slots, costOf);
       if (!qualifies(tv, sc)) continue;
       if (c < pickCost - 1e-9 || (c <= pickCost + 1e-9 && sc > pickScore + EPS)) { pick = a; pickScore = sc; pickCost = c; }
     }
@@ -1181,7 +1379,7 @@ function optimizeSuit(pools: Record<string, OptItem[]>, current: OptAssignment, 
     best = optSanitize(cur2, slots);
     bestScore = optScoreVector(optTotalsOf(best, slots, space), space);
     if (opts.exact) {
-      const bb2 = optBranchAndBound(slots, cands, space, best, bestScore, Math.max(0, budgetMs - (Date.now() - exactStart)), undefined, undefined, undefined, { min: min - EPS, met: met, cost: optTieCost(best, slots) });
+      const bb2 = optBranchAndBound(slots, cands, space, best, bestScore, Math.max(0, budgetMs - (Date.now() - exactStart)), undefined, undefined, undefined, { min: min - EPS, met: met, cost: optTieCost(best, slots, costOf), costOf: costOf, lexMins: topVec || undefined }, lex);
       best = optSanitize(bb2.best, slots);
       bestScore = optScoreVector(optTotalsOf(best, slots, space), space);
       proven = proven && bb2.proven;
@@ -1192,12 +1390,14 @@ function optimizeSuit(pools: Record<string, OptItem[]>, current: OptAssignment, 
     const sigOf = function (a: OptAssignment): string { const parts: string[] = []; for (let i = 0; i < slots.length; i++) { const it = a[slots[i]!]; parts.push(it ? String(it.serial) : "0"); } return parts.join(","); };
     const seen: Record<string, boolean> = {};
     seen[sigOf(best)] = true;
-    const list = bbAlts.map(function (e) { const a = optSanitize(e.a, slots); return { best: a, score: optScoreVector(optTotalsOf(a, slots, space), space) }; });
+    // strict order: only suits equal to the best on every stage, whatever the tolerance
+    const list = bbAlts.map(function (e) { const a = optSanitize(e.a, slots); return { best: a, score: optScoreVector(optTotalsOf(a, slots, space), space) }; })
+      .filter(function (e) { return !lex || optLexCmp(lexAt(e.best), bestVec!) === 0; });
     list.sort(function (x, y) { return y.score - x.score; });
     alternatives = [];
     for (let i = 0; i < list.length && alternatives.length < alt.count; i++) {
       const e = list[i]!;
-      if (e.score < topScore - altTol - 1e-9) break;   // ranked against the best score, which a tie-break's suit may sit under
+      if (!lex && e.score < topScore - altTol - 1e-9) break;   // ranked against the best score, which a tie-break's suit may sit under
       const k = sigOf(e.best);
       if (seen[k]) continue;
       seen[k] = true;
@@ -1214,13 +1414,14 @@ function optimizeSuit(pools: Record<string, OptItem[]>, current: OptAssignment, 
     const s = slots[i]!, it = best[s] || null;
     if (!it || !optional[s] || s === "oneHanded" || s === "twoHanded" || (cur[s] && cur[s]!.serial === it.serial)) continue;
     const without: OptAssignment = { ...best, [s]: null }, sc = scoreSet(without, profile);
-    if (sc >= tied - 1e-9 && (!tieKeeps || tieKeeps(without))) { best = without; tied = sc; }
+    // strict order: it comes off when no stage is lower without it
+    if ((lex ? optLexCmp(lexAt(without), lexAt(best)) >= 0 : sc >= tied - 1e-9) && (!tieKeeps || tieKeeps(without))) { best = without; tied = sc; }
   }
   bestScore += tied - untrimmed;
   if (tb) {
     const top: Record<string, number | null> = {};
     for (let i = 0; i < slots.length; i++) { const it = tieRef[slots[i]!]; top[slots[i]!] = it ? it.serial : null; }
-    tieInfo = { topScore: Math.max(topScore, bestScore), cost: optTieCost(best, slots), top: top, floors: tieMet.map(function (i) { return space.keys[i]!; }).sort() };
+    tieInfo = { topScore: Math.max(topScore, bestScore), cost: optTieCost(best, slots), ...(fewest ? { changes: optChanges(best, cur, slots) } : {}), top: top, floors: tieMet.map(function (i) { return space.keys[i]!; }).sort() };
   }
 
   // Per-slot diff report.
@@ -1274,8 +1475,9 @@ function optimizeSuit(pools: Record<string, OptItem[]>, current: OptAssignment, 
     pruned: pruned,
     alternatives: alternatives,
     altTolerance: alt ? altTol : undefined,
-    ...(tieInfo ? { tieBreak: tieInfo } : {})
+    ...(tieInfo ? { tieBreak: tieInfo } : {}),
+    ...(lex ? { lex: lexAt(best) } : {})
   };
 }
 
-export { scoreSet, optimizeSuit, optIsValidAssignment, optMulberry32, optDefaultSlots, optDefaultOptionalSlots, optAssignmentTotals, optGradientProfile, optCollectKeys, optBuildSpace, optDominancePrune, optVec, optScoreVector, optIsTwoHandedWeapon };
+export { optStrictStages, optStrictScore, optLexCmp, optChanges, CHANGE_COST, optChangeCost, scoreSet, optimizeSuit, optIsValidAssignment, optMulberry32, optDefaultSlots, optDefaultOptionalSlots, optAssignmentTotals, optGradientProfile, optCollectKeys, optBuildSpace, optDominancePrune, optVec, optScoreVector, optIsTwoHandedWeapon };

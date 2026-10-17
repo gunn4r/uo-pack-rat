@@ -26,7 +26,7 @@
 // rather than fighting that structural mismatch at every call site.
 import type * as Core from "../scripts/optimizer-core.mts";
 import type { OptItem } from "./vault-lib.mts";
-import { buildSuitMip, startVector, pickedOf, tieBreakModel, TIE_SLACK, DEFAULT_SLOTS, DEFAULT_OPTIONAL_SLOTS, type BuiltMip } from "./mip.mts";
+import { buildSuitMip, startVector, pickedOf, tieBreakModel, heldModel, stageObjective, tieCosts, changeCostFor, TIE_SLACK, DEFAULT_SLOTS, DEFAULT_OPTIONAL_SLOTS, type BuiltMip } from "./mip.mts";
 import {
   loadHighs as defaultLoadHighs, openModel, solveModel as defaultSolveModel, addNoGood, closeModel,
   type HighsInstance, type Handle, type SolveModelOptions, type SolveResult,
@@ -44,6 +44,10 @@ type CoreProgress = Parameters<NonNullable<OptOptionsFull["onProgress"]>>[0];
 export interface CoreModule {
   optimizeSuit: typeof Core.optimizeSuit;
   scoreSet: typeof Core.scoreSet;
+  optStrictStages: typeof Core.optStrictStages;
+  optLexCmp: typeof Core.optLexCmp;
+  optStrictScore: typeof Core.optStrictScore;
+  optChanges: typeof Core.optChanges;
 }
 
 // Every phase this file reports through onProgress (the heuristic step 1's own progress,
@@ -71,6 +75,7 @@ export interface SolveProgress {
   found?: number | undefined;
   wanted?: number | undefined;
   at?: number | undefined;
+  stage?: StrictStageProgress | undefined;   // strict order: the stage being solved
 }
 
 export interface ExactSolveResult extends OptResult {
@@ -86,14 +91,22 @@ export interface ExactSolveResult extends OptResult {
   altShortfall?: AltShortfall | undefined;
   workers?: undefined;
   tieBreak?: TieBreakResult | undefined;
+  strictProven?: number | undefined;   // strict order: how many stages, in order, HiGHS proved (all of them when `proven`)
 }
 // A tie-break's outcome (opts.tieBreak, issue #262): the best score found, the returned suit's summed tie cost, and,
 // from the exact search, the preference and tolerance it ran with and whether that cost is proven the lowest (`proven`
-// is the score's proof alone: a second stage that runs out of time leaves it, and says so here).
-export interface TieBreakResult { topScore: number; cost: number; rarity?: string | undefined; tolerance?: number | undefined; costProven?: boolean | undefined }
+// is the score's proof alone: a second stage that runs out of time leaves it, and says so here). With fewest changes,
+// `changes` is how many slots the suit changes.
+export interface TieBreakResult { topScore: number; cost: number; changes?: number | undefined; rarity?: string | undefined; fewestChanges?: boolean | undefined; tolerance?: number | undefined; costProven?: boolean | undefined }
+// A strict-order stage in progress: which of how many, what it scores and its properties (scripts/optimizer-core.mts OptStage).
+export interface StrictStageProgress { at: number; of: number; kind: string; keys: string[] | null }
+// A strict-order build's outcome (issue #292), as the worker puts it on the result: each stage (optStrictStages: its kind,
+// a weights stage's properties) with the returned suit's value there, scaled as the core scales it, how many stages, in
+// order, are proven best, and with fewest changes how many slots the suit changes.
+export interface StrictResult { stages: Array<{ kind: string; keys: string[] | null; value: number }>; proven: number; changes?: number | undefined }
 // Why the k-best search returned fewer alternatives than asked: the time budget ran out, the next
 // suit scored outside the tolerance, or no other suit exists.
-export type AltShortfall = "budget" | "tolerance" | "exhausted";
+export type AltShortfall = "budget" | "tolerance" | "exhausted" | "unequal";   // unequal: strict order, no more suits match on every goal
 
 export interface SolveExactArgs {
   core: CoreModule;
@@ -120,6 +133,9 @@ const SCORE_EPS = 1e-6;
 // A result's best score: with a tie-break the returned suit may score under it (OptResult.tieBreak.topScore).
 const topOf = (r: OptResult): number => r.tieBreak ? r.tieBreak.topScore : r.score;
 const tieCostOf = (picked: Partial<Record<string, OptItem>>): number => Object.values(picked).reduce((n, it) => n + (it?.tieCost || 0), 0);
+// How many slots of `picked` hold another piece than `current` (fewest changes).
+const serialsKey = (a: OptAssignment): string => JSON.stringify(serialsOf(a));
+const dot = (a: ArrayLike<number>, b: ArrayLike<number>): number => { let s = 0; for (let j = 0; j < a.length; j++) s += a[j]! * b[j]!; return s; };
 const serialsOf = (suit: Partial<Record<string, { serial: number } | null>> | null | undefined): Record<string, number | null> =>
   Object.fromEntries(Object.entries(suit || {}).map(([slot, it]): [string, number | null] => [slot, it ? it.serial : null]));
 
@@ -146,7 +162,9 @@ export async function solveExact({
   const mipCurrent = current as unknown as Partial<Record<string, OptItem>>;
   // profile (the core's own OptProfile, caps required) satisfies mip.mts's MipProfile (every field
   // optional) as-is — no cast needed in this direction.
-  const built = buildSuitMip({ pools: mipPools, current: mipCurrent, profile, optionalSlots, slots });
+  // strict order (issue #292): the stages, most important first, which need the objective split by property
+  const stages = opts.strict ? core.optStrictStages(profile, opts.strict.ranks, !!opts.strict.fewestChanges) : null;
+  const built = buildSuitMip({ pools: mipPools, current: mipCurrent, profile, optionalSlots, slots, parts: !!stages });
   if (built.cols.every((c) => c.kind !== "x")) {
     // Nothing to decide (every slot fixed or empty): the heuristic's suit is trivially optimal.
     return { ...heur, method: "exact", proven: true, solver: "none", bound: heur.score, gapPoints: 0, mipMs: 0, heuristicMs, unreachableFloors: built.unreachableFloors };
@@ -172,14 +190,15 @@ export async function solveExact({
     // one budget. A limit of 0 still returns the MIP start as the incumbent.
     const remaining = () => Math.max(0, (budget - (now() - t0)) / 1000);
     // With a tie-break the first stage gets three quarters of what is left, so the second always keeps a share.
-    const tb = opts.tieBreak ? { rarity: opts.tieBreak.rarity, tolerance: Math.max(0, opts.tieBreak.tolerance || 0) } : null;
+    const tb = opts.tieBreak ? { rarity: opts.tieBreak.rarity, fewest: !!opts.tieBreak.fewestChanges, tolerance: Math.max(0, opts.tieBreak.tolerance || 0) } : null;
     const stage1Limit = (): number => (tb ? 0.75 * remaining() : remaining());
     // equal scores: the solvers' score precision with a tie-break (app/mip.mts TIE_SLACK, as the core and the stage-2 row), else SCORE_EPS
     const eps = tb ? TIE_SLACK : SCORE_EPS;
     let lastEmit = 0;
     // HiGHS reports ±Infinity for a bound it has not established yet (seen at sub-second budgets): no bound.
     const toScore = (v: number | null | undefined): number | null => (v == null || !Number.isFinite(v) ? null : v + active.scoreOffset);
-    const onEvent = (ev: { kind: string; primal: number | undefined; dual: number | undefined; nodes: number }) => {
+    // a strict-order stage's events carry the stage and no score (a stage's objective is not the score)
+    const onEvent = (ev: { kind: string; primal: number | undefined; dual: number | undefined; nodes: number }, stage?: StrictStageProgress) => {
       const at = now();
       if (lastEmit !== 0 && at - lastEmit < 250) return;
       lastEmit = at;
@@ -188,11 +207,65 @@ export async function solveExact({
       onProgress({
         phase: "exact", elapsedMs: at - t0, budgetMs: budget, bestScore, bound,
         gapPoints: bestScore != null && bound != null ? Math.max(0, bound - bestScore) : null,
-        nodes: ev.nodes, candidates, solver: "highs", currentScore: heur.currentScore, at,
+        nodes: ev.nodes, candidates, solver: "highs", currentScore: heur.currentScore, at, ...(stage ? { stage } : {}),
       });
     };
 
-    let solve = solveModel(handle, { timeLimitS: stage1Limit(), start: startVector(active, heur.best as unknown as Partial<Record<string, OptItem>>), onEvent });
+    const alt = opts.alternatives && opts.alternatives.count > 0 ? opts.alternatives : null;
+    // ---- strict order: one solve per stage, most important first, each holding every earlier stage at what it reached
+    // (app/mip.mts heldModel) and started from the stage before's suit. Each stage gets an equal share of what is left with
+    // the solves still to come (the tie-break's and the other suits' count one each), so a quick stage leaves its time to
+    // the rest. A stage that runs out of time stops the sequence: its incumbent, never worse than its start, is the suit,
+    // and `proven` counts the stages proven in order. The result stands in for the one solve below: its objective is the
+    // plain score of that suit, `colValue` the suit, and `held` every stage's objective for the tie-break and the other suits.
+    let held: number[][] = [], achieved: number[] = [], strictValues: number[] = [], strictProven = 0;
+    const solveStrict = (start: Float64Array): SolveResult => {
+      const objectives = stages!.map((st) => stageObjective(active, st, mipCurrent)), extra = (tb ? 1 : 0) + (alt ? 1 : 0);
+      const hardRows = Object.keys(active.hardRows).length > 0;
+      let vec = start, last: SolveResult | null = null, nodes = 0;
+      held = []; achieved = []; strictProven = 0;
+      for (const [i, o] of objectives.entries()) {
+        // a constant stage has nothing to choose, but the first is solved while the model has hard rows: that solve is
+        // what checks them (a conflict then reaches the hardAsSoft retry, as in Best value)
+        if (o.cost.every((c) => c === 0) && (i > 0 || !hardRows)) { held.push(o.cost); achieved.push(0); if (strictProven === i) strictProven++; continue; }
+        const st = stages![i]!, stage = { at: i + 1, of: objectives.length, kind: st.kind, keys: st.keys };
+        const run = (limit: number): SolveResult => {
+          const h = openModel(highs, heldModel(active, vec, held, o.cost, "maximize", { values: achieved }));
+          try {
+            return solveModel(h, { timeLimitS: limit, start: vec, onEvent: (ev) => { onEvent({ ...ev, primal: undefined, dual: undefined }, stage); } });
+          } finally {
+            closeModel(h);
+          }
+        };
+        onProgress({ phase: "exact", stage, elapsedMs: now() - t0, budgetMs: budget, candidates, solver: "highs", currentScore: heur.currentScore, bestScore: null, bound: null, gapPoints: null, at: now() });
+        const share = remaining() / (objectives.length - i + extra);
+        last = run(share);
+        nodes += last.nodes;
+        // Out of time with time left: once more from its incumbent, with all that is left but the tie-break's and the other
+        // suits' shares. The stages after it are worth nothing unproven, so its proof is what the time is for.
+        if (last.status === "timeLimit" && last.colValue && remaining() / (1 + extra) > 1.5 * share) {
+          vec = startVector(active, pickedOf(active, last.colValue));
+          last = run(remaining() / (1 + extra));
+          nodes += last.nodes;
+        }
+        if (last.colValue == null) break;   // infeasible (only the first stage's hard rows can be) or no incumbent
+        vec = startVector(active, pickedOf(active, last.colValue));
+        held.push(o.cost); achieved.push(dot(o.cost, vec));
+        if (last.status === "optimal" && strictProven === i) strictProven++;
+        if (last.status !== "optimal") break;
+      }
+      held = objectives.map((o) => o.cost);
+      strictValues = objectives.map((o) => dot(o.cost, vec) + o.offset);
+      const done = strictProven === objectives.length;
+      if (last && last.colValue == null && vec === start) return { ...last, nodes };
+      return { status: done ? "optimal" : last!.status === "infeasible" ? "other" : last!.status, statusText: done ? "strict order: every stage proven" : `strict order: ${strictProven} of ${objectives.length} stages proven`,
+        objective: dot(active.model.colCost, vec), primal: null, dual: null, gapAbs: null, nodes, colValue: vec, ms: last?.ms ?? 0 };
+    };
+    const firstSolve = (): SolveResult => {
+      const start = startVector(active, heur.best as unknown as Partial<Record<string, OptItem>>);
+      return stages ? solveStrict(start) : solveModel(handle, { timeLimitS: stage1Limit(), start, onEvent });
+    };
+    let solve = firstSolve();
     let floorsConflict = false;
 
     if (solve.status === "infeasible") {
@@ -202,9 +275,9 @@ export async function solveExact({
       // soft so the fallback below still reports the best honestly-reachable suit.
       floorsConflict = true;
       closeModel(handle);
-      active = buildSuitMip({ pools: mipPools, current: mipCurrent, profile, optionalSlots, slots, hardAsSoft: true });
+      active = buildSuitMip({ pools: mipPools, current: mipCurrent, profile, optionalSlots, slots, hardAsSoft: true, parts: !!stages });
       handle = openModel(highs, active);
-      solve = solveModel(handle, { timeLimitS: stage1Limit(), start: startVector(active, heur.best as unknown as Partial<Record<string, OptItem>>), onEvent });
+      solve = firstSolve();
     }
 
     // A genuine floors conflict only ever gets HERE by way of the infeasible branch above: the
@@ -228,7 +301,7 @@ export async function solveExact({
     if (solve.colValue == null) {
       const final = core.optimizeSuit(pools, current, profile, { ...opts, exact: false, restarts: 0, warmStart: serialsOf(heur.best), ...heurTop });
       const mipMs = now() - t0 - heuristicMs;
-      const bound = toScore(solve.dual);
+      const bound = stages ? null : toScore(solve.dual);
       return {
         ...final, method: "exact", proven: false, solver: "highs", bound, gapPoints: bound != null ? bound - final.score : null,
         nodes: solve.nodes, restarts, evaluations: heur.evaluations + final.evaluations, alternatives: undefined, altTolerance: undefined,
@@ -242,12 +315,13 @@ export async function solveExact({
     // ---- step 3b: the tie-break's second stage (optional) -----------------------------------
     // Among suits within the tolerance of stage 1's that meet every floor it meets, the lowest summed tie cost
     // (app/mip.mts tieBreakModel), started from stage 1's suit, so a timeout still returns a suit no worse than it.
-    const alt = opts.alternatives && opts.alternatives.count > 0 ? opts.alternatives : null;
+    // With strict order, among the suits that hold every stage and meet the same floors. With fewest changes, the tie cost
+    // counts the change cost for each slot changed from the worn suit (app/mip.mts tieCosts).
     let picked2 = picked, stage2Optimal = true;
     if (tb) {
       // stage 1's suit with every column worked out from its own totals: an unproven incumbent may leave a met floor's indicator at 0
-      const start = startVector(active, picked);
-      const h2 = openModel(highs, tieBreakModel(active, start, tb.tolerance));
+      const start = startVector(active, picked), costs = tieCosts(active, tb.fewest ? mipCurrent : null);
+      const h2 = openModel(highs, stages ? heldModel(active, start, held, costs, "minimize", { fixMet: true }) : tieBreakModel(active, start, tb.tolerance, costs));
       try {
         onProgress({ phase: "tie-break", elapsedMs: now() - t0, budgetMs: budget, bestScore: mipScore, at: now() });
         // with other suits asked for, half of what is left stays theirs
@@ -267,17 +341,23 @@ export async function solveExact({
     // Why fewer alternatives came back than were asked for (unset when the count was met).
     let altShortfall: AltShortfall | undefined;
     if (alt) {
-      for (let k = 0; k < alt.count && now() - t0 < budget; k++) {
-        addNoGood(handle, active, lastPicked);
-        onProgress({ phase: "alternatives", found: alternatives.length, wanted: alt.count, elapsedMs: now() - t0, budgetMs: budget, bestScore: mipScore, at: now() });
-        const sk = solveModel(handle, { timeLimitS: remaining() });
-        if (sk.status !== "optimal") { altShortfall = sk.status === "infeasible" ? "exhausted" : "budget"; break; }
-        const score = sk.objective! + active.scoreOffset;
-        if (score < mipScore - altTolerance! - 1e-9) { altShortfall = "tolerance"; break; }
-        const skPicked = pickedOf(active, sk.colValue!);
-        const assignment = assignmentOf(skPicked, slots);
-        alternatives.push({ best: assignment, score: core.scoreSet(assignment, profile) });
-        lastPicked = skPicked;
+      // strict order: the suits that hold every stage (the tolerance plays no part), the best plain score first
+      const kh = stages ? openModel(highs, heldModel(active, startVector(active, picked), held, active.model.colCost, "maximize")) : handle;
+      try {
+        for (let k = 0; k < alt.count && now() - t0 < budget; k++) {
+          addNoGood(kh, active, lastPicked);
+          onProgress({ phase: "alternatives", found: alternatives.length, wanted: alt.count, elapsedMs: now() - t0, budgetMs: budget, bestScore: mipScore, at: now() });
+          const sk = solveModel(kh, { timeLimitS: remaining() });
+          if (sk.status !== "optimal") { altShortfall = sk.status === "infeasible" ? "exhausted" : "budget"; break; }
+          const score = sk.objective! + active.scoreOffset;
+          if (!stages && score < mipScore - altTolerance! - 1e-9) { altShortfall = "tolerance"; break; }
+          const skPicked = pickedOf(active, sk.colValue!);
+          const assignment = assignmentOf(skPicked, slots);
+          alternatives.push({ best: assignment, score: core.scoreSet(assignment, profile) });
+          lastPicked = skPicked;
+        }
+      } finally {
+        if (kh !== handle) closeModel(kh);
       }
       if (alternatives.length < alt.count) altShortfall ??= "budget";   // the loop's own time check ended it
     }
@@ -297,41 +377,63 @@ export async function solveExact({
     // status any of them firing means the model and the core disagree about a suit's score — a
     // modelling bug, not a race — so HiGHS's bound is no bound on the core's scores either.
     const stats = `HiGHS status ${solve.status}, objective ${mipScore}, heuristic ${heur.score}`;
-    // With a tie-break the guards compare best scores (topOf) and, where those agree, tie costs.
-    const heuristicLeads = topOf(heur) > mipScore + eps;
+    // With a tie-break the guards compare best scores (topOf) and, where those agree, tie costs. With strict order they
+    // compare the stage values (the core's `lex`, HiGHS's strictValues) stage by stage; a tie-break's suit holds the top's.
+    type Top = number | number[];
+    const topIn = (r: OptResult): Top => (stages ? r.lex! : topOf(r)), mipTop: Top = stages ? strictValues : mipScore;
+    const cmpTop = (a: Top, b: Top, slack: number): number => (stages ? core.optLexCmp(a as number[], b as number[]) : (a as number) > (b as number) + slack ? 1 : (a as number) < (b as number) - slack ? -1 : 0);
+    const heuristicLeads = cmpTop(topIn(heur), mipTop, eps) > 0;
     // the top-score suit (stage 1's, or the heuristic's when it leads) rides along as one more start, so the core's best
     // score is that suit's, and the floors it meets are the ones both stages held
     const topSuit = heuristicLeads ? heur.tieBreak?.top : serialsOf(picked);
     const topStart = tb && topSuit ? { tieBreak: { ...opts.tieBreak!, topStart: topSuit } } : {};
     let final = core.optimizeSuit(pools, current, profile, { ...opts, exact: false, restarts: 0, warmStart: serialsOf(heuristicLeads ? heur.best : picked2), ...topStart });
     let coreImproved = false, rescoreMismatch = false;
-    const cost2 = tieCostOf(picked2);
+    // a tie cost with fewest changes: the change cost for each slot changed, then the rarity tie cost
+    const changeCost = changeCostFor(active);
+    const tieOrder = (r: OptResult): number => r.tieBreak!.cost + changeCost * (r.tieBreak!.changes ?? 0);
+    const cost2 = tieCostOf(picked2) + (tb?.fewest ? changeCost * core.optChanges(assignmentOf(picked2, slots), current, slots) : 0);
     if (!heuristicLeads) {
-      if (topOf(final) > mipScore + eps) {
-        onWarn(`core improved on HiGHS by ${topOf(final) - mipScore} (${stats})`);
+      if (cmpTop(topIn(final), mipTop, eps) > 0) {
+        onWarn(stages ? `core improved on HiGHS's stages ${JSON.stringify(strictValues)}: ${JSON.stringify(topIn(final))} (${stats})` : `core improved on HiGHS by ${topOf(final) - mipScore} (${stats})`);
         coreImproved = true;
-      } else if (tb && stage2Optimal && final.tieBreak && final.tieBreak.cost < cost2 - 1e-9) {
-        onWarn(`core found a lower tie cost than HiGHS's proven ${cost2}: ${final.tieBreak.cost} (${stats})`);
+      } else if (tb && stage2Optimal && final.tieBreak && tieOrder(final) < cost2 - 1e-9) {
+        onWarn(`core found a lower tie cost than HiGHS's proven ${cost2}: ${tieOrder(final)} (${stats})`);
         coreImproved = true;
       }
-      if (topOf(final) < mipScore - 1e-3) {
-        onWarn(`re-score mismatch: the core scores HiGHS's suit ${topOf(final)} (${stats})`);
+      if (cmpTop(topIn(final), mipTop, 1e-3) < 0) {
+        onWarn(stages ? `re-score mismatch: the core scores HiGHS's suit ${JSON.stringify(topIn(final))} against its stages ${JSON.stringify(strictValues)} (${stats})` : `re-score mismatch: the core scores HiGHS's suit ${topOf(final)} (${stats})`);
         rescoreMismatch = true;
       }
     }
     // a costlier suit than the heuristic's counts only against the same floors held (equal tops can meet different ones)
     const sameFloors = (a: OptResult, b: OptResult): boolean => (a.tieBreak?.floors || []).join() === (b.tieBreak?.floors || []).join();
-    const costAbove = (a: OptResult, b: OptResult): boolean => !!(tb && a.tieBreak && b.tieBreak && Math.abs(topOf(a) - topOf(b)) <= eps && sameFloors(a, b) && a.tieBreak.cost > b.tieBreak.cost + 1e-9);
+    const costAbove = (a: OptResult, b: OptResult): boolean => !!(tb && a.tieBreak && b.tieBreak && cmpTop(topIn(a), topIn(b), eps) === 0 && sameFloors(a, b) && tieOrder(a) > tieOrder(b) + 1e-9);
     let belowHeuristic = heuristicLeads;
-    if (!heuristicLeads && (topOf(final) < topOf(heur) - eps || costAbove(final, heur))) {
+    if (!heuristicLeads && (cmpTop(topIn(final), topIn(heur), eps) < 0 || costAbove(final, heur))) {
       final = core.optimizeSuit(pools, current, profile, { ...opts, exact: false, restarts: 0, warmStart: serialsOf(heur.best), ...heurTop });
       belowHeuristic = true;
     }
-    if (belowHeuristic) onWarn(`exact search's suit scored below the heuristic's ${heur.score} — reporting the heuristic's suit instead of a regression (${stats})`);
+    if (belowHeuristic) onWarn(stages ? `exact search's stages ${JSON.stringify(strictValues)} came in below the heuristic's ${JSON.stringify(heur.lex)} — reporting the heuristic's suit instead of a regression (${stats})` : `exact search's suit scored below the heuristic's ${heur.score} — reporting the heuristic's suit instead of a regression (${stats})`);
+    // Other suits never list the returned suit: the core can hand back another suit than HiGHS's, even one the loop listed.
+    // HiGHS's own suit is then one of them (in Best value when within the tolerance). In strict order keep only those equal
+    // to the returned suit on every stage (a heuristic's suit can win on a later stage).
+    const highsSuit = { best: assignmentOf(picked2, slots), score: core.scoreSet(assignmentOf(picked2, slots), profile) };
+    const shownAlts = [...(stages || highsSuit.score >= final.score - (altTolerance ?? 0) - 1e-9 ? [highsSuit] : []), ...alternatives]
+      .filter((a, i, all) => serialsKey(a.best) !== serialsKey(final.best) && all.findIndex((x) => serialsKey(x.best) === serialsKey(a.best)) === i
+        && (!stages || core.optLexCmp(core.optStrictScore(a.best, current, profile, opts.strict!, slots), final.lex!) === 0))
+      .sort((x, y) => stages ? 0 : y.score - x.score)
+      .slice(0, alt?.count ?? 0);
+    // strict order: a list that came back short (not for time) is short because no more suits match on every goal
+    if (alt && stages && shownAlts.length < alt.count && altShortfall !== "budget") altShortfall = "unequal";
 
     const mipMs = now() - t0 - heuristicMs;
     const disagree = solve.status === "optimal" && (coreImproved || belowHeuristic || rescoreMismatch);
-    const boundRaw = disagree ? null : solve.status === "optimal" ? solve.objective : solve.dual;
+    // strict order has no bound on the plain score: its proof is the stages', as far as the returned suit holds their
+    // values (a heuristic's suit that wins on a later stage holds them; one that differs on a proven stage does not)
+    let stillProven = 0;
+    while (stages && stillProven < strictProven && Math.abs(final.lex![stillProven]! - strictValues[stillProven]!) <= TIE_SLACK) stillProven++;
+    const boundRaw = disagree || stages ? null : solve.status === "optimal" ? solve.objective : solve.dual;
     const proven = solve.status === "optimal" && !coreImproved && !belowHeuristic && !rescoreMismatch;
     return {
       ...final,
@@ -339,11 +441,12 @@ export async function solveExact({
       proven,
       solver: "highs",
       bound: toScore(boundRaw),
-      gapPoints: disagree ? null : solve.gapAbs,
+      gapPoints: disagree || stages ? null : solve.gapAbs,
+      ...(stages ? { strictProven: disagree ? 0 : stillProven } : {}),
       nodes: solve.nodes,
       restarts,
       evaluations: heur.evaluations + final.evaluations,
-      alternatives: alt ? alternatives : undefined,
+      alternatives: alt ? shownAlts : undefined,
       altTolerance,
       altShortfall,
       mipMs, heuristicMs,
@@ -351,7 +454,7 @@ export async function solveExact({
       unreachableFloors: active.unreachableFloors,
       pruned: undefined,
       workers: undefined,
-      ...(tb && final.tieBreak ? { tieBreak: { topScore: Math.max(mipScore, topOf(final)), cost: final.tieBreak.cost, rarity: tb.rarity, tolerance: tb.tolerance, costProven: proven && stage2Optimal } } : {}),
+      ...(tb && final.tieBreak ? { tieBreak: { topScore: Math.max(mipScore, topOf(final)), cost: final.tieBreak.cost, ...(final.tieBreak.changes != null ? { changes: final.tieBreak.changes, fewestChanges: true } : {}), ...(tb.rarity ? { rarity: tb.rarity } : {}), tolerance: tb.tolerance, costProven: proven && stage2Optimal } } : {}),
     };
   } finally {
     closeModel(handle);

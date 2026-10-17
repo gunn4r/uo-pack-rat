@@ -11,7 +11,7 @@
 // the server, Task 8, can build/read against the same types this file narrows into and emits from)
 // rather than trusting `workerData`'s ambient `any`.
 import { parentPort, workerData } from "node:worker_threads";
-import { solveExact, type OptPools, type OptAssignment, type OptProfile, type ExactSolveResult, type SolveProgress } from "./exact-solver.mts";
+import { solveExact, type OptPools, type OptAssignment, type OptProfile, type ExactSolveResult, type SolveProgress, type StrictResult } from "./exact-solver.mts";
 import { resultDiagnostics, scoreShares, withDiagnostics, type Diagnostic, type DiagnosticsProfile, type ScoreShare } from "./diagnostics.mts";
 import { propertyReach, DEFAULT_OPTIONAL_SLOTS, DEFAULT_SLOTS } from "./mip.mts";
 import { heldWeapon, ssiShareOf, stepsFor, swingOf, type SwingResult } from "./swing.mts";
@@ -41,7 +41,7 @@ export interface WorkerWarnMessage {
 }
 // Either path's result, with the settings that worked against it (app/diagnostics.mts; no `diagnostics` when computing them failed) and the suit's swing (app/swing.mts).
 // Each suit carries what made up its score (scoreShares), with the minimums this build held resists at.
-export type WorkerResult = (OptResult | ExactSolveResult) & { diagnostics?: Diagnostic[]; swing?: SwingResult | undefined; shares?: ScoreShare[] };
+export type WorkerResult = (OptResult | ExactSolveResult) & { diagnostics?: Diagnostic[]; swing?: SwingResult | undefined; shares?: ScoreShare[]; strict?: StrictResult | undefined };
 export interface WorkerDoneMessage {
   type: "done";
   result: WorkerResult;
@@ -78,8 +78,14 @@ try {
   const weapon = heldWeapon(result.best), sw = prof.swing;
   const swing = weapon && sw ? swingOf(weapon.speed!, sw.stamBase, result.totals?.after || {}, ssiShareOf(prof)) : undefined;
   // a tie-break's outcome names the preference and tolerance it ran with (the exact search's already does)
-  const tieBreak = result.tieBreak && opts.tieBreak ? { tieBreak: { rarity: opts.tieBreak.rarity, tolerance: Math.max(0, opts.tieBreak.tolerance || 0), topScore: result.tieBreak.topScore, cost: result.tieBreak.cost, ...("costProven" in result.tieBreak ? { costProven: result.tieBreak.costProven } : {}) } } : {};
-  const withSwing = { ...result, ...(swing ? { swing } : {}), ...tieBreak };
+  const tb = result.tieBreak;
+  const tieBreak = tb && opts.tieBreak ? { tieBreak: { ...(opts.tieBreak.rarity ? { rarity: opts.tieBreak.rarity } : {}), ...(opts.tieBreak.fewestChanges ? { fewestChanges: true, changes: tb.changes } : {}), tolerance: Math.max(0, opts.tieBreak.tolerance || 0), topScore: tb.topScore, cost: tb.cost, ...("costProven" in tb ? { costProven: (tb as { costProven?: boolean }).costProven } : {}) } } : {};
+  // strict order: each stage with the suit's value there and how many are proven (the exact search counts them; the core proves all or none)
+  const stages = opts.strict && result.lex ? core.optStrictStages(solveProfile, opts.strict.ranks, !!opts.strict.fewestChanges) : null;
+  const strict: StrictResult | null = stages ? { stages: stages.map((st, i) => ({ kind: st.kind, keys: st.keys, value: result.lex![i]! })), proven: (result as ExactSolveResult).strictProven ?? (result.proven ? stages.length : 0),
+    ...(opts.strict!.fewestChanges ? { changes: core.optChanges(result.best, current, opts.slots ?? DEFAULT_SLOTS) } : {}) } : null;
+  const { lex: _lex, strictProven: _proven, ...plain } = result as ExactSolveResult;
+  const withSwing = { ...plain, ...(swing ? { swing } : {}), ...tieBreak, ...(strict ? { strict } : {}) };
   // A failure here never costs the suit (withDiagnostics): the result goes out without diagnostics and the server logs why.
   const withDiags = withDiagnostics(withSwing, () => resultDiagnostics({ pools: items, current: worn, optionalSlots: opts.optionalSlots, slots: opts.slots, profile: solveProfile as DiagnosticsProfile, result: withSwing, swingNote: note }),
     (e) => port.postMessage({ type: "warn", message: `diagnostics failed, the result goes out without them: ${String((e as Error)?.stack || e)}` } satisfies WorkerWarnMessage));
