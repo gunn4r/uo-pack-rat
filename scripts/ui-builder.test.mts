@@ -5,12 +5,12 @@
 // Each of the older cases is maintainer feedback on the redesign (PR #43), plus the resist cap overrides (issue #44), the weapon exclusions (issue #45) and the Weapon must have chip (issue #214). Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, copyFileSync, readFileSync, readdirSync, existsSync } from "node:fs";
+import { mkdtempSync, writeFileSync, mkdirSync, copyFileSync, readFileSync, readdirSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
-import { fitWindow, noUpdateCheck } from "./electron-window.mts";
+import { fitWindow, noUpdateCheck, removeTempDir } from "./electron-window.mts";
 import type { ElectronApplication, Locator, Page } from "playwright";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -96,7 +96,7 @@ test("[slow] ⌘↵ builds from anywhere on the Builder screen, and not from beh
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });
 
@@ -227,7 +227,7 @@ test("[slow] the Settings drawer: ⌘, and its button, Esc, the tabs, an error's
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });
 
@@ -265,7 +265,7 @@ test("[slow] the Fetch list's pieces show the item tooltip on hover and on keybo
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });
 
@@ -304,7 +304,7 @@ test("[slow] the Plan's worn and replacement names each show their own piece's t
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });
 
@@ -348,7 +348,7 @@ test("[slow] a Fetch list row shows its whole place, wrapped not cut, and copies
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });
 
@@ -394,7 +394,7 @@ test("[slow] Check your settings: the block shows before and after the build, an
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });
 
@@ -508,7 +508,7 @@ test("[slow] goals: the ranked list, its counts, =, spare points, How the goals 
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });
 
@@ -570,7 +570,7 @@ test("[slow] goals runs: the first-visit goals, the run line in goal names, and 
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });
 
@@ -629,7 +629,7 @@ test("[slow] weight scale: the row shows importance with a trade-off hover, and 
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });
 
@@ -727,7 +727,7 @@ test("[slow] What changes: Gauges for what the build asks, Table with every prop
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });
 
@@ -887,7 +887,7 @@ test("[slow] drawer extras: notched weight sliders, buffs by school, each requir
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });
 
@@ -958,7 +958,7 @@ test("[slow] swing steps: the switch, the swing line, Next step from the result,
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });
 
@@ -986,7 +986,7 @@ test("[slow] casting school: the FC cap's source beside the select and on the FC
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });
 
@@ -1027,7 +1027,7 @@ test("[slow] rarity preference: the segmented control, its help line, the result
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });
 
@@ -1052,7 +1052,7 @@ test("[slow] STR limit sits beside Race under Advanced, and a bad value opens th
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });
 
@@ -1122,7 +1122,7 @@ test("[slow] a raised resist cap is marked, built with, shown in the result and 
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });
 
@@ -1173,7 +1173,7 @@ test("[slow] resist caps: a floor past its cap warns, a race change drops a now-
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });
 
@@ -1216,7 +1216,7 @@ test("[slow] excluded weapon skills and the Use Best Weapon Skill check show on 
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });
 
@@ -1249,7 +1249,7 @@ test("[slow] the Weapons popover's Spellbooks row excludes spellbooks and is sav
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });
 
@@ -1286,7 +1286,7 @@ test("[slow] the Weapon must have chip shows the checked properties and is saved
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });
 
@@ -1333,7 +1333,7 @@ test("[slow] the Only containers chip narrows the pool, is built with, kept by t
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });
 
@@ -1368,7 +1368,7 @@ test("[slow] a switch's on state stands apart from its off state in each theme a
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });
 
@@ -1444,7 +1444,7 @@ test("[slow] Manual mode: a picked piece fills its slot, moves the totals and le
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });
 
@@ -1515,7 +1515,7 @@ test("[slow] Manual hand-offs: fill the rest, save as run, reopen it, and start 
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });
 
@@ -1599,7 +1599,7 @@ test("[slow] templates: built-ins first with their description, Apply sets Manua
   } finally {
     await page.unrouteAll({ behavior: "ignoreErrors" });
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });
 
@@ -1683,7 +1683,7 @@ test("[slow] No character: built in Automatic from its own profile, saved as a r
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });
 
@@ -1789,7 +1789,7 @@ test("[slow] arriving: the first-visit view, coming back to the latest run, othe
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });
 
@@ -1863,7 +1863,7 @@ test("[slow] gear changed since a run: the banner lists the changes, the Plan ma
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });
 
@@ -1909,6 +1909,6 @@ test("[slow] arriving: a card asks before replacing tuned settings, and a list r
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });
