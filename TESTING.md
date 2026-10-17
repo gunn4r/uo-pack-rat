@@ -152,7 +152,6 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `app/ui-render.test.mts` — the page's DOM builders for scan-supplied values (the character sheet, the tooltip, the peek's properties), which once built markup as a raw string.
 - `app/ui-state.test.mts` — `app/ui/view-state.mts`, the page's DOM-free state rules.
 - `app/ui-world-map.test.mts` — `app/ui/world-map-model.mts` (issue #164), the world map lightbox's view.
-- `app/unravel-model.test.mts` — `app/ui/unravel-model.mts`, the words of the Unravel view's Gather into a bag dialog (issue #271).
 - `app/unravel.test.mts` — `app/unravel.mts`, what unraveling a piece at a soul forge gives (issue #271).
 - `app/watcher.test.mts` — `app/watcher.mts`: the accepted-name rule, ingesting a file, and the watcher's debounce, retry, reject, sweep and self-healing.
 - `app/wizard-default-adapter.test.mts` — `app/ui/adapters.mts`'s adapter-selection helpers: the wizard and the Import tab never default to a paste client or to a client this OS can't run.
@@ -182,7 +181,6 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `scripts/ui-components.test.mts` — [slow]: `app/ui/components.mts`'s overlays and keyboard behavior in the real Electron window.
 - `scripts/ui-contrast.test.mts` — [slow]: the contrast check from design spec 2.3, run on the real page in both theme families, light and dark.
 - `scripts/ui-forms.test.mts` — [slow]: the form-like screens (the Import drawer, the setup wizard and Settings) in the real Electron window.
-- `scripts/ui-gather.test.mts` — [slow]: the Unravel view's Gather into a bag (issue #271) in the real Electron window.
 - `scripts/ui-map.test.mts` — [slow]: the House map (issues #10 and #164) in the real Electron window over a seeded data folder.
 - `scripts/ui-move.test.mts` — [slow]: the Inventory's selection, Move to and Move back (issue #270) in the real Electron window.
 - `scripts/ui-organize.test.mts` — [slow]: Organize (issue #11) in the real Electron window over the demo scans.
