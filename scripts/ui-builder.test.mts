@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
-import { fitWindow, noUpdateCheck, removeTempDir, pickCharacter, pickTemplate, sideways, sidewaysAt } from "./electron-window.mts";
+import { fitWindow, noUpdateCheck, removeTempDir, pickCharacter, pickTemplate, settle, sideways, sidewaysAt } from "./electron-window.mts";
 import type { ElectronApplication, Locator, Page } from "playwright";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -228,14 +228,17 @@ test("[slow] the Settings drawer: ⌘, and its button, Esc, the tabs, an error's
     // The sentence bar (issue #321): one line at 1366 (where the screen allows that width), Saved runs on the quieter row
     // under it; at 1024 the pickers wrap and Build Settings and Build stay one group at the right of its row.
     const top = (sel: string): Promise<number> => page.locator(sel).evaluate((n) => Math.round(n.getBoundingClientRect().top));
+    const tops = (...sels: string[]): Promise<number[]> => Promise.all(sels.map(top));
     if ((await fitWindow(app, page, { width: 1366, height: 900 })).width === 1366) {
-      assert.equal(await top("#b-run"), await top("#b-char"), "one line at 1366");
-      assert.equal(await top("#b-tpl"), await top("#b-char"));
+      const [run, tpl, char] = await settle(() => tops("#b-run", "#b-tpl", "#b-char"), ([r, t, c]) => r === c && t === c);
+      assert.equal(run, char, "one line at 1366");
+      assert.equal(tpl, char);
     }
     assert.ok(await top("#b-runs-open") > await top("#b-run"), "Saved runs on the second row");
     await fitWindow(app, page, { width: 1024, height: 768 });
-    assert.equal(await top("#b-settings"), await top("#b-run"));
-    const bar = (await page.locator("#b-topbar").boundingBox())!, run = (await page.locator("#b-run").boundingBox())!;
+    const [settingsTop, runTop] = await settle(() => tops("#b-settings", "#b-run"), ([s, r]) => s === r);
+    assert.equal(settingsTop, runTop);
+    const bar = (await settle(async () => (await page.locator("#b-topbar").boundingBox())!, (b) => b.height < 170)), run = (await page.locator("#b-run").boundingBox())!;
     assert.ok(bar.x + bar.width - (run.x + run.width) < 40, "Build at the bar's right end");
     assert.ok(bar.height < 170, `the pickers wrap once at most, got ${bar.height}`);
     assert.deepEqual(errors, []);
@@ -2101,8 +2104,9 @@ test("[slow] the sentence bar: typeahead pickers by keyboard, the build's state 
     const narrow = await sidewaysAt(app, page, { width: 420, height: 900 });
     assert.equal(await page.locator(".b-w-for").isVisible(), false);
     const top = (sel: string): Promise<number> => page.locator(sel).evaluate((n) => Math.round(n.getBoundingClientRect().top));
-    assert.equal(await top("#b-settings"), await top("#b-run"));
-    assert.ok(await top("#b-tpl") > await top("#b-char"), "the pickers on rows of their own");
+    const [settingsTop, runTop, tplTop, charTop] = await settle(() => Promise.all(["#b-settings", "#b-run", "#b-tpl", "#b-char"].map(top)), ([s, r, t, c]) => s === r && t! > c!);
+    assert.equal(settingsTop, runTop);
+    assert.ok(tplTop! > charTop!, "the pickers on rows of their own");
     assert.ok(narrow <= 0, `no sideways scroll at 420: ${narrow}`);
     for (const pick of ["#b-char", "#b-tpl"]) {
       await page.click(pick);

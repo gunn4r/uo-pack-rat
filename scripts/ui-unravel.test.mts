@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
-import { fitWindow, sidewaysAt, testEnv, noUpdateCheck, removeTempDir } from "./electron-window.mts";
+import { fitWindow, settle, sidewaysAt, testEnv, noUpdateCheck, removeTempDir } from "./electron-window.mts";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const require_ = createRequire(import.meta.url);
@@ -225,7 +225,7 @@ test("[slow] the Unravel view folds its groups, condenses its rows, and keeps it
     assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector("#tab-unravel")!).overflowY), "auto");
     // Condensed rows stay one line there too: the name and the ingredient side by side.
     const narrow = page.locator(".unr-group.essence .unr-row").first();
-    const [name, ing] = [await narrow.locator(".unr-name").boundingBox(), await narrow.locator(".unr-ing").boundingBox()];
+    const [name, ing] = await settle(async () => [await narrow.locator(".unr-name").boundingBox(), await narrow.locator(".unr-ing").boundingBox()], ([n, i]) => !!n && !!i && Math.abs(n.y - i.y) < 8);
     assert.ok(Math.abs(name!.y - ing!.y) < 8 && ing!.x > name!.x, `one line at 420 (${JSON.stringify([name, ing])})`);
     assert.deepEqual(errors, []);
   } finally {

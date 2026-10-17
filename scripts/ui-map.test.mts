@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
-import { fitWindow, sideways as sidewaysOf, type RealSize, testEnv, noUpdateCheck, removeTempDir } from "./electron-window.mts";
+import { fitWindow, settle, sideways as sidewaysOf, type RealSize, testEnv, noUpdateCheck, removeTempDir } from "./electron-window.mts";
 import { probeContrast, failures, describeFailures, type ContrastRow } from "./contrast-probe.mts";
 import { houseScan } from "../app/organize-fixture.mts";
 import { claimHouses, vaultHouse, courtyardHouse, castleHouse, fixtureTileData, FIXTURE_TILES } from "../app/house-fixture.mts";
@@ -1070,10 +1070,10 @@ test("[slow] House map: every text, control edge and icon passes contrast on the
     // a small window: one column, no sideways scroll anywhere on the screen
     await fitWindow(app, page, { width: 1000, height: 700 });
     await go(page, `#/map/${VAULT}`, `#map-svg [data-chest="${LABELLED}"]`);   // a vault-only chest: the courtyard drawn before it has stacks too
-    const layout = await page.evaluate(() => {
+    const layout = await settle(() => page.evaluate(() => {
       const over = (sel: string): number => { const e = document.querySelector(sel) as HTMLElement; return e.scrollWidth - e.clientWidth; };
       return { cols: getComputedStyle(document.querySelector("#map-body")!).gridTemplateColumns.split(" ").length, page: over("html"), body: over("#map-body"), top: over("#tab-map .topbar") };
-    });
+    }), (l) => l.cols === 1 && l.page <= 0 && l.body <= 0 && l.top <= 0);
     assert.deepEqual(layout, { cols: 1, page: 0, body: 0, top: 0 });
     assert.deepEqual(await clippedPills(page), [], "every level pill shows whole beside the search box");
     assert.deepEqual(errors, []);
@@ -1570,7 +1570,7 @@ test("[slow] House map Stack plan: lists every container of the dense vault, a c
     for (const width of [1000, 1440]) {
       const real = await fitWindow(app, page, { width, height: 768 });
       if (real.width >= 1100 && real.width < 1800) await page.waitForFunction(() => getComputedStyle(document.querySelector(".map-side")!).visibility === "hidden", undefined, { timeout: 10_000 });   // the levels pane folds so the cards fit
-      const l = await sideways(page);
+      const l = await settle(() => sideways(page), (v) => v.page <= 0 && v.body <= 0);
       assert.deepEqual([l.page, l.body], [0, 0], `nothing scrolls sideways at ${real.width} px`);
       assert.deepEqual(await clippedPills(page), [], `the level pills show whole at ${real.width} px`);
     }
