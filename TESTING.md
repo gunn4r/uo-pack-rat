@@ -94,6 +94,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `app/migrate.test.mts` — `app/migrate.mts`, the one registry of data-file migrations: every golden file in `app/fixtures/golden/<kind>/<version>.json` loads through `migrate` to its kind's current version and passes that kind's own check, and migrating it again changes nothing; every kind has a golden file at its current version; a document newer than the build comes back untouched and marked `newer`; a v3 profiles.json with `intent.swingSteps` (issue #217) reads as it is, with no step, with the "made by a newer Pack Rat" notice; `version` and `schemaVersion` read as one field, written as the file writes it; a document with no version its kind accepts comes back untouched for its reader to refuse; and each kind's steps are in order and end at its current version.
 - `app/mip.test.mts` — `app/mip.mts`, the pure MIP builder, and `app/mip-solve.mts`, the HiGHS solve.
 - `app/missing.test.mts` — `app/missing.mts`, Missing since last scan (issue #99): what left a root container between its last two scans and is nowhere else in the inventory now.
+- `app/move.test.mts` — `app/move.mts`, Move to's planner (issue #270), on hand-built house scans folded by the real fold.
 - `app/newer-files.test.mts` — data files made by a newer Pack Rat (app/migrate.mts), on a real server and temp data folder: `GET /api/organize`, `/api/item-kinds`, `/api/house-map` and `/api/profiles` read what they can and say `readOnly` ("made by a newer Pack Rat"), and every save to them (`PUT /api/organize`, `POST /api/item-kinds` and its import, `PUT /api/house-map/<id>`, `PUT /api/profiles`) is a 409 with that message, the file left byte for byte.
 - `app/organize-config.test.mts` — `app/organize-config.mts` (issue #11): the strict check PUT /api/organize runs on an Organize setup, and the salvage every read of a hand-edited organize.json goes through.
 - `app/organize-presets.test.mts` — `app/organize-presets.mts` (issue #11): every preset is a valid rule and finds what its name promises.
@@ -145,6 +146,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `app/ui-item-tip.test.mts` — `app/ui/item-tip.mts`, where the item tooltip gets its item (issue #10).
 - `app/ui-map.test.mts` — `app/ui/house-map-model.mts`, the House map's pure rules (issues #10 and #164).
 - `app/ui-messages.test.mts` — `app/ui/messages.mts`, the plain sentences the page shows for an outcome the server reports as a count, a status code or a one-word field.
+- `app/ui-move.test.mts` — `app/ui/move-model.mts`, Move to's pure rules (issue #270).
 - `app/ui-organize.test.mts` — `app/ui/organize-model.mts`, the Organize screen's pure rules (issue #11).
 - `app/ui-render.test.mts` — the page's DOM builders for scan-supplied values (the character sheet, the tooltip, the peek's properties), which once built markup as a raw string.
 - `app/ui-state.test.mts` — `app/ui/view-state.mts`, the page's DOM-free state rules.
@@ -178,6 +180,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `scripts/ui-contrast.test.mts` — [slow]: the contrast check from design spec 2.3, run on the real page in both theme families, light and dark.
 - `scripts/ui-forms.test.mts` — [slow]: the form-like screens (the Import drawer, the setup wizard and Settings) in the real Electron window.
 - `scripts/ui-map.test.mts` — [slow]: the House map (issues #10 and #164) in the real Electron window over a seeded data folder.
+- `scripts/ui-move.test.mts` — [slow]: the Inventory's selection, Move to and Move back (issue #270) in the real Electron window.
 - `scripts/ui-organize.test.mts` — [slow]: Organize (issue #11) in the real Electron window over the demo scans.
 - `scripts/ui-scrolls.test.mts` — [slow]: the Inventory's Scrolls view (issue #181) in the real Electron window.
 - `scripts/ui-shell.test.mts` — [slow]: the app shell (design spec 3.1) in the real Electron window.

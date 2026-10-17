@@ -1,6 +1,6 @@
 // organize-server.test.mts — the Organize routes (issue #11) and the item kinds routes (issue #150) on a real server and temp data folder.
 //
-// the Organize routes on a real server and temp data folder: `GET|PUT /api/organize` (a broken setup and a blacklisted label refused, the setup's stamp with a stale `base` refused and two saves from the same read landing once (issue #280), a hand-edited file salvaged, an unparsable or non-version-1 one moved aside), `GET /api/organize/plan`, `GET /api/organize/presets`, `POST /api/organize/propose` (Auto organize: the proposal over every offered chest saved as it is with PUT, naming the stamp it answers as base (issue #280), and proposing again changing nothing; planned with what the running bridge can do, like the plan; an unknown strategy, a bad container list and a salvaged setup refused; a container it cannot use reported), `POST /api/organize/match` (what one rule filter takes of the movable items in labelled roots, ignoring the other rules; the strict filter check; the body limit), and `POST /api/organize/trip` (a stale stamp, a second trip before the first reports back, a trip that is not its site's first, a salvaged setup and a client without `trip` refused, a running bridge that reports no `trip` refused while one too old to report itself is judged by the newest scan as before; the largest valid setup accepted and read back; a trip whose bridge went quiet stops holding the queue; a reported trip read into the overlay), and Put away (issue #131): a request dropped after a refresh's scan answered with one trip carrying the picked container's `putAway`, only the pack's own items (never the pouch's), a second request refused while it has not reported back, what stayed once it has ("1 bag stays in your pack"), a chest last scanned before the click refused, a stale request with a bad id refused, and the pouch picked next giving up its own items. The item kinds routes (issue #150): `POST /api/item-kinds` re-kinds an item with no rescan, the plan follows, it survives a restart, a name beats a graphic and kind null resets; the refusals (gear, an unknown kind, a bad name or graphic, neither named); an import merges with its entries winning and says what it left out, a file with nothing to import is refused, and export then import on a fresh data folder reproduces the kinds; a file that does not parse is moved aside with a warning. All `[fast]`.
+// the Organize routes on a real server and temp data folder: `GET|PUT /api/organize` (a broken setup and a blacklisted label refused, the setup's stamp with a stale `base` refused and two saves from the same read landing once (issue #280), a hand-edited file salvaged, an unparsable or non-version-1 one moved aside), `GET /api/organize/plan`, `GET /api/organize/presets`, `POST /api/organize/propose` (Auto organize: the proposal over every offered chest saved as it is with PUT, naming the stamp it answers as base (issue #280), and proposing again changing nothing; planned with what the running bridge can do, like the plan; an unknown strategy, a bad container list and a salvaged setup refused; a container it cannot use reported), `POST /api/organize/match` (what one rule filter takes of the movable items in labelled roots, ignoring the other rules; the strict filter check; the body limit), Move to's `POST /api/move/plan` and `/api/move/trip` (issue #270: the selection counted and planned into a container, an Organize rule that would take a moved item out again, a dest no scan has refused, one trip at a time, nothing queued once everything is there, and Move back), and `POST /api/organize/trip` (a stale stamp, a second trip before the first reports back, a trip that is not its site's first, a salvaged setup and a client without `trip` refused, a running bridge that reports no `trip` refused while one too old to report itself is judged by the newest scan as before; the largest valid setup accepted and read back; a trip whose bridge went quiet stops holding the queue; a reported trip read into the overlay), and Put away (issue #131): a request dropped after a refresh's scan answered with one trip carrying the picked container's `putAway`, only the pack's own items (never the pouch's), a second request refused while it has not reported back, what stayed once it has ("1 bag stays in your pack"), a chest last scanned before the click refused, a stale request with a bad id refused, and the pouch picked next giving up its own items. The item kinds routes (issue #150): `POST /api/item-kinds` re-kinds an item with no rescan, the plan follows, it survives a restart, a name beats a graphic and kind null resets; the refusals (gear, an unknown kind, a bad name or graphic, neither named); an import merges with its entries winning and says what it left out, a file with nothing to import is refused, and export then import on a fresh data folder reproduces the kinds; a file that does not parse is moved aside with a warning. All `[fast]`.
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, readFileSync, existsSync, renameSync } from "node:fs";
@@ -222,6 +222,45 @@ test("[fast] a trip's reported steps go into the overlay, and the next plan no l
     assert.deepEqual(st.moves.map((m) => [m.serial, m.to]), [[PEARL, A], [RUBY, B]]);
     const gone = await call(s, "/api/organize/trip", body("POST", { index: 1, stamp: next.stamp }));
     assert.equal(gone.status, 404);
+  } finally {
+    await s.close();
+  }
+});
+
+test("[fast] Move to: POST /api/move/plan counts the selection and plans into the picked container; POST /api/move/trip queues it once, and Move back returns each item where it came from", async () => {
+  const GEM = 0x40001003;
+  const { s, dir } = await serve([{ serial: GEM, name: "Ruby", in: B }]);
+  try {
+    assert.equal((await call(s, "/api/organize", body("PUT", CONFIG_DOC))).status, 200);
+    const selection = { serials: [PEARL, GEM] };
+    const counted = await call(s, "/api/move/plan", body("POST", { selection }));
+    assert.deepEqual(counted.body, { ok: true, selected: 2, worn: 0, wornNames: [], here: { [B]: 2 } });
+    // The pearl belongs in A; the gems rule files the ruby in B, so the next Organize run would take it out again.
+    const plan = await call<{ plan: { moving: number; trips: number; against: { serial: number; target: number }[] } }>(s, "/api/move/plan", body("POST", { selection, to: A }));
+    assert.deepEqual([plan.body.plan.moving, plan.body.plan.trips], [2, 1]);
+    assert.deepEqual(plan.body.plan.against.map((x) => [x.serial, x.target]), [[GEM, B]]);
+    assert.equal((await call<{ problem: string }>(s, "/api/move/plan", body("POST", { selection, to: 0x41000000 }))).body.problem, "that container is in no scan");
+    assert.equal((await call(s, "/api/move/plan", body("POST", { selection: {} }))).status, 400);
+
+    const trip = await call<{ id: string; names: Record<string, string>; remaining: number }>(s, "/api/move/trip", body("POST", { selection, to: A }));
+    assert.equal(trip.status, 200, JSON.stringify(trip.body));
+    assert.deepEqual([trip.body.remaining, Object.keys(trip.body.names).length], [2, 2]);
+    const [line] = queued(dir);
+    assert.deepEqual([line!.id, line!.action], [trip.body.id, "trip"]);
+    assert.deepEqual((line!.puts as { serial: number; dest: number[] }[]).map((p) => [p.serial, p.dest]), [[PEARL, [A]], [GEM, [A]]]);
+    assert.match(String((await call(s, "/api/move/trip", body("POST", { selection, to: A }))).body.error), /has not reported back/);
+    assert.equal((await call(s, "/api/move/trip", body("POST", { selection, to: 0x41000000 }))).status, 409);
+
+    const t = new Date().toISOString();
+    writeFileSync(join(dir, "bridge", "tazuo", "status.json"), JSON.stringify({ alive: t, character: "Tester", current: null, counts: { done: 1, failed: 0 },
+      results: { [trip.body.id]: { ok: true, msg: "trip 1", t, partial: false, stopped: false, steps: [PEARL, GEM].flatMap((serial) => [{ op: "take", serial, ok: true, msg: "took" }, { op: "put", serial, ok: true, msg: "put" }]) } } }));
+    const back = { serials: [PEARL, GEM], trips: [trip.body.id] };
+    assert.deepEqual((await call(s, "/api/move/plan", body("POST", { back }))).body, { ok: true, back: { movable: 2, skipped: [] } });
+    assert.equal((await call(s, "/api/move/trip", body("POST", { selection, to: A }))).body.id, null, "everything is there now: nothing to queue");
+    const returned = await call(s, "/api/move/trip", body("POST", { back }));
+    assert.equal(returned.status, 200, JSON.stringify(returned.body));
+    assert.deepEqual((queued(dir).at(-1)!.puts as { serial: number; dest: number[] }[]).map((p) => [p.serial, p.dest]), [[PEARL, [B]], [GEM, [B]]]);
+    assert.equal((await call(s, "/api/move/trip", body("POST", { back: { serials: [PEARL] } }))).status, 400);
   } finally {
     await s.close();
   }

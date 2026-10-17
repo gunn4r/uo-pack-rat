@@ -1,5 +1,7 @@
-// organize.mts — Organize: GET|PUT /api/organize, GET /api/organize/presets, POST /api/organize/match and /api/organize/propose, GET /api/organize/plan and POST /api/organize/trip.
+// organize.mts — Organize: GET|PUT /api/organize, GET /api/organize/presets, POST /api/organize/match and /api/organize/propose, GET /api/organize/plan and POST /api/organize/trip; and Move to (issue #270), which runs as Organize trips: POST /api/move/plan and /api/move/trip.
 import { isBoundedInt, isBoundedString, MAX_SERIAL } from "../../guards.mts";
+import { againstRules, backSteps, destProblem, MAX_SELECTION, planMoves, resolveSelection, type LeftReason, type MoveStep, type Selection } from "../../move.mts";
+import { applyOverlay } from "../../organize.mts";
 import { checkOrganizeConfig, LIMITS, matchProblem, MAX_SETUP_BYTES, salvagedRefusal, type RuleMatch } from "../../organize-config.mts";
 import { PRESETS } from "../../organize-presets.mts";
 import { proposeOrganize, STRATEGY_IDS, type StrategyId } from "../../organize-strategies.mts";
@@ -10,8 +12,25 @@ import { send, asObject } from "../respond.mts";
 import type { Route } from "../router.mts";
 import type { ServerContext } from "../context.mts";
 
+const serialList = (v: unknown): v is number[] => Array.isArray(v) && v.length <= MAX_SELECTION && v.every((s) => isBoundedInt(s, 1, MAX_SERIAL));
+// A Move's selection as the page sends it (move.mts's Selection), or why it is refused.
+function selectionOf(v: unknown): Selection | string {
+  const o = (v && typeof v === "object" && !Array.isArray(v) ? v : {}) as Record<string, unknown>;
+  const ok = (o.serials === undefined || serialList(o.serials)) && (o.query === undefined || isBoundedString(o.query, 8000)) && (o.except === undefined || serialList(o.except));
+  if (ok && ((o.serials as number[] | undefined)?.length || o.query !== undefined)) return { serials: o.serials as number[] | undefined, query: o.query as string | undefined, except: o.except as number[] | undefined };
+  return `selection must name serials (at most ${MAX_SELECTION}), an Inventory query, or both, with the serials a query leaves out in except`;
+}
+
+// Move back's request: the serials a Move moved and its trip ids, or why it is refused.
+function backOf(v: unknown): { serials: number[]; trips: string[] } | string {
+  const b = (v && typeof v === "object" && !Array.isArray(v) ? v : {}) as Record<string, unknown>;
+  if (serialList(b.serials) && b.serials.length && Array.isArray(b.trips) && b.trips.length && b.trips.length <= 500 && b.trips.every((t) => isBoundedString(t, 64))) return { serials: b.serials, trips: b.trips as string[] };
+  return "back must be {serials: [the moved serials], trips: [the Move's trip ids]}";
+}
+
 export function routes(ctx: ServerContext): Route[] {
   const { appSettings, blacklistStore, eventBus, getInventory, organizeService, organizeStore } = ctx;
+  const blacklist = (): number[] => blacklistStore.read().map((e) => e.serial);
   return [
     { method: "GET", path: "/api/organize", handle: (_req, res) => send(res, 200, { ok: true, ...organizeStore.read(), stamp: organizeStore.stamp() }) },
     { method: "PUT", path: "/api/organize", handle: async (req, res) => {
@@ -85,6 +104,72 @@ export function routes(ctx: ServerContext): Route[] {
       const queued = organizeService.queuePlanTrip(adapter, fold, state, plan, index);
       if (!queued.ok) return send(res, 409, { ok: false, error: queued.error });
       return send(res, 200, { ok: true, id: queued.id, index });
+    } },
+    { method: "POST", path: "/api/move/plan", handle: async (req, res) => {
+      // What Move to would do with the selection (issue #270): how many items it holds and how many are worn, how many of
+      // them sit directly in each container (the picker's "already here"), and, with `to`, the plan into that container:
+      // how many move and in how many trips, which stay and why, and which of the moved ones Organize would take out again.
+      // With `back` instead (Move back's request), how many items would go back and which are skipped. Read-only.
+      const { selection, to, back } = asObject(await readBody(req, { limit: 256e3 }));
+      if (back !== undefined) {
+        const b = backOf(back);
+        if (typeof b === "string") return send(res, 400, { ok: false, error: b });
+        const { fold, state } = await organizeService.organizeInputs();
+        const { steps, skipped } = backSteps(fold, state.moves, b.serials, b.trips);
+        return send(res, 200, { ok: true, back: { movable: steps.length, skipped: skipped.map((x) => x.name) } });
+      }
+      const sel = selectionOf(selection);
+      if (typeof sel === "string") return send(res, 400, { ok: false, error: sel });
+      if (to !== undefined && !isBoundedInt(to, 1, MAX_SERIAL)) return send(res, 400, { ok: false, error: "to must be a container serial" });
+      const { inv } = await getInventory();
+      const items = resolveSelection(inv, sel, appSettings.rules().rarity);
+      const worn = items.filter((it) => it.equippedBy);
+      const here: Record<string, number> = {};
+      for (const it of items) if (!it.equippedBy && it.container != null) here[it.container] = (here[it.container] ?? 0) + 1;
+      const base = { ok: true, selected: items.length, worn: worn.length, wornNames: worn.slice(0, 3).map((it) => it.name), here };
+      if (to === undefined) return send(res, 200, base);
+      const { fold, config, state } = await organizeService.organizeInputs();
+      const view = applyOverlay(fold, state.moves).inv;
+      const problem = destProblem(view, to, blacklist());
+      if (problem) return send(res, 200, { ...base, problem, plan: null });
+      const plan = planMoves(fold, state.moves, items.map((it) => ({ serial: +it.serial, to })), { blacklist: blacklist() });
+      const left: Partial<Record<LeftReason, number>> = {};
+      for (const l of plan.left) left[l.why] = (left[l.why] ?? 0) + 1;
+      const moved = plan.moves.map((m) => m.serial);
+      const against = againstRules(view, config, moved, to, { now: Date.now(), rarity: appSettings.rules().rarity, suitPieces: organizeService.suitsFor(config.rules.map((r) => r.match)), blacklist: blacklist(), seen: state.seen });
+      return send(res, 200, { ...base, problem: null, plan: { moving: moved.length, trips: plan.trips.length, already: plan.already.length, noRoom: plan.noRoom.length, left, against } });
+    } },
+    { method: "POST", path: "/api/move/trip", handle: async (req, res) => {
+      // The next trip of a Move, planned now and queued like an Organize trip: `selection` and `to` (Move to), or `back`, the
+      // serials a Move moved and its trip ids (Move back: each item to the container the overlay says that Move took it from).
+      // The page asks again after each trip that reports back clean, until nothing is left to move (`id` null).
+      const { selection, to, back } = asObject(await readBody(req, { limit: 256e3 }));
+      let steps: MoveStep[], skipped: Array<{ serial: number; name: string }> = [];
+      const adapter = appSettings.bridgeAdapter();
+      const { fold, state, features } = await organizeService.organizeInputs();
+      if (back !== undefined) {
+        const b = backOf(back);
+        if (typeof b === "string") return send(res, 400, { ok: false, error: b });
+        ({ steps, skipped } = backSteps(fold, state.moves, b.serials, b.trips));
+      } else {
+        const sel = selectionOf(selection);
+        if (typeof sel === "string") return send(res, 400, { ok: false, error: sel });
+        if (!isBoundedInt(to, 1, MAX_SERIAL)) return send(res, 400, { ok: false, error: "to must be a container serial" });
+        const problem = destProblem(applyOverlay(fold, state.moves).inv, to, blacklist());
+        if (problem) return send(res, 409, { ok: false, error: problem });
+        const { inv } = await getInventory();
+        steps = resolveSelection(inv, sel, appSettings.rules().rarity).map((it) => ({ serial: +it.serial, to }));
+      }
+      if (!features.has("trip")) return send(res, 409, { ok: false, error: `the ${adapter} bridge cannot run Organize trips` });
+      const waiting = state.pending[0];
+      if (waiting) return send(res, 409, { ok: false, error: `trip ${waiting.index} has not reported back yet` });
+      const plan = planMoves(fold, state.moves, steps, { blacklist: blacklist() });
+      const trip = plan.trips[0];
+      if (!trip) return send(res, 200, { ok: true, id: null, remaining: 0, skipped });
+      const queued = organizeService.queuePlanTrip(adapter, fold, state, plan, trip.index);
+      if (!queued.ok) return send(res, 409, { ok: false, error: queued.error });
+      const names = Object.fromEntries(plan.moves.filter((m) => m.trip === trip.index).map((m) => [m.serial, m.name]));
+      return send(res, 200, { ok: true, id: queued.id, index: trip.index, names, remaining: plan.moves.length, skipped });
     } },
   ];
 }

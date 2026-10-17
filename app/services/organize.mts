@@ -85,7 +85,8 @@ export function createOrganizeService({ paths, getInventory, organizeStore, orga
 
   // Trip `index` of `plan` queued with queueTrip and recorded as pending, so its result is read back into the
   // overlay (harvestTrips). A Put away trip from the pack carries putAway, the picked container (docs/bridge-protocol.md, Put away).
-  function queuePlanTrip(adapter: string, fold: Inventory, state: OrganizeState, plan: Plan, index: number, putAway?: number): { ok: true; id: string } | { ok: false; error: string } {
+  // A Move to's plan (app/move.mts) is queued the same way.
+  function queuePlanTrip(adapter: string, fold: Inventory, state: OrganizeState, plan: Pick<Plan, "moves" | "stamp">, index: number, putAway?: number): { ok: true; id: string } | { ok: false; error: string } {
     const input = tripCommand(applyOverlay(fold, state.moves).inv, plan, index);
     if (!input) return { ok: false, error: `trip ${index} cannot be built from the current scans` };
     const now = new Date();
@@ -157,6 +158,6 @@ export function createOrganizeService({ paths, getInventory, organizeStore, orga
     if (!queued.ok) return { ok: false, msg: "The trip could not be queued.", detail: queued.error };
     return { ok: true, msg: tripMsg(trip.puts.length, plan.moves.length - trip.puts.length), trip: queued.id };
   }
-  return { harvestNow, organizeNow, queuePlanTrip, putAway, suitsFor };
+  return { harvestNow, organizeInputs, organizeNow, queuePlanTrip, putAway, suitsFor };
 }
 export type OrganizeService = ReturnType<typeof createOrganizeService>;
