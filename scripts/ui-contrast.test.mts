@@ -11,7 +11,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import type { ElectronApplication, Page } from "playwright";
-import { fitWindow, openFacet, setRows, type RealSize, testEnv, noUpdateCheck, removeTempDir } from "./electron-window.mts";
+import { fitWindow, openFacet, setRows, type RealSize, testEnv, noUpdateCheck, removeTempDir, pickCharacter, characterNames } from "./electron-window.mts";
 import { probeContrast, failures, describeFailures, type ContrastRow } from "./contrast-probe.mts";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -146,7 +146,7 @@ const SCENES: Scene[] = [
   }, leave: (p) => p.evaluate(async () => (await import("/ui/components.mjs" as string)).clearToasts()) },
   { name: "builder result", enter: async (p) => {
     await route(p, "#/builder", "#b-run");
-    await p.waitForFunction(() => document.querySelector<HTMLSelectElement>("#b-char")?.value, undefined, { timeout: 10_000 });
+    await p.waitForFunction(() => document.querySelector("#b-char")?.getAttribute("data-value"), undefined, { timeout: 10_000 });
     // Advanced: other suits, so that card draws too. The budget leaves a slow runner time to find the two other suits
     // "builder compare suits" ticks (issue #240); a fast runner finishes well inside it.
     await settingsTab(p, "advanced");
@@ -324,7 +324,8 @@ const SCENES: Scene[] = [
     await p.click("#b-runs-compare");
     await p.waitForSelector("#b-compare-view:not([hidden]) .b-cmp");
   }, leave: async (p) => { await p.getByRole("button", { name: "Back to result" }).click(); } },
-  { name: "builder template menu", enter: async (p) => { await p.click("#b-tpl-menu"); await p.waitForSelector(".pop[role=menu]"); }, leave: (p) => p.keyboard.press("Escape") },
+  { name: "builder character picker", enter: async (p) => { await p.click("#b-char"); await p.keyboard.type("e"); await p.waitForSelector(".pop .cbx-hit"); }, leave: (p) => p.keyboard.press("Escape") },
+  { name: "builder build picker", enter: async (p) => { await p.click("#b-tpl"); await p.waitForSelector(".pop .cbx-list"); }, leave: (p) => p.keyboard.press("Escape") },
   { name: "builder property picker", enter: async (p) => { await settingsTab(p, "requirements"); await p.click("#b-addfloor"); await p.waitForSelector(".pop .b-pick-list"); }, leave: (p) => p.keyboard.press("Escape") },
   { name: "builder chip checklist", enter: async (p) => { await settingsTab(p, "pool"); await p.click("#b-locked"); await p.waitForSelector(".pop .b-checks"); }, leave: (p) => p.keyboard.press("Escape") },
   // The Weapons popover (issue #45) with two skills excluded: ticked and unticked rows.
@@ -356,8 +357,8 @@ const SCENES: Scene[] = [
     await p.unroute("**/api/optimize");
   } },
   { name: "builder first visit", enter: async (p) => {
-    const names = (await p.locator("#b-char option").allInnerTexts()).filter((n) => n !== "No character");
-    await p.selectOption("#b-char", names[1]!);
+    const names = await characterNames(p);
+    await pickCharacter(p, names[1]!);
     await p.waitForSelector("#b-start #b-wearing");
   } },
 ];

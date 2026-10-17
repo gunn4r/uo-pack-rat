@@ -16,6 +16,7 @@ import {
   weaponsChipText, weaponMustHaveChipText, toggleWeapon, weaponName, withBuffs, pastCapNotes, runSettingsDiff, weightTradeoff, newWeight, editedValue, NEW_WEIGHT_IMPORTANCE, templateBuffsLine, sourceTitle, who, rarityHelp, rarityTotal, rarityDetail, strictDetail, stageProgress, shareRows, needStatus, shownImportance,
   latestRun, latestShownRun, otherCharactersRuns, gearChangedSince, suggestTemplates, SUGGEST_MIN_SKILL, needsLine, topWeights, poolLine, searchLine,
   goalWord, goalRows, goalSummary, moveGoal, linkGoal, removeGoal, addGoal, goalOutcomes, goalTrades, goalVerdict, swingOutcome, tradeText, spareLine, applyAction,
+  buildStateText, buildStateDetail, topSkills, templateLine,
   type Knobs, type ChangeRow,
 } from "./ui/builder-model.mts";
 import { OPTS_LIMITS } from "./vault-server.mts";
@@ -613,4 +614,40 @@ test("[fast] builder model: the first-visit summary lists the goals by rank and 
   const linked: Goals = { ranks: [["a"], ["b"], ["c"], ["d"], ["luck", "lmc"], ["sdi"]], leftover: "luck" };
   assert.deepEqual([goalSummary(linked).rows.length, goalSummary(linked).more], [4, 3]);
   assert.equal(goalSummary({ ...MELEE_GOALS, swing: { mode: "every", seconds: 2 } }).rows[0]!.names, "Swing speed every 2.0 s", "seconds as the page writes them");
+});
+
+// Issue #321: the build picker's state line, for every case. The old "modified" badge compared the panel with the template
+// it came from; the line keeps that ("with N settings changed") and adds what is not saved to the profile yet, unsaved
+// changes first since they are what a template pick would lose. Never a bare "modified".
+test("[fast] the build state line: no template, clean, unsaved changes, changed from its template, a deleted template", () => {
+  assert.equal(buildStateText({ template: null }), "not from a template");
+  assert.equal(buildStateText({ template: null, unsaved: 2 }), "not from a template · 2 unsaved changes");
+  assert.equal(buildStateText({ template: "Melee" }), "from template “Melee”", "clean: equal to the template and saved");
+  assert.equal(buildStateText({ template: "melee", unsaved: 1 }), "from template “melee” · 1 unsaved change");
+  assert.equal(buildStateText({ template: "Melee", changed: 3 }), "from template “Melee”, with 3 settings changed", "saved, but not the template any more");
+  assert.equal(buildStateText({ template: "Melee", changed: 1 }), "from template “Melee”, with 1 setting changed");
+  assert.equal(buildStateText({ template: "Melee", changed: 3, unsaved: 2 }), "from template “Melee” · 2 unsaved changes", "unsaved changes are named first");
+  assert.equal(buildStateText({ template: "gone", missing: true, changed: 4 }), "from template “gone”, which no longer exists", "a deleted template has nothing to compare with");
+  assert.equal(buildStateText({ template: "gone", missing: true, unsaved: 1 }), "from template “gone”, which no longer exists · 1 unsaved change");
+  for (const s of [{ template: null }, { template: "Melee", changed: 2 }, { template: "Melee", unsaved: 2 }]) assert.doesNotMatch(buildStateText(s), /modified/);
+});
+test("[fast] the build state in full: what changed from the template and what is not saved", () => {
+  assert.equal(buildStateDetail({ name: "Dorran", template: "Melee" }), "These settings equal the Melee template. No unsaved changes.");
+  assert.equal(buildStateDetail({ name: "Dorran", template: "Melee", changedLines: ["DI floor 20 → 30", "Luck weight added"], unsavedLines: ["DI floor 20 → 30"] }),
+    "Changed from Melee: DI floor 20 → 30 · Luck weight added. Not saved to Dorran's profile yet: DI floor 20 → 30.");
+  assert.equal(buildStateDetail({ name: NOBODY, template: null, unsavedLines: ["race elf → human"] }), "These settings are not from a template; Save as template stores them as one. Not saved to No character's profile yet: race elf → human.");
+  assert.match(buildStateDetail({ name: "Dorran", template: "gone", missing: true }), /^These settings came from a template named gone, which no longer exists\./);
+});
+test("[fast] the character picker's skills and a player's template's line", () => {
+  const skills = { Swordsmanship: { value: 120, cap: 120 }, Tactics: { value: 110.5, cap: 120 }, Parry: { value: 110, cap: 120 }, Anatomy: { value: 100, cap: 100 }, Cooking: { value: 0, cap: 100 } };
+  assert.equal(topSkills(skills), "Swordsmanship 120 · Tactics 110.5 · Parry 110", "the top three by value");
+  assert.equal(topSkills({ Hiding: { value: 50, cap: 100 }, Anatomy: { value: 50, cap: 100 } }), "Anatomy 50 · Hiding 50", "a tie by name");
+  assert.equal(topSkills({}), "");
+  assert.equal(topSkills(null), "");
+  assert.equal(topSkills({ Odd: "not a skill", Zero: { value: 0, cap: 1 } }), "", "nothing trained, nothing named");
+  assert.equal(templateLine({ description: "Endgame, DEX 100" }, ["Dorran"]), "Endgame, DEX 100", "its own description first");
+  assert.equal(templateLine({}, ["Dorran", "Kestrel"]), "Used by Dorran and Kestrel");
+  assert.equal(templateLine({}, [NOBODY]), "Used by No character");
+  assert.equal(templateLine({ savedAt: "2026-10-07T12:00:00Z" }, []), "Saved Oct 7");
+  assert.equal(templateLine({}, []), "Your template");
 });
