@@ -18,7 +18,8 @@ const SHIELD_RE = /\b(shield|buckler)\b/i;
 // Hats are clothing in ServUO (BaseHat), with a higher base resist than a helmet; one named for an armor material (a
 // leather cap, a leather ninja hood) is armor.
 const HAT_RE = /\b(hat|bandana|skullcap|bonnet|garland|mask|kasa|cap|hood|toque|tricorne)\b/i;
-// Armor material words: a kilt, skirt or hakama in a clothing slot made of one is armor (a gargish kilt, a leather skirt).
+// Armor material words: a kilt, skirt or hakama made of one is armor (a gargish kilt, a leather skirt). Only that slot:
+// a leather belt or gargish leather talons are clothing.
 const ARMOR_MATERIAL_RE = /\b(leather|studded|plate|platemail|stone|chain|chainmail|ring|ringmail|bone|dragon|hide)\b/i;
 // A weapon, armor piece, shield, hat or piece of jewelry can be unraveled. Everything else is null: robes, cloaks, shirts,
 // shoes and other clothing, talismans, spellbooks and quivers.
@@ -31,7 +32,7 @@ export function unravelType(it: Pick<Item, "gear" | "name" | "slot" | "extras" |
   const slot = it.slot || "", group = SLOT_GROUP[slot], material = ARMOR_MATERIAL_RE.test(it.name);
   if ((group === "Jewelry" && slot !== "talisman") || (slot === "neck" && !isNeckArmor(it.name))) return "jewel";
   if (slot === "helmet" && HAT_RE.test(it.name) && !material) return "hat";
-  return group === "Armor" || (group === "Clothing" && material) ? "armor" : null;
+  return group === "Armor" || (slot === "outerLegs" && material) ? "armor" : null;
 }
 
 // ---------------------------------------------------------------- the property weights

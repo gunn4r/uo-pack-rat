@@ -227,8 +227,11 @@ function drawGroups(shown: UnravelRow[], skill: number): void {
   }
   const by = new Map<Group, UnravelRow[]>(GROUP_ORDER.map((g) => [g, []]));
   for (const r of shown) by.get(groupOf(r, skill))!.push(r);
+  // A redrawn list can put other rows at the anchor's index: a shift-click starts afresh.
   order = GROUP_ORDER.flatMap((g) => by.get(g)!);
+  sel = { ...sel, anchor: null };
   const out: HTMLElement[] = [];
+  let index = 0;
   for (const g of GROUP_ORDER) {
     const list = by.get(g)!;
     if (!list.length) continue;
@@ -238,7 +241,7 @@ function drawGroups(shown: UnravelRow[], skill: number): void {
         el("h3", {}, el("span", { class: "unr-dot", "aria-hidden": "true" }), h.title),
         txt(h.note, "unr-gs"),
         linkButton("Select these", { "data-select": g })),
-      ...list.map((r) => rowEl(r, skill, order.indexOf(r)))));
+      ...list.map((r) => rowEl(r, skill, index++))));
   }
   listEl.replaceChildren(...out);
 }
