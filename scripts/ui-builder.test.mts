@@ -1667,14 +1667,14 @@ test("[slow] templates: built-ins first with their description, Apply sets Manua
     await page.click("#b-tpl");
     await page.locator(".pop").getByRole("button", { name: "Manage templates…" }).click();
     const manage = page.getByRole("menu", { name: "Manage templates" });
-    assert.deepEqual((await manage.getByRole("menuitem").allInnerTexts()).map((x) => x.trim()), ["Update Mine with the current build settings", "Delete “Mine”…", "Update Spare with the current build settings", "Delete “Spare”…"], "the build's own first");
+    assert.deepEqual((await manage.getByRole("menuitem").allInnerTexts()).map((x) => x.trim()), ["Update Mine with the current build settings", "Delete Mine…", "Update Spare with the current build settings", "Delete Spare…"], "the build's own first");
     // a click on the build picker's button with the menu open closes the menu, with no error (re-review R1)
     await page.click("#b-tpl");
     assert.equal(await page.locator(".pop").count(), 0, "the menu closed");
     assert.deepEqual(errors, []);
     await page.click("#b-tpl");
     await page.locator(".pop").getByRole("button", { name: "Manage templates…" }).click();
-    await manage.getByRole("menuitem", { name: "Delete “Spare”…" }).click();
+    await manage.getByRole("menuitem", { name: "Delete Spare…" }).click();
     await page.locator("dialog[open]").getByRole("button", { name: "Delete Spare" }).click();
     await page.waitForFunction(() => /Template Spare deleted/.test(document.body.textContent || ""), undefined, { timeout: 10_000 });
     assert.equal(Object.hasOwn(profiles().templates, "Spare"), false);
@@ -2141,11 +2141,13 @@ test("[slow] the result scrolls on its own and the side column stays put; stacke
     await openBuilder(page);
     await pressBuild(page);
     await built(page);
-    // side by side only where the results box is 1000 px wide or more: a CI screen smaller than 1440 stacks the columns
-    const sticky = async (): Promise<string> => page.evaluate(() => getComputedStyle(document.querySelector(".b-arrive-side")!).position);
-    const boxWide = await page.evaluate(() => document.querySelector(".b-results")!.clientWidth >= 1000);
-    assert.equal(await sticky(), boxWide ? "sticky" : "static", "sticky exactly when side by side");
-    if (boxWide) {
+    // side by side needs a results box 1000 px wide; a CI screen can be smaller than 1440, so zoom out until the page is wide
+    // enough (0.7 makes even a 1024 px screen 1460 CSS px), and fail rather than skip when it is not
+    const zoom = (f: number): Promise<void> => app.evaluate(({ BrowserWindow }, z) => { BrowserWindow.getAllWindows()[0]!.webContents.setZoomFactor(z); }, f);
+    await zoom(0.7);
+    await page.waitForFunction(() => document.querySelector(".b-results")!.clientWidth >= 1000, undefined, { timeout: 5_000 });
+    assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector(".b-arrive-side")!).position), "sticky", "sticky side by side");
+    {
       const tops = (): Promise<number[]> => page.evaluate(() => [".b-arrive-side", ".b-arrive-main"].map((s) => Math.round(document.querySelector(s)!.getBoundingClientRect().top)));
       const [side, main] = await tops();
       const scrolled = await page.evaluate(() => { const r = document.querySelector(".b-results")!; r.scrollTop = 400; return r.scrollTop; });
@@ -2153,6 +2155,7 @@ test("[slow] the result scrolls on its own and the side column stays put; stacke
       await page.waitForFunction((m) => Math.round(document.querySelector(".b-arrive-main")!.getBoundingClientRect().top) < m, main!, { timeout: 5_000 });
       assert.equal((await tops())[0], side, "the side column stays where it was");
     }
+    await zoom(1);
     await fitWindow(app, page, { width: 420, height: 900 });
     await page.waitForFunction(() => document.documentElement.scrollWidth <= innerWidth, undefined, { timeout: 5_000 }).catch(() => {});
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), "no sideways scroll at 420");

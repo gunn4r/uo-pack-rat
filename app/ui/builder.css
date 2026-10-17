@@ -47,7 +47,7 @@
 .b-drawer-foot { flex-wrap: wrap; }
 .b-changes { flex: 1 1 12rem; min-width: 0; }
 @media (max-width: 720px) { .b-changes { order: -1; flex-basis: 100%; } }
-.b-results { flex: 1 1 auto; min-width: 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--space-4); container-type: size; }
+.b-results { flex: 1 1 auto; min-width: 0; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--space-4); container: b-results / size; }
 #b-msg, #b-result { display: flex; flex-direction: column; gap: var(--space-4); }
 #b-msg:empty { display: none; }
 /* a previous result stays on screen, dimmed and out of reach (inert, aria-hidden), until the new one lands */
@@ -437,8 +437,10 @@
 .b-arrive-side { flex: 1 1 300px; min-width: 0; display: flex; flex-direction: column; gap: var(--space-3); }
 .b-arrive-side:not(:has(> :not([hidden]))) { display: none; }
 /* side by side (issue #333), the side column stays put while the main column scrolls, and scrolls on its own when it is taller
-   than the results box; stacked under it on a narrow box, it scrolls with the page as before */
-@container (min-width: 1000px) { .b-arrive-side { position: sticky; top: 0; max-height: 100cqb; overflow-y: auto; } }
+   than the results box; stacked under it on a narrow box, it scrolls with the page as before. 1000 px is where the columns
+   sit side by side: the bases above, 680 + 300, plus the 16 px gap, are 996; change them together. With a block above the
+   result (#b-msg), a side column taller than the box starts that much lower, so its last rows show once the result scrolls. */
+@container b-results (min-width: 1000px) { .b-arrive-side { position: sticky; top: 0; max-height: 100cqb; overflow-y: auto; } }
 .b-arrive-main h2:focus { outline: none; }
 .b-side-card { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3) var(--space-4); }
 .b-side-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-2); }
