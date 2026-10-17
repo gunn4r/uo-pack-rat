@@ -11,14 +11,16 @@ import type { ItemQueryRows, UnravelRow } from "../item-query.mts";
 import { state } from "./store.mts";
 import { $, el, itemTip, toast, whereText } from "./dom.mts";
 import { api } from "./api.mts";
-import { txt, box, button, message, select } from "./components.mts";
+import { txt, box, button, message, select, openDialog } from "./components.mts";
 import { errorText } from "./messages.mts";
 import { plural } from "./inv-model.mts";
 import { parseRoute, registerScreen } from "./nav.mts";
 import { rarityEl } from "./item-parts.mts";
 import { grabAll } from "./bridge.mts";
-import { emptySelection, isSelected, isWorn, toggleRows, toggleLoaded, grabItems, wornNote, GRAB_TOO_MANY, WORN_LOCK, type Matches, type Selection } from "./move-model.mts";
-import type { ItemsApiResponse, SettingsApiResponse } from "./api-types.mts";
+import { emptySelection, isSelected, isWorn, toggleRows, toggleLoaded, grabItems, wornNote, selectionBody, pickedText, leftText, GRAB_TOO_MANY, WORN_LOCK, type Matches, type Selection } from "./move-model.mts";
+import { openPicker, startMove, placeOf, gate } from "./move-to.mts";
+import { gatherWeight, gatherButton, GATHER_LOOSE, GATHER_GROUND } from "./unravel-model.mts";
+import type { ItemsApiResponse, MovePlanApiResponse, SettingsApiResponse } from "./api-types.mts";
 
 type Group = "relic" | "held" | "essence" | "residue";
 let rows: UnravelRow[] | null = null;
@@ -133,6 +135,7 @@ function build(): void {
       txt("Each unravel can also raise Imbuing. The skill comes from the latest scan.", "unr-note")),
     el("div", { class: "unr-forecast", id: "unr-forecast" }),
     el("div", { class: "unr-excl", id: "unr-excl" }),
+    el("div", { class: "inv-move-result", id: "unr-move-result", "aria-live": "polite", hidden: true }),
     box("section", { class: "card unr-card", "aria-label": "Unravel candidates" },
       el("div", { class: "unr-selbar", id: "unr-selbar", hidden: true }),
       el("div", { class: "unr-list", id: "unr-list" }),
@@ -274,6 +277,7 @@ function drawSelbar(shown: UnravelRow[], skill: number): void {
     box("span", { class: "unr-sel-acts" },
       button({ label: "Keep", size: "sm", attrs: { id: "unr-keep-sel" }, onClick: () => { void setKept(picked.map((r) => r.serial), true); } }),
       button({ label: "Grab", icon: "grab", size: "sm", disabled: !me || !grab, attrs: { id: "unr-grab-sel", ...(grab ? {} : { title: GRAB_TOO_MANY }) }, onClick: () => { if (me && grab) void grabAll(grab, me); } }),
+      button({ label: "Gather into a bag…", variant: "primary", size: "sm", attrs: { id: "unr-gather" }, onClick: () => { void openGather(picked); } }),
       button({ label: "Clear", size: "sm", variant: "ghost", onClick: () => { sel = emptySelection(); render(); } })));
 }
 
@@ -318,4 +322,60 @@ async function setKept(serials: number[], keep: boolean): Promise<void> {
   const gone = new Set(serials);
   sel = { ...sel, items: new Map([...sel.items].filter(([s]) => !gone.has(s))) };
   render();
+}
+
+// ---------------------------------------------------------------- Gather into a bag
+// The selected pieces moved loose into one bag through Move to (ui/move-to.mts): the bag this character gathered into last
+// time (settings.json's unravelBag), or another container from Move to's picker, which is then remembered.
+async function openGather(picked: UnravelRow[]): Promise<void> {
+  const me = who()?.name ?? null, selection = selectionBody(sel), bag = me ? state.settings?.unravelBag?.[me] ?? null : null;
+  const plan = (to?: number): Promise<MovePlanApiResponse> => api<MovePlanApiResponse>("/api/move/plan", { method: "POST", body: { selection, ...(to ? { to } : {}) } });
+  let counted: MovePlanApiResponse, mine: MovePlanApiResponse | null;
+  try { [counted, mine] = await Promise.all([plan(), bag ? plan(bag) : Promise.resolve(null)]); }
+  catch (e) { toast(errorText(e), "bad"); return; }
+  const c = bag ? state.inv?.containers[bag] : undefined, bagName = bag ? placeOf(bag) : "";
+  const fill = c?.capacity ? { items: c.capacity.items, max: c.capacity.maxItems } : { items: 0, max: 0 };
+  const sum = mine?.plan && !mine.problem ? pickedText(bagName, mine.plan, fill) : null;
+  const usable = !!(mine?.plan && !mine.problem && mine.plan.moving);
+  const radio = (value: string, on: boolean, disabled = false): HTMLInputElement => {
+    const r = el("input", { type: "radio", name: "unr-bag", value, ...(disabled ? { disabled: "" } : {}) });
+    r.checked = on;
+    return r;
+  };
+  const opts: HTMLElement[] = [];
+  if (bag) {
+    const why = mine?.problem ? `${bagName}: ${mine.problem}.` : sum?.text ?? "";
+    opts.push(box("label", { class: "unr-opt" }, radio("bag", usable, !usable), box("span", { class: "unr-opt-t" }, txt(bagName)), txt(`${why} Pack Rat remembers this bag for ${me}.`, "unr-opt-d")));
+  }
+  opts.push(box("label", { class: "unr-opt" }, radio("other", !usable), box("span", { class: "unr-opt-t" }, txt("Another container…")),
+    txt(`Opens the Move to picker.${me ? ` Pack Rat remembers the one you pick for ${me}.` : ""}`, "unr-opt-d")));
+  const notMoving = counted.selected - counted.movable;
+  const left = mine?.plan ? leftText(mine.plan.left, counted.worn) : notMoving ? leftText({ pack: notMoving - counted.worn }, counted.worn) : null;
+  const tripWhy = gate();
+  const go = button({ label: "", variant: "primary", attrs: { id: "unr-gather-go" } });
+  const paintGo = (): void => {
+    const other = d.dialog.querySelector<HTMLInputElement>('input[name="unr-bag"]:checked')?.value !== "bag";
+    go.textContent = other ? "Pick a container…" : gatherButton(mine!.plan!);
+    go.disabled = !other && !!tripWhy;
+  };
+  const d = openDialog({ title: `Gather ${plural(picked.length, "piece")} into a bag`, width: "md", cls: "unr-gather",
+    body: [box("div", { class: "unr-gather-body" }, ...opts,
+      box("div", { class: "unr-callout" }, txt(`${GATHER_LOOSE} ${gatherWeight(picked)}`), txt(GATHER_GROUND), left ? txt(left) : null, tripWhy ? txt(tripWhy, "mv-short") : null))],
+    actions: [button({ label: "Cancel", attrs: { id: "unr-gather-cancel" }, onClick: () => d.close() }), go] });
+  for (const r of d.dialog.querySelectorAll<HTMLInputElement>('input[name="unr-bag"]')) r.addEventListener("change", paintGo);
+  paintGo();
+  const from = { selection, host: "unr-move-result", gather: true, onRun: (to: number) => { sel = emptySelection(); render(); if (me) void rememberBag(me, to); } };
+  go.addEventListener("click", () => {
+    if (go.disabled) return;
+    const other = d.dialog.querySelector<HTMLInputElement>('input[name="unr-bag"]:checked')?.value !== "bag";
+    d.close();
+    if (other) void openPicker(from);
+    else startMove(from, bag!, mine!.plan!);
+  });
+}
+// The bag a character gathers into, remembered in settings.json (written whole, like the Keep list).
+async function rememberBag(me: string, to: number): Promise<void> {
+  const bags = { ...(state.settings?.unravelBag ?? {}), [me]: to };
+  try { state.settings = (await api<SettingsApiResponse>("/api/settings", { method: "PUT", body: { unravelBag: bags } })).settings; }
+  catch (e) { toast(`Could not remember the bag: ${errorText(e)}`, "bad"); }
 }

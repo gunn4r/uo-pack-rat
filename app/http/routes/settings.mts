@@ -6,7 +6,7 @@ import { validateScriptsDir, badPathShape } from "../../installer.mts";
 import { readBody } from "../../read-body.mts";
 import { retentionError, retentionOf } from "../../retention.mts";
 import { loadRules, listRules } from "../../rules.mts";
-import { UNRAVEL_KEEP_MAX, type ClientSettings, type SettingsDoc } from "../../store/settings.mts";
+import { UNRAVEL_KEEP_MAX, unravelBagError, type ClientSettings, type SettingsDoc } from "../../store/settings.mts";
 import { send, asObject } from "../respond.mts";
 import { MAX_PATH_LEN, NO_CLIENT_FOLDER } from "./setup.mts";
 import type { Route } from "../router.mts";
@@ -49,6 +49,10 @@ export function routes(ctx: ServerContext): Route[] {
       if (hasKeep && !(Array.isArray(body.unravelKeep) && body.unravelKeep.length <= UNRAVEL_KEEP_MAX && body.unravelKeep.every((s) => isBoundedInt(s, 1, MAX_SERIAL)) && new Set(body.unravelKeep).size === body.unravelKeep.length)) {
         return send(res, 400, { ok: false, error: `settings.unravelKeep must be a list of at most ${UNRAVEL_KEEP_MAX} distinct item serials` });
       }
+      // unravelBag (issue #271): the bag each character gathers pieces to unravel into, written whole.
+      const hasBag = Object.prototype.hasOwnProperty.call(body, "unravelBag");
+      const bagBad = hasBag ? unravelBagError(body.unravelBag) : null;
+      if (bagBad) return send(res, 400, { ok: false, error: bagBad });
       const hasRetention = Object.prototype.hasOwnProperty.call(body, "retention");
       const retentionBad = hasRetention ? retentionError(body.retention) : null;
       if (retentionBad) return send(res, 400, { ok: false, error: retentionBad });
@@ -107,6 +111,7 @@ export function routes(ctx: ServerContext): Route[] {
       if (nextClient !== undefined) changes.client = nextClient;
       if (nextUoFolder !== undefined) changes.uoFolder = nextUoFolder;
       if (hasKeep) changes.unravelKeep = body.unravelKeep as number[];
+      if (hasBag) changes.unravelBag = body.unravelBag as Record<string, number>;
       if (hasRetention) changes.retention = { ...retentionOf(appSettings.saved().retention), ...(body.retention as object) };
       appSettings.save(changes);
       appSettings.applyRules(nextRules, nextFallback);

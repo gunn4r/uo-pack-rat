@@ -304,3 +304,12 @@
   .mv-result .mv-acts { flex-wrap: wrap; }
   .mv-dest { grid-template-columns: auto minmax(0, 1fr) 96px; }
 }
+/* Gather into a bag (ui/unravel.mts): the bag choices as cards, and the callout under them */
+.unr-gather-body { display: flex; flex-direction: column; gap: var(--space-3); }
+.unr-opt { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 2px 10px; padding: 10px; border: var(--border-width) solid var(--color-border); border-radius: var(--radius-lg); cursor: pointer; }
+.unr-opt:has(input:checked) { border-color: var(--color-accent); background: var(--color-accent-soft); color: var(--color-on-accent-soft); }
+.unr-opt:has(input:disabled) { cursor: default; color: var(--color-text-muted); }
+.unr-opt input { margin: 3px 0 0; accent-color: var(--color-accent); }
+.unr-opt-t { font-weight: var(--weight-medium); min-width: 0; }
+.unr-opt-d { grid-column: 2; font-size: var(--text-sm); color: var(--color-text-muted); }
+.unr-callout { display: flex; flex-direction: column; gap: var(--space-1); padding: 10px var(--space-3); border-radius: var(--radius-lg); background: var(--color-surface-subtle); color: var(--color-text-muted); font-size: var(--text-sm); }

@@ -152,7 +152,7 @@ Every route lives in `app/http/routes/`, one module per area, each exporting `ro
 
 ### `app/http/routes/settings.mts`
 
-- `GET|PUT /api/settings` (`<data>/settings.json:` {shard, setupDone?, client?, retention?, autoUpdateCheck?, uoFolder?, unravelKeep?}; unravelKeep is the Unravel view's Keep list, written whole, at most 5000 distinct serials)
+- `GET|PUT /api/settings` (`<data>/settings.json:` {shard, setupDone?, client?, retention?, autoUpdateCheck?, uoFolder?, unravelKeep?, unravelBag?}; unravelKeep is the Unravel view's Keep list, written whole, at most 5000 distinct serials; unravelBag maps each character to the bag Gather into a bag fills, written whole, at most 200 characters)
 - `POST /api/retention/cleanup` {dryRun} -> {scans, runs, refused} (prune old scans and saved runs now, or count what that would remove; app/retention.mts; 409 under --demo)
 - `GET /api/rules` (the current shard's rules object plus every {id,name,source} listRules() finds — builtin and `<data>/rules/*.json`)
 
