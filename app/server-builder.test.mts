@@ -1297,3 +1297,38 @@ test("[fast] /api/optimize: a rarity preference stamps tie costs, keys apart fro
     await s2.close();
   }
 });
+
+// Issue #311: the route sets the hard-floor bonus before the run key, so a hand-built request with six soft floors at 1e6
+// gets the ring that meets its hard floor (at the fixed 1e7 the ring meeting the six wins); past the cap it builds at the
+// cap and says so, before the search and on the result; a floorPartial above 0.5 is refused.
+test("[fast] POST /api/optimize: the hard-floor bonus outweighs large soft floors, says when it is capped, and refuses a floorPartial over 0.5", async () => {
+  const soft = ["s1", "s2", "s3", "s4", "s5", "s6"];
+  const meets = { serial: 93111, name: "Meets", slot: "ring", props: { hci: 10 } };
+  const near = { serial: 93112, name: "Near", slot: "ring", props: { hci: 9, luck: 0, ...Object.fromEntries(soft.map((k) => [k, 1])) } };
+  const opts = { exact: true, timeBudgetMs: 5000, optionalSlots: [] };
+  const post = (profile: object, client: string) => rawReq(`${tsrv.url}/api/optimize`, { method: "POST", headers: { ...authHost(), "content-type": "application/json", "x-client-id": client }, body: JSON.stringify({ pools: { ring: [meets, near] }, current: { ring: meets }, profile, opts }) });
+  const finish = async (id: string): Promise<OptimizeJobResponse> => {
+    let s: OptimizeJobResponse | undefined;
+    for (let i = 0; i < 200; i++) {
+      s = asJson<OptimizeJobResponse>((await rawReq(`${tsrv.url}/api/optimize/${id}/status`, { headers: authHost() })).json());
+      if (s.state !== "running") break;
+      await new Promise((res) => setTimeout(res, 50));
+    }
+    assert.equal(s!.state, "done", JSON.stringify(s));
+    return s!;
+  };
+  const profile = { weights: {}, caps: {}, floors: { hci: 10, ...Object.fromEntries(soft.map((k) => [k, 1])) }, hardFloors: ["hci"], floorBonus: 1e6 };
+  const first = asJson<OptimizeJobResponse>((await post(profile, "c311-a")).json());
+  assert.ok(first.id, JSON.stringify(first));
+  const done = await finish(first.id!);
+  assert.deepEqual([(done.result!.best as { ring?: { serial: number } }).ring?.serial, done.result!.proven], [meets.serial, true]);
+  type Diag = { code: string; property?: string };
+  near.props.luck = 5000;   // weighted at 1e6 a point: the bound passes the cap
+  const capped = asJson<OptimizeJobResponse & { diagnostics: Diag[] }>((await post({ ...profile, floorBonus: 1000, weights: { luck: 1e6 } }, "c311-b")).json());
+  assert.ok(capped.diagnostics.some((d) => d.code === "requirement_outweighed"), JSON.stringify(capped.diagnostics));
+  const cappedDone = await finish(capped.id!);
+  assert.ok((cappedDone.result!.diagnostics as Diag[]).some((d) => d.code === "requirement_outweighed"), "kept on the result");
+  const bad = await post({ ...profile, floorPartial: 0.9 }, "c311-c");
+  assert.equal(bad.status, 400);
+  assert.equal(asJson<ErrorBody>(bad.json()).error, "profile.floorPartial must be a number from 0 to 0.5");
+});

@@ -58,15 +58,22 @@ interface OptProfile {
   floors?: Record<string, number> | undefined;
   floorBonus?: number;
   floorPartial?: number;
-  hardFloors?: string[] | undefined;    // floors that act as requirements: their bonus is HARD_FLOOR_BONUS, so no mix of other gains under 5e6 (the weights and soft floor bonuses together) can buy a miss
+  hardFloors?: string[] | undefined;    // floors that act as requirements: their bonus is HARD_FLOOR_BONUS (or hardFloorBonus), so no mix of other gains can buy a miss
   // `mins[p]`: a value the property never falls below (a resist's Resisting Spells minimum): it scores weights[p] × max(min, min(total, cap)), and a floor at or under it is met by every suit, so it is dropped.
   mins?: Record<string, number> | undefined;
   // SSI scored by swing step (app/swing.mts stepTable): with a positive SSI weight, SSI is worth weights.ssi × the largest `credit` among the points the suit reaches (ssi total >= ssi and stamPool total >= stam; 0 when it reaches none) in place of weights.ssi × min(ssi, cap). SSI floors still read the plain total.
   ssiSteps?: Array<{ ssi: number; stam: number; credit: number }> | undefined;
   // Resisting Spells steps (app/vault-lib.mts EffectiveProfile.resistSteps), lowest first: a suit whose RESIST_SKILL_KEY total is at least `at` (less RESIST_STEP_SLACK) holds each property in `mins` at that min in place of `mins` above. It scores weights[p] × max(that min, min(total, cap)), and a floor is met when the total or that min reaches it.
   resistSteps?: Array<{ at: number; mins: Record<string, number> }> | undefined;
+  // A hard floor's bonus when above HARD_FLOOR_BONUS: app/mip.mts withHardFloorBonus sets it from the pool, so the rest of
+  // the score can never move by half of it (issue #311).
+  hardFloorBonus?: number | undefined;
 }
 const HARD_FLOOR_BONUS = 1e7;
+// == app/mip.mts hardBonusOf
+function optHardBonus(profile: OptProfile): number {
+  return typeof profile.hardFloorBonus === "number" && profile.hardFloorBonus > HARD_FLOOR_BONUS ? profile.hardFloorBonus : HARD_FLOOR_BONUS;
+}
 // Strict order's stage values count as equal within this (== app/mip.mts TIE_SLACK): optStrictStages scales a stage so two
 // different values sit far further apart.
 const LEX_EPS = 1e-3;
@@ -293,7 +300,7 @@ function optBuildSpace(keys: string[], profile: OptProfile): OptSpace {
   const hard: Record<string, boolean> = {};
   const hardList = profile.hardFloors || [];
   for (let i = 0; i < hardList.length; i++) hard[hardList[i]!] = true;
-  const baseBonus = typeof profile.floorBonus === "number" ? profile.floorBonus : 1000;
+  const baseBonus = typeof profile.floorBonus === "number" ? profile.floorBonus : 1000, hardBonus = optHardBonus(profile);
   const floorBonusArr: number[] = [];
   // Steps need both dimensions in the space, even when no candidate carries them.
   const stepped = Array.isArray(profile.ssiSteps) && typeof weights["ssi"] === "number" && weights["ssi"] > 0;
@@ -308,13 +315,13 @@ function optBuildSpace(keys: string[], profile: OptProfile): OptSpace {
     cap.push(typeof caps[k] === "number" ? caps[k] : Infinity);
     min.push(typeof mins[k] === "number" ? mins[k] : -Infinity);
     floor.push(typeof floors[k] === "number" && !(floors[k] <= min[i]!) ? floors[k] : 0);
-    floorBonusArr.push(hard[k] ? HARD_FLOOR_BONUS : baseBonus);
+    floorBonusArr.push(hard[k] ? hardBonus : baseBonus);
     zero.push(0);
   }
   // Partial credit at the floor. The hard floors share theirs (each gets 1/n of it), so together it stays under half one
-  // floor's bonus and no mix of it can buy a miss of a floor some suit meets (issue #204), as long as the weights and soft
-  // floor bonuses together move a score by less than that half (5e6). n counts every hard floor, one each suit meets
-  // included: such a floor never earns partial credit, so counting it only makes the margin wider.
+  // floor's bonus and no mix of it can buy a miss of a floor some suit meets (issue #204); the bonus itself is large enough
+  // that the rest of the score never moves by the other half (hardFloorBonus, #311). n counts every hard floor, one each
+  // suit meets included: such a floor never earns partial credit, so counting it only makes the margin wider.
   const partial = typeof profile.floorPartial === "number" ? profile.floorPartial : 0.5;
   let nHard = 0;
   for (let i = 0; i < keys.length; i++) if (hard[keys[i]!] && floor[i]! > 0) nHard++;
@@ -559,7 +566,8 @@ function optGradientProfile(profile: OptProfile): OptProfile {
     hardFloors: profile.hardFloors,
     mins: profile.mins,
     ssiSteps: profile.ssiSteps,
-    resistSteps: profile.resistSteps
+    resistSteps: profile.resistSteps,
+    hardFloorBonus: profile.hardFloorBonus
   };
 }
 

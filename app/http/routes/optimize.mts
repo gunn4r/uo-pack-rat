@@ -2,8 +2,8 @@
 import { randomUUID } from "node:crypto";
 import http from "node:http";
 import { isBoundedInt, isBoundedString, short } from "../../guards.mts";
-import { optionalSlotsFor, withReachableResistSteps } from "../../mip.mts";
-import { onlyRootsDiagnostics, preBuildDiagnostics, scoreShares, weaponFlagDiagnostics, type Diagnostic, type DiagnosticsProfile } from "../../diagnostics.mts";
+import { optionalSlotsFor, poolStepsFor, withHardFloorBonus, withReachableResistSteps, type MipProfile } from "../../mip.mts";
+import { onlyRootsDiagnostics, preBuildDiagnostics, requirementScaleDiagnostics, scoreShares, weaponFlagDiagnostics, type Diagnostic, type DiagnosticsProfile } from "../../diagnostics.mts";
 import { readBody } from "../../read-body.mts";
 import { gearChanges, runKey, reusableRun, runSummary, manualRun, poolSerials, poolSnapshot, type RunOpts, type SavedRun } from "../../runs-lib.mts";
 import { OPTS_LIMITS, RUN_DEFAULTS, runSettingsError, type RunSettings } from "../../run-settings.mts";
@@ -297,9 +297,21 @@ export function routes(ctx: ServerContext): Route[] {
       if (hardFloors != null && (!Array.isArray(hardFloors) || hardFloors.some((k) => !isBoundedString(k, 64)))) return send(res, 400, { ok: false, error: "profile.hardFloors must be an array of property names" });
       const { resistSteps } = profile as { resistSteps?: unknown };
       if (resistSteps != null && !resistStepsValid(resistSteps)) return send(res, 400, { ok: false, error: "profile.resistSteps must be an array of {at, mins}: at in (0, 1000] and strictly increasing, mins a finite number for every resist" });
+      // a hard floor's shared partial credit stays under half its bonus only up to 0.5 (mip.mts hardFloorSpread); the page
+      // and MCP never send one, so this is a hand-built request's field
+      const { floorPartial } = profile as { floorPartial?: unknown };
+      if (floorPartial != null && (typeof floorPartial !== "number" || !Number.isFinite(floorPartial) || floorPartial < 0 || floorPartial > 0.5)) return send(res, 400, { ok: false, error: "profile.floorPartial must be a number from 0 to 0.5" });
       const fullOpts = Object.assign({ seed: RUN_DEFAULTS.seed, restarts: RUN_DEFAULTS.restarts }, opts as RunOpts);
       // only the Resisting Spells steps this pool reaches, before the key: a pool without such pieces keys as before them
       profile = withReachableResistSteps(profile as { resistSteps?: ResistStep[] }, pools as Partial<Record<string, OptItem[]>>, current as Partial<Record<string, OptItem | null>>, fullOpts.optionalSlots as string[] | undefined);
+      // a hard floor's bonus large enough that nothing else in the score outweighs it (issue #311), the SSI step table the
+      // worker will score with counted; a usual profile carries none. Past the cap the build runs at it and says so.
+      {
+        const p = pools as Partial<Record<string, OptItem[]>>, c = current as Partial<Record<string, OptItem | null>>, optional = fullOpts.optionalSlots as string[] | undefined;
+        const { ssiSteps } = poolStepsFor(profile as Parameters<typeof poolStepsFor>[0], p, c, optional);
+        profile = withHardFloorBonus(profile as MipProfile, p, c, optional, undefined, ssiSteps);
+        poolDiagnostics = [...poolDiagnostics, ...requirementScaleDiagnostics({ pools: p, current: c, optionalSlots: optional, profile: { ...(profile as DiagnosticsProfile), ...(ssiSteps ? { ssiSteps } : {}) } })];
+      }
       const key = runKey({ pools, current, profile, opts: fullOpts, weaponMustHave: mustHave, onlyRoots: only });
       const runs = runStore.all();
       const hit = fill ? null : reusableRun(runs, key, fullOpts as { timeBudgetMs?: number });

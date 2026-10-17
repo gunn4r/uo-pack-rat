@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { propertyReach, buildSuitMip, type BuiltMip } from "./mip.mts";
-import { preBuildDiagnostics, resultDiagnostics, scoreShares, withDiagnostics, weightDiagnostics, weaponFlagDiagnostics, onlyRootsDiagnostics, DOMINANT_SHARE, DOMINANT_WORTH, THIN_SUIT, type DiagnosticsProfile } from "./diagnostics.mts";
+import { preBuildDiagnostics, requirementScaleDiagnostics, resultDiagnostics, scoreShares, withDiagnostics, weightDiagnostics, weaponFlagDiagnostics, onlyRootsDiagnostics, DOMINANT_SHARE, DOMINANT_WORTH, THIN_SUIT, type DiagnosticsProfile } from "./diagnostics.mts";
 import { solveExact, type OptPools } from "./exact-solver.mts";
 import { core, defaultProfiles, STARTERS_BEFORE_GOALS, templateNames, type OptOptions } from "./solver-fixture.mts";
 import { actionApplies, actionWords, applyAction, handledAction, nextSwingStep, resultChecks, swingLines } from "./ui/builder-model.mts";
@@ -518,4 +518,28 @@ test("[fast] onlyRootsDiagnostics: one line naming the slots, none without any",
   const [d] = onlyRootsDiagnostics(["helmet", "ring"]);
   assert.deepEqual(d, { code: "only_containers_empty", level: "info", message: "Your Only containers hold nothing for Head and Ring, so the suit takes nothing from them there.", values: { slots: 2 }, actions: [] });
   assert.deepEqual(resultChecks({ diagnostics: [d!] }, false), [d], "the result's Check your settings lists it");
+});
+
+// Issue #311: requirement_outweighed's Set weight, applied as the panel applies it (it needs values.weight, the weight
+// the build ran with), clears the warning with the other weights held; when the others alone are too much, no action.
+test("[fast] requirement_outweighed: Set weight, applied by the panel, clears it; none when one weight can't", () => {
+  const ring = (serial: number, props: Record<string, number>) => ({ serial, name: `r${serial}`, slot: "ring", props });
+  const check = (props: Record<string, number>, weights: Record<string, number>) => {
+    const pools = { ring: [ring(1, { ...props, hci: 9 }), ring(2, { hci: 10 })] }, current = { ring: pools.ring[1]! };
+    const diag = (w: Record<string, number>) => requirementScaleDiagnostics({ pools, current, optionalSlots: [], slots: ["ring"], profile: { weights: w, caps: {}, floors: { hci: 10 }, hardFloors: ["hci"] } });
+    const [d] = diag(weights);
+    assert.equal(d?.code, "requirement_outweighed");
+    const panel = { weights: { ...weights } };
+    for (const a of d!.actions.filter(handledAction)) {
+      assert.ok(actionApplies(panel as never, a, d!.values?.weight), "the panel offers it");
+      applyAction(panel as never, a, d!.values?.weight);
+    }
+    return { d: d!, after: diag(panel.weights) };
+  };
+  for (const [label, weights] of [["one weight", { luck: 1e6 }], ["beside a small one", { luck: 1e6, hci: 1 }]] as const) {
+    const { d, after } = check({ luck: 5000 }, weights);
+    assert.deepEqual([d.property, d.actions.length, d.values?.weight, after], ["luck", 1, 1e6, []], label);
+  }
+  const { d, after } = check({ luck: 2000, dci: 1500, lrc: 1500 }, { luck: 1e6, dci: 1e6, lrc: 1e6 });
+  assert.deepEqual([d.actions, after.length], [[], 1], "three alike: no one weight is enough");
 });
