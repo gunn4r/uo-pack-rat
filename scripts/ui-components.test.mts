@@ -139,6 +139,14 @@ test("[slow] components: confirm dialog, drawer, popover, toasts and tooltip beh
     await page.evaluate(() => { const C = (window as unknown as { C: Record<string, (...a: unknown[]) => unknown> }).C; C.popover!(document.getElementById("anchor"), [C.txt!("x")], { label: "Slot filter" }); });
     await page.mouse.click(1200, 800);
     assert.equal(await page.locator(".pop").count(), 0, "a click outside closes it");
+    // a menu opened again on the anchor of the open one closes it and opens nothing, without an error: popover() hands back
+    // the closed handle, never null
+    const again = await page.evaluate(() => {
+      const C = (window as unknown as { C: Record<string, (...a: unknown[]) => unknown> }).C, a = document.getElementById("anchor")!;
+      C.menu!(a, [{ label: "One", onSelect: () => {} }], { label: "Twice" });
+      try { const h = C.menu!(a, [{ label: "One", onSelect: () => {} }], { label: "Twice" }) as { isOpen: () => boolean }; return { open: h.isOpen(), pops: document.querySelectorAll(".pop").length }; } catch (e) { return { error: String(e) }; }
+    });
+    assert.deepEqual(again, { open: false, pops: 0 }, "the second press toggles the menu closed");
 
     // --- toasts: bottom-right stack of at most three; an error is an alert and stays. Read in one go inside the
     // page: a success or info toast leaves after 6 s, which a slow runner can reach between separate steps.
