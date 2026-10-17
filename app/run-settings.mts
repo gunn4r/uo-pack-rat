@@ -37,6 +37,12 @@ const LISTS = ["softFloors", "lockedSlots", "excludeTags", "excludeRoots", "excl
 // Read only by an exact search: without one the page leaves these fields unchecked (builder-model.mts firstKnobError),
 // so a run with `exact: false` may carry any number in them.
 const EXACT_ONLY = ["budgetMs", "altCount", "altTol"];
+// A run's Swing speed goal weapon (vault-lib.mts GoalSwingWeapon): only its three fields, a name (blank for a weapon with none), a speed from 0 to 10 s and a stamina from 0 to 1000.
+const isGoalSwing = (v: unknown): boolean => {
+  const o = v as Record<string, unknown>;
+  return !!v && typeof v === "object" && !Array.isArray(v) && Object.keys(o).every((k) => ["weapon", "speed", "stamina"].includes(k)) && typeof o.weapon === "string" && o.weapon.length <= 200
+    && typeof o.speed === "number" && o.speed > 0 && o.speed <= 10 && typeof o.stamina === "number" && Number.isFinite(o.stamina) && o.stamina >= 0 && o.stamina <= 1000;
+};
 const plainKey = (k: string): boolean => isBoundedString(k, 64) && !["__proto__", "constructor", "prototype"].includes(k);
 
 // A run's settings, as the Saved runs drawer keeps them (ui/runs.mts settingsSnapshot) and the optimize route's
@@ -72,6 +78,7 @@ export function runSettingsError(settings: unknown, label: string): string | nul
     else if (k === "rarity") { if (!RARITY_PREFERENCES.includes(v as RarityPreference)) return `${label}.rarity must be one of ${RARITY_PREFERENCES.join(", ")}`; }
     else if (k === "buffs") { if (!isRunBuffs(v)) return `${label}.buffs must list known buffs, each once and one form at most, with their numbers in range`; }
     else if (k === "goals") { const e = goalsError(v, `${label}.goals`); if (e) return e; }
+    else if (k === "goalSwing") { if (!isGoalSwing(v)) return `${label}.goalSwing must be { weapon, speed, stamina }: a weapon name, its speed in seconds and a stamina`; }
     else return `${label}.${short(k)} is not a run setting`;
   }
   return null;

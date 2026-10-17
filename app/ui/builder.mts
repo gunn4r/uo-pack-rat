@@ -824,7 +824,7 @@ function weightsSection(): HTMLElement {
     const paints: Array<() => void> = [];
     const readout = el("p", { class: "help b-wreadout", id: "b-wreadout", hidden: "" });
     const rows = keys.map((k) => {
-      const nm = propName(k), conv = { show: (w: number) => shownImportance(importanceOf(k, w)), store: (n: number) => weightOfImportance(k, n) };
+      const nm = goalName(k), conv = { show: (w: number) => shownImportance(importanceOf(k, w)), store: (n: number) => weightOfImportance(k, n) };
       const num = boundNumber(p.weights!, k, `${nm} weight`, k, conv);
       const hover = el("span", { class: "sr", id: `b-wtip-${k.replace(/\W/g, "_")}` });
       const slider = el("input", { type: "range", class: "b-wslider", min: "0", max: "100", step: "5", "aria-label": `${nm} weight slider`, "aria-describedby": hover.id });
@@ -892,7 +892,7 @@ function weightsSection(): HTMLElement {
     const scale = rows.length ? box("div", { class: "b-wscale", "aria-hidden": "true" }, el("span"), el("span"),
       box("span", { class: "b-wmarks" }, ...[["off", 0], ["low", 25], ["some", 50], ["high", 75], ["top", 100]].map(([w, x]) => el("span", { style: `left:${x}%` }, String(w)))), el("span"), el("span")) : null;
     const add = filterChip({ label: "Add weight", add: true, attrs: { class: "fchip add b-add", id: "b-addweight" } });
-    add.onclick = () => propertyPicker(add, "Add weight", Object.keys(p.weights!), (k) => { ownWeights(); p.weights![k] = newWeight(k); redraw("weights"); focusIn("weights", `.rule-row[data-key="${CSS.escape(k)}"] input`, true); });
+    add.onclick = () => propertyPicker(add, "Add weight", Object.keys(p.weights!), (k) => { ownWeights(); p.weights![k] = newWeight(k); redraw("weights"); focusIn("weights", `.rule-row[data-key="${CSS.escape(k)}"] input`, true); }, allPropKeys(), goalName);
     return [el("p", { class: "help", id: "b-weights-help" }, txt(fromGoals ? GOAL_WEIGHTS_HELP : WEIGHTS_HELP)),
       rows.length ? box("div", { class: "b-rules" }, ...rows) : null, scale, readout, add];
   });
@@ -1266,7 +1266,7 @@ function endJob(job: BuilderJob, node?: HTMLElement | null): boolean {
 }
 interface JobFinishInfo { result: OptimizeResult; ms: number; runId: string | null; reused?: SavedRunLike | null | undefined; settings: RunSettings }
 function finishJob(job: BuilderJob, r: JobFinishInfo): void {
-  const meta: BuildMeta = { ms: r.ms, poolSize: job.poolSize, skipped: job.skipped, reused: r.reused || null, ...(goalsActive(r.settings.goals) ? { goals: r.settings.goals } : {}) };
+  const meta: BuildMeta = { ms: r.ms, poolSize: job.poolSize, skipped: job.skipped, reused: r.reused || null, ...(goalsActive(r.settings.goals) ? { goals: r.settings.goals, ...(r.settings.goalSwing ? { goalSwing: r.settings.goalSwing } : {}) } : {}) };
   const finished: FinishedBuild = { name: job.name, result: r.result, current: job.current, profile: job.profile, runId: r.runId || null, meta, settings: r.settings };
   // Switched to another character while it ran: never draw this suit (or its Plan and Grab all) under that
   // character. It waits until its own character is selected again.

@@ -2,9 +2,9 @@
 // "What changes" gauges and table and "after the change" values, the compare table's differing rows and best values,
 // and a saved run's label and badges. No DOM and no page state, so app/builder-model.test.mts can check it
 // all directly; ui/builder.mts, ui/builder-result.mts and ui/runs.mts draw what it returns.
-import { NOBODY, PROPERTIES, labelOf, paperdollResist, propName, importanceOf, withCurrentActions, weightOfImportance, RESIST_SKILL_KEY, GEAR_SLOTS, NOT_BUILDER_KEYS, RESIST_KEYS, RESIST_CAP_LIMITS, SLOT_LABELS, settingsDiff, shardResistCap, WEAPON_SKILLS, WEAPON_EXCLUDES, SPELLBOOKS, MELEE_SKILLS, ubwsLetsIn, flagLabel, rankImportance, LEFTOVER_GROUPS } from "../vault-lib.mts";
+import { NOBODY, PROPERTIES, labelOf, paperdollResist, propName, importanceOf, withCurrentActions, weightOfImportance, RESIST_SKILL_KEY, GEAR_SLOTS, NOT_BUILDER_KEYS, RESIST_KEYS, RESIST_CAP_LIMITS, SLOT_LABELS, settingsDiff, shardResistCap, WEAPON_SKILLS, WEAPON_EXCLUDES, SPELLBOOKS, MELEE_SKILLS, ubwsLetsIn, flagLabel, rankImportance, LEFTOVER_GROUPS, LEFTOVER_LABELS, goalLabel, goalName, goalWord } from "../vault-lib.mts";
 import type { FcCap, Goals, PlannedBuffs, PropMap, ResistCap, RunSettings } from "../vault-lib.mts";
-import { applyBuffs, buffById, buffsDiff, capWord, signed, TAG_WORDS, type BuffResult } from "../buffs.mts";
+import { applyBuffs, buffById, buffsDiff, capWord, signed, type BuffResult } from "../buffs.mts";
 import { RUN_SETTING_LIMITS, type Range } from "../run-settings.mts";
 import { paperdollCaps, suitResist } from "../evaluate.mts";
 import type { Diagnostic, DiagnosticAction, DiagnosticCode, ScoreShare, SwingResult } from "../runs-types.mts";
@@ -416,9 +416,9 @@ export function weightTradeoff(key: string, weights: Record<string, number>): st
   const top = Object.entries(weights).filter(([k, v]) => !NOT_BUILDER_KEYS.has(k) && Number.isFinite(v) && v > 0).sort((a, b) => importanceOf(b[0], b[1]) - importanceOf(a[0], a[1]))[0];
   // one decimal under 1.5 ("about 1.4"), whole above, and no number past 1,000
   const about = (x: number): string => (x > 1000 ? "far more than 1,000" : `about ${num(x < 1.5 ? Math.round(x * 10) / 10 : Math.round(x))}`);
-  const line = !Number.isFinite(w) || w === 0 ? `At weight 0, ${propName(key)} doesn't count.`
-    : !top ? `${propName(key)} counts against the score.`
-    : top[0] === key ? `${propName(key)} has the highest weight: the other weights are compared with it.`
+  const line = !Number.isFinite(w) || w === 0 ? `At weight 0, ${goalName(key)} doesn't count.`
+    : !top ? `${goalName(key)} counts against the score.`
+    : top[0] === key ? `${goalName(key)} has the highest weight: the other weights are compared with it.`
     : w > 0 ? (w >= top[1] ? `At these settings, 1 ${L(key)} is worth ${about(w / top[1])} ${L(top[0])}.` : `At these settings, 1 ${L(top[0])} is worth ${about(top[1] / w)} ${L(key)}.`)
     : -w >= top[1] ? `At these settings, 1 ${L(key)} takes away what ${about(-w / top[1])} ${L(top[0])} adds.` : `At these settings, 1 ${L(top[0])} makes up for ${about(top[1] / -w)} ${L(key)}.`;
   return key === RESIST_SKILL_KEY ? `${line} It also raises your resist minimums.` : line;
@@ -441,11 +441,11 @@ export interface ShareRow { key: string | null; label: string; pct: string; shar
 export const sharePct = (share: number): string => { const p = Math.round(Math.abs(share) * 100); return `${share < 0 ? "−" : ""}${p === 0 && share !== 0 ? "<1" : p}%`; };
 export function shareRows(shares: ScoreShare[], fold = SHARE_FOLD): ShareRow[] {
   const row = (key: string | null, label: string, share: number, note: string | null = null, holds: string | null = null): ShareRow => ({ key, label, pct: sharePct(share), share, negative: share < 0, note, holds });
-  const own = (s: ScoreShare): ShareRow => row(s.property, propName(s.property), s.share, s.fromMin ? "includes the Resisting Spells minimum" : null);
+  const own = (s: ScoreShare): ShareRow => row(s.property, goalName(s.property), s.share, s.fromMin ? "includes the Resisting Spells minimum" : null);
   const positive = shares.filter((s) => s.share >= 0).sort((a, b) => b.share - a.share), small = positive.filter((s) => s.share < fold);
   const rows = positive.filter((s) => s.share >= fold).map(own);
   if (small.length === 1) rows.push(own(small[0]!));
-  else if (small.length) rows.push(row(null, `Other (${small.length})`, small.reduce((n, s) => n + s.share, 0), null, small.map((s) => propName(s.property)).join(", ")));
+  else if (small.length) rows.push(row(null, `Other (${small.length})`, small.reduce((n, s) => n + s.share, 0), null, small.map((s) => goalName(s.property)).join(", ")));
   return [...rows, ...shares.filter((s) => s.share < 0).sort((a, b) => a.share - b.share).map(own)];
 }
 
@@ -536,12 +536,19 @@ export function poolLine(excluded: string[] = [], ubws = false, pieces: number |
 export const searchLine = (k: Pick<Knobs, "exact" | "budgetS" | "restarts">): string => (k.exact ? `Exact, up to ${k.budgetS} s` : `Heuristic, ${k.restarts} restarts`);
 
 // ---------------------------------------------------------------- goals (issue #292, vault-lib.mts compileGoals)
-// A goal's property in a sentence ("swing speed", "hit chance", "physical resist") and as a row's name ("Swing speed").
-export const goalWord = (k: string): string => { const w = RESIST_KEYS.includes(k) ? propName(k) : TAG_WORDS[k] ?? propName(k); return w[0]!.toLowerCase() + w.slice(1); };
-export const goalName = (k: string): string => { const w = goalWord(k); return w[0]!.toUpperCase() + w.slice(1); };
+// A goal's property in a sentence ("swing speed") and as a row's name ("Swing speed"): vault-lib.mts's one name per property,
+// which the weight rows and the score breakdown use too.
+export { goalName, goalWord };
 // The goals as rows, most important first: each property with its rank (from 1), whether it shares that rank with the row above, and what it counts.
 export interface GoalRow { key: string; rank: number; linked: boolean; counts: number }
 export const goalRows = (g: Goals): GoalRow[] => g.ranks.flatMap((r, i) => r.map((key, j) => ({ key, rank: i + 1, linked: j > 0, counts: rankImportance(i) })));
+// The first-visit view's "What matters most" with goals in force (issue #302): one row per rank, its goals' names joined
+// ("Hit chance = Defense chance", Swing speed with its swing time) and what it counts, the first `n`, how many more ranks
+// there are, and where spare points go ("Spare points: Luck").
+export function goalSummary(g: Goals, n = 4): { rows: Array<{ rank: number; names: string; counts: number }>; more: number; spare: string } {
+  const rows = g.ranks.map((r, i) => ({ rank: i + 1, names: r.map((k) => goalLabel(g, k)).join(" = "), counts: rankImportance(i) }));
+  return { rows: rows.slice(0, n), more: Math.max(0, rows.length - n), spare: `Spare points: ${LEFTOVER_LABELS[g.leftover]}` };
+}
 // The edits the Goals tab makes, each a new set of goals. ↑ and ↓ move the row's whole rank past the next one; "=" links a row
 // to the one above (sharing its rank) or unlinks it (its own rank, and the rows under it with it); ✕ removes a row; a new goal
 // goes last.
@@ -582,18 +589,22 @@ export function goalVerdict(o: GoalOutcome, trades: readonly GoalTrade[]): strin
 }
 // Swing speed's line in seconds, from the suit's own swing (its weapon and stamina), with its SSI as secondary text:
 // "As fast as possible" reads "1.75 s with Broadsword (fastest it can reach)", or "2.75 s with Broadsword" with what the
-// weapon worn now could reach (`worn`: "1.25 s possible with Double Bladed Staff"); a swing time reads "1.5 s with War Axe ·
-// goal met", or "1.75 s with Broadsword · goal was every 1.5 s (set for War Axe)" when the suit's weapon is not the one the
-// goal was worked out for. Maxed only when the suit's swing reaches the goal's delay, or its weapon's fastest step (`fastest`).
-export interface SwingOutcome { text: string; ssi: string; after: string | null; maxed: boolean }
-export function swingOutcome(g: Goals, sw: { seconds: number; ssi: number }, weapon: string | null, fastest: boolean, worn: { seconds: number; weapon: string | null } | null = null): SwingOutcome {
+// goal's weapon could reach (`worn`: "1.25 s possible with Double Bladed Staff"); a swing time reads "1.5 s with War Axe ·
+// goal met", or "1.75 s with War Axe · goal was every 1.5 s". When the swing time is missed with another weapon than the
+// one the goal was set for (`worn`, by its speed when both are known, else by name), the verdict says the goal does not
+// apply (`verdict`: "the suit uses a Longsword, so the 1.5 s goal for your Katana does not apply"). Maxed only when the
+// suit's swing reaches the goal's delay, or its weapon's fastest step (`fastest`).
+export interface SwingOutcome { text: string; ssi: string; after: string | null; maxed: boolean; verdict: string | null }
+const aWeapon = (w: string): string => (/^the\b/i.test(w) ? w : `${/^[aeiou]/i.test(w) ? "an" : "a"} ${w}`);
+export function swingOutcome(g: Goals, sw: { seconds: number; ssi: number; speed?: number | undefined }, weapon: string | null, fastest: boolean, worn: { seconds: number; weapon: string | null; speed?: number | undefined } | null = null): SwingOutcome {
   const goal = g.swing?.mode === "every" ? g.swing.seconds ?? null : null, w = weapon ?? "the weapon", at = `${delayText(sw.seconds)} with ${w}`, ssi = `SSI ${num(sw.ssi)}`;
   if (goal != null) {
-    const met = sw.seconds <= goal, other = worn?.weapon && worn.weapon !== weapon ? ` (set for ${worn.weapon})` : "";
-    return { text: met ? `${at} · goal met` : `${at} · goal was every ${delayText(goal)}${other}`, ssi, after: null, maxed: met };
+    const met = sw.seconds <= goal, other = !!worn?.weapon && (sw.speed != null && worn.speed != null ? sw.speed !== worn.speed : worn.weapon !== weapon);
+    if (!met && other && weapon) return { text: at, ssi, after: null, maxed: false, verdict: `the suit uses ${aWeapon(weapon)}, so the ${delayText(goal)} goal for your ${worn!.weapon} does not apply` };
+    return { text: met ? `${at} · goal met` : `${at} · goal was every ${delayText(goal)}`, ssi, after: null, maxed: met, verdict: null };
   }
   const possible = !fastest && worn && worn.seconds < sw.seconds ? `${delayText(worn.seconds)} possible with ${worn.weapon ?? "the weapon worn now"}` : null;
-  return { text: fastest ? `${at} (fastest it can reach)` : at, ssi, after: possible, maxed: fastest };
+  return { text: fastest ? `${at} (fastest it can reach)` : at, ssi, after: possible, maxed: fastest, verdict: null };
 }
 // The trades the build made, from what is worn now to the suit: a goal that went down while a lower-ranked one went up,
 // each held at its cap, in rank order, at most `n`, each with every lower goal that rose.

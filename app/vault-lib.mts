@@ -335,10 +335,9 @@ export function compileGoals(g: Goals, kept: Readonly<Record<string, number>> = 
   for (const k of LEFTOVER_GROUPS[g.leftover]) if (!goal.has(k)) weights[k] = per(k, LEFTOVER_IMPORTANCE);
   return { weights, swingSteps: goal.has("ssi") };
 }
-// Goals in a line, for a settings diff: "SSI 1.5 s › HCI = DCI › DI, spare points to luck".
+// Goals in a line, for a settings diff: "Swing speed every 1.5 s › Hit chance = Defense chance › Damage, spare points to luck".
 export function goalsText(g: Goals): string {
-  const name = (k: string): string => (k === "ssi" && g.swing?.mode === "every" && g.swing.seconds != null ? `SSI ${g.swing.seconds} s` : labelOf(k));
-  return `${g.ranks.map((r) => r.map(name).join(" = ")).join(" › ") || "no goals"}, spare points to ${LEFTOVER_LABELS[g.leftover].toLowerCase()}`;
+  return `${g.ranks.map((r) => r.map((k) => goalLabel(g, k)).join(" = ")).join(" › ") || "no goals"}, spare points to ${LEFTOVER_LABELS[g.leftover].toLowerCase()}`;
 }
 // The most ranks goals hold, and the most properties one rank holds (the Goals tab stops at both).
 export const GOAL_RANKS_MAX = 40, GOAL_RANK_SIZE_MAX = 10;
@@ -388,6 +387,26 @@ export function propName(k: string): string {
   if (k.startsWith("sk:")) return `${labelOf(k).slice(1)} skill bonus`;
   return fullOf(k).replace(/(?!^)\b([A-Z])([a-z]+)/g, (_m, a: string, b: string) => a.toLowerCase() + b);
 }
+// The one word each property a buff moves takes in its tags (a resist's alone, "fire" + " resist"); a skill bonus is the
+// skill's name. Every key the buff catalog's effects and caps use has one (app/buffs.test.mts checks).
+export const TAG_WORDS: Readonly<Record<string, string>> = {
+  physResist: "physical", fireResist: "fire", coldResist: "cold", poisonResist: "poison", energyResist: "energy",
+  strBonus: "strength", dexBonus: "dexterity", intBonus: "intelligence",
+  hci: "hit chance", dci: "defense chance", di: "damage", sdi: "spell damage", ssi: "swing speed", fc: "faster casting", castingFocus: "casting focus",
+  hpRegen: "hit point regeneration", stamRegen: "stamina regeneration", manaRegen: "mana regeneration",
+  hitsPool: "hit points", stamPool: "stamina", manaPool: "mana",
+  hitLightning: "hit lightning", hitFireball: "hit fireball", hitHarm: "hit harm", hitMagicArrow: "hit magic arrow", hitDispel: "hit dispel",
+};
+// A pool and the item property that feeds it, named so the two can't be mixed up.
+const PAIR_WORDS: Readonly<Record<string, string>> = {
+  stamPool: "stamina (total)", stamInc: "stamina bonus", manaPool: "mana (total)", manaInc: "mana bonus", hitsPool: "hit points (total)", hpi: "hit point bonus",
+};
+// A property's name in the Suit Builder's goals, weight rows and score breakdown (issue #302: one name per property), in a
+// sentence ("swing speed", "physical resist", "stamina bonus") and as a row's name ("Swing speed").
+export const goalWord = (k: string): string => { const w = PAIR_WORDS[k] ?? (RESIST_KEYS.includes(k) ? propName(k) : TAG_WORDS[k] ?? propName(k)); return w[0]!.toLowerCase() + w.slice(1); };
+export const goalName = (k: string): string => { const w = goalWord(k); return w[0]!.toUpperCase() + w.slice(1); };
+// A goal as a list names it: Swing speed with its swing time when it has one ("Swing speed every 1.5 s").
+export const goalLabel = (g: Goals, k: string): string => (k === "ssi" && g.swing?.mode === "every" && g.swing.seconds != null ? `${goalName(k)} every ${g.swing.seconds} s` : goalName(k));
 
 // The five resists in paperdoll order, with the names the page shows: the long one ("Physical"), the short one
 // ("Phys") and the colour token (--res-phys).
@@ -580,7 +599,8 @@ export interface EffectiveProfile {
   // (so a result can show them, and runs with other buffs key apart), and the caps and floors before them.
   buffs?: PlannedBuffs | undefined;
   // What the build knows of the character's swing (app/build-spec.mts planBuild), absent with no character: stamina before gear (raw DEX and the buffs' shares), the worn suit's stamina, and whether SSI is scored by step.
-  swing?: { stamBase: number; refStamina: number; steps: boolean } | undefined;
+  // `goalSsi`: a Swing speed goal's SSI cap in item terms (issue #302), absent without one; the step table credits no point more.
+  swing?: { stamBase: number; refStamina: number; steps: boolean; goalSsi?: number | undefined } | undefined;
   // The step table both solvers score SSI with (app/swing.mts stepTable), put on by the optimize worker.
   ssiSteps?: Array<{ ssi: number; stam: number; credit: number }> | undefined;
   // The higher minimums a suit's own Resisting Spells bonus brings (resistStepsFor), lowest first, in item terms like
@@ -1636,7 +1656,10 @@ export interface RunSettings {
   castingSchool?: string | undefined;
   rarity?: RarityPreference | undefined;
   goals?: Goals | undefined;   // the goals its weights came from (issue #292); absent for a run built from weights set by hand
+  goalSwing?: GoalSwingWeapon | undefined;   // the weapon and stamina a Swing speed goal was set for (issue #302); absent in a run saved before it
 }
+// What a Swing speed goal was set for: the weapon worn when it was built (its name and base speed in seconds) and the stamina.
+export interface GoalSwingWeapon { weapon: string; speed: number; stamina: number }
 // A run's buffs: which were on, and the numbers they scale with (app/buffs.mts's inputs, Resisting Spells aside).
 export interface RunBuffs { on: string[]; skills: Record<string, number> }
 // What changed between two saved runs' builder settings, as short readable lines (b relative to a).
