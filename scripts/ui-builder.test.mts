@@ -1668,6 +1668,12 @@ test("[slow] templates: built-ins first with their description, Apply sets Manua
     await page.locator(".pop").getByRole("button", { name: "Manage templates…" }).click();
     const manage = page.getByRole("menu", { name: "Manage templates" });
     assert.deepEqual((await manage.getByRole("menuitem").allInnerTexts()).map((x) => x.trim()), ["Update “Mine” with these settings", "Delete “Mine”…", "Update “Spare” with these settings", "Delete “Spare”…"], "the build's own first");
+    // a click on the build picker's button with the menu open closes the menu, with no error (re-review R1)
+    await page.click("#b-tpl");
+    assert.equal(await page.locator(".pop").count(), 0, "the menu closed");
+    assert.deepEqual(errors, []);
+    await page.click("#b-tpl");
+    await page.locator(".pop").getByRole("button", { name: "Manage templates…" }).click();
     await manage.getByRole("menuitem", { name: "Delete “Spare”…" }).click();
     await page.locator("dialog[open]").getByRole("button", { name: "Delete Spare" }).click();
     await page.waitForFunction(() => /Template Spare deleted/.test(document.body.textContent || ""), undefined, { timeout: 10_000 });

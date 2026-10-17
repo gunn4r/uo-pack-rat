@@ -732,7 +732,10 @@ export function combobox(o: ComboboxOptions): ComboboxHandle {
     }
     paint();
     active = Math.max(0, opts.findIndex((x) => x.current));
-    handle = popover(trigger, [input, list, foot], { label: o.label, width: o.width ?? 380, onClose: () => { handle = null; paint = null; } });
+    // another popover on the same button (the build picker's Manage templates menu): popover() closes it and opens nothing,
+    // so the click toggles that one closed
+    handle = popover(trigger, [input, list, foot], { label: o.label, width: o.width ?? 380, onClose: () => { handle = null; paint = null; } }) as PopoverHandle | null;
+    if (!handle) { paint = null; return; }
     handle.root.classList.add("pop-cbx");
     sync();
   }
