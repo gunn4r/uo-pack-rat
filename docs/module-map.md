@@ -41,7 +41,7 @@ Three files keep names from before the project became Pack Rat: `app/vault-serve
 | Module | Role | Owns |
 |---|---|---|
 | `app/rules.mts` | Node-only loader: a rules file from `<data>/rules/` or the builtin set, validated before anything sees it. | `loadRules`, `listRules`, `DEFAULT_SHARD`, `scrollBinderProblem`, `slayerGroupsProblem` |
-| `app/rules/uoalive.json`, `app/rules/generic-osi.json` | The builtin shard rules files (`docs/shard-rules.md`). | caps, `raceCaps`, `resistMinimum`, `tagUnits`, `rarity`, `raceLock`, `freeSkills`, `scrollBinder`, `slayerGroups` |
+| `app/rules/uoalive.json`, `app/rules/generic-osi.json` | The builtin shard rules files (`docs/shard-rules.md`). | caps, `raceCaps`, `resistMinimum`, `tagUnits`, `rarity`, `raceLock`, `freeSkills`, `scrollBinder`, `slayerGroups`, `unravel` |
 | `app/schema/rules.v1.schema.json` | The contract every rules file is checked against. | the rules shape |
 | `app/vault-lib.mts` (rules part) | Holds the loaded rules for page and server, and the rules-driven math. | `setRules`, `getRules`, `minResistAt`, `resistMinimum`, `paperdollResist`, `shardResistCap`, `tagUnits`, `tagInfo` |
 
@@ -147,6 +147,15 @@ Profiles, buffs, pools, solvers, saved runs and Manual. `docs/solver.md` describ
 
 The recipes are the shard rules' `scrollBinder` (Shard rules, above).
 
+## Unravel
+
+| Module | Role | Owns |
+|---|---|---|
+| `app/unravel.mts` | Pure, served to the page too: which pieces can be unraveled, their imbuing weight and the property-weight table, what a weight gives at a skill, why a piece is left out by default, ingredients on hand. | `unravelType`, `unravelWeight`, `unravelYield`, `expectedYield`, `leftOutReasons`, `onHand`, `PROPERTY_WEIGHTS`, `LEFT_OUT` |
+| `app/ui/unravel.mts` | The Inventory's Unravel view: the picker, the forecast, what is left out, the candidates by ingredient, Keep and the selection bar. | the `unravel` screen |
+
+The thresholds are the shard rules' `unravel` (Shard rules, above); `GET /api/items?unravel=1` (`app/item-query.mts`) lists the candidates, and the Keep list is settings.json's `unravelKeep`.
+
 ## MCP
 
 | Module | Role | Owns |
@@ -240,7 +249,7 @@ What still lives inside `startServer`: the startup warning; the wiring of the st
 
 ## UI
 
-The page is `app/index.html` plus `app/ui/`, compiled by `scripts/build-ui.mts` and served through the `/ui/<name>` route. Screens that belong to one feature are listed in that feature's section above: Suit Builder, Organize, House map, Scrolls. The DOM-free modules are the ones `node:test` suites import directly.
+The page is `app/index.html` plus `app/ui/`, compiled by `scripts/build-ui.mts` and served through the `/ui/<name>` route. Screens that belong to one feature are listed in that feature's section above: Suit Builder, Organize, House map, Scrolls, Unravel. The DOM-free modules are the ones `node:test` suites import directly.
 
 ### Bootstrap
 

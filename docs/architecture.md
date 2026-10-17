@@ -123,6 +123,7 @@ Every route lives in `app/http/routes/`, one module per area, each exporting `ro
 - `GET /logo-mark.png` (the rat's head cropped from the logo, 80 px, the sidebar's mark)
 - `GET /vault-lib.mjs`
 - `GET /item-query.mjs` (pure filter/sort/facet logic shared by the browser and GET /api/items below — no DOM, no node: imports, servable byte for byte like vault-lib.mts)
+- `GET /unravel.mjs` (item-query.mts's import: what unraveling a piece gives, which the Unravel view reads too, same reason)
 - `GET /scan-schema.mjs` (vault-lib.mts imports it for parseStamp, so it must be servable to the browser the same way)
 - `GET /schema/validate.mjs` (scan-schema.mts's own import, same reason)
 - `GET /organize-config.mjs` (the rule editor's import, same reason)
@@ -140,7 +141,7 @@ Every route lives in `app/http/routes/`, one module per area, each exporting `ro
 
 - `GET /api/inventory` (the cached fold of every scan, with Organize's results overlay applied — getInventory(), keyed by a signature of the scans directory + shard, and of organize-state.json for the overlay, so an edited/added/removed scan file or a finished trip is picked up on the next request with no restart; each scan file is upgraded v1→v2 and schema- validated on read — scanStore.all() — an invalid or unparsable file is logged and skipped) — the response carries facets/worn/rootCounts/missingCounts/itemCount/propKeys — never the full item map (that stopped shipping in Task 5, once the page moved to paging GET /api/items instead)
 - `GET /api/missing?root=` — what left that root since its last scan (app/missing.mts, issue #99)
-- `GET /api/items?q=&slot=&loc=&rarity=&kind=&seenDays=&slayer=&nogarg=&med=&hide=&prop=&group=&sort=&dir=&offset=&limit=` — a paged, server-side search/sort over the same folded inventory (parseItemQuery/applyItemQuery, app/item-query.mts); &fields=hits answers lean rows (hitRow), up to HIT_LIMIT a page, for the House map's search
+- `GET /api/items?q=&slot=&loc=&rarity=&kind=&seenDays=&slayer=&nogarg=&med=&hide=&prop=&group=&sort=&dir=&offset=&limit=` — a paged, server-side search/sort over the same folded inventory (parseItemQuery/applyItemQuery, app/item-query.mts); &fields=hits answers lean rows (hitRow), up to HIT_LIMIT a page, for the House map's search; &unravel=1 keeps only unravel candidates, each row with `unravel: {ingredient, weight, maybe, leftOut?}` (app/unravel.mts, issue #271), less the pieces left out by default (worn, in a saved run, insured, pinned in Organize, imbued, blessed, kept) unless &unravelShow= names those reasons (or `all`); sort=unravel is by weight
 - `GET /api/items/by-serial?serials=1,2,3` — full item records (location/tags/equippedBy…) by serial, 1-200 at a time (400 otherwise); a serial with no item is simply absent from the response
 
 ### `app/http/routes/prefs.mts`
@@ -151,7 +152,7 @@ Every route lives in `app/http/routes/`, one module per area, each exporting `ro
 
 ### `app/http/routes/settings.mts`
 
-- `GET|PUT /api/settings` (`<data>/settings.json:` {shard, setupDone?, client?, retention?, autoUpdateCheck?, uoFolder?})
+- `GET|PUT /api/settings` (`<data>/settings.json:` {shard, setupDone?, client?, retention?, autoUpdateCheck?, uoFolder?, unravelKeep?}; unravelKeep is the Unravel view's Keep list, written whole, at most 5000 distinct serials)
 - `POST /api/retention/cleanup` {dryRun} -> {scans, runs, refused} (prune old scans and saved runs now, or count what that would remove; app/retention.mts; 409 under --demo)
 - `GET /api/rules` (the current shard's rules object plus every {id,name,source} listRules() finds — builtin and `<data>/rules/*.json`)
 
