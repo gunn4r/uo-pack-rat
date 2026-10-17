@@ -77,7 +77,9 @@ export function preBuildDiagnostics(input: DiagnosticsInput): Diagnostic[] {
 // requirement_outweighed (issue #311): the weights and soft-floor bonuses can move a score by more than half the largest
 // hard-floor bonus (mip.mts HARD_FLOOR_BONUS_MAX), so the build runs at that bonus and a suit missing a requirement could
 // still win. Said before the search and kept on the result. It names the largest part: the soft-floor bonus (no action),
-// or the weight moving the score most, offered at the importance that scales every weight down far enough.
+// or the weight moving the score most. Set weight offers that one weight at the importance that brings the bound under the
+// cap with every other part held, rounded toward zero so it never lands past the line; with no such value (the rest alone
+// is too much, or it rounds to 0) there is no action.
 export function requirementScaleDiagnostics(input: DiagnosticsInput): Diagnostic[] {
   const { pools = {}, current = {}, optionalSlots = DEFAULT_OPTIONAL_SLOTS, slots = DEFAULT_SLOTS, profile } = input;
   const sp = hardFloorSpread(profile, pools, current, optionalSlots, slots);
@@ -88,10 +90,12 @@ export function requirementScaleDiagnostics(input: DiagnosticsInput): Diagnostic
   if (!k || sp.soft >= part) {
     return [{ code: "requirement_outweighed", level: "warn", message: "Your soft requirements' bonus is so large that a requirement could lose to them. Lower the bonus.", values: { spread: sp.soft + weightsTotal, room }, actions: [] }];
   }
-  const w = num(obj(profile.weights)[k]) ?? 0, scale = Math.max(0, room - sp.soft) / weightsTotal, suggested = roundImportance(importanceOf(k, w * scale));
+  const w = num(obj(profile.weights)[k]) ?? 0, fit = room - sp.soft - (weightsTotal - part);
+  // the importance at which this weight's part fits, toward zero at roundImportance's steps (whole from 10, tenths below)
+  const exact = fit > 0 ? importanceOf(k, w * fit / part) : 0, suggested = Math.abs(exact) >= 10 ? Math.trunc(exact) : Math.trunc(exact * 10) / 10;
   return [{ code: "requirement_outweighed", level: "warn", property: k,
     message: `Your weights are so large that a requirement could lose to them, ${propName(k)} most of all. Scale the weights down.`,
-    values: { spread: sp.soft + weightsTotal, room, suggested }, actions: suggested !== 0 ? [{ kind: "setWeight", property: k, value: suggested }] : [] }];
+    values: { weight: w, spread: sp.soft + weightsTotal, room, ...(suggested !== 0 ? { suggested } : {}) }, actions: suggested !== 0 ? [{ kind: "setWeight", property: k, value: suggested }] : [] }];
 }
 
 // The weapon properties a build requires (pool `weaponMustHave`, issue #214), said before the search and kept on the result: weapon_missing_flag for each locked slot whose worn weapon lacks one (the lock wins, so it stays; no action, since none unlocks a slot), and no_weapon_with_flag when no weapon in the pool carries them all (the suit is built without one). `kept` lists each such slot with its weapon and the properties it lacks.
