@@ -469,7 +469,7 @@ export interface OrganizeTripApiResponse { ok: boolean; id: string; index: numbe
 // Move to (issue #270, app/move.mts). POST /api/move/plan: the selection's count, its worn items, how many of it sit directly in
 // each container, and with `to` the plan into that container (or why it cannot be filled); with `back`, Move back's count.
 export interface MovePlanSummary { moving: number; serials: number[]; trips: number; already: number; noRoom: number; left: Partial<Record<"gone" | "worn" | "pack" | "bag" | "unreachable" | "site", number>>; against: Array<{ serial: number; name: string; target: number }> }
-export interface MovePlanApiResponse { ok: boolean; selected: number; worn: number; wornNames: string[]; movable: number; here: Record<string, number>; problem?: string | null; plan?: MovePlanSummary | null }
+export interface MovePlanApiResponse { ok: boolean; selected: number; worn: number; wornNames: string[]; movable: number; here: Record<string, number>; left: MovePlanSummary["left"]; problem?: string | null; plan?: MovePlanSummary | null }
 export interface MoveBackApiResponse { ok: boolean; back: { movable: number; skipped: string[] } }
 // POST /api/move/trip: the trip queued (`id` null when nothing is left to move), its items' names, the moves left counting it.
 export interface MoveTripApiResponse { ok: boolean; id: string | null; index?: number; names?: Record<string, string>; remaining: number; skipped: Array<{ serial: number; name: string }>; noRoom: Array<{ serial: number; name: string }> }

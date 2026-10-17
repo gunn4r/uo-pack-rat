@@ -6,6 +6,7 @@
 // the selection bar keeps or grabs the selected pieces. The candidates are one GET /api/items query with `unravel` (the server works out each piece's weight and why it is left out), the
 // ingredients on hand three more; the math is app/unravel.mts. The Keep list is settings.json's unravelKeep (PUT /api/settings).
 import type { Item } from "../vault-lib.mts";
+import { isBoundedInt, MAX_SERIAL } from "../guards.mts";
 import { unravelYield, expectedYield, onHand, LEFT_OUT, INGREDIENTS, type Ingredient, type LeftOut, type UnravelYield } from "../unravel.mts";
 import type { ItemQueryRows, UnravelRow } from "../item-query.mts";
 import { state } from "./store.mts";
@@ -328,7 +329,7 @@ async function setKept(serials: number[], keep: boolean): Promise<void> {
 // The selected pieces moved loose into one bag through Move to (ui/move-to.mts): the bag this character gathered into last
 // time (settings.json's unravelBag), or another container from Move to's picker, which is then remembered.
 async function openGather(picked: UnravelRow[]): Promise<void> {
-  const me = who()?.name ?? null, selection = selectionBody(sel), bag = me ? state.settings?.unravelBag?.[me] ?? null : null;
+  const me = who()?.name ?? null, selection = selectionBody(sel), bag = me ? bags()[me] ?? null : null;
   const plan = (to?: number): Promise<MovePlanApiResponse> => api<MovePlanApiResponse>("/api/move/plan", { method: "POST", body: { selection, ...(to ? { to } : {}) } });
   let counted: MovePlanApiResponse, mine: MovePlanApiResponse | null;
   try { [counted, mine] = await Promise.all([plan(), bag ? plan(bag) : Promise.resolve(null)]); }
@@ -349,8 +350,7 @@ async function openGather(picked: UnravelRow[]): Promise<void> {
   }
   opts.push(box("label", { class: "unr-opt" }, radio("other", !usable), box("span", { class: "unr-opt-t" }, txt("Another container…")),
     txt(`Opens the Move to picker.${me ? ` Pack Rat remembers the one you pick for ${me}.` : ""}`, "unr-opt-d")));
-  const notMoving = counted.selected - counted.movable;
-  const left = mine?.plan ? leftText(mine.plan.left, counted.worn) : notMoving ? leftText({ pack: notMoving - counted.worn }, counted.worn) : null;
+  const left = leftText(mine?.plan ? mine.plan.left : counted.left, counted.worn);
   const tripWhy = gate();
   const go = button({ label: "", variant: "primary", attrs: { id: "unr-gather-go" } });
   const paintGo = (): void => {
@@ -373,9 +373,13 @@ async function openGather(picked: UnravelRow[]): Promise<void> {
     else startMove(from, bag!, mine!.plan!);
   });
 }
+// The remembered bags, less any entry a hand edit left that is not a serial: a bad one would fail its plan, and the whole map
+// written back would be refused.
+function bags(): Record<string, number> {
+  return Object.fromEntries(Object.entries(state.settings?.unravelBag ?? {}).filter(([k, s]) => k && isBoundedInt(s, 1, MAX_SERIAL)));
+}
 // The bag a character gathers into, remembered in settings.json (written whole, like the Keep list).
 async function rememberBag(me: string, to: number): Promise<void> {
-  const bags = { ...(state.settings?.unravelBag ?? {}), [me]: to };
-  try { state.settings = (await api<SettingsApiResponse>("/api/settings", { method: "PUT", body: { unravelBag: bags } })).settings; }
+  try { state.settings = (await api<SettingsApiResponse>("/api/settings", { method: "PUT", body: { unravelBag: { ...bags(), [me]: to } } })).settings; }
   catch (e) { toast(`Could not remember the bag: ${errorText(e)}`, "bad"); }
 }
