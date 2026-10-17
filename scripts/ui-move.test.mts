@@ -89,6 +89,8 @@ async function until<T>(read: () => T | Promise<T>, ok: (v: T) => boolean, what:
 }
 async function search(page: Page, q: string): Promise<void> {
   await page.fill("#f-text", q);
+  // The search applies after a debounce; the rows can already match (gems sort first), so wait for the filter itself, then its rows.
+  await until(() => page.locator("#inv-active").innerText().catch(() => ""), (t) => t.toLowerCase().includes(`search: ${q}`), `the search "${q}" applied`);
   await until(() => page.locator("#inv-table tbody tr.item").first().innerText(), (t) => t.toLowerCase().includes(q), `rows matching "${q}"`);
 }
 const box = (page: Page, n: number) => page.locator("#inv-table tbody tr.item").nth(n).locator("input.sel-cb");
