@@ -179,7 +179,13 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `scripts/start.test.mts` — `scripts/start.mts` (`npm start`) as a real child process: a signal reaches the server and a signal death never reads as a clean exit.
 - `scripts/test-index.test.mts` — a [smoke] guard that every test file describes itself in a header and that TESTING.md's test index is current.
 - `scripts/test-tags.test.mts` — a [smoke] guard that every top-level test name starts with a tag.
-- `scripts/ui-builder.test.mts` — [slow]: the Suit Builder's keyboard, hover and panel behavior in the real Electron window.
+- `scripts/ui-builder-goals.test.mts` — [slow]: the ranked goals, strict order, goals runs and the weight scale.
+- `scripts/ui-builder-header.test.mts` — [slow]: the sentence bar's pickers, ⌘↵, arriving on the screen, the gear-changed banner and the What changed chip.
+- `scripts/ui-builder-manual.test.mts` — [slow]: Manual mode, its hand-offs and No character.
+- `scripts/ui-builder-pool.test.mts` — [slow]: resist caps, weapon exclusions, the Weapon must have and Only containers chips.
+- `scripts/ui-builder-result.test.mts` — [slow]: What changes, the Fetch list and Plan tooltips, a Fetch list row's place, and the result's own scrolling.
+- `scripts/ui-builder-settings.test.mts` — [slow]: Build Settings: its keys, tabs and scrim, Check your settings, the drawer's extras, swing steps, casting school, rarity and the STR limit.
+- `scripts/ui-builder-templates.test.mts` — [slow]: the template picker and the Manage templates drawer.
 - `scripts/ui-components.test.mts` — [slow]: `app/ui/components.mts`'s overlays and keyboard behavior in the real Electron window.
 - `scripts/ui-contrast.test.mts` — [slow]: the contrast check from design spec 2.3, run on the real page in both theme families, light and dark.
 - `scripts/ui-forms.test.mts` — [slow]: the form-like screens (the Import drawer, the setup wizard and Settings) in the real Electron window.

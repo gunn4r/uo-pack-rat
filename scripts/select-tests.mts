@@ -21,10 +21,11 @@ export type Selection = { full: string } | { tests: Record<string, string[]> };
 const IGNORED = /(^|\/)[^/]+\.md$|^docs\/|^\.github\/|^LICENSE$|^node_modules(\/|$)/;
 const FULL = /^(scripts\/(test-runner|run-suite|test-file-watchdog|electron-window|build-ui|build-schema-types)\.mts|scripts\/test_runner\.sh|package(-lock)?\.json|tsconfig[^/]*\.json|app\/schema\/.*|electron\/.*)$/;
 
-// app/ui file stem → the Electron test(s) that drive that screen. A stem not listed here (tokens, dom,
-// store, app, theme...) is shared by every screen, so it selects all of them.
+// app/ui file stem → the Electron test(s) that drive that screen; a name ending in * stands for every Electron test whose name
+// starts with the rest (the Suit Builder's are split by area). A stem not listed here (tokens, dom, store, app, theme...) is
+// shared by every screen, so it selects all of them.
 export const SCREENS: Record<string, string | string[]> = {
-  builder: "ui-builder", "builder-model": "ui-builder", "builder-result": "ui-builder",
+  builder: "ui-builder-*", "builder-model": "ui-builder-*", "builder-result": "ui-builder-*",
   components: "ui-components",
   import: "ui-forms", "import-preview": "ui-forms", wizard: "ui-forms", settings: "ui-forms", shard: "ui-forms",
   shell: "ui-shell",
@@ -34,8 +35,8 @@ export const SCREENS: Record<string, string | string[]> = {
   "house-map": "ui-map", "house-map-model": "ui-map", "world-map": "ui-map", "world-map-model": "ui-map",
   organize: "ui-organize", "auto-organize": "ui-organize", "rule-editor": "ui-organize",
   "organize-model": ["ui-organize", "ui-map"], kinds: "ui-organize",
-  "builder-buffs": "ui-builder", "builder-manual": "ui-builder", "manual-model": "ui-builder",
-  "item-browser": ["ui-state", "ui-builder"],
+  "builder-buffs": "ui-builder-*", "builder-manual": "ui-builder-*", "manual-model": "ui-builder-*",
+  "item-browser": ["ui-state", "ui-builder-*"],
 };
 
 const LITERAL = /["'`](\.\.?\/[^"'`\s]+)["'`]/g;
@@ -73,7 +74,8 @@ export function selectTests(changed: string[], sources: Record<string, string>):
     for (const t of tests) if ([...reach.get(t)!].some(names)) pick(t, path);
     if (path.startsWith("app/ui/") || path === "app/index.html") {
       const screen = SCREENS[posix.basename(path).replace(/\.(mts|css)$/, "")];
-      for (const t of screen ? [screen].flat().map((n) => `scripts/${n}.test.mts`) : electronUi) pick(t, path);
+      const named = (n: string): string[] => (n.endsWith("*") ? electronUi.filter((f) => f.startsWith(`scripts/${n.slice(0, -1)}`)) : [`scripts/${n}.test.mts`]);
+      for (const t of screen ? [screen].flat().flatMap(named) : electronUi) pick(t, path);
       if (path.endsWith(".css")) pick("scripts/ui-contrast.test.mts", path);
     }
     if (!Object.values(picked).some((p) => p.includes(path))) return { full: `no test reaches ${path}` };
