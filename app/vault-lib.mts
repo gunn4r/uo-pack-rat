@@ -1669,14 +1669,19 @@ export interface RunSettings {
 export interface GoalSwingWeapon { weapon: string; speed: number; stamina: number; stamBase: number }
 // A run's buffs: which were on, and the numbers they scale with (app/buffs.mts's inputs, Resisting Spells aside).
 export interface RunBuffs { on: string[]; skills: Record<string, number> }
-// What changed between two saved runs' builder settings, as short readable lines (b relative to a).
-export function settingsDiff(a: RunSettings = {}, b: RunSettings = {}): string[] {
-  const out: string[] = [];
+// What changed between two sets of builder settings (b relative to a), one entry per change: its short readable line
+// (`text`, what settingsDiff returns), the group it belongs to, and for a requirement, weight or resist cap its property
+// (`key`), name and both values ("none" when absent), so a table can show them side by side (issue #336).
+export type SettingsGroup = "requirements" | "weights" | "pool" | "buffs" | "character" | "search";
+export interface SettingsChange { group: SettingsGroup; text: string; key?: string; label?: string; from?: string; to?: string; added?: boolean; soft?: boolean }
+export function settingsChanges(a: RunSettings = {}, b: RunSettings = {}): SettingsChange[] {
+  const out: SettingsChange[] = [];
+  const add = (group: SettingsGroup, text: string, more: Omit<SettingsChange, "group" | "text"> = {}): void => { out.push({ group, text, ...more }); };
   const L = labelOf;
   // with goals setting the weights on both sides (issue #292), changed goals are one line, and the weights and swing-step
   // switch they set are not compared
   const fromGoals = goalsActive(a.goals) && goalsActive(b.goals);
-  if (fromGoals && goalsText(a.goals!) !== goalsText(b.goals!)) out.push(`goals: ${goalsText(b.goals!)}`);
+  if (fromGoals && goalsText(a.goals!) !== goalsText(b.goals!)) add("weights", `goals: ${goalsText(b.goals!)}`, { label: "Goals", from: goalsText(a.goals!), to: goalsText(b.goals!) });
   for (const [group, noun] of [["floors", "floor"], ["weights", "weight"]] as const) {
     if (group === "weights" && fromGoals) continue;
     const A: Record<string, number> = a[group] || {}, B: Record<string, number> = b[group] || {};
@@ -1684,61 +1689,66 @@ export function settingsDiff(a: RunSettings = {}, b: RunSettings = {}): string[]
     const v = (k: string, x: number): string | number => (group === "weights" ? importanceText(k, x) : x);
     for (const k of [...new Set([...Object.keys(A), ...Object.keys(B)])].sort()) {
       if (group === "weights" && k in A && k in B && v(k, A[k]!) === v(k, B[k]!)) continue;   // a change too small to show is not named as "X → X"
-      if (!(k in A)) out.push(`${L(k)} ${noun} ${v(k, B[k]!)} added`);
-      else if (!(k in B)) out.push(`${L(k)} ${noun} ${v(k, A[k]!)} removed`);
-      else if (A[k] !== B[k]) out.push(`${L(k)} ${noun} ${v(k, A[k]!)} → ${v(k, B[k]!)}`);
+      const g = group === "floors" ? "requirements" : "weights", soft = group === "floors" && k in B && (b.softFloors || []).includes(k);
+      const row = { key: k, label: L(k), from: k in A ? String(v(k, A[k]!)) : "none", to: k in B ? String(v(k, B[k]!)) : "none", ...(soft ? { soft } : {}) };
+      if (!(k in A)) add(g, `${L(k)} ${noun} ${v(k, B[k]!)} added`, { ...row, added: true });
+      else if (!(k in B)) add(g, `${L(k)} ${noun} ${v(k, A[k]!)} removed`, row);
+      else if (A[k] !== B[k]) add(g, `${L(k)} ${noun} ${v(k, A[k]!)} → ${v(k, B[k]!)}`, row);
     }
   }
   // A resist cap override: set, changed, or taken off (back to the shard's cap for the character's race).
   const RA: Record<string, number> = a.resistCaps || {}, RB: Record<string, number> = b.resistCaps || {};
   for (const k of RESIST_KEYS.filter((x) => x in RA || x in RB)) {
-    if (!(k in RA)) out.push(`${L(k)} cap set to ${RB[k]}`);
-    else if (!(k in RB)) out.push(`${L(k)} cap back to the shard's`);
-    else if (RA[k] !== RB[k]) out.push(`${L(k)} cap ${RA[k]} → ${RB[k]}`);
+    const row = { key: k, label: `${L(k)} cap`, from: k in RA ? String(RA[k]) : "shard's", to: k in RB ? String(RB[k]) : "shard's" };
+    if (!(k in RA)) add("character", `${L(k)} cap set to ${RB[k]}`, row);
+    else if (!(k in RB)) add("character", `${L(k)} cap back to the shard's`, row);
+    else if (RA[k] !== RB[k]) add("character", `${L(k)} cap ${RA[k]} → ${RB[k]}`, row);
   }
   const setDiff = <T,>(x: T[] = [], y: T[] = []): [T[], T[]] => [y.filter((v) => !x.includes(v)), x.filter((v) => !y.includes(v))];
   const [softOn, softOff] = setDiff(a.softFloors, b.softFloors);
-  for (const k of softOn) if ((b.floors || {})[k] != null) out.push(`${L(k)} floor made soft`);
-  for (const k of softOff) if ((b.floors || {})[k] != null) out.push(`${L(k)} floor made hard`);
+  for (const k of softOn) if ((b.floors || {})[k] != null) add("requirements", `${L(k)} floor made soft`, { key: k, label: L(k), from: "hard", to: "soft", soft: true });
+  for (const k of softOff) if ((b.floors || {})[k] != null) add("requirements", `${L(k)} floor made hard`, { key: k, label: L(k), from: "soft", to: "hard" });
   const [lockOn, lockOff] = setDiff(a.lockedSlots, b.lockedSlots);
-  if (lockOn.length) out.push(`locked ${lockOn.map((x) => SLOT_LABELS[x] || x).join(", ")}`);
-  if (lockOff.length) out.push(`unlocked ${lockOff.map((x) => SLOT_LABELS[x] || x).join(", ")}`);
+  if (lockOn.length) add("pool", `locked ${lockOn.map((x) => SLOT_LABELS[x] || x).join(", ")}`);
+  if (lockOff.length) add("pool", `unlocked ${lockOff.map((x) => SLOT_LABELS[x] || x).join(", ")}`);
   const [tagOn, tagOff] = setDiff(a.excludeTags, b.excludeTags);
-  if (tagOn.length) out.push(`excluding ${tagOn.join(", ")}`);
-  if (tagOff.length) out.push(`allowing ${tagOff.join(", ")}`);
+  if (tagOn.length) add("pool", `excluding ${tagOn.join(", ")}`);
+  if (tagOff.length) add("pool", `allowing ${tagOff.join(", ")}`);
   const [rootOn, rootOff] = setDiff(a.excludeRoots, b.excludeRoots);
-  if (rootOn.length || rootOff.length) out.push("skipped containers changed");
+  if (rootOn.length || rootOff.length) add("pool", "skipped containers changed");
   const [onlyOn, onlyOff] = setDiff(a.onlyRoots, b.onlyRoots);
-  if (onlyOn.length || onlyOff.length) out.push(b.onlyRoots?.length ? (a.onlyRoots?.length ? "only containers changed" : `only ${b.onlyRoots.length} container${b.onlyRoots.length === 1 ? "" : "s"}`) : "any container");
-  if ((a.race || "human") !== (b.race || "human")) out.push(`race ${a.race || "human"} → ${b.race || "human"}`);
+  if (onlyOn.length || onlyOff.length) add("pool", b.onlyRoots?.length ? (a.onlyRoots?.length ? "only containers changed" : `only ${b.onlyRoots.length} container${b.onlyRoots.length === 1 ? "" : "s"}`) : "any container");
+  if ((a.race || "human") !== (b.race || "human")) add("character", `race ${a.race || "human"} → ${b.race || "human"}`);
   const [skOn, skOff] = setDiff(a.excludeSkills, b.excludeSkills);
-  if (skOn.length) out.push(`forbidding ${skOn.join(", ")} bonuses`);
-  if (skOff.length) out.push(`allowing ${skOff.join(", ")} bonuses`);
-  const flag = (k: "allowGargoyle" | "medOnly" | "exact" | "swingSteps", on: string, off: string) => { if (!!a[k] !== !!b[k]) out.push(b[k] ? on : off); };
+  if (skOn.length) add("pool", `forbidding ${skOn.join(", ")} bonuses`);
+  if (skOff.length) add("pool", `allowing ${skOff.join(", ")} bonuses`);
+  const flag = (k: "allowGargoyle" | "medOnly" | "exact" | "swingSteps", on: string, off: string, g: SettingsGroup = "pool") => { if (!!a[k] !== !!b[k]) add(g, b[k] ? on : off); };
   flag("allowGargoyle", "gargoyle gear allowed", "gargoyle gear excluded");
   flag("medOnly", "meditation-safe only", "meditation-safe off");
   const others = (s: RunSettings) => !!s.allowOthersWorn;   // a saved run is normalized to allowOthersWorn before it ever reaches here
-  if (others(a) !== others(b)) out.push(others(b) ? "others' worn gear allowed" : "others' worn gear excluded");
-  flag("exact", "exact search on", "exact search off");
-  if (!fromGoals) flag("swingSteps", "+SSI by step", "SSI by point");
-  if ((a.castingSchool || "") !== (b.castingSchool || "")) out.push(b.castingSchool ? `casting school ${b.castingSchool}` : "casting school from skills");
-  if ((a.rarity || "") !== (b.rarity || "")) out.push(b.rarity ? `prefer ${b.rarity} rarity` : "any rarity");
+  if (others(a) !== others(b)) add("pool", others(b) ? "others' worn gear allowed" : "others' worn gear excluded");
+  flag("exact", "exact search on", "exact search off", "search");
+  if (!fromGoals) flag("swingSteps", "+SSI by step", "SSI by point", "weights");
+  if ((a.castingSchool || "") !== (b.castingSchool || "")) add("character", b.castingSchool ? `casting school ${b.castingSchool}` : "casting school from skills");
+  if ((a.rarity || "") !== (b.rarity || "")) add("pool", b.rarity ? `prefer ${b.rarity} rarity` : "any rarity");
   const [wOn, wOff] = setDiff(a.excludeWeapons, b.excludeWeapons);
   const weaponWords = (ws: string[]): string => [ws.some((w) => w !== SPELLBOOKS) ? `${ws.filter((w) => w !== SPELLBOOKS).join(", ")} weapons` : "", ws.includes(SPELLBOOKS) ? "spellbooks" : ""].filter(Boolean).join(" and ");
-  if (wOn.length) out.push(`excluding ${weaponWords(wOn)}`);
-  if (wOff.length) out.push(`allowing ${weaponWords(wOff)}`);
+  if (wOn.length) add("pool", `excluding ${weaponWords(wOn)}`);
+  if (wOff.length) add("pool", `allowing ${weaponWords(wOff)}`);
   const ubws = (s: RunSettings) => s.ubwsAnyWeapon !== false;   // absent means on
-  if (ubws(a) !== ubws(b)) out.push(ubws(b) ? "Use Best Weapon Skill weapons allowed" : "Use Best Weapon Skill weapons held to their own skill");
+  if (ubws(a) !== ubws(b)) add("pool", ubws(b) ? "Use Best Weapon Skill weapons allowed" : "Use Best Weapon Skill weapons held to their own skill");
   const [fOn, fOff] = setDiff(a.weaponMustHave, b.weaponMustHave);
-  if (fOn.length) out.push(`weapon must have ${fOn.join(", ")}`);
-  if (fOff.length) out.push(`weapon need not have ${fOff.join(", ")}`);
-  if (a.strLimit !== b.strLimit && b.strLimit != null) out.push(`STR limit ${a.strLimit ?? "?"} → ${b.strLimit}`);
-  if (a.restarts !== b.restarts && b.restarts != null) out.push(`restarts ${a.restarts ?? "?"} → ${b.restarts}`);
-  if (a.budgetMs !== b.budgetMs && b.budgetMs != null && b.exact) out.push(`budget ${(a.budgetMs ?? 0) / 1000} s → ${b.budgetMs / 1000} s`);
-  if (a.altCount !== b.altCount && b.altCount != null) out.push(`other suits ${a.altCount ?? 0} → ${b.altCount}`);
-  if (a.altTol !== b.altTol && b.altTol != null) out.push(`other suits within ${a.altTol ?? 0} → ${b.altTol} points`);
+  if (fOn.length) add("pool", `weapon must have ${fOn.join(", ")}`);
+  if (fOff.length) add("pool", `weapon need not have ${fOff.join(", ")}`);
+  if (a.strLimit !== b.strLimit && b.strLimit != null) add("character", `STR limit ${a.strLimit ?? "?"} → ${b.strLimit}`);
+  if (a.restarts !== b.restarts && b.restarts != null) add("search", `restarts ${a.restarts ?? "?"} → ${b.restarts}`);
+  if (a.budgetMs !== b.budgetMs && b.budgetMs != null && b.exact) add("search", `budget ${(a.budgetMs ?? 0) / 1000} s → ${b.budgetMs / 1000} s`);
+  if (a.altCount !== b.altCount && b.altCount != null) add("search", `other suits ${a.altCount ?? 0} → ${b.altCount}`);
+  if (a.altTol !== b.altTol && b.altTol != null) add("search", `other suits within ${a.altTol ?? 0} → ${b.altTol} points`);
   return out;
 }
+// The same, as short readable lines.
+export const settingsDiff = (a: RunSettings = {}, b: RunSettings = {}): string[] => settingsChanges(a, b).map((c) => c.text);
 
 export function toOptItem(it: Item): OptItem {
   const props: PropMap = { ...it.props };

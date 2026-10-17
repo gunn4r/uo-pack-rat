@@ -6,7 +6,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { NOBODY, setRules, resistCapsFor, settingsDiff, importanceOf, roundImportance, weightOfImportance, PROP_LABELS, NOT_BUILDER_KEYS, labelOf, type Goals } from "./vault-lib.mts";
+import { NOBODY, setRules, resistCapsFor, settingsDiff, settingsChanges, importanceOf, roundImportance, weightOfImportance, PROP_LABELS, NOT_BUILDER_KEYS, labelOf, type Goals } from "./vault-lib.mts";
 import { buffSkillValues, runBuffs } from "./buffs.mts";
 import type { RulesV1 } from "./schema/types.d.mts";
 import {
@@ -650,4 +650,26 @@ test("[fast] the character picker's skills and a player's template's line", () =
   assert.equal(templateLine({}, [NOBODY]), "Used by No character");
   assert.equal(templateLine({ savedAt: "2026-10-07T12:00:00Z" }, []), "Saved Oct 7");
   assert.equal(templateLine({}, []), "Your template");
+});
+
+// Issue #336: settingsChanges is settingsDiff's structured form, so the What changed popover shows each change in a table
+// without parsing its text: the group, and for a requirement, weight or resist cap its property and both values.
+test("[fast] settingsChanges: settingsDiff's lines, grouped, with the values of a requirement, weight or cap", () => {
+  const a = { floors: { physResist: 65 }, weights: { dci: 10 }, excludeTags: [] as string[], race: "human" };
+  const b = { floors: { physResist: 70, luck: 300 }, softFloors: ["luck"], weights: { dci: 10 }, excludeTags: ["Cursed"], race: "elf", resistCaps: { fireResist: 80 } };
+  const c = settingsChanges(a, b);
+  assert.deepEqual(c.map((x) => x.text), settingsDiff(a, b), "the same lines, in the same order");
+  const by = (k: string) => c.find((x) => x.key === k)!;
+  assert.deepEqual({ ...by("luck") }, { group: "requirements", text: by("luck").text, key: "luck", label: by("luck").label, from: "none", to: "300", added: true, soft: true });
+  assert.deepEqual([by("physResist").group, by("physResist").from, by("physResist").to, by("physResist").added], ["requirements", "65", "70", undefined]);
+  assert.deepEqual([by("fireResist").group, by("fireResist").from, by("fireResist").to], ["character", "shard's", "80"]);
+  assert.equal(c.find((x) => /Cursed/.test(x.text))!.group, "pool");
+  assert.equal(c.find((x) => /^race/.test(x.text))!.group, "character");
+  assert.deepEqual(settingsChanges({ restarts: 1 }, { restarts: 2 }).map((x) => x.group), ["search"]);
+  // a removed requirement (never tagged soft), a requirement made soft, a weight as importances
+  const r = settingsChanges({ floors: { luck: 300, dci: 45 }, softFloors: ["luck"], weights: { dci: 10 } }, { floors: { dci: 45 }, softFloors: ["luck", "dci"], weights: { dci: 5 } });
+  const rm = r.find((x) => x.key === "luck")!, soft = r.find((x) => x.key === "dci" && x.group === "requirements")!, w = r.find((x) => x.group === "weights")!;
+  assert.deepEqual([rm.from, rm.to, rm.soft, rm.added], ["300", "none", undefined, undefined]);
+  assert.deepEqual([soft.from, soft.to, soft.soft], ["hard", "soft", true]);
+  assert.deepEqual([w.key, w.from, w.to], ["dci", "100", "50"], "a weight's values are its importances");
 });
