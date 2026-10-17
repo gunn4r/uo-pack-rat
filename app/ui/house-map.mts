@@ -1355,7 +1355,7 @@ function chestRow(m: HouseModel, s: Stack, c: ChestView): HTMLElement {
   const items = button({ label: "Show items", size: "sm", disabled: !c.opened, attrs: { "data-act": "items" }, onClick: () => openDrawer(c.serial) });
   const open = D?.chest === c.serial;
   return box("li", { class: `map-chest-row${c.opened ? "" : " unopened"}${open ? " open" : ""}`, "data-chest": String(c.serial), ...(open ? { "aria-current": "true" } : {}) },
-    artTile(c.graphic, { size: 32, badge: swatchEl(colourOf(c, S.mode)) }),
+    artTile(c.graphic, { size: 32, hue: c.hue, badge: swatchEl(colourOf(c, S.mode)) }),
     box("div", { class: "map-chest-text" },
       box("span", { class: "map-chest-name" }, txt(c.code, "mono strong"), txt(c.name, "ellip strong")),
       c.name !== c.inGame ? txt(`In game: ${c.inGame}`, "t-sm muted ellip") : null,
@@ -1549,6 +1549,7 @@ function drawDrawer(): void {
   d.replaceChildren(drawerGrip(),
     box("header", { class: "map-drawer-head" },
       box("div", { class: "map-drawer-title" },
+        c ? artTile(c.graphic, { size: 32, hue: c.hue }) : null,
         box("div", { class: "map-drawer-titles" }, box("h2", { class: "t-lg map-drawer-name" }, ...(c ? [txt(c.code, "mono"), txt(c.name, "ellip")] : [txt(`Stack ${s.letter}`, "ellip")])), meta),
         button({ label: "Close contents", icon: "close", iconOnly: true, variant: "ghost", size: "sm", attrs: { id: "map-drawer-close" }, onClick: closeDrawer })),
       c?.fill ? box("div", { class: "map-drawer-fill" }, meter(c.fill.items, c.fill.max, { tone: fillTone(c.fill), label: fillWords(c) }), txt(slotsText(c), "t-sm num")) : null,
