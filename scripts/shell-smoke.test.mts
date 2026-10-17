@@ -5,7 +5,8 @@
 // [slow] because it launches a real Electron binary, tens of seconds even when everything works. To skip it: TEST_SKIP_ELECTRON=1 npm test
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
+import { removeTempDir } from "./electron-window.mts";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -37,7 +38,7 @@ test("[slow] the Electron shell boots, loads the page and exits clean (--smoke)"
     assert.equal(code, 0, `expected exit 0, got ${code}\nstdout:\n${stdout}`);
     assert.match(stdout, /SMOKE OK \d+/, `expected "SMOKE OK <port>" in stdout\nstdout:\n${stdout}`);
   } finally {
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });
 

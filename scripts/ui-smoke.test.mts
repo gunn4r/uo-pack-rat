@@ -5,13 +5,13 @@
 // This is what stands in for a full end-to-end UI test today; electron/README.md's "What's not exercised by the automated smoke test" section lists what still needs a human (the native folder dialog, Finder integration, a clean Cmd+Q with no orphaned server-entry process).
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, realpathSync } from "node:fs";
+import { mkdtempSync, writeFileSync, mkdirSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import type { Page } from "playwright";
-import { testEnv, noUpdateCheck } from "./electron-window.mts";
+import { testEnv, noUpdateCheck, removeTempDir } from "./electron-window.mts";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const require_ = createRequire(import.meta.url);
@@ -109,7 +109,7 @@ test("[slow] the packaged UI renders, switches tabs and lists the demo inventory
     assert.deepEqual(errors, [], "no uncaught page errors during load and tab switch");
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });
 
@@ -138,7 +138,7 @@ test("[slow] the rows' actions follow the client the wizard just set up, without
     assert.match(reason, /can't Grab from Pack Rat/);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });
 
@@ -176,7 +176,7 @@ test("[slow] with tazuo configured, the demo inventory shows all three bridge bu
     assert.equal(await page.locator("#wizard[open]").count(), 0, "setupDone:true should skip the first-run wizard");
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });
 
@@ -217,8 +217,8 @@ test("[slow] a partial-bridge adapter only offers its declared action, and the n
     assert.match(await actionReason(page, "Highlight in game"), /Bridge offline/, "Highlight is supported, so only the bridge being off holds it back");
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
-    rmSync(adaptersDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
+    removeTempDir(adaptersDir);
   }
 });
 
@@ -266,7 +266,7 @@ test("[slow] Save as… in the suit builder opens an in-page dialog and saves th
     assert.ok(names.includes(templateName), `expected "${templateName}" among the saved templates, got ${JSON.stringify(names)}`);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });
 // A test launch must never read a real game-client folder (it once found the maintainer's own TazUO
@@ -297,8 +297,8 @@ test("[slow] an Electron test launch searches only its own temp home for game cl
     assert.equal(realpathSync(setup.dataDirCheck!.scriptsDir!), realpathSync(scripts));
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
-    rmSync(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
+    removeTempDir(home);
   }
 });
 // Small helper: assert the given locator's element is the page's activeElement — Playwright has no

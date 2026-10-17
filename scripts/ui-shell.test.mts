@@ -5,12 +5,12 @@
 // Same launch as scripts/ui-smoke.test.mts. The sidebar pin is a ui-prefs field, not localStorage. Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
-import { fitWindow, type RealSize, testEnv, noUpdateCheck } from "./electron-window.mts";
+import { fitWindow, type RealSize, testEnv, noUpdateCheck, removeTempDir } from "./electron-window.mts";
 import type { ElectronApplication, Page } from "playwright";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -117,7 +117,7 @@ test("[slow] the shell: screens, routes, drawers, the bridge popover and Setting
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });
 
@@ -167,6 +167,6 @@ test("[slow] the sidebar collapses to icons below 1180 px, and pinning it collap
     });
   } finally {
     await run.app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });

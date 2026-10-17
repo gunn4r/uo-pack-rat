@@ -5,12 +5,12 @@
 // Same launch as scripts/ui-shell.test.mts. Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
-import { fitWindow, noUpdateCheck, testEnv } from "./electron-window.mts";
+import { fitWindow, noUpdateCheck, testEnv, removeTempDir } from "./electron-window.mts";
 import type { ElectronApplication, Page } from "playwright";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -101,7 +101,7 @@ test("[slow] Import: paste default, instant preview, errors in the card, ⌘↵ 
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });
 
@@ -191,8 +191,8 @@ test("[slow] Wizard: named stepper with branch-aware labels, radio cards, kept t
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
-    rmSync(client, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
+    removeTempDir(client);
   }
 });
 
@@ -249,7 +249,7 @@ test("[slow] ClassicUO web client: Settings copies the bundled scanner and says 
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });
 
@@ -322,7 +322,7 @@ test("[slow] Settings: sections with the client warning, theme and appearance, R
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });
 
@@ -373,7 +373,7 @@ test("[slow] Settings › AI assistants (MCP): the switch opens the server, the 
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });
 
@@ -419,7 +419,7 @@ test("[slow] Settings › Updates: the automatic check shows a dismissible notic
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });
 
@@ -463,6 +463,6 @@ test("[slow] Settings › Data retention: Clean up now counts, confirms and remo
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });
