@@ -1,6 +1,6 @@
 // build-spec.test.mts — `app/build-spec.mts`, a build's intent as one document (issue #218, BuildSpec).
 //
-// `[fast]`: `app/build-spec.mts`: a full spec, a template's (no buffs) and one filled from nothing pass `buildSpecError`, and one refused field of each kind says where; the panel's flat profile goes to a spec and back unchanged; and `planBuild` equals the assemblies it replaced, kept in the test as they were written: the page's build (its profile, pool settings, search options and saved-run snapshot, ui/builder.mts and ui/runs.mts) and the MCP tools' `planProfile` (mcp-tools.mts), for the demo characters with and without buffs and edited numbers, No character, and a hand-picked suit planned as Manual plans it; with no character (issue #12) the shard's caps, no Resisting Spells minimum, no swing and the named school's FC cap; and a character's swing on the planned profile (raw DEX plus the buffs' DEX and stamina shares, the worn suit's stamina, the step switch, none with No character), the switch in a spec only when on and checked as a boolean; `weaponMustHave` stored only when non-empty, checked, round-tripped and planned with; `onlyRoots` (issue #12) likewise, and kept out of templates; and the rarity preference (issue #262) likewise, planned as the tie-break on exact ties (tolerance 0, whatever Within points says).
+// `[fast]`: `app/build-spec.mts`: a full spec, a template's (no buffs) and one filled from nothing pass `buildSpecError`, and one refused field of each kind says where; the panel's flat profile goes to a spec and back unchanged; and `planBuild` equals the assemblies it replaced, kept in the test as they were written: the page's build (its profile, pool settings, search options and saved-run snapshot, ui/builder.mts and ui/runs.mts) and the MCP tools' `planProfile` (mcp-tools.mts), for the demo characters with and without buffs and edited numbers, No character, and a hand-picked suit planned as Manual plans it; with no character (issue #12) the shard's caps, no Resisting Spells minimum, no swing and the named school's FC cap; and a character's swing on the planned profile (raw DEX plus the buffs' DEX and stamina shares, the worn suit's stamina, the step switch, none with No character), the switch in a spec only when on and checked as a boolean; `weaponMustHave` stored only when non-empty, checked, round-tripped and planned with; `onlyRoots` (issue #12) likewise, and kept out of templates; and the rarity preference (issue #262) likewise, planned as the tie-break on exact ties (tolerance 0, whatever Within points says). `characterLabel`, `labelError` and `keepLabels` (issue #336).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
@@ -12,7 +12,7 @@ import type { RulesV1 } from "./schema/types.d.mts";
 import { upgradeScan } from "./scan-schema.mts";
 import { buffPlanOf, buffSkillValues, manualBase, manualPlan, plannedProfile, runBuffs } from "./buffs.mts";
 import { RACES, RUN_DEFAULTS, defaultStrLimit } from "./run-settings.mts";
-import { buildSpec, buildSpecError, type BuildSpecSource, type CharacterEntry, characterBuffs, characterProfile, findTemplate, migrateProfilesV3, planBuild, profileFromSpec, profilesSpecError, specFromProfile, specFromRunSettings, templateLabel, templateRefs, templateSettings, templateSpecFrom,
+import { buildSpec, buildSpecError, type BuildSpecSource, type CharacterEntry, characterBuffs, characterLabel, keepLabels, labelError, LABEL_MAX, characterProfile, findTemplate, migrateProfilesV3, planBuild, profileFromSpec, profilesSpecError, specFromProfile, specFromRunSettings, templateLabel, templateRefs, templateSettings, templateSpecFrom,
   type BuildSpec, type FlatProfile, type ProfilesV3, type TemplateMap } from "./build-spec.mts";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
@@ -393,4 +393,25 @@ test("[fast] profilesSpecError refuses a template named past 128 characters or w
   assert.equal(profilesSpecError(doc("x".repeat(128))), null);
   assert.match(profilesSpecError(doc("x".repeat(129))) ?? "", /at most 128 characters/);
   assert.match(profilesSpecError(doc("builtin:melee")) ?? "", /can't start with "builtin:"/);
+});
+
+// Issue #336: a character's build label as the picker and the MCP tools read it, and the longest profiles.json takes.
+test("[fast] characterLabel: trimmed, null for none, a blank or a non-string one; LABEL_MAX is the schema's", () => {
+  const spec = buildSpec();
+  const p = { characters: { A: { spec, label: "  Main Crafter " }, B: { spec, label: "   " }, C: { spec }, D: { spec, label: 7 as unknown as string } } } as Pick<ProfilesV3, "characters">;
+  assert.equal(characterLabel(p, "A"), "Main Crafter");
+  for (const n of ["B", "C", "D", "nobody", "toString"]) assert.equal(characterLabel(p, n), null, n);
+  assert.equal(characterLabel(null, "A"), null);
+  const schema = JSON.parse(readFileSync(join(HERE, "schema", "profiles.v3.schema.json"), "utf8")) as { $defs: { character: { properties: { label: { maxLength: number } } } } };
+  assert.equal(schema.$defs.character.properties.label.maxLength, LABEL_MAX);
+});
+
+test("[fast] labelError refuses control characters, line breaks, non-text and over 40 characters once trimmed; keepLabels keeps the stored labels", () => {
+  for (const ok of ["Main Crafter", "", "  " + "x".repeat(40) + " ", "Archer-Bard (champ spawns)", "Ünïcødé ✓"]) assert.equal(labelError(ok), null, ok);
+  for (const bad of ["a\nb", "a\rb", "a\tb", "a\u0000", "a\u007f", "x".repeat(41), 7, null]) assert.ok(labelError(bad), JSON.stringify(bad));
+  const spec = buildSpec();
+  const next = { characters: { A: { spec, label: "from the page" }, B: { spec, label: "stale" }, C: { spec } } } as Pick<ProfilesV3, "characters">;
+  keepLabels(next, { characters: { A: { spec, label: "stored" }, C: { spec, label: "kept" } } });
+  assert.deepEqual([next.characters.A!.label, next.characters.B!.label, next.characters.C!.label], ["stored", undefined, "kept"]);
+  assert.ok(!("label" in next.characters.B!), "no stored label: the key goes");
 });

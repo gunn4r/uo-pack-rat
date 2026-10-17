@@ -20,6 +20,13 @@
 #char-table .char-name .char-link { min-width: 0; }
 #char-table .char-name .badge { flex: none; }
 #char-table td { height: var(--row-comfortable); }
+#char-table .char-cell { display: flex; flex-direction: column; min-width: 0; }
+#char-table .char-label { display: flex; align-items: center; gap: var(--space-2); min-width: 0; font-size: var(--text-sm); line-height: var(--lh-sm); }
+#char-table .char-label-text { overflow: hidden; text-overflow: ellipsis; }
+#char-label-input { width: 160px; }
+#char-table .char-label.editing { padding: 2px 0; }
+.pr .char-label-btn { flex: none; padding: 0; border: 0; background: none; color: var(--color-link); font: inherit; font-weight: var(--weight-medium); cursor: pointer; }
+.pr .char-label-btn:hover { color: var(--color-link-hover); text-decoration: underline; }
 #char-table td.no-match { height: auto; white-space: normal; }
 .pr a.char-link { color: var(--color-text); text-decoration: none; }
 .pr a.char-link:hover { color: var(--color-text); text-decoration: underline; }
