@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
-import { fitWindow, testEnv, noUpdateCheck, completeLines, removeTempDir } from "./electron-window.mts";
+import { fitWindow, sidewaysAt, testEnv, noUpdateCheck, completeLines, removeTempDir } from "./electron-window.mts";
 import { houseScan } from "../app/organize-fixture.mts";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -127,9 +127,8 @@ test("[slow] Gather into a bag: pick a bag through Move to, the Move runs, the b
     assert.equal(await page.locator("#unr-gather-go").innerText(), "Gather 3 pieces");
 
     // At 420 px the dialog fits with nothing scrolling sideways.
-    await fitWindow(app, page, { width: 420, height: 860 });
-    const w = await page.evaluate(() => [document.documentElement.scrollWidth, innerWidth, document.querySelector("dialog.unr-gather")!.scrollWidth, document.querySelector("dialog.unr-gather")!.clientWidth]);
-    assert.ok(w[0]! <= w[1]! && w[2]! <= w[3]!, `no sideways scroll at 420 (${w.join(", ")})`);
+    const over = await sidewaysAt(app, page, { width: 420, height: 860 }, ["dialog.unr-gather"]);
+    assert.ok(over <= 0, `no sideways scroll at 420 (${over} px)`);
     await fitWindow(app, page, { width: 1024, height: 768 });
 
     // Gather 3 pieces: straight into the remembered bag, with no picker, and it stays remembered.
