@@ -7,24 +7,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import { createRequire } from "node:module";
-import { fitWindow, sideways, type RealSize, testEnv, noUpdateCheck, completeLines, removeTempDir } from "./electron-window.mts";
+import { join } from "node:path";
+import { sideways, type RealSize } from "./electron-window.mts";
+import { fakeBridge, launchApp, skipWithoutElectron, until, type App } from "./electron-app.mts";
 import { houseScan } from "../app/organize-fixture.mts";
-import type { ElectronApplication, Page } from "playwright";
+import type { Page } from "playwright";
 
-const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
-const require_ = createRequire(import.meta.url);
 const GEMS = 0x40000001, SPARE = 0x40000002, WORN = 0x40009001;
 const GEM_COUNT = 590;
-function unavailable(): string | null {
-  if (process.env.TEST_SKIP_ELECTRON) return "TEST_SKIP_ELECTRON is set";
-  for (const dep of ["electron", "playwright"]) {
-    try { require_.resolve(dep); } catch { return `${dep} is not installed`; }
-  }
-  return null;
-}
 // The house: the gems' chest, a chest beside it with room for 3, two rings in it and one worn; Organize files gems in the first.
 function dataDir(): string {
   const dir = mkdtempSync(join(tmpdir(), "packrat-move-"));
@@ -43,50 +33,7 @@ function dataDir(): string {
     rules: [{ id: "gems", name: "Gems", match: { query: { q: "", slot: [], rarity: "", rarityMin: "", rarityMax: "", kind: [], slayer: "", nogarg: false, med: false, hideTags: [], props: [] }, names: ["gem"] }, targets: [GEMS], origin: "manual" }] }));
   return dir;
 }
-// The bridge, as far as the page can tell: a status file refreshed every half second that answers each queued trip, a second later, with every step done.
-function standInBridge(dir: string): { stop: () => void; trips: () => Array<{ id: string; puts: Array<{ serial: number; dest: number[] }> }> } {
-  const bridgeDir = join(dir, "bridge", "tazuo");
-  mkdirSync(bridgeDir, { recursive: true });
-  const results: Record<string, unknown> = {}, seen = new Set<string>();
-  const trips = () => completeLines(join(bridgeDir, "queue.jsonl")).map((l) => JSON.parse(l) as { id: string; action: string; takes: Array<{ serial: number }>; puts: Array<{ serial: number; dest: number[] }> }).filter((c) => c.action === "trip");
-  const tick = (): void => {
-    for (const c of trips()) {
-      if (seen.has(c.id)) continue;
-      seen.add(c.id);
-      setTimeout(() => { results[c.id] = { ok: true, msg: "trip done", t: new Date().toISOString(), partial: false, stopped: false, steps: [...c.takes.map((t) => ({ op: "take", serial: t.serial, ok: true, msg: "took" })), ...c.puts.map((p) => ({ op: "put", serial: p.serial, ok: true, msg: "put" }))] }; }, 1000).unref();
-    }
-    writeFileSync(join(bridgeDir, "status.json"), JSON.stringify({ alive: new Date().toISOString(), character: "Tester", current: null, counts: { done: 0, failed: 0 }, results }));
-  };
-  tick();
-  const timer = setInterval(tick, 500).unref();
-  return { stop: () => clearInterval(timer), trips };
-}
-async function launch(dir: string, want: RealSize, scheme: "light" | "dark" = "light"): Promise<{ app: ElectronApplication; page: Page; errors: string[] }> {
-  const { _electron } = await import("playwright");
-  const app = await _electron.launch({ args: [ROOT, "--data", noUpdateCheck(dir)], cwd: ROOT, timeout: 60_000, env: testEnv() });
-  try {
-    const page = await app.firstWindow();
-    const errors: string[] = [];
-    page.on("pageerror", (e) => errors.push(String(e)));
-    await page.emulateMedia({ colorScheme: scheme });
-    await fitWindow(app, page, want);
-    await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
-    return { app, page, errors };
-  } catch (e) {
-    await app.close();
-    throw e;
-  }
-}
-async function until<T>(read: () => T | Promise<T>, ok: (v: T) => boolean, what: string): Promise<T> {
-  const end = Date.now() + 20_000;
-  let v = await read();
-  while (!ok(v)) {
-    if (Date.now() > end) throw new Error(`timed out waiting for ${what}: ${JSON.stringify(v)}`);
-    await new Promise((r) => setTimeout(r, 100));
-    v = await read();
-  }
-  return v;
-}
+const launch = (dir: string, want: RealSize, scheme: "light" | "dark" = "light"): Promise<App> => launchApp(dir, { size: want, colorScheme: scheme, ready: "#inv-table tbody tr.item" });
 async function search(page: Page, q: string): Promise<void> {
   await page.fill("#f-text", q);
   // The search applies after a debounce; the rows can already match (gems sort first), so wait for the filter itself, then its rows.
@@ -97,10 +44,9 @@ const box = (page: Page, n: number) => page.locator("#inv-table tbody tr.item").
 const barText = (page: Page) => page.locator("#inv-selbar").innerText();
 
 test("[slow] select rows, Move to a container that holds only some, then Pin them and Move back", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const dir = dataDir(), bridge = standInBridge(dir);
-  const { app, page, errors } = await launch(dir, { width: 1440, height: 900 });
+  if (skipWithoutElectron(t)) return;
+  const dir = dataDir(), bridge = fakeBridge(dir, { every: 500, answerTrips: 1000 });
+  const { page, errors, close } = await launch(dir, { width: 1440, height: 900 });
   try {
     // A worn row is locked and says why; a range over it leaves it out by name.
     await search(page, "ring");
@@ -156,17 +102,15 @@ test("[slow] select rows, Move to a container that holds only some, then Pin the
     assert.deepEqual(errors, []);
   } finally {
     bridge.stop();
-    await app.close();
-    removeTempDir(dir);
+    await close();
   }
 });
 
 for (const scheme of ["light", "dark"] as const) {
   test(`[slow] at 420 × 860 (${scheme}) the selection bar and the picker fit with nothing scrolling sideways`, async (t) => {
-    const why = unavailable();
-    if (why) return t.skip(why);
-    const dir = dataDir(), bridge = standInBridge(dir);
-    const { app, page, errors } = await launch(dir, { width: 420, height: 860 }, scheme);
+    if (skipWithoutElectron(t)) return;
+    const dir = dataDir(), bridge = fakeBridge(dir, { every: 500, answerTrips: 1000 });
+    const { page, errors, close } = await launch(dir, { width: 420, height: 860 }, scheme);
     try {
       await search(page, "gem");
       await box(page, 0).click();
@@ -181,8 +125,7 @@ for (const scheme of ["light", "dark"] as const) {
       assert.deepEqual(errors, []);
     } finally {
       bridge.stop();
-      await app.close();
-      removeTempDir(dir);
+      await close();
     }
   });
 }
