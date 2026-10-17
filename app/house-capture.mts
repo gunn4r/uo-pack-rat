@@ -3,7 +3,8 @@ import { isKnownKind } from "./scan-schema.mts";
 import type { ScanV2 } from "./schema/types.d.mts";
 
 export type HouseTile = [graphic: number, x: number, y: number, z: number, impassable: number];
-export type HouseItem = [serial: number, graphic: number, x: number, y: number, z: number];
+// A container row in the app carries its hue as a sixth element (issue #174), from the capture's containerHues (houseGroups); the scan's own rows have five.
+export type HouseItem = [serial: number, graphic: number, x: number, y: number, z: number, hue?: number];
 export interface HouseSource { id: string; facet: number | null; capturedAt: string; tiles: HouseTile[]; items: HouseItem[]; containers: HouseItem[]; captures: number }
 export const HOUSE_ITEM_REACH = 18;
 
@@ -26,7 +27,7 @@ export function tileBounds(tiles: ReadonlyArray<readonly number[]>): { x0: numbe
 export type HouseCapture = NonNullable<ScanV2["house"]>;
 export interface HouseGroup { id: string; captures: Array<{ scan: number; house: HouseCapture }>; items: Map<number, { item: HouseItem; scan: number }>; containers: Map<number, { item: HouseItem; scan: number }>; trash: Map<number, number>; supersededBy: number[] }
 
-// Every house the scans captured, by id: its captures oldest first (`scan` indexes `scans`; equal times keep the scans' order), its furniture and its containers (each `[serial, graphic, x, y, z]`) merged across them with the capture each piece last came from, the trash containers any of them listed that hide one of those containers (issue #162; serial to the newest capture listing it in trash; a trash serial no capture lists among its containers is dropped, so it keeps no capture), which are never among its containers, and the captures (scan indexes) superseding it: each newer capture of another footprint on the same facet (an unknown facet matches only an unknown one) overlapping its newest one's bounding box, so it was redesigned or moved. A capture without `items` or `containers` (the ground could not be read) erases nothing and adds nothing to that list. latestHouses and retention (app/retention.mts) both read houses through here.
+// Every house the scans captured, by id: its captures oldest first (`scan` indexes `scans`; equal times keep the scans' order), its furniture and its containers (each `[serial, graphic, x, y, z]`, a container with its hue from that capture's `containerHues` as a sixth element, issue #174) merged across them with the capture each piece last came from, the trash containers any of them listed that hide one of those containers (issue #162; serial to the newest capture listing it in trash; a trash serial no capture lists among its containers is dropped, so it keeps no capture), which are never among its containers, and the captures (scan indexes) superseding it: each newer capture of another footprint on the same facet (an unknown facet matches only an unknown one) overlapping its newest one's bounding box, so it was redesigned or moved. A capture without `items` or `containers` (the ground could not be read) erases nothing and adds nothing to that list. latestHouses and retention (app/retention.mts) both read houses through here.
 export function houseGroups(scans: ScanV2[]): HouseGroup[] {
   const byId = new Map<string, HouseGroup>();
   scans.forEach((s, scan) => {
@@ -40,10 +41,11 @@ export function houseGroups(scans: ScanV2[]): HouseGroup[] {
   for (const g of groups) {
     g.captures.sort((a, b) => captureTime(a.house.capturedAt) - captureTime(b.house.capturedAt));
     for (const { scan, house: c } of g.captures) {
+      const hues = new Map((c.containerHues ?? []).filter((r) => r[1]! <= 0xffff).map((r) => [r[0]!, r[1]!]));
       for (const [list, seen] of [[c.items, g.items], [c.containers, g.containers]] as const) {
         if (!list) continue;
         for (const [serial, { item: it }] of seen) if (Math.max(Math.abs(it[2] - c.at.x), Math.abs(it[3] - c.at.y)) <= HOUSE_ITEM_REACH) seen.delete(serial);
-        for (const it of list as HouseItem[]) seen.set(it[0], { item: it, scan });
+        for (const it of list as HouseItem[]) { const hue = seen === g.containers ? hues.get(it[0]) : undefined; seen.set(it[0], { item: hue ? [it[0], it[1], it[2], it[3], it[4], hue] : it, scan }); }
       }
       for (const serial of c.trash ?? []) g.trash.set(serial, scan);
     }
