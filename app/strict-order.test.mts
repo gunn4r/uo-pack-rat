@@ -1,10 +1,6 @@
-// strict-order.test.mts — Strict order and fewest changes (issue #292 part 2): the stages (the core's optStrictStages and
-// the MIP's objective parts), hand-built cases (a lower goal never costs a higher one, linked ranks, a Swing speed rank
-// scored by step, the spare-points stage, requirements first, a stage that runs out of time, fewest changes and its
-// order with a rarity preference), and three seeded brute-force fuzzes on small pools: (a) strict order's suit is the
-// best stage by stage (no suit equal on the earlier stages is higher on a later one), (b) the core's exact search and
-// HiGHS agree and both prove it, (c) fewest changes never lowers the score (Best value) or a stage (Strict order) and
-// changes the fewest slots among the suits as good. The goals are compiled to weights as the app compiles them.
+// strict-order.test.mts — Strict order and fewest changes in both solvers, checked by hand and against brute force.
+//
+// Issue #292 part 2: the stages (the core's optStrictStages and the MIP's objective parts), hand-built cases (a lower goal never costs a higher one, linked ranks, a Swing speed rank scored by step, the spare-points stage, requirements first, a stage that runs out of time, fewest changes and its order with a rarity preference, and planBuild's options and run keys), and seeded brute-force fuzzes on small pools: (a) strict order's suit is the best stage by stage (no suit equal on the earlier stages is higher on a later one), (b) the core's exact search and HiGHS agree and both prove it, (c) fewest changes never lowers the score (Best value) or a stage (Strict order) and changes the fewest slots among the suits as good. The goals are compiled to weights as the app compiles them, and each fuzz checks that its generator makes the case matter often enough. The strict fuzz is `[fast]` (about a second), the fewest-changes fuzz `[slow]`; `STRICT_SEEDS` overrides the seeds.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { solveExact, type OptPools, type OptAssignment, type OptProfile } from "./exact-solver.mts";
@@ -51,7 +47,7 @@ test("[fast] mip: the objective parts add up to the model's objective, and askin
   assert.equal(split.scoreOffset, plain.scoreOffset);
   const sum = new Array<number>(split.model.numCols).fill(0);
   let offset = 0;
-  for (const p of [...Object.values(split.parts!.weights), split.parts!.floors]) { p.cols.forEach((j, i) => { sum[j]! += p.costs[i]!; }); offset += p.offset; }
+  for (const p of [...Object.values(split.parts!.weights), split.parts!.floors, split.parts!.softPartial]) { p.cols.forEach((j, i) => { sum[j]! += p.costs[i]!; }); offset += p.offset; }
   sum.forEach((v, j) => assert.ok(Math.abs(v - split.model.colCost[j]!) < 1e-9, `column ${j}: parts ${v}, model ${split.model.colCost[j]}`));
   assert.ok(Math.abs(offset - split.scoreOffset) < 1e-9);
   // a stage's objective: the floors alone, or its properties' weights scaled
@@ -117,6 +113,21 @@ test("[fast] strict order: spare points only break ties among the goals, and req
   const r2 = await both(pools, {}, { weights, caps: {}, floors: { luck: 400 }, floorBonus: 1000 }, strictOpts(ranks, ["ring"]));
   assert.equal(r2.highs.best.ring!.serial, c.serial);
   assert.equal(r2.core.best.ring!.serial, c.serial);
+});
+
+test("[fast] strict order: getting closer to a soft requirement still missed never costs a goal; a hard one out of reach comes first", async () => {
+  const ranks = [["hci"]], weights = weightsOf(ranks);
+  const a = it("ring", { hci: 10 }), b = it("ring", { hci: 8, luck: 300 });
+  const soft: OptProfile = { weights, caps: {}, floors: { luck: 1000 }, floorBonus: 1000 };
+  const value = core.optimizeSuit({ ring: [a, b] }, {}, soft, { seed: 1, restarts: 4, slots: ["ring"], optionalSlots: ["ring"], exact: true });
+  assert.equal(value.best.ring!.serial, b.serial, "Best value trades two points of hit chance for partial credit");
+  const r = await both({ ring: [a, b] }, {}, soft, strictOpts(ranks, ["ring"]));
+  assert.deepEqual(r.warnings, []);
+  assert.equal(r.highs.best.ring!.serial, a.serial);
+  assert.equal(r.core.best.ring!.serial, a.serial);
+  const hard = await both({ ring: [a, b] }, {}, { ...soft, hardFloors: ["luck"] }, strictOpts(ranks, ["ring"]));
+  assert.equal(hard.highs.best.ring!.serial, b.serial, "a hard requirement out of reach is brought as close as it goes");
+  assert.equal(hard.core.best.ring!.serial, b.serial);
 });
 
 test("[fast] strict order: a stage that runs out of time stops the sequence, and the result says how many stages were proven", async () => {
@@ -228,20 +239,22 @@ function candidates({ slots, optionalSlots, pools, current }: Instance): Record<
   if (out.oneHanded && out.twoHanded && !out.oneHanded.includes(null)) out.twoHanded = out.twoHanded.filter((x) => !x || x.twoHanded !== true);
   return out;
 }
-// Every suit with its stage values, worked out independently of the solvers' stage code: the requirements (the profile
-// with no weights), each rank's weighted properties, then every other weight, each through the core's plain scoreSet.
+// Every suit with its stage values, worked out independently of the solvers' stage code: the requirements (the profile with no weights), each rank's weighted properties, then every other weight, each through the core's plain scoreSet.
 interface Suit { a: OptAssignment; score: number; lex: number[]; changes: number; cost: number; met: string[] }
 function allSuits(inst: Instance): Suit[] {
   const cands = candidates(inst), w = inst.profile.weights!, used = new Set(inst.ranks.flat());
   const groups = [...inst.ranks.map((r) => r.filter((k) => w[k])).filter((r) => r.length), Object.keys(w).filter((k) => !used.has(k))].filter((g) => g.length);
   const profiles = [{ ...inst.profile, weights: {} }, ...groups.map((g) => ({ ...inst.profile, weights: Object.fromEntries(g.map((k) => [k, w[k]!])), floors: {}, hardFloors: [] }))];
   const floors = Object.entries(inst.profile.floors || {}), out: Suit[] = [], pick: OptAssignment = {};
+  // the requirements stage leaves out a soft floor's partial credit
+  const hard = inst.profile.hardFloors || [], fb = inst.profile.floorBonus ?? 1000, fp = inst.profile.floorPartial ?? 0.5;
+  const softPartial = (t: Record<string, number>): number => floors.filter(([k, f]) => !hard.includes(k) && (t[k] || 0) < f).reduce((n, [k, f]) => n + (fb * fp * Math.max(0, t[k] || 0)) / f, 0);
   const rec = (i: number): void => {
     if (i === inst.slots.length) {
       if (pick.twoHanded?.twoHanded === true && pick.oneHanded) return;
       const a = { ...pick }, totals: Record<string, number> = {};
       for (const x of Object.values(a)) if (x) for (const [k, v] of Object.entries(x.props)) totals[k] = (totals[k] || 0) + v;
-      out.push({ a, score: core.scoreSet(a, inst.profile), lex: profiles.map((p) => core.scoreSet(a, p)), cost: Object.values(a).reduce((n, x) => n + (x?.tieCost || 0), 0),
+      out.push({ a, score: core.scoreSet(a, inst.profile), lex: profiles.map((p, k) => core.scoreSet(a, p) - (k ? 0 : softPartial(totals))), cost: Object.values(a).reduce((n, x) => n + (x?.tieCost || 0), 0),
         changes: inst.slots.filter((s) => (a[s]?.serial ?? 0) !== (inst.current[s]?.serial ?? 0)).length, met: floors.filter(([k, f]) => (totals[k] || 0) >= f).map(([k]) => k) });
       return;
     }

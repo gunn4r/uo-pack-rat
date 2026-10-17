@@ -13,7 +13,7 @@ import {
   propName, withStoredRoots, knobError, firstKnobError, knobFromServerError, ruleValueError,
   resistOutcome, locationCrumbs, changeRows, gaugeRows, gaugeNote, worse, gaugeTrack, changesSummary, afterChange, compareModel, hiddenRowsNote, toggleCompare, runAutoLabel, runBadges, plural, KNOB_RANGES,
   resistCapError, withResistCap, capNote, resistMinimumText, capsLine, anyOverridden, effectiveFloor, floorCapWarning, pruneResistCaps,
-  weaponsChipText, weaponMustHaveChipText, toggleWeapon, weaponName, withBuffs, pastCapNotes, runSettingsDiff, weightTradeoff, newWeight, editedValue, NEW_WEIGHT_IMPORTANCE, templateBuffsLine, sourceTitle, who, rarityHelp, rarityTotal, rarityDetail, shareRows, needStatus, shownImportance,
+  weaponsChipText, weaponMustHaveChipText, toggleWeapon, weaponName, withBuffs, pastCapNotes, runSettingsDiff, weightTradeoff, newWeight, editedValue, NEW_WEIGHT_IMPORTANCE, templateBuffsLine, sourceTitle, who, rarityHelp, rarityTotal, rarityDetail, strictDetail, shareRows, needStatus, shownImportance,
   latestRun, latestShownRun, otherCharactersRuns, gearChangedSince, suggestTemplates, SUGGEST_MIN_SKILL, needsLine, topWeights, poolLine, searchLine,
   goalWord, goalRows, goalSummary, moveGoal, linkGoal, removeGoal, addGoal, goalOutcomes, goalTrades, goalVerdict, swingOutcome, tradeText, spareLine, applyAction,
   type Knobs, type ChangeRow,
@@ -390,6 +390,17 @@ test("[fast] rarity preference: help line, settings change, rarity total and the
   assert.equal(rarityTotal({ ring: { tieCost: 0 }, neck: { tieCost: 7 }, waist: null }, "higher", 8), 9);
   assert.equal(rarityDetail({ topScore: 10, cost: 6, rarity: "lower", tolerance: 0, costProven: true }, 6), "Lowest-rarity pieces among equal suits · rarity total 6");
   assert.equal(rarityDetail({ topScore: 10, cost: 30, rarity: "higher", tolerance: 0 }, 66), "Highest-rarity pieces among equal suits · rarity total 66 (the highest found, not proven)");
+});
+
+test("[fast] builder model: a strict-order build's proof in words, and the goals line naming the strategy and fewest changes (issue #292)", () => {
+  const stages = [{ keys: null, value: 0 }, { keys: ["ssi"], value: 31 }, { keys: ["hci", "dci"], value: 90 }, { keys: ["luck"], value: 120 }];
+  assert.equal(strictDetail({ stages, proven: 4 }), "Strict order: each goal proven best in turn, most important first");
+  assert.equal(strictDetail({ stages, proven: 2 }), "Strict order: proven through Swing speed; from Hit chance = Defense chance on it is the best found, not proven");
+  assert.equal(strictDetail({ stages, proven: 1 }), "Strict order: proven through your requirements; from Swing speed on it is the best found, not proven");
+  assert.equal(strictDetail({ stages, proven: 0 }), "Strict order: the best found, not proven; raise the time budget to prove it");
+  const g: Goals = { ranks: [["ssi"], ["hci"]], leftover: "luck" };
+  assert.deepEqual(settingsDiff({ goals: g }, { goals: { ...g, strategy: "strict", fewestChanges: true } }), ["goals: Swing speed › Hit chance, spare points to luck, strict order, fewest changes"]);
+  assert.deepEqual(settingsDiff({ goals: g }, { goals: { ...g, strategy: "value" } }), [], "Best value named is Best value");
 });
 
 test("[fast] builder model: what made up the score, largest first, shares under 2% folded into Other, a negative one set apart after them (issue #273)", () => {

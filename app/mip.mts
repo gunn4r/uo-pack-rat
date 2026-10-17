@@ -128,10 +128,11 @@ export interface BuiltMip {
   parts?: ObjectiveParts | undefined;   // with BuildSuitMipOptions.parts
 }
 // The objective split by what each term scores (BuildSuitMipOptions.parts, issue #292's strict order): each weighted
-// property's terms and constant, and the floors' (their bonuses, partial credit and the hard floors' constant). Together
-// they are the model's colCost and scoreOffset; a column can sit in a part more than once (its costs add).
+// property's terms and constant, the floors' (their bonuses, a hard floor's partial credit and the hard floors'
+// constant), and the soft floors' partial credit. Together they are the model's colCost and scoreOffset; a column can
+// sit in a part more than once (its costs add).
 export interface ObjectivePart { cols: number[]; costs: number[]; offset: number }
-export interface ObjectiveParts { weights: Record<string, ObjectivePart>; floors: ObjectivePart }
+export interface ObjectiveParts { weights: Record<string, ObjectivePart>; floors: ObjectivePart; softPartial: ObjectivePart }
 export interface StepCol { col: number; ssi: number; stam: number }
 // h = 1 when the suit's Resisting Spells bonus total reaches `at` (less RESIST_STEP_SLACK).
 export interface ResistStepCol { col: number; at: number }
@@ -191,7 +192,7 @@ export function withReachableResistSteps<P extends { resistSteps?: ResistStep[] 
 
 export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots = DEFAULT_OPTIONAL_SLOTS, slots = DEFAULT_SLOTS, hardAsSoft = false, parts: withParts = false }: BuildSuitMipOptions): BuiltMip {
   // with `parts`, every objective term is also put in the part it scores for (its property's weight, or the floors)
-  const parts: ObjectiveParts | null = withParts ? { weights: {}, floors: { cols: [], costs: [], offset: 0 } } : null;
+  const parts: ObjectiveParts | null = withParts ? { weights: {}, floors: { cols: [], costs: [], offset: 0 }, softPartial: { cols: [], costs: [], offset: 0 } } : null;
   let part: ObjectivePart | null = null;
   const optional = new Set(optionalSlots);
   const W = profile.weights || {}, CAPS = profile.caps || {}, FL = profile.floors || {}, MINS = profile.mins || {};
@@ -359,7 +360,10 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
     // a hard floor's partial credit is shared among the hard floors, as the core's (issue #204)
     const bonus = isHard ? HARD_FLOOR_BONUS : FB, sMax = bonus * PARTIAL / (isHard ? nHard : 1), k = sMax / f;
     const y = unreachable ? null : addCol({ name: `y_${d}`, kind: "y", dim: d }, bonus, 0, 1, true);
+    // a soft floor's partial credit is a part of its own, which strict order's requirements stage leaves out (scripts/optimizer-core.mts optLexSpaces)
+    if (parts && !isHard) part = parts.softPartial;
     const sv = addCol({ name: `s_${d}`, kind: "s", dim: d }, 1, 0, sMax, false);
+    part = parts ? parts.floors : null;
     // "met" row, t ≥ f·y written as t − (f − minReach)·y ≥ minReach: y = 1 still forces t ≥ f, and
     // y = 0 leaves t free down to the lowest total any suit reaches (a plain t − f·y ≥ 0 would forbid
     // every negative-total suit outright, although the core scores it: no credit on this floor, the

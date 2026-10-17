@@ -429,8 +429,8 @@ function scoreSet(items: OptAssignment | (OptItem | null)[], profile: OptProfile
 // Strict order (issue #292): the score as a vector, compared stage by stage
 // ---------------------------------------------------------------------------
 
-// A strict-order build's stages, most important first: the requirements (`keys` null: every floor's bonus and partial
-// credit), each rank's weighted properties, then every other weighted property (spare points, the tag penalty). A stage's
+// A strict-order build's stages, most important first: the requirements (`keys` null: each floor met, and a hard floor's
+// partial credit; optLexSpaces), each rank's weighted properties, then every other weighted property (spare points, the tag penalty). A stage's
 // weights are scaled so the smallest is 1: with whole property totals, two different values of a stage then sit at least
 // a small fraction of a point apart, far above LEX_EPS. A rank with no weighted property is left out. app/exact-solver.mts
 // builds its stages from this same list.
@@ -448,10 +448,17 @@ function optStrictStages(profile: OptProfile, ranks: string[][]): Array<{ keys: 
   return out;
 }
 // One space per stage, over the search space's keys so the totals line up: the requirements stage scores the floors
-// alone, a weights stage its properties' weight terms alone (scaled), with no floors.
+// alone, a weights stage its properties' weight terms alone (scaled), with no floors. The requirements stage counts a
+// soft floor only when it is met: a soft floor's partial credit is in no stage, so getting closer to a preference the
+// suit still misses never costs a goal. A hard floor keeps its partial credit, which outweighs every weight in Best value too.
 function optLexSpaces(keys: string[], profile: OptProfile, stages: Array<{ keys: string[] | null; scale: number }>): OptSpace[] {
+  const hard = profile.hardFloors || [];
   return stages.map(function (st) {
-    if (!st.keys) return optBuildSpace(keys, { ...profile, weights: {} });
+    if (!st.keys) {
+      const sp = optBuildSpace(keys, { ...profile, weights: {} });
+      sp.partialArr = sp.partialArr.map(function (p, i) { return hard.indexOf(sp.keys[i]!) >= 0 ? p : 0; });
+      return sp;
+    }
     const weights: Record<string, number> = {};
     for (let i = 0; i < st.keys.length; i++) weights[st.keys[i]!] = profile.weights![st.keys[i]!]! * st.scale;
     return optBuildSpace(keys, { ...profile, weights: weights, floors: {}, hardFloors: [] });
