@@ -1,6 +1,6 @@
 // ui-unravel.test.mts — [slow]: the Inventory's Unravel view (issue #271) in the real Electron window.
 //
-// `[slow]`: the Inventory's Unravel view (issue #271) in the real Electron window at 1024 × 768, over the demo scans with Kestrel at Imbuing 70: the picker on the highest Imbuing, the three forecast cards, the groups in their order (Wait for Imbuing 95, Enchanted Essence, Magical Residue) with each row's chance line at 70, a maybe tag with its title, Keep taking a row out and writing settings.json's unravelKeep, Change showing a chip per reason with its count, the Kept chip bringing the kept row back with Unkeep, which puts it back on the list, a row's checkbox, a shift-click range (none across a redraw) and Select these with the selection bar, the cards for a character below Imbuing 45, and no sideways scroll at 420 px.
+// `[slow]`: the Inventory's Unravel view (issue #271) in the real Electron window at 1024 × 768, over the demo scans with Kestrel at Imbuing 70: the picker on the highest Imbuing, the three forecast cards, the groups in their order (Wait for Imbuing 95, Enchanted Essence, Magical Residue) with each row's chance line at 70, a maybe tag with its title, Keep taking a row out and writing settings.json's unravelKeep, Change showing a chip per reason with its count, the Kept chip bringing the kept row back with Unkeep, which puts it back on the list, a row's checkbox, a shift-click range (none across a redraw) and Select these with the selection bar, the cards for a character below Imbuing 45, and no sideways scroll at 420 px. Issue #332: a group folded and unfolded (its count on the heading, Select these still taking its rows), condensed one-line rows with the place in the row's title, both kept in ui-prefs.json across a reload, the top staying put while only the list scrolls, and at 420 px the whole view scrolling with nothing sideways.
 //
 // Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
 import test from "node:test";
@@ -137,6 +137,84 @@ test("[slow] the Unravel view forecasts, groups the candidates by ingredient, ke
     await fitWindow(app, page, { width: 420, height: 900 });
     const w = await page.evaluate(() => [document.documentElement.scrollWidth, innerWidth]);
     assert.ok(w[0]! <= w[1]!, `no sideways scroll at 420 (${w.join(", ")})`);
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    removeTempDir(dataDir);
+  }
+});
+
+// Issue #332: the groups fold (the count on a folded heading, Select these still taking its rows), condensed one-line rows,
+// both kept in ui-prefs.json across a reload; the top stays put while only the list scrolls, and at 420 px the whole view
+// scrolls with nothing sideways.
+test("[slow] the Unravel view folds its groups, condenses its rows, and keeps its top in place while the list scrolls", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = mkdtempSync(join(tmpdir(), "packrat-unravel-polish-"));
+  seed(dataDir);
+  const uiPrefs = (): Record<string, unknown> => { try { return JSON.parse(readFileSync(join(dataDir, "ui-prefs.json"), "utf8")); } catch { return {}; } };
+  const until = async (ok: () => boolean, what: string): Promise<void> => {
+    for (let i = 0; i < 100 && !ok(); i++) await new Promise((r) => setTimeout(r, 100));
+    assert.ok(ok(), what);
+  };
+  const { _electron } = await import("playwright");
+  const app = await _electron.launch({ args: [ROOT, "--data", noUpdateCheck(dataDir)], cwd: ROOT, timeout: 60_000, env: testEnv() });
+  try {
+    const page = await app.firstWindow();
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(String(e)));
+    await fitWindow(app, page, { width: 1024, height: 768 });
+    await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
+    await page.getByRole("radio", { name: "Unravel", exact: true }).click();
+    await page.locator(".unr-row").first().waitFor({ timeout: 15_000 });
+
+    // The top stays put: the list scrolls in its own box, the view itself does not.
+    const top = async (): Promise<number> => (await page.locator("#unr-forecast").boundingBox())!.y;
+    const before = await top();
+    const scrolled = await page.evaluate(() => { const l = document.querySelector<HTMLElement>("#unr-list")!; l.scrollTop = 1e6; return [l.scrollTop, document.querySelector<HTMLElement>("#tab-unravel")!.scrollTop]; });
+    assert.ok(scrolled[0]! > 0, "the list scrolls");
+    assert.equal(scrolled[1], 0, "the view does not");
+    assert.equal(await top(), before, "the forecast stays where it was");
+    await page.evaluate(() => { document.querySelector<HTMLElement>("#unr-list")!.scrollTop = 0; });
+
+    // Fold "Wait for Imbuing 95": its rows go, its heading shows the count, and the choice is saved.
+    const fold = page.locator('[data-fold="held"]');
+    const held = await page.locator(".unr-group.held .unr-row").count();
+    assert.ok(held > 0);
+    await fold.click();
+    assert.equal(await fold.getAttribute("aria-expanded"), "false");
+    assert.equal(await page.locator(".unr-group.held .unr-row").count(), 0);
+    assert.match(await fold.innerText(), new RegExp(`Wait for Imbuing 95\\s*${held}$`));
+    await until(() => JSON.stringify(uiPrefs().unravelCollapsed) === '["held"]', "unravelCollapsed saved");
+    // Select these still takes a folded group's pieces.
+    await page.locator('[data-select="held"]').click();
+    assert.match(await page.locator("#unr-selbar").innerText(), new RegExp(`^${held} selected`));
+    await page.locator("#unr-selbar").getByRole("button", { name: "Clear" }).click();
+
+    // Condensed rows: one line each, the place in the row's title, and the choice saved.
+    const fullHeight = (await page.locator(".unr-group.essence .unr-row").first().boundingBox())!.height;
+    await page.locator('#unr-rows [data-value="condensed"]').click();
+    assert.equal(await page.locator("#unr-list.condensed").count(), 1);
+    const row = page.locator(".unr-group.essence .unr-row").first();
+    assert.ok((await row.boundingBox())!.height < fullHeight, "a condensed row is shorter");
+    assert.ok(((await row.getAttribute("title")) ?? "").length > 0, "the place is the row's title");
+    assert.equal(await row.locator(".unr-where").isVisible(), false);
+    await until(() => uiPrefs().unravelRows === "condensed", "unravelRows saved");
+
+    // Both survive a reload; unfolding brings the rows back.
+    await page.reload();
+    await page.locator(".unr-row").first().waitFor({ timeout: 30_000 });
+    assert.equal(await page.locator('[data-fold="held"]').getAttribute("aria-expanded"), "false");
+    assert.equal(await page.locator("#unr-list.condensed").count(), 1);
+    await page.locator('[data-fold="held"]').click();
+    assert.equal(await page.locator(".unr-group.held .unr-row").count(), held);
+    await until(() => JSON.stringify(uiPrefs().unravelCollapsed) === "[]", "unravelCollapsed cleared");
+
+    // At 420 px the whole view scrolls instead, with nothing sideways.
+    await fitWindow(app, page, { width: 420, height: 900 });
+    const w = await page.evaluate(() => [document.documentElement.scrollWidth, innerWidth]);
+    assert.ok(w[0]! <= w[1]!, `no sideways scroll at 420 (${w.join(", ")})`);
+    assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector("#tab-unravel")!).overflowY), "auto");
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
