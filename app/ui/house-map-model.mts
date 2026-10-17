@@ -93,7 +93,7 @@ export function chestViews(m: HouseModel, s: Stack, inv: Inv, labels: Readonly<R
     const key = String(serial), c = inv.containers[key], lab = labels[key];
     const inGame = c ? splitSerial(c.label || bagLabel(c)).name : m.unopenedNames[key] ?? "container";
     return { serial, code: m.codes[key] ?? s.letter, name: lab?.name ?? inGame, inGame, color: lab?.color ?? null, fill: c?.capacity ? { items: c.capacity.items, max: c.capacity.maxItems } : null,
-      opened: !unopened.has(serial), items: inv.rootCounts[key] ?? 0, z: s.zs[i] ?? 0, graphic: m.graphics[key] ?? c?.graphic ?? null, hue: m.hues[key] ?? c?.hue ?? 0 };
+      opened: !unopened.has(serial), items: inv.rootCounts[key] ?? 0, z: s.zs[i] ?? 0, ...(m.graphics[key] != null ? { graphic: m.graphics[key], hue: m.hues[key] ?? 0 } : { graphic: c?.graphic ?? null, hue: c?.hue ?? 0 }) };
   }).reverse();
 }
 // A chest's colour: a token, or an Organize label's colour (the page paints that through safeColor, always with a border-strong edge).

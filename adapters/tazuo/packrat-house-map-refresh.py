@@ -293,7 +293,7 @@ def claims_over(here, claims):
 
 # BEGIN generated: tazuo/house_capture
 def house_capture(px, py):
-    """The house the player stands in, from the client's own house tiles (issue #10), or None outside a house or on a build without the multi calls (house_footprint). What stands on the ground inside that footprint is recorded too (both left out when the ground cannot be read): furniture and fixtures as `items`, and every container as `containers` (2.11.0; its hue as a sixth element from 2.20.0, issue #174), opened or not, so the map shows a chest from the first scan even when it stood too far away to open; corpses, trash containers and blacklisted ones are left out (trash by name, or because the roots pass, which runs first, read its tooltip; a far trash container whose cached name is generic cannot be told apart without a tooltip query, which this never makes). Names come from tiledata in the app, so this asks the server nothing. A house of more than HOUSE_MAX_TILES tiles is left out and its count noted in HOUSE_TOO_LARGE."""
+    """The house the player stands in, from the client's own house tiles (issue #10), or None outside a house or on a build without the multi calls (house_footprint). What stands on the ground inside that footprint is recorded too (both left out when the ground cannot be read): furniture and fixtures as `items`, and every container as `containers` (2.11.0), with each one's hue other than 0 as `containerHues`, [serial, hue] rows (2.20.0, issue #174; a key of its own, so an older app reading the rows is not thrown), opened or not, so the map shows a chest from the first scan even when it stood too far away to open; corpses, trash containers and blacklisted ones are left out (trash by name, or because the roots pass, which runs first, read its tooltip; a far trash container whose cached name is generic cannot be told apart without a tooltip query, which this never makes). Names come from tiledata in the app, so this asks the server nothing. A house of more than HOUSE_MAX_TILES tiles is left out and its count noted in HOUSE_TOO_LARGE."""
     fp = house_footprint(px, py)
     if fp is None:
         return None
@@ -313,7 +313,7 @@ def house_capture(px, py):
         ground = None
     if ground is None:
         return house
-    items, chests = [], []
+    items, chests, hues = [], [], {}
     for g in ground:
         try:
             if (int(g.X), int(g.Y)) not in keep:
@@ -323,7 +323,10 @@ def house_capture(px, py):
             if not is_container(g, name):
                 items.append(row)
             elif row[0] not in BLACKLIST and row[0] not in TRASHED and not TRASH_RE.search(name):
-                chests.append(row + [int(getattr(g, "Hue", 0) or 0)])
+                chests.append(row)
+                hue = int(getattr(g, "Hue", 0) or 0)
+                if 0 < hue <= 0xFFFF:
+                    hues[row[0]] = hue
         except Exception:
             continue
 
@@ -342,6 +345,9 @@ def house_capture(px, py):
     house["items"] = sorted(items[:HOUSE_MAX_ITEMS])
     chests.sort(key=nearest)
     house["containers"] = sorted(chests[:HOUSE_MAX_CONTAINERS])
+    kept_hues = sorted([c[0], hues[c[0]]] for c in house["containers"] if c[0] in hues)
+    if kept_hues:
+        house["containerHues"] = kept_hues
     return house
 # END generated: tazuo/house_capture
 

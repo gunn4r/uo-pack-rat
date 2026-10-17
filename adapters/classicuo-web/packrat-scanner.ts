@@ -272,8 +272,9 @@ function tooltipOf(serial: number): { lines: string[]; name: string; nameSource:
 
 // A container's graphic and hue (issue #174), for its art in the app; empty when the client cannot say.
 function look(it: any): { graphic?: number; hue?: number } {
-  const graphic = Number(it?.graphic);
-  return graphic > 0 ? { graphic, hue: Number(it.hue) || 0 } : {};
+  const graphic = Number(it?.graphic), hue = Number(it?.hue) || 0;
+  const ok = (n: number): boolean => Number.isInteger(n) && n >= 0 && n <= 0xffff;
+  return graphic > 0 && ok(graphic) && ok(hue) ? { graphic, hue } : {};
 }
 
 function itemEntry(it: any, container: number | null, layer?: string): any {

@@ -266,8 +266,8 @@ def look(it):
     """A container's graphic and hue (issue #174), for its art in the app; empty when the client has no
     item for it or cannot say."""
     try:
-        graphic = int(getattr(it, "Graphic", 0) or 0)
-        return {"graphic": graphic, "hue": int(getattr(it, "Hue", 0) or 0)} if graphic > 0 else {}
+        graphic, hue = int(getattr(it, "Graphic", 0) or 0), int(getattr(it, "Hue", 0) or 0)
+        return {"graphic": graphic, "hue": hue} if 0 < graphic <= 0xFFFF and 0 <= hue <= 0xFFFF else {}
     except Exception:
         return {}
 

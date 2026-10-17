@@ -516,7 +516,15 @@ class TazUOScanner(DataDir, unittest.TestCase):
         self.assertEqual(look(CHEST), {"graphic": 0x0E75, "hue": 1153})
         self.assertEqual(look(BAG), {"graphic": 0x0E79, "hue": 2500})
         self.assertEqual(look(PACK)["graphic"], w.items[PACK].Graphic)
-        self.assertEqual(s["house"]["containers"], [[CHEST, 0x0E75, 11, 10, 0, 1153]], "the hue is a house row's sixth element")
+        self.assertEqual(s["house"]["containers"], [[CHEST, 0x0E75, 11, 10, 0]], "the rows keep five numbers")
+        self.assertEqual(s["house"]["containerHues"], [[CHEST, 1153]], "the hue is in a key of its own")
+
+    def test_a_graphic_or_hue_out_of_range_is_left_out(self):
+        w = World(); home(w)
+        w.items[BAG].Hue = 0x10000
+        self.scan(w)
+        [s] = self.scans("tazuo")
+        self.assertNotIn("graphic", s["containers"][str(BAG)])
 
     def test_the_facet_is_left_out_when_the_client_cannot_say(self):
         def stub_ahead_of_build():
@@ -601,7 +609,8 @@ class TazUOScanner(DataDir, unittest.TestCase):
         w.add(0x40000052, 0, name="trash barrel", X=14, Y=14)      # a trash container is never listed
         self.scan(w)
         [s] = self.scans("tazuo")
-        self.assertEqual(s["house"]["containers"], [[CHEST, 0x0E75, 11, 10, 0, 0], [0x40000050, 0x0E7C, 15, 15, 7, 0]])
+        self.assertEqual(s["house"]["containers"], [[CHEST, 0x0E75, 11, 10, 0], [0x40000050, 0x0E7C, 15, 15, 7]])
+        self.assertNotIn("containerHues", s["house"], "no hue other than 0, no list")
         self.assertNotIn(0x40000050, self.opened(w))
         self.assertNotIn(0x40000050, [r["serial"] for r in s["roots"]])
         self.assertEqual(s["house"]["items"], [], "a container is never furniture")
@@ -871,7 +880,7 @@ class TazUOHouseMapRefresh(DataDir, unittest.TestCase):
         h = s["house"]
         self.assertEqual((h["facet"], h["at"], len(h["tiles"])), (1, {"x": 10, "y": 10}, 144))
         self.assertEqual(h["items"], [[0x40000040, 0x0B34, 12, 12, 7]])
-        self.assertEqual(h["containers"], [[CHEST, 0x0E75, 11, 10, 0, 0], [0x40000050, 0x0E7C, 15, 15, 7, 0]])
+        self.assertEqual(h["containers"], [[CHEST, 0x0E75, 11, 10, 0], [0x40000050, 0x0E7C, 15, 15, 7]])
         self.assertEqual(self.opened(w), [], "no container is opened")
         self.assertEqual(asked, [], "no tooltip or OPL request")
         self.assertEqual(w.messages, ["Pack Rat house map refresh (Tester) -> %s: 144 tiles, 1 pieces of furniture, 2 containers" % os.path.basename(files[0])])

@@ -30,6 +30,8 @@ export const isKnownKind = (doc: { kind?: string | undefined }): boolean => doc.
 const SERIAL = { type: "integer", minimum: 0, maximum: 4294967295 };
 const SERIAL_OR_NULL = { type: ["integer", "null"], minimum: 0, maximum: 4294967295 };
 const GRAPHIC = { type: ["number", "null"], minimum: 0, maximum: 65535 };
+// A container's graphic and hue (issue #174): whole numbers, which the scanners leave out rather than write out of range.
+const COLOR = { type: ["integer", "null"], minimum: 0, maximum: 65535 };
 const AMOUNT = { type: "number", minimum: 0, maximum: 4294967295 };
 const NAME = { type: "string", maxLength: 256 };
 const TOOLTIP = { type: "array", maxItems: 256, items: { type: "string", maxLength: 512 } };
@@ -84,7 +86,7 @@ export const SCAN_V2_SCHEMA = {
     resists: NUMBER_MAP_OR_NULL,
     house: {
       type: "object",
-      "$comment": "The house the player stood in (issue #10), from the client's house tiles: tiles are [graphic, x, y, z, impassable 0|1]; items (furniture and fixtures on the ground inside the footprint) and containers (every container on the ground inside it, opened by the scan or not; TazUO 2.11.0 and later) are [serial, graphic, x, y, z], a container row with its hue as a sixth element from TazUO 2.20.0 (issue #174), each left out when the ground could not be read; trash is the sorted serials of the trash containers the scan skipped (issue #162), left out when there were none, so the house map leaves them out of every capture of the house; at is where the player stood, so the app knows which items a later capture should have seen. Other keys are allowed, so a newer adapter's addition never makes an older app drop the scan. Written by TazUO 2.10.0 and later.",
+      "$comment": "The house the player stood in (issue #10), from the client's house tiles: tiles are [graphic, x, y, z, impassable 0|1]; items (furniture and fixtures on the ground inside the footprint) and containers (every container on the ground inside it, opened by the scan or not; TazUO 2.11.0 and later) are [serial, graphic, x, y, z], containerHues (TazUO 2.20.0, issue #174) is [serial, hue] for each listed container with a hue other than 0, a key of its own so an older app ignores it, each left out when the ground could not be read; trash is the sorted serials of the trash containers the scan skipped (issue #162), left out when there were none, so the house map leaves them out of every capture of the house; at is where the player stood, so the app knows which items a later capture should have seen. Other keys are allowed, so a newer adapter's addition never makes an older app drop the scan. Written by TazUO 2.10.0 and later.",
       required: ["capturedAt", "at", "tiles"],
       additionalProperties: true,
       properties: {
@@ -93,7 +95,8 @@ export const SCAN_V2_SCHEMA = {
         at: { type: "object", required: ["x", "y"], additionalProperties: false, properties: { x: { type: "integer" }, y: { type: "integer" } } },
         tiles: { type: "array", maxItems: 20000, items: { type: "array", minItems: 5, maxItems: 5, items: { type: "integer" } } },
         items: { type: "array", maxItems: 5000, items: { type: "array", minItems: 5, maxItems: 5, items: { type: "integer" } } },
-        containers: { type: "array", maxItems: 5000, items: { type: "array", minItems: 5, maxItems: 6, items: { type: "integer" } } },
+        containers: { type: "array", maxItems: 5000, items: { type: "array", minItems: 5, maxItems: 5, items: { type: "integer" } } },
+        containerHues: { type: "array", maxItems: 5000, items: { type: "array", minItems: 2, maxItems: 2, items: { type: "integer", minimum: 0, maximum: 4294967295 } } },
         trash: { type: "array", maxItems: 5000, items: SERIAL }
       }
     },
@@ -144,8 +147,8 @@ export const SCAN_V2_SCHEMA = {
           pos: { ...NUMBER_MAP_OR_NULL, properties: { facet: { type: "integer", enum: [0, 1, 2, 3, 4, 5], "$comment": "The facet the container is on: 0 Felucca, 1 Trammel, 2 Ilshenar, 3 Malas, 4 Tokuno, 5 Ter Mur. Scanners write it on a ground root's pos (TazUO 2.9.0, Razor Enhanced 1.9.0, ClassicUO web 1.3.0) and leave it out when the client cannot say." } } },
           tooltip: TOOLTIP,
           opened: { type: "boolean" },
-          graphic: GRAPHIC,
-          hue: GRAPHIC,
+          graphic: COLOR,
+          hue: COLOR,
         },
       },
     },

@@ -1,6 +1,6 @@
 // scan-schema.test.mts — `app/scan-schema.mts`: the scan v2 schema and the v1→v2 upgrade on read.
 //
-// `app/scan-schema.mts`: `SCAN_V2_SCHEMA` is byte-identical to `app/schema/scan.v2.schema.json` (the two must never drift, since the `.mjs` copy is what gets served to the browser); `upgradeScan`'s v1→v2 conversion (naive-local `scannedAt` → RFC 3339 with this machine's DST-correct offset, `adapter` stamped — `"app"` for a `_`-prefixed tombstone character, `"tazuo"` otherwise — every root `opened: true`, every serial coerced to a number, `nameSource: "opl"` on every item/equipped entry); a v2 document passed through unchanged except a missing `shard` gets stamped; neither v1 nor v2 shaped throws; `validateScan` against the schema (including the fractional-seconds `scannedAt` shape `/api/forget` actually writes, refusing a `scannedAt` that is not a real date and time, and a container `pos` whose `facet` is not a whole number 0-5, or a container `graphic` or `hue` past 0-65535 (issue #174); the optional `house` section (issue #10): five-integer tiles, at most 20,000, container rows of five integers or six with the hue, `items` optional, a negative z, an empty items list and an extra key accepted); `parseStamp` for fold ordering. An unknown capability or adapter field, an adapter's `features` and an unknown `kind` (a newer adapter's) validate. A house-only file (`kind: "house"`, issue #10) validates with an empty inventory, and is refused with an empty `kind`, without its `house`, or with anything in `roots`, `containers`, `items` or `equipped`.
+// `app/scan-schema.mts`: `SCAN_V2_SCHEMA` is byte-identical to `app/schema/scan.v2.schema.json` (the two must never drift, since the `.mjs` copy is what gets served to the browser); `upgradeScan`'s v1→v2 conversion (naive-local `scannedAt` → RFC 3339 with this machine's DST-correct offset, `adapter` stamped — `"app"` for a `_`-prefixed tombstone character, `"tazuo"` otherwise — every root `opened: true`, every serial coerced to a number, `nameSource: "opl"` on every item/equipped entry); a v2 document passed through unchanged except a missing `shard` gets stamped; neither v1 nor v2 shaped throws; `validateScan` against the schema (including the fractional-seconds `scannedAt` shape `/api/forget` actually writes, refusing a `scannedAt` that is not a real date and time, and a container `pos` whose `facet` is not a whole number 0-5, or a container `graphic` or `hue` that is not a whole number 0-65535 (issue #174); the optional `house` section (issue #10): five-integer tiles, at most 20,000, container rows of five integers and `containerHues` pairs, `items` optional, a negative z, an empty items list and an extra key accepted); `parseStamp` for fold ordering. An unknown capability or adapter field, an adapter's `features` and an unknown `kind` (a newer adapter's) validate. A house-only file (`kind: "house"`, issue #10) validates with an empty inventory, and is refused with an empty `kind`, without its `house`, or with anything in `roots`, `containers`, `items` or `equipped`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -246,7 +246,7 @@ test("[fast] validateScan: a container may carry its graphic and hue (issue #174
   const withLook = (look: Record<string, unknown>) => validateScan({ ...base, containers: { "1": { serial: 1, root: 1, parent: null, kind: "ground", ...look } } });
   assert.equal(withLook({ graphic: 0x0E40, hue: 1153 }).ok, true);
   assert.equal(withLook({}).ok, true, "an older scan");
-  for (const look of [{ graphic: 65536 }, { hue: -1 }, { graphic: "0x0E40" }]) assert.equal(withLook(look).ok, false, JSON.stringify(look));
+  for (const look of [{ graphic: 65536 }, { hue: -1 }, { graphic: "0x0E40" }, { hue: 1.5 }]) assert.equal(withLook(look).ok, false, JSON.stringify(look));
 });
 
 test("[fast] scan schema: an optional house section with tiles and items", () => {
@@ -301,11 +301,12 @@ test("[fast] scan schema: a house-only file (kind \"house\", TazUO 2.12.0) carri
   }
 });
 
-test("[fast] scan schema: house.containers lists five-integer rows, or six with the hue (TazUO 2.20.0, issue #174), at most 5,000 (TazUO 2.11.0)", () => {
+test("[fast] scan schema: house.containers lists five-integer rows, at most 5,000 (TazUO 2.11.0), and house.containerHues [serial, hue] pairs (TazUO 2.20.0, issue #174)", () => {
   const house = { facet: 1, capturedAt: "2026-10-01T12:00:00Z", at: { x: 100, y: 200 }, tiles: [[1, 100, 200, 7, 0]], containers: [[0x40000001, 0x0E7C, 100, 200, 7]] };
   assert.equal(validateScan({ ...bounded, house }).ok, true);
-  assert.equal(validateScan({ ...bounded, house: { ...house, containers: [[0x40000001, 0x0E7C, 100, 200, 7, 1153]] } }).ok, true, "a sixth number, the hue");
+  assert.equal(validateScan({ ...bounded, house: { ...house, containerHues: [[0x40000001, 1153]] } }).ok, true, "the hues in a key of their own");
+  assert.equal(validateScan({ ...bounded, house: { ...house, containerHues: [[0x40000001]] } }).ok, false, "a pair");
+  assert.equal(validateScan({ ...bounded, house: { ...house, containers: [[0x40000001, 0x0E7C, 100, 200, 7, 1153]] } }).ok, false, "never a sixth number, which an older app refuses");
   assert.equal(validateScan({ ...bounded, house: { ...house, containers: [[1, 2, 3]] } }).ok, false, "a container row has five numbers");
-  assert.equal(validateScan({ ...bounded, house: { ...house, containers: [[1, 2, 3, 4, 5, 6, 7]] } }).ok, false, "or six");
   assert.equal(validateScan({ ...bounded, house: { ...house, containers: Array.from({ length: 5001 }, () => [1, 2, 3, 4, 5]) } }).ok, false, "at most 5,000");
 });

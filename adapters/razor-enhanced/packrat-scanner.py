@@ -257,8 +257,8 @@ def root_pos(it, kind):
 def look(it):
     """A container's graphic and hue (issue #174), for its art in the app; empty when the client
     cannot say."""
-    graphic = as_int(getattr(it, "ItemID", 0))
-    return {"graphic": graphic, "hue": as_int(getattr(it, "Hue", 0))} if graphic > 0 else {}
+    graphic, hue = as_int(getattr(it, "ItemID", 0)), as_int(getattr(it, "Hue", 0))
+    return {"graphic": graphic, "hue": hue} if 0 < graphic <= 0xFFFF and 0 <= hue <= 0xFFFF else {}
 
 
 def root_entry(it, kind, label):

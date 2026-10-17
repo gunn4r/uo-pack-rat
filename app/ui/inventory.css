@@ -47,8 +47,9 @@
 .inv-loc { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 6px; row-gap: 8px; min-width: 0; height: var(--lh-base); overflow: hidden; }
 .inv-loc > .ellip { flex: 0 1 auto; max-width: 100%; }
 .inv-loc > .mono { flex: none; }
-.inv-loc:has(> .art-tile) { height: 24px; align-items: center; }   /* a container's art (ui/item-art.mts, issue #174) sets the line's height, and its name stays on the line beside it */
-.inv-loc:has(> .art-tile) > .ellip { max-width: calc(100% - 30px); }
+/* A container's art (ui/item-art.mts, issue #174) sets the line's height; the line does not wrap, so the name shrinks beside it. */
+.inv-loc:has(> .art-tile) { height: 24px; align-items: center; flex-wrap: nowrap; }
+.inv-loc:has(> .art-tile) > .ellip { min-width: 0; }
 /* row actions: a zero-width column pinned to the right edge; the buttons show on row hover and focus */
 .inv-tbl col.act-col { width: 0; }
 .inv-tbl th.act-cell, .inv-tbl td.act-cell { position: sticky; right: 0; padding: 0; width: 0; overflow: visible; z-index: 1; }
