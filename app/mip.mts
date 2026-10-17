@@ -417,11 +417,13 @@ export function tieBreakModel(built: BuiltMip, start: ArrayLike<number>, toleran
 // floor-met indicator at 1 in `start` is fixed at 1 and the rows leave out the y's tieBreakModel's note names; without
 // it every term stays in, so a later strict-order stage may meet other floors for the same requirements score, as the
 // core's stage-by-stage compare allows.
-export function heldModel(built: BuiltMip, start: ArrayLike<number>, held: ReadonlyArray<ArrayLike<number>>, objective: number[], sense: MipSense, { fixMet = false, tolerance = 0 }: { fixMet?: boolean; tolerance?: number } = {}): BuiltMip {
+// `values`, when given, are what each entry of `held` is held at in place of its value at `start` (strict order holds each
+// stage at the value its own solve reached, so holds never drift by TIE_SLACK from stage to stage).
+export function heldModel(built: BuiltMip, start: ArrayLike<number>, held: ReadonlyArray<ArrayLike<number>>, objective: number[], sense: MipSense, { fixMet = false, tolerance = 0, values: at }: { fixMet?: boolean; tolerance?: number; values?: readonly number[] | undefined } = {}): BuiltMip {
   const m = built.model, isY = (j: number): boolean => built.cols[j]!.kind === "y";
   const colLower = fixMet ? m.colLower.map((lo, j) => (isY(j) && start[j]! > 0.5 ? 1 : lo)) : m.colLower;
   const rowLower = [...m.rowLower], rowUpper = [...m.rowUpper], starts = [...m.matrix.starts], indices = [...m.matrix.indices], values = [...m.matrix.values];
-  for (const cost of held) {
+  for (const [h, cost] of held.entries()) {
     const terms: Term[] = [];
     let score = 0;
     for (let j = 0; j < m.numCols; j++) {
@@ -431,31 +433,43 @@ export function heldModel(built: BuiltMip, start: ArrayLike<number>, held: Reado
     if (!terms.length) continue;
     for (const [j, v] of terms) { indices.push(j); values.push(v); }
     starts.push(indices.length);
-    rowLower.push(score - Math.max(0, tolerance) - TIE_SLACK);
+    rowLower.push((at ? at[h]! : score) - Math.max(0, tolerance) - TIE_SLACK);
     rowUpper.push(INF);
   }
   const numRows = rowLower.length;
   return { ...built, model: { ...m, sense, offset: 0, colCost: objective, colLower, numRows, rowLower, rowUpper, matrix: { format: "csr", numRows, numCols: m.numCols, starts, indices, values } } };
 }
-// What one changed slot costs with fewest changes (== scripts/optimizer-core.mts CHANGE_COST): above any suit's summed
-// rarity tie cost (at most the rarity ladder's length in each of the nineteen slots), so fewer changes always come first.
+// What one changed slot costs at least with the tie-break's fewest changes (== scripts/optimizer-core.mts CHANGE_COST).
 export const CHANGE_COST = 1000;
-// The tie-break's cost on each x column: the piece's tieCost and, with `current` (fewest changes), CHANGE_COST for a piece
-// in a slot nobody wears, -CHANGE_COST for the worn piece and 0 for another piece in a worn slot. A suit's sum is then its
-// tie cost plus CHANGE_COST for each slot it changes (an empty slot that was worn included), less a constant.
+// The cost of one changed slot for this model's pieces (== scripts/optimizer-core.mts optChangeCost): above what the
+// nineteen slots' tie costs can sum to, so fewer changes always come first whatever the rarity ladder's length.
+export function changeCostFor(built: BuiltMip): number {
+  let maxTie = 0;
+  for (const c of built.cols) if (c.kind === "x") maxTie = Math.max(maxTie, c.item!.tieCost || 0);
+  return Math.max(CHANGE_COST, 19 * maxTie + 1);
+}
+// A piece's value in strict order's fewest-changes stage against the worn suit (== the core's optChangeOf): 1 for the worn
+// piece, -1 in a slot nobody wears, 0 for another piece; a suit's sum is its worn slots less its changes.
+const keptOf = (c: MipCol, current: Partial<Record<string, OptItem | null>>): number => { const worn = current[c.slot!]; return !worn ? -1 : worn.serial === c.item!.serial ? 1 : 0; };
+// The tie-break's cost on each x column: the piece's tieCost and, with `current` (fewest changes), the change cost less
+// the change cost times keptOf. A suit's sum is then its tie cost plus the change cost for each slot it changes (an empty
+// slot that was worn included), less a constant.
 export function tieCosts(built: BuiltMip, current: Partial<Record<string, OptItem | null>> | null = null): number[] {
-  return built.cols.map((c) => {
-    if (c.kind !== "x") return 0;
-    const own = c.item!.tieCost || 0, worn = current ? current[c.slot!] : undefined;
-    return !current ? own : own + (!worn ? CHANGE_COST : worn.serial === c.item!.serial ? -CHANGE_COST : 0);
-  });
+  const cc = current ? changeCostFor(built) : 0;
+  return built.cols.map((c) => (c.kind !== "x" ? 0 : (c.item!.tieCost || 0) - (current ? cc * keptOf(c, current) : 0)));
 }
 // One strict-order stage's objective (scripts/optimizer-core.mts optStrictStages) from a model built with `parts`: the
-// floors' terms (`keys` null), else the named properties' weight terms times `scale`; `offset` is its constant.
-export function stageObjective(built: BuiltMip, stage: { keys: string[] | null; scale: number }): { cost: number[]; offset: number } {
+// requirements (the floors' part), a soft floor's partial credit, the fewest changes (keptOf, against `current`), or the
+// named properties' weight terms times `scale`; `offset` is its constant.
+export function stageObjective(built: BuiltMip, stage: { kind: string; keys: string[] | null; scale: number }, current: Partial<Record<string, OptItem | null>> = {}): { cost: number[]; offset: number } {
   const cost = new Array<number>(built.model.numCols).fill(0), parts = built.parts!;
+  if (stage.kind === "changes") {
+    built.cols.forEach((c, j) => { if (c.kind === "x") cost[j] = keptOf(c, current); });
+    return { cost, offset: 0 };
+  }
   let offset = 0;
-  for (const p of stage.keys ? stage.keys.flatMap((k) => (parts.weights[k] ? [parts.weights[k]] : [])) : [parts.floors]) {
+  const from = stage.kind === "requirements" ? [parts.floors] : stage.kind === "softPartial" ? [parts.softPartial] : stage.keys!.flatMap((k) => (parts.weights[k] ? [parts.weights[k]] : []));
+  for (const p of from) {
     for (let i = 0; i < p.cols.length; i++) cost[p.cols[i]!]! += stage.scale * p.costs[i]!;
     offset += stage.scale * p.offset;
   }

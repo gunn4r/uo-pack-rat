@@ -4,7 +4,7 @@
 // saved runs. Before a build the first-visit view (ui/builder-start.mts) has the screen. The numbers come from
 // ui/builder-model.mts; the bridge actions are gated by ui/bridge.mts's bridgeActionReason(). It shares the builder's
 // state through ui/builder-session.mts and provides the result and compare commands there.
-import { GEAR_SLOTS, NOBODY, RESIST_KEYS, resistSkillOf, resistSkillCapOf, toOptItem, totalsOf, requirementReport, resistCapsFor, profileResistCaps, fcCapFor } from "../vault-lib.mts";
+import { GEAR_SLOTS, NOBODY, RESIST_KEYS, STRICT_PROMISE, TAGGED_NOTE, resistSkillOf, resistSkillCapOf, toOptItem, totalsOf, requirementReport, resistCapsFor, profileResistCaps, fcCapFor } from "../vault-lib.mts";
 import type { EffectiveProfile, Goals, GoalSwingWeapon, Item, PropMap, ResistCap } from "../vault-lib.mts";
 import { state } from "./store.mts";
 import type { BuildMeta } from "./store.mts";
@@ -248,7 +248,10 @@ function goalsCard(g: Goals, gs: GoalSwingWeapon | null, current: OptSuit, suit:
       txt((r.key === "ssi" && swing?.verdict) || goalVerdict(r, trades), `t-sm ${r.maxed ? "tone-ok" : "muted"}`),
       r.key === "ssi" && perPoint ? txt("Swing time isn't counted in steps here, because the suit isn't tied to one weapon.", "t-sm muted") : null))),
     trades.length ? box("ul", { class: "b-trades" }, ...trades.map((t) => el("li", { class: "t-sm" }, txt(`Trade made: ${tradeText(t, from && to ? { from: from.seconds, to: to.seconds } : null)}`))))
-      : strict ? el("p", { class: "t-sm muted b-no-trades" }, txt("Strict order: no trades. A higher goal is never given up for a lower one.")) : null,
+      : strict ? el("p", { class: "t-sm muted b-no-trades" }, txt(`Strict order: no trades. ${STRICT_PROMISE}`)) : null,
+    // strict order wears a tagged piece whenever it helps a goal (the tag penalty is a stage after the goals)
+    strict && Object.values(suit).some((it) => it && (it.props.tagPenalty || 0) > 0 && !Object.values(current).some((c) => c?.serial === it.serial))
+      ? el("p", { class: "t-sm muted b-tagged" }, txt(TAGGED_NOTE)) : null,
     ((line) => (line ? el("p", { class: "t-sm" }, txt(line)) : null))(spareLine(g, was.totals, now.totals)));
 }
 
@@ -395,12 +398,16 @@ function detailsCard(res: OptimizeResult, meta: BuildMeta | undefined, view: num
   if (res.nodes != null) pairs.push(["Search nodes", fmtN(res.nodes)]);
   if (time) pairs.push(["Time", time]);
   if (skips) pairs.push(["Left out", skips]);
-  if (res.method !== "manual") pairs.push(["Score", `${fmtN(Math.round(res.currentScore))} → ${fmtN(Math.round(score))}`]);
-  if (res.strict && res.method !== "manual") pairs.push(["Strategy", strictDetail(res.strict)]);
-  if (res.tieBreak?.fewestChanges && res.method !== "manual") pairs.push(["Fewest changes", `${plural(res.tieBreak.changes ?? 0, "piece")} changed, the fewest among equal suits${res.tieBreak.costProven === false ? " found (not proven)" : ""}`]);
+  // a strict build's plain score is in Best value's terms, which it did not optimize (it compares goal by goal)
+  if (res.method !== "manual") pairs.push([res.strict ? "Score (Best value terms; strict order ranks goal by goal)" : "Score", `${fmtN(Math.round(res.currentScore))} → ${fmtN(Math.round(score))}`]);
+  if (res.strict && res.method !== "manual") pairs.push(["Strategy", strictDetail(res.strict, res.method)]);
+  // fewest changes: Best value's tie-break, or strict order's stage after the goals
+  const changes = res.strict ? res.strict.changes : res.tieBreak?.fewestChanges ? res.tieBreak.changes : undefined;
+  if (changes != null && res.method !== "manual") pairs.push(["Fewest changes", `${plural(changes, "piece")} changed, ${res.strict ? "the fewest that keeps every goal" : "the fewest among equal suits"}${!res.strict && res.tieBreak?.costProven === false ? " found (not proven)" : ""}`]);
   if (res.tieBreak?.rarity && res.method !== "manual") pairs.push(["Rarity", rarityDetail(res.tieBreak, rarityTotal(res.best, res.tieBreak.rarity, state.rules?.rarity?.length ?? 0))]);
   if (res.gapPoints != null) pairs.push(["Gap to the bound", `${fmtN(res.gapPoints)} points`]);
-  if (res.altTolerance != null) pairs.push(["Other suits", res.strict ? `${fmtN((res.alternatives || []).length)} equal on every goal${res.altShortfall === "budget" ? " · the time budget ran out before more were found" : ""}` : `${fmtN((res.alternatives || []).length)} within ${fmtN(res.altTolerance)} points${res.altShortfall === "budget" ? " · the time budget ran out before more were found" : ""}`]);
+  const short = res.altShortfall === "budget" ? " · the time budget ran out before more were found" : "";
+  if (res.altTolerance != null) pairs.push(["Other suits", `${fmtN((res.alternatives || []).length)} ${res.strict ? "equal on every goal" : `within ${fmtN(res.altTolerance)} points`}${short}`]);
   // A run is reused when the solvers' input is the same (runs-lib.mts's runKey): its buffs may differ where they plan alike.
   if (meta?.reused) {
     const other = buffsDiff(savedBuffs(meta.reused.settings), prof.buffs ? runBuffs(prof.buffs.on, prof.buffs.skills) : undefined).length > 0;
@@ -483,7 +490,7 @@ function openSuitCompare(indices: number[]): void {
     // Every suit of one result was built with the same caps; an override is named on each column's outcome.
     const resists = profileResistCaps(prof), capped = anyOverridden(resists);
     if (capped) for (const c of columns) c.outcome.push(capsLine(resists));
-    return { title: "Compare suits", noun: "suits", columns, outcomeRows: ["Points vs best", ...(capped ? ["Resist caps"] : [])], keys: compareKeys(columns, prof), caps: paperdollCaps(resists, fcCapOf(prof)),
+    return { title: "Compare suits", noun: "suits", columns, outcomeRows: [res.strict ? "Points vs best (Best value terms; strict order ranks goal by goal)" : "Points vs best", ...(capped ? ["Resist caps"] : [])], keys: compareKeys(columns, prof), caps: paperdollCaps(resists, fcCapOf(prof)),
       onRemove: (i) => { idx = idx.filter((_, j) => j !== i); picked = new Set(idx.map(String)); if (idx.length < 2) { closeCompare(); rerender(); } else showCompare(openSpec!); } };
   });
   void name;

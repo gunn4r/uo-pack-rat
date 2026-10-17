@@ -536,7 +536,7 @@ test("[slow] strict order: the strategy's subtitle, a strict build without trade
     assert.equal(await page.locator("#b-strategy-help").innerText(), "Most important first. Higher goals count more, but a small loss up top can buy a big gain lower down.");
     assert.match(await page.locator('.b-goal[data-key="hci"] .b-goal-counts').innerText(), /^counts 80 · max 45$/);
     await page.click('#b-strategy [data-value="strict"]');
-    await text("#b-strategy-help", /^Most important first\. A higher goal is never given up for a lower one\.$/);
+    await text("#b-strategy-help", /^Most important first\. A higher goal is never given up for a lower one\. Requirements always come first\.$/);
     assert.equal(await page.locator('.b-goal[data-key="hci"] .b-goal-counts').innerText(), "max 45", "what a goal counts is Best value's");
     await text("#b-tpl-state", /strict order/);
     await noSideways("the Goals tab");

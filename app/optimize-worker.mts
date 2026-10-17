@@ -81,8 +81,9 @@ try {
   const tb = result.tieBreak;
   const tieBreak = tb && opts.tieBreak ? { tieBreak: { ...(opts.tieBreak.rarity ? { rarity: opts.tieBreak.rarity } : {}), ...(opts.tieBreak.fewestChanges ? { fewestChanges: true, changes: tb.changes } : {}), tolerance: Math.max(0, opts.tieBreak.tolerance || 0), topScore: tb.topScore, cost: tb.cost, ...("costProven" in tb ? { costProven: (tb as { costProven?: boolean }).costProven } : {}) } } : {};
   // strict order: each stage with the suit's value there and how many are proven (the exact search counts them; the core proves all or none)
-  const stages = opts.strict && result.lex ? core.optStrictStages(solveProfile, opts.strict.ranks) : null;
-  const strict: StrictResult | null = stages ? { stages: stages.map((st, i) => ({ keys: st.keys, value: result.lex![i]! })), proven: (result as ExactSolveResult).strictProven ?? (result.proven ? stages.length : 0) } : null;
+  const stages = opts.strict && result.lex ? core.optStrictStages(solveProfile, opts.strict.ranks, !!opts.strict.fewestChanges) : null;
+  const strict: StrictResult | null = stages ? { stages: stages.map((st, i) => ({ kind: st.kind, keys: st.keys, value: result.lex![i]! })), proven: (result as ExactSolveResult).strictProven ?? (result.proven ? stages.length : 0),
+    ...(opts.strict!.fewestChanges ? { changes: core.optChanges(result.best, current, opts.slots ?? DEFAULT_SLOTS) } : {}) } : null;
   const { lex: _lex, strictProven: _proven, ...plain } = result as ExactSolveResult;
   const withSwing = { ...plain, ...(swing ? { swing } : {}), ...tieBreak, ...(strict ? { strict } : {}) };
   // A failure here never costs the suit (withDiagnostics): the result goes out without diagnostics and the server logs why.

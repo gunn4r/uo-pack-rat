@@ -116,7 +116,8 @@ function optsError(opts: Record<string, unknown>): string | null {
       }
       case "strict": {
         // strict order (issue #292): the goal ranks, most important first, each a list of property keys
-        const { ranks, ...extra } = (v && typeof v === "object" && !Array.isArray(v) ? v : { ranks: null }) as Record<string, unknown>;
+        const { ranks, fewestChanges, ...extra } = (v && typeof v === "object" && !Array.isArray(v) ? v : { ranks: null }) as Record<string, unknown>;
+        if (fewestChanges != null && typeof fewestChanges !== "boolean") return "opts.strict.fewestChanges must be a boolean";
         if (!Array.isArray(ranks) || ranks.length > GOAL_RANKS_MAX || !ranks.every((r) => Array.isArray(r) && r.length > 0 && r.length <= GOAL_RANK_SIZE_MAX && r.every((k) => isBoundedString(k, 64))))
           return `opts.strict.ranks must be a list of at most ${GOAL_RANKS_MAX} ranks, each a list of 1 to ${GOAL_RANK_SIZE_MAX} property names`;
         if (Object.keys(extra).length) return `opts.strict.${short(Object.keys(extra)[0]!)} is not a strict-order setting`;

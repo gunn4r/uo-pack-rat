@@ -44,17 +44,29 @@ export function rarityHelp(rarity: string | undefined): string {
 export function rarityTotal(best: Record<string, { tieCost?: number | undefined } | null | undefined>, rarity: string | undefined, ladderLength: number): number {
   return Object.values(best).reduce((n, it) => (it && it.tieCost != null ? n + (rarity === "higher" ? ladderLength - it.tieCost : it.tieCost) : n), 0);
 }
-// Solver details' Rarity row: "Lowest-rarity pieces among equal suits · rarity total 16", and when the second stage ran
-// out of time, that the rarity choice is not proven.
+// A strict-order stage in words (issue #292), named by what it scores: "your requirements", its goals ("Hit chance and
+// Defense chance"), "getting closer to soft requirements", "fewest changes", "tagged pieces" or "spare points".
+export function stageName(st: { kind: string; keys: string[] | null }): string {
+  return st.kind === "requirements" ? "your requirements" : st.kind === "softPartial" ? "getting closer to soft requirements" : st.kind === "changes" ? "fewest changes"
+    : st.kind === "tags" ? "tagged pieces" : st.kind === "spare" ? "spare points" : andList((st.keys || []).map(propName));
+}
+// What a strict-order build is solving now, for the progress card: "Strict order: getting Hit chance and Defense chance
+// as high as they go", "Strict order: meeting your requirements", "Strict order: spare points".
+export function stageProgress(st: { kind: string; keys: string[] | null }): string {
+  if (st.kind === "goal") { const n = (st.keys || []).length; return `Strict order: getting ${stageName(st)} as high as ${n === 1 ? "it goes" : "they go"}`; }
+  return `Strict order: ${st.kind === "requirements" ? "meeting your requirements" : st.kind === "changes" ? "changing as few pieces as possible" : st.kind === "tags" ? "avoiding tagged pieces" : stageName(st)}`;
+}
 // A strict-order build's proof in words (issue #292): every stage proven best in turn, or the last one proven and where
-// the best found takes over. A stage is named by its goals ("Hit chance = Defense chance"), the first by the requirements.
-export function strictDetail(s: StrictResult): string {
-  const name = (i: number): string => { const k = s.stages[i]!.keys; return k ? k.map(propName).join(" = ") : "your requirements"; };
+// the best found takes over; a build without Exact search proves nothing, and says how to.
+export function strictDetail(s: StrictResult, method?: string): string {
   const n = s.stages.length;
   if (s.proven >= n) return "Strict order: each goal proven best in turn, most important first";
-  if (s.proven <= 0) return "Strict order: the best found, not proven; raise the time budget to prove it";
-  return `Strict order: proven through ${name(s.proven - 1)}; from ${name(s.proven)} on it is the best found, not proven`;
+  if (s.proven <= 0) return `Strict order: the best found, not proven; ${method === "exact" ? "raise the time budget" : "turn on Exact search"} to prove it`;
+  const first = s.stages[s.proven - 1]!;
+  return `Strict order: proven ${first.kind === "requirements" ? "for your requirements only" : `best up to ${stageName(first)}`}; from ${stageName(s.stages[s.proven]!)} on, the best found (not proven)`;
 }
+// Solver details' Rarity row: "Lowest-rarity pieces among equal suits · rarity total 16", and when the second stage ran
+// out of time, that the rarity choice is not proven.
 export function rarityDetail(tb: TieBreakResult, total: number): string {
   const most = tb.rarity === "higher" ? "highest" : "lowest";
   return `${most[0]!.toUpperCase()}${most.slice(1)}-rarity pieces among equal suits · rarity total ${total.toLocaleString("en-US")}${tb.costProven ? "" : ` (the ${most} found, not proven)`}`;

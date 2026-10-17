@@ -321,7 +321,7 @@ export interface OptimizeResult {
 // A tie-break's outcome: the best score found, the returned suit's rarity points, the preference and tolerance, with fewest changes how many slots it changes, and whether that is proven the lowest (exact search only).
 export interface TieBreakResult { topScore: number; cost: number; changes?: number | undefined; rarity?: string | undefined; fewestChanges?: boolean | undefined; tolerance?: number | undefined; costProven?: boolean | undefined }
 // A strict-order build's stages, each with the suit's value there, and how many are proven in order.
-export interface StrictResult { stages: Array<{ keys: string[] | null; value: number }>; proven: number }
+export interface StrictResult { stages: Array<{ kind: string; keys: string[] | null; value: number }>; proven: number; changes?: number | undefined }
 // SolveProgress (app/exact-solver.mts) as reported over the job's SSE stream and read by
 // builder.mts's runPanel(). Every field but `phase` is optional — not every phase reports every one.
 export interface OptimizeProgress {
@@ -341,7 +341,7 @@ export interface OptimizeProgress {
   gapPoints?: number | null | undefined;
   found?: number | undefined;
   wanted?: number | undefined;
-  stage?: { at: number; of: number } | undefined;   // strict order: the stage being solved, from 1
+  stage?: { at: number; of: number; kind: string; keys: string[] | null } | undefined;   // strict order: the stage being solved, from 1, and what it scores
 }
 // POST /api/optimize's start response — the non-cached branch (a fresh job) and the cached branch
 // (`cached: true`, carrying the reused SavedRunLike straight away) share every field but the ones

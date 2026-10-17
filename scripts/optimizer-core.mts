@@ -70,9 +70,17 @@ const HARD_FLOOR_BONUS = 1e7;
 // Strict order's stage values count as equal within this (== app/mip.mts TIE_SLACK): optStrictStages scales a stage so two
 // different values sit far further apart.
 const LEX_EPS = 1e-3;
-// What one changed slot costs with fewestChanges (== app/mip.mts CHANGE_COST): above any suit's summed rarity tie cost (at
-// most the rarity ladder's length in each of the nineteen slots), so fewer changes always come first.
+// What one changed slot costs at least with the tie-break's fewestChanges (== app/mip.mts CHANGE_COST); optChangeCost
+// raises it above any suit's summed tie cost, so fewer changes always come first.
 const CHANGE_COST = 1000;
+// == app/mip.mts changeCostFor: the cost of one changed slot for pieces whose largest tie cost is `maxTie`, above what
+// the nineteen slots can sum to (a rules file's rarity ladder can be any length).
+function optChangeCost(maxTie: number): number {
+  return Math.max(CHANGE_COST, 19 * maxTie + 1);
+}
+// The dimension strict order's fewest-changes stage scores in: a piece worn in its slot counts 1, a piece in a slot
+// nobody wears -1, any other piece (and an empty slot) 0, so the total is the worn slots less the changes.
+const CHANGES_KEY = "\u0000changes";
 // == app/vault-lib.mts RESIST_SKILL_KEY and RESIST_STEP_SLACK
 const RESIST_SKILL_KEY = "sk:resisting spells";
 const RESIST_STEP_SLACK = 0.05;
@@ -100,7 +108,8 @@ interface OptOptions {
   tieBreak?: { tolerance: number; rarity?: string | undefined; fewestChanges?: boolean | undefined; topStart?: Record<string, number | null> | undefined } | undefined;
   // Strict order (issue #292): the score is a vector compared stage by stage (optStrictStages: the requirements, each of
   // `ranks`' weighted properties, then every other weight), so no later stage ever buys a loss in an earlier one.
-  strict?: { ranks: string[][] } | undefined;
+  // `fewestChanges`: the fewest slots changed from `current`, as a stage after the goals and soft partial credit and before the tag penalty and spare points.
+  strict?: { ranks: string[][]; fewestChanges?: boolean | undefined } | undefined;
 }
 
 // Progress snapshot handed to onProgress. `explored` is the fraction of the exact search tree
@@ -177,6 +186,9 @@ interface OptSpace {
   rs: number;
   rsTau: number[];
   rsMin: number[][];
+  // Strict order's fewest-changes stage (CHANGES_KEY): its dimension (-1 without it) and each piece's value there, set by optStrictSpaces.
+  chg: number;
+  changeOf?: ((it: OptItem) => number) | undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -326,7 +338,8 @@ function optBuildSpace(keys: string[], profile: OptProfile): OptSpace {
     steps: stepped ? { ssi: profile.ssiSteps!.map((p) => p.ssi), stam: profile.ssiSteps!.map((p) => p.stam), credit: profile.ssiSteps!.map((p) => p.credit) } : steps,
     rs: lifted ? index[RESIST_SKILL_KEY]! : -1,
     rsTau: lifted ? rSteps.map((st) => st.at - RESIST_STEP_SLACK) : [],
-    rsMin: lifted ? rSteps.map((st) => keys.map((k, i) => (typeof st.mins[k] === "number" ? st.mins[k] : min[i]!))) : []
+    rsMin: lifted ? rSteps.map((st) => keys.map((k, i) => (typeof st.mins[k] === "number" ? st.mins[k] : min[i]!))) : [],
+    chg: keys.indexOf(CHANGES_KEY)
   };
 }
 
@@ -369,6 +382,7 @@ function optVec(it: OptItem | null, space: OptSpace): number[] {
     if (idx === undefined) continue; // property outside the space contributes nothing
     v[idx]! += props[pk[i]!]!;
   }
+  if (space.chg >= 0 && space.changeOf) v[space.chg] = space.changeOf(it);
   space.vecCache.set(it, v);
   return v;
 }
@@ -429,40 +443,72 @@ function scoreSet(items: OptAssignment | (OptItem | null)[], profile: OptProfile
 // Strict order (issue #292): the score as a vector, compared stage by stage
 // ---------------------------------------------------------------------------
 
-// A strict-order build's stages, most important first: the requirements (`keys` null: each floor met, and a hard floor's
-// partial credit; optLexSpaces), each rank's weighted properties, then every other weighted property (spare points, the tag penalty). A stage's
-// weights are scaled so the smallest is 1: with whole property totals, two different values of a stage then sit at least
-// a small fraction of a point apart, far above LEX_EPS. A rank with no weighted property is left out. app/exact-solver.mts
-// builds its stages from this same list.
-function optStrictStages(profile: OptProfile, ranks: string[][]): Array<{ keys: string[] | null; scale: number }> {
+// A strict-order stage: what it scores (optStrictSpaces), its properties for a weights stage, and the factor its weights
+// are scaled by.
+type OptStageKind = "requirements" | "goal" | "softPartial" | "changes" | "tags" | "spare";
+interface OptStage { kind: OptStageKind; keys: string[] | null; scale: number }
+const TAG_KEY = "tagPenalty";
+// A strict-order build's stages, most important first: the requirements (each floor met, and a hard floor's partial
+// credit), each goal rank's weighted properties, a soft floor's partial credit (when there is a soft floor), the fewest
+// changes (`fewest`), the tag penalty, then every other weighted property (spare points). So a tagged piece is never
+// worn for spare points alone, and neither is a piece changed. A weights stage's weights are scaled so the smallest is
+// 1: with whole property totals, two different values of a stage then sit at least a small fraction of a point apart,
+// far above LEX_EPS. A rank with no weighted property is left out. app/exact-solver.mts builds its stages from this list.
+function optStrictStages(profile: OptProfile, ranks: string[][], fewest: boolean = false): OptStage[] {
   const w = profile.weights || {}, used: Record<string, boolean> = {};
-  const out: Array<{ keys: string[] | null; scale: number }> = [{ keys: null, scale: 1 }];
-  const add = function (keys: string[]): void {
+  const out: OptStage[] = [{ kind: "requirements", keys: null, scale: 1 }];
+  const add = function (kind: OptStageKind, keys: string[]): void {
     const live = keys.filter(function (k) { return typeof w[k] === "number" && w[k] !== 0; });
     let least = Infinity;
     for (let i = 0; i < live.length; i++) least = Math.min(least, Math.abs(w[live[i]!]!));
-    if (live.length) out.push({ keys: live, scale: 1 / least });
+    if (live.length) out.push({ kind: kind, keys: live, scale: 1 / least });
   };
-  for (let i = 0; i < ranks.length; i++) { add(ranks[i]!); for (let j = 0; j < ranks[i]!.length; j++) used[ranks[i]![j]!] = true; }
-  add(Object.keys(w).sort().filter(function (k) { return !used[k]; }));
+  for (let i = 0; i < ranks.length; i++) { add("goal", ranks[i]!); for (let j = 0; j < ranks[i]!.length; j++) used[ranks[i]![j]!] = true; }
+  const hard = profile.hardFloors || [], floors = profile.floors || {};
+  if (Object.keys(floors).some(function (k) { return floors[k]! > 0 && hard.indexOf(k) < 0; })) out.push({ kind: "softPartial", keys: null, scale: 1 });
+  if (fewest) out.push({ kind: "changes", keys: null, scale: 1 });
+  if (!used[TAG_KEY]) add("tags", [TAG_KEY]);
+  add("spare", Object.keys(w).sort().filter(function (k) { return !used[k] && k !== TAG_KEY; }));
   return out;
 }
-// One space per stage, over the search space's keys so the totals line up: the requirements stage scores the floors
-// alone, a weights stage its properties' weight terms alone (scaled), with no floors. The requirements stage counts a
-// soft floor only when it is met: a soft floor's partial credit is in no stage, so getting closer to a preference the
-// suit still misses never costs a goal. A hard floor keeps its partial credit, which outweighs every weight in Best value too.
-function optLexSpaces(keys: string[], profile: OptProfile, stages: Array<{ keys: string[] | null; scale: number }>): OptSpace[] {
+// One space per stage, over the search space's keys so the totals line up:
+// - requirements: the floors alone, a soft floor counting only when met, a hard floor with its partial credit too (it
+//   outweighs every weight in Best value as well);
+// - softPartial: a soft floor's partial credit alone, so getting closer to a soft requirement never costs a goal;
+// - changes: the CHANGES_KEY dimension, whose values `changeOf` gives;
+// - the weights stages: their properties' weight terms alone (scaled), with no floors.
+function optStrictSpaces(keys: string[], profile: OptProfile, stages: OptStage[], changeOf: (it: OptItem) => number): OptSpace[] {
   const hard = profile.hardFloors || [];
   return stages.map(function (st) {
-    if (!st.keys) {
-      const sp = optBuildSpace(keys, { ...profile, weights: {} });
-      sp.partialArr = sp.partialArr.map(function (p, i) { return hard.indexOf(sp.keys[i]!) >= 0 ? p : 0; });
-      return sp;
+    const isHard = function (sp: OptSpace, i: number): boolean { return hard.indexOf(sp.keys[i]!) >= 0; };
+    let sp: OptSpace;
+    if (st.kind === "requirements" || st.kind === "softPartial") {
+      sp = optBuildSpace(keys, { ...profile, weights: {} });
+      const soft = st.kind === "softPartial";
+      sp.partialArr = sp.partialArr.map(function (p, i) { return isHard(sp, i) !== soft ? p : 0; });
+      if (soft) sp.floorBonusArr = sp.floorBonusArr.map(function () { return 0; });
+    } else if (st.kind === "changes") {
+      sp = optBuildSpace(keys, { ...profile, weights: { [CHANGES_KEY]: 1 }, floors: {}, hardFloors: [] });
+    } else {
+      const weights: Record<string, number> = {};
+      for (let i = 0; i < st.keys!.length; i++) weights[st.keys![i]!] = profile.weights![st.keys![i]!]! * st.scale;
+      sp = optBuildSpace(keys, { ...profile, weights: weights, floors: {}, hardFloors: [] });
     }
-    const weights: Record<string, number> = {};
-    for (let i = 0; i < st.keys.length; i++) weights[st.keys[i]!] = profile.weights![st.keys[i]!]! * st.scale;
-    return optBuildSpace(keys, { ...profile, weights: weights, floors: {}, hardFloors: [] });
+    sp.changeOf = changeOf;
+    return sp;
   });
+}
+// A piece's value in the CHANGES_KEY dimension against the worn suit `cur`.
+function optChangeOf(cur: OptAssignment): (it: OptItem) => number {
+  return function (it) { const w = cur[it.slot]; return !w ? -1 : w.serial === it.serial ? 1 : 0; };
+}
+// A suit's stage values under opts.strict, for a caller holding the suit alone (app/exact-solver.mts's other suits).
+function optStrictScore(items: OptAssignment, current: OptAssignment, profile: OptProfile, strict: { ranks: string[][]; fewestChanges?: boolean | undefined }, slots?: string[]): number[] {
+  const sl = slots || optDefaultSlots(), cur = optSanitize(current || {}, sl), a = optSanitize(items, sl);
+  const stages = optStrictStages(profile, strict.ranks, !!strict.fewestChanges);
+  const keys = optCollectKeys({}, a, profile).concat(stages.some(function (s) { return s.kind === "changes"; }) ? [CHANGES_KEY] : []);
+  const base = optBuildSpace(keys, profile), lex = optStrictSpaces(base.keys, profile, stages, optChangeOf(cur));
+  return optLexOf(optTotalsOf(a, sl, lex[0]!), lex);
 }
 function optLexOf(totals: number[], lex: OptSpace[]): number[] {
   return lex.map(function (sp) { return optScoreVector(totals, sp); });
@@ -746,6 +792,7 @@ function optSanitize(a: OptAssignment, slots: string[]): OptAssignment {
 // ---------------------------------------------------------------------------
 // +1 more is better, -1 less is better, 0 irrelevant, 2 neither (negative weight with a floor).
 function optDimSign(space: OptSpace, i: number): number {
+  if (i === space.chg) return 1;   // strict order's fewest changes: keeping the worn piece is better
   // with SSI by step, more stamina can reach a faster step: it counts as good unless its own weight is negative
   if (i === space.stepStam) return space.w[i]! < 0 ? 2 : 1;
   // with Resisting Spells steps, more bonus lifts the mins: good for a weighted or floored resist, bad for one weighted
@@ -1076,11 +1123,15 @@ function optimizeSuit(pools: Record<string, OptItem[]>, current: OptAssignment, 
   for (let i = 0; i < optionalList.length; i++) optional[optionalList[i]!] = true;
 
   const cur = optSanitize(current || {}, slots);
-  const keys = optCollectKeys(pools || {}, cur, profile);
+  // strict order: a space per stage; every comparison below is then stage by stage, and `score` stays the plain score. With
+  // its fewest-changes stage every space carries the CHANGES_KEY dimension (weight 0 outside that stage).
+  const stages = opts.strict ? optStrictStages(profile, opts.strict.ranks, !!opts.strict.fewestChanges) : null;
+  const keys = optCollectKeys(pools || {}, cur, profile).concat(stages && stages.some(function (s) { return s.kind === "changes"; }) ? [CHANGES_KEY] : []);
   const space = optBuildSpace(keys, profile);
   const gradSpace = optBuildSpace(keys, optGradientProfile(profile));
-  // strict order: a space per stage; every comparison below is then stage by stage, and `score` stays the plain score
-  const lex = opts.strict ? optLexSpaces(space.keys, profile, optStrictStages(profile, opts.strict.ranks)) : null;
+  const changeOf = optChangeOf(cur);
+  space.changeOf = changeOf; gradSpace.changeOf = changeOf;
+  const lex = stages ? optStrictSpaces(space.keys, profile, stages, changeOf) : null;
   const lexAt = function (a: OptAssignment): number[] { return optLexOf(optTotalsOf(a, slots, space), lex!); };
 
   const cands: Record<string, (OptItem | null)[]> = {};
@@ -1228,15 +1279,18 @@ function optimizeSuit(pools: Record<string, OptItem[]>, current: OptAssignment, 
   let tieInfo: { topScore: number; cost: number; changes?: number; top: Record<string, number | null>; floors: string[] } | undefined = undefined;
   let tieRef: OptAssignment = best, tieMet: number[] = [];
   let tieKeeps: ((a: OptAssignment) => boolean) | null = null;   // the trim below must not give up a floor the best suit meets
-  // With fewestChanges a piece also costs CHANGE_COST in a slot where it is not the worn piece, and the worn piece costs
-  // CHANGE_COST less than nothing (an empty slot costs 0), so a suit's cost is its tie cost plus CHANGE_COST for each slot
-  // it changes, less a constant: one changed slot more always costs more than any rarity can save.
+  // With the tie-break's fewestChanges a piece also costs the change cost in a slot nobody wears, and the worn piece costs
+  // it less than nothing (any other piece, and an empty slot, 0), so a suit's cost is its tie cost plus the change cost for
+  // each slot it changes, less a constant. The change cost (optChangeCost) is above any suit's summed tie cost, so one
+  // changed slot more always costs more than any rarity can save.
   const fewest = !!(opts.tieBreak && opts.tieBreak.fewestChanges);
+  let maxTie = 0;
+  for (let i = 0; i < slots.length; i++) { const l = cands[slots[i]!]!; for (let j = 0; j < l.length; j++) { const c = l[j]; if (c && (c.tieCost || 0) > maxTie) maxTie = c.tieCost || 0; } }
+  const changeCost = optChangeCost(maxTie);
   const costOf = function (it: OptItem | null): number {
     const own = it ? it.tieCost || 0 : 0;
     if (!fewest || !it) return own;
-    const worn = cur[it.slot];
-    return own + (!worn ? CHANGE_COST : worn.serial === it.serial ? -CHANGE_COST : 0);
+    return own + changeCost * -changeOf(it);
   };
   if (tb) {
     // scores within 1e-3 count as equal, the exact solver's precision (app/mip.mts TIE_SLACK)
@@ -1426,4 +1480,4 @@ function optimizeSuit(pools: Record<string, OptItem[]>, current: OptAssignment, 
   };
 }
 
-export { optStrictStages, optLexCmp, CHANGE_COST, scoreSet, optimizeSuit, optIsValidAssignment, optMulberry32, optDefaultSlots, optDefaultOptionalSlots, optAssignmentTotals, optGradientProfile, optCollectKeys, optBuildSpace, optDominancePrune, optVec, optScoreVector, optIsTwoHandedWeapon };
+export { optStrictStages, optStrictScore, optLexCmp, optChanges, CHANGE_COST, optChangeCost, scoreSet, optimizeSuit, optIsValidAssignment, optMulberry32, optDefaultSlots, optDefaultOptionalSlots, optAssignmentTotals, optGradientProfile, optCollectKeys, optBuildSpace, optDominancePrune, optVec, optScoreVector, optIsTwoHandedWeapon };

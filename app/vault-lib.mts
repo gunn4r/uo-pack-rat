@@ -321,6 +321,13 @@ export interface GoalSwing { mode: (typeof SWING_GOALS)[number]; seconds?: numbe
 // weights; "strict" never gives up a higher goal for a lower one (a staged solve, opts.strict). fewestChanges: among
 // suits as good, the fewest slots changed from what is worn now (the tie-break's first part).
 export const GOAL_STRATEGIES = ["value", "strict"] as const;
+// What each strategy means, in the Goals tab, How the goals went and build_suit's description.
+export const STRICT_PROMISE = "A higher goal is never given up for a lower one.";
+export const STRATEGY_HELP: Record<(typeof GOAL_STRATEGIES)[number], string> = { value: "Higher goals count more, but a small loss up top can buy a big gain lower down.", strict: `${STRICT_PROMISE} Requirements always come first.` };
+// What Change as few pieces as possible does in each strategy: Best value breaks exact ties, Strict order solves it after the goals.
+// Under How the goals went when a strict suit wears a tagged piece the worn suit doesn't.
+export const TAGGED_NOTE = "Strict order takes tagged pieces (Cursed, Antique…) when they help a goal. To keep them out, use Exclude tags in the Pool tab.";
+export const FEWEST_HELP: Record<(typeof GOAL_STRATEGIES)[number], string> = { value: "Finally, among equally good suits, keep the most of what you wear.", strict: "After the goals, keep the most of what you wear, before tagged pieces and spare points." };
 export interface Goals { ranks: string[][]; swing?: GoalSwing | undefined; leftover: GoalLeftover; strategy?: (typeof GOAL_STRATEGIES)[number] | undefined; fewestChanges?: boolean | undefined; ownWeights?: boolean | undefined }
 // What a rank counts on the importance scale: the first 100, the second 80, and so on, 15 for every rank from the ninth.
 export const RANK_IMPORTANCE: readonly number[] = [100, 80, 65, 50, 40, 30, 25, 20, 15];

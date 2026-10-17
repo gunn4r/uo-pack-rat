@@ -4,7 +4,7 @@
 // is ui/runs.mts; they share the builder's state and call each other through ui/builder-session.mts. The panel is drawn
 // from the session's profile plus its Advanced knobs, so what a build sends, what a profile saves and what a run
 // snapshots are read from state, never from the DOM.
-import { NOBODY, PROP_LABELS, NOT_BUILDER_KEYS, importanceOf, weightOfImportance, GEAR_SLOTS, tagUnits, WEAPON_EXCLUDES, MELEE_SKILLS, WEAPON_MUST_HAVE, flagLabel, getRules, RESIST_KEYS, RESIST_CAP_LIMITS, resistCapsFor, templateFrom, settingsDiff, bagLabel, toOptItem, totalsOf, fcCapFor, CASTING_SCHOOLS, compileGoals, goalsActive, GOAL_LEFTOVERS, LEFTOVER_GROUPS, LEFTOVER_LABELS, GOAL_RANKS_MAX, GOAL_RANK_SIZE_MAX } from "../vault-lib.mts";
+import { NOBODY, PROP_LABELS, NOT_BUILDER_KEYS, importanceOf, weightOfImportance, GEAR_SLOTS, tagUnits, WEAPON_EXCLUDES, MELEE_SKILLS, WEAPON_MUST_HAVE, flagLabel, getRules, RESIST_KEYS, RESIST_CAP_LIMITS, resistCapsFor, templateFrom, settingsDiff, bagLabel, toOptItem, totalsOf, fcCapFor, CASTING_SCHOOLS, compileGoals, goalsActive, GOAL_LEFTOVERS, LEFTOVER_GROUPS, LEFTOVER_LABELS, GOAL_RANKS_MAX, GOAL_RANK_SIZE_MAX, STRATEGY_HELP, FEWEST_HELP } from "../vault-lib.mts";
 import { delayText, heldWeapon, ssiShareOf, swingOf, type SwingResult } from "../swing.mts";
 import { BUILTIN_PREFIX, characterBuffs, characterEntry, characterProfile, findTemplate, goalSsiCap, planBuild, specFromProfile, templateLabel, templateName, templateRefs, templateSettings, templateSpecFrom, type PlannedBuild } from "../build-spec.mts";
 import type { FcCap, Goals, ResistCap, RunBuffs, RunSettings, Character } from "../vault-lib.mts";
@@ -730,7 +730,9 @@ function goalsSection(): HTMLElement {
         const { ownWeights: _own, ...rest } = g;
         setGoals(rest, "#b-goals-h");
       } });
-      return [el("p", { class: "help b-goals-off" }, txt("Using your own weights."), " ", again)];
+      // the strategy and fewest changes are the goals' too, so they are off with them
+      const off = [g.strategy === "strict" ? "Strict order" : "", g.fewestChanges ? "Change as few pieces as possible" : ""].filter(Boolean);
+      return [el("p", { class: "help b-goals-off" }, txt(off.length ? `Using your own weights, so ${andList(off)} ${off.length === 1 ? "is" : "are"} off.` : "Using your own weights."), " ", again)];
     }
     const rows = goalRows(g), last = g.ranks.length, row = (k: string): string => `.b-goal[data-key="${CSS.escape(k)}"]`, strict = g.strategy === "strict";
     const items = rows.map((r, i) => {
@@ -748,7 +750,7 @@ function goalsSection(): HTMLElement {
       return box("li", { class: `b-goal${r.linked ? " linked" : ""}`, "data-key": r.key }, link,
         box("span", { class: "b-goal-name", tabindex: "-1" }, txt(`${r.rank}.`, "b-goal-rank"), txt(nm)),
         // what a goal counts matters only in Best value: Strict order compares the ranks one by one
-        ((s) => (s ? txt(s, "t-sm muted b-goal-counts") : null))(strict ? goalCapText(g, r.key).replace(/^ · /, "") : `counts ${r.counts}${goalCapText(g, r.key)}`),
+        ((s) => (s ? txt(s, "t-sm muted b-goal-counts") : null))([strict ? "" : `counts ${r.counts}`, goalCapText(g, r.key)].filter(Boolean).join(" · ")),
         rowActions([move(-1, "up"), move(1, "down"), { label: `Remove goal: ${nm}`, icon: "close", onClick: () => setGoals(removeGoal(g, r.key), next ? `${row(next.key)} .rowact > :last-child` : "#b-addgoal") }]),
         r.key === "ssi" ? swingGoal(g) : null);
     });
@@ -771,11 +773,11 @@ function goalsSection(): HTMLElement {
       onChange: (v) => { const { fewestChanges: _f, ...rest } = g; setGoals(v ? { ...rest, fewestChanges: true } : rest, "#b-fewest"); } });
     return [el("h3", { class: "t-md strong", id: "b-goals-h", tabindex: "-1" }, "What should this suit be best at?"),
       box("div", { class: "field b-strategy" }, el("span", { class: "label" }, "Strategy"), strategy),
-      el("p", { class: "help", id: "b-strategy-help" }, txt(strict ? "Most important first. A higher goal is never given up for a lower one." : "Most important first. Higher goals count more, but a small loss up top can buy a big gain lower down.")),
+      el("p", { class: "help", id: "b-strategy-help" }, txt(`Most important first. ${STRATEGY_HELP[strict ? "strict" : "value"]}`)),
       rows.length ? box("ol", { class: "b-goals", "aria-labelledby": "b-goals-h" }, ...items) : el("p", { class: "t-sm muted" }, txt("No goals yet.")), add.disabled ? tipWrap(add, `Goals hold at most ${GOAL_RANKS_MAX} ranks.`) : add,
       box("div", { class: "field b-leftover" }, el("span", { class: "label" }, "After that, put spare points into:"), leftover,
         el("p", { class: "help" }, txt(spareHelp))),
-      box("div", { class: "field b-fewest" }, fewest.root, el("p", { class: "help" }, txt("Finally, among suits that do as well, keep the most of what you wear now."))),
+      box("div", { class: "field b-fewest" }, fewest.root, el("p", { class: "help" }, txt(FEWEST_HELP[strict ? "strict" : "value"]))),
       fine.root];
   });
   sec.hidden = !stored;
@@ -787,16 +789,16 @@ function focusGoalArrow(key: string, word: "up" | "down"): void {
   const b = word === "up" ? up : down, other = word === "up" ? down : up;
   (b && !b.disabled ? b : other && !other.disabled ? other : x)?.focus();
 }
-// What a goal row says after what it counts: its cap ("· max 45"); for Swing speed the SSI its swing needs, the goal's step
-// (a swing time's cap) or the fastest step of the weapon worn now ("· needs SSI 51"), else the cap.
+// What a goal row says after what it counts: its cap ("max 45"); for Swing speed the SSI its swing needs, the goal's step
+// (a swing time's cap) or the fastest step of the weapon worn now ("needs SSI 51"), else the cap; "" with none.
 function goalCapText(g: Goals, k: string): string {
   if (k === "ssi") {
     const cap = ssiGoalCap(g), fastest = g.swing?.mode !== "every" ? wornSwing()?.sw.steps.at(-1) : undefined;
-    if (cap != null) return ` · needs SSI ${cap}`;
-    if (fastest) return ` · needs SSI ${fastest.ssi}`;
+    if (cap != null) return `needs SSI ${cap}`;
+    if (fastest) return `needs SSI ${fastest.ssi}`;
   }
   const cap = capFor(k);
-  return cap != null ? ` · max ${cap}` : "";
+  return cap != null ? `max ${cap}` : "";
 }
 // The SSI a swing-time goal stops counting at for the weapon worn now (build-spec.mts goalSsiCap), null for the fastest swing.
 function ssiGoalCap(g: Goals): number | null {

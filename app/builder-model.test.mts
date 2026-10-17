@@ -13,7 +13,7 @@ import {
   propName, withStoredRoots, knobError, firstKnobError, knobFromServerError, ruleValueError,
   resistOutcome, locationCrumbs, changeRows, gaugeRows, gaugeNote, worse, gaugeTrack, changesSummary, afterChange, compareModel, hiddenRowsNote, toggleCompare, runAutoLabel, runBadges, plural, KNOB_RANGES,
   resistCapError, withResistCap, capNote, resistMinimumText, capsLine, anyOverridden, effectiveFloor, floorCapWarning, pruneResistCaps,
-  weaponsChipText, weaponMustHaveChipText, toggleWeapon, weaponName, withBuffs, pastCapNotes, runSettingsDiff, weightTradeoff, newWeight, editedValue, NEW_WEIGHT_IMPORTANCE, templateBuffsLine, sourceTitle, who, rarityHelp, rarityTotal, rarityDetail, strictDetail, shareRows, needStatus, shownImportance,
+  weaponsChipText, weaponMustHaveChipText, toggleWeapon, weaponName, withBuffs, pastCapNotes, runSettingsDiff, weightTradeoff, newWeight, editedValue, NEW_WEIGHT_IMPORTANCE, templateBuffsLine, sourceTitle, who, rarityHelp, rarityTotal, rarityDetail, strictDetail, stageProgress, shareRows, needStatus, shownImportance,
   latestRun, latestShownRun, otherCharactersRuns, gearChangedSince, suggestTemplates, SUGGEST_MIN_SKILL, needsLine, topWeights, poolLine, searchLine,
   goalWord, goalRows, goalSummary, moveGoal, linkGoal, removeGoal, addGoal, goalOutcomes, goalTrades, goalVerdict, swingOutcome, tradeText, spareLine, applyAction,
   type Knobs, type ChangeRow,
@@ -393,11 +393,18 @@ test("[fast] rarity preference: help line, settings change, rarity total and the
 });
 
 test("[fast] builder model: a strict-order build's proof in words, and the goals line naming the strategy and fewest changes (issue #292)", () => {
-  const stages = [{ keys: null, value: 0 }, { keys: ["ssi"], value: 31 }, { keys: ["hci", "dci"], value: 90 }, { keys: ["luck"], value: 120 }];
-  assert.equal(strictDetail({ stages, proven: 4 }), "Strict order: each goal proven best in turn, most important first");
-  assert.equal(strictDetail({ stages, proven: 2 }), "Strict order: proven through Swing speed; from Hit chance = Defense chance on it is the best found, not proven");
-  assert.equal(strictDetail({ stages, proven: 1 }), "Strict order: proven through your requirements; from Swing speed on it is the best found, not proven");
-  assert.equal(strictDetail({ stages, proven: 0 }), "Strict order: the best found, not proven; raise the time budget to prove it");
+  const stages = [{ kind: "requirements", keys: null, value: 0 }, { kind: "goal", keys: ["ssi"], value: 31 }, { kind: "goal", keys: ["hci", "dci"], value: 90 }, { kind: "changes", keys: null, value: 3 }, { kind: "spare", keys: ["luck"], value: 120 }];
+  assert.equal(strictDetail({ stages, proven: 5 }, "exact"), "Strict order: each goal proven best in turn, most important first");
+  assert.equal(strictDetail({ stages, proven: 2 }, "exact"), "Strict order: proven best up to Swing speed; from Hit chance and Defense chance on, the best found (not proven)");
+  assert.equal(strictDetail({ stages, proven: 1 }, "exact"), "Strict order: proven for your requirements only; from Swing speed on, the best found (not proven)");
+  assert.equal(strictDetail({ stages, proven: 3 }, "exact"), "Strict order: proven best up to Hit chance and Defense chance; from fewest changes on, the best found (not proven)");
+  assert.equal(strictDetail({ stages, proven: 0 }, "exact"), "Strict order: the best found, not proven; raise the time budget to prove it");
+  assert.equal(strictDetail({ stages, proven: 0 }, "heuristic"), "Strict order: the best found, not proven; turn on Exact search to prove it", "a heuristic build has no budget to raise");
+  // the progress card names what is being solved
+  assert.deepEqual(stages.map(stageProgress), ["Strict order: meeting your requirements", "Strict order: getting Swing speed as high as it goes", "Strict order: getting Hit chance and Defense chance as high as they go",
+    "Strict order: changing as few pieces as possible", "Strict order: spare points"]);
+  assert.equal(stageProgress({ kind: "softPartial", keys: null }), "Strict order: getting closer to soft requirements");
+  assert.equal(stageProgress({ kind: "tags", keys: ["tagPenalty"] }), "Strict order: avoiding tagged pieces");
   const g: Goals = { ranks: [["ssi"], ["hci"]], leftover: "luck" };
   assert.deepEqual(settingsDiff({ goals: g }, { goals: { ...g, strategy: "strict", fewestChanges: true } }), ["goals: Swing speed › Hit chance, spare points to luck, strict order, fewest changes"]);
   assert.deepEqual(settingsDiff({ goals: g }, { goals: { ...g, strategy: "value" } }), [], "Best value named is Best value");
