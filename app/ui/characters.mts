@@ -35,6 +35,7 @@ function rosterRows(): RosterRow[] {
       resists: c ? resistFigures(name, wornSet(name)) : null,
       worn: (state.inv!.worn[name] || []).length,
       lowDurability: lowDurabilityCount(state.inv!.worn[name] || []),
+      label: characterLabel(state.profiles, name),
     };
   });
 }
@@ -162,7 +163,7 @@ function renderRoster(): void {
   t.querySelector("thead th:last-child span")?.classList.add("sr");
   const tbody = t.querySelector("tbody")!;
   if (!rows.length) tbody.append(el("tr", {}, el("td", { colspan: ROSTER_COLS.length, class: "no-match" },
-    box("div", { class: "empty-state" }, el("h2", {}, "No characters match"), txt(`None of the ${plural(all.length, "character")} has “${query.trim()}” in their name.`, "muted"),
+    box("div", { class: "empty-state" }, el("h2", {}, "No characters match"), txt(`None of the ${plural(all.length, "character")} has “${query.trim()}” in their name or build label.`, "muted"),
       button({ label: "Clear search", onClick: () => { search.input.value = ""; query = ""; renderRoster(); search.input.focus(); } })))));
   const cap = rows[0]?.resists?.[0]?.cap ?? all.find((r) => r.resists)?.resists?.[0]?.cap ?? 70;
   const foot = box("div", { class: "tbl-foot" }, txt(rows.length === all.length ? plural(all.length, "character") : `${rows.length} of ${plural(all.length, "character")}`),

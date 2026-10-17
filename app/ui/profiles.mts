@@ -25,16 +25,18 @@ export function setCharacterBuffs(name: string, buffs: Partial<BuildBuffs>): voi
   else p.characters[name] = characterEntry(characterProfile(p, name, state.builtinTemplates), next);
   void putProfiles().then((r) => { if (!r.ok) toast(r.error!, "bad"); });
 }
-// A character's build label (issue #336) saved: trimmed, and blank removes it. A character with no saved settings yet
-// gets the ones the Suit Builder shows it, as with buffs. A refused save puts the profile back and says why in a toast.
+// A character's build label (issue #336) saved through PUT /api/profiles/label, which changes only that label in the
+// file on the server, so this page's copy of the rest never goes with it. The page's copy then takes the label (or the
+// entry the server made for a character with no saved settings). A refused save says why in a toast.
 export async function setCharacterLabel(name: string, label: string): Promise<boolean> {
-  const p = state.profiles!, had = Object.hasOwn(p.characters, name), before = had ? p.characters[name]! : undefined, text = label.trim();
-  if (!had && !text) return true;
-  const { label: _old, ...entry }: CharacterEntry = before ?? characterEntry(characterProfile(p, name, state.builtinTemplates), characterBuffs(p, name));
-  p.characters[name] = text ? { ...entry, label: text } : entry;
-  const r = await putProfiles();
-  if (r.ok) return true;
-  if (before) p.characters[name] = before; else delete p.characters[name];
-  toast(r.error!, "bad");
-  return false;
+  let r: { ok: boolean; error?: string; entry?: CharacterEntry | null };
+  try { r = await api<{ ok: boolean; error?: string; entry?: CharacterEntry | null }>("/api/profiles/label", { method: "PUT", body: { character: name, label } }); }
+  catch (e) { r = { ok: false, error: (e as Error).message }; }
+  if (!r.ok) { toast(r.error!, "bad"); return false; }
+  const chars = state.profiles!.characters, mine = Object.hasOwn(chars, name) ? chars[name]! : undefined;
+  if (!r.entry) return true;
+  if (!mine) chars[name] = r.entry;
+  else if (typeof r.entry.label === "string") mine.label = r.entry.label;
+  else delete mine.label;
+  return true;
 }

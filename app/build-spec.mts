@@ -199,8 +199,23 @@ export function characterBuffs(profiles: ProfilesV3, name: string): BuildBuffs {
   return buildSpec({ buffs: saved?.spec?.buffs }).buffs;
 }
 
-// A character's build label, trimmed; null for none. LABEL_MAX is the longest one profiles.json takes.
+// A character's build label, trimmed; null for none. LABEL_MAX is the longest one profiles.json takes, and the schema's
+// pattern refuses control characters and line breaks, as labelError does.
 export const LABEL_MAX = 40;
+export function labelError(v: unknown): string | null {
+  if (typeof v !== "string") return "label must be text";
+  if (v.trim().length > LABEL_MAX) return `label must be at most ${LABEL_MAX} characters`;
+  if (/[\u0000-\u001f\u007f]/.test(v)) return "label must be one line of text, with no control characters";
+  return null;
+}
+// Labels are written only by PUT /api/profiles/label, which changes one character's label on the server: a whole-file
+// save keeps each character's stored label, so a page holding an older copy of the file never drops or reverts one.
+export function keepLabels(next: Pick<ProfilesV3, "characters">, stored: Pick<ProfilesV3, "characters">): void {
+  for (const [name, entry] of Object.entries(next.characters)) {
+    const label = Object.hasOwn(stored.characters, name) ? stored.characters[name]!.label : undefined;
+    if (typeof label === "string") entry.label = label; else delete entry.label;
+  }
+}
 export function characterLabel(profiles: Pick<ProfilesV3, "characters"> | null | undefined, name: string): string | null {
   const saved = profiles && Object.hasOwn(profiles.characters || {}, name) ? profiles.characters[name] : undefined;
   return typeof saved?.label === "string" && saved.label.trim() ? saved.label.trim() : null;

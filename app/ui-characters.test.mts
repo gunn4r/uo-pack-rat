@@ -1,6 +1,6 @@
 // ui-characters.test.mts — the Characters screen's pure logic (`app/ui/sheet.mts`'s formatters, `app/ui/roster.mts`).
 //
-// the Characters screen's pure logic: `app/ui/sheet.mts`'s formatters (the "cap +N" badge from a raw value past its cap, the at-cap meter, an attribute's "(own + gear)" split including a negative bonus, "now → after", a slot tile's two key numbers — nearest their shard cap, uncapped properties against 100, skill bonuses as "Magery +20", bookkeeping keys never shown and a power scroll's `psLevel` never offered on the Properties card — the tag tones, pluralising, and the durability watch: a piece low at 20% of its max or 10 points, never with a max of 0, at or past its max, or with no durability line, the count and its summary sentence) and `app/ui/roster.mts`'s search and sort (by name either way, by a resist's capped value or scan time with an unscanned character last, ties by name) and the sheet's scan summary (`sheetMeta`: the count of root containers the character's scans opened, backpack, bank and the containers inside others left out, its `#/containers/<Name>` link, and no count at none), and the worn-gear tiles holding every gear slot exactly once (issue #218), and the character list (`characterNames`: scanned, then profiled, once each, never No character's pseudo name, issue #12). No DOM. All `[fast]`.
+// the Characters screen's pure logic: `app/ui/sheet.mts`'s formatters (the "cap +N" badge from a raw value past its cap, the at-cap meter, an attribute's "(own + gear)" split including a negative bonus, "now → after", a slot tile's two key numbers — nearest their shard cap, uncapped properties against 100, skill bonuses as "Magery +20", bookkeeping keys never shown and a power scroll's `psLevel` never offered on the Properties card — the tag tones, pluralising, and the durability watch: a piece low at 20% of its max or 10 points, never with a max of 0, at or past its max, or with no durability line, the count and its summary sentence) and `app/ui/roster.mts`'s search and sort (by name either way, by a resist's capped value or scan time with an unscanned character last, ties by name) and the sheet's scan summary (`sheetMeta`: the count of root containers the character's scans opened, backpack, bank and the containers inside others left out, its `#/containers/<Name>` link, and no count at none), and the worn-gear tiles holding every gear slot exactly once (issue #218), and the character list (`characterNames`: scanned, then profiled, once each, never No character's pseudo name, issue #12). No DOM. All `[fast]`. The roster search also matches a build label (issue #336).
 //
 // Lives in app/ rather than app/ui/ for the reason app/ui-render.test.mts gives.
 import "../scripts/localstorage-shim-for-tests.mts";   // a localStorage stub for the page modules below; none reads it at module scope today (app/ui/store.mts no longer does)
@@ -138,6 +138,11 @@ test("[fast] roster: the search matches anywhere in the name, ignoring case and 
   assert.deepEqual(names(rosterView(ROWS, "D", { key: "name", dir: 1 })), ["Aldo", "Dorran"]);
   assert.deepEqual(names(rosterView(ROWS, "zzz", { key: "name", dir: 1 })), []);
   assert.equal(rosterView(ROWS, "", { key: "name", dir: 1 }).length, 3);
+});
+// Issue #336: the build label is searched too.
+test("[fast] roster: the search matches a build label as well as the name", () => {
+  const rows = ROWS.map((r) => (r.name === "Aldo" ? { ...r, label: "Main Crafter" } : r));
+  assert.deepEqual(names(rosterView(rows, "crafter", { key: "name", dir: 1 })), ["Aldo"]);
 });
 
 test("[fast] roster: stat triples join with middots and dash a missing number", () => {

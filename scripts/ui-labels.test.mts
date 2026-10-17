@@ -1,6 +1,6 @@
 // ui-labels.test.mts — [slow]: character build labels (issue #336) in the real Electron window.
 //
-// `[slow]`: character build labels (issue #336) in the real Electron window, over the demo scans with Kestrel at Archery 100 and Tactics 90: the Characters roster's "No build label" with Add label, ↵ saving the label into profiles.json and the focus back on the line's Edit, Esc putting an edit back, a blank Save removing the label; the Suit Builder's character picker showing the label in place of the top skills (the button and its option), the search matching a label and the skills behind it, the top skills for a character with no label; and no sideways scroll at 420 px with the label box open or the picker showing a label.
+// `[slow]`: character build labels (issue #336) in the real Electron window, over the demo scans with Kestrel at Archery 100 and Tactics 90: the Characters roster's "No build label" with Add label, ↵ saving the label into profiles.json and the focus back on the line's Edit, the top-bar search finding a label, Esc putting an edit back, a blank Save removing the label; the Suit Builder's character picker showing the label in place of the top skills (the button and its option), the search matching a label and the skills behind it, the top skills for a character with no label; and no sideways scroll at 420 px with the label box open or the picker showing a label.
 //
 // Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
 import test from "node:test";
@@ -64,6 +64,12 @@ test("[slow] build labels: added, edited and removed on the Characters page, sho
     assert.equal(saved(), "Archer-Bard", "trimmed, in profiles.json");
     assert.equal(await active(), "Edit Kestrel's build label", "the focus back on the line's button");
     assert.match(await page.locator('#char-table tr[data-name="Dorran"] .char-label').innerText(), /^No build label/);
+    // The top-bar search matches the label.
+    await page.fill("#char-q", "bard");
+    await page.waitForFunction(() => [...document.querySelectorAll("#char-table tbody tr[data-name]")].map((r) => r.getAttribute("data-name")).join() === "Kestrel", undefined, { timeout: 10_000 });
+    await page.fill("#char-q", "");
+    await page.locator('#char-table tr[data-name="Dorran"]').waitFor();
+    await page.getByRole("button", { name: "Edit Kestrel's build label" }).focus();
 
     // Esc puts an edit back; a blank Save removes the label.
     await page.keyboard.press("Enter");
