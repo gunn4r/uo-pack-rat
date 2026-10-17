@@ -1,5 +1,5 @@
 // diagnostics.mts — settings that work against a build, each with the change that would fix it (issue #217): a requirement no suit in the pool can reach, hard requirements the suit could reach one at a time but not together, a weight that swamps the rest, and a required weapon property no weapon has. Pure and browser-safe. The server sends the floor ones with POST /api/optimize before the search starts; the worker attaches the full list to every result, on both solver paths, so a saved run keeps it.
-import { propertyReach, DEFAULT_OPTIONAL_SLOTS, DEFAULT_SLOTS } from "./mip.mts";
+import { propertyReach, hardFloorSpread, HARD_FLOOR_BONUS_MAX, DEFAULT_OPTIONAL_SLOTS, DEFAULT_SLOTS } from "./mip.mts";
 import { RESIST_KEYS, RESIST_SKILL_KEY, SLOT_LABELS, flagLabel, importanceOf, liftedMin, propName, roundImportance, type OptItem, type ResistCap, type ResistStep } from "./vault-lib.mts";
 import { delayText, heldWeapon, stepCredit, swingSeconds, type Held, type SsiStepPoint, type SwingResult } from "./swing.mts";
 import type { Diagnostic, DiagnosticAction, ScoreShare } from "./runs-types.mts";
@@ -72,6 +72,30 @@ export function preBuildDiagnostics(input: DiagnosticsInput): Diagnostic[] {
       values: { floor, best }, actions: [...lower(k, best), ...(isHard ? [{ kind: "makeSoft", property: k } as const] : [])] });
   }
   return out;
+}
+
+// requirement_outweighed (issue #311): the weights and soft-floor bonuses can move a score by more than half the largest
+// hard-floor bonus (mip.mts HARD_FLOOR_BONUS_MAX), so the build runs at that bonus and a suit missing a requirement could
+// still win. Said before the search and kept on the result. It names the largest part: the soft-floor bonus (no action),
+// or the weight moving the score most. Set weight offers that one weight at the importance that brings the bound under the
+// cap with every other part held, rounded toward zero so it never lands past the line; with no such value (the rest alone
+// is too much, or it rounds to 0) there is no action.
+export function requirementScaleDiagnostics(input: DiagnosticsInput): Diagnostic[] {
+  const { pools = {}, current = {}, optionalSlots = DEFAULT_OPTIONAL_SLOTS, slots = DEFAULT_SLOTS, profile } = input;
+  const sp = hardFloorSpread(profile, pools, current, optionalSlots, slots);
+  if (!sp) return [];
+  const parts = Object.entries(sp.weights), weightsTotal = parts.reduce((n, [, v]) => n + v, 0), room = (HARD_FLOOR_BONUS_MAX - 1) / 2;
+  if (sp.soft + weightsTotal <= room) return [];
+  const [k, part] = parts.reduce<[string, number] | [null, number]>((best, [d, v]) => (v > best[1] ? [d, v] : best), [null, 0]);
+  if (!k || sp.soft >= part) {
+    return [{ code: "requirement_outweighed", level: "warn", message: "Your soft requirements' bonus is so large that a requirement could lose to them. Lower the bonus.", values: { spread: sp.soft + weightsTotal, room }, actions: [] }];
+  }
+  const w = num(obj(profile.weights)[k]) ?? 0, fit = room - sp.soft - (weightsTotal - part);
+  // the importance at which this weight's part fits, toward zero at roundImportance's steps (whole from 10, tenths below)
+  const exact = fit > 0 ? importanceOf(k, w * fit / part) : 0, suggested = Math.abs(exact) >= 10 ? Math.trunc(exact) : Math.trunc(exact * 10) / 10;
+  return [{ code: "requirement_outweighed", level: "warn", property: k,
+    message: `Your weights are so large that a requirement could lose to them, ${propName(k)} most of all. Scale the weights down.`,
+    values: { weight: w, spread: sp.soft + weightsTotal, room, ...(suggested !== 0 ? { suggested } : {}) }, actions: suggested !== 0 ? [{ kind: "setWeight", property: k, value: suggested }] : [] }];
 }
 
 // The weapon properties a build requires (pool `weaponMustHave`, issue #214), said before the search and kept on the result: weapon_missing_flag for each locked slot whose worn weapon lacks one (the lock wins, so it stays; no action, since none unlocks a slot), and no_weapon_with_flag when no weapon in the pool carries them all (the suit is built without one). `kept` lists each such slot with its weapon and the properties it lacks.
