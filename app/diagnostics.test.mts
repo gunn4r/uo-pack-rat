@@ -69,7 +69,7 @@ test("[fast] a floor exactly at the bound is reachable: no diagnostic, and the M
 
 test("[fast] a floor one above the bound: floor_unreachable with the best possible; hard offers Lower and Make soft, soft only Lower", () => {
   const [hard] = preBuildDiagnostics({ pools: ssiPools, ...ssiSlots, profile: ssiProfile(36) });
-  assert.deepEqual(hard, { code: "floor_unreachable", level: "warn", property: "ssi", message: "Swing speed increase 36 can't be reached with your inventory (best possible: 35).",
+  assert.deepEqual(hard, { code: "floor_unreachable", level: "warn", property: "ssi", message: "Swing speed 36 can't be reached with your inventory (best possible: 35).",
     values: { floor: 36, best: 35 }, actions: [{ kind: "setFloor", property: "ssi", value: 35 }, { kind: "makeSoft", property: "ssi" }] });
   const soft = preBuildDiagnostics({ pools: ssiPools, ...ssiSlots, profile: ssiProfile(36, { hardFloors: [] }) });
   assert.deepEqual(soft.map((d) => [d.level, d.actions]), [["info", [{ kind: "setFloor", property: "ssi", value: 35 }]]]);
@@ -90,7 +90,7 @@ test("[fast] best possible is in the player's terms: the cap, the Resisting Spel
   assert.deepEqual(resultDiagnostics({ pools: res, ...ssiSlots, profile: resist(40), result: { totals: { after: { physResist: 0 } } } }), []);
   // Divine Fury's +10 SSI: the player's floor of 60 is 50 from gear; the pool's 35 is 45 with the buff
   const [ssi] = preBuildDiagnostics({ pools: ssiPools, ...ssiSlots, profile: ssiProfile(50, { caps: { ssi: 50 }, buffs: { floors: { ssi: 60 } } }) });
-  assert.deepEqual([ssi!.values, ssi!.message], [{ floor: 60, best: 45 }, "Swing speed increase 60 can't be reached with your inventory (best possible: 45)."]);
+  assert.deepEqual([ssi!.values, ssi!.message], [{ floor: 60, best: 45 }, "Swing speed 60 can't be reached with your inventory (best possible: 45)."]);
 });
 
 // Issue #265: a suit's own Resisting Spells bonus lifts the minimum (resistSteps), so a floor only that lift meets is in reach.
@@ -158,8 +158,8 @@ test("[fast] floor_unreachable comes out of both solver paths, and a met floor r
 
 test("[fast] the page: an action's words and its edit to the panel's profile", () => {
   const lowerTo = { kind: "setFloor", property: "ssi", value: 55 } as const, soft = { kind: "makeSoft", property: "ssi" } as const;
-  assert.deepEqual(actionWords(lowerTo), { label: "Lower to 55", done: "Lowered ✓", toast: "Swing speed increase requirement lowered to 55. Build again to use it.", stale: "The requirement changed since this build, so this no longer applies." });
-  assert.deepEqual(actionWords(soft), { label: "Make soft", done: "Made soft ✓", toast: "Swing speed increase requirement is soft now. Build again to use it.", stale: "The requirement changed since this build, so this no longer applies." });
+  assert.deepEqual(actionWords(lowerTo), { label: "Lower to 55", done: "Lowered ✓", toast: "Swing speed requirement lowered to 55. Build again to use it.", stale: "The requirement changed since this build, so this no longer applies." });
+  assert.deepEqual(actionWords(soft), { label: "Make soft", done: "Made soft ✓", toast: "Swing speed requirement is soft now. Build again to use it.", stale: "The requirement changed since this build, so this no longer applies." });
   const p: { floors?: Record<string, number>; softFloors?: string[] } = { floors: { ssi: 60 } };
   applyAction(p, lowerTo); applyAction(p, soft); applyAction(p, soft);
   assert.deepEqual(p, { floors: { ssi: 55 }, softFloors: ["ssi"] });

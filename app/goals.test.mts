@@ -1,6 +1,6 @@
 // goals.test.mts — the Suit Builder's goals (issue #292): ranked goals compiled to the weights the solvers score with, and a build from goals being the build from those weights.
 //
-// `[fast]`: `app/vault-lib.mts`'s `compileGoals`: the rank importances (100, 80, 65, 50, 40, 30, 25, 20, 15, then 15 for every later rank), linked properties sharing their rank's, the spare-points group at 5 less any member that is a goal, SSI by swing step on with a Swing speed goal in either swing mode, an empty list, the tag penalty kept, and the same goals always compiling to the same weights; `goalsError` (unknown property names refused, named); a goals change counting as one settings change (`settingsDiff`); `app/build-spec.mts`'s `planBuild` capping SSI at a swing-every-N-s goal's step for the weapon worn now (none for the fastest swing, nor for weights set by hand) and `app/swing.mts`'s step table keeping no point past that cap; every built-in template's weights and swing-step switch equal to what its goals compile to; the step table's credit held at a swing-time goal's cap however the faster swing is reached (a review repro); a run's saved settings planning the same SSI cap and swing as its build; a spec read back recompiling the weights its goals set; and two seeded fuzzes: over small random pools with no character, a build from random goals equals the build from their compiled weights and the brute-force best of the goals' own scoring, and the trade finder (`app/ui/builder-model.mts`'s `goalTrades`) names a trade exactly when a higher goal went down while a lower one went up; and with the demo characters' own swings, random goals ranking Swing speed in both modes, planned as the page plans them, score an oracle that prices each suit's own swing from the formula held at the goal's step, while two broken builds (no credit cap, ranks reversed) each miss it at least once. Issue #302: a run built from goals keeps its Swing speed goal's weapon (name and base speed) and stamina, passing the run-settings check (bad shapes refused), a reopened run plans its cap from them after the weapon is taken off while a run saved before them falls back to the weapon worn now, the goal's cap is stored with the swing (`goalSsi`), and the step credit holds at a goal of exactly SSI 60 as at 59, with 61 past the cap; the settings diff names goals by their goal names.
+// `[fast]`: `app/vault-lib.mts`'s `compileGoals`: the rank importances (100, 80, 65, 50, 40, 30, 25, 20, 15, then 15 for every later rank), linked properties sharing their rank's, the spare-points group at 5 less any member that is a goal, SSI by swing step on with a Swing speed goal in either swing mode, an empty list, the tag penalty kept, and the same goals always compiling to the same weights; `goalsError` (unknown property names refused, named); a goals change counting as one settings change (`settingsDiff`); `app/build-spec.mts`'s `planBuild` capping SSI at a swing-every-N-s goal's step for the weapon worn now (none for the fastest swing, nor for weights set by hand) and `app/swing.mts`'s step table keeping no point past that cap; every built-in template's weights and swing-step switch equal to what its goals compile to; the step table's credit held at a swing-time goal's cap however the faster swing is reached (a review repro); a run's saved settings planning the same SSI cap and swing as its build; a spec read back recompiling the weights its goals set; and two seeded fuzzes: over small random pools with no character, a build from random goals equals the build from their compiled weights and the brute-force best of the goals' own scoring, and the trade finder (`app/ui/builder-model.mts`'s `goalTrades`) names a trade exactly when a higher goal went down while a lower one went up; and with the demo characters' own swings, random goals ranking Swing speed in both modes, planned as the page plans them, score an oracle that prices each suit's own swing from the formula held at the goal's step, while two broken builds (no credit cap, ranks reversed) each miss it at least once. Issue #302: a run built from goals keeps its Swing speed goal's weapon (name and base speed), stamina and stamina before gear, passing the run-settings check (bad shapes refused, and a weapon out of its range not kept), a reopened run plans its cap and its suit's swing from them after the weapon is taken off and DEX drops while a run saved before them falls back to today's, the goal's cap is stored with the swing (`goalSsi`), and the step credit holds at a goal of exactly SSI 60 as at 59, with 61 past the cap; the settings diff names goals by their goal names.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -117,8 +117,8 @@ test("[fast] goals: a swing every N s caps SSI at that step for the weapon worn 
 // A 2.5 s weapon at a reference stamina of 95 needs SSI 1 for 1.5 s; one stamina band up (+40 gear stamina) reaches 1.25 s.
 test("[fast] goals: a swing-time goal's SSI cap holds the step credit too, however the faster swing is reached", () => {
   const pools = { oneHanded: [{ serial: 1, name: "Blade", slot: "oneHanded", props: {}, speed: 2.5 }] }, current = { oneHanded: pools.oneHanded[0]! };
-  const profile = (cap: number) => ({ swing: { stamBase: 80, refStamina: 95, steps: true, ...(cap < 60 ? { goalSsi: cap } : {}) }, weights: { ssi: 1 }, caps: { ssi: cap } });
-  const capped = stepsFor(profile(1), pools, current, { min: 0, max: 40 }).ssiSteps!;
+  const profile = (cap: number, goalSsi?: number) => ({ swing: { stamBase: 80, refStamina: 95, steps: true, ...(goalSsi != null ? { goalSsi } : {}) }, weights: { ssi: 1 }, caps: { ssi: cap } });
+  const capped = stepsFor(profile(1, 1), pools, current, { min: 0, max: 40 }).ssiSteps!;
   assert.ok(capped.length > 0 && capped.every((p) => p.credit <= 1 && p.ssi <= 1), JSON.stringify(capped));
   // with no goal (the formula's 60) the band above keeps its full price, as before goals
   assert.ok(stepsFor(profile(60), pools, current, { min: 0, max: 40 }).ssiSteps!.some((p) => p.credit > 1));
@@ -133,14 +133,15 @@ test("[fast] goals: a run's saved settings plan the same SSI cap and swing as th
   assert.deepEqual([reopened.profile.caps.ssi, reopened.profile.swing], [live.profile.caps.ssi, live.profile.swing]);
 });
 
-// Issue #302: a run built from goals keeps the swing goal's weapon (name and base speed) and the stamina, and a reopened run
-// plans its cap from them, not from the weapon worn now; a run saved before them falls back to the weapon worn now.
+// Issue #302: a run built from goals keeps the swing goal's weapon (name and base speed), the stamina and the stamina before
+// gear, and a reopened run plans its cap and its suit's swing from them, not from the weapon and DEX now; a run saved before
+// them falls back to today's; a weapon outside the run-settings check's range is not kept.
 test("[fast] goals: a run keeps its swing goal's weapon and stamina, and a reopened run plans from them", () => {
   const goals: Goals = { ranks: [["ssi"], ["hci"]], swing: { mode: "every", seconds: 1.5 }, leftover: "luck" }, c = compileGoals(goals);
   const spec = buildSpec({ intent: { weights: c.weights, swingSteps: c.swingSteps, goals } }), worn = wornBy("Kestrel"), character = inv.characters.Kestrel!;
   const axe = heldWeapon(Object.fromEntries(worn.filter((it) => it.slot).map((it) => [it.slot!, toOptItem(it)])))!;
   const live = planBuild(spec, { character, worn });
-  assert.deepEqual(live.snapshot.goalSwing, { weapon: axe.name, speed: axe.speed, stamina: live.profile.swing!.refStamina });
+  assert.deepEqual(live.snapshot.goalSwing, { weapon: axe.name, speed: axe.speed, stamina: live.profile.swing!.refStamina, stamBase: live.profile.swing!.stamBase });
   assert.equal(runSettingsError(live.snapshot, "settings"), null, "a run's settings with the goal's weapon pass the run-settings check");
   assert.equal(live.profile.swing!.goalSsi, 29, "the goal's cap is stored with the swing");
   // the weapon taken off since: the reopened run still plans the goal for the weapon it was built with
@@ -154,7 +155,16 @@ test("[fast] goals: a run keeps its swing goal's weapon and stamina, and a reope
   assert.equal(planBuild(buildSpec({ intent: { ...compileGoals({ ...goals, swing: { mode: "fastest" } }), goals: { ...goals, swing: { mode: "fastest" } } } }), { character, worn }).snapshot.goalSwing?.speed, axe.speed);
   assert.equal(planBuild(buildSpec({ intent: { ...c, goals: { ...goals, ownWeights: true } } }), { character, worn }).snapshot.goalSwing, undefined);
   assert.equal(planBuild(buildSpec({ intent: { ...compileGoals({ ranks: [["hci"]], leftover: "luck" }), goals: { ranks: [["hci"]], leftover: "luck" } } }), { character, worn }).snapshot.goalSwing, undefined);
-  for (const bad of [{ weapon: "Axe", speed: 0, stamina: 90 }, { weapon: "Axe", speed: 3, stamina: -1 }, { weapon: "Axe", speed: 3, stamina: 90, x: 1 }, { weapon: 7, speed: 3, stamina: 90 }])
+  // raw DEX 40 lower since (a stamina band down): the reopened run's suit swing still reads the stamina it was built with
+  const weaker = { ...character, stats: { ...character.stats!, dex: Number(character.stats!.dex) - 40 } };
+  const later = planBuild(specFromRunSettings(st), { character: weaker, worn, race: st.race, goalSwing: st.goalSwing });
+  assert.deepEqual([later.profile.swing?.stamBase, later.profile.swing?.refStamina], [st.goalSwing!.stamBase, st.goalSwing!.stamina]);
+  assert.notEqual(planBuild(specFromRunSettings(before), { character: weaker, worn, race: st.race }).profile.swing?.stamBase, st.goalSwing!.stamBase, "a run saved before #302 reads today's DEX");
+  // a worn weapon outside the run-settings check's range is not kept and caps nothing, and the build still plans
+  const odd = worn.map((it) => (it.serial === axe.serial ? { ...it, extras: { ...it.extras, "weapon speed": 12 } } : it));
+  const oddPlan = planBuild(spec, { character, worn: odd });
+  assert.deepEqual([oddPlan.snapshot.goalSwing, oddPlan.profile.caps.ssi, oddPlan.profile.swing?.goalSsi, runSettingsError(oddPlan.snapshot, "settings")], [undefined, 60, undefined, null]);
+  for (const bad of [{ weapon: "Axe", speed: 0, stamina: 90, stamBase: 80 }, { weapon: "Axe", speed: 3, stamina: -1, stamBase: 80 }, { weapon: "Axe", speed: 3, stamina: 90, stamBase: 80, x: 1 }, { weapon: 7, speed: 3, stamina: 90, stamBase: 80 }, { weapon: "Axe", speed: 12, stamina: 90, stamBase: 80 }, { weapon: "Axe", speed: 3, stamina: 90 }])
     assert.match(runSettingsError({ goalSwing: bad }, "settings")!, /settings\.goalSwing must be/);
 });
 

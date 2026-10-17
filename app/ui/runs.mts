@@ -8,7 +8,7 @@ import { NOBODY, RESIST_KEYS, RESIST_SKILL_KEY, resistMinimum, resistSkillOf, re
 import { planBuild, specFromRunSettings } from "../build-spec.mts";
 import { buffById, plannedProfile, savedBuffs } from "../buffs.mts";
 import type { RunSettings, OptItem, PropMap, Character, EffectiveProfile } from "../vault-lib.mts";
-import { state } from "./store.mts";
+import { state, goalsMeta } from "./store.mts";
 import { $, el, fmtSecs, fmtRunTime, fmtRunDay, toast } from "./dom.mts";
 import { api } from "./api.mts";
 import { bindDrawer, box, txt, button, badge, message, input, confirmDialog, menu, type DrawerHandle } from "./components.mts";
@@ -292,7 +292,7 @@ export async function openRun(id: string, auto = false): Promise<boolean> {
   session.result = run.result;
   // run.ms is `number | null` (a saved run's on-disk shape); run.skipped is whatever that run stored (live
   // arrays or plain counts), which the Solver details' counter reads either way.
-  await commands.renderResult(run.result, current, profileFromSettings(run.settings), name, { ms: run.ms ?? 0, poolSize: run.poolSize, skipped: run.skipped as Record<string, unknown> | undefined, reused: null, ...(goalsActive(run.settings.goals) ? { goals: run.settings.goals, ...(run.settings.goalSwing ? { goalSwing: run.settings.goalSwing } : {}) } : {}) });
+  await commands.renderResult(run.result, current, profileFromSettings(run.settings), name, { ms: run.ms ?? 0, poolSize: run.poolSize, skipped: run.skipped as Record<string, unknown> | undefined, reused: null, ...goalsMeta(run.settings) });
   if (session.openRun !== id) return false;
   paintRunBanner(run, diff);
   return true;

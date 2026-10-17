@@ -123,7 +123,7 @@ function summaryCard(name: string): HTMLElement {
 function goalsMost(g: Goals, open: (tab: string, text: string) => HTMLElement): HTMLElement[] {
   const s = goalSummary(g);
   const row = (r: (typeof s.rows)[number]): HTMLElement => box("li", {}, box("button", { type: "button", class: "b-imp b-imp-goal", "data-k": `g:${r.rank}`, "aria-label": `${r.rank}. ${r.names}, counts ${r.counts}`, onclick: () => commands.openSettingsTab("weights") },
-    txt(`${r.rank}. ${r.names}`), el("span", { class: "b-wbar", style: `--fill:${r.counts}%`, "aria-hidden": "true" }), txt(String(r.counts), "b-imp-n")));
+    el("span", { class: "b-imp-gname" }, txt(`${r.rank}.`, "muted"), ` ${r.names}`), el("span", { class: "b-wbar", style: `--fill:${r.counts}%`, "aria-hidden": "true" }), txt(String(r.counts), "b-imp-n")));
   return [s.rows.length ? box("ol", { class: "b-imps" }, ...s.rows.map(row)) : el("p", { class: "muted" }, "No goals yet."),
     el("p", { class: "t-sm b-imp-spare" }, s.spare), open("weights", s.more ? `+ ${s.more} more ${s.more === 1 ? "goal" : "goals"} in Settings` : "Goals in Settings")];
 }

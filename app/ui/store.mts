@@ -1,6 +1,7 @@
 // ui/store.mts — the shared mutable state object, the bridge connection state, and invStamp.
 // Moved verbatim out of index.html's inline <script type="module"> (Task 4, the page split).
 import type { Item, EffectiveProfile, Goals, GoalSwingWeapon, RunSettings } from "../vault-lib.mts";
+import { goalsActive } from "../vault-lib.mts";
 import type { FlatProfile, ProfilesV3, TemplateMap } from "../build-spec.mts";
 import type { Facets } from "../item-query.mts";
 import type { RulesV1 } from "../schema/types.d.mts";
@@ -70,6 +71,8 @@ export interface BuildMeta {
   goals?: Goals | undefined;   // the goals in force the run was built from (issue #292): the result's "How the goals went"
   goalSwing?: GoalSwingWeapon | undefined;   // the weapon and stamina its Swing speed goal was set for (issue #302); absent in a run saved before it
 }
+// A result's goals meta from its run's settings: the goals in force and the weapon its Swing speed goal was set for; none for weights set by hand.
+export const goalsMeta = (st: RunSettings): Pick<BuildMeta, "goals" | "goalSwing"> => (goalsActive(st.goals) ? { goals: st.goals, ...(st.goalSwing ? { goalSwing: st.goalSwing } : {}) } : {});
 export interface BridgeState {
   online: boolean;
   character: string | null;

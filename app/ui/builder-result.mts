@@ -18,7 +18,7 @@ import { session, commands, provide } from "./builder-session.mts";
 import { RESIST_NAMES, keyProps, tipTarget, verdict, grabAllButton, fetchCard, settingsCheck } from "./builder-parts.mts";
 import { savedBuffs, plannedFromWorn, buffById, buffsDiff, runBuffs, signed } from "../buffs.mts";
 import type { RunBuffs } from "../vault-lib.mts";
-import { slotsOf, paperdollCaps, pastCapNotes, runSettingsDiff, withBuffs, afterChange, compareModel, hiddenRowsNote, changeRows, gaugeRows, worse, gaugeNote, gaugeTrack, changesSummary, nextSwingStep, sharePct, plural, resistOutcome, toggleCompare, propName, capNote, capsLine, anyOverridden, effectiveFloor, resultChecks, shareRows, swingLines, who, rarityDetail, rarityTotal, goalName, goalOutcomes, goalTrades, goalVerdict, swingOutcome, tradeText, spareLine, type ChangeRow, type CompareMember } from "./builder-model.mts";
+import { slotsOf, paperdollCaps, pastCapNotes, runSettingsDiff, withBuffs, afterChange, compareModel, hiddenRowsNote, changeRows, gaugeRows, worse, gaugeNote, gaugeTrack, changesSummary, nextSwingStep, sharePct, plural, resistOutcome, toggleCompare, propName, capNote, capsLine, anyOverridden, effectiveFloor, resultChecks, shareRows, swingLines, who, rarityDetail, rarityTotal, goalOutcomes, goalTrades, goalVerdict, swingOutcome, tradeText, spareLine, type ChangeRow, type CompareMember } from "./builder-model.mts";
 import { heldWeapon, ssiShareOf, swingOf, swingSeconds, SSI_CAP } from "../swing.mts";
 import type { ScoreShare, SwingResult } from "../runs-types.mts";
 import type { OptSuit, OptimizeResult, SavedRunLike, UiPrefs } from "./api-types.mts";
@@ -166,7 +166,7 @@ function whatChanges(rows: ChangeRow[], matter: string[], nextSsi: number | null
 // One gauge: the short name (the full one for a screen reader), the suit's total against its cap and the change in what counts, a track filled to the suit's total with a tick at what is worn now, and its note. A change against the build (builder-model.mts worse) is muted, not red.
 function gauge(r: ChangeRow, nextSsi: number | null, past: string | undefined): HTMLElement {
   const note = gaugeNote(r, nextSsi), t = gaugeTrack(r), loss = worse(r);
-  return box("li", { class: `b-gauge${loss ? " loss" : ""}`, "data-key": r.key },
+  return box("li", { class: `b-gauge${loss ? " loss" : ""}` },
     box("span", { class: "b-gauge-top" }, el("span", { class: "b-gauge-name muted", title: propName(r.key), "aria-hidden": "true" }, label(r.key)), txt(propName(r.key), "sr"), txt(numText(r.suit), "b-gauge-val"), r.cap != null ? txt(`/ ${numText(r.cap)}`, "muted") : null,
       el("span", { class: "spacer" }), txt(r.delta ? signed(r.delta) : "0", `b-gauge-delta ${loss || !r.delta ? "muted" : "tone-ok"}`), txt(`, was ${numText(r.now)}`, "sr")),
     box("span", { class: "b-gauge-track", "aria-hidden": "true" }, el("i", { style: `width:${t.fill}%` }), el("s", { style: `left:${t.tick}%` })),
@@ -228,17 +228,17 @@ function goalsCard(g: Goals, gs: GoalSwingWeapon | null, current: OptSuit, suit:
   const swingIn = (s: OptSuit): ReturnType<typeof swingOf> | null => { const w = heldWeapon(s); return w && prof.swing ? swingOf(w.speed!, prof.swing.stamBase, totalsOf(s), ssiShareOf(prof)) : null; };
   // the weapon the goal was set for and its fastest swing at that stamina: the run's (`gs`, issue #302), else, in a run saved
   // before it, the weapon worn now at the worn stamina
-  const from = swingIn(current), to = swingIn(suit), wornFastest = from ? from.steps.at(-1)?.seconds ?? from.seconds : null;
-  const goalWeapon = gs ? { seconds: swingSeconds(gs.speed, gs.stamina, SSI_CAP), weapon: gs.weapon || null, speed: gs.speed }
-    : from && wornFastest != null ? { seconds: wornFastest, weapon: heldWeapon(current)?.name ?? null, speed: from.speed } : null;
+  const from = swingIn(current), to = swingIn(suit), worn = heldWeapon(current);
+  const set = gs ?? (worn && prof.swing ? { weapon: worn.name, speed: worn.speed!, stamina: prof.swing.refStamina } : null);
+  const goalWeapon = set ? { seconds: swingSeconds(set.speed, set.stamina, SSI_CAP), weapon: set.weapon || null, speed: set.speed } : null;
   const swing = to ? swingOutcome(g, to, heldWeapon(suit)?.name ?? null, !nextSwingStep(to), goalWeapon) : null;
   const trades = goalTrades(g, was.totals, now.totals, caps), rows = goalOutcomes(g, now.totals, caps, swing?.maxed ?? null);
   return box("section", { class: "card b-side-card", id: "b-goals-went", "aria-labelledby": "b-goals-went-h" }, el("h3", { class: "t-md", id: "b-goals-went-h" }, "How the goals went"),
-    box("ol", { class: "b-went" }, ...rows.map((r) => box("li", {}, box("span", { class: "b-went-name" }, txt(`${r.rank}.`, "muted"), txt(goalName(r.key))),
+    box("ol", { class: "b-went" }, ...rows.map((r) => box("li", {}, box("span", { class: "b-went-name" }, txt(`${r.rank}.`, "muted"), txt(propName(r.key))),
       r.key === "ssi" && swing ? box("span", { class: "b-went-swing" }, txt(swing.text, "b-went-val"), txt(` · ${swing.ssi}`, "t-sm muted"), swing.after ? txt(` (${swing.after})`, "t-sm muted") : null)
         : txt(r.cap != null ? `${numText(r.value)} / ${numText(r.cap)}` : numText(r.value), "b-went-val"),
       txt((r.key === "ssi" && swing?.verdict) || goalVerdict(r, trades), `t-sm ${r.maxed ? "tone-ok" : "muted"}`),
-      r.key === "ssi" && perPoint ? txt("Counted per point: the weapon isn't fixed, so the swing time can't be scored by step.", "t-sm muted") : null))),
+      r.key === "ssi" && perPoint ? txt("Swing time isn't counted in steps here, because the suit isn't tied to one weapon.", "t-sm muted") : null))),
     trades.length ? box("ul", { class: "b-trades" }, ...trades.map((t) => el("li", { class: "t-sm" }, txt(`Trade made: ${tradeText(t, from && to ? { from: from.seconds, to: to.seconds } : null)}`)))) : null,
     ((line) => (line ? el("p", { class: "t-sm" }, txt(line)) : null))(spareLine(g, was.totals, now.totals)));
 }

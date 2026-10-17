@@ -5,7 +5,7 @@
 // profiles.json (Automatic's buffs and their numbers move in from ui-prefs.json), and the flat working profile the
 // Suit Builder's panel edits. Pure and browser-safe, like run-settings.mts and evaluate.mts.
 import { buffPlanOf, buffSkillValues, isBuffList, isBuffSkills, isBuffSkillsByCharacter, manualBase, manualPlan, normalizeBuffListsByCharacter, NO_CHARACTER, planBuffs, runBuffs, type BuffPlan } from "./buffs.mts";
-import { RACES, RUN_DEFAULTS, RUN_SETTING_LIMITS, defaultStrLimit, runSettingsError } from "./run-settings.mts";
+import { RACES, RUN_DEFAULTS, RUN_SETTING_LIMITS, defaultStrLimit, isGoalSwing, runSettingsError } from "./run-settings.mts";
 import { compileGoals, copyGoals, goalsActive, migrateProfiles, templateFrom, TEMPLATE_KEYS, toOptItem, totalsOf, type Character, type EffectiveProfile, type Goals, type GoalSwingWeapon, type Item, type Profile, type ProfilesFile, type RarityPreference, type RunBuffs, type RunSettings, type Template, type TemplateSource } from "./vault-lib.mts";
 import { heldWeapon, ssiForTicks } from "./swing.mts";
 
@@ -240,16 +240,19 @@ export function planBuild(spec: BuildSpec, { character, worn, race, suit, goalSw
   const share = (k: string): number => (r.shares[k] || []).filter((x) => !x.outside).reduce((n, x) => n + x.value, 0);
   const stamBase = plan.stats.dex + share("dexBonus") + share("stamPool");
   const wornStam = totalsOf(Object.fromEntries(worn.map((it) => [String(it.serial), toOptItem(it)]))).stamPool || 0;
-  // a Swing speed goal is set for the weapon worn now at the worn suit's stamina (a reopened run's: the ones it was built
-  // with), which the run keeps; a swing every N s caps SSI at what that delay takes there: SSI past it counts nothing, and
-  // the step table reads that cap from `swing.goalSsi` (app/swing.mts stepsFor)
-  const held = heldWeapon(Object.fromEntries(worn.filter((it) => it.slot).map((it) => [it.slot!, toOptItem(it)])));
+  // a Swing speed goal is set for the weapon worn now at the worn suit's stamina, which the run keeps with the stamina before
+  // gear (one out of the run-settings check's range is not kept and caps nothing); a reopened run plans from the ones it
+  // was built with, its suit's swing too. A swing every N s caps SSI at what that delay takes there: SSI past it counts
+  // nothing, and the step table reads that cap from `swing.goalSsi` (app/swing.mts stepsFor)
+  const refStamina = stamBase + wornStam, held = heldWeapon(Object.fromEntries(worn.filter((it) => it.slot).map((it) => [it.slot!, toOptItem(it)])));
   const ssiGoal = goalsActive(intent.goals) && intent.goals.ranks.some((r) => r.includes("ssi"));
-  const gs = !ssiGoal ? null : goalSwing ?? (held ? { weapon: held.name, speed: held.speed!, stamina: stamBase + wornStam } : null);
+  const now = held ? { weapon: held.name, speed: held.speed!, stamina: refStamina, stamBase } : null;
+  const gs = !ssiGoal ? null : goalSwing ?? (isGoalSwing(now) ? now : null);
   const cap = gs ? goalSsiCap(intent.goals, gs.speed, gs.stamina) : null;
   const scored = cap == null ? prof : planBuffs({ ...base, caps: { ...base.caps, ssi: cap } }, character, plan).prof;
   const goalSsi = cap == null ? undefined : scored.caps?.ssi;
-  return { base, plan, profile: { ...scored, swing: { stamBase, refStamina: stamBase + wornStam, steps: !!intent.swingSteps, ...(goalSsi != null ? { goalSsi } : {}) } }, buffs, pool, opts, snapshot: gs ? { ...snapshot, goalSwing: { ...gs } } : snapshot };
+  const swing = gs && goalSwing ? { stamBase: gs.stamBase, refStamina: gs.stamina } : { stamBase, refStamina };
+  return { base, plan, profile: { ...scored, swing: { ...swing, steps: !!intent.swingSteps, ...(goalSsi != null ? { goalSsi } : {}) } }, buffs, pool, opts, snapshot: gs ? { ...snapshot, goalSwing: { ...gs } } : snapshot };
 }
 // The SSI a Swing speed goal of a swing every N s stops counting at (issue #292): the least effective SSI that gives that
 // delay for a weapon of `speedS` at `stamina`; null for the fastest swing, goals not in force, no Swing speed goal, or a

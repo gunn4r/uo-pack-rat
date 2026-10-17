@@ -4,7 +4,7 @@
 // Scripts/) or the UO Alive wiki, which wins where the two disagree (the other's number is said in the entry's note),
 // and carries how sure those numbers are. No DOM: Manual (ui/builder-manual.mts) and Automatic read the same model,
 // and app/buffs.test.mts checks it.
-import { RESIST_KEYS, SKILL_NAMES, TAG_WORDS, minResistAt, skillInSuit, labelOf, effectiveProfile, profileResistCaps, toOptItem, totalsOf } from "./vault-lib.mts";
+import { RESIST_KEYS, SKILL_NAMES, minResistAt, skillInSuit, labelOf, effectiveProfile, profileResistCaps, toOptItem, totalsOf } from "./vault-lib.mts";
 import type { BuffShift, SuitSkill, Character, EffectiveProfile, Item, Profile, PropMap, RunBuffs } from "./vault-lib.mts";
 
 // ---------------------------------------------------------------- the numbers a buff scales with
@@ -460,8 +460,16 @@ export function buffEffectTags(id: string, skills: Skills, stats: Stats | null, 
   const tags = [...new Set([...words(moves, ""), ...words(capMoves, " cap"), ...(b.extra?.(c) || [])])];
   return (tags.length ? tags : ["no suit effect"]).map((text) => ({ text, down: text.endsWith(" down") }));
 }
-// The one word each property an entry moves takes in its tags (vault-lib.mts TAG_WORDS, which the goals' names share).
-export { TAG_WORDS };
+// The one word each property an entry moves takes in its tags (a resist's alone, "fire" + " resist"); a skill bonus is the
+// skill's name. Every key the catalog's effects and caps use has one (app/buffs.test.mts checks).
+export const TAG_WORDS: Readonly<Record<string, string>> = {
+  physResist: "physical", fireResist: "fire", coldResist: "cold", poisonResist: "poison", energyResist: "energy",
+  strBonus: "strength", dexBonus: "dexterity", intBonus: "intelligence",
+  hci: "hit chance", dci: "defense chance", di: "damage", sdi: "spell damage", ssi: "swing speed", fc: "faster casting", castingFocus: "casting focus",
+  hpRegen: "hit point regeneration", stamRegen: "stamina regeneration", manaRegen: "mana regeneration",
+  hitsPool: "hit points", stamPool: "stamina", manaPool: "mana",
+  hitLightning: "hit lightning", hitFireball: "hit fireball", hitHarm: "hit harm", hitMagicArrow: "hit magic arrow", hitDispel: "hit dispel",
+};
 const tagWord = (k: string): string => (k.startsWith("sk:") ? labelOf(k).slice(1).toLowerCase() : TAG_WORDS[k] ?? k);
 
 // ---------------------------------------------------------------- toggling

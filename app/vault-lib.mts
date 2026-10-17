@@ -7,6 +7,7 @@
 // loaded (Node-only, by app/rules.mts) and handed in here with setRules() — this module never reads
 // a rules file itself, so it stays usable in the browser. getRules() throws until setRules() has run:
 // a forgotten call must be loud, not a silent wrong answer.
+import { delayText } from "./swing.mts";
 import { isPseudoCharacter, NOBODY, parseStamp, V1_ADAPTER_VERSION } from "./scan-schema.mts";
 export { isPseudoCharacter, NOBODY };
 import type { RulesV1, ScanV2, ScanV2Adapter } from "./schema/types.d.mts";
@@ -218,23 +219,26 @@ export function getRules(): RulesV1 {
 // fold (the pools) or read off the item (the "extra" columns). `builder` is whether the Suit Builder's weight and
 // requirement rows offer it. `typical` is the span a good suit covers in each property the builder offers: the usual
 // shard cap where there is one (a resist's 70), else what a good suit gathers (typicalRange, and so a weight's
-// importance, read it). The exports below are derived from it.
+// importance, read it). `name` is the property in words wherever the page names it in full (propName), when that is not
+// its full name in sentence case: the goals' words for the long tooltip names, and pools that say what they add up. The
+// exports below are derived from it.
 type PropKind = "number" | "extra";
-interface PropDef<K extends string = string> { key: K; pattern?: RegExp; label: string; full: string; builder: boolean; kind: PropKind; typical?: number }
+interface PropDef<K extends string = string> { key: K; pattern?: RegExp; label: string; full: string; builder: boolean; kind: PropKind; typical?: number; name?: string }
 const tip = (text: string): RegExp => new RegExp(`${text}[^-\\d]*(-?\\d+)`);
 const parsed = <K extends string>(key: K, text: string, label: string, full: string, builder = true): PropDef<K> => ({ key, pattern: tip(text), label, full, builder, kind: "number" });
 const derived = <K extends string>(key: K, label: string, full: string, builder = true): PropDef<K> => ({ key, label, full, builder, kind: "number" });
 const extra = <K extends string>(key: K, label: string, full: string): PropDef<K> => ({ key, label, full, builder: false, kind: "extra" });
 const typ = <K extends string>(def: PropDef<K>, typical: number): PropDef<K> => ({ ...def, typical });
+const named = <K extends string>(def: PropDef<K>, name: string): PropDef<K> => ({ ...def, name });
 export const PROPERTIES = [
   typ(parsed("physResist", "physical resist", "Phys", "Physical Resist"), 70), typ(parsed("fireResist", "fire resist", "Fire", "Fire Resist"), 70),
   typ(parsed("coldResist", "cold resist", "Cold", "Cold Resist"), 70), typ(parsed("poisonResist", "poison resist", "Poison", "Poison Resist"), 70),
   typ(parsed("energyResist", "energy resist", "Energy", "Energy Resist"), 70),
-  typ(parsed("hci", "hit chance increase", "HCI", "Hit Chance Increase"), 45), typ(parsed("dci", "defense chance increase", "DCI", "Defense Chance Increase"), 45),
-  typ(parsed("ssi", "swing speed increase", "SSI", "Swing Speed Increase"), 60), typ(parsed("di", "damage increase", "DI", "Damage Increase"), 100),
+  named(typ(parsed("hci", "hit chance increase", "HCI", "Hit Chance Increase"), 45), "Hit chance"), named(typ(parsed("dci", "defense chance increase", "DCI", "Defense Chance Increase"), 45), "Defense chance"),
+  named(typ(parsed("ssi", "swing speed increase", "SSI", "Swing Speed Increase"), 60), "Swing speed"), named(typ(parsed("di", "damage increase", "DI", "Damage Increase"), 100), "Damage"),
   typ(parsed("lmc", "lower mana cost", "LMC", "Lower Mana Cost"), 40), typ(parsed("lrc", "lower reagent cost", "LRC", "Lower Reagent Cost"), 100),
   typ(parsed("fc", "faster casting", "FC", "Faster Casting"), 2), typ(parsed("fcr", "faster cast recovery", "FCR", "Faster Cast Recovery"), 6),
-  typ(parsed("sdi", "spell damage increase", "SDI", "Spell Damage Increase"), 100),
+  named(typ(parsed("sdi", "spell damage increase", "SDI", "Spell Damage Increase"), 100), "Spell damage"),
   typ(parsed("hpi", "hit point increase", "HP+", "Hit Point Increase"), 25), typ(parsed("hpRegen", "hit point regeneration", "HPR", "Hit Point Regeneration"), 18),
   typ(parsed("stamInc", "stamina increase", "Stam+", "Stamina Increase"), 20), typ(parsed("stamRegen", "stamina regeneration", "SR", "Stamina Regeneration"), 24),
   typ(parsed("manaInc", "mana increase", "Mana+", "Mana Increase"), 20), typ(parsed("manaRegen", "mana regeneration", "MR", "Mana Regeneration"), 30),
@@ -258,9 +262,9 @@ export const PROPERTIES = [
   derived("psLevel", "PS level", "Power scroll level (the skill cap it raises to)", false),
   derived("sotPoints", "SoT pts", "Scroll of Transcendence skill points", false),
   derived("tagPenalty", "Tag penalty", "Penalty for Cursed / Brittle / Antique / Prized tags", false),
-  typ(derived("stamPool", "Stam pool", "Stamina from gear: DEX bonus + Stamina Increase"), 45),
-  typ(derived("manaPool", "Mana pool", "Mana from gear: INT bonus + Mana Increase"), 45),
-  typ(derived("hitsPool", "Hits pool", "Hit points from gear: STR bonus ÷ 2 + Hit Point Increase"), 35),
+  named(typ(derived("stamPool", "Stam pool", "Stamina from gear: DEX bonus + Stamina Increase"), 45), "Stamina from gear and buffs"),
+  named(typ(derived("manaPool", "Mana pool", "Mana from gear: INT bonus + Mana Increase"), 45), "Mana from gear and buffs"),
+  named(typ(derived("hitsPool", "Hits pool", "Hit points from gear: STR bonus ÷ 2 + Hit Point Increase"), 35), "Hit points from gear and buffs"),
   // Columns computed from an item but not stored under item.props (item-query.mts's EXTRA_COLS).
   extra("strReq", "STR req", "Strength Requirement"), extra("weight", "Wt", "Weight (stones)"),
 ] as const;
@@ -380,33 +384,19 @@ const SKILL_SET = new Set(SKILL_NAMES);
 const titleCase = (x: string): string => x.replace(/\b\w/g, (c) => c.toUpperCase());
 export const labelOf = (k: string): string => (k.startsWith("sk:") ? "+" + titleCase(k.slice(3)) : PROP_LABELS[k] || k);
 export const fullOf = (k: string): string => (k.startsWith("sk:") ? `${titleCase(k.slice(3))} skill bonus from items` : PROP_FULL[k] || k);
-// A property in words, as a Suit Builder rule row and a diagnostic name it ("Physical resist", "Hit chance increase"); a summary or badge uses the short label ("Phys", "HCI"). The pools and skill bonuses read better short.
-const POOL_KEYS = new Set(["stamPool", "manaPool", "hitsPool"]);
+// A property in words, wherever the page names it in full (the Suit Builder's goals, weight and requirement rows, the score
+// breakdown, the result's gauges and table, a diagnostic: "Physical resist", "Hit chance", "Stamina increase"; issue #302,
+// one name per property): the registry's `name`, else its full name in sentence case; a skill bonus "Magery skill bonus". A
+// summary or badge uses the short label ("Phys", "HCI").
+const PROP_NAMES: Record<string, string> = Object.fromEntries(NUMBER_PROPS.flatMap((p): Array<[string, string]> => ("name" in p && p.name ? [[p.key, p.name]] : [])));
 export function propName(k: string): string {
-  if (POOL_KEYS.has(k)) return labelOf(k);
   if (k.startsWith("sk:")) return `${labelOf(k).slice(1)} skill bonus`;
-  return fullOf(k).replace(/(?!^)\b([A-Z])([a-z]+)/g, (_m, a: string, b: string) => a.toLowerCase() + b);
+  return PROP_NAMES[k] ?? fullOf(k).replace(/(?!^)\b([A-Z])([a-z]+)/g, (_m, a: string, b: string) => a.toLowerCase() + b);
 }
-// The one word each property a buff moves takes in its tags (a resist's alone, "fire" + " resist"); a skill bonus is the
-// skill's name. Every key the buff catalog's effects and caps use has one (app/buffs.test.mts checks).
-export const TAG_WORDS: Readonly<Record<string, string>> = {
-  physResist: "physical", fireResist: "fire", coldResist: "cold", poisonResist: "poison", energyResist: "energy",
-  strBonus: "strength", dexBonus: "dexterity", intBonus: "intelligence",
-  hci: "hit chance", dci: "defense chance", di: "damage", sdi: "spell damage", ssi: "swing speed", fc: "faster casting", castingFocus: "casting focus",
-  hpRegen: "hit point regeneration", stamRegen: "stamina regeneration", manaRegen: "mana regeneration",
-  hitsPool: "hit points", stamPool: "stamina", manaPool: "mana",
-  hitLightning: "hit lightning", hitFireball: "hit fireball", hitHarm: "hit harm", hitMagicArrow: "hit magic arrow", hitDispel: "hit dispel",
-};
-// A pool and the item property that feeds it, named so the two can't be mixed up.
-const PAIR_WORDS: Readonly<Record<string, string>> = {
-  stamPool: "stamina (total)", stamInc: "stamina bonus", manaPool: "mana (total)", manaInc: "mana bonus", hitsPool: "hit points (total)", hpi: "hit point bonus",
-};
-// A property's name in the Suit Builder's goals, weight rows and score breakdown (issue #302: one name per property), in a
-// sentence ("swing speed", "physical resist", "stamina bonus") and as a row's name ("Swing speed").
-export const goalWord = (k: string): string => { const w = PAIR_WORDS[k] ?? (RESIST_KEYS.includes(k) ? propName(k) : TAG_WORDS[k] ?? propName(k)); return w[0]!.toLowerCase() + w.slice(1); };
-export const goalName = (k: string): string => { const w = goalWord(k); return w[0]!.toUpperCase() + w.slice(1); };
+// A property in a sentence ("swing speed", "hit chance"): propName, lower-cased at the start.
+export const goalWord = (k: string): string => { const w = propName(k); return w[0]!.toLowerCase() + w.slice(1); };
 // A goal as a list names it: Swing speed with its swing time when it has one ("Swing speed every 1.5 s").
-export const goalLabel = (g: Goals, k: string): string => (k === "ssi" && g.swing?.mode === "every" && g.swing.seconds != null ? `${goalName(k)} every ${g.swing.seconds} s` : goalName(k));
+export const goalLabel = (g: Goals, k: string): string => (k === "ssi" && g.swing?.mode === "every" && g.swing.seconds != null ? `${propName(k)} every ${delayText(g.swing.seconds)}` : propName(k));
 
 // The five resists in paperdoll order, with the names the page shows: the long one ("Physical"), the short one
 // ("Phys") and the colour token (--res-phys).
@@ -1658,8 +1648,9 @@ export interface RunSettings {
   goals?: Goals | undefined;   // the goals its weights came from (issue #292); absent for a run built from weights set by hand
   goalSwing?: GoalSwingWeapon | undefined;   // the weapon and stamina a Swing speed goal was set for (issue #302); absent in a run saved before it
 }
-// What a Swing speed goal was set for: the weapon worn when it was built (its name and base speed in seconds) and the stamina.
-export interface GoalSwingWeapon { weapon: string; speed: number; stamina: number }
+// What a Swing speed goal was set for: the weapon worn when it was built (its name and base speed in seconds), the stamina
+// it was worked out at (with the worn suit), and the stamina before gear (raw DEX and the buffs' shares), which the suit's own swing reads.
+export interface GoalSwingWeapon { weapon: string; speed: number; stamina: number; stamBase: number }
 // A run's buffs: which were on, and the numbers they scale with (app/buffs.mts's inputs, Resisting Spells aside).
 export interface RunBuffs { on: string[]; skills: Record<string, number> }
 // What changed between two saved runs' builder settings, as short readable lines (b relative to a).

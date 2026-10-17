@@ -11,7 +11,7 @@ import type { FcCap, Goals, ResistCap, RunBuffs, RunSettings, Character } from "
 import { BUFFS, BUFF_GROUPS, BUFF_INPUTS, buffAvailability, buffById, buffEffectTags, isSchool, gearNeedsText, overrideNote, planBuffs, normalizeBuffs, runBuffs, toggleBuff, buffPlanOf, type Buff, type BuffPlan } from "../buffs.mts";
 import { defaultStrLimit } from "../run-settings.mts";
 import { evaluateSuit } from "../evaluate.mts";
-import { state, invStamp } from "./store.mts";
+import { state, invStamp, goalsMeta } from "./store.mts";
 import type { BuilderJob, BuilderJobUi, FinishedBuild, BuildMeta } from "./store.mts";
 import { $, el, label, full, fmtN, fmtSecs, slotLabel, toast } from "./dom.mts";
 import { promptText } from "./dialog.mts";
@@ -25,7 +25,7 @@ import { putProfiles, setCharacterBuffs } from "./profiles.mts";
 import { session, commands, provide, readControls, type BuilderChange } from "./builder-session.mts";
 import { followJob, progressText, settingsCheck } from "./builder-parts.mts";
 import { characterNames } from "./roster.mts";
-import { needStatus, shownImportance, nextSwingStep, speedText, swingLines, propName, newWeight, editedValue, runSettingsDiff, plural, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistMinimumText, pruneResistCaps, floorCapWarning, weaponsChipText, weaponMustHaveChipText, withStoredRoots, weaponName, toggleWeapon, weightTradeoff, fcCapText, rarityHelp, templateBuffsLine, sourceTitle, who, goalRows, goalName, moveGoal, spareKeys, andList, linkGoal, removeGoal, addGoal, type KnobField } from "./builder-model.mts";
+import { needStatus, shownImportance, nextSwingStep, speedText, swingLines, propName, newWeight, editedValue, runSettingsDiff, plural, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistMinimumText, pruneResistCaps, floorCapWarning, weaponsChipText, weaponMustHaveChipText, withStoredRoots, weaponName, toggleWeapon, weightTradeoff, fcCapText, rarityHelp, templateBuffsLine, sourceTitle, who, goalRows, moveGoal, spareKeys, andList, linkGoal, removeGoal, addGoal, type KnobField } from "./builder-model.mts";
 import type { OptimizeResult, SavedRunLike, OptimizeStartApiResponse, OptimizeCancelApiResponse, UiPrefs } from "./api-types.mts";
 import { prefs } from "./prefs.mts";
 
@@ -734,11 +734,11 @@ function goalsSection(): HTMLElement {
     }
     const rows = goalRows(g), last = g.ranks.length, row = (k: string): string => `.b-goal[data-key="${CSS.escape(k)}"]`;
     const items = rows.map((r, i) => {
-      const nm = goalName(r.key), rank = andList(g.ranks[r.rank - 1]!.map(goalName));
+      const nm = propName(r.key), rank = andList(g.ranks[r.rank - 1]!.map(propName));
       // "=" links to the rank above, unless that rank is full (the most a rank holds, GOAL_RANK_SIZE_MAX)
       const full = !r.linked && i > 0 && g.ranks[r.rank - 2]!.length >= GOAL_RANK_SIZE_MAX;
       const pressed = pill({ label: "=", pressed: r.linked, onToggle: (on) => setGoals(linkGoal(g, r.key, on), `${row(r.key)} .pill`) });
-      if (i) pressed.setAttribute("aria-label", `${nm}: same importance as ${goalName(rows[i - 1]!.key)}`);
+      if (i) pressed.setAttribute("aria-label", `${nm}: same importance as ${propName(rows[i - 1]!.key)}`);
       if (full) pressed.disabled = true;
       const link = !i ? el("span") : full ? tipWrap(pressed, `The rank above already holds ${GOAL_RANK_SIZE_MAX} goals, the most a rank holds.`) : tooltip(pressed, "Same importance as the one above");
       // ↑ and ↓ move the whole rank, so they name every goal in it
@@ -753,14 +753,14 @@ function goalsSection(): HTMLElement {
     });
     // "+ Add a goal" offers the short list (goalChoices) up to the most ranks goals hold; the new row's name takes the focus
     const add = filterChip({ label: "Add a goal", add: true, attrs: { class: "fchip add b-add", id: "b-addgoal", "aria-haspopup": "listbox" } });
-    add.onclick = () => propertyPicker(add, "Add a goal", [], (k) => setGoals(addGoal(g, k), k === "ssi" ? "#b-swing-goal" : `${row(k)} .b-goal-name`), goalChoices(rows.map((r) => r.key)), goalName);
+    add.onclick = () => propertyPicker(add, "Add a goal", [], (k) => setGoals(addGoal(g, k), k === "ssi" ? "#b-swing-goal" : `${row(k)} .b-goal-name`), goalChoices(rows.map((r) => r.key)), propName);
     if (last >= GOAL_RANKS_MAX) add.disabled = true;
     const leftover = segmented({ label: "Spare points", size: "sm", options: GOAL_LEFTOVERS.map((v) => ({ value: v, label: LEFTOVER_LABELS[v] })), value: g.leftover,
       onChange: (v) => setGoals({ ...g, leftover: v as Goals["leftover"] }, `#b-leftover [data-value="${v}"]`) });
     leftover.id = "b-leftover";
     // the help names the group's properties that are not goals: those are the ones spare points go to
-    const spare = spareKeys(g).map(goalName), group = LEFTOVER_GROUPS[g.leftover];
-    const spareHelp = spare.length ? `${spare.join(", ")}: counts a little, after the goals.` : group.length ? `${andList(group.map(goalName))} ${group.length === 1 ? "is already a goal" : "are already goals"}, so spare points add nothing.` : "Nothing past the goals.";
+    const spare = spareKeys(g).map(propName), group = LEFTOVER_GROUPS[g.leftover];
+    const spareHelp = spare.length ? `${spare.join(", ")}: counts a little, after the goals.` : group.length ? `${andList(group.map(propName))} ${group.length === 1 ? "is already a goal" : "are already goals"}, so spare points add nothing.` : "Nothing past the goals.";
     const fine = switchControl({ label: "Show the weights these goals set", checked: fineTune, attrs: { id: "b-finetune" }, onChange: (v) => { fineTune = v; prefs.set({ builderFineTune: v ? "on" : "off" }, { quiet: true }); redraw("weights"); } });
     return [el("h3", { class: "t-md strong", id: "b-goals-h", tabindex: "-1" }, "What should this suit be best at?"),
       el("p", { class: "help" }, txt("Most important first. Higher goals count more, but a small loss up top can buy a big gain lower down.")),
@@ -824,7 +824,7 @@ function weightsSection(): HTMLElement {
     const paints: Array<() => void> = [];
     const readout = el("p", { class: "help b-wreadout", id: "b-wreadout", hidden: "" });
     const rows = keys.map((k) => {
-      const nm = goalName(k), conv = { show: (w: number) => shownImportance(importanceOf(k, w)), store: (n: number) => weightOfImportance(k, n) };
+      const nm = propName(k), conv = { show: (w: number) => shownImportance(importanceOf(k, w)), store: (n: number) => weightOfImportance(k, n) };
       const num = boundNumber(p.weights!, k, `${nm} weight`, k, conv);
       const hover = el("span", { class: "sr", id: `b-wtip-${k.replace(/\W/g, "_")}` });
       const slider = el("input", { type: "range", class: "b-wslider", min: "0", max: "100", step: "5", "aria-label": `${nm} weight slider`, "aria-describedby": hover.id });
@@ -892,7 +892,7 @@ function weightsSection(): HTMLElement {
     const scale = rows.length ? box("div", { class: "b-wscale", "aria-hidden": "true" }, el("span"), el("span"),
       box("span", { class: "b-wmarks" }, ...[["off", 0], ["low", 25], ["some", 50], ["high", 75], ["top", 100]].map(([w, x]) => el("span", { style: `left:${x}%` }, String(w)))), el("span"), el("span")) : null;
     const add = filterChip({ label: "Add weight", add: true, attrs: { class: "fchip add b-add", id: "b-addweight" } });
-    add.onclick = () => propertyPicker(add, "Add weight", Object.keys(p.weights!), (k) => { ownWeights(); p.weights![k] = newWeight(k); redraw("weights"); focusIn("weights", `.rule-row[data-key="${CSS.escape(k)}"] input`, true); }, allPropKeys(), goalName);
+    add.onclick = () => propertyPicker(add, "Add weight", Object.keys(p.weights!), (k) => { ownWeights(); p.weights![k] = newWeight(k); redraw("weights"); focusIn("weights", `.rule-row[data-key="${CSS.escape(k)}"] input`, true); }, allPropKeys(), propName);
     return [el("p", { class: "help", id: "b-weights-help" }, txt(fromGoals ? GOAL_WEIGHTS_HELP : WEIGHTS_HELP)),
       rows.length ? box("div", { class: "b-rules" }, ...rows) : null, scale, readout, add];
   });
@@ -1266,7 +1266,7 @@ function endJob(job: BuilderJob, node?: HTMLElement | null): boolean {
 }
 interface JobFinishInfo { result: OptimizeResult; ms: number; runId: string | null; reused?: SavedRunLike | null | undefined; settings: RunSettings }
 function finishJob(job: BuilderJob, r: JobFinishInfo): void {
-  const meta: BuildMeta = { ms: r.ms, poolSize: job.poolSize, skipped: job.skipped, reused: r.reused || null, ...(goalsActive(r.settings.goals) ? { goals: r.settings.goals, ...(r.settings.goalSwing ? { goalSwing: r.settings.goalSwing } : {}) } : {}) };
+  const meta: BuildMeta = { ms: r.ms, poolSize: job.poolSize, skipped: job.skipped, reused: r.reused || null, ...goalsMeta(r.settings) };
   const finished: FinishedBuild = { name: job.name, result: r.result, current: job.current, profile: job.profile, runId: r.runId || null, meta, settings: r.settings };
   // Switched to another character while it ran: never draw this suit (or its Plan and Grab all) under that
   // character. It waits until its own character is selected again.

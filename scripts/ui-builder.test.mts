@@ -450,7 +450,7 @@ test("[slow] goals: the ranked list, its counts, =, spare points, How the goals 
     assert.doesNotMatch(went, /as high as the gear allows|went to: \S+ −/, "no unproven verdict, and no loss as a destination");
     // built from goals, SSI counted per point is a note under the swing goal, not a warning in Check your settings
     assert.doesNotMatch(await page.locator(".b-head-card").innerText(), /SSI was scored per point/);
-    assert.match(went, /Counted per point: the weapon isn't fixed, so the swing time can't be scored by step\./);
+    assert.match(went, /Swing time isn't counted in steps here, because the suit isn't tied to one weapon\./);
     await page.click('#b-leftover [data-value="melee"]');
     await count("1 change since the last build");
     await page.click('#b-leftover [data-value="luck"]');
@@ -598,7 +598,7 @@ test("[slow] weight scale: the row shows importance with a trade-off hover, and 
       return !!e && new RegExp(w).test(e.textContent ?? "");
     }, want, { timeout: 5_000 });
     assert.equal(await field.inputValue(), "5.56", "the importance as stored, to two decimals");
-    await hover("^At these settings, 1 (DCI|HCI) is worth about 200 Luck\\.$");
+    await hover("^At these settings, 1 (Defense chance|Hit chance) is worth about 200 Luck\\.$");
     await field.fill("2000");
     await hover("^Luck has the highest weight: the other weights are compared with it\\.$");
     await field.fill("");
@@ -623,7 +623,7 @@ test("[slow] weight scale: the row shows importance with a trade-off hover, and 
     await closeSettings(page);
     await block.getByRole("button", { name: `Set Luck to ${to}` }).click();
     assert.equal(await field.inputValue(), to, "the panel's weight is set");
-    await hover("^At these settings, 1 (DCI|HCI) is worth about \\d+ Luck\\.$");
+    await hover("^At these settings, 1 (Defense chance|Hit chance) is worth about \\d+ Luck\\.$");
     assert.match(await page.locator("#b-tpl-state").innerText(), new RegExp(`Luck weight [\\d.]+ → ${to.replace(".", "\\.")}`), "the template badge names the change");
     assert.equal(await block.getByRole("button", { name: "Set ✓" }).isDisabled(), true);
     assert.deepEqual(errors, []);
@@ -649,8 +649,6 @@ test("[slow] What changes: Gauges for what the build asks, Table with every prop
     assert.equal(await view(), "Gauges", "Gauges by default");
     assert.match(await page.locator(".b-chg-head").first().innerText(), /\d+ up/);
     const gauges = (await page.locator(".b-gauge .b-gauge-top > span[title]").evaluateAll((es) => es.map((e) => e.getAttribute("title") ?? ""))).sort();
-    const gaugeKeys = await page.locator(".b-gauge[data-key]").evaluateAll((es) => es.map((e) => e.getAttribute("data-key") ?? ""));
-    assert.equal(gaugeKeys.length, gauges.length);
     assert.ok(gauges.length > 0);
     const loss = page.locator(".b-gauge.loss").first();
     assert.ok(await page.locator(".b-gauge.loss").count(), "the suit gives something up");
@@ -670,12 +668,11 @@ test("[slow] What changes: Gauges for what the build asks, Table with every prop
     assert.ok(rows.some((r) => r[4] === "0"), "an unchanged property is listed too");
     const moved = rows.filter((r) => r[4] !== "0" && !/ resist$/.test(r[0]!)).map((r) => r[0]!);
     assert.ok(gauges.every((g) => moved.includes(g)), "a gauge only for a property that moves");
-    // only what the build asks for: a non-zero weight or a requirement; a pool never beside its bonus (by property key: the
-    // weight rows name a property as the goals do, the gauges and requirement rows by its full name, issue #302)
-    const asked = await page.evaluate(() => [...document.querySelectorAll<HTMLElement>("#b-sec-weights .rule-row[data-key], #b-sec-req .rule-row[data-key]")]
-      .filter((row) => { const i = row.querySelector<HTMLInputElement>("input[type=number]"); return !!i && (!row.closest("#b-sec-weights") || Number(i.value) !== 0); }).map((row) => row.dataset.key ?? ""));
-    assert.ok(gaugeKeys.every((k) => asked.includes(k)), `every gauge is weighted or required: ${gaugeKeys.join(", ")}`);
-    assert.ok(!(gaugeKeys.includes("stamInc") && gaugeKeys.includes("stamPool")), "no pool beside its bonus");
+    // only what the build asks for: a non-zero weight or a requirement; a pool never beside its bonus
+    const asked = await page.evaluate(() => [...document.querySelectorAll<HTMLInputElement>("#b-sec-weights .rule-row input[type=number], #b-sec-req .rule-row input[type=number]")]
+      .filter((i) => !/ weight$/.test(i.getAttribute("aria-label") ?? "") || Number(i.value) !== 0).map((i) => (i.getAttribute("aria-label") ?? "").replace(/ (weight|minimum)$/, "")));
+    assert.ok(gauges.every((g) => asked.includes(g)), `every gauge is weighted or required: ${gauges.join(", ")}`);
+    assert.ok(!(gauges.includes("Stamina increase") && gauges.includes("Stamina from gear and buffs")), "no pool beside its bonus");
     assert.ok(moved.length > gauges.length, "the build moves more than it asks for");
     assert.equal(more, moved.length - gauges.length, "the link counts the moved properties with no gauge");
     const saved = (): boolean => { try { return (JSON.parse(readFileSync(join(dataDir, "ui-prefs.json"), "utf8")) as { builderChanges?: string }).builderChanges === "table"; } catch { return false; } };
@@ -724,7 +721,7 @@ test("[slow] What changes: Gauges for what the build asks, Table with every prop
     await closeSettings(page);
     assert.match(await page.locator(".b-chg").innerText(), /\+\d+ past the cap \(Enemy of One\)/, "the note under What changes");
     await page.click("#b-chg-view [data-value=table]");
-    const di = page.locator(".b-chg-tbl tbody tr", { has: page.locator("td:first-child", { hasText: /^Damage increase$/ }) }).locator("td").nth(3);
+    const di = page.locator(".b-chg-tbl tbody tr", { has: page.locator("td:first-child", { hasText: /^Damage$/ }) }).locator("td").nth(3);
     assert.match(await di.innerText(), /· \+\d+ past/);
     assert.match(await di.locator(".b-cap-past").getAttribute("title") ?? "", /past the cap \(Enemy of One\)/);
     assert.deepEqual(errors, []);

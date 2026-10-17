@@ -455,8 +455,9 @@
 .pr .b-imp { display: grid; grid-template-columns: minmax(0, 10rem) minmax(4rem, 1fr) 2.5rem; align-items: center; gap: var(--space-2); width: 100%; padding: var(--space-0-5) var(--space-1); border: 0; border-radius: var(--radius-sm); background: none; color: var(--color-text); font-weight: var(--weight-regular); text-align: left; }
 .pr .b-imp:hover { background: var(--color-row-hover); }
 .b-imp-n { text-align: right; font-variant-numeric: tabular-nums; }
-/* a goals rank names every goal in it, so its name wraps rather than cut off */
+/* a goals rank names every goal in it, so its name wraps rather than cut off, indented past its number */
 .pr .b-imp-goal { grid-template-columns: minmax(0, 14rem) minmax(3rem, 1fr) 2.5rem; height: auto; min-height: 28px; }
+.b-imp-gname { padding-left: 2.5ch; text-indent: -2.5ch; }
 .b-imp-spare { margin: var(--space-1) 0 0; padding: 0 var(--space-1); }
 .pr #b-start-build { height: 42px; padding: 0 var(--space-6); font-size: var(--text-lg); }   /* the view's one big action */
 .b-start-build { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-4); }
