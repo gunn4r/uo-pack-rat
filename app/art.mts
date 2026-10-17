@@ -1,0 +1,158 @@
+// art.mts — item art from the player's own client files (issue #174): the UOP container artLegacyMUL.uop (its table of entries, each found by the lookup3 hash of its name), one item's static art in it, and the colours of hues.mul. Pure, apart from the read callback the caller passes: nothing here throws on a file that does not add up or reads past a buffer; every decoder answers null instead. The table is read block by block and an entry only when it is asked for, never the whole payload.
+import { inflateSync } from "node:zlib";
+
+// Jenkins' lookup3 hashlittle2 with both seeds 0, as the UOP format names its entries: the 64-bit result is b << 32 | c.
+const rot = (x: number, k: number): number => ((x << k) | (x >>> (32 - k))) >>> 0;
+export function uopHash(name: string): bigint {
+  const s = Buffer.from(name, "latin1");
+  let a = (0xdeadbeef + s.length) >>> 0, b = a, c = a, i = 0, n = s.length;
+  const w = (o: number): number => (s[o]! | (s[o + 1]! << 8) | (s[o + 2]! << 16) | (s[o + 3]! << 24)) >>> 0;
+  for (; n > 12; n -= 12, i += 12) {
+    a = (a + w(i)) >>> 0; b = (b + w(i + 4)) >>> 0; c = (c + w(i + 8)) >>> 0;
+    a = (a - c) >>> 0; a = (a ^ rot(c, 4)) >>> 0; c = (c + b) >>> 0;
+    b = (b - a) >>> 0; b = (b ^ rot(a, 6)) >>> 0; a = (a + c) >>> 0;
+    c = (c - b) >>> 0; c = (c ^ rot(b, 8)) >>> 0; b = (b + a) >>> 0;
+    a = (a - c) >>> 0; a = (a ^ rot(c, 16)) >>> 0; c = (c + b) >>> 0;
+    b = (b - a) >>> 0; b = (b ^ rot(a, 19)) >>> 0; a = (a + c) >>> 0;
+    c = (c - b) >>> 0; c = (c ^ rot(b, 4)) >>> 0; b = (b + a) >>> 0;
+  }
+  if (n > 0) {
+    // The last 1 to 12 bytes, zero-padded.
+    const t = Buffer.alloc(12);
+    s.copy(t, 0, i);
+    a = (a + t.readUInt32LE(0)) >>> 0; b = (b + t.readUInt32LE(4)) >>> 0; c = (c + t.readUInt32LE(8)) >>> 0;
+    c = (c ^ b) >>> 0; c = (c - rot(b, 14)) >>> 0;
+    a = (a ^ c) >>> 0; a = (a - rot(c, 11)) >>> 0;
+    b = (b ^ a) >>> 0; b = (b - rot(a, 25)) >>> 0;
+    c = (c ^ b) >>> 0; c = (c - rot(b, 16)) >>> 0;
+    a = (a ^ c) >>> 0; a = (a - rot(c, 4)) >>> 0;
+    b = (b ^ a) >>> 0; b = (b - rot(a, 14)) >>> 0;
+    c = (c ^ b) >>> 0; c = (c - rot(b, 24)) >>> 0;
+  }
+  return (BigInt(b) << 32n) | BigInt(c);
+}
+// The entry name of an item graphic's art: item art follows the 0x4000 land tiles.
+export const itemArtName = (graphic: number): string => `build/artlegacymul/${String(graphic + 0x4000).padStart(8, "0")}.tga`;
+
+// Reads `length` bytes at `position` of the file, or answers null when it cannot (short of the file's end included).
+export type ReadAt = (position: number, length: number) => Uint8Array | null;
+// A UOP file's table, its entries sorted by name hash; empty entries (offset 0) left out. `at` is where an entry's data starts (its offset plus its header).
+export interface UopTable { hashes: BigUint64Array; at: Float64Array; stored: Int32Array; size: Int32Array; flag: Int16Array }
+const UOP_MAGIC = 0x0050594d, HEADER = 28, BLOCK_HEAD = 12, ENTRY = 34, MAX_ENTRIES = 1 << 20;
+
+// The header (magic "MYP\0", version up to 5, signature, the first table block, block size, file count), then the chain of table blocks: a count, the next block (0 ends it), `count` entries of offset, header length, stored and decompressed lengths, name hash, adler32 and flag. Null when the chain loops, a block or an entry reaches past the file, or a number does not make sense.
+export function readUopTable(read: ReadAt, fileSize: number): UopTable | null {
+  const head = read(0, HEADER);
+  if (!head || head.length < HEADER) return null;
+  const hv = new DataView(head.buffer, head.byteOffset, head.byteLength);
+  if (hv.getUint32(0, true) !== UOP_MAGIC || hv.getUint32(4, true) > 5) return null;
+  const rows: Array<{ hash: bigint; at: number; stored: number; size: number; flag: number }> = [];
+  const seen = new Set<number>();
+  let next = Number(hv.getBigUint64(12, true));
+  while (next !== 0) {
+    if (seen.has(next) || next < HEADER || next + BLOCK_HEAD > fileSize) return null;
+    seen.add(next);
+    const bh = read(next, BLOCK_HEAD);
+    if (!bh || bh.length < BLOCK_HEAD) return null;
+    const bv = new DataView(bh.buffer, bh.byteOffset, bh.byteLength);
+    const count = bv.getUint32(0, true), after = Number(bv.getBigUint64(4, true));
+    if (rows.length + count > MAX_ENTRIES || next + BLOCK_HEAD + count * ENTRY > fileSize) return null;
+    const body = count ? read(next + BLOCK_HEAD, count * ENTRY) : new Uint8Array(0);
+    if (!body || body.length < count * ENTRY) return null;
+    const v = new DataView(body.buffer, body.byteOffset, body.byteLength);
+    for (let k = 0; k < count; k++) {
+      const o = k * ENTRY, offset = Number(v.getBigInt64(o, true));
+      if (offset === 0) continue;
+      const headerLength = v.getInt32(o + 8, true), stored = v.getInt32(o + 12, true), size = v.getInt32(o + 16, true);
+      if (offset < 0 || headerLength < 0 || stored < 0 || size < 0 || offset + headerLength + stored > fileSize) return null;
+      rows.push({ hash: v.getBigUint64(o + 20, true), at: offset + headerLength, stored, size, flag: v.getInt16(o + 32, true) });
+    }
+    next = after;
+  }
+  rows.sort((x, y) => (x.hash < y.hash ? -1 : x.hash > y.hash ? 1 : 0));
+  const t: UopTable = { hashes: new BigUint64Array(rows.length), at: new Float64Array(rows.length), stored: new Int32Array(rows.length), size: new Int32Array(rows.length), flag: new Int16Array(rows.length) };
+  rows.forEach((r, i) => { t.hashes[i] = r.hash; t.at[i] = r.at; t.stored[i] = r.stored; t.size[i] = r.size; t.flag[i] = r.flag; });
+  return t;
+}
+
+// The entry of that name's data: read as stored (flag 0) or inflated (flag 1, which must come out at its decompressed length); null when there is no such entry, it does not read, or it is packed any other way. `maxBytes` caps what is read or inflated.
+export function readUopEntry(t: UopTable, name: string, read: ReadAt, maxBytes = 1 << 20): Uint8Array | null {
+  const h = uopHash(name);
+  let lo = 0, hi = t.hashes.length - 1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1, x = t.hashes[mid]!;
+    if (x < h) lo = mid + 1;
+    else if (x > h) hi = mid - 1;
+    else {
+      const flag = t.flag[mid]!, stored = t.stored[mid]!, size = t.size[mid]!;
+      if (stored > maxBytes || (flag !== 0 && flag !== 1) || (flag === 1 && size > maxBytes)) return null;
+      const data = read(t.at[mid]!, stored);
+      if (!data || data.length < stored) return null;
+      if (flag === 0) return data;
+      try { const out = inflateSync(data, { maxOutputLength: maxBytes }); return out.length === size ? out : null; } catch { return null; }
+    }
+  }
+  return null;
+}
+
+// Item art: an int32, uint16 width and height, `height` uint16 row starts (in 16-bit words from the end of that table), then per row runs of (x skip, run length, `run` ARGB1555 pixels) ending in (0, 0). A pixel of value 0 is transparent. `pixels` is width × height with 0 transparent and anything else opaque (bit 0x8000 set, the colour in the low 15 bits).
+export interface StaticArt { width: number; height: number; pixels: Uint16Array }
+export const MAX_ART_SIDE = 1024;
+export function decodeStatic(buf: Uint8Array): StaticArt | null {
+  if (buf.length < 8) return null;
+  const v = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  const width = v.getUint16(4, true), height = v.getUint16(6, true);
+  if (width === 0 || height === 0 || width > MAX_ART_SIDE || height > MAX_ART_SIDE) return null;
+  const data = 8 + height * 2;
+  if (data > buf.length) return null;
+  const pixels = new Uint16Array(width * height);
+  for (let y = 0; y < height; y++) {
+    let at = data + v.getUint16(8 + y * 2, true) * 2, x = 0;
+    for (;;) {
+      if (at + 4 > buf.length) return null;
+      const skip = v.getUint16(at, true), run = v.getUint16(at + 2, true);
+      at += 4;
+      if (skip === 0 && run === 0) break;
+      x += skip;
+      if (x + run > width || at + run * 2 > buf.length) return null;
+      for (let k = 0; k < run; k++, x++, at += 2) { const c = v.getUint16(at, true); if (c !== 0) pixels[y * width + x] = 0x8000 | (c & 0x7fff); }
+    }
+  }
+  return { width, height, pixels };
+}
+
+// hues.mul: groups of 708 bytes, a uint32 header and 8 hues of 32 uint16 colours, a uint16 table start and end and a 20-byte name. Null for a file that is not whole groups.
+export interface Hues { buf: Uint8Array; count: number }
+const GROUP = 708, HUE = 88;
+export function readHues(buf: Uint8Array): Hues | null {
+  return buf.length === 0 || buf.length % GROUP !== 0 ? null : { buf, count: (buf.length / GROUP) * 8 };
+}
+// A hue's 32 colours (15-bit) and whether it is partial (bit 0x8000: only grey pixels take it); null for hue 0 or one the file does not have. The hue number is its low 14 bits, 1-based.
+export function hueOf(hues: Hues, hue: number): { colours: Uint16Array; partial: boolean } | null {
+  const h = hue & 0x3fff;
+  if (h === 0 || h > hues.count) return null;
+  const at = Math.floor((h - 1) / 8) * GROUP + 4 + ((h - 1) % 8) * HUE, v = new DataView(hues.buf.buffer, hues.buf.byteOffset, hues.buf.byteLength);
+  const colours = new Uint16Array(32);
+  for (let k = 0; k < 32; k++) colours[k] = v.getUint16(at + k * 2, true) & 0x7fff;
+  return { colours, partial: (hue & 0x8000) !== 0 };
+}
+
+// The art as 8-bit RGBA cut to its opaque box, the hue applied (each pixel's 5-bit red channel picks one of its 32 colours; a partial hue only grey pixels, r = g = b). Null when no pixel is opaque.
+export function toRgba(art: StaticArt, hue: { colours: Uint16Array; partial: boolean } | null = null): { width: number; height: number; rgba: Buffer } | null {
+  let x0 = art.width, y0 = art.height, x1 = -1, y1 = -1;
+  for (let y = 0; y < art.height; y++) for (let x = 0; x < art.width; x++) {
+    if (art.pixels[y * art.width + x] === 0) continue;
+    if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+  }
+  if (x1 < 0) return null;
+  const width = x1 - x0 + 1, height = y1 - y0 + 1, rgba = Buffer.alloc(width * height * 4), to8 = (c: number): number => (c << 3) | (c >> 2);
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+    let p = art.pixels[(y + y0) * art.width + x + x0]!;
+    if (p === 0) continue;
+    const r = (p >> 10) & 31;
+    if (hue && (!hue.partial || (r === ((p >> 5) & 31) && r === (p & 31)))) p = hue.colours[r]!;
+    const o = (y * width + x) * 4;
+    rgba[o] = to8((p >> 10) & 31); rgba[o + 1] = to8((p >> 5) & 31); rgba[o + 2] = to8(p & 31); rgba[o + 3] = 255;
+  }
+  return { width, height, rgba };
+}

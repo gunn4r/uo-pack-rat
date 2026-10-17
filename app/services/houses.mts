@@ -1,9 +1,12 @@
-// houses.mts — the house map's client files and models (issues #10, #164): the UO folder, its tiledata.mul and facetNN.mul, the facet PNGs cut from them, and the house models built from the inventory, each kept while its inputs stay the same.
-import { readFileSync, existsSync, statSync } from "node:fs";
+// houses.mts — the house map's client files and models (issues #10, #164, #174): the UO folder, its tiledata.mul and facetNN.mul, the facet PNGs cut from them, the item art PNGs drawn from its artLegacyMUL.uop and hues.mul, and the house models built from the inventory, each kept while its inputs stay the same.
+import { createHash } from "node:crypto";
+import { closeSync, fstatSync, openSync, readFileSync, readSync, existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { badPathShape } from "../installer.mts";
 import { uoFolderFromTazuo, loadTileData, type TileData } from "../tiledata.mts";
 import { decodeFacet, type FacetBitmap } from "../facet-map.mts";
+import { decodeStatic, hueOf, itemArtName, readHues, readUopEntry, readUopTable, toRgba, type Hues, type ReadAt, type StaticArt, type UopTable } from "../art.mts";
+import { encodePngRgba } from "../png.mts";
 import { buildHouseModel, type HouseContainerInput, type HouseModel } from "../house-model.mts";
 import type { HouseSource } from "../house-capture.mts";
 import type { Inventory } from "../vault-lib.mts";
@@ -58,6 +61,41 @@ export function createHousesService({ settings }: { settings: () => SettingsDoc 
     facetPngBytes += out.length;
     return out;
   }
+  // Item art (issue #174): the UO folder's artLegacyMUL.uop table (its table blocks only, never the payload) and hues.mul, each read once while the file stays the same, and an entry read only when its graphic is asked for. The PNGs are kept by file stamps, graphic and hue up to 4 MB in all, the oldest dropped first, and never written to disk. `etag` names the files' stamps, graphic and hue (hashed, so never the path). A hue the hues.mul does not have, or with no hues.mul, draws the art unhued. `reason` as for the facet: no folder, the art file missing or not a UOP table, or no art for that graphic.
+  let artMemo: { key: string; table: UopTable | null } | null = null, hueMemo: { key: string; hues: Hues | null } | null = null;
+  const artPngs = new Map<string, Buffer>();
+  let artPngBytes = 0;
+  const ART_PNG_BYTES = 4 * 1024 * 1024;
+  const stamp = (path: string): string | null => { try { const st = statSync(path); return st.isFile() ? `${path}:${st.mtimeMs}:${st.size}` : null; } catch { return null; } };
+  function itemArt(graphic: number, hue: number): { png: Buffer; etag: string } | { reason: string } {
+    const at = uoFolder();
+    if (at.folder === null) return { reason: at.reason };
+    if (at.source === "settings") { try { if (!statSync(at.folder).isDirectory()) return { reason: "override-missing" }; } catch { return { reason: "override-missing" }; } }
+    const artPath = join(at.folder, "artLegacyMUL.uop"), artKey = stamp(artPath);
+    if (!artKey) return { reason: "missing" };
+    const huesPath = join(at.folder, "hues.mul"), huesKey = hue & 0x3fff ? stamp(huesPath) : null;
+    const key = `${artKey}|${huesKey ?? ""}|${graphic}|${hue}`, etag = `"${createHash("sha1").update(key).digest("hex").slice(0, 20)}"`;
+    const kept = artPngs.get(key);
+    if (kept) return { png: kept, etag };
+    let fd: number;
+    try { fd = openSync(artPath, "r"); } catch { return { reason: "missing" }; }
+    try {
+      const read: ReadAt = (position, length) => { const b = Buffer.alloc(length); return readSync(fd, b, 0, length, position) === length ? b : null; };
+      if (artMemo?.key !== artKey) { let table: UopTable | null; try { table = readUopTable(read, fstatSync(fd).size); } catch { table = null; } artMemo = { key: artKey, table }; }
+      if (!artMemo.table) return { reason: "unreadable" };
+      let art: StaticArt | null;
+      try { const raw = readUopEntry(artMemo.table, itemArtName(graphic), read); art = raw && decodeStatic(raw); } catch { art = null; }
+      if (!art) return { reason: "no-art" };
+      if (huesKey && hueMemo?.key !== huesKey) { let hues: Hues | null; try { hues = readHues(readFileSync(huesPath)); } catch { hues = null; } hueMemo = { key: huesKey, hues }; }
+      const hues = huesKey ? hueMemo?.hues : null, img = toRgba(art, hues ? hueOf(hues, hue) : null);
+      if (!img) return { reason: "no-art" };
+      const png = encodePngRgba(img.width, img.height, img.rgba);
+      for (const [k, v] of artPngs) { if (artPngBytes + png.length <= ART_PNG_BYTES) break; artPngs.delete(k); artPngBytes -= v.length; }
+      artPngs.set(key, png);
+      artPngBytes += png.length;
+      return { png, etag };
+    } finally { closeSync(fd); }
+  }
   // Built house models, kept while the served inventory (a new object whenever the scans, the item kinds or the overlay change; the houses come from the same fold) and the tiledata (loadTileData answers the same object until the file changes) stay the same. The ground chests are the inventory's ground roots with a position, as Organize picks them.
   let houseMemo: { inv: Inventory | null; td: TileData | null; ground: HouseContainerInput[]; models: Map<string, HouseModel> } = { inv: null, td: null, ground: [], models: new Map() };
   function houseModel(inv: Inventory, house: HouseSource, td: TileData | null): HouseModel {
@@ -75,6 +113,6 @@ export function createHousesService({ settings }: { settings: () => SettingsDoc 
     }
     return m;
   }
-  return { tileData: houseTileData, facetBitmap, facetPng, model: houseModel };
+  return { tileData: houseTileData, facetBitmap, facetPng, itemArt, model: houseModel };
 }
 export type HousesService = ReturnType<typeof createHousesService>;

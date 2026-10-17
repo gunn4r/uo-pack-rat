@@ -90,7 +90,7 @@ test("[fast] house map: a stack's chests top first, named by label, else by engr
 });
 
 test("[fast] house map: Contents colours by label (unlabelled neutral, empty pale, unopened its own); Free space by how full", () => {
-  const c = (over: Partial<ChestView>): ChestView => ({ serial: 1, code: "A", name: "x", inGame: "x", color: null, fill: { items: 10, max: 100 }, opened: true, items: 10, z: 7, ...over });
+  const c = (over: Partial<ChestView>): ChestView => ({ serial: 1, code: "A", name: "x", inGame: "x", color: null, fill: { items: 10, max: 100 }, opened: true, items: 10, z: 7, graphic: null, ...over });
   assert.deepEqual(colourOf(c({ color: "#2f7f7f" }), "contents"), { label: "#2f7f7f" });
   assert.deepEqual(colourOf(c({}), "contents"), { token: "--color-map-chest" });
   assert.deepEqual(colourOf(c({ fill: { items: 0, max: 100 } }), "contents"), { token: "--color-map-chest-empty" });
@@ -729,7 +729,7 @@ test("[fast] house map drawer: the filter matches name, tooltip line and tag tex
 });
 
 test("[fast] house map drawer: up to 4 chests the stack's chests are tabs; more are a select, each option the code and name, a chest not opened yet disabled", () => {
-  const view = (serial: number, opened: boolean): ChestView => ({ serial, code: `A${serial}`, name: `Chest ${serial}`, inGame: "Metal Chest", color: null, fill: null, opened, items: 0, z: 0 });
+  const view = (serial: number, opened: boolean): ChestView => ({ serial, code: `A${serial}`, name: `Chest ${serial}`, inGame: "Metal Chest", color: null, fill: null, opened, items: 0, z: 0, graphic: null });
   const four = drawerPicker([view(4, true), view(3, false), view(2, true), view(1, true)]);
   assert.equal(four.kind, "tabs");
   assert.deepEqual(four.options[1], { value: "3", label: "A3", sub: "Chest 3", disabled: true, title: "Not opened yet" });
@@ -743,7 +743,7 @@ test("[fast] house map drawer: up to 4 chests the stack's chests are tabs; more 
 });
 
 test("[fast] house map drawer: a stack opens its top opened chest; the header words the chest, its stack and its fill", () => {
-  const view = (serial: number, opened: boolean, extra: Partial<ChestView> = {}): ChestView => ({ serial, code: `A${serial}`, name: `Chest ${serial}`, inGame: "Metal Chest", color: null, fill: { items: 106, max: 125 }, opened, items: 0, z: 0, ...extra });
+  const view = (serial: number, opened: boolean, extra: Partial<ChestView> = {}): ChestView => ({ serial, code: `A${serial}`, name: `Chest ${serial}`, inGame: "Metal Chest", color: null, fill: { items: 106, max: 125 }, opened, items: 0, z: 0, graphic: null, ...extra });
   assert.equal(drawerChest([view(4, false), view(3, true), view(2, true)]), 3, "top first, the first opened one");
   assert.equal(drawerChest([view(4, false)]), null);
   const s = { letter: "A", serials: [1, 2, 3, 4] } as unknown as Stack;
@@ -924,7 +924,7 @@ test("[fast] house map Stack plan: every stack of the level is a card at its col
 test("[fast] house map Stack plan: a card is its stack's name and count, then its containers top first with code, label, in-game name and fill out of the real maximum, or Not opened yet", () => {
   assert.deepEqual(planHead({ letter: "C", serials: [1, 2, 3, 4] }), { title: "Stack C", count: "4 containers" });
   assert.deepEqual(planHead({ letter: "F", serials: [1] }), { title: "Stack F", count: "1 container" });
-  const v = (over: Partial<ChestView>): ChestView => ({ serial: 1, code: "C1", name: "Metal Chest", inGame: "Metal Chest", color: null, fill: { items: 41, max: 125 }, opened: true, items: 41, z: 7, ...over });
+  const v = (over: Partial<ChestView>): ChestView => ({ serial: 1, code: "C1", name: "Metal Chest", inGame: "Metal Chest", color: null, fill: { items: 41, max: 125 }, opened: true, items: 41, z: 7, graphic: null, ...over });
   const rows = planRows([v({ serial: 4, code: "C4", fill: { items: 0, max: 125 } }), v({ serial: 3, code: "C3", name: "Runes & books", color: "#2f7f7f", fill: { items: 41, max: 240 } }), v({ serial: 2, code: "C2", name: "chest", inGame: "chest", opened: false, fill: null }), v({ serial: 1, code: "C1", fill: null })]);
   assert.deepEqual(rows.map((r) => r.code), ["C4", "C3", "C2", "C1"], "top first, as chestViews gives them");
   assert.deepEqual(rows[0], { serial: 4, code: "C4", label: null, name: "Metal Chest", opened: true, fill: { items: 0, max: 125 }, fillText: "0/125" });

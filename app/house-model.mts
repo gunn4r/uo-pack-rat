@@ -171,6 +171,9 @@ export function buildHouseModel(house: HouseSource, td: TileData | null, contain
   const seenOnly = new Map(containers.filter((c) => c.opened === false).map((c) => [c.serial, c.name]));
   const unopened = stacks.flatMap((s) => s.serials).filter((n) => seenOnly.has(n)).sort((a, b) => a - b);
   const unopenedNames = Object.fromEntries(unopened.map((n) => [String(n), seenOnly.get(n)!]));
+  // Each stacked chest's graphic as the house's captures saw it (issue #174), for its art; a chest no capture listed has none.
+  const seenGraphic = new Map(house.containers.map((c) => [c[0], c[1]]));
+  const graphics = Object.fromEntries(stacks.flatMap((s) => s.serials).filter((n) => seenGraphic.has(n)).sort((a, b) => a - b).map((n) => [String(n), seenGraphic.get(n)!]));
   const spots = spotsOf(cells.filter((c) => !rims.has(c)), at, stackAt, furniture, levels, (c) => region.get(c) ?? null, (s) => stackRegion.get(s) ?? null);
 
   const angle = (s: Stack): number => { const p = spots[s.spot!]!; return Math.round(((Math.atan2(s.x - p.x, -(s.y - p.y)) * 180) / Math.PI + 360) % 360); };
@@ -184,7 +187,7 @@ export function buildHouseModel(house: HouseSource, td: TileData | null, contain
   });
 
   return { id: house.id, facet: house.facet, capturedAt: house.capturedAt, captures: house.captures, x0, y0, x1, y1, levels, cells,
-    furniture, stacks: ordered, spots, codes, tiledata: td !== null, unopened, unopenedNames };
+    furniture, stacks: ordered, spots, codes, tiledata: td !== null, unopened, unopenedNames, graphics };
 }
 
 // The house's plot as the player knows it: its bounds without an outer row or column of front steps (a custom house's steps stand outside the plot): a ground-level row holding a stair tile with every tile in it below the ground floor's z. The model's bounds keep the steps, so they still draw.
