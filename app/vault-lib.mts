@@ -323,7 +323,7 @@ export interface GoalSwing { mode: (typeof SWING_GOALS)[number]; seconds?: numbe
 export const GOAL_STRATEGIES = ["value", "strict"] as const;
 // What each strategy means, in the Goals tab, How the goals went and build_suit's description.
 export const STRICT_PROMISE = "A higher goal is never given up for a lower one.";
-export const STRATEGY_HELP: Record<(typeof GOAL_STRATEGIES)[number], string> = { value: "Higher goals count more, but a small loss up top can buy a big gain lower down.", strict: `${STRICT_PROMISE} Requirements always come first.` };
+export const STRATEGY_HELP: Record<(typeof GOAL_STRATEGIES)[number], string> = { value: "Higher goals count more, but a small loss up top can buy a big gain lower down.", strict: `${STRICT_PROMISE} Requirements come before every goal.` };
 // What Change as few pieces as possible does in each strategy: Best value breaks exact ties, Strict order solves it after the goals.
 // Under How the goals went when a strict suit wears a tagged piece the worn suit doesn't.
 export const TAGGED_NOTE = "Strict order takes tagged pieces (Cursed, Antique…) when they help a goal. To keep them out, use Exclude tags in the Pool tab.";

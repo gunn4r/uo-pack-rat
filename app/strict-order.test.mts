@@ -193,6 +193,31 @@ test("[fast] strict order: other suits are the suits equal to the returned one o
     assert.notEqual(alts[0], res.best.ring!.serial);
     assert.ok([a.serial, b.serial].includes(alts[0]!), "the copy, not the piece a point short, whatever the tolerance");
   }
+  assert.equal(r.highs.altShortfall, "unequal", "three were asked for and one matches on every goal: the result says why");
+});
+
+test("[fast] Best value: other suits never list the returned suit, even when it is not HiGHS's own", async () => {
+  // HiGHS's first solve is made to hand back the weaker ring, so the heuristic's ring is returned; the no-good loop then finds that
+  // ring, and HiGHS's own takes its place
+  const ranks = [["hci"], ["dci"]], slots = ["ring"], a = it("ring", { hci: 5 }), b = it("ring", { dci: 5 });
+  const pools: OptPools = { ring: [a, b] }, profile: OptProfile = { weights: weightsOf(ranks), caps: {} };
+  const built = buildSuitMip({ pools: mipPools(pools), current: {}, profile, slots });
+  const colOf = (x: Item) => built.cols.findIndex((c) => c.item?.serial === x.serial);
+  let calls = 0;
+  const solveModel = (h: Handle, o: SolveModelOptions) => {
+    const res = realSolveModel(h, o);
+    if (++calls > 1 || !res.colValue) return res;
+    const v = Array.from(res.colValue); v[colOf(a)] = 0; v[colOf(b)] = 1;
+    return { ...res, colValue: v, objective: res.objective! - 100 };
+  };
+  const warnings: string[] = [];
+  const r = await solveExact({ core, pools, current: {}, profile, opts: { seed: 1, restarts: 4, slots, optionalSlots: slots, exact: true, timeBudgetMs: 10000, alternatives: { count: 5, tolerance: 1e6 } },
+    onProgress: () => {}, onWarn: (m) => warnings.push(m), solveModel });
+  assert.equal(r.best.ring!.serial, a.serial);
+  assert.ok(warnings.some((m) => /below the heuristic/.test(m)), "the forced weaker suit took the heuristic's path");
+  const alts = (r.alternatives || []).map((x) => x.best.ring?.serial ?? 0);
+  assert.ok(!alts.includes(a.serial), `the returned ring is not listed: ${JSON.stringify(alts)}`);
+  assert.ok(alts.includes(b.serial), "HiGHS's own ring is, in its place");
 });
 
 test("[fast] fewest changes outranks any rarity sum, however long the rules' rarity ladder", async () => {

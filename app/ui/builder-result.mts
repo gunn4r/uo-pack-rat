@@ -332,6 +332,9 @@ function otherSuitsCard(res: OptimizeResult, view: number | null): HTMLElement {
   const all = [{ best: res.best, score: res.score }, ...(res.alternatives || [])];
   const tb = totalsOf(res.best), shownIdx = view == null ? 0 : view + 1;
   const title = `Other suits within ${fmtN(res.altTolerance)} points`;
+  // strict order: fewer than asked because no more suits match on every goal
+  const n0 = all.length - 1, unequal = res.altShortfall === "unequal" ? (n0 ? `Only ${plural(n0, "other suit")} ${n0 === 1 ? "matches" : "match"} on every goal.` : "No other suit matches on every goal.") : null;
+  if (all.length === 1 && unequal) return el("section", { class: "card", "aria-label": "Other suits" }, box("div", { class: "card-head" }, el("h2", {}, title)), box("div", { class: "card-pad" }, el("p", { class: "muted" }, txt(unequal))));
   if (all.length === 1) return el("section", { class: "card", "aria-label": "Other suits" }, box("div", { class: "card-head" }, el("h2", {}, title)),
     box("div", { class: "card-pad" }, el("p", { class: "muted" }, txt(res.altShortfall === "budget" ? `The time budget ran out before another suit within ${fmtN(res.altTolerance)} points was found.` : `No other suit scores within ${fmtN(res.altTolerance)} points of the best.`))));
   const rows = all.map((s, i) => {
@@ -356,7 +359,8 @@ function otherSuitsCard(res: OptimizeResult, view: number | null): HTMLElement {
     box("div", { class: "card-head" }, el("h2", {}, title), txt(pickRefused ? `${pickRefused} can be compared` : "Check 2 or 3 to compare", `t-sm ${pickRefused ? "tone-warn" : "muted"}`), el("span", { class: "spacer" }),
       n < 2 ? tipWrap(cmp, "Check 2 or 3 suits to compare them.") : cmp),
     (() => { const t = table({ label: "Other suits", columns: [{ label: "Select", width: "44px" }, { label: "Suit", width: "80px" }, { label: "vs best", num: true, width: "90px" }, { label: "Different pieces", width: "32%" }, { label: "Totals vs best" }, { label: "", width: "88px" }], rows });
-      t.querySelector("thead th")!.replaceChildren(el("span", { class: "sr" }, "Select")); return t; })());
+      t.querySelector("thead th")!.replaceChildren(el("span", { class: "sr" }, "Select")); return t; })(),
+    unequal ? box("div", { class: "card-pad" }, el("p", { class: "muted b-unequal" }, txt(unequal))) : null);
 }
 
 // ---- 5. <name> after the change: only the values that move
@@ -399,7 +403,7 @@ function detailsCard(res: OptimizeResult, meta: BuildMeta | undefined, view: num
   if (time) pairs.push(["Time", time]);
   if (skips) pairs.push(["Left out", skips]);
   // a strict build's plain score is in Best value's terms, which it did not optimize (it compares goal by goal)
-  if (res.method !== "manual") pairs.push([res.strict ? "Score (Best value terms; strict order ranks goal by goal)" : "Score", `${fmtN(Math.round(res.currentScore))} → ${fmtN(Math.round(score))}`]);
+  if (res.method !== "manual") pairs.push([res.strict ? "Score (Best value)" : "Score", `${fmtN(Math.round(res.currentScore))} → ${fmtN(Math.round(score))}`]);
   if (res.strict && res.method !== "manual") pairs.push(["Strategy", strictDetail(res.strict, res.method)]);
   // fewest changes: Best value's tie-break, or strict order's stage after the goals
   const changes = res.strict ? res.strict.changes : res.tieBreak?.fewestChanges ? res.tieBreak.changes : undefined;
@@ -490,7 +494,7 @@ function openSuitCompare(indices: number[]): void {
     // Every suit of one result was built with the same caps; an override is named on each column's outcome.
     const resists = profileResistCaps(prof), capped = anyOverridden(resists);
     if (capped) for (const c of columns) c.outcome.push(capsLine(resists));
-    return { title: "Compare suits", noun: "suits", columns, outcomeRows: [res.strict ? "Points vs best (Best value terms; strict order ranks goal by goal)" : "Points vs best", ...(capped ? ["Resist caps"] : [])], keys: compareKeys(columns, prof), caps: paperdollCaps(resists, fcCapOf(prof)),
+    return { title: "Compare suits", noun: "suits", columns, outcomeRows: [res.strict ? "Points vs best (Best value)" : "Points vs best", ...(capped ? ["Resist caps"] : [])], keys: compareKeys(columns, prof), caps: paperdollCaps(resists, fcCapOf(prof)),
       onRemove: (i) => { idx = idx.filter((_, j) => j !== i); picked = new Set(idx.map(String)); if (idx.length < 2) { closeCompare(); rerender(); } else showCompare(openSpec!); } };
   });
   void name;

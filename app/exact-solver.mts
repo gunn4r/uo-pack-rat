@@ -106,7 +106,7 @@ export interface StrictStageProgress { at: number; of: number; kind: string; key
 export interface StrictResult { stages: Array<{ kind: string; keys: string[] | null; value: number }>; proven: number; changes?: number | undefined }
 // Why the k-best search returned fewer alternatives than asked: the time budget ran out, the next
 // suit scored outside the tolerance, or no other suit exists.
-export type AltShortfall = "budget" | "tolerance" | "exhausted";
+export type AltShortfall = "budget" | "tolerance" | "exhausted" | "unequal";   // unequal: strict order, no more suits match on every goal
 
 export interface SolveExactArgs {
   core: CoreModule;
@@ -415,12 +415,17 @@ export async function solveExact({
       belowHeuristic = true;
     }
     if (belowHeuristic) onWarn(stages ? `exact search's stages ${JSON.stringify(strictValues)} came in below the heuristic's ${JSON.stringify(heur.lex)} — reporting the heuristic's suit instead of a regression (${stats})` : `exact search's suit scored below the heuristic's ${heur.score} — reporting the heuristic's suit instead of a regression (${stats})`);
-    // strict order: other suits held at HiGHS's suit can differ from the returned one (a heuristic's suit that won on a later
-    // stage): keep those equal to it on every stage, and never the returned suit itself; HiGHS's own suit is one of them when
-    // the core handed back another as good
-    const shownAlts = !stages ? alternatives : [{ best: assignmentOf(picked2, slots), score: core.scoreSet(assignmentOf(picked2, slots), profile) }, ...alternatives]
-      .filter((a, i, all) => core.optLexCmp(core.optStrictScore(a.best, current, profile, opts.strict!, slots), final.lex!) === 0 && serialsKey(a.best) !== serialsKey(final.best) && all.findIndex((x) => serialsKey(x.best) === serialsKey(a.best)) === i)
+    // Other suits never list the returned suit: the core can hand back another suit than HiGHS's, even one the loop listed.
+    // HiGHS's own suit is then one of them (in Best value when within the tolerance). In strict order keep only those equal
+    // to the returned suit on every stage (a heuristic's suit can win on a later stage).
+    const highsSuit = { best: assignmentOf(picked2, slots), score: core.scoreSet(assignmentOf(picked2, slots), profile) };
+    const shownAlts = [...(stages || highsSuit.score >= final.score - (altTolerance ?? 0) - 1e-9 ? [highsSuit] : []), ...alternatives]
+      .filter((a, i, all) => serialsKey(a.best) !== serialsKey(final.best) && all.findIndex((x) => serialsKey(x.best) === serialsKey(a.best)) === i
+        && (!stages || core.optLexCmp(core.optStrictScore(a.best, current, profile, opts.strict!, slots), final.lex!) === 0))
+      .sort((x, y) => stages ? 0 : y.score - x.score)
       .slice(0, alt?.count ?? 0);
+    // strict order: a list that came back short (not for time) is short because no more suits match on every goal
+    if (alt && stages && shownAlts.length < alt.count && altShortfall !== "budget") altShortfall = "unequal";
 
     const mipMs = now() - t0 - heuristicMs;
     const disagree = solve.status === "optimal" && (coreImproved || belowHeuristic || rescoreMismatch);

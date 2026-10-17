@@ -303,7 +303,7 @@ export interface OptimizeResult {
   nodes?: number | undefined;
   alternatives?: Array<{ best: OptSuit; score: number; shares?: ScoreShare[] | undefined }> | undefined;
   altTolerance?: number | undefined;
-  altShortfall?: "budget" | "tolerance" | "exhausted" | undefined;   // why fewer alternatives than asked (exact-solver.mts's AltShortfall)
+  altShortfall?: "budget" | "tolerance" | "exhausted" | "unequal" | undefined;   // why fewer alternatives than asked (exact-solver.mts's AltShortfall)
   solver?: string | undefined;
   bound?: number | null | undefined;
   gapPoints?: number | null | undefined;
