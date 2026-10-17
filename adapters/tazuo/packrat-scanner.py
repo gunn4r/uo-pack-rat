@@ -75,7 +75,7 @@ def read_blacklist(path):
 
 
 ADAPTER_ID = "tazuo"
-ADAPTER_VERSION = "2.19.0"
+ADAPTER_VERSION = "2.20.0"
 CAPABILITIES = {
     "layers": ["OneHanded", "TwoHanded", "Shoes", "Pants", "Shirt", "Helmet", "Gloves",
                "Ring", "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic",
@@ -279,6 +279,16 @@ def root_pos(serial, kind):
     return pos
 
 
+def look(it):
+    """A container's graphic and hue (issue #174), for its art in the app; empty when the client has no
+    item for it or cannot say."""
+    try:
+        graphic = int(getattr(it, "Graphic", 0) or 0)
+        return {"graphic": graphic, "hue": int(getattr(it, "Hue", 0) or 0)} if graphic > 0 else {}
+    except Exception:
+        return {}
+
+
 def root_entry(serial, kind, label):
     """A root's containers entry. A ground root carries its tooltip too, as a nested bag does: its
     Contents line ("Contents: 13/125 Items, 95 Stones") is how the app knows the room left in it, and
@@ -286,6 +296,10 @@ def root_entry(serial, kind, label):
     entry = {"serial": serial, "name": label, "parent": None, "root": serial, "kind": kind, "pos": root_pos(serial, kind)}
     if kind == "ground":
         entry["tooltip"] = tooltip_lines(serial)
+    try:
+        entry.update(look(API.FindItem(int(serial))))
+    except Exception:
+        pass
     return entry
 # END generated: tazuo/root
 
@@ -379,7 +393,7 @@ def claims_over(here, claims):
 
 # BEGIN generated: tazuo/house_capture
 def house_capture(px, py):
-    """The house the player stands in, from the client's own house tiles (issue #10), or None outside a house or on a build without the multi calls (house_footprint). What stands on the ground inside that footprint is recorded too (both left out when the ground cannot be read): furniture and fixtures as `items`, and every container as `containers` (2.11.0), opened or not, so the map shows a chest from the first scan even when it stood too far away to open; corpses, trash containers and blacklisted ones are left out (trash by name, or because the roots pass, which runs first, read its tooltip; a far trash container whose cached name is generic cannot be told apart without a tooltip query, which this never makes). Names come from tiledata in the app, so this asks the server nothing. A house of more than HOUSE_MAX_TILES tiles is left out and its count noted in HOUSE_TOO_LARGE."""
+    """The house the player stands in, from the client's own house tiles (issue #10), or None outside a house or on a build without the multi calls (house_footprint). What stands on the ground inside that footprint is recorded too (both left out when the ground cannot be read): furniture and fixtures as `items`, and every container as `containers` (2.11.0; its hue as a sixth element from 2.20.0, issue #174), opened or not, so the map shows a chest from the first scan even when it stood too far away to open; corpses, trash containers and blacklisted ones are left out (trash by name, or because the roots pass, which runs first, read its tooltip; a far trash container whose cached name is generic cannot be told apart without a tooltip query, which this never makes). Names come from tiledata in the app, so this asks the server nothing. A house of more than HOUSE_MAX_TILES tiles is left out and its count noted in HOUSE_TOO_LARGE."""
     fp = house_footprint(px, py)
     if fp is None:
         return None
@@ -409,7 +423,7 @@ def house_capture(px, py):
             if not is_container(g, name):
                 items.append(row)
             elif row[0] not in BLACKLIST and row[0] not in TRASHED and not TRASH_RE.search(name):
-                chests.append(row)
+                chests.append(row + [int(getattr(g, "Hue", 0) or 0)])
         except Exception:
             continue
 
@@ -554,6 +568,7 @@ def scan_root(root_serial, kind, label, containers, items, seen):
             cname = lines[0] if lines else str(it.Name or "")
             containers[s] = {"serial": s, "name": cname, "parent": parent, "root": root_serial,
                              "kind": "container", "tooltip": lines}
+            containers[s].update(look(it))
             if s in unopened:
                 containers[s]["opened"] = False
             if s in unopened and s not in BLACKLIST:

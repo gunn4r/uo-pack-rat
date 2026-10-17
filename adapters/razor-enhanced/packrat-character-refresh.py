@@ -76,7 +76,7 @@ def read_blacklist(path):
 
 
 ADAPTER_ID = "razor-enhanced"
-ADAPTER_VERSION = "1.12.1"
+ADAPTER_VERSION = "1.13.0"
 CAPABILITIES = {
     "layers": ["RightHand", "LeftHand", "Shoes", "Pants", "Shirt", "Head", "Gloves", "Ring",
                "Talisman", "Neck", "Waist", "InnerTorso", "Bracelet", "MiddleTorso", "Earrings",
@@ -249,6 +249,13 @@ def root_pos(it, kind):
     return pos
 
 
+def look(it):
+    """A container's graphic and hue (issue #174), for its art in the app; empty when the client
+    cannot say."""
+    graphic = as_int(getattr(it, "ItemID", 0))
+    return {"graphic": graphic, "hue": as_int(getattr(it, "Hue", 0))} if graphic > 0 else {}
+
+
 def root_entry(it, kind, label):
     """A root's containers entry. A ground root carries its tooltip too, as a nested bag does: its
     Contents line ("Contents: 13/125 Items, 95 Stones") is how the app knows the room left in it, and
@@ -257,6 +264,7 @@ def root_entry(it, kind, label):
     entry = {"serial": serial, "name": label, "parent": None, "root": serial, "kind": kind, "pos": root_pos(it, kind)}
     if kind == "ground":
         entry["tooltip"] = tooltip_lines(it)
+    entry.update(look(it))
     return entry
 
 
@@ -266,6 +274,7 @@ def container_entry(cont, root_serial, opened):
              "name": lines[0] if lines else str(getattr(cont, "Name", "") or ""),
              "parent": as_int(getattr(cont, "Container", 0), root_serial) or root_serial,
              "root": root_serial, "kind": "container", "tooltip": lines}
+    entry.update(look(cont))
     if not opened:
         entry["opened"] = False
     return entry

@@ -3,7 +3,8 @@ import { isKnownKind } from "./scan-schema.mts";
 import type { ScanV2 } from "./schema/types.d.mts";
 
 export type HouseTile = [graphic: number, x: number, y: number, z: number, impassable: number];
-export type HouseItem = [serial: number, graphic: number, x: number, y: number, z: number];
+// A container row carries its hue as a sixth element from TazUO 2.20.0 (issue #174).
+export type HouseItem = [serial: number, graphic: number, x: number, y: number, z: number, hue?: number];
 export interface HouseSource { id: string; facet: number | null; capturedAt: string; tiles: HouseTile[]; items: HouseItem[]; containers: HouseItem[]; captures: number }
 export const HOUSE_ITEM_REACH = 18;
 

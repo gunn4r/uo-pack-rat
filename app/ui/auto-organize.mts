@@ -7,6 +7,7 @@ import { state } from "./store.mts";
 import { $, el, toast, compactChildren } from "./dom.mts";
 import { api } from "./api.mts";
 import { box, txt, button, badge, message, segmented, check, table, tipWrap, createDrawer, type DrawerHandle } from "./components.mts";
+import { containerArt } from "./item-art.mts";
 import { errorText } from "./messages.mts";
 import { plural } from "./inv-model.mts";
 import { saveConfig } from "./organize-data.mts";
@@ -97,7 +98,7 @@ function paintContainers(): void {
     box("ul", { class: "auto-cands" }, ...g.rows.map((c) => {
       const note = candidateNote(c);
       const cb = check({ label: `${c.name} · ${c.fill.items}/${c.fill.max}`, checked: chosen.has(c.serial), attrs: { "data-container": String(c.serial) }, onChange: (on) => { toggle(c.serial, on); } });
-      return box("li", { class: "auto-cand" }, cb.root, note ? txt(note, "t-sm muted") : null);
+      return box("li", { class: "auto-cand" }, containerArt(c.serial, 24), cb.root, note ? txt(note, "t-sm muted") : null);
     }))));
   const out = p.unusable.length
     ? el("details", { class: "auto-unusable" }, el("summary", {}, txt(`${plural(p.unusable.length, "container")} can't be used`, "t-sm")),

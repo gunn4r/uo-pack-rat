@@ -16,6 +16,16 @@ def root_pos(serial, kind):
     return pos
 
 
+def look(it):
+    """A container's graphic and hue (issue #174), for its art in the app; empty when the client has no
+    item for it or cannot say."""
+    try:
+        graphic = int(getattr(it, "Graphic", 0) or 0)
+        return {"graphic": graphic, "hue": int(getattr(it, "Hue", 0) or 0)} if graphic > 0 else {}
+    except Exception:
+        return {}
+
+
 def root_entry(serial, kind, label):
     """A root's containers entry. A ground root carries its tooltip too, as a nested bag does: its
     Contents line ("Contents: 13/125 Items, 95 Stones") is how the app knows the room left in it, and
@@ -23,4 +33,8 @@ def root_entry(serial, kind, label):
     entry = {"serial": serial, "name": label, "parent": None, "root": serial, "kind": kind, "pos": root_pos(serial, kind)}
     if kind == "ground":
         entry["tooltip"] = tooltip_lines(serial)
+    try:
+        entry.update(look(API.FindItem(int(serial))))
+    except Exception:
+        pass
     return entry

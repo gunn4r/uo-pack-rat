@@ -101,7 +101,7 @@ export function createHousesService({ settings }: { settings: () => SettingsDoc 
   function houseModel(inv: Inventory, house: HouseSource, td: TileData | null): HouseModel {
     if (houseMemo.inv !== inv || houseMemo.td !== td) {
       const ground = Object.values(inv.containers).flatMap((c) => (c.parent == null && c.kind === "ground" && c.pos && Number.isFinite(c.pos.x) && Number.isFinite(c.pos.y))
-        ? [{ serial: c.serial, name: c.name ?? "", facet: c.pos.facet ?? null, x: c.pos.x!, y: c.pos.y!, z: c.pos.z ?? 0, opened: true }] : []);
+        ? [{ serial: c.serial, name: c.name ?? "", facet: c.pos.facet ?? null, x: c.pos.x!, y: c.pos.y!, z: c.pos.z ?? 0, opened: true, graphic: c.graphic, hue: c.hue }] : []);
       houseMemo = { inv, td, ground, models: new Map() };
     }
     let m = houseMemo.models.get(house.id);

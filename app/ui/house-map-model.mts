@@ -84,8 +84,8 @@ export function drawnZs(s: Stack, base: number): number[] {
 
 // ---------------------------------------------------------------- a stack's chests, and how they are coloured
 export type Mode = "contents" | "free";
-// A chest as the map and its panel show it: its code, the name its label gives (else its in-game name: the engraving, or its scanned name without the serial a duplicate carries, or a seen-only chest's tiledata name), its label colour, fill, item count, height and graphic (as a house capture saw it, issue #174; null when none did).
-export interface ChestView { serial: number; code: string; name: string; inGame: string; color: string | null; fill: { items: number; max: number } | null; opened: boolean; items: number; z: number; graphic: number | null }
+// A chest as the map and its panel show it: its code, the name its label gives (else its in-game name: the engraving, or its scanned name without the serial a duplicate carries, or a seen-only chest's tiledata name), its label colour, fill, item count, height, and graphic and hue (issue #174: the model's, else its scan record's; null and 0 when neither knows).
+export interface ChestView { serial: number; code: string; name: string; inGame: string; color: string | null; fill: { items: number; max: number } | null; opened: boolean; items: number; z: number; graphic: number | null; hue: number }
 type Inv = Pick<InventoryData, "containers" | "rootCounts">;
 export function chestViews(m: HouseModel, s: Stack, inv: Inv, labels: Readonly<Record<string, ContainerLabel>>): ChestView[] {
   const unopened = new Set(m.unopened);
@@ -93,7 +93,7 @@ export function chestViews(m: HouseModel, s: Stack, inv: Inv, labels: Readonly<R
     const key = String(serial), c = inv.containers[key], lab = labels[key];
     const inGame = c ? splitSerial(c.label || bagLabel(c)).name : m.unopenedNames[key] ?? "container";
     return { serial, code: m.codes[key] ?? s.letter, name: lab?.name ?? inGame, inGame, color: lab?.color ?? null, fill: c?.capacity ? { items: c.capacity.items, max: c.capacity.maxItems } : null,
-      opened: !unopened.has(serial), items: inv.rootCounts[key] ?? 0, z: s.zs[i] ?? 0, graphic: m.graphics[key] ?? null };
+      opened: !unopened.has(serial), items: inv.rootCounts[key] ?? 0, z: s.zs[i] ?? 0, graphic: m.graphics[key] ?? c?.graphic ?? null, hue: m.hues[key] ?? c?.hue ?? 0 };
   }).reverse();
 }
 // A chest's colour: a token, or an Organize label's colour (the page paints that through safeColor, always with a border-strong edge).
@@ -599,7 +599,7 @@ export function plainGrid(inv: Pick<InventoryData, "containers">, houses: readon
     s.serials.forEach((serial, h) => { codes[String(serial)] = s.serials.length === 1 ? s.letter : `${s.letter}.${h + 1}`; });
   });
   return { id: PLAIN, facet: null, capturedAt: "", captures: 0, x0: 0, y0: 0, x1, y1,
-    levels: [{ index: 0, name: "Containers on the ground", floorZ: 0, status: "floor-only" }], cells, areas, furniture: [], stacks, spots: [], codes, tiledata: false, unopened: [], unopenedNames: {}, graphics: {} };
+    levels: [{ index: 0, name: "Containers on the ground", floorZ: 0, status: "floor-only" }], cells, areas, furniture: [], stacks, spots: [], codes, tiledata: false, unopened: [], unopenedNames: {}, graphics: {}, hues: {} };
 }
 
 // ---------------------------------------------------------------- search on the map, and the links to it (issue #10)

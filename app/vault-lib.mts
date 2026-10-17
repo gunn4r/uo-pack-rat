@@ -105,6 +105,9 @@ export interface Container {
   // false when the newest scan saw this bag but could not open it: what the fold keeps under it is from an
   // older scan (see foldSnapshots). Organize never moves anything out of one.
   opened?: boolean | undefined;
+  // Its item graphic and hue (issue #174), for its art; absent from scans made before the adapters recorded them.
+  graphic?: number | null | undefined;
+  hue?: number | null | undefined;
   // The container's segment in location text: its bagLabel, plus a distinguishing suffix when another
   // container with the same label sits beside it (labelContainers). Set by every fold.
   label?: string | undefined;
