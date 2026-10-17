@@ -179,7 +179,7 @@ Every route lives in `app/http/routes/`, one module per area, each exporting `ro
 - `GET /api/optimize/<id>/status`
 - A POST /api/optimize whose inputs match a saved run that cannot be bettered returns {cached: true, run} at once.
 - `GET /api/runs?character=` (saved runs, newest first; `?character=_nobody` lists No character's)
-- `GET|PUT {label}|DELETE /api/runs/<id>`
+- `GET|PUT {label}|DELETE /api/runs/<id>` (GET adds `gearChanges` for a run that kept its pool: the pieces its pool, rebuilt from its settings against the scans now, takes that it did not, and the suit's pieces that moved or are gone; issue #291)
 - `POST /api/runs` {character, suit, settings, inventoryStamp} (save Manual's suit as a run, method "manual"; `_nobody` saves No character's, with nothing worn)
 - `POST /api/evaluate` {character (null or `"_nobody"`: No character), suit, profile?, buffs?} (a hand-picked suit evaluated as Manual evaluates it, `app/evaluate.mts`: gear totals, effective totals with the buffs, caps, waste and requirements; `profile` is a run's settings snapshot, the character's saved profile without it)
 

@@ -9,7 +9,7 @@ import type { PlannedBuild } from "../build-spec.mts";
 import { knobError, type Knobs } from "./builder-model.mts";
 import type { BuilderProfile, BuilderJob, BuildMeta, FinishedBuild } from "./store.mts";
 import type { OptimizeResult, OptSuit, RunSummaryLike, SavedRunLike } from "./api-types.mts";
-import type { SwingResult } from "../runs-types.mts";
+import type { GearChanges, SwingResult } from "../runs-types.mts";
 
 export type BuilderMode = "automatic" | "manual";
 // The shown result's best suit as the Requirements tab reads it (issue #272): its paperdoll totals with the buffs it was
@@ -96,6 +96,7 @@ export interface BuilderCommands {
   // builder-result.mts: the result and the compare view
   renderResult(res: OptimizeResult, current: OptSuit, prof: EffectiveProfile, name: string, meta?: BuildMeta): Promise<void>;
   resetResultView(): void;
+  setResultGear(gear: GearChanges | null): Promise<void>;
   resultLoadError(e: unknown): void;
   closeCompare(): void;
   openRunCompare(runs: SavedRunLike[], titleOf: (r: SavedRunLike) => string, open: (id: string) => void, onRemove: (id: string) => void): void;

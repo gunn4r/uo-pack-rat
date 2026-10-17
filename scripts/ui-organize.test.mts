@@ -5,12 +5,12 @@
 // Also a page reloaded mid-trip picking the trip back up. Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
-import { fitWindow, openFacet, type RealSize, testEnv, noUpdateCheck, completeLines } from "./electron-window.mts";
+import { fitWindow, openFacet, type RealSize, testEnv, noUpdateCheck, completeLines, removeTempDir } from "./electron-window.mts";
 import type { ElectronApplication, Page } from "playwright";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -115,7 +115,7 @@ test("[slow] Organize teaches labelling until a container is labelled, and Label
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });
 
@@ -149,7 +149,7 @@ test("[slow] Label… pinning a chest a rule fills names the rule and takes the 
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });
 
@@ -191,7 +191,7 @@ test("[slow] the Rules card: each rule's filter, targets with their fill and cou
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });
 
@@ -249,7 +249,7 @@ test("[slow] a save over a setup changed in another window is refused: the page 
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });
 
@@ -313,7 +313,7 @@ test("[slow] + Rule from a preset, then targets in fill order; the editor lists 
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });
 
@@ -361,7 +361,7 @@ test("[slow] a bag inside a labelled chest can be picked as a target, is labelle
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });
 
@@ -392,7 +392,7 @@ test("[slow] Save as rule… keeps the Inventory's item filters and leaves the l
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });
 
@@ -445,7 +445,7 @@ test("[slow] the plan puts its reports first and keeps a 600-move trip list coll
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });
 
@@ -499,7 +499,7 @@ test("[slow] Run trip queues one trip; Stop writes the stop flag; a failed put l
   } finally {
     clearInterval(alive);
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });
 
@@ -543,7 +543,7 @@ test("[slow] a page reloaded mid-trip picks the trip back up: shown as running, 
   } finally {
     clearInterval(alive);
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });
 
@@ -596,7 +596,7 @@ test("[slow] Organize fits a 1000 × 700 window: rows reflow, nothing scrolls si
   } finally {
     clearInterval(alive);
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });
 
@@ -627,7 +627,7 @@ test("[slow] a hand-edited organize.json that lost a rule says so, refuses trips
   } finally {
     clearInterval(alive);
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });
 
@@ -696,7 +696,7 @@ test("[slow] Auto organize: Simple proposes groups for the ticked chests, Accept
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });
 
@@ -727,7 +727,7 @@ test("[slow] the Auto organize drawer fits a 1000 × 700 window: nothing scrolls
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });
 
@@ -782,6 +782,6 @@ test("[slow] Review unclassified items opens the Other items, Classify this… m
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
-    rmSync(dataDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    removeTempDir(dataDir);
   }
 });

@@ -99,13 +99,29 @@ export function testEnv(extra: Record<string, string> = {}, home?: string): Reco
   if (!home) {
     if (!sharedHome) {
       const made = mkdtempSync(join(tmpdir(), "packrat-client-home-"));
-      process.on("exit", () => rmSync(made, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }));
+      process.on("exit", () => removeTempDir(made));
       sharedHome = made;
     }
     home = sharedHome;
   }
   // Playwright's `env` wants plain strings; process.env's entries are, at runtime.
   return { ...(process.env as Record<string, string>), PACKRAT_CLIENT_HOME: home, ...extra };
+}
+
+// Removes a test's temp folder. On Windows the Electron process can still hold a handle on it for a moment after the app
+// closes, so a locked folder (EPERM, EBUSY, ENOTEMPTY) is tried again for up to 30 seconds, and if it is still locked a warning is
+// logged instead of failing a test whose assertions have already run; the OS temp folder is cleaned up eventually.
+export function removeTempDir(dir: string): void {
+  const until = Date.now() + 30_000;
+  for (;;) {
+    try { rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }); return; }
+    catch (e) {
+      const code = (e as NodeJS.ErrnoException).code ?? "";
+      if (!["EPERM", "EBUSY", "ENOTEMPTY"].includes(code)) throw e;
+      if (Date.now() >= until) { console.warn(`could not remove ${dir} (${code}); leaving it to the OS temp cleanup`); return; }
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 500);
+    }
+  }
 }
 
 // The data folder every Electron UI test launches the app with, passed through this first: it turns the

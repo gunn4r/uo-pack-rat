@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
-import { fitWindow, type RealSize, testEnv, noUpdateCheck } from "./electron-window.mts";
+import { fitWindow, type RealSize, testEnv, noUpdateCheck, removeTempDir } from "./electron-window.mts";
 import { probeContrast, failures, describeFailures, type ContrastRow } from "./contrast-probe.mts";
 import { houseScan } from "../app/organize-fixture.mts";
 import { claimHouses, vaultHouse, courtyardHouse, castleHouse, fixtureTileData, FIXTURE_TILES } from "../app/house-fixture.mts";
@@ -114,7 +114,7 @@ async function launch(dataDir: string, { want = { width: 1440, height: 900 }, de
 }
 async function done(app: ElectronApplication, dir: string): Promise<void> {
   await app.close();
-  rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  removeTempDir(dir);
 }
 async function go(page: Page, hash: string, ready: string): Promise<void> {
   await page.evaluate((h) => { location.hash = h; }, hash);

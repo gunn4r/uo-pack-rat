@@ -5,6 +5,7 @@ import { goalsActive } from "../vault-lib.mts";
 import type { FlatProfile, ProfilesV3, TemplateMap } from "../build-spec.mts";
 import type { Facets } from "../item-query.mts";
 import type { RulesV1 } from "../schema/types.d.mts";
+import type { GearChanges } from "../runs-types.mts";
 import type { BridgeAdapterReport, InventoryData, SettingsData, ShardOption, SetupApiResponse, OptSuit, OptimizeResult, OptimizeProgress, SavedRunLike, OrganizeConfig, OrganizePlan, OrganizePreset } from "./api-types.mts";
 
 // The suit builder's own working copy of a character's settings: the flat profile app/build-spec.mts's
@@ -70,6 +71,7 @@ export interface BuildMeta {
   reused: SavedRunLike | null;
   goals?: Goals | undefined;   // the goals in force the run was built from (issue #292): the result's "How the goals went"
   goalSwing?: GoalSwingWeapon | undefined;   // the weapon and stamina its Swing speed goal was set for (issue #302); absent in a run saved before it
+  gearChanges?: GearChanges | undefined;     // a saved run's: what changed in the gear since it was built (issue #291), for the slot table's marks
 }
 // A result's goals meta from its run's settings: the goals in force and the weapon its Swing speed goal was set for; none for weights set by hand.
 export const goalsMeta = (st: RunSettings): Pick<BuildMeta, "goals" | "goalSwing"> => (goalsActive(st.goals) ? { goals: st.goals, ...(st.goalSwing ? { goalSwing: st.goalSwing } : {}) } : {});
