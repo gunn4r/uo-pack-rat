@@ -1,9 +1,9 @@
 // organize.mts — the Organize service (issues #11, #127, #131): finished trips read back into the results overlay, what a plan starts from, the plan, a trip queued for the bridge, and Put away's requests from the in-game panel.
-import { lstatSync, mkdirSync, readFileSync, unlinkSync } from "node:fs";
+import { mkdirSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { DATA_DIR_MODE, DATA_FILE_MODE, type ConfigPaths } from "../config.mts";
-import { writeFileAtomic } from "../atomic-write.mts";
+import { readBounded, writeFileAtomic } from "../atomic-write.mts";
 import { isBoundedString } from "../guards.mts";
 import { readBridgeStatus } from "../bridge-status.mts";
 import { queueTrip } from "../bridge-trip.mts";
@@ -101,8 +101,8 @@ export function createOrganizeService({ paths, getInventory, organizeStore, orga
   async function putAway(adapter: string, path: string): Promise<void> {
     let raw: unknown = null;
     try {
-      const st = lstatSync(path);
-      if (st.isFile() && st.size <= MAX_REQUEST_BYTES) raw = JSON.parse(readFileSync(path, "utf8"));
+      const r = readBounded(path, MAX_REQUEST_BYTES, { follow: false });
+      if (!r.tooBig) raw = JSON.parse(r.text);
     } catch { /* refused below as not a request */ }
     try { unlinkSync(path); } catch { /* gone already */ }
     const checked = checkPutAwayRequest(raw, Date.now());
