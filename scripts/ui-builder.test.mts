@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
-import { fitWindow, noUpdateCheck, removeTempDir, pickCharacter, pickTemplate } from "./electron-window.mts";
+import { fitWindow, noUpdateCheck, removeTempDir, pickCharacter, pickTemplate, settle, sideways, sidewaysAt } from "./electron-window.mts";
 import type { ElectronApplication, Locator, Page } from "playwright";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -228,14 +228,17 @@ test("[slow] the Settings drawer: ⌘, and its button, Esc, the tabs, an error's
     // The sentence bar (issue #321): one line at 1366 (where the screen allows that width), Saved runs on the quieter row
     // under it; at 1024 the pickers wrap and Build Settings and Build stay one group at the right of its row.
     const top = (sel: string): Promise<number> => page.locator(sel).evaluate((n) => Math.round(n.getBoundingClientRect().top));
+    const tops = (...sels: string[]): Promise<number[]> => Promise.all(sels.map(top));
     if ((await fitWindow(app, page, { width: 1366, height: 900 })).width === 1366) {
-      assert.equal(await top("#b-run"), await top("#b-char"), "one line at 1366");
-      assert.equal(await top("#b-tpl"), await top("#b-char"));
+      const [run, tpl, char] = await settle(() => tops("#b-run", "#b-tpl", "#b-char"), ([r, t, c]) => r === c && t === c);
+      assert.equal(run, char, "one line at 1366");
+      assert.equal(tpl, char);
     }
     assert.ok(await top("#b-runs-open") > await top("#b-run"), "Saved runs on the second row");
     await fitWindow(app, page, { width: 1024, height: 768 });
-    assert.equal(await top("#b-settings"), await top("#b-run"));
-    const bar = (await page.locator("#b-topbar").boundingBox())!, run = (await page.locator("#b-run").boundingBox())!;
+    const [settingsTop, runTop] = await settle(() => tops("#b-settings", "#b-run"), ([s, r]) => s === r);
+    assert.equal(settingsTop, runTop);
+    const bar = (await settle(async () => (await page.locator("#b-topbar").boundingBox())!, (b) => b.height < 170)), run = (await page.locator("#b-run").boundingBox())!;
     assert.ok(bar.x + bar.width - (run.x + run.width) < 40, "Build at the bar's right end");
     assert.ok(bar.height < 170, `the pickers wrap once at most, got ${bar.height}`);
     assert.deepEqual(errors, []);
@@ -491,7 +494,7 @@ test("[slow] goals: the ranked list, its counts, =, spare points, How the goals 
       await page.click("#b-runs-open");
       await page.locator("#b-runs .run-card button[aria-haspopup=menu]").first().click();
       await page.click('.pop-over-drawer [role="menuitem"]:has-text("Open")');
-      await page.waitForSelector("#b-run-banner .saved-run, #b-run-banner .b-gear-changed", { timeout: 10_000 });
+      await page.waitForSelector("#b-run-banner .saved-run, #b-run-banner .b-gear-changed", { timeout: 30_000 });   // a slow Windows runner took over 10 s (issue #330)
       await closeSettings(page);
       await page.locator("#b-run-banner").getByRole("button", { name: "Load these settings" }).click();
     };
@@ -501,9 +504,8 @@ test("[slow] goals: the ranked list, its counts, =, spare points, How the goals 
     await count("No changes since the last build");
 
     // at phone width the drawer fits without a sideways scroll
-    await fitWindow(app, page, { width: 420, height: 900 });
-    const widths = await page.evaluate(() => [document.documentElement.scrollWidth, innerWidth, document.querySelector("#b-drawer .b-drawer-body")!.scrollWidth, document.querySelector("#b-drawer .b-drawer-body")!.clientWidth]);
-    assert.ok(widths[0]! <= widths[1]! && widths[2]! <= widths[3]!, `no sideways scroll: ${widths.join(", ")}`);
+    const drawerOver = await sidewaysAt(app, page, { width: 420, height: 900 }, ["#b-drawer .b-drawer-body"]);
+    assert.ok(drawerOver <= 0, `no sideways scroll: ${drawerOver}`);
     await fitWindow(app, page, { width: 1440, height: 900 });
 
     // a profile saved with weights and no goals opens on its weights; a run built from it, loaded over goals, leaves goal mode
@@ -540,9 +542,8 @@ test("[slow] strict order: the strategy's subtitle, a strict build without trade
   const { app, page, errors } = await launch(dataDir);
   const text = (sel: string, re: RegExp): Promise<unknown> => page.waitForFunction(([q, src]) => new RegExp(src!).test(document.querySelector(q!)?.textContent || ""), [sel, re.source], { timeout: 10_000 });
   const noSideways = async (what: string): Promise<void> => {
-    await fitWindow(app, page, { width: 420, height: 900 });
-    const w = await page.evaluate(() => [document.documentElement.scrollWidth, innerWidth]);
-    assert.ok(w[0]! <= w[1]!, `${what}: no sideways scroll at 420 (${w.join(", ")})`);
+    const over = await sidewaysAt(app, page, { width: 420, height: 900 });
+    assert.ok(over <= 0, `${what}: no sideways scroll at 420 (${over} px)`);
     await fitWindow(app, page, { width: 1440, height: 900 });
   };
   try {
@@ -605,9 +606,7 @@ test("[slow] goals runs: the first-visit goals, the run line in goal names, and 
     const sum = await page.locator("#b-start .b-start-sum").innerText();
     assert.match(sum, /Spare points: Luck\s+Goals in Build Settings/);
     assert.doesNotMatch(sum, /more in Build Settings/, "the spare points are no extra row");
-    await fitWindow(app, page, { width: 420, height: 900 });
-    const fits = await page.waitForFunction(() => document.documentElement.scrollWidth - document.documentElement.clientWidth <= 0, undefined, { timeout: 5_000 }).then(() => true, () => false);
-    assert.ok(fits, "no sideways scroll at 420 on the first-visit view");
+    assert.ok(await sidewaysAt(app, page, { width: 420, height: 900 }) <= 0, "no sideways scroll at 420 on the first-visit view");
     await fitWindow(app, page, { width: 1440, height: 900 });
 
     // a swing time: the worn weapon's fastest step
@@ -640,9 +639,7 @@ test("[slow] goals runs: the first-visit goals, the run line in goal names, and 
     assert.doesNotMatch(banner, /SSI|HCI|DCI/, "goal names, not abbreviations");
     assert.equal(await swingRow(), before, "the reopened run's Swing speed line is the build's");
     assert.doesNotMatch(await page.locator("#b-goals-went").innerText(), /Practice Staff/, "not the weapon worn now");
-    await fitWindow(app, page, { width: 420, height: 900 });
-    const fitsRun = await page.waitForFunction(() => document.documentElement.scrollWidth - document.documentElement.clientWidth <= 0, undefined, { timeout: 5_000 }).then(() => true, () => false);
-    assert.ok(fitsRun, "no sideways scroll at 420 on the reopened run");
+    assert.ok(await sidewaysAt(app, page, { width: 420, height: 900 }) <= 0, "no sideways scroll at 420 on the reopened run");
     assert.deepEqual(errors, []);
   } finally {
     await app.close();
@@ -756,12 +753,10 @@ test("[slow] What changes: Gauges for what the build asks, Table with every prop
     assert.ok(saved(), "the choice is in ui-prefs.json");
 
     // At phone width the page doesn't scroll sideways; the table scrolls inside its box.
-    await fitWindow(app, page, { width: 420, height: 900 });
-    // the resized window's layout settles over a frame or two (the header's pickers reflow): measure once it has
-    await page.waitForFunction(() => document.documentElement.scrollWidth <= innerWidth, undefined, { timeout: 5_000 }).catch(() => {});
-    const widths = await page.evaluate(() => { const r = document.querySelector(".b-results")!, b = document.querySelector(".b-chg-scroll")!; return [document.documentElement.scrollWidth, innerWidth, r.scrollWidth, r.clientWidth, b.scrollWidth, b.clientWidth]; });
-    assert.ok(widths[0]! <= widths[1]! && widths[2]! <= widths[3]!, `no sideways page scroll: ${widths.join(", ")}`);
-    assert.ok(widths[4]! > widths[5]!, "the table scrolls in its own box");
+    const resultsOver = await sidewaysAt(app, page, { width: 420, height: 900 }, [".b-results"]);
+    assert.ok(resultsOver <= 0, `no sideways page scroll: ${resultsOver}`);
+    const [boxW, boxClient] = await page.locator(".b-chg-scroll").evaluate((b) => [b.scrollWidth, b.clientWidth]);
+    assert.ok(boxW! > boxClient!, "the table scrolls in its own box");
     const box = page.locator(".b-chg-scroll");
     assert.deepEqual([await box.getAttribute("role"), await box.getAttribute("tabindex"), await box.evaluate((e) => e.classList.contains("more-right"))], ["region", "0", true], "a labelled region the keyboard can scroll, marked when more is on the right");
     const [nameLeft, boxLeft] = await page.evaluate(() => { const b = document.querySelector(".b-chg-scroll")!; b.scrollLeft = b.scrollWidth; return [document.querySelector(".b-chg-tbl tbody td")!.getBoundingClientRect().left, b.getBoundingClientRect().left]; });
@@ -960,7 +955,7 @@ test("[slow] drawer extras: notched weight sliders, buffs by school, each requir
     await fitWindow(app, page, { width: 420, height: 900 });
     for (const tab of ["weights", "buffs", "requirements"] as const) {
       await settings(page, tab);
-      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), 0, `no sideways scroll on ${tab} at 420`);
+      assert.ok(await sideways(page) <= 0, `no sideways scroll on ${tab} at 420`);
     }
     assert.deepEqual(errors, []);
   } finally {
@@ -1807,9 +1802,7 @@ test("[slow] arriving: the first-visit view, coming back to the latest run, othe
     assert.match(await page.locator("#b-start .b-start-sum").innerText(), /Melee will build for\s+Needs\s+Resists 65[\s\S]*What matters most/);
     assert.equal(await page.locator("#b-start-build").innerText(), "Build Dorran's suit");
     assert.match(await page.locator("#b-wearing").innerText(), /^Dorran is wearing now/);
-    await fitWindow(app, page, { width: 420, height: 900 });
-    // polled: the sidebar folds as the window narrows, so a read in the middle of the resize can catch it wider
-    const fits = await page.waitForFunction(() => document.documentElement.scrollWidth - document.documentElement.clientWidth <= 0, undefined, { timeout: 5_000 }).then(() => true, () => false);
+    const fits = await sidewaysAt(app, page, { width: 420, height: 900 }) <= 0;
     assert.ok(fits, `no sideways scroll at 420: ${await page.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth, ...[...document.querySelectorAll("body *")].filter((e) => e.getBoundingClientRect().right > innerWidth + 0.5).slice(0, 5).map((e) => `${e.tagName}.${e.className}#${e.id}`)].join(" "))}`);
     await fitWindow(app, page, { width: 1440, height: 900 });
 
@@ -1955,8 +1948,7 @@ test("[slow] gear changed since a run: the banner lists the changes, the Plan ma
     await page.waitForFunction(() => !/No longer in the scans/.test(document.querySelector(".b-plan")?.textContent || ""), undefined, { timeout: 10_000 });
     assert.match(await row(labels[0]).innerText(), /Now in Metal Chest/);
     assert.equal(await row(labels[0]).getByRole("button", { name: /^Grab / }).count(), 1);
-    await fitWindow(app, page, { width: 420, height: 900 });
-    const fits = await page.waitForFunction(() => document.documentElement.scrollWidth - document.documentElement.clientWidth <= 0, undefined, { timeout: 5_000 }).then(() => true, () => false);
+    const fits = await sidewaysAt(app, page, { width: 420, height: 900 }) <= 0;
     assert.ok(fits, `no sideways scroll at 420: ${await page.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth, ...[...document.querySelectorAll("body *")].filter((e) => e.getBoundingClientRect().right > innerWidth + 0.5).slice(0, 5).map((e) => `${e.tagName}.${e.className}#${e.id}`)].join(" "))}`);
     // narrow, the Plan has no Where column: the mark shows under the piece's name
     assert.equal(await row(labels[2]).locator(".b-mark-narrow").innerText(), "Now worn by Kestrel");
@@ -2109,17 +2101,17 @@ test("[slow] the sentence bar: typeahead pickers by keyboard, the build's state 
     await face(/^from template “Caster”$/);
 
     // At phone width: the words go, each picker takes the width, Build Settings and Build share a row, no sideways scroll.
-    await fitWindow(app, page, { width: 420, height: 900 });
-    const sideways = (): Promise<number> => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    const narrow = await sidewaysAt(app, page, { width: 420, height: 900 });
     assert.equal(await page.locator(".b-w-for").isVisible(), false);
     const top = (sel: string): Promise<number> => page.locator(sel).evaluate((n) => Math.round(n.getBoundingClientRect().top));
-    assert.equal(await top("#b-settings"), await top("#b-run"));
-    assert.ok(await top("#b-tpl") > await top("#b-char"), "the pickers on rows of their own");
-    assert.ok(await sideways() <= 0, `no sideways scroll at 420: ${await sideways()}`);
+    const [settingsTop, runTop, tplTop, charTop] = await settle(() => Promise.all(["#b-settings", "#b-run", "#b-tpl", "#b-char"].map(top)), ([s, r, t, c]) => s === r && t! > c!);
+    assert.equal(settingsTop, runTop);
+    assert.ok(tplTop! > charTop!, "the pickers on rows of their own");
+    assert.ok(narrow <= 0, `no sideways scroll at 420: ${narrow}`);
     for (const pick of ["#b-char", "#b-tpl"]) {
       await page.click(pick);
       await page.locator(".pop [role=combobox]").waitFor();
-      assert.ok(await sideways() <= 0, `no sideways scroll with ${pick}'s list open`);
+      assert.ok(await sideways(page) <= 0, `no sideways scroll with ${pick}'s list open`);
       await page.keyboard.press("Escape");
     }
     await fitWindow(app, page, { width: 1440, height: 900 });

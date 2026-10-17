@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
-import { fitWindow, openFacet, testEnv, noUpdateCheck, completeLines, removeTempDir, pickCharacter, characterNames } from "./electron-window.mts";
+import { fitWindow, openFacet, settle, testEnv, noUpdateCheck, completeLines, removeTempDir, pickCharacter, characterNames } from "./electron-window.mts";
 import type { ElectronApplication, Page } from "playwright";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -570,6 +570,9 @@ test("[slow] a worn piece low on durability is badged on the sheet and beside it
     assert.ok(cb && lb && lb.x >= cb.x && lb.x + lb.width <= cb.x + cb.width + 0.5 && lb.x + lb.width <= viewport.width,
       `the badge is inside the sticky Character cell and on screen without scrolling (cell ${JSON.stringify(cb)}, badge ${JSON.stringify(lb)}, viewport ${JSON.stringify(viewport)})`);
     await low.focus();
+    // The badge's own tooltip, and it alone once an earlier hover's has gone (issue #330: two were in the page for a moment).
+    await page.getByRole("tooltip").filter({ hasText: /^1 worn piece is low on durability$/ }).waitFor();
+    assert.equal(await settle(() => page.getByRole("tooltip").count(), (n) => n === 1), 1, "one tooltip showing");
     assert.equal(await page.getByRole("tooltip").innerText(), "1 worn piece is low on durability");
     assert.equal(await page.locator('#char-table tr[data-name="Kestrel"] .badge').count(), 0, "nothing low, no badge");
     assert.deepEqual(errors, []);
@@ -707,13 +710,12 @@ test("[slow] the data-folder banner is one line above every screen, which fits b
       for (const tab of ["inventory", "builder", "characters", "settings"]) {
         await openTab(page, tab);
         await page.waitForSelector("#notice:not([hidden])", { timeout: 15_000 });
-        await page.waitForTimeout(300);
-        const m = await page.evaluate((id) => ({
+        const m = await settle(() => page.evaluate((id) => ({
           notice: document.querySelector("#notice")!.getBoundingClientRect().height,
           text: document.querySelector("#notice > span")!.textContent,
           screenBottom: document.querySelector(`#tab-${id}`)!.getBoundingClientRect().bottom,
           vh: innerHeight,
-        }), tab);
+        }), tab), (v) => v.notice <= 56 && v.screenBottom <= v.vh + 0.5);
         assert.equal(m.text, "Your game scripts write scans to a different folder than Pack Rat is reading.");
         assert.ok(m.notice <= 56, `${tab} at ${real.width}: the banner is one line, got ${m.notice}px`);
         assert.ok(m.screenBottom <= m.vh + 0.5, `${tab} at ${real.width}: the screen ends at the window's bottom (${m.screenBottom} > ${m.vh})`);
