@@ -120,9 +120,13 @@ export function buildSpecError(v: unknown, label: string, { template = false }: 
 // "builtin:…", which names the shard's own.
 export const TEMPLATE_NAME_MAX = 128;
 // profiles.json v3's characters and templates, each spec held to buildSpecError (the schema checks the file's shape), and
-// each template's name to TEMPLATE_NAME_MAX and the built-in prefix.
-export function profilesSpecError(doc: ProfilesV3): string | null {
-  for (const id of Object.keys(doc.templates)) if (id.length > TEMPLATE_NAME_MAX || id.startsWith(BUILTIN_PREFIX)) return `templates: a template's name is at most ${TEMPLATE_NAME_MAX} characters and can't start with "${BUILTIN_PREFIX}"`;
+// each NEW template's name to TEMPLATE_NAME_MAX and the built-in prefix: a name already in the stored file (`stored`, which
+// an older Pack Rat may have written) stays, so it never blocks a save; the error names the template refused.
+export function profilesSpecError(doc: ProfilesV3, stored?: Pick<ProfilesV3, "templates"> | null): string | null {
+  for (const id of Object.keys(doc.templates)) {
+    if (stored?.templates && Object.hasOwn(stored.templates, id)) continue;
+    if (id.length > TEMPLATE_NAME_MAX || id.startsWith(BUILTIN_PREFIX)) return `templates: “${id.length > 40 ? `${id.slice(0, 40)}…` : id}”: a template's name is at most ${TEMPLATE_NAME_MAX} characters and can't start with "${BUILTIN_PREFIX}"`;
+  }
   for (const [name, c] of Object.entries(doc.characters)) { const e = buildSpecError(c.spec, `characters.${name}.spec`); if (e) return e; }
   for (const [id, t] of Object.entries(doc.templates)) { const e = buildSpecError(t.spec, `templates.${id}.spec`, { template: true }); if (e) return e; }
   return null;

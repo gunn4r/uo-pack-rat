@@ -392,7 +392,15 @@ test("[fast] profilesSpecError refuses a template named past 128 characters or w
   const doc = (name: string) => ({ schemaVersion: 3, characters: {}, templates: { [name]: { spec } } }) as unknown as Parameters<typeof profilesSpecError>[0];
   assert.equal(profilesSpecError(doc("x".repeat(128))), null);
   assert.match(profilesSpecError(doc("x".repeat(129))) ?? "", /at most 128 characters/);
-  assert.match(profilesSpecError(doc("builtin:melee")) ?? "", /can't start with "builtin:"/);
+  assert.match(profilesSpecError(doc("builtin:melee")) ?? "", /^templates: “builtin:melee”: .*can't start with "builtin:"/, "the error names the template");
+  assert.match(profilesSpecError(doc("y".repeat(129))) ?? "", new RegExp(`^templates: “${"y".repeat(40)}…”`), "a long name, shortened");
+  // a name already in the stored file (an older Pack Rat's) never blocks a save; a new one beside it is still checked
+  const old = doc("builtin:old"), long = doc("z".repeat(200));
+  assert.equal(profilesSpecError(old, old), null);
+  assert.equal(profilesSpecError(long, long), null);
+  const both = { ...old, templates: { ...old.templates, "builtin:new": { spec } } } as typeof old;
+  assert.match(profilesSpecError(both, old) ?? "", /“builtin:new”/);
+  assert.equal(profilesSpecError(old, { templates: {} }), profilesSpecError(old), "not stored: checked");
 });
 
 // Issue #336: a character's build label as the picker and the MCP tools read it, and the longest profiles.json takes.

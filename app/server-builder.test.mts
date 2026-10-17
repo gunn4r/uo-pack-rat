@@ -81,6 +81,27 @@ test("[fast] PUT /api/profiles: an oversized multi-byte body is 413 (bytes, not 
   assert.equal(asJson<ErrorBody>(old.json()).error, "profiles are saved in a newer shape now; reload the page and make the change again");
 });
 
+// Issue #336: a template name an older Pack Rat let through (over 128 characters, or "builtin:…") stays in the file and
+// never blocks a save; only a new one is refused, by name.
+test("[fast] PUT /api/profiles: stored over-long and built-in-prefixed template names pass; a new one is 400 naming it", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-tplnames-")), spec = templateSpecFrom({}, []), long = "x".repeat(200);
+  const stored = { schemaVersion: 3, characters: {}, templates: { "builtin:old": { spec }, [long]: { spec } } };
+  const cfg = ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {}));
+  writeFileSync(join(dir, "profiles.json"), JSON.stringify(stored));
+  const s = await startServer(cfg);
+  try {
+    const put = (doc: unknown) => fetch(`${s.url}/api/profiles`, { method: "PUT", headers: JSON_HEADERS, body: JSON.stringify(doc) });
+    const read = asJson<ProfilesResponse>(await (await fetch(`${s.url}/api/profiles`)).json()).profiles;
+    assert.deepEqual(Object.keys(read.templates).sort(), [long, "builtin:old"].sort(), "read as stored");
+    const same = await put({ ...read, templates: { ...read.templates, Mine: { spec } } });
+    assert.equal(same.status, 200, "a save beside them goes through");
+    const bad = await put({ ...read, templates: { ...read.templates, "builtin:new": { spec } } });
+    assert.equal(bad.status, 400);
+    assert.match(asJson<ErrorBody>(await bad.json()).error, /^templates: “builtin:new”: /);
+    assert.deepEqual(Object.keys(JSON.parse(readFileSync(join(dir, "profiles.json"), "utf8")).templates).sort(), [long, "Mine", "builtin:old"].sort(), "the refused save left the file alone");
+  } finally { await s.close(); rmSync(dir, { recursive: true, force: true }); }
+});
+
 test("[fast] two POST /api/optimize from the same X-Client-Id: the second supersedes the first, whose status becomes cancelled", async () => {
   const inv = asJson<InventoryResponse>((await rawReq(`${tsrv.url}/api/inventory`, { headers: authHost() })).json());
   const profiles = asJson<ProfilesResponse>((await rawReq(`${tsrv.url}/api/profiles`, { headers: authHost() })).json());
