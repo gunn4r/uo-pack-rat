@@ -302,3 +302,11 @@
 /* ---- menus size to their longest item (components.mts menu): no item's words wrap; the minimum is inline */
 .pop[role="menu"] { width: max-content; max-width: min(360px, calc(100vw - 16px)); }
 .pop-menu .menu-item > span:not(.count) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+
+/* ---- an item's in-game art (ui/item-art.mts, issue #174): a square tile, the art centered and scaled down to fit (2x and pixelated when that fits), a badge (the House map's color swatch) in its corner */
+.art-tile { position: relative; flex: none; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--radius-sm); background: var(--color-art-backing); }
+.art-tile.art-32 { width: 32px; height: 32px; }
+.art-tile.art-24 { width: 24px; height: 24px; }
+.art-img { display: block; max-width: 100%; max-height: 100%; }
+.art-img.art-2x { image-rendering: pixelated; max-width: none; max-height: none; }
+.art-tile > :not(.art-img) { position: absolute; right: -2px; bottom: -2px; }

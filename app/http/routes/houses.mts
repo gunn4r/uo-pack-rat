@@ -1,4 +1,4 @@
-// houses.mts — the house map: GET /api/houses[/<id>], GET /api/facet-map/<facet>.png, GET /api/house-map, PUT /api/house-map/<id>, GET /api/house-claims and DELETE /api/house-claims/<id>.
+// houses.mts — the house map: GET /api/houses[/<id>], GET /api/facet-map/<facet>.png, GET /api/item-art/<graphic>.png, GET /api/house-map, PUT /api/house-map/<id>, GET /api/house-claims and DELETE /api/house-claims/<id>.
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { DATA_DIR_MODE } from "../../config.mts";
@@ -63,6 +63,16 @@ export function routes(ctx: ServerContext): Route[] {
       const region = `${r.x0},${r.y0},${r.x1},${r.y1}`;
       const out = houseService.facetPng(`${got.key}|${region}|${w}`, () => { const img = renderRegion(f, r, w); return encodePng(img.width, img.height, img.rgb); });
       return send(res, 200, out, "image/png", { "x-region": region });
+    } },
+    // An item's art (issue #174): GET /api/item-art/<graphic>.png?hue=<n>, the graphic and the hue (0 by default, none) whole numbers from 0 to 65535, as a PNG cut to its opaque box, from the same UO folder's artLegacyMUL.uop and hues.mul. The ETag names the files' stamps, graphic and hue, so a repeat with If-None-Match is a 304. A 404 says why there is none as a reason word (as the facet map's, or no-art for a graphic the file has no art for), never with the path.
+    { method: "GET", path: /^\/api\/item-art\//, handle: (req, res, url) => {
+      const m = /^\/api\/item-art\/(\d{1,5})\.png$/.exec(url.pathname), hueText = url.searchParams.get("hue") ?? "0";
+      const graphic = m ? Number(m[1]) : NaN, hue = /^\d{1,5}$/.test(hueText) ? Number(hueText) : NaN;
+      if (!(graphic <= 0xffff) || !(hue <= 0xffff)) return send(res, 400, { ok: false, error: "the graphic and the hue must be whole numbers from 0 to 65535" });
+      const got = houseService.itemArt(graphic, hue);
+      if ("reason" in got) return send(res, 404, { ok: false, reason: got.reason });
+      const headers = { "cache-control": "private, no-cache", etag: got.etag };
+      return req.headers["if-none-match"] === got.etag ? send(res, 304, "", "image/png", headers) : send(res, 200, got.png, "image/png", headers);
     } },
     // The house names and areas (issues #164, #10): GET the whole map; PUT /api/house-map/<id> {name, bounds?, areas?, …}
     // replaces that house's entry (an empty name with no areas removes it). Any id of the house-id shape is taken, listed or not: a name kept for a house
