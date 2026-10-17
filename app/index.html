@@ -44,7 +44,7 @@
     <div id="notice" class="msg warn" role="status" hidden></div>
     <div id="update-notice" class="msg info" role="status" hidden></div>
 
-    <!-- ========================================================== Inventory (ui/inventory.mts, ui/containers.mts, ui/scrolls.mts, ui/inventory.css) -->
+    <!-- ========================================================== Inventory (ui/inventory.mts, ui/containers.mts, ui/scrolls.mts, ui/unravel.mts, ui/inventory.css) -->
     <main class="screen" id="tab-inventory" aria-labelledby="h-inventory">
       <header class="topbar">
         <h1 id="h-inventory">Inventory</h1>
@@ -52,6 +52,7 @@
           <button type="button" role="radio" data-view="items" aria-checked="true"><span>Items</span></button>
           <button type="button" role="radio" data-view="containers" aria-checked="false" tabindex="-1"><span>Containers</span></button>
           <button type="button" role="radio" data-view="scrolls" aria-checked="false" tabindex="-1"><span>Scrolls</span></button>
+          <button type="button" role="radio" data-view="unravel" aria-checked="false" tabindex="-1"><span>Unravel</span></button>
         </div>
         <span class="spacer"></span>
         <a class="btn btn-sm" href="#/import" id="inv-import"><svg class="i i-sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5"></path><path d="M4 17v3h16v-3"></path></svg><span>Import scans</span></a>
@@ -79,6 +80,7 @@
           </section>
         </div>
         <div id="tab-scrolls" class="inv-view" hidden></div>
+        <div id="tab-unravel" class="inv-view" hidden></div>
       </div>
     </main>
 

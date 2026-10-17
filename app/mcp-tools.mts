@@ -12,7 +12,8 @@ import { buffPlanOf, normalizeBuffs, savedBuffs, BUFFS } from "./buffs.mts";
 import { BUILTIN_PREFIX, characterBuffs, characterProfile, findTemplate, planBuild, specFromProfile, templateRefs, templateSettings, type PlannedBuild, type ProfilesV3, type TemplateMap } from "./build-spec.mts";
 import { evaluateSuit } from "./evaluate.mts";
 import type { Diagnostic } from "./runs-types.mts";
-import { EXTRA_COLS, parseItemQuery } from "./item-query.mts";
+import { EXTRA_COLS, parseItemQuery, type UnravelRow } from "./item-query.mts";
+import { LEFT_OUT } from "./unravel.mts";
 import { RUN_DEFAULTS } from "./run-settings.mts";
 import type { ValidatorSchema } from "./schema/validate.mts";
 import type { PlanMove } from "./organize-types.mts";
@@ -83,6 +84,7 @@ function row(it: Item): Record<string, unknown> {
     ...(it.rarity ? { rarity: it.rarity } : {}), where: it.location?.text ?? null, ...(it.container != null ? { container: it.container } : {}), ...(it.root != null ? { root: it.root } : {}),
     ...(it.equippedBy ? { wornBy: it.equippedBy } : {}),
     ...(Object.keys(it.props).length ? { props: it.props } : {}), ...(it.slayers?.length ? { slayers: it.slayers } : {}), ...(it.tags.length ? { tags: it.tags } : {}),
+    ...((it as UnravelRow).unravel ? { unravel: (it as UnravelRow).unravel } : {}),
   };
 }
 const nonZero = (m: PropMap | Record<string, number> | undefined): Record<string, number> => Object.fromEntries(Object.entries(m || {}).filter(([, v]) => v));
@@ -322,6 +324,8 @@ export const TOOLS: Tool[] = [
       sort: { type: "string", maxLength: 64, description: "name (default), kind, slot, location, rarity, seen, amount, or a property key." },
       reverse: { type: "boolean", description: "Numeric sorts are highest first and text sorts A to Z; this flips them." },
       group: { type: "boolean", description: "One row per item name, with the total amount and where the stacks are." },
+      unravel: { type: "boolean", description: "Only pieces worth unraveling at a soul forge, heaviest first (unless sort is given); each row's `unravel` has the ingredient its weight gives (Relic Fragment, Enchanted Essence, Magical Residue), the weight and `maybe` when it sits near a line between two. Pieces worn, in a saved Suit Builder run, insured, pinned in Organize, imbued, blessed or kept by the player are left out unless unravelShow names them." },
+      unravelShow: { type: "array", maxItems: 7, items: { type: "string", enum: [...LEFT_OUT] }, description: "With unravel: list these pieces too; their rows name why under unravel.leftOut." },
       ...PAGE,
     } },
     annotations: { title: "Search items", ...READ },
@@ -355,6 +359,7 @@ export const TOOLS: Tool[] = [
       if (a.medable) sp.set("med", "1");
       if (a.reverse) sp.set("dir", "-1");
       if (a.group) sp.set("group", "1");
+      if (a.unravel) { sp.set("unravel", "1"); if (a.sort === undefined) sp.set("sort", "unravel"); for (const r of (a.unravelShow as string[] | undefined) || []) sp.append("unravelShow", r); }
       const r = await ctx.api<{ total: number; pieces: number; rows?: Item[]; groups?: Array<Record<string, unknown>> }>(`/api/items?${sp}`);
       if (a.group) return { total: r.total, pieces: r.pieces, offset, groups: (r.groups || []).map((g) => ({ name: g.name, kind: g.kind, slot: g.slot, amount: g.amount, stacks: g.stacks, where: g.locations, serial: g.serial })) };
       return { total: r.total, pieces: r.pieces, offset, items: (r.rows || []).map(row) };

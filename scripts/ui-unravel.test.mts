@@ -1,0 +1,124 @@
+// ui-unravel.test.mts — [slow]: the Inventory's Unravel view (issue #271) in the real Electron window.
+//
+// `[slow]`: the Inventory's Unravel view (issue #271) in the real Electron window at 1024 × 768, over the demo scans with Kestrel at Imbuing 70: the picker on the highest Imbuing, the three forecast cards, the groups in their order (Wait for Imbuing 95, Enchanted Essence, Magical Residue) with each row's chance line at 70, a maybe tag with its title, Keep taking a row out and writing settings.json's unravelKeep, Change showing a chip per reason with its count, the Kept chip bringing the kept row back with Unkeep, which puts it back on the list, a row's checkbox and Select these with the selection bar, and no sideways scroll at 420 px.
+//
+// Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
+import test from "node:test";
+import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
+import { fitWindow, testEnv, noUpdateCheck, removeTempDir } from "./electron-window.mts";
+
+const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
+const require_ = createRequire(import.meta.url);
+function unavailable(): string | null {
+  if (process.env.TEST_SKIP_ELECTRON) return "TEST_SKIP_ELECTRON is set";
+  for (const dep of ["electron", "playwright"]) {
+    try { require_.resolve(dep); } catch { return `${dep} is not installed`; }
+  }
+  return null;
+}
+// The demo scans, with Kestrel at Imbuing 70.
+function seed(dataDir: string): void {
+  writeFileSync(join(dataDir, "settings.json"), JSON.stringify({ schemaVersion: 1, shard: "uoalive", setupDone: true }));
+  mkdirSync(join(dataDir, "scans"), { recursive: true });
+  for (const name of ["Dorran", "Kestrel"]) {
+    const scan = JSON.parse(readFileSync(join(ROOT, "app", "fixtures", `demo-${name}.json`), "utf8")) as { skills: Record<string, unknown> };
+    if (name === "Kestrel") scan.skills = { ...scan.skills, Imbuing: { base: 70, value: 70, cap: 100 } };
+    writeFileSync(join(dataDir, "scans", `demo-${name}.json`), JSON.stringify(scan));
+  }
+}
+
+test("[slow] the Unravel view forecasts, groups the candidates by ingredient, keeps and unkeeps a piece, and fits at 420 px", async (t) => {
+  const why = unavailable();
+  if (why) return t.skip(why);
+  const dataDir = mkdtempSync(join(tmpdir(), "packrat-unravel-"));
+  seed(dataDir);
+  const kept = (): unknown => JSON.parse(readFileSync(join(dataDir, "settings.json"), "utf8")).unravelKeep;
+  const { _electron } = await import("playwright");
+  const app = await _electron.launch({ args: [ROOT, "--data", noUpdateCheck(dataDir)], cwd: ROOT, timeout: 60_000, env: testEnv() });
+  try {
+    const page = await app.firstWindow();
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(String(e)));
+    await fitWindow(app, page, { width: 1024, height: 768 });
+    await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
+
+    // The fourth view of the Inventory's switch.
+    await page.getByRole("radio", { name: "Unravel", exact: true }).click();
+    await page.waitForFunction(() => location.hash === "#/unravel");
+    await page.locator(".unr-row").first().waitFor({ timeout: 15_000 });
+    assert.equal(await page.locator("#unr-who").inputValue(), "Kestrel", "the highest Imbuing first");
+    assert.match(await page.locator("#unr-who option:checked").innerText(), /Kestrel · Imbuing 70/);
+
+    // Three forecast cards; below 95 the Relic card says how many pieces wait for it.
+    const cards = await page.locator(".unr-fc").allInnerTexts();
+    assert.equal(cards.length, 3);
+    assert.match(cards[0]!, /Relic Fragment[\s\S]*0 now[\s\S]*pieces? held for Imbuing 95\. At 95 about \d+, at 100 about \d+\. On hand: 0\./i);
+    assert.match(cards[1]!, /Enchanted Essence[\s\S]*≈ \d+[\s\S]*From \d+ pieces?\. On hand: 0\./i);
+    assert.match(cards[2]!, /Magical Residue[\s\S]*≈ \d+[\s\S]*Essence misses\. On hand: 0\./i);
+
+    // The groups in order, each row's ingredient and chance line at Imbuing 70.
+    assert.deepEqual(await page.locator(".unr-group-head h3").allInnerTexts(), ["Wait for Imbuing 95", "Enchanted Essence", "Magical Residue"]);
+    const lines = async (g: string): Promise<string[]> => page.locator(`.unr-group.${g} .unr-yield`).allInnerTexts();
+    assert.ok((await lines("held")).every((l) => /^Relic Fragment at Imbuing 95\s*(maybe)?\s*Refused until then \(now 70\)$/i.test(l.trim())), (await lines("held"))[0]);
+    assert.ok((await lines("essence")).every((l) => /^Enchanted Essence ×[2-4]\s*(maybe)?\s*50% at 70, else Residue$/i.test(l.trim())), (await lines("essence"))[0]);
+    assert.ok((await lines("residue")).every((l) => /^Magical Residue (×1|1–2|2–3)\s*(maybe)?\s*Always at Imbuing 45\+$/i.test(l.trim())), (await lines("residue"))[0]);
+    const weights = await page.locator(".unr-group.essence .unr-row").count();
+    assert.ok(weights > 1, "more than one Essence piece");
+    const maybe = page.locator(".unr-row .unr-maybe").first();
+    assert.match(await maybe.getAttribute("title") ?? "", /^Close to the line between .+: it could go either way$/);
+
+    // Keep takes the row out and writes the Keep list.
+    const left = async (): Promise<number> => +((await page.locator("#unr-excl").innerText()).match(/^(\d+) pieces? left out/)?.[1] ?? 0);
+    const leftBefore = await left();
+    const first = page.locator(".unr-group.essence .unr-row").first();
+    const serial = Number(await first.getAttribute("data-serial"));
+    await first.locator(".unr-keep").click();
+    await page.waitForFunction((s) => !document.querySelector(`.unr-row[data-serial="${s}"]`), serial);
+    assert.deepEqual(kept(), [serial]);
+    assert.equal(await left(), leftBefore + 1);
+
+    // Change: a chip per reason with its count, every one left out; the Kept chip shows the kept row again, with Unkeep.
+    await page.locator("#unr-change").click();
+    const chips = await page.locator("#unr-excl .unr-chip").allInnerTexts();
+    assert.deepEqual(chips.map((c) => c.replace(/\s*\d+$/, "")), ["Worn", "In a saved build", "Insured", "Organize pins", "Imbued", "Blessed", "Kept"]);
+    assert.match(chips[6]!, /Kept\s*1$/);
+    assert.equal(await page.locator('#unr-excl .unr-chip[aria-pressed="true"]').count(), 7, "all left out by default");
+    await page.locator('#unr-excl .unr-chip[data-reason="kept"]').click();
+    const back = page.locator(`.unr-row[data-serial="${serial}"]`);
+    await back.waitFor();
+    assert.equal(await back.locator(".unr-keep").innerText(), "Unkeep");
+    assert.match(await back.locator(".unr-sub").innerText(), /Kept/i);
+    await back.locator(".unr-keep").click();
+    await page.waitForFunction((s) => document.querySelector(`.unr-row[data-serial="${s}"] .unr-keep`)?.textContent === "Keep", serial);
+    for (let i = 0; i < 50 && JSON.stringify(kept()) !== "[]"; i++) await page.waitForTimeout(100);
+    assert.deepEqual(kept(), []);
+
+    // A row's checkbox selects it alone, and the selection bar follows; clearing it hides the bar.
+    const cb = page.locator(".unr-group.residue .unr-cb").first();
+    await cb.click();
+    assert.match(await page.locator("#unr-selbar").innerText(), /^1 selected\s*1 Residue/);
+    assert.equal(await cb.isChecked(), true);
+    await cb.click();
+    await page.locator("#unr-selbar").waitFor({ state: "hidden" });
+
+    // Select these: the whole Essence group, and the selection bar says so.
+    await page.locator('.unr-group.essence [data-select="essence"]').click();
+    await page.locator("#unr-selbar").waitFor();
+    assert.match(await page.locator("#unr-selbar").innerText(), new RegExp(`${weights} selected\\s*${weights} Essence`));
+    assert.equal(await page.locator(".unr-group.essence .unr-cb:checked").count(), weights);
+
+    // No sideways scroll at 420 px.
+    await fitWindow(app, page, { width: 420, height: 900 });
+    const w = await page.evaluate(() => [document.documentElement.scrollWidth, innerWidth]);
+    assert.ok(w[0]! <= w[1]!, `no sideways scroll at 420 (${w.join(", ")})`);
+    assert.deepEqual(errors, []);
+  } finally {
+    await app.close();
+    removeTempDir(dataDir);
+  }
+});

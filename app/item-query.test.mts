@@ -1,6 +1,6 @@
 // item-query.test.mts — `app/item-query.mts`, the item-list filtering, sorting, paging and faceting shared by the page and `GET /api/items`.
 //
-// `app/item-query.mts` (the pure item-list filtering/sorting/paging/faceting shared by the browser and the server's `GET /api/items`): `parseItemQuery`'s defaults and clamping, the list filters taken as repeated params (character, slot, kind, location, root container), prop rules with an operator (at least, at most, exactly), every `applyItemQuery` filter (kind, slot, location, root, character, rarity and rarity-at-least, seenDays, slayer, nogarg, med, hideTags, a prop rule incl. `EXTRA_COLS` keys) and sort (by prop column, by rarity ladder order), paging (offset/limit against `total`/`pieces`), group mode's JSON-safe shape and its stack and piece counts, `facetsOf` (including the places the Location filter's tree is built from), `rarityRank` (a Reforged tier with its base tier, eight tiers in both shipped ladders), `rarityMax` (an item with no tier or one off the ladder counting as below every tier, an unknown ceiling ignored, a floor above the ceiling matching nothing), and `matchesItem` (an Organize rule's per-item checks, agreeing with `applyItemQuery` on every filter a rule keeps, its free text never matching location text). All `[fast]`.
+// `app/item-query.mts` (the pure item-list filtering/sorting/paging/faceting shared by the browser and the server's `GET /api/items`): `parseItemQuery`'s defaults and clamping, the list filters taken as repeated params (character, slot, kind, location, root container), prop rules with an operator (at least, at most, exactly), every `applyItemQuery` filter (kind, slot, location, root, character, rarity and rarity-at-least, seenDays, slayer, nogarg, med, hideTags, a prop rule incl. `EXTRA_COLS` keys) and sort (by prop column, by rarity ladder order), paging (offset/limit against `total`/`pieces`), group mode's JSON-safe shape and its stack and piece counts, `facetsOf` (including the places the Location filter's tree is built from), `rarityRank` (a Reforged tier with its base tier, eight tiers in both shipped ladders), `rarityMax` (an item with no tier or one off the ladder counting as below every tier, an unknown ceiling ignored, a floor above the ceiling matching nothing), and `matchesItem` (an Organize rule's per-item checks, agreeing with `applyItemQuery` on every filter a rule keeps, its free text never matching location text), and `unravel`/`unravelShow` read off the query string (issue #271). All `[fast]`.
 //
 // applyItemQuery's predicate and sort keep parity with what the Inventory screen used to do on its own. Hand-built fixture items (no scan files, no server) keep this fast and pure.
 import { test } from "node:test";
@@ -454,4 +454,15 @@ test("[fast] applyItemQuery and matchesItem: any of the weapon skills, alongside
   assert.equal(matchesItem(ARMED[1]!, { ...rule(""), wskill: ["Fencing"] }), true, "a hand-edited rule matches whatever its case");
   const { wskill, ...old } = rule("kind=gear");
   assert.equal(matchesItem(ARMED[5]!, old), true, "a rule saved before wskill existed has none, and requires none");
+});
+
+// Issue #271: `unravel=1` and the reasons `unravelShow` names (comma-separated, repeated or `all`); an unknown reason is dropped.
+test("[fast] parseItemQuery reads unravel and unravelShow", () => {
+  assert.equal(parseItemQuery(new URLSearchParams("")).unravel, undefined);
+  assert.deepEqual(parseItemQuery(new URLSearchParams("unravel=1")).unravelShow, []);
+  assert.deepEqual(parseItemQuery(new URLSearchParams("unravel=1&unravelShow=kept,worn&unravelShow=nope")).unravelShow, ["worn", "kept"]);
+  assert.deepEqual(parseItemQuery(new URLSearchParams("unravel=1&unravelShow=all")).unravelShow, ["worn", "build", "insured", "pinned", "imbued", "blessed", "kept"]);
+  assert.equal(parseItemQuery(new URLSearchParams("unravelShow=all")).unravelShow, undefined, "only with unravel");
+  // Without an unravel context (a caller that never set one up) the flag matches nothing rather than every item.
+  assert.deepEqual((applyItemQuery(ITEMS, { ...parseItemQuery(new URLSearchParams("unravel=1")) }, ctx) as ItemQueryRows).rows, []);
 });

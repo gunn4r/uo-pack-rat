@@ -149,6 +149,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `app/ui-render.test.mts` — the page's DOM builders for scan-supplied values (the character sheet, the tooltip, the peek's properties), which once built markup as a raw string.
 - `app/ui-state.test.mts` — `app/ui/view-state.mts`, the page's DOM-free state rules.
 - `app/ui-world-map.test.mts` — `app/ui/world-map-model.mts` (issue #164), the world map lightbox's view.
+- `app/unravel.test.mts` — `app/unravel.mts`, what unraveling a piece at a soul forge gives (issue #271).
 - `app/watcher.test.mts` — `app/watcher.mts`: the accepted-name rule, ingesting a file, and the watcher's debounce, retry, reject, sweep and self-healing.
 - `app/wizard-default-adapter.test.mts` — `app/ui/adapters.mts`'s adapter-selection helpers: the wizard and the Import tab never default to a paste client or to a client this OS can't run.
 - `scripts/american-spelling.test.mts` — a [smoke] guard for American spelling in what a player reads (issue #10).
@@ -184,6 +185,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `scripts/ui-smoke.test.mts` — [slow]: the Playwright-driven render check that the page renders and its tabs work.
 - `scripts/ui-state.test.mts` — [slow]: the page's state transitions in the real Electron window.
 - `scripts/ui-tooltips.test.mts` — [slow]: the item tooltip on every screen that draws an item (issue #10).
+- `scripts/ui-unravel.test.mts` — [slow]: the Inventory's Unravel view (issue #271) in the real Electron window.
 <!-- test-index:end -->
 
 The adapters' Python test files are not a separate runner step: `app/adapters.test.mts` spawns each `test_*.py` as a `[fast]` case. `app/contracts.test.mts`, `app/scan-schema.test.mts`, `app/rules.test.mts` and `app/bridge-trip.test.mts` together keep the contracts (`docs/scan-schema.md`, `docs/bridge-protocol.md`, `docs/shard-rules.md`) honest against the code that ships.
