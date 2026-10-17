@@ -1689,7 +1689,7 @@ export function settingsChanges(a: RunSettings = {}, b: RunSettings = {}): Setti
     const v = (k: string, x: number): string | number => (group === "weights" ? importanceText(k, x) : x);
     for (const k of [...new Set([...Object.keys(A), ...Object.keys(B)])].sort()) {
       if (group === "weights" && k in A && k in B && v(k, A[k]!) === v(k, B[k]!)) continue;   // a change too small to show is not named as "X → X"
-      const g = group === "floors" ? "requirements" : "weights", soft = group === "floors" && (b.softFloors || []).includes(k);
+      const g = group === "floors" ? "requirements" : "weights", soft = group === "floors" && k in B && (b.softFloors || []).includes(k);
       const row = { key: k, label: L(k), from: k in A ? String(v(k, A[k]!)) : "none", to: k in B ? String(v(k, B[k]!)) : "none", ...(soft ? { soft } : {}) };
       if (!(k in A)) add(g, `${L(k)} ${noun} ${v(k, B[k]!)} added`, { ...row, added: true });
       else if (!(k in B)) add(g, `${L(k)} ${noun} ${v(k, A[k]!)} removed`, row);
