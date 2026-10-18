@@ -76,7 +76,7 @@ def read_blacklist(path):
 
 # BEGIN generated: manifest
 ADAPTER_ID = "tazuo"
-ADAPTER_VERSION = "2.20.0"
+ADAPTER_VERSION = "2.21.0"
 CAPABILITIES = {
     "layers": ["OneHanded", "TwoHanded", "Shoes", "Pants", "Shirt", "Helmet", "Gloves", "Ring",
                "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic", "Earrings", "Arms",
@@ -363,12 +363,13 @@ NOT_CLAIMED = "Not in one of your houses, so only your pack was scanned. Use Cla
 
 def read_claims(path):
     """The valid entries of <data directory>/house-claims.json, the houses the player claimed (issue #299:
-    {id, facet, bounds: {x0, y0, x1, y1}, claimedAt, by?}), the same checks app/store/house-claims.mts makes.
+    {id, facet, bounds: {x0, y0, x1, y1}, claimedAt, by?}), the same checks app/store/house-claims.mts makes
+    (app/schema/house-claims.v1.schema.json; both run app/fixtures/contract-cases/house-claims.json).
     A bad entry is dropped, and a missing, unreadable or oversized file reads as none: a scan then reads
     no ground container."""
     def ok(e):
         b = e.get("bounds") if isinstance(e, dict) else None
-        return (isinstance(b, dict) and isinstance(e.get("id"), str) and re.match(r"^(\d{1,3}|x)-\d{1,6}-\d{1,6}$", e["id"])
+        return (isinstance(b, dict) and isinstance(e.get("id"), str) and re.fullmatch(r"(\d{1,3}|x)-\d{1,6}-\d{1,6}", e["id"], re.ASCII)
                 and "facet" in e and (e["facet"] is None or (type(e["facet"]) is int and 0 <= e["facet"] <= 5))
                 and all(type(b.get(k)) is int and 0 <= b[k] <= 999999 for k in ("x0", "y0", "x1", "y1")) and b["x0"] <= b["x1"] and b["y0"] <= b["y1"]
                 and isinstance(e.get("claimedAt"), str) and 0 < len(e["claimedAt"]) <= 40 and ("by" not in e or (isinstance(e["by"], str) and 0 < len(e["by"]) <= 64)))
