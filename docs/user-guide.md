@@ -7,6 +7,7 @@ Everything about using Pack Rat, in more detail than the [README](../README.md).
 - [The game scripts](#the-game-scripts)
 - [Inventory and characters](#inventory-and-characters)
 - [Suit Builder](#suit-builder)
+- [House map](#house-map)
 - [Organize](#organize)
 - [The ClassicUO web client](#the-classicuo-web-client)
 - [AI assistants (MCP)](#ai-assistants-mcp)
@@ -114,6 +115,14 @@ Turn on the buffs and forms you fight with (Divine Fury, Reaper Form, Bless, pot
 **Manual** lets you build a suit by hand and see its totals, buffs included, then let the search fill the slots you left empty, save it as a run, or start from an automatic result.
 
 ![A Suit Builder result: the best suit for the demo character, with each resist's before and after, what changes, and how each goal went](images/suit-builder.png)
+
+## House map
+
+The **House map** draws your house from the game, floor by floor, with every stack of chests where it stands. To add a house, stand inside it in game, press **Claim this house** in the Pack Rat panel, then run the house map refresh (TazUO). The map needs your UO folder's `tiledata.mul`; **Settings** shows where Pack Rat found it.
+
+![The House map of a demo house: the floors on the left, the house drawn at the game's angle in the middle with chests colored by their labels, and the house's totals on the right](images/house-map.png)
+
+Switch between **Game angle**, **Top-down** and **Stack plan** (a list of every stack, top chest first), and color the chests by their **Contents** (a labeled chest takes its label's color) or by **Free space**. **Find items in this house** marks the chests that hold what you search for. **New area** draws named areas on a floor, such as a room or a row of chests. Click a stack to see its chests, label one, highlight it in game or open its contents.
 
 ## Organize
 

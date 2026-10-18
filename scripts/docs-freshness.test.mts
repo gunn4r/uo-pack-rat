@@ -36,7 +36,7 @@ const BUDGETS: Record<string, number> = {
   "docs/shard-rules.md": 22000,
   "docs/solver.md": 110000,
   "docs/threat-model.md": 52000,
-  "docs/user-guide.md": 20000,
+  "docs/user-guide.md": 21000,
   "docs/ui.md": 28000,
   "docs/ui/characters.md": 10000,
   "docs/ui/forms.md": 9000,

@@ -81,6 +81,8 @@ async function launchBrowser(): Promise<Browser> {
 async function go(page: Page, url: string, hash: string, ready: string): Promise<void> {
   await page.goto(`${url}/#/${hash}`);
   await page.waitForSelector(ready, { timeout: 30_000 });
+  // The sidebar's footer the same in every picture: a client set up, its bridge not running.
+  await page.waitForSelector('#bridge[data-state="offline"]', { timeout: 30_000 });
   await page.waitForTimeout(600);   // sleep: fonts and transitions settle before the picture
 }
 
@@ -95,7 +97,8 @@ async function still(browser: Browser, name: string, shoot: (page: Page) => Prom
   const page = await context.newPage();
   try {
     await shoot(page);
-    await page.mouse.move(SIZE.width - 2, SIZE.height - 2);   // no hover tooltip in the picture
+    await page.mouse.move(SIZE.width - 2, SIZE.height - 2);   // no hover tooltip or row actions in the picture
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
     await pause(page, 400);
     await page.screenshot({ path: join(OUT, `${name}.png`) });
     report(`${name}.png`);
