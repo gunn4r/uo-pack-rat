@@ -1,9 +1,9 @@
 // ui-prefs.mts — <data>/ui-prefs.json: the page's view choices (GET/PUT /api/ui-prefs), the fields it may hold, and the checks a request's or a hand-edited file's value is held to.
 //
 // map: server
-// owns: `createUiPrefsStore`, `UI_PREF_CHOICES`, `UI_PREF_LISTS`, `UI_PREF_VERSIONS`, `isColWidths`, `isDrawerWidth`, `isManualSuit`
+// owns: `createUiPrefsStore`, `UI_PREF_FIELDS`, `UI_PREF_CHOICES`, `UI_PREF_LISTS`, `UI_PREF_VERSIONS`, `isColWidths`, `isDrawerWidth`, `isManualSuit`
 import { GEAR_SLOTS } from "../vault-lib.mts";
-import { isBuffSkills, isBuffSkillsByCharacter, normalizeBuffs, normalizeBuffListsByCharacter } from "../buffs.mts";
+import { isBuffList, isBuffSkills, isBuffSkillsByCharacter, normalizeBuffs, normalizeBuffListsByCharacter } from "../buffs.mts";
 import { isBoundedInt, isBoundedString, MAX_SERIAL } from "../guards.mts";
 import { migrate } from "../migrate.mts";
 import { readJsonFile, writeJsonFile } from "./json-file.mts";
@@ -51,6 +51,26 @@ export function isManualSuit(v: unknown): v is Record<string, number> {
   if (!v || typeof v !== "object" || Array.isArray(v)) return false;
   return Object.entries(v).every(([k, s]) => GEAR_SLOTS.includes(k) && isBoundedInt(s, 1, MAX_SERIAL));
 }
+// Every field of <data>/ui-prefs.json, in the file's order: `check` is what PUT /api/ui-prefs holds a value to, with
+// `error` its 400; `read` is how the field is read back from the file (the value, healed, or undefined to drop it),
+// `check` itself when absent. A list read back may be longer or hold longer keys than a PUT allows; the buffs read back
+// healed (app/buffs.mts normalizeBuffs, a hand-edited second form replaces the first); Automatic's buffs and the buff
+// numbers by character are only read back (LegacyBuffPrefs below; they are the profile now, a setBuffs edit through PATCH /api/profiles), and a PUT naming them is refused.
+export interface UiPrefField { key: string; check: (v: unknown) => boolean; error: string; read?: (v: unknown) => unknown }
+const isKeyList = (v: unknown): boolean => Array.isArray(v) && v.length <= 200 && v.every((c) => isBoundedString(c, 64));
+const legacy = (key: string): string => `${key} is kept with the profiles now; reload the page`;
+export const UI_PREF_FIELDS: UiPrefField[] = [
+  ...UI_PREF_LISTS.map((key) => ({ key, check: isKeyList, error: `${key} must be a list of at most 200 keys`, read: (v: unknown) => (Array.isArray(v) && v.every((c) => typeof c === "string") ? v : undefined) })),
+  ...Object.entries(UI_PREF_CHOICES).map(([key, allowed]) => ({ key, check: (v: unknown) => typeof v === "string" && (allowed as readonly string[]).includes(v), error: `${key} must be one of ${allowed.join(", ")}` })),
+  { key: "colWidths", check: isColWidths, error: "colWidths must map at most 200 column keys to whole widths from 40 to 1200 px" },
+  { key: "mapDrawerWidth", check: isDrawerWidth, error: "mapDrawerWidth must be a whole width from 320 to 4000 px" },
+  { key: "manualSuit", check: isManualSuit, error: "manualSuit must map the suit's slots to item serials" },
+  { key: "manualBuffs", check: isBuffList, error: "manualBuffs must list known buffs, each once, one form at most", read: (v) => normalizeBuffs(v) || undefined },
+  { key: "autoBuffs", check: () => false, error: legacy("autoBuffs"), read: (v) => normalizeBuffListsByCharacter(v) || undefined },
+  { key: "manualBuffSkills", check: isBuffSkills, error: "manualBuffSkills must map known buff skills to numbers within their ranges" },
+  { key: "buffSkills", check: () => false, error: legacy("buffSkills"), read: (v) => (isBuffSkillsByCharacter(v) ? v : undefined) },   // an older flat shape is dropped
+  ...UI_PREF_VERSIONS.map((key) => ({ key, check: (v: unknown) => isBoundedString(v, 64), error: `${key} must be a version of at most 64 characters` })),
+];
 // <data>/ui-prefs.json: the page's view choices (GET/PUT /api/ui-prefs). A missing, unreadable or
 // malformed file reads as "nothing chosen", and the page keeps its defaults.
 // Each field is read on its own: one bad value (a hand edit) drops that field, not the whole file.
@@ -64,24 +84,10 @@ export function createUiPrefsStore(file: string) {
 function salvageUiPrefs(doc: unknown): UiPrefsFile {
   const raw = doc as Record<string, unknown>;
   if (!raw || typeof raw !== "object") return {};
-  const out: UiPrefsFile = {};
-  for (const key of UI_PREF_LISTS) {
-    const v = raw[key];
-    if (Array.isArray(v) && v.every((c) => typeof c === "string")) out[key] = v as string[];
+  const out: Record<string, unknown> = {};
+  for (const f of UI_PREF_FIELDS) {
+    const v = f.read ? f.read(raw[f.key]) : f.check(raw[f.key]) ? raw[f.key] : undefined;
+    if (v !== undefined) out[f.key] = v;
   }
-  for (const [key, allowed] of Object.entries(UI_PREF_CHOICES)) {
-    const v = raw[key];
-    if (typeof v === "string" && (allowed as readonly string[]).includes(v)) (out as Record<string, unknown>)[key] = v;   // one of its allowed values, just checked
-  }
-  if (isColWidths(raw.colWidths)) out.colWidths = raw.colWidths;
-  if (isDrawerWidth(raw.mapDrawerWidth)) out.mapDrawerWidth = raw.mapDrawerWidth;
-  if (isManualSuit(raw.manualSuit)) out.manualSuit = raw.manualSuit;
-  // the buffs read back healed (app/buffs.mts normalizeBuffs): a hand-edited second form replaces the first
-  const manualBuffs = normalizeBuffs(raw.manualBuffs), autoBuffs = normalizeBuffListsByCharacter(raw.autoBuffs);
-  if (manualBuffs) out.manualBuffs = manualBuffs;
-  if (autoBuffs) out.autoBuffs = autoBuffs;
-  if (isBuffSkills(raw.manualBuffSkills)) out.manualBuffSkills = raw.manualBuffSkills;
-  if (isBuffSkillsByCharacter(raw.buffSkills)) out.buffSkills = raw.buffSkills;   // an older flat shape is dropped
-  for (const key of UI_PREF_VERSIONS) if (isBoundedString(raw[key], 64)) out[key] = raw[key];
-  return out;
+  return out as UiPrefsFile;
 }
