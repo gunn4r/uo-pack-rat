@@ -126,6 +126,7 @@ CAPABILITIES = {
 # The actions a queue line may name. "trip-bags" is not one: it is a feature, telling the app this bridge's trips
 # check a bag is empty before taking it (issue #128), so an older bridge is never sent one. It stays in this list,
 # where every Pack Rat reads it, until an app that reads a scan's adapter.features has been out for a release.
+# compat: trip-bags-action, remove in Pack Rat 0.3.0 (docs/architecture.md, Compatibility shims)
 ACTIONS = [a for a in CAPABILITIES["bridge"] if a != "trip-bags"]
 
 
@@ -527,7 +528,8 @@ def check_scan(cmd, now_s):
 
 def check_protocol(cmd):
     """A line names the protocol it was written in; one with none comes from an app older than the field
-    and reads as protocol 1. A newer protocol than this bridge knows is refused, never guessed at."""
+    and reads as protocol 1. A newer protocol than this bridge knows is refused, never guessed at.
+    compat: queue-line-no-protocol (the missing-protocol default), remove in Pack Rat 0.3.0 (docs/architecture.md, Compatibility shims)"""
     p = cmd.get("protocol", 1)
     if not isinstance(p, int) or isinstance(p, bool) or p < 1:
         return "protocol is not a protocol number"

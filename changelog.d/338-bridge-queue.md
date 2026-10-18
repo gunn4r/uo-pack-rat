@@ -1,0 +1,1 @@
+- **For contributors: one writer of the bridge queue** (issue #338): `app/store/bridge.mts`'s `appendCommand` appends a command as a line of an adapter's `queue.jsonl`, creating its folder. `POST /api/bridge` (its commands and scans) and `queueTrip` go through it instead of appending to the file themselves. The queue's lines are the same as before.

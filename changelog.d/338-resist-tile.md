@@ -1,0 +1,1 @@
+- **For contributors: one resist tile frame** (issue #338): the item peek and the Suit Builder's result each built the tinted `.resist` tile with its coloured element name; both now use `resistTile(name, token, ...kids)` in `app/ui/components.mts` and add their own value parts. The tiles look the same.

@@ -1,0 +1,1 @@
+- **For contributors: a UI guide** (issue #338): `app/ui/CLAUDE.md` names the page's three kinds of module (screens, models, data modules), the import rules and the guard rule behind each, the Suit Builder session's contract, how to add a screen, a builder piece or a cached resource, which tests cover what, and the traps.

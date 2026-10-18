@@ -12,6 +12,7 @@
 //   9. the Suit Builder's nine modules (builder, builder-header, builder-templates, builder-requirements, builder-job, builder-start, builder-manual, builder-result, runs) never import each other: they share state and call each other through builder-session.mts.
 //  10. every command in builder-session.mts's BuilderCommands is provided by exactly one app/ui/ module's provide() call, and no provide() names anything else: a missing one would only fail at run time, as `undefined is not a function`.
 //      Likewise every BuilderNews key has exactly one onChange() listener in app/ui/ (an announce() nobody hears redraws nothing), and onChange() names only a news key or a BuilderState field.
+//  11. no route module in app/http/routes/ imports another (type imports included): what two route families share lives in a module both import.
 // Rules 2-4 follow runtime imports only: `import type` and `export type` are erased, so they load nothing.
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -185,6 +186,12 @@ test("[smoke] layering: every module app/ui/ reaches outside app/ui/ has its sta
 test("[smoke] layering: app/store/ and app/services/ import nothing from app/http/", () => {
   const found = modules.filter((f) => f.startsWith("app/store/") || f.startsWith("app/services/"))
     .flatMap((f) => edges.get(f)!.filter((e) => e.to?.startsWith("app/http/")).map((e) => `${f} → ${e.spec}`));
+  assert.deepEqual(found, []);
+});
+
+test("[smoke] layering: no app/http/routes/ module imports another", () => {
+  const isRoute = (f: string): boolean => f.startsWith("app/http/routes/");
+  const found = modules.filter(isRoute).flatMap((f) => edges.get(f)!.filter((e) => e.to && isRoute(e.to)).map((e) => `${f} → ${e.spec}`));
   assert.deepEqual(found, []);
 });
 

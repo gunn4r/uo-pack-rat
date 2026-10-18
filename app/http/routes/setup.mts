@@ -8,24 +8,17 @@
 // - `GET /api/update-check` (a GitHub releases/latest check, 10 s timeout, a success cached for an hour; {configured: false} when package.json names no GitHub repo)
 //
 // map: server
-// owns: `routes`, `MAX_PATH_LEN`, `NO_CLIENT_FOLDER`
+// owns: `routes`
 import { join } from "node:path";
 import { short } from "../../guards.mts";
 import { validateScriptsDir, installedVersion, installScripts, pasteScanner, repoFromPackage, checkForUpdates, type CheckForUpdatesResult } from "../../installer.mts";
 import { safeAppendLog } from "../../log.mts";
 import { readBody } from "../../read-body.mts";
 import { panelPrefsError } from "../../tazuo-panel.mts";
-import { send, asObject } from "../respond.mts";
+import { send, asObject, NO_CLIENT_FOLDER } from "../respond.mts";
 import type { Route } from "../router.mts";
 import type { InstallApiResponse, LocateApiResponse, PasteScannerApiResponse, SetupApiResponse, UpdateCheckApiResponse } from "../../api/setup.mts";
 import type { ServerContext } from "../context.mts";
-
-export const MAX_PATH_LEN = 4096;
-// What a failed locate/install tells the caller. Deliberately says nothing about the path it probed:
-// echoing the resolved path back made these routes a clean existence oracle for any absolute path on
-// the machine — "existing directory" vs "file or absent", for free, from an unauthenticated route in
-// the bare `npm start` configuration (post-review fix, Important 3).
-export const NO_CLIENT_FOLDER = "no scripts folder found there for that client";
 
 export function routes(ctx: ServerContext): Route[] {
   const { config: CONFIG, appSettings, clientRunning, clientSearch, host, packageJson: PACKAGE_JSON, savePanel, setupService, updateFetch } = ctx;

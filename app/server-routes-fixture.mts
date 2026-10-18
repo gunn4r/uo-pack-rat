@@ -7,10 +7,11 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import http from "node:http";
 import { foldSnapshots, type Item, type Inventory, type Template } from "./vault-lib.mts";
-import { templateSettings, type ProfilesV3, type TemplateMap } from "./build-spec.mts";
+import { templateSettings } from "./build-spec.mts";
 import { upgradeScan, validateScan } from "./scan-schema.mts";
 import type { RulesV1, ScanV2 } from "./schema/types.d.mts";
 import type { InventoryApiResponse, InventoryData } from "./api/inventory.mts";
+import type { ProfilesApiResponse } from "./api/prefs.mts";
 
 // ---------------------------------------------------------------------------------------------
 // HTTP responses are unknown provenance — every route is reachable by any local caller, trusted
@@ -34,11 +35,8 @@ export type InventorySummary = InventoryData & { items?: undefined };
 export interface InventoryResponse extends InventoryApiResponse { inventory: InventorySummary }
 export type { ItemsBySerialApiResponse as ItemsBySerialResponse } from "./api/inventory.mts";
 
-export interface ProfilesResponse {
-  ok?: boolean;
-  profiles: ProfilesV3;
-  builtinTemplates: TemplateMap;
-}
+// GET /api/profiles' answer is the API's own type (app/api/prefs.mts), under the name these tests use.
+export type ProfilesResponse = ProfilesApiResponse;
 // The first built-in template's settings (a fresh data folder has no templates of its own), as a build's profile.
 export const firstTemplate = (r: ProfilesResponse): Template => templateSettings(Object.values(r.builtinTemplates)[0]!);
 

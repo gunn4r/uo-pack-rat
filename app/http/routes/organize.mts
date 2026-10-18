@@ -19,7 +19,7 @@ import { applyOverlay } from "../../organize.mts";
 import { checkOrganizeConfig, LIMITS, matchProblem, MAX_SETUP_BYTES, salvagedRefusal, type RuleMatch } from "../../organize-config.mts";
 import { PRESETS } from "../../organize-presets.mts";
 import { proposeOrganize, STRATEGY_IDS, type StrategyId } from "../../organize-strategies.mts";
-import type { OrganizePlanApiResponse, OrganizeProposeApiResponse, ProposeResult } from "../../organize-types.mts";
+import type { OrganizePlanApiResponse, OrganizeProposeApiResponse, ProposeResult, OrganizeApiResponse, OrganizePutApiResponse, OrganizePresetsApiResponse, OrganizeMatchApiResponse, OrganizeTripApiResponse, MoveBackApiResponse, MovePlanApiResponse, MoveTripApiResponse } from "../../organize-types.mts";
 import { matchCount } from "../../organize.mts";
 import { readBody } from "../../read-body.mts";
 import { send, asObject } from "../respond.mts";
@@ -46,10 +46,11 @@ export function routes(ctx: ServerContext): Route[] {
   const { appSettings, blacklistStore, eventBus, getInventory, organizeService, organizeStore } = ctx;
   const blacklist = (): number[] => blacklistStore.read().map((e) => e.serial);
   return [
-    { method: "GET", path: "/api/organize", handle: (_req, res) => send(res, 200, { ok: true, ...organizeStore.read(), stamp: organizeStore.stamp() }) },
+    { method: "GET", path: "/api/organize", handle: (_req, res) => send(res, 200, { ok: true, ...organizeStore.read(), stamp: organizeStore.stamp() } satisfies OrganizeApiResponse) },
     { method: "PUT", path: "/api/organize", handle: async (req, res) => {
       // `base`: the stamp GET answered with. A setup saved by someone else since is refused (409, code "stale", with the
       // current stamp) and the file is left alone; a PUT without one (a page from an older build) is still taken.
+      // compat: organize-put-no-base, remove in Pack Rat 0.3.0 (docs/architecture.md, Compatibility shims)
       const { base, ...doc } = asObject(await readBody(req, { limit: MAX_SETUP_BYTES, tooLargeMsg: "the Organize setup is too large" }));
       if (base !== undefined && !isBoundedString(base, 64)) return send(res, 400, { ok: false, error: "base must be the stamp GET /api/organize answered with" });
       const checked = checkOrganizeConfig(doc);
@@ -62,9 +63,9 @@ export function routes(ctx: ServerContext): Route[] {
       if (!saved.ok) return send(res, 409, { ok: false, code: "stale", error: "the Organize setup was changed elsewhere since it was read; reload it", stamp: saved.stamp });
       // Every other open page reloads the setup only, not the inventory (the page that saved sent its own id).
       eventBus.broadcast("changed", { what: "organize", by: req.headers["x-client-id"], at: Date.now() });
-      return send(res, 200, { ok: true, stamp: saved.stamp });
+      return send(res, 200, { ok: true, stamp: saved.stamp } satisfies OrganizePutApiResponse);
     } },
-    { method: "GET", path: "/api/organize/presets", handle: (_req, res) => send(res, 200, { ok: true, presets: PRESETS }) },
+    { method: "GET", path: "/api/organize/presets", handle: (_req, res) => send(res, 200, { ok: true, presets: PRESETS } satisfies OrganizePresetsApiResponse) },
     { method: "POST", path: "/api/organize/match", handle: async (req, res) => {
       // Room for the largest filter a rule may carry (100 names, three 50-name lists, 10 tags, 20 property rules).
       const { match } = asObject(await readBody(req, { limit: 64e3 }));
@@ -72,7 +73,7 @@ export function routes(ctx: ServerContext): Route[] {
       if (problem) return send(res, 400, { ok: false, error: problem });
       const { inv } = await getInventory();
       const counted = matchCount(inv, organizeStore.read().config, match as RuleMatch, { now: Date.now(), rarity: appSettings.rules().rarity, suitPieces: organizeService.suitsFor([match as RuleMatch]), blacklist: blacklistStore.read().map((e) => e.serial) });
-      return send(res, 200, { ok: true, ...counted });
+      return send(res, 200, { ok: true, ...counted } satisfies OrganizeMatchApiResponse);
     } },
     { method: "POST", path: "/api/organize/propose", handle: async (req, res) => {
       // Auto organize (spec §5): what a strategy would set up over the chests the player ticked (every one it ticks
@@ -117,7 +118,7 @@ export function routes(ctx: ServerContext): Route[] {
       if (first.index !== index) return send(res, 409, { ok: false, error: `run trip ${first.index} first: this trip counts on the room it makes` });
       const queued = organizeService.queuePlanTrip(adapter, fold, state.moves, plan, index);
       if (!queued.ok) return send(res, 409, { ok: false, error: queued.error });
-      return send(res, 200, { ok: true, id: queued.id, index });
+      return send(res, 200, { ok: true, id: queued.id, index } satisfies OrganizeTripApiResponse);
     } },
     { method: "POST", path: "/api/move/plan", handle: async (req, res) => {
       // What Move to would do with the selection (issue #270): how many items it holds and how many are worn, how many of
@@ -130,7 +131,7 @@ export function routes(ctx: ServerContext): Route[] {
         if (typeof b === "string") return send(res, 400, { ok: false, error: b });
         const { fold, state } = await organizeService.organizeInputs();
         const { steps, skipped } = backSteps(fold, state.moves, b.serials, b.trips);
-        return send(res, 200, { ok: true, back: { movable: steps.length, skipped: skipped.map((x) => x.name) } });
+        return send(res, 200, { ok: true, back: { movable: steps.length, skipped: skipped.map((x) => x.name) } } satisfies MoveBackApiResponse);
       }
       const sel = selectionOf(selection);
       if (typeof sel === "string") return send(res, 400, { ok: false, error: sel });
@@ -149,17 +150,17 @@ export function routes(ctx: ServerContext): Route[] {
         here[it.container!] = (here[it.container!] ?? 0) + 1;
       }
       const base = { ok: true, selected: items.length, worn: worn.length, wornNames: worn.slice(0, 3).map((it) => it.name), movable, here, left };
-      if (to === undefined) return send(res, 200, base);
+      if (to === undefined) return send(res, 200, base satisfies MovePlanApiResponse);
       const { fold, config, state } = await organizeService.organizeInputs();
       const view = applyOverlay(fold, state.moves).inv;
       const problem = destProblem(view, to, blacklist());
-      if (problem) return send(res, 200, { ...base, problem, plan: null });
+      if (problem) return send(res, 200, { ...base, problem, plan: null } satisfies MovePlanApiResponse);
       const plan = planMoves(fold, state.moves, items.map((it) => ({ serial: +it.serial, to })), { blacklist: blacklist() });
       const planLeft: Partial<Record<LeftReason, number>> = {};
       for (const l of plan.left) planLeft[l.why] = (planLeft[l.why] ?? 0) + 1;
       const moved = plan.moves.map((m) => m.serial);
       const against = againstRules(view, config, moved, to, { now: Date.now(), rarity: appSettings.rules().rarity, suitPieces: organizeService.suitsFor(config.rules.map((r) => r.match)), blacklist: blacklist(), seen: state.seen });
-      return send(res, 200, { ...base, problem: null, plan: { moving: moved.length, serials: moved, trips: plan.trips.length, already: plan.already.length, noRoom: plan.noRoom.length, left: planLeft, against } });
+      return send(res, 200, { ...base, problem: null, plan: { moving: moved.length, serials: moved, trips: plan.trips.length, already: plan.already.length, noRoom: plan.noRoom.length, left: planLeft, against } } satisfies MovePlanApiResponse);
     } },
     { method: "POST", path: "/api/move/trip", handle: async (req, res) => {
       // The next trip of a Move, planned now and queued like an Organize trip: `selection` and `to` (Move to), or `back`, the
@@ -189,11 +190,11 @@ export function routes(ctx: ServerContext): Route[] {
       const trip = plan.trips[0];
       // `noRoom`: the items no container on their way has room for (Move back's sources filled up since).
       const noRoom = plan.noRoom.map((serial) => ({ serial, name: fold.items[serial]?.name ?? `0x${serial.toString(16)}` }));
-      if (!trip) return send(res, 200, { ok: true, id: null, remaining: 0, skipped, noRoom });
+      if (!trip) return send(res, 200, { ok: true, id: null, remaining: 0, skipped, noRoom } satisfies MoveTripApiResponse);
       const queued = organizeService.queuePlanTrip(adapter, fold, state.moves, plan, trip.index);
       if (!queued.ok) return send(res, 409, { ok: false, error: queued.error });
       const names = Object.fromEntries(plan.moves.filter((m) => m.trip === trip.index).map((m) => [m.serial, m.name]));
-      return send(res, 200, { ok: true, id: queued.id, index: trip.index, names, remaining: plan.moves.length, skipped, noRoom });
+      return send(res, 200, { ok: true, id: queued.id, index: trip.index, names, remaining: plan.moves.length, skipped, noRoom } satisfies MoveTripApiResponse);
     } },
   ];
 }

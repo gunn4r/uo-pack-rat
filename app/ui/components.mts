@@ -5,7 +5,7 @@
 // bare string or number among its children. Nothing here sets innerHTML: icons are built node by node.
 //
 // map: ui-components
-// owns: `box`, `txt`, `button`, `input`, `select`, `popover`, `combobox`, `createDrawer`, `openDialog`, `confirmDialog`, `table`, `menu`, `toast`, `FLEX_CLASSES`
+// owns: `box`, `txt`, `button`, `input`, `select`, `popover`, `combobox`, `createDrawer`, `openDialog`, `confirmDialog`, `table`, `menu`, `toast`, `resistTile`, `detailPane`, `FLEX_CLASSES`
 import { el } from "./dom.mts";
 import type { ElAttrs } from "./dom.mts";
 
@@ -292,6 +292,32 @@ export function keyValue(pairs: Array<[string, Content]>): HTMLDivElement {
 export function card({ title, titleTag = "h2", actions = [], body = [], pad = true, attrs = {} }: { title?: string | undefined; titleTag?: "h2" | "h3"; actions?: HTMLElement[]; body?: Kids; pad?: boolean; attrs?: ElAttrs }): HTMLElement {
   const head = title ? box("div", { class: "card-head" }, el(titleTag, {}, title), actions.length ? el("span", { class: "spacer" }) : null, ...actions) : null;
   return el("section", { class: "card", ...attrs }, head, el("div", { class: pad ? "card-body card-pad" : "card-body" }, ...body.filter((k): k is Node => !!k)));
+}
+// A resist tile (the item peek, the Suit Builder's result): the element's name in its colour, so the word carries
+// the element and not colour alone, then the caller's value parts. `token` is the resist's --res-* colour token
+// (RESIST_META); the tile's tint class is named after it.
+export function resistTile(name: string, token: string, ...kids: Kids): HTMLDivElement {
+  return box("div", { class: `resist tint tint-${token.slice(6)}` }, el("span", { class: "t-sm resist-name", style: `color:var(${token})` }, name), ...kids);
+}
+
+// ---------------------------------------------------------------- detail pane
+// A side detail pane's contents (the Inventory's item peek, the Scrolls view's skill detail; styled in inventory.css):
+// the title with Previous / Next / Close, a meta line, the sections, then the actions and the keys hint. The caller
+// owns the pane element, showing it and its keys (Esc, the arrows); `noun` names what the arrows step through.
+export const detailSection = (title: string, ...kids: Kids): HTMLElement => box("section", { class: "peek-sec", "aria-label": title }, txt(title, "caps"), ...kids);
+export function detailPane(pane: HTMLElement, o: { title: string; titleId: string; noun: string; nouns: string; meta: Kids; sections: Kids; actions: Kids; actionsCls?: string; onStep: (delta: number) => void; onClose: () => void }): void {
+  pane.setAttribute("aria-labelledby", o.titleId);
+  pane.replaceChildren(
+    box("div", { class: "peek-head" },
+      box("div", { class: "peek-title" }, el("h2", { class: "t-lg", id: o.titleId }, o.title),
+        button({ label: `Previous ${o.noun}`, icon: "chevron-up", iconOnly: true, variant: "ghost", size: "sm", onClick: () => o.onStep(-1) }),
+        button({ label: `Next ${o.noun}`, icon: "chevron-down", iconOnly: true, variant: "ghost", size: "sm", onClick: () => o.onStep(1) }),
+        button({ label: "Close detail", icon: "close", iconOnly: true, variant: "ghost", size: "sm", attrs: { "data-peek-close": "" }, onClick: () => o.onClose() })),
+      box("div", { class: "peek-meta" }, ...o.meta)),
+    box("div", { class: "peek-body" }, ...o.sections),
+    box("div", { class: "overlay-foot peek-foot" },
+      box("div", { class: `peek-acts${o.actionsCls ? " " + o.actionsCls : ""}` }, ...o.actions),
+      box("p", { class: "t-sm muted peek-keys" }, kbd("↑"), kbd("↓"), txt(`step through ${o.nouns}`), kbd("Esc"), txt("close"))));
 }
 
 // ---------------------------------------------------------------- table
