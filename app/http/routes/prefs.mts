@@ -22,6 +22,8 @@ import { panelPrefsError, readPanelPrefs } from "../../tazuo-panel.mts";
 import { send, asObject } from "../respond.mts";
 import { APP_DIR } from "../../config.mts";
 import type { Route } from "../router.mts";
+import type { OkApiResponse } from "../../api/routes.mts";
+import type { ProfilesApiResponse, ProfilesPatchApiResponse, TazuoPanelApiResponse, UiPrefsApiResponse } from "../../api/prefs.mts";
 import type { ServerContext } from "../context.mts";
 
 const HERE = APP_DIR;
@@ -44,7 +46,7 @@ export async function patchProfiles(store: ServerContext["profilesStore"], list:
     const bad = profilesSpecError(next, stored);
     if (bad) return { status: 400, body: { ok: false, error: bad } };
     const saved = store.write(next, was);
-    if (saved.ok) return { status: 200, body: { ok: true, stamp: saved.stamp, was } };
+    if (saved.ok) return { status: 200, body: { ok: true, stamp: saved.stamp, was } satisfies ProfilesPatchApiResponse };
   }
   return { status: 409, body: { ok: false, code: "stale", error: "the profiles kept changing while this save was made; reload them and make the change again" } };
 }
@@ -57,7 +59,7 @@ export function routes(ctx: ServerContext): Route[] {
     // `stamp`: the file's content stamp, which a PATCH's `was` is compared with.
     { method: "GET", path: "/api/profiles", handle: async (_req, res) => {
       const { profiles, stamp } = await profilesStore.readStamped(), readOnly = profilesStore.readOnly();
-      return send(res, 200, { ok: true, profiles, stamp, builtinTemplates: profilesStore.builtins(), ...(readOnly ? { readOnly } : {}) });
+      return send(res, 200, { ok: true, profiles, stamp, builtinTemplates: profilesStore.builtins(), ...(readOnly ? { readOnly } : {}) } satisfies ProfilesApiResponse);
     } },
     // The one way to save the profiles: edits (app/profile-edits.mts), {edits: [...]}, 1 to 100, made in order on the file as it is on the
     // server and written once, so a page's save carries what it means and never its copy of the rest. Each edit's shape is
@@ -78,7 +80,7 @@ export function routes(ctx: ServerContext): Route[] {
     } },
     { method: "GET", path: "/api/ui-prefs", handle: (_req, res) => {
       const { autoBuffs: _on, buffSkills: _skills, ...prefs } = uiPrefsStore.read();   // moved to profiles.json, waiting for its migration
-      return send(res, 200, { ok: true, prefs });
+      return send(res, 200, { ok: true, prefs } satisfies UiPrefsApiResponse);
     } },
     { method: "PUT", path: "/api/ui-prefs", handle: async (req, res) => {
       // The page's own view choices (the Inventory tab's columns, the look, the sidebar). Kept here rather than in
@@ -96,7 +98,7 @@ export function routes(ctx: ServerContext): Route[] {
         if (!Object.prototype.hasOwnProperty.call(body, key)) continue;
         const v = body[key];
         if (typeof v !== "string" || !(allowed as readonly string[]).includes(v)) return send(res, 400, { ok: false, error: `${key} must be one of ${allowed.join(", ")}` });
-        next[key as keyof typeof UI_PREF_CHOICES] = v;
+        (next as Record<string, unknown>)[key] = v;   // one of its allowed values, just checked
       }
       if (Object.prototype.hasOwnProperty.call(body, "colWidths")) {
         if (!isColWidths(body.colWidths)) return send(res, 400, { ok: false, error: "colWidths must map at most 200 column keys to whole widths from 40 to 1200 px" });
@@ -127,10 +129,10 @@ export function routes(ctx: ServerContext): Route[] {
         next[key] = body[key];
       }
       uiPrefsStore.write(next);
-      return send(res, 200, { ok: true });
+      return send(res, 200, { ok: true } satisfies OkApiResponse);
     } },
     { method: "GET", path: "/api/tazuo-panel", handle: (_req, res) => {
-      return send(res, 200, { ok: true, prefs: readPanelPrefs(PANEL_PREFS) });
+      return send(res, 200, { ok: true, prefs: readPanelPrefs(PANEL_PREFS) } satisfies TazuoPanelApiResponse);
     } },
     { method: "PUT", path: "/api/tazuo-panel", handle: async (req, res) => {
       const body = asObject(await readBody(req, { limit: 8e3 }));
@@ -138,7 +140,7 @@ export function routes(ctx: ServerContext): Route[] {
       if (bad) return send(res, 400, { ok: false, error: bad });
       if (CONFIG.demo) return send(res, 409, { ok: false, error: "demo data is read-only" });
       savePanel(body);
-      return send(res, 200, { ok: true, prefs: readPanelPrefs(PANEL_PREFS) });
+      return send(res, 200, { ok: true, prefs: readPanelPrefs(PANEL_PREFS) } satisfies TazuoPanelApiResponse);
     } },
   ];
 }
