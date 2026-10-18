@@ -23,7 +23,7 @@
 //
 // map: builder
 // owns: `optimizeSuit`, `scoreSet`, `optDefaultSlots`, `optDefaultOptionalSlots`, `optDominancePrune`
-import { CHANGE_COST, DEFAULT_BUDGET_MS, DEFAULT_FLOOR_BONUS, DEFAULT_FLOOR_PARTIAL, DEFAULT_RESTARTS, FLOAT_EPS, RESIST_SKILL_KEY, RESIST_STEP_SLACK, TIE_SLACK, changeCost, hardBonusOf, slackAt } from "../app/solver/scoring.mts";
+import { CHANGE_COST, DEFAULT_BUDGET_MS, DEFAULT_RESTARTS, FLOAT_EPS, RESIST_SKILL_KEY, RESIST_STEP_SLACK, TIE_SLACK, changeCost, scoringProfile, slackAt } from "../app/solver/scoring.mts";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -285,15 +285,11 @@ function optBuildSpace(keys: string[], profile: OptProfile): OptSpace {
   const min: number[] = [];
   const floor: number[] = [];
   const zero: number[] = [];
-  const caps = profile.caps || {};
-  const mins = profile.mins || {};
-  const floors = profile.floors || {};
-  const weights = profile.weights || {};
-  const hard: Record<string, boolean> = {};
-  const hardList = profile.hardFloors || [];
-  for (let i = 0; i < hardList.length; i++) hard[hardList[i]!] = true;
-  const baseBonus = typeof profile.floorBonus === "number" ? profile.floorBonus : DEFAULT_FLOOR_BONUS, hardBonus = hardBonusOf(profile);
+  const sp = scoringProfile(profile), { caps, mins, weights } = sp;
   const floorBonusArr: number[] = [];
+  // Partial credit at the floor (scoringProfile's partialOf): the hard floors share theirs, issue #204; the bonus itself is
+  // large enough that the rest of the score never moves by the other half (hardFloorBonus, #311).
+  const partialArr: number[] = [];
   // Steps need both dimensions in the space, even when no candidate carries them.
   const stepped = Array.isArray(profile.ssiSteps) && typeof weights["ssi"] === "number" && weights["ssi"] > 0;
   if (stepped) for (const k of ["ssi", "stamPool"]) if (keys.indexOf(k) < 0) keys = keys.concat([k]);
@@ -306,19 +302,11 @@ function optBuildSpace(keys: string[], profile: OptProfile): OptSpace {
     w.push(typeof weights[k] === "number" ? weights[k] : 0);
     cap.push(typeof caps[k] === "number" ? caps[k] : Infinity);
     min.push(typeof mins[k] === "number" ? mins[k] : -Infinity);
-    floor.push(typeof floors[k] === "number" && !(floors[k] <= min[i]!) ? floors[k] : 0);
-    floorBonusArr.push(hard[k] ? hardBonus : baseBonus);
+    floor.push(sp.floorOf(k));
+    floorBonusArr.push(sp.bonusOf(k));
+    partialArr.push(sp.partialOf(k));
     zero.push(0);
   }
-  // Partial credit at the floor. The hard floors share theirs (each gets 1/n of it), so together it stays under half one
-  // floor's bonus and no mix of it can buy a miss of a floor some suit meets (issue #204); the bonus itself is large enough
-  // that the rest of the score never moves by the other half (hardFloorBonus, #311). n counts every hard floor, one each
-  // suit meets included: such a floor never earns partial credit, so counting it only makes the margin wider.
-  const partial = typeof profile.floorPartial === "number" ? profile.floorPartial : DEFAULT_FLOOR_PARTIAL;
-  let nHard = 0;
-  for (let i = 0; i < keys.length; i++) if (hard[keys[i]!] && floor[i]! > 0) nHard++;
-  const partialArr: number[] = [];
-  for (let i = 0; i < keys.length; i++) partialArr.push(hard[keys[i]!] ? floorBonusArr[i]! * partial / Math.max(1, nHard) : floorBonusArr[i]! * partial);
   return {
     keys: keys,
     index: index,
@@ -327,7 +315,7 @@ function optBuildSpace(keys: string[], profile: OptProfile): OptSpace {
     min: min,
     floor: floor,
     floorBonusArr: floorBonusArr,
-    floorBonus: baseBonus,
+    floorBonus: sp.floorBonus,
     partialArr: partialArr,
     zero: zero,
     vecCache: new Map(),
@@ -554,7 +542,7 @@ function optGradientProfile(profile: OptProfile): OptProfile {
     weights: profile.weights,
     caps: profile.caps,
     floors: profile.floors,
-    floorBonus: typeof profile.floorBonus === "number" ? profile.floorBonus : DEFAULT_FLOOR_BONUS,
+    floorBonus: scoringProfile(profile).floorBonus,
     floorPartial: 1,
     hardFloors: profile.hardFloors,
     mins: profile.mins,
