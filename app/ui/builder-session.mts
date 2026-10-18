@@ -43,6 +43,7 @@ const data: BuilderState = { character: null, profile: null, result: null, job: 
 //   roster    the character list changed (a load, a scan, a Forget): Manual resolves its suit again (builder-manual.mts)
 //   settings  the panel's settings were edited: the first-visit view, while shown, is drawn again in place (builder-start.mts)
 //   view      the result view starts over: a result still resolving its pieces must not draw (builder-result.mts)
+// A listener that throws does not stop the one announcing: dispatchEvent reports the error as a page error and returns.
 export type BuilderNews = "panel" | "caps" | "picker" | "selected" | "roster" | "settings" | "view";
 // Every setter fires `builderchange` on the document, with the field's name as its detail; announce() fires the news.
 export type BuilderChange = CustomEvent<{ key: keyof BuilderState | "knobs" | BuilderNews }>;

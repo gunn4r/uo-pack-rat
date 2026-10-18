@@ -11,6 +11,7 @@
 //   8. every app/ui/ module that registers a screen with nav.mts's registerScreen() is reached from app/ui/app.mts by runtime imports (a side-effect `import "./x.mts"` counts): a screen module nothing loads never registers its route;
 //   9. the Suit Builder's nine modules (builder, builder-header, builder-templates, builder-requirements, builder-job, builder-start, builder-manual, builder-result, runs) never import each other: they share state and call each other through builder-session.mts.
 //  10. every command in builder-session.mts's BuilderCommands is provided by exactly one app/ui/ module's provide() call, and no provide() names anything else: a missing one would only fail at run time, as `undefined is not a function`.
+//      Likewise every BuilderNews key has exactly one onChange() listener in app/ui/ (an announce() nobody hears redraws nothing), and onChange() names only a news key or a BuilderState field.
 // Rules 2-4 follow runtime imports only: `import type` and `export type` are erased, so they load nothing.
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -139,6 +140,23 @@ test("[smoke] layering: every BuilderCommands command is provided by exactly one
   for (const f of modules.filter(isUi)) for (const k of providedKeys(readFileSync(posix.join(root, f), "utf8"))) by.set(k, [...(by.get(k) ?? []), f]);
   const problems = [...declared.filter((k) => (by.get(k) ?? []).length !== 1).map((k) => `${k}: provided by ${(by.get(k) ?? []).join(", ") || "no module"}`),
     ...[...by.keys()].filter((k) => !declared.includes(k)).map((k) => `${k}: provided by ${by.get(k)!.join(", ")} but not a BuilderCommands command`)];
+  assert.deepEqual(problems, []);
+});
+
+test("[smoke] layering: every BuilderNews key has exactly one onChange listener, and onChange names only declared keys", () => {
+  const session = readFileSync(posix.join(root, "app/ui/builder-session.mts"), "utf8");
+  const news = [...(session.match(/export type BuilderNews = ([^;]+);/)?.[1] ?? "").matchAll(/"(\w+)"/g)].map((m) => m[1]!);
+  const stateBlock = session.slice(session.indexOf("export interface BuilderState {"), session.indexOf("\n}\n", session.indexOf("export interface BuilderState {")));
+  const fields = [...stateBlock.matchAll(/^ {2}(\w+):/gm)].map((m) => m[1]!);
+  assert.ok(news.length >= 5 && fields.length >= 5, `news read: ${news.join(", ")}; fields read: ${fields.join(", ")}`);
+  const by = new Map<string, string[]>();
+  for (const f of modules.filter(isUi)) {
+    const text = readFileSync(posix.join(root, f), "utf8");
+    if (!/import \{[^}]*\bonChange\b[^}]*\} from "\.\/builder-session\.mts"/.test(text)) continue;
+    for (const m of text.matchAll(/(?<![\w.])onChange\(\s*"(\w+)"/g)) by.set(m[1]!, [...(by.get(m[1]!) ?? []), f]);
+  }
+  const problems = [...news.filter((k) => (by.get(k) ?? []).length !== 1).map((k) => `${k}: heard by ${(by.get(k) ?? []).join(", ") || "no module"}`),
+    ...[...by.keys()].filter((k) => !news.includes(k) && !fields.includes(k) && k !== "knobs").map((k) => `${k}: onChange in ${by.get(k)!.join(", ")} but not a BuilderNews key or BuilderState field`)];
   assert.deepEqual(problems, []);
 });
 
