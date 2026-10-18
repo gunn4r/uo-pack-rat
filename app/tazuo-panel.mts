@@ -22,7 +22,7 @@ const MAX_LSCRIPT_BYTES = 1024 * 1024;
 export { HOTKEY_KEYS, HOTKEY_MODS, PANEL_DEFAULTS, panelPrefsError, panelPrefsOf, type AutostartOutcome, type Hotkey, type PanelPrefs } from "./tazuo-panel-prefs.mts";
 
 // The in-game panel writes tazuo-panel.json too, so it is read as untrusted: capped, each field validated.
-const MAX_PANEL_FILE_BYTES = 64 * 1024;
+const MAX_PANEL_FILE_BYTES = 4096;   // the size packrat-panel.py reads too (MAX_PREFS_BYTES)
 export function readPanelPrefs(path: string): PanelPrefs {
   let raw: unknown = null;
   try { const r = readBounded(path, MAX_PANEL_FILE_BYTES); if (!r.tooBig) raw = JSON.parse(r.text); } catch { /* missing or unreadable: the defaults */ }

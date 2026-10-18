@@ -1,0 +1,32 @@
+{
+  "$comment": "Cases for a Put away request, <data>/inbox/<adapter>/putaway-request.json (app/schema/put-away.v1.schema.json, $defs.request), checked at `now`. app/put-away.test.mts runs each through checkPutAwayRequest (a valid one taken, an invalid one refused) and the schema (`schema`: whether the shape passes; the time windows and a character's control characters are beyond it). adapters/test_panel.py checks the request the panel really writes has the first valid case's fields and types.",
+  "now": "2026-09-30T12:00:00Z",
+  "valid": [
+    { "id": "1727697600000-1", "container": 1073741825, "character": "Tester", "requestedAt": "2026-09-30T11:59:58Z", "clickedAt": "2026-09-30T11:55:00Z", "at": { "x": 1520, "y": 1631, "facet": 1 } },
+    { "id": "1727697600000-2", "container": 1073741825, "character": "Tester", "requestedAt": "2026-09-30T13:59:58+02:00", "clickedAt": "2026-09-30T11:55:00Z", "at": { "x": 0, "y": 0 } },
+    { "id": "aBcD-0123456789-aBcD-0123456789-aBcD-0123456789-aBcD-0123456789X", "container": 4294967295, "character": "A", "requestedAt": "2026-09-30T12:00:04Z", "clickedAt": "2026-09-30T11:00:05Z", "at": { "x": 7168, "y": 4096, "facet": 5 } }
+  ],
+  "invalid": [
+    { "why": "not an object", "entry": "put away", "schema": false },
+    { "why": "a field Put away does not take", "entry": { "id": "r-1", "container": 1073741825, "character": "Tester", "requestedAt": "2026-09-30T11:59:58Z", "clickedAt": "2026-09-30T11:55:00Z", "at": { "x": 1, "y": 1 }, "dest": [1] }, "schema": false },
+    { "why": "no id", "entry": { "container": 1073741825, "character": "Tester", "requestedAt": "2026-09-30T11:59:58Z", "clickedAt": "2026-09-30T11:55:00Z", "at": { "x": 1, "y": 1 } }, "schema": false },
+    { "why": "an id that is a path", "entry": { "id": "../x", "container": 1073741825, "character": "Tester", "requestedAt": "2026-09-30T11:59:58Z", "clickedAt": "2026-09-30T11:55:00Z", "at": { "x": 1, "y": 1 } }, "schema": false },
+    { "why": "an id past 64 characters", "entry": { "id": "aBcD-0123456789-aBcD-0123456789-aBcD-0123456789-aBcD-0123456789XY", "container": 1073741825, "character": "Tester", "requestedAt": "2026-09-30T11:59:58Z", "clickedAt": "2026-09-30T11:55:00Z", "at": { "x": 1, "y": 1 } }, "schema": false },
+    { "why": "container 0", "entry": { "id": "r-1", "container": 0, "character": "Tester", "requestedAt": "2026-09-30T11:59:58Z", "clickedAt": "2026-09-30T11:55:00Z", "at": { "x": 1, "y": 1 } }, "schema": false },
+    { "why": "a container past 32 bits", "entry": { "id": "r-1", "container": 4294967296, "character": "Tester", "requestedAt": "2026-09-30T11:59:58Z", "clickedAt": "2026-09-30T11:55:00Z", "at": { "x": 1, "y": 1 } }, "schema": false },
+    { "why": "a container that is a string", "entry": { "id": "r-1", "container": "0x40000001", "character": "Tester", "requestedAt": "2026-09-30T11:59:58Z", "clickedAt": "2026-09-30T11:55:00Z", "at": { "x": 1, "y": 1 } }, "schema": false },
+    { "why": "no character", "entry": { "id": "r-1", "container": 1073741825, "character": "", "requestedAt": "2026-09-30T11:59:58Z", "clickedAt": "2026-09-30T11:55:00Z", "at": { "x": 1, "y": 1 } }, "schema": false },
+    { "why": "a character with a control character", "entry": { "id": "r-1", "container": 1073741825, "character": "Tes\nter", "requestedAt": "2026-09-30T11:59:58Z", "clickedAt": "2026-09-30T11:55:00Z", "at": { "x": 1, "y": 1 } }, "schema": true },
+    { "why": "a request over 60 seconds old", "entry": { "id": "r-1", "container": 1073741825, "character": "Tester", "requestedAt": "2026-09-30T11:58:59Z", "clickedAt": "2026-09-30T11:55:00Z", "at": { "x": 1, "y": 1 } }, "schema": true },
+    { "why": "a request from the future", "entry": { "id": "r-1", "container": 1073741825, "character": "Tester", "requestedAt": "2026-09-30T12:00:06Z", "clickedAt": "2026-09-30T11:55:00Z", "at": { "x": 1, "y": 1 } }, "schema": true },
+    { "why": "a requestedAt that is not a time", "entry": { "id": "r-1", "container": 1073741825, "character": "Tester", "requestedAt": "yesterday", "clickedAt": "2026-09-30T11:55:00Z", "at": { "x": 1, "y": 1 } }, "schema": true },
+    { "why": "clicked after the request", "entry": { "id": "r-1", "container": 1073741825, "character": "Tester", "requestedAt": "2026-09-30T11:59:58Z", "clickedAt": "2026-09-30T12:00:04Z", "at": { "x": 1, "y": 1 } }, "schema": true },
+    { "why": "clicked over an hour before", "entry": { "id": "r-1", "container": 1073741825, "character": "Tester", "requestedAt": "2026-09-30T11:59:58Z", "clickedAt": "2026-09-30T10:59:57Z", "at": { "x": 1, "y": 1 } }, "schema": true },
+    { "why": "no place", "entry": { "id": "r-1", "container": 1073741825, "character": "Tester", "requestedAt": "2026-09-30T11:59:58Z", "clickedAt": "2026-09-30T11:55:00Z" }, "schema": false },
+    { "why": "a place with z", "entry": { "id": "r-1", "container": 1073741825, "character": "Tester", "requestedAt": "2026-09-30T11:59:58Z", "clickedAt": "2026-09-30T11:55:00Z", "at": { "x": 1, "y": 1, "z": 0 } }, "schema": false },
+    { "why": "x off the map", "entry": { "id": "r-1", "container": 1073741825, "character": "Tester", "requestedAt": "2026-09-30T11:59:58Z", "clickedAt": "2026-09-30T11:55:00Z", "at": { "x": -1, "y": 1 } }, "schema": false },
+    { "why": "y off the map", "entry": { "id": "r-1", "container": 1073741825, "character": "Tester", "requestedAt": "2026-09-30T11:59:58Z", "clickedAt": "2026-09-30T11:55:00Z", "at": { "x": 1, "y": 5000 } }, "schema": false },
+    { "why": "facet past 5", "entry": { "id": "r-1", "container": 1073741825, "character": "Tester", "requestedAt": "2026-09-30T11:59:58Z", "clickedAt": "2026-09-30T11:55:00Z", "at": { "x": 1, "y": 1, "facet": 6 } }, "schema": false },
+    { "why": "a fractional x", "entry": { "id": "r-1", "container": 1073741825, "character": "Tester", "requestedAt": "2026-09-30T11:59:58Z", "clickedAt": "2026-09-30T11:55:00Z", "at": { "x": 1.5, "y": 1 } }, "schema": false }
+  ]
+}

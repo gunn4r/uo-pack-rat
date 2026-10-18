@@ -1,6 +1,6 @@
 // build-spec.test.mts — `app/build-spec.mts`, a build's intent as one document (issue #218, BuildSpec).
 //
-// `[fast]`: `app/build-spec.mts`: a full spec, a template's (no buffs) and one filled from nothing pass `buildSpecError`, and one refused field of each kind says where; the panel's flat profile goes to a spec and back unchanged; and `planBuild` equals the assemblies it replaced, kept in the test as they were written: the page's build (its profile, pool settings, search options and saved-run snapshot, ui/builder.mts and ui/runs.mts) and the MCP tools' `planProfile` (mcp-tools.mts), for the demo characters with and without buffs and edited numbers, No character, and a hand-picked suit planned as Manual plans it; with no character (issue #12) the shard's caps, no Resisting Spells minimum, no swing and the named school's FC cap; and a character's swing on the planned profile (raw DEX plus the buffs' DEX and stamina shares, the worn suit's stamina, the step switch, none with No character), the switch in a spec only when on and checked as a boolean; `weaponMustHave` stored only when non-empty, checked, round-tripped and planned with; `onlyRoots` (issue #12) likewise, and kept out of templates; and the rarity preference (issue #262) likewise, planned as the tie-break on exact ties (tolerance 0, whatever Within points says). `characterLabel`, `labelError` and `keepLabels` (issue #336).
+// `[fast]`: `app/build-spec.mts`: a full spec, a template's (no buffs) and one filled from nothing pass `buildSpecError`, and one refused field of each kind says where; the panel's flat profile goes to a spec and back unchanged; and `planBuild` equals the assemblies it replaced, kept in the test as they were written: the page's build (its profile, pool settings, search options and saved-run snapshot, ui/builder.mts and ui/runs.mts) and the MCP tools' `planProfile` (mcp-tools.mts), for the demo characters with and without buffs and edited numbers, No character, and a hand-picked suit planned as Manual plans it; with no character (issue #12) the shard's caps, no Resisting Spells minimum, no swing and the named school's FC cap; and a character's swing on the planned profile (raw DEX plus the buffs' DEX and stamina shares, the worn suit's stamina, the step switch, none with No character), the switch in a spec only when on and checked as a boolean; `weaponMustHave` stored only when non-empty, checked, round-tripped and planned with; `onlyRoots` (issue #12) likewise, and kept out of templates; and the rarity preference (issue #262) likewise, planned as the tie-break on exact ties (tolerance 0, whatever Within points says). `characterLabel` and `labelError` (issue #336).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
@@ -12,7 +12,7 @@ import type { RulesV1 } from "./schema/types.d.mts";
 import { upgradeScan } from "./scan-schema.mts";
 import { buffPlanOf, buffSkillValues, manualBase, manualPlan, plannedProfile, runBuffs } from "./buffs.mts";
 import { RACES, RUN_DEFAULTS, defaultStrLimit } from "./run-settings.mts";
-import { buildSpec, buildSpecError, type BuildSpecSource, type CharacterEntry, characterBuffs, characterLabel, keepLabels, labelError, LABEL_MAX, characterProfile, findTemplate, migrateProfilesV3, planBuild, profileFromSpec, profilesSpecError, specFromProfile, specFromRunSettings, templateLabel, templateRefs, templateSettings, templateSpecFrom,
+import { buildSpec, buildSpecError, type BuildSpecSource, type CharacterEntry, characterBuffs, characterLabel, labelError, LABEL_MAX, characterProfile, findTemplate, migrateProfilesV3, planBuild, profileFromSpec, profilesSpecError, specFromProfile, specFromRunSettings, templateLabel, templateRefs, templateSettings, templateSpecFrom,
   type BuildSpec, type FlatProfile, type ProfilesV3, type TemplateMap } from "./build-spec.mts";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
@@ -163,7 +163,7 @@ test("[fast] build spec: onlyRoots is stored only when non-empty, checked, kept 
 });
 
 // ---- planBuild against the assemblies it replaced
-// The page (ui/builder.mts runBuild, optimizerProfile, poolSettings, searchOpts; ui/runs.mts settingsSnapshot), as written.
+// The page (ui/builder-job.mts runBuild, optimizerProfile, poolSettings, searchOpts; ui/runs.mts settingsSnapshot), as written.
 interface Knobs { strLimit: string; restarts: string; exact: boolean; budgetS: string; altCount: string; altTol: string }
 function pageBuild(p: FlatProfile, c: Character, worn: Item[], on: string[], edits: Record<string, number>, knobs: Knobs) {
   const panelBuffs = runBuffs(on, buffSkillValues(c.skills || {}, edits).values);
@@ -312,7 +312,7 @@ test("[fast] profiles v3: a bad v2 value is healed key by key and said; empty bu
   assert.deepEqual(migrateProfilesV3(profiles, { manualBuffSkills: { Chivalry: 90 }, buffSkills: { "": { Chivalry: 80 } } } as Record<string, unknown>).prefs, { manualBuffSkills: { Chivalry: 90 } });
 });
 
-test("[fast] profiles v3: the migration is idempotent, its result passes PUT /api/profiles' checks, and a newer file is left alone", () => {
+test("[fast] profiles v3: the migration is idempotent, its result passes a save's checks (PATCH /api/profiles), and a newer file is left alone", () => {
   const once = migrateProfilesV3(gold("profiles.json") as ProfilesFile, gold("ui-prefs.json") as Record<string, unknown>);
   assert.deepEqual(once.profiles, gold("expected.profiles.json"));
   assert.deepEqual(once.prefs, gold("expected.ui-prefs.json"));
@@ -328,7 +328,7 @@ test("[fast] profiles v3: the migration is idempotent, its result passes PUT /ap
 });
 
 // Issue #336: a template an older version named past 128 characters stays, and so does the link of a character made from
-// it: the v2 migration keeps it, and the file passes the schema and PUT /api/profiles' checks against itself.
+// it: the v2 migration keeps it, and the file passes the schema and a save's checks (PATCH /api/profiles) against itself.
 test("[fast] an older file's 130-character template keeps its character's link through the migration and the save checks", () => {
   const long = "t".repeat(130);
   const v2 = { schemaVersion: 2, characters: { A: { template: long, floors: { luck: 100 } } }, templates: { [long]: { floors: { luck: 100 } } } };
@@ -428,12 +428,7 @@ test("[fast] characterLabel: trimmed, null for none, a blank or a non-string one
   assert.equal(schema.$defs.character.properties.label.maxLength, LABEL_MAX);
 });
 
-test("[fast] labelError refuses control characters, line breaks, non-text and over 40 characters once trimmed; keepLabels keeps the stored labels", () => {
+test("[fast] labelError refuses control characters, line breaks, non-text and over 40 characters once trimmed", () => {
   for (const ok of ["Main Crafter", "", "  " + "x".repeat(40) + " ", "Archer-Bard (champ spawns)", "Ünïcødé ✓"]) assert.equal(labelError(ok), null, ok);
   for (const bad of ["a\nb", "a\rb", "a\tb", "a\u0000", "a\u007f", "x".repeat(41), 7, null]) assert.ok(labelError(bad), JSON.stringify(bad));
-  const spec = buildSpec();
-  const next = { characters: { A: { spec, label: "from the page" }, B: { spec, label: "stale" }, C: { spec } } } as Pick<ProfilesV3, "characters">;
-  keepLabels(next, { characters: { A: { spec, label: "stored" }, C: { spec, label: "kept" } } });
-  assert.deepEqual([next.characters.A!.label, next.characters.B!.label, next.characters.C!.label], ["stored", undefined, "kept"]);
-  assert.ok(!("label" in next.characters.B!), "no stored label: the key goes");
 });
