@@ -252,6 +252,10 @@ The thresholds are the shard rules' `unravel` (Shard rules, above); `GET /api/it
 | `app/vault-server.mts` | Pack Rat's local HTTP server and its composition root: startServer(config) returns { server, port, url, close() } and nothing runs at import time; it builds the stores, services and route table, runs the Host, Origin and token checks, dispatches, maps errors to statuses and listens, and close() tears down every timer, stream and worker; every HTML response carries the Content-Security-Policy, every response sent through send() carries nosniff, no-store and DENY framing, a body-reading PUT or POST must declare JSON, and headersTimeout is 60 s and requestTimeout 300 s, with only the idle-socket timeout off so an SSE stream survives (docs/architecture.md, "The server's request checks"). | `startServer`, `defaultClientSearch`, `ServerHandle`, `StartServerOptions`; re-exports `OPTS_LIMITS`, `HostBridge`, `ClientSearch`, `JobTimings` |
 <!-- module-map:end -->
 
+| Also here | Role | Owns |
+|---|---|---|
+| `app/schema/house-claims.v1.schema.json` | One entry of `<data>/house-claims.json`, which the app and the TazUO panel both write: `app/store/house-claims.mts` checks entries against it, and its accept and reject cases (`app/fixtures/contract-cases/house-claims.json`) run in the TypeScript and the Python suites. | the house claims shape |
+
 The services below are factories with explicit dependencies (stores, getters, a log function), built once by `startServer` and never importing `app/http/`:
 
 <!-- module-map:start services -->

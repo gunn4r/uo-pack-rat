@@ -203,6 +203,21 @@ test("[fast] stores: house claims read up to 256 KiB, a larger, missing or damag
   assert.equal(readFileSync(f, "utf8"), JSON.stringify([unsigned], null, 1) + "\n");
 });
 
+
+// The cases app/fixtures/contract-cases/house-claims.json shares with adapters/test_adapters.py, which runs the TazUO scripts' reader over them.
+test("[fast] stores: house claims keep every shared valid case, with only the fields they know, and drop every shared invalid one", () => {
+  const cases = JSON.parse(readFileSync(join(APP, "fixtures", "contract-cases", "house-claims.json"), "utf8")) as { valid: HouseClaim[]; invalid: { why: string; entry: unknown }[] };
+  const d = dir(), f = join(d, "house-claims.json"), store = createHouseClaimsStore(f);
+  for (const entry of cases.valid) {
+    writeFileSync(f, JSON.stringify([entry]));
+    const { id, facet, bounds: { x0, y0, x1, y1 }, claimedAt, by } = entry;
+    assert.deepEqual(store.read(), [{ id, facet, bounds: { x0, y0, x1, y1 }, claimedAt, ...(by !== undefined ? { by } : {}) }], JSON.stringify(entry));
+  }
+  for (const { why, entry } of cases.invalid) {
+    writeFileSync(f, JSON.stringify([entry]));
+    assert.deepEqual(store.read(), [], why);
+  }
+});
 test("[fast] stores: claimsOver matches a claim on the same facet whose bounds overlap, and claimsFromHouseMap claims the named houses and those with areas, less the forgotten (issue #299)", () => {
   const claim = (id: string, facet: number | null, x0: number, y0: number, x1: number, y1: number): HouseClaim => ({ id, facet, bounds: { x0, y0, x1, y1 }, claimedAt: "t" });
   const claims = [claim("1-0-0", 1, 0, 0, 10, 10), claim("x-0-0", null, 0, 0, 10, 10), claim("1-50-50", 1, 50, 50, 60, 60)];

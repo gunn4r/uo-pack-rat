@@ -1,0 +1,24 @@
+{
+  "$comment": "Pack Rat <data>/house-claims.json v1 (issue #299): the houses the player claimed, a JSON list written by the app (app/store/house-claims.mts) and by TazUO's packrat-panel.py (Claim this house), and read by both and by the TazUO scanners (adapters/_shared/tazuo/claims.py). Restricted to the keyword subset app/schema/validate.mts supports. A reader keeps the entries that pass and drops the rest, the first 500, from a file of at most 256 KiB. One rule this schema can't say is checked beside it on both sides: a claim's bounds run from x0 <= x1 and y0 <= y1. The shared accept and reject cases are app/fixtures/contract-cases/house-claims.json, which the TypeScript and Python test suites both run.",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["id", "facet", "bounds", "claimedAt"],
+    "properties": {
+      "id": { "type": "string", "pattern": "^(\\d{1,3}|x)-\\d{1,6}-\\d{1,6}$", "$comment": "the house's id, <facet or x>-<x>-<y> of its corner tile (app/house-names.mts's isHouseId)" },
+      "facet": { "type": ["integer", "null"], "minimum": 0, "maximum": 5, "$comment": "null when the facet was not known" },
+      "bounds": {
+        "type": "object",
+        "required": ["x0", "y0", "x1", "y1"],
+        "properties": {
+          "x0": { "type": "integer", "minimum": 0, "maximum": 999999 },
+          "y0": { "type": "integer", "minimum": 0, "maximum": 999999 },
+          "x1": { "type": "integer", "minimum": 0, "maximum": 999999 },
+          "y1": { "type": "integer", "minimum": 0, "maximum": 999999 }
+        }
+      },
+      "claimedAt": { "type": "string", "minLength": 1, "maxLength": 40 },
+      "by": { "type": "string", "minLength": 1, "maxLength": 64, "$comment": "the character that claimed it; left out of the claims the app makes itself" }
+    }
+  }
+}

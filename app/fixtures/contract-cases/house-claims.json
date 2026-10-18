@@ -1,0 +1,43 @@
+{
+  "$comment": "Accept and reject cases for one entry of <data>/house-claims.json (app/schema/house-claims.v1.schema.json). Both readers run every case: app/store/house-claims.mts (app/store/stores.test.mts) and adapters/_shared/tazuo/claims.py (adapters/test_adapters.py). A valid entry is kept, an invalid one dropped.",
+  "valid": [
+    { "id": "1-100-200", "facet": 1, "bounds": { "x0": 100, "y0": 200, "x1": 120, "y1": 220 }, "claimedAt": "2026-10-18T00:00:00Z", "by": "Dorran" },
+    { "id": "x-5-6", "facet": null, "bounds": { "x0": 5, "y0": 6, "x1": 5, "y1": 6 }, "claimedAt": "2026-10-18T00:00:00Z" },
+    { "id": "999-999999-0", "facet": 5, "bounds": { "x0": 0, "y0": 0, "x1": 999999, "y1": 999999 }, "claimedAt": "a", "by": "B" },
+    { "id": "0-1-1", "facet": 0, "bounds": { "x0": 1, "y0": 1, "x1": 2, "y1": 2 }, "claimedAt": "0123456789012345678901234567890123456789", "by": "0123456789012345678901234567890123456789012345678901234567890123" },
+    { "id": "0-1-1", "facet": 0, "bounds": { "x0": 1, "y0": 1, "x1": 2, "y1": 2, "z": 9 }, "claimedAt": "2026-10-18T00:00:00Z", "note": "a field a newer build adds" }
+  ],
+  "invalid": [
+    { "why": "not an object", "entry": "1-100-200" },
+    { "why": "null", "entry": null },
+    { "why": "a list", "entry": [] },
+    { "why": "id missing", "entry": { "facet": 1, "bounds": { "x0": 1, "y0": 1, "x1": 2, "y1": 2 }, "claimedAt": "t" } },
+    { "why": "id not a house id", "entry": { "id": "1-100", "facet": 1, "bounds": { "x0": 1, "y0": 1, "x1": 2, "y1": 2 }, "claimedAt": "t" } },
+    { "why": "id facet too long", "entry": { "id": "1234-1-1", "facet": 1, "bounds": { "x0": 1, "y0": 1, "x1": 2, "y1": 2 }, "claimedAt": "t" } },
+    { "why": "id with a trailing newline", "entry": { "id": "1-1-1\n", "facet": 1, "bounds": { "x0": 1, "y0": 1, "x1": 2, "y1": 2 }, "claimedAt": "t" } },
+    { "why": "id with digits that are not ASCII", "entry": { "id": "\u0661-1-1", "facet": 1, "bounds": { "x0": 1, "y0": 1, "x1": 2, "y1": 2 }, "claimedAt": "t" } },
+    { "why": "id a number", "entry": { "id": 7, "facet": 1, "bounds": { "x0": 1, "y0": 1, "x1": 2, "y1": 2 }, "claimedAt": "t" } },
+    { "why": "facet missing", "entry": { "id": "1-1-1", "bounds": { "x0": 1, "y0": 1, "x1": 2, "y1": 2 }, "claimedAt": "t" } },
+    { "why": "facet past 5", "entry": { "id": "1-1-1", "facet": 6, "bounds": { "x0": 1, "y0": 1, "x1": 2, "y1": 2 }, "claimedAt": "t" } },
+    { "why": "facet negative", "entry": { "id": "1-1-1", "facet": -1, "bounds": { "x0": 1, "y0": 1, "x1": 2, "y1": 2 }, "claimedAt": "t" } },
+    { "why": "facet a string", "entry": { "id": "1-1-1", "facet": "1", "bounds": { "x0": 1, "y0": 1, "x1": 2, "y1": 2 }, "claimedAt": "t" } },
+    { "why": "facet a fraction", "entry": { "id": "1-1-1", "facet": 1.5, "bounds": { "x0": 1, "y0": 1, "x1": 2, "y1": 2 }, "claimedAt": "t" } },
+    { "why": "facet a boolean", "entry": { "id": "1-1-1", "facet": true, "bounds": { "x0": 1, "y0": 1, "x1": 2, "y1": 2 }, "claimedAt": "t" } },
+    { "why": "bounds missing", "entry": { "id": "1-1-1", "facet": 1, "claimedAt": "t" } },
+    { "why": "bounds not an object", "entry": { "id": "1-1-1", "facet": 1, "bounds": [1, 1, 2, 2], "claimedAt": "t" } },
+    { "why": "a corner missing", "entry": { "id": "1-1-1", "facet": 1, "bounds": { "x0": 1, "y0": 1, "x1": 2 }, "claimedAt": "t" } },
+    { "why": "x0 past x1", "entry": { "id": "1-1-1", "facet": 1, "bounds": { "x0": 3, "y0": 1, "x1": 2, "y1": 2 }, "claimedAt": "t" } },
+    { "why": "y0 past y1", "entry": { "id": "1-1-1", "facet": 1, "bounds": { "x0": 1, "y0": 3, "x1": 2, "y1": 2 }, "claimedAt": "t" } },
+    { "why": "a coordinate past 999999", "entry": { "id": "1-1-1", "facet": 1, "bounds": { "x0": 1, "y0": 1, "x1": 1000000, "y1": 2 }, "claimedAt": "t" } },
+    { "why": "a coordinate negative", "entry": { "id": "1-1-1", "facet": 1, "bounds": { "x0": -1, "y0": 1, "x1": 2, "y1": 2 }, "claimedAt": "t" } },
+    { "why": "a coordinate a fraction", "entry": { "id": "1-1-1", "facet": 1, "bounds": { "x0": 1.5, "y0": 1, "x1": 2, "y1": 2 }, "claimedAt": "t" } },
+    { "why": "a coordinate a string", "entry": { "id": "1-1-1", "facet": 1, "bounds": { "x0": "1", "y0": 1, "x1": 2, "y1": 2 }, "claimedAt": "t" } },
+    { "why": "a coordinate a boolean", "entry": { "id": "1-1-1", "facet": 1, "bounds": { "x0": 1, "y0": 1, "x1": true, "y1": 2 }, "claimedAt": "t" } },
+    { "why": "claimedAt missing", "entry": { "id": "1-1-1", "facet": 1, "bounds": { "x0": 1, "y0": 1, "x1": 2, "y1": 2 } } },
+    { "why": "claimedAt empty", "entry": { "id": "1-1-1", "facet": 1, "bounds": { "x0": 1, "y0": 1, "x1": 2, "y1": 2 }, "claimedAt": "" } },
+    { "why": "claimedAt past 40 characters", "entry": { "id": "1-1-1", "facet": 1, "bounds": { "x0": 1, "y0": 1, "x1": 2, "y1": 2 }, "claimedAt": "01234567890123456789012345678901234567890" } },
+    { "why": "by empty", "entry": { "id": "1-1-1", "facet": 1, "bounds": { "x0": 1, "y0": 1, "x1": 2, "y1": 2 }, "claimedAt": "t", "by": "" } },
+    { "why": "by null", "entry": { "id": "1-1-1", "facet": 1, "bounds": { "x0": 1, "y0": 1, "x1": 2, "y1": 2 }, "claimedAt": "t", "by": null } },
+    { "why": "by past 64 characters", "entry": { "id": "1-1-1", "facet": 1, "bounds": { "x0": 1, "y0": 1, "x1": 2, "y1": 2 }, "claimedAt": "t", "by": "01234567890123456789012345678901234567890123456789012345678901234" } }
+  ]
+}

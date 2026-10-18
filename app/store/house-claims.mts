@@ -1,10 +1,10 @@
-// house-claims.mts — <data>/house-claims.json (issue #299): the houses the player claimed, which the TazUO panel writes too: only valid entries read, which claims a house's bounds fall under, and the claims made at the first start from the houses already named. A TazUO scan opens ground containers, and captures the house, only inside one, and the House map shows only those. A JSON list of {id, facet, bounds: {x0, y0, x1, y1}, claimedAt, by?} that TazUO's packrat-panel.py writes too (Claim this house), read there with the same checks (adapters/_shared/tazuo/claims.py); `by` is the character that claimed it, left out of the claims the app makes itself.
+// house-claims.mts — <data>/house-claims.json (issue #299): the houses the player claimed, which the TazUO panel writes too: only valid entries read, which claims a house's bounds fall under, and the claims made at the first start from the houses already named. A TazUO scan opens ground containers, and captures the house, only inside one, and the House map shows only those. A JSON list of {id, facet, bounds: {x0, y0, x1, y1}, claimedAt, by?} that TazUO's packrat-panel.py writes too (Claim this house), read there with the same checks (adapters/_shared/tazuo/claims.py): the entry schema app/schema/house-claims.v1.schema.json, whose accept and reject cases both run (app/fixtures/contract-cases/house-claims.json); `by` is the character that claimed it, left out of the claims the app makes itself.
 //
 // map: server
 // owns: `createHouseClaimsStore`, `claimsOver`, `claimsFromHouseMap`, `MAX_CLAIMS`
-import { existsSync } from "node:fs";
-import { isBoundedInt, isBoundedString } from "../guards.mts";
-import { isHouseId, type HouseMapDoc } from "../house-names.mts";
+import { existsSync, readFileSync } from "node:fs";
+import type { HouseMapDoc } from "../house-names.mts";
+import { validate, type ValidatorSchema } from "../schema/validate.mts";
 import { readJsonFile, writeJsonFile } from "./json-file.mts";
 
 export interface ClaimBounds { x0: number; y0: number; x1: number; y1: number }
@@ -12,15 +12,12 @@ export interface HouseClaim { id: string; facet: number | null; bounds: ClaimBou
 export const MAX_CLAIMS = 500;
 const MAX_CLAIMS_BYTES = 256 * 1024;   // the size the game scripts read too
 
-const isCoord = (v: unknown): v is number => isBoundedInt(v, 0, 999_999);
-const isBounds = (v: unknown): v is ClaimBounds => {
-  const b = v as Partial<ClaimBounds> | null;
-  return !!b && typeof b === "object" && isCoord(b.x0) && isCoord(b.y0) && isCoord(b.x1) && isCoord(b.y1) && b.x0 <= b.x1 && b.y0 <= b.y1;
-};
+// One entry's schema (app/schema/house-claims.v1.schema.json), and the rule it can't say: bounds run low to high.
+const CLAIM = (JSON.parse(readFileSync(new URL("../schema/house-claims.v1.schema.json", import.meta.url), "utf8")) as { items: ValidatorSchema }).items;
 const isClaim = (v: unknown): v is HouseClaim => {
-  const c = v as Partial<HouseClaim> | null;
-  return !!c && typeof c === "object" && typeof c.id === "string" && isHouseId(c.id) && (c.facet === null || isBoundedInt(c.facet, 0, 5)) && isBounds(c.bounds)
-    && isBoundedString(c.claimedAt, 40) && (c.by === undefined || isBoundedString(c.by, 64));
+  if (!validate(CLAIM, v).ok) return false;
+  const { x0, y0, x1, y1 } = (v as HouseClaim).bounds;
+  return x0 <= x1 && y0 <= y1;
 };
 
 // Only valid entries are read, the first MAX_CLAIMS; anything else in the file (or a file too big or unparsable) is dropped, and the next write leaves it out.
