@@ -9,7 +9,7 @@
 //   6. nothing imports app/vault-server.mts except electron/, scripts/, the test fixtures (*-fixture.mts) and tests;
 //   7. no app/ui/ module imports app/ui/app.mts, the page's bootstrap (routes are nav.mts, the inventory reload is inventory-data.mts);
 //   8. every app/ui/ module that registers a screen with nav.mts's registerScreen() is reached from app/ui/app.mts by runtime imports (a side-effect `import "./x.mts"` counts): a screen module nothing loads never registers its route;
-//   9. the Suit Builder's seven modules (builder, builder-header, builder-templates, builder-start, builder-manual, builder-result, runs) never import each other: they share state and call each other through builder-session.mts.
+//   9. the Suit Builder's eight modules (builder, builder-header, builder-templates, builder-requirements, builder-start, builder-manual, builder-result, runs) never import each other: they share state and call each other through builder-session.mts.
 // Rules 2-4 follow runtime imports only: `import type` and `export type` are erased, so they load nothing.
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -108,7 +108,7 @@ test("[smoke] layering: no import cycles in app/ui/ beyond the known groups", ()
   assert.deepEqual([...found], []);
 });
 
-const BUILDER = ["builder", "builder-header", "builder-templates", "builder-start", "builder-manual", "builder-result", "runs"].map((m) => `app/ui/${m}.mts`);
+const BUILDER = ["builder", "builder-header", "builder-templates", "builder-requirements", "builder-start", "builder-manual", "builder-result", "runs"].map((m) => `app/ui/${m}.mts`);
 test("[smoke] layering: the Suit Builder's modules never import each other (builder-session.mts is their interface)", () => {
   const found = BUILDER.flatMap((f) => edges.get(f)!.filter((e) => !e.typeOnly && e.to && BUILDER.includes(e.to)).map((e) => `${f} → ${e.spec}`));
   assert.deepEqual(found, []);
