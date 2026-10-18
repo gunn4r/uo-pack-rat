@@ -12,9 +12,10 @@ import { bagLabel } from "../vault-lib.mts";
 import type { Container } from "../vault-lib.mts";
 import { parseItemQuery } from "../item-query.mts";
 import type { ItemQuery, RuleQuery } from "../item-query.mts";
-import { activeFilters, plural } from "./inv-model.mts";
+import { activeFilters } from "./inv-model.mts";
 import type { FilterContext } from "./inv-model.mts";
 import type { BridgeResultEntry, Build, SpellSchool, ContainerLabel, OrganizeConfig, OrganizeMatchApiResponse, OrganizePlan, OrganizeRule, PlanMove, PlanRuleReport, PlanWarning, PlanWarningKind, RuleMatch, AutoStrategy, OrganizeProposal, ProposalCandidate, ProposalGroup, ProposalLayout, OrganizeRunningTrip } from "./api-types.mts";
+import { plural } from "./format.mts";
 
 // The ruleIds the plan reports the catch-all and the gathered empty bags under (app/organize-config.mts's
 // CATCH_ALL_ID and EMPTY_BAGS_ID; a value import from there would add a second server module to the page for two

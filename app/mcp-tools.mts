@@ -438,7 +438,7 @@ export const TOOLS: Tool[] = [
     inputSchema: { type: "object", additionalProperties: false, properties: {} },
     annotations: { title: "Item kinds", ...READ },
     async handler(_a, ctx) {
-      const [inv, own] = await Promise.all([inventory(ctx), ctx.api<{ names: Record<string, string>; graphics: Record<string, string> }>("/api/item-kinds")]);
+      const [inv, own] = await Promise.all([inventory(ctx), ctx.api<ApiResponse<"GET /api/item-kinds">>("/api/item-kinds")]);
       return { kinds: inv.facets.kinds, playerSet: { names: own.names, graphics: own.graphics } };
     },
   },

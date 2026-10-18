@@ -9,7 +9,7 @@
 //
 // map: ui-infra
 // owns: the hand-declared `*ApiResponse` types
-import type { RunSettings, KindOverrides } from "../vault-lib.mts";
+import type { RunSettings } from "../vault-lib.mts";
 import type { ProfilesV3, TemplateMap } from "../build-spec.mts";
 import type { AutostartOutcome, Hotkey as PanelHotkey, PanelPrefs } from "../tazuo-panel-prefs.mts";
 import type { OrganizeConfig, RuleMatch } from "../organize-config.mts";
@@ -82,13 +82,7 @@ export interface ProfilesApiResponse {
 // The TazUO panel (app/tazuo-panel-prefs.mts): GET/PUT /api/tazuo-panel, and POST /api/setup/install's `panel`.
 export type { AutostartOutcome, PanelHotkey, PanelPrefs };
 export interface TazuoPanelApiResponse { ok: boolean; prefs: PanelPrefs }
-// GET/PUT /api/mcp and POST /api/mcp/token: the built-in MCP server's settings and its listener (app/mcp.mts). `token` is
-// null until MCP is first turned on; `live.portBusy` names the saved port when another program held it at launch.
-export interface McpApiResponse {
-  ok: boolean;
-  config: { enabled: boolean; allowActions: boolean; port: number; token: string | null };
-  live: { listening: boolean; port: number | null; portBusy: number | null };
-}
+export type { McpApiResponse } from "../api/mcp.mts";
 export type { HostPickFolderApiResponse } from "../api/host.mts";
 
 // ---------------------------------------------------------------- import
@@ -96,10 +90,7 @@ export type { HostPickFolderApiResponse } from "../api/host.mts";
 export type { ImportPasteApiResponse, RescanApiResponse } from "../api/import.mts";
 // POST /api/forget and /api/forget-character, and GET /api/blacklist: app/api/inventory.mts.
 export type { ForgetApiResponse, BlacklistApiResponse } from "../api/inventory.mts";
-// GET and POST /api/item-kinds, POST /api/item-kinds/import (issue #150): the whole item-kinds.json document after
-// the change; an import also says how many entries it left out and why (the first few).
-// `readOnly` (GET): why the file cannot be changed, when a newer Pack Rat made it (app/migrate.mts).
-export interface ItemKindsApiResponse extends KindOverrides { ok: boolean; version: 1; skipped?: number; problems?: string[]; readOnly?: string }
+export type { ItemKindsApiResponse } from "../api/kinds.mts";
 
 // ---------------------------------------------------------------- suit builder: optimize / runs
 

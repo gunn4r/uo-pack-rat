@@ -10,6 +10,9 @@ import type { BridgeQueueApiResponse, BridgeStatusApiResponse } from "./bridge.m
 import type { HouseApiResponse, HouseClaimsApiResponse, HouseEntry, HouseMapApiResponse, HouseMapPutApiResponse, HousesApiResponse } from "../house-model-types.mts";
 import type { HostPickFolderApiResponse, OpenPathBody, PickFolderBody } from "./host.mts";
 import type { ImportPasteApiResponse, ImportPasteBody, RescanApiResponse } from "./import.mts";
+import type { ItemKindsApiResponse, ItemKindsPostBody } from "./kinds.mts";
+import type { McpApiResponse, McpPutBody } from "./mcp.mts";
+import type { KindOverrides } from "../vault-lib.mts";
 import type { BlacklistApiResponse, BlacklistPostBody, ForgetApiResponse, InventoryApiResponse, ItemHitsApiResponse, ItemsApiResponse, ItemsBySerialApiResponse, MissingApiResponse } from "./inventory.mts";
 import type { EvaluateApiResponse, OptimizeCancelApiResponse, OptimizeStartApiResponse, OptimizeStatusApiResponse } from "./optimize.mts";
 import type { OrganizePlanApiResponse, OrganizeProposeApiResponse, OrganizeProposeBody } from "../organize-types.mts";
@@ -60,13 +63,13 @@ export interface ApiRoutes {
   "GET /api/items": ApiEntry<ItemsApiResponse | ItemHitsApiResponse>;   // ItemHitsApiResponse with fields=hits
   "GET /api/items/by-serial": ApiEntry<ItemsBySerialApiResponse>;
   // kinds.mts
-  "GET /api/item-kinds": Untyped;
-  "POST /api/item-kinds": Untyped;
-  "POST /api/item-kinds/import": Untyped;
+  "GET /api/item-kinds": ApiEntry<ItemKindsApiResponse>;
+  "POST /api/item-kinds": ApiEntry<ItemKindsApiResponse, ItemKindsPostBody>;
+  "POST /api/item-kinds/import": ApiEntry<ItemKindsApiResponse, Partial<KindOverrides>>;
   // mcp.mts
-  "GET /api/mcp": Untyped;
-  "PUT /api/mcp": Untyped;
-  "POST /api/mcp/token": Untyped;
+  "GET /api/mcp": ApiEntry<McpApiResponse>;
+  "PUT /api/mcp": ApiEntry<McpApiResponse, McpPutBody>;
+  "POST /api/mcp/token": ApiEntry<McpApiResponse, Record<string, never>>;
   // optimize.mts: builds
   "POST /api/optimize": ApiEntry<OptimizeStartApiResponse, unknown>;   // the request bodies of the builds are not typed yet
   "GET /api/optimize/<id>/events": ApiEntry<EventStream>;

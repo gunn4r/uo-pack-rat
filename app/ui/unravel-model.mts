@@ -5,7 +5,8 @@
 // owns: `gatherWeight`, `gatherButton`
 import type { Item } from "../vault-lib.mts";
 import type { MovePlanSummary } from "./api-types.mts";
-import { plural } from "./inv-model.mts";
+import { plural } from "./format.mts";
+
 
 // Unravel Container works through the bag's top level only (ServUO's ImbuingGump walks the container's own items).
 export const GATHER_LOOSE = "Pieces go in loose, not in sub-bags: Unravel Container only reaches the bag's top level.";

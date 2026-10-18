@@ -15,7 +15,7 @@ import { $, compactChildren, el, noteEl } from "./dom.mts";
 import { api } from "./api.mts";
 import { prefs } from "./prefs.mts";
 import { badge, box, button, check, confirmDialog, copyText, input, message, segmented, select, switchControl, txt, showToast, type Kids } from "./components.mts";
-import { plural } from "./builder-model.mts";
+
 import { applyLook, currentLook, resolveTheme, BUILT_THEMES, type Appearance } from "./theme.mts";
 import { changeShard } from "./shard.mts";
 import { openWizard } from "./wizard.mts";
@@ -31,6 +31,7 @@ import { tiledataNote } from "./house-map-model.mts";
 import { registerScreen } from "./nav.mts";
 import type { SetupApiResponse, InstallApiResponse, UpdateCheckApiResponse, BlacklistApiResponse, CleanupApiResponse, RetentionSetting, SettingsApiResponse, PanelPrefs, TazuoPanelApiResponse, McpApiResponse, HousesApiResponse, TiledataFrom, HostPickFolderApiResponse, ApiError, UiPrefs } from "./api-types.mts";
 import { isPseudoCharacter, rulesUpgradeNote, type BlacklistEntry } from "../vault-lib.mts";
+import { plural } from "./format.mts";
 
 // Reinstall's own confirmation and result — separate from the wizard's, since this row acts on the client
 // that is already set up (no need to re-walk shard/client/folder).
