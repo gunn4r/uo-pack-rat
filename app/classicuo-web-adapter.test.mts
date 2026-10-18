@@ -1,6 +1,6 @@
 // classicuo-web-adapter.test.mts — stands in for app/contracts.test.mts for the ClassicUO web client adapter, which ships no fixture.scan.json yet.
 //
-// stands in for `app/contracts.test.mts` until `adapters/classicuo-web/` ships a real `fixture.scan.json` (see that adapter's README: nobody has run `packrat-scanner.ts` against a live client yet, so the real contract test skips this adapter folder entirely). Reads `const CAPABILITIES = {...}` and the `PASTE_BEGIN`/`PASTE_END` constants straight out of the committed `packrat-scanner.ts` source with targeted regexes (not `new Function`/`eval` — a hand-rolled parser over the handful of field shapes actually used), so a real edit to the scanner is what gets checked, not a hand-typed copy asserted only against itself: `capabilities.json` matches `CAPABILITIES` field for field, and the scanner's paste markers are byte-identical to `app/import.mts`'s own `PASTE_BEGIN`/`PASTE_END`. The real scanner is also RUN: imported (Node strips its types) with the four sandbox globals it reads (`player`, `client`, `log`, `sleep`) faked, and the document it prints between the paste markers is parsed back and validated against the v2 schema. Checked against that real output: items stay items whether a non-container's `contents` is `undefined` or an empty array (a build that gives every item `[]` used to turn the whole backpack into containers), an empty bag with a known container graphic is still a container, a ground chest whose contents read `[]` or throw is `opened: false` with nothing under it, and every root — opened or not — has a matching `containers` entry, a ground one with its `pos`; a trash container on the ground or in the backpack is left out with its contents while an ordinary barrel is not (issue #74). A ground root's `pos` carries `player.map` as its `facet` only when it is a whole number 0-5 (issue #11). Also spawns `node --experimental-strip-types` on the real `packrat-scanner.ts` file directly and asserts it fails only with a `ReferenceError` for a missing sandbox global, never a `SyntaxError` — the one check in this file that actually PARSES the script rather than reading it as text, closing a real gap a source-corruption bug shipped through undetected during this phase. Every container record carries its graphic and hue (issue #174). All `[fast]`.
+// stands in for `app/contracts.test.mts` until `adapters/classicuo-web/` ships a real `fixture.scan.json` (see that adapter's README: nobody has run `packrat-scanner.ts` against a live client yet, so the real contract test skips this adapter folder entirely). Reads the `PASTE_BEGIN`/`PASTE_END` constants straight out of the committed `packrat-scanner.ts` source with a targeted regex, and checks they are byte-identical to `app/import.mts`'s own. The scanner's id, version and capabilities are generated from `capabilities.json` (`npm run gen:contracts`), and a real scan must report exactly those; a Gargish Chest on the ground is scanned like any chest. The real scanner is also RUN: imported (Node strips its types) with the four sandbox globals it reads (`player`, `client`, `log`, `sleep`) faked, and the document it prints between the paste markers is parsed back and validated against the v2 schema. Checked against that real output: items stay items whether a non-container's `contents` is `undefined` or an empty array (a build that gives every item `[]` used to turn the whole backpack into containers), an empty bag with a known container graphic is still a container, a ground chest whose contents read `[]` or throw is `opened: false` with nothing under it, and every root — opened or not — has a matching `containers` entry, a ground one with its `pos`; a trash container on the ground or in the backpack is left out with its contents while an ordinary barrel is not (issue #74). A ground root's `pos` carries `player.map` as its `facet` only when it is a whole number 0-5 (issue #11). Also spawns `node --experimental-strip-types` on the real `packrat-scanner.ts` file directly and asserts it fails only with a `ReferenceError` for a missing sandbox global, never a `SyntaxError` — the one check in this file that actually PARSES the script rather than reading it as text, closing a real gap a source-corruption bug shipped through undetected during this phase. Every container record carries its graphic and hue (issue #174). All `[fast]`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -15,9 +15,10 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const ADAPTER_DIR = join(HERE, "..", "adapters", "classicuo-web");
 
 // capabilities.json's own shape (app/installer.mts's AdapterInfo reads more of it; this file only
-// ever reads .adapter/.transport/.capabilities off it).
+// ever reads .adapter/.version/.transport/.capabilities off it).
 interface CapabilitiesFile {
   adapter: string;
+  version: string;
   transport: string;
   capabilities: ScanV2AdapterCapabilities;
 }
@@ -45,49 +46,6 @@ test("[fast] classicuo-web: packrat-scanner.ts is syntactically valid TypeScript
   assert.match(r.stderr || "", /ReferenceError/, `expected a ReferenceError for a missing sandbox global, got:\n${r.stderr}`);
 });
 
-// Post-review fix (Phase 6 final review, Important 3): this used to be a third hand-typed copy of
-// the scanner's CAPABILITIES object, asserted only against itself — a change to the real
-// packrat-scanner.ts (add a layer, flip `arms`, add a bridge action) could never fail this test no
-// matter how far it drifted, while the comment above claimed the opposite. This now pulls the
-// literal `const CAPABILITIES = { ... };` block straight out of the .ts source and parses it
-// field-by-field with targeted regexes (not `new Function`/`eval` on source text — a security review
-// flagged an earlier draft of this fix for exactly that, and a hand-rolled parser over a handful of
-// known field shapes (a quoted-string array, a boolean, a quoted string) is no harder and doesn't
-// execute anything), so a real edit to the scanner is what this test is actually checking against.
-// The comparison against capabilities.json (below) is unchanged; it's the source of the "expected"
-// value that changed, not what it's compared to.
-function extractScannerCapabilities(src: string): ScanV2AdapterCapabilities {
-  const block = /const CAPABILITIES\s*=\s*(\{[\s\S]*?\n\};)/.exec(src);
-  assert.ok(block, "packrat-scanner.ts: could not find `const CAPABILITIES = { ... };` — did it move or get renamed?");
-  const body = block[1]!;   // present whenever block matched — the regex's only capture group
-  const stringArray = (field: string): string[] => {
-    const m = new RegExp(`${field}:\\s*\\[([\\s\\S]*?)\\]`).exec(body);
-    assert.ok(m, `packrat-scanner.ts CAPABILITIES: no "${field}: [...]" field found`);
-    return [...m[1]!.matchAll(/"([^"]*)"/g)].map((x) => x[1]!);   // present whenever the outer match succeeded
-  };
-  const bool = (field: string): boolean => {
-    const m = new RegExp(`${field}:\\s*(true|false)`).exec(body);
-    assert.ok(m, `packrat-scanner.ts CAPABILITIES: no "${field}: true|false" field found`);
-    return m[1] === "true";
-  };
-  const str = (field: string): string => {
-    const m = new RegExp(`${field}:\\s*"([^"]*)"`).exec(body);
-    assert.ok(m, `packrat-scanner.ts CAPABILITIES: no "${field}: "..."" field found`);
-    return m[1]!;   // present whenever m matched — the regex's only capture group
-  };
-  return {
-    layers: stringArray("layers"), arms: bool("arms"), bank: bool("bank"), ground: bool("ground"),
-    nested: bool("nested"), tooltips: str("tooltips") as ScanV2AdapterCapabilities["tooltips"], bridge: stringArray("bridge"),
-  };
-}
-const SCANNER_CAPABILITIES = extractScannerCapabilities(scannerSrc);
-
-test("[fast] classicuo-web: capabilities.json matches the scanner's own CAPABILITIES constant, read from the real .ts source", () => {
-  assert.equal(capsFile.adapter, "classicuo-web");
-  assert.equal(capsFile.transport, "paste");
-  assert.deepEqual(capsFile.capabilities, SCANNER_CAPABILITIES);
-});
-
 // The paste markers the scanner prints (PASTE_BEGIN/PASTE_END, also regexed straight out of the .ts
 // source) must be byte-identical to the ones app/import.mts's extractJsonText actually looks for —
 // docs/adapter-guide.md and both READMEs document this as a hard requirement ("must match
@@ -112,6 +70,7 @@ test("[fast] classicuo-web: the scanner's paste markers match app/import.mts's P
 interface FakeItem { serial: number; name: string; graphic: number; hue: number; amount: number; x?: number; y?: number; z?: number; readonly contents: FakeItem[] | undefined }
 interface WebRoot { serial: number; kind: string; name: string; opened: boolean }
 interface WebDoc {
+  adapter: { id: string; version: string; capabilities: ScanV2AdapterCapabilities };
   roots: WebRoot[];
   containers: Record<string, { serial: number; kind: string; parent: number | null; root: number; pos?: unknown }>;
   items: { serial: number; container: number }[];
@@ -168,6 +127,22 @@ function homeWorld(leaf?: FakeItem[]) {
   const katana = fakeItem(0x40000006, "A Katana", RING_GRAPHIC, undefined, leaf);
   return { backpack, ground: [chest, unloaded, locked], equipped: { oneHanded: katana } };
 }
+
+// The scanner's ADAPTER_ID, ADAPTER_VERSION and CAPABILITIES are generated from capabilities.json (npm run gen:contracts);
+// this checks what a real scan reports, not the source text.
+test("[fast] classicuo-web: the real scan reports capabilities.json's id, version and capabilities", async () => {
+  const { adapter } = await runScanner(homeWorld());
+  assert.deepEqual([capsFile.adapter, capsFile.transport], ["classicuo-web", "paste"]);
+  assert.deepEqual([adapter.id, adapter.version, adapter.capabilities], [capsFile.adapter, capsFile.version, capsFile.capabilities]);
+});
+
+test("[fast] classicuo-web: a Gargish Chest on the ground is scanned like any other chest (the shared container graphics)", async () => {
+  const w = homeWorld();
+  w.ground.push(fakeItem(0x4000000b, "A Gargish Chest", 0x4025, [fakeItem(0x4000000c, "Bandage", RING_GRAPHIC, undefined)]));
+  const doc = await runScanner(w);
+  assert.ok(doc.roots.some((r) => r.serial === 0x4000000b && r.opened), "the chest is a root");
+  assert.ok(doc.items.some((i) => i.serial === 0x4000000c && i.container === 0x4000000b), "and its contents are read");
+});
 
 for (const [label, leaf] of [["undefined", undefined], ["an empty array", []]] as const) {
   test(`[fast] classicuo-web: the real scan records items as items when a non-container's contents is ${label}`, async () => {
