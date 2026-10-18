@@ -108,7 +108,7 @@ Profiles, buffs, pools, solvers, saved runs and Manual. `docs/solver.md` describ
 | `app/vault-lib.mts` (builder part) | Profiles and templates, the effective profile the solvers see (the Faster Casting cap by casting school included), pools, weapons, run settings and requirement reports. | `Profile`, `EffectiveProfile`, `effectiveProfile`, `CASTING_SCHOOLS`, `fcCapFor`, `RESIST_CAP_LIMITS`, `resistCapsFor`, `TEMPLATE_KEYS`, `templateFrom`, `migrateProfiles` (v1 → v2), `OptItem`, `toOptItem`, `buildPools`, `WEAPON_SKILLS`, `MELEE_SKILLS`, `WEAPON_MUST_HAVE`, `isWeapon`, `missingFlags`, `weaponHasFlags`, `weaponMustHaveError`, `RunSettings`, `settingsDiff`, `totalsOf`, `requirementReport` |
 | `app/data/profiles.default.json` | A new `<data>/profiles.json`, written on first run: schemaVersion 3, no characters and no templates of the player's own. | the first-run file |
 | `app/data/templates/` | One file per shard (uoalive, generic-osi): the shard's built-in Suit Builder templates, read at run time, shown read-only, never copied into `<data>/profiles.json`. | the built-in templates |
-| `app/schema/profiles.v3.schema.json` | The contract `PUT /api/profiles` checks a body's shape against (each spec then goes through `buildSpecError`). | the profiles shape |
+| `app/schema/profiles.v3.schema.json` | The contract a profiles save (`PATCH /api/profiles`) checks the file's shape against (each spec then goes through `buildSpecError`). | the profiles shape |
 
 ## Organize
 
@@ -231,7 +231,7 @@ The thresholds are the shard rules' `unravel` (Shard rules, above); `GET /api/it
 | `app/http/routes/mcp.mts` | The built-in MCP server's settings: GET\|PUT /api/mcp and POST /api/mcp/token. | `routes` |
 | `app/http/routes/optimize.mts` | The Suit Builder's builds and saved runs: POST /api/optimize, the per-job /api/optimize/<id>/events\|cancel\|status, POST\|GET /api/runs and GET\|PUT\|DELETE /api/runs/<id>, and POST /api/evaluate. | `routes` |
 | `app/http/routes/organize.mts` | Organize: GET\|PUT /api/organize, GET /api/organize/presets, POST /api/organize/match and /api/organize/propose, GET /api/organize/plan and POST /api/organize/trip; and Move to (issue #270), which runs as Organize trips: POST /api/move/plan and /api/move/trip. | `routes` |
-| `app/http/routes/prefs.mts` | The player's saved choices: GET\|PATCH /api/profiles, /api/ui-prefs and /api/tazuo-panel. | `routes` |
+| `app/http/routes/prefs.mts` | The player's saved choices: GET\|PATCH /api/profiles, /api/ui-prefs and /api/tazuo-panel. | `routes`, `patchProfiles` |
 | `app/http/routes/settings.mts` | GET\|PUT /api/settings, POST /api/retention/cleanup and GET /api/rules. | `routes` |
 | `app/http/routes/setup.mts` | The setup wizard: GET /api/setup, GET /api/setup/scanner, POST /api/setup/locate and /api/setup/install, and GET /api/update-check. | `routes`, `MAX_PATH_LEN`, `NO_CLIENT_FOLDER` |
 | `app/http/routes/static.mts` | The page and the browser-shared modules: GET / (index.html), the favicon and logo, each module the page imports at run time (/<name>.mjs, compiled into app/dist/), GET /ui/<name> and GET /ui/fonts/<name>.woff2. | `routes` |

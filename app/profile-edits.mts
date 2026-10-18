@@ -30,13 +30,15 @@ export type ProfileEditOp = ProfileEdit["op"];
 export interface ProfileEditContext { builtins: TemplateMap; canLabel?: (name: string) => boolean }
 
 const NAME_MAX = 64, ID_MAX = 4096;
+// Names an object key can't safely be: assigning one changes the map's prototype instead of adding an entry.
+const UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 // Why a value is not a ProfileEdit, or null. The values inside (specs, buffs) are held to the profiles schema and
 // buildSpecError once applied, with the rest of the file.
 export function profileEditError(v: unknown): string | null {
   if (!isObject(v)) return "an edit must be an object";
-  const name = (): string | null => (isBoundedString(v.name, NAME_MAX) && v.name ? null : `${String(v.op)}: name must be a character's name`);
-  const id = (k: string): string | null => (isBoundedString(v[k], ID_MAX) && v[k] ? null : `${String(v.op)}: ${k} must be a template's name`);
+  const name = (): string | null => (isBoundedString(v.name, NAME_MAX) && v.name && !UNSAFE_KEYS.has(v.name) ? null : `${String(v.op)}: name must be a character's name`);
+  const id = (k: string): string | null => (isBoundedString(v[k], ID_MAX) && v[k] && !UNSAFE_KEYS.has(v[k] as string) ? null : `${String(v.op)}: ${k} must be a template's name`);
   switch (v.op) {
     case "setBuffs": return name() ?? (isObject(v.buffs) ? null : "setBuffs: buffs must be an object");
     case "setLabel": return name() ?? labelError(v.label);

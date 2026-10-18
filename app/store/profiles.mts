@@ -89,8 +89,8 @@ export function createProfilesStore({ file, defaults, templatesDir, shard, log, 
   const stamped = (doc: unknown, names: Set<string> | null): { profiles: ProfilesV3; stamp: string } => ({ profiles: migrateNow(doc, names), stamp: stamp() });
   // A v2 file whose ui-prefs still hold buffs waits on the scanned characters first. That wait is shared: concurrent
   // first reads run one migration, and it reads both files again after the wait, so a save made meanwhile is what it
-  // migrates (a v3 file is left as it is) rather than being written over. A save that runs once the migration is done,
-  // before a reader sharing it resumes, cannot pair that reader's profiles with a newer stamp.
+  // migrates (a v3 file is left as it is) rather than being written over. Readers sharing it get one copy and its stamp,
+  // which a save made from it names as write's `base`, so a second save from the same copy is refused, not written over the first.
   let migration: Promise<{ profiles: ProfilesV3; stamp: string }> | null = null;
   // The profiles and their stamp, which GET /api/profiles answers with.
   async function readStamped(): Promise<{ profiles: ProfilesV3; stamp: string }> {
@@ -106,12 +106,15 @@ export function createProfilesStore({ file, defaults, templatesDir, shard, log, 
     return migration;
   }
   const read = async (): Promise<ProfilesV3> => (await readStamped()).profiles;
-  // PATCH /api/profiles: the edited file, already checked against the schema and app/build-spec.mts's profilesSpecError.
-  // Answers its new stamp.
-  function write(doc: ProfilesV3): { stamp: string } {
+  // PATCH /api/profiles: the edited file, already checked against the schema and app/build-spec.mts's profilesSpecError,
+  // written only over the file it was made from (`base`, the stamp read with it). A file changed since is left alone (ok
+  // false, with the stamp it has now), so a save made from an older copy can't drop another save's edits. The check and
+  // the write run with no await between them.
+  function write(doc: ProfilesV3, base: string): { ok: boolean; stamp: string } {
+    if (stamp() !== base) return { ok: false, stamp: stamp() };
     refuseNewer(file, "profiles");
     writeJsonFile(file, doc, { indent: 2 });
-    return { stamp: stamp() };
+    return { ok: true, stamp: stamp() };
   }
   // Why profiles.json may not be saved (a newer Pack Rat made it), or null.
   const readOnly = (): string | null => newerOnDisk(file, "profiles");

@@ -1062,7 +1062,7 @@ test("[fast] profiles: ubwsAnyWeapon is on unless set false, and the schema take
   assert.ok(validate(schema, { schemaVersion: 3, characters: { A: { spec: spec(false) } }, templates: { t: { spec: spec(true) } } }).ok);
   for (const g of ["characters", "templates"]) {
     const r = validate(schema, { schemaVersion: 3, characters: {}, templates: {}, [g]: { A: { spec: spec("yes") } } });
-    assert.match(r.errors[0]?.path || "", new RegExp(`^/${g}/A/spec/pool/ubwsAnyWeapon`), `PUT /api/profiles refuses a non-boolean in ${g}: ${JSON.stringify(r.errors)}`);
+    assert.match(r.errors[0]?.path || "", new RegExp(`^/${g}/A/spec/pool/ubwsAnyWeapon`), `a profiles save refuses a non-boolean in ${g}: ${JSON.stringify(r.errors)}`);
   }
   assert.deepEqual(settingsDiff({}, { ubwsAnyWeapon: false }), ["Use Best Weapon Skill weapons held to their own skill"]);
   assert.deepEqual(settingsDiff({ ubwsAnyWeapon: false }, { ubwsAnyWeapon: true }), ["Use Best Weapon Skill weapons allowed"]);

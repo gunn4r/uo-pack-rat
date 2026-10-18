@@ -7,11 +7,13 @@ import { applyProfileEdits, type ProfileEdit, type ProfileEditContext } from "..
 import { state } from "./store.mts";
 import { toast } from "./dom.mts";
 import { api } from "./api.mts";
-import type { ProfilesApiResponse } from "./api-types.mts";
+import type { ApiError, ProfilesApiResponse } from "./api-types.mts";
 
 // `reloaded`: the page's copy was read again (the file had another window's saves, or the edits were refused), so a
 // caller showing the profiles redraws.
 export interface ProfilesSave { ok: boolean; error?: string; reloaded?: boolean }
+// A stamp no file has: the page's copy is not known to be the file, so the next save is refused as stale and reads it.
+const UNREAD = "unread";
 
 async function reloadProfiles(): Promise<void> {
   const r = await api<ProfilesApiResponse>("/api/profiles");
@@ -33,22 +35,34 @@ export function loadProfiles(): Promise<void> { return inTurn(reloadProfiles); }
 // the copy). The answer names the stamp the file had before them: this page's own, and the copy is the file; another,
 // and the page reads the file again. A list the server can't make (a template deleted elsewhere) is refused whole, says
 // why, and the page reads the file again too.
+//
+// When the file can't be read again either (the server is down), the copy goes back to how it was before the edits (when
+// nothing has replaced it since), and its stamp to one no file has, so the next save reads the file first rather than
+// carrying a copy that is not the file. `reloaded` says whether the file was read again.
 export function editProfiles(edits: ProfileEdit[]): Promise<ProfilesSave> {
   const ctx = (): ProfileEditContext => ({ builtins: state.builtinTemplates });
-  applyProfileEdits(state.profiles!, edits, ctx());
+  const made = state.profiles!, before = structuredClone(made);
+  applyProfileEdits(made, edits, ctx());
+  const unread = (): void => { state.profilesStamp = UNREAD; };
   return inTurn(async () => {
     applyProfileEdits(state.profiles!, edits, ctx());
     const sent = state.profiles;
-    try {
-      const r = await api<{ stamp: string; was: string }>("/api/profiles", { method: "PATCH", body: { edits } });
-      // the copy plus the edits is the file only while the page still holds the copy they were made on
-      if (r.was === state.profilesStamp && state.profiles === sent) { state.profilesStamp = r.stamp; return { ok: true }; }
-      await reloadProfiles();
-      return { ok: true, reloaded: true };
-    } catch (e) {
-      try { await reloadProfiles(); } catch { /* the copy as it was */ }
-      return { ok: false, error: (e as Error).message, reloaded: true };
+    let r: { stamp: string; was: string };
+    try { r = await api<{ stamp: string; was: string }>("/api/profiles", { method: "PATCH", body: { edits } }); }
+    catch (e) {
+      // no answer at all (the connection dropped): the server may have saved them before it went
+      const lost = (e as ApiError).status === undefined, error = lost ? `${(e as Error).message}. The server did not answer, so the change may have been saved: the profiles were read again and show it if it was.` : (e as Error).message;
+      try { await reloadProfiles(); return { ok: false, error, reloaded: true }; }
+      catch {
+        if (state.profiles === made) state.profiles = before;
+        unread();
+        return { ok: false, error: (e as Error).message, reloaded: false };
+      }
     }
+    // the copy plus the edits is the file only while the page still holds the copy they were made on
+    if (r.was === state.profilesStamp && state.profiles === sent) { state.profilesStamp = r.stamp; return { ok: true }; }
+    try { await reloadProfiles(); return { ok: true, reloaded: true }; }
+    catch { unread(); return { ok: true, reloaded: false }; }
   });
 }
 // A character's buffs (Automatic's ones on, and the numbers edited for it, which Manual shares) saved at once, like a

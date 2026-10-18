@@ -7,7 +7,7 @@
 // - `GET|PUT /api/ui-prefs` (`<data>/ui-prefs.json:` {cols?, colsVersion?, colWidths?, sheetProps?, theme?, appearance?, sidebar?, density?, areaLabels?, mapDrawerWidth?, builderMode?, builderTab?, builderChanges?, builderFineTune?, manualFor?, manualSuit?, manualBuffs?, manualBuffSkills?, buffsCount?, dismissedUpdate?, copiedScanner?}, the page's view choices; `autoBuffs` and `buffSkills` are refused, since a character's buffs are its profile's now)
 //
 // map: server
-// owns: `routes`
+// owns: `routes`, `patchProfiles`
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { isBuffList, isBuffSkills } from "../../buffs.mts";
@@ -28,6 +28,26 @@ const HERE = APP_DIR;
 const PROFILES_SCHEMA = JSON.parse(readFileSync(join(HERE, "schema", "profiles.v3.schema.json"), "utf8")) as ValidatorSchema;
 // The most edits one PATCH /api/profiles makes (a page sends one or two).
 const MAX_EDITS = 100;
+
+// PATCH /api/profiles' edits made on the file as read and written only over that same file (the store's `base`). A
+// save that landed in between (two first reads can share one v2 migration, and so one copy) is never written over: the
+// edits are made again on the file it left, at most three times, then refused as stale. `scanned`: the characters a
+// label may go on besides the saved ones.
+export async function patchProfiles(store: ServerContext["profilesStore"], list: ProfileEdit[], scanned: string[]): Promise<{ status: number; body: Record<string, unknown> }> {
+  for (let i = 0; i < 3; i++) {
+    const { profiles: stored, stamp: was } = await store.readStamped(), next = structuredClone(stored);
+    const canLabel = (name: string): boolean => !isPseudoCharacter(name) && (Object.hasOwn(stored.characters, name) || scanned.includes(name));
+    const refused = applyProfileEdits(next, list, { builtins: store.builtins(), canLabel });
+    if (refused) return { status: 409, body: { ok: false, code: "conflict", error: refused } };
+    const { ok, errors } = validate(PROFILES_SCHEMA, next);
+    if (!ok) return { status: 400, body: { ok: false, error: `${errors[0]!.path} ${errors[0]!.msg}`, errors } };
+    const bad = profilesSpecError(next, stored);
+    if (bad) return { status: 400, body: { ok: false, error: bad } };
+    const saved = store.write(next, was);
+    if (saved.ok) return { status: 200, body: { ok: true, stamp: saved.stamp, was } };
+  }
+  return { status: 409, body: { ok: false, code: "stale", error: "the profiles kept changing while this save was made; reload them and make the change again" } };
+}
 
 export function routes(ctx: ServerContext): Route[] {
   const { config: CONFIG, panelPrefsFile: PANEL_PREFS, profilesStore, savePanel, uiPrefsStore, getInventory } = ctx;
@@ -53,17 +73,8 @@ export function routes(ctx: ServerContext): Route[] {
       for (const e of edits) { const bad = profileEditError(e); if (bad) return send(res, 400, { ok: false, error: bad }); }
       const list = edits as ProfileEdit[];
       const inv = list.some((e) => e.op === "setLabel") ? (await getInventory()).inv : null;
-      // the file and its stamp as read; from here to the write nothing awaits, so no other save can come between them
-      const { profiles: stored, stamp: was } = await profilesStore.readStamped(), next = structuredClone(stored);
-      const canLabel = (name: string): boolean => !isPseudoCharacter(name) && (Object.hasOwn(stored.characters, name) || !!inv && Object.hasOwn(inv.characters, name));
-      const refused = applyProfileEdits(next, list, { builtins: profilesStore.builtins(), canLabel });
-      if (refused) return send(res, 409, { ok: false, code: "conflict", error: refused });
-      const { ok, errors } = validate(PROFILES_SCHEMA, next);
-      if (!ok) return send(res, 400, { ok: false, error: `${errors[0]!.path} ${errors[0]!.msg}`, errors });
-      const bad = profilesSpecError(next, stored);
-      if (bad) return send(res, 400, { ok: false, error: bad });
-      const { stamp } = profilesStore.write(next);
-      return send(res, 200, { ok: true, stamp, was });
+      const r = await patchProfiles(profilesStore, list, inv ? Object.keys(inv.characters) : []);
+      return send(res, r.status, r.body);
     } },
     { method: "GET", path: "/api/ui-prefs", handle: (_req, res) => {
       const { autoBuffs: _on, buffSkills: _skills, ...prefs } = uiPrefsStore.read();   // moved to profiles.json, waiting for its migration

@@ -105,6 +105,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `app/organize.test.mts` — `app/organize.mts`, Organize's planner (issue #11), on hand-built house scans folded by the real fold.
 - `app/png.test.mts` — `app/png.mts` (issue #164), the PNG writer.
 - `app/profile-edits.test.mts` — `app/profile-edits.mts`: each ProfileEdit made on a profiles file (buffs, a label, a character's settings kept around what the panel doesn't edit, a deleted character, a template put, updated, deleted and renamed with its characters following), each made again changing nothing more, the ones that can't be made refused with why (a template gone, a name taken, a label for no such character), a list stopping at the first refusal, and the shape check.
+- `app/profiles-patch.test.mts` — `patchProfiles` (PATCH /api/profiles' save, `app/http/routes/prefs.mts`) when two saves race the first read of a v2 file: neither loses the other's edits.
 - `app/properties.test.mts` — `app/vault-lib.mts`'s property registry (`PROPERTIES`): the lists derived from it, frozen as the literals they replaced.
 - `app/put-away.test.mts` — `app/put-away.mts` (issue #131): the strict check on the TazUO panel's Put away request.
 - `app/retention.test.mts` — `app/retention.mts` (issue #28): which old scans and saved runs pruning removes, with the inventory folded from what is left equal to the inventory folded from everything.
@@ -113,7 +114,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `app/scan-schema.test.mts` — `app/scan-schema.mts`: the scan v2 schema and the v1→v2 upgrade on read.
 - `app/schema/validate.test.mts` — `app/schema/validate.mts`, the zero-dependency JSON Schema subset validator.
 - `app/scrolls-model.test.mts` — `app/ui/scrolls-model.mts`, the Inventory's Scrolls view as data (issue #181).
-- `app/server-builder.test.mts` — HTTP tests of the Suit Builder: `POST /api/optimize`, the saved runs and `GET|PUT /api/profiles`.
+- `app/server-builder.test.mts` — HTTP tests of the Suit Builder: `POST /api/optimize`, the saved runs and `GET|PATCH /api/profiles`.
 - `app/server-host.test.mts` — HTTP tests of the event stream, the bridge, the host calls and the UI preferences.
 - `app/server-import.test.mts` — HTTP tests of `POST /api/import/paste` and `POST /api/import/rescan`.
 - `app/server-inventory.test.mts` — HTTP tests of the inventory routes, Forget and the blacklist.

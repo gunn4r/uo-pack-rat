@@ -312,7 +312,7 @@ test("[fast] profiles v3: a bad v2 value is healed key by key and said; empty bu
   assert.deepEqual(migrateProfilesV3(profiles, { manualBuffSkills: { Chivalry: 90 }, buffSkills: { "": { Chivalry: 80 } } } as Record<string, unknown>).prefs, { manualBuffSkills: { Chivalry: 90 } });
 });
 
-test("[fast] profiles v3: the migration is idempotent, its result passes PUT /api/profiles' checks, and a newer file is left alone", () => {
+test("[fast] profiles v3: the migration is idempotent, its result passes a save's checks (PATCH /api/profiles), and a newer file is left alone", () => {
   const once = migrateProfilesV3(gold("profiles.json") as ProfilesFile, gold("ui-prefs.json") as Record<string, unknown>);
   assert.deepEqual(once.profiles, gold("expected.profiles.json"));
   assert.deepEqual(once.prefs, gold("expected.ui-prefs.json"));
@@ -328,7 +328,7 @@ test("[fast] profiles v3: the migration is idempotent, its result passes PUT /ap
 });
 
 // Issue #336: a template an older version named past 128 characters stays, and so does the link of a character made from
-// it: the v2 migration keeps it, and the file passes the schema and PUT /api/profiles' checks against itself.
+// it: the v2 migration keeps it, and the file passes the schema and a save's checks (PATCH /api/profiles) against itself.
 test("[fast] an older file's 130-character template keeps its character's link through the migration and the save checks", () => {
   const long = "t".repeat(130);
   const v2 = { schemaVersion: 2, characters: { A: { template: long, floors: { luck: 100 } } }, templates: { [long]: { floors: { luck: 100 } } } };
