@@ -1,6 +1,6 @@
 // stores.test.mts — each store in `app/store/` on its own: size caps, bad files and the exact bytes written.
 //
-// each store in `app/store/` on its own: its size cap at the cap and one byte past it (blacklist and house claims 256 KiB, organize-state 4 MB, item-kinds and organize their own limits), what a missing, damaged or partly bad file reads as (moved aside, empty, salvaged or skipped) with the exact warning, log or problem text, and the exact bytes each write leaves (indent, trailing newline, a run compact with none); a file a newer Pack Rat made (organize, item-kinds, profiles) read as far as it can be, marked read-only and never written over; `update(fn)` on the blacklist, house claims and organize-state writing the same bytes as `write` and nothing when `fn` answers undefined. The bridge queue: each command appended as its own line; a bridge reply replacing the last; the Stop flag. The house map's save (indent 2, its folder made), its bad-file log line written once and its refusal over a newer file. The panel prefs: a change saved over the file as it is (the in-game panel's change kept), normalised. Scans' tombstone write: compact, no newline, replacing one of the same name, and an invalid one refused. The house claims (issue #299): which claims a house's bounds fall under, and the claims made at the first start from the houses named or given areas. All `[fast]`; they pin the policies the routes rely on while the server is split.
+// each store in `app/store/` on its own: its size cap at the cap and one byte past it (blacklist and house claims 256 KiB, organize-state 4 MB, item-kinds and organize their own limits), what a missing, damaged or partly bad file reads as (moved aside, empty, salvaged or skipped) with the exact warning, log or problem text, and the exact bytes each write leaves (indent, trailing newline, a run compact with none); a file a newer Pack Rat made (organize, item-kinds, profiles) read as far as it can be, marked read-only and never written over; `update(fn)` on the blacklist, house claims and organize-state writing the same bytes as `write` and nothing when `fn` answers undefined. The bridge queue: each command appended as its own line; a bridge reply replacing the last; the Stop flag. The house map's save (indent 2, its folder made), its bad-file log line written once and its refusal over a newer file. The panel prefs: a change saved over the file as it is (the in-game panel's change kept), normalised. The MCP config: missing read as off, a token minted and saved, each bad field read as its default with a warning. Scans' tombstone write: compact, no newline, replacing one of the same name, and an invalid one refused. The house claims (issue #299): which claims a house's bounds fall under, and the claims made at the first start from the houses named or given areas. All `[fast]`; they pin the policies the routes rely on while the server is split.
 import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -20,6 +20,7 @@ import { createScansStore } from "./scans.mts";
 import { createHouseMapStore } from "./house-map.mts";
 import { createPanelPrefsStore } from "./panel-prefs.mts";
 import { PANEL_DEFAULTS } from "../tazuo-panel-prefs.mts";
+import { createMcpConfigStore, defaultMcpConfig } from "./mcp-config.mts";
 import { appendCommand, writeReply, writeStop } from "./bridge.mts";
 import { resolveConfig } from "../config.mts";
 import { emptyKindOverrides, kindsText, MAX_KINDS_BYTES } from "../item-kinds.mts";
@@ -421,6 +422,19 @@ test("[fast] stores: the bridge Stop flag is written as <data>/bridge/stop with 
   writeStop(paths);
   writeStop(paths);
   assert.match(readFileSync(paths.bridgeStop, "utf8"), /^\d{4}-\d\d-\d\dT[\d:.]+Z\n$/);
+});
+
+test("[fast] stores: the MCP config reads a missing file as off, mints and saves a token, falls back field by field with a warning, and writes indent 2 with a newline", () => {
+  const file = join(dir(), "mcp.json"), warned: string[] = [], store = createMcpConfigStore(file, (m) => warned.push(m));
+  assert.deepEqual(store.read(), defaultMcpConfig());
+  writeFileSync(file, JSON.stringify({ version: 1, enabled: "yes", allowActions: true, port: 47615 }));
+  const got = store.read();
+  assert.deepEqual({ ...got, token: null }, { ...defaultMcpConfig(), allowActions: true });
+  assert.match(got.token ?? "", /^[A-Za-z0-9-]{16,128}$/);
+  assert.deepEqual(warned, ["mcp.json: enabled not valid, read as the default"]);
+  assert.equal(readFileSync(file, "utf8"), JSON.stringify(got, null, 2) + "\n", "the minted token is saved");
+  store.write({ ...got, enabled: true });
+  assert.equal(readFileSync(file, "utf8"), JSON.stringify({ ...got, enabled: true }, null, 2) + "\n");
 });
 
 test("[fast] stores: the panel prefs save a change over the file as it is now, written normalised, indent 2 with a newline", () => {
