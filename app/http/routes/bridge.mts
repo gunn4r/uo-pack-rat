@@ -8,15 +8,14 @@
 // map: server
 // owns: `routes`
 import { randomUUID } from "node:crypto";
-import { readFileSync, appendFileSync, mkdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { BRIDGE_PROTOCOL } from "../../bridge-contract.mts";
 import { readBridgeStatus } from "../../bridge-status.mts";
-import { writeBridgeStop } from "../../bridge-trip.mts";
-import { DATA_DIR_MODE, DATA_FILE_MODE } from "../../config.mts";
 import { isBoundedString } from "../../guards.mts";
 import { addGrab } from "../../organize-state.mts";
 import { readBody } from "../../read-body.mts";
+import { appendCommand, writeStop } from "../../store/bridge.mts";
 import { validate, type ValidatorSchema } from "../../schema/validate.mts";
 import { send, asObject } from "../respond.mts";
 import { APP_DIR } from "../../config.mts";
@@ -41,8 +40,7 @@ export function routes(ctx: ServerContext): Route[] {
         const { ok, errors } = validate(BRIDGE_SCHEMA.scan, line);
         if (!ok) return send(res, 400, { ok: false, error: `${errors[0]!.path} ${errors[0]!.msg}`, errors });
         const adapter = appSettings.bridgeAdapter();
-        mkdirSync(CONFIG.paths.bridgeFor(adapter), { recursive: true, mode: DATA_DIR_MODE });
-        appendFileSync(CONFIG.paths.bridgeQueueFor(adapter), JSON.stringify(line) + "\n", { mode: DATA_FILE_MODE });
+        appendCommand(CONFIG.paths, adapter, JSON.stringify(line));
         return send(res, 200, { ok: true, id: line.id } satisfies BridgeQueueApiResponse);
       }
       // Cheap bounded checks in front of the schema (post-review fix, Minor 9): a 500,000-character
@@ -68,11 +66,10 @@ export function routes(ctx: ServerContext): Route[] {
       // script that's actually reading commands (Phase 6 final review follow-up).
       // pos is `object|null` in the contract with no shape of its own, so the assembled line is
       // size-checked once at the end — the only bound the field-level checks above can't give.
-      const text = JSON.stringify(line) + "\n";
-      if (text.length > 4096) return send(res, 400, { ok: false, error: "bridge command too large" });
+      const text = JSON.stringify(line);
+      if (text.length + 1 > 4096) return send(res, 400, { ok: false, error: "bridge command too large" });   // with its newline
       const adapter = appSettings.bridgeAdapter();
-      mkdirSync(CONFIG.paths.bridgeFor(adapter), { recursive: true, mode: DATA_DIR_MODE });
-      appendFileSync(CONFIG.paths.bridgeQueueFor(adapter), text, { mode: DATA_FILE_MODE });
+      appendCommand(CONFIG.paths, adapter, text);
       // A Grab is remembered like a trip (issue #148), so when it reports back the item reads as in the backpack
       // and the container it left has that slot free again (harvestTrips), until a scan says otherwise.
       if (line.action === "grab") {
@@ -84,7 +81,7 @@ export function routes(ctx: ServerContext): Route[] {
       // Organize's Stop: the flag packrat-bridge.py checks between the steps of a trip. No fields;
       // the body is still read so the content-type and shape checks apply like every other POST.
       asObject(await readBody(req, { limit: 8e3 }));
-      writeBridgeStop(CONFIG.paths);
+      writeStop(CONFIG.paths);
       return send(res, 200, { ok: true } satisfies OkApiResponse);
     } },
     { method: "GET", path: "/api/bridge/status", handle: (_req, res) => {
