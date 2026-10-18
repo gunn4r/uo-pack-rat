@@ -4,6 +4,7 @@
 // owns: `checkHouseEntry`, `salvageHouseMap`, `NAME_MAX`, `MAX_AREAS`, `AREA_COLORS`
 import { migrate, newerNotice } from "./migrate.mts";
 import type { AreaRect, HouseArea, HouseBounds, HouseEntry } from "./house-model-types.mts";
+import { isPlainObject } from "./guards.mts";
 
 // An entry's shape is the API's own (app/house-model-types.mts), which the page reads too.
 export type { HouseBounds, AreaRect, HouseArea, HouseEntry } from "./house-model-types.mts";
@@ -27,7 +28,6 @@ const HOUSE_ID = /^(\d{1,3}|x)-\d{1,6}-\d{1,6}$/;
 export const isHouseId = (id: string): boolean => HOUSE_ID.test(id);
 export const emptyHouseMap = (): HouseMapDoc => ({ version: 1, houses: {} });
 
-const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 const isInt = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v);
 // C0/C1 controls, the line and paragraph separators and the bidi embeddings, overrides and isolates (a name could
 // otherwise flip the text around it); a zero-width joiner stays, emoji need it.
@@ -48,7 +48,7 @@ function checkAreas(v: unknown, b: HouseBounds | undefined): { ok: true; areas: 
   if (v.length && !b) return { ok: false, error: "areas need the house's bounds" };
   const ids = new Set<string>(), out: HouseArea[] = [];
   for (const a of v) {
-    if (!isObj(a)) return { ok: false, error: "each area must be an object" };
+    if (!isPlainObject(a)) return { ok: false, error: "each area must be an object" };
     if (typeof a.id !== "string" || !AREA_ID.test(a.id)) return { ok: false, error: "an area's id must be 1 to 24 letters, digits, - or _" };
     if (ids.has(a.id)) return { ok: false, error: `two areas share the id ${a.id}` };
     ids.add(a.id);
@@ -60,7 +60,7 @@ function checkAreas(v: unknown, b: HouseBounds | undefined): { ok: true; areas: 
     if (typeof a.color !== "string" || !(AREA_COLORS as readonly string[]).includes(a.color)) return { ok: false, error: `an area's color must be one of ${AREA_COLORS.join(", ")}` };
     if (!Array.isArray(a.rects) || !a.rects.length || a.rects.length > MAX_RECTS) return { ok: false, error: `An area must have 1 to ${MAX_RECTS} rectangles.` };
     for (const r of a.rects) {
-      if (!(isObj(r) && isInt(r.x0) && isInt(r.y0) && isInt(r.x1) && isInt(r.y1) && r.x0 <= r.x1 && r.y0 <= r.y1)) return { ok: false, error: "a rectangle must be {x0, y0, x1, y1}, whole numbers with x0 <= x1 and y0 <= y1" };
+      if (!(isPlainObject(r) && isInt(r.x0) && isInt(r.y0) && isInt(r.x1) && isInt(r.y1) && r.x0 <= r.x1 && r.y0 <= r.y1)) return { ok: false, error: "a rectangle must be {x0, y0, x1, y1}, whole numbers with x0 <= x1 and y0 <= y1" };
       if (r.x0 < b!.x0 - AREA_MARGIN || r.y0 < b!.y0 - AREA_MARGIN || r.x1 > b!.x1 + AREA_MARGIN || r.y1 > b!.y1 + AREA_MARGIN) return { ok: false, error: "a rectangle must lie on the house" };
     }
     out.push({ ...a, name: n.name, rects: (a.rects as AreaRect[]).map((r) => ({ ...r })) } as HouseArea);
@@ -70,12 +70,12 @@ function checkAreas(v: unknown, b: HouseBounds | undefined): { ok: true; areas: 
 
 // An entry as PUT carries it: the name trimmed and the areas checked; null when it has neither a name nor an area (the entry is removed), or why it is refused.
 export function checkHouseEntry(v: unknown): { ok: true; entry: HouseEntry | null } | { ok: false; error: string } {
-  if (!isObj(v)) return { ok: false, error: "the entry must be an object with a name" };
+  if (!isPlainObject(v)) return { ok: false, error: "the entry must be an object with a name" };
   if (typeof v.name !== "string") return { ok: false, error: "name must be a string" };
   const n = checkName(v.name, "The name");
   if (!n.ok) return n;
   const b = v.bounds;
-  if (b !== undefined && !(isObj(b) && isInt(b.x0) && isInt(b.y0) && isInt(b.x1) && isInt(b.y1) && (b.facet === null || isInt(b.facet)))) {
+  if (b !== undefined && !(isPlainObject(b) && isInt(b.x0) && isInt(b.y0) && isInt(b.x1) && isInt(b.y1) && (b.facet === null || isInt(b.facet)))) {
     return { ok: false, error: "bounds must be {x0, y0, x1, y1, facet}, whole numbers (facet may be null)" };
   }
   let areas: HouseArea[] | undefined;
@@ -92,14 +92,14 @@ export function checkHouseEntry(v: unknown): { ok: true; entry: HouseEntry | nul
 
 
 const isStamp = (v: unknown): v is string => typeof v === "string" && v.length <= 40 && Number.isFinite(Date.parse(v));
-const isForgottenEntry = (v: unknown): v is ForgottenHouse => isObj(v) && typeof v.id === "string" && isHouseId(v.id) && isStamp(v.capturedAt);
+const isForgottenEntry = (v: unknown): v is ForgottenHouse => isPlainObject(v) && typeof v.id === "string" && isHouseId(v.id) && isStamp(v.capturedAt);
 
 // The house map in `parsed` (house-map.json's JSON), migrated: null when it is not a version 1 (or newer) map, else the
 // map with every entry that has a bad id, name or area left out (`dropped` counts them) and, for a file a newer Pack Rat
 // made, `readOnly` saying why it must not be saved over (`fileName` names it there). app/store/house-map.mts reads the file.
 export function salvageHouseMap(parsed: unknown, fileName: string): { doc: HouseMapDoc; dropped: number; readOnly: string | null } | null {
   const m = migrate("house-map", parsed), raw = m.doc;
-  if (!(isObj(raw) && (m.fromVersion === 1 || m.newer) && isObj(raw.houses))) return null;
+  if (!(isPlainObject(raw) && (m.fromVersion === 1 || m.newer) && isPlainObject(raw.houses))) return null;
   const houses: Record<string, HouseEntry> = {};
   let dropped = 0;
   for (const [id, v] of Object.entries(raw.houses)) {

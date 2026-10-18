@@ -11,13 +11,13 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { isBuffList, isBuffSkills } from "../../buffs.mts";
-import { profilesSpecError } from "../../build-spec.mts";
+import { profilesSpecError, isManualSuit } from "../../build-spec.mts";
 import { applyProfileEdits, profileEditError, type ProfileEdit } from "../../profile-edits.mts";
 import { isPseudoCharacter } from "../../scan-schema.mts";
 import { isBoundedString } from "../../guards.mts";
 import { readBody } from "../../read-body.mts";
 import { validate, type ValidatorSchema } from "../../schema/validate.mts";
-import { isColWidths, isDrawerWidth, isManualSuit, UI_PREF_CHOICES, UI_PREF_LISTS, UI_PREF_VERSIONS } from "../../store/ui-prefs.mts";
+import { isColWidths, isDrawerWidth, UI_PREF_CHOICES, UI_PREF_LISTS, UI_PREF_VERSIONS } from "../../store/ui-prefs.mts";
 import { panelPrefsError, readPanelPrefs } from "../../tazuo-panel.mts";
 import { send, asObject } from "../respond.mts";
 import { APP_DIR } from "../../config.mts";

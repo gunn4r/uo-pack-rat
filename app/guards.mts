@@ -1,7 +1,10 @@
 // guards.mts — the checks a request field or a hand-edited data file is held to: a real string of bounded length, an integer in an inclusive range, a serial. Shared by the HTTP layer and the stores, so neither imports the other.
 //
 // map: server
-// owns: `isBoundedString`, `isBoundedInt`, `MAX_SERIAL`, `MAX_PATH_LEN`, `short`
+// owns: `isPlainObject`, `isBoundedString`, `isBoundedInt`, `MAX_SERIAL`, `MAX_PATH_LEN`, `short`
+
+// A JSON object (not null, not an array): what a request body or a data file's record must be before its fields are read.
+export const isPlainObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 
 // A request field that must be a real string of bounded length. `unknown` in, a narrowed string out,
 // so a route reads the value directly after the check instead of casting it.
