@@ -98,3 +98,16 @@ test("[fast] profiles: a label saved over the file this page read takes its stam
   assert.deepEqual(names(state.profiles!), ["Other"], "the rest is read again");
   assert.equal(state.profilesStamp, stamp());
 });
+
+test("[fast] profiles: an edit that no longer applies after a reload queued ahead of it says the template was deleted elsewhere", async () => {
+  fresh({ characters: {}, templates: { T: { spec: {} } } });
+  delete server.doc.templates.T; server.n++;   // another window deleted T
+  const loaded = loadProfiles();   // a scan's reload, queued first
+  const update = editProfiles([{ op: "updateTemplate", id: "T", spec: { x: 1 } as never, savedAt: "2026-10-18T00:00:00.000Z" }]);
+  await loaded;
+  const r = await update;
+  assert.equal(r.ok, false);
+  assert.equal(r.reloaded, true);
+  assert.match(r.error!, /deleted elsewhere/);
+  assert.deepEqual(names(state.profiles!), []);
+});
