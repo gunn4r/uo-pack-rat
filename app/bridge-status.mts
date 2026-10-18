@@ -70,7 +70,8 @@ export function readBridgeStatus(file: string, now: number): BridgeStatusRead {
     const kept = Object.fromEntries(Object.entries(results).filter(([, r]) => validate(RESULT_READ, r).ok)) as Record<string, BridgeResultRead>;
     const status: BridgeStatus = { ...rest, current: readCurrent(current), results: kept,
       ...(adapter !== undefined && validate(ADAPTER_SCHEMA!, adapter).ok ? { adapter } : {}) };
-    // An RFC 3339 string, or the epoch seconds an older bridge build wrote.
+    // An RFC 3339 string, or the epoch seconds an older bridge build wrote (compat: numeric-alive, remove in Pack Rat 0.3.0
+    // (docs/architecture.md, Compatibility shims)).
     const aliveMs = typeof status.alive === "number" ? status.alive * 1000 : Date.parse(status.alive);
     const age = Number.isNaN(aliveMs) ? Infinity : (now - aliveMs) / 1000;
     return { status, aliveMs, age, online: age < ONLINE_S && status.stopped !== true };

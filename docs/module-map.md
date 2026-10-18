@@ -351,7 +351,7 @@ The page is `app/index.html` plus `app/ui/`, compiled by `scripts/build-ui.mts` 
 |---|---|---|
 | `app/ui/app.mts` | Bootstrap: load(), screen and drawer switching, tab-nav wiring, the tooltip/bridge kickoff. | — |
 | `app/ui/breakpoints.mts` | The page's width breakpoints in CSS pixels, each the widest window its narrower layout applies to (a `max-width` query; a `min-width` query starts one pixel above it). | `BREAKPOINTS`, `upTo` |
-| `app/ui/inventory-data.mts` | The inventory and profiles the page draws from: reload() fetches them into the store and then dispatches "inventorychange" on document, which every screen drawn from them listens for. | `reload`, `retryLoad`, `fetchAllItems` |
+| `app/ui/inventory-data.mts` | The inventory and profiles the page draws from: reload() fetches them into the store and then dispatches "inventorychange" on document, which every screen drawn from them listens for. | `reload`, `retryLoad`, `fetchAllItems`, `inventoryLoader` |
 | `app/ui/nav.mts` | The hash routes, the screen registry they dispatch to, and the cross-screen ways into the Inventory's Items view. | `parseRoute`, `routeFor`, `registerScreen`, `showRoute`, `showItem`, `showContainer`, `showSearch`, `showKind`, `showCharacterItems` |
 | `app/ui/shell.mts` | The app shell (design spec 3.1): the left sidebar (nav, the shard and last-scan line, the bridge status control and its popover), collapsing to icons below 1180 px or when pinned collapsed, the nav's counts and current item, and ⌘I for Import. | `initShell`, `renderNavCounts` |
 | `app/ui/theme.mts` | The look: which theme family and light/dark mode <html> carries (data-theme, data-mode; app/ui/tokens.css reads both). | `resolveTheme`, `resolveMode`, `applyLook`, `BUILT_THEMES` |
