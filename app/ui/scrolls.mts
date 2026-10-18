@@ -14,7 +14,7 @@ import { $, el, itemTip, whereText } from "./dom.mts";
 import { api } from "./api.mts";
 import { txt, box, icon, button, badge, kbd, keyValue, message, meter, searchInput, segmented, tableFoot } from "./components.mts";
 import { errorText } from "./messages.mts";
-import { plural, splitSerial } from "./inv-model.mts";
+import { splitSerial } from "./inv-model.mts";
 import { parseRoute, registerScreen, showSearch } from "./nav.mts";
 import { tagEls } from "./item-parts.mts";
 import {
@@ -23,6 +23,7 @@ import {
 } from "./scrolls-model.mts";
 import type { ItemsApiResponse } from "./api-types.mts";
 import type { ItemQueryRows } from "../item-query.mts";
+import { plural } from "./format.mts";
 
 type Tab = "power" | "sot";
 type Row = PowerRow | SotRow;

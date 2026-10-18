@@ -11,6 +11,7 @@ import { isKindName, kindCount, kindsDocument, kindsFor, salvageKindOverrides, w
 import { readBody } from "../../read-body.mts";
 import { send, asObject } from "../respond.mts";
 import type { Route } from "../router.mts";
+import type { ItemKindsApiResponse } from "../../api/kinds.mts";
 import type { ServerContext } from "../context.mts";
 
 export function routes(ctx: ServerContext): Route[] {
@@ -23,7 +24,7 @@ export function routes(ctx: ServerContext): Route[] {
     // `readOnly`: why the file cannot be changed (a newer Pack Rat made it), when it cannot; every change is then a 409.
     { method: "GET", path: "/api/item-kinds", handle: (_req, res) => {
       const readOnly = itemKindsStore.readOnly();
-      return send(res, 200, { ok: true, ...kindsDocument(itemKindsStore.read()), ...(readOnly ? { readOnly } : {}) });
+      return send(res, 200, { ok: true, ...kindsDocument(itemKindsStore.read()), ...(readOnly ? { readOnly } : {}) } satisfies ItemKindsApiResponse);
     } },
     { method: "POST", path: "/api/item-kinds", handle: async (req, res) => {
       const { name, graphic, kind } = asObject(await readBody(req, { limit: 8e3 }));
@@ -36,7 +37,7 @@ export function routes(ctx: ServerContext): Route[] {
       const refused = itemKindsStore.save(next);
       if (refused) return send(res, 409, { ok: false, error: refused });
       eventBus.broadcast("changed", { what: "inventory", by: req.headers["x-client-id"], at: Date.now() });
-      return send(res, 200, { ok: true, ...kindsDocument(next!) });
+      return send(res, 200, { ok: true, ...kindsDocument(next!) } satisfies ItemKindsApiResponse);
     } },
     { method: "POST", path: "/api/item-kinds/import", handle: async (req, res) => {
       const body = asObject(await readBody(req, { limit: MAX_KINDS_BYTES, tooLargeMsg: "the item kinds file is too large" }));
@@ -46,7 +47,7 @@ export function routes(ctx: ServerContext): Route[] {
       const refused = itemKindsStore.save(next);
       if (refused) return send(res, 409, { ok: false, error: `the import was refused: ${refused}` });
       eventBus.broadcast("changed", { what: "inventory", by: req.headers["x-client-id"], at: Date.now() });
-      return send(res, 200, { ok: true, ...kindsDocument(next!), skipped: problems.length, problems: problems.slice(0, 5) });
+      return send(res, 200, { ok: true, ...kindsDocument(next!), skipped: problems.length, problems: problems.slice(0, 5) } satisfies ItemKindsApiResponse);
     } },
   ];
 }

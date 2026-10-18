@@ -18,9 +18,10 @@ import { bindDrawer, box, txt, button, badge, message, input, confirmDialog, men
 import { renderNavCounts } from "./shell.mts";
 import { resolveItems } from "./items.mts";
 import { session, commands, announce, provide, applyKnobs } from "./builder-session.mts";
-import { paperdollCaps, slotsOf, runAutoLabel, runBadges, runSettingsDiff, toggleCompare, plural, who, withBuffs, latestShownRun, otherCharactersRuns, gearChangedSince, gearChangeLines } from "./builder-model.mts";
+import { paperdollCaps, slotsOf, runAutoLabel, runBadges, runSettingsDiff, toggleCompare, who, withBuffs, latestShownRun, otherCharactersRuns, gearChangedSince, gearChangeLines } from "./builder-model.mts";
 import type { GearChanges } from "../runs-types.mts";
 import type { RunsListApiResponse, RunApiResponse, RunPutApiResponse, RunSummaryLike, SavedRunLike } from "./api-types.mts";
+import { plural } from "./format.mts";
 
 // ---------------------------------------------------------------- settings snapshot / apply
 // Everything a run can differ by, read from the panel's state (the profile, the buffs and the Advanced fields):

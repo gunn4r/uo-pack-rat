@@ -9,6 +9,7 @@
 import type { ItemQuery, PropFilter, Place } from "../item-query.mts";
 import { clearedQuery } from "./view-state.mts";
 import { flagLabel } from "../vault-lib.mts";
+import { plural } from "./format.mts";
 
 // ---------------------------------------------------------------- slayers
 // "Air Elemental Slayer". A bracket in the name stays when it is the item's own capitalized wording ("Undead Slayer
@@ -45,12 +46,6 @@ export function slayerTree(facet: Array<{ name: string; count: number }>, groups
   if (groups?.length) group(rest.length ? [{ kind: "title", label: "Other" }, ...rest] : []);
   else out.push(...rest);
   return out;
-}
-
-// ---------------------------------------------------------------- counts and plurals
-// "1 stack", "2 stacks", "1,204 pieces": a count and its noun, always agreeing.
-export function plural(n: number, one: string, many = `${one}s`): string {
-  return `${n.toLocaleString("en-US")} ${n === 1 ? one : many}`;
 }
 
 // ---------------------------------------------------------------- columns
