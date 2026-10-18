@@ -1662,7 +1662,11 @@ test("[slow] templates: built-ins first with their description, Apply sets Manua
     type Disk = { templates: Record<string, { spec: unknown }>; characters: Record<string, { template?: string }> };
     const profiles = (): Disk => JSON.parse(readFileSync(join(dataDir, "profiles.json"), "utf8")) as Disk;
     const onDisk = async (ok: (d: Disk) => boolean, what: string): Promise<void> => { for (let i = 0; i < 50 && !ok(profiles()); i++) await page.waitForTimeout(100); assert.ok(ok(profiles()), what); };
-    await page.evaluate(async (url) => { const { state } = await import(url); state.profiles.templates.Spare = { spec: state.profiles.templates.Mine.spec }; }, "/ui/store.mjs");
+    // a second template, saved the way the page saves one (an edit)
+    await page.evaluate(async () => {
+      const { state } = await import("/ui/store.mjs" as string), { editProfiles } = await import("/ui/profiles.mjs" as string);
+      await editProfiles([{ op: "putTemplate", id: "Spare", entry: { spec: state.profiles.templates.Mine.spec } }]);
+    });
     await settings(page, "requirements");
     await page.click("#b-save");
     await onDisk((d) => d.characters.Kestrel?.template === "Mine" && !!d.templates.Spare, "Kestrel's saved settings come from Mine");
