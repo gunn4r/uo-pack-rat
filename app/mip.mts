@@ -7,7 +7,7 @@
 // owns: `buildSuitMip`, `propertyReach`, `startVector`, `pickedOf`, `noGoodRow`, `HARD_FLOOR_BONUS`, `DEFAULT_SLOTS`, `optionalSlotsFor`, `heldModel`, `tieBreakModel`, `stageObjective`, `tieCosts`, `withHardFloorBonus`, `hardFloorSpread`
 import { GEAR_SLOTS, REQUIRED_SLOTS, RESIST_SKILL_KEY, RESIST_STEP_SLACK, type OptItem, type ResistStep } from "./vault-lib.mts";
 import { stepsFor } from "./swing.mts";
-import { CHANGE_COST, FLOAT_EPS, HARD_FLOOR_BONUS, HARD_FLOOR_BONUS_MAX, SCORE_REL, TIE_SLACK, changeCost, hardBonusOf, keptValue, scoringProfile, slackAt } from "./solver/scoring.mts";
+import { CHANGE_COST, HARD_FLOOR_BONUS, HARD_FLOOR_BONUS_MAX, SCORE_REL, TIE_SLACK, changeCost, floorMet, hardBonusOf, heldTotal, keptValue, pointReached, scoringProfile, slackAt, stepReached } from "./solver/scoring.mts";
 
 // The scoring constants this module and the core share live in app/solver/scoring.mts; they are re-exported here for the
 // modules that read them from the MIP.
@@ -117,6 +117,7 @@ export interface FloorCol {
   s: number;
   u: number | null;
   h?: number | undefined;   // the Resisting Spells step binary whose min meets this floor, when one does
+  hMin?: number | undefined;   // that step's min
 }
 
 export interface BuiltMip {
@@ -426,7 +427,7 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
       addRow([...xs, [u, -minReach]], 0, INF);              // t + N·u ≥ 0 with N = −minReach
       addRow([[sv, 1], [u, sMax]], -INF, sMax);              // s ≤ sMax·(1 − u)
     }
-    floorCols[d] = { f, k, sMax, y, s: sv, u, ...(h != null ? { h } : {}) };
+    floorCols[d] = { f, k, sMax, y, s: sv, u, ...(h != null ? { h, hMin: lifts![li]! } : {}) };
   }
   part = null;
   for (const s of Object.keys(xIndex)) addRow(xIndex[s]!.map((j) => [j, 1]), isRequired(s) ? 1 : -INF, 1);   // one per slot: = 1 when required and worn, else ≤ 1
@@ -489,21 +490,21 @@ export function changeCostFor(built: BuiltMip): number {
   return changeCost(maxTie);
 }
 // A piece's value in strict order's fewest-changes stage against the worn suit (scoring.mts keptValue, as the core's optChangeOf).
-const keptOf = (c: MipCol, current: Partial<Record<string, OptItem | null>>): number => keptValue(c.item!, current[c.slot!]);
+const keptValueOf = (c: MipCol, current: Partial<Record<string, OptItem | null>>): number => keptValue(c.item!, current[c.slot!]);
 // The tie-break's cost on each x column: the piece's tieCost and, with `current` (fewest changes), the change cost less
-// the change cost times keptOf. A suit's sum is then its tie cost plus the change cost for each slot it changes (an empty
+// the change cost times keptValueOf. A suit's sum is then its tie cost plus the change cost for each slot it changes (an empty
 // slot that was worn included), less a constant.
 export function tieCosts(built: BuiltMip, current: Partial<Record<string, OptItem | null>> | null = null): number[] {
   const cc = current ? changeCostFor(built) : 0;
-  return built.cols.map((c) => (c.kind !== "x" ? 0 : (c.item!.tieCost || 0) - (current ? cc * keptOf(c, current) : 0)));
+  return built.cols.map((c) => (c.kind !== "x" ? 0 : (c.item!.tieCost || 0) - (current ? cc * keptValueOf(c, current) : 0)));
 }
 // One strict-order stage's objective (scripts/optimizer-core.mts optStrictStages) from a model built with `parts`: the
-// requirements (the floors' part), a soft floor's partial credit, the fewest changes (keptOf, against `current`), or the
+// requirements (the floors' part), a soft floor's partial credit, the fewest changes (keptValueOf, against `current`), or the
 // named properties' weight terms times `scale`; `offset` is its constant.
 export function stageObjective(built: BuiltMip, stage: { kind: string; keys: string[] | null; scale: number }, current: Partial<Record<string, OptItem | null>> = {}): { cost: number[]; offset: number } {
   const cost = new Array<number>(built.model.numCols).fill(0), parts = built.parts!;
   if (stage.kind === "changes") {
-    built.cols.forEach((c, j) => { if (c.kind === "x") cost[j] = keptOf(c, current); });
+    built.cols.forEach((c, j) => { if (c.kind === "x") cost[j] = keptValueOf(c, current); });
     return { cost, offset: 0 };
   }
   let offset = 0;
@@ -540,7 +541,7 @@ export function startVector(built: BuiltMip, assignment: Partial<Record<string, 
     }
   }
   let reached = -1;
-  for (const [i, rc] of resistStepCols.entries()) if (bonus >= rc.at - RESIST_STEP_SLACK) { vec[rc.col] = 1; reached = i; }
+  for (const [i, rc] of resistStepCols.entries()) if (stepReached(bonus, rc.at)) { vec[rc.col] = 1; reached = i; }
   for (const d of dims) {
     const t = totals[d]!;
     const cc = capCols[d];
@@ -549,12 +550,12 @@ export function startVector(built: BuiltMip, assignment: Partial<Record<string, 
     const mc = minCols[d];
     if (mc && mc.col >= 0) {
       const own = Math.min(t, mc.cap), min = mc.lifts && reached >= 0 ? mc.lifts[reached]! : mc.min;
-      vec[mc.col] = Math.max(min, own);
+      vec[mc.col] = heldTotal(own, min);
       if (mc.b != null) vec[mc.b] = own > min ? 1 : 0;
     }
     const fc = floorCols[d];
     if (!fc) continue;
-    const met = fc.y != null && (t >= fc.f || (fc.h != null && vec[fc.h]! > 0.5));
+    const met = fc.y != null && floorMet(t, fc.f, fc.h != null && vec[fc.h]! > 0.5 ? fc.hMin! : null);
     if (fc.y != null) vec[fc.y] = met ? 1 : 0;
     vec[fc.s] = met ? 0 : fc.k * Math.max(0, t);
     if (fc.u != null) vec[fc.u] = t < 0 ? 1 : 0;
@@ -562,7 +563,7 @@ export function startVector(built: BuiltMip, assignment: Partial<Record<string, 
   // the best-paying point the start suit reaches
   let bestStep: StepCol | null = null;
   for (const p of stepCols) {
-    if (totals.ssi! >= p.ssi - FLOAT_EPS && totals.stamPool! >= p.stam - FLOAT_EPS && (!bestStep || model.colCost[p.col]! > model.colCost[bestStep.col]!)) bestStep = p;
+    if (pointReached(p, totals.ssi!, totals.stamPool!) && (!bestStep || model.colCost[p.col]! > model.colCost[bestStep.col]!)) bestStep = p;
   }
   if (bestStep) vec[bestStep.col] = 1;
   return vec;

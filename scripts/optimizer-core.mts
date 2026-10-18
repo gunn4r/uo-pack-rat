@@ -23,7 +23,7 @@
 //
 // map: builder
 // owns: `optimizeSuit`, `scoreSet`, `optDefaultSlots`, `optDefaultOptionalSlots`, `optDominancePrune`
-import { CHANGE_COST, DEFAULT_BUDGET_MS, DEFAULT_FLOOR_BONUS, DEFAULT_RESTARTS, FLOAT_EPS, RESIST_SKILL_KEY, RESIST_STEP_SLACK, TIE_SLACK, changeCost, floorMet, keptValue, scoringProfile, slackAt, stepCredit, type SsiStepPoint } from "../app/solver/scoring.mts";
+import { CHANGE_COST, DEFAULT_BUDGET_MS, DEFAULT_RESTARTS, FLOAT_EPS, RESIST_SKILL_KEY, RESIST_STEP_SLACK, TIE_SLACK, changeCost, floorMet, keptValue, scoringProfile, slackAt, stepCredit, type SsiStepPoint } from "../app/solver/scoring.mts";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -371,6 +371,8 @@ function optVec(it: OptItem | null, space: OptSpace): number[] {
 
 // Score a totals VECTOR. Over-cap points are worth exactly zero — that is the whole reason
 // this is a set-level problem. A total under its min counts as the min (the Resisting Spells step its bonus reaches).
+// The hot loop: it states `heldTotal` (v < m ? m : v) and `floorMet` (t >= f || m >= f) from app/solver/scoring.mts inline
+// over the space's arrays rather than calling them.
 function optScoreVector(totals: number[], space: OptSpace): number {
   space.evals++;
   let s = 0;
@@ -537,7 +539,7 @@ function optGradientProfile(profile: OptProfile): OptProfile {
     weights: profile.weights,
     caps: profile.caps,
     floors: profile.floors,
-    floorBonus: typeof profile.floorBonus === "number" ? profile.floorBonus : DEFAULT_FLOOR_BONUS,
+    floorBonus: scoringProfile(profile).floorBonus,
     floorPartial: 1,
     hardFloors: profile.hardFloors,
     mins: profile.mins,

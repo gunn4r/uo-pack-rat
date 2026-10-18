@@ -4,7 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { cell } from "../solver-fixture.mts";
-import { HARD_FLOOR_BONUS, poolStepsFor } from "../mip.mts";
+import { DEFAULT_SLOTS, HARD_FLOOR_BONUS, poolStepsFor } from "../mip.mts";
 import { RUN_DEFAULTS } from "../run-settings.mts";
 import { runKey } from "../runs-lib.mts";
 import { getRules, type Inventory } from "../vault-lib.mts";
@@ -55,5 +55,10 @@ test("[fast] prepare: the SSI step table is the one the worker worked out from t
   assert.ok(input.ssiSteps && input.ssiSteps.length > 0);
   assert.deepEqual(input.ssiSteps, poolStepsFor(input.profile as Parameters<typeof poolStepsFor>[0], input.pools as Parameters<typeof poolStepsFor>[1], input.current as Parameters<typeof poolStepsFor>[2], input.opts.optionalSlots as string[]).ssiSteps);
   assert.equal(input.swingNote, null);
+  // a search over fewer slots gets the table of those slots, as the worker built it from opts.slots
+  const slots = DEFAULT_SLOTS.filter((s) => s === "oneHanded" || s === "twoHanded" || s === "talisman");
+  const narrowed = prepareSolve({ pools: one, current: worn, profile: swingProfile, opts: { optionalSlots: ["talisman"], slots } }).input;
+  assert.deepEqual(narrowed.ssiSteps, poolStepsFor(narrowed.profile as Parameters<typeof poolStepsFor>[0], narrowed.pools as Parameters<typeof poolStepsFor>[1], narrowed.current as Parameters<typeof poolStepsFor>[2], ["talisman"], slots).ssiSteps);
+  assert.notDeepEqual(narrowed.ssiSteps, input.ssiSteps, "the slots change the table here");
   assert.equal("ssiSteps" in input.profile, false, "the table is not on the profile, so the key is as before");
 });

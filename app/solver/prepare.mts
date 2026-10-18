@@ -63,7 +63,7 @@ export function prepareSolve({ pools, current, profile, opts, rarity, weaponMust
   profile = withReachableResistSteps(profile as { resistSteps?: ResistStep[] }, p, c, optional);
   // the step table both solvers score SSI with, and a hard floor's bonus large enough that nothing else in the score
   // outweighs it (issue #311), that table counted; a usual profile carries none. Past the cap the build runs at it and says so.
-  const { ssiSteps, note } = poolStepsFor(profile as Parameters<typeof poolStepsFor>[0], p, c, optional);
+  const { ssiSteps, note } = poolStepsFor(profile as Parameters<typeof poolStepsFor>[0], p, c, optional, fullOpts.slots as string[] | undefined);
   profile = withHardFloorBonus(profile as MipProfile, p, c, optional, undefined, ssiSteps);
   const scaleDiagnostics = requirementScaleDiagnostics({ pools: p, current: c, optionalSlots: optional, profile: { ...(profile as DiagnosticsProfile), ...(ssiSteps ? { ssiSteps } : {}) } });
   const key = runKey({ pools, current, profile, opts: fullOpts, weaponMustHave, onlyRoots });
