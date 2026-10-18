@@ -11,6 +11,7 @@ import { join, dirname, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import {
+  REGISTRARS,
   listAdapters, candidateClientRoots, validateScriptsDir, installedVersion, installScripts,
   repoFromPackage, checkForUpdates, checkScriptsDataDir, heartbeatAlive, pasteScanner, RUNNING_MESSAGE_OTHER,
 } from "./installer.mts";
@@ -801,6 +802,27 @@ test("[fast] installScripts runs TazUO's tazuo-panel-autostart registrar: applie
   assert.deepEqual(install(closed.scriptsDir, { clientRunning: () => false }).registered, { status: "applied" });
   assert.deepEqual(JSON.parse(readFileSync(closed.lscript, "utf8")).GlobalAutoStartScripts, ["packrat-panel.py"]);
   assert.equal(install(tmp("qm-is-autostart-none-"), { clientRunning: () => false }).registered?.status, "error", "not a TazUO folder: reported, the install still succeeds");
+});
+
+test("[fast] installScripts runs the registrar only after the install succeeded, and reports a throwing one as an error", (t) => {
+  const tazuo = join(tmp("qm-is-autostart-fail-"), "TazUO");
+  mkdirSync(join(tazuo, "Data"), { recursive: true });
+  const scriptsDir = join(tazuo, "LegionScripts");
+  mkdirSync(scriptsDir);
+  if (!trySymlink(join(tmp("qm-is-autostart-canary-"), "x.json"), join(scriptsDir, "packrat-paths.json"))) { t.skip("symlinks need privilege here"); return; }
+  const failed = installScripts({ adapter: "tazuo", adaptersDir: fakeAdaptersDir(), scriptsDir, dataDir: tmp("qm-is-data-"), bridgeStatusPath: join(scriptsDir, "no-status.json"), clientRunning: () => false });
+  assert.equal(failed.ok, false, JSON.stringify(failed));
+  assert.equal(existsSync(join(tazuo, "Data", "lscript.json")), false, "a failed install leaves TazUO's autostart list alone");
+
+  const adaptersDir = fakeAdaptersDir();
+  editManifest(join(adaptersDir, "tazuo"), (m) => { (m.install as { register: string }).register = "test-throws"; });
+  REGISTRARS["test-throws"] = () => { throw new Error("boom"); };
+  try {
+    const dir = tmp("qm-is-register-throws-");
+    const r = installScripts({ adapter: "tazuo", adaptersDir, scriptsDir: dir, dataDir: tmp("qm-is-data-"), bridgeStatusPath: join(dir, "no-status.json") });
+    assert.equal(r.ok, true, JSON.stringify(r));
+    assert.deepEqual(r.registered, { status: "error", error: "boom" });
+  } finally { delete REGISTRARS["test-throws"]; }
 });
 
 // Post-review fix (security, Phase 7): the temp file each script is copied through is randomly named

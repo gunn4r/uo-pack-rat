@@ -66,7 +66,9 @@ export interface RegistrarContext {
   log: (msg: string) => void;
   clientRunning: () => boolean;
 }
-const REGISTRARS: Record<string, (ctx: RegistrarContext) => AutostartOutcome | null> = {
+// The outcome type is TazUO's AutostartOutcome because the panel autostart is the only step that reports today; it
+// widens to a union when a second one does (Razor Enhanced's profiles, issue #157).
+export const REGISTRARS: Record<string, (ctx: RegistrarContext) => AutostartOutcome | null> = {
   "none": () => null,
   "tazuo-panel-autostart": (ctx) => addPanelAutostart(ctx.scriptsDir, ctx.clientRunning),
 };
@@ -556,11 +558,17 @@ export function installScripts(
     installed.push(name);
   }
   removeRetired(install?.retired ?? [], destDir, log);
-  const registered = runRegister ? register({ scriptsDir: destDir, installed: [...installed], log, clientRunning }) : null;
   const { version } = installedVersion(destDir, adapter);
   let pathsFile: PathsFileOutcome;
   try { pathsFile = writePathsFile(destDir, dataDir); }
   catch (e) { return { ok: false, code: "writeFailed", error: (e as Error).message, installed: [...installed] }; }
+  // Last, once the install has succeeded, so a failed one never changes the client's own settings. A step that throws is
+  // reported as an error, never a failed install.
+  let registered: AutostartOutcome | null = null;
+  if (runRegister) {
+    try { registered = register({ scriptsDir: destDir, installed: [...installed], log, clientRunning }); }
+    catch (e) { registered = { status: "error", error: (e as Error).message }; }
+  }
   return { ok: true, installed, version, pathsFile, registered };
 }
 
