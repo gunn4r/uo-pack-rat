@@ -11,7 +11,7 @@
 import type { Item } from "../vault-lib.mts";
 import { state } from "./store.mts";
 import { $, el, itemTip, whereText } from "./dom.mts";
-import { api } from "./api.mts";
+import { fetchAllItems } from "./inventory-data.mts";
 import { txt, box, icon, button, badge, kbd, keyValue, message, meter, searchInput, segmented, tableFoot } from "./components.mts";
 import { errorText } from "./messages.mts";
 import { splitSerial } from "./inv-model.mts";
@@ -21,8 +21,6 @@ import {
   powerRows, powerLevels, sotRows, emptyBinderCount, scrollFacts, filterRows, powerQuery, sotQuery, placeGroups, planText, runText, fmtTenths, toTenths, whoText, listName,
   type PowerRow, type SotRow,
 } from "./scrolls-model.mts";
-import type { ItemsApiResponse } from "./api-types.mts";
-import type { ItemQueryRows } from "../item-query.mts";
 import { plural } from "./format.mts";
 
 type Tab = "power" | "sot";
@@ -42,18 +40,10 @@ const steps = () => binderRules()?.powerScrolls ?? [];
 const usableAt = (): number[] | null => binderRules()?.transcendence?.usableAt ?? null;
 
 // ---------------------------------------------------------------- data
-async function fetchAll(params: string): Promise<Item[]> {
-  const rows: Item[] = [];
-  for (let offset = 0; ; offset += 500) {
-    const r = await api<ItemsApiResponse>(`/api/items?${params}&limit=500&offset=${offset}`);
-    rows.push(...(r as ItemQueryRows).rows);
-    if (offset + 500 >= r.total) return rows;
-  }
-}
 // One fetch at a time; a reload that lands while one runs is fetched once it is done.
 function load(): void {
   const inv = state.inv;
-  loading = Promise.all([fetchAll("prop=psLevel:1"), fetchAll("prop=sotPoints:0.1"), fetchAll("q=scroll%20binder")])
+  loading = Promise.all([fetchAllItems("prop=psLevel:1"), fetchAllItems("prop=sotPoints:0.1"), fetchAllItems("q=scroll%20binder")])
     .then(([power, sot, binders]) => { data = { power, sot, binders }; loadError = null; loadedFor = inv; })
     .catch((e: unknown) => { loadError = errorText(e); })
     .finally(() => {
