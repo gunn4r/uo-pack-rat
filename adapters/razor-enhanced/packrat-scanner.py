@@ -74,11 +74,9 @@ def read_blacklist(path):
 # END generated: read_blacklist
 
 
+# BEGIN generated: manifest
 ADAPTER_ID = "razor-enhanced"
 ADAPTER_VERSION = "1.13.0"
-# Keep this literal in sync with capabilities.json -- a test enforces the two never drift apart
-# for the TazUO adapter (test_paths.py) and the same discipline applies here by hand until this
-# adapter has its own test.
 CAPABILITIES = {
     "layers": ["RightHand", "LeftHand", "Shoes", "Pants", "Shirt", "Head", "Gloves", "Ring",
                "Talisman", "Neck", "Waist", "InnerTorso", "Bracelet", "MiddleTorso", "Earrings",
@@ -86,6 +84,7 @@ CAPABILITIES = {
     "arms": True, "bank": True, "ground": True, "nested": True, "tooltips": "opl",
     "bridge": ["highlight", "grab", "goto"],
 }
+# END generated: manifest
 
 # Razor Enhanced's own equip-layer names (Player.GetItemOnLayer / Items.Filter.Layers), not
 # TazUO's naming -- Hair and FacialHair are excluded here on purpose: RE lists them as layers too
