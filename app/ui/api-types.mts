@@ -9,12 +9,11 @@
 //
 // map: ui-infra
 // owns: the hand-declared `*ApiResponse` types
-import type { OptItem, RunSettings, KindOverrides } from "../vault-lib.mts";
-import type { ProfilesV3, TemplateMap } from "../build-spec.mts";
+import type { RunSettings } from "../vault-lib.mts";
 import type { AutostartOutcome, Hotkey as PanelHotkey, PanelPrefs } from "../tazuo-panel-prefs.mts";
-import type { OrganizeConfig, RuleMatch } from "../organize-config.mts";
-import type { Diagnostic, RunBody, RunsListBody, RunSummary, SavedRun, ScoreShare, SwingResult } from "../runs-types.mts";
+import type { RunBody, RunsListBody, RunSummary, SavedRun } from "../runs-types.mts";
 import type { HouseApiResponse } from "../house-model-types.mts";
+import type { OptimizeResult as SharedOptimizeResult, OptimizeStartApiResponse as SharedOptimizeStartApiResponse, SolveProgress, Suit } from "../api/optimize.mts";
 
 // ---------------------------------------------------------------- shared fragments
 
@@ -31,183 +30,39 @@ export interface SkillEntry {
 export type { ClientSettings as ClientSetting, Retention as RetentionSetting, SettingsData, SettingsApiResponse, CleanupApiResponse, ShardOption, RulesApiResponse,
   AdapterSummary, InstalledVersionInfo, DataDirCheckInfo, SetupApiResponse, PasteScannerApiResponse, LocateApiResponse, InstallApiResponse, UpdateCheckApiResponse } from "../api/setup.mts";
 
-// GET /api/ui-prefs — the page's own view choices, kept in <data>/ui-prefs.json. Every field is
-// optional: absent means "never chosen", and the page keeps its default.
-export interface UiPrefs {
-  cols?: string[] | undefined;
-  colsVersion?: "2" | undefined;                       // the column set `cols` was saved against (view-state.mts)
-  colWidths?: Record<string, number> | undefined;      // the Inventory columns' dragged widths in px, by column key
-  sheetProps?: string[] | undefined;                   // the character sheet's shown properties (absent = sheet.mts's default set)
-  theme?: string | undefined;                          // a theme family ("default" or "britannia")
-  appearance?: "light" | "system" | "dark" | undefined;
-  sidebar?: "auto" | "collapsed" | undefined;          // "collapsed" = pinned to icons at any width
-  density?: "dense" | "regular" | undefined;           // the Inventory table's rows: 32 or 40 px
-  areaLabels?: "show" | "hide" | undefined;            // the House map's area name pills (absent = shown)
-  mapDrawerWidth?: number | undefined;                 // the House map contents drawer's width in px (absent = 400)
-  builderMode?: "automatic" | "manual" | undefined;    // the Suit Builder's mode (absent = Automatic)
-  builderTab?: "requirements" | "weights" | "buffs" | "pool" | "advanced" | undefined;   // the Settings drawer's last tab (absent = Requirements)
-  builderChanges?: "gauges" | "table" | undefined;   // the result's What changes view (absent = Gauges)
-  builderFineTune?: "on" | "off" | undefined;   // whether the Goals tab shows the weights its goals set (absent = off)
-  unravelRows?: "full" | "condensed" | undefined;      // the Unravel view's rows (absent = full)
-  unravelCollapsed?: string[] | undefined;             // the Unravel view's collapsed groups: relic, held, essence, residue (absent = none)
-  manualFor?: "character" | "none" | undefined;        // Manual totals with the picked character's bonuses, or raw items (absent = character)
-  manualSuit?: Record<string, number> | undefined;     // the Manual suit: a serial per slot (builder-manual.mts)
-  manualBuffs?: string[] | undefined;                  // the Manual suit's buffs that are on (app/buffs.mts ids)
-  manualBuffSkills?: Record<string, number> | undefined;   // the buff numbers edited for Manual's No character (a character's are its profile's)
-  buffsCount?: "on" | "off" | undefined;               // whether Manual's totals count the buffs (absent = on)
-  dismissedUpdate?: string | undefined;                // the release whose update notice was dismissed (settings.mts)
-  copiedScanner?: string | undefined;                  // the ClassicUO web scanner version last copied (paste-scanner.mts)
-}
-export interface UiPrefsApiResponse {
-  ok: boolean;
-  prefs: UiPrefs;
-}
+// GET/PUT /api/ui-prefs, GET/PATCH /api/profiles and GET/PUT /api/tazuo-panel: app/api/prefs.mts.
+export type { UiPrefs, UiPrefsApiResponse, ProfilesApiResponse, ProfilesPatchApiResponse, TazuoPanelApiResponse } from "../api/prefs.mts";
 
 // ---------------------------------------------------------------- inventory / items
 
 // The inventory routes' shapes come from app/api/inventory.mts.
 export type { InventoryData, InventoryApiResponse, MissingApiResponse, ItemsApiResponse, ItemHitsApiResponse, ItemsBySerialApiResponse } from "../api/inventory.mts";
 
-export interface ProfilesApiResponse {
-  ok: boolean;
-  profiles: ProfilesV3;
-  stamp: string;   // the file's content stamp, which a PATCH's `was` is compared with
-  builtinTemplates: TemplateMap;   // the shard's built-in templates, read-only (app/data/templates/<shard>.json)
-  readOnly?: string;   // why profiles.json cannot be saved, when a newer Pack Rat made it (app/migrate.mts)
-}
 
 // ---------------------------------------------------------------- setup / wizard / adapters
 
 // The TazUO panel (app/tazuo-panel-prefs.mts): GET/PUT /api/tazuo-panel, and POST /api/setup/install's `panel`.
 export type { AutostartOutcome, PanelHotkey, PanelPrefs };
-export interface TazuoPanelApiResponse { ok: boolean; prefs: PanelPrefs }
-// GET/PUT /api/mcp and POST /api/mcp/token: the built-in MCP server's settings and its listener (app/mcp.mts). `token` is
-// null until MCP is first turned on; `live.portBusy` names the saved port when another program held it at launch.
-export interface McpApiResponse {
-  ok: boolean;
-  config: { enabled: boolean; allowActions: boolean; port: number; token: string | null };
-  live: { listening: boolean; port: number | null; portBusy: number | null };
-}
-export interface HostPickFolderApiResponse {
-  ok: boolean;
-  path: string | null;
-}
+export type { McpApiResponse } from "../api/mcp.mts";
+export type { HostPickFolderApiResponse } from "../api/host.mts";
 
 // ---------------------------------------------------------------- import
 
-export interface ImportPasteApiResponse {
-  ok: boolean;
-  written: string;
-  character: string;
-  warning?: string | undefined;
-}
-export interface RescanApiResponse {
-  ok: boolean;
-  adapters: string[];
-}
+export type { ImportPasteApiResponse, RescanApiResponse } from "../api/import.mts";
 // POST /api/forget and /api/forget-character, and GET /api/blacklist: app/api/inventory.mts.
 export type { ForgetApiResponse, BlacklistApiResponse } from "../api/inventory.mts";
-// GET and POST /api/item-kinds, POST /api/item-kinds/import (issue #150): the whole item-kinds.json document after
-// the change; an import also says how many entries it left out and why (the first few).
-// `readOnly` (GET): why the file cannot be changed, when a newer Pack Rat made it (app/migrate.mts).
-export interface ItemKindsApiResponse extends KindOverrides { ok: boolean; version: 1; skipped?: number; problems?: string[]; readOnly?: string }
+export type { ItemKindsApiResponse } from "../api/kinds.mts";
 
 // ---------------------------------------------------------------- suit builder: optimize / runs
 
-// The optimizer's per-slot change list — mirrors scripts/optimizer-core.mts's (unexported)
-// OptSlotChange, which app/exact-solver.mts's ExactSolveResult carries through unchanged.
-export interface SlotChange {
-  slot: string;
-  from: string | null;
-  fromSerial: number;
-  to: string | null;
-  toSerial: number;
-  gainedProps: Record<string, number>;
-}
-// One candidate suit — the shape both `result.best`/`result.alternatives[].best` (an OptAssignment,
-// scripts/optimizer-core.mts) and the by-character POST /api/optimize response's `current` use: a
-// slot name to a candidate item, or null for "nothing there." vault-lib.mts's OptItem is the same
-// item shape the rest of the page already uses (resolveItems, totalsOf, sheetHtml).
-export type OptSuit = Record<string, OptItem | null>;
-// The optimizer's own result — mirrors scripts/optimizer-core.mts's OptResult, plus the exact-search
-// fields app/exact-solver.mts's ExactSolveResult adds on top of it. Declared as one flat, mostly
-// optional shape (rather than the two-interface split those files use) since every reader here
-// (builder.mts, runs.mts) only ever reads fields off the union, the same way server.test.mts's own
-// OptimizeJobResponse.result does.
-export interface OptimizeResult {
-  best: OptSuit;
-  score: number;
-  currentScore: number;
-  greedyScore?: number | undefined;
-  delta?: number | undefined;
-  perSlotChanges: SlotChange[];
-  totals: { before: Record<string, number>; after: Record<string, number> };
-  method?: string | undefined;
-  proven?: boolean | undefined;
-  nodes?: number | undefined;
-  alternatives?: Array<{ best: OptSuit; score: number; shares?: ScoreShare[] | undefined }> | undefined;
-  altTolerance?: number | undefined;
-  altShortfall?: "budget" | "tolerance" | "exhausted" | "unequal" | undefined;   // why fewer alternatives than asked (exact-solver.mts's AltShortfall)
-  solver?: string | undefined;
-  bound?: number | null | undefined;
-  gapPoints?: number | null | undefined;
-  mipMs?: number | undefined;
-  heuristicMs?: number | undefined;
-  unreachableFloors?: string[] | undefined;
-  fallbackReason?: string | undefined;
-  floorsConflict?: boolean | undefined;
-  diagnostics?: Diagnostic[] | undefined;   // absent on a run saved before SOLVER_VERSION 6: unreachableFloors is drawn instead
-  swing?: SwingResult | undefined;          // the suit's swing (app/swing.mts), when it holds a weapon with a known speed and the build has a character
-  tieBreak?: TieBreakResult | undefined;    // a rarity preference's or fewest changes' outcome (app/exact-solver.mts TieBreakResult)
-  strict?: StrictResult | undefined;        // a strict-order build's stages (app/exact-solver.mts StrictResult)
-  shares?: ScoreShare[] | undefined;        // what made up the suit's score (app/diagnostics.mts scoreShares); absent on a run saved before issue #273
-}
-// A tie-break's outcome: the best score found, the returned suit's rarity points, the preference and tolerance, with fewest changes how many slots it changes, and whether that is proven the lowest (exact search only).
-export interface TieBreakResult { topScore: number; cost: number; changes?: number | undefined; rarity?: string | undefined; fewestChanges?: boolean | undefined; tolerance?: number | undefined; costProven?: boolean | undefined }
-// A strict-order build's stages, each with the suit's value there, and how many are proven in order.
-export interface StrictResult { stages: Array<{ kind: string; keys: string[] | null; value: number }>; proven: number; changes?: number | undefined }
-// SolveProgress (app/exact-solver.mts) as reported over the job's SSE stream and read by
-// builder-job.mts's runPanel(). Every field but `phase` is optional — not every phase reports every one.
-export interface OptimizeProgress {
-  phase: string;
-  elapsedMs?: number | undefined;
-  restartsDone?: number | undefined;
-  restarts?: number | undefined;
-  nodes?: number | undefined;
-  candidates?: number | undefined;
-  budgetMs?: number | undefined;
-  improvements?: number | undefined;
-  lastImprovementMs?: number | undefined;
-  bestScore?: number | null | undefined;
-  currentScore?: number | undefined;
-  floorsMet?: number | undefined;
-  floorsTotal?: number | undefined;
-  gapPoints?: number | null | undefined;
-  found?: number | undefined;
-  wanted?: number | undefined;
-  stage?: { at: number; of: number; kind: string; keys: string[] | null } | undefined;   // strict order: the stage being solved, from 1, and what it scores
-}
-// POST /api/optimize's start response — the non-cached branch (a fresh job) and the cached branch
-// (`cached: true`, carrying the reused SavedRunLike straight away) share every field but the ones
-// only one side sends.
-export interface OptimizeStartApiResponse {
-  ok: boolean;
-  id?: string | undefined;
-  warmFrom?: string | null | undefined;
-  superseded?: string | null | undefined;
-  warning?: string | undefined;
-  poolSize: number;
-  skipped: Record<string, number>;
-  current: OptSuit;
-  blocked: string[];
-  cached?: boolean | undefined;
-  run?: SavedRunLike | undefined;
-  diagnostics?: Diagnostic[] | undefined;   // the requirements no suit in the pool can reach, before the search starts
-}
-export interface OptimizeCancelApiResponse {
-  ok: boolean;
-  state: string;
-}
+// What a build answers (app/api/optimize.mts), under the names the page has always used. A suit (OptSuit) is a slot to a
+// candidate item, or null: result.best, result.alternatives[].best and POST /api/optimize's `current`.
+export type { SlotChange, TieBreakResult, StrictResult, OptimizeCancelApiResponse } from "../api/optimize.mts";
+export type OptSuit = Suit;
+export type OptimizeResult = SharedOptimizeResult;
+export type OptimizeProgress = SolveProgress;
+// POST /api/optimize's start response, its cached branch carrying the saved run as the page reads it.
+export type OptimizeStartApiResponse = SharedOptimizeStartApiResponse<SavedRunLike>;
 // The page's view of a saved run (app/runs-types.mts). The server's types are loose because it parses whatever run files are on disk; every run the server writes (vault-server.mts saveRun, runs-lib.mts manualRun) has an id, a createdAt, a label ("" until renamed), a poolSize and an ms, so the page reads those as present (Settled). Loose: optional here.
 type Settled<T, K extends keyof T> = { [P in K]-?: Exclude<T[P], undefined> };
 type Loose<T, K extends keyof T> = { [P in K]?: T[P] | undefined };
@@ -223,28 +78,8 @@ export type RunsListApiResponse = RunsListBody<RunSummaryLike>;
 export type RunApiResponse = RunBody<SavedRunLike> & { error?: string | undefined };
 export type RunPutApiResponse = RunBody<RunSummaryLike>;
 
-// SSE payloads (POST /api/optimize's job stream, JSON.parse()'d from MessageEvent.data by
-// builder.mts) — mirror vault-server.mts's jobSnapshot()/finish() literals.
-export interface JobSnapshotEvent {
-  id: string;
-  state: string;
-  progress: OptimizeProgress | null;
-  result: OptimizeResult | null;
-  ms: number | null;
-  error: string | null;
-  runId: string | null;
-}
-export interface JobDoneEvent {
-  result: OptimizeResult;
-  ms: number;
-  runId: string | null;
-}
-export interface JobFailedEvent {
-  error: string;
-}
-export interface JobCancelledEvent {
-  ms: number;
-}
+// SSE payloads (POST /api/optimize's job stream, JSON.parse()'d from MessageEvent.data by builder-job.mts).
+export type { JobSnapshot as JobSnapshotEvent, JobDoneEvent, JobFailedEvent, JobCancelledEvent } from "../api/optimize.mts";
 
 // ---------------------------------------------------------------- bridge
 // The bridge routes' shapes come from app/api/bridge.mts.
@@ -261,21 +96,8 @@ export type {
   OrganizeRunningTrip, OrganizePlanApiResponse,
   StrategyId as AutoStrategy, Candidate as ProposalCandidate, GroupReport as ProposalGroup, Layout as ProposalLayout, Proposal as OrganizeProposal, OrganizeProposeApiResponse,
 } from "../organize-types.mts";
-export interface OrganizePreset { id: string; name: string; match: RuleMatch }
-// stamp: the saved setup's, which PUT takes back as `base`; a setup saved elsewhere since is refused (409, code "stale").
-export interface OrganizeApiResponse { ok: boolean; config: OrganizeConfig; problems: string[]; readOnly?: string; stamp: string }
-export interface OrganizePutApiResponse { ok: boolean; stamp: string }
-export interface OrganizePresetsApiResponse { ok: boolean; presets: OrganizePreset[] }
-export interface OrganizeTripApiResponse { ok: boolean; id: string; index: number }
-// Move to (issue #270, app/move.mts). POST /api/move/plan: the selection's count, its worn items, how many of it sit directly in
-// each container, and with `to` the plan into that container (or why it cannot be filled); with `back`, Move back's count.
-export interface MovePlanSummary { moving: number; serials: number[]; trips: number; already: number; noRoom: number; left: Partial<Record<"gone" | "worn" | "pack" | "bag" | "unreachable" | "site", number>>; against: Array<{ serial: number; name: string; target: number }> }
-export interface MovePlanApiResponse { ok: boolean; selected: number; worn: number; wornNames: string[]; movable: number; here: Record<string, number>; left: MovePlanSummary["left"]; problem?: string | null; plan?: MovePlanSummary | null }
-export interface MoveBackApiResponse { ok: boolean; back: { movable: number; skipped: string[] } }
-// POST /api/move/trip: the trip queued (`id` null when nothing is left to move), its items' names, the moves left counting it.
-export interface MoveTripApiResponse { ok: boolean; id: string | null; index?: number; names?: Record<string, string>; remaining: number; skipped: Array<{ serial: number; name: string }>; noRoom: Array<{ serial: number; name: string }> }
-// POST /api/organize/match: what one rule filter takes of the movable items in labelled roots (app/organize.mts's matchCount).
-export interface OrganizeMatchApiResponse { ok: boolean; count: number; pieces: number; sample: string[] }
+// The rest of the Organize and Move to routes' answers: app/organize-types.mts too.
+export type { OrganizePreset, OrganizeApiResponse, OrganizePutApiResponse, OrganizePresetsApiResponse, OrganizeTripApiResponse, MovePlanSummary, MovePlanApiResponse, MoveBackApiResponse, MoveTripApiResponse, OrganizeMatchApiResponse } from "../organize-types.mts";
 
 // SSE payloads on the shared /api/events stream (ui/events.mts) — mirror the server's
 // eventBus.broadcast("inventory", …) / eventBus.broadcast("rejected", …) literals (app/services/events.mts) (app/watcher.mts's
@@ -314,14 +136,5 @@ export type { MaterialFamily, Level, CellKind, Cell, Furniture, Stack, Spot, Til
 export type HouseModel = HouseApiResponse["house"];
 // GET /api/facet-map/<facet>.png answers a PNG, or a 404 with why there is none: no UO folder (as TiledataFrom), or the facet file missing or not a facet bitmap.
 export type FacetMapReason = "override-missing" | "no-client" | "no-tazuo-profile" | "missing" | "unreadable";
-// GET /api/house-map and PUT /api/house-map/<id> (app/house-names.mts, issues #164 and #10): the player's names and drawn
-// areas by house id, each with the footprint the house had when it was named or its areas drawn. `name` is "" for a house
-// with areas but no name. Other fields an entry or an area may carry later are kept, unread.
-export interface HouseBounds { x0: number; y0: number; x1: number; y1: number; facet: number | null }
-// World tiles, inclusive.
-export interface AreaRect { x0: number; y0: number; x1: number; y1: number }
-// `color` is a token name, "area-1" … "area-8" (--color-area-N).
-export interface HouseArea { id: string; name: string; level: number; color: string; rects: AreaRect[] }
-export interface HouseMapEntry { name: string; bounds?: HouseBounds | undefined; areas?: HouseArea[] | undefined }
-export interface HouseMapApiResponse { ok: boolean; houses: Record<string, HouseMapEntry>; readOnly?: string }
-export interface HouseMapPutApiResponse { ok: boolean; entry: HouseMapEntry | null }
+// GET /api/house-map, PUT /api/house-map/<id> and GET /api/house-claims: app/house-model-types.mts.
+export type { HouseBounds, AreaRect, HouseArea, HouseEntry as HouseMapEntry, HouseMapApiResponse, HouseMapPutApiResponse, HouseClaimsApiResponse } from "../house-model-types.mts";

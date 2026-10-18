@@ -3,10 +3,10 @@
 // map: house
 // owns: `showMap`, `applyMapPrefs`
 import { state, bridge } from "./store.mts";
-import { $, el, itemTip, safeColor, fmtN, toast } from "./dom.mts";
+import { $, el, itemTip, safeColor, fmtN } from "./dom.mts";
 import { api } from "./api.mts";
 import { prefs } from "./prefs.mts";
-import { box, txt, button, segmented, pill, message, meter, keyValue, modalOpen, tipWrap, input, copyText, icon, kbd, menu, popover, closePopover, confirmDialog, select as selectEl, searchInput, badge } from "./components.mts";
+import { box, txt, button, segmented, pill, message, meter, keyValue, modalOpen, tipWrap, input, copyText, icon, kbd, menu, popover, closePopover, confirmDialog, select as selectEl, searchInput, badge, toast } from "./components.mts";
 import { labelContainer } from "./containers.mts";
 import { parseRoute, registerScreen, showContainer, showSearch } from "./nav.mts";
 import { itemMenu, itemActions, rarityEl, tagEls } from "./item-parts.mts";
@@ -14,7 +14,7 @@ import { propertyLines, RESISTS } from "./peek.mts";
 import { bridgeActionReason, runBridgeAction, sendBridge, type BridgeTarget } from "./bridge.mts";
 import { errorText } from "./messages.mts";
 import { openWorldMap, fetchFacetImage, type FacetImage } from "./world-map.mts";
-import { plural } from "./inv-model.mts";
+
 import { fillTone } from "./organize-model.mts";
 import { artTile } from "./item-art.mts";
 import { PLAIN, pickHouse, plainGrid, chestCount, houseLabel, houseName, carryOver, carryOverText, tiledataNote, chestViews, colourOf, chestLabel, sceneOf, boundsOf, fit, vbText,
@@ -29,6 +29,7 @@ import { houseLinks, setHouses } from "./house-links.mts";
 import { houses } from "./houses-data.mts";
 import { BREAKPOINTS, upTo } from "./breakpoints.mts";
 import type { Item } from "../vault-lib.mts";
+import { plural } from "./format.mts";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 // The map's page state: the houses and models as last fetched, the player's house names and areas (issues #164, #10), the one shown, its level, view (the Stack plan, else the drawing's angle) and colour mode, the area zoomed to (by id), the selected stack (by a serial in it, so a rescan that keeps the stack keeps the selection), the hovered and focused stacks (by letter), the viewBox, and a load error.
@@ -1386,7 +1387,7 @@ async function highlightStack(m: HouseModel, s: Stack, chests: ChestView[]): Pro
     highlighting = false;
     drawPanel();
   }
-  toast(stopped ? `${sent} of ${chests.length} queued, stopped at ${stopped}` : `${plural(sent, "highlight")} queued for ${bridge.character}`, stopped ? "bad" : "");
+  toast(stopped ? `${sent} of ${chests.length} queued, stopped at ${stopped}` : `${plural(sent, "highlight")} queued for ${bridge.character}`, stopped ? "bad" : "info");
 }
 // ---------------------------------------------------------------- the contents drawer
 // A column after the panel that lists a chest of the selected stack without leaving the map: the chest shown (null when no scan opened any chest of the stack), the filter typed (kept from chest to chest), the bags closed, its items as last fetched (kept on screen while a rescan's are fetched), the list's scroll, and the chest whose Show items opened it, where focus goes back on close.

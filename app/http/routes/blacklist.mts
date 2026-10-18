@@ -22,16 +22,18 @@ export function routes(ctx: ServerContext): Route[] {
       const { serial, name, where } = asObject(await readBody(req, { limit: 8e3 }));
       if (!isBoundedInt(serial, 1, MAX_SERIAL)) return send(res, 400, { ok: false, error: "serial required (positive integer)" });
       if (typeof name !== "string" || (where !== undefined && typeof where !== "string")) return send(res, 400, { ok: false, error: "name and where must be strings" });
-      const entries = blacklistStore.read();
-      if (entries.some((e) => e.serial === serial)) return send(res, 200, { ok: true } satisfies OkApiResponse);
-      if (entries.length >= 1000) return send(res, 409, { ok: false, error: "the blacklist is full (1000 containers)" });
       const place = where?.slice(0, 64).trim();
-      entries.push({ serial, name: name.slice(0, 64).trim() || "container", addedAt: new Date().toISOString(), ...(place ? { where: place } : {}) });
-      blacklistStore.write(entries);
+      let full = false;
+      blacklistStore.update((entries) => {
+        if (entries.some((e) => e.serial === serial)) return undefined;
+        if (entries.length >= 1000) { full = true; return undefined; }
+        return [...entries, { serial, name: name.slice(0, 64).trim() || "container", addedAt: new Date().toISOString(), ...(place ? { where: place } : {}) }];
+      });
+      if (full) return send(res, 409, { ok: false, error: "the blacklist is full (1000 containers)" });
       return send(res, 200, { ok: true } satisfies OkApiResponse);
     } },
     { method: "DELETE", path: /^\/api\/blacklist\/(\d{1,10})$/, handle: (_req, res, _url, unlist) => {
-      blacklistStore.write(blacklistStore.read().filter((e) => e.serial !== Number(unlist[1])));
+      blacklistStore.update((entries) => entries.filter((e) => e.serial !== Number(unlist[1])));
       return send(res, 200, { ok: true } satisfies OkApiResponse);
     } },
   ];

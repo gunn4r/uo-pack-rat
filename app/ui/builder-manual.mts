@@ -18,14 +18,14 @@ import { defaultStrLimit } from "../run-settings.mts";
 import { evaluateSuit, type SuitEvaluation } from "../evaluate.mts";
 import type { ItemQuery } from "../item-query.mts";
 import { state, invStamp } from "./store.mts";
-import { $, el, label, slotLabel, itemTip, toast } from "./dom.mts";
-import { box, txt, button, icon, segmented, tag, confirmDialog, modalOpen, tooltip, tipWrap, progress } from "./components.mts";
+import { $, el, label, slotLabel, itemTip } from "./dom.mts";
+import { box, txt, button, icon, segmented, tag, confirmDialog, modalOpen, tooltip, tipWrap, progress, toast } from "./components.mts";
 import { api } from "./api.mts";
 import { prefs } from "./prefs.mts";
 import { setCharacterBuffs } from "./profiles.mts";
 import { resolveItems, rarityToken } from "./items.mts";
 import { fetchCard, followJob, grabAllButton, keyProps, progressText, verdict, RESIST_NAMES } from "./builder-parts.mts";
-import { capNote, fcCapSource, knobError, paperdollCaps, plural, who, type KnobField } from "./builder-model.mts";
+import { capNote, fcCapSource, knobError, paperdollCaps, who, type KnobField } from "./builder-model.mts";
 import { session, commands, provide, onChange, readControls, type BuffInputs, type BuilderMode } from "./builder-session.mts";
 import { optimizeErrorMessage } from "./messages.mts";
 import { itemActions } from "./item-parts.mts";
@@ -35,6 +35,7 @@ import type { ItemBrowser } from "./item-browser.mts";
 import type { UiPrefs, OptimizeResult, OptimizeStartApiResponse, OptSuit } from "./api-types.mts";
 import { MANUAL_GROUPS, emptyHistory, record, undoStep, redoStep, historyKey, historyKeyNames, type History, type Suit, TOTAL_KEYS, STAT_KEYS, STRIP_KEYS, capped, capLine, slotQuery, handConflict, handNote, suitFrom, fillableSlots, fetchPieces, fillPicks, keptSlots, noCharacterRunSettings, listWords, applyEditStep, type FillStart, type EditStep, type Reslot, savedSlots, missingSlots, reslotted, reslotNote, deltaKeys, slotDelta } from "./manual-model.mts";
 import { buffMarker, buffStrip, createBuffPicker, keepChipFocus, type BuffActions, type BuffPicker, type BuffView } from "./builder-buffs.mts";
+import { plural } from "./format.mts";
 
 let noCharacter = false;
 // The suit: a serial per slot, and the records those serials resolved to (a slot whose serial is not here is missing).

@@ -11,26 +11,27 @@
 import type { Item } from "../vault-lib.mts";
 import { isBoundedInt, MAX_SERIAL } from "../guards.mts";
 import { unravelYield, expectedYield, onHand, LEFT_OUT, INGREDIENTS, type Ingredient, type LeftOut, type UnravelYield } from "../unravel.mts";
-import type { ItemQueryRows, UnravelRow } from "../item-query.mts";
+import type { UnravelRow } from "../item-query.mts";
 import { state } from "./store.mts";
-import { $, el, itemTip, toast, whereText } from "./dom.mts";
+import { $, el, itemTip, whereText } from "./dom.mts";
 import { api } from "./api.mts";
-import { txt, box, button, message, select, openDialog, icon, segmented } from "./components.mts";
+import { fetchAllItems, inventoryLoader } from "./inventory-data.mts";
+import { txt, box, button, message, select, openDialog, icon, segmented, toast } from "./components.mts";
 import { prefs } from "./prefs.mts";
 import { errorText } from "./messages.mts";
-import { plural } from "./inv-model.mts";
+
 import { parseRoute, registerScreen } from "./nav.mts";
 import { rarityEl } from "./item-parts.mts";
 import { grabAll } from "./bridge.mts";
 import { emptySelection, isSelected, isWorn, toggleRows, toggleLoaded, grabItems, wornNote, selectionBody, pickedText, leftText, GRAB_TOO_MANY, WORN_LOCK, type Matches, type Selection } from "./move-model.mts";
 import { openPicker, startMove, placeOf, gate } from "./move-to.mts";
 import { gatherWeight, gatherButton, GATHER_LOOSE, GATHER_GROUND } from "./unravel-model.mts";
-import type { ItemsApiResponse, MovePlanApiResponse, SettingsApiResponse, UiPrefs } from "./api-types.mts";
+import type { MovePlanApiResponse, SettingsApiResponse, UiPrefs } from "./api-types.mts";
+import { plural } from "./format.mts";
 
 type Group = "relic" | "held" | "essence" | "residue";
 let rows: UnravelRow[] | null = null;
 let stacks: Item[] = [];   // the ingredient stacks the scans hold
-let loadedFor: unknown = null, loadError: string | null = null, loading: Promise<void> | null = null;
 let built = false;
 let character: string | null = null;   // the picked "Unraveled by"; null until the player picks one
 const shownReasons = new Set<LeftOut>();   // reasons the player chose to show instead of leaving out
@@ -59,41 +60,27 @@ const u = () => state.rules?.unravel;
 const keepList = (): number[] => state.settings?.unravelKeep ?? [];
 
 // ---------------------------------------------------------------- data
-async function fetchAll(params: string): Promise<Item[]> {
-  const out: Item[] = [];
-  for (let offset = 0; ; offset += 500) {
-    const r = await api<ItemsApiResponse>(`/api/items?${params}&limit=500&offset=${offset}`);
-    out.push(...(r as ItemQueryRows).rows);
-    if (offset + 500 >= r.total) return out;
-  }
-}
-// One fetch at a time; a reload that lands while one runs is fetched once it is done.
-function load(): void {
-  const inv = state.inv;
-  loading = Promise.all([fetchAll("unravel=1&unravelShow=all&sort=unravel"), ...INGREDIENTS.map((i) => fetchAll(`q=${encodeURIComponent(i.toLowerCase())}`))])
-    .then(([cands, ...held]) => { rows = cands as UnravelRow[]; stacks = held.flat(); loadError = null; loadedFor = inv; })
-    .catch((e: unknown) => { loadError = errorText(e); })
-    .finally(() => {
-      loading = null;
-      render();
-      if (!loadError && state.inv !== loadedFor && !root().hidden) load();
-    });
-}
+const loader = inventoryLoader({
+  fetch: () => Promise.all([fetchAllItems("unravel=1&unravelShow=all&sort=unravel"), ...INGREDIENTS.map((i) => fetchAllItems(`q=${encodeURIComponent(i.toLowerCase())}`))]),
+  loaded: ([cands, ...held]) => { rows = cands as UnravelRow[]; stacks = held.flat(); },
+  settled: () => render(),
+  shown: () => !root().hidden,
+});
 // A reload (a scan landed, a Forget) or a saved Organize setup (its pins): fetch again while the view shows.
 registerScreen({ name: "unravel", show: () => showUnravel() });
 document.addEventListener("inventorychange", () => { if (parseRoute().tab === "unravel") showUnravel(); });
-document.addEventListener("organizechange", () => { if (built && !root().hidden && !loading) load(); });
+document.addEventListener("organizechange", () => { if (built && !root().hidden && !loader.loading) loader.load(); });
 // A run saved or removed (here or, through the events stream, in another window) changes which pieces are in a saved
 // build: fetch again now if the view shows, else when it is next shown.
 document.addEventListener("builderchange", (e) => {
   if ((e as CustomEvent<{ key: string }>).detail?.key !== "runs") return;
-  loadedFor = null;
-  if (built && !root().hidden && !loading) load();
+  loader.invalidate();
+  if (built && !root().hidden && !loader.loading) loader.load();
 });
 function showUnravel(): void {
   build();
   render();
-  if (state.inv && loadedFor !== state.inv && !loading) load();
+  loader.ensure();
 }
 
 // ---------------------------------------------------------------- who unravels
@@ -175,7 +162,7 @@ function render(): void {
   const listEl = $<HTMLElement>("#unr-list")!;
   if (!u()) { listEl.replaceChildren(stateBox(txt("This shard's rules have no unravel thresholds, so there is nothing to suggest.", "muted"))); drawForecast([], skill); drawExcluded(); drawSelbar([], skill); return; }
   if (!rows) {
-    listEl.replaceChildren(stateBox(loadError ? message({ tone: "bad", text: `Could not load the unravel candidates: ${loadError}` }) : txt("Loading unravel candidates…", "muted")));
+    listEl.replaceChildren(stateBox(loader.error ? message({ tone: "bad", text: `Could not load the unravel candidates: ${loader.error}` }) : txt("Loading unravel candidates…", "muted")));
     return;
   }
   const shown = rows.filter(isShown);

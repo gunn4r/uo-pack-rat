@@ -7,9 +7,19 @@
 // map: api
 // owns: `ApiRoutes`, `ApiEntry`, `OkApiResponse`, `Untyped`, `EventStream`, `Png`, `ApiResponse`, `ApiBody`
 import type { BridgeQueueApiResponse, BridgeStatusApiResponse } from "./bridge.mts";
-import type { HouseApiResponse, HousesApiResponse } from "../house-model-types.mts";
+import type { HouseApiResponse, HouseClaimsApiResponse, HouseEntry, HouseMapApiResponse, HouseMapPutApiResponse, HousesApiResponse } from "../house-model-types.mts";
+import type { HostPickFolderApiResponse, OpenPathBody, PickFolderBody } from "./host.mts";
+import type { ImportPasteApiResponse, ImportPasteBody, RescanApiResponse } from "./import.mts";
+import type { ItemKindsApiResponse, ItemKindsPostBody } from "./kinds.mts";
+import type { McpApiResponse, McpPutBody } from "./mcp.mts";
+import type { KindOverrides } from "../vault-lib.mts";
 import type { BlacklistApiResponse, BlacklistPostBody, ForgetApiResponse, InventoryApiResponse, ItemHitsApiResponse, ItemsApiResponse, ItemsBySerialApiResponse, MissingApiResponse } from "./inventory.mts";
-import type { OrganizePlanApiResponse, OrganizeProposeApiResponse, OrganizeProposeBody } from "../organize-types.mts";
+import type { MoveBackApiResponse, MovePlanApiResponse, MoveTripApiResponse, OrganizeApiResponse, OrganizeMatchApiResponse, OrganizePlanApiResponse, OrganizePresetsApiResponse, OrganizeProposeApiResponse, OrganizeProposeBody, OrganizePutApiResponse, OrganizeTripApiResponse } from "../organize-types.mts";
+import type { OrganizeConfig, RuleMatch } from "../organize-config.mts";
+import type { ProfileEdit } from "../profile-edits.mts";
+import type { PanelPrefs } from "../tazuo-panel-prefs.mts";
+import type { ProfilesApiResponse, ProfilesPatchApiResponse, TazuoPanelApiResponse, UiPrefs, UiPrefsApiResponse } from "./prefs.mts";
+import type { EvaluateApiResponse, OptimizeCancelApiResponse, OptimizeStartApiResponse, OptimizeStatusApiResponse } from "./optimize.mts";
 import type { RunBody, RunsListBody, RunSummary } from "../runs-types.mts";
 import type { CleanupApiResponse, CleanupBody, InstallApiResponse, InstallBody, LocateApiResponse, LocateBody, PasteScannerApiResponse, RulesApiResponse, SettingsApiResponse, SettingsPutBody, SetupApiResponse, UpdateCheckApiResponse } from "./setup.mts";
 
@@ -36,63 +46,63 @@ export interface ApiRoutes {
   "POST /api/forget": ApiEntry<ForgetApiResponse, unknown>;
   "POST /api/forget-character": ApiEntry<ForgetApiResponse, { character: string }>;
   // host.mts
-  "POST /api/host/pick-folder": Untyped;
-  "POST /api/host/open-path": Untyped;
+  "POST /api/host/pick-folder": ApiEntry<HostPickFolderApiResponse, PickFolderBody>;
+  "POST /api/host/open-path": ApiEntry<OkApiResponse, OpenPathBody>;
   "GET /api/events": ApiEntry<EventStream>;
   // houses.mts
   "GET /api/houses": ApiEntry<HousesApiResponse>;
   "GET /api/houses/<id>": ApiEntry<HouseApiResponse>;
   "GET /api/facet-map/<facet>.png": ApiEntry<Png>;
   "GET /api/item-art/<graphic>.png": ApiEntry<Png>;
-  "GET /api/house-map": Untyped;
-  "PUT /api/house-map/<id>": Untyped;
-  "GET /api/house-claims": Untyped;
-  "DELETE /api/house-claims/<id>": Untyped;
+  "GET /api/house-map": ApiEntry<HouseMapApiResponse>;
+  "PUT /api/house-map/<id>": ApiEntry<HouseMapPutApiResponse, HouseEntry>;
+  "GET /api/house-claims": ApiEntry<HouseClaimsApiResponse>;
+  "DELETE /api/house-claims/<id>": ApiEntry<OkApiResponse>;
   // import.mts
-  "POST /api/import/paste": Untyped;
-  "POST /api/import/rescan": Untyped;
+  "POST /api/import/paste": ApiEntry<ImportPasteApiResponse, ImportPasteBody>;
+  "POST /api/import/rescan": ApiEntry<RescanApiResponse, Record<string, never>>;
   // inventory.mts
   "GET /api/inventory": ApiEntry<InventoryApiResponse>;
   "GET /api/missing": ApiEntry<MissingApiResponse>;
   "GET /api/items": ApiEntry<ItemsApiResponse | ItemHitsApiResponse>;   // ItemHitsApiResponse with fields=hits
   "GET /api/items/by-serial": ApiEntry<ItemsBySerialApiResponse>;
   // kinds.mts
-  "GET /api/item-kinds": Untyped;
-  "POST /api/item-kinds": Untyped;
-  "POST /api/item-kinds/import": Untyped;
+  "GET /api/item-kinds": ApiEntry<ItemKindsApiResponse>;
+  "POST /api/item-kinds": ApiEntry<ItemKindsApiResponse, ItemKindsPostBody>;
+  "POST /api/item-kinds/import": ApiEntry<ItemKindsApiResponse, Partial<KindOverrides>>;
   // mcp.mts
-  "GET /api/mcp": Untyped;
-  "PUT /api/mcp": Untyped;
-  "POST /api/mcp/token": Untyped;
+  "GET /api/mcp": ApiEntry<McpApiResponse>;
+  "PUT /api/mcp": ApiEntry<McpApiResponse, McpPutBody>;
+  "POST /api/mcp/token": ApiEntry<McpApiResponse, Record<string, never>>;
   // optimize.mts: builds
-  "POST /api/optimize": Untyped;
+  "POST /api/optimize": ApiEntry<OptimizeStartApiResponse, unknown>;   // the request bodies of the builds are not typed yet
   "GET /api/optimize/<id>/events": ApiEntry<EventStream>;
-  "POST /api/optimize/<id>/cancel": Untyped;
-  "GET /api/optimize/<id>/status": Untyped;
-  "POST /api/evaluate": Untyped;
+  "POST /api/optimize/<id>/cancel": ApiEntry<OptimizeCancelApiResponse>;
+  "GET /api/optimize/<id>/status": ApiEntry<OptimizeStatusApiResponse>;
+  "POST /api/evaluate": ApiEntry<EvaluateApiResponse, unknown>;
   // optimize.mts: saved runs
   "GET /api/runs": ApiEntry<RunsListBody>;
   "POST /api/runs": ApiEntry<RunBody<RunSummary>, unknown>;   // the request bodies of POST and PUT are not typed yet
   "GET /api/runs/<id>": ApiEntry<RunBody>;
   "PUT /api/runs/<id>": ApiEntry<RunBody<RunSummary>, unknown>;
-  "DELETE /api/runs/<id>": Untyped;
+  "DELETE /api/runs/<id>": ApiEntry<OkApiResponse>;
   // organize.mts
-  "GET /api/organize": Untyped;
-  "PUT /api/organize": Untyped;
-  "GET /api/organize/presets": Untyped;
-  "POST /api/organize/match": Untyped;
+  "GET /api/organize": ApiEntry<OrganizeApiResponse>;
+  "PUT /api/organize": ApiEntry<OrganizePutApiResponse, OrganizeConfig & { base?: string }>;
+  "GET /api/organize/presets": ApiEntry<OrganizePresetsApiResponse>;
+  "POST /api/organize/match": ApiEntry<OrganizeMatchApiResponse, { match: RuleMatch }>;
   "POST /api/organize/propose": ApiEntry<OrganizeProposeApiResponse, OrganizeProposeBody>;
   "GET /api/organize/plan": ApiEntry<OrganizePlanApiResponse>;
-  "POST /api/organize/trip": Untyped;
-  "POST /api/move/plan": Untyped;
-  "POST /api/move/trip": Untyped;
+  "POST /api/organize/trip": ApiEntry<OrganizeTripApiResponse, { index: number; stamp: string }>;
+  "POST /api/move/plan": ApiEntry<MovePlanApiResponse | MoveBackApiResponse, unknown>;   // MoveBackApiResponse for {back}
+  "POST /api/move/trip": ApiEntry<MoveTripApiResponse, unknown>;
   // prefs.mts
-  "GET /api/profiles": Untyped;
-  "PATCH /api/profiles": Untyped;
-  "GET /api/ui-prefs": Untyped;
-  "PUT /api/ui-prefs": Untyped;
-  "GET /api/tazuo-panel": Untyped;
-  "PUT /api/tazuo-panel": Untyped;
+  "GET /api/profiles": ApiEntry<ProfilesApiResponse>;
+  "PATCH /api/profiles": ApiEntry<ProfilesPatchApiResponse, { edits: ProfileEdit[] }>;
+  "GET /api/ui-prefs": ApiEntry<UiPrefsApiResponse>;
+  "PUT /api/ui-prefs": ApiEntry<OkApiResponse, UiPrefs>;
+  "GET /api/tazuo-panel": ApiEntry<TazuoPanelApiResponse>;
+  "PUT /api/tazuo-panel": ApiEntry<TazuoPanelApiResponse, PanelPrefs>;
   // settings.mts
   "GET /api/settings": ApiEntry<SettingsApiResponse>;
   "PUT /api/settings": ApiEntry<SettingsApiResponse, SettingsPutBody>;

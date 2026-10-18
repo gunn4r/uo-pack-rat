@@ -121,6 +121,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `app/server-settings.test.mts` — HTTP tests of the settings, the shard's rules and retention.
 - `app/server-setup.test.mts` — HTTP tests of the setup wizard's routes, the TazUO panel, the update check and the client search.
 - `app/server.test.mts` — HTTP tests of what every route shares, on a real listening server (ephemeral port, temp data folder).
+- `app/services/builds.test.mts` — `app/services/builds.mts`, a checked build request into a started job or a saved run that answers it (issue #338).
 - `app/services/events.test.mts` — `app/services/events.mts` on its own: event frames, the broadcast and `close()`.
 - `app/services/houses.test.mts` — `app/services/houses.mts` on its own: why there is no tiledata.mul, facet or item art, and the facet and item art PNG caches.
 - `app/services/inventory.test.mts` — `app/services/inventory.mts` on its own: when the fold and the overlay are cached and when they are made again.
@@ -168,6 +169,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `scripts/build-schema-types.test.mts` — the JSON Schema to TypeScript generator (`scripts/build-schema-types.mts`).
 - `scripts/build-ui.test.mts` — `scripts/build-ui.mts`'s `buildUi()`, the page build.
 - `scripts/changelog.test.mts` — `scripts/changelog.mts`: a [smoke] guard that the committed fragments and CHANGELOG.md are in shape, a [smoke] release of a copy of them, and the release that puts the fragments together.
+- `scripts/compat-shims.test.mts` — a [fast] guard that docs/architecture.md's "Compatibility shims" table and the code's `compat: <id>` comments name the same shims.
 - `scripts/css-guard.test.mts` — a [smoke] guard that keeps screen stylesheets from restyling the shared components, and the window breakpoints in one list.
 - `scripts/docs-links.test.mts` — a [smoke] guard that every repo path the Markdown names in backticks exists.
 - `scripts/electron-app.test.mts` — a [smoke] guard that keeps the Electron UI tests on their shared fixture (scripts/electron-app.mts, issue #338).

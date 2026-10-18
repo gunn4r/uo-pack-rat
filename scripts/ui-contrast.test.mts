@@ -134,8 +134,8 @@ const SCENES: Scene[] = [
   { name: "toasts", enter: async (p) => {
     await p.evaluate(async () => {
       const C = await import("/ui/components.mjs" as string);
-      C.showToast("8 grabs queued for Dorran", "ok"); C.showToast("Grab: Mighty Orc Mask queued for Dorran", "info");
-      C.showToast("Bridge is offline. Press Play on packrat-bridge.py in game first.", "bad", { action: { label: "Details", onClick: () => {} } });
+      C.toast("8 grabs queued for Dorran", "good"); C.toast("Grab: Mighty Orc Mask queued for Dorran", "info");
+      C.toast("Bridge is offline. Press Play on packrat-bridge.py in game first.", "bad", { action: { label: "Details", onClick: () => {} } });
     });
   }, leave: (p) => p.evaluate(async () => (await import("/ui/components.mjs" as string)).clearToasts()) },
   { name: "builder result", enter: async (p) => {

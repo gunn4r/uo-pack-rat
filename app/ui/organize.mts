@@ -9,9 +9,9 @@
 // map: organize
 // owns: `showOrganize`
 import { state, bridge } from "./store.mts";
-import { $, el, itemTip, toast, compactChildren } from "./dom.mts";
+import { $, el, itemTip, compactChildren } from "./dom.mts";
 import { api } from "./api.mts";
-import { box, txt, button, badge, card, message, menu, select, tipWrap, table, type Kids } from "./components.mts";
+import { box, txt, button, badge, card, message, menu, select, tipWrap, table, type Kids, toast } from "./components.mts";
 import { bridgeFeatureSet, currentAdapter, BRIDGE_OFFLINE } from "./bridge.mts";
 import { setNavBusy } from "./shell.mts";
 import { errorText } from "./messages.mts";
@@ -177,7 +177,7 @@ async function reorder(id: string, to: (at: number) => number, keyboard: boolean
   $<HTMLElement>("#org-live")!.textContent = `${moved.name} moved to position ${at + 1} of ${rules.length}.`;
   if (keyboard) $<HTMLElement>(`.org-rule[data-rule="${CSS.escape(moved.id)}"] .org-grip`)?.focus();
 }
-const toastBad = (text: string): void => toast(text, "bad");
+const toastBad = (text: string): void => { toast(text, "bad"); };
 
 // ---------------------------------------------------------------- the plan
 // Fetched after every render of a ready setup and after every trip. Only the Plan card and the rule counts are

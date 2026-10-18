@@ -17,7 +17,8 @@ import { dirname, join } from "node:path";
 import { DATA_DIR_MODE } from "../../config.mts";
 import { renderRegion, type Region } from "../../facet-map.mts";
 import { tileBounds, type HouseSource } from "../../house-capture.mts";
-import type { HouseApiResponse, HousesApiResponse } from "../../house-model-types.mts";
+import type { HouseApiResponse, HouseClaimsApiResponse, HouseMapApiResponse, HouseMapPutApiResponse, HousesApiResponse } from "../../house-model-types.mts";
+import type { OkApiResponse } from "../../api/routes.mts";
 import { plotBounds, plotSize } from "../../house-model.mts";
 import { checkHouseEntry, isHouseId, readHouseMap, saveHouseEntry, MAX_ENTRY_BYTES } from "../../house-names.mts";
 import { safeAppendLog } from "../../log.mts";
@@ -93,7 +94,7 @@ export function routes(ctx: ServerContext): Route[] {
     // `readOnly`: why the map cannot be changed (a newer Pack Rat made it), when it cannot; every PUT is then a 409.
     { method: "GET", path: "/api/house-map", handle: (_req, res) => {
       const { doc, readOnly } = readNames();
-      return send(res, 200, { ok: true, houses: doc.houses, ...(readOnly ? { readOnly } : {}) });
+      return send(res, 200, { ok: true, houses: doc.houses, ...(readOnly ? { readOnly } : {}) } satisfies HouseMapApiResponse);
     } },
     { method: "PUT", path: /^\/api\/house-map\//, handle: async (req, res, url) => {
       let id: string | null;
@@ -106,18 +107,20 @@ export function routes(ctx: ServerContext): Route[] {
       mkdirSync(dirname(HOUSE_MAP), { recursive: true, mode: DATA_DIR_MODE });
       const refused = saveHouseEntry(HOUSE_MAP, doc, id, checked.entry);
       if (refused) return send(res, 409, { ok: false, error: refused });
-      return send(res, 200, { ok: true, entry: checked.entry });
+      return send(res, 200, { ok: true, entry: checked.entry } satisfies HouseMapPutApiResponse);
     } },
     // The houses claimed (issue #299, <data>/house-claims.json, app/store/house-claims.mts): GET lists them; DELETE /api/house-claims/<id> unclaims the house of that id, every claim over it gone (the claim of its id, and any claim its bounds overlap on its facet, made before it was customized), so it leaves the House map. A malformed id is a 400.
-    { method: "GET", path: "/api/house-claims", handle: (_req, res) => send(res, 200, { ok: true, claims: houseClaimsStore.read() }) },
+    { method: "GET", path: "/api/house-claims", handle: (_req, res) => send(res, 200, { ok: true, claims: houseClaimsStore.read() } satisfies HouseClaimsApiResponse) },
     { method: "DELETE", path: /^\/api\/house-claims\/[^/]+$/, handle: async (_req, res, url) => {
       let id: string | null;
       try { id = decodeURIComponent(url.pathname.slice("/api/house-claims/".length)); } catch { id = null; }
       if (id == null || !isHouseId(id)) return send(res, 400, { ok: false, error: "that is not a house id (<facet>-<x>-<y>)" });
-      const house = (await getInventory()).houses.find((h) => h.id === id), claims = houseClaimsStore.read();
-      const over = new Set(house ? claimsOver(claims, house.facet, tileBounds(house.tiles)) : []);
-      houseClaimsStore.write(claims.filter((c) => c.id !== id && !over.has(c)));
-      return send(res, 200, { ok: true });
+      const house = (await getInventory()).houses.find((h) => h.id === id);
+      houseClaimsStore.update((claims) => {
+        const over = new Set(house ? claimsOver(claims, house.facet, tileBounds(house.tiles)) : []);
+        return claims.filter((c) => c.id !== id && !over.has(c));
+      });
+      return send(res, 200, { ok: true } satisfies OkApiResponse);
     } },
   ];
 }

@@ -15,17 +15,18 @@ import { defaultStrLimit } from "../run-settings.mts";
 import { evaluateSuit } from "../evaluate.mts";
 import { state } from "./store.mts";
 import type { FinishedBuild } from "./store.mts";
-import { $, el, slotLabel, toast } from "./dom.mts";
-import { box, txt, button, badge, select, input, field, switchControl, check, segmented, filterChip, pill, popover, closePopover, icon, modalOpen, bindDrawer, type DrawerHandle } from "./components.mts";
+import { $, el, slotLabel } from "./dom.mts";
+import { box, txt, button, badge, select, input, field, switchControl, check, segmented, filterChip, pill, popover, closePopover, icon, modalOpen, bindDrawer, type DrawerHandle, toast } from "./components.mts";
 import { createBuffPicker, type BuffPicker, type BuffView, type PickerActions } from "./builder-buffs.mts";
 import { parseRoute, registerScreen, routeFor } from "./nav.mts";
 import { editProfiles, setCharacterBuffs } from "./profiles.mts";
 import { session, commands, announce, provide, onChange, readControls, type BuilderChange, type BuildState, type SectionId, type FocusSection } from "./builder-session.mts";
 import { plainName, NO_CHARACTER, buffsOn, group, checklist, panelFcCap, fcCapNote } from "./builder-parts.mts";
 import { characterNames } from "./roster.mts";
-import { runSettingsDiff, plural, knobError, pruneResistCaps, weaponsChipText, weaponMustHaveChipText, withStoredRoots, weaponName, toggleWeapon, fcCapText, rarityHelp, templateBuffsLine, sourceTitle, who, buildStateText, buildStateDetail, type KnobField } from "./builder-model.mts";
+import { runSettingsDiff, knobError, pruneResistCaps, weaponsChipText, weaponMustHaveChipText, withStoredRoots, weaponName, toggleWeapon, fcCapText, rarityHelp, templateBuffsLine, sourceTitle, who, buildStateText, buildStateDetail, type KnobField } from "./builder-model.mts";
 import type { UiPrefs } from "./api-types.mts";
 import { prefs } from "./prefs.mts";
+import { plural } from "./format.mts";
 
 // ---------------------------------------------------------------- panel state
 // The solver knobs as typed (ui/builder-session.mts), and the Build Settings drawer's tab (ui-prefs `builderTab`).

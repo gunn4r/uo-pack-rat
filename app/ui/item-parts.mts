@@ -8,10 +8,10 @@
 import { tagUnits } from "../vault-lib.mts";
 import type { Item } from "../vault-lib.mts";
 import { state } from "./store.mts";
-import { label, slotLabel, rarityColor, safeColor, toast, whereText, tagChip } from "./dom.mts";
+import { label, slotLabel, rarityColor, safeColor, whereText, tagChip } from "./dom.mts";
 import { rarityToken } from "./items.mts";
 import { bridgeActionReason, runBridgeAction } from "./bridge.mts";
-import { txt, box, rowActions, menu, copyText } from "./components.mts";
+import { txt, box, rowActions, menu, copyText, toast } from "./components.mts";
 import { containerArt } from "./item-art.mts";
 import type { MenuItem } from "./components.mts";
 import { splitSerial } from "./inv-model.mts";

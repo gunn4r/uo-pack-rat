@@ -165,7 +165,8 @@ export const BRIDGE_OFFLINE = "Bridge offline. Press Play on packrat-bridge.py i
 // running bridge's own report first (status.json's adapter, while it is online), then the newest scan made with that
 // adapter, then the manifest this app ships (docs/bridge-protocol.md, Features).
 // A manifest (capabilities.json) or a scan's adapter block: its bridge actions and its features. Scripts before TazUO
-// 2.16.0 listed "trip-bags" among the actions, so a name counts from either list.
+// 2.16.0 listed "trip-bags" among the actions, so a name counts from either list (compat: trip-bags-action, remove in
+// Pack Rat 0.3.0 (docs/architecture.md, Compatibility shims)).
 export interface FeatureDeclaration { capabilities?: { bridge?: readonly string[] | undefined } | undefined; features?: readonly string[] | undefined }
 export type FeatureSource = "bridge" | "scan" | "app";
 const featureNames = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
@@ -1351,7 +1352,7 @@ export interface OptItem {
 // buildPools() only ever stores an item after `!it.slot` has already sent it to `continue` — every
 // item it hands the solver has passed that filter, so its slot is honestly a string, not the plain
 // OptItem's `string | null`. scripts/optimizer-core.mts declares its own (unexported) OptItem with a
-// required, non-null `slot` — the two are independently declared (the core imports only
+// required, non-null `slot` — the two are independently declared (at run time the core imports only
 // app/solver/scoring.mts; see its own header comment) describing the same runtime objects, and they already
 // drifted once with nothing to catch it (app/solver.test.mts's compile-time assignability guard, next
 // to its own note on the cast this boundary needs, is what catches it now).

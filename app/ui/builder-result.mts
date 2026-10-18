@@ -12,7 +12,7 @@ import type { EffectiveProfile, Goals, GoalSwingWeapon, Item, PropMap, ResistCap
 import { state } from "./store.mts";
 import type { BuildMeta } from "./store.mts";
 import { $, el, label, fmtN, fmtSecs, fmtRunTime, slotLabel, whereText } from "./dom.mts";
-import { box, txt, button, icon, badge, message, meter, segmented, switchControl, check, table, tableFoot, rowActions, tipWrap, tooltip, keyValue, token } from "./components.mts";
+import { box, txt, button, icon, badge, message, meter, segmented, switchControl, check, table, tableFoot, rowActions, tipWrap, tooltip, keyValue, token, resistTile } from "./components.mts";
 import { prefs } from "./prefs.mts";
 import { sheetNode, sheetParts } from "./sheet.mts";
 import { bridgeActionReason, runBridgeAction } from "./bridge.mts";
@@ -21,15 +21,16 @@ import { session, commands, announce, provide, onChange } from "./builder-sessio
 import { RESIST_NAMES, keyProps, tipTarget, verdict, grabAllButton, fetchCard, settingsCheck } from "./builder-parts.mts";
 import { savedBuffs, plannedFromWorn, buffById, buffsDiff, runBuffs, signed } from "../buffs.mts";
 import type { RunBuffs } from "../vault-lib.mts";
-import { slotsOf, paperdollCaps, pastCapNotes, runSettingsDiff, withBuffs, afterChange, compareModel, hiddenRowsNote, changeRows, gaugeRows, worse, gaugeNote, gaugeTrack, changesSummary, nextSwingStep, sharePct, plural, resistOutcome, toggleCompare, propName, capNote, capsLine, anyOverridden, effectiveFloor, resultChecks, shareRows, swingLines, who, rarityDetail, rarityTotal, strictDetail, goalOutcomes, goalTrades, goalVerdict, swingOutcome, tradeText, spareLine, pieceMark, GONE_MARK, type ChangeRow, type CompareMember } from "./builder-model.mts";
+import { slotsOf, paperdollCaps, pastCapNotes, runSettingsDiff, withBuffs, afterChange, compareModel, hiddenRowsNote, changeRows, gaugeRows, worse, gaugeNote, gaugeTrack, changesSummary, nextSwingStep, sharePct, resistOutcome, toggleCompare, propName, capNote, capsLine, anyOverridden, effectiveFloor, resultChecks, shareRows, swingLines, who, rarityDetail, rarityTotal, strictDetail, goalOutcomes, goalTrades, goalVerdict, swingOutcome, tradeText, spareLine, pieceMark, GONE_MARK, type ChangeRow, type CompareMember } from "./builder-model.mts";
 import { heldWeapon, ssiShareOf, swingOf, swingSeconds, SSI_CAP } from "../swing.mts";
 import type { GearChanges, ScoreShare, SwingResult } from "../runs-types.mts";
 import type { OptSuit, OptimizeResult, SavedRunLike, UiPrefs } from "./api-types.mts";
+import { plural } from "./format.mts";
 
 // One resist tile: its name in its resist colour, the value (before → after when there is a before) against
 // the requirement or cap, a meter and the outcome line, and under it the cap's override when the build has one
 // ("Cap raised from 70"): the tile's numbers are then against the player's cap, not the shard's.
-function resistTile(k: string, after: number, floor: number | null, c: ResistCap, before: number | null = null): HTMLElement {
+function resultResistTile(k: string, after: number, floor: number | null, c: ResistCap, before: number | null = null): HTMLElement {
   const [name, colour] = RESIST_NAMES[k]!;
   const cap = c.cap, note = capNote(c);
   const out = resistOutcome(after, floor, cap);
@@ -37,7 +38,7 @@ function resistTile(k: string, after: number, floor: number | null, c: ResistCap
   const value = before == null
     ? box("span", { class: "b-resist-val" }, txt(after, "t-xl"), txt(`/ ${target}`, "muted"))
     : box("span", { class: "b-resist-val" }, txt(before, "muted"), icon("arrow-right", { size: "sm" }), txt(after, "t-xl"), txt(`/ ${cap}`, "muted"));
-  return box("div", { class: `resist tint tint-${colour.slice(6)}` }, el("span", { class: "t-sm resist-name", style: `color:var(${colour})` }, name), value,
+  return resistTile(name, colour, value,
     meter(Math.min(after, target), target, { tone: out.tone === "warn" ? "warn" : "ok", label: `${name} ${after} of ${target}` }), txt(out.text, `t-sm tone-${out.tone}`),
     note ? txt(`Cap ${note}`, "t-sm strong b-cap-note") : null);
 }
@@ -126,7 +127,7 @@ function headlineCard(res: OptimizeResult, current: OptSuit, suit: OptSuit, prof
   const manual = res.method === "manual", buffsUsed: RunBuffs | undefined = prof.buffs ? runBuffs(prof.buffs.on, prof.buffs.skills) : undefined;
   const start = button({ label: manual ? "Open in Manual" : "Start from this result", icon: "pencil", attrs: { id: "b-to-manual" },
     onClick: () => { void commands.openInManual(suit, slotsOf(res.best), buffsUsed, manual ? "Open the manual run" : "Start from the result"); } });
-  const tiles = RESIST_KEYS.map((k) => resistTile(k, now.totals[k]!, pdFloors[k] ?? null, { cap: now.caps[k]!, shard: caps[k]!.shard }, was.totals[k]!));
+  const tiles = RESIST_KEYS.map((k) => resultResistTile(k, now.totals[k]!, pdFloors[k] ?? null, { cap: now.caps[k]!, shard: caps[k]!.shard }, was.totals[k]!));
   const shareList = view == null ? res.shares : res.alternatives![view]!.shares;
   // the gauges are for what this build asks for: a non-zero weight or a requirement; a buff's past-cap amount always has a row
   const matter = [...Object.entries(prof.weights).filter(([, w]) => w).map(([k]) => k), ...Object.keys(pdFloors)], past = pastCapNotes(now);

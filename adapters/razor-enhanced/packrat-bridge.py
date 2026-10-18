@@ -450,7 +450,8 @@ def check_scan(cmd, now_s):
 
 def check_protocol(cmd):
     """A line names the protocol it was written in; one with none comes from an app older than the field
-    and reads as protocol 1. A newer protocol than this bridge knows is refused, never guessed at."""
+    and reads as protocol 1. A newer protocol than this bridge knows is refused, never guessed at.
+    compat: queue-line-no-protocol (the missing-protocol default), remove in Pack Rat 0.3.0 (docs/architecture.md, Compatibility shims)"""
     p = cmd.get("protocol", 1)
     if not isinstance(p, int) or isinstance(p, bool) or p < 1:
         return "protocol is not a protocol number"

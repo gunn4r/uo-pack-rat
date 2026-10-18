@@ -4,7 +4,7 @@
 // reads the builder's character before the builder's listener picks a new one.
 //
 // map: ui-bootstrap
-// owns: `reload`, `retryLoad`
+// owns: `reload`, `retryLoad`, `fetchAllItems`, `inventoryLoader`
 import { state, newestStamp } from "./store.mts";
 import { forgetTipMisses } from "./dom.mts";
 import { api } from "./api.mts";
@@ -12,11 +12,57 @@ import { loadOrganize, refreshPlaces } from "./organize-data.mts";
 import { loadHouseLinks } from "./house-links.mts";
 import { renderNavCounts } from "./shell.mts";
 import { loadProfiles } from "./profiles.mts";
-import type { InventoryApiResponse } from "./api-types.mts";
+import { errorText } from "./messages.mts";
+import type { InventoryApiResponse, ItemsApiResponse } from "./api-types.mts";
+import type { Item } from "../vault-lib.mts";
+import type { ItemQueryRows } from "../item-query.mts";
 
 // api() throws with the server's own message ("internal error"); the panels a failed load writes into also need
 // to know which request it was.
 export function get<T>(path: string): Promise<T> { return api<T>(path).catch((e: Error) => { throw new Error(`${path} failed: ${e.message}`); }); }
+
+// Every item a GET /api/items query matches, in its 500-row pages (Unravel and Scrolls load their lists with it).
+// `params` is the query string without limit and offset.
+export async function fetchAllItems(params: string): Promise<Item[]> {
+  const rows: Item[] = [];
+  for (let offset = 0; ; offset += 500) {
+    const r = await api<ItemsApiResponse>(`/api/items?${params}&limit=500&offset=${offset}`);
+    rows.push(...(r as ItemQueryRows).rows);
+    if (offset + 500 >= r.total) return rows;
+  }
+}
+
+// A screen's data drawn from the inventory, fetched once per state.inv (a reload makes a new one). One fetch at a
+// time; a reload that lands while one runs is fetched once it is done, if the screen still shows. A failed fetch
+// keeps the last data and sets `error`; `settled` (the screen's redraw) runs after every fetch either way.
+export interface InventoryLoader {
+  readonly error: string | null;
+  readonly loading: boolean;
+  load(): void;         // fetch now
+  ensure(): void;       // fetch unless the data is for this inventory or a fetch is running
+  invalidate(): void;   // the data is stale even for this inventory: ensure() fetches next time
+}
+export function inventoryLoader<T>(o: { fetch: () => Promise<T>; loaded: (data: T) => void; settled: () => void; shown: () => boolean }): InventoryLoader {
+  let loadedFor: unknown = null, error: string | null = null, loading: Promise<void> | null = null;
+  const load = (): void => {
+    const inv = state.inv;
+    loading = o.fetch()
+      .then((data) => { o.loaded(data); error = null; loadedFor = inv; })
+      .catch((e: unknown) => { error = errorText(e); })
+      .finally(() => {
+        loading = null;
+        o.settled();
+        if (!error && state.inv !== loadedFor && o.shown()) load();
+      });
+  };
+  return {
+    get error() { return error; },
+    get loading() { return loading !== null; },
+    load,
+    ensure: () => { if (state.inv && loadedFor !== state.inv && !loading) load(); },
+    invalidate: () => { loadedFor = null; },
+  };
+}
 
 // The data half of app.mts's load(): inventory and profiles, and everything drawn from them. A live scan landing
 // (events.mts, the "inventory" SSE event) and Forget run just this; rules/settings/setup don't change

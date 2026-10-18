@@ -18,6 +18,7 @@ import { txt, box, badge, tag, meter, message, button, check, searchInput, popov
 import type { SkillEntry } from "./api-types.mts";
 import { capNote } from "./builder-model.mts";
 import { STAT_MAX } from "../buffs.mts";
+import { plural } from "./format.mts";
 
 // The slot value the sheet needs out of a worn/candidate piece — both a full scanned Item (the
 // Characters screen's worn set) and an optimizer OptItem (the builder's `suit`/`current`) carry these,
@@ -82,7 +83,6 @@ export function keyNumbers(props: Record<string, number>, caps: Record<string, n
 }
 // Item flags as tags: cursed in danger, brittle and antique in warning, the rest neutral.
 export const tagTone = (t: string): "bad" | "warn" | undefined => (t === "cursed" ? "bad" : t === "brittle" || t === "antique" ? "warn" : undefined);
-export const plural = (n: number, one: string, many = one + "s"): string => `${n} ${n === 1 ? one : many}`;
 // Durability watch (issue #98): a worn piece is low once its durability is at 20% of its max or at 10
 // points, so it can be repaired before it breaks mid-fight. The scan's "Durability 12 / 255" line is
 // extras.durability; no line, a max of 0, or a piece at (or past) its max, which no repair would raise, is

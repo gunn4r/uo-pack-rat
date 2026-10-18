@@ -56,6 +56,7 @@ import { createRetentionService } from "./services/retention.mts";
 import { createInventoryService } from "./services/inventory.mts";
 import { createOrganizeService } from "./services/organize.mts";
 import { createJobsService, type JobTimings } from "./services/jobs.mts";
+import { createBuildsService } from "./services/builds.mts";
 export type { JobTimings } from "./services/jobs.mts";
 import { send } from "./http/respond.mts";
 import { dispatch, type Route } from "./http/router.mts";
@@ -243,6 +244,8 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   // Organize is built first, so the harvest hook below never reaches it before it exists; it reads the inventory through a getter.
   const inventoryService = createInventoryService({ scanStore, itemKindsStore, organizeStateStore, shard: () => appSettings.current().shard, harvest: (now) => organizeService.harvestNow(now) });
   const getInventory = inventoryService.getInventory;
+  // the Suit Builder's builds: the pool, the prepared solve, a saved run that answers it or a job (app/services/builds.mts)
+  const buildsService = createBuildsService({ getInventory, runStore, jobService });
   const profilesStore = createProfilesStore({ file: PROFILES, defaults: DEFAULT_PROFILES, templatesDir: CONFIG.paths.builtinTemplates, shard: () => appSettings.current().shard,
     log: (line) => safeAppendLog(CONFIG.paths.log, line), uiPrefs: uiPrefsStore, scanned: async () => Object.keys((await getInventory()).inv.characters) });
   const timers = new Set<NodeJS.Timeout>();   // the host-call timeouts and stream pings the routes own, so close() can stop them all; the jobs service clears its own
@@ -258,7 +261,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
 
   // Every route, in the order the server tries them (app/http/routes/; docs/architecture.md lists them).
   const ctx: ServerContext = { config: CONFIG, host, clientSearch, clientRunning, updateFetch, packageJson: PACKAGE_JSON, appSettings, setupService, eventBus, houseService,
-    retentionService, jobService, organizeService, getInventory, profilesStore, uiPrefsStore, blacklistStore, houseClaimsStore, itemKindsStore, organizeStore, organizeStateStore, runStore,
+    retentionService, jobService, buildsService, organizeService, getInventory, profilesStore, uiPrefsStore, blacklistStore, houseClaimsStore, itemKindsStore, organizeStore, organizeStateStore, runStore, scanStore,
     panelPrefsFile: PANEL_PREFS, savePanel, watchers, timers, mcp };
   const routes: Route[] = [staticRoutes, inventoryRoutes, prefsRoutes, settingsRoutes, setupRoutes, importRoutes, hostRoutes, optimizeRoutes, mcpRoutes, bridgeRoutes,
     forgetRoutes, blacklistRoutes, housesRoutes, kindsRoutes, organizeRoutes].flatMap((make) => make(ctx));

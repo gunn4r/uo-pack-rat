@@ -839,6 +839,12 @@ test("[fast] POST /api/optimize rejects a malformed pools/current/profile (hardF
       { pools: { helmet: "not-an-array" }, current: {}, profile, opts: {} },
       { pools: [], current: {}, profile, opts: {} },
       { pools: {}, current: { helmet: 5 }, profile, opts: {} },
+      // a piece the search can't use as sent: no serial, no name, a slot that is no string, a property that is no number
+      { pools: {}, current: { helmet: { name: "x", slot: "helmet", props: {} } }, profile, opts: {} },
+      { pools: {}, current: { helmet: { serial: 1, slot: "helmet", props: {} } }, profile, opts: {} },
+      { pools: {}, current: { helmet: { serial: 1, name: "x", slot: 7, props: {} } }, profile, opts: {} },
+      { pools: {}, current: { helmet: { serial: 1, name: "x", slot: "helmet", props: { hci: "5" } } }, profile, opts: {} },
+      { pools: { helmet: [{ serial: "1", name: "x", slot: "helmet", props: {} }] }, current: {}, profile, opts: {} },
       { pools: {}, current: {}, profile: "not-an-object", opts: {} },
       { pools: {}, current: {}, profile, opts: { restarts: 1e12 } },
       { pools: {}, current: {}, profile, opts: { timeBudgetMs: Number.MAX_SAFE_INTEGER } },
@@ -1123,6 +1129,21 @@ test("[fast] /api/optimize with pinned: every placed piece stays, the rest is se
   if (notGear) assert.equal((await fetch(srv.url + "/api/optimize", fillBody(character, { ring: notGear.serial }))).status, 400);
   const twoH = [...loose, ...worn].find((it) => it.slot === "twoHanded" && it.twoHanded), oneH = [...loose, ...worn].find((it) => it.slot === "oneHanded");
   if (twoH && oneH) assert.equal((await fetch(srv.url + "/api/optimize", fillBody(character, { twoHanded: twoH.serial, oneHanded: oneH.serial }))).status, 400);
+});
+
+// The route checks the request's shape before the builds service reads any scan: a request wrong in two ways reports
+// its profile first, ahead of an unknown character's 404 and a bad pin's 400 (issue #338).
+test("[fast] /api/optimize: a bad profile is reported before an unknown character and before a bad pin", async () => {
+  const { character, worn, loose } = await demoGear();
+  const pin = loose.find((it) => it.slot !== "twoHanded" && it.slot !== "oneHanded") ?? worn[0]!;
+  const nobody = await fetch(srv.url + "/api/optimize", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ character: "Nobody", profile: "x" }) });
+  assert.deepEqual([nobody.status, asJson<ErrorBody>(await nobody.json()).error], [400, "profile required"]);
+  const badPin = { [pin.slot!]: pin.serial + 999999 };
+  const both = await fetch(srv.url + "/api/optimize", fillBody(character, badPin, "x" as never));
+  assert.deepEqual([both.status, asJson<ErrorBody>(await both.json()).error], [400, "profile required"]);
+  const pinOnly = await fetch(srv.url + "/api/optimize", fillBody(character, badPin));
+  assert.equal(pinOnly.status, 400);
+  assert.match(asJson<ErrorBody>(await pinOnly.json()).error, /is not a gear piece/);
 });
 
 test("[fast] /api/optimize with pinned and no character: the pool is the pieces nobody wears, plus a pinned worn one (issue #12)", async () => {

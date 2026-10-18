@@ -5,7 +5,7 @@
 // map: ui-bootstrap
 import { setRules } from "../vault-lib.mts";
 import { state } from "./store.mts";
-import { $, el, installTooltip, toast } from "./dom.mts";
+import { $, el, installTooltip } from "./dom.mts";
 import { api, onReadOnly } from "./api.mts";
 import { pollBridge } from "./bridge.mts";
 import { initFilters, applyUiPrefs, inventoryFailed } from "./inventory.mts";
@@ -25,7 +25,7 @@ import { setCopiedScanner } from "./paste-scanner.mts";
 import { renderImport, importDrawer } from "./import.mts";
 import { applyLook } from "./theme.mts";
 import { initShell, applyShellPrefs, setCurrentNav } from "./shell.mts";
-import { segmented, clearToasts, closePopover } from "./components.mts";
+import { segmented, clearToasts, closePopover, toast } from "./components.mts";
 import { openRunsDrawer, closeRunsDrawer } from "./runs.mts";
 import { session } from "./builder-session.mts";
 import "./organize.mts";   // registers its route and its inventorychange listener; nothing else imports it

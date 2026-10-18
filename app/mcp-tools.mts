@@ -12,18 +12,15 @@
 import { withCurrentActions, BRIDGE_ACTION_LABELS, BRIDGE_OFFLINE, GEAR_SLOTS, bridgeFeatures, bridgeRefusal, containerChain, newestScanAdapter, fullOf, isPseudoCharacter, NOBODY, RESIST_SKILL_KEY, resistMinimum, toOptItem, totalsOf, TRASH_RE, compileGoals, goalsError, GOAL_LEFTOVERS, GOAL_STRATEGIES, STRATEGY_HELP, SWING_GOALS, RANK_IMPORTANCE, LEFTOVER_IMPORTANCE } from "./vault-lib.mts";
 import type { BridgeAction, Character, Container, ContainerCapacity, Item, OptItem, Profile, PropMap, Goals } from "./vault-lib.mts";
 import { buffPlanOf, normalizeBuffs, savedBuffs, BUFFS } from "./buffs.mts";
-import { BUILTIN_PREFIX, characterBuffs, characterLabel, characterProfile, findTemplate, planBuild, specFromProfile, templateRefs, templateSettings, type PlannedBuild, type ProfilesV3, type TemplateMap } from "./build-spec.mts";
+import { BUILTIN_PREFIX, characterBuffs, characterLabel, characterProfile, findTemplate, planBuild, specFromProfile, templateRefs, templateSettings, type PlannedBuild } from "./build-spec.mts";
 import { evaluateSuit } from "./evaluate.mts";
 import type { Diagnostic } from "./runs-types.mts";
 import { EXTRA_COLS, parseItemQuery, type UnravelRow } from "./item-query.mts";
 import { LEFT_OUT } from "./unravel.mts";
 import { RUN_DEFAULTS } from "./run-settings.mts";
 import type { ValidatorSchema } from "./schema/validate.mts";
-import type { PlanMove } from "./organize-types.mts";
 import type { ApiResponse } from "./api/routes.mts";
 import { LIMITS, salvagedRefusal, type OrganizeConfig } from "./organize-config.mts";
-import type { HouseModel, HouseSummary } from "./house-model-types.mts";
-import type { HouseArea } from "./house-names.mts";
 import { areaOfStack } from "./house-areas.mts";
 
 // A tool's failure in words the model reads (a route's own refusal, a bad argument): a tool result with isError.
@@ -61,8 +58,7 @@ type InventoryDoc = ApiResponse<"GET /api/inventory">["inventory"];
 type BridgeStatus = ApiResponse<"GET /api/bridge/status">;
 type BridgeResult = NonNullable<BridgeStatus["results"]>[string];
 interface RunDoc { id: string; character?: string; createdAt: string; label?: string; settings?: Record<string, unknown>; result?: Record<string, unknown> | null; ms?: number | null; inventoryStamp?: string | null }
-interface OrganizeDoc { config: OrganizeConfig; problems: string[]; readOnly?: string; stamp: string }
-interface PlanDoc { stamp: string; inventoryStamp: string; moves: PlanMove[]; trips: Array<{ index: number; site: number }>; rules: unknown[]; warnings: unknown[]; seconds: number; unclaimed: number }
+type OrganizeDoc = ApiResponse<"GET /api/organize">;
 
 // ---------------------------------------------------------------- helpers
 const PAGE: Record<string, Schema> = {
@@ -115,9 +111,8 @@ const newestStamp = (scans: InventoryDoc["scans"]): string => {
 // are what evaluate.mts's evaluateSuit takes, and `profile` is plannedProfile of them.
 interface Planned extends PlannedBuild { buffsOn: string[]; character: Character | null }
 type EvalInputs = Pick<Planned, "base" | "character" | "plan">;
-interface Prefs { manualBuffs?: string[]; buffsCount?: string; manualBuffSkills?: Record<string, number> }
 async function planProfile(ctx: ToolContext, inv: InventoryDoc, name: string | null, args: Record<string, unknown>, suit: Record<string, Item> | null): Promise<Planned> {
-  const [{ profiles, builtinTemplates: builtins = {} }, { prefs }] = await Promise.all([ctx.api<{ profiles: ProfilesV3; builtinTemplates?: TemplateMap }>("/api/profiles"), ctx.api<{ prefs: Prefs }>("/api/ui-prefs")]);
+  const [{ profiles, builtinTemplates: builtins = {} }, { prefs }] = await Promise.all([ctx.api<ApiResponse<"GET /api/profiles">>("/api/profiles"), ctx.api<ApiResponse<"GET /api/ui-prefs">>("/api/ui-prefs")]);
   const c = name ? scannedCharacter(inv, name) : null;
   // no character plans with No character's own profile (the builder's, under NOBODY), on the shard's caps
   const p = characterProfile(profiles, name ?? NOBODY, builtins);
@@ -181,7 +176,7 @@ function resultSummary(result: Record<string, unknown> | null | undefined, ev: E
     ...(Array.isArray(result.alternatives) && result.alternatives.length ? { otherSuits: (result.alternatives as Array<{ best: Record<string, { serial: number; name: string } | null>; score: number }>).map((a) => ({ score: a.score, suit: suitRows(a.best) })) } : {}),
   };
 }
-interface JobStatus { id: string; state: string; progress: Record<string, unknown> | null; result: Record<string, unknown> | null; ms: number | null; error: string | null; runId: string | null }
+type JobStatus = ApiResponse<"GET /api/optimize/<id>/status">;
 // A build that filled empty slots around pinned pieces (memory.filled) leaves out currentScore: it is the pins' own and
 // reads as a huge gain beside the score.
 function jobSummary(j: JobStatus, memory: ToolContext["memory"], ev: EvalInputs | null = memory.plans.get(j.id) ?? null): Record<string, unknown> {
@@ -231,7 +226,7 @@ async function follow(ctx: ToolContext, id: string, seconds: number): Promise<Re
     if (!state) {
       // This server's own record first; the Organize plan (a whole plan computed) only for an id it does not know.
       const at = ctx.memory.actions.get(id);
-      if ((at != null && Date.now() - at < QUEUED_FOR_MS) || (await ctx.api<{ running: { id: string } | null }>("/api/organize/plan")).running?.id === id) state = "queued";
+      if ((at != null && Date.now() - at < QUEUED_FOR_MS) || (await ctx.api<ApiResponse<"GET /api/organize/plan">>("/api/organize/plan")).running?.id === id) state = "queued";
       else throw new ToolError("No such action (unknown or expired)");
     }
     if (Date.now() >= until) return { id, state, bridgeOnline: !!st.online, hint: "poll get_action_status with this id" };
@@ -275,7 +270,7 @@ const SCAN_SCRIPTS: Record<string, string> = { here: "scanner", character: "refr
 async function newestScanOf(ctx: ToolContext, what: string, character: string | null, inv?: InventoryDoc): Promise<{ ms: number; scan: Record<string, unknown> | null }> {
   let best: { ms: number; scan: Record<string, unknown> | null } = { ms: -Infinity, scan: null };
   if (what === "house") {
-    for (const h of (await ctx.api<{ houses: HouseSummary[] }>("/api/houses")).houses) {
+    for (const h of (await ctx.api<ApiResponse<"GET /api/houses">>("/api/houses")).houses) {
       const ms = Date.parse(h.capturedAt);
       if (ms > best.ms) best = { ms, scan: { character, at: h.capturedAt, house: h.name ?? h.id, containers: h.containers } };
     }
@@ -413,7 +408,7 @@ export const TOOLS: Tool[] = [
     inputSchema: { type: "object", additionalProperties: false, properties: {} },
     annotations: { title: "Characters", ...READ },
     async handler(_a, ctx) {
-      const [inv, { profiles }] = await Promise.all([inventory(ctx), ctx.api<{ profiles: ProfilesV3 }>("/api/profiles")]);
+      const [inv, { profiles }] = await Promise.all([inventory(ctx), ctx.api<ApiResponse<"GET /api/profiles">>("/api/profiles")]);
       const roots = (name: string): Record<string, number> => Object.fromEntries(Object.values(inv.containers)
         .filter((c) => c.parent == null && (c.kind === "backpack" || c.kind === "bank") && c.scannedBy === name).map((c) => [c.kind!, c.serial]));
       return { characters: Object.values(inv.characters).filter((c) => !isPseudoCharacter(c.name)).sort((x, y) => x.name.localeCompare(y.name)).map((c) => ({
@@ -426,7 +421,7 @@ export const TOOLS: Tool[] = [
     inputSchema: { type: "object", additionalProperties: false, required: ["character"], properties: { character: CHARACTER } },
     annotations: { title: "Character sheet", ...READ },
     async handler(a, ctx) {
-      const [inv, { profiles }] = await Promise.all([inventory(ctx), ctx.api<{ profiles: ProfilesV3 }>("/api/profiles")]);
+      const [inv, { profiles }] = await Promise.all([inventory(ctx), ctx.api<ApiResponse<"GET /api/profiles">>("/api/profiles")]);
       const c = scannedCharacter(inv, a.character as string);
       const worn = inv.worn[c.name] || [], wornTotals = totalsOf(Object.fromEntries(worn.map((i) => [String(i.serial), toOptItem(i)])));
       const skills = Object.entries(c.skills || {}).map(([k, v]) => [k, Number((v as { value?: unknown })?.value) || 0] as const).filter(([, v]) => v > 0).sort((x, y) => y[1] - x[1]);
@@ -440,7 +435,7 @@ export const TOOLS: Tool[] = [
     inputSchema: { type: "object", additionalProperties: false, properties: {} },
     annotations: { title: "Item kinds", ...READ },
     async handler(_a, ctx) {
-      const [inv, own] = await Promise.all([inventory(ctx), ctx.api<{ names: Record<string, string>; graphics: Record<string, string> }>("/api/item-kinds")]);
+      const [inv, own] = await Promise.all([inventory(ctx), ctx.api<ApiResponse<"GET /api/item-kinds">>("/api/item-kinds")]);
       return { kinds: inv.facets.kinds, playerSet: { names: own.names, graphics: own.graphics } };
     },
   },
@@ -638,7 +633,7 @@ export const TOOLS: Tool[] = [
     annotations: { title: "Organize plan", ...READ },
     async handler(a, ctx) {
       const { limit, offset } = pageOf(a);
-      const [{ plan, running }, inv] = await Promise.all([ctx.api<{ plan: PlanDoc; running: unknown }>("/api/organize/plan"), inventory(ctx)]);
+      const [{ plan, running }, inv] = await Promise.all([ctx.api<ApiResponse<"GET /api/organize/plan">>("/api/organize/plan"), inventory(ctx)]);
       const name = (s: number | null): string | null => s == null ? "backpack" : inv.containers[s]?.label || inv.containers[s]?.name || hex(s);
       const trips = plan.trips.slice(offset, offset + limit).map((t) => ({ index: t.index, site: t.site,
         moves: plan.moves.filter((m) => m.trip === t.index).map((m) => ({ serial: m.serial, name: m.name, amount: m.amount, from: name(m.from), to: name(m.to), rule: m.ruleId })) }));
@@ -657,7 +652,7 @@ export const TOOLS: Tool[] = [
     async handler(a, ctx) {
       const { limit, offset } = pageOf(a);
       if (a.outside && a.house !== undefined) throw new ToolError("name a house, or set outside (not both)");
-      const [inv, { houses }, map, org] = await Promise.all([inventory(ctx), ctx.api<{ houses: HouseSummary[] }>("/api/houses"), ctx.api<{ houses: Record<string, { areas?: HouseArea[] }> }>("/api/house-map"), ctx.api<OrganizeDoc>("/api/organize")]);
+      const [inv, { houses }, map, org] = await Promise.all([inventory(ctx), ctx.api<ApiResponse<"GET /api/houses">>("/api/houses"), ctx.api<ApiResponse<"GET /api/house-map">>("/api/house-map"), ctx.api<OrganizeDoc>("/api/organize")]);
       let picked = houses;
       if (typeof a.house === "string") {
         const q = a.house.toLowerCase();
@@ -674,7 +669,7 @@ export const TOOLS: Tool[] = [
           rows.push({ serial: c.serial, name: c.name ?? null, kind: c.kind, label: label(c.serial), fill: fill(c), house: null, area: null, level: null, position: c.pos ? { x: c.pos.x, y: c.pos.y, z: c.pos.z } : null, scanned: true });
         }
       } else {
-        const models = await Promise.all(picked.map((h) => ctx.api<{ house: HouseModel }>(`/api/houses/${enc(h.id)}`)));
+        const models = await Promise.all(picked.map((h) => ctx.api<ApiResponse<"GET /api/houses/<id>">>(`/api/houses/${enc(h.id)}`)));
         picked.forEach((h, i) => {
           const m = models[i]!.house, areas = map.houses[h.id]?.areas ?? [];
           for (const st of m.stacks) {
@@ -814,10 +809,10 @@ export const TOOLS: Tool[] = [
     async handler(a, ctx) {
       const st = await ctx.api<BridgeStatus>("/api/bridge/status");
       if (!st.online) throw new ToolError(BRIDGE_OFFLINE);
-      const [{ plan }, inv] = await Promise.all([ctx.api<{ plan: PlanDoc }>("/api/organize/plan"), inventory(ctx)]);
+      const [{ plan }, inv] = await Promise.all([ctx.api<ApiResponse<"GET /api/organize/plan">>("/api/organize/plan"), inventory(ctx)]);
       const where = (s: number | null): string => s == null ? "backpack" : inv.containers[s]?.label || inv.containers[s]?.name || hex(s);
       const moves = plan.moves.filter((m) => m.trip === a.index).map((m) => ({ serial: m.serial, name: m.name, from: where(m.from), to: where(m.to) }));
-      const r = await ctx.api<{ id: string; index: number }>("/api/organize/trip", { method: "POST", body: { index: a.index, stamp: a.stamp } });
+      const r = await ctx.api<ApiResponse<"POST /api/organize/trip">>("/api/organize/trip", { method: "POST", body: { index: a.index, stamp: a.stamp } });
       ctx.memory.actions.set(r.id, Date.now());
       const out = await follow(ctx, r.id, waitOf(a));
       // A move counts as made only when a put step for its item succeeded: a trip the bridge refused, or one that

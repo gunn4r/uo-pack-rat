@@ -9,8 +9,8 @@
 // map: organize
 // owns: `openRuleEditor`
 import { state } from "./store.mts";
-import { $, el, toast, safeColor, compactChildren } from "./dom.mts";
-import { box, txt, button, meter, message, field, input, select, textarea, pill, check, token, createDrawer, confirmDialog, showToast, type DrawerHandle } from "./components.mts";
+import { $, el, safeColor, compactChildren } from "./dom.mts";
+import { box, txt, button, meter, message, field, input, select, textarea, pill, check, token, createDrawer, confirmDialog, toast, type DrawerHandle } from "./components.mts";
 import { containerArt } from "./item-art.mts";
 import { errorText } from "./messages.mts";
 import { filterContext } from "./item-parts.mts";
@@ -177,5 +177,5 @@ async function save(): Promise<void> {
   drawer().close();
   const text = d.isNew ? `Rule ${rule.name} added.` : `Rule ${rule.name} saved.`;
   if (location.hash === "#/organize") toast(text, "good");
-  else showToast(text, "ok", { action: { label: "Open Organize", onClick: () => { location.hash = "#/organize"; } } });
+  else toast(text, "good", { action: { label: "Open Organize", onClick: () => { location.hash = "#/organize"; } } });
 }

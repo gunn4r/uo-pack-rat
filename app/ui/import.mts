@@ -13,12 +13,13 @@ import { state } from "./store.mts";
 import { $, el } from "./dom.mts";
 import { api } from "./api.mts";
 import { parsePastedScan, type ParsePastedScanResult } from "../paste-scan.mts";
-import { bindDrawer, box, button, icon, message, segmented, select, textarea, txt, showToast, type Kids, modalOpen } from "./components.mts";
+import { bindDrawer, box, button, icon, message, segmented, select, textarea, txt, toast, type Kids, modalOpen } from "./components.mts";
 import { defaultImportAdapterId, platformCompatible } from "./adapters.mts";
 import { importOptionLabel } from "./adapter-copy.mts";
-import { importActionLabel, listText, plural, scanPreview, sendEach, sizeText, type ScanPreview } from "./import-preview.mts";
+import { importActionLabel, listText, scanPreview, sendEach, sizeText, type ScanPreview } from "./import-preview.mts";
 import { errorText, relativeWhen } from "./messages.mts";
 import type { ImportPasteApiResponse, RescanApiResponse } from "./api-types.mts";
+import { plural } from "./format.mts";
 
 // A scan file bigger than the inbox accepts (app/watcher.mts's MAX_INBOX_BYTES) is refused before it is read.
 const MAX_FILE_BYTES = 32 * 1024 * 1024;
@@ -220,7 +221,7 @@ async function doImport(): Promise<void> {
   renderImport();
   importDrawer.close();
   const names = [...new Set(landed)];
-  showToast(landed.length === 1 ? `${names[0]}'s scan landed` : `${plural(landed.length, "scan")} landed for ${listText(names)}`, "ok");
+  toast(landed.length === 1 ? `${names[0]}'s scan landed` : `${plural(landed.length, "scan")} landed for ${listText(names)}`, "good");
 }
 
 async function doRescan(): Promise<void> {

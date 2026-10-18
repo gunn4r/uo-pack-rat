@@ -2,7 +2,7 @@
 // Moved verbatim out of index.html's inline <script type="module"> (Task 4, the page split).
 //
 // map: ui-infra
-// owns: `el`, `$`, `fmtN`, `slotLabel`, `rarityColor`, `toast`, `installTooltip`
+// owns: `el`, `$`, `fmtN`, `slotLabel`, `rarityColor`, `installTooltip`
 import { SLOT_LABELS, labelOf, fullOf, tagInfo, gameName } from "../vault-lib.mts";
 import type { Item } from "../vault-lib.mts";
 import { EXTRA_COLS, rarityRank as rarityRankOf } from "../item-query.mts";
@@ -10,7 +10,7 @@ import { state } from "./store.mts";
 import { rarityToken } from "./items.mts";
 import { api } from "./api.mts";
 import type { ItemsBySerialApiResponse } from "./api-types.mts";
-import { showToast, tag, tooltip } from "./components.mts";
+import { tag, tooltip } from "./components.mts";
 import { createTipResolver, type TooltipItem } from "./item-tip.mts";
 
 export { EXTRA_COLS, colVal } from "../item-query.mts";
@@ -85,7 +85,7 @@ export const slotLabel = (s: string | null | undefined): string => SLOT_LABELS[s
 // a hardcoded table — a shard with a different tier scheme ships its own app/rules/<shard>.json.
 export const rarityRank = (name: string | null | undefined): number => rarityRankOf(state.rules?.rarity || [], name);
 // A tier's colour for the page: its --rarity-* token (items.mts's rarityToken) when the tier has one,
-// else the shard's raw game colour, which only reads well inside a dark subtree (see rarCell).
+// else the shard's raw game colour, which only reads well inside a dark subtree.
 export const rarityColor = (name: string | null | undefined): string | null => {
   const token = rarityToken(name);
   if (token) return `var(${token})`;
@@ -93,12 +93,6 @@ export const rarityColor = (name: string | null | undefined): string | null => {
   return r ? safeColor(r.colour) : null;
 };
 export const rarRank = (it: Item): number => rarityRank(it.rarity);
-export const rarCell = (it: Item): HTMLElement => {
-  if (!it.rarity) return el("span", { class: "muted" }, "·");
-  if (rarityToken(it.rarity)) return el("span", { class: "rar-name", style: `color:${rarityColor(it.rarity)}` }, it.rarity);
-  const raw = rarityColor(it.rarity);
-  return el("span", { class: "rar-name rar-raw", "data-theme": "default", "data-mode": "dark", style: raw ? `color:${raw}` : "" }, it.rarity);
-};
 // safeColor(c) — a colour that is safe to put in a style property, or null. The one dynamic colour
 // the page takes from a scan is the <BASEFONT COLOR=#rrggbb> tag the client writes into a tooltip
 // line's own text; it reaches a `style` through tipNode below. That capture is already regex-bound,
@@ -124,14 +118,6 @@ export function fmtRunTime(iso: string): string {
   if (isNaN(d as unknown as number)) return "?";
   const hm = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   return d.toDateString() === new Date().toDateString() ? hm : `${d.toLocaleDateString([], { month: "short", day: "numeric" })} ${hm}`;
-}
-
-// toast(text, cls) — the page's long-standing call, now the toast stack in components.mts (bottom-right, up to
-// three, errors stay until dismissed). cls keeps its old meaning: "" is information, "good" a success, "bad"
-// an error. (components.mts imports el() from here; the cycle is safe because neither module calls into the
-// other while it is still loading.)
-export function toast(text: string, cls = ""): void {
-  showToast(text, cls === "bad" ? "bad" : cls === "good" ? "ok" : "info");
 }
 
 // ---------------------------------------------------------------- in-game style tooltip

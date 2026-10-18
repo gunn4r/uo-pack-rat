@@ -5,7 +5,8 @@
 // owns: `rosterView`, `sheetMeta`, `characterNames`
 import type { ResistFigure } from "./sheet.mts";
 import { isPseudoCharacter, type Container } from "../vault-lib.mts";
-import { plural } from "./inv-model.mts";
+import { plural } from "./format.mts";
+
 
 // Every character the page knows of, scanned ones first, then ones with only a saved Suit Builder profile; a pseudo
 // name (the Suit Builder's No character's profile, issue #12) is none of them.

@@ -2,8 +2,9 @@
 // optimizer-core.mts — whole-suit gear optimizer CORE: the heuristic suit search and scoring of record, loaded from source by the path corePath() resolves.
 // ----------------------------------------------------------------------------
 // PURE LOGIC ONLY. No game globals (no `player`, `client`, `Gump`, ...) and no I/O. It imports the
-// scoring constants it shares with app/mip.mts from app/solver/scoring.mts (issue #338) and exports
-// through the one `export { ... }` line at the end. Everything is deterministic given a seed
+// scoring constants it shares with app/mip.mts from app/solver/scoring.mts (issue #338), its result
+// types from app/api/optimize.mts (a type import, erased when Node loads it), and exports through
+// the one `export { ... }` line at the end. Everything is deterministic given a seed
 // (mulberry32; `Math.random` is never called here).
 //
 // The problem: you have ~30 candidate items per slot across 19 slots. Exhaustive search is
@@ -24,6 +25,7 @@
 // map: builder
 // owns: `optimizeSuit`, `scoreSet`, `optDefaultSlots`, `optDefaultOptionalSlots`, `optDominancePrune`
 import { CHANGE_COST, DEFAULT_BUDGET_MS, DEFAULT_RESTARTS, FLOAT_EPS, RESIST_SKILL_KEY, RESIST_STEP_SLACK, TIE_SLACK, changeCost, floorMet, keptValue, scoringProfile, slackAt, stepCredit, type SsiStepPoint } from "../app/solver/scoring.mts";
+import type { OptResult as SharedOptResult, SlotChange } from "../app/api/optimize.mts";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -38,7 +40,7 @@ interface OptItem {
   serial: number;
   name: string;
   slot: string;
-  twoHanded?: boolean;
+  twoHanded?: true | undefined;   // as vault-lib.mts OptItem: only a two-handed weapon carries it
   props: Record<string, number>;
   speed?: number | undefined;   // a weapon's base speed in seconds; the core never reads it (app/swing.mts does)
   tieCost?: number | undefined; // a tie-break cost (a rarity preference's, issue #262), never negative: with opts.tieBreak the search takes the lowest summed cost among suits within the tolerance of the best
@@ -131,37 +133,8 @@ interface OptProgress {
   candidates: number;       // candidate items in play (after pruning once that has run)
 }
 
-interface OptSlotChange {
-  slot: string;
-  from: string | null;
-  fromSerial: number;
-  to: string | null;
-  toSerial: number;
-  gainedProps: Record<string, number>;
-}
-
-interface OptResult {
-  best: OptAssignment;
-  score: number;
-  currentScore: number;
-  greedyScore: number;
-  delta: number;
-  perSlotChanges: OptSlotChange[];
-  totals: { before: Record<string, number>; after: Record<string, number> };
-  seed: number;
-  restarts: number;
-  evaluations: number;
-  method?: string;        // "heuristic" | "exact"
-  proven?: boolean | undefined;       // exact phase finished the whole tree: this is the optimum for the given pools/profile
-  nodes?: number | undefined;         // branch-and-bound nodes visited
-  pruned?: { before: number; after: number } | undefined;   // candidate counts before/after dominance pruning
-  alternatives?: { best: OptAssignment; score: number }[] | undefined;   // other suits within altTolerance of the best, best first (never the best itself)
-  altTolerance?: number | undefined;
-  // with opts.tieBreak: the best score found, the returned suit's summed tie cost, the best suit whose floors were held (slot -> serial) and those floors
-  // (`changes`, with fewestChanges: how many slots differ from the worn suit)
-  tieBreak?: { topScore: number; cost: number; changes?: number | undefined; top?: Record<string, number | null> | undefined; floors?: string[] | undefined } | undefined;
-  lex?: number[] | undefined;   // with opts.strict: the returned suit's value in each stage (optStrictStages' order)
-}
+// The result types are shared with the exact solver, the worker and the page (app/api/optimize.mts).
+type OptResult = SharedOptResult<OptAssignment>;
 
 // Internal: a flattened property space so scoring is an array loop instead of object churn.
 interface OptSpace {
@@ -1413,7 +1386,7 @@ function optimizeSuit(pools: Record<string, OptItem[]>, current: OptAssignment, 
   }
 
   // Per-slot diff report.
-  const changes: OptSlotChange[] = [];
+  const changes: SlotChange[] = [];
   for (let i = 0; i < slots.length; i++) {
     const slot = slots[i]!;
     const from = cur[slot] || null;

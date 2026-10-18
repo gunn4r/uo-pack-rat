@@ -5,8 +5,8 @@
 // map: ui-screens
 // owns: `renderCharacters`, `showCharacter`
 import { state } from "./store.mts";
-import { $, el, toast, tipNode, hideItemTip, compactChildren } from "./dom.mts";
-import { txt, box, badge, button, input, meter, table, searchInput, message, popover, menu, confirmDialog, tooltip, type Column } from "./components.mts";
+import { $, el, tipNode, hideItemTip, compactChildren } from "./dom.mts";
+import { txt, box, badge, button, input, meter, table, searchInput, message, popover, menu, confirmDialog, tooltip, type Column, toast } from "./components.mts";
 import { api } from "./api.mts";
 import { reload } from "./inventory-data.mts";
 import { editProfiles, setCharacterLabel } from "./profiles.mts";
@@ -16,10 +16,11 @@ import { session } from "./builder-session.mts";
 import { registerScreen, showCharacterItems, showItem } from "./nav.mts";
 import { openWizard } from "./wizard.mts";
 import { relativeWhen } from "./messages.mts";
-import { sheetNode, wornSet, resistFigures, atCap, plural, lowDurabilityCount, lowDurabilitySummary, type ResistFigure, type SheetItem } from "./sheet.mts";
+import { sheetNode, wornSet, resistFigures, atCap, lowDurabilityCount, lowDurabilitySummary, type ResistFigure, type SheetItem } from "./sheet.mts";
 import type { Item } from "../vault-lib.mts";
 import type { RunsListApiResponse } from "./api-types.mts";
 import { characterNames, rosterView, triple, sheetMeta, type RosterRow, type RosterSort } from "./roster.mts";
+import { plural } from "./format.mts";
 
 
 const num = (v: unknown): number | null => (v != null && Number.isFinite(Number(v)) ? Number(v) : null);

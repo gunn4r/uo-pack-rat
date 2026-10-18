@@ -38,7 +38,7 @@
           }
         },
         "stopHint": { "type": "string", "minLength": 1, "$comment": "How to stop this client's running scripts, ending the install's running refusal. Absent: neutral wording." },
-        "register": { "type": "string", "enum": ["none"], "$comment": "The client-specific step an install runs once the scripts are in place (app/installer.mts's REGISTRARS)." }
+        "register": { "type": "string", "enum": ["none", "tazuo-panel-autostart"], "$comment": "The client-specific step an install runs once the scripts are in place (app/installer.mts's REGISTRARS): none, or tazuo-panel-autostart (the in-game panel in TazUO's autostart list)." }
       }
     }
   }
