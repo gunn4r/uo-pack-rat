@@ -366,7 +366,7 @@ test("[fast] checkScriptsDataDir: every shared packrat-paths.json case reads the
   const schema = JSON.parse(readFileSync(join(HERE, "schema", "packrat-paths.v1.schema.json"), "utf8")) as ValidatorSchema;
   for (const c of cases) {
     const home = tmp("qm-dd-home-"), scriptsDir = scriptsFolder("qm-dd-case-", JSON.stringify(c.doc));
-    const named = String(c.doc.dataDir ?? ""), expected = c.reads === "default" ? join(home, ".pack-rat") : named.startsWith("~/") ? join(home, named.slice(2)) : resolve(named);
+    const named = String(c.doc.dataDir ?? ""), expected = c.reads === "default" ? join(home, ".pack-rat") : named === "~" ? home : named.startsWith("~/") ? join(home, named.slice(2)) : resolve(named);
     const r = checkScriptsDataDir({ dataDir: expected, client: { adapter: "tazuo", scriptsDir }, candidates: [], home, platform: "linux" });
     assert.equal(r.status, c.reads === "error" ? "unreadable" : "match", c.why);
     assert.equal(validate(schema, c.doc).ok, c.schema, `schema: ${c.why}`);
