@@ -4,10 +4,11 @@ adapters/tazuo/test_paths.py still covers the TazUO-specific header and contract
 
 1. Conventions — none of the three banned unbounded-loop literals (see scripts/no-unbounded-loop.test.mts, which spells them out; this file must not, since TazUO refuses a script whose text contains one anywhere, comments included) in any adapter .py, `import API` alone on its line, each script's `CAPABILITIES` and `FEATURES` literals and version agreeing with its `capabilities.json` (and each bridge's `PROTOCOL` with its `protocol`), no public-speech call in a bridge, and the never-a-container names and graphics and the wearable names (read from their `adapters/_shared/` fragments) refusing what they must and nothing else. That the scripts' copies of a shared helper match is scripts/gen-contracts.mts's job (adapters/_shared/), not this file's.
 2. The bridge's untrusted-input guards (Phase 7 security review, area 5). Every bridge carries the same generated block of PURE functions — no game API, no files — bounded by the constants above them; this file extracts that block, execs it, and drives it directly, the same way adapters/tazuo/test_paths.py execs `data_dir` without a running client. Checked: stale, future-dated or unstamped commands refused, unknown actions, bad serials, over-long chains, out-of-range positions and walks, and over-long names refused, a line in a newer protocol refused (one with none read as protocol 1), an unknown top-level field ignored by both checks (what keeps installed bridges working when the app adds one), the burst budget (a 25-piece Grab all fits, a flood does not), partial and over-long queue lines, `resolve_root` and the chain check refusing another player's pack, a trip's `putAway` (a container serial, and a Put away trip takes nothing), and a scan line (issue #281: its script one of scanner, refresh and house, unknown fields ignored, and an unknown action on a bridge that does not start scans).
+3. The shared contract cases (app/fixtures/contract-cases/): each file the game scripts and the app both read, its accept and reject cases run through the scripts' own reader, as the TypeScript suite runs them through the app's.
 
 Run: python3 adapters/test_adapters.py  (app/adapters.test.mts also spawns it, so `npm test` does).
 """
-import json, os, re, unittest
+import json, os, re, tempfile, unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 BANNED_LOOPS = re.compile(r"while\s*\(?\s*(true|1)\b", re.I)
@@ -611,6 +612,31 @@ class UntrustedInput(unittest.TestCase):
             for payload in (None, 17, "trip", [1]):
                 trip, why = ns["check_trip"](payload, NOW)
                 self.assertIn("not a JSON object", why, name)
+
+
+class SharedContractCases(unittest.TestCase):
+    """The accept and reject cases app/fixtures/contract-cases/ shares with the TypeScript suite: each file the game
+    scripts and the app both read, run through the scripts' own reader."""
+
+    def cases(self, name):
+        with open(os.path.join(HERE, "..", "app", "fixtures", "contract-cases", name + ".json"), encoding="utf-8") as f:
+            return json.load(f)
+
+    def test_house_claims_cases(self):
+        ns = {"re": re, "os": os, "json": json, "data_dir": lambda: tempfile.gettempdir()}
+        path = os.path.join(HERE, "_shared", "tazuo", "claims.py")
+        exec(compile(read_text(path), path, "exec"), ns)
+        cases = self.cases("house-claims")
+        with tempfile.TemporaryDirectory() as d:
+            f = os.path.join(d, "house-claims.json")
+            for entry in cases["valid"]:
+                with open(f, "w", encoding="utf-8") as out:
+                    json.dump([entry], out)
+                self.assertEqual(ns["read_claims"](f), [entry], json.dumps(entry))
+            for case in cases["invalid"]:
+                with open(f, "w", encoding="utf-8") as out:
+                    json.dump([case["entry"]], out)
+                self.assertEqual(ns["read_claims"](f), [], case["why"])
 
 
 if __name__ == "__main__":
