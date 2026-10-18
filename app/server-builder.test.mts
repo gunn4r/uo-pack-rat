@@ -173,7 +173,7 @@ test("[fast] PUT /api/profiles: a stale window's save is refused and drops nothi
 // Quality pass 1, W1a: PATCH /api/profiles makes a list of edits (app/profile-edits.mts) on the file as it is on the server,
 // so two windows' edits made from the same old copy both land; a list that can't be made, or whose result the checks
 // refuse, writes nothing.
-test("[fast] PATCH /api/profiles: two windows' edits land side by side; a refused list writes nothing; bad edits are 400 naming why", async () => {
+test("[fast] PATCH /api/profiles: two windows' edits land side by side; a refused list (a deleted template, a taken name with create) writes nothing; bad edits are 400 naming why", async () => {
   const dir = mkdtempSync(join(tmpdir(), "qm-edits-"));
   const stored = { schemaVersion: 3, characters: { Dorran: { template: "Mine", spec: specFromProfile({}) } }, templates: { Mine: { spec: templateSpecFrom({}, []) } } };
   const cfg = ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {}));
@@ -197,6 +197,10 @@ test("[fast] PATCH /api/profiles: two windows' edits land side by side; a refuse
     const gone = await patch([{ op: "setBuffs", name: "Dorran", buffs: { on: [] } }, { op: "updateTemplate", id: "Mine", spec: templateSpecFrom({}, []), savedAt: "2026-10-17T00:00:00.000Z" }]);
     assert.equal(gone.status, 409);
     assert.deepEqual([asJson<{ code: string }>(await gone.clone().json()).code, asJson<ErrorBody>(await gone.json()).error], ["conflict", "the Mine template was deleted elsewhere, so it was not updated"]);
+    // a template put with create never writes over another one by that name (Duplicate, Save as without Overwrite)
+    const taken = await patch([{ op: "putTemplate", id: "Spare", entry: { spec: templateSpecFrom({ floors: { dci: 45 } }, []), savedAt: "2026-10-18T00:00:00.000Z" }, create: true }]);
+    assert.equal(taken.status, 409);
+    assert.deepEqual([asJson<{ code: string }>(await taken.clone().json()).code, asJson<ErrorBody>(await taken.json()).error], ["conflict", "there is already a template named Spare"]);
     for (const [edits, msg] of [[[], /1 to 100 edits/], [Array.from({ length: 101 }, () => ({ op: "deleteCharacter", name: "x" })), /1 to 100 edits/], ["x", /1 to 100 edits/], [[{ op: "nope" }], /unknown edit "nope"/],
       [[{ op: "setLabel", name: "Dorran", label: "a\nb" }], /one line/], [[{ op: "putTemplate", id: "builtin:x", entry: { spec: templateSpecFrom({}, []) } }], /can't start with "builtin:"/],
       [[{ op: "putTemplate", id: "Bad", entry: { spec: { ...templateSpecFrom({}, []), extra: 1 } } }], /\/templates\/Bad\/spec/]] as const) {
