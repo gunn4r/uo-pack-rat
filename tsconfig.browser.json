@@ -18,6 +18,7 @@
     "app/domain/kinds.*",
     "app/domain/fold.*",
     "app/domain/pools.*",
+    "app/domain/goals.*",
     "app/item-query.*",
     "app/unravel.*",
     "app/organize-config.*",
