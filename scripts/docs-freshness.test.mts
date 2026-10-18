@@ -64,8 +64,6 @@ const EXTERNAL: Record<string, string> = {
 
 // Docs the line and code-name checks skip for now, with the reason. An entry whose doc passes both fails, so it goes once fixed.
 const PENDING: Record<string, string> = {
-  // TODO(W3e, issue #338): split its two long paragraphs and drop the retired `optSlack` once #419 and #425 have merged.
-  "docs/solver.md": "the solver pull requests in flight edit it",
 };
 
 // Listed inside the tests, not at load: outside a git checkout (a source archive) git fails.
