@@ -5,6 +5,9 @@
 // that. Export saves the file through the browser's download (Electron's own Save dialog in the desktop app) and
 // Import reads one with a file input and merges it in, its entries winning (Settings › Data). reload() (inventory-data.mts) is
 // imported when it is needed.
+//
+// map: ui-screens
+// owns: `openClassify`, `exportKinds`, `importKinds`
 import { OVERRIDE_KINDS, gameName, kindNameKey, kindGraphicKey, ownKind, type Item } from "../vault-lib.mts";
 import { el, toast } from "./dom.mts";
 import { api } from "./api.mts";

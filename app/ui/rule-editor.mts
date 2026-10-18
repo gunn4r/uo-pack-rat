@@ -5,6 +5,9 @@
 // Organize screen's "+ Rule" and a rule's Edit…, and from the Inventory filter strip's "Save as rule…". Saving
 // writes the whole setup with PUT /api/organize (organize-data.mts's saveConfig). Also the target chip the Rules
 // card shares with it.
+//
+// map: organize
+// owns: `openRuleEditor`
 import { state } from "./store.mts";
 import { $, el, toast, safeColor, compactChildren } from "./dom.mts";
 import { box, txt, button, meter, message, field, input, select, textarea, pill, check, token, createDrawer, confirmDialog, showToast, type DrawerHandle } from "./components.mts";

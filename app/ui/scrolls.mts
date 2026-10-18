@@ -5,6 +5,9 @@
 // Show in Inventory. Count cells and Show in Inventory open the Items view searching for exactly those scrolls. The
 // scrolls come from GET /api/items (three filtered queries: power scrolls by their level property, Scrolls of
 // Transcendence by their points, Scroll Binders by name), fetched again when the inventory reloads.
+//
+// map: scrolls
+// owns: `showScrolls`
 import type { Item } from "../vault-lib.mts";
 import { state } from "./store.mts";
 import { $, el, itemTip, whereText } from "./dom.mts";

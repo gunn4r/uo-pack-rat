@@ -1,9 +1,12 @@
-// config.mts — every path the server, bench and adapters agree on, resolved once.
+// config.mts — every path the server, bench and adapters agree on, the port and the token, resolved once from flags, then the environment, then defaults; it also creates the data folder's directories.
 //   data dir: --data <dir>  →  PACKRAT_DATA  →  ~/.pack-rat
 //   port:     --port N      →  PACKRAT_PORT  →  8765
 //   token:    --token <t>   →  PACKRAT_TOKEN →  null (no auth — the bare loopback server's default)
 //   adapters: --adapters <dir> → PACKRAT_ADAPTERS_DIR → <repo>/adapters (real ones; tests point elsewhere)
 //   --demo   serve app/fixtures instead of <data>/scans     --open   open the browser after listening
+//
+// map: server
+// owns: `resolveConfig`, `ensureLayout`, `corePath`, `DATA_DIR_MODE`, `DATA_FILE_MODE`, `DEFAULT_PORT`
 import { homedir } from "node:os";
 import { join, dirname, resolve } from "node:path";
 import { mkdirSync, existsSync } from "node:fs";

@@ -30,6 +30,9 @@
 // validated separately — so it produces three root types (BridgeV1Command, BridgeV1Result,
 // BridgeV1Status) rather than a single combined BridgeV1. bridge-trip.v1.schema.json is one schema,
 // the Organize trip command (BridgeTripV1).
+//
+// map: tooling
+// owns: `buildSchemaTypes`, `schemaToTypeSource`
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";

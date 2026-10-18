@@ -1,6 +1,9 @@
 // ui/bridge.mts — Highlight / Grab / Go-to buttons and the packrat-bridge.py connection
 // status. Moved verbatim out of index.html's inline <script type="module"> (Task 4, the page
 // split).
+//
+// map: bridge
+// owns: `sendBridge`, `runBridgeAction`, `grabAll`, `pollBridge`, `bridgeActionReason`, `bridgeFeatureSet`
 import { state, bridge } from "./store.mts";
 import { $, el, toast } from "./dom.mts";
 import { api } from "./api.mts";

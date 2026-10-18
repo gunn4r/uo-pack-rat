@@ -1,4 +1,4 @@
-// missing.mts — Missing since last scan (issue #99). For each root container two scans have opened, what its
+// missing.mts — Missing since last scan (issue #99): what a root's previous scan saw that is nowhere in the fold now. For each root container two scans have opened, what its
 // previous scan saw in it that its latest scan did not, and that is nowhere in the folded inventory now: sold,
 // dropped, stolen, or moved somewhere no scan has seen yet. An item moved to another scanned container, or now
 // worn, is in the fold and so not missing. A stack that shrank in place is reported with how many fewer.
@@ -8,6 +8,9 @@
 // previous scan, and what one in the root itself grew by. Only the rest is reported. A sale can therefore be
 // under-reported while such a stack exists, but a merge is never reported as missing.
 // Pure; app/vault-server.mts runs it beside the fold, over the same scans.
+//
+// map: scan
+// owns: `missingSinceLastScan`, `MissingItem`
 import { parseStamp } from "./scan-schema.mts";
 import { shownName, TRASH_RE } from "./vault-lib.mts";
 import type { Inventory } from "./vault-lib.mts";

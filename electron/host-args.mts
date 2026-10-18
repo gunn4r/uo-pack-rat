@@ -11,6 +11,9 @@
 // with real forged values instead of asserting on main.mts's source text (phase-7 security review,
 // Important 1 and Minor 1). Nothing else belongs here: this module stays dependency-free and
 // side-effect-free so the test can import it directly.
+//
+// map: shell
+// owns: `openPathTarget`, `dialogTitle`
 
 // openPath's wire value is a DISCRIMINATOR, never a path: main.mts owns the two directories it maps
 // to (dataDir, and logs inside it), so a compromised server child cannot name a third one and have

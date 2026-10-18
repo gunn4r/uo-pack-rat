@@ -1,4 +1,4 @@
-// main.mts — the Electron shell's main process. Forks the Pack Rat server
+// main.mts — the Electron shell's main process: it forks the server, opens one window, stamps a per-launch token, keeps a single instance, and answers the native folder picker and Open folder. Forks the Pack Rat server
 // (server-entry.mts) as a utility process, opens one BrowserWindow on it, stamps every request to
 // that server with a per-launch bearer token (session.webRequest, never a URL/log/page value), and
 // answers the two native-only calls the server's page cannot make itself: choosing a folder and
@@ -9,6 +9,9 @@
 // server child unchanged) · --smoke (see runSmokeCheck below — exits instead of staying open, for
 // scripts/shell-smoke.test.mts) · --devtools (re-enables DevTools in a packaged build, see
 // createWindow).
+//
+// map: shell
+// owns: the window and token lifecycle
 import { app, BrowserWindow, dialog, session, shell, utilityProcess } from "electron";
 import type { UtilityProcess, WebContents } from "electron";
 import { randomUUID } from "node:crypto";

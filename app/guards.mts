@@ -1,4 +1,7 @@
 // guards.mts — the checks a request field or a hand-edited data file is held to: a real string of bounded length, an integer in an inclusive range, a serial. Shared by the HTTP layer and the stores, so neither imports the other.
+//
+// map: server
+// owns: `isBoundedString`, `isBoundedInt`, `MAX_SERIAL`, `short`
 
 // A request field that must be a real string of bounded length. `unknown` in, a narrowed string out,
 // so a route reads the value directly after the check instead of casting it.

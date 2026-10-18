@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// make-adapter-fixture.mts <real-scan.json> <out.json> — turns one real scan file (v1 or v2, from
+// make-adapter-fixture.mts — `node scripts/make-adapter-fixture.mts <real-scan.json> <out.json>` turns one real scan file (v1 or v2, from
 // local/scans/, never committed) into an anonymised fixture safe to commit and fold in tests.
 // Upgrades to v2 via upgradeScan, then: character -> "Fixture", position -> {x:1,y:1}, every
 // container pos -> {x:1,y:1,z:0} (its facet kept: which map a house is on names nobody), every serial remapped in order of first appearance to
@@ -11,6 +11,8 @@
 // carry. Refuses to write anything that still contains the source character or account name
 // anywhere (a container called "<name>'s Backpack", an item or tooltip line naming them), since only
 // the fields above are rewritten. Prints item/container/root counts.
+//
+// map: installer
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { upgradeScan, validateScan, type UnvalidatedScan } from "../app/scan-schema.mts";
 import type { ScanV2, ScanV2AdapterCapabilities, ScanV2ContainersValue } from "../app/schema/types.d.mts";

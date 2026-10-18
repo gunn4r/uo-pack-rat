@@ -1,4 +1,7 @@
 // tiledata.mts — the client's tiledata.mul, read from the player's own UO folder (issue #10). The client files every item graphic with flags (wall, window, door, roof, surface, impassable, stairs…), a height and a name; the house map draws a house's tiles and furniture from them, exactly as the game decides what blocks movement. 7.x ("high seas") layout only: 512 land blocks of 32 x 30 bytes, then item blocks of 32 x 41 bytes, each block led by a 4-byte header. An item entry is flags (8 bytes), weight (1), layer (1), count (4), anim (2), hue (2), light (2), height (1), name (20, latin1, NUL-padded). scripts/gen-graphic-layers.mts reads the same layout for the wearable-graphic table.
+//
+// map: house
+// owns: `readTileData`, `classify` (tiles), `FLAG`, `uoFolderFromTazuo`, `loadTileData`
 
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";

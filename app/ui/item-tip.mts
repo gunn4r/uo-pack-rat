@@ -6,6 +6,9 @@
 // knows by serial and name, a plan's move) is looked up: the page's item cache, else one GET by serial. A serial the
 // server says it does not know is asked for once: until forget() (a new inventory) the partial record, if any, is
 // shown. A lookup that fails (offline, a server error) is no answer, so the next hover asks again.
+//
+// map: ui-infra
+// owns: `createTipResolver`
 
 // The item shape the tooltip reads: looser than vault-lib.mts's Item, since suit-builder candidates and partial
 // records only ever carry some of it.

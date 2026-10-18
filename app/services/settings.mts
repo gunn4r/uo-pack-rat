@@ -1,4 +1,7 @@
 // settings.mts — the settings this run uses and the shard's rules: settings.json as saved, with the two startup fallbacks laid over it, and the rules that settings.json names, handed to vault-lib.
+//
+// map: services
+// owns: `createSettingsService`
 import { loadRules, DEFAULT_SHARD } from "../rules.mts";
 import { retentionOf } from "../retention.mts";
 import { rulesUpgradeNote, setRules } from "../vault-lib.mts";

@@ -12,6 +12,9 @@
 // PACKRAT_UI_BUILT=1 for the files it runs: they run in parallel, and a rebuild of app/dist by one of
 // them (the Electron shell's self-heal, `npm start`, app/server.test.mts) would clear the page out
 // from under another one loading it. A build into another folder (`outDir`) always runs.
+//
+// map: tooling
+// owns: `buildUi`
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join, relative } from "node:path";

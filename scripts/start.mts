@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // start.mts — start the Pack Rat server (bare, no Electron). Flags pass through to the server.
 //   npm start -- --open        npm start -- --demo --port 9000
+//
+// map: tooling
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { constants } from "node:os";

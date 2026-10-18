@@ -1,4 +1,7 @@
 // settings.mts — <data>/settings.json: the shard, the client, the setup and retention choices. What a run actually uses (the startup fallbacks laid over this file) is the server's business; this store only reads and writes the file.
+//
+// map: server
+// owns: `createSettingsStore`, `SettingsDoc`, `ClientSettings`
 import { existsSync } from "node:fs";
 import { DEFAULT_SHARD } from "../rules.mts";
 import { jsonErrorReason } from "../paste-scan.mts";

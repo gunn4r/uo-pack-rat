@@ -1,4 +1,7 @@
 // facet-map.mts — the client's facetNN.mul world-map overviews, read from the player's own UO folder (issue #164). One pixel is one world tile. Layout, little-endian: int16 width, int16 height, then per row an int32 byte count followed by byteCount / 3 runs, each a uint8 pixel count and a uint16 ARGB1555 colour; a row's runs add up to the width. Pure: decodeFacet never throws and never reads past the buffer, answers null for any file that does not add up, and keeps no pixel buffer: the file's own bytes and where each row's runs start, so a region is drawn by walking only its rows.
+//
+// map: house
+// owns: `decodeFacet`, `renderRegion`, `MAX_SIDE`
 
 export const MAX_SIDE = 8192;
 // rowStart[y]: the offset of row y's first run; the row's runs end where the next row's byte count starts (the last row's at the end of the file).

@@ -1,4 +1,7 @@
 // house-model.mts — a house as the map draws it (issue #10), built from the newest capture of its tiles (app/house-capture.mts), the client's tiledata.mul (app/tiledata.mts; null when it was not found) and the fold's ground containers. Pure. Spec: docs/superpowers/specs/2026-10-01-house-map-design.md, section 3.
+//
+// map: house
+// owns: `buildHouseModel`, `plotBounds`
 import { classify, FLAG, type TileData, type TileClass } from "./tiledata.mts";
 import type { HouseItem, HouseSource } from "./house-capture.mts";
 import type { Cell, CellKind, Furniture, HouseContainerInput, HouseModel, Level, MaterialFamily, Spot, Stack } from "./house-model-types.mts";

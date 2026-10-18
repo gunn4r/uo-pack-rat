@@ -1,5 +1,8 @@
 // ui/view-state.mts — the page's pure state rules: what a refresh keeps and what "Clear all" resets. No DOM and no store.mts import, so app/ui-state.test.mts imports it under
 // plain node:test, the same arrangement as ui/adapters.mts.
+//
+// map: ui-data
+// owns: `optionsKeeping`, `clearedQuery`, `COLS_VERSION`
 import type { ItemQuery } from "../item-query.mts";
 import type { UiPrefs } from "./api-types.mts";
 

@@ -8,6 +8,9 @@
 //   node scripts/changelog.mts --seal                re-seal CHANGELOG.md after a deliberate correction to a released entry
 //
 // scripts/changelog.test.mts runs --check's checks on the committed files.
+//
+// map: tooling
+// owns: `fragmentError`, `changelogError`, `release`
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";

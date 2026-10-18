@@ -1,9 +1,12 @@
-// item-kinds.mts — the player's own item kinds (issue #150), <data>/item-kinds.json:
+// item-kinds.mts — the player's own item kinds (issue #150), <data>/item-kinds.json: this module checks, merges and resets its document, purely; an entry this version does not know is left out and named, never an error, and the server folds again when the file changes and refuses a change past MAX_KINDS_BYTES with a 409. The file:
 // {"version": 1, "names": {"<item name, lower-case>": kind}, "graphics": {"0x<hex>": kind}}. vault-lib.mts's
 // overriddenKind layers them over the shipped table as the fold enriches each item; this module reads, checks and
 // changes the file's document. Pure (no node: imports). salvageKindOverrides keeps every entry that still makes sense
 // and names what it left out: every read of the file and every imported file go through it, so a hand edit, or a
 // shared file with a kind this version does not know, loses that entry and not the rest.
+//
+// map: kinds
+// owns: `salvageKindOverrides`, `withKinds`, `withoutKinds`, `kindsDocument`, `MAX_KINDS_BYTES`
 import { OVERRIDE_KINDS, kindNameKey, kindGraphicKey, type KindOverrides } from "./vault-lib.mts";
 export { OVERRIDE_KINDS };
 
