@@ -1,12 +1,12 @@
 // gen-contracts.test.mts — `scripts/gen-contracts.mts`, the generator that copies `adapters/_shared/` fragments into the adapter scripts.
 //
-// `scripts/gen-contracts.mts`: every adapter script's generated blocks match their `adapters/_shared/` fragments and every fragment is carried by some script (`[smoke]`, the same check as `--check`); a block's inner lines rewritten and nothing else, a second run changing nothing; an unmatched or nested marker, a missing fragment and another adapter's fragment refused; a fragment a Razor Enhanced script carries refused when it is not ASCII or uses an f-string; and `generate()` naming a stale script and an unused fragment while writing nothing. The rest `[fast]`.
+// `scripts/gen-contracts.mts`: every adapter script's generated blocks match their `adapters/_shared/` fragments and every fragment is carried by some script (`[smoke]`, the same check as `--check`); a block's inner lines rewritten and nothing else, a second run changing nothing; an unmatched or nested marker, a missing fragment and another adapter's fragment refused; a fragment a Razor Enhanced script carries refused when it is not ASCII or uses an f-string; and `generate()` naming a stale script and an unused fragment while writing nothing; the `manifest` blocks rendered from an adapter's `capabilities.json`, and a version bump there making every script that carries one stale. The rest `[fast]`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { generate, splice, fragmentProblems } from "./gen-contracts.mts";
+import { generate, splice, fragmentProblems, renderManifest } from "./gen-contracts.mts";
 
 test("[smoke] gen-contracts: every adapter script's generated blocks match adapters/_shared, and every fragment is used", () => {
   const { stale, unused } = generate();
@@ -76,6 +76,46 @@ test("[fast] gen-contracts: a CRLF checkout of a script and its fragment is up t
     const { files, stale } = generate(root);
     assert.deepEqual(stale, [old]);
     assert.equal(files.get(old), block(frags.helper!));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("[fast] gen-contracts: the manifest blocks are Python literals of capabilities.json, lists wrapped, the values between them on one line", () => {
+  const doc = { adapter: "tazuo", version: "2.20.0", capabilities: { layers: Array.from({ length: 12 }, (_, i) => `Layer${i}`), arms: true, bank: false, tooltips: "opl", none: null, bridge: [] } };
+  assert.equal(renderManifest("manifest", doc), [
+    'ADAPTER_ID = "tazuo"',
+    'ADAPTER_VERSION = "2.20.0"',
+    "CAPABILITIES = {",
+    '    "layers": ["Layer0", "Layer1", "Layer2", "Layer3", "Layer4", "Layer5", "Layer6", "Layer7",',
+    '               "Layer8", "Layer9", "Layer10", "Layer11"],',
+    '    "arms": True, "bank": False, "tooltips": "opl", "none": None,',
+    '    "bridge": [],',
+    "}",
+    "",
+  ].join("\n"));
+  assert.equal(renderManifest("manifest_version", doc), 'ADAPTER_ID = "tazuo"\nADAPTER_VERSION = "2.20.0"\n');
+  assert.throws(() => renderManifest("manifest", { ...doc, version: "2.20.0-é" }), /printable ASCII/);
+  assert.throws(() => renderManifest("manifest", { ...doc, capabilities: { install: { a: 1 } } }), /must be a list/);
+});
+
+test("[fast] gen-contracts: a version bump in capabilities.json makes every script carrying a manifest block stale", () => {
+  const root = mkdtempSync(join(tmpdir(), "gen-contracts-"));
+  try {
+    mkdirSync(join(root, "_shared"), { recursive: true });
+    mkdirSync(join(root, "tazuo"));
+    const manifest = (version: string): string => JSON.stringify({ adapter: "tazuo", version, capabilities: { bridge: ["scan"] } });
+    writeFileSync(join(root, "tazuo", "capabilities.json"), manifest("1.0.0"));
+    const scanner = join(root, "tazuo", "packrat-scanner.py"), panel = join(root, "tazuo", "packrat-panel.py");
+    writeFileSync(scanner, "# BEGIN generated: manifest\n# END generated: manifest\n");
+    writeFileSync(panel, "# BEGIN generated: manifest_version\n# END generated: manifest_version\n");
+    for (const [p, t] of generate(root).files) writeFileSync(p, t);
+    assert.deepEqual(generate(root).stale, [], "up to date once written");
+    writeFileSync(join(root, "tazuo", "capabilities.json"), manifest("1.0.1"));
+    const { files, stale } = generate(root);
+    assert.deepEqual(stale.sort(), [panel, scanner].sort());
+    assert.match(files.get(scanner)!, /^ADAPTER_VERSION = "1\.0\.1"$/m);
+    assert.match(files.get(panel)!, /^ADAPTER_VERSION = "1\.0\.1"$/m);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
