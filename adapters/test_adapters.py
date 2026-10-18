@@ -664,6 +664,14 @@ class SharedContractCases(unittest.TestCase):
                 else:
                     os.environ[k] = v
 
+    def test_put_away_consent_the_panel_writes_is_what_the_bridge_reads(self):
+        # PUT_AWAY_VAR is a client shared variable, not a file: one fragment (tazuo/put_away_consent) holds its name,
+        # the panel's formatter and the bridge's parser, so the two scripts carry the same text.
+        ns = load_shared("tazuo/put_away_consent")
+        self.assertEqual(ns["put_away_parts"](ns["put_away_consent"](1073741825, 1792324795.5)), (1073741825, 1792324795.5))
+        for value in ("", "soon", "1:2:3", "x:5", "5:x", None, 7):
+            self.assertIsNone(ns["put_away_parts"](value), repr(value))
+
     def test_tazuo_panel_cases(self):
         ns = panel_readers()
         with tempfile.TemporaryDirectory() as d:
