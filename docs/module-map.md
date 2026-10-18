@@ -72,7 +72,7 @@ Profiles, buffs, pools, solvers, saved runs and Manual. `docs/solver.md` describ
 <!-- module-map:start builder -->
 | Module | Role | Owns |
 |---|---|---|
-| `app/bench/compare-cores.mts` | Runs the optimizer core at a git ref and the working tree's core on identical inputs and checks their results are byte-identical, so a solver refactor can show it changes nothing. | — |
+| `app/bench/compare-cores.mts` | Runs the solvers' code at a git ref and the working tree's on identical inputs and checks every output is byte-identical, so a solver refactor can show it changes nothing. | — |
 | `app/bench/gen-inventory.mts` | Synthetic scan generator for the suit-builder scale benchmark. | `learnModel`, `generateScan` |
 | `app/bench/make-fixtures.mts` | Regenerate app/fixtures/demo-*.json from the empirical model. | — |
 | `app/bench/mip-spike.mts` | SPIKE (Sep 13 2026): solve the suit problem as a mixed-integer program with HiGHS (WASM) and compare against the core's proven scores. | — |
