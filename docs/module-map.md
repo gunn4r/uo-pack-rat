@@ -145,7 +145,7 @@ Profiles, buffs, pools, solvers, saved runs and Manual. `docs/solver.md` describ
 | Module | Role | Owns |
 |---|---|---|
 | `app/bridge-contract.mts` | The bridge protocol this app writes and the limits every packrat-bridge.py enforces on an Organize trip, as plain constants with no I/O, so a planner (app/organize.mts) can use them without loading the trip writer (app/bridge-trip.mts). | `BRIDGE_PROTOCOL`, `TRIP_MAX_BYTES`, `TRIP_NAME_MAX` |
-| `app/bridge-status.mts` | The one reader of a bridge's status.json (docs/bridge-protocol.md, Status), checked against the status schema, with the one "online" definition; the status route and the Organize service read it. | `readBridgeStatus`, `ONLINE_S` |
+| `app/bridge-status.mts` | The one reader of a bridge's status.json (docs/bridge-protocol.md, Status), checked against the status schema, with the one "online" definition; the status route and the Organize service read it. | `readBridgeStatus`, `ONLINE_S`, `BridgeStatus` |
 | `app/bridge-trip.mts` | The one writer of an Organize trip (issue #11). | `queueTrip`, `writeBridgeStop` |
 | `app/ui/bridge.mts` | Highlight / Grab / Go-to buttons and the packrat-bridge.py connection status. | `sendBridge`, `runBridgeAction`, `grabAll`, `pollBridge`, `bridgeActionReason`, `bridgeFeatureSet` |
 <!-- module-map:end -->

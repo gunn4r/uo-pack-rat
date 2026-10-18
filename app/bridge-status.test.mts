@@ -1,6 +1,6 @@
 // bridge-status.test.mts — the bridge reporting itself: `readBridgeStatus` (`app/bridge-status.mts`), the one reader of status.json, and `bridgeFeatures` (`app/vault-lib.mts`), what a bridge can do.
 //
-// `readBridgeStatus`: no file, unreadable JSON and a file off the status schema read as not running; online is a heartbeat under 8 s old (a future one counts), an older bridge's epoch-seconds heartbeat still reads, and a newer bridge's extra fields (a count included) do not stop it reading, and an off-shape report of itself is dropped on its own while the status still reads as online. `bridgeFeatures`: the online bridge's own report first, then the newest scan made with that adapter (a v1 scan's made-up block skipped, "trip-bags" still read from the actions list where older scripts put it), then the shipped manifest; a bridge too old to report itself is judged exactly as before. Every queue line `queueTrip` writes carries `BRIDGE_PROTOCOL`.
+// `readBridgeStatus`: no file, unreadable JSON and a file off the status schema read as not running; online is a heartbeat under 8 s old (a future one counts), an older bridge's epoch-seconds heartbeat still reads, and a newer bridge's extra fields (a count included) do not stop it reading, and an off-shape report of itself or result is dropped on its own, and an off-shape running command reads as null, while the status still reads as online. `bridgeFeatures`: the online bridge's own report first, then the newest scan made with that adapter (a v1 scan's made-up block skipped, "trip-bags" still read from the actions list where older scripts put it), then the shipped manifest; a bridge too old to report itself is judged exactly as before. Every queue line `queueTrip` writes carries `BRIDGE_PROTOCOL`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -54,6 +54,25 @@ test("[fast] readBridgeStatus: a report of itself off its shape is dropped on it
     assert.equal(r.status && "adapter" in r.status, false, `${JSON.stringify(adapter)} is dropped`);
     assert.equal(bridgeFeatures({ running: r.status?.adapter, manifest }).source, "app", "gating falls back as for an older bridge");
   }
+});
+
+test("[fast] readBridgeStatus: a result off its shape is dropped on its own, the others kept, and the bridge still reads as online", () => {
+  const good = { ok: true, msg: "grabbed", t: stamp(NOW - 5000) }, trip = { ok: false, msg: "trip 2", t: stamp(NOW - 4000), partial: true, steps: [{ op: "take", serial: 7, ok: true, msg: "" }] };
+  const bad = { a: { ok: "yes", msg: "x", t: stamp(NOW) }, b: { ok: true, msg: "no time" }, c: "done", d: null, e: { ...good, steps: [{ op: "drop", serial: 1, ok: true, msg: "" }] } };
+  const r = readBridgeStatus(statusFile(valid({ results: { good, trip, ...bad } })), NOW);
+  assert.equal(r.online, true);
+  assert.deepEqual(r.status?.results, { good, trip });
+});
+
+test("[fast] readBridgeStatus: a running command off its shape reads as null, and the bridge still reads as online", () => {
+  const running = { id: "c1", action: "grab", name: "Bag" };
+  assert.deepEqual(readBridgeStatus(statusFile(valid({ current: running })), NOW).status?.current, running);
+  assert.deepEqual(readBridgeStatus(statusFile(valid({ current: { id: "c1", action: "trip" } })), NOW).status?.current, { id: "c1", action: "trip" }, "only the id is required");
+  for (const current of [{ action: "grab", name: "Bag" }, { id: 7, action: "grab", name: "Bag" }, { id: "", action: "grab", name: "Bag" }, { id: "c1", name: 3 }]) {
+    const r = readBridgeStatus(statusFile(valid({ current })), NOW);
+    assert.deepEqual([r.online, r.status?.current, r.status?.character], [true, null, "Tester"], JSON.stringify(current));
+  }
+  assert.equal(readBridgeStatus(statusFile(valid({ current: "grab" })), NOW).status, null, "a current that is not an object at all still breaks the status");
 });
 
 const TAZUO_ACTIONS = ["highlight", "grab", "goto", "trip"];

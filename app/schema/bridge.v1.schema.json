@@ -5,7 +5,7 @@
     "additionalProperties": false,
     "required": ["id", "action", "serial", "name", "chain", "pos", "queuedAt", "protocol"],
     "properties": {
-      "protocol": { "type": "integer", "minimum": 1, "$comment": "The protocol this line is written in: app/bridge-contract.mts's BRIDGE_PROTOCOL. Every packrat-bridge.py refuses a line in a newer protocol than its own PROTOCOL (its capabilities.json's protocol) and reads a line with none, from an app older than the field, as protocol 1." },
+      "protocol": { "type": "integer", "minimum": 1, "$comment": "The protocol this line is written in: app/bridge-contract.mts's BRIDGE_PROTOCOL. Every packrat-bridge.py refuses a line in a newer protocol than its own PROTOCOL (its capabilities.json's protocol) and reads a line with none, from an app older than the field, as protocol 1. compat: queue-line-no-protocol" },
       "id": { "type": "string", "minLength": 1, "maxLength": 64, "$comment": "The app writes a 36-character randomUUID(). 64 matches MAX_ID in every packrat-bridge.py, which refuses a longer id: results are keyed by id, so an unbounded one would grow status.json." },
       "action": { "type": "string", "enum": ["highlight", "grab", "goto"] },
       "serial": { "type": "integer", "minimum": 1 },
@@ -74,7 +74,7 @@
     "$comment": "Open, so a newer bridge's added field never makes this app read the bridge as offline. app/bridge-status.mts's readBridgeStatus is the one reader, and it checks every status against this schema.",
     "required": ["alive", "character", "current", "results", "counts"],
     "properties": {
-      "alive": { "type": ["string", "number"], "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?([+-]\\d{2}:\\d{2}|Z)$", "$comment": "RFC 3339. A number is the epoch seconds an older bridge build wrote, still read." },
+      "alive": { "type": ["string", "number"], "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?([+-]\\d{2}:\\d{2}|Z)$", "$comment": "RFC 3339. A number is the epoch seconds an older bridge build wrote, still read. compat: numeric-alive" },
       "adapter": {
         "type": "object",
         "additionalProperties": true,
@@ -88,8 +88,18 @@
         }
       },
       "character": { "type": "string" },
-      "current": { "type": ["object", "null"] },
-      "results": { "type": "object" },
+      "current": {
+        "type": ["object", "null"],
+        "additionalProperties": true,
+        "$comment": "The command the bridge is carrying out, or null between commands: its id, action and name as queued (a trip's name is \"#<index>\", a scan's its script). readBridgeStatus checks it on its own: one off this shape reads as null, and the rest of the status still reads.",
+        "required": ["id"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1, "maxLength": 64, "$comment": "What Organize follows a trip by. The shipped bridges always write action and name too." },
+          "action": { "type": "string" },
+          "name": { "type": "string" }
+        }
+      },
+      "results": { "type": "object", "$comment": "Each finished command's result, keyed by its id: every value is one `result` (above; this validator has no $ref). readBridgeStatus checks each against `result` and drops one off its shape, keeping the rest." },
       "counts": {
         "type": "object",
         "additionalProperties": true,
