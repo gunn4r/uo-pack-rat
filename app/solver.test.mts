@@ -620,6 +620,13 @@ test("[fast] rarity: the first stage gets three quarters of what is left of the 
   assert.deepEqual([serials(r.best), r.tieBreak!.cost, r.proven], [{ ring: 42, neck: 43 }, 4, true]);
 });
 
+test("[fast] budget: the heuristic's restarts get half the build's budget, so HiGHS keeps the other half", async () => {
+  const caps: (number | undefined)[] = [];
+  const spy = { ...core, optimizeSuit: ((p, c, pr, o) => { caps.push(o?.heuristicBudgetMs); return core.optimizeSuit(p, c, pr, o); }) as typeof core.optimizeSuit };
+  await solveExact({ core: spy, pools: tiePools(), current: {}, profile: tieProfile, opts: { ...tieOpts, timeBudgetMs: 4000 }, onProgress: () => {} });
+  assert.equal(caps[0], 2000, "the first core call is the heuristic, capped at half");
+});
+
 test("[fast] rarity: with other suits asked for, the second stage takes only half of what is left, and the other suits still come back", async () => {
   let clock = 0;
   const limits: number[] = [];

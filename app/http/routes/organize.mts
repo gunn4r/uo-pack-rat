@@ -43,8 +43,8 @@ function backOf(v: unknown): { serials: number[]; trips: string[] } | string {
 }
 
 export function routes(ctx: ServerContext): Route[] {
-  const { appSettings, blacklistStore, eventBus, getInventory, organizeService, organizeStore } = ctx;
-  const blacklist = (): number[] => blacklistStore.read().map((e) => e.serial);
+  const { appSettings, eventBus, getInventory, organizeService, organizeStore } = ctx;
+  const blacklist = (): number[] => [...organizeService.blacklisted()];
   return [
     { method: "GET", path: "/api/organize", handle: (_req, res) => send(res, 200, { ok: true, ...organizeStore.read(), stamp: organizeStore.stamp() } satisfies OrganizeApiResponse) },
     { method: "PUT", path: "/api/organize", handle: async (req, res) => {
@@ -56,7 +56,7 @@ export function routes(ctx: ServerContext): Route[] {
       const checked = checkOrganizeConfig(doc);
       if (!checked.ok) return send(res, 400, { ok: false, error: checked.error });
       // A blacklisted container is never opened by a scan, so a label on one could only plan from stale contents.
-      const black = new Set(blacklistStore.read().map((e) => e.serial));
+      const black = organizeService.blacklisted();
       const listed = Object.values(checked.config.labels).find((l) => black.has(l.serial));
       if (listed) return send(res, 400, { ok: false, error: `container ${listed.serial} is blacklisted and cannot be labeled` });
       const saved = organizeStore.write(checked.config, base as string | undefined);
@@ -72,7 +72,7 @@ export function routes(ctx: ServerContext): Route[] {
       const problem = matchProblem(match);
       if (problem) return send(res, 400, { ok: false, error: problem });
       const { inv } = await getInventory();
-      const counted = matchCount(inv, organizeStore.read().config, match as RuleMatch, { now: Date.now(), rarity: appSettings.rules().rarity, suitPieces: organizeService.suitsFor([match as RuleMatch]), blacklist: blacklistStore.read().map((e) => e.serial) });
+      const counted = matchCount(inv, organizeStore.read().config, match as RuleMatch, { now: Date.now(), rarity: appSettings.rules().rarity, suitPieces: organizeService.suitsFor([match as RuleMatch]), blacklist: blacklist() });
       return send(res, 200, { ok: true, ...counted } satisfies OrganizeMatchApiResponse);
     } },
     { method: "POST", path: "/api/organize/propose", handle: async (req, res) => {
@@ -87,7 +87,7 @@ export function routes(ctx: ServerContext): Route[] {
       const { fold, config, stamp, state, problems, features } = await organizeService.organizeNow();
       if (problems.length) return send(res, 409, { ok: false, error: salvagedRefusal(problems) });
       // `features`: what the bridge can do, as the plan Organize then shows decides it.
-      const r = proposeOrganize(fold, config, state.moves, { strategy: strategy as StrategyId, containers: containers as number[] | undefined, now: Date.now(), rarity: appSettings.rules().rarity, suitPieces: organizeService.suitsFor(config.rules.map((r) => r.match)), blacklist: blacklistStore.read().map((e) => e.serial), seen: state.seen, features });
+      const r = proposeOrganize(fold, config, state.moves, { strategy: strategy as StrategyId, containers: containers as number[] | undefined, ...organizeService.planContext(config, state), features });
       return r.ok ? send(res, 200, { ...r, stamp } satisfies OrganizeProposeApiResponse) : send(res, 409, r satisfies ProposeResult);
     } },
     { method: "GET", path: "/api/organize/plan", handle: async (_req, res) => {
@@ -159,7 +159,7 @@ export function routes(ctx: ServerContext): Route[] {
       const planLeft: Partial<Record<LeftReason, number>> = {};
       for (const l of plan.left) planLeft[l.why] = (planLeft[l.why] ?? 0) + 1;
       const moved = plan.moves.map((m) => m.serial);
-      const against = againstRules(view, config, moved, to, { now: Date.now(), rarity: appSettings.rules().rarity, suitPieces: organizeService.suitsFor(config.rules.map((r) => r.match)), blacklist: blacklist(), seen: state.seen });
+      const against = againstRules(view, config, moved, to, organizeService.planContext(config, state));
       return send(res, 200, { ...base, problem: null, plan: { moving: moved.length, serials: moved, trips: plan.trips.length, already: plan.already.length, noRoom: plan.noRoom.length, left: planLeft, against } } satisfies MovePlanApiResponse);
     } },
     { method: "POST", path: "/api/move/trip", handle: async (req, res) => {
