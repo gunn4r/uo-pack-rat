@@ -1,0 +1,1 @@
+- **For contributors: Put away's consent is one shared helper** (issue #338): the TazUO panel's shared variable `packrat_putaway`, its `"<container>:<until>"` value and the bridge's reading of it now live in one generated fragment, `adapters/_shared/tazuo/put_away_consent.py`, carried by both scripts, instead of a format written in one and parsed in the other.
