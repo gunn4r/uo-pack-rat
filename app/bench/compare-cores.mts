@@ -16,13 +16,15 @@
 // min, some hard floors naming keys with no floor), floor bonuses and partial credit down to 0, mins, Resisting Spells and
 // SSI steps, hard-floor bonuses from 5 to 1e10; eight searches each (plain, exact with alternatives, tie-break (half of
 // them from a given top suit), Strict order, tie-break with alternatives, Strict order with a tie-break, few local-search
-// passes, and the exact solver's final call: no restarts, a warm start and a top suit), the exact ones with a ten-minute budget. An exact search that comes back unproven fails the check, since two
-// runs cut by the clock can differ on the clock alone.
+// passes, and the exact solver's final call: no restarts, a warm start and a top suit), the exact ones with a ten-minute
+// budget. A core exact search that comes back unproven fails the check, since two runs cut by the clock can differ on the
+// clock alone; so does an exact-solver build that differs and ran out of time (unproven, no guard warning).
 //
 //   node app/bench/compare-cores.mts [--base origin/main] [--generated 2000] [--exact 500]
 //
-// Prints a JSON summary and exits 1 when any output differs or any of the core's exact searches is unproven. An unproven
-// exact-solver build (its guards revoked the proof) is counted and listed with its warnings, not failed.
+// Prints a JSON summary and exits 1 when any output differs, any of the core's exact searches is unproven, or an
+// exact-solver build differs because it ran out of time. An exact-solver build whose guards revoked the proof is counted
+// and listed with its warnings (`exactUnprovenCases`), not failed.
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -176,11 +178,13 @@ if (typeof before.exact.solveExact === "function" && typeof after.exact.solveExa
     const a = await exactOf(before, structuredClone(inputs)), b = await exactOf(after, structuredClone(inputs));
     const c = (count.solveExact ||= [0, 0]);
     c[0]++;
+    // a build its guards left unproven carries a warning; one unproven without any ran out of time
+    const clockCut = (x: unknown): boolean => (x as { proven?: boolean; warnings: string[] }).proven === false && !(x as { warnings: string[] }).warnings.length;
     if (json(a) === json(b)) c[1]++;
+    else if (clockCut(a) || clockCut(b)) unproven.push(`solveExact ${label} (out of time)`);   // the clock, not the code
     else { diffs.push(`solveExact ${label}`); firstDiff ??= { label: `solveExact ${label}`, keys: keysThatDiffer(a, b) }; }
     const r = b as { proven?: boolean; solver?: string; fallbackReason?: string; floorsConflict?: boolean; strictProven?: number; warnings: string[] };
-    // An unproven exact build is listed, not failed: its guards' warnings are compared byte for byte with the rest, and a
-    // clock cut that changed anything shows up as a difference.
+    // An exact build its guards left unproven is listed, not failed: its warnings are compared byte for byte with the rest.
     if (r.proven === false && exactUnproven.length < 20) exactUnproven.push({ label: `solveExact ${label}`, solver: r.solver, fallbackReason: r.fallbackReason, strictProven: r.strictProven, warnings: r.warnings.slice(0, 2) });
     if (r.proven === false) exactUnprovenCount++;
   }
