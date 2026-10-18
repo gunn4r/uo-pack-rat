@@ -7,7 +7,7 @@
 // owns: `buildSuitMip`, `propertyReach`, `startVector`, `pickedOf`, `noGoodRow`, `HARD_FLOOR_BONUS`, `DEFAULT_SLOTS`, `optionalSlotsFor`, `heldModel`, `tieBreakModel`, `stageObjective`, `tieCosts`, `withHardFloorBonus`, `hardFloorSpread`
 import { GEAR_SLOTS, REQUIRED_SLOTS, RESIST_SKILL_KEY, RESIST_STEP_SLACK, type OptItem, type ResistStep } from "./vault-lib.mts";
 import { stepsFor } from "./swing.mts";
-import { CHANGE_COST, FLOAT_EPS, HARD_FLOOR_BONUS, HARD_FLOOR_BONUS_MAX, SCORE_REL, TIE_SLACK, changeCost, hardBonusOf, scoringProfile, slackAt } from "./solver/scoring.mts";
+import { CHANGE_COST, FLOAT_EPS, HARD_FLOOR_BONUS, HARD_FLOOR_BONUS_MAX, SCORE_REL, TIE_SLACK, changeCost, hardBonusOf, keptValue, scoringProfile, slackAt } from "./solver/scoring.mts";
 
 // The scoring constants this module and the core share live in app/solver/scoring.mts; they are re-exported here for the
 // modules that read them from the MIP.
@@ -488,9 +488,8 @@ export function changeCostFor(built: BuiltMip): number {
   for (const c of built.cols) if (c.kind === "x") maxTie = Math.max(maxTie, c.item!.tieCost || 0);
   return changeCost(maxTie);
 }
-// A piece's value in strict order's fewest-changes stage against the worn suit (== the core's optChangeOf): 1 for the worn
-// piece, -1 in a slot nobody wears, 0 for another piece; a suit's sum is its worn slots less its changes.
-const keptOf = (c: MipCol, current: Partial<Record<string, OptItem | null>>): number => { const worn = current[c.slot!]; return !worn ? -1 : worn.serial === c.item!.serial ? 1 : 0; };
+// A piece's value in strict order's fewest-changes stage against the worn suit (scoring.mts keptValue, as the core's optChangeOf).
+const keptOf = (c: MipCol, current: Partial<Record<string, OptItem | null>>): number => keptValue(c.item!, current[c.slot!]);
 // The tie-break's cost on each x column: the piece's tieCost and, with `current` (fewest changes), the change cost less
 // the change cost times keptOf. A suit's sum is then its tie cost plus the change cost for each slot it changes (an empty
 // slot that was worn included), less a constant.

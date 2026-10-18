@@ -6,7 +6,7 @@
 // owns: `swingSeconds`, `ssiForTicks`, `swingSteps`, `stepTable`, `stepsFor`, `swingOf`, `weaponSpeedOf`, `heldWeapon`
 import type { EffectiveProfile } from "./vault-lib.mts";
 import type { SwingResult, SwingStep } from "./runs-types.mts";
-import { FLOAT_EPS } from "./solver/scoring.mts";
+import { stepCredit, type SsiStepPoint } from "./solver/scoring.mts";
 
 export type { SwingResult, SwingStep } from "./runs-types.mts";
 
@@ -50,8 +50,8 @@ export function staminaOf(rawDex: number, totals: Readonly<Record<string, number
   return rawDex + (totals.stamPool || 0) + (shares.dexBonus || 0) + (shares.stamPool || 0);
 }
 
-// One point of the step table: a suit whose item SSI is at least `ssi` and whose gear Stamina pool is at least `stam` swings at a delay worth `credit` SSI points.
-export interface SsiStepPoint { ssi: number; stam: number; credit: number }
+// One point of the step table (a suit whose item SSI is at least `ssi` and whose gear Stamina pool is at least `stam` swings at a delay worth `credit` SSI points), and the credit a suit's totals reach: app/solver/scoring.mts, re-exported here.
+export { stepCredit, type SsiStepPoint };
 export interface StepTableInput {
   speedS: number;
   stamBase: number;                          // stamina before gear: raw DEX plus the buffs' shares
@@ -80,13 +80,6 @@ export function stepTable({ speedS, stamBase, refStamina, share, stamRange, ssiM
   }
   const beats = (q: SsiStepPoint, p: SsiStepPoint): boolean => q.credit >= p.credit && q.ssi <= p.ssi && q.stam <= p.stam;
   return all.filter((p, i) => !all.some((q, j) => j !== i && beats(q, p) && (!beats(p, q) || j < i)));
-}
-
-// The largest credit among the points a suit with `ssi` item SSI and `stam` gear Stamina pool reaches, 0 when it reaches none: what SSI by step scores (scripts/optimizer-core.mts optStepCredit, which keeps its own copy: the core imports nothing).
-export function stepCredit(points: readonly SsiStepPoint[], ssi: number, stam: number): number {
-  let best = 0;
-  for (const p of points) if (ssi >= p.ssi - FLOAT_EPS && stam >= p.stam - FLOAT_EPS && p.credit > best) best = p.credit;
-  return best;
 }
 
 // The one base speed every weapon a suit can hold shares: the hand slots' candidates (the pool and the worn piece) that carry a speed. A two-handed weapon is no candidate while the one-handed slot must keep its worn piece (locked: not among `optionalSlots`), and a one-handed one none while the two-handed slot must keep a worn two-hander (the hand rule leaves the other hand empty), as in the solvers. Null, with the reason, when there is none or they differ.
