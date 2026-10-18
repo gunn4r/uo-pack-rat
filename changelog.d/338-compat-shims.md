@@ -1,0 +1,1 @@
+- **For contributors: every compatibility shim names the release that removes it** (issue #338): the five places that keep an older app or older installed scripts working carry a `compat: <id>` comment, and `docs/architecture.md`'s new "Compatibility shims" table lists each with Pack Rat 0.3.0 as its removal release. No behaviour changes.
