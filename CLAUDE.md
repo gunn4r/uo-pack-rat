@@ -7,7 +7,7 @@ Read this first, then `CONTRIBUTING.md` for the full contributor guide.
 1. `docs/module-map.md`: where each concept lives, area by area, and which concepts are still copied by hand.
 2. `docs/change-checklists.md`: for your kind of change, every place that has to change with it.
 3. Touching the game scripts or a file they share: `adapters/CLAUDE.md` (the adapter invariants and how to extend and test them) and `app/schema/README.md` (the contract index: every shared file, its schema, writers, readers and cases).
-4. The one doc for your area: `docs/server.md` (routes, stores and services; `app/http/CLAUDE.md` is its short form), `docs/solver.md` (Suit Builder), `docs/ui.md` (the page, then `docs/ui/<screen>.md` for the screen you touch), `docs/scan-schema.md`, `docs/bridge-protocol.md`, `docs/shard-rules.md`, `docs/adapter-guide.md`, `docs/mcp.md`, `docs/architecture.md` (processes and the data folder), `docs/threat-model.md` (security).
+4. The one doc for your area: `docs/server.md` (routes, stores and services; `app/http/CLAUDE.md` is its short form), `docs/solver.md` (Suit Builder; `docs/guides/suit-builder.md` is its short guide), `docs/ui.md` (the page, with `app/ui/CLAUDE.md` as its short guide, then `docs/ui/<screen>.md` for the screen you touch), `docs/scan-schema.md`, `docs/bridge-protocol.md`, `docs/shard-rules.md`, `docs/adapter-guide.md`, `docs/mcp.md`, `docs/architecture.md` (processes and the data folder), `docs/threat-model.md` (security).
 
 ## Conventions reviews keep enforcing
 
@@ -22,6 +22,8 @@ Read this first, then `CONTRIBUTING.md` for the full contributor guide.
 - Plain words. Match the surrounding code's comment density and naming.
 
 ## Local test loop
+
+`scripts/CLAUDE.md` is the guide to the runner, the guards and the Electron fixture; `TESTING.md` is the full reference.
 
 - `npm run typecheck`.
 - `TEST_SKIP_ELECTRON=1 ./scripts/test_runner.sh --changed`, then `TEST_SKIP_ELECTRON=1 ./scripts/test_runner.sh --fast`.

@@ -1,7 +1,7 @@
-// respond.mts — how the server answers: send() with the headers every response carries, the event streams' own header set, the Content-Security-Policy, and the guard that turns a body that is not a JSON object into a 400.
+// respond.mts — how the server answers: send() with the headers every response carries, the event streams' own header set, the Content-Security-Policy, the guard that turns a body that is not a JSON object into a 400, and the answer the setup and settings routes give for a folder that is not a client's.
 //
 // map: server
-// owns: `send`, `SSE_HEADERS`, `CSP`, `asObject`
+// owns: `send`, `SSE_HEADERS`, `CSP`, `asObject`, `NO_CLIENT_FOLDER`
 import type http from "node:http";
 import type { HttpError } from "../read-body.mts";
 
@@ -35,6 +35,12 @@ export const SSE_HEADERS: Record<string, string> = {
   "content-type": "text/event-stream", "cache-control": "no-store", connection: "keep-alive",
   "x-content-type-options": "nosniff", "x-frame-options": "DENY", "content-security-policy": "frame-ancestors 'none'",
 };
+
+// What a failed locate/install tells the caller. Deliberately says nothing about the path it probed:
+// echoing the resolved path back made the setup and settings routes a clean existence oracle for any absolute path on
+// the machine — "existing directory" vs "file or absent", for free, from an unauthenticated route in
+// the bare `npm start` configuration (post-review fix, Important 3).
+export const NO_CLIENT_FOLDER = "no scripts folder found there for that client";
 
 // Every route below reads its body as an object of named fields, but JSON.parse happily returns
 // null, an array, a string or a number for a perfectly well-formed body — and destructuring null is

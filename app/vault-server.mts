@@ -44,7 +44,7 @@ import { createOrganizeStateStore } from "./store/organize-state.mts";
 import { createItemKindsStore } from "./store/item-kinds.mts";
 import { createBlacklistStore } from "./store/blacklist.mts";
 import { claimsFromHouseMap, createHouseClaimsStore } from "./store/house-claims.mts";
-import { readHouseMap } from "./house-names.mts";
+import { createHouseMapStore, readHouseMap } from "./store/house-map.mts";
 import { createProfilesStore } from "./store/profiles.mts";
 import { createUiPrefsStore } from "./store/ui-prefs.mts";
 import { createSettingsStore } from "./store/settings.mts";
@@ -220,7 +220,9 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   }
 
   const scanStore = createScansStore({ dir: SCANS, shard: () => appSettings.current().shard });
-  const houseService = createHousesService({ settings: appSettings.current });
+  // The adapters folder doesn't change while the server runs, so each adapter's UO-folder finder is read once.
+  const uoFolderFinders = new Map(setupService.adapters().map((a) => [a.id, a.uoFolder]));
+  const houseService = createHousesService({ settings: appSettings.current, uoFolderFinder: (id) => uoFolderFinders.get(id) ?? null });
 
   const uiPrefsStore = createUiPrefsStore(join(CONFIG.dataDir, "ui-prefs.json"));
   // The TazUO panel's hotkey and show-at-login choice (app/tazuo-panel.mts); the in-game panel writes it too.
@@ -229,8 +231,10 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   const blacklistStore = createBlacklistStore(join(CONFIG.dataDir, "scan-blacklist.json"));
   // The houses claimed (issue #299). The first start with claims claims the houses already named or given areas, so they keep working; the file then exists, and an unclaimed house stays unclaimed.
   const houseClaimsStore = createHouseClaimsStore(join(CONFIG.dataDir, "house-claims.json"));
+  // The player's house names and areas (issue #164); what a read sets aside or leaves out goes to the log, once while it stays the same.
+  const houseMapStore = createHouseMapStore(join(CONFIG.dataDir, "house-map.json"), (line) => safeAppendLog(CONFIG.paths.log, line));
   if (!houseClaimsStore.exists()) {
-    const claims = claimsFromHouseMap(readHouseMap(join(CONFIG.dataDir, "house-map.json")).doc, new Date().toISOString());
+    const claims = claimsFromHouseMap(readHouseMap(houseMapStore.file).doc, new Date().toISOString());
     if (claims.length) houseClaimsStore.write(claims);
   }
   const itemKindsStore = createItemKindsStore(join(CONFIG.dataDir, "item-kinds.json"));
@@ -261,7 +265,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
 
   // Every route, in the order the server tries them (app/http/routes/; docs/architecture.md lists them).
   const ctx: ServerContext = { config: CONFIG, host, clientSearch, clientRunning, updateFetch, packageJson: PACKAGE_JSON, appSettings, setupService, eventBus, houseService,
-    retentionService, jobService, buildsService, organizeService, getInventory, profilesStore, uiPrefsStore, blacklistStore, houseClaimsStore, itemKindsStore, organizeStore, organizeStateStore, runStore, scanStore,
+    retentionService, jobService, buildsService, organizeService, getInventory, profilesStore, uiPrefsStore, blacklistStore, houseClaimsStore, houseMapStore, itemKindsStore, organizeStore, organizeStateStore, runStore, scanStore,
     panelPrefsFile: PANEL_PREFS, savePanel, watchers, timers, mcp };
   const routes: Route[] = [staticRoutes, inventoryRoutes, prefsRoutes, settingsRoutes, setupRoutes, importRoutes, hostRoutes, optimizeRoutes, mcpRoutes, bridgeRoutes,
     forgetRoutes, blacklistRoutes, housesRoutes, kindsRoutes, organizeRoutes].flatMap((make) => make(ctx));

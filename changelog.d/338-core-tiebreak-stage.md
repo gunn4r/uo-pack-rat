@@ -1,0 +1,1 @@
+- **For contributors: the optimizer core's tie-break stage is its own function** (issue #338, W3e): `optTieBreakStage` holds the second stage that was inline in `optimizeSuit`, and `optBranchAndBound` takes an options object instead of eleven positional arguments. Results are unchanged.

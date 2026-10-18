@@ -1,6 +1,6 @@
-// bridge-trip.test.mts — `queueTrip` (`app/bridge-trip.mts`), the only writer of an Organize trip line, and the stop flag behind POST /api/bridge/stop.
+// bridge-trip.test.mts — `queueTrip` (`app/bridge-trip.mts`), the only writer of an Organize trip line.
 //
-// `queueTrip` (the only writer of a trip line): schema-valid line in the adapter's own queue, names cut to 40, refusals for bad roots keys, unplaced or unused roots, duplicate serials, empty trips and lines over the bridges' 16 KB limit (writing nothing), the largest legal trip still fitting, the limits matching both bridges' constants, `putAway` (the picked container) written only on a Put away trip, which takes nothing, and `writeBridgeStop`. All `[fast]`.
+// `queueTrip` (the only writer of a trip line): schema-valid line in the adapter's own queue, names cut to 40, refusals for bad roots keys, unplaced or unused roots, duplicate serials, empty trips and lines over the bridges' 16 KB limit (writing nothing), the largest legal trip still fitting, the limits matching both bridges' constants, `putAway` (the picked container) written only on a Put away trip, which takes nothing. All `[fast]`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, existsSync } from "node:fs";
@@ -8,7 +8,7 @@ import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { resolveConfig, type ConfigPaths } from "./config.mts";
-import { queueTrip, writeBridgeStop, type TripInput } from "./bridge-trip.mts";
+import { queueTrip, type TripInput } from "./bridge-trip.mts";
 import { TRIP_MAX_BYTES, TRIP_NAME_MAX } from "./bridge-contract.mts";
 import { validate, type ValidatorSchema } from "./schema/validate.mts";
 
@@ -114,12 +114,4 @@ test("[fast] TRIP_MAX_BYTES is every bridge's own line limit", () => {
     assert.match(py, new RegExp(`^MAX_LINE_BYTES = ${TRIP_MAX_BYTES}\\b`, "m"), adapter);
     assert.match(py, new RegExp(`^MAX_TRIP_NAME = ${TRIP_NAME_MAX}\\b`, "m"), adapter);
   }
-});
-
-test("[fast] writeBridgeStop writes <data>/bridge/stop, and rewrites it", () => {
-  const { dir, paths } = fresh();
-  assert.equal(paths.bridgeStop, join(dir, "bridge", "stop"));
-  writeBridgeStop(paths);
-  writeBridgeStop(paths);
-  assert.ok(existsSync(join(dir, "bridge", "stop")));
 });

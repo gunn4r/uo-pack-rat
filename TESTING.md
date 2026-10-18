@@ -58,7 +58,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `app/bridge-adapter-fallback.test.mts` — `app/ui/bridge.mts`'s `currentAdapter()`/`bridgeNote()` falling back to the server's bridge adapter when no client is set.
 - `app/bridge-status.test.mts` — the bridge reporting itself: `readBridgeStatus` (`app/bridge-status.mts`), the one reader of status.json, and `bridgeFeatures` (`app/vault-lib.mts`), what a bridge can do.
 - `app/bridge-toast.test.mts` — `app/ui/bridge.mts`'s `pollBridge()` toasting what the bridge reports for the commands this page queued.
-- `app/bridge-trip.test.mts` — `queueTrip` (`app/bridge-trip.mts`), the only writer of an Organize trip line, and the stop flag behind POST /api/bridge/stop.
+- `app/bridge-trip.test.mts` — `queueTrip` (`app/bridge-trip.mts`), the only writer of an Organize trip line.
 - `app/buffs-plan.test.mts` — Automatic's buffs in the optimizer's profile (issue #12, `app/buffs.mts` `plannedProfile`), across the combinations.
 - `app/buffs.test.mts` — `app/buffs.mts`, the Suit Builder's buffs, abilities and forms (issue #12).
 - `app/build-spec.test.mts` — `app/build-spec.mts`, a build's intent as one document (issue #218, BuildSpec).
@@ -138,6 +138,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `app/solver-templates.test.mts` — HiGHS and the core agree on the fixture for every shipped default template, and with soft floors.
 - `app/solver.test.mts` — solver equivalence: HiGHS must never disagree with the core's own exact branch-and-bound about what the best suit is worth.
 - `app/solver/agreement.test.mts` — the solvers agree on one suit's score (issue #338): for random suits over generated pools and profiles, the core's `scoreSet` equals the MIP's objective at `startVector` plus `scoreOffset` (the hard floors built as soft terms for every suit, and as rows for a suit that meets them), each weighted property's part of that objective is its `scoreShares` share of the terms' total size, and the core's score with the floors taken out is the sum of those parts.
+- `app/solver/budget.test.mts` — `app/solver/budget.mts`, the exact solver's time budget (issue #338).
 - `app/solver/finish.test.mts` — `app/solver/finish.mts`, everything a build does after the search (issue #338).
 - `app/solver/prepare.test.mts` — `app/solver/prepare.mts`, everything a build does to its input before the search, and the run key (issue #338).
 - `app/solver/scoring.test.mts` — `app/solver/scoring.mts`, the scoring constants both solvers read (issue #338).
@@ -170,7 +171,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `scripts/build-ui.test.mts` — `scripts/build-ui.mts`'s `buildUi()`, the page build.
 - `scripts/changelog.test.mts` — `scripts/changelog.mts`: a [smoke] guard that the committed fragments and CHANGELOG.md are in shape, a [smoke] release of a copy of them, and the release that puts the fragments together.
 - `scripts/compat-shims.test.mts` — a [fast] guard that docs/architecture.md's "Compatibility shims" table and the code's `compat: <id>` comments name the same shims.
-- `scripts/css-guard.test.mts` — a [smoke] guard that keeps screen stylesheets from restyling the shared components, and the window breakpoints in one list.
+- `scripts/css-guard.test.mts` — a [smoke] guard that keeps screen stylesheets from restyling the shared components, the window breakpoints in one list, and every color a token.
 - `scripts/docs-links.test.mts` — a [smoke] guard that every repo path the Markdown names in backticks exists.
 - `scripts/electron-app.test.mts` — a [smoke] guard that keeps the Electron UI tests on their shared fixture (scripts/electron-app.mts, issue #338).
 - `scripts/electron-guards.test.mts` — the Electron shell's guards, from the phase-7 review: unit tests of the pure decisions and source-level checks on `electron/main.mts`.

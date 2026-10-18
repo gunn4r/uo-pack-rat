@@ -2,14 +2,14 @@
 //
 // map: services
 // owns: `createOrganizeService`
-import { mkdirSync, unlinkSync } from "node:fs";
-import { join } from "node:path";
+import { unlinkSync } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { DATA_DIR_MODE, DATA_FILE_MODE, type ConfigPaths } from "../config.mts";
-import { readBounded, writeFileAtomic } from "../atomic-write.mts";
+import type { ConfigPaths } from "../config.mts";
+import { readBounded } from "../atomic-write.mts";
 import { isBoundedString } from "../guards.mts";
 import { readBridgeStatus } from "../bridge-status.mts";
 import { queueTrip } from "../bridge-trip.mts";
+import { writeReply } from "../store/bridge.mts";
 import { ancestry, applyOverlay, packKept, planOrganize, stampMs, tripCommand, type Plan, type PutAway } from "../organize.mts";
 import { harvestTrips, noteSeen, pruneOverlay, PENDING_GRACE_MS, type BridgeView, type OrganizeState } from "../organize-state.mts";
 import { checkPutAwayRequest, nothingDetail, requestId, tripMsg, FRESH_MARGIN_MS, MAX_REQUEST_BYTES, PUT_AWAY_REPLY, type PutAwayReply, type PutAwayRequest } from "../put-away.mts";
@@ -130,8 +130,7 @@ export function createOrganizeService({ paths, getInventory, organizeStore, orga
     }
     const reply: PutAwayReply = { id: requestId(raw), ...answer, t: new Date().toISOString() };
     try {
-      mkdirSync(paths.bridgeFor(adapter), { recursive: true, mode: DATA_DIR_MODE });
-      writeFileAtomic(join(paths.bridgeFor(adapter), PUT_AWAY_REPLY), JSON.stringify(reply) + "\n", DATA_FILE_MODE);
+      writeReply(paths, adapter, PUT_AWAY_REPLY, reply);
     } catch (e) { log(`${reply.t} put away: could not write the answer: ${(e as Error).message}\n`); }
   }
   // One Put away step: the first trip of a plan whose only source is what lies directly in the container the player
