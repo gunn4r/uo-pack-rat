@@ -7,32 +7,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import { createRequire } from "node:module";
-import { fitWindow, noUpdateCheck, testEnv, removeTempDir } from "./electron-window.mts";
-import type { ElectronApplication, Page } from "playwright";
+import { join } from "node:path";
+import { removeTempDir } from "./electron-window.mts";
+import { ROOT, launchApp, skipWithoutElectron, type App } from "./electron-app.mts";
+import type { Page } from "playwright";
 
-const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const KESTREL = readFileSync(join(ROOT, "app", "fixtures", "demo-Kestrel.json"), "utf8");
-const require_ = createRequire(import.meta.url);
-function unavailable(): string | null {
-  if (process.env.TEST_SKIP_ELECTRON) return "TEST_SKIP_ELECTRON is set";
-  for (const dep of ["electron", "playwright"]) {
-    try { require_.resolve(dep); } catch { return `${dep} is not installed`; }
-  }
-  return null;
-}
-async function launch(dataDir: string, { demo = true } = {}): Promise<{ app: ElectronApplication; page: Page; errors: string[] }> {
-  const { _electron } = await import("playwright");
-  const app = await _electron.launch({ args: [ROOT, ...(demo ? ["--demo"] : []), "--data", noUpdateCheck(dataDir)], cwd: ROOT, timeout: 60_000, env: testEnv() });
-  const page = await app.firstWindow();
-  const errors: string[] = [];
-  page.on("pageerror", (e) => errors.push(String(e)));
-  // The real window, as close to 1440 × 900 as the screen allows (scripts/electron-window.mts).
-  await fitWindow(app, page, { width: 1440, height: 900 });
-  return { app, page, errors };
-}
+// The real window, as close to 1440 × 900 as the screen allows (scripts/electron-window.mts).
+const launch = (dataDir: string, { demo = true } = {}): Promise<App> => launchApp(dataDir, { demo, size: { width: 1440, height: 900 } });
 // A paste lands as one insertion; typing a 43 KB scan key by key through page.fill() is slow enough to time out
 // on a CI runner, and isn't what a player does.
 async function paste(page: Page, selector: string, text: string): Promise<void> {
@@ -45,11 +27,10 @@ async function paste(page: Page, selector: string, text: string): Promise<void> 
 const setupDone = (dataDir: string): void => writeFileSync(join(dataDir, "settings.json"), JSON.stringify({ schemaVersion: 1, shard: "uoalive", setupDone: true }));
 
 test("[slow] Import: paste default, instant preview, errors in the card, ⌘↵ imports and closes with a toast, drop opens Scan files", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   const dataDir = mkdtempSync(join(tmpdir(), "packrat-forms-import-"));
   setupDone(dataDir);
-  const { app, page, errors } = await launch(dataDir);
+  const { page, errors, close } = await launch(dataDir);
   try {
     await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
     await page.evaluate(() => { location.hash = "#/import"; });
@@ -100,19 +81,17 @@ test("[slow] Import: paste default, instant preview, errors in the card, ⌘↵ 
     await page.waitForSelector("#import-drawer", { state: "hidden" });
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
 test("[slow] Wizard: named stepper with branch-aware labels, radio cards, kept typed path, install then Finish", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   const dataDir = mkdtempSync(join(tmpdir(), "packrat-forms-wizard-"));
   const client = mkdtempSync(join(tmpdir(), "packrat-forms-client-"));
   mkdirSync(join(client, "TazUO", "LegionScripts"), { recursive: true });
   // No settings.json: a first run, so the wizard opens by itself.
-  const { app, page, errors } = await launch(dataDir);
+  const { page, errors, close } = await launch(dataDir);
   const steps = (): Promise<string[]> => page.locator("#wizard .stepper .step").evaluateAll((els) => els.map((e) => e.firstElementChild!.nextElementSibling!.textContent || ""));
   try {
     await page.waitForSelector("#wizard[open]", { timeout: 30_000 });
@@ -190,21 +169,19 @@ test("[slow] Wizard: named stepper with branch-aware labels, radio cards, kept t
     assert.match(settings.client.scriptsDir, /LegionScripts$/);
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
     removeTempDir(client);
   }
 });
 
 test("[slow] ClassicUO web client: Settings copies the bundled scanner and says when it is newer than the one copied; the wizard's copy step, and its fallback box", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   const dataDir = mkdtempSync(join(tmpdir(), "packrat-forms-webscanner-"));
   writeFileSync(join(dataDir, "settings.json"), JSON.stringify({ schemaVersion: 1, shard: "uoalive", setupDone: true, client: { adapter: "classicuo-web", scriptsDir: "" } }));
   writeFileSync(join(dataDir, "ui-prefs.json"), JSON.stringify({ copiedScanner: "0.9.0" }));
   const script = readFileSync(join(ROOT, "adapters", "classicuo-web", "packrat-scanner.ts"), "utf8");
   const version = /ADAPTER_VERSION\s*=\s*"([^"]+)"/.exec(script)![1]!;
-  const { app, page, errors } = await launch(dataDir);
+  const { app, page, errors, close } = await launch(dataDir);
   // The Windows clipboard stores CRLF, so line endings are compared as LF.
   const clipboardText = async (): Promise<string> => (await app.evaluate(({ clipboard }) => clipboard.readText())).replace(/\r\n/g, "\n");
   try {
@@ -248,17 +225,15 @@ test("[slow] ClassicUO web client: Settings copies the bundled scanner and says 
     assert.equal(await page.evaluate(() => { const ta = document.querySelector<HTMLTextAreaElement>("#wiz-copy-scanner-text")!; return document.activeElement === ta && ta.selectionEnd - ta.selectionStart === ta.value.length; }), true, "focused and all selected");
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
 test("[slow] Settings: sections with the client warning, theme and appearance, Run setup, forget with confirm, update check messages", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   const dataDir = mkdtempSync(join(tmpdir(), "packrat-forms-settings-"));
   setupDone(dataDir);
-  const { app, page, errors } = await launch(dataDir);
+  const { page, errors, close } = await launch(dataDir);
   try {
     await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
     await page.evaluate(() => { location.hash = "#/settings"; });
@@ -321,16 +296,14 @@ test("[slow] Settings: sections with the client warning, theme and appearance, R
     assert.equal(await page.locator("#set-updates .msg.ok").innerText(), "You have the latest version, 0.1.0.");
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
 // Issue #211: the MCP server's switches, and how to connect a client while it runs. mcp.json asks for any free port, so
 // the test never collides with a Pack Rat running on the machine.
 test("[slow] Settings › AI assistants (MCP): the switch opens the server, the token stays hidden until Show, New token asks first", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   const dataDir = mkdtempSync(join(tmpdir(), "packrat-forms-mcp-"));
   setupDone(dataDir);
   writeFileSync(join(dataDir, "mcp.json"), JSON.stringify({ version: 1, enabled: false, allowActions: false, port: 0, token: "11111111-2222-3333-4444-555555555555" }));
@@ -340,7 +313,7 @@ test("[slow] Settings › AI assistants (MCP): the switch opens the server, the 
     for (const until = Date.now() + 10_000; !want(mcp()) && Date.now() < until;) await new Promise((r) => setTimeout(r, 100));
     return mcp();
   };
-  const { app, page, errors } = await launch(dataDir);
+  const { page, errors, close } = await launch(dataDir);
   try {
     await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
     await page.evaluate(() => { location.hash = "#/settings"; });
@@ -372,8 +345,7 @@ test("[slow] Settings › AI assistants (MCP): the switch opens the server, the 
     assert.equal((await fileShows((m) => !m.enabled)).enabled, false);
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
@@ -381,11 +353,10 @@ test("[slow] Settings › AI assistants (MCP): the switch opens the server, the 
 // noUpdateCheck), a newer release shows a notice above the screen until dismissed, the dismissal is saved, and
 // only a later release shows again.
 test("[slow] Settings › Updates: the automatic check shows a dismissible notice for a newer release", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   const dataDir = mkdtempSync(join(tmpdir(), "packrat-forms-autoupdate-"));
   setupDone(dataDir);
-  const { app, page, errors } = await launch(dataDir);
+  const { page, errors, close } = await launch(dataDir);
   let latest = "9.9.9", checks = 0;
   await page.route("**/api/update-check", (r) => { checks++; return r.fulfill({ contentType: "application/json",
     body: JSON.stringify({ ok: true, configured: true, current: "0.1.0", latest, url: `https://github.com/example/pack-rat/releases/tag/v${latest}`, upToDate: false }) }); });
@@ -418,14 +389,12 @@ test("[slow] Settings › Updates: the automatic check shows a dismissible notic
     assert.equal(await page.locator("#update-notice > span").innerText(), "Pack Rat 9.9.10 is available.");
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
 test("[slow] Settings › Data retention: Clean up now counts, confirms and removes; Keep everything disables it", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   // Not --demo, which prunes nothing: the demo scans plus an older copy of Dorran's, and three saved runs.
   // Keep everything is on at launch so the startup prune leaves them for the button.
   const dataDir = mkdtempSync(join(tmpdir(), "packrat-forms-retention-"));
@@ -435,7 +404,7 @@ test("[slow] Settings › Data retention: Clean up now counts, confirms and remo
   writeFileSync(join(dataDir, "scans", "old-Dorran.json"), JSON.stringify({ ...JSON.parse(readFileSync(join(ROOT, "app", "fixtures", "demo-Dorran.json"), "utf8")), scannedAt: "2025-01-01T12:00:00" }));
   for (const d of [20, 21, 22]) writeFileSync(join(dataDir, "runs", `r${d}.json`), JSON.stringify({ id: `r${d}`, key: `r${d}`, character: "Dorran", createdAt: `2026-09-${d}T10:00:00Z`, label: "", settings: {}, result: null }));
   writeFileSync(join(dataDir, "settings.json"), JSON.stringify({ schemaVersion: 1, shard: "uoalive", setupDone: true, retention: { keepAll: true, scanDays: 30, runsPerCharacter: 1 } }));
-  const { app, page, errors } = await launch(dataDir, { demo: false });
+  const { page, errors, close } = await launch(dataDir, { demo: false });
   const retention = (): unknown => JSON.parse(readFileSync(join(dataDir, "settings.json"), "utf8")).retention;
   try {
     await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
@@ -462,7 +431,6 @@ test("[slow] Settings › Data retention: Clean up now counts, confirms and remo
     assert.deepEqual(retention(), { keepAll: true, scanDays: 30, runsPerCharacter: 1 });
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });

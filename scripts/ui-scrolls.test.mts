@@ -7,38 +7,21 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import { createRequire } from "node:module";
-import { fitWindow, testEnv, noUpdateCheck, removeTempDir } from "./electron-window.mts";
+import { join } from "node:path";
+import { launchApp, skipWithoutElectron } from "./electron-app.mts";
 import { writeScrollScans } from "./scrolls-fixture.mts";
 import type { Page } from "playwright";
 
-const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
-const require_ = createRequire(import.meta.url);
-function unavailable(): string | null {
-  if (process.env.TEST_SKIP_ELECTRON) return "TEST_SKIP_ELECTRON is set";
-  for (const dep of ["electron", "playwright"]) {
-    try { require_.resolve(dep); } catch { return `${dep} is not installed`; }
-  }
-  return null;
-}
 const row = (page: Page, skill: string) => page.locator(`#scr-table tbody tr[data-skill="${skill}"]`);
 const cells = (page: Page, skill: string): Promise<string[]> => row(page, skill).locator("td").allInnerTexts();
 
 test("[slow] the Scrolls view rolls power scrolls and Scrolls of Transcendence up per skill, opens a skill's detail and links to exactly its scrolls (1024 × 768)", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   const dataDir = mkdtempSync(join(tmpdir(), "packrat-scrolls-"));
   writeFileSync(join(dataDir, "settings.json"), JSON.stringify({ schemaVersion: 1, shard: "uoalive", setupDone: true }));
   writeScrollScans(dataDir);
-  const { _electron } = await import("playwright");
-  const app = await _electron.launch({ args: [ROOT, "--data", noUpdateCheck(dataDir)], cwd: ROOT, timeout: 60_000, env: testEnv() });
+  const { page, errors, close } = await launchApp(dataDir, { size: { width: 1024, height: 768 } });
   try {
-    const page = await app.firstWindow();
-    const errors: string[] = [];
-    page.on("pageerror", (e) => errors.push(String(e)));
-    await fitWindow(app, page, { width: 1024, height: 768 });
     await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
 
     // The third view of the Inventory's switch, on its Power scrolls tab.
@@ -128,7 +111,6 @@ test("[slow] the Scrolls view rolls power scrolls and Scrolls of Transcendence u
     }, undefined, { timeout: 15_000 });
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
