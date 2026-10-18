@@ -58,7 +58,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `app/bridge-adapter-fallback.test.mts` — `app/ui/bridge.mts`'s `currentAdapter()`/`bridgeNote()` falling back to the server's bridge adapter when no client is set.
 - `app/bridge-status.test.mts` — the bridge reporting itself: `readBridgeStatus` (`app/bridge-status.mts`), the one reader of status.json, and `bridgeFeatures` (`app/vault-lib.mts`), what a bridge can do.
 - `app/bridge-toast.test.mts` — `app/ui/bridge.mts`'s `pollBridge()` toasting what the bridge reports for the commands this page queued.
-- `app/bridge-trip.test.mts` — `queueTrip` (`app/bridge-trip.mts`), the only writer of an Organize trip line, and the stop flag behind POST /api/bridge/stop.
+- `app/bridge-trip.test.mts` — `queueTrip` (`app/bridge-trip.mts`), the only writer of an Organize trip line.
 - `app/buffs-plan.test.mts` — Automatic's buffs in the optimizer's profile (issue #12, `app/buffs.mts` `plannedProfile`), across the combinations.
 - `app/buffs.test.mts` — `app/buffs.mts`, the Suit Builder's buffs, abilities and forms (issue #12).
 - `app/build-spec.test.mts` — `app/build-spec.mts`, a build's intent as one document (issue #218, BuildSpec).
