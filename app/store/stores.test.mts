@@ -1,6 +1,6 @@
 // stores.test.mts — each store in `app/store/` on its own: size caps, bad files and the exact bytes written.
 //
-// each store in `app/store/` on its own: its size cap at the cap and one byte past it (blacklist and house claims 256 KiB, organize-state 4 MB, item-kinds and organize their own limits), what a missing, damaged or partly bad file reads as (moved aside, empty, salvaged or skipped) with the exact warning, log or problem text, and the exact bytes each write leaves (indent, trailing newline, a run compact with none); a file a newer Pack Rat made (organize, item-kinds, profiles) read as far as it can be, marked read-only and never written over; `update(fn)` on the blacklist, house claims and organize-state writing the same bytes as `write` and nothing when `fn` answers undefined. The house claims (issue #299): which claims a house's bounds fall under, and the claims made at the first start from the houses named or given areas. All `[fast]`; they pin the policies the routes rely on while the server is split.
+// each store in `app/store/` on its own: its size cap at the cap and one byte past it (blacklist and house claims 256 KiB, organize-state 4 MB, item-kinds and organize their own limits), what a missing, damaged or partly bad file reads as (moved aside, empty, salvaged or skipped) with the exact warning, log or problem text, and the exact bytes each write leaves (indent, trailing newline, a run compact with none); a file a newer Pack Rat made (organize, item-kinds, profiles) read as far as it can be, marked read-only and never written over; `update(fn)` on the blacklist, house claims and organize-state writing the same bytes as `write` and nothing when `fn` answers undefined. Scans' tombstone write: compact, no newline, replacing one of the same name, and an invalid one refused. The house claims (issue #299): which claims a house's bounds fall under, and the claims made at the first start from the houses named or given areas. All `[fast]`; they pin the policies the routes rely on while the server is split.
 import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -358,6 +358,25 @@ test("[fast] stores: scans skips a damaged file with a warning, reads a valid on
   assert.deepEqual(store.files().map((s) => s.file), ["kestrel.json"]);
   assert.deepEqual(warned().map((w) => w.replace(/: .*/, ":")), ["skipping bad.json:"]);
   assert.match(store.signature(), /^bad\.json:[\d.]+:5\|kestrel\.json:[\d.]+:\d+$/);
+});
+
+test("[fast] stores: scans writes a tombstone compact with no newline into a folder it creates, replaces one of the same name, reads it back as a valid scan, and an invalid one throws with nothing written", () => {
+  const d = dir(), scans = join(d, "scans"), store = createScansStore({ dir: scans, shard: () => DEFAULT_SHARD });
+  const capabilities = { layers: [], arms: false, bank: false, ground: false, nested: false, tooltips: "label", bridge: [] };
+  const head = { schemaVersion: 2, character: "_vault" };
+  const tail = { adapter: { id: "app", version: "1", client: "Pack Rat", clientVersion: null, capabilities }, shard: DEFAULT_SHARD, stats: {}, equipped: [] };
+  const roots = [{ serial: 0x1234, kind: "ground", name: "Chest", opened: true }];
+  store.writeTombstone("_forget-1234.json", { roots });
+  const text = readFileSync(join(scans, "_forget-1234.json"), "utf8"), root = JSON.parse(text);
+  assert.equal(text, JSON.stringify({ ...head, scannedAt: root.scannedAt, ...tail, roots, containers: {}, items: [] }));
+  store.writeTombstone("_forget-1234.json", { roots: [{ ...roots[0]!, name: "Box" }] });
+  assert.equal(JSON.parse(readFileSync(join(scans, "_forget-1234.json"), "utf8")).roots[0].name, "Box");
+  store.writeTombstone("_forget-char-41.json", { character: "A" });
+  const char = readFileSync(join(scans, "_forget-char-41.json"), "utf8"), { scannedAt } = JSON.parse(char);
+  assert.equal(char, JSON.stringify({ ...head, scannedAt, forgetCharacter: "A", ...tail, roots: [], containers: {}, items: [] }));
+  assert.deepEqual(store.files().map((s) => s.file), ["_forget-1234.json", "_forget-char-41.json"]);
+  assert.throws(() => store.writeTombstone("_forget-0.json", { roots: [{ ...roots[0]!, kind: "shelf" }] }), /refusing to write an invalid tombstone: /);
+  assert.ok(!existsSync(join(scans, "_forget-0.json")));
 });
 
 test("[fast] stores: a file made by a newer Pack Rat is read as far as this build understands it, marked read-only, and never written over (organize, item-kinds, profiles)", async (t) => {
