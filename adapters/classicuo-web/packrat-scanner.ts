@@ -93,22 +93,19 @@ const PASTE_BEGIN = "-----BEGIN PACK RAT SCAN-----";
 const PASTE_END = "-----END PACK RAT SCAN-----";
 
 // ---------------------------------------------------------------------------------------------
-// The adapter's contract. Must match capabilities.json's `capabilities` object exactly — the
-// contract test (app/contracts.test.mjs, once this adapter ships a fixture) compares them.
+// The adapter's contract, generated from capabilities.json (npm run gen:contracts).
 // ---------------------------------------------------------------------------------------------
+// BEGIN generated: manifest
 const ADAPTER_ID = "classicuo-web";
-const ADAPTER_VERSION = "1.4.0";
+const ADAPTER_VERSION = "1.5.0";
 const CAPABILITIES = {
-  layers: ["OneHanded", "TwoHanded", "Shoes", "Pants", "Shirt", "Helmet", "Gloves",
-    "Ring", "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic",
-    "Earrings", "Arms", "Cloak", "Robe", "Skirt", "Legs"],
-  arms: false,
-  bank: false,
-  ground: true,
-  nested: true,
-  tooltips: "opl",
+  layers: ["OneHanded", "TwoHanded", "Shoes", "Pants", "Shirt", "Helmet", "Gloves", "Ring",
+           "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic", "Earrings", "Arms",
+           "Cloak", "Robe", "Skirt", "Legs"],
+  arms: false, bank: false, ground: true, nested: true, tooltips: "opl",
   bridge: [] as string[],
 };
+// END generated: manifest
 
 // ---------------------------------------------------------------------------------------------
 // Tuning
@@ -151,19 +148,22 @@ const LAYER_MAP: Record<string, string> = {
   arms: "Arms", cloak: "Cloak", robe: "Robe", skirt: "Skirt", legs: "Legs",
 };
 
-// Known chest/bag/crate/pouch graphics — the same curated set adapters/tazuo/packrat-scanner.py
-// uses (graphic ids are a client-independent UO fact, not something specific to either adapter).
+// Known chest/bag/crate/pouch graphics — the same curated set the TazUO scripts use, generated from
+// adapters/_shared/container_graphics.py (graphic ids are a client-independent UO fact).
 // This is the ceiling of what ground scanning can find here — see the header comment above.
+// BEGIN generated: container_graphics
 const CONTAINER_GRAPHICS = [
-  0x0e75, 0x0e76, 0x0e79, 0x0e7d, 0x09aa, 0x09a8, 0x09a9, 0x09ab,
-  0x0e3c, 0x0e3d, 0x0e3e, 0x0e3f, 0x0e40, 0x0e41, 0x0e42, 0x0e43,
-  0x0e7c, 0x0e7e, 0x0e7f, 0xa32f, 0xa333,
+  0x0e75, 0x0e76, 0x0e79, 0x0e7d, 0x09aa, 0x09a8, 0x09a9, 0x09ab, 0x0e3c, 0x0e3d, 0x0e3e, 0x0e3f,
+  0x0e40, 0x0e41, 0x0e42, 0x0e43, 0x0e7c, 0x0e7e, 0x0e7f, 0xa32f, 0xa333, 0x4025, 0x4026
 ];
+// END generated: container_graphics
 
 // A trash barrel or chest is a real container, but the server deletes its contents on a timer, so
 // nothing in one is worth recording: it and its contents are left out of the scan. By name only: a
 // trash barrel has the same graphic as an ordinary barrel.
+// BEGIN generated: trash_re
 const TRASH_RE = /\btrash\b/i;
+// END generated: trash_re
 let trashed = 0;
 
 const SKILL_NAMES = ["Alchemy", "Anatomy", "Animal Lore", "Animal Taming", "Arms Lore", "Archery",

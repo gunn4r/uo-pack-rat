@@ -69,6 +69,11 @@ def data_dir():
         with open(cfg, "r", encoding="utf-8") as f:
             d = json.load(f).get("dataDir")
         if d:
+            # app/schema/packrat-paths.v1.schema.json's shapes: a relative path would land under the client's own
+            # working folder and ~user/ elsewhere, unseen by the app, so refuse to start instead.
+            drive = len(d) > 2 and "a" <= d[0].lower() <= "z" and d[1] == ":" and d[2] in "/\\"
+            if not (drive or d == "~" or d.startswith(("/", "\\\\", "~/", "~\\"))):
+                raise ValueError("packrat-paths.json: dataDir must be an absolute folder or start with ~/")
             return os.path.expanduser(d)
     return os.path.expanduser(os.environ.get("PACKRAT_DATA") or "~/.pack-rat")
 
@@ -113,7 +118,7 @@ def script_prefix(self_name):
 
 # BEGIN generated: manifest_version
 ADAPTER_ID = "tazuo"
-ADAPTER_VERSION = "2.20.0"
+ADAPTER_VERSION = "2.21.0"
 # END generated: manifest_version
 
 SELF = "packrat-panel.py"
@@ -320,7 +325,8 @@ def read_json(path, limit=MAX_PREFS_BYTES):
 
 
 def read_prefs():
-    """<data>/tazuo-panel.json (the hotkey and showAtLogin)."""
+    """<data>/tazuo-panel.json (the hotkey and showAtLogin; app/schema/tazuo-panel.v1.schema.json, and the cases both
+    readers run, app/fixtures/contract-cases/tazuo-panel.json)."""
     return read_json(PREFS)
 
 
@@ -339,10 +345,18 @@ def read_hotkey(doc):
         return DEFAULT_HOTKEY
 
 
+def read_show_at_login(doc):
+    """The file's showAtLogin, else openAtLogin (the name an older app wrote), else True: the first that is
+    true or false, as app/tazuo-panel-prefs.mts reads it."""
+    for k in ("showAtLogin", "openAtLogin"):
+        if isinstance(doc.get(k), bool):
+            return doc[k]
+    return True
+
+
 def load_prefs():
     doc = read_prefs()
-    on = doc.get("showAtLogin", doc.get("openAtLogin"))     # openAtLogin: the name an older app wrote
-    state["show_at_login"] = on if isinstance(on, bool) else True
+    state["show_at_login"] = read_show_at_login(doc)
     set_text("login_btn", login_text())
     hk = read_hotkey(doc)
     if hk == state["hotkey"]:
@@ -360,10 +374,10 @@ def login_text():
 
 
 def on_login():
-    """Save whether the window shows at the next login, keeping the hotkey."""
-    doc = read_prefs()
-    out = {"hotkey": doc["hotkey"]} if isinstance(doc.get("hotkey"), dict) else {}
-    out["showAtLogin"] = not state["show_at_login"]
+    """Save whether the window shows at the next login, keeping the hotkey as read_hotkey reads it, so an
+    invalid one is written as the default, as the app's own write does."""
+    parts = read_hotkey(read_prefs()).split("+")
+    out = {"hotkey": {"mods": parts[:-1], "key": parts[-1]}, "showAtLogin": not state["show_at_login"]}
     try:
         write_json_atomic(PREFS, out)
     except Exception:
@@ -567,12 +581,13 @@ NOT_CLAIMED = "Not in one of your houses, so only your pack was scanned. Use Cla
 
 def read_claims(path):
     """The valid entries of <data directory>/house-claims.json, the houses the player claimed (issue #299:
-    {id, facet, bounds: {x0, y0, x1, y1}, claimedAt, by?}), the same checks app/store/house-claims.mts makes.
+    {id, facet, bounds: {x0, y0, x1, y1}, claimedAt, by?}), the same checks app/store/house-claims.mts makes
+    (app/schema/house-claims.v1.schema.json; both run app/fixtures/contract-cases/house-claims.json).
     A bad entry is dropped, and a missing, unreadable or oversized file reads as none: a scan then reads
     no ground container."""
     def ok(e):
         b = e.get("bounds") if isinstance(e, dict) else None
-        return (isinstance(b, dict) and isinstance(e.get("id"), str) and re.match(r"^(\d{1,3}|x)-\d{1,6}-\d{1,6}$", e["id"])
+        return (isinstance(b, dict) and isinstance(e.get("id"), str) and re.fullmatch(r"(\d{1,3}|x)-\d{1,6}-\d{1,6}", e["id"], re.ASCII)
                 and "facet" in e and (e["facet"] is None or (type(e["facet"]) is int and 0 <= e["facet"] <= 5))
                 and all(type(b.get(k)) is int and 0 <= b[k] <= 999999 for k in ("x0", "y0", "x1", "y1")) and b["x0"] <= b["x1"] and b["y0"] <= b["y1"]
                 and isinstance(e.get("claimedAt"), str) and 0 < len(e["claimedAt"]) <= 40 and ("by" not in e or (isinstance(e["by"], str) and 0 < len(e["by"]) <= 64)))

@@ -58,6 +58,8 @@ test("[fast] saveCharacter: the panel's race, template and spec over the entry, 
 test("[fast] templates: put, update (refused when gone), delete, rename with characters following (refused when gone or taken)", () => {
   const d = doc(), spec = templateSpecFrom({ floors: { dci: 45 } });
   twice(d, { op: "putTemplate", id: "Spare", entry: { spec } });
+  twice(d, { op: "putTemplate", id: "Spare", entry: { spec }, create: true });
+  assert.match(applyProfileEdit(d, { op: "putTemplate", id: "Spare", entry: { spec: templateSpecFrom({}) }, create: true }, ctx) ?? "", /already a template named Spare/, "create never writes over another template");
   twice(d, { op: "updateTemplate", id: "Mine", spec, savedAt: "2026-10-17T00:00:00.000Z" });
   assert.deepEqual(d.templates.Mine, { description: "my own", spec, savedAt: "2026-10-17T00:00:00.000Z" }, "its other fields kept");
   assert.match(applyProfileEdit(d, { op: "updateTemplate", id: "Gone", spec, savedAt: "x" }, ctx) ?? "", /Gone template was deleted elsewhere/);
@@ -83,7 +85,7 @@ test("[fast] profileEditError: each op's fields, an unknown op and a non-object"
     { op: "putTemplate", id: "t", entry: { spec: {} } }, { op: "updateTemplate", id: "t", spec: {}, savedAt: "x" }, { op: "deleteTemplate", id: "t" }, { op: "renameTemplate", from: "a", to: "b" }]) assert.equal(profileEditError(ok), null, ok.op);
   for (const [bad, msg] of [[null, /must be an object/], [{ op: "nope" }, /unknown edit "nope"/], [{ op: "setBuffs", name: "", buffs: {} }, /name must be/], [{ op: "setBuffs", name: "A", buffs: [] }, /buffs must be an object/],
     [{ op: "setLabel", name: "A", label: "a\nb" }, /one line/], [{ op: "setLabel", name: "x".repeat(65), label: "" }, /name must be/], [{ op: "saveCharacter", name: "A", entry: {} }, /entry must be/],
-    [{ op: "putTemplate", id: 7, entry: { spec: {} } }, /id must be/], [{ op: "updateTemplate", id: "t", spec: {} }, /savedAt/], [{ op: "renameTemplate", from: "a" }, /to must be/]] as const) {
+    [{ op: "putTemplate", id: 7, entry: { spec: {} } }, /id must be/], [{ op: "putTemplate", id: "t", entry: { spec: {} }, create: "yes" }, /create must be/], [{ op: "updateTemplate", id: "t", spec: {} }, /savedAt/], [{ op: "renameTemplate", from: "a" }, /to must be/]] as const) {
     assert.match(profileEditError(bad) ?? "", msg, JSON.stringify(bad));
   }
 });

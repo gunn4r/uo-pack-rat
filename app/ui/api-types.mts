@@ -152,7 +152,7 @@ export interface ItemsBySerialApiResponse {
 export interface ProfilesApiResponse {
   ok: boolean;
   profiles: ProfilesV3;
-  stamp: string;   // the file's content stamp, which a save names (PUT /api/profiles' base)
+  stamp: string;   // the file's content stamp, which a PATCH's `was` is compared with
   builtinTemplates: TemplateMap;   // the shard's built-in templates, read-only (app/data/templates/<shard>.json)
   readOnly?: string;   // why profiles.json cannot be saved, when a newer Pack Rat made it (app/migrate.mts)
 }
@@ -331,7 +331,7 @@ export interface TieBreakResult { topScore: number; cost: number; changes?: numb
 // A strict-order build's stages, each with the suit's value there, and how many are proven in order.
 export interface StrictResult { stages: Array<{ kind: string; keys: string[] | null; value: number }>; proven: number; changes?: number | undefined }
 // SolveProgress (app/exact-solver.mts) as reported over the job's SSE stream and read by
-// builder.mts's runPanel(). Every field but `phase` is optional — not every phase reports every one.
+// builder-job.mts's runPanel(). Every field but `phase` is optional — not every phase reports every one.
 export interface OptimizeProgress {
   phase: string;
   elapsedMs?: number | undefined;
