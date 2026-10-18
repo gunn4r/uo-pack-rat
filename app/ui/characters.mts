@@ -9,7 +9,7 @@ import { $, el, toast, tipNode, hideItemTip, compactChildren } from "./dom.mts";
 import { txt, box, badge, button, input, meter, table, searchInput, message, popover, menu, confirmDialog, tooltip, type Column } from "./components.mts";
 import { api } from "./api.mts";
 import { reload } from "./inventory-data.mts";
-import { saveProfiles, setCharacterLabel } from "./profiles.mts";
+import { editProfiles, setCharacterLabel } from "./profiles.mts";
 import { characterLabel, LABEL_MAX } from "../build-spec.mts";
 import { selectCharacter } from "./builder.mts";
 import { session } from "./builder-session.mts";
@@ -224,7 +224,7 @@ export async function forgetCharacter(name: string): Promise<void> {
   try {
     if (state.inv!.characters[name]) await api("/api/forget-character", { method: "POST", body: { character: name } });
     if (state.profiles!.characters?.[name]) {
-      const r = await saveProfiles((p) => { delete p.characters[name]; });
+      const r = await editProfiles([{ op: "deleteCharacter", name }]);
       if (!r.ok) throw new Error(r.error);
     }
     if (current === name) { current = null; history.replaceState(null, "", "#/characters"); }

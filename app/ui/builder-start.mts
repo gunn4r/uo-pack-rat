@@ -14,7 +14,7 @@ import { state, invStamp } from "./store.mts";
 import { $, el, label, ago } from "./dom.mts";
 import { box, txt, button, badge } from "./components.mts";
 import { api } from "./api.mts";
-import { session, commands, provide } from "./builder-session.mts";
+import { session, commands, provide, onChange } from "./builder-session.mts";
 import { RESIST_NAMES } from "./builder-parts.mts";
 import { paperdollCaps, needsLine, topWeights, goalSummary, poolLine, searchLine, suggestTemplates, propName, who } from "./builder-model.mts";
 import type { ItemsApiResponse } from "./api-types.mts";
@@ -68,7 +68,7 @@ function mainColumn(name: string): HTMLElement {
 // ("Suggested"), then the other templates that best fit the character's skills, the player's own (newest first) ahead of the
 // built-ins on a tie (suggestTemplates). The set and its order are fixed while the view is up for the character, so a card
 // never moves or changes its badge when picked; picking only moves the selected state, which is the panel's template. A
-// card applies its template and saves it as the character's settings (builder.mts pickTemplate).
+// card applies its template and saves it as the character's settings (builder-templates.mts pickTemplate).
 const CARDS = 4;
 let cardSet: { name: string; templates: string; suggested: string | null; refs: string[] } | null = null;
 const shortDate = (iso: string): string => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
@@ -149,4 +149,5 @@ function wearingCard(name: string): HTMLElement {
     gauges.length ? box("ul", { class: "b-gauges" }, ...gauges) : null,
     el("p", { class: "t-sm muted" }, "The build starts from this. A result shows what would change."));
 }
-provide({ renderCurrentSuit, refreshCurrentSuit });
+onChange("settings", refreshCurrentSuit);
+provide({ renderCurrentSuit });

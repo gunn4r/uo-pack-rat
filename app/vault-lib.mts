@@ -531,7 +531,7 @@ export function resistCapsFor(race: string | null | undefined, overrides: Record
   }));
 }
 // What a resistCaps value is wrong about, or null when it is fine: an object naming only the five resists, each a
-// whole number within RESIST_CAP_LIMITS. The server checks a build's settings with this; PUT /api/profiles checks
+// whole number within RESIST_CAP_LIMITS. The server checks a build's settings with this; PATCH /api/profiles checks
 // profiles.json's with the same rule, written as JSON Schema in profiles.v3.schema.json.
 export function resistCapsError(v: unknown, path = "resistCaps"): string | null {
   if (v == null) return null;
