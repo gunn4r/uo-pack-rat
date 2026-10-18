@@ -1,0 +1,1 @@
+- **For contributors: the kernel starts splitting into `app/domain/`** (issue #338): the property registry and what derives from it moved from `app/vault-lib.mts` to `app/domain/properties.mts`, and the rules singleton (`setRules`/`getRules`) to `app/domain/rules.mts`. `vault-lib.mts` re-exports both under the same names, so no importer changes. A pure move: no behaviour changes.
