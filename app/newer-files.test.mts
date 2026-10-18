@@ -1,4 +1,4 @@
-// newer-files.test.mts — data files made by a newer Pack Rat (app/migrate.mts), on a real server and temp data folder: `GET /api/organize`, `/api/item-kinds`, `/api/house-map` and `/api/profiles` read what they can and say `readOnly` ("made by a newer Pack Rat"), and every save to them (`PUT /api/organize`, `POST /api/item-kinds` and its import, `PUT /api/house-map/<id>`, `PUT /api/profiles`) is a 409 with that message, the file left byte for byte. All `[fast]`.
+// newer-files.test.mts — data files made by a newer Pack Rat (app/migrate.mts), on a real server and temp data folder: `GET /api/organize`, `/api/item-kinds`, `/api/house-map` and `/api/profiles` read what they can and say `readOnly` ("made by a newer Pack Rat"), and every save to them (`PUT /api/organize`, `POST /api/item-kinds` and its import, `PUT /api/house-map/<id>`, `PATCH /api/profiles`) is a 409 with that message, the file left byte for byte. All `[fast]`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -43,7 +43,7 @@ test("[fast] newer files: organize, item kinds, the house map and profiles are r
       ["/api/item-kinds", body("POST", { name: "Ruby", kind: "decor" }), notice("item-kinds.json", 3)],
       ["/api/item-kinds/import", body("POST", { version: 1, names: { pearl: "gem" } }), `the import was refused: ${notice("item-kinds.json", 3)}`],
       ["/api/house-map/1-1-1", body("PUT", { name: "Renamed" }), notice("house-map.json", 2)],
-      ["/api/profiles", body("PUT", { schemaVersion: 3, characters: {}, templates: {} }), notice("profiles.json", 4)],
+      ["/api/profiles", body("PATCH", { edits: [{ op: "deleteCharacter", name: "x" }] }), notice("profiles.json", 4)],
     ];
     for (const [path, init, error] of saves) assert.deepEqual(await call(path, init), { status: 409, body: { ok: false, error } }, path);
     for (const [name, text] of Object.entries(files)) assert.equal(readFileSync(join(dir, name), "utf8"), text, name);

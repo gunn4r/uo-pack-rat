@@ -24,7 +24,8 @@ import { createBuffPicker, type BuffPicker, type BuffView, type PickerActions } 
 import { optimizeErrorMessage } from "./messages.mts";
 import { parseRoute, registerScreen, routeFor } from "./nav.mts";
 import { setNavBusy } from "./shell.mts";
-import { saveProfiles, setCharacterBuffs, type ProfilesEdit } from "./profiles.mts";
+import { editProfiles, setCharacterBuffs, type ProfilesSave } from "./profiles.mts";
+import type { ProfileEdit } from "../profile-edits.mts";
 import { session, commands, provide, readControls, type BuilderChange } from "./builder-session.mts";
 import { followJob, progressText, settingsCheck } from "./builder-parts.mts";
 import { characterNames } from "./roster.mts";
@@ -452,20 +453,14 @@ async function askTemplateName(title: string, value: string, was = ""): Promise<
 async function renameTemplate(ref: string): Promise<void> {
   const name = await askTemplateName(`Rename ${ref}`, ref, ref);
   if (!name) return;
-  // the characters made from it, and this build, now say "from <new name>"; made already (or gone elsewhere), it changes nothing
-  const saving = saveTemplates(`Template ${ref} renamed to ${name}.`, (p) => {
-    const t = p.templates;
-    if (!Object.hasOwn(t, ref)) return Object.hasOwn(t, name);
-    if (Object.hasOwn(t, name)) return false;   // a template by that name made elsewhere since the name was checked: never overwritten unasked
-    t[name] = t[ref]!;
-    delete t[ref];
-    for (const c of Object.values(p.characters)) if (c.template === ref) c.template = name;
-  });
-  if (session.profile?.template === ref) session.profile.template = name;
-  if (openCard === ref) openCard = name;
+  // the characters made from it, and this build, now say "from <new name>"
+  const saving = saveTemplates(`Template ${ref} renamed to ${name}.`, [{ op: "renameTemplate", from: ref, to: name }]);
+  const pointed = session.profile?.template === ref, opened = openCard === ref;
+  if (pointed) session.profile!.template = name;
+  if (opened) openCard = name;
   renderPanel();
   paintTemplatesDrawer();
-  await saving;
+  if (!(await saving).ok && (pointed || opened)) unpoint(name, ref);
 }
 async function duplicateTemplate(ref: string): Promise<void> {
   const from = findTemplate(state.profiles!, state.builtinTemplates, ref);
@@ -473,16 +468,13 @@ async function duplicateTemplate(ref: string): Promise<void> {
   const name = await askTemplateName(`Duplicate ${plainName(ref)}`, copyName(plainName(ref)));
   if (!name) return;
   const copy = { spec: structuredClone(from.spec), ...(from.description ? { description: from.description } : {}), savedAt: new Date().toISOString() };
-  // a template by that name made elsewhere since the name was checked is never overwritten unasked; the same one (this
-  // edit landed already, with a save queued before it) is
-  const saving = saveTemplates(`Template ${name} saved.`, (p) => {
-    if (Object.hasOwn(p.templates, name) && JSON.stringify(p.templates[name]) !== JSON.stringify(copy)) return false;
-    p.templates[name] = copy;
-  });
+  // never over a template by that name made elsewhere since the name was checked
+  const saving = saveTemplates(`Template ${name} saved.`, [{ op: "putTemplate", id: name, entry: copy, create: true }]);
+  const back = openCard ?? undefined;
   openCard = name;
   renderPanel();
   paintTemplatesDrawer();
-  await saving;
+  if (!(await saving).ok) unpoint(name, back);
 }
 function pickBuild(v: string): void {
   if (v === OWN) return;
@@ -578,11 +570,21 @@ function paintChanges(): void {
     out.textContent = n ? `${plural(n, "change")} since the last build` : "No changes since the last build";
   }, 150);
 }
-async function saveTemplates(done: string, edit: ProfilesEdit): Promise<void> {
-  const r = await saveProfiles(edit);
+// The copy changes when it is read again, and when a failed save puts it back, so either redraws.
+async function saveTemplates(done: string, edits: ProfileEdit[]): Promise<ProfilesSave> {
+  const r = await editProfiles(edits);
   // a refused save always says why
   toast(r.ok ? done : r.error!, r.ok ? "good" : "bad");
-  if (r.reloaded) { renderPanel(); paintTemplatesDrawer(); }
+  if (r.reloaded || !r.ok) { renderPanel(); paintTemplatesDrawer(); }
+  return r;
+}
+// After a refused save, the build and the open card go back to the template they showed before it (the name may be
+// another window's template), unless something else was picked meanwhile.
+function unpoint(name: string, back: string | undefined): void {
+  if (session.profile?.template === name) { if (back === undefined) delete session.profile.template; else session.profile.template = back; }
+  if (openCard === name) openCard = back ?? null;
+  renderPanel();
+  paintTemplatesDrawer();
 }
 // A template's settings into the panel. A template with buffs also sets the character's buffs, which are saved at once, and
 // Manual's when Manual is for the same character (one undo step there).
@@ -622,22 +624,18 @@ async function saveTemplateAs(): Promise<void> {
   const existed = !!name && Object.hasOwn(state.profiles!.templates, name);
   if (!name || (existed && !await confirmDialog({ title: `Overwrite the ${name} template?`, body: `The ${name} template is replaced with these settings.`, confirmLabel: `Overwrite ${name}` }))) return;
   const entry = { spec: templateSpecFrom(readControls(), buffsOn()), savedAt: new Date().toISOString() };
-  // overwriting is what was confirmed; a template by that name made elsewhere since the prompt is never overwritten unasked,
-  // and the same one is this edit landed already
-  const saving = saveTemplates(`Template ${name} saved.`, (p) => {
-    if (!existed && Object.hasOwn(p.templates, name) && JSON.stringify(p.templates[name]) !== JSON.stringify(entry)) return false;
-    p.templates[name] = entry;
-  });
+  // over the template by that name only when that was confirmed: never over one made elsewhere since the prompt
+  const saving = saveTemplates(`Template ${name} saved.`, [{ op: "putTemplate", id: name, entry, ...(existed ? {} : { create: true }) }]);
+  const back = session.profile!.template;
   session.profile!.template = name;
   renderPanel();
   paintTemplatesDrawer();
-  await saving;
+  if (!(await saving).ok) unpoint(name, back);
 }
 async function updateTemplate(name: string): Promise<void> {
   if (!Object.hasOwn(state.profiles!.templates, name) || !await confirmDialog({ title: `Update the ${name} template?`, body: `The ${name} template is overwritten with these settings.`, confirmLabel: `Update ${name}` })) return;
-  const spec = templateSpecFrom(readControls(), buffsOn()), savedAt = new Date().toISOString();
-  // deleted elsewhere meanwhile: not made again
-  const saving = saveTemplates(`Template ${name} updated.`, (p) => { if (!Object.hasOwn(p.templates, name)) return false; p.templates[name] = { ...p.templates[name], spec, savedAt }; });
+  // deleted elsewhere meanwhile: refused, not made again
+  const saving = saveTemplates(`Template ${name} updated.`, [{ op: "updateTemplate", id: name, spec: templateSpecFrom(readControls(), buffsOn()), savedAt: new Date().toISOString() }]);
   session.profile!.template = name;
   updateTemplateBadge();
   paintTemplatesDrawer();
@@ -646,7 +644,7 @@ async function updateTemplate(name: string): Promise<void> {
 // `confirmed`: asked already, in the Manage templates drawer's card.
 async function deleteTemplate(name: string, confirmed = false): Promise<void> {
   if (!Object.hasOwn(state.profiles!.templates, name) || (!confirmed && !await confirmDialog({ title: `Delete the ${name} template?`, body: "Characters made from it keep their settings.", confirmLabel: `Delete ${name}` }))) return;
-  const saving = saveTemplates(`Template ${name} deleted.`, (p) => { delete p.templates[name]; });
+  const saving = saveTemplates(`Template ${name} deleted.`, [{ op: "deleteTemplate", id: name }]);
   askDelete = null;
   if (openCard === name) openCard = null;
   renderPanel();
@@ -1619,19 +1617,12 @@ function runPanel(job: BuilderJob): BuilderJobUi {
 // ---------------------------------------------------------------- save
 async function saveProfile(said?: string): Promise<void> {
   if (!session.character || !session.profile) { toast("No character to save a profile for yet: scan one first.", "bad"); return; }
-  // A copy (later panel edits must not ride along with a template save), keeping what the panel doesn't edit: any
-  // other field of the entry, and the spec's goal and search.
-  // the buffs are the ones saved when the edit runs (a reload may bring another window's)
-  const name = session.character!, controls = readControls(), chars = state.profiles!.characters;
-  const had = Object.hasOwn(chars, name), before = chars[name];
-  const r = await saveProfiles((p) => {
-    const entry = characterEntry(controls, characterBuffs(p, name));
-    const { race: _race, template: _template, spec: was, ...rest } = Object.hasOwn(p.characters, name) ? p.characters[name]! : { spec: undefined };
-    p.characters[name] = { ...rest, ...entry, spec: { ...was, ...entry.spec } };
-  });
+  // The panel's settings as a saveCharacter edit (app/profile-edits.mts), which keeps what the panel doesn't edit: the
+  // saved buffs and label, any other field of the entry, and the spec's goal and search. A refused save reloads the
+  // profiles, so the build's line still counts the panel's changes as unsaved.
+  const name = session.character!, entry = characterEntry(readControls(), characterBuffs(state.profiles!, name));
+  const r = await editProfiles([{ op: "saveCharacter", name, entry }]);
   toast(r.ok ? said ?? `Profile for ${who(name)} saved.` : r.error!, r.ok ? "good" : "bad");
-  // a refused save leaves the profile as it was, so the build's line still counts the changes as unsaved
-  if (!r.ok && !r.reloaded && state.profiles!.characters === chars) { if (had) chars[name] = before!; else delete chars[name]; }
   updateTemplateBadge();
 }
 provide({ showCharacter, renderPanel, clearCapDrafts, panelBuild, buffPlan, loadRunBuffs, tuneWeight, pickTemplate: (ref) => { void pickTemplate(ref); }, selectCharacter, build: () => { void runBuild(); }, openSettingsTab: (t) => openSettings(t as Tab) });
