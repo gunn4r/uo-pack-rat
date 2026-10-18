@@ -9,13 +9,13 @@
 import { isBoundedString, MAX_SERIAL, short } from "../../guards.mts";
 import { readBody } from "../../read-body.mts";
 import { isPseudoCharacter } from "../../scan-schema.mts";
-import { send, asObject } from "../respond.mts";
+import { send, asObject, refuseDemo } from "../respond.mts";
 import type { Route } from "../router.mts";
 import type { ForgetApiResponse } from "../../api/inventory.mts";
 import type { ServerContext } from "../context.mts";
 
 export function routes(ctx: ServerContext): Route[] {
-  const { config: CONFIG, scanStore, eventBus, getInventory } = ctx;
+  const { scanStore, eventBus, getInventory } = ctx;
   return [
     { method: "POST", path: "/api/forget", handle: async (req, res) => {
       // A tombstone scan: a root with no items, dated now, so the fold drops everything under it.
@@ -25,7 +25,7 @@ export function routes(ctx: ServerContext): Route[] {
       // scan regardless of this machine's timezone.
       // --demo points SCANS at app/fixtures/ (repo data, committed) — Forget must never write a
       // tombstone there, or a demo session leaves a stray file in the working tree.
-      if (CONFIG.demo) return send(res, 409, { ok: false, error: "demo data is read-only" });
+      refuseDemo(ctx);
       // Four small scalar fields — no reason for this route to accept the 50 MB default, which is
       // what let a 200,000-character `name` become a 200 KB scan file (post-review fix, Important 4).
       const { root, name = "forgotten" } = asObject(await readBody(req, { limit: 8e3 }));
@@ -58,7 +58,7 @@ export function routes(ctx: ServerContext): Route[] {
       // A character tombstone: a `_vault` scan naming the character in `forgetCharacter`, which the
       // fold (vault-lib.mts's forgetCharacter) handles by dropping the character's card, worn set,
       // backpack and bank. Same demo refusal as /api/forget above.
-      if (CONFIG.demo) return send(res, 409, { ok: false, error: "demo data is read-only" });
+      refuseDemo(ctx);
       const { character } = asObject(await readBody(req, { limit: 8e3 }));
       if (!isBoundedString(character, 64) || isPseudoCharacter(character)) return send(res, 400, { ok: false, error: "character required (a scanned character's name)" });
       // Only a character the inventory has: a tombstone per arbitrary name would pile up in scans/.
