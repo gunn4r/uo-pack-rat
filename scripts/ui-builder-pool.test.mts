@@ -7,7 +7,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { skipWithoutElectron, tempDataDir } from "./electron-app.mts";
+import { skipWithoutElectron, tempDataDir, until } from "./electron-app.mts";
 import { built, closeSettings, launch, openBuilder, pressBuild, settings } from "./builder-ui.mts";
 
 // Resist cap overrides (issue #44): a Fire cap raised to 95 for a Reaper Form suit is marked in the drawer, the
@@ -255,8 +255,7 @@ test("[slow] the Only containers chip narrows the pool, is built with, kept by t
     // the saved run keeps the list (the server writes it as the build finishes: wait for the file)
     const kept = (): boolean => existsSync(join(dataDir, "runs")) && readdirSync(join(dataDir, "runs")).filter((f: string) => f.endsWith(".json"))
       .some((f: string) => JSON.stringify((JSON.parse(readFileSync(join(dataDir, "runs", f), "utf8")) as { settings?: { onlyRoots?: number[] } }).settings?.onlyRoots) === JSON.stringify([picked]));
-    for (let i = 0; i < 50 && !kept(); i++) await page.waitForTimeout(100);
-    assert.ok(kept(), "the saved run keeps the list");
+    assert.ok(await until(kept, (v) => v, "the list in the saved run"), "the saved run keeps the list");
     await page.click("#b-save");
     await page.waitForFunction(() => /Profile for .* saved/.test(document.body.textContent || ""), undefined, { timeout: 10_000 });
     const pool = (): { onlyRoots?: number[] } => (JSON.parse(readFileSync(join(dataDir, "profiles.json"), "utf8")) as { characters: Record<string, { spec: { pool: { onlyRoots?: number[] } } }> }).characters[who]!.spec.pool;
@@ -271,8 +270,7 @@ test("[slow] the Only containers chip narrows the pool, is built with, kept by t
     await page.waitForFunction(() => document.querySelector<HTMLElement>("#b-onlyroots")?.innerText === "Only containers");
     await page.keyboard.press("Escape");
     await page.click("#b-save");
-    for (let i = 0; i < 50 && pool().onlyRoots; i++) await page.waitForTimeout(100);
-    assert.equal(pool().onlyRoots, undefined, "an empty list is not stored");
+    assert.equal((await until(pool, (p) => !p.onlyRoots, "the list gone from the saved profile")).onlyRoots, undefined, "an empty list is not stored");
     assert.deepEqual(errors, []);
   } finally {
     await close();

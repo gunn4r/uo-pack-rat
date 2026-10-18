@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fitWindow, pickCharacter, pickTemplate } from "./electron-window.mts";
-import { skipWithoutElectron, tempDataDir } from "./electron-app.mts";
+import { skipWithoutElectron, tempDataDir, until } from "./electron-app.mts";
 import { closeSettings, launch, openBuilder, settings } from "./builder-ui.mts";
 
 // Issue #212, with the built-in Melee given a description, a source and Divine Fury (the page's GET /api/profiles
@@ -79,7 +79,7 @@ test("[slow] templates: built-ins first with their description, Apply sets Manua
     // build and Kestrel alone. At 420 a long name wraps inside its buttons, with no sideways scroll.
     type Disk = { templates: Record<string, { spec: unknown }>; characters: Record<string, { template?: string }> };
     const profiles = (): Disk => JSON.parse(readFileSync(join(dataDir, "profiles.json"), "utf8")) as Disk;
-    const onDisk = async (ok: (d: Disk) => boolean, what: string): Promise<void> => { for (let i = 0; i < 50 && !ok(profiles()); i++) await page.waitForTimeout(100); assert.ok(ok(profiles()), what); };
+    const onDisk = async (ok: (d: Disk) => boolean, what: string): Promise<void> => { assert.ok(ok(await until(profiles, ok, what)), what); };
     await page.evaluate(async (url) => { const { state } = await import(url); state.profiles.templates.Spare = { spec: state.profiles.templates.Mine.spec }; }, "/ui/store.mjs");
     await settings(page, "requirements");
     await page.click("#b-save");
@@ -102,7 +102,7 @@ test("[slow] templates: built-ins first with their description, Apply sets Manua
     for (const bad of ["Mine", "builtin:x", ""]) {
       await card("Spare").getByRole("button", { name: "Rename Spare" }).click();
       await name(bad);
-      await page.waitForTimeout(300);
+      await page.waitForTimeout(300);   // sleep: proves a refused name renames nothing, which no event can show
       assert.equal(await card("Spare").count(), 1, `"${bad}" refused`);
     }
     assert.equal(JSON.stringify(profiles()), before, "nothing written for a refused name");
