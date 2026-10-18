@@ -11,7 +11,7 @@ class FakeWorker extends EventEmitter {
   terminated = false;
   terminate(): Promise<number> { this.terminated = true; setImmediate(() => this.emit("exit", 1)); return Promise.resolve(1); }
 }
-const input = (): JobInput => ({ pools: {}, current: {}, profile: {}, opts: { timeBudgetMs: 1000 } });
+const input = (): JobInput => ({ pools: {}, current: {}, profile: {}, opts: { timeBudgetMs: 1000 }, ssiSteps: null, swingNote: null });
 const tick = (): Promise<void> => new Promise((ok) => setImmediate(ok));
 
 function setup(retentionMs = 60_000) {

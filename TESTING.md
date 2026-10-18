@@ -138,6 +138,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `app/solver.test.mts` — solver equivalence: HiGHS must never disagree with the core's own exact branch-and-bound about what the best suit is worth.
 - `app/solver/agreement.test.mts` — the solvers agree on one suit's score (issue #338): for random suits over generated pools and profiles, the core's `scoreSet` equals the MIP's objective at `startVector` plus `scoreOffset` (the hard floors built as soft terms for every suit, and as rows for a suit that meets them), each weighted property's part of that objective is its `scoreShares` share of the terms' total size, and the core's score with the floors taken out is the sum of those parts.
 - `app/solver/finish.test.mts` — `app/solver/finish.mts`, everything a build does after the search (issue #338).
+- `app/solver/prepare.test.mts` — `app/solver/prepare.mts`, everything a build does to its input before the search, and the run key (issue #338).
 - `app/solver/scoring.test.mts` — `app/solver/scoring.mts`, the scoring constants both solvers read (issue #338).
 - `app/store/json-file.test.mts` — `app/store/json-file.mts`: each bad-file policy and the writer.
 - `app/store/stores.test.mts` — each store in `app/store/` on its own: size caps, bad files and the exact bytes written.
