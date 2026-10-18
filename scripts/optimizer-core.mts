@@ -24,7 +24,7 @@
 //
 // map: builder
 // owns: `optimizeSuit`, `scoreSet`, `optDefaultSlots`, `optDefaultOptionalSlots`, `optDominancePrune`
-import { CHANGE_COST, DEFAULT_BUDGET_MS, DEFAULT_RESTARTS, FLOAT_EPS, RESIST_SKILL_KEY, RESIST_STEP_SLACK, TIE_SLACK, changeCost, floorMet, keptValue, scoringProfile, slackAt, stepCredit, type SsiStepPoint } from "../app/solver/scoring.mts";
+import { CHANGE_COST, DEFAULT_BUDGET_MS, DEFAULT_RESTARTS, FLOAT_EPS, PROGRESS_EVERY_MS, RESIST_SKILL_KEY, RESIST_STEP_SLACK, TIE_SLACK, TIE_STAGE_SHARE, changeCost, floorMet, keptValue, scoringProfile, slackAt, stepCredit, type SsiStepPoint } from "../app/solver/scoring.mts";
 import type { OptResult as SharedOptResult, SlotChange } from "../app/api/optimize.mts";
 
 // ---------------------------------------------------------------------------
@@ -97,7 +97,7 @@ interface OptOptions {
   exact?: boolean;        // after the heuristic, run dominance pruning + branch-and-bound (proves the optimum or reports best-within-budget)
   timeBudgetMs?: number;  // wall-clock budget for the exact phase (default 15000)
   heuristicBudgetMs?: number;  // wall-clock cap on the seeded-random restarts (default none): once spent, the remaining restarts are skipped. The fixed starts (worn, greedy, gradient, warm) always run.
-  onProgress?: (p: OptProgress) => void;  // live progress, throttled to progressEveryMs (default 250); never affects results
+  onProgress?: (p: OptProgress) => void;  // live progress, throttled to progressEveryMs (default PROGRESS_EVERY_MS); never affects results
   progressEveryMs?: number;
   warmStart?: Record<string, number | null>;  // slot -> serial of an earlier best suit; mapped onto this run's candidates and used as one more search start
   alternatives?: { count: number; tolerance: number };  // exact phase: also list up to `count` other suits scoring within `tolerance` of the best (0 = exact ties)
@@ -980,7 +980,7 @@ function optBranchAndBound(slots: string[], cands: Record<string, (OptItem | nul
   // bestScore is the score of `best`, the best suit this search found; cut is the pruning threshold.
   let best: OptAssignment = incumbent, bestScore = incumbentScore, cut = incumbentScore, nodes = 0, proven = true, improvements = 0;
   const t0 = Date.now();
-  const every = typeof tickEveryMs === "number" && tickEveryMs > 0 ? tickEveryMs : 250;
+  const every = typeof tickEveryMs === "number" && tickEveryMs > 0 ? tickEveryMs : PROGRESS_EVERY_MS;
   let nextTick = t0 + every;
   const EPS = FLOAT_EPS;
   // Alternatives: keep the best (count + 1) leaves scoring at least cut - tolerance. Pruning then only drops a
@@ -1244,7 +1244,7 @@ function optimizeSuit(pools: Record<string, OptItem[]>, current: OptAssignment, 
   // Progress reporting (throttled; a no-op without opts.onProgress).
   const t0 = Date.now();
   const budgetMs = typeof opts.timeBudgetMs === "number" ? opts.timeBudgetMs : DEFAULT_BUDGET_MS;
-  const progressEvery = typeof opts.progressEveryMs === "number" && opts.progressEveryMs > 0 ? opts.progressEveryMs : 250;
+  const progressEvery = typeof opts.progressEveryMs === "number" && opts.progressEveryMs > 0 ? opts.progressEveryMs : PROGRESS_EVERY_MS;
   let candCount = 0;
   for (let i = 0; i < slots.length; i++) candCount += cands[slots[i]!]!.length;
   const prog: OptProgress = { phase: "heuristic", elapsedMs: 0, restartsDone: 0, restarts: restarts, nodes: 0, explored: 0, budgetMs: budgetMs,
@@ -1345,7 +1345,7 @@ function optimizeSuit(pools: Record<string, OptItem[]>, current: OptAssignment, 
       emit(true);
     };
     // with a tie-break, the score pass keeps a quarter of the budget for the tie pass below
-    const bb = optBranchAndBound(slots, pcands, space, best, bestScore, { budgetMs: tb ? budgetMs * 0.75 : budgetMs, tick: opts.onProgress ? tick : undefined, tickEveryMs: progressEvery, alt: alt || undefined, lex: lex });
+    const bb = optBranchAndBound(slots, pcands, space, best, bestScore, { budgetMs: tb ? budgetMs * TIE_STAGE_SHARE : budgetMs, tick: opts.onProgress ? tick : undefined, tickEveryMs: progressEvery, alt: alt || undefined, lex: lex });
     const bbBest = optSanitize(bb.best, slots);
     if (lex ? optLexCmp(lexAt(bbBest), bestVec!) > 0 : bb.score > bestScore) { best = bbBest; bestScore = bb.score; noteBest(best, bestScore); if (lex) bestVec = lexAt(best); }
     method = "exact"; proven = bb.proven; nodes = bb.nodes; pruned = { before: before, after: after };

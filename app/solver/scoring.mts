@@ -5,7 +5,7 @@
 // solvers". Pure, no imports: the core loads it from source, and the page compiles it with the modules that read it.
 //
 // map: builder
-// owns: `HARD_FLOOR_BONUS`, `HARD_FLOOR_BONUS_MAX`, `hardBonusOf`, `TIE_SLACK`, `SCORE_REL`, `slackAt`, `FLOAT_EPS`, `CHANGE_COST`, `GEAR_SLOT_COUNT`, `changeCost`, `RESIST_SKILL_KEY`, `RESIST_STEP_SLACK`, `DEFAULT_FLOOR_BONUS`, `DEFAULT_FLOOR_PARTIAL`, `DEFAULT_BUDGET_MS`, `DEFAULT_RESTARTS`, `scoringProfile`, `ScoringProfile`, `ResistStep`, `stepReached`, `liftedMin`, `heldTotal`, `floorMet`, `SsiStepPoint`, `pointReached`, `stepCredit`, `keptValue`
+// owns: `HARD_FLOOR_BONUS`, `HARD_FLOOR_BONUS_MAX`, `hardBonusOf`, `TIE_SLACK`, `SCORE_REL`, `slackAt`, `FLOAT_EPS`, `CHANGE_COST`, `GEAR_SLOT_COUNT`, `changeCost`, `RESIST_SKILL_KEY`, `RESIST_STEP_SLACK`, `DEFAULT_FLOOR_BONUS`, `DEFAULT_FLOOR_PARTIAL`, `DEFAULT_BUDGET_MS`, `DEFAULT_RESTARTS`, `TIE_STAGE_SHARE`, `PROGRESS_EVERY_MS`, `scoringProfile`, `ScoringProfile`, `ResistStep`, `stepReached`, `liftedMin`, `heldTotal`, `floorMet`, `SsiStepPoint`, `pointReached`, `stepCredit`, `keptValue`
 
 // A met hard floor's bonus, and the most app/mip.mts's withHardFloorBonus raises it to for a profile whose weights could
 // otherwise outweigh it (issue #311).
@@ -43,6 +43,10 @@ export const DEFAULT_FLOOR_BONUS = 1000;
 export const DEFAULT_FLOOR_PARTIAL = 0.5;
 export const DEFAULT_BUDGET_MS = 15_000;
 export const DEFAULT_RESTARTS = 200;
+// With a tie-break, the score pass gets this share of the time it has and the tie pass keeps the rest (both solvers).
+export const TIE_STAGE_SHARE = 0.75;
+// How often a search reports progress at most, by default (the core's opts.progressEveryMs, the exact solver's events).
+export const PROGRESS_EVERY_MS = 250;
 
 // A profile as both solvers score it: every default filled in once, and the floor rules they share. `weights`, `caps`, `mins`
 // and `floors` are the profile's own maps (an absent one empty); `floorOf(d)` is the floor a suit can miss, 0 for none and for
