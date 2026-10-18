@@ -5,6 +5,7 @@
 // owns: `SOLVER_VERSION`, `runKey`, `reusableRun`, `runSummary`, `manualRun`, `runRecord`, `poolSnapshot`, `gearChanges`
 import { createHash } from "node:crypto";
 import { NOBODY, locationOf, totalsOf, type Inventory, type Item, type OptItem } from "./vault-lib.mts";
+import { DEFAULT_BUDGET_MS } from "./solver/scoring.mts";
 import type { GearChanges, PiecePlace, RunResult, RunSettingsRaw, RunSummary, SavedRun, ScoreShare } from "./runs-types.mts";
 export type { RunResult, RunSettingsRaw, RunSummary, SavedRun } from "./runs-types.mts";
 
@@ -87,7 +88,7 @@ export function runKey({ pools = {}, current = {}, profile = {}, opts = {}, weap
 // newest first, so the newest match wins.
 // A manual run (manualRun below) never answers: nothing searched for it.
 export function reusableRun(runs: SavedRun[], key: string, opts: { timeBudgetMs?: number } = {}): SavedRun | null {
-  const want = typeof opts.timeBudgetMs === "number" ? opts.timeBudgetMs : 15000;
+  const want = typeof opts.timeBudgetMs === "number" ? opts.timeBudgetMs : DEFAULT_BUDGET_MS;
   return runs.find((r) => r.key === key && r.result && r.result.method !== "manual" && r.result.solver !== "fallback" && (r.result.proven || r.result.method !== "exact" || (r.budgetMs ?? 0) >= want)) || null;
 }
 
