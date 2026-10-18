@@ -1,0 +1,1 @@
+- **For contributors: every color is a token, checked** (issue #338): `scripts/css-guard.test.mts` now fails on a literal color (`#hex`, `rgb()` / `hsl()` and the other color functions, a named color) in any `app/ui/*.css` but `tokens.css` and `britannia.css`, and in the page modules' inline style strings. Nothing breaks it today.
