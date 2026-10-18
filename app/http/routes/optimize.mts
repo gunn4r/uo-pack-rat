@@ -331,8 +331,8 @@ export function routes(ctx: ServerContext): Route[] {
       const key = runKey({ pools, current, profile, opts: fullOpts, weaponMustHave: mustHave, onlyRoots: only });
       const runs = runStore.all();
       const hit = fill ? null : reusableRun(runs, key, fullOpts as { timeBudgetMs?: number });
-      // §11c: warn (not block) once the candidate pool is large enough that the exact solver can
-      // take a while — the page shows this line above the progress panel (Task 3).
+      // Warn (not block) once the candidate pool is large enough that the exact solver can
+      // take a while: the page shows this line above the progress panel.
       const poolSize = typeof meta.poolSize === "number" ? meta.poolSize : Object.values(pools).reduce((a: number, v) => a + (Array.isArray(v) ? v.length : 0), 0);
       // The by-character form doesn't hand the caller's meta a poolSize/skipped up front (unlike the
       // old form, whose client computes them itself — ui/builder.mts) — fill them in now so a saved

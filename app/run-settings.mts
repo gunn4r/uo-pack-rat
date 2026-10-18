@@ -28,7 +28,7 @@ export const RUN_SETTING_LIMITS = {
 export const RUN_DEFAULTS = { seed: 2026, restarts: 200, exact: true, budgetMs: 300_000, mcpBudgetMs: 60_000, altCount: 5, altTol: 0 } as const;
 
 // The STR limit a build uses when the profile names none: the character's STR, else 125 (the page's STR limit field
-// and build_suit). POST /api/optimize's own default is no limit (Infinity): a known difference the BuildSpec work settles.
+// and build_suit). POST /api/optimize reads the same default (through build-spec.mts's poolFromSpec).
 export const DEFAULT_STR_LIMIT = 125;
 export const defaultStrLimit = (character: { stats?: unknown } | null | undefined): number =>
   Number((character?.stats as { str?: unknown } | undefined)?.str) || DEFAULT_STR_LIMIT;
