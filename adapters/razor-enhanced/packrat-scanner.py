@@ -34,6 +34,11 @@ def data_dir():
         with open(cfg, "r", encoding="utf-8") as f:
             d = json.load(f).get("dataDir")
         if d:
+            # app/schema/packrat-paths.v1.schema.json's shapes: a relative path would land under the client's own
+            # working folder and ~user/ elsewhere, unseen by the app, so refuse to start instead.
+            drive = len(d) > 2 and "a" <= d[0].lower() <= "z" and d[1] == ":" and d[2] in "/\\"
+            if not (drive or d == "~" or d.startswith(("/", "\\\\", "~/", "~\\"))):
+                raise ValueError("packrat-paths.json: dataDir must be an absolute folder or start with ~/")
             return os.path.expanduser(d)
     return os.path.expanduser(os.environ.get("PACKRAT_DATA") or "~/.pack-rat")
 
