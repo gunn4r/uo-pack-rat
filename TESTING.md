@@ -138,6 +138,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `app/solver-templates.test.mts` — HiGHS and the core agree on the fixture for every shipped default template, and with soft floors.
 - `app/solver.test.mts` — solver equivalence: HiGHS must never disagree with the core's own exact branch-and-bound about what the best suit is worth.
 - `app/solver/agreement.test.mts` — the solvers agree on one suit's score (issue #338): for random suits over generated pools and profiles, the core's `scoreSet` equals the MIP's objective at `startVector` plus `scoreOffset` (the hard floors built as soft terms for every suit, and as rows for a suit that meets them), each weighted property's part of that objective is its `scoreShares` share of the terms' total size, and the core's score with the floors taken out is the sum of those parts.
+- `app/solver/budget.test.mts` — `app/solver/budget.mts`, the exact solver's time budget (issue #338).
 - `app/solver/finish.test.mts` — `app/solver/finish.mts`, everything a build does after the search (issue #338).
 - `app/solver/prepare.test.mts` — `app/solver/prepare.mts`, everything a build does to its input before the search, and the run key (issue #338).
 - `app/solver/scoring.test.mts` — `app/solver/scoring.mts`, the scoring constants both solvers read (issue #338).
