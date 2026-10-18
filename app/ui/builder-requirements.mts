@@ -14,7 +14,7 @@ import { gearNeedsText, overrideNote, planBuffs, runBuffs } from "../buffs.mts";
 import { state } from "./store.mts";
 import { el, label, full } from "./dom.mts";
 import { box, txt, button, badge, token, select, input, switchControl, check, segmented, filterChip, pill, popover, closePopover, searchInput, tooltip, refreshTooltips, rowActions, tipWrap } from "./components.mts";
-import { session, commands, provide, type BuilderChange } from "./builder-session.mts";
+import { session, commands, provide, onChange, type BuilderChange } from "./builder-session.mts";
 import { buffsOn, group, checklist, panelFcCap, fcCapNote } from "./builder-parts.mts";
 import { needStatus, shownImportance, nextSwingStep, speedText, swingLines, propName, newWeight, editedValue, ruleValueError, resistCapError, withResistCap, capNote, resistMinimumText, floorCapWarning, weightTradeoff, goalRows, moveGoal, spareKeys, andList, linkGoal, removeGoal, addGoal } from "./builder-model.mts";
 import type { UiPrefs } from "./api-types.mts";
@@ -490,4 +490,5 @@ function showGoalWeights(): void {
 }
 // The first resist whose cap is typed out of range, which stops a build (builder-job.mts runBuild).
 const badCapDraft = (): string | undefined => RESIST_KEYS.find((k) => capDrafts[k] != null);
-provide({ requirementsSection, capsSection, goalsSection, weightsSection, clearCapDrafts, showGoalWeights, badCapDraft });
+onChange("caps", clearCapDrafts);
+provide({ requirementsSection, capsSection, goalsSection, weightsSection, showGoalWeights, badCapDraft });

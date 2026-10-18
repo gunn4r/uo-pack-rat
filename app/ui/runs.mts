@@ -17,7 +17,7 @@ import { api } from "./api.mts";
 import { bindDrawer, box, txt, button, badge, message, input, confirmDialog, menu, type DrawerHandle } from "./components.mts";
 import { renderNavCounts } from "./shell.mts";
 import { resolveItems } from "./items.mts";
-import { session, commands, provide, applyKnobs } from "./builder-session.mts";
+import { session, commands, announce, provide, applyKnobs } from "./builder-session.mts";
 import { paperdollCaps, slotsOf, runAutoLabel, runBadges, runSettingsDiff, toggleCompare, plural, who, withBuffs, latestShownRun, otherCharactersRuns, gearChangedSince, gearChangeLines } from "./builder-model.mts";
 import type { GearChanges } from "../runs-types.mts";
 import type { RunsListApiResponse, RunApiResponse, RunPutApiResponse, RunSummaryLike, SavedRunLike } from "./api-types.mts";
@@ -35,8 +35,8 @@ export function applySettings(st: RunSettings): void {
   if (st.onlyRoots?.length) p.onlyRoots = [...st.onlyRoots]; else delete p.onlyRoots;
   applyKnobs(st);
   commands.loadRunBuffs(savedBuffs(st));
-  commands.clearCapDrafts();
-  commands.renderPanel();
+  announce("caps");
+  announce("panel");
   toast("Settings loaded into the panel. Save profile to keep them.", "good");
 }
 // The profile a run was built with, its buffs planned as they were (effectiveProfile's own default parameter already
@@ -218,7 +218,7 @@ async function deleteRun(run: RunSummaryLike, title: string): Promise<void> {
 // The result on screen cleared, back to the first-visit view (ui/builder-start.mts), while no build runs.
 function clearShown(): void {
   session.openRun = null;
-  if (!session.job && session.character) { session.result = null; $<HTMLElement>("#b-msg")!.replaceChildren(); commands.resetResultView(); commands.renderCurrentSuit(session.character); }
+  if (!session.job && session.character) { session.result = null; $<HTMLElement>("#b-msg")!.replaceChildren(); announce("view"); commands.renderCurrentSuit(session.character); }
 }
 // New build (the "<name>'s runs" card): the first-visit view for the character, the runs kept.
 function startOver(): void {
@@ -266,7 +266,7 @@ export async function openRun(id: string, auto = false): Promise<boolean> {
   else {
     const { restarts, exact, budgetMs, altCount, altTol } = run.settings;
     applyKnobs({ restarts, exact, budgetMs, altCount, altTol } as RunSettings);
-    commands.renderPanel();
+    announce("panel");
   }
   const diff = runSettingsDiff(settingsSnapshot(), run.settings);
   // A saved run never persisted the assignment it started from, only its result (best, perSlotChanges,

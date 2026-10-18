@@ -20,7 +20,7 @@ import { box, txt, button, badge, select, input, field, switchControl, check, se
 import { createBuffPicker, type BuffPicker, type BuffView, type PickerActions } from "./builder-buffs.mts";
 import { parseRoute, registerScreen, routeFor } from "./nav.mts";
 import { editProfiles, setCharacterBuffs } from "./profiles.mts";
-import { session, commands, provide, readControls, type BuilderChange, type BuildState, type SectionId, type FocusSection } from "./builder-session.mts";
+import { session, commands, announce, provide, onChange, readControls, type BuilderChange, type BuildState, type SectionId, type FocusSection } from "./builder-session.mts";
 import { plainName, NO_CHARACTER, buffsOn, group, checklist, panelFcCap, fcCapNote } from "./builder-parts.mts";
 import { characterNames } from "./roster.mts";
 import { runSettingsDiff, plural, knobError, pruneResistCaps, weaponsChipText, weaponMustHaveChipText, withStoredRoots, weaponName, toggleWeapon, fcCapText, rarityHelp, templateBuffsLine, sourceTitle, who, buildStateText, buildStateDetail, type KnobField } from "./builder-model.mts";
@@ -157,8 +157,8 @@ export function syncBuilderCharacters(): void {
     $<HTMLElement>("#b-result")!.replaceChildren(box("div", { class: "card empty-state" }, el("h2", { class: "t-lg" }, "No characters yet"), el("p", { class: "muted" }, txt("Import a scan and its character shows up here."))));
   }
   setNoCharacter(!names.length);
-  commands.paintCharSelect();
-  void commands.syncManual();
+  announce("picker");
+  announce("roster");
 }
 // With no character there is nothing to build or save: the Build and save buttons are disabled, and say why (NO_CHARACTER) — in
 // their title, and in the drawer's own line that they are described by.
@@ -177,13 +177,13 @@ export function selectCharacter(name: string, open: string | true = true): void 
   if (parseRoute().tab === "builder") history.replaceState(null, "", routeFor("builder"));
   session.profile = characterProfile(state.profiles!, name, state.builtinTemplates);
   session.profile!.excludeRoots ??= [];
-  commands.clearCapDrafts();
+  announce("caps");
   const c = state.inv!.characters[name];
   knobs.strLimit = String(session.profile!.strLimit ?? defaultStrLimit(c));
   renderPanel();
   session.compare = new Set(); session.openRun = null; session.result = null;
   commands.closeCompare();
-  commands.resetResultView();   // a result still resolving its pieces for the previous character must not draw now
+  announce("view");   // a result still resolving its pieces for the previous character must not draw now
   if (!session.job) $<HTMLElement>("#b-msg")!.replaceChildren();   // a running build keeps its progress card
   // A build that finished while another character was on screen waits here for its own character.
   const parked = session.parked;
@@ -193,8 +193,8 @@ export function selectCharacter(name: string, open: string | true = true): void 
   else if (session.job) commands.renderCurrentSuit(name);
   else $<HTMLElement>("#b-result")!.replaceChildren();
   commands.loadRuns(open);
-  commands.paintCharSelect();
-  commands.renderManual();
+  announce("picker");
+  announce("selected");
 }
 
 // ---------------------------------------------------------------- the panel
@@ -290,7 +290,7 @@ function updateTemplateBadge(): void {
   $<HTMLElement>("#b-tpl-state")!.textContent = `${st.text}. ${st.detail}`;
   $<HTMLElement>("#b-drawer-tpl")!.textContent = st.text;
   paintChanges();
-  commands.refreshCurrentSuit();
+  announce("settings");
 }
 // The footer's "N changes since the last build": what the runs drawer's diff (runSettingsDiff) names between the shown
 // run and the panel, hidden with no run shown. While the run on screen is the one a build just showed, it counts from
@@ -639,5 +639,6 @@ async function saveProfile(said?: string): Promise<void> {
   toast(r.ok ? said ?? `Profile for ${who(name)} saved.` : r.error!, r.ok ? "good" : "bad");
   updateTemplateBadge();
 }
-provide({ renderPanel, panelBuild, buffPlan, loadRunBuffs, tuneWeight, selectCharacter, openSettingsTab: (t, focus) => openSettings(t as Tab, focus),
+onChange("panel", renderPanel);
+provide({ panelBuild, buffPlan, loadRunBuffs, tuneWeight, selectCharacter, openSettingsTab: (t, focus) => openSettings(t as Tab, focus),
   buildState, unsavedChanges, openChange, updateTemplateBadge, redraw, focusIn, saveProfile: (said) => { void saveProfile(said); }, focusKnob, paintChanges, showFinished });

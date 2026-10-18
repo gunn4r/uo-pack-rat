@@ -14,7 +14,7 @@ import { state, invStamp } from "./store.mts";
 import { $, el, label, ago } from "./dom.mts";
 import { box, txt, button, badge } from "./components.mts";
 import { api } from "./api.mts";
-import { session, commands, provide } from "./builder-session.mts";
+import { session, commands, provide, onChange } from "./builder-session.mts";
 import { RESIST_NAMES } from "./builder-parts.mts";
 import { paperdollCaps, needsLine, topWeights, goalSummary, poolLine, searchLine, suggestTemplates, propName, who } from "./builder-model.mts";
 import type { ItemsApiResponse } from "./api-types.mts";
@@ -149,4 +149,5 @@ function wearingCard(name: string): HTMLElement {
     gauges.length ? box("ul", { class: "b-gauges" }, ...gauges) : null,
     el("p", { class: "t-sm muted" }, "The build starts from this. A result shows what would change."));
 }
-provide({ renderCurrentSuit, refreshCurrentSuit });
+onChange("settings", refreshCurrentSuit);
+provide({ renderCurrentSuit });
