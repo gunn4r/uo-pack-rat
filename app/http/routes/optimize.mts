@@ -16,20 +16,19 @@
 import { randomUUID } from "node:crypto";
 import http from "node:http";
 import { isBoundedInt, isBoundedString, short } from "../../guards.mts";
-import { optionalSlotsFor, poolStepsFor, withHardFloorBonus, withReachableResistSteps, type MipProfile } from "../../mip.mts";
-import { onlyRootsDiagnostics, preBuildDiagnostics, requirementScaleDiagnostics, scoreShares, weaponFlagDiagnostics, type Diagnostic, type DiagnosticsProfile } from "../../diagnostics.mts";
+import { optionalSlotsFor } from "../../mip.mts";
+import { prepareSolve } from "../../solver/prepare.mts";
+import { onlyRootsDiagnostics, scoreShares, weaponFlagDiagnostics, type Diagnostic, type DiagnosticsProfile } from "../../diagnostics.mts";
 import { readBody } from "../../read-body.mts";
-import { gearChanges, runKey, reusableRun, runSummary, manualRun, poolSerials, poolSnapshot, type RunOpts, type SavedRun } from "../../runs-lib.mts";
-import { OPTS_LIMITS, RUN_DEFAULTS, runSettingsError, type RunSettings } from "../../run-settings.mts";
+import { gearChanges, reusableRun, runSummary, manualRun, poolSerials, poolSnapshot, type RunOpts, type SavedRun } from "../../runs-lib.mts";
+import { OPTS_LIMITS, runSettingsError, type RunSettings } from "../../run-settings.mts";
 import { manualBase, manualPlan } from "../../buffs.mts";
 import { evaluateSuit } from "../../evaluate.mts";
 import type { GearChanges, RunBody, RunsListBody, RunSummary, ScoreShare } from "../../runs-types.mts";
 import { sse } from "../../services/events.mts";
 import type { Job } from "../../services/jobs.mts";
 import { isManualSuit } from "../../store/ui-prefs.mts";
-import { rarityRank } from "../../item-query.mts";
-import type { RulesV1RarityItem } from "../../schema/types.d.mts";
-import { GEAR_SLOTS, GOAL_RANKS_MAX, GOAL_RANK_SIZE_MAX, NOBODY, RARITY_PREFERENCES, RESIST_KEYS, buildPools, getRules, missingFlags, toOptItem, totalsOf, type Character, type Inventory, type Item, type OptItem, type Profile, type RarityPreference, type ResistStep, type RunBuffs } from "../../vault-lib.mts";
+import { GEAR_SLOTS, GOAL_RANKS_MAX, GOAL_RANK_SIZE_MAX, NOBODY, RARITY_PREFERENCES, RESIST_KEYS, buildPools, getRules, missingFlags, toOptItem, totalsOf, type Character, type Inventory, type Item, type OptItem, type Profile, type RarityPreference, type RunBuffs } from "../../vault-lib.mts";
 import { characterProfile, planBuild, poolFromSpec, specFromRunSettings } from "../../build-spec.mts";
 import { safeAppendLog } from "../../log.mts";
 import { stepsFor } from "../../swing.mts";
@@ -141,13 +140,6 @@ function optsError(opts: Record<string, unknown>): string | null {
     }
   }
   return null;
-}
-// A rarity preference's per-piece cost (issue #262), stamped on each candidate and worn piece: the solvers minimize its
-// sum among suits within the tolerance. "lower" costs a piece its rank on the shard's ladder, "higher" the ranks above
-// it (an empty slot costs 0 either way); a serial the scans do not have ranks 0, below every tier.
-function stampTieCost<T extends { serial: number }>(it: T, inv: Inventory, rarity: RarityPreference, ladder: RulesV1RarityItem[]): T & { tieCost: number } {
-  const rank = rarityRank(ladder, inv.items[it.serial]?.rarity);
-  return { ...it, tieCost: rarity === "lower" ? rank : ladder.length - rank };
 }
 // A build's settings with their nulls dropped: a `null` in an optional field (as a saved run's settings can carry, e.g.
 // re-posted from the runs drawer) means "use the default", exactly like an absent field.
@@ -298,13 +290,6 @@ export function routes(ctx: ServerContext): Route[] {
         const badPools = poolsError(pools) || currentError(current);
         if (badPools) return send(res, 400, { ok: false, error: badPools });
       }
-      const rarity = ((opts as RunOpts).tieBreak as { rarity?: RarityPreference } | undefined)?.rarity;
-      if (rarity) {
-        const { inv } = await getInventory(), ladder = getRules().rarity || [];
-        const stamp = (it: unknown): unknown => (it && typeof it === "object" ? stampTieCost(it as { serial: number }, inv, rarity, ladder) : it);
-        pools = Object.fromEntries(Object.entries(pools).map(([slot, list]) => [slot, (list as unknown[]).map(stamp)]));
-        current = Object.fromEntries(Object.entries(current).map(([slot, it]) => [slot, stamp(it)]));
-      }
       // profile is scored against in the worker; a string or a number would fail there, not here.
       if (!profile || typeof profile !== "object" || Array.isArray(profile)) return send(res, 400, { ok: false, error: "profile required" });
       const { hardFloors } = profile as { hardFloors?: unknown };
@@ -317,18 +302,13 @@ export function routes(ctx: ServerContext): Route[] {
       // a soft floor's bonus rewards reaching it: a negative one has no use, and the exact solver has no model for it (issue #315)
       if (floorBonus != null && (typeof floorBonus !== "number" || !Number.isFinite(floorBonus) || floorBonus < 0 || floorBonus > 1e6)) return send(res, 400, { ok: false, error: "profile.floorBonus must be a number from 0 to 1000000" });
       if (floorPartial != null && (typeof floorPartial !== "number" || !Number.isFinite(floorPartial) || floorPartial < 0 || floorPartial > 0.5)) return send(res, 400, { ok: false, error: "profile.floorPartial must be a number from 0 to 0.5" });
-      const fullOpts = Object.assign({ seed: RUN_DEFAULTS.seed, restarts: RUN_DEFAULTS.restarts }, opts as RunOpts);
-      // only the Resisting Spells steps this pool reaches, before the key: a pool without such pieces keys as before them
-      profile = withReachableResistSteps(profile as { resistSteps?: ResistStep[] }, pools as Partial<Record<string, OptItem[]>>, current as Partial<Record<string, OptItem | null>>, fullOpts.optionalSlots as string[] | undefined);
-      // a hard floor's bonus large enough that nothing else in the score outweighs it (issue #311), the SSI step table the
-      // worker will score with counted; a usual profile carries none. Past the cap the build runs at it and says so.
-      {
-        const p = pools as Partial<Record<string, OptItem[]>>, c = current as Partial<Record<string, OptItem | null>>, optional = fullOpts.optionalSlots as string[] | undefined;
-        const { ssiSteps } = poolStepsFor(profile as Parameters<typeof poolStepsFor>[0], p, c, optional);
-        profile = withHardFloorBonus(profile as MipProfile, p, c, optional, undefined, ssiSteps);
-        poolDiagnostics = [...poolDiagnostics, ...requirementScaleDiagnostics({ pools: p, current: c, optionalSlots: optional, profile: { ...(profile as DiagnosticsProfile), ...(ssiSteps ? { ssiSteps } : {}) } })];
-      }
-      const key = runKey({ pools, current, profile, opts: fullOpts, weaponMustHave: mustHave, onlyRoots: only });
+      // every transform of the solve's input and the run key, in their one order (app/solver/prepare.mts)
+      const rarity = ((opts as RunOpts).tieBreak as { rarity?: RarityPreference } | undefined)?.rarity;
+      const { input, key, scaleDiagnostics, preDiagnostics } = prepareSolve({ pools, current, profile, opts: opts as RunOpts, weaponMustHave: mustHave, onlyRoots: only,
+        rarity: rarity ? { inv: (await getInventory()).inv, ladder: getRules().rarity || [] } : null });
+      const fullOpts = input.opts;
+      ({ pools, current } = input);
+      poolDiagnostics = [...poolDiagnostics, ...scaleDiagnostics];
       const runs = runStore.all();
       const hit = fill ? null : reusableRun(runs, key, fullOpts as { timeBudgetMs?: number });
       // Warn (not block) once the candidate pool is large enough that the exact solver can
@@ -339,8 +319,7 @@ export function routes(ctx: ServerContext): Route[] {
       // run started this way (the jobs service's saveRun() reads job.meta) carries the same figures the response does.
       if (character) { meta.poolSize = poolSize; meta.skipped = skipped; }
       // The requirements no suit in the pool can reach, said before the search starts (app/diagnostics.mts); the result repeats them.
-      const diagnostics = [...poolDiagnostics, ...preBuildDiagnostics({ pools: pools as Partial<Record<string, OptItem[]>>, current: current as Partial<Record<string, OptItem | null>>,
-        optionalSlots: fullOpts.optionalSlots as string[] | undefined, profile: profile as DiagnosticsProfile })];
+      const diagnostics = [...poolDiagnostics, ...preDiagnostics];
       if (hit) return send(res, 200, { ok: true, cached: true, run: hit, poolSize, skipped, current, blocked, diagnostics });
       // warm start: this character's newest saved suit, re-scored under the new settings
       const last = fill ? null : runs.find((r) => r.character === meta.character && r.result && r.result.best);
@@ -349,7 +328,7 @@ export function routes(ctx: ServerContext): Route[] {
       // own declared fields (an index-signature read, same trust as everywhere else in this route).
       if (last) fullOpts.warmStart = Object.fromEntries(Object.entries(last.result!.best as Record<string, { serial: number } | null>).map(([slot, it]) => [slot, it ? it.serial : null]));
       // One running build per client, behind a server-wide ceiling (app/services/jobs.mts submit).
-      const started = jobService.submit({ pools, current, profile, opts: fullOpts, ...(poolDiagnostics.length ? { diagnostics: poolDiagnostics } : {}) }, key, meta, headerClientId, !fill);
+      const started = jobService.submit({ ...input, ...(poolDiagnostics.length ? { diagnostics: poolDiagnostics } : {}) }, key, meta, headerClientId, !fill);
       if (!started) return send(res, 429, { ok: false, error: "too many builds are already running; try again in a moment" });
       const { job, superseded } = started;
       if (poolSize > 50000) job.meta.warning = "over 50,000 candidates; the exact solver may take a while";
