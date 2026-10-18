@@ -18,7 +18,6 @@ import { isBoundedString } from "../../guards.mts";
 import { addGrab } from "../../organize-state.mts";
 import { readBody } from "../../read-body.mts";
 import { validate, type ValidatorSchema } from "../../schema/validate.mts";
-import type { BridgeV1Status } from "../../schema/types.d.mts";
 import { send, asObject } from "../respond.mts";
 import { APP_DIR } from "../../config.mts";
 import type { Route } from "../router.mts";
@@ -96,9 +95,7 @@ export function routes(ctx: ServerContext): Route[] {
       if (!status) return send(res, 200, { ok: true, online: false } satisfies BridgeStatusApiResponse);
       // The file's own fields go first, so a stray ok/online/age in a hand-edited or foreign file can never override
       // what this server computed.
-      // `current` and `results` are status.json's own objects, which the schema leaves open, while BridgeStatusApiResponse
-      // names the fields the page reads off them.
-      return send(res, 200, { ...status, ok: true, online, age: Math.round(age) } satisfies Omit<BridgeStatusApiResponse, "current" | "results"> & Pick<BridgeV1Status, "current" | "results">);
+      return send(res, 200, { ...status, ok: true, online, age: Math.round(age) } satisfies BridgeStatusApiResponse);
     } },
   ];
 }
