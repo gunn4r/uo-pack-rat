@@ -12,7 +12,7 @@ import type { Item } from "../vault-lib.mts";
 import { state } from "./store.mts";
 import { $, el, fmtN, itemTip, whereText } from "./dom.mts";
 import { fetchAllItems, inventoryLoader } from "./inventory-data.mts";
-import { txt, box, icon, button, badge, kbd, keyValue, message, meter, searchInput, segmented, tableFoot } from "./components.mts";
+import { txt, box, icon, button, badge, keyValue, detailPane, detailSection, message, meter, searchInput, segmented, tableFoot } from "./components.mts";
 import { splitSerial } from "./inv-model.mts";
 import { parseRoute, registerScreen, showSearch } from "./nav.mts";
 import { tagEls } from "./item-parts.mts";
@@ -252,18 +252,12 @@ function drawDetail(shown: Row[]): void {
   const count = power ? plural((r as PowerRow).total, "power scroll") : plural((r as SotRow).tenths.length, "Scroll of Transcendence", "Scrolls of Transcendence");
   const nx = power ? (r as PowerRow).next : null;
   const summary = power ? powerSummary(r as PowerRow) : sotSummary(r as SotRow);
-  const titleId = "scr-peek-title";
-  p.setAttribute("aria-labelledby", titleId);
-  p.replaceChildren(
-    box("div", { class: "peek-head" },
-      box("div", { class: "peek-title" }, el("h2", { class: "t-lg", id: titleId }, r.skill),
-        button({ label: "Previous skill", icon: "chevron-up", iconOnly: true, variant: "ghost", size: "sm", onClick: () => step(-1) }),
-        button({ label: "Next skill", icon: "chevron-down", iconOnly: true, variant: "ghost", size: "sm", onClick: () => step(1) }),
-        button({ label: "Close detail", icon: "close", iconOnly: true, variant: "ghost", size: "sm", attrs: { "data-peek-close": "" }, onClick: () => closeDetail(true) })),
-      box("div", { class: "peek-meta" }, badge(count), badge(plural(groups.length, "container")))),
-    box("div", { class: "peek-body" },
-      summary ? box("section", { class: "peek-sec", "aria-label": power ? "Roll-up" : "Binder plan" }, txt(power ? "Roll-up" : "Binder plan", "caps"), summary) : null,
-      box("section", { class: "peek-sec", "aria-label": "Where they are" }, txt("Where they are", "caps"),
+  detailPane(p, {
+    title: r.skill, titleId: "scr-peek-title", noun: "skill", nouns: "skills",
+    meta: [badge(count), badge(plural(groups.length, "container"))],
+    sections: [
+      summary ? detailSection(power ? "Roll-up" : "Binder plan", summary) : null,
+      detailSection("Where they are",
         ...groups.map((g) => {
           const { name, serial } = splitSerial(whereText(g.text));
           return box("div", { class: "scr-place" },
@@ -273,10 +267,10 @@ function drawDetail(shown: Row[]): void {
               const level = power ? String(it.props.psLevel) : fmtTenths(toTenths(it.props.sotPoints ?? 0));
               return itemTip(box("li", {}, badge(level, power && nx && it.props.psLevel === nx.from ? "accent" : undefined), txt((it.amount || 1) > 1 ? `${listName(it.name)} ×${fmtN(it.amount)}` : listName(it.name), "ellip"), ...tagEls(it)), it);
             })));
-        }))),
-    box("div", { class: "overlay-foot peek-foot" },
-      box("div", { class: "peek-acts scr-acts" }, button({ label: "Show in Inventory", icon: "inventory", block: true, attrs: { id: "scr-show" }, onClick: () => showSearch(power ? powerQuery(r.skill) : sotQuery(r.skill)) })),
-      box("p", { class: "t-sm muted peek-keys" }, kbd("↑"), kbd("↓"), txt("step through skills"), kbd("Esc"), txt("close"))));
+        }))],
+    actions: [button({ label: "Show in Inventory", icon: "inventory", block: true, attrs: { id: "scr-show" }, onClick: () => showSearch(power ? powerQuery(r.skill) : sotQuery(r.skill)) })], actionsCls: "scr-acts",
+    onStep: (d) => step(d), onClose: () => closeDetail(true),
+  });
   p.hidden = false;
 }
 function powerSummary(r: PowerRow): HTMLElement | null {
