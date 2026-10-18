@@ -9,12 +9,13 @@
 //
 // map: ui-infra
 // owns: the hand-declared `*ApiResponse` types
-import type { OptItem, RunSettings } from "../vault-lib.mts";
+import type { RunSettings } from "../vault-lib.mts";
 import type { ProfilesV3, TemplateMap } from "../build-spec.mts";
 import type { AutostartOutcome, Hotkey as PanelHotkey, PanelPrefs } from "../tazuo-panel-prefs.mts";
 import type { OrganizeConfig, RuleMatch } from "../organize-config.mts";
-import type { Diagnostic, RunBody, RunsListBody, RunSummary, SavedRun, ScoreShare, SwingResult } from "../runs-types.mts";
+import type { RunBody, RunsListBody, RunSummary, SavedRun } from "../runs-types.mts";
 import type { HouseApiResponse } from "../house-model-types.mts";
+import type { OptimizeResult as SharedOptimizeResult, OptimizeStartApiResponse as SharedOptimizeStartApiResponse, SolveProgress, Suit } from "../api/optimize.mts";
 
 // ---------------------------------------------------------------- shared fragments
 
@@ -93,100 +94,14 @@ export type { ItemKindsApiResponse } from "../api/kinds.mts";
 
 // ---------------------------------------------------------------- suit builder: optimize / runs
 
-// The optimizer's per-slot change list — mirrors scripts/optimizer-core.mts's (unexported)
-// OptSlotChange, which app/exact-solver.mts's ExactSolveResult carries through unchanged.
-export interface SlotChange {
-  slot: string;
-  from: string | null;
-  fromSerial: number;
-  to: string | null;
-  toSerial: number;
-  gainedProps: Record<string, number>;
-}
-// One candidate suit — the shape both `result.best`/`result.alternatives[].best` (an OptAssignment,
-// scripts/optimizer-core.mts) and the by-character POST /api/optimize response's `current` use: a
-// slot name to a candidate item, or null for "nothing there." vault-lib.mts's OptItem is the same
-// item shape the rest of the page already uses (resolveItems, totalsOf, sheetHtml).
-export type OptSuit = Record<string, OptItem | null>;
-// The optimizer's own result — mirrors scripts/optimizer-core.mts's OptResult, plus the exact-search
-// fields app/exact-solver.mts's ExactSolveResult adds on top of it. Declared as one flat, mostly
-// optional shape (rather than the two-interface split those files use) since every reader here
-// (builder.mts, runs.mts) only ever reads fields off the union, the same way server.test.mts's own
-// OptimizeJobResponse.result does.
-export interface OptimizeResult {
-  best: OptSuit;
-  score: number;
-  currentScore: number;
-  greedyScore?: number | undefined;
-  delta?: number | undefined;
-  perSlotChanges: SlotChange[];
-  totals: { before: Record<string, number>; after: Record<string, number> };
-  method?: string | undefined;
-  proven?: boolean | undefined;
-  nodes?: number | undefined;
-  alternatives?: Array<{ best: OptSuit; score: number; shares?: ScoreShare[] | undefined }> | undefined;
-  altTolerance?: number | undefined;
-  altShortfall?: "budget" | "tolerance" | "exhausted" | "unequal" | undefined;   // why fewer alternatives than asked (exact-solver.mts's AltShortfall)
-  solver?: string | undefined;
-  bound?: number | null | undefined;
-  gapPoints?: number | null | undefined;
-  mipMs?: number | undefined;
-  heuristicMs?: number | undefined;
-  unreachableFloors?: string[] | undefined;
-  fallbackReason?: string | undefined;
-  floorsConflict?: boolean | undefined;
-  diagnostics?: Diagnostic[] | undefined;   // absent on a run saved before SOLVER_VERSION 6: unreachableFloors is drawn instead
-  swing?: SwingResult | undefined;          // the suit's swing (app/swing.mts), when it holds a weapon with a known speed and the build has a character
-  tieBreak?: TieBreakResult | undefined;    // a rarity preference's or fewest changes' outcome (app/exact-solver.mts TieBreakResult)
-  strict?: StrictResult | undefined;        // a strict-order build's stages (app/exact-solver.mts StrictResult)
-  shares?: ScoreShare[] | undefined;        // what made up the suit's score (app/diagnostics.mts scoreShares); absent on a run saved before issue #273
-}
-// A tie-break's outcome: the best score found, the returned suit's rarity points, the preference and tolerance, with fewest changes how many slots it changes, and whether that is proven the lowest (exact search only).
-export interface TieBreakResult { topScore: number; cost: number; changes?: number | undefined; rarity?: string | undefined; fewestChanges?: boolean | undefined; tolerance?: number | undefined; costProven?: boolean | undefined }
-// A strict-order build's stages, each with the suit's value there, and how many are proven in order.
-export interface StrictResult { stages: Array<{ kind: string; keys: string[] | null; value: number }>; proven: number; changes?: number | undefined }
-// SolveProgress (app/exact-solver.mts) as reported over the job's SSE stream and read by
-// builder-job.mts's runPanel(). Every field but `phase` is optional — not every phase reports every one.
-export interface OptimizeProgress {
-  phase: string;
-  elapsedMs?: number | undefined;
-  restartsDone?: number | undefined;
-  restarts?: number | undefined;
-  nodes?: number | undefined;
-  candidates?: number | undefined;
-  budgetMs?: number | undefined;
-  improvements?: number | undefined;
-  lastImprovementMs?: number | undefined;
-  bestScore?: number | null | undefined;
-  currentScore?: number | undefined;
-  floorsMet?: number | undefined;
-  floorsTotal?: number | undefined;
-  gapPoints?: number | null | undefined;
-  found?: number | undefined;
-  wanted?: number | undefined;
-  stage?: { at: number; of: number; kind: string; keys: string[] | null } | undefined;   // strict order: the stage being solved, from 1, and what it scores
-}
-// POST /api/optimize's start response — the non-cached branch (a fresh job) and the cached branch
-// (`cached: true`, carrying the reused SavedRunLike straight away) share every field but the ones
-// only one side sends.
-export interface OptimizeStartApiResponse {
-  ok: boolean;
-  id?: string | undefined;
-  warmFrom?: string | null | undefined;
-  superseded?: string | null | undefined;
-  warning?: string | undefined;
-  poolSize: number;
-  skipped: Record<string, number>;
-  current: OptSuit;
-  blocked: string[];
-  cached?: boolean | undefined;
-  run?: SavedRunLike | undefined;
-  diagnostics?: Diagnostic[] | undefined;   // the requirements no suit in the pool can reach, before the search starts
-}
-export interface OptimizeCancelApiResponse {
-  ok: boolean;
-  state: string;
-}
+// What a build answers (app/api/optimize.mts), under the names the page has always used. A suit (OptSuit) is a slot to a
+// candidate item, or null: result.best, result.alternatives[].best and POST /api/optimize's `current`.
+export type { SlotChange, TieBreakResult, StrictResult, OptimizeCancelApiResponse } from "../api/optimize.mts";
+export type OptSuit = Suit;
+export type OptimizeResult = SharedOptimizeResult;
+export type OptimizeProgress = SolveProgress;
+// POST /api/optimize's start response, its cached branch carrying the saved run as the page reads it.
+export type OptimizeStartApiResponse = SharedOptimizeStartApiResponse<SavedRunLike>;
 // The page's view of a saved run (app/runs-types.mts). The server's types are loose because it parses whatever run files are on disk; every run the server writes (vault-server.mts saveRun, runs-lib.mts manualRun) has an id, a createdAt, a label ("" until renamed), a poolSize and an ms, so the page reads those as present (Settled). Loose: optional here.
 type Settled<T, K extends keyof T> = { [P in K]-?: Exclude<T[P], undefined> };
 type Loose<T, K extends keyof T> = { [P in K]?: T[P] | undefined };
@@ -202,28 +117,8 @@ export type RunsListApiResponse = RunsListBody<RunSummaryLike>;
 export type RunApiResponse = RunBody<SavedRunLike> & { error?: string | undefined };
 export type RunPutApiResponse = RunBody<RunSummaryLike>;
 
-// SSE payloads (POST /api/optimize's job stream, JSON.parse()'d from MessageEvent.data by
-// builder.mts) — mirror vault-server.mts's jobSnapshot()/finish() literals.
-export interface JobSnapshotEvent {
-  id: string;
-  state: string;
-  progress: OptimizeProgress | null;
-  result: OptimizeResult | null;
-  ms: number | null;
-  error: string | null;
-  runId: string | null;
-}
-export interface JobDoneEvent {
-  result: OptimizeResult;
-  ms: number;
-  runId: string | null;
-}
-export interface JobFailedEvent {
-  error: string;
-}
-export interface JobCancelledEvent {
-  ms: number;
-}
+// SSE payloads (POST /api/optimize's job stream, JSON.parse()'d from MessageEvent.data by builder-job.mts).
+export type { JobSnapshot as JobSnapshotEvent, JobDoneEvent, JobFailedEvent, JobCancelledEvent } from "../api/optimize.mts";
 
 // ---------------------------------------------------------------- bridge
 // The bridge routes' shapes come from app/api/bridge.mts.
