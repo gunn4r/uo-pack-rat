@@ -12,7 +12,7 @@ import { changeCostFor, pickedOf, startVector, tieCosts } from "../../mip.mts";
 import { addNoGood, closeModel, openModel, type SolveResult } from "../../mip-solve.mts";
 import { FLOAT_EPS, TIE_SLACK } from "../scoring.mts";
 import type { ExactObjective } from "./objective.mts";
-import { assignmentOf, serialsKey, serialsOf, tieCostOf, topOf, type ExactRun, type OptAssignment, type OptOptionsFull, type OptResult } from "./run.mts";
+import { assignmentOf, serialsKey, serialsOf, tieCostOf, topOf, type ExactRun, type OptAssignment, type OptResult } from "./run.mts";
 
 type Picked = Partial<Record<string, OptItem>>;
 
@@ -84,18 +84,13 @@ export interface HandBackInput {
   alternatives: { best: OptAssignment; score: number }[];
   altShortfall: AltShortfall | undefined;
   altTolerance: number | undefined;
-  eps: number;                   // equal scores: the slack the guards compare within
-  heurTop: Partial<Pick<OptOptionsFull, "tieBreak">>;   // the heuristic's top suit as a tie-break start, for a hand-back from its suit
-  heuristicMs: number;
-  restarts: number;
   floorsConflict: boolean;
-  onWarn: (message: string) => void;
 }
 
 // Hand the winning suit back to the core for the full report, with the three guards that revoke `proven` and warn.
 export function handBack(run: ExactRun, objective: ExactObjective, input: HandBackInput): SharedExactSolveResult<OptAssignment> {
-  const { core, budget, pools, current, profile, opts, slots, heur, tb, alt } = run;
-  const { solve, picked, picked2, mipScore, stage2Optimal, alternatives, altTolerance, eps, heurTop, heuristicMs, restarts, floorsConflict, onWarn } = input;
+  const { core, budget, pools, current, profile, opts, slots, heur, tb, alt, eps, heurTop, heuristicMs, restarts, onWarn } = run;
+  const { solve, picked, picked2, mipScore, stage2Optimal, alternatives, altTolerance, floorsConflict } = input;
   let { altShortfall } = input;
   // The MIP start guarantees HiGHS never returns an incumbent that scores below the heuristic
   // from that starting point on — but a `timeLimit` result can still lose the race: the

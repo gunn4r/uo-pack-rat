@@ -41,6 +41,7 @@ export interface ExactRun {
   budget: Budget;
   now: () => number;
   onProgress: (p: SolveProgress) => void;
+  onWarn: (message: string) => void;
   pools: OptPools;
   current: OptAssignment;
   profile: OptProfile;
@@ -48,6 +49,10 @@ export interface ExactRun {
   slots: string[];
   mipCurrent: Partial<Record<string, OptItem>>;
   heur: OptResult;                                   // the heuristic's result, the incumbent HiGHS starts from
+  heuristicMs: number;                               // how long the heuristic took
+  heurTop: Partial<Pick<OptOptionsFull, "tieBreak">>;  // its top suit as a tie-break start, for a hand-back from its suit
+  restarts: number;                                  // the heuristic's restarts, as the result reports them
+  eps: number;                                       // equal scores: the slack the guards compare within
   candidates: number;                                // candidate pieces in the model, for progress
   tb: TieBreakAsked | null;
   alt: { count: number; tolerance: number } | null;  // opts.alternatives, when it asks for any

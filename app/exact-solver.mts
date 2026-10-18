@@ -120,10 +120,10 @@ export async function solveExact({
   // (app/solver/budget.mts); with a tie-break the first solve takes TIE_STAGE_SHARE of it.
   const tb = opts.tieBreak ? { rarity: opts.tieBreak.rarity, fewest: !!opts.tieBreak.fewestChanges, tolerance: Math.max(0, opts.tieBreak.tolerance || 0) } : null;
   const alt = opts.alternatives && opts.alternatives.count > 0 ? opts.alternatives : null;
-  const run = startRun({ core, highs, solveModel, budget, now, onProgress, pools, current, profile, opts, slots, mipCurrent, heur, candidates, tb, alt, active: built, handle: openModel(highs, built) });
+  // equal scores: the solvers' score precision with a tie-break (app/mip.mts TIE_SLACK, as the core and the stage-2 row), else SCORE_EPS
+  const eps = tb ? TIE_SLACK : SCORE_EPS;
+  const run = startRun({ core, highs, solveModel, budget, now, onProgress, onWarn, pools, current, profile, opts, slots, mipCurrent, heur, heuristicMs, heurTop, restarts, eps, candidates, tb, alt, active: built, handle: openModel(highs, built) });
   try {
-    // equal scores: the solvers' score precision with a tie-break (app/mip.mts TIE_SLACK, as the core and the stage-2 row), else SCORE_EPS
-    const eps = tb ? TIE_SLACK : SCORE_EPS;
     const objective = stages ? strictOrderObjective(run, stages) : bestValueObjective(run);
     const firstSolve = (): SolveResult => objective.firstSolve(startVector(run.active, heur.best as unknown as Partial<Record<string, OptItem>>));
     let solve = firstSolve();
@@ -176,7 +176,7 @@ export async function solveExact({
     // ---- step 3b: the tie-break's second stage, step 4: the other suits, step 5: the hand-back (app/solver/exact/phases.mts)
     const { picked2, stage2Optimal } = tieBreakPhase(run, objective, picked, mipScore);
     const { alternatives, altShortfall, altTolerance } = alternativesPhase(run, objective, picked, picked2, mipScore);
-    return handBack(run, objective, { solve, picked, picked2, mipScore, stage2Optimal, alternatives, altShortfall, altTolerance, eps, heurTop, heuristicMs, restarts, floorsConflict, onWarn });
+    return handBack(run, objective, { solve, picked, picked2, mipScore, stage2Optimal, alternatives, altShortfall, altTolerance, floorsConflict });
   } finally {
     closeModel(run.handle);
   }
