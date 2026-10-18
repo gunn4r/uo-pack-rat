@@ -1,0 +1,1 @@
+- **For contributors: a code guide at the top of the Inventory screen doc** (issue #338): `docs/ui/inventory.md` opens with a `## Code` section (the modules, events, routes, tests and recipes for a filter, a column and a new place that draws items), and its behavior text is split into `##` and `###` sections, its longest line down from 6,250 characters to about 420.
