@@ -4,32 +4,17 @@
 // - `GET /` (index.html)
 // - `GET /favicon.png` (app/assets/, the logo at 64 px)
 // - `GET /logo-mark.png` (the rat's head cropped from the logo, 80 px, the sidebar's mark)
-// - `GET /vault-lib.mjs`
-// - `GET /item-query.mjs` (pure filter/sort/facet logic shared by the browser and GET /api/items below — no DOM, no node: imports, servable byte for byte like vault-lib.mts)
-// - `GET /unravel.mjs` (item-query.mts's import: what unraveling a piece gives, which the Unravel view reads too, same reason)
-// - `GET /scan-schema.mjs` (vault-lib.mts imports it for parseStamp, so it must be servable to the browser the same way)
-// - `GET /schema/validate.mjs` (scan-schema.mts's own import, same reason)
-// - `GET /solver/scoring.mjs` (the solvers' shared scoring constants, which swing.mts, vault-lib.mts and build-spec.mts import, same reason)
-// - `GET /organize-config.mjs` (the rule editor's import, same reason)
-// - `GET /buffs.mjs` (the Suit Builder's Manual buffs, same reason)
-// - `GET /evaluate.mjs` (one suit evaluation for Manual's totals and Automatic's buff picker, the one `POST /api/evaluate` and the MCP tools use)
-// - `GET /build-spec.mjs` (a build's intent as one document, which the Suit Builder turns into a build with the server's own rule, same reason)
-// - `GET /profile-edits.mjs` (the page makes each profiles edit on its own copy with the server's own rule, same reason)
-// - `GET /swing.mjs` (the Suit Builder's swing line and step hints, the formula both solvers score with, same reason)
-// - `GET /run-settings.mjs` and `GET /guards.mjs` (the Suit Builder's Advanced fields check against the server's run-setting ranges, same reason)
-// - `GET /data-dir-notice.mjs` (ui/messages.mts's import, same reason)
-// - `GET /house-areas.mjs` (the House map's areas, the rule MCP's `list_containers` uses too, same reason)
-// - `GET /paste-scan.mjs` (the Import drawer's instant preview parses a paste with the server's own rule, same reason)
+// - `GET /<path>.mjs` for each shared module the page imports at run time: every `app/<path>.*` entry of tsconfig.browser.json's `include`, read once at start (`SHARED_MODULES`), served from app/dist/<path>.mjs; any other `.mjs` path is passed on to the routes after it
 // - `GET /ui/<name>` (name matching /^[a-z0-9-]+\.(mjs|css)$/, served from app/ui/, else 404)
 // - `GET /ui/fonts/<name>.woff2` (the bundled IBM Plex faces, app/ui/fonts/, as binary font/woff2)
 //
 // map: server
-// owns: `routes`
+// owns: `routes`, `SHARED_MODULES`
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { send } from "../respond.mts";
-import { APP_DIR } from "../../config.mts";
-import type { Route } from "../router.mts";
+import { APP_DIR, ROOT_DIR } from "../../config.mts";
+import { NEXT, type Route } from "../router.mts";
 import type { ServerContext } from "../context.mts";
 
 const HERE = APP_DIR;
@@ -40,42 +25,20 @@ const HERE = APP_DIR;
 const WEB = join(HERE, "dist");
 const UI_NAME_RE = /^[a-z0-9-]+\.(mjs|css)$/;
 const FONT_NAME_RE = /^[a-z0-9-]+\.woff2$/;
+// The shared modules' URLs ("/vault-lib.mjs", "/solver/scoring.mjs"): one per `app/<path>.*` entry of
+// tsconfig.browser.json's include, the list tsc compiles for the page (the app/ui/ and app/api/ folders and the
+// .d.mts types are not single modules, so they don't match). scripts/layering.test.mts checks that every module the
+// page reaches outside app/ui/ is on it.
+export const SHARED_MODULES: string[] = (JSON.parse(readFileSync(join(ROOT_DIR, "tsconfig.browser.json"), "utf8")) as { include: string[] }).include
+  .flatMap((entry) => { const m = /^app\/([\w/-]+)\.\*$/.exec(entry); return m ? [`/${m[1]}.mjs`] : []; });
+const SHARED = new Set(SHARED_MODULES);
 
 export function routes(_ctx: ServerContext): Route[] {
   return [
     { method: "GET", path: "/", handle: (_req, res) => send(res, 200, readFileSync(join(HERE, "index.html"), "utf8"), "text/html") },
     { method: "GET", path: "/favicon.png", handle: (_req, res) => send(res, 200, readFileSync(join(HERE, "assets", "favicon.png")), "image/png") },
     { method: "GET", path: "/logo-mark.png", handle: (_req, res) => send(res, 200, readFileSync(join(HERE, "assets", "logo-mark.png")), "image/png") },
-    { method: "GET", path: "/vault-lib.mjs", handle: (_req, res) => send(res, 200, readFileSync(join(WEB, "vault-lib.mjs"), "utf8"), "text/javascript") },
-    { method: "GET", path: "/item-query.mjs", handle: (_req, res) => send(res, 200, readFileSync(join(WEB, "item-query.mjs"), "utf8"), "text/javascript") },
-    // item-query.mts's unravel candidates and the Inventory's Unravel view read the same weights (app/unravel.mts, issue #271).
-    { method: "GET", path: "/unravel.mjs", handle: (_req, res) => send(res, 200, readFileSync(join(WEB, "unravel.mjs"), "utf8"), "text/javascript") },
-    // The rule editor opens an Auto rule as the planner reads it (organize-config.mts's ruleMatchOf, issue #150).
-    { method: "GET", path: "/organize-config.mjs", handle: (_req, res) => send(res, 200, readFileSync(join(WEB, "organize-config.mjs"), "utf8"), "text/javascript") },
-    // Manual's buffs read the same catalog the server checks ui-prefs with (app/buffs.mts, issue #12).
-    { method: "GET", path: "/buffs.mjs", handle: (_req, res) => send(res, 200, readFileSync(join(WEB, "buffs.mjs"), "utf8"), "text/javascript") },
-    // Manual's totals and Automatic's buff picker evaluate a suit the way the server and the MCP tools do (app/evaluate.mts).
-    { method: "GET", path: "/evaluate.mjs", handle: (_req, res) => send(res, 200, readFileSync(join(WEB, "evaluate.mjs"), "utf8"), "text/javascript") },
-    // The Suit Builder's Advanced fields check against the server's run-setting ranges (app/run-settings.mts), which
-    // import the request guards.
-    { method: "GET", path: "/run-settings.mjs", handle: (_req, res) => send(res, 200, readFileSync(join(WEB, "run-settings.mjs"), "utf8"), "text/javascript") },
-    // The Suit Builder plans a build, and reads and writes the profiles, through the server's own BuildSpec (app/build-spec.mts).
-    { method: "GET", path: "/build-spec.mjs", handle: (_req, res) => send(res, 200, readFileSync(join(WEB, "build-spec.mjs"), "utf8"), "text/javascript") },
-    // The page makes its profile edits with the server's own function (app/profile-edits.mts, PATCH /api/profiles).
-    { method: "GET", path: "/profile-edits.mjs", handle: (_req, res) => send(res, 200, readFileSync(join(WEB, "profile-edits.mjs"), "utf8"), "text/javascript") },
-    // The Suit Builder's swing line and step hints use the solvers' own swing formula (app/swing.mts).
-    { method: "GET", path: "/swing.mjs", handle: (_req, res) => send(res, 200, readFileSync(join(WEB, "swing.mjs"), "utf8"), "text/javascript") },
-    // swing.mjs, vault-lib.mjs and build-spec.mjs import the solvers' shared scoring constants (app/solver/scoring.mts).
-    { method: "GET", path: "/solver/scoring.mjs", handle: (_req, res) => send(res, 200, readFileSync(join(WEB, "solver", "scoring.mjs"), "utf8"), "text/javascript") },
-    { method: "GET", path: "/house-areas.mjs", handle: (_req, res) => send(res, 200, readFileSync(join(WEB, "house-areas.mjs"), "utf8"), "text/javascript") },
-    { method: "GET", path: "/guards.mjs", handle: (_req, res) => send(res, 200, readFileSync(join(WEB, "guards.mjs"), "utf8"), "text/javascript") },
-    { method: "GET", path: "/data-dir-notice.mjs", handle: (_req, res) => send(res, 200, readFileSync(join(WEB, "data-dir-notice.mjs"), "utf8"), "text/javascript") },
-    { method: "GET", path: "/scan-schema.mjs", handle: (_req, res) => send(res, 200, readFileSync(join(WEB, "scan-schema.mjs"), "utf8"), "text/javascript") },
-    // The Import drawer's instant preview parses a paste with the server's own rule (app/paste-scan.mts).
-    { method: "GET", path: "/paste-scan.mjs", handle: (_req, res) => send(res, 200, readFileSync(join(WEB, "paste-scan.mjs"), "utf8"), "text/javascript") },
-    // scan-schema.mjs imports validate() from here — the browser resolves that relative import
-    // against scan-schema.mjs's own served URL, so this needs its own static route too.
-    { method: "GET", path: "/schema/validate.mjs", handle: (_req, res) => send(res, 200, readFileSync(join(WEB, "schema", "validate.mjs"), "utf8"), "text/javascript") },
+    { method: "GET", path: /^\/[\w/-]+\.mjs$/, handle: (_req, res, url) => (SHARED.has(url.pathname) ? send(res, 200, readFileSync(join(WEB, url.pathname.slice(1)), "utf8"), "text/javascript") : NEXT) },
     { method: "GET", path: /^\/ui\/fonts\//, handle: (_req, res, url) => {
       // One flat folder of woff2 files and nothing else: the licence texts next to them, a subfolder or
       // a dot-dot never match the name pattern.

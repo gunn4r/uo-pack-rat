@@ -1,6 +1,6 @@
 // server.test.mts — HTTP tests of what every route shares, on a real listening server (ephemeral port, temp data folder).
 //
-// what every route shares: the CSP and `nosniff` header, `frame-ancestors 'none'` and `x-frame-options: DENY` on every response, no inline `<script>`, the page's stylesheets and fonts allowed by its CSP, the `/ui/` allowlist (traversal and unlisted files rejected), `/ui/app.mjs` and `/ui/shard.mjs`, the bundled fonts, the favicon and the sidebar mark, every browser-shared module (`/schema/validate.mjs`, `/paste-scan.mjs`, `/item-query.mjs`, `/organize-config.mjs`, `/data-dir-notice.mjs`, `/buffs.mjs`, `/evaluate.mjs`) served as `text/javascript`; the 415 on a body with no declared content-type, a null, array or scalar body a clean 400 on every body-reading route and a malformed one a 400 naming the problem, both with nothing logged; the Host/Origin/token checks (`--token` server: a forged Host or Origin, `Origin: null` and an HTTP/1.0 request with no Host are 403, the static page needs no token); the stack-free, ref-keyed 500; finite header and request timeouts with an SSE stream still streaming; `close()` ending open SSE streams; a server that cannot bind its port leaving the inbox alone; and settings, profiles and tombstones replaced through a renamed temp file at `0600`.
+// what every route shares: the CSP and `nosniff` header, `frame-ancestors 'none'` and `x-frame-options: DENY` on every response, no inline `<script>`, the page's stylesheets and fonts allowed by its CSP, the `/ui/` allowlist (traversal and unlisted files rejected), `/ui/app.mjs` and `/ui/shard.mjs`, the bundled fonts, the favicon and the sidebar mark, every browser-shared module (each `SHARED_MODULES` URL, read off `tsconfig.browser.json`, a few by content too) served as `text/javascript` and an unlisted server module a 404; the 415 on a body with no declared content-type, a null, array or scalar body a clean 400 on every body-reading route and a malformed one a 400 naming the problem, both with nothing logged; the Host/Origin/token checks (`--token` server: a forged Host or Origin, `Origin: null` and an HTTP/1.0 request with no Host are 403, the static page needs no token); the stack-free, ref-keyed 500; finite header and request timeouts with an SSE stream still streaming; `close()` ending open SSE streams; a server that cannot bind its port leaving the inbox alone; and settings, profiles and tombstones replaced through a renamed temp file at `0600`.
 //
 // The routes themselves are in app/server-<family>.test.mts. Tags: [smoke] and [fast].
 import { test, before, after, afterEach } from "node:test";
@@ -15,6 +15,7 @@ import { resolveConfig, ensureLayout } from "./config.mts";
 import type { ServerHandle } from "./vault-server.mts";
 import { startTestServer as startServer } from "./server-fixture.mts";
 import { buildPools, setRules } from "./vault-lib.mts";
+import { SHARED_MODULES } from "./http/routes/static.mts";
 import { buildUi } from "../scripts/build-ui.mts";
 import { buildSchemaTypes } from "../scripts/build-schema-types.mts";
 import { asJson, HERE, UOALIVE, foldFixtures, rawReq, sseReader, JSON_HEADERS, patchProfiles, logText, type InventoryResponse, type ProfilesResponse, type RulesResponse, type OptimizeJobResponse, type ErrorBody } from "./server-routes-fixture.mts";
@@ -105,6 +106,16 @@ test("[fast] /paste-scan.mjs is servable (the Import drawer's preview parses wit
   assert.equal(r.status, 200);
   assert.equal(r.headers.get("content-type"), "text/javascript; charset=utf-8");
   assert.match(await r.text(), /export function parsePastedScan/);
+});
+
+test("[fast] every shared module tsconfig.browser.json lists is served, and a server module it doesn't list is not", async () => {
+  assert.ok(SHARED_MODULES.length >= 17, SHARED_MODULES.join(", "));
+  for (const url of SHARED_MODULES) {
+    const r = await get(url);
+    assert.equal(r.status, 200, url);
+    assert.equal(r.headers.get("content-type"), "text/javascript; charset=utf-8", url);
+  }
+  assert.equal((await get("/vault-server.mjs")).status, 404);
 });
 
 test("[fast] /favicon.png is the logo, served same-origin as image/png, and the page links it", async () => {
