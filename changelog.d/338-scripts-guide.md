@@ -1,0 +1,1 @@
+- **For contributors: a tests and tooling guide** (issue #338): `scripts/CLAUDE.md` gives the runner's rules (tags, headers, the summary file), the Electron fixture every UI test goes through, how to extend each guard's allow-list, how to run one file or one CI part, and the time budgets and traps.
