@@ -7,21 +7,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, mkdirSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import { createRequire } from "node:module";
+import { join } from "node:path";
 import type { Page } from "playwright";
-import { testEnv, noUpdateCheck, removeTempDir } from "./electron-window.mts";
+import { removeTempDir } from "./electron-window.mts";
+import { launchApp, skipWithoutElectron } from "./electron-app.mts";
 
-const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
-const require_ = createRequire(import.meta.url);
-function unavailable(): string | null {
-  if (process.env.TEST_SKIP_ELECTRON) return "TEST_SKIP_ELECTRON is set";
-  for (const dep of ["electron", "playwright"]) {
-    try { require_.resolve(dep); } catch { return `${dep} is not installed`; }
-  }
-  return null;
-}
 
 // The Inventory's row actions (ui/inventory.mts): icon buttons named by aria-label, drawn on every row
 // and shown on hover. A disabled one hangs its reason on a wrapper's tooltip (components.mts tipWrap).
@@ -55,19 +45,14 @@ async function actionReason(page: Page, action: string): Promise<string> {
 }
 
 test("[slow] the packaged UI renders, switches tabs and lists the demo inventory", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
 
-  const { _electron } = await import("playwright");
   const dataDir = mkdtempSync(join(tmpdir(), "packrat-ui-"));
   // Same shape as shell-smoke.test.mts's runSmoke: the absolute ROOT (not ".") as args[0] is what
   // main.mts expects in dev (process.argv.slice(2) skips the electron binary and this project path),
   // and cwd: ROOT keeps that resolution independent of wherever `node --test` was invoked from.
-  const app = await _electron.launch({ args: [ROOT, "--demo", "--data", noUpdateCheck(dataDir)], cwd: ROOT, timeout: 60_000, env: testEnv() });
+  const { page, errors, close } = await launchApp(dataDir, { demo: true });
   try {
-    const page = await app.firstWindow();
-    const errors: string[] = [];
-    page.on("pageerror", (e) => errors.push(String(e)));
 
     assert.equal(await page.title(), "Pack Rat");
     await page.waitForSelector("#status", { state: "attached", timeout: 30_000 });   // attached, not visible: a narrow window collapses the sidebar, which hides the status line
@@ -108,20 +93,16 @@ test("[slow] the packaged UI renders, switches tabs and lists the demo inventory
 
     assert.deepEqual(errors, [], "no uncaught page errors during load and tab switch");
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
 test("[slow] the rows' actions follow the client the wizard just set up, without a reload", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
 
-  const { _electron } = await import("playwright");
   const dataDir = mkdtempSync(join(tmpdir(), "packrat-ui-wizard-"));
-  const app = await _electron.launch({ args: [ROOT, "--demo", "--data", noUpdateCheck(dataDir)], cwd: ROOT, timeout: 60_000, env: testEnv() });
+  const { page, close } = await launchApp(dataDir, { demo: true });
   try {
-    const page = await app.firstWindow();
     await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
     // Behind the first-run wizard the rows act for the default client (TazUO). Pick the paste client, which has
     // no bridge, and finish.
@@ -137,8 +118,7 @@ test("[slow] the rows' actions follow the client the wizard just set up, without
     while (!/can't Grab/.test(reason) && Date.now() < until) reason = await actionReason(page, "Grab to backpack");
     assert.match(reason, /can't Grab from Pack Rat/);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
@@ -148,10 +128,8 @@ test("[slow] the rows' actions follow the client the wizard just set up, without
 // regression in the actual render path (app/ui/bridge.mts's actButtons()/bridgeNote()) could pass
 // every existing test. These two prove the other two gate conditions at the DOM level too.
 test("[slow] with tazuo configured, the demo inventory shows all three bridge buttons and no note", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
 
-  const { _electron } = await import("playwright");
   const dataDir = mkdtempSync(join(tmpdir(), "packrat-ui-tazuo-"));
   // Pre-seed settings.json (setupDone: true skips the wizard; client names the real tazuo adapter,
   // whose adapters/tazuo/capabilities.json declares all three bridge actions) rather than driving
@@ -160,9 +138,8 @@ test("[slow] with tazuo configured, the demo inventory shows all three bridge bu
   writeFileSync(join(dataDir, "settings.json"), JSON.stringify({
     schemaVersion: 1, shard: "uoalive", setupDone: true, client: { adapter: "tazuo", scriptsDir: dataDir },
   }));
-  const app = await _electron.launch({ args: [ROOT, "--demo", "--data", noUpdateCheck(dataDir)], cwd: ROOT, timeout: 60_000, env: testEnv() });
+  const { page, close } = await launchApp(dataDir, { demo: true });
   try {
-    const page = await app.firstWindow();
     await page.waitForSelector("#status", { state: "attached", timeout: 30_000 });   // attached, not visible: a narrow window collapses the sidebar, which hides the status line
     await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
 
@@ -175,16 +152,13 @@ test("[slow] with tazuo configured, the demo inventory shows all three bridge bu
     assert.equal(await page.locator("#tab-inventory .bridge-note").count(), 0, "tazuo has full bridge support — nothing to explain");
     assert.equal(await page.locator("#wizard[open]").count(), 0, "setupDone:true should skip the first-run wizard");
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
 test("[slow] a partial-bridge adapter only offers its declared action, and the note names what's missing", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
 
-  const { _electron } = await import("playwright");
   const dataDir = mkdtempSync(join(tmpdir(), "packrat-ui-partial-"));
   const adaptersDir = mkdtempSync(join(tmpdir(), "packrat-ui-partial-adapters-"));
   const partialDir = join(adaptersDir, "partial-bridge");
@@ -199,12 +173,8 @@ test("[slow] a partial-bridge adapter only offers its declared action, and the n
   // PACKRAT_ADAPTERS_DIR (the same override app/config.mts/app/server.test.mts use) points the whole
   // app — main process and the forked server child, which inherits main's process.env — at this
   // throwaway adapter instead of the repo's real adapters/, without touching electron/main.mts.
-  const app = await _electron.launch({
-    args: [ROOT, "--demo", "--data", noUpdateCheck(dataDir)], cwd: ROOT, timeout: 60_000,
-    env: testEnv({ PACKRAT_ADAPTERS_DIR: adaptersDir }),
-  });
+  const { page, close } = await launchApp(dataDir, { demo: true, env: { PACKRAT_ADAPTERS_DIR: adaptersDir } });
   try {
-    const page = await app.firstWindow();
     await page.waitForSelector("#status", { state: "attached", timeout: 30_000 });   // attached, not visible: a narrow window collapses the sidebar, which hides the status line
     await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
 
@@ -216,8 +186,7 @@ test("[slow] a partial-bridge adapter only offers its declared action, and the n
     assert.match(await actionReason(page, "Go to container"), /can't Go to/);
     assert.match(await actionReason(page, "Highlight in game"), /Bridge offline/, "Highlight is supported, so only the bridge being off holds it back");
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
     removeTempDir(adaptersDir);
   }
 });
@@ -229,17 +198,14 @@ test("[slow] a partial-bridge adapter only offers its declared action, and the n
 // window through Save as… end to end (open the builder, click Save as…, type a name in the dialog,
 // confirm) and checks the template landed server-side, the one thing window.prompt() could never do.
 test("[slow] Save as… in the suit builder opens an in-page dialog and saves the template (Electron has no window.prompt)", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
 
-  const { _electron } = await import("playwright");
   const dataDir = mkdtempSync(join(tmpdir(), "packrat-ui-saveas-"));
   // setupDone:true skips the first-run wizard (already covered above) — this test is about the
   // Save as… dialog, not the wizard flow.
   writeFileSync(join(dataDir, "settings.json"), JSON.stringify({ schemaVersion: 1, shard: "uoalive", setupDone: true }));
-  const app = await _electron.launch({ args: [ROOT, "--demo", "--data", noUpdateCheck(dataDir)], cwd: ROOT, timeout: 60_000, env: testEnv() });
+  const { page, close } = await launchApp(dataDir, { demo: true });
   try {
-    const page = await app.firstWindow();
     await page.waitForSelector("#status", { state: "attached", timeout: 30_000 });   // attached, not visible: a narrow window collapses the sidebar, which hides the status line
 
     await page.click('[data-nav="builder"]');
@@ -265,8 +231,7 @@ test("[slow] Save as… in the suit builder opens an in-page dialog and saves th
     const names = Object.keys(r.profiles?.templates || {});
     assert.ok(names.includes(templateName), `expected "${templateName}" among the saved templates, got ${JSON.stringify(names)}`);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 // A test launch must never read a real game-client folder (it once found the maintainer's own TazUO
@@ -275,9 +240,7 @@ test("[slow] Save as… in the suit builder opens an in-page dialog and saves th
 // one the app finds, so the search looked there and nowhere else (a real ~/Desktop/TazUO on the machine
 // running the test would show up as a second candidate or as the mismatch's folder).
 test("[slow] an Electron test launch searches only its own temp home for game clients", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const { _electron } = await import("playwright");
+  if (skipWithoutElectron(t)) return;
   const dataDir = mkdtempSync(join(tmpdir(), "packrat-ui-clienthome-data-"));
   const home = mkdtempSync(join(tmpdir(), "packrat-ui-clienthome-"));
   const scripts = join(home, "Desktop", "TazUO", "TazUO", "LegionScripts");
@@ -286,9 +249,8 @@ test("[slow] an Electron test launch searches only its own temp home for game cl
   writeFileSync(join(scripts, "packrat-paths.json"), JSON.stringify({ dataDir: join(home, "elsewhere") }));
   writeFileSync(join(dataDir, "settings.json"), JSON.stringify({ schemaVersion: 1, shard: "uoalive", setupDone: true }));
   // Not --demo: the data-folder check (the banner's source) only runs on a real data folder.
-  const app = await _electron.launch({ args: [ROOT, "--data", noUpdateCheck(dataDir)], cwd: ROOT, timeout: 60_000, env: testEnv({}, home) });
+  const { page, close } = await launchApp(dataDir, { home: home });
   try {
-    const page = await app.firstWindow();
     await page.waitForSelector("#status", { state: "attached", timeout: 30_000 });
     const setup: { candidates: Record<string, string[]>; dataDirCheck?: { status: string; scriptsDir?: string } } = await page.evaluate(() => fetch("/api/setup").then((r) => r.json()));
     const found = Object.values(setup.candidates).flat();
@@ -296,8 +258,7 @@ test("[slow] an Electron test launch searches only its own temp home for game cl
     assert.equal(setup.dataDirCheck?.status, "mismatch");
     assert.equal(realpathSync(setup.dataDirCheck!.scriptsDir!), realpathSync(scripts));
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
     removeTempDir(home);
   }
 });

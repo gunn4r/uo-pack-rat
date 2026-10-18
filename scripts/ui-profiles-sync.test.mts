@@ -1,39 +1,11 @@
-// ui-profiles-sync.test.mts — [slow]: the page's profile saves against another window's in the real Electron window (quality pass 1, W1a), on a writable `--data` directory seeded with the demo scans. Another window's save (a whole-file PUT with its own stamp, sent from the page's origin) makes the page's copy stale: a buff toggle after it goes up as an edit (PATCH), lands beside the other window's character (marked by its buffs: a whole-file save keeps only stored labels) and template with no stale refusal, and the page reads the file again and lists that template; an Update of a template the other window deleted is refused (409 conflict), not made again, the page says why, and the template stays deleted. Skipped the same way as the UI smoke test.
+// ui-profiles-sync.test.mts — [slow]: the page's profile saves against another window's in the real Electron window (quality pass 1, W1a), on a writable `--data` directory seeded with the demo scans. Another window's save (a whole-file PUT with its own stamp, sent from the page's origin) makes the page's copy stale: a buff toggle after it goes up as an edit (PATCH), lands beside the other window's character (marked by its buffs: a whole-file save keeps only stored labels) and template with no stale refusal, and the page reads the file again and lists that template; an Update of a template the other window deleted is refused (409 conflict), not made again, the page says why, and the template stays deleted. Launched through `scripts/electron-app.mts`; skipped when Electron can't run here.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, mkdirSync, copyFileSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import { createRequire } from "node:module";
-import { fitWindow, noUpdateCheck, removeTempDir } from "./electron-window.mts";
-import type { ElectronApplication, Page } from "playwright";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import type { Page } from "playwright";
+import { launchApp, skipWithoutElectron, tempDataDir, until } from "./electron-app.mts";
 
-const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
-const require_ = createRequire(import.meta.url);
-function unavailable(): string | null {
-  if (process.env.TEST_SKIP_ELECTRON) return "TEST_SKIP_ELECTRON is set";
-  for (const dep of ["electron", "playwright"]) {
-    try { require_.resolve(dep); } catch { return `${dep} is not installed`; }
-  }
-  return null;
-}
-function seedDataDir(prefix: string): string {
-  const dataDir = mkdtempSync(join(tmpdir(), prefix));
-  mkdirSync(join(dataDir, "scans"), { recursive: true });
-  for (const f of ["demo-Dorran.json", "demo-Kestrel.json"]) copyFileSync(join(ROOT, "app", "fixtures", f), join(dataDir, "scans", f));
-  writeFileSync(join(dataDir, "settings.json"), JSON.stringify({ schemaVersion: 1, shard: "uoalive", setupDone: true }));
-  return dataDir;
-}
-async function launch(dataDir: string): Promise<{ app: ElectronApplication; page: Page; errors: string[] }> {
-  const { _electron } = await import("playwright");
-  const app = await _electron.launch({ args: [ROOT, "--data", noUpdateCheck(dataDir)], cwd: ROOT, timeout: 60_000 });
-  const page = await app.firstWindow();
-  const errors: string[] = [];
-  page.on("pageerror", (e) => errors.push(String(e)));
-  await fitWindow(app, page, { width: 1440, height: 900 });
-  return { app, page, errors };
-}
 interface Disk { characters: Record<string, { spec: { buffs?: { on: string[] } } }>; templates: Record<string, unknown> }
 // Another window's whole-file save, made with the stamp it reads now: `change` runs on its copy (in the page's context).
 type Change = "kestrelAndTemplate" | "deleteMine";
@@ -49,15 +21,11 @@ const otherWindow = (page: Page, change: Change): Promise<number> => page.evalua
 }, change);
 
 test("[slow] a stale window's saves: a buff toggle lands beside the other window's character and template; an Update of a template it deleted says why", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const dataDir = seedDataDir("packrat-ui-sync-");
-  const { app, page, errors } = await launch(dataDir);
+  if (skipWithoutElectron(t)) return;
+  const dataDir = tempDataDir("packrat-ui-sync-", { demoScans: true });
+  const { page, errors, close } = await launchApp(dataDir, { size: { width: 1440, height: 900 } });
   const disk = (): Disk => JSON.parse(readFileSync(join(dataDir, "profiles.json"), "utf8")) as Disk;
-  const onDisk = async (ok: (d: Disk) => boolean, what: string): Promise<void> => {
-    for (let i = 0; i < 100 && !ok(disk()); i++) await page.waitForTimeout(100);
-    assert.ok(ok(disk()), what);
-  };
+  const onDisk = (ok: (d: Disk) => boolean, what: string): Promise<Disk> => until(disk, ok, what, 10_000);
   const buff = async (id: string): Promise<void> => {
     if (await page.locator("#b-drawer").isHidden()) await page.click("#b-settings");
     await page.click("#b-tab-buffs");
@@ -109,7 +77,6 @@ test("[slow] a stale window's saves: a buff toggle lands beside the other window
     await page.locator('#tpl-drawer .tm-card[data-template="Mine"]').waitFor({ state: "detached", timeout: 10_000 });
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });

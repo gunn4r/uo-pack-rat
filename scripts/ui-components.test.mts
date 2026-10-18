@@ -7,37 +7,18 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import { createRequire } from "node:module";
-import { testEnv, noUpdateCheck, removeTempDir } from "./electron-window.mts";
-import type { ElectronApplication, Page } from "playwright";
+import { join } from "node:path";
+import { launchApp, skipWithoutElectron, type App } from "./electron-app.mts";
+import type { Page } from "playwright";
 
-const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
-const require_ = createRequire(import.meta.url);
-function unavailable(): string | null {
-  if (process.env.TEST_SKIP_ELECTRON) return "TEST_SKIP_ELECTRON is set";
-  for (const dep of ["electron", "playwright"]) {
-    try { require_.resolve(dep); } catch { return `${dep} is not installed`; }
-  }
-  return null;
-}
-async function launch(dataDir: string): Promise<{ app: ElectronApplication; page: Page; errors: string[] }> {
-  const { _electron } = await import("playwright");
-  const app = await _electron.launch({ args: [ROOT, "--demo", "--data", noUpdateCheck(dataDir)], cwd: ROOT, timeout: 60_000, env: testEnv() });
-  const page = await app.firstWindow();
-  const errors: string[] = [];
-  page.on("pageerror", (e) => errors.push(String(e)));
-  return { app, page, errors };
-}
+const launch = (dataDir: string): Promise<App> => launchApp(dataDir, { demo: true });
 const activeId = (page: Page): Promise<string> => page.evaluate(() => (document.activeElement as HTMLElement | null)?.id || document.activeElement?.getAttribute("aria-label") || document.activeElement?.tagName || "");
 
 test("[slow] components: confirm dialog, drawer, popover, toasts and tooltip behave, and no flex container holds bare text", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   const dataDir = mkdtempSync(join(tmpdir(), "packrat-components-"));
   writeFileSync(join(dataDir, "settings.json"), JSON.stringify({ schemaVersion: 1, shard: "uoalive", setupDone: true }));
-  const { app, page, errors } = await launch(dataDir);
+  const { page, errors, close } = await launch(dataDir);
   try {
     await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
     // A test bench of the builders, appended to the page; window.C is the module, as the page loads it.
@@ -173,7 +154,6 @@ test("[slow] components: confirm dialog, drawer, popover, toasts and tooltip beh
 
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
