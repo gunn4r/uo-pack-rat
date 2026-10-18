@@ -29,6 +29,7 @@ import { validate } from "./schema/validate.mts";
 import { INSTRUCTIONS, TOOLS, ToolError, type ToolContext } from "./mcp-tools.mts";
 import { isJsonContentType, readBody, type HttpError } from "./read-body.mts";
 import { migrate } from "./migrate.mts";
+import type { McpConfig, McpLive } from "./api/mcp.mts";
 
 export const MCP_DEFAULT_PORT = 47615;
 // Newest first: an initialize naming one of these gets it back, any other gets the newest.
@@ -36,10 +37,8 @@ export const PROTOCOL_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26"];
 const MAX_BODY_BYTES = 1024 * 1024;
 export const ACTIONS_OFF = "In-game actions are off in Pack Rat's Settings (Allow in-game actions)";
 
-// <data>/mcp.json. `port` 0 asks the OS for a free port (a hand edit; Settings never writes it). `token` is null
-// until MCP is first turned on.
-export interface McpConfig { version: 1; enabled: boolean; allowActions: boolean; port: number; token: string | null }
-export interface McpLive { listening: boolean; port: number | null; portBusy: number | null }
+// <data>/mcp.json and the listener are the API's own types (app/api/mcp.mts).
+export type { McpConfig, McpLive } from "./api/mcp.mts";
 export const defaultMcpConfig = (): McpConfig => ({ version: 1, enabled: false, allowActions: false, port: MCP_DEFAULT_PORT, token: null });
 const TOKEN_RE = /^[A-Za-z0-9-]{16,128}$/;
 

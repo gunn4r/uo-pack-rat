@@ -26,9 +26,6 @@ td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
 .tag.cursed, .tag.brittle { color: var(--color-danger); border-color: var(--color-danger); }
 .tag.antique { color: var(--color-warning); border-color: var(--color-warning); }
 .tag.slayer { color: var(--color-accent); border-color: var(--color-accent); }
-.rar-name { font-weight: var(--weight-medium); }
-/* a shard tier with no --rarity-* token: its raw game colour on a dark chip, where game colours read (ui/dom.mts's rarCell) */
-.rar-raw { background: var(--color-surface-raised); padding: 0 var(--space-1-5); border-radius: var(--radius-sm); }
 .empty { padding: var(--space-10); text-align: center; color: var(--color-text-muted); }
 .empty code { font-family: var(--font-mono); background: var(--color-surface-sunken); color: var(--color-text); padding: var(--space-0-5) var(--space-1-5); border-radius: var(--radius-sm); }
 details summary { cursor: pointer; color: var(--color-text-muted); font-size: var(--text-sm); }

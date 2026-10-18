@@ -5,9 +5,10 @@
 // The rendered screen is driven by scripts/ui-state.test.mts.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { plural, queryParams, withFixed, activeFilters, clearAll, matchLine, countFact, emptyCause, rowWindow, chunksToFetch, gridKey, colGroup, groupColumns, DEFAULT_COLS, shortTier, propRuleLabel, slayerTree, slayerLabel } from "./ui/inv-model.mts";
+import { queryParams, withFixed, activeFilters, clearAll, matchLine, countFact, emptyCause, rowWindow, chunksToFetch, gridKey, colGroup, groupColumns, DEFAULT_COLS, shortTier, propRuleLabel, slayerTree, slayerLabel } from "./ui/inv-model.mts";
 import { parseItemQuery } from "./item-query.mts";
 import type { ItemQuery } from "./item-query.mts";
+import { plural } from "./ui/format.mts";
 
 const BASE: ItemQuery = parseItemQuery(new URLSearchParams());
 const LADDER = ["Minor Magic Item", "Lesser Magic Item", "Greater Magic Item", "Major Magic Item", "Lesser Artifact", "Greater Artifact", "Major Artifact", "Legendary Artifact"];
