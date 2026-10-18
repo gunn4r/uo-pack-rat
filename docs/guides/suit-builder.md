@@ -19,7 +19,7 @@ The guide to what turns a build request into a suit (`app/build-spec.mts`, `app/
 
 - **A new scoring term or rule:** follow "Add or change a scoring term". Put the term in `app/solver/scoring.mts` when both solvers can call it, and add a row to the rules-written-twice table when one cannot.
 - **A new BuildSpec field:** follow "Add or change a BuildSpec field". It is checked by `buildSpecError`, read by `planBuild`, and held by `runSettingsError` once a run carries it.
-- **A new search mode or tie-break:** W3e (issue #338) is replacing the per-mode branches in `scripts/optimizer-core.mts` and `app/exact-solver.mts` with one `Objective` per mode. Until it lands, Strict order is the `opts.strict` branches in both, and a new mode would add a third arm to each. Check the open W3e pull requests before starting one.
+- **A new search mode:** each mode is an objective, `OptObjective` in `scripts/optimizer-core.mts` (`OPT_BEST_VALUE`, `optStrictObjective`) and `ExactObjective` in `app/solver/exact/objective.mts` (`bestValueObjective`, `strictOrderObjective`). A new mode is one more implementation of each, chosen where `optimizeSuit` and `solveExact` pick the objective from `opts`; `docs/solver.md`'s "Before you change the solvers" has the recipe. A tie-break is an option on top of a mode (`opts.tieBreak`), not a mode.
 - **Result-changing work:** bump `SOLVER_VERSION`. Behavior-preserving work proves itself with `node app/bench/compare-cores.mts --base origin/main`, and its summary goes in the PR body.
 
 ## Tests
