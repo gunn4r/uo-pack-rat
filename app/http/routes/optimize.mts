@@ -45,12 +45,18 @@ import type { ServerContext } from "../context.mts";
 // Important 5). Every helper here returns the reason it refused (for a 400) or null.
 
 // One optimizer candidate: vault-lib's OptItem, {serial, name, slot, props}. The core reads `.props`
-// off every entry with no null guard of its own, so both a literal null and an item with no props
-// have to be refused here.
+// off every entry with no null guard of its own, keys candidates and changes by `.serial`, names a change
+// by `.name` and offers a piece only in the slot its `.slot` names, so a piece missing any of them (or
+// with a property that is not a number) can't be searched as sent and is refused here. A worn piece
+// goes back in the start answer's `current` as it came, so this is also what keeps that answer an OptItem.
 function optItemError(it: unknown): string | null {
   if (!it || typeof it !== "object" || Array.isArray(it)) return "every candidate must be an object";
-  const props = (it as Record<string, unknown>).props;
+  const { serial, name, slot, props } = it as Record<string, unknown>;
   if (!props || typeof props !== "object" || Array.isArray(props)) return "every candidate needs a props object";
+  if (typeof serial !== "number" || !Number.isFinite(serial)) return "every candidate needs a numeric serial";
+  if (typeof name !== "string") return "every candidate needs a name";
+  if (slot !== null && typeof slot !== "string") return "every candidate needs a slot (a string, or null)";
+  for (const [k, v] of Object.entries(props)) if (typeof v !== "number" || !Number.isFinite(v)) return `props.${short(k)} must be a number`;
   return null;
 }
 function poolsError(pools: unknown): string | null {
