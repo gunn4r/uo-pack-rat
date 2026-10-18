@@ -346,6 +346,12 @@ class Panel(unittest.TestCase):
         self.assertEqual(mid.get("character"), "Tester")
         self.assertNotIn("stopped", mid)
         self.assertIs(self.heartbeat().get("stopped"), True)
+        # the shapes of app/fixtures/contract-cases/heartbeat.json's first two cases, which the app's install guard reads
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "app", "fixtures", "contract-cases", "heartbeat.json"), encoding="utf-8") as f:
+            running, stopped = [c["doc"] for c in json.load(f)["cases"][:2]]
+        for got, case in ((mid, running), (self.heartbeat(), stopped)):
+            self.assertEqual({k: type(v) for k, v in got.items()}, {k: type(v) for k, v in case.items()})
+            self.assertRegex(got["alive"], r"\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(Z|[+-]\d{2}:\d{2})\Z")
         self.assertIn("Pack Rat - Tester", self.labels(api))
         self.assertIn("Last scan: just now", self.labels(api))
 
@@ -412,6 +418,14 @@ class Panel(unittest.TestCase):
         self.assertEqual(reqs[0]["character"], "Tester")
         self.assertEqual(reqs[0]["at"], {"x": w.px, "y": w.py, "facet": 1})
         self.assertNotEqual(reqs[0]["id"], reqs[1]["id"])
+        # the shape app/fixtures/contract-cases/put-away.json's first valid request has, which the app's check takes
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "app", "fixtures", "contract-cases", "put-away.json"), encoding="utf-8") as f:
+            case = json.load(f)["valid"][0]
+        for req in reqs:
+            self.assertEqual(sorted(req), sorted(case))
+            self.assertEqual({k: type(v) for k, v in req.items()}, {k: type(v) for k, v in case.items()})
+            self.assertEqual({k: type(v) for k, v in req["at"].items()}, {k: type(v) for k, v in case["at"].items()})
+            self.assertRegex(req["id"], r"\A[A-Za-z0-9-]{1,64}\Z")
         pouch, until = seen["consent"].split(":")
         self.assertEqual(int(pouch), POUCH, "the consent names the picked container")
         self.assertGreater(float(until), w.clock.start, "for as long as the run lasts")

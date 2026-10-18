@@ -16,31 +16,25 @@ Read this section first; the rest of the file is the reference, feature by featu
 **The invariants.** Each is held by the tests, the exact solver's guards or code review (the `runKey` one is a convention nothing checks); a change that breaks one is a bug, not a trade-off:
 
 - The core is the one scorer of record. `solveExact` always hands its winning suit back to the core, and every number a result carries is the core's. Its guards revoke `proven` and warn when HiGHS's objective, the core's re-score and the heuristic disagree.
-- For any suit, the MIP's objective at `startVector(suit)` plus `scoreOffset` equals the core's `scoreSet(suit)`. The exact solver's guards catch a disagreement on the suit it returns (they compare HiGHS's objective with the core's result after the hand-back, which re-climbs from HiGHS's suit), and the fuzz suite on whole searches; no test checks it suit by suit yet.
+- For any suit, the MIP's objective at `startVector(suit)` plus `scoreOffset` equals the core's `scoreSet(suit)`. `app/solver/agreement.test.mts` checks it suit by suit over generated profiles, with the weight terms `scoreShares` reads, so a drift fails at the term that drifted, and holds the MIP's rows to it (every start vector meets them, and the model solved with the suit's pieces fixed scores what the core does); the exact solver's guards also catch a disagreement on the suit it returns (they compare HiGHS's objective with the core's result after the hand-back, which re-climbs from HiGHS's suit), and the fuzz suite on whole searches.
 - Every profile transform happens before `runKey`, so the key covers it. A transform added after it silently reuses runs it shouldn't.
 - A change to what a build returns bumps `SOLVER_VERSION` (`app/runs-lib.mts`, with a line in its comment), so saved runs stop being reused as instant repeats.
-- The same seed and inputs give byte-identical results when no time limit cuts the search (the restarts all run and the exact phase proves).
+- The same seed and inputs give byte-identical results when no time limit cuts the search (the restarts all run and the exact phase proves). `app/bench/compare-cores.mts --base <ref>` checks a refactor against its base this way: the base's core, MIP and diagnostics against the working tree's on the same inputs, byte for byte.
 - `alternatives` never contains the returned suit.
 
-**The rules written twice.** The core and the MIP keep their own copies of these, marked `==` in the code. A change to one is a change to both; the third column says what catches a mismatch:
+**The shared scoring constants** live once in `app/solver/scoring.mts`, which both solvers import: the hard-floor bonus and its maximum (`HARD_FLOOR_BONUS`, `HARD_FLOOR_BONUS_MAX`, `hardBonusOf`), the score precision (`TIE_SLACK`, also HiGHS's `mip_abs_gap`), the relative slack (`SCORE_REL`, `slackAt`), float noise (`FLOAT_EPS`), the change cost (`CHANGE_COST`, `changeCost`), the Resisting Spells key and step slack, and the defaults an absent field means (`DEFAULT_FLOOR_BONUS`, `DEFAULT_FLOOR_PARTIAL`, `DEFAULT_BUDGET_MS`, `DEFAULT_RESTARTS`). So is the profile as both read it: `scoringProfile` fills those defaults in and says which floors ask for something (`floorOf`: none at or under the property's min), what a met floor earns (`bonusOf`) and the partial credit at it, the hard floors sharing theirs (`partialOf`). And so are the terms one suit is scored by, which diagnostics, the requirement report and the solvers call: `liftedMin` (the minimum a resist is held at), `heldTotal`, `floorMet`, `stepCredit` (SSI by step) and `keptValue` (a piece against the worn one, for fewest changes). Change a value or a rule there, never in a solver.
+
+**The rules written twice.** The core states these as an evaluator and the MIP as rows, so a change to one is a change to both; the third column says what catches a mismatch:
 
 | Rule | Core (`scripts/optimizer-core.mts`) | Other copy | Caught by |
 |---|---|---|---|
-| Hard-floor bonus | `HARD_FLOOR_BONUS` | `HARD_FLOOR_BONUS` (`app/mip.mts`) | the fuzz suite |
-| The bonus a profile carries | `optHardBonus` | `hardBonusOf` (`app/mip.mts`) | nothing direct |
-| Tie and Strict order slack, 1e-3 | `LEX_EPS` | `TIE_SLACK` (`app/mip.mts`); `mip_abs_gap` (`app/mip-solve.mts`) | nothing direct |
-| Relative slack | `SCORE_REL`, `optSlack` | `SCORE_REL`, `slackAt` (`app/mip.mts`) | nothing direct |
-| Change cost | `CHANGE_COST` | `CHANGE_COST` (`app/mip.mts`) | `app/strict-order.test.mts` |
-| Change cost per pool (with the slot count 19 written in) | `optChangeCost` | `changeCostFor` (`app/mip.mts`) | one value in `app/strict-order.test.mts` |
-| A kept piece's value | `optChangeOf` | `keptOf` (`app/mip.mts`) | nothing direct |
-| Resisting Spells key and step slack | `RESIST_SKILL_KEY`, `RESIST_STEP_SLACK` | the same names in `app/vault-lib.mts` | nothing direct |
-| The minimum a resist is held at | `optScoreVector`'s step loop | `liftedMin` (`app/vault-lib.mts`), the step loop in `startVector` and the `h` rows in `buildSuitMip` | the fuzz suite |
-| SSI step credit | `optStepCredit` | `stepCredit` (`app/swing.mts`), the step loop in `startVector` | the fuzz suite |
+| The minimum a resist is held at | `optScoreVector`'s step loop, over the space's arrays | `liftedMin` (shared; `startVector` uses its `stepReached`, with `heldTotal` and `floorMet`) and the `v`, `b` and `h` rows in `buildSuitMip` | `app/solver/agreement.test.mts` (suit by suit, the rows included), `app/solver-buffs-fuzz.test.mts` (whole searches; `app/solver-fuzz.test.mts` generates no minimums) |
+| SSI step credit | `stepCredit` (shared) | the step columns' rows in `buildSuitMip`; `startVector` picks the paying column through `pointReached` | `app/solver/agreement.test.mts`, `app/solver-fuzz.test.mts` |
 | The slots | `optDefaultSlots` | `GEAR_SLOTS` (`app/vault-lib.mts`, read by `app/mip.mts`) | `app/solver.test.mts` |
 | The optional slots | `optDefaultOptionalSlots` | `DEFAULT_OPTIONAL_SLOTS` (`app/mip.mts`) | `app/solver.test.mts` |
-| Default soft-floor bonus 1000 and partial credit 0.5 | in `optBuildSpace` and the profile normalization | in `buildSuitMip` and `hardFloorSpread` (`app/mip.mts`); `SPEC_DEFAULTS.floorBonus` (`app/build-spec.mts`) | nothing direct |
+| A floor at or under its minimum asks for nothing | `floorOf` (`scoringProfile`, which the MIP reads too) | `floorsOf` (`app/diagnostics.mts`), against the lifted minimum | `app/diagnostics.test.mts` |
 
-The core keeps its own copies because its header rule was "imports nothing, so it can be pasted into a game script". No adapter pastes it, and issue #338's quality pass moves these into one shared module; this table shrinks as that lands.
+Issue #338's quality pass moves the profile normalization and these term functions into `app/solver/` next; this table shrinks as that lands.
 
 **To add or change a scoring term**, follow "Add or change a scoring term" in `docs/change-checklists.md`. In short: the core's evaluator and its bound, the MIP's rows and `startVector`, `hardFloorSpread`, diagnostics, `requirementReport`, the fuzz generator, `SOLVER_VERSION`, and this file.
 
@@ -48,7 +42,7 @@ The Suit Builder's "exact" mode does not search a decision tree in JavaScript. I
 
 ## The problem
 
-Choosing the best suit is a multiple-choice knapsack: pick at most one item per slot (the nineteen of `vault-lib.mts`'s `GEAR_SLOTS`, one per paperdoll layer: helmet, neck, chest, arms, hands, legs, outerLegs (a kilt or skirt over the legs), feet, oneHanded and twoHanded — the second hand, which holds a shield or a two-handed weapon — shirt, tunic (the middle torso: doublet, surcoat, sash), robe, waist, cloak, ring, bracelet, earrings and talisman) to maximize a score built from weighted property totals, subject to floors — required minimum totals on some properties, some of them hard (a suit that misses one is not a valid answer at all) and some soft (a preference the optimizer may trade away for a big enough gain elsewhere). The game refuses an item only when another worn item shares its layer, plus the hand rule below, so the slots need no other rule between them (issue #202). Every slot but the five armor pieces (helmet, chest, arms, hands, legs) is optional (`DEFAULT_OPTIONAL_SLOTS`); `app/mip.mts` derives both lists from `GEAR_SLOTS`, and the core, which imports nothing, keeps a copy that `app/solver.test.mts` holds to them.
+Choosing the best suit is a multiple-choice knapsack: pick at most one item per slot (the nineteen of `vault-lib.mts`'s `GEAR_SLOTS`, one per paperdoll layer: helmet, neck, chest, arms, hands, legs, outerLegs (a kilt or skirt over the legs), feet, oneHanded and twoHanded — the second hand, which holds a shield or a two-handed weapon — shirt, tunic (the middle torso: doublet, surcoat, sash), robe, waist, cloak, ring, bracelet, earrings and talisman) to maximize a score built from weighted property totals, subject to floors — required minimum totals on some properties, some of them hard (a suit that misses one is not a valid answer at all) and some soft (a preference the optimizer may trade away for a big enough gain elsewhere). The game refuses an item only when another worn item shares its layer, plus the hand rule below, so the slots need no other rule between them (issue #202). Every slot but the five armor pieces (helmet, chest, arms, hands, legs) is optional (`DEFAULT_OPTIONAL_SLOTS`); `app/mip.mts` derives both lists from `GEAR_SLOTS`, and the core keeps its own copy, which `app/solver.test.mts` holds to them.
 
 ## Variables and rows
 

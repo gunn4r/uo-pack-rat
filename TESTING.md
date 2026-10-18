@@ -136,6 +136,8 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `app/solver-large.test.mts` — app/solver.test.mts's one real-sized case, a 3,000-item generated cell, in a file of its own.
 - `app/solver-templates.test.mts` — HiGHS and the core agree on the fixture for every shipped default template, and with soft floors.
 - `app/solver.test.mts` — solver equivalence: HiGHS must never disagree with the core's own exact branch-and-bound about what the best suit is worth.
+- `app/solver/agreement.test.mts` — the solvers agree on one suit's score (issue #338): for random suits over generated pools and profiles, the core's `scoreSet` equals the MIP's objective at `startVector` plus `scoreOffset` (the hard floors built as soft terms for every suit, and as rows for a suit that meets them), each weighted property's part of that objective is its `scoreShares` share of the terms' total size, and the core's score with the floors taken out is the sum of those parts.
+- `app/solver/scoring.test.mts` — `app/solver/scoring.mts`, the scoring constants both solvers read (issue #338).
 - `app/store/json-file.test.mts` — `app/store/json-file.mts`: each bad-file policy and the writer.
 - `app/store/stores.test.mts` — each store in `app/store/` on its own: size caps, bad files and the exact bytes written.
 - `app/strict-order.test.mts` — Strict order and fewest changes in both solvers, checked by hand and against brute force.
@@ -160,6 +162,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `app/watcher.test.mts` — `app/watcher.mts`: the accepted-name rule, ingesting a file, and the watcher's debounce, retry, reject, sweep and self-healing.
 - `app/wizard-default-adapter.test.mts` — `app/ui/adapters.mts`'s adapter-selection helpers: the wizard and the Import tab never default to a paste client or to a client this OS can't run.
 - `scripts/american-spelling.test.mts` — a [smoke] guard for American spelling in what a player reads (issue #10).
+- `scripts/api-routes.test.mts` — a [smoke] guard that `app/api/routes.mts`'s route map and the routes `app/http/routes/` registers agree, both ways (issue #338).
 - `scripts/build-schema-types.test.mts` — the JSON Schema to TypeScript generator (`scripts/build-schema-types.mts`).
 - `scripts/build-ui.test.mts` — `scripts/build-ui.mts`'s `buildUi()`, the page build.
 - `scripts/changelog.test.mts` — `scripts/changelog.mts`: a [smoke] guard that the committed fragments and CHANGELOG.md are in shape, a [smoke] release of a copy of them, and the release that puts the fragments together.

@@ -17,6 +17,7 @@ import { readBody } from "../../read-body.mts";
 import { addPanelAutostart, panelPrefsError } from "../../tazuo-panel.mts";
 import { send, asObject } from "../respond.mts";
 import type { Route } from "../router.mts";
+import type { InstallApiResponse, LocateApiResponse, PasteScannerApiResponse, SetupApiResponse, UpdateCheckApiResponse } from "../../api/setup.mts";
 import type { ServerContext } from "../context.mts";
 
 export const MAX_PATH_LEN = 4096;
@@ -71,7 +72,7 @@ export function routes(ctx: ServerContext): Route[] {
         // page offers Open there and Copy path in a plain browser (npm start), instead of an Open that
         // answers 501 and vanishes.
         canOpenFolders: typeof host?.openPath === "function",
-      });
+      } satisfies SetupApiResponse);
     } },
     { method: "GET", path: "/api/setup/scanner", handle: (_req, res, url) => {
       // Read-only and path-free: the id must name a known paste-transport adapter, and the script is that
@@ -80,7 +81,7 @@ export function routes(ctx: ServerContext): Route[] {
       if (!setupService.adapters().some((a) => a.id === adapter && a.transport === "paste")) return send(res, 400, { ok: false, error: `unknown paste adapter: ${short(adapter)}` });
       const scanner = pasteScanner(ADAPTERS_DIR, adapter as string);
       if (!scanner) return send(res, 404, { ok: false, error: "this build ships no scanner for that client" });
-      return send(res, 200, { ok: true, ...scanner });
+      return send(res, 200, { ok: true, ...scanner } satisfies PasteScannerApiResponse);
     } },
     { method: "POST", path: "/api/setup/locate", handle: async (req, res) => {
       const { adapter, dir } = asObject(await readBody(req, { limit: 8e3 }));
@@ -94,7 +95,7 @@ export function routes(ctx: ServerContext): Route[] {
       // machine (the body cap above is what bounds the path's length).
       const result = validateScriptsDir(dir, adapter, ADAPTERS_DIR);
       if (!result.ok) return send(res, 400, { ok: false, error: NO_CLIENT_FOLDER });
-      return send(res, 200, { ok: true, scriptsDir: result.scriptsDir, installed: installedVersion(result.scriptsDir, adapter) });
+      return send(res, 200, { ok: true, scriptsDir: result.scriptsDir, installed: installedVersion(result.scriptsDir, adapter) } satisfies LocateApiResponse);
     } },
     { method: "POST", path: "/api/setup/install", handle: async (req, res) => {
       const { adapter, scriptsDir, panel } = asObject(await readBody(req, { limit: 8e3 }));
@@ -140,17 +141,17 @@ export function routes(ctx: ServerContext): Route[] {
       // pathsFile: what happened to packrat-paths.json on the way in (written/unchanged/kept/
       // backed-up) — installScripts no longer silently clobbers a hand-authored one, and the page
       // can say so.
-      return send(res, 200, { ok: true, installed: result.installed, version: result.version, scriptsDir: destDir, pathsFile: result.pathsFile, autostart });
+      return send(res, 200, { ok: true, installed: result.installed, version: result.version, scriptsDir: destDir, pathsFile: result.pathsFile, autostart } satisfies InstallApiResponse);
     } },
     { method: "GET", path: "/api/update-check", handle: async (_req, res) => {
       // Cached for an hour so every page load doesn't cost a GitHub round trip (and its unauthenticated
       // rate limit); a failed check is not cached, so the next request simply tries again.
       if (!updateCheckCache || Date.now() - updateCheckCache.at > UPDATE_CHECK_TTL_MS) {
         const result = await checkForUpdates({ current: PACKAGE_JSON.version, repo: repoFromPackage(PACKAGE_JSON), fetchImpl: updateFetch });
-        if (result.error) return send(res, 200, { ok: true, ...result });
+        if (result.error) return send(res, 200, { ok: true, ...result } satisfies UpdateCheckApiResponse);
         updateCheckCache = { at: Date.now(), result };
       }
-      return send(res, 200, { ok: true, ...updateCheckCache.result });
+      return send(res, 200, { ok: true, ...updateCheckCache.result } satisfies UpdateCheckApiResponse);
     } },
   ];
 }

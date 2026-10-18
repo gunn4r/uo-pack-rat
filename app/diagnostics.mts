@@ -3,8 +3,9 @@
 // map: builder
 // owns: `preBuildDiagnostics`, `resultDiagnostics`, `swingDiagnostics`, `weightDiagnostics`, `weaponFlagDiagnostics`, `onlyRootsDiagnostics`
 import { propertyReach, hardFloorSpread, HARD_FLOOR_BONUS_MAX, DEFAULT_OPTIONAL_SLOTS, DEFAULT_SLOTS } from "./mip.mts";
-import { RESIST_KEYS, RESIST_SKILL_KEY, SLOT_LABELS, flagLabel, importanceOf, liftedMin, propName, roundImportance, type OptItem, type ResistCap, type ResistStep } from "./vault-lib.mts";
-import { delayText, heldWeapon, stepCredit, swingSeconds, type Held, type SsiStepPoint, type SwingResult } from "./swing.mts";
+import { RESIST_KEYS, RESIST_SKILL_KEY, SLOT_LABELS, flagLabel, importanceOf, propName, roundImportance, type OptItem, type ResistCap } from "./vault-lib.mts";
+import { delayText, heldWeapon, swingSeconds, type Held, type SwingResult } from "./swing.mts";
+import { floorMet, heldTotal, liftedMin, stepCredit, type ResistStep, type SsiStepPoint } from "./solver/scoring.mts";
 import type { Diagnostic, DiagnosticAction, ScoreShare } from "./runs-types.mts";
 
 export type { Diagnostic, DiagnosticAction, DiagnosticCode, ScoreShare } from "./runs-types.mts";
@@ -46,7 +47,7 @@ function floorsOf(profile: DiagnosticsProfile): Array<[string, number]> {
 // A property's min in a suit carrying `bonus` Resisting Spells (0: the profile's own; liftedMin).
 const minOf = (profile: DiagnosticsProfile, k: string, bonus = 0): number | null => num(liftedMin({ mins: obj(profile.mins) as Record<string, number>, resistSteps: Array.isArray(profile.resistSteps) ? profile.resistSteps : [] }, k, bonus));
 // A total as the suit has it: held at its min, where it has one.
-const heldAt = (profile: DiagnosticsProfile, k: string, t: number, bonus = 0): number => { const m = minOf(profile, k, bonus); return m != null && t < m ? m : t; };
+const heldAt = (profile: DiagnosticsProfile, k: string, t: number, bonus = 0): number => heldTotal(t, minOf(profile, k, bonus));
 // What turns an item total into the player's terms: a planned buff's share (the floor before the buffs less the floor after them).
 function offsetOf(profile: DiagnosticsProfile, k: string, f: number): number {
   const before = num(obj(obj(profile.buffs).floors)[k]);
@@ -65,7 +66,7 @@ export function preBuildDiagnostics(input: DiagnosticsInput): Diagnostic[] {
   const out: Diagnostic[] = [];
   for (const [k, f] of floors) {
     const max = reach[k]!.max;
-    if (max >= f || (minOf(profile, k, bonus) ?? -Infinity) >= f) continue;
+    if (floorMet(max, f, minOf(profile, k, bonus))) continue;
     const off = offsetOf(profile, k, f), cap = num(caps[k]);
     const floor = Math.round(f + off), best = Math.floor(heldAt(profile, k, Math.min(cap ?? Infinity, max), bonus) + off), isHard = hard.has(k);
     // a resist floor set above its cap counts only up to the cap (vault-lib.mts effectiveProfile), so the sentence says which number it is
@@ -122,10 +123,9 @@ export function resultDiagnostics(input: ResultDiagnosticsInput): Diagnostic[] {
   const floors = floorsOf(profile).filter(([k]) => hard.has(k)), reach = reachOf(input, [...floors.map(([k]) => k), RESIST_SKILL_KEY]);
   const out = preBuildDiagnostics(input), bonus = num(after[RESIST_SKILL_KEY]) ?? 0, most = reach[RESIST_SKILL_KEY]!.max;
   // out of reach (said above) or met: by the total, or by the min the suit's own Resisting Spells bonus lifts it to
-  const atLeast = (m: number | null, f: number): boolean => m != null && m >= f;
   for (const [k, f] of floors) {
     const t = num(after[k]) ?? 0;
-    if ((reach[k]!.max < f && !atLeast(minOf(profile, k, most), f)) || t >= f || atLeast(minOf(profile, k, bonus), f)) continue;
+    if (!floorMet(reach[k]!.max, f, minOf(profile, k, most)) || floorMet(t, f, minOf(profile, k, bonus))) continue;
     const off = offsetOf(profile, k, f), floor = Math.round(f + off), value = Math.floor(heldAt(profile, k, t, bonus) + off);
     out.push({ code: "floors_conflict", level: "warn", property: k,
       message: result.floorsConflict

@@ -38,7 +38,7 @@ export const SCREENS: Record<string, string | string[]> = {
   "house-map": "ui-map", "house-map-model": "ui-map", "world-map": "ui-map", "world-map-model": "ui-map",
   organize: "ui-organize", "auto-organize": "ui-organize", "rule-editor": "ui-organize",
   "organize-model": ["ui-organize", "ui-map"], kinds: "ui-organize",
-  "builder-buffs": "ui-builder-*", "builder-header": "ui-builder-*", "builder-manual": "ui-builder-*", "manual-model": "ui-builder-*",
+  "builder-buffs": "ui-builder-*", "builder-header": "ui-builder-*", "builder-templates": "ui-builder-*", "builder-requirements": "ui-builder-*", "builder-job": "ui-builder-*", "builder-manual": "ui-builder-*", "manual-model": "ui-builder-*",
   "item-browser": ["ui-state", "ui-builder-*"],
 };
 

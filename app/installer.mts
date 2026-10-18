@@ -14,6 +14,7 @@ import { fileURLToPath } from "node:url";
 import { atomicReplace, readBounded, writeFileAtomic } from "./atomic-write.mts";
 import type { DataDirCheckInfo } from "./data-dir-notice.mts";
 import type { AdapterManifestV1, AdapterManifestV1Install, AdapterManifestV1InstallRetiredItem } from "./schema/types.d.mts";
+import type { AdapterCapabilities, InstalledVersionInfo } from "./api/setup.mts";
 
 const VERSION_RE = /ADAPTER_VERSION\s*=\s*"([^"]+)"/;
 const ADAPTER_ID_RE = /^[a-z0-9-]+$/;
@@ -109,7 +110,7 @@ export interface AdapterInfo {
   id: string;
   name: string;
   scripts: string[];
-  capabilities: unknown;
+  capabilities: AdapterCapabilities;
   // What the bridge does besides the actions in capabilities.bridge (capabilities.json's optional "features").
   features: string[];
   transport: "folder" | "paste";
@@ -130,7 +131,10 @@ export function listAdapters(adaptersDir: string): AdapterInfo[] {
     let raw: Record<string, unknown>;
     try { raw = JSON.parse(readFileSync(capPath, "utf8")) as Record<string, unknown>; }
     catch { continue; }
-    const capabilities = raw.capabilities || {};
+    // `bridge` is what the page and the MCP tools offer as bridge actions, so it is always a list of names; the rest of
+    // the object is passed on as the file wrote it.
+    const declared = raw.capabilities && typeof raw.capabilities === "object" && !Array.isArray(raw.capabilities) ? raw.capabilities as Record<string, unknown> : {};
+    const capabilities: AdapterCapabilities = { ...declared, bridge: Array.isArray(declared.bridge) ? declared.bridge.filter((a): a is string => typeof a === "string") : [] };
     // "folder" (the adapter writes scripts into a player-chosen client folder) or "paste" (no
     // filesystem access — the player pastes what the script prints into the Import tab instead).
     // See docs/adapter-guide.md. Anything other than the literal "paste" is treated as "folder" so an
@@ -290,10 +294,7 @@ export function validateScriptsDir(dir: unknown, adapter: unknown, adaptersDir: 
 // (scriptsDir) and, by GET /api/setup, for the repo's own adapters/<id>/ to report the shipped version.
 // version comes from the scanner script (its name contains "scanner"; falls back to the first script
 // alphabetically so a differently-named future adapter still reports something) when present, else null.
-export interface InstalledVersionResult {
-  version: string | null;
-  files: Record<string, boolean>;
-}
+export type InstalledVersionResult = InstalledVersionInfo;
 
 export function installedVersion(scriptsDir: string, adapter: unknown): InstalledVersionResult {
   const names = scriptNamesIn(scriptsDir);
@@ -647,7 +648,7 @@ export interface CheckForUpdatesParams {
 export type CheckForUpdatesResult =
   | { configured: false; error?: undefined; current?: undefined; latest?: undefined; url?: undefined; upToDate?: undefined }
   | { configured: true; error: string; current?: undefined; latest?: undefined; url?: undefined; upToDate?: undefined }
-  | { configured: true; current: string; latest: string; url: unknown; upToDate: boolean; error?: undefined };
+  | { configured: true; current: string; latest: string; url: string; upToDate: boolean; error?: undefined };
 
 export async function checkForUpdates(
   { current, repo, fetchImpl = fetch, timeoutMs = 10_000 }: CheckForUpdatesParams = {} as CheckForUpdatesParams,   // every real call site supplies current/repo (see app/installer.test.mts, app/vault-server.mts); this cast is compiler-only, matching config.mts's rawPort pattern
@@ -670,9 +671,8 @@ export async function checkForUpdates(
   catch (e) { return { configured: true, error: `invalid release response: ${(e as Error).message}` }; }
   // body is the parsed JSON of a GitHub releases/latest response — never schema-checked before this
   // (same unvalidated trust as elsewhere in this file); tag_name is coerced through String(), and
-  // html_url now goes through releaseUrl rather than being forwarded as-is. `url` stays typed
-  // `unknown` so the result's shape is unchanged for every caller, but at run time it is always a
-  // string this module vouched for.
+  // html_url now goes through releaseUrl rather than being forwarded as-is, so `url` is always a string this module
+  // vouched for.
   const release = body as { tag_name?: unknown; html_url?: unknown };
   const latest = String(release.tag_name || "").replace(/^v/, "");
   return { configured: true, current, latest, url: releaseUrl(release.html_url, repo), upToDate: compareSemver(current, latest) >= 0 };

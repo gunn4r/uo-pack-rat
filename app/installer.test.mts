@@ -92,6 +92,19 @@ test("[fast] listAdapters finds tazuo with its five scripts and a summary mentio
   assert.equal(tazuo.platform, null, "tazuo has no platform restriction — capabilities.json carries no platform field");
 });
 
+// capabilities.bridge is what the page and the MCP tools offer as bridge actions (GET /api/setup), so listAdapters always
+// hands it on as a list of names, whatever a capabilities.json wrote there; the rest of the object is passed on as is.
+test("[fast] listAdapters reads a missing or malformed capabilities.bridge as a list of its string entries", () => {
+  const dir = tmp("qm-installer-bridge-");
+  const cases: Record<string, unknown> = { none: { bank: true }, "not-a-list": { bridge: "grab" }, mixed: { bridge: ["grab", 3, null, "goto"] }, "no-capabilities": undefined, "capabilities-a-list": ["grab"] };
+  for (const [id, capabilities] of Object.entries(cases)) {
+    mkdirSync(join(dir, id));
+    writeFileSync(join(dir, id, "capabilities.json"), JSON.stringify({ adapter: id, transport: "folder", ...(capabilities === undefined ? {} : { capabilities }) }));
+  }
+  const got = Object.fromEntries(listAdapters(dir).map((a) => [a.id, a.capabilities]));
+  assert.deepEqual(got, { none: { bank: true, bridge: [] }, "not-a-list": { bridge: [] }, mixed: { bridge: ["grab", "goto"] }, "no-capabilities": { bridge: [] }, "capabilities-a-list": { bridge: [] } });
+});
+
 // Phase 6 final review follow-up: capabilities.json's optional top-level `platform` field (see
 // docs/adapter-guide.md's "Platform restriction") must surface on the object listAdapters returns —
 // this is what app/ui/adapters.mts's platformCompatible reads instead of hard-coding an adapter id.

@@ -12,7 +12,7 @@ import { defaultStrLimit } from "../run-settings.mts";
 import { state } from "./store.mts";
 import { $, el } from "./dom.mts";
 import { box, txt, button, icon, popover, closePopover, confirmDialog, tag, combobox, type ComboboxHandle, type ComboGroup, type ComboOption, type ComboFace, type ComboAction } from "./components.mts";
-import { session, commands, provide, type BuildState } from "./builder-session.mts";
+import { session, commands, announce, provide, type BuildState } from "./builder-session.mts";
 import { NO_CHARACTER, plainName } from "./builder-parts.mts";
 import { characterNames } from "./roster.mts";
 import { plural, topSkills, who, templateLine } from "./builder-model.mts";
@@ -113,7 +113,7 @@ function pickCharacter(v: string): void {
   const none = v === NOBODY;
   commands.setManualFor(none ? null : v);
   if (v !== session.character && (!none || session.mode !== "manual")) commands.selectCharacter(v);
-  commands.paintCharSelect();
+  announce("picker");
 }
 function showCharacter(name: string): void { shownCharacter = name; charPicker?.refresh(); }
 // The build picker's face: "<name>'s build" over where its settings came from and how they stand.
@@ -159,8 +159,8 @@ async function revertToSaved(): Promise<void> {
   if (session.character !== name) return;
   session.profile = characterProfile(state.profiles!, name, state.builtinTemplates);
   session.profile!.excludeRoots ??= [];
-  commands.clearCapDrafts();
+  announce("caps");
   session.knobs.strLimit = String(session.profile!.strLimit ?? defaultStrLimit(state.inv!.characters[name]));
-  commands.renderPanel();
+  announce("panel");
 }
 provide({ showCharacter, refreshCharPicker: () => charPicker?.refresh(), refreshBuildPicker: () => buildPicker?.refresh(), paintChangesChip });
