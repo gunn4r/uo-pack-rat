@@ -1,18 +1,20 @@
 // settings.mts — <data>/settings.json: the shard, the client, the setup and retention choices. What a run actually uses (the startup fallbacks laid over this file) is the server's business; this store only reads and writes the file.
 //
 // map: server
-// owns: `createSettingsStore`, `SettingsDoc`, `ClientSettings`
+// owns: `createSettingsStore`, `SettingsDoc`
 import { existsSync } from "node:fs";
 import { DEFAULT_SHARD } from "../rules.mts";
 import { jsonErrorReason } from "../paste-scan.mts";
 import { migrate } from "../migrate.mts";
 import { readJsonFile, writeJsonFile } from "./json-file.mts";
 import { isBoundedInt, MAX_SERIAL } from "../guards.mts";
+import type { ClientSettings } from "../api/setup.mts";
 
 // settings.json is user-editable, on-disk data with no schema check at read time (PUT /api/settings
 // validates each field it writes; a hand-edited file is trusted here the same way profiles.json
 // is in the profiles store) — the cast documents that trust boundary, same pattern as rules.mts's loadFile.
-export interface ClientSettings { adapter: string; scriptsDir: string; }
+// The configured client is the API's own type (app/api/setup.mts), so settings.json, the routes and the page agree on it.
+export type { ClientSettings } from "../api/setup.mts";
 export interface SettingsDoc {
   schemaVersion?: number;
   shard: string;

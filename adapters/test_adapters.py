@@ -4,10 +4,11 @@ adapters/tazuo/test_paths.py still covers the TazUO-specific header and contract
 
 1. Conventions — none of the three banned unbounded-loop literals (see scripts/no-unbounded-loop.test.mts, which spells them out; this file must not, since TazUO refuses a script whose text contains one anywhere, comments included) in any adapter .py, `import API` alone on its line, each script's `CAPABILITIES` and `FEATURES` literals and version agreeing with its `capabilities.json` (and each bridge's `PROTOCOL` with its `protocol`), no public-speech call in a bridge, and the never-a-container names and graphics and the wearable names (read from their `adapters/_shared/` fragments) refusing what they must and nothing else. That the scripts' copies of a shared helper match is scripts/gen-contracts.mts's job (adapters/_shared/), not this file's.
 2. The bridge's untrusted-input guards (Phase 7 security review, area 5). Every bridge carries the same generated block of PURE functions — no game API, no files — bounded by the constants above them; this file extracts that block, execs it, and drives it directly, the same way adapters/tazuo/test_paths.py execs `data_dir` without a running client. Checked: stale, future-dated or unstamped commands refused, unknown actions, bad serials, over-long chains, out-of-range positions and walks, and over-long names refused, a line in a newer protocol refused (one with none read as protocol 1), an unknown top-level field ignored by both checks (what keeps installed bridges working when the app adds one), the burst budget (a 25-piece Grab all fits, a flood does not), partial and over-long queue lines, `resolve_root` and the chain check refusing another player's pack, a trip's `putAway` (a container serial, and a Put away trip takes nothing), and a scan line (issue #281: its script one of scanner, refresh and house, unknown fields ignored, and an unknown action on a bridge that does not start scans).
+3. The shared contract cases (app/fixtures/contract-cases/): each file the game scripts and the app both read, its accept and reject cases run through the scripts' own reader, as the TypeScript suite runs them through the app's.
 
 Run: python3 adapters/test_adapters.py  (app/adapters.test.mts also spawns it, so `npm test` does).
 """
-import json, os, re, unittest
+import json, os, re, tempfile, unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 BANNED_LOOPS = re.compile(r"while\s*\(?\s*(true|1)\b", re.I)
@@ -51,6 +52,23 @@ def load_shared(fragment):
     path = os.path.join(HERE, "_shared", fragment + ".py")
     exec(compile(read_text(path), path, "exec"), ns)
     return ns
+
+
+MANIFEST_LINE = re.compile(r"^(?:const )?(ADAPTER_ID|ADAPTER_VERSION|CAPABILITIES) =")
+MARKER = re.compile(r"^(?:#|//) (BEGIN|END) generated: (\S+)$")
+
+
+def stray_manifest_lines(text):
+    """The lines setting ADAPTER_ID, ADAPTER_VERSION or CAPABILITIES outside a manifest block, which
+    gen-contracts --check cannot see."""
+    out, block = [], None
+    for line in text.splitlines():
+        m = MARKER.match(line)
+        if m:
+            block = m.group(2) if m.group(1) == "BEGIN" else None
+        elif MANIFEST_LINE.match(line) and block not in ("manifest", "manifest_version"):
+            out.append(line)
+    return out
 
 
 def load_block(bridge_path):
@@ -146,6 +164,18 @@ class Conventions(unittest.TestCase):
                     continue
                 self.assertIn('ADAPTER_VERSION = "%s"' % version, t,
                               "%s/%s does not carry the manifest's version %s" % (name, f, version))
+
+    def test_the_manifest_constants_live_only_in_generated_blocks(self):
+        self.assertEqual(stray_manifest_lines('CAPABILITIES = {}\n# BEGIN generated: manifest\nADAPTER_ID = "x"\n'
+                                              '# END generated: manifest\n'), ["CAPABILITIES = {}"])
+        for name, d in adapter_dirs():
+            for f in sorted(os.listdir(d)):
+                if not re.match(r"packrat-.*\.(py|ts)$", f):
+                    continue
+                t = read_text(os.path.join(d, f))
+                self.assertEqual(stray_manifest_lines(t), [], "%s/%s sets a manifest constant by hand" % (name, f))
+                if f.startswith(("packrat-scanner.", "packrat-character-refresh.")):
+                    self.assertRegex(t, r"(?m)^(#|//) BEGIN generated: manifest$", "%s/%s has no manifest block" % (name, f))
 
     def test_bridges_never_call_a_public_speech_primitive(self):
         # Every in-game message an adapter prints is client-local. API.Msg / Player.ChatSay et al are
@@ -582,6 +612,116 @@ class UntrustedInput(unittest.TestCase):
             for payload in (None, 17, "trip", [1]):
                 trip, why = ns["check_trip"](payload, NOW)
                 self.assertIn("not a JSON object", why, name)
+
+
+def panel_readers():
+    """The TazUO panel's pure tazuo-panel.json readers (read_json, read_hotkey, read_show_at_login) and the
+    constants they use, lifted out of packrat-panel.py into a bare namespace."""
+    text = read_text(os.path.join(HERE, "tazuo", "packrat-panel.py"))
+    ns = {"re": re, "os": os, "json": json}
+    for name in ("MAX_PREFS_BYTES", "DEFAULT_HOTKEY", "HOTKEY_MODS", "HOTKEY_KEY_RE"):
+        exec(re.search(r"^%s = .*$" % name, text, re.M).group(0), ns)
+    for name in ("read_json", "read_hotkey", "read_show_at_login"):
+        exec(helper_source(text, name), ns)
+    return ns
+
+
+class SharedContractCases(unittest.TestCase):
+    """The accept and reject cases app/fixtures/contract-cases/ shares with the TypeScript suite: each file the game
+    scripts and the app both read, run through the scripts' own reader."""
+
+    def cases(self, name):
+        with open(os.path.join(HERE, "..", "app", "fixtures", "contract-cases", name + ".json"), encoding="utf-8") as f:
+            return json.load(f)
+
+    def test_house_claims_cases(self):
+        ns = {"re": re, "os": os, "json": json, "data_dir": lambda: tempfile.gettempdir()}
+        path = os.path.join(HERE, "_shared", "tazuo", "claims.py")
+        exec(compile(read_text(path), path, "exec"), ns)
+        cases = self.cases("house-claims")
+        with tempfile.TemporaryDirectory() as d:
+            f = os.path.join(d, "house-claims.json")
+            for entry in cases["valid"]:
+                with open(f, "w", encoding="utf-8") as out:
+                    json.dump([entry], out)
+                self.assertEqual(ns["read_claims"](f), [entry], json.dumps(entry))
+            for case in cases["invalid"]:
+                with open(f, "w", encoding="utf-8") as out:
+                    json.dump([case["entry"]], out)
+                self.assertEqual(ns["read_claims"](f), [], case["why"])
+
+    def test_cut_utf16_counts_as_the_app_does_and_never_splits_a_character(self):
+        cut = load_shared("cut_utf16")["cut_utf16"]
+        self.assertEqual(cut("abc", 64), "abc")
+        self.assertEqual(cut("a" * 70, 64), "a" * 64)
+        self.assertEqual(cut("a" + "\U0001F400" * 40, 64), "a" + "\U0001F400" * 31, "an astral character is two units")
+        self.assertEqual(cut("a\ud83d\udc00", 2), "a", "IronPython's surrogate pair is not left half-cut")
+
+    def test_blacklist_cases(self):
+        ns = load_shared("read_blacklist")
+        ns.update({"os": os, "json": json})
+        cases = self.cases("blacklist")
+        with tempfile.TemporaryDirectory() as d:
+            f = os.path.join(d, "scan-blacklist.json")
+            for entry in cases["valid"]:
+                with open(f, "w", encoding="utf-8") as out:
+                    json.dump([entry], out)
+                self.assertEqual(ns["read_blacklist"](f), [entry], json.dumps(entry))
+            for case in cases["invalid"]:
+                with open(f, "w", encoding="utf-8") as out:
+                    json.dump([case["entry"]], out)
+                self.assertEqual(ns["read_blacklist"](f), [case["entry"]] if case["scripts"] else [], case["why"])
+
+    def test_packrat_paths_cases(self):
+        cases = self.cases("packrat-paths")["cases"]
+        saved = {k: os.environ.get(k) for k in ("HOME", "USERPROFILE", "PACKRAT_DATA")}
+        try:
+            with tempfile.TemporaryDirectory() as home, tempfile.TemporaryDirectory() as d:
+                os.environ["HOME"] = os.environ["USERPROFILE"] = home
+                os.environ.pop("PACKRAT_DATA", None)
+                for fragment in ("tazuo/paths", "razor-enhanced/paths"):
+                    ns = {"os": os, "json": json, "__file__": os.path.join(d, "packrat-scanner.py")}
+                    path = os.path.join(HERE, "_shared", fragment + ".py")
+                    exec(compile(read_text(path), path, "exec"), ns)
+                    for case in cases:
+                        with open(os.path.join(d, "packrat-paths.json"), "w", encoding="utf-8") as f:
+                            json.dump(case["doc"], f)
+                        why = "%s: %s" % (fragment, case["why"])
+                        if case["reads"] == "error":
+                            with self.assertRaises(Exception, msg=why):
+                                ns["data_dir"]()
+                        else:
+                            want = case["doc"]["dataDir"] if case["reads"] == "dataDir" else "~/.pack-rat"
+                            self.assertEqual(ns["data_dir"](), os.path.expanduser(want), why)
+        finally:
+            for k, v in saved.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+
+    def test_put_away_consent_the_panel_writes_is_what_the_bridge_reads(self):
+        # PUT_AWAY_VAR is a client shared variable, not a file: one fragment (tazuo/put_away_consent) holds its name,
+        # the panel's formatter and the bridge's parser, so the two scripts carry the same text.
+        ns = load_shared("tazuo/put_away_consent")
+        self.assertEqual(ns["put_away_parts"](ns["put_away_consent"](1073741825, 1792324795.5)), (1073741825, 1792324795.5))
+        for value in ("", "soon", "1:2:3", "x:5", "5:x", None, 7):
+            self.assertIsNone(ns["put_away_parts"](value), repr(value))
+
+    def test_tazuo_panel_cases(self):
+        ns = panel_readers()
+        with tempfile.TemporaryDirectory() as d:
+            f = os.path.join(d, "tazuo-panel.json")
+            for case in self.cases("tazuo-panel")["cases"]:
+                with open(f, "w", encoding="utf-8") as out:
+                    json.dump(case["doc"], out)
+                doc = ns["read_json"](f)
+                read = case["read"]
+                self.assertEqual(ns["read_hotkey"](doc), "+".join(read["hotkey"]["mods"] + [read["hotkey"]["key"]]), case["why"])
+                self.assertEqual(ns["read_show_at_login"](doc), read["showAtLogin"], case["why"])
+            with open(f, "w", encoding="utf-8") as out:
+                json.dump({"showAtLogin": False, "pad": "x" * 4096}, out)
+            self.assertEqual(ns["read_json"](f), {}, "past 4096 bytes: the defaults")
 
 
 if __name__ == "__main__":

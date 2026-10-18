@@ -1,5 +1,5 @@
-// build-schema-types.mts — derive app/schema/types.d.mts from the six JSON Schema files that are
-// the runtime authority for Pack Rat's scan, bridge, bridge trip, rules, profile and adapter manifest shapes (app/schema/*.schema.json,
+// build-schema-types.mts — derive app/schema/types.d.mts from the JSON Schema files that are
+// the runtime authority for Pack Rat's scan, bridge, bridge trip, rules, profile, adapter manifest and house claims shapes (app/schema/*.schema.json,
 // enforced at runtime by app/schema/validate.mts). Hand-written types would be a second authority
 // free to drift from what the validator actually checks; this generates one from the other instead.
 //
@@ -24,7 +24,7 @@
 // constrain values, not shapes, so they're consumed and ignored for the same reason the metadata
 // keyword $comment is.
 //
-// buildSchemaTypes() reads the six schema files and writes app/schema/types.d.mts, only rewriting
+// buildSchemaTypes() reads those schema files and writes app/schema/types.d.mts, only rewriting
 // it when the generated content actually changed. bridge.v1.schema.json is not itself one schema —
 // per its own header comment it holds three independent schemas (command, result, status),
 // validated separately — so it produces three root types (BridgeV1Command, BridgeV1Result,
@@ -279,6 +279,7 @@ export function buildSchemaTypes({ out = TYPES_OUT }: { out?: string } = {}): st
     rules: join(SCHEMA_DIR, "rules.v1.schema.json"),
     profiles: join(SCHEMA_DIR, "profiles.v3.schema.json"),
     adapterManifest: join(SCHEMA_DIR, "adapter-manifest.v1.schema.json"),
+    houseClaims: join(SCHEMA_DIR, "house-claims.v1.schema.json"),
   };
 
   const bridgeDoc = asPlainObject(readJson(files.bridge), files.bridge);
@@ -292,6 +293,7 @@ export function buildSchemaTypes({ out = TYPES_OUT }: { out?: string } = {}): st
     schemaToTypeSource("RulesV1", readJson(files.rules)),
     schemaToTypeSource("ProfilesV3", readJson(files.profiles)),
     schemaToTypeSource("AdapterManifestV1", readJson(files.adapterManifest)),
+    schemaToTypeSource("HouseClaimsV1", readJson(files.houseClaims)),
   ];
 
   const sourceList = Object.values(files).map((f) => relative(ROOT, f)).join(", ");

@@ -49,6 +49,11 @@ def data_dir():
         with open(cfg, "r", encoding="utf-8") as f:
             d = json.load(f).get("dataDir")
         if d:
+            # app/schema/packrat-paths.v1.schema.json's shapes: a relative path would land under the client's own
+            # working folder and ~user/ elsewhere, unseen by the app, so refuse to start instead.
+            drive = len(d) > 2 and "a" <= d[0].lower() <= "z" and d[1] == ":" and d[2] in "/\\"
+            if not (drive or d == "~" or d.startswith(("/", "\\\\", "~/", "~\\"))):
+                raise ValueError("packrat-paths.json: dataDir must be an absolute folder or start with ~/")
             return os.path.expanduser(d)
     return os.path.expanduser(os.environ.get("PACKRAT_DATA") or "~/.pack-rat")
 
@@ -109,7 +114,7 @@ def script_prefix(self_name):
 
 # BEGIN generated: manifest
 ADAPTER_ID = "tazuo"
-ADAPTER_VERSION = "2.20.0"
+ADAPTER_VERSION = "2.21.0"
 CAPABILITIES = {
     "layers": ["OneHanded", "TwoHanded", "Shoes", "Pants", "Shirt", "Helmet", "Gloves", "Ring",
                "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic", "Earrings", "Arms",
@@ -150,7 +155,24 @@ HIGHLIGHT_HUE = 53        # bright yellow-green
 MARK_HUE = 53
 ALARM_HUE, OK_HUE, INFO_HUE = 33, 68, 88
 PACK_MAX_ITEMS = 125      # a backpack's item cap (ServUO's Container default MaxItems)
-PUT_AWAY_VAR = "packrat_putaway"   # set by packrat-panel.py's Put away (put_away_asked)
+# BEGIN generated: tazuo/put_away_consent
+PUT_AWAY_VAR = "packrat_putaway"   # Put away's consent, a client shared variable: the panel sets it, the bridge checks it
+
+
+def put_away_consent(container, until):
+    """PUT_AWAY_VAR's value while a Put away run on `container` may last until `until` (epoch seconds):
+    "<container serial>:<until>". "" withdraws it."""
+    return "%d:%f" % (container, until)
+
+
+def put_away_parts(value):
+    """(container, until) from PUT_AWAY_VAR's `value`, or None when it holds no consent."""
+    try:
+        serial, until = str(value).split(":")
+        return int(serial), float(until)
+    except Exception:
+        return None
+# END generated: tazuo/put_away_consent
 TAKE_DROP = (60, 90)      # where a trip drops what it takes, inside the backpack window: a drop at a spot never stacks
 SELF = "packrat-bridge.py"
 SCAN_FILES = {"scanner": SCANNER, "refresh": REFRESH, "house": HOUSE}   # a scan line's script (SCAN_SCRIPTS), as a file
@@ -563,12 +585,12 @@ TRASH_RE = re.compile(r"\btrash\b", re.I)
 WEARABLE_RE = re.compile(r"\b(plate\w*|chain\w*|ring\s*mail|studded|leather|armou?r)\b", re.I)
 # END generated: tazuo/wearable_re
 # Engraved bags and Backpacks match no name pattern — detect by graphic too (probe-verified Aug 2026).
-# BEGIN generated: tazuo/container_graphics
+# BEGIN generated: container_graphics
 CONTAINER_GRAPHICS = {0x0E75, 0x0E76, 0x0E79, 0x0E7D, 0x09AA, 0x09A8, 0x09A9, 0x09AB,
                       0x0E3C, 0x0E3D, 0x0E3E, 0x0E3F, 0x0E40, 0x0E41, 0x0E42, 0x0E43,
                       0x0E7C, 0x0E7E, 0x0E7F, 0xA32F, 0xA333,
                       0x4025, 0x4026}   # Gargish Chest: UO Alive's tiledata does not flag it
-# END generated: tazuo/container_graphics
+# END generated: container_graphics
 
 results = {}              # id -> {ok, msg}
 # The ids in the order they were recorded: the client's Python does not keep a dict in insertion order
@@ -1431,10 +1453,10 @@ def put_away_asked(container):
     until>". A shared variable lives in the client's memory, so a line written into the queue file alone
     can never make the bridge put away what you carry (docs/threat-model.md, boundary 13)."""
     try:
-        serial, until = str(API.GetSharedVar(PUT_AWAY_VAR)).split(":")
-        return int(serial) == container and float(until) > time.time()
+        parts = put_away_parts(API.GetSharedVar(PUT_AWAY_VAR))
     except Exception:
         return False
+    return parts is not None and parts[0] == container and parts[1] > time.time()
 
 
 def in_own_pack(container):
@@ -1558,10 +1580,11 @@ def do_scan(cmd):
     if running(path):
         return False, f"{name} is already running"
     try:
-        if float(str(API.GetSharedVar(PUT_AWAY_VAR)).split(":")[1]) > time.time():
-            return False, "a Put away is running: scan after it"
+        parts = put_away_parts(API.GetSharedVar(PUT_AWAY_VAR))
     except Exception:
-        pass
+        parts = None
+    if parts is not None and parts[1] > time.time():
+        return False, "a Put away is running: scan after it"
     play(path)
     until = time.time() + START_CHECK_S
     while not running(path):
