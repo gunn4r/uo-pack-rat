@@ -1,4 +1,7 @@
 // setup.mts — the setup wizard: GET /api/setup, GET /api/setup/scanner, POST /api/setup/locate and /api/setup/install, and GET /api/update-check.
+//
+// map: server
+// owns: `routes`, `MAX_PATH_LEN`, `NO_CLIENT_FOLDER`
 import { join } from "node:path";
 import { short } from "../../guards.mts";
 import { validateScriptsDir, installedVersion, installScripts, pasteScanner, repoFromPackage, checkForUpdates, type CheckForUpdatesResult } from "../../installer.mts";

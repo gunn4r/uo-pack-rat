@@ -2,6 +2,9 @@
 // detection, script install/verify, scan import, and a GitHub-releases update check. node:fs and
 // node:path only; the one bit of I/O that isn't the local filesystem (checkForUpdates' HTTP call)
 // takes an injectable fetchImpl so callers (and tests) never depend on a real fetch global.
+//
+// map: installer
+// owns: `listAdapters`, `candidateClientRoots`, `validateScriptsDir`, `installedVersion`, `installScripts`, `checkForUpdates`, `checkScriptsDataDir`, `RUNNING_MESSAGE_OTHER`, `REGISTRARS`
 import {
   existsSync, statSync, lstatSync, readdirSync, readFileSync, copyFileSync, realpathSync,
   unlinkSync, constants, type Dirent, type Stats,

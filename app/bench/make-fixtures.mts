@@ -6,6 +6,8 @@
 // scans do carry worn gear, so this script also PROMOTES a handful of the generated gear items — one
 // per optimizer slot — from scan.items into scan.equipped, so the fixtures exercise the fold's worn/
 // packed distinction the way a real scan does.
+//
+// map: builder
 import { writeFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";

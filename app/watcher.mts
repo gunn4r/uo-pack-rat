@@ -42,6 +42,9 @@
 // 'error' from it is logged and the watch re-armed, a deleted inbox is recreated (and watched again)
 // by the next sweep, and scanOnce() returns false when it could not sweep at all. A live watch is also swept every
 // sweepMs (5 s), since the OS can drop its notifications altogether.
+//
+// map: scan
+// owns: `startWatcher`, `ingestFile`, `acceptedName` (the one place scan text becomes a file name), `MAX_INBOX_BYTES`
 import {
   existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, renameSync, unlinkSync, lstatSync, statSync, realpathSync,
   watch as fsWatch, type WatchListener,

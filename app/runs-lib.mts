@@ -1,5 +1,8 @@
 // runs-lib.mts — saved suit-builder runs: the cache key, the reuse rule, the list summary, and what changed in the gear since a run.
 // Server-side only (uses node:crypto); the page never imports it.
+//
+// map: builder
+// owns: `SOLVER_VERSION`, `runKey`, `reusableRun`, `runSummary`, `manualRun`, `runRecord`, `poolSnapshot`, `gearChanges`
 import { createHash } from "node:crypto";
 import { NOBODY, locationOf, totalsOf, type Inventory, type Item, type OptItem } from "./vault-lib.mts";
 import type { GearChanges, PiecePlace, RunResult, RunSettingsRaw, RunSummary, SavedRun, ScoreShare } from "./runs-types.mts";

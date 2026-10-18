@@ -14,6 +14,9 @@
 //      is not a module (JSON, CSS, HTML), by naming it in quotes ("demo-Kestrel.json"). Under app/ui
 //      (and app/index.html) the Electron screen tests for it are added too, from SCREENS; a
 //      stylesheet adds the contrast test. A path nothing reaches runs the full suite.
+//
+// map: tooling
+// owns: `selectTests`, `SCREENS`
 import { posix } from "node:path";
 
 export type Selection = { full: string } | { tests: Record<string, string[]> };

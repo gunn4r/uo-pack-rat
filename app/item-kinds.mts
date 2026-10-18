@@ -4,6 +4,9 @@
 // changes the file's document. Pure (no node: imports). salvageKindOverrides keeps every entry that still makes sense
 // and names what it left out: every read of the file and every imported file go through it, so a hand edit, or a
 // shared file with a kind this version does not know, loses that entry and not the rest.
+//
+// map: kinds
+// owns: `salvageKindOverrides`, `withKinds`, `withoutKinds`, `kindsDocument`, `MAX_KINDS_BYTES`
 import { OVERRIDE_KINDS, kindNameKey, kindGraphicKey, type KindOverrides } from "./vault-lib.mts";
 export { OVERRIDE_KINDS };
 

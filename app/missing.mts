@@ -8,6 +8,9 @@
 // previous scan, and what one in the root itself grew by. Only the rest is reported. A sale can therefore be
 // under-reported while such a stack exists, but a merge is never reported as missing.
 // Pure; app/vault-server.mts runs it beside the fold, over the same scans.
+//
+// map: scan
+// owns: `missingSinceLastScan`, `MissingItem`
 import { parseStamp } from "./scan-schema.mts";
 import { shownName, TRASH_RE } from "./vault-lib.mts";
 import type { Inventory } from "./vault-lib.mts";

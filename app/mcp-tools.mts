@@ -6,6 +6,9 @@
 // page does (buffs.mts, vault-lib.mts). One entry per tool: its name, description, JSON Schema for its arguments
 // (the subset app/schema/validate.mts checks, which mcp.mts runs before the handler), annotations and handler.
 // `action: true` marks a tool that acts in game: refused while Settings' "Allow in-game actions" is off.
+//
+// map: mcp
+// owns: `TOOLS`, `INSTRUCTIONS`, `ToolContext`
 import { withCurrentActions, BRIDGE_ACTION_LABELS, BRIDGE_OFFLINE, GEAR_SLOTS, bridgeFeatures, bridgeRefusal, containerChain, newestScanAdapter, fullOf, isPseudoCharacter, NOBODY, RESIST_SKILL_KEY, resistMinimum, toOptItem, totalsOf, TRASH_RE, compileGoals, goalsError, GOAL_LEFTOVERS, GOAL_STRATEGIES, STRATEGY_HELP, SWING_GOALS, RANK_IMPORTANCE, LEFTOVER_IMPORTANCE } from "./vault-lib.mts";
 import type { BridgeAction, Character, Container, ContainerCapacity, Item, OptItem, Profile, PropMap, Goals } from "./vault-lib.mts";
 import { buffPlanOf, normalizeBuffs, savedBuffs, BUFFS } from "./buffs.mts";

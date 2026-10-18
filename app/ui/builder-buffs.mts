@@ -4,6 +4,9 @@
 // character's skills, a field per number a group scales with, and the note when a form replaced another. Manual shows
 // the picker in its side column, Automatic in a popover from its Buffs section (ui/builder.mts). The model is
 // app/buffs.mts; ui/builder-manual.mts and ui/builder.mts hold the state and call these with it.
+//
+// map: builder
+// owns: `buffChip`, `createBuffPicker`
 import { BUFFS, BUFF_GROUPS, BUFF_INPUTS, EXCLUSIVE, buffById, buffContext, buffNeeds, buffText, capWord, signed, signedPct } from "../buffs.mts";
 import type { Buff, BuffResult, BuffWho, Skills, Stats } from "../buffs.mts";
 import type { PropMap } from "../vault-lib.mts";

@@ -12,6 +12,9 @@
 // same 60 s on purpose: whichever side notices first, the caller sees the same 504, because the error
 // below carries the `statusCode` that server's route handler reads off a thrown error (both run in
 // this same process — server-entry.mts is what hosts startServer()).
+//
+// map: shell
+// owns: `createPendingHostCalls`, `HOST_CALL_TIMEOUT_MS`
 
 export interface PendingHostCalls {
   // Registers one call in flight and returns its wire id. `reject` is called with the error below if

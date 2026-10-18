@@ -1,4 +1,7 @@
 // router.mts — the route table: each route a method and a path (a string matched exactly, or a RegExp), tried in table order. A route's handler may answer NEXT to pass the request on, as the old if-chain fell through; a request no route answers is the server's 404 "not found" (never a 405).
+//
+// map: server
+// owns: `Route`, `NEXT`, `dispatch`
 import type http from "node:http";
 import type { ServerContext } from "./context.mts";
 

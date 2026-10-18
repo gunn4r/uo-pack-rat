@@ -5,6 +5,9 @@
 // Built as DOM nodes, never an HTML string (Phase 7 security review, Area 2, Important 1): a scan file
 // is attacker-controlled text, and a pasted "here's my suit" scan once turned into persistent
 // HTML/CSS injection inside the app window through this builder.
+//
+// map: ui-components
+// owns: `sheetNode`, `SLOT_GROUPS`, `SHEET_GROUPS`, `RESISTS`
 import { totalsOf, resistMinimum, paperdollResist, RESIST_SKILL_KEY, PROP_FULL, SLOTS_IN_GROUP, RESIST_META } from "../vault-lib.mts";
 import type { ExtrasMap, OptItem, ResistCap } from "../vault-lib.mts";
 import { state } from "./store.mts";

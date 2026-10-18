@@ -23,6 +23,9 @@
 // (a second POST cancels the first and reports {superseded}); job ids are crypto.randomUUID() and the
 // events route checks the job's own id against a ?client= query param instead of the token. A route
 // that throws returns {error:"internal error", ref} with the stack only in CONFIG.paths.log, keyed by ref.
+//
+// map: server
+// owns: `startServer`, `defaultClientSearch`, `ServerHandle`, `StartServerOptions`; re-exports `OPTS_LIMITS`, `HostBridge`, `ClientSearch`, `JobTimings`
 
 import http from "node:http";
 import { readFileSync, readdirSync, existsSync } from "node:fs";

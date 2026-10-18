@@ -7,6 +7,9 @@
 // resolves shows as a missing card. The numbers come from ui/manual-model.mts. Buffs, abilities and forms (app/buffs.mts,
 // drawn by ui/builder-buffs.mts) can be counted in the totals: the ones that are on, the numbers the player edited and
 // the switch are ui-prefs fields too, and turning one on or off is a step in the suit's undo history. The mode is the builder session's (ui/builder-session.mts), and Manual provides its commands there.
+//
+// map: builder
+// owns: `initManual`, `applyBuilderPrefs`, `savePrefs`
 import { GEAR_SLOTS, NOBODY, RESIST_KEYS, effectiveProfile, isPseudoCharacter, fcCapFor, profileResistCaps, requirementReport, toOptItem, totalsOf } from "../vault-lib.mts";
 import type { Character, EffectiveProfile, Item, OptItem, RunBuffs, RunSettings } from "../vault-lib.mts";
 import { buffById, buffSkillValues, isBuffSkills, manualPlan, manualProfile, normalizeBuffs, ownEntry, rawStats, runBuffs, toggleBuff, weaponFlags, NO_CHARACTER, signed } from "../buffs.mts";

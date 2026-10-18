@@ -3,6 +3,9 @@
 // back, the slots whose piece left the scans, a picker row's delta ("LRC +20 → 77"), the suit's undo history and
 // keys, and the hand-offs with Automatic (a result into the suit, the pieces to fetch). No DOM and no page state, so
 // app/manual-model.test.mts checks it directly; ui/builder-manual.mts draws what it returns.
+//
+// map: builder
+// owns: `TOTAL_KEYS`, `STAT_KEYS`, `MANUAL_GROUPS`, `handConflict`, `slotDelta`, `fillableSlots`
 import { RESIST_KEYS, GEAR_SLOTS, labelOf } from "../vault-lib.mts";
 import type { PropMap } from "../vault-lib.mts";
 import type { ItemQuery } from "../item-query.mts";

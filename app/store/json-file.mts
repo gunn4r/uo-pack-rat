@@ -3,6 +3,9 @@
 // - "empty": a missing, oversized, unreadable or unparsable file reads as `salvage(undefined)`, and a parsed one as `salvage(doc)`; a salvage that throws on the parsed document reads as an empty file too. Nothing on disk changes.
 // - "aside": a bad file (oversized, unparsable, unreadable, or refused by `check`) is moved aside as <file>.corrupt and reported, so the next write cannot overwrite what was in it. A missing file reads as `{missing: true}`. With `ioErrors: "throw"`, a failed read (a missing file included) throws instead, since it says nothing about the file's contents.
 // - "skip": any failure throws, for a reader that skips that file and says why (one scan or run in a folder).
+//
+// map: server
+// owns: `readJsonFile`, `writeJsonFile`, `newerOnDisk`, `refuseNewer`
 import { mkdirSync } from "node:fs";
 import { basename, dirname } from "node:path";
 import { moveAside, readBounded, writeFileAtomic } from "../atomic-write.mts";

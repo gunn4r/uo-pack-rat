@@ -20,6 +20,9 @@
 //
 // Companion offline test: optimizer-core.test.mts (`node scripts/optimizer-core.test.mts`).
 // ============================================================================
+//
+// map: builder
+// owns: `optimizeSuit`, `scoreSet`, `optDefaultSlots`, `optDefaultOptionalSlots`, `optDominancePrune`
 
 // ---------------------------------------------------------------------------
 // Types

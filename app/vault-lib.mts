@@ -7,6 +7,9 @@
 // loaded (Node-only, by app/rules.mts) and handed in here with setRules() — this module never reads
 // a rules file itself, so it stays usable in the browser. getRules() throws until setRules() has run:
 // a forgotten call must be loud, not a silent wrong answer.
+//
+// map: scan
+// owns: `Item`, `Container`, `Character`, `Inventory`, `ScanSummary`, `parseTooltip`, `foldSnapshots`, `locationOf`, `containerPath`, `capacityOf`, `TRASH_RE`, `groupByName`, `slayersOf`, `medableOf`
 import { delayText } from "./swing.mts";
 import { isPseudoCharacter, NOBODY, parseStamp, V1_ADAPTER_VERSION } from "./scan-schema.mts";
 export { isPseudoCharacter, NOBODY };

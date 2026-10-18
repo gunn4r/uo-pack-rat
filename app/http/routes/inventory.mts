@@ -1,4 +1,7 @@
 // inventory.mts — the inventory: GET /api/inventory, /api/missing, /api/items and /api/items/by-serial.
+//
+// map: server
+// owns: `routes`
 import { parseItemQuery, applyItemQuery, facetsOf, wantsHits, hitRow, type ItemQueryRows, type ItemQueryGroups, type UnravelContext } from "../../item-query.mts";
 import type { Item } from "../../vault-lib.mts";
 import { leftOutReasons } from "../../unravel.mts";

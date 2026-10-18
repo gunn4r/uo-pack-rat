@@ -1,4 +1,7 @@
 // log.mts — the one way the server appends a line to its log file.
+//
+// map: server
+// owns: `safeAppendLog`
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DATA_DIR_MODE, DATA_FILE_MODE } from "./config.mts";

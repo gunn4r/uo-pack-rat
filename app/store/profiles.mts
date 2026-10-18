@@ -1,4 +1,7 @@
 // profiles.mts — <data>/profiles.json: the Suit Builder's characters and templates (GET/PUT /api/profiles).
+//
+// map: server
+// owns: `createProfilesStore`
 import { copyFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { PROFILES_VERSION, buildSpecError, type ProfilesV3, type TemplateEntry, type TemplateMap } from "../build-spec.mts";

@@ -1,4 +1,7 @@
 // scans.mts — <data>/scans/: every accepted scan, one JSON file each (the watcher writes them, /api/forget* adds tombstones, retention removes old ones).
+//
+// map: server
+// owns: `createScansStore`
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { isKnownKind, validateScan } from "../scan-schema.mts";

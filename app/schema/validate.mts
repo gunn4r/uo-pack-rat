@@ -14,6 +14,9 @@
 //
 // validate(schema, doc, path = "") → { ok, errors: [{ path, msg }] }. Only the first 20 errors are
 // collected (a huge invalid document should not turn validation into a second parse pass).
+//
+// map: scan
+// owns: `validate`, the supported keyword subset
 const MAX_ERRORS = 20;
 
 // The runtime keyword subset above, as a type — deliberately its own small shape rather than a

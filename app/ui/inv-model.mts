@@ -3,6 +3,9 @@
 // sentence that explains an empty result, which slice of rows the virtual table draws and fetches, and
 // the table's keyboard model. No DOM and no store.mts import, so app/ui-inventory.test.mts runs it under
 // plain node:test (the same arrangement as ui/view-state.mts).
+//
+// map: ui-models
+// owns: `DEFAULT_COLS`, `ITEM_COLS`, `COL_GROUPS`, `queryParams`, `activeFilters`
 import type { ItemQuery, PropFilter, Place } from "../item-query.mts";
 import { clearedQuery } from "./view-state.mts";
 import { flagLabel } from "../vault-lib.mts";

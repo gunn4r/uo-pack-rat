@@ -1,4 +1,7 @@
 // art-fixture.mts — synthetic client files for the item-art tests (no game data ships in the repo): a UOP container holding named entries, one item's static art, and a hues.mul. Each is written as given, so a test can make one that does not add up.
+//
+// map: house
+// owns: `syntheticUop`, `syntheticArt`, `syntheticHues`
 import { deflateSync } from "node:zlib";
 import { uopHash } from "./art.mts";
 

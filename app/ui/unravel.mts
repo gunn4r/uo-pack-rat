@@ -5,6 +5,9 @@
 // first. Each row has a checkbox (the Items view's selection model, ui/move-model.mts) and Keep (Unkeep on a kept piece);
 // the selection bar keeps or grabs the selected pieces. The candidates are one GET /api/items query with `unravel` (the server works out each piece's weight and why it is left out), the
 // ingredients on hand three more; the math is app/unravel.mts. The Keep list is settings.json's unravelKeep (PUT /api/settings).
+//
+// map: unravel
+// owns: the `unravel` screen
 import type { Item } from "../vault-lib.mts";
 import { isBoundedInt, MAX_SERIAL } from "../guards.mts";
 import { unravelYield, expectedYield, onHand, LEFT_OUT, INGREDIENTS, type Ingredient, type LeftOut, type UnravelYield } from "../unravel.mts";

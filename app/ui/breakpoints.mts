@@ -1,4 +1,7 @@
 // ui/breakpoints.mts — the page's width breakpoints in CSS pixels, each the widest window its narrower layout applies to (a `max-width` query; a `min-width` query starts one pixel above it). CSS media queries cannot read custom properties, so the stylesheets write these numbers as literals and `tokens.css` lists them; scripts/css-guard.test.mts fails on a width in a media query or a matchMedia() that is not one of them.
+//
+// map: ui-bootstrap
+// owns: `BREAKPOINTS`, `upTo`
 export const BREAKPOINTS = {
   tight: 720,     // Settings' MCP rows put the control under the title; the Suit Builder's top bar and drawer footer go compact; the Inventory's top bar wraps and Unravel rows stack
   compact: 1023,  // the Suit Builder's result tiles go three to a row

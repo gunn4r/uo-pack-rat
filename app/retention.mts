@@ -10,6 +10,9 @@
 // something in the fold still carries the timestamp of (a character's card and worn set, a bag a later
 // scan could not open, which keeps what an older one saw in it), and a house's captures from its oldest kept one on (issue #10). Then the fold (and every house still listed) of what is left is
 // compared with the fold of everything, and when they differ nothing is pruned at all.
+//
+// map: scan
+// owns: `scansToPrune`, `runsToPrune`, `RETENTION_DEFAULTS`, `RETENTION_LIMITS`, `retentionOf`
 import { isPseudoCharacter, parseStamp } from "./scan-schema.mts";
 import { houseGroups, latestHouses } from "./house-capture.mts";
 import type { Inventory } from "./vault-lib.mts";

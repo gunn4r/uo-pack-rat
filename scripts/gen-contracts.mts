@@ -13,6 +13,9 @@
 //
 // Usage: node scripts/gen-contracts.mts           rewrites every script whose blocks are out of date
 //        node scripts/gen-contracts.mts --check   rewrites nothing; exits 1 naming each stale script
+//
+// map: installer
+// owns: `generate`, `splice`, `fragmentProblems`
 import { readFileSync, writeFileSync, readdirSync, existsSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";

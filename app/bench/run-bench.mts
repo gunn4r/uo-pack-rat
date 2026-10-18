@@ -17,6 +17,8 @@
 // was retired along with that search path — see CHANGELOG.md Phase 3 — so a cell that fails to prove within
 // budget is simply reported unproven; a smaller, cheaper probe budget then covers larger N so the sweep doesn't
 // keep burning the full budget on cells already known to fail.)
+//
+// map: builder
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { tmpdir, availableParallelism } from "node:os";

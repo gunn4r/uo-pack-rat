@@ -4,6 +4,9 @@
 // that size clamped to the screen's work area, and the test reads back the width it really got and drives the
 // layout that width shows (a collapsed sidebar, facet chips folded into "+ Filter" below 1180 px). An assertion
 // only reachable above the real width is skipped with that reason, and still runs where the screen allows.
+//
+// map: tooling
+// owns: `fitWindow`, `testEnv`
 import { spawn } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";

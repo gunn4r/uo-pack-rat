@@ -2,6 +2,9 @@
 // the server logs this sentence to the console at startup (app/vault-server.mts) and the page shows it
 // (app/ui/messages.mts re-exports it), so the banner and the terminal never disagree. Served to the page at
 // /data-dir-notice.mjs.
+//
+// map: server
+// owns: `dataDirNotice`, `DataDirCheckInfo`
 
 // Whether the client's installed scripts write to this data folder: app/installer.mts's checkScriptsDataDir
 // returns it (as DataDirCheck), and the page reads it from GET /api/setup.

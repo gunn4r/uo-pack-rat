@@ -4,6 +4,9 @@
 // into a build through planBuild. Also the one check a spec is held to, its defaults, the v2 → v3 migration of
 // profiles.json (Automatic's buffs and their numbers move in from ui-prefs.json), and the flat working profile the
 // Suit Builder's panel edits. Pure and browser-safe, like run-settings.mts and evaluate.mts.
+//
+// map: builder
+// owns: `BuildSpec`, `ProfilesV3`, `buildSpec`, `buildSpecError`, `planBuild`, `goalSsiCap`, `specFromProfile`, `profileFromSpec`, `characterProfile`, `characterBuffs`, `characterEntry`, `characterLabel`, `labelError`, `keepLabels`, `findTemplate`, `templateRefs`, `BUILTIN_PREFIX`, `migrateProfilesV3`
 import { buffPlanOf, buffSkillValues, isBuffList, isBuffSkills, isBuffSkillsByCharacter, manualBase, manualPlan, normalizeBuffListsByCharacter, NO_CHARACTER, planBuffs, runBuffs, type BuffPlan } from "./buffs.mts";
 import { RACES, RUN_DEFAULTS, RUN_SETTING_LIMITS, defaultStrLimit, isGoalSwing, runSettingsError } from "./run-settings.mts";
 import { compileGoals, copyGoals, goalsActive, migrateProfiles, templateFrom, TEMPLATE_KEYS, toOptItem, totalsOf, type Character, type EffectiveProfile, type Goals, type GoalSwingWeapon, type Item, type Profile, type ProfilesFile, type RarityPreference, type RunBuffs, type RunSettings, type Template, type TemplateSource } from "./vault-lib.mts";

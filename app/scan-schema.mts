@@ -4,6 +4,9 @@
 // static route in vault-server.mts. Because it must stay fs-free, SCAN_V2_SCHEMA is an inline JS
 // object rather than a read of app/schema/scan.v2.schema.json; scan-schema.test.mts asserts the two
 // stay identical, and app/schema/scan.v2.schema.json is the copy other (non-JS) tooling can read.
+//
+// map: scan
+// owns: `SCAN_V2_SCHEMA`, `TAZUO_V1_CAPS`, `validateScan`, `upgradeScan`, `parseStamp`, `isRealStamp`, `isPseudoCharacter`, `NOBODY`
 import { validate, type ValidationResult } from "./schema/validate.mts";
 import type { ScanV2Adapter, ScanV2AdapterCapabilities } from "./schema/types.d.mts";
 

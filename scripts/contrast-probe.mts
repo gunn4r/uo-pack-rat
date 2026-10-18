@@ -7,6 +7,9 @@
 // edges and knobs, icons inside icon-only buttons, toasts and messages, and status dots. Subtrees marked
 // aria-hidden="true" and hidden elements are skipped. Disabled controls need 3:1 text and no boundary.
 // Used by scripts/ui-contrast.test.mts, which fails the build on any failing pair.
+//
+// map: tooling
+// owns: `probeContrast`
 
 export interface ContrastRow {
   kind: "text" | "field-value" | "placeholder" | "boundary" | "switch-track" | "icon" | "status-dot";

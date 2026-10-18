@@ -1,4 +1,7 @@
 // bridge.mts — the in-game bridge: POST /api/bridge, POST /api/bridge/stop and GET /api/bridge/status.
+//
+// map: server
+// owns: `routes`
 import { randomUUID } from "node:crypto";
 import { readFileSync, appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";

@@ -4,6 +4,9 @@
 // rules' `unravel` block, so a correction is a data change. Also why a piece is left out of the suggestions by default
 // (leftOutReasons) and how many ingredients a list of stacks holds (onHand). No DOM, no node: imports: served to the browser
 // as it stands, like item-query.mts.
+//
+// map: unravel
+// owns: `unravelType`, `unravelWeight`, `unravelYield`, `expectedYield`, `leftOutReasons`, `onHand`, `PROPERTY_WEIGHTS`, `LEFT_OUT`
 import { SKILL_NAMES, SLOT_GROUP, isNeckArmor } from "./vault-lib.mts";
 import type { Item } from "./vault-lib.mts";
 import type { RulesV1 } from "./schema/types.d.mts";

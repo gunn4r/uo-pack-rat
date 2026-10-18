@@ -9,7 +9,7 @@ Walk the list for each kind your change is, and say in the pull request which ki
 - `CHANGELOG.md`: one line under Unreleased when the change matters to a player or a contributor, in the file's style.
 - Tests next to every module you touched, each test name tagged `[smoke]`, `[fast]` or `[slow]`. Every test file opens with a header saying what it covers (`TESTING.md`); after adding one or changing a header's first sentence, run `npm run gen:test-index`.
 - `npm run typecheck`, then `./scripts/test_runner.sh --changed` and `--fast` (`TESTING.md`).
-- `docs/module-map.md` when you add, move, delete or rename a module, or move a concept from one module to another.
+- `npm run gen:modules` when you add, move, delete or rename a module, or change its header's first sentence, `// map:` or `// owns:` line (moving a concept between modules changes the `// owns:` lines). The tables in `docs/module-map.md` are generated; never edit them by hand.
 - The docs for the area you changed (the one `docs/` file, an adapter README, `README.md` for what players see). Below, `docs/ui.md` means the core page or the screen's own page under `docs/ui/`, whichever holds what changed.
 
 ## Add or change a gear slot

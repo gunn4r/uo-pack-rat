@@ -1,4 +1,7 @@
 // png.mts — a minimal PNG encoder on node built-ins (issue #164): 8-bit RGB (or RGBA, issue #174), no interlace, every row filter type 0, one IDAT deflated by node:zlib, chunk CRCs from the table below. Enough for the facet overview the house map shows and the item art; no dependency.
+//
+// map: house
+// owns: `encodePng`, `encodePngRgba`, `crc32`
 import { deflateSync } from "node:zlib";
 
 const TABLE = new Uint32Array(256).map((_, n) => {

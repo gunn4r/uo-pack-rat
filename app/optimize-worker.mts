@@ -10,6 +10,9 @@
 // OptimizeWorkerData and the Worker*Message types below name both shapes explicitly (exported so
 // the server, Task 8, can build/read against the same types this file narrows into and emits from)
 // rather than trusting `workerData`'s ambient `any`.
+//
+// map: builder
+// owns: the worker message types
 import { parentPort, workerData } from "node:worker_threads";
 import { solveExact, type OptPools, type OptAssignment, type OptProfile, type ExactSolveResult, type SolveProgress, type StrictResult } from "./exact-solver.mts";
 import { resultDiagnostics, scoreShares, withDiagnostics, type Diagnostic, type DiagnosticsProfile, type ScoreShare } from "./diagnostics.mts";

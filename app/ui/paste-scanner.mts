@@ -4,6 +4,9 @@
 // the button is drawn, so the click writes the clipboard straight away; if the write is refused, the
 // script shows in a read-only box, selected, for the player to copy by hand. The version last copied is
 // remembered (ui-prefs copiedScanner), so Settings can say when the app ships a newer one.
+//
+// map: ui-components
+// owns: `scannerCopy`
 import { api } from "./api.mts";
 import { prefs } from "./prefs.mts";
 import { box, button, copyText, message, showToast, textarea } from "./components.mts";

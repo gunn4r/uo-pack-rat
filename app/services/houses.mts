@@ -1,4 +1,7 @@
 // houses.mts — the house map's client files and models (issues #10, #164, #174): the UO folder, its tiledata.mul and facetNN.mul, the facet PNGs cut from them, the item art PNGs drawn from its artLegacyMUL.uop and hues.mul, and the house models built from the inventory, each kept while its inputs stay the same.
+//
+// map: services
+// owns: `createHousesService`
 import { createHash } from "node:crypto";
 import { closeSync, fstatSync, openSync, readFileSync, readSync, existsSync, statSync } from "node:fs";
 import { join } from "node:path";

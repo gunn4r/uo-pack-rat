@@ -1,4 +1,7 @@
 // house-names.mts — <data>/house-map.json (issues #164 and #10): what the player says about each house, by house id ({ version: 1, houses: { "<id>": { name, bounds?, areas? } } }). `name`, `bounds` and `areas` are checked; any other field on an entry or an area is kept, so notes can join the same entry later. `bounds` is the house's footprint when it was named or its areas drawn, so a redesigned or moved house (a new id) can be offered the old name and areas. `areas` are the player's own areas on the House map: each a name, a level, a colour from a fixed palette and up to MAX_RECTS rectangles of world tiles (inclusive). `forgotten` (issue #298) lists the houses the player removed from the House map before claims (issue #299) replaced that: it is kept as it is and read only so the houses claimed at the first start with claims leave them out (app/store/house-claims.mts). Written only by PUT /api/house-map/<id>, whole entry at a time; a file that does not parse is moved aside as house-map.json.corrupt (the way organize.json is) and reads as empty.
+//
+// map: house
+// owns: `checkHouseEntry`, `readHouseMap`, `saveHouseEntry`, `NAME_MAX`, `MAX_AREAS`, `AREA_COLORS`
 import { existsSync, lstatSync, readFileSync } from "node:fs";
 import { basename } from "node:path";
 import { moveAside, writeFileAtomic } from "./atomic-write.mts";

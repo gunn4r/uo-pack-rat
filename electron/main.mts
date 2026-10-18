@@ -9,6 +9,9 @@
 // server child unchanged) · --smoke (see runSmokeCheck below — exits instead of staying open, for
 // scripts/shell-smoke.test.mts) · --devtools (re-enables DevTools in a packaged build, see
 // createWindow).
+//
+// map: shell
+// owns: the window and token lifecycle
 import { app, BrowserWindow, dialog, session, shell, utilityProcess } from "electron";
 import type { UtilityProcess, WebContents } from "electron";
 import { randomUUID } from "node:crypto";
