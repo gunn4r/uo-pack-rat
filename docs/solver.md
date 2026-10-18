@@ -16,7 +16,7 @@ Read this section first; the rest of the file is the reference, feature by featu
 **The invariants.** Each is held by the tests or by the exact solver's own guards; a change that breaks one is a bug, not a trade-off:
 
 - The core is the one scorer of record. `solveExact` always hands its winning suit back to the core, and every number a result carries is the core's. Its guards revoke `proven` and warn when HiGHS's objective, the core's re-score and the heuristic disagree.
-- For any suit, the MIP's objective at `startVector(suit)` plus `scoreOffset` equals the core's `scoreSet(suit)`. The exact solver checks this on every suit it returns (HiGHS's objective against the core's re-score).
+- For any suit, the MIP's objective at `startVector(suit)` plus `scoreOffset` equals the core's `scoreSet(suit)`. `app/solver/agreement.test.mts` checks it suit by suit over generated profiles, with the weight terms `scoreShares` reads, so a drift fails at the term that drifted; the exact solver also checks it on every suit it returns (HiGHS's objective against the core's re-score).
 - Every profile transform happens before `runKey`, so the key covers it. A transform added after it silently reuses runs it shouldn't.
 - A change to what a build returns bumps `SOLVER_VERSION` (`app/runs-lib.mts`, with a line in its comment), so saved runs stop being reused as instant repeats.
 - The same seed gives byte-identical results.
@@ -28,8 +28,8 @@ Read this section first; the rest of the file is the reference, feature by featu
 
 | Rule | Core (`scripts/optimizer-core.mts`) | Other copy | Caught by |
 |---|---|---|---|
-| The minimum a resist is held at | `optScoreVector`'s step loop, over the space's arrays | `liftedMin` (shared), the step loop in `startVector` and the `h` rows in `buildSuitMip` | the fuzz suite |
-| SSI step credit | `stepCredit` (shared) | the step loop in `startVector`, which picks the paying column | the fuzz suite |
+| The minimum a resist is held at | `optScoreVector`'s step loop, over the space's arrays | `liftedMin` (shared), the step loop in `startVector` and the `h` rows in `buildSuitMip` | `app/solver/agreement.test.mts`, the fuzz suite |
+| SSI step credit | `stepCredit` (shared) | the step loop in `startVector`, which picks the paying column | `app/solver/agreement.test.mts`, the fuzz suite |
 | The slots | `optDefaultSlots` | `GEAR_SLOTS` (`app/vault-lib.mts`, read by `app/mip.mts`) | `app/solver.test.mts` |
 | The optional slots | `optDefaultOptionalSlots` | `DEFAULT_OPTIONAL_SLOTS` (`app/mip.mts`) | `app/solver.test.mts` |
 | A floor at or under its minimum asks for nothing | `floorOf` (`scoringProfile`, which the MIP reads too) | `floorsOf` (`app/diagnostics.mts`), against the lifted minimum | `app/diagnostics.test.mts` |
