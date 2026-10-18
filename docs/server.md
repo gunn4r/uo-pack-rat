@@ -33,7 +33,7 @@ Each import rule and the `scripts/layering.test.mts` rule that enforces it:
 | Nothing outside `app/ui/` imports from `app/ui/` | rule 1 |
 | A browser-shared module (`tsconfig.browser.json`'s include, `app/api/` among them) reaches no `node:` module | rule 2 |
 | No import cycles outside `app/ui/` | rule 3 |
-| A module the page loads has its own static route in `app/http/routes/static.mts` | rule 4 |
+| A module the page loads is an `app/<path>.*` entry of `tsconfig.browser.json`'s include, which `app/http/routes/static.mts` serves | rule 4 |
 | `app/store/` and `app/services/` import nothing from `app/http/`, type imports included | rule 5 |
 | Only `electron/`, `scripts/`, the fixtures and the tests import `app/vault-server.mts` | rule 6 |
 | A route module in `app/http/routes/` imports no other route module, type imports included | rule 11 |
@@ -61,7 +61,7 @@ Not enforced, kept by review: a service gets the stores and other services it us
 | A new data file | a store `app/store/<name>.mts` on `app/store/json-file.mts`, its path in `ConfigPaths` (`app/config.mts`), a `DOC_KINDS` entry if it carries a version, and a line in `docs/architecture.md`'s data folder layout |
 | A cache that outlives one request, a background job, work spanning several stores | a service in `app/services/` |
 | A response or body type | the family's `app/api/<family>.mts` (or the domain's `*-types.mts`), plus its `ApiRoutes` entry |
-| Something both the page and the server run | a node-free module listed in `tsconfig.browser.json`, with its static route |
+| Something both the page and the server run | a node-free module listed in `tsconfig.browser.json`'s include, which serves it |
 | Something a model should reach | a tool in `app/mcp-tools.mts`, which calls the route over loopback |
 | A new field of a stored file | `docs/change-checklists.md`, "Change the shape of a data file" |
 
