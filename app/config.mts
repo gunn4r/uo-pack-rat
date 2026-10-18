@@ -1,4 +1,4 @@
-// config.mts — every path the server, bench and adapters agree on, resolved once.
+// config.mts — every path the server, bench and adapters agree on, the port and the token, resolved once from flags, then the environment, then defaults; it also creates the data folder's directories.
 //   data dir: --data <dir>  →  PACKRAT_DATA  →  ~/.pack-rat
 //   port:     --port N      →  PACKRAT_PORT  →  8765
 //   token:    --token <t>   →  PACKRAT_TOKEN →  null (no auth — the bare loopback server's default)

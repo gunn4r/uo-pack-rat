@@ -1,6 +1,6 @@
 // optimize-worker.mts — runs one optimize call off the server's main thread: the core's own
 // heuristic search (opts.exact falsy) or the HiGHS-backed exact orchestrator (opts.exact true,
-// app/exact-solver.mts). One worker per job — HiGHS explores the tree itself, so there is no
+// app/exact-solver.mts), falling back to the core when HiGHS does not load; it resolves the swing step table before either solver runs and attaches the diagnostics and the suit's swing to the result, and cancel terminates the job's worker. One worker per job — HiGHS explores the tree itself, so there is no
 // multi-thread branch-and-bound split left to run here. The worker posts throttled progress, a
 // "warn" message for anything the server should log but not fail the job over, then its result.
 // Cancelling = the server terminates the worker, so nothing here needs to be cooperative.

@@ -62,27 +62,28 @@ export interface App {
   close: (o?: { keepData?: boolean }) => Promise<void>;
 }
 // Launches the app on `dataDir` and waits for its page to load, so a hash a test sets is never dropped by the document that
-// replaces a loading page (issue #330). A launch that fails after Electron started closes it, so no window outlives the file.
+// replaces a loading page (issue #330). From here on the launch owns `dataDir`: a launch that fails closes Electron (no window
+// outlives the file), removes the folder and throws the launch's own error; close() removes it even when closing throws.
 export async function launchApp(dataDir: string, o: AppOptions = {}): Promise<App> {
-  const { _electron } = await import("playwright");
-  // The absolute ROOT as args[0] is what electron/main.mts expects in dev, and cwd: ROOT keeps it independent of where
-  // `node --test` runs from.
-  const app = await _electron.launch({ args: [ROOT, ...(o.demo ? ["--demo"] : []), "--data", noUpdateCheck(dataDir)], cwd: ROOT, timeout: 60_000, env: testEnv(o.env, o.home) });
+  let app: ElectronApplication | undefined;
   try {
-    const page = await app.firstWindow();
+    const { _electron } = await import("playwright");
+    // The absolute ROOT as args[0] is what electron/main.mts expects in dev, and cwd: ROOT keeps it independent of where
+    // `node --test` runs from.
+    const launched = app = await _electron.launch({ args: [ROOT, ...(o.demo ? ["--demo"] : []), "--data", noUpdateCheck(dataDir)], cwd: ROOT, timeout: 60_000, env: testEnv(o.env, o.home) });
+    const page = await launched.firstWindow();
     const errors: string[] = [];
     page.on("pageerror", (e) => errors.push(String(e)));
     await page.waitForLoadState("load");
     if (o.colorScheme) await page.emulateMedia({ colorScheme: o.colorScheme });
-    const size = o.size ? await fitWindow(app, page, o.size) : await page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
+    const size = o.size ? await fitWindow(launched, page, o.size) : await page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
     if (o.ready) await page.locator(o.ready).first().waitFor({ timeout: 30_000 });
     const close = async ({ keepData = false } = {}): Promise<void> => {
-      await app.close();
-      if (!keepData) removeTempDir(dataDir);
+      try { await launched.close(); } finally { if (!keepData) removeTempDir(dataDir); }
     };
-    return { app, page, errors, dataDir, size, close };
+    return { app: launched, page, errors, dataDir, size, close };
   } catch (e) {
-    await app.close();
+    try { await app?.close(); } catch { /* the launch's own error is the one to report */ } finally { removeTempDir(dataDir); }
     throw e;
   }
 }

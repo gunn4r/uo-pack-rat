@@ -1,4 +1,4 @@
-// organize-types.mts — Organize's plan (app/organize.mts) and Auto organize's proposal (app/organize-strategies.mts), and the GET /api/organize/plan and POST /api/organize/propose responses built from them. Types only, importing only organize-config.mts's types, so the page's browser build can use them: the server annotates its responses with these and ui/api-types.mts re-exports them.
+// organize-types.mts — Organize's plan and Auto organize's proposal, and the GET /api/organize/plan and POST /api/organize/propose responses built from them; types only, importing only organize-config.mts's types, so the page's browser build can use them: app/organize.mts and app/organize-strategies.mts re-export them, the routes `satisfies` them, and ui/api-types.mts re-exports them.
 //
 // map: organize
 // owns: `Plan`, `PlanMove`, `PlanTrip`, `PlanWarning`, `WarningKind`, `RuleReport`, `RoomReport`, `Carried`, `EmptyBag`, `Proposal`, `ProposeResult`, `StrategyId`, `Family`, `Candidate`, `GroupReport`, `Layout`, `OrganizePlanApiResponse`, `OrganizeProposeApiResponse`

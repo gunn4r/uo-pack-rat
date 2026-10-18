@@ -1,4 +1,4 @@
-// ui/api-types.mts — response shapes the page reads off its own fetches. api.mts's `api()` call
+// ui/api-types.mts — every response shape the page reads off its own fetches: the house, Organize and saved-run shapes re-exported from the types-only modules (runs narrowed), the rest declared here. api.mts's `api()` call
 // returns `unknown` at the boundary (Response.json() is genuinely unvalidated network input); every
 // caller narrows through one of the types below rather than sprinkling `as Whatever` at each read
 // site, per the migration plan's "type each endpoint's response in ONE place."

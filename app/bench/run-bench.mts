@@ -1,4 +1,4 @@
-// run-bench.mts — suit-builder scale benchmark. Sweeps inventory size x gear fraction x profile, measuring the
+// run-bench.mts — the suit builder's scale benchmark, a sweep through app/optimize-worker.mts. Sweeps inventory size x gear fraction x profile, measuring the
 // fold, the /api/inventory payload, pool sizes, dominance pruning, and the heuristic + exact phases (the exact
 // phase runs through app/optimize-worker.mts exactly as the server would: HiGHS when it loads, the core's own
 // heuristic as the honest fallback otherwise) and writes results/<stamp>.json + results/<stamp>.md. Reads real

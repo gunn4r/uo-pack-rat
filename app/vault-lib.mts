@@ -1,4 +1,4 @@
-// vault-lib.mts — Pack Rat shared logic: tooltip parsing, slot classification, snapshot folding,
+// vault-lib.mts — Pack Rat's shared kernel, page and server alike: the inventory types, tooltip parsing, slot classification, snapshot folding (a scan replaces everything under each root it lists),
 // optimizer pool building and requirement reports. Used by index.html (browser, via the
 // server) and gear-vault.test.mts (Node). No dependencies, no DOM.
 //

@@ -1,5 +1,5 @@
 // ui/unravel.mts — the Inventory screen's Unravel view (issue #271, #/unravel): which pieces to unravel at a soul forge, and what
-// they would give. A character picker (Unraveled by, the highest Imbuing first), three forecast cards (what every candidate is
+// they would give: the picker, the forecast, what is left out, the candidates by ingredient, Keep, the selection bar and Gather into a bag (through ui/move-to.mts's openPicker and startMove). A character picker (Unraveled by, the highest Imbuing first), three forecast cards (what every candidate is
 // expected to give at that skill, and what is on hand), a line saying what is left out (Change opens a chip per reason), and the
 // candidates grouped by ingredient: Relic Fragment, Wait for Imbuing 95, Enchanted Essence, Magical Residue, highest weight
 // first. Each row has a checkbox (the Items view's selection model, ui/move-model.mts) and Keep (Unkeep on a kept piece);

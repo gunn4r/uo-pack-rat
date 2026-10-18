@@ -139,6 +139,9 @@
 - **Saves hold up on Windows while another program has the file open**: Windows refuses to replace a file that an antivirus scan, a search indexer or a backup tool is reading at that moment, and a save (a rule, a label, your settings) used to fail with "operation not permitted". Pack Rat now tries again for about a second first.
 - **For contributors: the module map's tables are generated** (issue #338): each module's header now carries its row in `docs/module-map.md`, its role (the header's first sentence), a `// map: <area>` line and a `// owns:` line, and `npm run gen:modules` rewrites the tables, so two pull requests that add modules no longer hand-merge the same table: rerun the generator instead. `scripts/module-map.test.mts` checks the tables are current.
 - **For contributors: each route module documents its own routes** (issue #338): the per-module route lists move from `docs/architecture.md` into the header of each `app/http/routes/` module, beside the routes themselves, so a route change edits one file; `docs/architecture.md` keeps how the routes are put together.
+Entries not yet released are in `changelog.d/`, one file per pull request (`CONTRIBUTING.md`, Changelog). `node scripts/changelog.mts --release <version>` moves them here.
+
+<!-- released-sha256: ce724fd8b9b82eea4ab7e26564b9a5c12c07b69e7f72da63d8b58b9c60edb010 (written by node scripts/changelog.mts) -->
 
 ## 0.1.1 — 2026-09-28
 

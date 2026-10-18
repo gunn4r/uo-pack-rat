@@ -1,4 +1,4 @@
-// scan-schema.mts — the scan v2 schema, the v1→v2 upgrade-on-read, and epoch-based scan ordering.
+// scan-schema.mts — the scan v2 schema inline (deep-equal to the JSON copy, a test checks), the v1→v2 upgrade-on-read (app/migrate.mts's scan step, and the watcher's and a paste's read), epoch-based scan ordering, and the pseudo character names (a name starting with `_`, and NOBODY, the Suit Builder's No character, re-exported by vault-lib.mts).
 // Browser-safe: no Node-only imports (no "node:fs"), so it can be served to the page exactly like
 // vault-lib.mts (which imports parseStamp from here for fold ordering) — see the /scan-schema.mjs
 // static route in vault-server.mts. Because it must stay fs-free, SCAN_V2_SCHEMA is an inline JS
