@@ -144,7 +144,24 @@ START_CHECK_S = 1.5       # a started script not seen running by then did not st
 WINDOW_TRIES = 3
 MAX_PREFS_BYTES = 4096
 MAX_STATUS_BYTES = 1 << 20  # the bridge's status.json: 30 results of at most 60 steps each
-PUT_AWAY_VAR = "packrat_putaway"   # packrat-bridge.py's put_away_asked reads it
+# BEGIN generated: tazuo/put_away_consent
+PUT_AWAY_VAR = "packrat_putaway"   # Put away's consent, a client shared variable: the panel sets it, the bridge checks it
+
+
+def put_away_consent(container, until):
+    """PUT_AWAY_VAR's value while a Put away run on `container` may last until `until` (epoch seconds):
+    "<container serial>:<until>". "" withdraws it."""
+    return "%d:%f" % (container, until)
+
+
+def put_away_parts(value):
+    """(container, until) from PUT_AWAY_VAR's `value`, or None when it holds no consent."""
+    try:
+        serial, until = str(value).split(":")
+        return int(serial), float(until)
+    except Exception:
+        return None
+# END generated: tazuo/put_away_consent
 PUT_AWAY_EVERY_S = 0.5    # how often a running Put away looks at its files
 PUT_AWAY_ROUNDS = 10      # trips one click runs at most
 SCAN_WAIT_S = 300         # the refresh or scan a Put away runs first
@@ -838,7 +855,7 @@ def ask(run):
     f = facet()
     if f is not None:
         at["facet"] = f
-    value = "%d:%f" % (run["container"], time.time() + REPLY_WAIT_S + TRIP_WAIT_S)
+    value = put_away_consent(run["container"], time.time() + REPLY_WAIT_S + TRIP_WAIT_S)
     consent(value)
     took = str(call(getattr(API, "GetSharedVar", None), PUT_AWAY_VAR)) == value
     if not took:       # the bridge would refuse every trip: say why now
