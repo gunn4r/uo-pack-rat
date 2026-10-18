@@ -20,7 +20,7 @@ const BINARY = /\.(png|jpe?g|gif|ico|icns|bmp|svg|woff2?|ttf|eot|otf|pdf|zip|tar
 const BANNED: [RegExp, string, string[]][] = [
   [/example|example/i, "the maintainer's name or machine", ["scripts/scrub.test.mts"]],
   [/gunn4r/i, "the maintainer's account — only the repository URL may carry it",
-    ["package.json", "package-lock.json", "README.md", "CONTRIBUTING.md", "SECURITY.md", "RELEASING.md",
+    ["package.json", "package-lock.json", "README.md", "docs/user-guide.md", "CONTRIBUTING.md", "SECURITY.md", "RELEASING.md",
      ".github/ISSUE_TEMPLATE/config.yml", "scripts/packaging.test.mts", "scripts/scrub.test.mts",
      // LICENSE: MIT needs an identifiable copyright holder, and gunn4r is the public account name —
      // already the repository owner, the electron-builder appId and package.json's author.
