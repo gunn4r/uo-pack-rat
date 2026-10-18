@@ -11,7 +11,7 @@ Four small scripts that run inside [Razor Enhanced](https://razorenhanced.readth
 
 ## Install
 
-The easy way is the setup window in the Pack Rat app: pick **Razor Enhanced** as your client, click **Choose a folder…**, and pick the folder you unpacked Razor Enhanced into (or the `Scripts` folder inside it). Pack Rat can't find this folder by itself, because Razor Enhanced can live anywhere. Then click **Install scanner**. The main [README](../../README.md#first-run) walks through it.
+The easy way is the setup window in the Pack Rat app: pick **Razor Enhanced** as your client, click **Choose a folder…**, and pick the folder you unpacked Razor Enhanced into (or the `Scripts` folder inside it). Pack Rat can't find this folder by itself, because Razor Enhanced can live anywhere. Then click **Install scanner**. The main [README](../../docs/user-guide.md#first-run) walks through it.
 
 Pack Rat won't replace a script that is still running. Before installing again (Settings › **Reinstall**), open Razor Enhanced's **Scripting** tab, select each running Pack Rat script and press **Stop**.
 
