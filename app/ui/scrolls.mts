@@ -10,7 +10,7 @@
 // owns: `showScrolls`
 import type { Item } from "../vault-lib.mts";
 import { state } from "./store.mts";
-import { $, el, itemTip, whereText } from "./dom.mts";
+import { $, el, fmtN, itemTip, whereText } from "./dom.mts";
 import { fetchAllItems, inventoryLoader } from "./inventory-data.mts";
 import { txt, box, icon, button, badge, kbd, keyValue, message, meter, searchInput, segmented, tableFoot } from "./components.mts";
 import { splitSerial } from "./inv-model.mts";
@@ -267,11 +267,11 @@ function drawDetail(shown: Row[]): void {
         ...groups.map((g) => {
           const { name, serial } = splitSerial(whereText(g.text));
           return box("div", { class: "scr-place" },
-            box("div", { class: "scr-place-head" }, txt(name, "ellip"), serial ? txt(serial, "mono faint") : null, txt(String(g.items.reduce((a, it) => a + (it.amount || 1), 0)), "scr-place-n")),
+            box("div", { class: "scr-place-head" }, txt(name, "ellip"), serial ? txt(serial, "mono faint") : null, txt(fmtN(g.items.reduce((a, it) => a + (it.amount || 1), 0)), "scr-place-n")),
             txt(whoText(g.location), "t-sm muted scr-place-who"),
             el("ul", { class: "scr-list" }, ...g.items.map((it) => {
               const level = power ? String(it.props.psLevel) : fmtTenths(toTenths(it.props.sotPoints ?? 0));
-              return itemTip(box("li", {}, badge(level, power && nx && it.props.psLevel === nx.from ? "accent" : undefined), txt((it.amount || 1) > 1 ? `${listName(it.name)} ×${it.amount}` : listName(it.name), "ellip"), ...tagEls(it)), it);
+              return itemTip(box("li", {}, badge(level, power && nx && it.props.psLevel === nx.from ? "accent" : undefined), txt((it.amount || 1) > 1 ? `${listName(it.name)} ×${fmtN(it.amount)}` : listName(it.name), "ellip"), ...tagEls(it)), it);
             })));
         }))),
     box("div", { class: "overlay-foot peek-foot" },
