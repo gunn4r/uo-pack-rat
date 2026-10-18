@@ -24,7 +24,7 @@ import { fileURLToPath } from "node:url";
 import { buildUi } from "./build-ui.mts";
 import { buildSchemaTypes } from "./build-schema-types.mts";
 import { runSuite, type Mode, type SuiteResult } from "./run-suite.mts";
-import { ELECTRON_FILE, parseShard, partOf, selectTests, type Part } from "./select-tests.mts";
+import { ELECTRON_FILE, parsePart, partOf, selectTests } from "./select-tests.mts";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const changedArg = process.argv.find((a) => a === "--changed" || a.startsWith("--changed="));
@@ -78,12 +78,8 @@ function changedSelection(ref: string): { files: string[] | undefined; note: str
 }
 const selection = changedArg ? changedSelection(changedArg.split("=")[1] ?? "origin/main") : { files: undefined, note: undefined };
 if (selection.note) console.log(`changed: ${selection.note}`);
-const shardArg = process.argv.find((a) => a.startsWith("--shard="));
-const part: Part = {
-  only: process.argv.includes("--only-node") ? "node" : process.argv.includes("--only-electron") ? "electron" : undefined,
-  shard: shardArg ? parseShard(shardArg.slice("--shard=".length)) ?? undefined : undefined,
-};
-if (shardArg && !part.shard) { console.error(`${shardArg}: expected --shard=<k>/<n> with 1 <= k <= n`); process.exit(2); }
+const part = parsePart(process.argv.slice(2));
+if ("error" in part) { console.error(part.error); process.exit(2); }
 const partNote = [part.only && `${part.only} files only`, part.shard && `shard ${part.shard.k} of ${part.shard.n}`].filter(Boolean).join(", ");
 
 // The house rule is to read test_logs/latest_summary.json for results, never raw console output — so
