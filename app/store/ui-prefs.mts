@@ -32,7 +32,7 @@ export const UI_PREF_LISTS = ["cols", "sheetProps", "unravelCollapsed"] as const
 // The version fields: the release whose in-app update notice was dismissed (ui/settings.mts's automatic
 // update check), and the ClassicUO web scanner last copied into the client (ui/paste-scanner.mts).
 export const UI_PREF_VERSIONS = ["dismissedUpdate", "copiedScanner"] as const;
-export type UiPrefsFile = { -readonly [K in typeof UI_PREF_LISTS[number]]?: string[] } & { -readonly [K in keyof typeof UI_PREF_CHOICES]?: string } & { -readonly [K in typeof UI_PREF_VERSIONS[number]]?: string } & { colWidths?: Record<string, number>; mapDrawerWidth?: number; manualSuit?: Record<string, number>; manualBuffs?: string[]; manualBuffSkills?: Record<string, number> } & LegacyBuffPrefs;
+export type UiPrefsFile = { -readonly [K in typeof UI_PREF_LISTS[number]]?: string[] } & { -readonly [K in keyof typeof UI_PREF_CHOICES]?: (typeof UI_PREF_CHOICES)[K][number] } & { -readonly [K in typeof UI_PREF_VERSIONS[number]]?: string } & { colWidths?: Record<string, number>; mapDrawerWidth?: number; manualSuit?: Record<string, number>; manualBuffs?: string[]; manualBuffSkills?: Record<string, number> } & LegacyBuffPrefs;
 // Automatic's buffs and the buff numbers, by character: profiles.json holds them since schemaVersion 3. Read back only
 // so that a file the profiles migration has not reached yet keeps them through a write, until that migration moves them
 // (app/build-spec.mts migrateProfilesV3). Neither GET nor PUT /api/ui-prefs carries them.
@@ -71,7 +71,7 @@ function salvageUiPrefs(doc: unknown): UiPrefsFile {
   }
   for (const [key, allowed] of Object.entries(UI_PREF_CHOICES)) {
     const v = raw[key];
-    if (typeof v === "string" && (allowed as readonly string[]).includes(v)) out[key as keyof typeof UI_PREF_CHOICES] = v;
+    if (typeof v === "string" && (allowed as readonly string[]).includes(v)) (out as Record<string, unknown>)[key] = v;   // one of its allowed values, just checked
   }
   if (isColWidths(raw.colWidths)) out.colWidths = raw.colWidths;
   if (isDrawerWidth(raw.mapDrawerWidth)) out.mapDrawerWidth = raw.mapDrawerWidth;

@@ -1,0 +1,1 @@
+- **For contributors: one side detail pane** (issue #338): the Inventory's item peek and the Scrolls view's skill detail each built the same pane (title with Previous / Next / Close, meta line, titled sections, actions and keys hint); both now fill it with `detailPane()` and `detailSection()` in `app/ui/components.mts`, keeping their own keys. The panes look and behave the same.

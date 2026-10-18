@@ -10,9 +10,7 @@
 // map: ui-infra
 // owns: the hand-declared `*ApiResponse` types
 import type { RunSettings } from "../vault-lib.mts";
-import type { ProfilesV3, TemplateMap } from "../build-spec.mts";
 import type { AutostartOutcome, Hotkey as PanelHotkey, PanelPrefs } from "../tazuo-panel-prefs.mts";
-import type { OrganizeConfig, RuleMatch } from "../organize-config.mts";
 import type { RunBody, RunsListBody, RunSummary, SavedRun } from "../runs-types.mts";
 import type { HouseApiResponse } from "../house-model-types.mts";
 import type { OptimizeResult as SharedOptimizeResult, OptimizeStartApiResponse as SharedOptimizeStartApiResponse, SolveProgress, Suit } from "../api/optimize.mts";
@@ -32,56 +30,19 @@ export interface SkillEntry {
 export type { ClientSettings as ClientSetting, Retention as RetentionSetting, SettingsData, SettingsApiResponse, CleanupApiResponse, ShardOption, RulesApiResponse,
   AdapterSummary, InstalledVersionInfo, DataDirCheckInfo, SetupApiResponse, PasteScannerApiResponse, LocateApiResponse, InstallApiResponse, UpdateCheckApiResponse } from "../api/setup.mts";
 
-// GET /api/ui-prefs — the page's own view choices, kept in <data>/ui-prefs.json. Every field is
-// optional: absent means "never chosen", and the page keeps its default.
-export interface UiPrefs {
-  cols?: string[] | undefined;
-  colsVersion?: "2" | undefined;                       // the column set `cols` was saved against (view-state.mts)
-  colWidths?: Record<string, number> | undefined;      // the Inventory columns' dragged widths in px, by column key
-  sheetProps?: string[] | undefined;                   // the character sheet's shown properties (absent = sheet.mts's default set)
-  theme?: string | undefined;                          // a theme family ("default" or "britannia")
-  appearance?: "light" | "system" | "dark" | undefined;
-  sidebar?: "auto" | "collapsed" | undefined;          // "collapsed" = pinned to icons at any width
-  density?: "dense" | "regular" | undefined;           // the Inventory table's rows: 32 or 40 px
-  areaLabels?: "show" | "hide" | undefined;            // the House map's area name pills (absent = shown)
-  mapDrawerWidth?: number | undefined;                 // the House map contents drawer's width in px (absent = 400)
-  builderMode?: "automatic" | "manual" | undefined;    // the Suit Builder's mode (absent = Automatic)
-  builderTab?: "requirements" | "weights" | "buffs" | "pool" | "advanced" | undefined;   // the Settings drawer's last tab (absent = Requirements)
-  builderChanges?: "gauges" | "table" | undefined;   // the result's What changes view (absent = Gauges)
-  builderFineTune?: "on" | "off" | undefined;   // whether the Goals tab shows the weights its goals set (absent = off)
-  unravelRows?: "full" | "condensed" | undefined;      // the Unravel view's rows (absent = full)
-  unravelCollapsed?: string[] | undefined;             // the Unravel view's collapsed groups: relic, held, essence, residue (absent = none)
-  manualFor?: "character" | "none" | undefined;        // Manual totals with the picked character's bonuses, or raw items (absent = character)
-  manualSuit?: Record<string, number> | undefined;     // the Manual suit: a serial per slot (builder-manual.mts)
-  manualBuffs?: string[] | undefined;                  // the Manual suit's buffs that are on (app/buffs.mts ids)
-  manualBuffSkills?: Record<string, number> | undefined;   // the buff numbers edited for Manual's No character (a character's are its profile's)
-  buffsCount?: "on" | "off" | undefined;               // whether Manual's totals count the buffs (absent = on)
-  dismissedUpdate?: string | undefined;                // the release whose update notice was dismissed (settings.mts)
-  copiedScanner?: string | undefined;                  // the ClassicUO web scanner version last copied (paste-scanner.mts)
-}
-export interface UiPrefsApiResponse {
-  ok: boolean;
-  prefs: UiPrefs;
-}
+// GET/PUT /api/ui-prefs, GET/PATCH /api/profiles and GET/PUT /api/tazuo-panel: app/api/prefs.mts.
+export type { UiPrefs, UiPrefsApiResponse, ProfilesApiResponse, ProfilesPatchApiResponse, TazuoPanelApiResponse } from "../api/prefs.mts";
 
 // ---------------------------------------------------------------- inventory / items
 
 // The inventory routes' shapes come from app/api/inventory.mts.
 export type { InventoryData, InventoryApiResponse, MissingApiResponse, ItemsApiResponse, ItemHitsApiResponse, ItemsBySerialApiResponse } from "../api/inventory.mts";
 
-export interface ProfilesApiResponse {
-  ok: boolean;
-  profiles: ProfilesV3;
-  stamp: string;   // the file's content stamp, which a PATCH's `was` is compared with
-  builtinTemplates: TemplateMap;   // the shard's built-in templates, read-only (app/data/templates/<shard>.json)
-  readOnly?: string;   // why profiles.json cannot be saved, when a newer Pack Rat made it (app/migrate.mts)
-}
 
 // ---------------------------------------------------------------- setup / wizard / adapters
 
 // The TazUO panel (app/tazuo-panel-prefs.mts): GET/PUT /api/tazuo-panel, and POST /api/setup/install's `panel`.
 export type { AutostartOutcome, PanelHotkey, PanelPrefs };
-export interface TazuoPanelApiResponse { ok: boolean; prefs: PanelPrefs }
 export type { McpApiResponse } from "../api/mcp.mts";
 export type { HostPickFolderApiResponse } from "../api/host.mts";
 
@@ -135,21 +96,8 @@ export type {
   OrganizeRunningTrip, OrganizePlanApiResponse,
   StrategyId as AutoStrategy, Candidate as ProposalCandidate, GroupReport as ProposalGroup, Layout as ProposalLayout, Proposal as OrganizeProposal, OrganizeProposeApiResponse,
 } from "../organize-types.mts";
-export interface OrganizePreset { id: string; name: string; match: RuleMatch }
-// stamp: the saved setup's, which PUT takes back as `base`; a setup saved elsewhere since is refused (409, code "stale").
-export interface OrganizeApiResponse { ok: boolean; config: OrganizeConfig; problems: string[]; readOnly?: string; stamp: string }
-export interface OrganizePutApiResponse { ok: boolean; stamp: string }
-export interface OrganizePresetsApiResponse { ok: boolean; presets: OrganizePreset[] }
-export interface OrganizeTripApiResponse { ok: boolean; id: string; index: number }
-// Move to (issue #270, app/move.mts). POST /api/move/plan: the selection's count, its worn items, how many of it sit directly in
-// each container, and with `to` the plan into that container (or why it cannot be filled); with `back`, Move back's count.
-export interface MovePlanSummary { moving: number; serials: number[]; trips: number; already: number; noRoom: number; left: Partial<Record<"gone" | "worn" | "pack" | "bag" | "unreachable" | "site", number>>; against: Array<{ serial: number; name: string; target: number }> }
-export interface MovePlanApiResponse { ok: boolean; selected: number; worn: number; wornNames: string[]; movable: number; here: Record<string, number>; left: MovePlanSummary["left"]; problem?: string | null; plan?: MovePlanSummary | null }
-export interface MoveBackApiResponse { ok: boolean; back: { movable: number; skipped: string[] } }
-// POST /api/move/trip: the trip queued (`id` null when nothing is left to move), its items' names, the moves left counting it.
-export interface MoveTripApiResponse { ok: boolean; id: string | null; index?: number; names?: Record<string, string>; remaining: number; skipped: Array<{ serial: number; name: string }>; noRoom: Array<{ serial: number; name: string }> }
-// POST /api/organize/match: what one rule filter takes of the movable items in labelled roots (app/organize.mts's matchCount).
-export interface OrganizeMatchApiResponse { ok: boolean; count: number; pieces: number; sample: string[] }
+// The rest of the Organize and Move to routes' answers: app/organize-types.mts too.
+export type { OrganizePreset, OrganizeApiResponse, OrganizePutApiResponse, OrganizePresetsApiResponse, OrganizeTripApiResponse, MovePlanSummary, MovePlanApiResponse, MoveBackApiResponse, MoveTripApiResponse, OrganizeMatchApiResponse } from "../organize-types.mts";
 
 // SSE payloads on the shared /api/events stream (ui/events.mts) — mirror the server's
 // eventBus.broadcast("inventory", …) / eventBus.broadcast("rejected", …) literals (app/services/events.mts) (app/watcher.mts's

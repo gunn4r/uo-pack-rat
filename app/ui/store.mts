@@ -97,7 +97,7 @@ export interface OrganizePage {
   blacklist: number[];
   places: Map<string, string>;
   plan: OrganizePlan | null;
-  presets: OrganizePreset[] | null;
+  presets: readonly OrganizePreset[] | null;
 }
 
 export interface AppState {

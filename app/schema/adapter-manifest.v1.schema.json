@@ -38,6 +38,8 @@
           }
         },
         "stopHint": { "type": "string", "minLength": 1, "$comment": "How to stop this client's running scripts, ending the install's running refusal. Absent: neutral wording." },
+        "panel": { "type": "boolean", "$comment": "true: the client runs Pack Rat's in-game panel (TazUO's packrat-panel.py), whose options the setup wizard and Settings show. Absent: no panel." },
+        "uoFolder": { "type": "string", "enum": ["tazuo-profile"], "$comment": "How the house map finds the UO folder through this client, when Settings names none (app/services/houses.mts's UO_FOLDER_FINDERS): tazuo-profile, the folder TazUO's launcher profile names. Absent: Settings must name it." },
         "register": { "type": "string", "enum": ["none", "tazuo-panel-autostart"], "$comment": "The client-specific step an install runs once the scripts are in place (app/installer.mts's REGISTRARS): none, or tazuo-panel-autostart (the in-game panel in TazUO's autostart list)." }
       }
     }

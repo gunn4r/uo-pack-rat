@@ -130,7 +130,7 @@ export async function solveExact({
 
   // ---- step 1: the heuristic incumbent, always available -----------------------------------
   // Its random restarts get at most half the budget, so HiGHS always keeps the other half.
-  const heur = core.optimizeSuit(pools, current, profile, { ...opts, exact: false, restarts, heuristicBudgetMs: budget.heuristicMs, onProgress: (p: CoreProgress) => onProgress({ ...p, at: now() }) });
+  const heur = core.optimizeSuit(pools, current, profile, { ...opts, exact: false, restarts, heuristicBudgetMs: budget.heuristicCapMs, onProgress: (p: CoreProgress) => onProgress({ ...p, at: now() }) });
   const heuristicMs = budget.elapsedMs();
   // with a tie-break, the heuristic's best-scoring suit (its tie pick may score under it), for a hand-back from its suit
   const heurTop = opts.tieBreak && heur.tieBreak?.top ? { tieBreak: { ...opts.tieBreak, topStart: heur.tieBreak.top } } : {};

@@ -14,8 +14,9 @@
 // (heuristic searches only: the core's branch-and-bound doesn't prove the fixture in reasonable time), then generated
 // inventories: negative values, two-handers, worn pieces, rarity tie costs, hard and soft floors (some exactly at their
 // min, some hard floors naming keys with no floor), floor bonuses and partial credit down to 0, mins, Resisting Spells and
-// SSI steps, hard-floor bonuses from 5 to 1e10; four searches each (plain, exact with alternatives, tie-break (half of
-// them from a given top suit), Strict order), the exact ones with a ten-minute budget. An exact search that comes back unproven fails the check, since two
+// SSI steps, hard-floor bonuses from 5 to 1e10; eight searches each (plain, exact with alternatives, tie-break (half of
+// them from a given top suit), Strict order, tie-break with alternatives, Strict order with a tie-break, few local-search
+// passes, and the exact solver's final call: no restarts, a warm start and a top suit), the exact ones with a ten-minute budget. An exact search that comes back unproven fails the check, since two
 // runs cut by the clock can differ on the clock alone.
 //
 //   node app/bench/compare-cores.mts [--base origin/main] [--generated 2000] [--exact 500]
@@ -105,6 +106,8 @@ for (let n = 0; n < generated; n++) {
       return it;
     });
   }
+  // a worn two-hander leaves the one-hand slot empty: no player wears both, so no such suit is compared
+  if ((current.twoHanded as { twoHanded?: boolean } | undefined)?.twoHanded) delete current.oneHanded;
   const weights: Record<string, number> = {}, caps: Record<string, number> = {}, floors: Record<string, number> = {}, mins: Record<string, number> = {};
   for (const k of keys) {
     if (k === "sk:resisting spells") continue;
@@ -124,9 +127,22 @@ for (let n = 0; n < generated; n++) {
   if (rnd() < 0.35 && (weights.ssi || 0) > 0) profile.ssiSteps = [{ ssi: 5, stam: 0, credit: 8 }, { ssi: 15, stam: 10, credit: 20 }, { ssi: 30, stam: 25, credit: 45 }];
   const optionalSlots = slots.filter(() => rnd() < 0.6), opts = { seed: n, restarts: 15, slots, optionalSlots };
   const ranks = [[keys[int(0, 5)]!], [keys[int(0, 8)]!]].map((r) => [...new Set(r)]);
-  // half the tie-break searches start from a given top suit (the exact solver's hand-back passes one): each slot's last piece, or empty
-  const topStart = rnd() < 0.5 ? Object.fromEntries(slots.map((s) => [s, rnd() < 0.2 ? null : (pools[s]![pools[s]!.length - 1] as { serial: number }).serial])) : null;
-  const searches = [opts, { ...opts, exact: true, timeBudgetMs: 600000, alternatives: { count: 3, tolerance: int(0, 1) * 5 } }, { ...opts, exact: rnd() < 0.5, timeBudgetMs: 600000, tieBreak: { tolerance: int(0, 1) * 3, fewestChanges: rnd() < 0.5, ...(topStart ? { topStart } : {}) } }, { ...opts, exact: rnd() < 0.5, timeBudgetMs: 600000, strict: { ranks, fewestChanges: rnd() < 0.5 } }];
+  // a given top suit (the exact solver's hand-back passes one): a random piece per slot, or empty
+  const randomSuit = (): Record<string, number | null> => Object.fromEntries(slots.map((s) => [s, rnd() < 0.2 ? null : (pools[s]![int(0, pools[s]!.length - 1)] as { serial: number }).serial]));
+  const tieBreak = (): Record<string, unknown> => ({ tolerance: int(0, 1) * 3, fewestChanges: rnd() < 0.5, ...(rnd() < 0.5 ? { topStart: randomSuit() } : {}) });
+  const strict = (): Record<string, unknown> => ({ ranks, fewestChanges: rnd() < 0.5 });
+  const searches = [
+    opts,
+    { ...opts, exact: true, timeBudgetMs: 600000, alternatives: { count: 3, tolerance: int(0, 1) * 5 } },
+    { ...opts, exact: rnd() < 0.5, timeBudgetMs: 600000, tieBreak: tieBreak() },
+    { ...opts, exact: rnd() < 0.5, timeBudgetMs: 600000, strict: strict() },
+    // the combinations: a tie-break with other suits, Strict order with a tie-break, and few local-search passes
+    { ...opts, exact: true, timeBudgetMs: 600000, tieBreak: tieBreak(), alternatives: { count: 3, tolerance: int(0, 1) * 4 } },
+    { ...opts, exact: rnd() < 0.5, timeBudgetMs: 600000, strict: strict(), tieBreak: tieBreak() },
+    { ...opts, exact: rnd() < 0.5, timeBudgetMs: 600000, maxPasses: int(0, 1), tieBreak: tieBreak() },
+    // the exact solver's own final call: no restarts, a warm start and a top suit to start the tie-break from
+    { ...opts, restarts: 0, warmStart: randomSuit(), tieBreak: { ...tieBreak(), topStart: randomSuit() }, ...(rnd() < 0.4 ? { strict: strict() } : {}) },
+  ];
   for (const [i, o] of searches.entries()) cmp("optimizeSuit", `gen${n}/${i}`, SEARCH, { pools, current, profile, o }, (x, a) => call(x, "core", "optimizeSuit", a.pools, a.current, a.profile, a.o));
   // the exact solver on the first --exact instances: plain, and each search above with exact on (HiGHS proves these small pools well inside the budget)
   if (n < exactRuns) for (const [i, o] of [{ ...opts, exact: true, timeBudgetMs: 600000 }, ...searches.slice(1).map((o) => ({ ...o, exact: true }))].entries()) exactJobs.push({ label: `gen${n}/${i}`, inputs: { pools, current, profile, o } });
