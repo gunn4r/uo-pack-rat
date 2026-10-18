@@ -24,7 +24,7 @@ export function createOrganizeService({ paths, getInventory, organizeStore, orga
   paths: Pick<ConfigPaths, "bridgeFor" | "bridgeQueueFor" | "bridgeStatusFor">;
   getInventory: () => Promise<{ fold: Inventory }>;
   organizeStore: { read(): { config: OrganizeConfig; problems: string[] }; stamp(): string };
-  organizeStateStore: { update(fn: (current: OrganizeState) => OrganizeState | undefined): OrganizeState };
+  organizeStateStore: { update(fn: (current: Readonly<OrganizeState>) => OrganizeState | undefined): OrganizeState };
   blacklistStore: { read(): BlacklistEntry[] };
   runStore: { all(): SavedRun[] };
   rules: () => RulesV1;
@@ -57,14 +57,18 @@ export function createOrganizeService({ paths, getInventory, organizeStore, orga
   // page's bridge status poll (every 2.5 s while any page is open), so a trip that reports back moves its items in
   // every view even with Organize closed; when it brought moves in, the state file is rewritten and every open page
   // told to reload its inventory. A Grab is harvested the same way. With nothing pending it only reads the state file.
-  function harvestNow(now: number): { state: OrganizeState; bridges: Record<string, BridgeView> } {
+  // `then` changes the harvested state further in the same update (organizeInputs' refresh), so the file is read once.
+  function harvestNow(now: number, then?: (harvested: OrganizeState) => OrganizeState): { state: OrganizeState; bridges: Record<string, BridgeView> } {
     let bridges: Record<string, BridgeView> = {}, moved = false;
     const state = organizeStateStore.update((before) => {
-      if (!before.pending.length && !before.grabs.length) return undefined;
-      bridges = Object.fromEntries([...new Set([...before.pending, ...before.grabs].map((p) => p.adapter))].map((a) => [a, bridgeView(a, now)]));
-      const next = harvestTrips(before, bridges, now);
-      moved = JSON.stringify(next.moves) !== JSON.stringify(before.moves);
-      return JSON.stringify(next) !== JSON.stringify(before) ? next : undefined;
+      let next: Readonly<OrganizeState> = before;
+      if (before.pending.length || before.grabs.length) {
+        bridges = Object.fromEntries([...new Set([...before.pending, ...before.grabs].map((p) => p.adapter))].map((a) => [a, bridgeView(a, now)]));
+        next = harvestTrips(before, bridges, now);
+        moved = JSON.stringify(next.moves) !== JSON.stringify(before.moves);
+      }
+      if (then) next = then(next);
+      return next !== before && JSON.stringify(next) !== JSON.stringify(before) ? next : undefined;
     });
     if (moved) events.broadcast("changed", { what: "inventory", at: now });
     return { state, bridges };
@@ -77,11 +81,7 @@ export function createOrganizeService({ paths, getInventory, organizeStore, orga
     const { fold } = await getInventory();
     const { config, problems } = organizeStore.read(), stamp = organizeStore.stamp();
     const now = Date.now();
-    const { bridges } = harvestNow(now);
-    const state = organizeStateStore.update((harvested) => {
-      const next = noteSeen(pruneOverlay(harvested, fold, now), config, fold);
-      return JSON.stringify(next) !== JSON.stringify(harvested) ? next : undefined;
-    });
+    const { state, bridges } = harvestNow(now, (harvested) => noteSeen(pruneOverlay(harvested, fold, now), config, fold));
     return { fold, config, stamp, state, problems, bridges, features: featuresOf(adapter, fold, now) };
   }
   const planOf = (fold: Inventory, config: OrganizeConfig, state: OrganizeState, features: ReadonlySet<string>, putAway?: PutAway): Plan =>
@@ -93,15 +93,21 @@ export function createOrganizeService({ paths, getInventory, organizeStore, orga
 
   // Trip `index` of `plan` queued with queueTrip and recorded as pending, so its result is read back into the
   // overlay (harvestTrips). A Put away trip from the pack carries putAway, the picked container (docs/bridge-protocol.md, Put away).
-  // A Move to's plan (app/move.mts) is queued the same way.
-  function queuePlanTrip(adapter: string, fold: Inventory, state: OrganizeState, plan: Pick<Plan, "moves" | "stamp">, index: number, putAway?: number): { ok: true; id: string } | { ok: false; error: string } {
-    const input = tripCommand(applyOverlay(fold, state.moves).inv, plan, index);
+  // A Move to's plan (app/move.mts) is queued the same way. `moves` is the overlay the plan was made over; the pending
+  // entry is added to the state file as it is now, and while a trip there has not reported back nothing is queued
+  // (`waiting`: its index), so two requests planned from the same read cannot both queue.
+  function queuePlanTrip(adapter: string, fold: Inventory, moves: OrganizeState["moves"], plan: Pick<Plan, "moves" | "stamp">, index: number, putAway?: number): { ok: true; id: string } | { ok: false; error: string; waiting?: number } {
+    const input = tripCommand(applyOverlay(fold, moves).inv, plan, index);
     if (!input) return { ok: false, error: `trip ${index} cannot be built from the current scans` };
     const now = new Date();
-    const queued = queueTrip(paths, adapter, putAway ? { ...input, putAway } : input, now);
-    if (!queued.ok) return queued;
     const steps = plan.moves.filter((m) => m.trip === index).map(({ serial, name, from, to }) => ({ serial, name, from, to }));
-    organizeStateStore.update((current) => ({ ...current, pending: [...current.pending, { id: queued.id, adapter, index, stamp: plan.stamp, queuedAt: now.toISOString(), steps }] }));
+    let queued: ReturnType<typeof queuePlanTrip> = { ok: false, error: "" };
+    organizeStateStore.update((current) => {
+      const waiting = current.pending[0];
+      if (waiting) { queued = { ok: false, error: `trip ${waiting.index} has not reported back yet`, waiting: waiting.index }; return undefined; }
+      const q = queued = queueTrip(paths, adapter, putAway ? { ...input, putAway } : input, now);
+      return q.ok ? { ...current, pending: [...current.pending, { id: q.id, adapter, index, stamp: plan.stamp, queuedAt: now.toISOString(), steps }] } : undefined;
+    });
     return queued;
   }
   // Put away (issue #131, app/put-away.mts): the TazUO panel's request, handed over by the watcher of the inbox it was
@@ -162,8 +168,8 @@ export function createOrganizeService({ paths, getInventory, organizeStore, orga
     const kept = source.from === "pack" ? packKept(fold, source.container, new Set(config.pinnedItems)) : undefined;
     const where = +picked.serial === +root.serial && source.from === "pack" ? "your pack" : "that container";
     if (!trip) return { ok: true, msg: "Nothing to put away.", detail: nothingDetail(plan, where, kept) };
-    const queued = queuePlanTrip(adapter, fold, state, plan, trip.index, source.from === "pack" ? source.container : undefined);
-    if (!queued.ok) return { ok: false, msg: "The trip could not be queued.", detail: queued.error };
+    const queued = queuePlanTrip(adapter, fold, state.moves, plan, trip.index, source.from === "pack" ? source.container : undefined);
+    if (!queued.ok) return queued.waiting === undefined ? { ok: false, msg: "The trip could not be queued.", detail: queued.error } : { ok: false, msg: `Trip ${queued.waiting} has not reported back yet.` };
     return { ok: true, msg: tripMsg(trip.puts.length, plan.moves.length - trip.puts.length), trip: queued.id };
   }
   return { harvestNow, organizeInputs, organizeNow, queuePlanTrip, putAway, suitsFor };

@@ -115,7 +115,7 @@ export function routes(ctx: ServerContext): Route[] {
       if (!trip) return send(res, 404, { ok: false, error: `the plan has no trip ${index}` });
       const first = plan.trips.find((t) => t.site === trip.site)!;
       if (first.index !== index) return send(res, 409, { ok: false, error: `run trip ${first.index} first: this trip counts on the room it makes` });
-      const queued = organizeService.queuePlanTrip(adapter, fold, state, plan, index);
+      const queued = organizeService.queuePlanTrip(adapter, fold, state.moves, plan, index);
       if (!queued.ok) return send(res, 409, { ok: false, error: queued.error });
       return send(res, 200, { ok: true, id: queued.id, index });
     } },
@@ -190,7 +190,7 @@ export function routes(ctx: ServerContext): Route[] {
       // `noRoom`: the items no container on their way has room for (Move back's sources filled up since).
       const noRoom = plan.noRoom.map((serial) => ({ serial, name: fold.items[serial]?.name ?? `0x${serial.toString(16)}` }));
       if (!trip) return send(res, 200, { ok: true, id: null, remaining: 0, skipped, noRoom });
-      const queued = organizeService.queuePlanTrip(adapter, fold, state, plan, trip.index);
+      const queued = organizeService.queuePlanTrip(adapter, fold, state.moves, plan, trip.index);
       if (!queued.ok) return send(res, 409, { ok: false, error: queued.error });
       const names = Object.fromEntries(plan.moves.filter((m) => m.trip === trip.index).map((m) => [m.serial, m.name]));
       return send(res, 200, { ok: true, id: queued.id, index: trip.index, names, remaining: plan.moves.length, skipped, noRoom });

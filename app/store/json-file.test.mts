@@ -103,4 +103,7 @@ test("[fast] json-file: updater reads once, writes what the function returns and
   assert.deepEqual([reads, writes], [1, [[1, 2]]]);
   assert.deepEqual(update(() => undefined), [1, 2]);
   assert.deepEqual([reads, writes], [2, [[1, 2]]]);
+  // The state is handed over read-only: a change is returned, never made in place (a forgotten return would drop it).
+  // @ts-expect-error push does not exist on a readonly array
+  void (() => update((c) => { c.push(3); return undefined; }));
 });

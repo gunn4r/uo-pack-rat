@@ -210,7 +210,7 @@ test("[fast] stores: update(fn) on the blacklist, house claims and organize-stat
   const entry = { serial: 1234, name: "Chest", addedAt: "2026-01-01T00:00:00.000Z" };
   const claim = { id: "1-3000-1000", facet: 1, bounds: { x0: 3000, y0: 1000, x1: 3006, y1: 1006 }, claimedAt: "2026-10-16T10:00:00Z" };
   const state = { ...emptyOrganizeState(), seen: { "1234": "2026-01-01T00:00:00.000Z" } };
-  function check<T>(file: string, update: (fn: (current: T) => T | undefined) => T, next: T): void {
+  function check<T>(file: string, update: (fn: (current: Readonly<T>) => T | undefined) => T, next: T): void {
     const seen: T[] = [];
     assert.deepEqual(update((c) => { seen.push(c); return undefined; }), seen[0]);
     assert.ok(!existsSync(file), `${file}: nothing written for undefined`);
