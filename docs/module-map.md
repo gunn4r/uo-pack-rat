@@ -259,6 +259,7 @@ The thresholds are the shard rules' `unravel` (Shard rules, above); `GET /api/it
 | Also here | Role | Owns |
 |---|---|---|
 | `app/schema/house-claims.v1.schema.json` | One entry of `<data>/house-claims.json`, which the app and the TazUO panel both write: `app/store/house-claims.mts` checks entries against it, and its accept and reject cases (`app/fixtures/contract-cases/house-claims.json`) run in the TypeScript and the Python suites. | the house claims shape |
+| `app/schema/blacklist.v1.schema.json` | One entry of `<data>/scan-blacklist.json`, which the app and the game clients' blacklist scripts both write: `app/store/blacklist.mts` checks entries against it, and its shared cases (`app/fixtures/contract-cases/blacklist.json`) say what the app keeps and what the scanners still skip. | the blacklist shape |
 
 The services below are factories with explicit dependencies (stores, getters, a log function), built once by `startServer` and never importing `app/http/`:
 
