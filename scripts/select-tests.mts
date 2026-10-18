@@ -82,3 +82,29 @@ export function selectTests(changed: string[], sources: Record<string, string>):
   }
   return { tests: picked };
 }
+
+// The files that open an Electron window: the UI tests and the shell smoke test.
+export const ELECTRON_FILE = /^scripts\/(ui-[^/]+|shell-smoke)\.test\.mts$/;
+// CI's parts (issue #338): `only` keeps the Node files or the Electron ones, and `shard` k of n deals what is left into n
+// shards of about the same number of tests (largest file first, each to the shard with the fewest tests so far, names breaking
+// ties), so every file lands in exactly one shard and a shard's files stay the same from run to run. `tests` is a file's
+// test count. Paths are repo-relative.
+export interface Part { only?: "node" | "electron" | undefined; shard?: { k: number; n: number } | undefined }
+export function partOf(files: Array<{ path: string; tests: number }>, { only, shard }: Part): string[] {
+  const kept = files.filter((f) => !only || ELECTRON_FILE.test(f.path) === (only === "electron"));
+  if (!shard) return kept.map((f) => f.path).sort();
+  const load = Array.from({ length: shard.n }, () => 0), mine: string[] = [];
+  for (const f of [...kept].sort((a, b) => b.tests - a.tests || a.path.localeCompare(b.path))) {
+    const to = load.indexOf(Math.min(...load));
+    load[to]! += Math.max(1, f.tests);
+    if (to === shard.k - 1) mine.push(f.path);
+  }
+  return mine.sort();
+}
+// A `--shard=k/n` value as {k, n}; null when it is not one (1 ≤ k ≤ n).
+export function parseShard(v: string): { k: number; n: number } | null {
+  const m = /^(\d+)\/(\d+)$/.exec(v);
+  if (!m) return null;
+  const k = Number(m[1]), n = Number(m[2]);
+  return k >= 1 && k <= n ? { k, n } : null;
+}

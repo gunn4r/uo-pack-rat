@@ -278,6 +278,17 @@ test("[fast] CI runs the suite on all three desktop platforms", () => {
   assert.doesNotMatch(ci, /TEST_SKIP_ELECTRON/, "CI must not skip the shell tests");
 });
 
+// Issue #338: the Node files and the Electron files run as separate jobs, the Electron ones in two shards, and the three checks
+// the main branch requires keep their names and pass only when every job did.
+test("[fast] CI runs the Node part and every Electron shard, and the required Test on <os> checks wait for all of them", () => {
+  const ci = workflow("ci.yml");
+  assert.match(ci, /npm test -- --only-node/);
+  assert.match(ci, /shard: \[1, 2\]/);
+  assert.equal((ci.match(/npm test -- --only-electron --shard=\$\{\{ matrix\.shard \}\}\/2/g) || []).length, 2, "both the Linux and the other step run the job's shard of 2");
+  assert.match(ci, /name: Test on \$\{\{ matrix\.os \}\}\n\s+needs: \[node, electron\]\n\s+if: always\(\)/, "the required checks keep their names and wait for every job");
+  assert.match(ci, /test "\$\{\{ needs\.node\.result \}\}" = success && test "\$\{\{ needs\.electron\.result \}\}" = success/);
+});
+
 test("[fast] CI compiles every adapter's Python scripts generically, not one adapter's files named by hand", () => {
   const ci = workflow("ci.yml");
   assert.match(

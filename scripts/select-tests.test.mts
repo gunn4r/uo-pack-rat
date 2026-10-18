@@ -5,7 +5,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { selectTests, SCREENS } from "./select-tests.mts";
+import { selectTests, SCREENS, parseShard, partOf } from "./select-tests.mts";
 
 const SOURCES: Record<string, string> = {
   "app/lib.mts": `export const x = 1;`,
@@ -81,4 +81,26 @@ test("[fast] select-tests: shared infrastructure and unreached paths fall back t
     assert.deepEqual(selectTests(["app/lib.mts", p], SOURCES), { full: `${p} is shared test infrastructure` }, p);
   }
   assert.deepEqual(selectTests(["app/orphan.mts"], SOURCES), { full: "no test reaches app/orphan.mts" });
+});
+
+// Issue #338: CI runs the Node files and the Electron files as separate jobs, the Electron files in shards.
+test("[fast] select-tests: partOf keeps the Node or the Electron files, and deals a part into shards that cover it once, by test count", () => {
+  const files = [
+    { path: "app/a.test.mts", tests: 9 }, { path: "scripts/ui-big.test.mts", tests: 20 }, { path: "scripts/ui-mid.test.mts", tests: 12 },
+    { path: "scripts/ui-small.test.mts", tests: 7 }, { path: "scripts/shell-smoke.test.mts", tests: 1 }, { path: "scripts/ui-zero.test.mts", tests: 0 },
+  ];
+  assert.deepEqual(partOf(files, { only: "node" }), ["app/a.test.mts"]);
+  const ui = ["scripts/shell-smoke.test.mts", "scripts/ui-big.test.mts", "scripts/ui-mid.test.mts", "scripts/ui-small.test.mts", "scripts/ui-zero.test.mts"];
+  assert.deepEqual(partOf(files, { only: "electron" }), ui);
+  assert.deepEqual(partOf(files, {}), [...ui, "app/a.test.mts"].sort());
+  const shards = [1, 2].map((k) => partOf(files, { only: "electron", shard: { k, n: 2 } }));
+  assert.deepEqual([...shards[0]!, ...shards[1]!].sort(), ui, "every file in exactly one shard");
+  assert.deepEqual(shards, [["scripts/ui-big.test.mts", "scripts/ui-zero.test.mts"], ["scripts/shell-smoke.test.mts", "scripts/ui-mid.test.mts", "scripts/ui-small.test.mts"]], "the largest first, each to the lighter shard (the first on a tie)");
+  assert.deepEqual(partOf(files, { only: "electron", shard: { k: 1, n: 2 } }), shards[0], "the same shards every run");
+  assert.deepEqual(partOf(files, { only: "node", shard: { k: 3, n: 3 } }), [], "a shard can be empty");
+});
+
+test("[fast] select-tests: parseShard reads k/n with 1 <= k <= n", () => {
+  assert.deepEqual(parseShard("2/3"), { k: 2, n: 3 });
+  for (const bad of ["0/2", "3/2", "2", "a/b", "1/0", "-1/2"]) assert.equal(parseShard(bad), null, bad);
 });
