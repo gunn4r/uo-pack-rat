@@ -1,8 +1,8 @@
 // organize-types.mts — Organize's plan and Auto organize's proposal, and the GET /api/organize/plan and POST /api/organize/propose responses built from them; types only, importing only organize-config.mts's types, so the page's browser build can use them: app/organize.mts and app/organize-strategies.mts re-export them, the routes `satisfies` them, and ui/api-types.mts re-exports them.
 //
 // map: organize
-// owns: `Plan`, `PlanMove`, `PlanTrip`, `PlanWarning`, `WarningKind`, `RuleReport`, `RoomReport`, `Carried`, `EmptyBag`, `Proposal`, `ProposeResult`, `StrategyId`, `Family`, `Candidate`, `GroupReport`, `Layout`, `OrganizePlanApiResponse`, `OrganizeProposeApiResponse`, `OrganizeProposeBody`
-import type { OrganizeConfig, Origin } from "./organize-config.mts";
+// owns: `Plan`, `PlanMove`, `PlanTrip`, `PlanWarning`, `WarningKind`, `RuleReport`, `RoomReport`, `Carried`, `EmptyBag`, `Proposal`, `ProposeResult`, `StrategyId`, `Family`, `Candidate`, `GroupReport`, `Layout`, `OrganizePlanApiResponse`, `OrganizeProposeApiResponse`, `OrganizeProposeBody`, `OrganizePreset`, `OrganizeApiResponse`, `OrganizePutApiResponse`, `OrganizePresetsApiResponse`, `OrganizeTripApiResponse`, `MovePlanSummary`, `MovePlanApiResponse`, `MoveBackApiResponse`, `MoveTripApiResponse`, `OrganizeMatchApiResponse`
+import type { OrganizeConfig, Origin, RuleMatch } from "./organize-config.mts";
 
 // ---------------------------------------------------------------- the plan (organize.mts planOrganize)
 export type WarningKind = "stale-container" | "missing-target" | "missing-label" | "unknown-capacity" | "old-scripts" | "blacklisted" | "no-position" | "not-ground" | "nearly-full";
@@ -74,3 +74,21 @@ export interface OrganizeRunningTrip { id: string; index: number; queuedAt: stri
 export interface OrganizePlanApiResponse { ok: boolean; plan: Plan; running: OrganizeRunningTrip | null }
 // `stamp`: the saved setup's when the proposal was worked out, which Accept's PUT names as its base (issue #280).
 export type OrganizeProposeApiResponse = Extract<ProposeResult, { ok: true }> & { stamp: string };
+
+// ---------------------------------------------------------------- the rest of the Organize and Move to routes
+// GET /api/organize/presets: the rule filters the page offers to start from.
+export interface OrganizePreset { id: string; name: string; match: RuleMatch }
+// stamp: the saved setup's, which PUT takes back as `base`; a setup saved elsewhere since is refused (409, code "stale").
+export interface OrganizeApiResponse { ok: boolean; config: OrganizeConfig; problems: string[]; readOnly?: string; stamp: string }
+export interface OrganizePutApiResponse { ok: boolean; stamp: string }
+export interface OrganizePresetsApiResponse { ok: boolean; presets: readonly OrganizePreset[] }
+export interface OrganizeTripApiResponse { ok: boolean; id: string; index: number }
+// Move to (issue #270, app/move.mts). POST /api/move/plan: the selection's count, its worn items, how many of it sit directly in
+// each container, and with `to` the plan into that container (or why it cannot be filled); with `back`, Move back's count.
+export interface MovePlanSummary { moving: number; serials: number[]; trips: number; already: number; noRoom: number; left: Partial<Record<"gone" | "worn" | "pack" | "bag" | "unreachable" | "site", number>>; against: Array<{ serial: number; name: string; target: number }> }
+export interface MovePlanApiResponse { ok: boolean; selected: number; worn: number; wornNames: string[]; movable: number; here: Record<string, number>; left: MovePlanSummary["left"]; problem?: string | null; plan?: MovePlanSummary | null }
+export interface MoveBackApiResponse { ok: boolean; back: { movable: number; skipped: string[] } }
+// POST /api/move/trip: the trip queued (`id` null when nothing is left to move), its items' names, the moves left counting it.
+export interface MoveTripApiResponse { ok: boolean; id: string | null; index?: number; names?: Record<string, string>; remaining: number; skipped: Array<{ serial: number; name: string }>; noRoom: Array<{ serial: number; name: string }> }
+// POST /api/organize/match: what one rule filter takes of the movable items in labelled roots (app/organize.mts's matchCount).
+export interface OrganizeMatchApiResponse { ok: boolean; count: number; pieces: number; sample: string[] }

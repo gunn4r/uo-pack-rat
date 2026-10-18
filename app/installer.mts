@@ -439,7 +439,8 @@ export function heartbeatAlive(heartbeatPath: string, now: number, log: (msg: st
   if (st.stopped === true || st.alive == null) return false;
   // st.alive is whatever the file's own "alive" field held (a Legion-script-written file — see
   // adapters/tazuo's bridge and panel scripts) — Date.parse ToStrings a non-string argument regardless of what
-  // TS is told its type is here, so this cast describes the existing (unvalidated) trust, not a change.
+  // TS is told its type is here, so this cast describes the existing (unvalidated) trust, not a change. A number is an
+  // older bridge's epoch seconds (compat: numeric-alive, remove in Pack Rat 0.3.0 (docs/architecture.md, Compatibility shims)).
   const aliveMs = typeof st.alive === "number" ? st.alive * 1000 : Date.parse(st.alive as string);
   if (Number.isNaN(aliveMs)) return false;
   const ageS = (now - aliveMs) / 1000;

@@ -1,6 +1,6 @@
 // server-settings.test.mts — HTTP tests of the settings, the shard's rules and retention.
 //
-// `GET /api/rules` and `GET|PUT /api/settings`: switching the shard (and the tag penalty the inventory reports with it), a fresh server folding with its shard's rules, `autoUpdateCheck` kept across a restart, a user rules file named differently than its id (listed, loaded, surviving a restart, overriding a builtin), a shard whose rules fail validation refused with `settings.json` unchanged, a shard with no rules file starting on the default with `fallback: true`, the shard type-checked before `loadRules`; `client` checked (a non-string or traversal adapter id, a scripts folder that is not absolute, non-UNC and a real client folder) and a paste client kept with no folder; a corrupt `settings.json` kept aside, a persisted client this install does not ship ignored for the run, and a settings write after a startup fallback keeping `settings.json`'s own shard and client (issue #18); retention (issue #28): `retention` refused out of bounds and merged field by field, `POST /api/retention/cleanup`'s dry run counting and its real run removing an old scan and the unnamed runs past the limit with the same inventory and a `server.log` line, a named and a symlinked run never removed, the prune on a restart, and a 409 under `--demo`.
+// `GET /api/rules` and `GET|PUT /api/settings`: switching the shard (and the tag penalty the inventory reports with it), a fresh server folding with its shard's rules, `autoUpdateCheck` kept across a restart, the body cap (the largest valid body taken, one past 256 KB a 413), a user rules file named differently than its id (listed, loaded, surviving a restart, overriding a builtin), a shard whose rules fail validation refused with `settings.json` unchanged, a shard with no rules file starting on the default with `fallback: true`, the shard type-checked before `loadRules`; `client` checked (a non-string or traversal adapter id, a scripts folder that is not absolute, non-UNC and a real client folder) and a paste client kept with no folder; a corrupt `settings.json` kept aside, a persisted client this install does not ship ignored for the run, and a settings write after a startup fallback keeping `settings.json`'s own shard and client (issue #18); retention (issue #28): `retention` refused out of bounds and merged field by field, `POST /api/retention/cleanup`'s dry run counting and its real run removing an old scan and the unnamed runs past the limit with the same inventory and a `server.log` line, a named and a symlinked run never removed, the prune on a restart, and a 409 under `--demo`.
 import { test, before, after, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, cpSync, symlinkSync } from "node:fs";
@@ -221,6 +221,22 @@ test("[fast] a user rules file named differently than its id overrides a builtin
     assert.equal(rules.available.find((r) => r.id === "uoalive")!.source, "user");
   } finally {
     await s2.close();
+  }
+});
+
+test("[fast] PUT /api/settings takes its largest valid body and refuses one past 256 KB with a 413", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-settings-cap-"));
+  const put = (url: string, body: unknown): Promise<Response> => fetch(url + "/api/settings", { method: "PUT", headers: JSON_HEADERS, body: JSON.stringify(body) });
+  const s = await startServer(ensureLayout(resolveConfig(["--port", "0", "--data", dir], {})));
+  try {
+    const unravelKeep = Array.from({ length: 5000 }, (_, i) => 0xFFFFFFFF - i);
+    const unravelBag = Object.fromEntries(Array.from({ length: 200 }, (_, i) => [String(i).padStart(64, "N"), 0xFFFFFFFF - i]));
+    assert.equal((await put(s.url, { unravelKeep, unravelBag })).status, 200, "a full Keep list and every bag");
+    const big = await put(s.url, { unravelKeep, extra: "x".repeat(256e3) });
+    assert.equal(big.status, 413);
+    assert.equal(asJson<ErrorBody>(await big.json()).error, "settings too large");
+  } finally {
+    await s.close();
   }
 });
 
