@@ -261,7 +261,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
 
   // Every route, in the order the server tries them (app/http/routes/; docs/architecture.md lists them).
   const ctx: ServerContext = { config: CONFIG, host, clientSearch, clientRunning, updateFetch, packageJson: PACKAGE_JSON, appSettings, setupService, eventBus, houseService,
-    retentionService, jobService, buildsService, organizeService, getInventory, profilesStore, uiPrefsStore, blacklistStore, houseClaimsStore, itemKindsStore, organizeStore, organizeStateStore, runStore,
+    retentionService, jobService, buildsService, organizeService, getInventory, profilesStore, uiPrefsStore, blacklistStore, houseClaimsStore, itemKindsStore, organizeStore, organizeStateStore, runStore, scanStore,
     panelPrefsFile: PANEL_PREFS, savePanel, watchers, timers, mcp };
   const routes: Route[] = [staticRoutes, inventoryRoutes, prefsRoutes, settingsRoutes, setupRoutes, importRoutes, hostRoutes, optimizeRoutes, mcpRoutes, bridgeRoutes,
     forgetRoutes, blacklistRoutes, housesRoutes, kindsRoutes, organizeRoutes].flatMap((make) => make(ctx));
