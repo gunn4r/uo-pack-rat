@@ -3,7 +3,7 @@
 // map: builder
 // owns: `ProfileEdit`, `applyProfileEdit`, `applyProfileEdits`, `profileEditError`
 import { characterBuffs, characterEntry, characterProfile, labelError, type BuildBuffs, type CharacterEntry, type ProfilesV3, type TemplateEntry, type TemplateMap, type TemplateSpec } from "./build-spec.mts";
-import { isBoundedString } from "./guards.mts";
+import { isPlainObject, isBoundedString } from "./guards.mts";
 
 export type ProfileEdit =
   // a character's buffs (Automatic's ones on, the numbers edited for it): a character with no saved settings gets the
@@ -32,20 +32,19 @@ export interface ProfileEditContext { builtins: TemplateMap; canLabel?: (name: s
 const NAME_MAX = 64, ID_MAX = 4096;
 // Names an object key can't safely be: assigning one changes the map's prototype instead of adding an entry.
 const UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
-const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 // Why a value is not a ProfileEdit, or null. The values inside (specs, buffs) are held to the profiles schema and
 // buildSpecError once applied, with the rest of the file.
 export function profileEditError(v: unknown): string | null {
-  if (!isObject(v)) return "an edit must be an object";
+  if (!isPlainObject(v)) return "an edit must be an object";
   const name = (): string | null => (isBoundedString(v.name, NAME_MAX) && v.name && !UNSAFE_KEYS.has(v.name) ? null : `${String(v.op)}: name must be a character's name`);
   const id = (k: string): string | null => (isBoundedString(v[k], ID_MAX) && v[k] && !UNSAFE_KEYS.has(v[k] as string) ? null : `${String(v.op)}: ${k} must be a template's name`);
   switch (v.op) {
-    case "setBuffs": return name() ?? (isObject(v.buffs) ? null : "setBuffs: buffs must be an object");
+    case "setBuffs": return name() ?? (isPlainObject(v.buffs) ? null : "setBuffs: buffs must be an object");
     case "setLabel": return name() ?? labelError(v.label);
-    case "saveCharacter": return name() ?? (isObject(v.entry) && isObject(v.entry.spec) ? null : "saveCharacter: entry must be a character entry");
+    case "saveCharacter": return name() ?? (isPlainObject(v.entry) && isPlainObject(v.entry.spec) ? null : "saveCharacter: entry must be a character entry");
     case "deleteCharacter": return name();
-    case "putTemplate": return id("id") ?? (isObject(v.entry) && isObject(v.entry.spec) ? null : "putTemplate: entry must be a template entry") ?? (v.create === undefined || typeof v.create === "boolean" ? null : "putTemplate: create must be true or false");
-    case "updateTemplate": return id("id") ?? (isObject(v.spec) && typeof v.savedAt === "string" ? null : "updateTemplate: spec must be a template spec, savedAt a date");
+    case "putTemplate": return id("id") ?? (isPlainObject(v.entry) && isPlainObject(v.entry.spec) ? null : "putTemplate: entry must be a template entry") ?? (v.create === undefined || typeof v.create === "boolean" ? null : "putTemplate: create must be true or false");
+    case "updateTemplate": return id("id") ?? (isPlainObject(v.spec) && typeof v.savedAt === "string" ? null : "updateTemplate: spec must be a template spec, savedAt a date");
     case "deleteTemplate": return id("id");
     case "renameTemplate": return id("from") ?? id("to");
     default: return `unknown edit ${JSON.stringify(v.op)}`;
