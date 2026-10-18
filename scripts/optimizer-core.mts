@@ -1,12 +1,10 @@
 // ============================================================================
 // optimizer-core.mts — whole-suit gear optimizer CORE: the heuristic suit search and scoring of record, loaded from source by the path corePath() resolves.
 // ----------------------------------------------------------------------------
-// PURE LOGIC ONLY. No game globals (no `player`, `client`, `Gump`, ...) and no I/O. It imports
-// nothing today and exports through the one `export { ... }` line at the end: a rule from when it
-// was pasted into game scripts. Nothing pastes it any more, so the rules it shares with app/mip.mts
-// (marked `==` below, listed in docs/solver.md "Before you change the solvers") can move to a shared
-// module (issue #338). Everything is deterministic given a seed (mulberry32; `Math.random` is never
-// called here).
+// PURE LOGIC ONLY. No game globals (no `player`, `client`, `Gump`, ...) and no I/O. It imports the
+// scoring constants it shares with app/mip.mts from app/solver/scoring.mts (issue #338) and exports
+// through the one `export { ... }` line at the end. Everything is deterministic given a seed
+// (mulberry32; `Math.random` is never called here).
 //
 // The problem: you have ~30 candidate items per slot across 19 slots. Exhaustive search is
 // 30^19. The point of optimizing a SET rather than each slot independently is that scoring is
@@ -25,6 +23,7 @@
 //
 // map: builder
 // owns: `optimizeSuit`, `scoreSet`, `optDefaultSlots`, `optDefaultOptionalSlots`, `optDominancePrune`
+import { CHANGE_COST, DEFAULT_BUDGET_MS, DEFAULT_RESTARTS, FLOAT_EPS, RESIST_SKILL_KEY, RESIST_STEP_SLACK, TIE_SLACK, changeCost, scoringProfile, slackAt } from "../app/solver/scoring.mts";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -74,35 +73,16 @@ interface OptProfile {
   // the score can never move by half of it (issue #311).
   hardFloorBonus?: number | undefined;
 }
-const HARD_FLOOR_BONUS = 1e7;
-// == app/mip.mts hardBonusOf
-function optHardBonus(profile: OptProfile): number {
-  return typeof profile.hardFloorBonus === "number" && profile.hardFloorBonus > HARD_FLOOR_BONUS ? profile.hardFloorBonus : HARD_FLOOR_BONUS;
-}
-// Strict order's stage values count as equal within this (== app/mip.mts TIE_SLACK): optStrictStages scales a stage so two
-// different values sit far further apart.
-const LEX_EPS = 1e-3;
-// Two scores closer than `base` count as equal, or than SCORE_REL of the larger when that is more (issue #316): a score
-// near 1e10 carries float rounding of about 1e-5 from summing in another order, above every absolute slack here.
-// == app/mip.mts SCORE_REL and slackAt.
-const SCORE_REL = 1e-12;
-function optSlack(base: number, a: number, b: number): number {
-  return Math.max(base, SCORE_REL * Math.max(Math.abs(a), Math.abs(b)));
-}
-// What one changed slot costs at least with the tie-break's fewestChanges (== app/mip.mts CHANGE_COST); optChangeCost
-// raises it above any suit's summed tie cost, so fewer changes always come first.
-const CHANGE_COST = 1000;
-// == app/mip.mts changeCostFor: the cost of one changed slot for pieces whose largest tie cost is `maxTie`, above what
-// the nineteen slots can sum to (a rules file's rarity ladder can be any length).
+// Strict order's stage values count as equal within TIE_SLACK: optStrictStages scales a stage so two different values sit far
+// further apart.
+const LEX_EPS = TIE_SLACK;
+// The cost of one changed slot with the tie-break's fewestChanges (app/solver/scoring.mts changeCost).
 function optChangeCost(maxTie: number): number {
-  return Math.max(CHANGE_COST, 19 * maxTie + 1);
+  return changeCost(maxTie);
 }
 // The dimension strict order's fewest-changes stage scores in: a piece worn in its slot counts 1, a piece in a slot
 // nobody wears -1, any other piece (and an empty slot) 0, so the total is the worn slots less the changes.
 const CHANGES_KEY = "\u0000changes";
-// == app/vault-lib.mts RESIST_SKILL_KEY and RESIST_STEP_SLACK
-const RESIST_SKILL_KEY = "sk:resisting spells";
-const RESIST_STEP_SLACK = 0.05;
 
 interface OptOptions {
   seed?: number;          // PRNG seed; same seed => byte-identical result
@@ -305,15 +285,11 @@ function optBuildSpace(keys: string[], profile: OptProfile): OptSpace {
   const min: number[] = [];
   const floor: number[] = [];
   const zero: number[] = [];
-  const caps = profile.caps || {};
-  const mins = profile.mins || {};
-  const floors = profile.floors || {};
-  const weights = profile.weights || {};
-  const hard: Record<string, boolean> = {};
-  const hardList = profile.hardFloors || [];
-  for (let i = 0; i < hardList.length; i++) hard[hardList[i]!] = true;
-  const baseBonus = typeof profile.floorBonus === "number" ? profile.floorBonus : 1000, hardBonus = optHardBonus(profile);
+  const sp = scoringProfile(profile), { caps, mins, weights } = sp;
   const floorBonusArr: number[] = [];
+  // Partial credit at the floor (scoringProfile's partialOf): the hard floors share theirs, issue #204; the bonus itself is
+  // large enough that the rest of the score never moves by the other half (hardFloorBonus, #311).
+  const partialArr: number[] = [];
   // Steps need both dimensions in the space, even when no candidate carries them.
   const stepped = Array.isArray(profile.ssiSteps) && typeof weights["ssi"] === "number" && weights["ssi"] > 0;
   if (stepped) for (const k of ["ssi", "stamPool"]) if (keys.indexOf(k) < 0) keys = keys.concat([k]);
@@ -326,19 +302,11 @@ function optBuildSpace(keys: string[], profile: OptProfile): OptSpace {
     w.push(typeof weights[k] === "number" ? weights[k] : 0);
     cap.push(typeof caps[k] === "number" ? caps[k] : Infinity);
     min.push(typeof mins[k] === "number" ? mins[k] : -Infinity);
-    floor.push(typeof floors[k] === "number" && !(floors[k] <= min[i]!) ? floors[k] : 0);
-    floorBonusArr.push(hard[k] ? hardBonus : baseBonus);
+    floor.push(sp.floorOf(k));
+    floorBonusArr.push(sp.bonusOf(k));
+    partialArr.push(sp.partialOf(k));
     zero.push(0);
   }
-  // Partial credit at the floor. The hard floors share theirs (each gets 1/n of it), so together it stays under half one
-  // floor's bonus and no mix of it can buy a miss of a floor some suit meets (issue #204); the bonus itself is large enough
-  // that the rest of the score never moves by the other half (hardFloorBonus, #311). n counts every hard floor, one each
-  // suit meets included: such a floor never earns partial credit, so counting it only makes the margin wider.
-  const partial = typeof profile.floorPartial === "number" ? profile.floorPartial : 0.5;
-  let nHard = 0;
-  for (let i = 0; i < keys.length; i++) if (hard[keys[i]!] && floor[i]! > 0) nHard++;
-  const partialArr: number[] = [];
-  for (let i = 0; i < keys.length; i++) partialArr.push(hard[keys[i]!] ? floorBonusArr[i]! * partial / Math.max(1, nHard) : floorBonusArr[i]! * partial);
   return {
     keys: keys,
     index: index,
@@ -347,7 +315,7 @@ function optBuildSpace(keys: string[], profile: OptProfile): OptSpace {
     min: min,
     floor: floor,
     floorBonusArr: floorBonusArr,
-    floorBonus: baseBonus,
+    floorBonus: sp.floorBonus,
     partialArr: partialArr,
     zero: zero,
     vecCache: new Map(),
@@ -385,7 +353,7 @@ function optFloorMet(space: OptSpace, totals: number[], i: number): boolean {
 function optStepCredit(space: OptSpace, ssi: number, stam: number): number {
   const st = space.steps;
   let best = 0;
-  for (let i = 0; i < st.credit.length; i++) if (ssi >= st.ssi[i]! - 1e-9 && stam >= st.stam[i]! - 1e-9 && st.credit[i]! > best) best = st.credit[i]!;
+  for (let i = 0; i < st.credit.length; i++) if (ssi >= st.ssi[i]! - FLOAT_EPS && stam >= st.stam[i]! - FLOAT_EPS && st.credit[i]! > best) best = st.credit[i]!;
   return best;
 }
 
@@ -535,7 +503,7 @@ function optLexOf(totals: number[], lex: OptSpace[]): number[] {
 // 1 when a beats b in strict order, -1 when b beats a, 0 when every stage is equal (within LEX_EPS).
 function optLexCmp(a: number[], b: number[]): number {
   for (let i = 0; i < a.length; i++) {
-    const e = optSlack(LEX_EPS, a[i]!, b[i]!);
+    const e = slackAt(LEX_EPS, a[i]!, b[i]!);
     if (a[i]! > b[i]! + e) return 1;
     if (a[i]! < b[i]! - e) return -1;
   }
@@ -543,7 +511,7 @@ function optLexCmp(a: number[], b: number[]): number {
 }
 // Whether every stage of `v` reaches `mins` (within LEX_EPS).
 function optLexHolds(v: number[], mins: number[]): boolean {
-  for (let i = 0; i < v.length; i++) if (v[i]! < mins[i]! - optSlack(LEX_EPS, v[i]!, mins[i]!)) return false;
+  for (let i = 0; i < v.length; i++) if (v[i]! < mins[i]! - slackAt(LEX_EPS, v[i]!, mins[i]!)) return false;
   return true;
 }
 
@@ -574,7 +542,7 @@ function optGradientProfile(profile: OptProfile): OptProfile {
     weights: profile.weights,
     caps: profile.caps,
     floors: profile.floors,
-    floorBonus: typeof profile.floorBonus === "number" ? profile.floorBonus : 1000,
+    floorBonus: scoringProfile(profile).floorBonus,
     floorPartial: 1,
     hardFloors: profile.hardFloors,
     mins: profile.mins,
@@ -679,7 +647,7 @@ function optBestWeaponPair(totals: number[], a: OptAssignment, oneCands: (OptIte
 // fixed iteration order keeps this deterministic (no tie-break coin flips).
 // With `lex` (strict order) a move must improve the suit in strict order, and the best such move is taken.
 function optLocalSearch(a: OptAssignment, slots: string[], cands: Record<string, (OptItem | null)[]>, space: OptSpace, maxPasses: number, lex?: OptSpace[] | null): { assignment: OptAssignment; score: number; vec: number[] | null } {
-  const EPS = 1e-9;
+  const EPS = FLOAT_EPS;
   const cur: OptAssignment = {};
   for (let i = 0; i < slots.length; i++) cur[slots[i]!] = a[slots[i]!] || null;
   const totals = optTotalsOf(cur, slots, space);
@@ -1032,7 +1000,7 @@ function optBranchAndBound(slots: string[], cands: Record<string, (OptItem | nul
   const t0 = Date.now();
   const every = typeof tickEveryMs === "number" && tickEveryMs > 0 ? tickEveryMs : 250;
   let nextTick = t0 + every;
-  const EPS = 1e-9;
+  const EPS = FLOAT_EPS;
   // Alternatives: keep the best (count + 1) leaves scoring at least cut - tolerance. Pruning then only drops a
   // subtree whose bound is strictly below that threshold, so ties survive. The threshold only ever rises (cut
   // rises, the list's lowest score rises), so a subtree dropped early stays correctly dropped.
@@ -1049,7 +1017,7 @@ function optBranchAndBound(slots: string[], cands: Record<string, (OptItem | nul
     for (let s = 0; s < stageBounds!.length; s++) {
       const B = stageBounds![s]!, ref = tie ? tie.lexMins![s]! : cutVec![s]!;
       let b = B.loose(k);
-      const e = optSlack(LEX_EPS, b, ref);
+      const e = slackAt(LEX_EPS, b, ref);
       if (b >= ref - e && n - k >= 2) b = Math.min(b, B.tight(k));
       if (b < ref - e) return true;
       if (!tie && b > ref + e) return false;
@@ -1089,7 +1057,7 @@ function optBranchAndBound(slots: string[], cands: Record<string, (OptItem | nul
         best = a;
       }
       // the slack from the suit's own score: the threshold and the list's lowest start infinite
-      if (alt && sc >= altThr() - optSlack(EPS, sc, 0) && (altList.length < altMax || sc > altMin + optSlack(EPS, sc, 0))) {
+      if (alt && sc >= altThr() - slackAt(EPS, sc, 0) && (altList.length < altMax || sc > altMin + slackAt(EPS, sc, 0))) {
         const a: OptAssignment = {};
         for (let i = 0; i < n; i++) a[order[i]!] = pick[i] as OptItem | null;
         if (altList.length < altMax) altList.push({ a: a, score: sc });
@@ -1139,7 +1107,7 @@ function optimizeSuit(pools: Record<string, OptItem[]>, current: OptAssignment, 
   const opts = options || {};
   const slots = opts.slots || optDefaultSlots();
   const seed = typeof opts.seed === "number" ? opts.seed : 0x5eed;
-  const restarts = typeof opts.restarts === "number" ? opts.restarts : 200;
+  const restarts = typeof opts.restarts === "number" ? opts.restarts : DEFAULT_RESTARTS;
   const maxPasses = typeof opts.maxPasses === "number" ? opts.maxPasses : 200;
   const optionalList = opts.optionalSlots || optDefaultOptionalSlots();
   const optional: Record<string, boolean> = {};
@@ -1183,7 +1151,7 @@ function optimizeSuit(pools: Record<string, OptItem[]>, current: OptAssignment, 
 
   // Progress reporting (throttled; a no-op without opts.onProgress).
   const t0 = Date.now();
-  const budgetMs = typeof opts.timeBudgetMs === "number" ? opts.timeBudgetMs : 15000;
+  const budgetMs = typeof opts.timeBudgetMs === "number" ? opts.timeBudgetMs : DEFAULT_BUDGET_MS;
   const progressEvery = typeof opts.progressEveryMs === "number" && opts.progressEveryMs > 0 ? opts.progressEveryMs : 250;
   let candCount = 0;
   for (let i = 0; i < slots.length; i++) candCount += cands[slots[i]!]!.length;
@@ -1316,8 +1284,8 @@ function optimizeSuit(pools: Record<string, OptItem[]>, current: OptAssignment, 
     return own + changeCost * -changeOf(it);
   };
   if (tb) {
-    // scores within 1e-3 count as equal, the exact solver's precision (app/mip.mts TIE_SLACK), or within SCORE_REL of a large one
-    const EPS = optSlack(1e-3, topScore, 0), min = topScore - tb.tolerance;
+    // scores within TIE_SLACK count as equal, the exact solver's precision, or within SCORE_REL of a large one
+    const EPS = slackAt(TIE_SLACK, topScore, 0), min = topScore - tb.tolerance;
     if (opts.tieBreak!.topStart) {
       const ts = fromSerials(opts.tieBreak!.topStart);
       if (lex ? optLexCmp(lexAt(ts), bestVec!) >= 0 : optScoreVector(optTotalsOf(ts, slots, space), space) >= topScore - EPS) tieRef = ts;
@@ -1337,14 +1305,14 @@ function optimizeSuit(pools: Record<string, OptItem[]>, current: OptAssignment, 
     for (let i = 0; i < tieCands.length; i++) {
       const a = optSanitize(tieCands[i]!, slots), tv = optTotalsOf(a, slots, space), sc = optScoreVector(tv, space), c = optTieCost(a, slots, costOf);
       if (!qualifies(tv, sc)) continue;
-      if (c < pickCost - 1e-9 || (c <= pickCost + 1e-9 && sc > pickScore + EPS)) { pick = a; pickScore = sc; pickCost = c; }
+      if (c < pickCost - FLOAT_EPS || (c <= pickCost + FLOAT_EPS && sc > pickScore + EPS)) { pick = a; pickScore = sc; pickCost = c; }
     }
     const cur2: OptAssignment = { ...pick }, totals = optTotalsOf(cur2, slots, space);
     const oneCands = cands["oneHanded"] || [null], twoCands = cands["twoHanded"] || [null];
     for (let pass = 0; pass < maxPasses; pass++) {
-      let bestDrop = 1e-9, moveScore = -Infinity, moveSlot = "", moveItem: OptItem | null = null, movePair: { one: OptItem | null; two: OptItem | null } | null = null;
+      let bestDrop = FLOAT_EPS, moveScore = -Infinity, moveSlot = "", moveItem: OptItem | null = null, movePair: { one: OptItem | null; two: OptItem | null } | null = null;
       const consider2 = function (drop: number, sc: number): boolean {
-        if (drop > bestDrop + 1e-9 || (drop >= bestDrop - 1e-9 && moveScore > -Infinity && sc > moveScore + EPS)) { bestDrop = drop; moveScore = sc; return true; }
+        if (drop > bestDrop + FLOAT_EPS || (drop >= bestDrop - FLOAT_EPS && moveScore > -Infinity && sc > moveScore + EPS)) { bestDrop = drop; moveScore = sc; return true; }
         return false;
       };
       for (let i = 0; i < slots.length; i++) {
@@ -1357,7 +1325,7 @@ function optimizeSuit(pools: Record<string, OptItem[]>, current: OptAssignment, 
           const cand = list[j] as OptItem | null;
           if (cand === have) continue;
           const drop = costOf(have) - costOf(cand);
-          if (drop < bestDrop - 1e-9) continue;
+          if (drop < bestDrop - FLOAT_EPS) continue;
           const vC = optVec(cand, space);
           optAddVec(totals, vC, 1);
           const sc = optScoreVector(totals, space);
@@ -1376,7 +1344,7 @@ function optimizeSuit(pools: Record<string, OptItem[]>, current: OptAssignment, 
             const one = ones[j] as OptItem | null;
             if (one === haveOne && two === haveTwo) continue;
             const drop = costOf(haveOne) + costOf(haveTwo) - costOf(one) - costOf(two);
-            if (drop < bestDrop - 1e-9) continue;
+            if (drop < bestDrop - FLOAT_EPS) continue;
             const v1 = optVec(one, space), v2 = optVec(two, space);
             optAddVec(totals, v1, 1); optAddVec(totals, v2, 1);
             const sc = optScoreVector(totals, space);
@@ -1420,7 +1388,7 @@ function optimizeSuit(pools: Record<string, OptItem[]>, current: OptAssignment, 
     alternatives = [];
     for (let i = 0; i < list.length && alternatives.length < alt.count; i++) {
       const e = list[i]!;
-      if (!lex && e.score < topScore - altTol - optSlack(1e-9, e.score, topScore)) break;   // ranked against the best score, which a tie-break's suit may sit under
+      if (!lex && e.score < topScore - altTol - slackAt(FLOAT_EPS, e.score, topScore)) break;   // ranked against the best score, which a tie-break's suit may sit under
       const k = sigOf(e.best);
       if (seen[k]) continue;
       seen[k] = true;
@@ -1438,7 +1406,7 @@ function optimizeSuit(pools: Record<string, OptItem[]>, current: OptAssignment, 
     if (!it || !optional[s] || s === "oneHanded" || s === "twoHanded" || (cur[s] && cur[s]!.serial === it.serial)) continue;
     const without: OptAssignment = { ...best, [s]: null }, sc = scoreSet(without, profile);
     // strict order: it comes off when no stage is lower without it
-    if ((lex ? optLexCmp(lexAt(without), lexAt(best)) >= 0 : sc >= tied - 1e-9) && (!tieKeeps || tieKeeps(without))) { best = without; tied = sc; }
+    if ((lex ? optLexCmp(lexAt(without), lexAt(best)) >= 0 : sc >= tied - FLOAT_EPS) && (!tieKeeps || tieKeeps(without))) { best = without; tied = sc; }
   }
   bestScore += tied - untrimmed;
   if (tb) {

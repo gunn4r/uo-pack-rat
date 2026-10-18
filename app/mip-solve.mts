@@ -12,6 +12,7 @@
 // owns: `loadHighs`, `openModel`, `solveModel`, `addNoGood`, `closeModel`, `gapFromEvents`
 import type { BuiltMip } from "./mip.mts";
 import { noGoodRow } from "./mip.mts";
+import { TIE_SLACK } from "./solver/scoring.mts";
 
 export interface HighsObjectiveSenseConstants {
   readonly maximize: number;
@@ -185,7 +186,7 @@ export interface SolveResult {
 // mipImprovingSolution / mipLogging callback channels.
 export function solveModel(handle: Handle, { timeLimitS, start, onEvent }: SolveModelOptions = {}): SolveResult {
   const { highs, model } = handle;
-  model.options.set({ time_limit: timeLimitS, mip_rel_gap: 0, mip_abs_gap: 1e-3 });
+  model.options.set({ time_limit: timeLimitS, mip_rel_gap: 0, mip_abs_gap: TIE_SLACK });
   if (start) model.setSolution({ colValue: start });
   let last: SolveEventData | null = null;
   const forward = (kind: "improving" | "log") => (e: HighsCallbackEvent): undefined => {

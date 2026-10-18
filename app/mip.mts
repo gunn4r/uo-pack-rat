@@ -7,10 +7,13 @@
 // owns: `buildSuitMip`, `propertyReach`, `startVector`, `pickedOf`, `noGoodRow`, `HARD_FLOOR_BONUS`, `DEFAULT_SLOTS`, `optionalSlotsFor`, `heldModel`, `tieBreakModel`, `stageObjective`, `tieCosts`, `withHardFloorBonus`, `hardFloorSpread`
 import { GEAR_SLOTS, REQUIRED_SLOTS, RESIST_SKILL_KEY, RESIST_STEP_SLACK, type OptItem, type ResistStep } from "./vault-lib.mts";
 import { stepsFor } from "./swing.mts";
+import { CHANGE_COST, FLOAT_EPS, HARD_FLOOR_BONUS, HARD_FLOOR_BONUS_MAX, SCORE_REL, TIE_SLACK, changeCost, hardBonusOf, scoringProfile, slackAt } from "./solver/scoring.mts";
 
-export const HARD_FLOOR_BONUS = 1e7;   // == scripts/optimizer-core.mts HARD_FLOOR_BONUS
-// Every gear slot (issue #202); all but the five armor pieces may be left empty. The core keeps its own copy (it
-// imports nothing), and app/solver.test.mts checks the two agree.
+// The scoring constants this module and the core share live in app/solver/scoring.mts; they are re-exported here for the
+// modules that read them from the MIP.
+export { CHANGE_COST, HARD_FLOOR_BONUS, HARD_FLOOR_BONUS_MAX, SCORE_REL, TIE_SLACK, hardBonusOf, slackAt };
+// Every gear slot (issue #202); all but the five armor pieces may be left empty. The core keeps its own list, and
+// app/solver.test.mts checks the two agree.
 export const DEFAULT_SLOTS: string[] = GEAR_SLOTS;
 export const DEFAULT_OPTIONAL_SLOTS: string[] = GEAR_SLOTS.filter((s) => !REQUIRED_SLOTS.includes(s));
 // A search's optional slots: the defaults less `keep` (the locked or pinned slots) and less a slot, the hands aside,
@@ -211,10 +214,8 @@ export function poolStepsFor(profile: Parameters<typeof stepsFor>[0], pools: Par
 // table (the optimize route passes the one the worker will score with). null with no hard floor.
 export interface HardFloorSpread { soft: number; weights: Record<string, number> }
 export function hardFloorSpread(profile: MipProfile, pools: Partial<Record<string, OptItem[]>>, current: Partial<Record<string, OptItem | null | undefined>>, optionalSlots: string[] = DEFAULT_OPTIONAL_SLOTS, slots: string[] = DEFAULT_SLOTS): HardFloorSpread | null {
-  const W = profile.weights || {}, CAPS = profile.caps || {}, FL = profile.floors || {}, MINS = profile.mins || {}, hard = new Set(profile.hardFloors || []);
-  const floorOf = (d: string): number => (MINS[d] != null && (FL[d] || 0) <= MINS[d]! ? 0 : FL[d] || 0);
-  if (!Object.keys(FL).some((d) => hard.has(d) && floorOf(d) > 0)) return null;
-  const FB = typeof profile.floorBonus === "number" ? profile.floorBonus : 1000, PARTIAL = typeof profile.floorPartial === "number" ? profile.floorPartial : 0.5;
+  const sp = scoringProfile(profile), { weights: W, caps: CAPS, floors: FL, mins: MINS, hard, floorOf, floorBonus: FB, floorPartial: PARTIAL } = sp;
+  if (!sp.hardCount) return null;
   const weighted = Object.keys(W).filter((d) => W[d]), reach = propertyReach(pools, current, optionalSlots, slots, weighted), weights: Record<string, number> = {};
   for (const d of weighted) {
     const cap = CAPS[d] ?? INF, mins = [MINS[d], ...(profile.resistSteps || []).map((st) => st.mins[d])].filter((m): m is number => typeof m === "number");
@@ -231,7 +232,6 @@ export function hardFloorBonusFor(profile: MipProfile, pools: Partial<Record<str
 // The largest bonus a profile carries: past about 5e9 the exact solver's score comparisons, absolute to 1e-6, start to
 // read float rounding as a better suit. A profile needing more builds at this one, and the optimize route says so
 // (diagnostics.mts requirementScaleDiagnostics).
-export const HARD_FLOOR_BONUS_MAX = 1e9;
 // The profile with its hard-floor bonus for this pool, capped at HARD_FLOOR_BONUS_MAX: the field only when it is above
 // HARD_FLOOR_BONUS (a caller's own value is replaced), so a usual profile builds, scores and keys exactly as before it
 // existed. `ssiSteps` is the step table the solvers will score SSI with, counted in the bound but not put on the profile.
@@ -240,18 +240,13 @@ export function withHardFloorBonus<P extends MipProfile>(profile: P, pools: Part
   const bonus = Math.min(HARD_FLOOR_BONUS_MAX, hardFloorBonusFor(ssiSteps ? { ...rest, ssiSteps } : rest, pools, current, optionalSlots, slots));
   return (bonus > HARD_FLOOR_BONUS ? { ...rest, hardFloorBonus: bonus } : rest) as P;
 }
-// The bonus a profile carries (== scripts/optimizer-core.mts optHardBonus).
-export const hardBonusOf = (profile: MipProfile): number => (typeof profile.hardFloorBonus === "number" && profile.hardFloorBonus > HARD_FLOOR_BONUS ? profile.hardFloorBonus : HARD_FLOOR_BONUS);
 
 export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots = DEFAULT_OPTIONAL_SLOTS, slots = DEFAULT_SLOTS, hardAsSoft = false, parts: withParts = false }: BuildSuitMipOptions): BuiltMip {
   // with `parts`, every objective term is also put in the part it scores for (its property's weight, or the floors)
   const parts: ObjectiveParts | null = withParts ? { weights: {}, floors: { cols: [], costs: [], offset: 0 }, softPartial: { cols: [], costs: [], offset: 0 } } : null;
   let part: ObjectivePart | null = null;
   const optional = new Set(optionalSlots);
-  const W = profile.weights || {}, CAPS = profile.caps || {}, FL = profile.floors || {}, MINS = profile.mins || {};
-  const hard = new Set(profile.hardFloors || []);
-  const FB = typeof profile.floorBonus === "number" ? profile.floorBonus : 1000;
-  const PARTIAL = typeof profile.floorPartial === "number" ? profile.floorPartial : 0.5, HB = hardBonusOf(profile);
+  const { weights: W, caps: CAPS, floors: FL, mins: MINS, hard, floorOf, bonusOf, partialOf, hardBonus: HB } = scoringProfile(profile);
   // SSI by step (scripts/optimizer-core.mts optScoreVector): with a positive SSI weight, the SSI term is w × the best credit among the points the suit reaches, in place of w·min(t, cap). It needs the Stamina pool's total too.
   const steps = Array.isArray(profile.ssiSteps) && (W.ssi || 0) > 0 ? profile.ssiSteps : null;
   const dims = [...new Set([...Object.keys(W), ...Object.keys(CAPS), ...Object.keys(FL), ...(steps ? ["ssi", "stamPool"] : [])])];
@@ -307,10 +302,6 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
     forced = true;
     for (const { col, at } of resistStepCols) addRow([...rsXs, [col, -(rsReach.max - (at - RESIST_STEP_SLACK))]], -INF, at - RESIST_STEP_SLACK);
   };
-  // a floor at or under the property's min is met by every suit: dropped, as the core drops it
-  const floorOf = (d: string): number => (MINS[d] != null && (FL[d] || 0) <= MINS[d]! ? 0 : FL[d] || 0);
-  // every hard floor counts in the share, one each suit meets included, as in the core
-  const nHard = dims.filter((d) => hard.has(d) && floorOf(d) > 0).length;
   for (const d of dims) {
     part = parts ? (parts.weights[d] = { cols: [], costs: [], offset: 0 }) : null;
     const w = W[d] || 0, cap = CAPS[d], m = MINS[d], f = floorOf(d);
@@ -411,7 +402,7 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
     if (unreachable && isHard) unreachableFloors.push(d);
     // soft floor (or an unreachable / hardAsSoft hard floor): bonus·y + s with t ≥ f·y, s ≤ k·t, s ≤ bonus·partial·(1 − y)
     // a hard floor's partial credit is shared among the hard floors, as the core's (issue #204)
-    const bonus = isHard ? HB : FB, sMax = bonus * PARTIAL / (isHard ? nHard : 1), k = sMax / f;
+    const bonus = bonusOf(d), sMax = partialOf(d), k = sMax / f;
     const y = unreachable ? null : addCol({ name: `y_${d}`, kind: "y", dim: d }, bonus, 0, 1, true);
     // a soft floor's partial credit is a part of its own, which strict order's requirements stage leaves out (scripts/optimizer-core.mts optStrictSpaces)
     if (parts && !isHard) part = parts.softPartial;
@@ -457,15 +448,8 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
 // hardAsSoft y (worth 1e7: a suit meeting one more hard floor would outscore the best), but keeps an unfixed soft floor's
 // y: a suit that meets one more soft floor gains its bonus, and without it the row would cut that suit. When no column
 // is left (a floors-only build) there is no row. The suit itself is feasible here, so it is the stage's MIP start.
-// TIE_SLACK is the solvers' score precision (HiGHS's mip_abs_gap): scores closer than this are equal suits, in this row,
-// in the core's tie-break (scripts/optimizer-core.mts keeps its own copy) and in the exact solver's guards. With 1e-6
-// HiGHS's presolve called a row the suit meets exactly infeasible.
-export const TIE_SLACK = 1e-3;
-// Two scores closer than `base` count as equal, or than SCORE_REL of the largest when that is more (issue #316): a score
-// near 1e10 carries float rounding of about 1e-5 from summing in another order, above every absolute slack. Every score
-// comparison in app/exact-solver.mts and every score row here goes through it. == scripts/optimizer-core.mts optSlack.
-export const SCORE_REL = 1e-12;
-export const slackAt = (base: number, ...scores: number[]): number => Math.max(base, SCORE_REL * Math.max(0, ...scores.map(Math.abs)));
+// TIE_SLACK (app/solver/scoring.mts) is the solvers' score precision, HiGHS's mip_abs_gap: with 1e-6 HiGHS's presolve called
+// a row the suit meets exactly infeasible.
 export function tieBreakModel(built: BuiltMip, start: ArrayLike<number>, tolerance: number, costs: number[] = tieCosts(built)): BuiltMip {
   return heldModel(built, start, [built.model.colCost], costs, "minimize", { fixMet: true, tolerance });
 }
@@ -498,14 +482,11 @@ export function heldModel(built: BuiltMip, start: ArrayLike<number>, held: Reado
   const numRows = rowLower.length;
   return { ...built, model: { ...m, sense, offset: 0, colCost: objective, colLower, numRows, rowLower, rowUpper, matrix: { format: "csr", numRows, numCols: m.numCols, starts, indices, values } } };
 }
-// What one changed slot costs at least with the tie-break's fewest changes (== scripts/optimizer-core.mts CHANGE_COST).
-export const CHANGE_COST = 1000;
-// The cost of one changed slot for this model's pieces (== scripts/optimizer-core.mts optChangeCost): above what the
-// nineteen slots' tie costs can sum to, so fewer changes always come first whatever the rarity ladder's length.
+// The cost of one changed slot for this model's pieces (app/solver/scoring.mts changeCost, from their largest tie cost).
 export function changeCostFor(built: BuiltMip): number {
   let maxTie = 0;
   for (const c of built.cols) if (c.kind === "x") maxTie = Math.max(maxTie, c.item!.tieCost || 0);
-  return Math.max(CHANGE_COST, 19 * maxTie + 1);
+  return changeCost(maxTie);
 }
 // A piece's value in strict order's fewest-changes stage against the worn suit (== the core's optChangeOf): 1 for the worn
 // piece, -1 in a slot nobody wears, 0 for another piece; a suit's sum is its worn slots less its changes.
@@ -582,7 +563,7 @@ export function startVector(built: BuiltMip, assignment: Partial<Record<string, 
   // the best-paying point the start suit reaches
   let bestStep: StepCol | null = null;
   for (const p of stepCols) {
-    if (totals.ssi! >= p.ssi - 1e-9 && totals.stamPool! >= p.stam - 1e-9 && (!bestStep || model.colCost[p.col]! > model.colCost[bestStep.col]!)) bestStep = p;
+    if (totals.ssi! >= p.ssi - FLOAT_EPS && totals.stamPool! >= p.stam - FLOAT_EPS && (!bestStep || model.colCost[p.col]! > model.colCost[bestStep.col]!)) bestStep = p;
   }
   if (bestStep) vec[bestStep.col] = 1;
   return vec;

@@ -9,6 +9,7 @@
 // - `GET /unravel.mjs` (item-query.mts's import: what unraveling a piece gives, which the Unravel view reads too, same reason)
 // - `GET /scan-schema.mjs` (vault-lib.mts imports it for parseStamp, so it must be servable to the browser the same way)
 // - `GET /schema/validate.mjs` (scan-schema.mts's own import, same reason)
+// - `GET /solver/scoring.mjs` (the solvers' shared scoring constants, which swing.mts, vault-lib.mts and build-spec.mts import, same reason)
 // - `GET /organize-config.mjs` (the rule editor's import, same reason)
 // - `GET /buffs.mjs` (the Suit Builder's Manual buffs, same reason)
 // - `GET /evaluate.mjs` (one suit evaluation for Manual's totals and Automatic's buff picker, the one `POST /api/evaluate` and the MCP tools use)
@@ -64,6 +65,8 @@ export function routes(_ctx: ServerContext): Route[] {
     { method: "GET", path: "/profile-edits.mjs", handle: (_req, res) => send(res, 200, readFileSync(join(WEB, "profile-edits.mjs"), "utf8"), "text/javascript") },
     // The Suit Builder's swing line and step hints use the solvers' own swing formula (app/swing.mts).
     { method: "GET", path: "/swing.mjs", handle: (_req, res) => send(res, 200, readFileSync(join(WEB, "swing.mjs"), "utf8"), "text/javascript") },
+    // swing.mjs, vault-lib.mjs and build-spec.mjs import the solvers' shared scoring constants (app/solver/scoring.mts).
+    { method: "GET", path: "/solver/scoring.mjs", handle: (_req, res) => send(res, 200, readFileSync(join(WEB, "solver", "scoring.mjs"), "utf8"), "text/javascript") },
     { method: "GET", path: "/house-areas.mjs", handle: (_req, res) => send(res, 200, readFileSync(join(WEB, "house-areas.mjs"), "utf8"), "text/javascript") },
     { method: "GET", path: "/guards.mjs", handle: (_req, res) => send(res, 200, readFileSync(join(WEB, "guards.mjs"), "utf8"), "text/javascript") },
     { method: "GET", path: "/data-dir-notice.mjs", handle: (_req, res) => send(res, 200, readFileSync(join(WEB, "data-dir-notice.mjs"), "utf8"), "text/javascript") },
