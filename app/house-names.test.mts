@@ -6,7 +6,8 @@ import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { checkHouseEntry, isHouseId, readHouseMap, saveHouseEntry, emptyHouseMap, MAX_HOUSES, MAX_HOUSE_MAP_BYTES, MAX_AREAS, MAX_RECTS, AREA_COLORS, AREA_MARGIN, MAX_ENTRY_BYTES, type HouseMapDoc, type HouseArea } from "./house-names.mts";
+import { checkHouseEntry, isHouseId, emptyHouseMap, MAX_HOUSES, MAX_HOUSE_MAP_BYTES, MAX_AREAS, MAX_RECTS, AREA_COLORS, AREA_MARGIN, MAX_ENTRY_BYTES, type HouseMapDoc, type HouseArea } from "./house-names.mts";
+import { readHouseMap, saveHouseEntry } from "./store/house-map.mts";
 
 test("[fast] house names: a name is trimmed, 1 to 60 characters, with no control characters; an empty one removes the entry", () => {
   assert.deepEqual(checkHouseEntry({ name: "  Main house  " }), { ok: true, entry: { name: "Main house" } });
