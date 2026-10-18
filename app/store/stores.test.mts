@@ -1,6 +1,6 @@
 // stores.test.mts — each store in `app/store/` on its own: size caps, bad files and the exact bytes written.
 //
-// each store in `app/store/` on its own: its size cap at the cap and one byte past it (blacklist and house claims 256 KiB, organize-state 4 MB, item-kinds and organize their own limits), what a missing, damaged or partly bad file reads as (moved aside, empty, salvaged or skipped) with the exact warning, log or problem text, and the exact bytes each write leaves (indent, trailing newline, a run compact with none); a file a newer Pack Rat made (organize, item-kinds, profiles) read as far as it can be, marked read-only and never written over; `update(fn)` on the blacklist, house claims and organize-state writing the same bytes as `write` and nothing when `fn` answers undefined. Scans' tombstone write: compact, no newline, replacing one of the same name, and an invalid one refused. The house claims (issue #299): which claims a house's bounds fall under, and the claims made at the first start from the houses named or given areas. All `[fast]`; they pin the policies the routes rely on while the server is split.
+// each store in `app/store/` on its own: its size cap at the cap and one byte past it (blacklist and house claims 256 KiB, organize-state 4 MB, item-kinds and organize their own limits), what a missing, damaged or partly bad file reads as (moved aside, empty, salvaged or skipped) with the exact warning, log or problem text, and the exact bytes each write leaves (indent, trailing newline, a run compact with none); a file a newer Pack Rat made (organize, item-kinds, profiles) read as far as it can be, marked read-only and never written over; `update(fn)` on the blacklist, house claims and organize-state writing the same bytes as `write` and nothing when `fn` answers undefined. The bridge queue: each command appended as its own line. Scans' tombstone write: compact, no newline, replacing one of the same name, and an invalid one refused. The house claims (issue #299): which claims a house's bounds fall under, and the claims made at the first start from the houses named or given areas. All `[fast]`; they pin the policies the routes rely on while the server is split.
 import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -17,6 +17,8 @@ import { createOrganizeStore } from "./organize.mts";
 import { createOrganizeStateStore } from "./organize-state.mts";
 import { createRunsStore } from "./runs.mts";
 import { createScansStore } from "./scans.mts";
+import { appendCommand } from "./bridge.mts";
+import { resolveConfig } from "../config.mts";
 import { emptyKindOverrides, kindsText, MAX_KINDS_BYTES } from "../item-kinds.mts";
 import { emptyOrganizeConfig, MAX_SETUP_BYTES } from "../organize-config.mts";
 import { emptyOrganizeState } from "../organize-state.mts";
@@ -377,6 +379,14 @@ test("[fast] stores: scans writes a tombstone compact with no newline into a fol
   assert.deepEqual(store.files().map((s) => s.file), ["_forget-1234.json", "_forget-char-41.json"]);
   assert.throws(() => store.writeTombstone("_forget-0.json", { roots: [{ ...roots[0]!, kind: "shelf" }] }), /refusing to write an invalid tombstone: /);
   assert.ok(!existsSync(join(scans, "_forget-0.json")));
+});
+
+test("[fast] stores: the bridge queue gets each command appended as its own line, in a folder made for the adapter", () => {
+  const paths = resolveConfig(["--data", dir()], {}).paths, queue = paths.bridgeQueueFor("tazuo");
+  appendCommand(paths, "tazuo", "{\"id\":\"a\"}");
+  appendCommand(paths, "tazuo", "{\"id\":\"b\"}");
+  assert.equal(readFileSync(queue, "utf8"), "{\"id\":\"a\"}\n{\"id\":\"b\"}\n");
+  assert.ok(!existsSync(paths.bridgeQueueFor("razor")), "only the adapter named");
 });
 
 test("[fast] stores: a file made by a newer Pack Rat is read as far as this build understands it, marked read-only, and never written over (organize, item-kinds, profiles)", async (t) => {
