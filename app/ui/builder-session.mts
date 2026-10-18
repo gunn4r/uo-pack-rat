@@ -1,6 +1,6 @@
-// ui/builder-session.mts — the Suit Builder's one session: the state its six modules share (builder.mts's panel and
-// job, builder-header.mts's sentence bar, builder-start.mts's first-visit view, builder-result.mts's result, builder-manual.mts's
-// Manual mode, runs.mts's saved runs) and the commands they call on each other. The six never import each other: each reads and sets the session here, and registers the commands it
+// ui/builder-session.mts — the Suit Builder's one session: the state its seven modules share (builder.mts's panel and
+// job, builder-header.mts's sentence bar, builder-templates.mts's templates, builder-start.mts's first-visit view, builder-result.mts's result, builder-manual.mts's
+// Manual mode, runs.mts's saved runs) and the commands they call on each other. The seven never import each other: each reads and sets the session here, and registers the commands it
 // performs for the others with provide(). Today a session is one character, one result and one job.
 //
 // map: builder
@@ -92,13 +92,16 @@ export interface BuilderCommands {
   buffPlan(name: string, race: string | null | undefined, buffs: RunBuffs | undefined): BuffPlan;
   loadRunBuffs(b: RunBuffs | undefined): void;
   tuneWeight(key: string | null, from: HTMLElement): void;
-  pickTemplate(ref: string, again?: boolean): void;
   selectCharacter(name: string, open?: string | true): void;
   build(): void;
   openSettingsTab(tab: string): void;
   buildState(): BuildState;
   unsavedChanges(): SettingsChange[];
   openChange(c: SettingsChange, from: HTMLElement): void;   // a What changed row's setting, in the drawer
+  updateTemplateBadge(): void;   // the build picker, the chip and the footer after an edit
+  saveProfile(said?: string): void;   // the panel's settings as the character's profile; `said` replaces the toast
+  // builder-templates.mts: the Manage templates drawer, and a template picked as the starting point
+  pickTemplate(ref: string, again?: boolean): void;
   saveTemplateAs(): void;
   openTemplatesDrawer(from: HTMLElement): void;
   // builder-header.mts: the sentence bar
@@ -137,6 +140,6 @@ export interface BuilderCommands {
   startOver(): void;
   lastRunDays(): Promise<Record<string, string> | null>;   // each character's latest run, as "today, 10:40 PM"; null when unknown
 }
-// Filled by each module as it loads (app.mts imports all six), so every command is there before the page calls one.
+// Filled by each module as it loads (app.mts imports all seven), so every command is there before the page calls one.
 export const commands = {} as BuilderCommands;
 export function provide(c: Partial<BuilderCommands>): void { Object.assign(commands, c); }

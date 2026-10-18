@@ -14,6 +14,7 @@ import { applyPanelPrefs, initBuilder, closeSettings } from "./builder.mts";
 import { applyBuilderPrefs, initManual } from "./builder-manual.mts";
 import { initPickers } from "./builder-header.mts";   // also provides the sentence bar's commands to ui/builder-session.mts
 import { applyResultPrefs } from "./builder-result.mts";   // also provides the result commands to ui/builder-session.mts
+import "./builder-templates.mts";   // provides the templates' commands to ui/builder-session.mts
 import "./builder-start.mts";   // provides the first-visit view's commands to ui/builder-session.mts
 import { connectEvents } from "./events.mts";
 import { openWizard } from "./wizard.mts";
