@@ -17,7 +17,7 @@ const { adapter: ADAPTER_SCHEMA, ...STATUS_FIELDS } = STATUS_SCHEMA.properties!;
 const STATUS_WITHOUT_ADAPTER: ValidatorSchema = { ...STATUS_SCHEMA, properties: STATUS_FIELDS };
 
 // Online: the heartbeat is under 8 s old. Both bridges rewrite status.json at least every 2 s, even during a long
-// highlight or walk. A heartbeat from the future (clocks apart) reads as online, as it always has. The page queues
+// highlight or walk. A heartbeat from the future (clocks apart) reads as online, as it always has, on purpose, unlike the install guard: app/fixtures/contract-cases/heartbeat.json pins both and says why. The page queues
 // commands only while the bridge is online, and only an online bridge's own report of its features counts.
 export const ONLINE_S = 8;
 

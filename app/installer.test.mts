@@ -14,6 +14,7 @@ import {
   listAdapters, candidateClientRoots, validateScriptsDir, installedVersion, installScripts,
   repoFromPackage, checkForUpdates, checkScriptsDataDir, heartbeatAlive, pasteScanner, RUNNING_MESSAGE_OTHER,
 } from "./installer.mts";
+import { readBridgeStatus } from "./bridge-status.mts";
 import type { AdapterManifestV1 } from "./schema/types.d.mts";
 import { validate, type ValidatorSchema } from "./schema/validate.mts";
 
@@ -535,13 +536,15 @@ test("[fast] installScripts proceeds when status.json says stopped: true", () =>
 });
 
 // The cases app/fixtures/contract-cases/heartbeat.json shares with adapters/test_panel.py, which checks the panel's real heartbeats have their shape.
-test("[fast] heartbeatAlive: every shared heartbeat case counts as running or not as it says, and the schema takes the shapes it says", () => {
-  const cases = JSON.parse(readFileSync(join(HERE, "fixtures", "contract-cases", "heartbeat.json"), "utf8")) as { now: string; cases: { why: string; doc: unknown; running: boolean; schema: boolean }[] };
+test("[fast] heartbeatAlive: every shared heartbeat case counts as running or not as it says, readBridgeStatus calls it online or not as it says, and the schema takes the shapes it says", () => {
+  const cases = JSON.parse(readFileSync(join(HERE, "fixtures", "contract-cases", "heartbeat.json"), "utf8")) as { now: string; cases: { why: string; doc: object; running: boolean; online: boolean; schema: boolean }[] };
   const schema = JSON.parse(readFileSync(join(HERE, "schema", "heartbeat.v1.schema.json"), "utf8")) as ValidatorSchema;
   const f = join(tmp("qm-hb-cases-"), "panel.json"), now = Date.parse(cases.now);
   for (const c of cases.cases) {
     writeFileSync(f, JSON.stringify(c.doc));
     assert.equal(heartbeatAlive(f, now), c.running, c.why);
+    writeFileSync(f, JSON.stringify({ character: "", current: null, results: {}, counts: { done: 0, failed: 0 }, ...c.doc }));
+    assert.equal(readBridgeStatus(f, now).online, c.online, `online: ${c.why}`);
     assert.equal(validate(schema, c.doc).ok, c.schema, `schema: ${c.why}`);
   }
 });
