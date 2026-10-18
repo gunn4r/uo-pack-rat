@@ -9,7 +9,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Page } from "playwright";
-import { openFacet, setRows, pickCharacter, characterNames } from "./electron-window.mts";
+import { openFacet, setRows, pickCharacter, characterNames, animationsDone } from "./electron-window.mts";
 import { ROOT, launchApp, skipWithoutElectron, type App } from "./electron-app.mts";
 import { probeContrast, failures, describeFailures, type ContrastRow } from "./contrast-probe.mts";
 
@@ -22,7 +22,7 @@ interface Scene { name: string; enter: (page: Page) => Promise<void>; leave?: (p
 async function route(page: Page, hash: string, ready: string): Promise<void> {
   await page.evaluate((h) => { location.hash = h; }, hash);
   await page.waitForSelector(ready, { timeout: 15_000 });
-  await page.waitForTimeout(250);
+  await animationsDone(page);
 }
 // The Suit Builder's Build Settings drawer (issue #272) open on one of its tabs.
 async function settingsTab(page: Page, tab: string): Promise<void> {
@@ -35,7 +35,7 @@ function openWizardAt(steps: number): (page: Page) => Promise<void> {
     await page.evaluate(async () => { await (await import("/ui/wizard.mjs" as string)).openWizard(); });
     await page.waitForSelector("#wizard[open] #wiz-primary");
     for (let i = 0; i < steps; i++) await page.click("#wiz-primary");
-    await page.waitForTimeout(150);
+    await animationsDone(page);
   };
 }
 async function closeWizard(page: Page): Promise<void> { await page.keyboard.press("Escape"); await page.waitForSelector("#wizard", { state: "hidden" }); }
@@ -62,7 +62,7 @@ const SCENES: Scene[] = [
   { name: "inventory row actions", enter: async (p) => {
     await route(p, "#/inventory", "#inv-table tbody tr.item");
     await p.locator("#inv-table tbody tr.item").nth(2).hover();
-    await p.waitForTimeout(100);
+    await animationsDone(p);
   }, leave: (p) => p.mouse.move(0, 0) },
   { name: "inventory filters and strip", enter: async (p) => {
     await openFacet(p, "rarity", "Rarity");
@@ -388,7 +388,7 @@ test("[slow] every text, control edge, icon and status dot on the real page pass
           // reduced motion: no colour transition is half-way when the probe reads the computed colours
           await page.emulateMedia({ colorScheme: mode, reducedMotion: "reduce" });
           await page.waitForFunction(([f, m]) => document.documentElement.dataset.theme === f && document.documentElement.dataset.mode === m, [family, mode], { timeout: 5_000 });
-          await page.waitForTimeout(80);
+          await animationsDone(page);
           const got = await page.evaluate(probeContrast);
           assert.ok(got.length > 10, `${scene.name} (${family} ${mode}) measured only ${got.length} pairs — did the scene render?`);
           for (const r of got) rows.push({ ...r, where: `${scene.name} · ${family} ${mode}` });

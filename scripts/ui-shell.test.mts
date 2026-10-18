@@ -71,7 +71,7 @@ test("[slow] the shell: screens, routes, drawers, the bridge popover and Setting
     await page.waitForSelector("dialog.dialog[open]");
     await page.keyboard.press(process.platform === "darwin" ? "Meta+i" : "Control+i");
     await page.evaluate(() => { const dt = new DataTransfer(); dt.items.add(new File(["{}"], "scan.json", { type: "application/json" })); window.dispatchEvent(new DragEvent("drop", { dataTransfer: dt, cancelable: true })); });
-    await page.waitForTimeout(200);
+    await page.waitForTimeout(200);   // sleep: proves no drawer opens under the dialog, which no event can show
     assert.deepEqual(await drawerState(page, "import-drawer"), [true, true], "no Import drawer under the dialog");
     assert.notEqual(await page.evaluate(() => location.hash), "#/import");
     await page.keyboard.press("Escape");

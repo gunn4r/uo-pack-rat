@@ -64,9 +64,10 @@ test("[slow] refresh, Clear all, the virtual table and Forget keep the page's st
     // Wait for the filtered count: "160 of 160" is the moment before the filter applies.
     await waitCount(page, /^(?!160 of)\d+ of 160 stacks/);
     const filtered = await countText(page);
-    // The page's own module (same URL as its <script>, so the same instance).
+    // The page's own module (same URL as its <script>, so the same instance). The refresh fetches the rows again: wait for that.
+    const refetched = page.waitForResponse((r) => new URL(r.url()).pathname === "/api/items");
     await page.evaluate(async (url) => { await (await import(url)).reload(); }, "/ui/inventory-data.mjs");
-    await page.waitForTimeout(500);
+    await refetched;
     await waitCount(page, /stacks/);
     assert.equal(await page.locator("#f-slot").innerText(), "Slot: Bracelet", "the Slot chip still reads Bracelet after a refresh");
     assert.equal(await page.locator("#f-slot.set").count(), 1);
@@ -190,7 +191,7 @@ test("[slow] the item peek opens from a row, follows the arrow keys and closes w
     await page.waitForFunction(() => document.querySelector<HTMLElement>("#tip")?.style.display === "none");
     await rows.nth(2).locator(".inv-name").hover();
     await rows.nth(2).getByRole("button", { name: "More actions" }).hover();
-    await page.waitForTimeout(700);
+    await page.waitForTimeout(700);   // sleep: past the tooltip's 400 ms delay, proving none shows
     assert.equal(await page.evaluate(() => document.querySelector<HTMLElement>("#tip")!.style.display), "none", "no item tooltip over the action buttons");
     await rows.nth(2).locator(".inv-name").hover();
     await page.waitForSelector("#tip[style*='block']", { timeout: 5_000 });
@@ -450,8 +451,7 @@ test("[slow] the Inventory column choice survives a restart of the desktop app",
     try {
       await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
       assert.notEqual(new URL(page.url()).origin, origin, "a new launch is a new origin");
-      await page.waitForTimeout(500);
-      await page.click("#inv-settings");
+      await page.click("#inv-settings");   // the page applies the saved columns before it draws the first row
       assert.equal(await page.locator(`#inv-cols input[data-col="${chip}"]`).isChecked(), true, `the ${chip} column is still chosen after a restart`);
     } finally {
       await close({ keepData: true });
@@ -612,20 +612,20 @@ test("[slow] a saved run or run list that lands after a character switch is not 
     await page.waitForSelector("#b-runs .run-main", { state: "attached", timeout: 10_000 });
 
     // Open the saved run with its fetch held back, and switch character while it is in flight.
-    await page.route("**/api/runs/*", async (route) => { await new Promise((r) => setTimeout(r, 1500)); await route.continue(); });
+    await page.route("**/api/runs/*", async (route) => { await new Promise((r) => setTimeout(r, 1500)); await route.continue(); });   // sleep: the run's fetch held back on purpose
     await page.click("#b-runs-open");
     await page.click("#b-runs .run-card button[aria-haspopup=menu]");
     await page.getByRole("menuitem", { name: "Open", exact: true }).click();
     await pickCharacter(page, other);
-    await page.waitForTimeout(3000);
+    await page.waitForTimeout(3000);   // sleep: past the held-back fetch, proving its late answer is not drawn
     assert.doesNotMatch(await page.locator("#b-result").innerText(), /Best suit for/, "the run opened for one character is not drawn under the other");
     await page.unroute("**/api/runs/*");
 
     // A slow run list for the old character must not fill the drawer under the new one.
-    await page.route(`**/api/runs?character=${encodeURIComponent(builtFor)}`, async (route) => { await new Promise((r) => setTimeout(r, 1500)); await route.continue(); });
+    await page.route(`**/api/runs?character=${encodeURIComponent(builtFor)}`, async (route) => { await new Promise((r) => setTimeout(r, 1500)); await route.continue(); });   // sleep: the list's fetch held back on purpose
     await pickCharacter(page, builtFor);
     await pickCharacter(page, other);
-    await page.waitForTimeout(3000);
+    await page.waitForTimeout(3000);   // sleep: past the held-back fetch, proving its late answer is not drawn
     assert.equal(await page.locator("#b-runs .run-main").count(), 0, `${other} has no saved runs; ${builtFor}'s late list must not show under ${other}`);
 
     assert.deepEqual(errors, []);

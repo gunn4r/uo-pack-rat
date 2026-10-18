@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fitWindow, settle, sideways as sidewaysOf, type RealSize } from "./electron-window.mts";
+import { fitWindow, settle, sideways as sidewaysOf, type RealSize, animationsDone, steady } from "./electron-window.mts";
 import { fakeBridge, launchApp, skipWithoutElectron, until, type App, type QueuedCommand } from "./electron-app.mts";
 import { probeContrast, failures, describeFailures, type ContrastRow } from "./contrast-probe.mts";
 import { houseScan } from "../app/organize-fixture.mts";
@@ -184,9 +184,9 @@ test("[slow] House map: hover shows a stack's callout, a click selects it and fi
   const { page, errors, close } = await launch(dir);
   try {
     await go(page, "#/map", "#map-svg .map-stack");
-    await page.waitForTimeout(500);   // let the first layout settle before hovering
     const front = letter(vaultModel, 3005, 1005), inner = letter(vaultModel, 3002, 1002);
     const stack = (l: string) => page.locator(`#map-svg [data-stack="${l}"]`);
+    await steady(() => stack(front).boundingBox());   // the first layout settled before hovering
     await stack(front).hover();
     await page.waitForSelector("#map-callout:not([hidden])");
     assert.equal(await page.locator("#map-callout .map-callout-row").count(), 5);
@@ -507,7 +507,7 @@ test("[slow] House map: ✎ renames a house (Esc cancels; Enter saves, and the h
     await page.waitForSelector("#map-panel #map-name:not([data-old])", { timeout: 15_000 });
     assert.equal(await page.locator("#map-name").inputValue(), "Draft");
     assert.equal(await focused(), "map-name");
-    await new Promise((r) => setTimeout(r, 300));
+    await new Promise((r) => setTimeout(r, 300));   // sleep: proves the replaced field's blur saves nothing, which no event can show
     assert.equal(readFileSync(join(dir, "house-map.json"), "utf8").includes("Draft"), false, "the replaced field's blur saved nothing");
     await page.locator("#map-name").fill("  Main house ");
     await page.keyboard.press("Enter");
@@ -868,7 +868,7 @@ async function measure(page: Page, name: string, shows: RegExp, rows: Array<Cont
     for (const mode of ["light", "dark"] as const) {
       await page.emulateMedia({ colorScheme: mode, reducedMotion: "reduce" });
       await page.waitForFunction(([f, m]) => document.documentElement.dataset.theme === f && document.documentElement.dataset.mode === m, [family, mode], { timeout: 5_000 });
-      await page.waitForTimeout(80);
+      await animationsDone(page);
       const got = await page.evaluate(probeContrast);
       assert.ok(got.length > 10, `${name} (${family} ${mode}) measured only ${got.length} pairs — did the scene render?`);
       assert.ok(got.some((r) => shows.test(r.text)), `${name} (${family} ${mode}) measured no text matching ${shows}`);
@@ -1022,7 +1022,7 @@ test("[slow] House map: every text, control edge and icon passes contrast on the
 
 // Where the drawer sits for the window's width: its own column right of the panel from 1100 px (the levels pane folded away below 1800, there from 1800), else after the panel in the one column.
 async function drawerLayout(page: Page, width: number, mapBefore: number): Promise<void> {
-  await page.waitForTimeout(400);   // the columns' width transition
+  await animationsDone(page);   // the columns' width transition
   const box = async (sel: string) => (await page.locator(sel).boundingBox())!;
   const [panel, drawer, map] = [await box("#map-panel"), await box("#map-drawer"), await box("#map-stage")];
   const side = await page.locator("#tab-map .map-side").evaluate((e) => e.getBoundingClientRect().width);
@@ -1087,7 +1087,7 @@ test("[slow] House map: Show items opens the contents drawer as a column of its 
     assert.equal(await page.evaluate(() => document.activeElement?.closest("li[data-chest]")?.getAttribute("data-chest")), String(TOP));
     assert.equal(await page.evaluate(() => (document.activeElement as HTMLElement).dataset.act), "items");
     assert.equal(await page.locator("#map-panel li.open").count(), 0);
-    await page.waitForTimeout(400);
+    await animationsDone(page);
     assert.ok(await page.locator("#tab-map .map-side").evaluate((e) => e.getBoundingClientRect().width) > 270, "the 280 px levels pane is back");
     // another stack swaps the drawer to that stack's top chest; ✕ closes it with focus on the stack
     await opener.click();
@@ -1112,9 +1112,9 @@ test("[slow] House map: Show items opens the contents drawer as a column of its 
     await page.locator(`#map-drawer-bag-${SPARE}`).click();
     assert.equal(await page.locator(`#map-drawer-bag-${SPARE}`).evaluate((e) => (e.parentElement as HTMLDetailsElement).open), false);
     const list = page.locator("#map-drawer-body");
-    const scrolled = await list.evaluate((e) => { e.scrollTop = 200; return e.scrollTop; });
+    // resolved by the scroll event, after the drawer's own listener has kept the position
+    const scrolled = await list.evaluate((e) => new Promise<number>((done) => { e.addEventListener("scroll", () => done(e.scrollTop), { once: true }); e.scrollTop = 200; }));
     assert.ok(scrolled > 50, `the list scrolls (${scrolled})`);
-    await page.waitForTimeout(150);
     writeVault(dir, true, [{ serial: 0x40500300, name: "Pearl 41", in: SUPPLIES }]);
     await page.evaluate(async () => { await (await import("/ui/inventory-data.mjs" as string)).reload(); });
     await summaryIs("47 items · 1 loose, 44 in 2 containers");
@@ -1520,8 +1520,7 @@ test("[slow] House map Stack plan: a search scrolls to its first matching card, 
     await page.fill("#map-q", "ruby");
     await page.waitForSelector("#map-plan .sp-row.hit");
     await page.waitForFunction((l) => document.querySelector("#map-plan .sp-card.has-hit")?.getAttribute("data-stack") === l, back);
-    await page.waitForTimeout(200);
-    assert.equal(await cardInView(page, back), true, "the first matching card is scrolled into view");
+    assert.equal(await until(() => cardInView(page, back), (v) => v, "the first matching card in view", 5_000), true, "the first matching card is scrolled into view");
     assert.deepEqual((await chestsOf(page, "#map-plan .sp-row.hit")).sort(), [FILLED.at(-1)!, RUBY_FRONT].sort());
     assert.equal(await page.locator("#map-plan .sp-card.has-hit").count(), 2);
     assert.equal(await page.locator("#map-plan .sp-card.faded").count(), 22);
@@ -1538,8 +1537,7 @@ test("[slow] House map Stack plan: a search scrolls to its first matching card, 
     await page.locator(`tr[data-root="${RUBY_FRONT}"] .cont-act button`).click();
     await page.getByRole("menuitem", { name: /Show on map/ }).click();
     await page.waitForSelector(`#map-plan .sp-card.sel[data-stack="${front}"]`);
-    await page.waitForTimeout(200);
-    assert.equal(await cardInView(page, front), true, "Show on map scrolls the plan to the card");
+    assert.equal(await until(() => cardInView(page, front), (v) => v, "the card in view", 5_000), true, "Show on map scrolls the plan to the card");
     assert.deepEqual(errors, []);
   } finally { await close(); }
 });

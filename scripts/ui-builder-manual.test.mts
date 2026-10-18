@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pickCharacter, pickTemplate } from "./electron-window.mts";
-import { skipWithoutElectron, tempDataDir } from "./electron-app.mts";
+import { skipWithoutElectron, tempDataDir, until } from "./electron-app.mts";
 import { built, closeSettings, launch, openBuilder, pressBuild, settings } from "./builder-ui.mts";
 
 // Manual mode (issue #12): a slot opens the picker on its pieces, a picked row fills the slot and moves the totals,
@@ -61,8 +61,7 @@ test("[slow] Manual mode: a picked piece fills its slot, moves the totals and le
     // The suit is saved by a PUT the page does not wait on: poll the file until it holds the ring.
     type Prefs = { builderMode?: string; manualSuit?: Record<string, number>; manualBuffs?: string[] };
     const read = (): Prefs => { try { return JSON.parse(readFileSync(join(dataDir, "ui-prefs.json"), "utf8")) as Prefs; } catch { return {}; } };
-    let prefs = read();
-    for (let i = 0; i < 50 && typeof prefs.manualSuit?.ring !== "number"; i++) { await page.waitForTimeout(100); prefs = read(); }
+    const prefs = await until(read, (p) => typeof p.manualSuit?.ring === "number", "the ring in ui-prefs.json");
     assert.equal(prefs.builderMode, "manual");
     assert.equal(typeof prefs.manualSuit?.ring, "number", "the suit is kept for the next launch");
     // A buff (app/buffs.mts): Add buff opens the buff picker in the side column, Divine Fury on puts its chip in the
@@ -76,8 +75,7 @@ test("[slow] Manual mode: a picked piece fills its slot, moves the totals and le
     await page.keyboard.press("Escape");
     await page.waitForSelector("#mb-buffs", { state: "hidden" });
     assert.equal(await page.evaluate(() => document.activeElement?.id), "bf-add", "focus back on Add buff");
-    let bp = read();
-    for (let i = 0; i < 50 && !bp.manualBuffs?.includes("divineFury"); i++) { await page.waitForTimeout(100); bp = read(); }
+    const bp = await until(read, (p) => !!p.manualBuffs?.includes("divineFury"), "Divine Fury in ui-prefs.json");
     assert.deepEqual(bp.manualBuffs, ["divineFury"], "the buffs are kept for the next launch");
     assert.deepEqual(errors, []);
   } finally {
@@ -114,7 +112,7 @@ test("[slow] Manual hand-offs: fill the rest, save as run, reopen it, and start 
       [...document.querySelectorAll<HTMLElement>(".pop [role=option]")].find((o) => o.dataset.value !== "_nobody" && o.dataset.value !== now)!.click();
     });
     await page.waitForFunction(() => document.querySelector(".mb-fill")?.textContent === "Fill canceled: the character changed");
-    await page.waitForTimeout(1500);
+    await page.waitForTimeout(1500);   // sleep: longer than the canceled search could take to land, proving it never does
     assert.equal(await filled(), 1, "the canceled fill left the suit alone");
     await page.click("#mb-fill");
     await page.waitForFunction(() => /^(Filled|Nothing filled)/.test(document.querySelector(".mb-fill")?.textContent || ""), undefined, { timeout: 60_000 });
