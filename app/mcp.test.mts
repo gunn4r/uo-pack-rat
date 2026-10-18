@@ -45,6 +45,8 @@ async function app<T = Record<string, unknown>>(sv: Served, path: string, method
   const r = await fetch(sv.s.url + path, { method, headers, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
   return { status: r.status, body: (await r.json()) as T };
 }
+// A whole profiles file saved on purpose, with the stamp a GET just answered.
+const putProfiles = async (sv: Served, doc: object): Promise<{ status: number; body: Record<string, unknown> }> => app(sv, "/api/profiles", "PUT", { ...doc, base: (await app<{ stamp: string }>(sv, "/api/profiles")).body.stamp });
 const mcpState = async (sv: Served): Promise<McpState> => (await app<McpState>(sv, "/api/mcp")).body;
 const mcpPort = async (sv: Served): Promise<number> => (await mcpState(sv)).live.port!;
 
@@ -335,19 +337,19 @@ test("[fast] score_suit keeps the hands legal around a named weapon, and plans w
     assert.deepEqual((await call(port, "build_suit", { character: "Kestrel", timeBudgetSeconds: 2 })).data.buffs, [], "Automatic's buffs for an unpinned build");
     const { profiles, builtinTemplates } = (await app<{ profiles: ProfilesV3; builtinTemplates: TemplateMap }>(sv, "/api/profiles")).body;
     const kestrel = characterEntry(characterProfile(profiles, "Kestrel", builtinTemplates), { on: ["bless"], skills: {} });
-    assert.equal((await app(sv, "/api/profiles", "PUT", { ...profiles, characters: { ...profiles.characters, Kestrel: kestrel } })).status, 200);
+    assert.equal((await putProfiles(sv, { ...profiles, characters: { ...profiles.characters, Kestrel: kestrel } })).status, 200);
     assert.deepEqual((await call(port, "build_suit", { character: "Kestrel", timeBudgetSeconds: 2 })).data.buffs, ["bless"], "the character's saved Automatic buffs (its profile's spec)");
     assert.doesNotMatch((await call(port, "score_suit", { character: "Kestrel", template: "tank" })).text, /no template/, "a built-in template by its id");
     assert.match((await call(port, "score_suit", { character: "Kestrel", template: "nope" })).text, /no template named "nope"; the templates are builtin:melee, builtin:caster, builtin:archer, builtin:tank/);
     // Issue #212: a template that carries buffs plans with them when none are named, as the builder's Apply turns them on.
     const vamp = { spec: { ...profiles.templates.melee?.spec ?? builtinTemplates.melee!.spec, buffs: { on: ["consecrateWeapon"], skills: {} } } };
-    assert.equal((await app(sv, "/api/profiles", "PUT", { ...profiles, characters: { ...profiles.characters, Kestrel: kestrel }, templates: { ...profiles.templates, vamp } })).status, 200);
+    assert.equal((await putProfiles(sv, { ...profiles, characters: { ...profiles.characters, Kestrel: kestrel }, templates: { ...profiles.templates, vamp } })).status, 200);
     assert.deepEqual((await call(port, "score_suit", { character: "Kestrel", template: "vamp" })).data.buffs, ["consecrateWeapon"], "the template's buffs over Manual's");
     assert.deepEqual((await call(port, "build_suit", { character: "Kestrel", template: "vamp", timeBudgetSeconds: 2 })).data.buffs, ["consecrateWeapon"], "the template's buffs over the character's");
     assert.deepEqual((await call(port, "score_suit", { character: "Kestrel", template: "vamp", buffs: [] })).data.buffs, [], "buffs named win");
     // the template's buff numbers over the character's, as the page's Apply merges them: Divine Fury's top tier or not
     const fury = (skills: Record<string, number>): { spec: unknown } => ({ spec: { ...vamp.spec, buffs: { on: ["divineFury"], skills } } });
-    assert.equal((await app(sv, "/api/profiles", "PUT", { ...profiles, characters: { ...profiles.characters, Kestrel: kestrel }, templates: { ...profiles.templates, top: fury({ Chivalry: 120, Karma: 10000 }), low: fury({ Chivalry: 0, Karma: 0 }) } })).status, 200);
+    assert.equal((await putProfiles(sv, { ...profiles, characters: { ...profiles.characters, Kestrel: kestrel }, templates: { ...profiles.templates, top: fury({ Chivalry: 120, Karma: 10000 }), low: fury({ Chivalry: 0, Karma: 0 }) } })).status, 200);
     const furyTotals = async (template: string): Promise<Record<string, number>> => (await call(port, "score_suit", { character: "Kestrel", template })).data.effectiveTotals;
     const [top, low] = [await furyTotals("top"), await furyTotals("low")];
     assert.ok(["hci", "di", "ssi", "dci"].some((k) => top[k] !== low[k]), `the template's numbers are planned with: ${JSON.stringify({ top, low })}`);
@@ -464,7 +466,7 @@ test("[fast] suit results carry effectiveTotals beside the gear totals, and unre
     // a hard floor no piece reaches, on Kestrel's saved profile
     const { profiles } = (await app<{ profiles: ProfilesV3 }>(sv, "/api/profiles")).body;
     const kestrel = characterEntry({ ...characterProfile(profiles, "Kestrel"), floors: { luck: 100000 }, softFloors: [] }, { on: [], skills: {} });
-    assert.equal((await app(sv, "/api/profiles", "PUT", { ...profiles, characters: { ...profiles.characters, Kestrel: kestrel } })).status, 200);
+    assert.equal((await putProfiles(sv, { ...profiles, characters: { ...profiles.characters, Kestrel: kestrel } })).status, 200);
     const b = (await call(port, "build_suit", { character: "Kestrel", buffs: ["divineFury"], timeBudgetSeconds: 2, waitSeconds: 45 })).data;
     assert.equal(b.state, "done", JSON.stringify(b));
     assert.deepEqual(b.unreachableFloors, ["luck"]);
@@ -992,7 +994,7 @@ test("[fast] build_suit's rarity: set, cleared with any or a template without on
     assert.deepEqual([lower?.rarity, lower?.tolerance, typeof lower?.cost], ["lower", 0, "number"]);
     const { profiles, builtinTemplates } = (await app<{ profiles: ProfilesV3; builtinTemplates: TemplateMap }>(sv, "/api/profiles")).body;
     const kestrel = characterEntry({ ...characterProfile(profiles, "Kestrel", builtinTemplates), rarity: "higher" }, { on: [], skills: {} });
-    assert.equal((await app(sv, "/api/profiles", "PUT", { ...profiles, characters: { ...profiles.characters, Kestrel: kestrel } })).status, 200);
+    assert.equal((await putProfiles(sv, { ...profiles, characters: { ...profiles.characters, Kestrel: kestrel } })).status, 200);
     assert.equal((await tb({}))?.rarity, "higher", "the profile's, kept");
     assert.equal(await tb({ rarity: "any" }), undefined, "any clears it");
     assert.equal(await tb({ template: "tank" }), undefined, "a template without one clears it, as the builder's Apply does");
@@ -1039,14 +1041,14 @@ test("[fast] PUT /api/profiles/label: one label changed on the server, checked, 
     // The schema refuses the same on a whole-file save.
     const now = await get();
     const withLabel = (text: string): ProfilesV3 => ({ ...now.profiles, characters: { ...now.profiles.characters, Kestrel: { ...now.profiles.characters.Kestrel!, label: text } } });
-    assert.equal((await app(sv, "/api/profiles", "PUT", withLabel("two\nlines"))).status, 400);
-    assert.equal((await app(sv, "/api/profiles", "PUT", withLabel("x".repeat(41)))).status, 400);
+    assert.equal((await putProfiles(sv, withLabel("two\nlines"))).status, 400);
+    assert.equal((await putProfiles(sv, withLabel("x".repeat(41)))).status, 400);
 
     // A builder save from a copy read before the label changed: the builder's change lands, the newer label stays.
     const stale = await get();
     assert.equal((await label("Kestrel", "Sampire")).status, 200);
     const higher = characterEntry({ ...characterProfile(stale.profiles, "Kestrel", stale.builtinTemplates), rarity: "higher" }, { on: [], skills: {} });
-    assert.equal((await app(sv, "/api/profiles", "PUT", { ...stale.profiles, characters: { ...stale.profiles.characters, Kestrel: { ...higher, label: "Archer-Bard" } } })).status, 200);
+    assert.equal((await putProfiles(sv, { ...stale.profiles, characters: { ...stale.profiles.characters, Kestrel: { ...higher, label: "Archer-Bard" } } })).status, 200);
     assert.equal((await kestrel())?.spec.intent.rarity, "higher", "the builder's change saved");
     assert.equal((await kestrel())?.label, "Sampire", "the newer label kept, not the copy's");
     // A label save after a builder save: the builder's change stays.

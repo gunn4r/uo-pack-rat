@@ -33,7 +33,7 @@ Read this first, then `CONTRIBUTING.md` for the full contributor guide.
 ## Working in parallel
 
 - Merge `origin/main` before each push; never rebase or force-push a branch with a pull request.
-- After a merge, re-run every generator (`npm run gen:test-index`, `npm run gen:modules`, `npm run gen:contracts`) rather than hand-resolving a generated block.
+- After a merge, re-run every generator (`npm run gen:test-index`, `npm run gen:modules`, `npm run gen:contracts`) rather than hand-resolving a generated block; resolve the conflicts first, then run the generators, since a generator run over leftover conflict markers leaves one side's lines behind.
 - A changelog entry is a new `changelog.d/<issue>-<short-name>.md` (the issue number orders it at release), never a line in `CHANGELOG.md`.
 - Two sessions on the same screen module are serialized, or their briefs name disjoint functions; a brief lists the files it touches.
 - `npm run try -- <pr> <pr>…` tests a stack of pull requests together.
