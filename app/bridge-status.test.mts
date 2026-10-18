@@ -31,11 +31,13 @@ test("[fast] readBridgeStatus: no file, unreadable JSON or a file off the status
   }
 });
 
-test("[fast] readBridgeStatus: online is a heartbeat under 8 s old; an older build's epoch seconds and a newer bridge's extra fields still read", () => {
+test("[fast] readBridgeStatus: online is a heartbeat under 8 s old and not stopped; an older build's epoch seconds and a newer bridge's extra fields still read", () => {
   const fresh = readBridgeStatus(statusFile(valid()), NOW);
   assert.deepEqual([fresh.online, fresh.age, fresh.status?.character], [true, 2, "Tester"]);
   assert.equal(readBridgeStatus(statusFile(valid({ alive: stamp(NOW - ONLINE_S * 1000) })), NOW).online, false, "8 s old is offline");
   assert.equal(readBridgeStatus(statusFile(valid({ alive: stamp(NOW + 60_000) })), NOW).online, true, "a heartbeat from the future counts, as it always has");
+  const stopped = readBridgeStatus(statusFile(valid({ stopped: true })), NOW);
+  assert.deepEqual([stopped.online, stopped.status?.stopped], [false, true], "a fresh status written on Stop is offline, so nothing is queued after it");
   const legacy = readBridgeStatus(statusFile(valid({ alive: (NOW - 3000) / 1000 })), NOW);
   assert.deepEqual([legacy.online, legacy.aliveMs], [true, NOW - 3000]);
   const newer = readBridgeStatus(statusFile(valid({ adapter: { id: "tazuo", version: "9.0.0", protocol: 2, features: ["grab"], since: "x" }, queueBytes: 12 })), NOW);

@@ -12,8 +12,9 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import {
   listAdapters, candidateClientRoots, validateScriptsDir, installedVersion, installScripts,
-  repoFromPackage, checkForUpdates, checkScriptsDataDir, pasteScanner, RUNNING_MESSAGE_OTHER,
+  repoFromPackage, checkForUpdates, checkScriptsDataDir, heartbeatAlive, pasteScanner, RUNNING_MESSAGE_OTHER,
 } from "./installer.mts";
+import { readBridgeStatus } from "./bridge-status.mts";
 import type { AdapterManifestV1 } from "./schema/types.d.mts";
 import { validate, type ValidatorSchema } from "./schema/validate.mts";
 
@@ -89,6 +90,19 @@ test("[fast] listAdapters finds tazuo with its five scripts and a summary mentio
   assert.ok(tazuo.name.length > 0);
   assert.equal(tazuo.transport, "folder");
   assert.equal(tazuo.platform, null, "tazuo has no platform restriction — capabilities.json carries no platform field");
+});
+
+// capabilities.bridge is what the page and the MCP tools offer as bridge actions (GET /api/setup), so listAdapters always
+// hands it on as a list of names, whatever a capabilities.json wrote there; the rest of the object is passed on as is.
+test("[fast] listAdapters reads a missing or malformed capabilities.bridge as a list of its string entries", () => {
+  const dir = tmp("qm-installer-bridge-");
+  const cases: Record<string, unknown> = { none: { bank: true }, "not-a-list": { bridge: "grab" }, mixed: { bridge: ["grab", 3, null, "goto"] }, "no-capabilities": undefined, "capabilities-a-list": ["grab"] };
+  for (const [id, capabilities] of Object.entries(cases)) {
+    mkdirSync(join(dir, id));
+    writeFileSync(join(dir, id, "capabilities.json"), JSON.stringify({ adapter: id, transport: "folder", ...(capabilities === undefined ? {} : { capabilities }) }));
+  }
+  const got = Object.fromEntries(listAdapters(dir).map((a) => [a.id, a.capabilities]));
+  assert.deepEqual(got, { none: { bank: true, bridge: [] }, "not-a-list": { bridge: [] }, mixed: { bridge: ["grab", "goto"] }, "no-capabilities": { bridge: [] }, "capabilities-a-list": { bridge: [] } });
 });
 
 // Phase 6 final review follow-up: capabilities.json's optional top-level `platform` field (see
@@ -532,6 +546,20 @@ test("[fast] installScripts proceeds when status.json says stopped: true", () =>
   const scriptsDir = tmp("qm-is-stopped-dest-");
   const result = installScripts({ adapter: "tazuo", adaptersDir: fakeAdaptersDir(), scriptsDir, dataDir: tmp("qm-is-data-"), bridgeStatusPath: sp });
   assert.equal(result.ok, true, JSON.stringify(result));
+});
+
+// The cases app/fixtures/contract-cases/heartbeat.json shares with adapters/test_panel.py, which checks the panel's real heartbeats have their shape.
+test("[fast] heartbeatAlive: every shared heartbeat case counts as running or not as it says, readBridgeStatus calls it online or not as it says, and the schema takes the shapes it says", () => {
+  const cases = JSON.parse(readFileSync(join(HERE, "fixtures", "contract-cases", "heartbeat.json"), "utf8")) as { now: string; cases: { why: string; doc: object; running: boolean; online: boolean; schema: boolean }[] };
+  const schema = JSON.parse(readFileSync(join(HERE, "schema", "heartbeat.v1.schema.json"), "utf8")) as ValidatorSchema;
+  const f = join(tmp("qm-hb-cases-"), "panel.json"), now = Date.parse(cases.now);
+  for (const c of cases.cases) {
+    writeFileSync(f, JSON.stringify(c.doc));
+    assert.equal(heartbeatAlive(f, now), c.running, c.why);
+    writeFileSync(f, JSON.stringify({ character: "", current: null, results: {}, counts: { done: 0, failed: 0 }, ...c.doc }));
+    assert.equal(readBridgeStatus(f, now).online, c.online, `online: ${c.why}`);
+    assert.equal(validate(schema, c.doc).ok, c.schema, `schema: ${c.why}`);
+  }
 });
 
 test("[fast] installScripts refuses while the in-game panel's panel.json beside status.json is alive, and proceeds once it says stopped", () => {

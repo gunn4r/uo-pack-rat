@@ -1,7 +1,7 @@
 // setup.mts — what the setup and settings routes answer and take (app/http/routes/setup.mts, settings.mts): settings.json as the server reports it, the shard's rules, the setup wizard's adapters, locate and install, the paste scanner, the update check and the retention clean-up. Types only and node-free, so the routes `satisfies` these, the page re-exports them (app/ui/api-types.mts) and the route map names them (app/api/routes.mts).
 //
 // map: api
-// owns: `ClientSettings`, `Retention`, `SettingsData`, `SettingsApiResponse`, `SettingsPutBody`, `CleanupBody`, `CleanupApiResponse`, `ShardOption`, `RulesApiResponse`, `AdapterSummary`, `InstalledVersionInfo`, `SetupApiResponse`, `PasteScannerApiResponse`, `LocateApiResponse`, `InstallApiResponse`, `UpdateCheckApiResponse`, `LocateBody`, `InstallBody`
+// owns: `ClientSettings`, `Retention`, `SettingsData`, `SettingsApiResponse`, `SettingsPutBody`, `CleanupBody`, `CleanupApiResponse`, `ShardOption`, `RulesApiResponse`, `AdapterSummary`, `AdapterCapabilities`, `InstalledVersionInfo`, `SetupApiResponse`, `PasteScannerApiResponse`, `LocateApiResponse`, `InstallApiResponse`, `UpdateCheckApiResponse`, `LocateBody`, `InstallBody`
 import type { RulesV1 } from "../schema/types.d.mts";
 import type { DataDirCheckInfo } from "../data-dir-notice.mts";
 import type { AutostartOutcome, PanelPrefs } from "../tazuo-panel-prefs.mts";
@@ -65,17 +65,19 @@ export interface RulesApiResponse {
 }
 
 // ---------------------------------------------------------------- the setup wizard (GET /api/setup and the rest of /api/setup)
-// One entry of GET /api/setup's `adapters` — app/installer.mts's AdapterInfo, with `capabilities` narrowed to the one
-// field the page reads off it (`.bridge`); the rest of an adapter's capabilities.json content is real but unused here.
+// One entry of GET /api/setup's `adapters`: app/installer.mts's AdapterInfo, less the script names the page never reads.
 export interface AdapterSummary {
   id: string;
   name: string;
   transport: string;
   platform: string | null;
   summary: string;
-  capabilities: { bridge: string[]; [key: string]: unknown };
+  capabilities: AdapterCapabilities;
   features: string[];
 }
+// capabilities.json's `capabilities` object as listAdapters reads it: `bridge` always a list of action names ([] when
+// the file has none or not a list); the rest as the file wrote it.
+export interface AdapterCapabilities { bridge: string[]; [key: string]: unknown }
 // Which of an adapter's scripts a folder holds, and the scanner's version among them (app/installer.mts installedVersion).
 export interface InstalledVersionInfo {
   version: string | null;

@@ -4,7 +4,7 @@
 // takes an injectable fetchImpl so callers (and tests) never depend on a real fetch global.
 //
 // map: installer
-// owns: `listAdapters`, `candidateClientRoots`, `validateScriptsDir`, `installedVersion`, `installScripts`, `checkForUpdates`, `checkScriptsDataDir`, `RUNNING_MESSAGE_OTHER`, `REGISTRARS`
+// owns: `listAdapters`, `candidateClientRoots`, `validateScriptsDir`, `installedVersion`, `installScripts`, `checkForUpdates`, `checkScriptsDataDir`, `heartbeatAlive`, `RUNNING_MESSAGE_OTHER`, `REGISTRARS`
 import {
   existsSync, statSync, lstatSync, readdirSync, readFileSync, copyFileSync, realpathSync,
   unlinkSync, constants, type Dirent, type Stats,
@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 import { atomicReplace, readBounded, writeFileAtomic } from "./atomic-write.mts";
 import type { DataDirCheckInfo } from "./data-dir-notice.mts";
 import type { AdapterManifestV1, AdapterManifestV1Install, AdapterManifestV1InstallRetiredItem } from "./schema/types.d.mts";
-import type { InstalledVersionInfo } from "./api/setup.mts";
+import type { AdapterCapabilities, InstalledVersionInfo } from "./api/setup.mts";
 
 const VERSION_RE = /ADAPTER_VERSION\s*=\s*"([^"]+)"/;
 const ADAPTER_ID_RE = /^[a-z0-9-]+$/;
@@ -110,7 +110,7 @@ export interface AdapterInfo {
   id: string;
   name: string;
   scripts: string[];
-  capabilities: unknown;
+  capabilities: AdapterCapabilities;
   // What the bridge does besides the actions in capabilities.bridge (capabilities.json's optional "features").
   features: string[];
   transport: "folder" | "paste";
@@ -131,7 +131,10 @@ export function listAdapters(adaptersDir: string): AdapterInfo[] {
     let raw: Record<string, unknown>;
     try { raw = JSON.parse(readFileSync(capPath, "utf8")) as Record<string, unknown>; }
     catch { continue; }
-    const capabilities = raw.capabilities || {};
+    // `bridge` is what the page and the MCP tools offer as bridge actions, so it is always a list of names; the rest of
+    // the object is passed on as the file wrote it.
+    const declared = raw.capabilities && typeof raw.capabilities === "object" && !Array.isArray(raw.capabilities) ? raw.capabilities as Record<string, unknown> : {};
+    const capabilities: AdapterCapabilities = { ...declared, bridge: Array.isArray(declared.bridge) ? declared.bridge.filter((a): a is string => typeof a === "string") : [] };
     // "folder" (the adapter writes scripts into a player-chosen client folder) or "paste" (no
     // filesystem access — the player pastes what the script prints into the Import tab instead).
     // See docs/adapter-guide.md. Anything other than the literal "paste" is treated as "folder" so an
@@ -419,8 +422,9 @@ const FUTURE_SKEW_TOLERANCE_S = 300;
 
 // A heartbeat file a running script rewrites every couple of seconds: the bridge's status.json, and the
 // in-game panel's panel.json beside it (adapters/tazuo/packrat-panel.py), which has the same
-// alive/stopped shape. Either one fresh means a script is running against the folder about to change.
-function heartbeatAlive(heartbeatPath: string, now: number, log: (msg: string) => void = () => {}): boolean {
+// alive/stopped shape (app/schema/heartbeat.v1.schema.json, with the shared cases
+// app/fixtures/contract-cases/heartbeat.json). Either one fresh means a script is running against the folder about to change.
+export function heartbeatAlive(heartbeatPath: string, now: number, log: (msg: string) => void = () => {}): boolean {
   let st: Record<string, unknown>;
   try { st = JSON.parse(readFileSync(heartbeatPath, "utf8")) as Record<string, unknown>; }
   catch { return false; }
