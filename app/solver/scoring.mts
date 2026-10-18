@@ -5,7 +5,7 @@
 // solvers". Pure, no imports: the core loads it from source, and the page compiles it with the modules that read it.
 //
 // map: builder
-// owns: `HARD_FLOOR_BONUS`, `HARD_FLOOR_BONUS_MAX`, `hardBonusOf`, `TIE_SLACK`, `SCORE_REL`, `slackAt`, `FLOAT_EPS`, `CHANGE_COST`, `GEAR_SLOT_COUNT`, `changeCost`, `RESIST_SKILL_KEY`, `RESIST_STEP_SLACK`, `DEFAULT_FLOOR_BONUS`, `DEFAULT_FLOOR_PARTIAL`, `DEFAULT_BUDGET_MS`, `DEFAULT_RESTARTS`, `scoringProfile`, `ScoringProfile`, `ResistStep`, `liftedMin`, `heldTotal`, `floorMet`, `SsiStepPoint`, `stepCredit`, `keptValue`
+// owns: `HARD_FLOOR_BONUS`, `HARD_FLOOR_BONUS_MAX`, `hardBonusOf`, `TIE_SLACK`, `SCORE_REL`, `slackAt`, `FLOAT_EPS`, `CHANGE_COST`, `GEAR_SLOT_COUNT`, `changeCost`, `RESIST_SKILL_KEY`, `RESIST_STEP_SLACK`, `DEFAULT_FLOOR_BONUS`, `DEFAULT_FLOOR_PARTIAL`, `DEFAULT_BUDGET_MS`, `DEFAULT_RESTARTS`, `scoringProfile`, `ScoringProfile`, `ResistStep`, `stepReached`, `liftedMin`, `heldTotal`, `floorMet`, `SsiStepPoint`, `pointReached`, `stepCredit`, `keptValue`
 
 // A met hard floor's bonus, and the most app/mip.mts's withHardFloorBonus raises it to for a profile whose weights could
 // otherwise outweigh it (issue #311).
@@ -96,11 +96,15 @@ export function scoringProfile(profile: ScoringInput): ScoringProfile {
 // One step of the Resisting Spells minimum a suit's own bonus lifts (app/vault-lib.mts EffectiveProfile.resistSteps): a
 // suit whose Resisting Spells bonus total is at least `at` holds each resist at `mins[k]`, in item terms.
 export interface ResistStep { at: number; mins: Record<string, number> }
+// Whether a suit whose Resisting Spells bonus total is `bonus` reaches the step at `at`: within RESIST_STEP_SLACK.
+export const stepReached = (bonus: number, at: number): boolean => bonus >= at - RESIST_STEP_SLACK;
 // The minimum a resist is held at in a suit whose Resisting Spells bonus total is `bonus`: the highest step it reaches
-// (within RESIST_STEP_SLACK), else the profile's own (`mins`), else none.
+// (within RESIST_STEP_SLACK), else the profile's own (`mins`), else none. A step whose `mins` lacks the key keeps the lower
+// step's value, where the core falls back to the profile's own min; the route requires every resist in every step, so no
+// input reaches that difference.
 export function liftedMin(profile: { mins?: Record<string, number> | undefined; resistSteps?: ResistStep[] | undefined }, k: string, bonus: number): number | null {
   let m = profile.mins?.[k] ?? null;
-  for (const s of profile.resistSteps || []) if (bonus >= s.at - RESIST_STEP_SLACK && s.mins[k] != null) m = s.mins[k]!;
+  for (const s of profile.resistSteps || []) if (stepReached(bonus, s.at) && s.mins[k] != null) m = s.mins[k]!;
   return m;
 }
 // A total as the suit has it: held at its min, where it has one.
@@ -109,11 +113,13 @@ export const heldTotal = (total: number, min: number | null): number => (min != 
 export const floorMet = (total: number, floor: number, min: number | null): boolean => total >= floor || (min != null && min >= floor);
 // One point of an SSI step table (app/swing.mts stepTable): reaching `ssi` item SSI with `stam` gear Stamina pool pays `credit`.
 export interface SsiStepPoint { ssi: number; stam: number; credit: number }
+// Whether a suit with `ssi` item SSI and `stam` gear Stamina pool reaches a point.
+export const pointReached = (p: { ssi: number; stam: number }, ssi: number, stam: number): boolean => ssi >= p.ssi - FLOAT_EPS && stam >= p.stam - FLOAT_EPS;
 // The largest credit among the points a suit with `ssi` item SSI and `stam` gear Stamina pool reaches, 0 when it reaches
 // none: what SSI by step scores.
 export function stepCredit(points: readonly SsiStepPoint[], ssi: number, stam: number): number {
   let best = 0;
-  for (const p of points) if (ssi >= p.ssi - FLOAT_EPS && stam >= p.stam - FLOAT_EPS && p.credit > best) best = p.credit;
+  for (const p of points) if (pointReached(p, ssi, stam) && p.credit > best) best = p.credit;
   return best;
 }
 // A piece's value in the fewest-changes tie-break and strict order's stage against the piece worn in its slot: 1 for the

@@ -371,6 +371,8 @@ function optVec(it: OptItem | null, space: OptSpace): number[] {
 
 // Score a totals VECTOR. Over-cap points are worth exactly zero — that is the whole reason
 // this is a set-level problem. A total under its min counts as the min (the Resisting Spells step its bonus reaches).
+// The hot loop: it states `heldTotal` (v < m ? m : v) and `floorMet` (t >= f || m >= f) from app/solver/scoring.mts inline
+// over the space's arrays rather than calling them.
 function optScoreVector(totals: number[], space: OptSpace): number {
   space.evals++;
   let s = 0;

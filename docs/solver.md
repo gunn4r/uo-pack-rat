@@ -28,8 +28,8 @@ Read this section first; the rest of the file is the reference, feature by featu
 
 | Rule | Core (`scripts/optimizer-core.mts`) | Other copy | Caught by |
 |---|---|---|---|
-| The minimum a resist is held at | `optScoreVector`'s step loop, over the space's arrays | `liftedMin` (shared), the step loop in `startVector` and the `h` rows in `buildSuitMip` | the fuzz suite |
-| SSI step credit | `stepCredit` (shared) | the step loop in `startVector`, which picks the paying column | the fuzz suite |
+| The minimum a resist is held at | `optScoreVector`'s step loop, over the space's arrays | `liftedMin` (shared, which `startVector` calls through `stepReached`, `heldTotal` and `floorMet`) and the `v`, `b` and `h` rows in `buildSuitMip` | `app/solver-buffs-fuzz.test.mts` (whole searches; `app/solver-fuzz.test.mts` generates no minimums) |
+| SSI step credit | `stepCredit` (shared) | the step columns' rows in `buildSuitMip`; `startVector` picks the paying column through `pointReached` | `app/solver-fuzz.test.mts` |
 | The slots | `optDefaultSlots` | `GEAR_SLOTS` (`app/vault-lib.mts`, read by `app/mip.mts`) | `app/solver.test.mts` |
 | The optional slots | `optDefaultOptionalSlots` | `DEFAULT_OPTIONAL_SLOTS` (`app/mip.mts`) | `app/solver.test.mts` |
 | A floor at or under its minimum asks for nothing | `floorOf` (`scoringProfile`, which the MIP reads too) | `floorsOf` (`app/diagnostics.mts`), against the lifted minimum | `app/diagnostics.test.mts` |
