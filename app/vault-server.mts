@@ -219,7 +219,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   }
 
   const scanStore = createScansStore({ dir: SCANS, shard: () => appSettings.current().shard });
-  const houseService = createHousesService({ settings: appSettings.current });
+  const houseService = createHousesService({ settings: appSettings.current, uoFolderFinder: (id) => setupService.adapters().find((a) => a.id === id)?.uoFolder ?? null });
 
   const uiPrefsStore = createUiPrefsStore(join(CONFIG.dataDir, "ui-prefs.json"));
   // The TazUO panel's hotkey and show-at-login choice (app/tazuo-panel.mts); the in-game panel writes it too.

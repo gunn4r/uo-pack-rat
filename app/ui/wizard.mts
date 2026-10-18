@@ -101,7 +101,7 @@ export async function openWizard({ firstRun = false }: { firstRun?: boolean } = 
   if (!dialog.open) dialog.showModal();
   focusStep();
   // A client already set up keeps its panel options: the install step starts from them, not the defaults.
-  if (client?.adapter === "tazuo") {
+  if (client && setup.adapters.some((a) => a.id === client.adapter && a.panel)) {
     try {
       const r = await api<TazuoPanelApiResponse>("/api/tazuo-panel");
       if (wiz) wiz.panel = r.prefs;
@@ -286,7 +286,7 @@ function step4(): StepContent {
     body: [
       already ? message({ tone: "info", text: el("span", {}, `Scanner ${already} is already installed in `, el("span", { class: "mono" }, wiz!.scriptsDir || ""), ". Installing again updates it.") }) : null,
       wiz!.installError ? message({ tone: "bad", title: "Could not install", text: wiz!.installError }) : null,
-      wiz!.adapter === "tazuo" ? panelOptions() : null,
+      currentAdapterInfo()?.panel ? panelOptions() : null,
       box("div", { class: "wiz-confirm" }, confirm.root),
     ],
   };
@@ -298,7 +298,7 @@ function panelOptions(): HTMLElement {
 async function doInstall(): Promise<void> {
   wiz!.installError = null; wiz!.busy = true; render();
   try {
-    const r = await api<InstallApiResponse>("/api/setup/install", { method: "POST", body: { adapter: wiz!.adapter, scriptsDir: wiz!.scriptsDir, ...(wiz!.adapter === "tazuo" ? { panel: wiz!.panel } : {}) } });
+    const r = await api<InstallApiResponse>("/api/setup/install", { method: "POST", body: { adapter: wiz!.adapter, scriptsDir: wiz!.scriptsDir, ...(currentAdapterInfo()?.panel ? { panel: wiz!.panel } : {}) } });
     wiz!.installResult = r;
     // The server's own resolved folder, not the one this step sent: POST /api/setup/install turns a
     // picked client root into its nested scripts folder, and that is what it persisted as the client.

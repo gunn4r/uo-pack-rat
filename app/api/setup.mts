@@ -74,6 +74,8 @@ export interface AdapterSummary {
   summary: string;
   capabilities: AdapterCapabilities;
   features: string[];
+  // install.panel: the client runs Pack Rat's in-game panel (the wizard's and Settings' panel options).
+  panel: boolean;
 }
 // capabilities.json's `capabilities` object as listAdapters reads it: `bridge` always a list of action names ([] when
 // the file has none or not a list); the rest as the file wrote it.

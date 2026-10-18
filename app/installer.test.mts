@@ -117,6 +117,20 @@ test("[fast] listAdapters surfaces razor-enhanced's platform:\"win32\" from its 
   assert.equal(tazuo!.platform, null);
 });
 
+test("[fast] listAdapters reads install.panel and install.uoFolder: TazUO has the panel and finds the UO folder through its profile, Razor Enhanced neither", () => {
+  const adapters = listAdapters(fakeMultiAdaptersDir());
+  const of = (id: string) => adapters.find((a) => a.id === id)!;
+  assert.deepEqual([of("tazuo").panel, of("tazuo").uoFolder], [true, "tazuo-profile"]);
+  assert.deepEqual([of("razor-enhanced").panel, of("razor-enhanced").uoFolder], [false, null]);
+});
+
+test("[fast] validateScriptsDir: an adapter with no manifest gets no other adapter's folder suffixes, only the folder itself", () => {
+  const root = tmp("qm-vsd-unknown-");
+  mkdirSync(join(root, "TazUO", "LegionScripts"), { recursive: true });
+  assert.deepEqual(validateScriptsDir(root, "nope", fakeAdaptersDir()), { ok: true, scriptsDir: root });
+  assert.deepEqual(validateScriptsDir(root, "tazuo", fakeAdaptersDir()), { ok: true, scriptsDir: join(root, "TazUO", "LegionScripts") });
+});
+
 test("[fast] listAdapters reports transport:\"paste\" and no scripts for the classicuo-web adapter", () => {
   const adapters = listAdapters(fakeWebAdapterDir());
   assert.equal(adapters.length, 1);
