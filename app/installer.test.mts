@@ -1,6 +1,6 @@
 // installer.test.mts — `app/installer.mts`: adapter discovery, client-folder detection, script install, the data-folder check and the update check.
 //
-// `app/installer.mts`: `listAdapters` against the real `adapters/tazuo/` folder (copied into a temp dir, not a hand-built fixture) and, since Phase 6, also against the real `adapters/classicuo-web/` folder (`transport: "paste"`, no scripts to install) and both `adapters/tazuo/` + `adapters/razor-enhanced/` side by side (proving one adapter's install never copies another's scripts into the destination); `candidateClientRoots`/`validateScriptsDir`'s folder-detection forms, including that `candidateClientRoots` proposes nothing at all for `razor-enhanced` on any platform (it has no fixed install location — see `adapters/razor-enhanced/README.md`'s "What's still outstanding") while `validateScriptsDir` still accepts a hand-picked folder for it; `installedVersion`; `installScripts` (the running-script 409 guard, `.new`-then-rename, `packrat-paths.json` written last, a bad/traversal adapter id rejected, and — Phase 6 — a paste-transport adapter refused with code `noInstall` before touching the filesystem); and `repoFromPackage`/`checkForUpdates` (every `package.json` `repository` shape, an injected `fetchImpl` — no real network in this file). All `[fast]`. `checkScriptsDataDir` (issue #39), temp folders only: match, mismatch, a missing `packrat-paths.json` (and an empty/absent `dataDir`) compared against the scripts' `~/.pack-rat` default, malformed files (bad JSON, an array, a non-string `dataDir`, one past the 64 KiB read cap) reported rather than thrown, a symlinked file not followed, the same folder written differently (trailing slash, `~`, `..`, a symlink either side, case on darwin/win32 but not linux), no client, a folder with no Pack Rat script, and an auto-detected folder where any matching candidate wins, a later mismatch not hidden behind an earlier unreadable file, and a UNC or device `dataDir` giving no verdict without being touched. `installScripts` also gets a regression test that a symlinked `packrat-paths.json` naming another folder is refused, not read through and reported "kept" (`readHead` now checks `lstat` before opening, since win32 has no `O_NOFOLLOW`). The retired `packrat-refresh.py` (renamed `packrat-character-refresh.py` in TazUO 2.12.0 and Razor Enhanced 1.10.0, issue #10) removed on install when its first line is that adapter's own, and any other file of that name (another adapter's header included), a symlink or a folder left alone. Everything per client comes from the manifest's `install` section: TazUO's running refusal word for word from its `stopHint`, an adapter's own `candidateRoot` and `scriptsSuffix` read from the `adaptersDir` passed in, and the `register` step (`"none"` installs exactly the scripts; a step this build lacks is refused before anything is written).
+// `app/installer.mts`: `listAdapters` against the real `adapters/tazuo/` folder (copied into a temp dir, not a hand-built fixture) and, since Phase 6, also against the real `adapters/classicuo-web/` folder (`transport: "paste"`, no scripts to install) and both `adapters/tazuo/` + `adapters/razor-enhanced/` side by side (proving one adapter's install never copies another's scripts into the destination); `candidateClientRoots`/`validateScriptsDir`'s folder-detection forms, including that `candidateClientRoots` proposes nothing at all for `razor-enhanced` on any platform (it has no fixed install location — see `adapters/razor-enhanced/README.md`'s "What's still outstanding") while `validateScriptsDir` still accepts a hand-picked folder for it; `installedVersion`; `installScripts` (the running-script 409 guard, `.new`-then-rename, `packrat-paths.json` written last, a bad/traversal adapter id rejected, and — Phase 6 — a paste-transport adapter refused with code `noInstall` before touching the filesystem); and `repoFromPackage`/`checkForUpdates` (every `package.json` `repository` shape, an injected `fetchImpl` — no real network in this file). All `[fast]`. `checkScriptsDataDir` (issue #39), temp folders only: match, mismatch, a missing `packrat-paths.json` (and an empty/absent `dataDir`) compared against the scripts' `~/.pack-rat` default, malformed files (bad JSON, an array, a non-string `dataDir`, one past the 64 KiB read cap) reported rather than thrown, a symlinked file not followed, the same folder written differently (trailing slash, `~`, `..`, a symlink either side, case on darwin/win32 but not linux), no client, a folder with no Pack Rat script, and an auto-detected folder where any matching candidate wins, a later mismatch not hidden behind an earlier unreadable file, and a UNC or device `dataDir` giving no verdict without being touched. `installScripts` also gets a regression test that a symlinked `packrat-paths.json` naming another folder is refused, not read through and reported "kept" (`readHead` now checks `lstat` before opening, since win32 has no `O_NOFOLLOW`). The retired `packrat-refresh.py` (renamed `packrat-character-refresh.py` in TazUO 2.12.0 and Razor Enhanced 1.10.0, issue #10) removed on install when its first line is that adapter's own, and any other file of that name (another adapter's header included), a symlink or a folder left alone. Everything per client comes from the manifest's `install` section: TazUO's running refusal word for word from its `stopHint`, an adapter's own `candidateRoot` and `scriptsSuffix` read from the `adaptersDir` passed in, and the `register` step (`"none"` installs exactly the scripts; TazUO's `"tazuo-panel-autostart"` adds the panel to TazUO's autostart list while TazUO is closed, leaves it alone while it is open or unknown, and is skipped on request; a step this build lacks is refused before anything is written).
 //
 // Temp folders only, and no real network: checkForUpdates takes an injected fetchImpl in every test here.
 import { test } from "node:test";
@@ -764,9 +764,11 @@ test("[fast] installScripts refuses a paste-transport adapter with code noInstal
 // Enhanced's profile registration there). "none" installs exactly the scripts; a step this build lacks installs nothing.
 test("[fast] installScripts runs the \"none\" registrar as a plain install, and refuses a registrar it does not have before writing", () => {
   const adaptersDir = fakeAdaptersDir();
+  editManifest(join(adaptersDir, "tazuo"), (m) => { (m.install as { register: string }).register = "none"; });
   const scriptsDir = tmp("qm-is-register-none-");
   const result = installScripts({ adapter: "tazuo", adaptersDir, scriptsDir, dataDir: tmp("qm-is-data-"), bridgeStatusPath: join(scriptsDir, "no-status.json") });
   assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(result.registered, null);
   assert.deepEqual(readdirSync(scriptsDir).sort(), [...result.installed!, "packrat-paths.json"].sort());
 
   editManifest(join(adaptersDir, "tazuo"), (m) => { (m.install as { register: string }).register = "razor-profiles"; });
@@ -776,6 +778,29 @@ test("[fast] installScripts runs the \"none\" registrar as a plain install, and 
   assert.equal(refused.code, "badAdapter");
   assert.match(refused.error!, /razor-profiles/);
   assert.deepEqual(readdirSync(refusedDir), [], "nothing was written");
+});
+
+// TazUO's manifest names "tazuo-panel-autostart": the install puts the panel in <TazUO>/Data/lscript.json's autostart list
+// while TazUO is closed (app/tazuo-panel.mts), says so in `registered`, and leaves it alone while it is open or unknown.
+test("[fast] installScripts runs TazUO's tazuo-panel-autostart registrar: applied while TazUO is closed, left alone while open, skipped on request", () => {
+  const install = (scriptsDir: string, extra: Partial<Parameters<typeof installScripts>[0]>) =>
+    installScripts({ adapter: "tazuo", adaptersDir: fakeAdaptersDir(), scriptsDir, dataDir: tmp("qm-is-data-"), bridgeStatusPath: join(scriptsDir, "no-status.json"), ...extra });
+  const layout = (): { scriptsDir: string; lscript: string } => {
+    const tazuo = join(tmp("qm-is-autostart-"), "TazUO");
+    mkdirSync(join(tazuo, "Data"), { recursive: true });
+    mkdirSync(join(tazuo, "LegionScripts"));
+    return { scriptsDir: join(tazuo, "LegionScripts"), lscript: join(tazuo, "Data", "lscript.json") };
+  };
+  const open = layout();
+  assert.deepEqual(install(open.scriptsDir, {}).registered, { status: "running" }, "unknown counts as open");
+  assert.equal(existsSync(open.lscript), false);
+  const skipped = layout();
+  assert.equal(install(skipped.scriptsDir, { clientRunning: () => false, register: false }).registered, null);
+  assert.equal(existsSync(skipped.lscript), false);
+  const closed = layout();
+  assert.deepEqual(install(closed.scriptsDir, { clientRunning: () => false }).registered, { status: "applied" });
+  assert.deepEqual(JSON.parse(readFileSync(closed.lscript, "utf8")).GlobalAutoStartScripts, ["packrat-panel.py"]);
+  assert.equal(install(tmp("qm-is-autostart-none-"), { clientRunning: () => false }).registered?.status, "error", "not a TazUO folder: reported, the install still succeeds");
 });
 
 // Post-review fix (security, Phase 7): the temp file each script is copied through is randomly named

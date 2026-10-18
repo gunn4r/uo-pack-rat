@@ -1,0 +1,1 @@
+- **For contributors: TazUO's panel autostart is an install step its manifest names** (issue #338): `adapters/tazuo/capabilities.json`'s `install.register` is `tazuo-panel-autostart`, run from `app/installer.mts`'s `REGISTRARS` like any other client's step, instead of a `tazuo` branch in the install route. What the install does is unchanged.

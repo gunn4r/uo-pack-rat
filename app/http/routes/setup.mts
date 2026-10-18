@@ -14,7 +14,7 @@ import { short } from "../../guards.mts";
 import { validateScriptsDir, installedVersion, installScripts, pasteScanner, repoFromPackage, checkForUpdates, type CheckForUpdatesResult } from "../../installer.mts";
 import { safeAppendLog } from "../../log.mts";
 import { readBody } from "../../read-body.mts";
-import { addPanelAutostart, panelPrefsError } from "../../tazuo-panel.mts";
+import { panelPrefsError } from "../../tazuo-panel.mts";
 import { send, asObject } from "../respond.mts";
 import type { Route } from "../router.mts";
 import type { InstallApiResponse, LocateApiResponse, PasteScannerApiResponse, SetupApiResponse, UpdateCheckApiResponse } from "../../api/setup.mts";
@@ -129,19 +129,18 @@ export function routes(ctx: ServerContext): Route[] {
       // the allowlist check just above proved it — same pattern installer.mts's own compiler-only
       // casts use.
       const result = installScripts({ adapter, adaptersDir: ADAPTERS_DIR, scriptsDir: destDir, dataDir: CONFIG.dataDir, bridgeStatusPath: CONFIG.paths.bridgeStatusFor(adapter as string),
-        log: (msg) => safeAppendLog(CONFIG.paths.log, `${new Date().toISOString()} setup-install ${msg}\n`) });
+        clientRunning, register: !CONFIG.demo, log: (msg) => safeAppendLog(CONFIG.paths.log, `${new Date().toISOString()} setup-install ${msg}\n`) });
       if (!result.ok) {
         return send(res, result.code === "running" ? 409 : 400, { ok: false, error: result.error, code: result.code, installed: result.installed });
       }
       appSettings.save({ client: { adapter: adapter as string, scriptsDir: destDir } });
-      // The wizard sends its panel options; either install puts the panel in TazUO's autostart list, which
-      // it can only do while TazUO is closed (app/tazuo-panel.mts's addPanelAutostart).
+      // The wizard sends its panel options. The adapter's own install step (its manifest's install.register, run by
+      // installScripts) put the TazUO panel in TazUO's autostart list, or said why not.
       if (panel !== undefined && !CONFIG.demo) savePanel(panel as object);
-      const autostart = adapter === "tazuo" && !CONFIG.demo ? addPanelAutostart(destDir, clientRunning) : null;
       // pathsFile: what happened to packrat-paths.json on the way in (written/unchanged/kept/
       // backed-up) — installScripts no longer silently clobbers a hand-authored one, and the page
       // can say so.
-      return send(res, 200, { ok: true, installed: result.installed, version: result.version, scriptsDir: destDir, pathsFile: result.pathsFile, autostart } satisfies InstallApiResponse);
+      return send(res, 200, { ok: true, installed: result.installed, version: result.version, scriptsDir: destDir, pathsFile: result.pathsFile, autostart: result.registered } satisfies InstallApiResponse);
     } },
     { method: "GET", path: "/api/update-check", handle: async (_req, res) => {
       // Cached for an hour so every page load doesn't cost a GitHub round trip (and its unauthenticated

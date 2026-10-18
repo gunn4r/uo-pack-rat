@@ -13,6 +13,8 @@ import { basename, join, resolve, dirname, isAbsolute } from "node:path";
 import { fileURLToPath } from "node:url";
 import { atomicReplace, readBounded, writeFileAtomic } from "./atomic-write.mts";
 import type { DataDirCheckInfo } from "./data-dir-notice.mts";
+import { addPanelAutostart } from "./tazuo-panel.mts";
+import type { AutostartOutcome } from "./tazuo-panel-prefs.mts";
 import type { AdapterManifestV1, AdapterManifestV1Install, AdapterManifestV1InstallRetiredItem } from "./schema/types.d.mts";
 import type { AdapterCapabilities, InstalledVersionInfo } from "./api/setup.mts";
 
@@ -54,15 +56,19 @@ function installOf(adaptersDir: string, adapter: unknown): AdapterManifestV1Inst
 }
 
 // The client-specific step an install runs once the scripts are in place, named by the manifest's
-// install.register. "none" is every shipped adapter today; a client whose scripts must also be entered in
-// its own settings (Razor Enhanced's profiles, issue #157) adds its step here and names it in its manifest.
+// install.register: "none" installs exactly the scripts, and "tazuo-panel-autostart" also puts the in-game panel
+// in TazUO's autostart list (app/tazuo-panel.mts), which it can only do while TazUO is closed. A client whose
+// scripts must also be entered in its own settings (Razor Enhanced's profiles, issue #157) adds its step here and
+// names it in its manifest. A step reports what it did and never fails the install; null when there is nothing to say.
 export interface RegistrarContext {
   scriptsDir: string;
   installed: string[];
   log: (msg: string) => void;
+  clientRunning: () => boolean;
 }
-const REGISTRARS: Record<string, (ctx: RegistrarContext) => void> = {
-  none: () => {},
+const REGISTRARS: Record<string, (ctx: RegistrarContext) => AutostartOutcome | null> = {
+  "none": () => null,
+  "tazuo-panel-autostart": (ctx) => addPanelAutostart(ctx.scriptsDir, ctx.clientRunning),
 };
 
 // ---- safe writes and bounded reads ------------------------------------------------------------------
@@ -473,6 +479,10 @@ export interface InstallScriptsOptions {
   bridgeStatusPath?: string | undefined;
   now?: () => number;
   log?: (msg: string) => void;
+  // Whether the game client is open, for a step that may only change its settings while it is closed; unknown
+  // counts as open. register: false skips the step (the demo, which never touches a real client).
+  clientRunning?: () => boolean;
+  register?: boolean;
 }
 
 // What became of packrat-paths.json: "written" (created, or replaced with content that loses nothing —
@@ -485,12 +495,12 @@ export type PathsFileOutcome = "written" | "unchanged" | "kept" | "backed-up";
 // off the union before narrowing on `ok`, without each read site needing its own narrowing or cast;
 // they carry no runtime meaning of their own.
 export type InstallScriptsResult =
-  | { ok: true; installed: string[]; version: string | null; pathsFile: PathsFileOutcome; code?: undefined; error?: undefined }
-  | { ok: false; code: "badAdapter" | "noInstall" | "running" | "badDir" | "writeFailed"; error: string; installed?: string[]; version?: undefined; pathsFile?: undefined };
+  | { ok: true; installed: string[]; version: string | null; pathsFile: PathsFileOutcome; registered: AutostartOutcome | null; code?: undefined; error?: undefined }
+  | { ok: false; code: "badAdapter" | "noInstall" | "running" | "badDir" | "writeFailed"; error: string; installed?: string[]; version?: undefined; pathsFile?: undefined; registered?: undefined };
 
 export function installScripts(
   {
-    adapter, adaptersDir, scriptsDir, dataDir, bridgeStatusPath, now = Date.now, log = () => {},
+    adapter, adaptersDir, scriptsDir, dataDir, bridgeStatusPath, now = Date.now, log = () => {}, clientRunning = () => true, register: runRegister = true,
   }: InstallScriptsOptions = {} as InstallScriptsOptions,   // every real call site supplies every required key (see app/installer.test.mts, app/vault-server.mts); this cast is compiler-only, matching config.mts's rawPort pattern
 ): InstallScriptsResult {
   if (typeof adapter !== "string" || !ADAPTER_ID_RE.test(adapter)) {
@@ -546,13 +556,12 @@ export function installScripts(
     installed.push(name);
   }
   removeRetired(install?.retired ?? [], destDir, log);
-  try { register({ scriptsDir: destDir, installed: [...installed], log }); }
-  catch (e) { return { ok: false, code: "writeFailed", error: (e as Error).message, installed: [...installed] }; }
+  const registered = runRegister ? register({ scriptsDir: destDir, installed: [...installed], log, clientRunning }) : null;
   const { version } = installedVersion(destDir, adapter);
   let pathsFile: PathsFileOutcome;
   try { pathsFile = writePathsFile(destDir, dataDir); }
   catch (e) { return { ok: false, code: "writeFailed", error: (e as Error).message, installed: [...installed] }; }
-  return { ok: true, installed, version, pathsFile };
+  return { ok: true, installed, version, pathsFile, registered };
 }
 
 // Scripts an earlier version shipped under a name it no longer uses (the manifest's install.retired), each with the first
