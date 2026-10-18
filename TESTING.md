@@ -177,7 +177,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `scripts/electron-app.test.mts` — a [smoke] guard that keeps the Electron UI tests on their shared fixture (scripts/electron-app.mts, issue #338).
 - `scripts/electron-guards.test.mts` — the Electron shell's guards, from the phase-7 review: unit tests of the pure decisions and source-level checks on `electron/main.mts`.
 - `scripts/gen-contracts.test.mts` — `scripts/gen-contracts.mts`, the generator that copies `adapters/_shared/` fragments into the adapter scripts.
-- `scripts/gen-graphic-layers.test.mts` — `scripts/gen-graphic-layers.mts`, the tiledata reader behind `app/vault-lib.mts`'s wearable-graphic table.
+- `scripts/gen-graphic-layers.test.mts` — `scripts/gen-graphic-layers.mts`, the tiledata reader behind `app/domain/slots.mts`'s wearable-graphic table.
 - `scripts/layering.test.mts` — a [smoke] guard for the import layering of app/, scripts/ and electron/.
 - `scripts/make-adapter-fixture.test.mts` — `scripts/make-adapter-fixture.mts` run as a real child process, the way a maintainer invokes it, against temp in/out paths.
 - `scripts/module-map.test.mts` — a [smoke] guard that keeps `docs/module-map.md` from falling behind the tree.
