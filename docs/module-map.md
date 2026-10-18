@@ -456,7 +456,7 @@ Stylesheets (`app/ui/tokens.css`, `app/ui/britannia.css`, `app/ui/components.css
 | `scripts/localstorage-shim-for-tests.mts` | A minimal globalThis.localStorage stub, installed as a side effect of importing this module (it has no exports). | — |
 | `scripts/module-index.mts` | The module tables in docs/module-map.md, generated from each module's own header. | `headerOf`, `renderTables`, `withTables` |
 | `scripts/run-suite.mts` | The counting half of scripts/test-runner.mts: build, discover, drive node:test's run() over the files, and fold its event stream into the summary shape TESTING.md documents. | `runSuite`, `patternsFor` |
-| `scripts/select-tests.mts` | The mapping behind `./scripts/test_runner.sh --changed`: from the files a branch changed to the test files worth running for them. | `selectTests`, `SCREENS` |
+| `scripts/select-tests.mts` | The mapping behind `./scripts/test_runner.sh --changed`: from the files a branch changed to the test files worth running for them. | `selectTests`, `SCREENS`, `SHARED_UI` |
 | `scripts/start.mts` | Start the Pack Rat server (bare, no Electron). | — |
 | `scripts/test-file-watchdog.mts` | Preloaded into every test file's process by scripts/run-suite.mts (`--import <this file>?ms=<grace>`). | — |
 | `scripts/test-index.mts` | The index of test files in TESTING.md: each test file with the first sentence of its header. | `renderIndex`, `summaryOf`, `indexIsCurrent` |

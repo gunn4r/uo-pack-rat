@@ -23,7 +23,7 @@ The guide to `app/ui/`. `docs/ui.md` holds the full rules (tokens, components, t
 
 ## Extend it
 
-- **A screen:** follow "Add a UI screen or view". Put the logic in a model with a node test, register the route with `registerScreen`, import the screen from `app.mts`, and add its stems to `SCREENS` in `scripts/select-tests.mts` (a missing stem selects every Electron test).
+- **A screen:** follow "Add a UI screen or view". Put the logic in a model with a node test, register the route with `registerScreen`, import the screen from `app.mts`, and add its stems to `SCREENS` in `scripts/select-tests.mts` (a module every screen uses goes in `SHARED_UI` with its reason instead; the guard fails on one in neither).
 - **A Suit Builder panel piece:** it lives in the one module that owns its section (module map, Suit Builder). A new call between modules is a `BuilderCommands` key provided once. A new redraw is a `BuilderNews` key with one listener.
 - **A resource the page caches:** a data module with a stamp, queued updates, a reload on `stale` and one change event. Copy `organize-data.mts`. Copy `houses-data.mts` when it has logic worth a node test: its fetch is injectable.
 - **A new look for a component:** an option in `components.mts` and `components.css`, not a rule in a screen's stylesheet.

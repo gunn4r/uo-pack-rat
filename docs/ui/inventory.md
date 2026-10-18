@@ -56,7 +56,7 @@ Part of the UI docs: [`docs/ui.md`](../ui.md) has the hard rules, tokens, compon
   - `scripts/ui-unravel.test.mts`;
   - `scripts/ui-gather.test.mts`;
   - `scripts/ui-tooltips.test.mts`, which hovers an item on every screen.
-- **`SCREENS`:** it maps `inventory`, `inv-model`, `peek`, `containers` and `view-state` to `ui-state`, and the Scrolls modules to `ui-scrolls`. The Move to, Unravel and tooltip modules have no entry, so a change to one runs every Electron file.
+- **`SCREENS`:** it maps `inventory`, `inv-model`, `peek`, `containers` and `view-state` to `ui-state`, and the Scrolls modules to `ui-scrolls`. It maps the Move to modules to `ui-move` and `ui-gather`, the Unravel modules to `ui-unravel` and `ui-gather`, and `item-tip` to `ui-tooltips`.
 
 ### How to extend it
 
