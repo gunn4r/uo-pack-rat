@@ -1,0 +1,1 @@
+- **For contributors: Put away's reply goes through the bridge store** (issue #338): `app/store/bridge.mts` gains `writeReply(paths, adapter, name, doc)`, which replaces a reply file in an adapter's bridge folder atomically, and the Organize service writes `putaway.json` through it instead of with its own folder and atomic write. The file's bytes are the same.
