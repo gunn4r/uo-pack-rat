@@ -9,7 +9,7 @@ import { TIE_STAGE_SHARE } from "./scoring.mts";
 test("[fast] budget: elapsed, left, spent, and the shares on a hand-driven clock", () => {
   let t = 1000;
   const b = startBudget(4000, () => t);
-  assert.deepEqual([b.ms, b.startedAt, b.heuristicMs], [4000, 1000, 2000]);
+  assert.deepEqual([b.ms, b.startedAt, b.heuristicCapMs], [4000, 1000, 2000]);
   t = 2000;
   assert.deepEqual([b.elapsedMs(), b.leftS(), b.over()], [1000, 3, false]);
   assert.equal(b.firstStageS(false), 3);

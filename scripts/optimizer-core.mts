@@ -879,15 +879,15 @@ function optChanges(a: OptAssignment, cur: OptAssignment, slots: string[]): numb
   return n;
 }
 
-// `tie`: the tie-break pass (OptOptions.tieBreak). A leaf counts when it scores at least `min` and meets the floors on
-// the dimensions in `met`, and wins on a lower summed tie cost (the higher score on an equal one); the incumbent's cost
-// is `cost`. A subtree is dropped when its score bound is under `min`, a floor in `met` is out of reach, or its cost so
-// far plus the cheapest piece of each remaining slot passes the incumbent's. `costOf` replaces OptItem.tieCost as a piece's cost.
+// What one branch-and-bound pass is asked for: its time budget, the progress tick and how often it fires, the other suits
+// to keep (`alt`, opts.alternatives), a tie pass (`tie`) and strict order's stage spaces (`lex`).
+// `tie`: the tie-break's second stage (OptOptions.tieBreak). A leaf counts when it scores at least `min` and meets the
+// floors on the dimensions in `met`, and wins on a lower summed tie cost (the higher score on an equal one); the
+// incumbent's cost is `cost`. A subtree is dropped when its score bound is under `min`, a floor in `met` is out of reach,
+// or its cost so far plus the cheapest piece of each remaining slot passes the incumbent's. `costOf` replaces
+// OptItem.tieCost as a piece's cost.
 // `lex` (strict order): leaves and bounds are compared stage by stage against the incumbent's values; in the tie pass a
 // leaf must hold every stage at `lexMins` in place of `min`, and other suits (`alt`) are the suits equal on every stage.
-// What one branch-and-bound pass is asked for: its time budget, the progress tick and how often it fires, the other
-// suits to keep (opts.alternatives), a tie pass's floor, held floors and cost (the tie-break's second stage), and strict
-// order's stage spaces.
 interface OptBranchOptions {
   budgetMs: number;
   tick?: ((nodes: number, bestScore: number, improvements: number, explored: number) => void) | undefined;
@@ -1143,9 +1143,9 @@ function optBranchAndBound(slots: string[], cands: Record<string, (OptItem | nul
 // higher score), until none does. With an exact deadline, a tie pass of the branch-and-bound over every candidate proves it.
 // Returns the suit, its score, the reference suit and the floors it held, the check that a suit still holds them, and the
 // tie pass's proof and node count.
-function optTieBreakStage({ slots, cands, space, objective, maxPasses, best, bestScore, bestVec, topScore, tolerance, topStart, tieCands, costOf, exactDeadline }: {
+function optTieBreakStage({ slots, cands, space, objective, maxPasses, best, bestVec, topScore, tolerance, topStart, tieCands, costOf, exactDeadline }: {
   slots: string[]; cands: Record<string, (OptItem | null)[]>; space: OptSpace; objective: OptObjective; maxPasses: number;
-  best: OptAssignment; bestScore: number; bestVec: number[] | null; topScore: number; tolerance: number; topStart: OptAssignment | null;
+  best: OptAssignment; bestVec: number[] | null; topScore: number; tolerance: number; topStart: OptAssignment | null;
   tieCands: OptAssignment[]; costOf: (it: OptItem | null) => number; exactDeadline: number | null;
 }): { best: OptAssignment; bestScore: number; ref: OptAssignment; met: number[]; keeps: (a: OptAssignment) => boolean; exact: { proven: boolean; nodes: number } | null } {
   // scores within TIE_SLACK count as equal, the exact solver's precision, or within SCORE_REL of a large one
@@ -1166,9 +1166,9 @@ function optTieBreakStage({ slots, cands, space, objective, maxPasses, best, bes
   };
   const keeps = function (a: OptAssignment): boolean { const tv = optTotalsOf(a, slots, space); for (let i = 0; i < met.length; i++) if (!optFloorMet(space, tv, met[i]!)) return false; return true; };
   let pick = ref, pickScore = optScoreVector(topTv, space), pickCost = optTieCost(ref, slots, costOf);
-  tieCands.push(best);
-  for (let i = 0; i < tieCands.length; i++) {
-    const a = optSanitize(tieCands[i]!, slots), tv = optTotalsOf(a, slots, space), sc = optScoreVector(tv, space), c = optTieCost(a, slots, costOf);
+  const starts = [...tieCands, best];
+  for (let i = 0; i < starts.length; i++) {
+    const a = optSanitize(starts[i]!, slots), tv = optTotalsOf(a, slots, space), sc = optScoreVector(tv, space), c = optTieCost(a, slots, costOf);
     if (!qualifies(tv, sc)) continue;
     if (c < pickCost - FLOAT_EPS || (c <= pickCost + FLOAT_EPS && sc > pickScore + EPS)) { pick = a; pickScore = sc; pickCost = c; }
   }
@@ -1233,7 +1233,7 @@ function optTieBreakStage({ slots, cands, space, objective, maxPasses, best, bes
     } else break;
   }
   best = optSanitize(cur2, slots);
-  bestScore = optScoreVector(optTotalsOf(best, slots, space), space);
+  let bestScore = optScoreVector(optTotalsOf(best, slots, space), space);
   let exact: { proven: boolean; nodes: number } | null = null;
   if (exactDeadline != null) {
     const bb2 = optBranchAndBound(slots, cands, space, best, bestScore, { budgetMs: Math.max(0, exactDeadline - Date.now()), tie: { min: min - EPS, met: met, cost: optTieCost(best, slots, costOf), costOf: costOf, lexMins: topVec || undefined }, lex: objective.stages });
@@ -1421,7 +1421,7 @@ function optimizeSuit(pools: Record<string, OptItem[]>, current: OptAssignment, 
     return own + changeCost * -changeOf(it);
   };
   if (tb) {
-    const stage = optTieBreakStage({ slots, cands, space, objective, maxPasses, best, bestScore, bestVec, topScore, tolerance: tb.tolerance,
+    const stage = optTieBreakStage({ slots, cands, space, objective, maxPasses, best, bestVec, topScore, tolerance: tb.tolerance,
       topStart: opts.tieBreak!.topStart ? fromSerials(opts.tieBreak!.topStart) : null, tieCands, costOf, exactDeadline: opts.exact ? exactStart + budgetMs : null });
     best = stage.best; bestScore = stage.bestScore; tieRef = stage.ref; tieMet = stage.met; tieKeeps = stage.keeps;
     if (stage.exact) { proven = proven && stage.exact.proven; nodes = (nodes || 0) + stage.exact.nodes; }
@@ -1430,7 +1430,7 @@ function optimizeSuit(pools: Record<string, OptItem[]>, current: OptAssignment, 
     const sigOf = function (a: OptAssignment): string { const parts: string[] = []; for (let i = 0; i < slots.length; i++) { const it = a[slots[i]!]; parts.push(it ? String(it.serial) : "0"); } return parts.join(","); };
     const seen: Record<string, boolean> = {};
     seen[sigOf(best)] = true;
-    // strict order: only suits equal to the best on every stage, whatever the tolerance
+    // the objective's listed suits: Best value's within the tolerance of the top score, Strict order's equal to the best on every stage
     const list = bbAlts.map(function (e) { const a = optSanitize(e.a, slots); return { best: a, score: optScoreVector(optTotalsOf(a, slots, space), space) }; })
       .filter(function (e) { return objective.altMatches(vecAt(e.best), bestVec); });
     list.sort(function (x, y) { return y.score - x.score; });
@@ -1454,7 +1454,7 @@ function optimizeSuit(pools: Record<string, OptItem[]>, current: OptAssignment, 
     const s = slots[i]!, it = best[s] || null;
     if (!it || !optional[s] || s === "oneHanded" || s === "twoHanded" || (cur[s] && cur[s]!.serial === it.serial)) continue;
     const without: OptAssignment = { ...best, [s]: null }, sc = scoreSet(without, profile);
-    // strict order: it comes off when no stage is lower without it
+    // it comes off when the objective is no worse without it (Strict order: no stage is lower)
     if (objective.noWorse(sc, vecAt(without), tied, vecAt(best)) && (!tieKeeps || tieKeeps(without))) { best = without; tied = sc; }
   }
   bestScore += tied - untrimmed;

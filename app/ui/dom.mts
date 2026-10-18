@@ -10,7 +10,7 @@ import { state } from "./store.mts";
 import { rarityToken } from "./items.mts";
 import { api } from "./api.mts";
 import type { ItemsBySerialApiResponse } from "./api-types.mts";
-import { tag, tooltip } from "./components.mts";
+import { tag, tooltip } from "./components.mts";   // components.mts imports el() from here; safe, as neither calls the other while loading
 import { createTipResolver, type TooltipItem } from "./item-tip.mts";
 
 export { EXTRA_COLS, colVal } from "../item-query.mts";

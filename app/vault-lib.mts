@@ -165,7 +165,8 @@ export const BRIDGE_OFFLINE = "Bridge offline. Press Play on packrat-bridge.py i
 // running bridge's own report first (status.json's adapter, while it is online), then the newest scan made with that
 // adapter, then the manifest this app ships (docs/bridge-protocol.md, Features).
 // A manifest (capabilities.json) or a scan's adapter block: its bridge actions and its features. Scripts before TazUO
-// 2.16.0 listed "trip-bags" among the actions, so a name counts from either list.
+// 2.16.0 listed "trip-bags" among the actions, so a name counts from either list (compat: trip-bags-action, remove in
+// Pack Rat 0.3.0 (docs/architecture.md, Compatibility shims)).
 export interface FeatureDeclaration { capabilities?: { bridge?: readonly string[] | undefined } | undefined; features?: readonly string[] | undefined }
 export type FeatureSource = "bridge" | "scan" | "app";
 const featureNames = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
@@ -1428,6 +1429,9 @@ export function buildPools(inv: Inventory, character: string | null, opts: Build
   // A worn piece the filters rule out (wrong weapon type, a forbidden skill bonus, a missing weapon property) must not
   // stay a candidate through the "keep what you wear" rule. A pinned piece is never blocked, and a locked slot keeps a
   // weapon that lacks a required property: the player chose it.
+  // The game never wears a two-handed weapon beside a one-hander (a demo fixture does): the one hand reads as empty, as
+  // the core's optSanitize would leave it, so the exact search never starts from a suit nobody can wear.
+  if (current.twoHanded?.twoHanded && current.oneHanded) delete current.oneHanded;
   const wornAt = (sl: string): Item | null => (current[sl] && pinned?.[sl] == null ? inv.items[current[sl]!.serial] || ({} as Item) : null);
   const kept = weaponMustHave.length ? HAND_SLOTS.filter((sl) => lockedSlots.includes(sl) && wornAt(sl) && !weaponHasFlags(wornAt(sl)!, weaponMustHave)) : [];
   const blocked = GEAR_SLOTS.filter((sl) => {

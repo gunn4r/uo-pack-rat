@@ -12,16 +12,12 @@
 //
 // map: server
 // owns: `routes`
-import { mkdirSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { DATA_DIR_MODE } from "../../config.mts";
 import { renderRegion, type Region } from "../../facet-map.mts";
 import { tileBounds, type HouseSource } from "../../house-capture.mts";
 import type { HouseApiResponse, HouseClaimsApiResponse, HouseMapApiResponse, HouseMapPutApiResponse, HousesApiResponse } from "../../house-model-types.mts";
 import type { OkApiResponse } from "../../api/routes.mts";
 import { plotBounds, plotSize } from "../../house-model.mts";
-import { checkHouseEntry, isHouseId, readHouseMap, saveHouseEntry, MAX_ENTRY_BYTES } from "../../house-names.mts";
-import { safeAppendLog } from "../../log.mts";
+import { checkHouseEntry, isHouseId, MAX_ENTRY_BYTES } from "../../house-names.mts";
 import { encodePng } from "../../png.mts";
 import { readBody } from "../../read-body.mts";
 import { claimsOver } from "../../store/house-claims.mts";
@@ -30,21 +26,11 @@ import type { Route } from "../router.mts";
 import type { ServerContext } from "../context.mts";
 
 export function routes(ctx: ServerContext): Route[] {
-  const { config: CONFIG, getInventory, houseService, houseClaimsStore } = ctx;
-  // <data>/house-map.json: the player's house names (issue #164, app/house-names.mts). A file that does not parse is
-  // moved aside and the houses read unnamed; what a read set aside or left out goes to the log, once while it stays the same.
-  const HOUSE_MAP = join(CONFIG.dataDir, "house-map.json");
-  let namesProblem: string | null = null;
-  function readNames(): ReturnType<typeof readHouseMap> {
-    const got = readHouseMap(HOUSE_MAP);
-    if (got.problem && got.problem !== namesProblem) safeAppendLog(CONFIG.paths.log, `${new Date().toISOString()} ${got.problem}\n`);
-    namesProblem = got.problem;
-    return got;
-  }
+  const { getInventory, houseService, houseClaimsStore, houseMapStore } = ctx;
   return [
     // The houses the scans captured (issue #10): GET /api/houses lists each with its size, chest count and container serials (what Inventory's "Show on map" looks an item's container up in), GET /api/houses/<id> serves one house's whole model. Both come from the fold's cache and the built models are memoised (houseModel); an id that names no house (or does not decode) is a 404. Only the houses the player claimed are served (issue #299): a house whose bounds overlap a claim on its facet.
     { method: "GET", path: /^\/api\/houses(?:\/|$)/, handle: async (_req, res, url) => {
-      const { inv, houses: all } = await getInventory(), map = readNames().doc, claims = houseClaimsStore.read();
+      const { inv, houses: all } = await getInventory(), map = houseMapStore.read().doc, claims = houseClaimsStore.read();
       const houses = all.filter((h) => claimsOver(claims, h.facet, tileBounds(h.tiles)).length);
       let one: HouseSource | undefined;
       if (url.pathname !== "/api/houses") {
@@ -93,7 +79,7 @@ export function routes(ctx: ServerContext): Route[] {
     // that was redesigned or moved is what the page offers to carry over to its new id.
     // `readOnly`: why the map cannot be changed (a newer Pack Rat made it), when it cannot; every PUT is then a 409.
     { method: "GET", path: "/api/house-map", handle: (_req, res) => {
-      const { doc, readOnly } = readNames();
+      const { doc, readOnly } = houseMapStore.read();
       return send(res, 200, { ok: true, houses: doc.houses, ...(readOnly ? { readOnly } : {}) } satisfies HouseMapApiResponse);
     } },
     { method: "PUT", path: /^\/api\/house-map\//, handle: async (req, res, url) => {
@@ -102,10 +88,7 @@ export function routes(ctx: ServerContext): Route[] {
       if (id == null || !isHouseId(id)) return send(res, 400, { ok: false, error: "that is not a house id (<facet>-<x>-<y>)" });
       const checked = checkHouseEntry(await readBody(req, { limit: MAX_ENTRY_BYTES }));
       if (!checked.ok) return send(res, 400, { ok: false, error: checked.error });
-      const { doc, readOnly } = readNames();
-      if (readOnly) return send(res, 409, { ok: false, error: readOnly });
-      mkdirSync(dirname(HOUSE_MAP), { recursive: true, mode: DATA_DIR_MODE });
-      const refused = saveHouseEntry(HOUSE_MAP, doc, id, checked.entry);
+      const refused = houseMapStore.save(id, checked.entry);
       if (refused) return send(res, 409, { ok: false, error: refused });
       return send(res, 200, { ok: true, entry: checked.entry } satisfies HouseMapPutApiResponse);
     } },
