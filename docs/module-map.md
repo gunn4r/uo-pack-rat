@@ -125,7 +125,7 @@ Profiles, buffs, pools, solvers, saved runs and Manual. `docs/solver.md` describ
 | `app/organize-presets.mts` | Ready-made rule filters for Organize (issue #11). | `PRESETS`, `ruleFromPreset` |
 | `app/organize-state.mts` | Organize's results overlay (issue #11), <data>/organize-state.json: the trips the server queued and has not yet heard back about (`pending`), the bridge Grabs likewise (`grabs`, issue #148), every step the bridge confirmed (`moves`, which planOrganize applies so a finished trip is not planned again before the next scan), and when each labelled container was last in a scan (`seen`, for "not seen since"). | `OrganizeState`, `harvestTrips`, `addGrab`, `pruneOverlay`, `noteSeen` |
 | `app/organize-strategies.mts` | Organize's Auto mode (issue #11, spec §5): the Simple, Detailed and By build (#91) strategies (which items form a group, each group written as ordinary rule filters, mostly the presets), assignGroups (which of the ticked chests each group gets) and proposeOrganize (the whole setup Accept saves). | `STRATEGIES`, `groupItems`, `assignGroups`, `proposeOrganize` |
-| `app/organize-types.mts` | Organize's plan and Auto organize's proposal, and the GET /api/organize/plan and POST /api/organize/propose responses built from them; types only, importing only organize-config.mts's types, so the page's browser build can use them: app/organize.mts and app/organize-strategies.mts re-export them, the routes `satisfies` them, and ui/api-types.mts re-exports them. | `Plan`, `PlanMove`, `PlanTrip`, `PlanWarning`, `WarningKind`, `RuleReport`, `RoomReport`, `Carried`, `EmptyBag`, `Proposal`, `ProposeResult`, `StrategyId`, `Family`, `Candidate`, `GroupReport`, `Layout`, `OrganizePlanApiResponse`, `OrganizeProposeApiResponse` |
+| `app/organize-types.mts` | Organize's plan and Auto organize's proposal, and the GET /api/organize/plan and POST /api/organize/propose responses built from them; types only, importing only organize-config.mts's types, so the page's browser build can use them: app/organize.mts and app/organize-strategies.mts re-export them, the routes `satisfies` them, and ui/api-types.mts re-exports them. | `Plan`, `PlanMove`, `PlanTrip`, `PlanWarning`, `WarningKind`, `RuleReport`, `RoomReport`, `Carried`, `EmptyBag`, `Proposal`, `ProposeResult`, `StrategyId`, `Family`, `Candidate`, `GroupReport`, `Layout`, `OrganizePlanApiResponse`, `OrganizeProposeApiResponse`, `OrganizeProposeBody` |
 | `app/organize.mts` | Organize's planner (issue #11): which item goes from which container to which, in which trip, and what does not fit. | `planOrganize`, `tripCommand`, `packSite`, `scopeOf`, `claimOf`, `buildOf`, `CASTER_PROPS`, `MELEE_PROPS`, `TRIP_DEFAULTS` |
 | `app/put-away.mts` | Put away (issue #131): the TazUO panel's filing, by the current Organize rules, of what lies directly in one container the player picks with a target cursor: the backpack, a bag in it, or a container in a labelled ground chest. | `PUT_AWAY_REQUEST`, `PUT_AWAY_REPLY`, `checkPutAwayRequest` |
 | `app/ui/auto-organize.mts` | Auto organize (issue #11, spec §5): a wide drawer opened from the Organize screen. | `openAutoOrganize` |
@@ -211,6 +211,16 @@ The thresholds are the shard rules' `unravel` (Shard rules, above); `GET /api/it
 | `app/mcp-tools.mts` | The MCP server's tools (issue #211; the protocol and the listener are app/mcp.mts), one table entry each, calling the app's own routes over loopback, and where the page computes before a route, calling the same shared function; tools that wait stop at 45 s by default, 50 at most. | `TOOLS`, `INSTRUCTIONS`, `ToolContext` |
 | `app/mcp.mts` | Pack Rat's built-in MCP server (issue #211): a second loopback listener inside the server process that speaks the stateless subset of MCP's Streamable HTTP transport, so Claude Code and other MCP clients can search the inventory, read character sheets and saved runs, run the Suit Builder and, with a second switch, act in game. | `createMcp`, `readMcpConfig`, `writeMcpConfig`, `PROTOCOL_VERSIONS`, `MCP_DEFAULT_PORT` |
 <!-- module-map:end -->
+
+## HTTP API contract
+
+<!-- module-map:start api -->
+| Module | Role | Owns |
+|---|---|---|
+| `app/api/routes.mts` | The HTTP API's route map: every /api route the server registers (app/http/routes/), keyed "METHOD /path" with a path parameter written <name>, and the type of what it answers with 200 (`res`) and of the JSON body it reads (`body`). | `ApiRoutes`, `ApiEntry`, `Untyped`, `EventStream`, `Png`, `ApiResponse`, `ApiBody` |
+<!-- module-map:end -->
+
+The route map is checked against the routes `app/http/routes/` registers by `scripts/api-routes.test.mts`, both ways.
 
 ## Server
 
