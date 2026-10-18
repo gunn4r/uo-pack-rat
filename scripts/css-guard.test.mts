@@ -1,8 +1,9 @@
-// css-guard.test.mts — a [smoke] guard that keeps screen stylesheets from restyling the shared components, and the window breakpoints in one list.
+// css-guard.test.mts — a [smoke] guard that keeps screen stylesheets from restyling the shared components, the window breakpoints in one list, and every color a token.
 //
 // 1. A rule in a screen stylesheet (every `app/ui/*.css` but `components.css`, `tokens.css` and `britannia.css`) whose subject, the last compound of a selector, carries a component class is an override: it changes a component in one place only, so a component change has to be checked in every such file. The component classes are the ones `app/ui/components.css` styles on their own (`.btn`, `.badge.best`, `dialog.dialog`), less the text and icon utilities. Today's overrides are listed below, each under the reason it is there; a new one fails until it becomes a component option or joins the list with its reason, and a listed one that is gone fails too, so the list stays current.
 // 2. Every width in an `@media` rule of `app/ui/*.css` is one of `app/ui/breakpoints.mts`'s (a `min-width` one pixel above one), and no `app/ui/*.mts` but that module writes a `max-width`/`min-width` query of its own.
 // 3. Every stylesheet closes each block it opens: a lost `}` nests every later rule in the block above it.
+// 4. No color is written as a literal (`#hex`, `rgb()` / `hsl()` and the other color functions, a named color such as `white`) outside `tokens.css` and `britannia.css`: not in a declaration of any other `app/ui/*.css`, and not in an inline style string of an `app/ui/*.mts` (a `style:` attribute, `.style.x =`, `setProperty()`, `cssText`, `setAttribute("style", …)`). A color is a `var(--…)` token; `transparent`, `currentColor` and `inherit` are fine. A legitimate exception goes in `COLOR_ALLOWED` with its reason.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
@@ -160,4 +161,37 @@ test("[smoke] css-guard: every stylesheet closes each block it opens", () => {
     if (depth) open.push(`${file}: ${depth > 0 ? `${depth} block(s) left open` : "a } with no block"}`);
   }
   assert.deepEqual(open, []);
+});
+
+// ---- 4. every color is a token
+// The CSS named colors (CSS Color 4), matched as whole words.
+const NAMED_COLORS = "aliceblue antiquewhite aqua aquamarine azure beige bisque black blanchedalmond blue blueviolet brown burlywood cadetblue chartreuse chocolate coral cornflowerblue cornsilk crimson cyan darkblue darkcyan darkgoldenrod darkgray darkgreen darkgrey darkkhaki darkmagenta darkolivegreen darkorange darkorchid darkred darksalmon darkseagreen darkslateblue darkslategray darkslategrey darkturquoise darkviolet deeppink deepskyblue dimgray dimgrey dodgerblue firebrick floralwhite forestgreen fuchsia gainsboro ghostwhite gold goldenrod gray green greenyellow grey honeydew hotpink indianred indigo ivory khaki lavender lavenderblush lawngreen lemonchiffon lightblue lightcoral lightcyan lightgoldenrodyellow lightgray lightgreen lightgrey lightpink lightsalmon lightseagreen lightskyblue lightslategray lightslategrey lightsteelblue lightyellow lime limegreen linen magenta maroon mediumaquamarine mediumblue mediumorchid mediumpurple mediumseagreen mediumslateblue mediumspringgreen mediumturquoise mediumvioletred midnightblue mintcream mistyrose moccasin navajowhite navy oldlace olive olivedrab orange orangered orchid palegoldenrod palegreen paleturquoise palevioletred papayawhip peachpuff peru pink plum powderblue purple rebeccapurple red rosybrown royalblue saddlebrown salmon sandybrown seagreen seashell sienna silver skyblue slateblue slategray slategrey snow springgreen steelblue tan teal thistle tomato turquoise violet wheat white whitesmoke yellow yellowgreen".split(" ");
+const LITERAL_COLOR = new RegExp(`#[0-9a-f]{3,8}\\b|\\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\\(|(?<![\\w.$-])(?:${NAMED_COLORS.join("|")})(?![\\w(-])`, "gi");
+const literalColors = (value: string): string[] => [...value.matchAll(LITERAL_COLOR)].map((m) => m[0]);
+// Each declaration's value in a stylesheet (selectors, which may hold an #id, are not looked at).
+const declarations = (css: string): string[] => [...css.matchAll(/(?<=[{;])\s*-{0,2}[\w-]+\s*:([^;{}]*)(?=[;}])/g)].map((m) => m[1]!);
+// The inline style strings of a page module, with their ${…} parts dropped (a value read at run time is not a literal).
+const STYLE_STRING = /(?:\bstyle:\s*|\.style\.[\w]+\s*=\s*|\.cssText\s*=\s*|setProperty\(\s*["'`][^"'`]*["'`]\s*,\s*|setAttribute\(\s*["']style["']\s*,\s*)(["'`])((?:\\.|(?!\1)[^\\])*)\1/g;
+const styleStrings = (src: string): string[] => [...src.replace(/^\s*\/\/.*$/gm, "").matchAll(STYLE_STRING)].map((m) => m[2]!.replace(/\$\{(?:[^{}]|\{[^{}]*\})*\}/g, ""));
+const COLOR_FREE = new Set(["tokens.css", "britannia.css"]);
+// Literal colors that are fine where they are, as "file: literal" with the reason.
+const COLOR_ALLOWED: Record<string, string> = {};
+
+test("[smoke] css-guard: the color check finds the literals it is meant to", () => {
+  assert.deepEqual(literalColors("1px solid #fff; color: rgb(0 0 0); background: white"), ["#fff", "rgb(", "white"]);
+  assert.deepEqual(literalColors("var(--color-text) transparent currentColor; white-space: nowrap; .red-dot"), []);
+  assert.deepEqual(declarations(".a:hover { color: #123456; } #abc { margin: 0 }"), [" #123456", " 0 "]);
+  assert.deepEqual(styleStrings('el("span", { style: `color:var(${t});background:#000` }); x.style.color = "red"; x.style.setProperty("--a", "blue");'), ["color:var();background:#000", "red", "blue"]);
+});
+
+test("[smoke] css-guard: every color is a token outside tokens.css and britannia.css", () => {
+  const found: string[] = [];
+  for (const file of readdirSync(UI).filter((f) => f.endsWith(".css") && !COLOR_FREE.has(f)).sort()) {
+    for (const v of declarations(read(file))) for (const c of literalColors(v)) found.push(`${file}: ${c}`);
+  }
+  for (const file of readdirSync(UI).filter((f) => f.endsWith(".mts")).sort()) {
+    for (const s of styleStrings(readFileSync(join(UI, file), "utf8"))) for (const c of literalColors(s)) found.push(`${file}: ${c}`);
+  }
+  assert.deepEqual(found.filter((f) => !(f in COLOR_ALLOWED)), [], "a literal color: use its var(--…) token from tokens.css, or list it in COLOR_ALLOWED with its reason");
+  assert.deepEqual(Object.keys(COLOR_ALLOWED).filter((f) => !found.includes(f)), [], "a listed color is gone: take it off COLOR_ALLOWED");
 });
