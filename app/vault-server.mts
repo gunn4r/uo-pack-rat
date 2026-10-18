@@ -18,8 +18,8 @@
 // Localhost security (docs/architecture.md's "The server's request checks" has the full writeup): every request's
 // Host must name this server and its Origin (if any) must match, or 403; with CONFIG.token set,
 // every /api/* route but the SSE events stream needs `Authorization: Bearer <token>`, or 401 — the
-// bare `node app/vault-server.mts` path runs with no token at all. PUT /api/profiles is capped at 1 MB
-// and schema-checked (app/schema/profiles.v3.schema.json). One running optimize job per X-Client-Id
+// bare `node app/vault-server.mts` path runs with no token at all. PATCH /api/profiles is capped at 1 MB
+// and its result schema-checked (app/schema/profiles.v3.schema.json). One running optimize job per X-Client-Id
 // (a second POST cancels the first and reports {superseded}); job ids are crypto.randomUUID() and the
 // events route checks the job's own id against a ?client= query param instead of the token. A route
 // that throws returns {error:"internal error", ref} with the stack only in CONFIG.paths.log, keyed by ref.

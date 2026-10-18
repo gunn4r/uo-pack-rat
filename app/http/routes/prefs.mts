@@ -1,8 +1,8 @@
-// prefs.mts — the player's saved choices: GET|PUT|PATCH /api/profiles, /api/ui-prefs and /api/tazuo-panel.
+// prefs.mts — the player's saved choices: GET|PATCH /api/profiles, /api/ui-prefs and /api/tazuo-panel.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { isBuffList, isBuffSkills } from "../../buffs.mts";
-import { PROFILES_VERSION, keepLabels, profilesSpecError, type ProfilesV3 } from "../../build-spec.mts";
+import { profilesSpecError } from "../../build-spec.mts";
 import { applyProfileEdits, profileEditError, type ProfileEdit } from "../../profile-edits.mts";
 import { isPseudoCharacter } from "../../scan-schema.mts";
 import { isBoundedString } from "../../guards.mts";
@@ -17,9 +17,6 @@ import type { ServerContext } from "../context.mts";
 
 const HERE = APP_DIR;
 const PROFILES_SCHEMA = JSON.parse(readFileSync(join(HERE, "schema", "profiles.v3.schema.json"), "utf8")) as ValidatorSchema;
-// A page loaded before the update still holds the old shape, without the buffs that moved in, or saves without a stamp:
-// it is refused rather than migrated or taken, so it can never write over them.
-const OLD_PAGE = "profiles are saved in a newer shape now; reload the page and make the change again";
 // The most edits one PATCH /api/profiles makes (a page sends one or two).
 const MAX_EDITS = 100;
 
@@ -27,39 +24,17 @@ export function routes(ctx: ServerContext): Route[] {
   const { config: CONFIG, panelPrefsFile: PANEL_PREFS, profilesStore, savePanel, uiPrefsStore, getInventory } = ctx;
   return [
     // The player's profiles, and the shard's built-in templates beside them (read-only, never written into the file).
-    // `readOnly`: why the file cannot be saved (a newer Pack Rat made it), when it cannot; every PUT is then a 409.
+    // `readOnly`: why the file cannot be saved (a newer Pack Rat made it), when it cannot; every PATCH is then a 409.
+    // `stamp`: the file's content stamp, which a PATCH's `was` is compared with.
     { method: "GET", path: "/api/profiles", handle: async (_req, res) => {
       const profiles = await profilesStore.read(), readOnly = profilesStore.readOnly();
       return send(res, 200, { ok: true, profiles, stamp: profilesStore.stamp(), builtinTemplates: profilesStore.builtins(), ...(readOnly ? { readOnly } : {}) });
     } },
-    // The whole file, with `base`: the stamp GET answered with. A file saved since (another window, an AI assistant, an
-    // edit) is refused with 409 "stale" and the current stamp, and left alone; the page reloads and makes its
-    // change again. A save without one comes from a page loaded before stamps, and is refused like an old shape.
-    { method: "PUT", path: "/api/profiles", handle: async (req, res) => {
-      const { base, ...body } = asObject(await readBody(req, { limit: 1e6, tooLargeMsg: "profiles too large" }));
-      const readOnly = profilesStore.readOnly();
-      if (readOnly) return send(res, 409, { ok: false, error: readOnly });
-      const version = body.schemaVersion;
-      if (typeof version === "number" && version < PROFILES_VERSION) return send(res, 400, { ok: false, error: OLD_PAGE });
-      const { ok, errors } = validate(PROFILES_SCHEMA, body);
-      if (!ok) return send(res, 400, { ok: false, error: `${errors[0]!.path} ${errors[0]!.msg}`, errors });
-      if (base === undefined) return send(res, 400, { ok: false, error: OLD_PAGE });
-      if (!isBoundedString(base, 64)) return send(res, 400, { ok: false, error: "base must be the stamp GET /api/profiles answered with" });
-      // a template name already stored passes as it is; the stored labels stay (only a setLabel edit changes one);
-      // nothing awaits between this read and the write
-      const stored = await profilesStore.read();
-      const bad = profilesSpecError(body as ProfilesV3, stored);
-      if (bad) return send(res, 400, { ok: false, error: bad });
-      keepLabels(body as ProfilesV3, stored);
-      const saved = profilesStore.write(body as ProfilesV3, base);
-      if (!saved.ok) return send(res, 409, { ok: false, code: "stale", error: "the profiles were changed elsewhere since they were read; reload them", stamp: saved.stamp });
-      return send(res, 200, { ok: true, stamp: saved.stamp });
-    } },
-    // Edits to the profiles (app/profile-edits.mts): {edits: [...]}, 1 to 100, made in order on the file as it is on the
+    // The one way to save the profiles: edits (app/profile-edits.mts), {edits: [...]}, 1 to 100, made in order on the file as it is on the
     // server and written once, so a page's save carries what it means and never its copy of the rest. Each edit's shape is
     // checked first (400), then one that can't be made on the file now (a template deleted elsewhere, a name taken, a
-    // label for no such character) refuses the whole list (409 "conflict"), and the result is held to the same schema
-    // and spec checks as a whole-file save (400). Answers the file's stamp before (`was`) and after the write, so a page
+    // label for no such character) refuses the whole list (409 "conflict"), and the result is held to the profiles
+    // schema and profilesSpecError (400; a template name already stored passes as it is). Answers the file's stamp before (`was`) and after the write, so a page
     // whose copy was the file before knows its copy plus the edits is the file now, and one holding another reloads.
     { method: "PATCH", path: "/api/profiles", handle: async (req, res) => {
       const { edits } = asObject(await readBody(req, { limit: 1e6, tooLargeMsg: "profiles too large" }));

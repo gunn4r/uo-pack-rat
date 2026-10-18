@@ -242,10 +242,9 @@ export function sseReader(response: Response): SseReaderHandle {
 // ---- issue #18: server durability ------------------------------------------------------------------
 
 export const JSON_HEADERS = { "content-type": "application/json" };
-// PUT /api/profiles with the stamp a GET just answered (`base`), for a test that saves a whole file on purpose.
-export async function putProfiles(url: string, doc: unknown, headers: Record<string, string> = {}): Promise<Response> {
-  const { stamp } = (await (await fetch(`${url}/api/profiles`, { headers })).json()) as { stamp: string };
-  return fetch(`${url}/api/profiles`, { method: "PUT", headers: { ...JSON_HEADERS, ...headers }, body: JSON.stringify({ ...(doc as object), base: stamp }) });
+// PATCH /api/profiles with a list of edits (app/profile-edits.mts), for a test that saves profiles.
+export function patchProfiles(url: string, edits: unknown, headers: Record<string, string> = {}): Promise<Response> {
+  return fetch(`${url}/api/profiles`, { method: "PATCH", headers: { ...JSON_HEADERS, ...headers }, body: JSON.stringify({ edits }) });
 }
 
 export const logText = (dir: string): string => existsSync(join(dir, "logs", "server.log")) ? readFileSync(join(dir, "logs", "server.log"), "utf8") : "";

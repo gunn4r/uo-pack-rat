@@ -1,4 +1,4 @@
-// ui-profiles-sync.test.mts — [slow]: the page's profile saves against another window's in the real Electron window (quality pass 1, W1a), on a writable `--data` directory seeded with the demo scans. Another window's save (a whole-file PUT with its own stamp, sent from the page's origin) makes the page's copy stale: a buff toggle after it goes up as an edit (PATCH), lands beside the other window's character (marked by its buffs: a whole-file save keeps only stored labels) and template with no stale refusal, and the page reads the file again and lists that template; an Update of a template the other window deleted is refused (409 conflict), not made again, the page says why, and the template stays deleted. Skipped the same way as the UI smoke test.
+// ui-profiles-sync.test.mts — [slow]: the page's profile saves against another window's in the real Electron window (quality pass 1, W1a), on a writable `--data` directory seeded with the demo scans. Another window's save (an edit sent from the page's origin) leaves the page's copy behind: a buff toggle after it lands beside the other window's character and template with no refusal, and the page reads the file again and lists that template; an Update of a template the other window deleted is refused (409 conflict), not made again, the page says why, and the template stays deleted. Skipped the same way as the UI smoke test.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, mkdirSync, copyFileSync, readFileSync } from "node:fs";
@@ -35,16 +35,12 @@ async function launch(dataDir: string): Promise<{ app: ElectronApplication; page
   return { app, page, errors };
 }
 interface Disk { characters: Record<string, { spec: { buffs?: { on: string[] } } }>; templates: Record<string, unknown> }
-// Another window's whole-file save, made with the stamp it reads now: `change` runs on its copy (in the page's context).
+// Another window's save (PATCH /api/profiles from the page's origin, not through this page's own state).
 type Change = "kestrelAndTemplate" | "deleteMine";
 const otherWindow = (page: Page, change: Change): Promise<number> => page.evaluate(async (c) => {
-  const got = await (await fetch("/api/profiles")).json() as { profiles: { characters: Record<string, Record<string, unknown>>; templates: Record<string, unknown> }; builtinTemplates: Record<string, unknown>; stamp: string };
-  const p = got.profiles;
-  if (c === "kestrelAndTemplate") {
-    p.characters.Kestrel = { ...p.characters.Dorran, spec: { ...(p.characters.Dorran as { spec: object }).spec, buffs: { on: ["bless"], skills: {} } } };
-    p.templates["Other window"] = got.builtinTemplates.melee;
-  } else delete p.templates.Mine;
-  const r = await fetch("/api/profiles", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...p, base: got.stamp }) });
+  const got = await (await fetch("/api/profiles")).json() as { builtinTemplates: Record<string, unknown> };
+  const edits = c === "kestrelAndTemplate" ? [{ op: "setBuffs", name: "Kestrel", buffs: { on: ["bless"] } }, { op: "putTemplate", id: "Other window", entry: got.builtinTemplates.melee }] : [{ op: "deleteTemplate", id: "Mine" }];
+  const r = await fetch("/api/profiles", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ edits }) });
   return r.status;
 }, change);
 

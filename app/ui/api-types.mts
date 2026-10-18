@@ -149,7 +149,7 @@ export interface ItemsBySerialApiResponse {
 export interface ProfilesApiResponse {
   ok: boolean;
   profiles: ProfilesV3;
-  stamp: string;   // the file's content stamp: PUT /api/profiles' base, and what PATCH's `was` is compared with
+  stamp: string;   // the file's content stamp, which a PATCH's `was` is compared with
   builtinTemplates: TemplateMap;   // the shard's built-in templates, read-only (app/data/templates/<shard>.json)
   readOnly?: string;   // why profiles.json cannot be saved, when a newer Pack Rat made it (app/migrate.mts)
 }

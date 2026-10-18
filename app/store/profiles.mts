@@ -1,4 +1,4 @@
-// profiles.mts — <data>/profiles.json: the Suit Builder's characters and templates (GET/PUT /api/profiles).
+// profiles.mts — <data>/profiles.json: the Suit Builder's characters and templates (GET/PATCH /api/profiles).
 import { copyFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { PROFILES_VERSION, buildSpecError, type ProfilesV3, type TemplateEntry, type TemplateMap } from "../build-spec.mts";
@@ -95,16 +95,15 @@ export function createProfilesStore({ file, defaults, templatesDir, shard, log, 
     })().finally(() => { migration = null; });
     return migration;
   }
-  // The file's content stamp, which GET /api/profiles answers with (Organize's pattern, json-file.mts's fileStamp).
+  // The file's content stamp, which GET /api/profiles answers with and PATCH answers before and after its write
+  // (json-file.mts's fileStamp).
   const stamp = (): string => fileStamp(file);
-  // The whole file, already checked against the schema and app/build-spec.mts's buildSpecError. Given the stamp it was
-  // read at (`base`), a file changed since is left alone (ok false, with the stamp it has now): a page's stale copy can't
-  // drop or revert what another window saved. The check and the write run with no await between them.
-  function write(doc: ProfilesV3, base?: string): { ok: boolean; stamp: string } {
-    if (base !== undefined && stamp() !== base) return { ok: false, stamp: stamp() };
+  // PATCH /api/profiles: the edited file, already checked against the schema and app/build-spec.mts's profilesSpecError.
+  // Answers its new stamp.
+  function write(doc: ProfilesV3): { stamp: string } {
     refuseNewer(file, "profiles");
     writeJsonFile(file, doc, { indent: 2 });
-    return { ok: true, stamp: stamp() };
+    return { stamp: stamp() };
   }
   // Why profiles.json may not be saved (a newer Pack Rat made it), or null.
   const readOnly = (): string | null => newerOnDisk(file, "profiles");

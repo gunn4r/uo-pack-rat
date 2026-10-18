@@ -19,7 +19,7 @@ import { swingSeconds } from "./swing.mts";
 import * as core from "../scripts/optimizer-core.mts";
 import { buildUi } from "../scripts/build-ui.mts";
 import { buildSchemaTypes } from "../scripts/build-schema-types.mts";
-import { asJson, HERE, UOALIVE, foldFixtures, rawReq, JSON_HEADERS, putProfiles, logText, type InventoryResponse, type ProfilesResponse, firstTemplate, type RulesResponse, type ItemsPageResponse, type OptimizeJobResponse, type ErrorBody } from "./server-routes-fixture.mts";
+import { asJson, HERE, UOALIVE, foldFixtures, rawReq, JSON_HEADERS, patchProfiles, logText, type InventoryResponse, type ProfilesResponse, firstTemplate, type RulesResponse, type ItemsPageResponse, type OptimizeJobResponse, type ErrorBody } from "./server-routes-fixture.mts";
 
 // Order matters: build the schema types before buildUi() runs, not because tsconfig.browser.json's
 // `include` enforces it (a missing literal entry there is silently dropped, not an error — verified)
@@ -57,45 +57,38 @@ before(() => {
 after(async () => { await tsrvStarted; await tsrv?.close(); });
 const authHost = () => ({ host: `localhost:${tsrv.port}`, authorization: "Bearer t0ken" });
 
-test("[fast] PUT /api/profiles: an oversized multi-byte body is 413 (bytes, not JS string length); an invalid shape is 400 naming /characters; an older page's v2 body is 400", async () => {
+test("[fast] PATCH /api/profiles: an oversized multi-byte body is 413 (bytes, not JS string length); edits that aren't a list are 400", async () => {
   // 600,000 "é" characters: 600,000 UTF-16 code units (well under the 1e6 string-length a byte-blind
   // cap would have measured) but 1,200,000 UTF-8 bytes (over the 1e6 byte cap) — this is exactly the
   // post-review fix: readBody() must count Buffer bytes, not the JS string's .length, or a body like
   // this one sails past a 1 MB limit while measuring under it.
-  const oversized = JSON.stringify({ schemaVersion: 2, characters: {}, templates: {}, pad: "é".repeat(600000) });
+  const oversized = JSON.stringify({ edits: [], pad: "é".repeat(600000) });
   const big = await rawReq(`${tsrv.url}/api/profiles`, {
-    method: "PUT", headers: { ...authHost(), "content-type": "application/json" }, body: oversized,
+    method: "PATCH", headers: { ...authHost(), "content-type": "application/json" }, body: oversized,
   });
   assert.equal(big.status, 413);
   assert.equal(asJson(big.json()).error, "profiles too large");
   const bad = await rawReq(`${tsrv.url}/api/profiles`, {
-    method: "PUT", headers: { ...authHost(), "content-type": "application/json" }, body: JSON.stringify({ schemaVersion: 3, templates: {}, characters: 5 }),
+    method: "PATCH", headers: { ...authHost(), "content-type": "application/json" }, body: JSON.stringify({ edits: 5 }),
   });
   assert.equal(bad.status, 400);
-  assert.match(asJson<ErrorBody>(bad.json()).error, /\/characters/);
-  // a page loaded before the update sends the old shape, without the buffs that moved in: refused, never migrated
-  const old = await rawReq(`${tsrv.url}/api/profiles`, {
-    method: "PUT", headers: { ...authHost(), "content-type": "application/json" }, body: JSON.stringify({ schemaVersion: 2, templates: {}, characters: { A: { floors: {} } } }),
-  });
-  assert.equal(old.status, 400);
-  assert.equal(asJson<ErrorBody>(old.json()).error, "profiles are saved in a newer shape now; reload the page and make the change again");
+  assert.match(asJson<ErrorBody>(bad.json()).error, /edits must be a list/);
 });
 
 // Issue #336: a template name an older Pack Rat let through (over 128 characters, or "builtin:…") stays in the file and
 // never blocks a save; only a new one is refused, by name.
-test("[fast] PUT /api/profiles: stored over-long and built-in-prefixed template names pass; a new one is 400 naming it", async () => {
+test("[fast] PATCH /api/profiles: stored over-long and built-in-prefixed template names pass; a new one is 400 naming it", async () => {
   const dir = mkdtempSync(join(tmpdir(), "qm-tplnames-")), spec = templateSpecFrom({}, []), long = "x".repeat(200);
   const stored = { schemaVersion: 3, characters: {}, templates: { "builtin:old": { spec }, [long]: { spec } } };
   const cfg = ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {}));
   writeFileSync(join(dir, "profiles.json"), JSON.stringify(stored));
   const s = await startServer(cfg);
   try {
-    const put = (doc: unknown) => putProfiles(s.url, doc);
     const read = asJson<ProfilesResponse>(await (await fetch(`${s.url}/api/profiles`)).json()).profiles;
     assert.deepEqual(Object.keys(read.templates).sort(), [long, "builtin:old"].sort(), "read as stored");
-    const same = await put({ ...read, templates: { ...read.templates, Mine: { spec } } });
+    const same = await patchProfiles(s.url, [{ op: "putTemplate", id: "Mine", entry: { spec } }]);
     assert.equal(same.status, 200, "a save beside them goes through");
-    const bad = await put({ ...read, templates: { ...read.templates, "builtin:new": { spec } } });
+    const bad = await patchProfiles(s.url, [{ op: "putTemplate", id: "builtin:new", entry: { spec } }]);
     assert.equal(bad.status, 400);
     assert.match(asJson<ErrorBody>(await bad.json()).error, /^templates: “builtin:new”: /);
     assert.deepEqual(Object.keys(JSON.parse(readFileSync(join(dir, "profiles.json"), "utf8")).templates).sort(), [long, "Mine", "builtin:old"].sort(), "the refused save left the file alone");
@@ -104,7 +97,7 @@ test("[fast] PUT /api/profiles: stored over-long and built-in-prefixed template 
 
 // Issue #336: a character made from a template an older version named past 128 characters keeps its link when the file
 // loads and when it is saved again.
-test("[fast] GET|PUT /api/profiles: a 130-character template a character uses loads, keeps the link and saves", async () => {
+test("[fast] GET|PATCH /api/profiles: a 130-character template a character uses loads, keeps the link and saves", async () => {
   const dir = mkdtempSync(join(tmpdir(), "qm-tpllink-")), long = "t".repeat(130);
   const stored = { schemaVersion: 3, characters: { Dorran: { template: long, spec: specFromProfile({}) } }, templates: { [long]: { spec: templateSpecFrom({}, []) } } };
   const cfg = ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {}));
@@ -113,8 +106,7 @@ test("[fast] GET|PUT /api/profiles: a 130-character template a character uses lo
   try {
     const read = asJson<ProfilesResponse>(await (await fetch(`${s.url}/api/profiles`)).json()).profiles;
     assert.equal(read.characters.Dorran!.template, long, "loaded with its link");
-    const next = { ...read, characters: { Dorran: { ...read.characters.Dorran!, spec: specFromProfile({ floors: { luck: 100 } }) } } };
-    const put = await putProfiles(s.url, next);
+    const put = await patchProfiles(s.url, [{ op: "saveCharacter", name: "Dorran", entry: { template: long, spec: specFromProfile({ floors: { luck: 100 } }) } }]);
     assert.equal(put.status, 200, await put.clone().text());
     const disk = JSON.parse(readFileSync(join(dir, "profiles.json"), "utf8")) as ProfilesV3;
     assert.equal(disk.characters.Dorran!.template, long, "saved with its link");
@@ -122,56 +114,8 @@ test("[fast] GET|PUT /api/profiles: a 130-character template a character uses lo
   } finally { await s.close(); rmSync(dir, { recursive: true, force: true }); }
 });
 
-// Quality pass 1, W1a: a save names the stamp it read, so a window holding a stale copy can't drop or revert what another
-// window saved since; it is told so (409 "stale" with the stamp now), reloads, and saves its own change on top.
-test("[fast] PUT /api/profiles: a stale window's save is refused and drops nothing; reloaded, it lands beside the other", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "qm-stamp-"));
-  const stored = { schemaVersion: 3, characters: { Dorran: { spec: specFromProfile({}) }, Kestrel: { spec: specFromProfile({}) } }, templates: { mine: { spec: templateSpecFrom({}, []) } } };
-  const cfg = ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {}));
-  writeFileSync(join(dir, "profiles.json"), JSON.stringify(stored));
-  const s = await startServer(cfg);
-  const get = async (): Promise<ProfilesResponse & { stamp: string }> => asJson<ProfilesResponse & { stamp: string }>(await (await fetch(`${s.url}/api/profiles`)).json());
-  const put = (doc: object, base?: string): Promise<Response> => fetch(`${s.url}/api/profiles`, { method: "PUT", headers: JSON_HEADERS, body: JSON.stringify({ ...doc, ...(base === undefined ? {} : { base }) }) });
-  const disk = (): ProfilesV3 => JSON.parse(readFileSync(join(dir, "profiles.json"), "utf8")) as ProfilesV3;
-  try {
-    const one = await get(), two = await get();
-    assert.match(one.stamp, /^[0-9a-f]{16}$/);
-    assert.equal(one.stamp, two.stamp, "the same file, the same stamp");
-    // window one: Dorran's settings
-    const luck = specFromProfile({ floors: { luck: 100 } });
-    const saved = await put({ ...one.profiles, characters: { ...one.profiles.characters, Dorran: { spec: luck } } }, one.stamp);
-    assert.equal(saved.status, 200);
-    const stamp1 = asJson<{ stamp: string }>(await saved.json()).stamp;
-    assert.notEqual(stamp1, one.stamp, "a save changes the stamp");
-    // window two, still on the first copy: Kestrel's settings, a deleted template and a new one; refused, the file as window one left it
-    const theirs = { ...two.profiles, characters: { ...two.profiles.characters, Kestrel: { spec: luck } }, templates: { spare: { spec: templateSpecFrom({}, []) } } };
-    const stale = await put(theirs, two.stamp);
-    assert.equal(stale.status, 409);
-    const refused = asJson<{ code: string; stamp: string }>(await stale.json());
-    assert.deepEqual([refused.code, refused.stamp], ["stale", stamp1]);
-    assert.deepEqual(disk().characters.Dorran!.spec, luck, "window one's save stays");
-    assert.deepEqual([Object.keys(disk().templates), disk().characters.Kestrel!.spec.intent.floors], [["mine"], {}], "nothing of window two's");
-    // window two reloads and makes its change again: both land
-    const again = await get();
-    assert.equal(again.stamp, stamp1);
-    assert.equal((await put({ ...again.profiles, characters: { ...again.profiles.characters, Kestrel: { spec: luck } } }, again.stamp)).status, 200);
-    assert.deepEqual([disk().characters.Dorran!.spec, disk().characters.Kestrel!.spec, Object.keys(disk().templates)], [luck, luck, ["mine"]]);
-    // a save without a stamp (a page from before them) is refused; so is one with a bad stamp
-    const before = readFileSync(join(dir, "profiles.json"), "utf8");
-    assert.match(asJson<ErrorBody>(await (await put(again.profiles)).json()).error, /reload the page/);
-    assert.equal((await put(again.profiles, "x".repeat(65))).status, 400);
-    assert.equal(readFileSync(join(dir, "profiles.json"), "utf8"), before, "neither wrote");
-    // an edit answers the stamp it saved over and the one after; a whole-file save from before it is stale
-    const old = await get();
-    const label = asJson<{ was: string; stamp: string }>(await (await fetch(`${s.url}/api/profiles`, { method: "PATCH", headers: JSON_HEADERS, body: JSON.stringify({ edits: [{ op: "setLabel", name: "Dorran", label: "Main" }] }) })).json());
-    assert.deepEqual([label.was === old.stamp, label.stamp === old.stamp], [true, false]);
-    assert.equal((await put(old.profiles, old.stamp)).status, 409, "the label is not dropped");
-    assert.equal(disk().characters.Dorran!.label, "Main");
-  } finally { await s.close(); rmSync(dir, { recursive: true, force: true }); }
-});
-
 // Quality pass 1, W1a: PATCH /api/profiles makes a list of edits (app/profile-edits.mts) on the file as it is on the server,
-// so two windows' edits made from the same old copy both land; a list that can't be made, or whose result the checks
+// so two windows' edits made from the same old copy both land, and neither drops or reverts the other's; a list that can't be made, or whose result the checks
 // refuse, writes nothing.
 test("[fast] PATCH /api/profiles: two windows' edits land side by side; a refused list writes nothing; bad edits are 400 naming why", async () => {
   const dir = mkdtempSync(join(tmpdir(), "qm-edits-"));
@@ -673,21 +617,19 @@ test("[fast] /api/optimize heuristic-only: the time budget caps the random resta
 test("[fast] resist cap overrides: profiles and saved runs keep them, and a bad one is refused with 400", async () => {
   const dir = mkdtempSync(join(tmpdir(), "qm-"));
   const s2 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {})));
-  const put = (body: unknown): Promise<Response> => putProfiles(s2.url, body);
   try {
-    const got = asJson<ProfilesResponse>(await (await fetch(s2.url + "/api/profiles")).json()), profiles = got.profiles, tpl = firstTemplate(got);
+    const got = asJson<ProfilesResponse>(await (await fetch(s2.url + "/api/profiles")).json()), tpl = firstTemplate(got);
     const character = Object.keys(asJson<InventoryResponse>(await (await fetch(s2.url + "/api/inventory")).json()).inventory.characters)[0]!;
     const withCaps = (resistCaps: unknown) => ({ ...specFromProfile(tpl), intent: { ...specFromProfile(tpl).intent, resistCaps } });
-    const good = { ...profiles, characters: { ...profiles.characters, [character]: { template: "builtin:melee", race: "human", spec: withCaps({ fireResist: 95 }) } },
-      templates: { ...profiles.templates, reaper: { spec: templateSpecFrom({ ...tpl, resistCaps: { fireResist: 95, coldResist: 60 } }) } } };
-    assert.equal((await put(good)).status, 200);
+    const good = [{ op: "saveCharacter", name: character, entry: { template: "builtin:melee", race: "human", spec: withCaps({ fireResist: 95 }) } },
+      { op: "putTemplate", id: "reaper", entry: { spec: templateSpecFrom({ ...tpl, resistCaps: { fireResist: 95, coldResist: 60 } }) } }];
+    assert.equal((await patchProfiles(s2.url, good)).status, 200);
     const back = asJson<ProfilesResponse>(await (await fetch(s2.url + "/api/profiles")).json()).profiles;
     assert.deepEqual(back.characters[character]!.spec.intent.resistCaps, { fireResist: 95 });
     assert.deepEqual(back.templates.reaper!.spec.intent.resistCaps, { fireResist: 95, coldResist: 60 });
     for (const [where, caps, path] of [["characters", { fireResist: 95.5 }, /\/characters\/.+\/spec\/intent\/resistCaps\/fireResist/], ["characters", { fireResist: 151 }, /resistCaps\/fireResist/],
       ["templates", { luck: 5 }, /\/templates\/reaper\/spec\/intent\/resistCaps/], ["templates", "95", /\/templates\/reaper\/spec\/intent\/resistCaps/]] as const) {
-      const bad = where === "characters" ? { ...good, characters: { [character]: { spec: withCaps(caps) } } } : { ...good, templates: { reaper: { spec: withCaps(caps) } } };
-      const r = await put(bad);
+      const r = await patchProfiles(s2.url, [where === "characters" ? { op: "saveCharacter", name: character, entry: { spec: withCaps(caps) } } : { op: "putTemplate", id: "reaper", entry: { spec: withCaps(caps) } }]);
       assert.equal(r.status, 400, `${where} ${JSON.stringify(caps)}`);
       assert.match(asJson<ErrorBody>(await r.json()).error, path);
     }
@@ -1017,12 +959,11 @@ async function pollJob(url: string, id: string, until: (s: OptimizeJobResponse &
 }
 
 // profiles.json v3 (app/build-spec.mts): a v2 data folder is migrated on the first read, Automatic's buffs moving in from
-// ui-prefs.json; GET carries the shard's built-in templates beside the file; PUT holds every spec to buildSpecError.
-test("[fast] GET/PUT /api/profiles v3: a v2 folder migrates on the first read, built-in templates ride along, and a bad spec is 400 naming where", async () => {
+// ui-prefs.json; GET carries the shard's built-in templates beside the file; PATCH holds every spec to buildSpecError.
+test("[fast] GET/PATCH /api/profiles v3: a v2 folder migrates on the first read, built-in templates ride along, and a bad spec is 400 naming where", async () => {
   const dir = mkdtempSync(join(tmpdir(), "qm-profiles-v3-")), gold = join(HERE, "fixtures", "profiles-v2");
   for (const n of ["profiles.json", "ui-prefs.json"]) writeFileSync(join(dir, n), readFileSync(join(gold, n)));
   const s2 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {})));
-  const put = (body: unknown): Promise<Response> => putProfiles(s2.url, body);
   try {
     const got = asJson<ProfilesResponse>(await (await fetch(s2.url + "/api/profiles")).json());
     // the demo scans have none of the golden characters: Corwin, who had only buffs, gets no profile (its buffs stay in the ui-prefs backup)
@@ -1033,15 +974,14 @@ test("[fast] GET/PUT /api/profiles v3: a v2 folder migrates on the first read, b
     assert.deepEqual(Object.keys(got.profiles.templates), ["melee", "my caster"], "never copied into the file");
     assert.equal(asJson<{ prefs: Record<string, unknown> }>(await (await fetch(s2.url + "/api/ui-prefs")).json()).prefs.autoBuffs, undefined);
     const aldric = got.profiles.characters.Aldric!;
-    const withBuffs = (buffs: unknown) => ({ ...got.profiles, characters: { ...got.profiles.characters, Aldric: { ...aldric, spec: { ...aldric.spec, buffs } } } });
-    assert.equal((await put(withBuffs({ on: ["bless"], skills: { Chivalry: 100 } }))).status, 200);
+    const withBuffs = (buffs: unknown) => [{ op: "setBuffs", name: "Aldric", buffs }];
+    assert.equal((await patchProfiles(s2.url, withBuffs({ on: ["bless"], skills: { Chivalry: 100 } }))).status, 200);
     assert.deepEqual(asJson<ProfilesResponse>(await (await fetch(s2.url + "/api/profiles")).json()).profiles.characters.Aldric!.spec.buffs, { on: ["bless"], skills: { Chivalry: 100 } });
-    for (const [body, msg] of [[withBuffs({ on: ["bless", "bless"], skills: {} }), /^characters\.Aldric\.spec\.buffs must list known buffs/],
-      [withBuffs(undefined), /^characters\.Aldric\.spec\.buffs must list known buffs/],
-      [{ ...got.profiles, templates: { t: { spec: { ...aldric.spec, pool: { ...aldric.spec.pool, strLimit: "mine" } } } } }, /^templates\.t\.spec\.pool\.strLimit must be "character"/],
-      [{ ...got.profiles, characters: { A: { spec: { ...aldric.spec, extra: 1 } } } }, /\/characters\/A\/spec/]] as const) {
-      const r = await put(body);
-      assert.equal(r.status, 400, JSON.stringify(body).slice(0, 200));
+    for (const [edits, msg] of [[withBuffs({ on: ["bless", "bless"], skills: {} }), /^characters\.Aldric\.spec\.buffs must list known buffs/],
+      [[{ op: "putTemplate", id: "t", entry: { spec: { ...aldric.spec, pool: { ...aldric.spec.pool, strLimit: "mine" } } } }], /^templates\.t\.spec\.pool\.strLimit must be "character"/],
+      [[{ op: "saveCharacter", name: "A", entry: { spec: { ...aldric.spec, extra: 1 } } }], /\/characters\/A\/spec/]] as const) {
+      const r = await patchProfiles(s2.url, edits);
+      assert.equal(r.status, 400, JSON.stringify(edits).slice(0, 200));
       assert.match(asJson<ErrorBody>(await r.json()).error, msg);
     }
   } finally {

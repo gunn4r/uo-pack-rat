@@ -69,7 +69,7 @@ export function buildSpec(s: BuildSpecSource = {}): BuildSpec {
   };
 }
 
-// The one check a spec is held to (PUT /api/profiles, the built-in templates): only the known groups and fields, each
+// The one check a spec is held to (PATCH /api/profiles, the built-in templates): only the known groups and fields, each
 // held to the rule a run's settings are (run-settings.mts). `template`: a template's spec, whose buffs are optional.
 // `label` names the spec in the reason; null when fine.
 export function buildSpecError(v: unknown, label: string, { template = false }: { template?: boolean } = {}): string | null {
@@ -217,14 +217,6 @@ export function labelError(v: unknown): string | null {
   if (/[\u0000-\u001f\u007f]/.test(v)) return "label must be one line of text, with no control characters";
   return null;
 }
-// Labels are written only by a setLabel edit (PATCH /api/profiles), which changes one character's label on the server: a whole-file
-// save keeps each character's stored label, so a page holding an older copy of the file never drops or reverts one.
-export function keepLabels(next: Pick<ProfilesV3, "characters">, stored: Pick<ProfilesV3, "characters">): void {
-  for (const [name, entry] of Object.entries(next.characters)) {
-    const label = Object.hasOwn(stored.characters, name) ? stored.characters[name]!.label : undefined;
-    if (typeof label === "string") entry.label = label; else delete entry.label;
-  }
-}
 export function characterLabel(profiles: Pick<ProfilesV3, "characters"> | null | undefined, name: string): string | null {
   const saved = profiles && Object.hasOwn(profiles.characters || {}, name) ? profiles.characters[name] : undefined;
   return typeof saved?.label === "string" && saved.label.trim() ? saved.label.trim() : null;
@@ -308,7 +300,7 @@ interface LegacyBuffPrefs { autoBuffs?: unknown; buffSkills?: unknown; manualBuf
 const MAPS = ["floors", "weights", "resistCaps"];
 const FLAGS = ["ubwsAnyWeapon", "allowOthersWorn", "allowGargoyle", "medOnly"];
 // A v2 entry's settings with only what the v3 check takes: a v2 file was checked loosely, so a value buildSpecError
-// refuses (a hand edit, say) is left out and takes its default, and the file stays one PUT /api/profiles accepts. A map
+// refuses (a hand edit, say) is left out and takes its default, and the file stays one PATCH /api/profiles accepts. A map
 // (floors, weights, resist caps) and a list lose only their bad keys or items; a flag is read as v2 read it (true unless
 // false for ubwsAnyWeapon, else any truthy value); race and template must be one of the races and a short name. Each
 // change is a line in `healed`, `where` naming the entry.
