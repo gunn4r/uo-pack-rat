@@ -82,24 +82,29 @@ export function createProfilesStore({ file, defaults, templatesDir, shard, log, 
     }
     return profiles;
   }
+  // The file's content stamp (Organize's pattern, json-file.mts's fileStamp).
+  const stamp = (): string => fileStamp(file);
+  // The file migrated and the stamp of what it holds then, taken with no await between them.
+  const stamped = (doc: unknown, names: Set<string> | null): { profiles: ProfilesV3; stamp: string } => ({ profiles: migrateNow(doc, names), stamp: stamp() });
   // A v2 file whose ui-prefs still hold buffs waits on the scanned characters first. That wait is shared: concurrent
   // first reads run one migration, and it reads both files again after the wait, so a save made meanwhile is what it
-  // migrates (a v3 file is left as it is) rather than being written over.
-  let migration: Promise<ProfilesV3> | null = null;
-  async function read(): Promise<ProfilesV3> {
+  // migrates (a v3 file is left as it is) rather than being written over. A save that runs once the migration is done,
+  // before a reader sharing it resumes, cannot pair that reader's profiles with a newer stamp.
+  let migration: Promise<{ profiles: ProfilesV3; stamp: string }> | null = null;
+  // The profiles and their stamp, which GET /api/profiles answers with.
+  async function readStamped(): Promise<{ profiles: ProfilesV3; stamp: string }> {
     if (migration) await migration.catch(() => {});
     const doc = load(), prefs = uiPrefs.read();
-    if (!scanned || ((doc as ProfilesV3).schemaVersion ?? 0) >= PROFILES_VERSION || !("autoBuffs" in prefs || "buffSkills" in prefs)) return migrateNow(doc, null);
+    if (!scanned || ((doc as ProfilesV3).schemaVersion ?? 0) >= PROFILES_VERSION || !("autoBuffs" in prefs || "buffSkills" in prefs)) return stamped(doc, null);
     migration ??= (async () => {
       let names: Set<string> | null = null;
       try { names = new Set(await scanned()); }
       catch (e) { log(`${new Date().toISOString()} profiles.json migration: the scanned characters could not be read (${(e as Error).message}); every character's buffs are moved\n`); }
-      return migrateNow(load(), names);
+      return stamped(load(), names);
     })().finally(() => { migration = null; });
     return migration;
   }
-  // The file's content stamp, which GET /api/profiles answers with (Organize's pattern, json-file.mts's fileStamp).
-  const stamp = (): string => fileStamp(file);
+  const read = async (): Promise<ProfilesV3> => (await readStamped()).profiles;
   // The whole file, already checked against the schema and app/build-spec.mts's buildSpecError. Given the stamp it was
   // read at (`base`), a file changed since is left alone (ok false, with the stamp it has now): a page's stale copy can't
   // drop or revert what another window saved. The check and the write run with no await between them.
@@ -125,5 +130,5 @@ export function createProfilesStore({ file, defaults, templatesDir, shard, log, 
     }
     return out;
   }
-  return { read, stamp, write, readOnly, builtins };
+  return { read, readStamped, stamp, write, readOnly, builtins };
 }

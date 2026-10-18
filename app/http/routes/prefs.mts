@@ -29,8 +29,8 @@ export function routes(ctx: ServerContext): Route[] {
     // The player's profiles, and the shard's built-in templates beside them (read-only, never written into the file).
     // `readOnly`: why the file cannot be saved (a newer Pack Rat made it), when it cannot; every PUT is then a 409.
     { method: "GET", path: "/api/profiles", handle: async (_req, res) => {
-      const profiles = await profilesStore.read(), readOnly = profilesStore.readOnly();
-      return send(res, 200, { ok: true, profiles, stamp: profilesStore.stamp(), builtinTemplates: profilesStore.builtins(), ...(readOnly ? { readOnly } : {}) });
+      const { profiles, stamp } = await profilesStore.readStamped(), readOnly = profilesStore.readOnly();
+      return send(res, 200, { ok: true, profiles, stamp, builtinTemplates: profilesStore.builtins(), ...(readOnly ? { readOnly } : {}) });
     } },
     // The whole file, with `base`: the stamp GET answered with. A file saved since (another window, an AI assistant, a
     // label save) is refused with 409 "stale" and the current stamp, and left alone; the page reloads and makes its
