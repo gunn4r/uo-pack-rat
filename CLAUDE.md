@@ -16,6 +16,7 @@ Read this first, then `CONTRIBUTING.md` for the full contributor guide.
 - No session links and no co-author or other trailers in commits, PRs or issues. This repository is public: no home paths, no real names (`scripts/scrub.test.mts`).
 - Say "container", not "chest", in generic text.
 - Every test name starts with a tag: `[smoke]`, `[fast]` or `[slow]` (`TESTING.md`). Every test file opens with a header comment saying what it covers, kept current with its tests; after adding a test file or changing a header's first sentence, run `npm run gen:test-index` (`scripts/test-index.test.mts` checks `TESTING.md`'s index). Every other module's header also carries its `docs/module-map.md` row (`// map: <area>`, `// owns: …`): after adding, moving or renaming a module or changing its header, run `npm run gen:modules`.
+- A changelog entry goes in a new `changelog.d/<short-name>.md` (one line per entry, starting with `- `), never in `CHANGELOG.md`: `scripts/changelog.test.mts` fails a hand edit (`CONTRIBUTING.md`, Changelog).
 - A backticked repo path in a Markdown file must exist (`scripts/docs-links.test.mts`).
 - Plain words. Match the surrounding code's comment density and naming.
 
