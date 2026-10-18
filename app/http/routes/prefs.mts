@@ -1,5 +1,11 @@
 // prefs.mts — the player's saved choices: GET|PUT /api/profiles, PUT /api/profiles/label, /api/ui-prefs and /api/tazuo-panel.
 //
+// The routes, what each takes and answers:
+// - `GET|PUT /api/profiles` (`<data>/profiles.json`; GET also answers `builtinTemplates`, the shard's built-in templates from `app/data/templates/<shard>.json`; PUT takes schemaVersion 3 only and refuses an older page's v2 body; PUT keeps each character's stored build label, `build-spec.mts`'s `keepLabels`)
+// - `PUT /api/profiles/label` (`{character, label}`, issue #336: changes one character's build label in `profiles.json` on the server, reading and writing with nothing awaited between, so no other saved setting rides along; trimmed, a blank one removed, at most 40 characters on one line (`labelError`); a scanned character with no saved settings gets the ones the Suit Builder shows it; 404 for an unknown or pseudo character; answers the entry as saved)
+// - `GET|PUT /api/tazuo-panel` ({hotkey?, showAtLogin?} -> {prefs}: the TazUO panel's hotkey and whether it shows its window at login, `<data>/tazuo-panel.json`, app/tazuo-panel.mts)
+// - `GET|PUT /api/ui-prefs` (`<data>/ui-prefs.json:` {cols?, colsVersion?, colWidths?, sheetProps?, theme?, appearance?, sidebar?, density?, areaLabels?, mapDrawerWidth?, builderMode?, builderTab?, builderChanges?, builderFineTune?, manualFor?, manualSuit?, manualBuffs?, manualBuffSkills?, buffsCount?, dismissedUpdate?, copiedScanner?}, the page's view choices; `autoBuffs` and `buffSkills` are refused, since a character's buffs are its profile's now)
+//
 // map: server
 // owns: `routes`
 import { readFileSync } from "node:fs";

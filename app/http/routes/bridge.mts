@@ -1,5 +1,10 @@
 // bridge.mts — the in-game bridge: POST /api/bridge, POST /api/bridge/stop and GET /api/bridge/status.
 //
+// The routes, what each takes and answers:
+// - `POST /api/bridge` {action, serial, name, chain: [root…parent], pos|null} (queue for packrat-bridge.py)
+// - `GET /api/bridge/status`
+// - `POST /api/bridge/stop` {} (Organize's Stop: writes `<data>/bridge/stop`, which packrat-bridge.py checks between a trip's steps)
+//
 // map: server
 // owns: `routes`
 import { randomUUID } from "node:crypto";

@@ -1,5 +1,12 @@
 // setup.mts — the setup wizard: GET /api/setup, GET /api/setup/scanner, POST /api/setup/locate and /api/setup/install, and GET /api/update-check.
 //
+// The routes, what each takes and answers:
+// - Setup wizard (app/installer.mts backs all of these): GET /api/setup {firstRun, settings, adapters, candidates, installed, available, dataDir, dataDirCheck}
+// - `GET /api/setup/scanner?adapter=<id>` {version, script} (a paste-transport adapter's bundled scanner, for the page's Copy button)
+// - `POST /api/setup/locate` {adapter, dir}
+// - `POST /api/setup/install` {adapter, scriptsDir} (409 while a Legion script is running in the client, per installer.mts's bridge-status guard)
+// - `GET /api/update-check` (a GitHub releases/latest check, 10 s timeout, a success cached for an hour; {configured: false} when package.json names no GitHub repo)
+//
 // map: server
 // owns: `routes`, `MAX_PATH_LEN`, `NO_CLIENT_FOLDER`
 import { join } from "node:path";
