@@ -272,7 +272,7 @@ The page is `app/index.html` plus `app/ui/`, compiled by `scripts/build-ui.mts` 
 | `app/ui/store.mts` | The shared mutable page state. | `state`, `bridge`, `invStamp`, `AppState` |
 | `app/ui/api.mts` | The one place every page fetch goes through. | `api`, `CLIENT_ID` |
 | `app/ui/prefs.mts` | The one writer of the page's view choices (`PUT /api/ui-prefs`), with one failure toast. | `prefs` |
-| `app/ui/profiles.mts` | The one writer of the player's profiles, one save at a time: a character's buffs and label as edits (`PATCH /api/profiles`, `app/profile-edits.mts`), the other saves as the whole file with the stamp it read (`PUT /api/profiles`; a stale refusal reloads them and makes the edit again). | `saveProfiles`, `editProfiles`, `setCharacterBuffs`, `setCharacterLabel` |
+| `app/ui/profiles.mts` | The one writer of the player's profiles, one save at a time: every save a list of edits (`PATCH /api/profiles`, `app/profile-edits.mts`) made on the page's copy at once; the copy is read again when the file had another window's saves or the edits were refused. | `editProfiles`, `setCharacterBuffs`, `setCharacterLabel` |
 | `app/ui/api-types.mts` | Every response shape the page reads off its fetches: the house, Organize and saved-run shapes re-exported from the types-only modules (runs narrowed), the rest declared here. | the hand-declared `*ApiResponse` types |
 | `app/ui/events.mts` | The one shared `EventSource("/api/events")`. | `connectEvents` |
 | `app/ui/items.mts` | Turns a serial into a full item record. | `resolveItems` |

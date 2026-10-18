@@ -125,7 +125,7 @@ export function routes(ctx: ServerContext): Route[] {
         if (!isBuffSkills(body.manualBuffSkills)) return send(res, 400, { ok: false, error: "manualBuffSkills must map known buff skills to numbers within their ranges" });
         next.manualBuffSkills = body.manualBuffSkills;
       }
-      // Automatic's buffs and the numbers edited for a character are the character's profile now (PUT /api/profiles).
+      // Automatic's buffs and the numbers edited for a character are the character's profile now (a setBuffs edit, PATCH /api/profiles).
       for (const key of ["autoBuffs", "buffSkills"]) if (Object.prototype.hasOwnProperty.call(body, key)) return send(res, 400, { ok: false, error: `${key} is kept with the profiles now; reload the page` });
       for (const key of UI_PREF_VERSIONS) {
         if (!Object.prototype.hasOwnProperty.call(body, key)) continue;

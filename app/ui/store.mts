@@ -101,7 +101,7 @@ export interface AppState {
   inv: InventoryData | null;
   profiles: ProfilesV3 | null;
   builtinTemplates: TemplateMap;   // the shard's built-in templates (GET /api/profiles), read-only
-  profilesStamp: string | null;   // the profiles' stamp as GET or the last save answered it, sent with every save (ui/profiles.mts)
+  profilesStamp: string | null;   // the profiles' stamp as GET or the last save answered it: a save's `was` matching it means the page's copy is the file (ui/profiles.mts)
   rules: RulesV1 | null;
   settings: SettingsData | null;
   availableShards: ShardOption[];
