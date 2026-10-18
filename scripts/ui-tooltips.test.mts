@@ -7,21 +7,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import { createRequire } from "node:module";
-import { fitWindow, noUpdateCheck, setRows, testEnv, removeTempDir } from "./electron-window.mts";
+import { join } from "node:path";
+import { setRows } from "./electron-window.mts";
+import { launchApp, skipWithoutElectron } from "./electron-app.mts";
 import type { Locator, Page } from "playwright";
 
-const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
-const require_ = createRequire(import.meta.url);
-function unavailable(): string | null {
-  if (process.env.TEST_SKIP_ELECTRON) return "TEST_SKIP_ELECTRON is set";
-  for (const dep of ["electron", "playwright"]) {
-    try { require_.resolve(dep); } catch { return `${dep} is not installed`; }
-  }
-  return null;
-}
 const DORRAN = 0x700c0000, KESTREL = 0x700b0000;
 const EMPTY_QUERY = { q: "", slot: [], rarity: "", rarityMin: "", rarityMax: "", kind: [], slayer: "", nogarg: false, med: false, hideTags: [], props: [] };
 function seed(): string {
@@ -84,17 +74,10 @@ async function tipShows(page: Page, target: Locator, where: string, { scroll = t
 }
 
 test("[slow] the item tooltip shows on every screen that draws an item: Inventory (list, grouped, with the peek open), a character sheet, the Suit Builder, the House map's contents drawer and the Organize plan (1024 × 768)", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   const dir = seed();
-  const { _electron } = await import("playwright");
-  const app = await _electron.launch({ args: [ROOT, "--demo", "--data", noUpdateCheck(dir)], cwd: ROOT, timeout: 60_000, env: testEnv() });
+  const { page, errors, close } = await launchApp(dir, { demo: true, size: { width: 1024, height: 768 }, ready: "#inv-table tbody tr.item" });
   try {
-    const page = await app.firstWindow();
-    const errors: string[] = [];
-    page.on("pageerror", (e) => errors.push(String(e)));
-    await fitWindow(app, page, { width: 1024, height: 768 });
-    await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
 
     await tipShows(page, page.locator("#inv-table tbody tr.item td:nth-child(2)").first(), "an Inventory row");
     // a row below the fold: hovering scrolls it into view first, and that scroll (it lands after the pointer is on
@@ -148,24 +131,16 @@ test("[slow] the item tooltip shows on every screen that draws an item: Inventor
     await tipShows(page, page.locator("#org-plan .org-move").first(), "an Organize plan move");
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dir);
+    await close();
   }
 });
 
 test("[slow] the item tooltip skips action buttons, hides on Esc and on a scroll that takes the item from under the pointer (but not on the scroll a hover makes to bring its row into view), follows keyboard focus with aria-describedby, and gives way to a character sheet slot's own pop", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   const dir = seed();
-  const { _electron } = await import("playwright");
-  const app = await _electron.launch({ args: [ROOT, "--demo", "--data", noUpdateCheck(dir)], cwd: ROOT, timeout: 60_000, env: testEnv() });
-  const shown = (page: Page): Promise<boolean> => page.evaluate(() => getComputedStyle(document.querySelector("#tip")!).display === "block");
+  const { page, errors, close } = await launchApp(dir, { demo: true, size: { width: 1024, height: 768 }, ready: "#inv-table tbody tr.item" });
+  const shown = (p: Page): Promise<boolean> => p.evaluate(() => getComputedStyle(document.querySelector("#tip")!).display === "block");
   try {
-    const page = await app.firstWindow();
-    const errors: string[] = [];
-    page.on("pageerror", (e) => errors.push(String(e)));
-    await fitWindow(app, page, { width: 1024, height: 768 });
-    await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
     // Esc hides it (on the Inventory: in the House map's drawer Esc closes the drawer too)
     await tipShows(page, page.locator("#inv-table tbody tr.item td:nth-child(2)").first(), "an Inventory row");
     await page.keyboard.press("Escape");
@@ -208,7 +183,6 @@ test("[slow] the item tooltip skips action buttons, hides on Esc and on a scroll
     assert.equal(await shown(page), false, "no hover tooltip while the slot's pop is open");
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dir);
+    await close();
   }
 });
