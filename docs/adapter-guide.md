@@ -66,13 +66,13 @@ Each script installs as a single file: TazUO lists every `.py` in its scripts fo
 - A fragment a Razor Enhanced script carries must be ASCII with no f-strings, since Razor Enhanced runs IronPython. The generator refuses one that is not.
 - To share a helper that is still separate code, make the copies identical first, move the text into a fragment, and put the markers around each copy.
 
-Code outside the markers is each script's own. `ADAPTER_VERSION` and `CAPABILITIES` are not generated yet: `adapters/test_adapters.py` checks them against `capabilities.json`.
+Two blocks are rendered from the script's own `adapters/<id>/capabilities.json` instead of read from a fragment: `manifest` (`ADAPTER_ID`, `ADAPTER_VERSION` and `CAPABILITIES`) and `manifest_version` (the first two, for a script that reports no capabilities, such as the TazUO panel). Code outside the markers is each script's own. The web scanner (`adapters/classicuo-web/packrat-scanner.ts`) still carries its own `ADAPTER_VERSION`.
 
 ## Versions
 
-Any change to an adapter's scripts bumps that adapter's version: `version` in its `capabilities.json` and the `ADAPTER_VERSION` line in every script that carries one, all together (`adapters/test_adapters.py` fails when they disagree). Settings compares the version installed in the client folder with the one the app ships and asks the player to reinstall when they differ, so a change shipped without a bump never reaches a player who already installed the scripts.
+Any change to an adapter's scripts bumps that adapter's version: edit `version` in its `capabilities.json` and run `npm run gen:contracts`, which rewrites the `ADAPTER_VERSION` line in every script (the web scanner's is still edited by hand, and `adapters/test_adapters.py` fails when a version disagrees). Settings compares the version installed in the client folder with the one the app ships and asks the player to reinstall when they differ, so a change shipped without a bump never reaches a player who already installed the scripts.
 
-A script's `FEATURES` literal, where it carries one, matches `features` in its `capabilities.json` the same way, and each bridge's `PROTOCOL` (in the shared untrusted-input block) matches `protocol`. The bridge reports its id, version, protocol and every action and feature in `status.json` (`adapter`), and the app decides what to offer from that report while the bridge runs, so a feature an installed bridge lacks is not offered even before the player reinstalls (`docs/bridge-protocol.md`, Features). Raise the protocol only when a queue line's meaning changes in a way an older bridge would misread.
+Each bridge's `PROTOCOL` (in the shared untrusted-input block) matches `protocol` in its `capabilities.json` (`adapters/test_adapters.py`). The bridge reports its id, version, protocol and every action and feature in `status.json` (`adapter`), and the app decides what to offer from that report while the bridge runs, so a feature an installed bridge lacks is not offered even before the player reinstalls (`docs/bridge-protocol.md`, Features). Raise the protocol only when a queue line's meaning changes in a way an older bridge would misread.
 
 ## Transports
 
@@ -112,7 +112,7 @@ Adding a new term means adding it to `ACTION_PRIMITIVES` in `app/adapters.test.m
 | Field | Required | Meaning |
 |---|---|---|
 | `adapter` | yes | The adapter's id, the same as its folder name (`[a-z0-9-]+`). |
-| `version` | yes | `x.y.z`, the same as every `ADAPTER_VERSION` line in its scripts (Versions, above). |
+| `version` | yes | `x.y.z`, which `npm run gen:contracts` writes into every script's `ADAPTER_VERSION` line (Versions, above). |
 | `transport` | yes | `"folder"` or `"paste"` (Transports, below). |
 | `protocol` | with a bridge | The bridge queue-line protocol its bridge reads (`docs/bridge-protocol.md`). |
 | `platform` | no | The one `process.platform` its client runs on (Platform restriction, below). |

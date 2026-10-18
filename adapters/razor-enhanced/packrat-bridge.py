@@ -68,9 +68,9 @@ def rfc3339_now():
 # END generated: rfc3339_now
 
 
+# BEGIN generated: manifest
 ADAPTER_ID = "razor-enhanced"
 ADAPTER_VERSION = "1.13.0"
-# Keep this literal in sync with capabilities.json and packrat-scanner.py's own copy.
 CAPABILITIES = {
     "layers": ["RightHand", "LeftHand", "Shoes", "Pants", "Shirt", "Head", "Gloves", "Ring",
                "Talisman", "Neck", "Waist", "InnerTorso", "Bracelet", "MiddleTorso", "Earrings",
@@ -78,6 +78,7 @@ CAPABILITIES = {
     "arms": True, "bank": True, "ground": True, "nested": True, "tooltips": "opl",
     "bridge": ["highlight", "grab", "goto"],
 }
+# END generated: manifest
 
 
 BRIDGE_DIR = os.path.join(data_dir(), "bridge", "razor-enhanced")
