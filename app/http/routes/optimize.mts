@@ -28,9 +28,8 @@ import type { EvaluateApiResponse, OptimizeCancelApiResponse, OptimizeStatusApiR
 import type { OkApiResponse } from "../../api/routes.mts";
 import { sse } from "../../services/events.mts";
 import type { Job } from "../../services/jobs.mts";
-import { isManualSuit } from "../../store/ui-prefs.mts";
 import { GEAR_SLOTS, GOAL_RANKS_MAX, GOAL_RANK_SIZE_MAX, NOBODY, RARITY_PREFERENCES, RESIST_KEYS, buildPools, toOptItem, totalsOf, type Character, type Item, type OptItem, type Profile, type RarityPreference, type RunBuffs } from "../../vault-lib.mts";
-import { characterProfile, planBuild, specFromRunSettings } from "../../build-spec.mts";
+import { characterProfile, planBuild, specFromRunSettings, isManualSuit } from "../../build-spec.mts";
 import { safeAppendLog } from "../../log.mts";
 import { stepsFor } from "../../swing.mts";
 import { send, asObject, SSE_HEADERS } from "../respond.mts";

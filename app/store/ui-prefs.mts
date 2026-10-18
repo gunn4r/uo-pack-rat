@@ -1,10 +1,10 @@
 // ui-prefs.mts — <data>/ui-prefs.json: the page's view choices (GET/PUT /api/ui-prefs), the fields it may hold, and the checks a request's or a hand-edited file's value is held to.
 //
 // map: server
-// owns: `createUiPrefsStore`, `UI_PREF_CHOICES`, `UI_PREF_LISTS`, `UI_PREF_VERSIONS`, `isColWidths`, `isDrawerWidth`, `isManualSuit`
-import { GEAR_SLOTS } from "../vault-lib.mts";
+// owns: `createUiPrefsStore`, `UI_PREF_CHOICES`, `UI_PREF_LISTS`, `UI_PREF_VERSIONS`, `isColWidths`, `isDrawerWidth`
 import { isBuffSkills, isBuffSkillsByCharacter, normalizeBuffs, normalizeBuffListsByCharacter } from "../buffs.mts";
-import { isBoundedInt, isBoundedString, MAX_SERIAL } from "../guards.mts";
+import { isBoundedInt, isBoundedString } from "../guards.mts";
+import { isManualSuit } from "../build-spec.mts";
 import { migrate } from "../migrate.mts";
 import { readJsonFile, writeJsonFile } from "./json-file.mts";
 
@@ -44,12 +44,6 @@ export function isColWidths(v: unknown): v is Record<string, number> {
   if (!v || typeof v !== "object" || Array.isArray(v)) return false;
   const entries = Object.entries(v);
   return entries.length <= 200 && entries.every(([k, w]) => isBoundedString(k, 64) && isBoundedInt(w, 40, 1200));
-}
-// The Suit Builder's Manual suit ({slot: serial}, app/ui/builder-manual.mts): each key one of the classifier's slots
-// (vault-lib.mts's GEAR_SLOTS), each value a serial.
-export function isManualSuit(v: unknown): v is Record<string, number> {
-  if (!v || typeof v !== "object" || Array.isArray(v)) return false;
-  return Object.entries(v).every(([k, s]) => GEAR_SLOTS.includes(k) && isBoundedInt(s, 1, MAX_SERIAL));
 }
 // <data>/ui-prefs.json: the page's view choices (GET/PUT /api/ui-prefs). A missing, unreadable or
 // malformed file reads as "nothing chosen", and the page keeps its defaults.

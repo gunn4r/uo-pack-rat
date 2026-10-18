@@ -6,12 +6,13 @@
 // Suit Builder's panel edits. Pure and browser-safe, like run-settings.mts and evaluate.mts.
 //
 // map: builder
-// owns: `BuildSpec`, `ProfilesV3`, `buildSpec`, `buildSpecError`, `planBuild`, `goalSsiCap`, `specFromProfile`, `profileFromSpec`, `characterProfile`, `characterBuffs`, `characterEntry`, `characterLabel`, `labelError`, `findTemplate`, `templateRefs`, `BUILTIN_PREFIX`, `migrateProfilesV3`
+// owns: `BuildSpec`, `ProfilesV3`, `buildSpec`, `buildSpecError`, `planBuild`, `goalSsiCap`, `specFromProfile`, `profileFromSpec`, `characterProfile`, `characterBuffs`, `characterEntry`, `characterLabel`, `labelError`, `findTemplate`, `templateRefs`, `BUILTIN_PREFIX`, `migrateProfilesV3`, `isManualSuit`
 import { buffPlanOf, buffSkillValues, isBuffList, isBuffSkills, isBuffSkillsByCharacter, manualBase, manualPlan, normalizeBuffListsByCharacter, NO_CHARACTER, planBuffs, runBuffs, type BuffPlan } from "./buffs.mts";
 import { RACES, RUN_DEFAULTS, RUN_SETTING_LIMITS, defaultStrLimit, isGoalSwing, runSettingsError } from "./run-settings.mts";
-import { compileGoals, copyGoals, goalsActive, migrateProfiles, templateFrom, TEMPLATE_KEYS, toOptItem, totalsOf, type Character, type EffectiveProfile, type Goals, type GoalSwingWeapon, type Item, type Profile, type ProfilesFile, type RarityPreference, type RunBuffs, type RunSettings, type Template, type TemplateSource } from "./vault-lib.mts";
+import { compileGoals, GEAR_SLOTS, copyGoals, goalsActive, migrateProfiles, templateFrom, TEMPLATE_KEYS, toOptItem, totalsOf, type Character, type EffectiveProfile, type Goals, type GoalSwingWeapon, type Item, type Profile, type ProfilesFile, type RarityPreference, type RunBuffs, type RunSettings, type Template, type TemplateSource } from "./vault-lib.mts";
 import { heldWeapon, ssiForTicks } from "./swing.mts";
 import { DEFAULT_FLOOR_BONUS } from "./solver/scoring.mts";
+import { isBoundedInt, MAX_SERIAL } from "./guards.mts";
 
 // ---------------------------------------------------------------- the document
 // swingSteps: score SSI by swing step (app/swing.mts) rather than per point; absent means off, and a spec carries it only when on.
@@ -368,4 +369,11 @@ export function migrateProfilesV3<P extends LegacyBuffPrefs>(file: ProfilesFile 
   }
   const { templates: _t, characters: _c, schemaVersion: _v, ...top } = v2;
   return { profiles: { ...top, schemaVersion: PROFILES_VERSION, characters, templates }, prefs: { ...keep, ...noCharacter } as P, changed: true, prefsChanged: legacy, healed };
+}
+
+// The Suit Builder's Manual suit ({slot: serial}, app/ui/builder-manual.mts): each key one of the classifier's slots
+// (vault-lib.mts's GEAR_SLOTS), each value a serial.
+export function isManualSuit(v: unknown): v is Record<string, number> {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return false;
+  return Object.entries(v).every(([k, s]) => GEAR_SLOTS.includes(k) && isBoundedInt(s, 1, MAX_SERIAL));
 }

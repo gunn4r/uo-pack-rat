@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 import { validateScan } from "./scan-schema.mts";
 import type { ScanV2 } from "./schema/types.d.mts";
 import { LIMITS, type OrganizeConfig } from "./organize-config.mts";
+import { MAX_SERIAL } from "./guards.mts";
 
 export const AT = "2026-09-28T10:00:00Z";
 export interface BoxSpec {
@@ -75,7 +76,7 @@ export function houseScan({ character = "Tester", scannedAt = AT, boxes, things 
 // limit of PUT /api/organize and the size a saved organize.json may have must both take it.
 export function maxOrganizeConfig(): OrganizeConfig {
   const t = (n: number): string => "x".repeat(n);
-  const serials = Array.from({ length: LIMITS.labels }, (_, i) => 0xFFFFFFFF - i);
+  const serials = Array.from({ length: LIMITS.labels }, (_, i) => MAX_SERIAL - i);
   const labels = Object.fromEntries(serials.map((s) => [String(s), { serial: s, name: t(LIMITS.text), color: "#aabbcc", pinned: false, origin: `strategy:${t(32)}` as const }]));
   const list = (): string[] => Array(LIMITS.list).fill(t(LIMITS.text));
   const rules = Array.from({ length: LIMITS.rules }, (_, i) => ({
