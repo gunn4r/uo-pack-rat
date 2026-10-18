@@ -16,8 +16,10 @@ const STATUS_SCHEMA = (JSON.parse(readFileSync(join(APP_DIR, "schema", "bridge.v
 const { adapter: ADAPTER_SCHEMA, ...STATUS_FIELDS } = STATUS_SCHEMA.properties!;
 const STATUS_WITHOUT_ADAPTER: ValidatorSchema = { ...STATUS_SCHEMA, properties: STATUS_FIELDS };
 
-// Online: the heartbeat is under 8 s old. Both bridges rewrite status.json at least every 2 s, even during a long
-// highlight or walk. A heartbeat from the future (clocks apart) reads as online, as it always has, on purpose, unlike the install guard: app/fixtures/contract-cases/heartbeat.json pins both and says why. The page queues
+// Online: the heartbeat is under 8 s old and not the last one a stopped bridge wrote (stopped: true), so nothing is
+// queued after Stop. Both bridges rewrite status.json at least every 2 s, even during a long highlight or walk. A
+// heartbeat from the future (clocks apart) reads as online, as it always has, on purpose, unlike the install guard:
+// app/fixtures/contract-cases/heartbeat.json pins it and says why. The page queues
 // commands only while the bridge is online, and only an online bridge's own report of its features counts.
 export const ONLINE_S = 8;
 
@@ -42,6 +44,6 @@ export function readBridgeStatus(file: string, now: number): BridgeStatusRead {
     // An RFC 3339 string, or the epoch seconds an older bridge build wrote.
     const aliveMs = typeof status.alive === "number" ? status.alive * 1000 : Date.parse(status.alive);
     const age = Number.isNaN(aliveMs) ? Infinity : (now - aliveMs) / 1000;
-    return { status, aliveMs, age, online: age < ONLINE_S };
+    return { status, aliveMs, age, online: age < ONLINE_S && status.stopped !== true };
   } catch { return NONE; }
 }
