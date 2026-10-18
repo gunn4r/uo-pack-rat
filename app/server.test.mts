@@ -130,8 +130,7 @@ test("[fast] /logo-mark.png is the sidebar's mark, served as image/png, and the 
 });
 
 test("[fast] writes require application/json", async () => {
-  const r = await fetch(srv.url + "/api/profiles", { method: "PUT", body: "{}" });
-  assert.equal(r.status, 415);
+  for (const method of ["PUT", "PATCH"]) assert.equal((await fetch(srv.url + "/api/profiles", { method, body: "{}" })).status, 415, method);
 });
 
 // A build in progress keeps its SSE client's response "waiting for a response", which is exactly
