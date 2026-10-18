@@ -1,4 +1,4 @@
-// missing.mts — Missing since last scan (issue #99). For each root container two scans have opened, what its
+// missing.mts — Missing since last scan (issue #99): what a root's previous scan saw that is nowhere in the fold now. For each root container two scans have opened, what its
 // previous scan saw in it that its latest scan did not, and that is nowhere in the folded inventory now: sold,
 // dropped, stolen, or moved somewhere no scan has seen yet. An item moved to another scanned container, or now
 // worn, is in the fold and so not missing. A stack that shrank in place is reported with how many fewer.

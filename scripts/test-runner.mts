@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// test-runner.mts — the project's standard test interface.
+// test-runner.mts — the project's standard test interface behind scripts/test_runner.sh: --smoke, --fast, --changed, full.
 //   node scripts/test-runner.mts [--smoke|--fast|--changed[=<ref>]]      (full when no flag)
 // Drives node:test's run() over every **/*.test.mts found by a recursive walk of app/ + scripts/
 // (node_modules/dist/fixtures excluded) and writes test_logs/latest_summary.json. Tags are name

@@ -1,4 +1,4 @@
-// profiles.mts — <data>/profiles.json: the Suit Builder's characters and templates (GET/PUT /api/profiles).
+// profiles.mts — <data>/profiles.json, the Suit Builder's characters and templates (GET/PUT /api/profiles): seeded from the defaults, a damaged file moved aside and reseeded, an old shape migrated (with <data>/ui-prefs.json beside it) after a dated backup of each, a newer one read-only, and the shard's built-in templates read.
 //
 // map: server
 // owns: `createProfilesStore`

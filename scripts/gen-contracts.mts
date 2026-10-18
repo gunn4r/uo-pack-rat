@@ -1,5 +1,5 @@
 // gen-contracts.mts — copy the adapters' shared Python helpers from adapters/_shared/ into every script
-// that carries them. Each script must install as a single file (TazUO lists every .py in its scripts
+// that carries them, between `# BEGIN generated: <fragment>` / `# END generated: <fragment>` markers; --check fails when a committed script differs. Each script must install as a single file (TazUO lists every .py in its scripts
 // folder as a runnable script, and Razor Enhanced has no import path to a sibling file), so the copies
 // stay; this makes them generated instead of hand-kept.
 //

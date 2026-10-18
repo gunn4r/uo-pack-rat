@@ -1,5 +1,5 @@
 // build-spec.mts — a build's intent as one document (issue #218, BuildSpec): what "good" means (intent), the buffs it
-// plans with (buffs), which pieces it may use (pool), and optionally the goal and the search knobs. profiles.json holds
+// plans with (buffs), which pieces it may use (pool), and optionally the goal and the search knobs; the one check it is held to and its defaults; planBuild (a spec into the profile the solvers score with, the pool settings, the search options and the saved run's snapshot); the panel's flat profile and back; and the profiles.json v2 → v3 migration that moves Automatic's buffs in from ui-prefs; pure, page and server alike, and the page, POST /api/optimize, POST /api/evaluate and the MCP tools all build through it. profiles.json holds
 // one per character and per template (schemaVersion 3), and the page, POST /api/optimize and the MCP tools all turn one
 // into a build through planBuild. Also the one check a spec is held to, its defaults, the v2 → v3 migration of
 // profiles.json (Automatic's buffs and their numbers move in from ui-prefs.json), and the flat working profile the

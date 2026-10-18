@@ -1,4 +1,4 @@
-// mcp-tools.mts — the MCP server's tools (issue #211; the protocol and the listener are app/mcp.mts). Each tool is a thin
+// mcp-tools.mts — the MCP server's tools (issue #211; the protocol and the listener are app/mcp.mts), one table entry each, calling the app's own routes over loopback, and where the page computes before a route, calling the same shared function; tools that wait stop at 45 s by default, 50 at most. Each tool is a thin
 // adapter over the app's own HTTP routes, called in-process over loopback (ToolContext.api): the routes keep every
 // validation, the bridge's own checks, Stop and one trip at a time, and this file only maps arguments, pages and
 // trims results for a model. Where the page computes something before it calls a route (a build's profile and buffs,
