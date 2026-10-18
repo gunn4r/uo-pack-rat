@@ -4,7 +4,7 @@
 //   1. nothing outside app/ui/ imports from app/ui/ (tests excluded);
 //   2. the browser-shared modules (tsconfig.browser.json's include, minus app/ui/**) reach no node: module;
 //   3. the modules outside app/ui/ have no import cycles, and the app/ui/ modules no cycles beyond the known groups below;
-//   4. every module app/ui/ reaches outside app/ui/ has its own "/<path>.mjs" route in app/http/routes/static.mts (the page gets a 404 at load otherwise; build:ui compiles it whether or not the include lists it) and reaches no node: module;
+//   4. every module app/ui/ reaches outside app/ui/ is served on its "/<path>.mjs" URL, that is it is an `app/<path>.*` entry of tsconfig.browser.json's include, which app/http/routes/static.mts's SHARED_MODULES serves (the page gets a 404 at load otherwise; build:ui compiles it whether or not the include lists it), and reaches no node: module; and every entry served is a module that exists;
 //   5. app/store/ and app/services/ import nothing from app/http/ (type imports included);
 //   6. nothing imports app/vault-server.mts except electron/, scripts/, the test fixtures (*-fixture.mts) and tests;
 //   7. no app/ui/ module imports app/ui/app.mts, the page's bootstrap (routes are nav.mts, the inventory reload is inventory-data.mts);
@@ -21,6 +21,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { posix } from "node:path";
+import { SHARED_MODULES } from "../app/http/routes/static.mts";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const tracked = execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard", "app", "scripts", "electron"], { cwd: root, encoding: "utf8" }).split("\n");
@@ -203,18 +204,19 @@ test("[smoke] layering: no app/ui/ module imports app/ui/app.mts", () => {
   assert.deepEqual(found, []);
 });
 
-// The static routes the server serves a shared module on, read from app/http/routes/static.mts's `path: "/x.mjs"` entries.
-const routes = new Set([...readFileSync(posix.join(root, "app/http/routes/static.mts"), "utf8").matchAll(/path: "(\/[^"]+\.mjs)"/g)].map((m) => m[1]!));
+// The URLs the server serves a shared module on: app/http/routes/static.mts's own list, read off tsconfig.browser.json.
+const routes = new Set(SHARED_MODULES);
 const routeOf = (f: string): string => `/${f.slice("app/".length).replace(/\.mts$/, ".mjs")}`;
 
 test("[smoke] layering: every module app/ui/ reaches outside app/ui/ has its static route and reaches no node: module", () => {
   assert.ok(routes.has("/vault-lib.mjs") && routes.has("/schema/validate.mjs"), `routes read: ${[...routes].join(", ")}`);
+  assert.deepEqual(SHARED_MODULES.filter((u) => !modules.includes(`app${u.replace(/\.mjs$/, ".mts")}`)), [], "a tsconfig.browser.json entry names no module");
   const found = new Map<string, string>();
   for (const f of modules.filter(isUi)) {
     for (const [to, path] of reach(f)) {
       if (isUi(to) || found.has(to)) continue;
       if (!to.startsWith("app/")) found.set(to, `${path.join(" → ")}: not a module the page can load`);
-      else if (!routes.has(routeOf(to))) found.set(to, `${path.join(" → ")}: no ${routeOf(to)} route in app/http/routes/static.mts`);
+      else if (!routes.has(routeOf(to))) found.set(to, `${path.join(" → ")}: not served on ${routeOf(to)}: add app/${routeOf(to).slice(1, -4)}.* to tsconfig.browser.json's include`);
     }
   }
   assert.deepEqual([...found.values()], []);

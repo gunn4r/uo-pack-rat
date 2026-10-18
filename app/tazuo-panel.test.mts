@@ -8,7 +8,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { validate, type ValidatorSchema } from "./schema/validate.mts";
-import { panelPrefsError, panelPrefsOf, PANEL_DEFAULTS, readPanelPrefs, writePanelPrefs, addToGlobalAutostart, addPanelAutostart, tazuoRunning, lscriptPathFor, type Run } from "./tazuo-panel.mts";
+import { panelPrefsError, panelPrefsOf, PANEL_DEFAULTS, addToGlobalAutostart, addPanelAutostart, tazuoRunning, lscriptPathFor, type Run } from "./tazuo-panel.mts";
+import { readPanelPrefs, writePanelPrefs } from "./store/panel-prefs.mts";
 
 const BOM = Buffer.from([0xef, 0xbb, 0xbf]);
 

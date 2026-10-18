@@ -78,7 +78,8 @@ import { routes as blacklistRoutes } from "./http/routes/blacklist.mts";
 import { routes as housesRoutes } from "./http/routes/houses.mts";
 import { routes as kindsRoutes } from "./http/routes/kinds.mts";
 import { routes as organizeRoutes } from "./http/routes/organize.mts";
-import { readPanelPrefs, tazuoRunning, writePanelPrefs } from "./tazuo-panel.mts";
+import { tazuoRunning } from "./tazuo-panel.mts";
+import { createPanelPrefsStore } from "./store/panel-prefs.mts";
 import { PUT_AWAY_REQUEST } from "./put-away.mts";
 import type {  } from "./house-capture.mts";
 import { candidateClientRoots, type FetchLike } from "./installer.mts";
@@ -86,7 +87,7 @@ import { dataDirNotice } from "./data-dir-notice.mts";
 import { safeAppendLog } from "./log.mts";
 import { homedir } from "node:os";
 
-import { resolveConfig, ensureLayout, APP_DIR, DATA_FILE_MODE, type Config } from "./config.mts";
+import { resolveConfig, ensureLayout, APP_DIR, type Config } from "./config.mts";
 const HERE = APP_DIR;
 // package.json content, handed to us already-parsed — the only fields this file reads off it
 // (version, repository) are trusted the same way installer.mts's repoFromPackage trusts its own
@@ -220,12 +221,13 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   }
 
   const scanStore = createScansStore({ dir: SCANS, shard: () => appSettings.current().shard });
-  const houseService = createHousesService({ settings: appSettings.current });
+  // The adapters folder doesn't change while the server runs, so each adapter's UO-folder finder is read once.
+  const uoFolderFinders = new Map(setupService.adapters().map((a) => [a.id, a.uoFolder]));
+  const houseService = createHousesService({ settings: appSettings.current, uoFolderFinder: (id) => uoFolderFinders.get(id) ?? null });
 
   const uiPrefsStore = createUiPrefsStore(join(CONFIG.dataDir, "ui-prefs.json"));
-  // The TazUO panel's hotkey and show-at-login choice (app/tazuo-panel.mts); the in-game panel writes it too.
-  const PANEL_PREFS = join(CONFIG.dataDir, "tazuo-panel.json");
-  const savePanel = (change: object): void => writePanelPrefs(PANEL_PREFS, { ...readPanelPrefs(PANEL_PREFS), ...change }, DATA_FILE_MODE);
+  // The TazUO panel's hotkey and show-at-login choice (app/store/panel-prefs.mts); the in-game panel writes it too.
+  const panelPrefsStore = createPanelPrefsStore(join(CONFIG.dataDir, "tazuo-panel.json"));
   const blacklistStore = createBlacklistStore(join(CONFIG.dataDir, "scan-blacklist.json"));
   // The houses claimed (issue #299). The first start with claims claims the houses already named or given areas, so they keep working; the file then exists, and an unclaimed house stays unclaimed.
   const houseClaimsStore = createHouseClaimsStore(join(CONFIG.dataDir, "house-claims.json"));
@@ -264,7 +266,7 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   // Every route, in the order the server tries them (app/http/routes/; docs/architecture.md lists them).
   const ctx: ServerContext = { config: CONFIG, host, clientSearch, clientRunning, updateFetch, packageJson: PACKAGE_JSON, appSettings, setupService, eventBus, houseService,
     retentionService, jobService, buildsService, organizeService, getInventory, profilesStore, uiPrefsStore, blacklistStore, houseClaimsStore, houseMapStore, itemKindsStore, organizeStore, organizeStateStore, runStore, scanStore,
-    panelPrefsFile: PANEL_PREFS, savePanel, watchers, timers, mcp };
+    panelPrefsStore, watchers, timers, mcp };
   const routes: Route[] = [staticRoutes, inventoryRoutes, prefsRoutes, settingsRoutes, setupRoutes, importRoutes, hostRoutes, optimizeRoutes, mcpRoutes, bridgeRoutes,
     forgetRoutes, blacklistRoutes, housesRoutes, kindsRoutes, organizeRoutes].flatMap((make) => make(ctx));
 
