@@ -1,33 +1,30 @@
 // ui/builder.mts — the Suit Builder screen (design spec 4.6, issues #272, #321): the sentence bar's Build Settings and Build,
-// the Build Settings drawer (its tabs: Requirements, Goals, Buffs, Pool, Advanced) with its footer and the optimize job (inline
-// progress card over SSE). The sentence bar's pickers and What changed chip are ui/builder-header.mts; the Manage templates drawer and the template actions are ui/builder-templates.mts; the Requirements and Goals tabs and the resist caps are ui/builder-requirements.mts; the first-visit view is ui/builder-start.mts; the result, the compare view and the Solver details are ui/builder-result.mts; the saved-runs drawer
+// the Build Settings drawer (its tabs: Requirements, Goals, Buffs, Pool, Advanced) with its footer, the panel as a build and
+// the finished build shown. The sentence bar's pickers and What changed chip are ui/builder-header.mts; the Manage templates drawer and the template actions are ui/builder-templates.mts; the Requirements and Goals tabs and the resist caps are ui/builder-requirements.mts; the optimize job and its progress card are ui/builder-job.mts; the first-visit view is ui/builder-start.mts; the result, the compare view and the Solver details are ui/builder-result.mts; the saved-runs drawer
 // is ui/runs.mts; they share the builder's state and call each other through ui/builder-session.mts. The panel is drawn
 // from the session's profile plus its Advanced knobs, so what a build sends, what a profile saves and what a run
 // snapshots are read from state, never from the DOM.
 //
 // map: builder
-// owns: `initBuilder`, `applyPanelPrefs`, `selectCharacter`, `cancelJob`
+// owns: `initBuilder`, `applyPanelPrefs`, `selectCharacter`
 import { NOBODY, GEAR_SLOTS, tagUnits, WEAPON_EXCLUDES, MELEE_SKILLS, WEAPON_MUST_HAVE, flagLabel, RESIST_KEYS, templateFrom, settingsChanges, bagLabel, CASTING_SCHOOLS } from "../vault-lib.mts";
 import { BUILTIN_PREFIX, characterBuffs, characterEntry, characterProfile, findTemplate, planBuild, specFromProfile, templateSettings, type PlannedBuild } from "../build-spec.mts";
 import type { RunBuffs, RunSettings, Character, SettingsChange, SettingsGroup } from "../vault-lib.mts";
 import { BUFFS, BUFF_GROUPS, BUFF_INPUTS, buffAvailability, buffById, buffEffectTags, isSchool, normalizeBuffs, toggleBuff, buffPlanOf, type Buff, type BuffPlan } from "../buffs.mts";
 import { defaultStrLimit } from "../run-settings.mts";
 import { evaluateSuit } from "../evaluate.mts";
-import { state, invStamp, goalsMeta } from "./store.mts";
-import type { BuilderJob, BuilderJobUi, FinishedBuild, BuildMeta } from "./store.mts";
-import { $, el, fmtN, fmtSecs, slotLabel, toast } from "./dom.mts";
-import { box, txt, button, kbd, badge, message, select, input, field, switchControl, check, segmented, filterChip, pill, popover, closePopover, stepper, progress, icon, modalOpen, bindDrawer, type DrawerHandle } from "./components.mts";
-import { api } from "./api.mts";
+import { state } from "./store.mts";
+import type { FinishedBuild } from "./store.mts";
+import { $, el, slotLabel, toast } from "./dom.mts";
+import { box, txt, button, badge, select, input, field, switchControl, check, segmented, filterChip, pill, popover, closePopover, icon, modalOpen, bindDrawer, type DrawerHandle } from "./components.mts";
 import { createBuffPicker, type BuffPicker, type BuffView, type PickerActions } from "./builder-buffs.mts";
-import { optimizeErrorMessage } from "./messages.mts";
 import { parseRoute, registerScreen, routeFor } from "./nav.mts";
-import { setNavBusy } from "./shell.mts";
 import { editProfiles, setCharacterBuffs } from "./profiles.mts";
-import { session, commands, provide, readControls, type BuilderChange, type BuildState } from "./builder-session.mts";
-import { followJob, progressText, settingsCheck, plainName, NO_CHARACTER, buffsOn, group, checklist, panelFcCap, fcCapNote } from "./builder-parts.mts";
+import { session, commands, provide, readControls, type BuilderChange, type BuildState, type SectionId, type FocusSection } from "./builder-session.mts";
+import { plainName, NO_CHARACTER, buffsOn, group, checklist, panelFcCap, fcCapNote } from "./builder-parts.mts";
 import { characterNames } from "./roster.mts";
-import { runSettingsDiff, plural, knobError, firstKnobError, knobFromServerError, pruneResistCaps, weaponsChipText, weaponMustHaveChipText, withStoredRoots, weaponName, toggleWeapon, fcCapText, rarityHelp, templateBuffsLine, sourceTitle, who, buildStateText, buildStateDetail, type KnobField } from "./builder-model.mts";
-import type { OptimizeResult, SavedRunLike, OptimizeStartApiResponse, OptimizeCancelApiResponse, UiPrefs } from "./api-types.mts";
+import { runSettingsDiff, plural, knobError, pruneResistCaps, weaponsChipText, weaponMustHaveChipText, withStoredRoots, weaponName, toggleWeapon, fcCapText, rarityHelp, templateBuffsLine, sourceTitle, who, buildStateText, buildStateDetail, type KnobField } from "./builder-model.mts";
+import type { UiPrefs } from "./api-types.mts";
 import { prefs } from "./prefs.mts";
 
 // ---------------------------------------------------------------- panel state
@@ -37,15 +34,15 @@ type Tab = NonNullable<UiPrefs["builderTab"]>;
 const TABS: Tab[] = ["requirements", "weights", "buffs", "pool", "advanced"];
 let tab: Tab = "requirements";
 // The tab each group that focusIn reaches sits in.
-const TAB_OF: Record<string, Tab> = { req: "requirements", goals: "weights", weights: "weights", adv: "advanced", caps: "advanced" };
+const TAB_OF: Record<FocusSection, Tab> = { req: "requirements", goals: "weights", weights: "weights", adv: "advanced", caps: "advanced" };
 const KNOB_IDS: Record<KnobField, string> = { strLimit: "b-str", restarts: "b-restarts", budgetS: "b-budget", altCount: "b-altcount", altTol: "b-alttol" };
 
 // ---------------------------------------------------------------- wiring
 // The builder's listeners, attached once for the page's life (app.mts's load()). Everything that depends on
 // the inventory is syncBuilderCharacters()'s job, which runs on every load and refresh.
 export function initBuilder(): void {
-  $<HTMLButtonElement>("#b-run")!.onclick = runBuild;
-  $<HTMLButtonElement>("#b-run-foot")!.onclick = runBuild;
+  $<HTMLButtonElement>("#b-run")!.onclick = () => commands.build();
+  $<HTMLButtonElement>("#b-run-foot")!.onclick = () => commands.build();
   $<HTMLButtonElement>("#b-save")!.onclick = () => saveProfile();
   $<HTMLButtonElement>("#b-save-tpl")!.onclick = () => commands.saveTemplateAs();
   $<HTMLButtonElement>("#b-runs-open")!.onclick = () => commands.openRunsDrawer();
@@ -58,7 +55,7 @@ export function initBuilder(): void {
     const run = $<HTMLButtonElement>("#b-run")!;
     if (run.disabled || session.job || !run.getClientRects().length || (run.closest("[inert]") && !drawerOpen()) || modalOpen()) return;
     e.preventDefault();
-    runBuild();
+    commands.build();
   });
   // The Build Settings drawer, the shared modal drawer (components.mts bindDrawer): its ×, the scrim and Esc close it.
   // Its button and ⌘, (Ctrl+, off the Mac) open it while the builder's top bar shows the button (not in Manual, the
@@ -218,8 +215,8 @@ function renderPanel(): void {
   updateTemplateBadge();
 }
 // Redraw one group in place (its rows changed), keeping the rest of the drawer and its scroll position as they are.
-function redraw(id: string): void {
-  const build: Record<string, () => HTMLElement> = { buffs: buffsSection, req: () => commands.requirementsSection(), caps: () => commands.capsSection(), goals: () => commands.goalsSection(), weights: () => commands.weightsSection(), pool: poolSection, adv: advancedSection };
+function redraw(id: SectionId): void {
+  const build: Record<SectionId, () => HTMLElement> = { buffs: buffsSection, req: () => commands.requirementsSection(), caps: () => commands.capsSection(), goals: () => commands.goalsSection(), weights: () => commands.weightsSection(), pool: poolSection, adv: advancedSection };
   const old = document.getElementById(`b-sec-${id}`);
   if (old && build[id]) old.replaceWith(build[id]!());
   updateTemplateBadge();
@@ -439,7 +436,7 @@ function openBuffPicker(anchor: HTMLElement): void {
 }
 
 // Focus a control in a group, the drawer opened on the group's tab first.
-function focusIn(sec: string, sel: string, selectText = false): void {
+function focusIn(sec: FocusSection, sel: string, selectText = false): void {
   openSettings(TAB_OF[sec], false);
   const e = document.querySelector<HTMLInputElement>(`#b-sec-${sec} ${sel}`);
   e?.focus();
@@ -619,116 +616,6 @@ function panelBuild(): PlannedBuild {
   // No character builds on the shard's caps: human, whatever race a saved entry says
   return planBuild(spec, { character: (state.inv!.characters[name] as Character | undefined) ?? null, worn: state.inv!.worn[name] || [], race: name === NOBODY ? "human" : p.race });
 }
-async function runBuild(): Promise<void> {
-  if (session.job) return;
-  if (commands.filling()) { toast("Manual is filling its empty slots. Wait for it, or cancel it there, before building."); return; }
-  if (!session.character || !session.profile) { toast("No character to build for yet: scan one first.", "bad"); return; }
-  // A bad field stops the build and takes focus, with its reason under it; the button itself stays enabled.
-  const bad = firstKnobError(knobs);
-  if (bad) { focusKnob(bad.field, bad.error); return; }
-  // A resist cap out of range stops the build from the panel's state, the drawer open or closed: it opens on the field.
-  const badCap = commands.badCapDraft();
-  if (badCap) {
-    focusIn("caps", `#b-cap-${badCap}`, true);
-    document.getElementById(`b-cap-${badCap}`)?.closest(".rule-row")?.scrollIntoView({ block: "nearest" });
-    return;
-  }
-  const badRule = document.querySelector<HTMLInputElement>("#b-panel-body .rule-row input[aria-invalid='true']");
-  if (badRule) { openSettings(badRule.closest<HTMLElement>("[role=tabpanel]")!.dataset.tab as Tab, false); badRule.focus(); return; }
-  const name = session.character, { pool: settings, opts, profile, snapshot } = panelBuild();
-  const exact = knobs.exact, budgetMs = 1000 * Number(knobs.budgetS);
-  commands.closeCompare();
-  // Pools/current/skipped are the server's job (buildPools against its own cached inventory, POST
-  // /api/optimize's by-character form): the page sends the character + settings and reads poolSize/skipped/
-  // current/warning back. The job keeps the character and the effective profile it was started with: the
-  // player can switch characters while it runs, and the result is judged against these.
-  const job: BuilderJob = { id: null, es: null, name, profile, exact, budgetMs, poolSize: null, skipped: {}, current: {}, warning: null, startedAt: Date.now(), lastProgressAt: Date.now(), lastServerAt: Date.now(), last: null, connected: true, ui: null, timer: null };
-  session.job = job;
-  setBuilding(true);
-  job.ui = runPanel(job);
-  $<HTMLElement>("#b-msg")!.replaceChildren(job.ui.root);
-  // started from the drawer (its Build, or ⌘↵ in one of its fields), the focus stays there to tweak and build again
-  if (!$<HTMLElement>("#b-drawer")!.contains(document.activeElement)) job.ui.root.focus();
-  let r: (OptimizeStartApiResponse & { ok: true }) | { ok: false; error: string };
-  try {
-    r = (await api<OptimizeStartApiResponse>("/api/optimize", { method: "POST", body: { character: name, settings, profile, opts,
-      meta: { character: name, settings: snapshot, inventoryStamp: invStamp() } } })) as OptimizeStartApiResponse & { ok: true };
-    // optimizeErrorMessage (ui/messages.mts) explains the one refusal that isn't about this build at all: 429,
-    // four jobs already running (vault-server.mts's MAX_RUNNING_JOBS) — this page only ever runs one.
-  } catch (e) { r = { ok: false, error: optimizeErrorMessage(e) }; }
-  if (session.job !== job) { if (r.ok) api(`/api/optimize/${r.id}/cancel`, { method: "POST" }).catch(() => {}); return; }   // cancelled while the request was in flight
-  if (!r.ok) { failJob(job, r.error); return; }
-  job.poolSize = r.poolSize; job.skipped = r.skipped; job.current = r.current; job.warning = r.warning || null;
-  // the requirements no suit can reach, said above the progress panel while the search runs
-  const checks = r.cached ? null : settingsCheck(r.diagnostics || [], name!);
-  if (checks) job.ui!.root.before(checks);
-  // r.run.ms is `number | null` (a saved run's on-disk shape); a genuinely null one has never been guarded here.
-  if (r.cached) { finishJob(job, { result: r.run!.result, ms: r.run!.ms!, runId: r.run!.id, reused: r.run!, settings: snapshot }); return; }
-  job.id = r.id!;
-  job.timer = setInterval(() => job.ui!.tick(job), 200) as unknown as number;
-  job.es = followJob(job.id, {
-    progress: (p) => { job.last = p; job.lastProgressAt = Date.now(); job.lastServerAt = Date.now(); job.connected = true; job.ui!.update(job); },
-    alive: (connected) => { if (connected) job.lastServerAt = Date.now(); job.connected = connected; },
-    done: (d) => finishJob(job, { ...d, settings: snapshot }),
-    failed: (error) => failJob(job, error),
-    cancelled: (ms) => endJob(job, cancelledNote(ms)),
-  });
-}
-// While a build runs: the top bar's and the drawer footer's Build buttons say so and are disabled, the sidebar's Suit
-// Builder item shows a busy dot, and a result already on screen stays there dimmed and out of reach until the new one lands.
-function setBuilding(on: boolean): void {
-  for (const [id, key] of [["#b-run", true], ["#b-run-foot", false]] as const) {
-    const b = $<HTMLButtonElement>(id)!;
-    // the footer's is only marked disabled (runBuild ignores a press while one runs), so it keeps the focus it has
-    if (key) b.disabled = on; else if (on) b.setAttribute("aria-disabled", "true"); else b.removeAttribute("aria-disabled");
-    b.replaceChildren(...(on ? [txt("Building…")] : [txt("Build"), ...(key ? [kbd("⌘↵")] : [])]));
-    b.querySelector(".kbd")?.setAttribute("aria-hidden", "true");
-  }
-  setNavBusy("builder", on);
-  paintChanges();
-  const res = $<HTMLElement>("#b-result")!;
-  const stale = on && !!session.result;
-  res.classList.toggle("b-stale", stale);
-  res.inert = stale;
-  if (stale) res.setAttribute("aria-hidden", "true"); else res.removeAttribute("aria-hidden");
-}
-const cancelledNote = (ms: number): HTMLElement => message({ tone: "info", text: `Canceled after ${fmtSecs(ms)}.`, actions: [button({ label: "Build again", size: "sm", onClick: () => runBuild() })] });
-// A refusal or failure: an inline message at the top of the results; when it names a field, that field gets
-// the error and the focus.
-function failJob(job: BuilderJob, text: string): void {
-  const hadFocus = endJob(job, message({ tone: "bad", title: "The build did not run", text }));
-  const f = knobFromServerError(text);
-  if (f) focusKnob(f, text);
-  else if (hadFocus) $<HTMLButtonElement>("#b-run")!.focus();
-}
-// Ends the job and puts `node` where the progress card was. Returns whether focus was inside the card (it
-// has focus from the moment a build starts), so the caller can hand it on instead of dropping it on <body>:
-// endJob itself hands it to the node's first button ("Build again"), finishJob to the result's heading.
-function endJob(job: BuilderJob, node?: HTMLElement | null): boolean {
-  if (session.job !== job) return false;
-  const msg = $<HTMLElement>("#b-msg")!;
-  const hadFocus = msg.contains(document.activeElement);
-  clearInterval(job.timer as number | undefined); job.es?.close(); session.job = null;
-  setBuilding(false);
-  msg.replaceChildren(...(node ? [node] : []));
-  if (hadFocus) node?.querySelector<HTMLElement>("button")?.focus();
-  return hadFocus;
-}
-interface JobFinishInfo { result: OptimizeResult; ms: number; runId: string | null; reused?: SavedRunLike | null | undefined; settings: RunSettings }
-function finishJob(job: BuilderJob, r: JobFinishInfo): void {
-  const meta: BuildMeta = { ms: r.ms, poolSize: job.poolSize, skipped: job.skipped, reused: r.reused || null, ...goalsMeta(r.settings) };
-  const finished: FinishedBuild = { name: job.name, result: r.result, current: job.current, profile: job.profile, runId: r.runId || null, meta, settings: r.settings };
-  // Switched to another character while it ran: never draw this suit (or its Plan and Grab all) under that
-  // character. It waits until its own character is selected again.
-  const away = job.name !== session.character;
-  const notes = [away ? message({ tone: "info", text: `${who(job.name)}'s build finished. Switch back to ${who(job.name)} to see it.`, attrs: { class: "msg info parked-note" } }) : null,
-    job.warning ? message({ tone: "warn", text: job.warning }) : null].filter((x): x is HTMLDivElement => x !== null);
-  const hadFocus = endJob(job, null);
-  $<HTMLElement>("#b-msg")!.replaceChildren(...notes);
-  if (away) { session.parked = finished; if (hadFocus) $<HTMLButtonElement>("#b-run")!.focus(); return; }
-  showFinished(finished, hadFocus);
-  commands.loadRuns();
-}
 // `focus`: the finished build's heading takes the focus the progress card had (tabindex -1: a target, not a stop).
 function showFinished(f: FinishedBuild, focus = false): void {
   session.result = f.result;
@@ -739,71 +626,6 @@ function showFinished(f: FinishedBuild, focus = false): void {
     const h = focus ? $<HTMLElement>("#b-result h2") : null;
     if (h) { h.tabIndex = -1; h.focus(); }
   }).catch(commands.resultLoadError);
-}
-export async function cancelJob(job: BuilderJob): Promise<void> {
-  if (!job.id) { endJob(job, cancelledNote(Date.now() - job.startedAt)); return; }
-  job.ui!.cancelling();
-  try { await api<OptimizeCancelApiResponse>(`/api/optimize/${job.id}/cancel`, { method: "POST" }); } catch { /* the server is gone; nothing to stop */ }
-  endJob(job, cancelledNote(Date.now() - job.startedAt));
-}
-
-// The inline progress card: busy dot, what is being built, Cancel (Esc while the card has focus), the three
-// phases, a determinate bar (restarts, then the time budget of the exact phase, then the other suits found),
-// and the stat row. The phase changes are announced; the numbers that tick every 200 ms are not.
-const PHASES: Array<[string, string]> = [["heuristic", "Hill climbing"], ["exact", "Proving with HiGHS"], ["alternatives", "Other suits"]];
-function runPanel(job: BuilderJob): BuilderJobUi {
-  const dot = el("span", { class: "dot busy", role: "img", "aria-label": "Solver running" });
-  const cancel = button({ label: "Cancel", kbd: "Esc", onClick: () => cancelJob(job) });
-  const phases = PHASES.filter(([k]) => job.exact || k === "heuristic");
-  let step = stepper(phases.map(([, l]) => l), 0, "Build phases");
-  const bar = progress(0, 1000, "Build progress");
-  const main = txt("Starting…"), cand = txt("", "muted");
-  const live = el("span", { class: "sr", "aria-live": "polite" }, "Hill climbing");
-  const stat = (lbl: string): [HTMLElement, HTMLSpanElement] => { const v = txt("—", "v"); return [box("div", { class: "b-stat" }, txt(lbl, "t-sm muted"), v), v]; };
-  const [sBest, vBest] = stat("Best so far"), [sReq, vReq] = stat("Requirements met"), [sCand, vCand] = stat("Candidates"), [sTime, vTime] = stat("Elapsed"), [sBeat, vBeat] = stat("Solver");
-  const root = box("section", { class: "card b-progress", "aria-label": "Build progress", tabindex: "-1" },
-    box("div", { class: "b-row" }, dot, el("h2", { class: "t-lg" }, job.name === NOBODY ? "Building a suit for No character" : `Building ${job.name}'s suit`), txt(job.exact ? `exact search · budget ${job.budgetMs / 1000} s` : "heuristic search", "muted"), el("span", { class: "spacer" }), cancel),
-    step,
-    box("div", { class: "b-prog" }, bar, box("div", { class: "b-prog-line" }, main, txt("·", "faint"), cand, el("span", { class: "spacer" }), txt("You can keep using Pack Rat while this runs", "muted"))),
-    box("div", { class: "b-stats" }, sBest, sReq, sCand, sTime, sBeat), live);
-  root.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); cancelJob(job); } });
-  let shownPhase = 0;
-  // a rarity preference's second stage (tie-break) is part of the exact phase's step
-  const phaseIdx = (p: string): number => (p === "done" ? phases.length : Math.max(0, phases.findIndex(([k]) => k === (p === "tie-break" ? "exact" : p))));
-  const ui: BuilderJobUi = {
-    root,
-    update(j: BuilderJob) {
-      const p = j.last; if (!p) return;
-      const cur = phaseIdx(p.phase);
-      if (cur !== shownPhase) {
-        shownPhase = cur;
-        const next = stepper(phases.map(([, l]) => l), cur, "Build phases");
-        step.replaceWith(next); step = next;
-        live.textContent = cur < phases.length ? phases[cur]![1] : "Finishing";
-      }
-      const { frac, text, detail } = progressText(p);
-      main.textContent = text; cand.textContent = detail;
-      bar.set(Math.round(frac * 1000));
-      vBest.textContent = p.improvements ? `improved ${fmtN(p.improvements)}× · at ${fmtSecs(p.lastImprovementMs!)}` : "the current suit";
-      vReq.className = "v";
-      if (p.floorsTotal) { vReq.textContent = `${p.floorsMet} of ${p.floorsTotal}`; vReq.classList.add("strong", p.floorsMet === p.floorsTotal ? "tone-ok" : "tone-warn"); }
-      else vReq.textContent = "none set";
-      vCand.textContent = fmtN(p.candidates);
-    },
-    tick(j: BuilderJob) {
-      const now = Date.now();
-      vTime.textContent = fmtSecs(now - j.startedAt);
-      const silent = (now - j.lastProgressAt) / 1000;
-      let tone = "", text = `alive · ${silent < 1 ? "just now" : silent.toFixed(0) + " s ago"}`;
-      if (!j.connected) { tone = "warn"; text = "connection lost · reconnecting"; }
-      else if (silent > 12) { tone = "bad"; text = `silent for ${silent.toFixed(0)} s: probably hung, cancel and build again`; }
-      else if (silent > 4) { tone = "warn"; text = `no update for ${silent.toFixed(0)} s`; }
-      dot.className = `dot ${tone || "busy"}`;
-      vBeat.className = `v${tone ? ` tone-${tone}` : ""}`; vBeat.textContent = text;
-    },
-    cancelling() { cancel.disabled = true; cancel.replaceChildren(txt("Canceling…")); },
-  };
-  return ui;
 }
 
 // ---------------------------------------------------------------- save
@@ -817,5 +639,5 @@ async function saveProfile(said?: string): Promise<void> {
   toast(r.ok ? said ?? `Profile for ${who(name)} saved.` : r.error!, r.ok ? "good" : "bad");
   updateTemplateBadge();
 }
-provide({ renderPanel, panelBuild, buffPlan, loadRunBuffs, tuneWeight, selectCharacter, build: () => { void runBuild(); }, openSettingsTab: (t) => openSettings(t as Tab),
-  buildState, unsavedChanges, openChange, updateTemplateBadge, redraw, focusIn, saveProfile: (said) => { void saveProfile(said); } });
+provide({ renderPanel, panelBuild, buffPlan, loadRunBuffs, tuneWeight, selectCharacter, openSettingsTab: (t, focus) => openSettings(t as Tab, focus),
+  buildState, unsavedChanges, openChange, updateTemplateBadge, redraw, focusIn, saveProfile: (said) => { void saveProfile(said); }, focusKnob, paintChanges, showFinished });

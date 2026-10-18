@@ -488,6 +488,6 @@ export function applyRequirementsPrefs(p: UiPrefs | null): void { fineTune = p?.
 function showGoalWeights(): void {
   if (goalsActive(session.profile?.goals) && !fineTune) { fineTune = true; prefs.set({ builderFineTune: "on" }, { quiet: true }); commands.redraw("goals"); commands.redraw("weights"); }
 }
-// The first resist whose cap is typed out of range, which stops a build (builder.mts runBuild).
+// The first resist whose cap is typed out of range, which stops a build (builder-job.mts runBuild).
 const badCapDraft = (): string | undefined => RESIST_KEYS.find((k) => capDrafts[k] != null);
 provide({ requirementsSection, capsSection, goalsSection, weightsSection, clearCapDrafts, showGoalWeights, badCapDraft });
