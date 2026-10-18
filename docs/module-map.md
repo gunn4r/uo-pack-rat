@@ -39,10 +39,6 @@ Three files keep names from before the project became Pack Rat: `app/vault-serve
 | `scripts/gen-graphic-layers.mts` | Regenerate the wearable-graphic table in app/domain/slots.mts from a client's tiledata.mul. | `wearableLayers`, `spliceTable` |
 <!-- module-map:end -->
 
-| Also here | Role | Owns |
-|---|---|---|
-| `app/vault-lib.mts` (classifier part) | Which slot a piece goes in (the worn layer, then the graphic's tiledata layer, then name rules) and which kind every item is. | `LAYER_TO_SLOT`, `GEAR_SLOTS`, `GEAR_SLOT_GROUPS`, `SLOT_GROUP`, `SLOTS_IN_GROUP`, `REQUIRED_SLOTS`, `SLOT_LABELS`, `NECK_ARMOR_WORDS`, `isNeckArmor`, `classify`, `layerOfGraphic`, the wearable-graphic table, `spellSchoolOf`, `KINDS`, `OVERRIDE_KINDS`, `kindOf`, `overriddenKind`, `INSTRUMENTS` |
-
 ## Item query
 
 <!-- module-map:start query -->
