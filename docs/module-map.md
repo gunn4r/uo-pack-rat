@@ -307,6 +307,7 @@ What still lives inside `startServer`: the startup warning; the wiring of the st
 | Also here | Role | Owns |
 |---|---|---|
 | `adapters/tazuo/`, `adapters/razor-enhanced/`, `adapters/classicuo-web/` | Each game client's scripts, `adapters/<id>/capabilities.json` (the manifest, `app/schema/adapter-manifest.v1.schema.json`) and README (`docs/adapter-guide.md`). | the adapter contract and install facts, `ADAPTER_VERSION` |
+| `app/schema/tazuo-panel.v1.schema.json` | `<data>/tazuo-panel.json`, which the app and the TazUO panel both write and read field by field: the shape, and the shared cases (`app/fixtures/contract-cases/tazuo-panel.json`) both readers run. | the panel prefs shape |
 | `adapters/_shared/` | The shared Python helper fragments: one file per helper family, `<adapter>/` for one adapter's own. Not shipped. | the shared adapter helpers |
 | `adapters/fake_clients.py`, `adapters/test_adapters.py`, `adapters/test_scanners.py`, `adapters/test_bridges.py`, `adapters/test_panel.py` | Fake game clients and the adapter tests, run by `app/adapters.test.mts`. | — |
 

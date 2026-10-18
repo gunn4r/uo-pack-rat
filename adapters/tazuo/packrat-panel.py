@@ -320,7 +320,8 @@ def read_json(path, limit=MAX_PREFS_BYTES):
 
 
 def read_prefs():
-    """<data>/tazuo-panel.json (the hotkey and showAtLogin)."""
+    """<data>/tazuo-panel.json (the hotkey and showAtLogin; app/schema/tazuo-panel.v1.schema.json, and the cases both
+    readers run, app/fixtures/contract-cases/tazuo-panel.json)."""
     return read_json(PREFS)
 
 
@@ -339,10 +340,18 @@ def read_hotkey(doc):
         return DEFAULT_HOTKEY
 
 
+def read_show_at_login(doc):
+    """The file's showAtLogin, else openAtLogin (the name an older app wrote), else True: the first that is
+    true or false, as app/tazuo-panel-prefs.mts reads it."""
+    for k in ("showAtLogin", "openAtLogin"):
+        if isinstance(doc.get(k), bool):
+            return doc[k]
+    return True
+
+
 def load_prefs():
     doc = read_prefs()
-    on = doc.get("showAtLogin", doc.get("openAtLogin"))     # openAtLogin: the name an older app wrote
-    state["show_at_login"] = on if isinstance(on, bool) else True
+    state["show_at_login"] = read_show_at_login(doc)
     set_text("login_btn", login_text())
     hk = read_hotkey(doc)
     if hk == state["hotkey"]:
@@ -360,10 +369,10 @@ def login_text():
 
 
 def on_login():
-    """Save whether the window shows at the next login, keeping the hotkey."""
-    doc = read_prefs()
-    out = {"hotkey": doc["hotkey"]} if isinstance(doc.get("hotkey"), dict) else {}
-    out["showAtLogin"] = not state["show_at_login"]
+    """Save whether the window shows at the next login, keeping the hotkey as read_hotkey reads it, so an
+    invalid one is written as the default, as the app's own write does."""
+    parts = read_hotkey(read_prefs()).split("+")
+    out = {"hotkey": {"mods": parts[:-1], "key": parts[-1]}, "showAtLogin": not state["show_at_login"]}
     try:
         write_json_atomic(PREFS, out)
     except Exception:
