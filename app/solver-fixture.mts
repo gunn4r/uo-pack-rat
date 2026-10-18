@@ -75,7 +75,7 @@ export function cell(profileName: string, { soft = [], overrides = {}, buffs = [
 }
 
 // Compile-time-only guard (review follow-up): scripts/optimizer-core.mts declares its own OptItem
-// (unexported, no import from vault-lib.mts — the core is a paste-able file with no imports at all,
+// (unexported, no import from vault-lib.mts — the core imports only app/solver/scoring.mts,
 // see its own header comment) and vault-lib.mts declares its own, independently. A reviewer proved
 // with `tsc` they had ALREADY drifted once (vault-lib's plain OptItem had `slot: string | null`; the
 // core's has always required a non-null `slot`) with nothing to catch it but a human reading a `tsc`
