@@ -82,3 +82,44 @@ export function selectTests(changed: string[], sources: Record<string, string>):
   }
   return { tests: picked };
 }
+
+// The files that open an Electron window: the UI tests and the shell smoke test.
+export const ELECTRON_FILE = /^scripts\/(ui-[^/]+|shell-smoke)\.test\.mts$/;
+// CI's parts (issue #338): `only` keeps the Node files or the Electron ones, and `shard` k of n deals what is left into n
+// shards of about the same number of tests (largest file first, each to the shard with the fewest tests so far, names breaking
+// ties), so every file lands in exactly one shard and a shard's files stay the same from run to run. `tests` is a file's
+// test count. Paths are repo-relative. A part that leaves no file throws: a CI job that runs nothing must fail, not pass
+// (a renamed test file or a shard count above the file count would otherwise go green with no test run).
+export interface Part { only?: "node" | "electron" | undefined; shard?: { k: number; n: number } | undefined }
+export function partOf(files: Array<{ path: string; tests: number }>, { only, shard }: Part): string[] {
+  const kept = files.filter((f) => !only || ELECTRON_FILE.test(f.path) === (only === "electron"));
+  const none = (): Error => new Error(`${[only && `--only-${only}`, shard && `--shard=${shard.k}/${shard.n}`].filter(Boolean).join(" ")} selected no test files`);
+  if (!shard) { if (only && !kept.length) throw none(); return kept.map((f) => f.path).sort(); }
+  const load = Array.from({ length: shard.n }, () => 0), mine: string[] = [];
+  for (const f of [...kept].sort((a, b) => b.tests - a.tests || a.path.localeCompare(b.path))) {
+    const to = load.indexOf(Math.min(...load));
+    load[to]! += Math.max(1, f.tests);
+    if (to === shard.k - 1) mine.push(f.path);
+  }
+  if (!mine.length) throw none();
+  return mine.sort();
+}
+// The part a test-runner command line asks for (--only-node, --only-electron, --shard=k/n), or why it is not one: an unknown
+// --only-* (a typo would otherwise run the whole suite in that job), both --only flags, or a bad --shard.
+export function parsePart(argv: string[]): Part | { error: string } {
+  const only = argv.filter((a) => a.startsWith("--only-"));
+  const bad = only.find((a) => a !== "--only-node" && a !== "--only-electron");
+  if (bad) return { error: `${bad}: expected --only-node or --only-electron` };
+  if (new Set(only).size > 1) return { error: "--only-node and --only-electron: give one" };
+  const shardArg = argv.find((a) => a.startsWith("--shard="));
+  const shard = shardArg ? parseShard(shardArg.slice("--shard=".length)) : undefined;
+  if (shard === null) return { error: `${shardArg}: expected --shard=<k>/<n> with 1 <= k <= n` };
+  return { only: only[0]?.slice("--only-".length) as Part["only"], shard };
+}
+// A `--shard=k/n` value as {k, n}; null when it is not one (1 ≤ k ≤ n).
+export function parseShard(v: string): { k: number; n: number } | null {
+  const m = /^(\d+)\/(\d+)$/.exec(v);
+  if (!m) return null;
+  const k = Number(m[1]), n = Number(m[2]);
+  return k >= 1 && k <= n ? { k, n } : null;
+}
