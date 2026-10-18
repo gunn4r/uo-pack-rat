@@ -9,7 +9,8 @@
 // owns: `powerRows`, `sotPlan`, `bindEverything`
 import type { Item } from "../vault-lib.mts";
 import type { RulesV1ScrollBinderPowerScrollsItem } from "../schema/types.d.mts";
-import { plural } from "./inv-model.mts";
+import { plural } from "./format.mts";
+
 
 export type Step = RulesV1ScrollBinderPowerScrollsItem;
 export type Counts = Record<number, number>;

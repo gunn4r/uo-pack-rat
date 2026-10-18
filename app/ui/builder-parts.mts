@@ -16,10 +16,11 @@ import { box, txt, button, message, tipWrap, tooltip, copyText, check, searchInp
 import { CLIENT_ID } from "./api.mts";
 import { bridgeActionReason, runBridgeAction, grabAll, grabbable } from "./bridge.mts";
 import { splitSerial } from "./item-parts.mts";
-import { locationCrumbs, plural, handledAction, actionWords, actionApplies, applyAction, strictDetail, stageProgress, fcCapText } from "./builder-model.mts";
+import { locationCrumbs, handledAction, actionWords, actionApplies, applyAction, strictDetail, stageProgress, fcCapText } from "./builder-model.mts";
 import { session, commands, announce } from "./builder-session.mts";
 import type { Diagnostic } from "../runs-types.mts";
 import type { OptimizeResult, OptimizeProgress, JobSnapshotEvent, JobDoneEvent, JobFailedEvent, JobCancelledEvent } from "./api-types.mts";
+import { plural } from "./format.mts";
 
 export const RESIST_NAMES: Record<string, [string, string]> = Object.fromEntries(RESIST_META.map((r) => [r.key, [r.long, r.token]]));
 // A template's name as the build picker shows it: a built-in's own name, without templateLabel's "(built-in)".

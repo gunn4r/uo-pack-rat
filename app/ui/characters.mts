@@ -16,10 +16,11 @@ import { session } from "./builder-session.mts";
 import { registerScreen, showCharacterItems, showItem } from "./nav.mts";
 import { openWizard } from "./wizard.mts";
 import { relativeWhen } from "./messages.mts";
-import { sheetNode, wornSet, resistFigures, atCap, plural, lowDurabilityCount, lowDurabilitySummary, type ResistFigure, type SheetItem } from "./sheet.mts";
+import { sheetNode, wornSet, resistFigures, atCap, lowDurabilityCount, lowDurabilitySummary, type ResistFigure, type SheetItem } from "./sheet.mts";
 import type { Item } from "../vault-lib.mts";
 import type { RunsListApiResponse } from "./api-types.mts";
 import { characterNames, rosterView, triple, sheetMeta, type RosterRow, type RosterSort } from "./roster.mts";
+import { plural } from "./format.mts";
 
 
 const num = (v: unknown): number | null => (v != null && Number.isFinite(Number(v)) ? Number(v) : null);
