@@ -114,7 +114,7 @@ All three require the container chain to be opened first with `Items.WaitForCont
 
 Every script resolves its data directory the same way, checked in order:
 
-1. `packrat-paths.json` next to the script (`{"dataDir": "..."}`).
+1. `packrat-paths.json` next to the script (`{"dataDir": "..."}`, `~` expanded). The folder must be absolute or start with `~/`; a relative one (or `~user/...`) stops the script at start (1.13.1), and Settings reports the file as unreadable.
 2. the `PACKRAT_DATA` environment variable.
 3. `~/.pack-rat`.
 

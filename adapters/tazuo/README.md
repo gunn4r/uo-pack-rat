@@ -111,7 +111,7 @@ The app's first-run setup wizard installs this adapter: pick TazUO as the client
 
 Every script resolves its data directory the same way, checked in order:
 
-1. `packrat-paths.json` next to the script (`{"dataDir": "..."}`, `~` expanded). The script's folder comes from `__file__`, or from `API.ScriptPath` if TazUO runs the script without defining `__file__` (which build does is unverified), and this step is skipped if neither is available.
+1. `packrat-paths.json` next to the script (`{"dataDir": "..."}`, `~` expanded). The folder must be absolute or start with `~/`; a relative one (or `~user/...`) stops the script at start (2.21.0), and Settings reports the file as unreadable. The script's folder comes from `__file__`, or from `API.ScriptPath` if TazUO runs the script without defining `__file__` (which build does is unverified), and this step is skipped if neither is available.
 2. the `PACKRAT_DATA` environment variable.
 3. `~/.pack-rat`.
 
