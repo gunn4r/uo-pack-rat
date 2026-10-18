@@ -16,7 +16,7 @@
 // collected (a huge invalid document should not turn validation into a second parse pass).
 //
 // map: scan
-// owns: `validate`, the supported keyword subset
+// owns: `validate`, the supported keyword subset, `firstErrorText`
 const MAX_ERRORS = 20;
 
 // The runtime keyword subset above, as a type — deliberately its own small shape rather than a
@@ -55,6 +55,8 @@ export interface ValidationResult {
   ok: boolean;
   errors: ValidationError[];
 }
+// The one-line reason a document failed: its first error, "<path> <msg>" (a refusal's `error` field).
+export const firstErrorText = (errors: ValidationError[]): string => `${errors[0]!.path} ${errors[0]!.msg}`;
 
 function typeMatches(value: unknown, t: string): boolean {
   switch (t) {
