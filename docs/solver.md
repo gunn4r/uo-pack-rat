@@ -32,6 +32,7 @@ Read this section first; the rest of the file is the reference, feature by featu
 | SSI step credit | `stepCredit` (shared) | the step columns' rows in `buildSuitMip`; `startVector` picks the paying column through `pointReached` | `app/solver/agreement.test.mts`, `app/solver-fuzz.test.mts` |
 | The slots | `optDefaultSlots` | `GEAR_SLOTS` (`app/vault-lib.mts`, read by `app/mip.mts`) | `app/solver.test.mts` |
 | The optional slots | `optDefaultOptionalSlots` | `DEFAULT_OPTIONAL_SLOTS` (`app/mip.mts`) | `app/solver.test.mts` |
+| A two-handed weapon leaves the one-hand slot empty | `optSanitize` empties a worn `oneHanded` under a worn two-hander | the MIP reads `current` as it is (`buildSuitMip`, `propertyReach`, `tieCosts`, `stageObjective`), so no worn suit with both reaches either solver: `buildPools` (`app/vault-lib.mts`) leaves the one hand empty under a worn two-hander (the game never wears both, a demo fixture does), Manual's Fill refuses one (`manualSuitError` in `app/services/builds.mts`), and so do the hand-built `POST /api/optimize` (`currentError` in `app/http/routes/optimize.mts`) and MCP's `build_suit` | `app/gear-vault.test.mts` (`buildPools`), `app/server-builder.test.mts` (the hand-built refusal) |
 | A floor at or under its minimum asks for nothing | `floorOf` (`scoringProfile`, which the MIP reads too) | `floorsOf` (`app/diagnostics.mts`), against the lifted minimum | `app/diagnostics.test.mts` |
 
 Issue #338's quality pass moves the profile normalization and these term functions into `app/solver/` next; this table shrinks as that lands.
