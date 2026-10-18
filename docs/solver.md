@@ -16,7 +16,7 @@ Read this section first; the rest of the file is the reference, feature by featu
 **The invariants.** Each is held by the tests, the exact solver's guards or code review (the `runKey` one is a convention nothing checks); a change that breaks one is a bug, not a trade-off:
 
 - The core is the one scorer of record. `solveExact` always hands its winning suit back to the core, and every number a result carries is the core's. Its guards revoke `proven` and warn when HiGHS's objective, the core's re-score and the heuristic disagree.
-- For any suit, the MIP's objective at `startVector(suit)` plus `scoreOffset` equals the core's `scoreSet(suit)`. `app/solver/agreement.test.mts` checks it suit by suit over generated profiles, with the weight terms `scoreShares` reads, so a drift fails at the term that drifted; the exact solver's guards also catch a disagreement on the suit it returns (they compare HiGHS's objective with the core's result after the hand-back, which re-climbs from HiGHS's suit), and the fuzz suite on whole searches.
+- For any suit, the MIP's objective at `startVector(suit)` plus `scoreOffset` equals the core's `scoreSet(suit)`. `app/solver/agreement.test.mts` checks it suit by suit over generated profiles, with the weight terms `scoreShares` reads, so a drift fails at the term that drifted, and holds the MIP's rows to it (every start vector meets them, and the model solved with the suit's pieces fixed scores what the core does); the exact solver's guards also catch a disagreement on the suit it returns (they compare HiGHS's objective with the core's result after the hand-back, which re-climbs from HiGHS's suit), and the fuzz suite on whole searches.
 - Every profile transform happens before `runKey`, so the key covers it. A transform added after it silently reuses runs it shouldn't.
 - A change to what a build returns bumps `SOLVER_VERSION` (`app/runs-lib.mts`, with a line in its comment), so saved runs stop being reused as instant repeats.
 - The same seed and inputs give byte-identical results when no time limit cuts the search (the restarts all run and the exact phase proves). `app/bench/compare-cores.mts --base <ref>` checks a refactor against its base this way: the base's core and the working tree's on the same inputs, byte for byte.
@@ -28,8 +28,8 @@ Read this section first; the rest of the file is the reference, feature by featu
 
 | Rule | Core (`scripts/optimizer-core.mts`) | Other copy | Caught by |
 |---|---|---|---|
-| The minimum a resist is held at | `optScoreVector`'s step loop, over the space's arrays | `liftedMin` (shared), the step loop in `startVector` and the `h` rows in `buildSuitMip` | `app/solver/agreement.test.mts`, the fuzz suite |
-| SSI step credit | `stepCredit` (shared) | the step loop in `startVector`, which picks the paying column | `app/solver/agreement.test.mts`, the fuzz suite |
+| The minimum a resist is held at | `optScoreVector`'s step loop, over the space's arrays | `liftedMin` (shared; `startVector` uses its `stepReached`, with `heldTotal` and `floorMet`) and the `v`, `b` and `h` rows in `buildSuitMip` | `app/solver/agreement.test.mts` (suit by suit, the rows included), `app/solver-buffs-fuzz.test.mts` (whole searches; `app/solver-fuzz.test.mts` generates no minimums) |
+| SSI step credit | `stepCredit` (shared) | the step columns' rows in `buildSuitMip`; `startVector` picks the paying column through `pointReached` | `app/solver/agreement.test.mts`, `app/solver-fuzz.test.mts` |
 | The slots | `optDefaultSlots` | `GEAR_SLOTS` (`app/vault-lib.mts`, read by `app/mip.mts`) | `app/solver.test.mts` |
 | The optional slots | `optDefaultOptionalSlots` | `DEFAULT_OPTIONAL_SLOTS` (`app/mip.mts`) | `app/solver.test.mts` |
 | A floor at or under its minimum asks for nothing | `floorOf` (`scoringProfile`, which the MIP reads too) | `floorsOf` (`app/diagnostics.mts`), against the lifted minimum | `app/diagnostics.test.mts` |
