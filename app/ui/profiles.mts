@@ -1,6 +1,9 @@
 // ui/profiles.mts — the one writer of the player's profiles (PUT /api/profiles, app/build-spec.mts's v3 shape), and of
 // a character's saved buffs and build label within them. The whole file goes up on each write, one write at a time and in order, so a
 // quick run of buff toggles lands as the last one left it.
+//
+// map: ui-infra
+// owns: `putProfiles`, `setCharacterBuffs`
 import { characterBuffs, characterEntry, characterProfile, type BuildBuffs, type CharacterEntry } from "../build-spec.mts";
 import { state } from "./store.mts";
 import { toast } from "./dom.mts";

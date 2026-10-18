@@ -3,6 +3,9 @@
 // (no node: imports), so the server's POST /api/import/paste (app/import.mts) and the Import drawer's
 // instant preview (app/ui/import.mts) apply one rule: the drawer can never call a paste clean that
 // the server then refuses, or the other way round. Served to the page at /paste-scan.mjs.
+//
+// map: scan
+// owns: `parsePastedScan`, `PASTE_BEGIN`/`PASTE_END`, `jsonErrorReason`
 import { upgradeScan, validateScan, type UnvalidatedScan } from "./scan-schema.mts";
 import type { ScanV2 } from "./schema/types.d.mts";
 

@@ -2,6 +2,9 @@
 // that count, the caps they leave, and the build's requirements against it. Manual's totals and deltas, Automatic's buff
 // picker, the MCP tools and POST /api/evaluate all call evaluateSuit, so the page and a model read the same numbers.
 // Pure and browser-safe, like vault-lib.mts and buffs.mts.
+//
+// map: builder
+// owns: `evaluateSuit`, `SuitEvaluation`, `paperdollCaps`
 import { RESIST_KEYS, RESIST_SKILL_KEY, effectiveProfile, getRules, profileResistCaps, requirementReport, resistSkillCapOf, totalsOf } from "./vault-lib.mts";
 import type { Character, EffectiveProfile, OptItem, Profile, PropMap, RequirementRow, ResistCap, SuitSkill } from "./vault-lib.mts";
 import { applyBuffs, planBuffs, type BuffPlan, type BuffResult } from "./buffs.mts";

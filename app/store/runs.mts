@@ -1,4 +1,7 @@
 // runs.mts — <data>/runs/: one JSON file per saved run (finished builds and Manual suits; /api/runs).
+//
+// map: server
+// owns: `createRunsStore`
 import { existsSync, readdirSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { DIAGNOSTICS_SOUND_SINCE, type SavedRun } from "../runs-lib.mts";

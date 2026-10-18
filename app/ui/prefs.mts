@@ -3,6 +3,9 @@
 // already shows the choice, so a failure only says so in one toast (messages.mts's prefsSaveFailed), and `quiet`
 // writes (the sidebar, a dismissed update notice, the copied scanner version) say nothing, since losing one only
 // means the next launch starts from the default.
+//
+// map: ui-infra
+// owns: `prefs`
 import { api } from "./api.mts";
 import { toast } from "./dom.mts";
 import { prefsSaveFailed } from "./messages.mts";

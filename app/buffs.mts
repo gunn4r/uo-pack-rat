@@ -4,6 +4,9 @@
 // Scripts/) or the UO Alive wiki, which wins where the two disagree (the other's number is said in the entry's note),
 // and carries how sure those numbers are. No DOM: Manual (ui/builder-manual.mts) and Automatic read the same model,
 // and app/buffs.test.mts checks it.
+//
+// map: builder
+// owns: `BUFFS`, `BUFF_INPUTS`, `BUFF_GROUPS`, `applyBuffs`, `minimumWith`, `buffPlanOf`, `manualProfile`, `manualBase`, `manualPlan`, `plannedProfile`, `planBuffs`, `isBuffList`, `normalizeBuffs`, `isRunBuffs`, `savedBuffs`
 import { RESIST_KEYS, SKILL_NAMES, minResistAt, skillInSuit, labelOf, effectiveProfile, profileResistCaps, toOptItem, totalsOf } from "./vault-lib.mts";
 import type { BuffShift, SuitSkill, Character, EffectiveProfile, Item, Profile, PropMap, RunBuffs } from "./vault-lib.mts";
 

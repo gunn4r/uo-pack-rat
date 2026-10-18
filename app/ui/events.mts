@@ -3,6 +3,9 @@
 // accepts or rejects to every connected browser tab; this module is the page's one listener for
 // that stream, so a scan dropped in game shows up here without the user ever touching the reload
 // button. EventSource reconnects on its own (the browser's default behaviour) — no retry logic needed.
+//
+// map: ui-infra
+// owns: `connectEvents`
 import { toast } from "./dom.mts";
 import { reload } from "./inventory-data.mts";
 import { loadRuns } from "./runs.mts";

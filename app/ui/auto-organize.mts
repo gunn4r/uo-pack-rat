@@ -3,6 +3,9 @@
 // gets, what does not fit, how much will move); Accept saves the proposal's setup whole through
 // ui/organize-data.mts's saveConfig, whose organizechange event redraws the screen and works the plan out. The
 // server works the proposal out (POST /api/organize/propose); every sentence comes from ui/organize-model.mts.
+//
+// map: organize
+// owns: `openAutoOrganize`
 import { state } from "./store.mts";
 import { $, el, toast, compactChildren } from "./dom.mts";
 import { api } from "./api.mts";

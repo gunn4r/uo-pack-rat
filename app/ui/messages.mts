@@ -8,6 +8,9 @@
 // They live in one place because the same outcome reaches the player through more than one panel:
 // an install runs from both the wizard's last step and Settings' Reinstall row. Two hand-written copies of
 // one sentence is how panels drift apart.
+//
+// map: ui-data
+// owns: `errorText`, `bridgeView`, `optimizeErrorMessage`, `prefsSaveFailed`
 import type { ApiError, DataDirCheckInfo } from "./api-types.mts";
 import { dataDirNotice } from "../data-dir-notice.mts";
 

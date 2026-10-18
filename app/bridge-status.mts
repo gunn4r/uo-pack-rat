@@ -1,6 +1,9 @@
-// bridge-status.mts — the one reader of a bridge's status.json (docs/bridge-protocol.md, Status). GET /api/bridge/status
+// bridge-status.mts — the one reader of a bridge's status.json (docs/bridge-protocol.md, Status), checked against the status schema, with the one "online" definition; the status route and the Organize service read it. GET /api/bridge/status
 // answers the page and the MCP tools from it, and the Organize service reads finished trips and the running bridge's
 // features through it.
+//
+// map: bridge
+// owns: `readBridgeStatus`, `ONLINE_S`
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { APP_DIR } from "./config.mts";

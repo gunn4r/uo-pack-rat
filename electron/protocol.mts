@@ -17,6 +17,9 @@
 // OS call — the phase-7 security review's Important 1 is what happens when a message's own claim is
 // taken as the argument to shell.openPath. These interfaces describe what the two processes send each
 // other; only `args` describes something the receiving side then verifies.
+//
+// map: shell
+// owns: `HostRequestMessage`, `HostResultMessage`, `ChildToMainMessage`, `MainToChildMessage`
 
 // server-entry.mts -> main.mts, once startServer() is listening.
 export interface ListeningMessage {

@@ -1,5 +1,8 @@
 // tazuo-panel-prefs.mts — the TazUO panel's options and their validation, with no Node imports, so the
 // page's types (app/ui/api-types.mts) can share them. The file side is app/tazuo-panel.mts.
+//
+// map: installer
+// owns: `PANEL_DEFAULTS`, `panelPrefsError`, `panelPrefsOf`, `HOTKEY_KEYS`
 export const HOTKEY_MODS = ["CTRL", "ALT", "SHIFT"] as const;
 export const HOTKEY_KEYS: readonly string[] = [
   ..."ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789".split(""),

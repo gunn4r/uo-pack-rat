@@ -5,6 +5,9 @@
 // hover tooltip need, so this fills state.itemCache from GET /api/items/by-serial on demand.
 // state.itemCache is seeded opportunistically by ui/inventory.mts's renderInventory() (a row it just
 // drew already IS a full record) and cleared by ui/inventory-data.mts's reload() whenever the inventory refreshes.
+//
+// map: ui-infra
+// owns: `resolveItems`
 import { state } from "./store.mts";
 import { api } from "./api.mts";
 import type { Item } from "../vault-lib.mts";

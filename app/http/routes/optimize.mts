@@ -1,4 +1,7 @@
 // optimize.mts — the Suit Builder's builds and saved runs: POST /api/optimize, the per-job /api/optimize/<id>/events|cancel|status, POST|GET /api/runs and GET|PUT|DELETE /api/runs/<id>, and POST /api/evaluate.
+//
+// map: server
+// owns: `routes`
 import { randomUUID } from "node:crypto";
 import http from "node:http";
 import { isBoundedInt, isBoundedString, short } from "../../guards.mts";

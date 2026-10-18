@@ -24,6 +24,7 @@
     "build:ui": "node scripts/build-ui.mts",
     "gen:contracts": "node scripts/gen-contracts.mts",
     "gen:test-index": "node scripts/test-index.mts --write",
+    "gen:modules": "node scripts/module-index.mts --write",
     "pretypecheck": "npm run build:types",
     "typecheck": "tsc -p tsconfig.json",
     "predesktop": "npm run build:types && npm run build:ui",
