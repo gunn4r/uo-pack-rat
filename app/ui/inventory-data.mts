@@ -4,7 +4,7 @@
 // reads the builder's character before the builder's listener picks a new one.
 //
 // map: ui-bootstrap
-// owns: `reload`, `retryLoad`
+// owns: `reload`, `retryLoad`, `fetchAllItems`
 import { state, newestStamp } from "./store.mts";
 import { forgetTipMisses } from "./dom.mts";
 import { api } from "./api.mts";
@@ -12,11 +12,24 @@ import { loadOrganize, refreshPlaces } from "./organize-data.mts";
 import { loadHouseLinks } from "./house-links.mts";
 import { renderNavCounts } from "./shell.mts";
 import { loadProfiles } from "./profiles.mts";
-import type { InventoryApiResponse } from "./api-types.mts";
+import type { InventoryApiResponse, ItemsApiResponse } from "./api-types.mts";
+import type { Item } from "../vault-lib.mts";
+import type { ItemQueryRows } from "../item-query.mts";
 
 // api() throws with the server's own message ("internal error"); the panels a failed load writes into also need
 // to know which request it was.
 export function get<T>(path: string): Promise<T> { return api<T>(path).catch((e: Error) => { throw new Error(`${path} failed: ${e.message}`); }); }
+
+// Every item a GET /api/items query matches, in its 500-row pages (Unravel and Scrolls load their lists with it).
+// `params` is the query string without limit and offset.
+export async function fetchAllItems(params: string): Promise<Item[]> {
+  const rows: Item[] = [];
+  for (let offset = 0; ; offset += 500) {
+    const r = await api<ItemsApiResponse>(`/api/items?${params}&limit=500&offset=${offset}`);
+    rows.push(...(r as ItemQueryRows).rows);
+    if (offset + 500 >= r.total) return rows;
+  }
+}
 
 // The data half of app.mts's load(): inventory and profiles, and everything drawn from them. A live scan landing
 // (events.mts, the "inventory" SSE event) and Forget run just this; rules/settings/setup don't change

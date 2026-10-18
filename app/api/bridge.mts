@@ -3,16 +3,17 @@
 // map: api
 // owns: `BridgeCurrentCommand`, `TripStepResult`, `BridgeResultEntry`, `BridgeAdapterReport`, `BridgeStatusApiResponse`, `BridgeQueueApiResponse`
 
-// GET /api/bridge/status: the bridge's status.json (app/schema/types.d.mts's BridgeV1Status) with the `online` and `age`
-// the server works out from it, or just {ok, online: false} with no status file. `current` and `results` are narrowed to
-// the fields the page and the MCP tools read (the schema leaves both open).
+// GET /api/bridge/status: the bridge's status.json as app/bridge-status.mts reads it (the running command and each result
+// checked to their shapes in bridge.v1.schema.json) with the `online` and `age` the server works out from it, or just
+// {ok, online: false} with no status file.
 export interface BridgeCurrentCommand {
   id?: string | undefined;           // the running command's id (a trip's, while Organize waits on it)
   action?: string | undefined;
   name?: string | undefined;
 }
 // One step of a trip's result (the bridge's trip action: every take and put it tried, in order).
-export interface TripStepResult { op: "take" | "put"; serial: number; ok: boolean; msg: string; ms?: number | undefined }
+// `op` is "take" or "put"; a newer bridge may name another, which the readers skip.
+export interface TripStepResult { op: string; serial: number; ok: boolean; msg: string; ms?: number | undefined }
 export interface BridgeResultEntry {
   ok: boolean;
   msg: string;
