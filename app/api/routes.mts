@@ -9,7 +9,7 @@
 import type { HouseApiResponse, HousesApiResponse } from "../house-model-types.mts";
 import type { OrganizePlanApiResponse, OrganizeProposeApiResponse, OrganizeProposeBody } from "../organize-types.mts";
 import type { RunBody, RunsListBody, RunSummary } from "../runs-types.mts";
-import type { CleanupApiResponse, InstallApiResponse, InstallBody, LocateApiResponse, LocateBody, PasteScannerApiResponse, RulesApiResponse, SettingsApiResponse, SettingsPutBody, SetupApiResponse, UpdateCheckApiResponse } from "./setup.mts";
+import type { CleanupApiResponse, CleanupBody, InstallApiResponse, InstallBody, LocateApiResponse, LocateBody, PasteScannerApiResponse, RulesApiResponse, SettingsApiResponse, SettingsPutBody, SetupApiResponse, UpdateCheckApiResponse } from "./setup.mts";
 
 // One route: what it answers with 200, and the JSON body it reads (undefined: none).
 export interface ApiEntry<Res, Body = undefined> { res: Res; body: Body }
@@ -92,7 +92,7 @@ export interface ApiRoutes {
   // settings.mts
   "GET /api/settings": ApiEntry<SettingsApiResponse>;
   "PUT /api/settings": ApiEntry<SettingsApiResponse, SettingsPutBody>;
-  "POST /api/retention/cleanup": ApiEntry<CleanupApiResponse, { dryRun: boolean }>;
+  "POST /api/retention/cleanup": ApiEntry<CleanupApiResponse, CleanupBody>;
   "GET /api/rules": ApiEntry<RulesApiResponse>;
   // setup.mts
   "GET /api/setup": ApiEntry<SetupApiResponse>;

@@ -667,9 +667,8 @@ export async function checkForUpdates(
   catch (e) { return { configured: true, error: `invalid release response: ${(e as Error).message}` }; }
   // body is the parsed JSON of a GitHub releases/latest response — never schema-checked before this
   // (same unvalidated trust as elsewhere in this file); tag_name is coerced through String(), and
-  // html_url now goes through releaseUrl rather than being forwarded as-is. `url` stays typed
-  // `unknown` so the result's shape is unchanged for every caller, but at run time it is always a
-  // string this module vouched for.
+  // html_url now goes through releaseUrl rather than being forwarded as-is, so `url` is always a string this module
+  // vouched for.
   const release = body as { tag_name?: unknown; html_url?: unknown };
   const latest = String(release.tag_name || "").replace(/^v/, "");
   return { configured: true, current, latest, url: releaseUrl(release.html_url, repo), upToDate: compareSemver(current, latest) >= 0 };

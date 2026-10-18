@@ -1,7 +1,7 @@
 // setup.mts — what the setup and settings routes answer and take (app/http/routes/setup.mts, settings.mts): settings.json as the server reports it, the shard's rules, the setup wizard's adapters, locate and install, the paste scanner, the update check and the retention clean-up. Types only and node-free, so the routes `satisfies` these, the page re-exports them (app/ui/api-types.mts) and the route map names them (app/api/routes.mts).
 //
 // map: api
-// owns: `ClientSettings`, `Retention`, `SettingsData`, `SettingsApiResponse`, `SettingsPutBody`, `CleanupApiResponse`, `ShardOption`, `RulesApiResponse`, `AdapterSummary`, `InstalledVersionInfo`, `SetupApiResponse`, `PasteScannerApiResponse`, `LocateApiResponse`, `InstallApiResponse`, `UpdateCheckApiResponse`, `LocateBody`, `InstallBody`
+// owns: `ClientSettings`, `Retention`, `SettingsData`, `SettingsApiResponse`, `SettingsPutBody`, `CleanupBody`, `CleanupApiResponse`, `ShardOption`, `RulesApiResponse`, `AdapterSummary`, `InstalledVersionInfo`, `SetupApiResponse`, `PasteScannerApiResponse`, `LocateApiResponse`, `InstallApiResponse`, `UpdateCheckApiResponse`, `LocateBody`, `InstallBody`
 import type { RulesV1 } from "../schema/types.d.mts";
 import type { DataDirCheckInfo } from "../data-dir-notice.mts";
 import type { AutostartOutcome, PanelPrefs } from "../tazuo-panel-prefs.mts";
@@ -40,6 +40,7 @@ export interface SettingsPutBody {
 }
 // POST /api/retention/cleanup {dryRun}: what a dry run would remove, or what a real run removed; refused when
 // old scans were kept because the inventory would have changed without them.
+export interface CleanupBody { dryRun: boolean }
 export interface CleanupApiResponse {
   ok: boolean;
   scans: number;
@@ -48,10 +49,12 @@ export interface CleanupApiResponse {
 }
 
 // ---------------------------------------------------------------- GET /api/rules
-// One entry of `available` (app/rules.mts's RulesEntry, which also says where the file is).
+// One entry of `available` (app/rules.mts listRules): a shard's rules file, built in or the player's own override.
 export interface ShardOption {
   id: string;
   name: string;
+  source: "builtin" | "user";
+  path: string;
 }
 export interface RulesApiResponse {
   ok: boolean;
@@ -125,7 +128,7 @@ export interface InstallBody { adapter: string; scriptsDir: string; panel?: Pane
 // app/installer.mts's CheckForUpdatesResult, flattened. `url` is checkForUpdates()'s releaseUrl(): GitHub's html_url
 // once it has been proved an https://github.com/<this repo>/releases… address, else the repository's releases page.
 export interface UpdateCheckApiResponse {
-  ok?: boolean | undefined;   // true on every answer; the page's own stand-in for a failed fetch leaves it out
+  ok: true;
   configured: boolean;
   error?: string | undefined;
   current?: string | undefined;
