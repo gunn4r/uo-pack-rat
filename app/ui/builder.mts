@@ -456,6 +456,7 @@ async function renameTemplate(ref: string): Promise<void> {
   const saving = saveTemplates(`Template ${ref} renamed to ${name}.`, (p) => {
     const t = p.templates;
     if (!Object.hasOwn(t, ref)) return Object.hasOwn(t, name);
+    if (Object.hasOwn(t, name)) return false;   // a template by that name made elsewhere since the name was checked: never overwritten unasked
     t[name] = t[ref]!;
     delete t[ref];
     for (const c of Object.values(p.characters)) if (c.template === ref) c.template = name;
@@ -472,7 +473,11 @@ async function duplicateTemplate(ref: string): Promise<void> {
   const name = await askTemplateName(`Duplicate ${plainName(ref)}`, copyName(plainName(ref)));
   if (!name) return;
   const copy = { spec: structuredClone(from.spec), ...(from.description ? { description: from.description } : {}), savedAt: new Date().toISOString() };
-  const saving = saveTemplates(`Template ${name} saved.`, (p) => { p.templates[name] = copy; });
+  // a template by that name made elsewhere since the name was checked is never overwritten unasked
+  const saving = saveTemplates(`Template ${name} saved.`, (p) => {
+    if (Object.hasOwn(p.templates, name) && p.templates[name] !== copy) return false;
+    p.templates[name] = copy;
+  });
   openCard = name;
   renderPanel();
   paintTemplatesDrawer();
@@ -613,9 +618,14 @@ async function saveTemplateAs(): Promise<void> {
   const name = await promptText({ title: "Template name", value: was.startsWith(BUILTIN_PREFIX) ? "" : was });
   if (name?.startsWith(BUILTIN_PREFIX)) { toast(`A template's name can't start with "${BUILTIN_PREFIX}".`, "bad"); return; }
   if (name && name.length > TEMPLATE_NAME_MAX) { toast(`A template's name is at most ${TEMPLATE_NAME_MAX} characters.`, "bad"); return; }
-  if (!name || (state.profiles!.templates[name] && !await confirmDialog({ title: `Overwrite the ${name} template?`, body: `The ${name} template is replaced with these settings.`, confirmLabel: `Overwrite ${name}` }))) return;
+  const existed = !!name && Object.hasOwn(state.profiles!.templates, name);
+  if (!name || (existed && !await confirmDialog({ title: `Overwrite the ${name} template?`, body: `The ${name} template is replaced with these settings.`, confirmLabel: `Overwrite ${name}` }))) return;
   const entry = { spec: templateSpecFrom(readControls(), buffsOn()), savedAt: new Date().toISOString() };
-  const saving = saveTemplates(`Template ${name} saved.`, (p) => { p.templates[name] = entry; });
+  // overwriting is what was confirmed; a template by that name made elsewhere since the prompt is never overwritten unasked
+  const saving = saveTemplates(`Template ${name} saved.`, (p) => {
+    if (!existed && Object.hasOwn(p.templates, name) && p.templates[name] !== entry) return false;
+    p.templates[name] = entry;
+  });
   session.profile!.template = name;
   renderPanel();
   paintTemplatesDrawer();
@@ -1619,7 +1629,7 @@ async function saveProfile(said?: string): Promise<void> {
   });
   toast(r.ok ? said ?? `Profile for ${who(name)} saved.` : r.error!, r.ok ? "good" : "bad");
   // a refused save leaves the profile as it was, so the build's line still counts the changes as unsaved
-  if (!r.ok && !r.reloaded) { if (had) chars[name] = before!; else delete chars[name]; }
+  if (!r.ok && !r.reloaded && state.profiles!.characters === chars) { if (had) chars[name] = before!; else delete chars[name]; }
   updateTemplateBadge();
 }
 provide({ showCharacter, renderPanel, clearCapDrafts, panelBuild, buffPlan, loadRunBuffs, tuneWeight, pickTemplate: (ref) => { void pickTemplate(ref); }, selectCharacter, build: () => { void runBuild(); }, openSettingsTab: (t) => openSettings(t as Tab) });
