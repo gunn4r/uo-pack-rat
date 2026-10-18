@@ -4,8 +4,9 @@
 // owns: `Selection`, `toggleRows`, `selectAllMatching`, `selectionBody`, `destGroups`
 import { bagLabel, compareNames, TRASH_RE, type Container, type Item } from "../vault-lib.mts";
 import type { ItemQuery } from "../item-query.mts";
-import { plural, queryParams } from "./inv-model.mts";
+import { queryParams } from "./inv-model.mts";
 import type { MovePlanSummary } from "./api-types.mts";
+import { plural } from "./format.mts";
 
 // ---------------------------------------------------------------- the selection
 // `items`: rows ticked one by one (outside `all`'s filter once it is set), by serial. `all`: every item matching that filter (its query as the table had it), `count` of them not worn; `except`: rows matching it the player unticked since. `anchor`: the row index a shift-click extends from. The selection never holds a worn item.

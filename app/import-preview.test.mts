@@ -9,7 +9,8 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parsePastedScan, PASTE_BEGIN, PASTE_END } from "./paste-scan.mts";
-import { importActionLabel, listText, plural, scanPreview, sizeText, sendEach } from "./ui/import-preview.mts";
+import { importActionLabel, listText, scanPreview, sizeText, sendEach } from "./ui/import-preview.mts";
+import { plural } from "./ui/format.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const KESTREL = readFileSync(join(HERE, "fixtures", "demo-Kestrel.json"), "utf8");

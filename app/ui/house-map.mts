@@ -14,7 +14,7 @@ import { propertyLines, RESISTS } from "./peek.mts";
 import { bridgeActionReason, runBridgeAction, sendBridge, type BridgeTarget } from "./bridge.mts";
 import { errorText } from "./messages.mts";
 import { openWorldMap, fetchFacetImage, type FacetImage } from "./world-map.mts";
-import { plural } from "./inv-model.mts";
+
 import { fillTone } from "./organize-model.mts";
 import { artTile } from "./item-art.mts";
 import { PLAIN, pickHouse, plainGrid, chestCount, houseLabel, houseName, carryOver, carryOverText, tiledataNote, chestViews, colourOf, chestLabel, sceneOf, boundsOf, fit, vbText,
@@ -29,6 +29,7 @@ import { houseLinks, setHouses } from "./house-links.mts";
 import { houses } from "./houses-data.mts";
 import { BREAKPOINTS, upTo } from "./breakpoints.mts";
 import type { Item } from "../vault-lib.mts";
+import { plural } from "./format.mts";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 // The map's page state: the houses and models as last fetched, the player's house names and areas (issues #164, #10), the one shown, its level, view (the Stack plan, else the drawing's angle) and colour mode, the area zoomed to (by id), the selected stack (by a serial in it, so a rescan that keeps the stack keeps the selection), the hovered and focused stacks (by letter), the viewBox, and a load error.

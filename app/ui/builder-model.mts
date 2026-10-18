@@ -14,8 +14,8 @@ import type { Diagnostic, DiagnosticAction, DiagnosticCode, GearChanges, ScoreSh
 import { listWords } from "./manual-model.mts";
 import { delayText, MIN_TICKS } from "../swing.mts";
 import type { StrictResult, TieBreakResult } from "./api-types.mts";
+import { plural } from "./format.mts";
 
-export const plural = (n: number, word: string, many = `${word}s`): string => `${n.toLocaleString("en-US")} ${n === 1 ? word : many}`;
 // ---------------------------------------------------------------- the header (issue #321)
 // The build picker's state line: which template the panel's settings came from and how they stand. `unsaved` counts the
 // settings that differ from the character's saved profile; `changed` those that differ from the template they came from
