@@ -68,9 +68,11 @@ export function editProfiles(edits: ProfileEdit[]): Promise<ProfilesSave> {
   applyProfileEdits(state.profiles!, edits, ctx());
   return inTurn(async () => {
     applyProfileEdits(state.profiles!, edits, ctx());
+    const sent = state.profiles;
     try {
       const r = await api<{ stamp: string; was: string }>("/api/profiles", { method: "PATCH", body: { edits } });
-      if (r.was === state.profilesStamp) { state.profilesStamp = r.stamp; return { ok: true }; }
+      // the copy plus the edits is the file only while the page still holds the copy they were made on
+      if (r.was === state.profilesStamp && state.profiles === sent) { state.profilesStamp = r.stamp; return { ok: true }; }
       await reloadProfiles();
       return { ok: true, reloaded: true };
     } catch (e) {
