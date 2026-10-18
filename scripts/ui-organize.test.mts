@@ -7,24 +7,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import { createRequire } from "node:module";
-import { fitWindow, openFacet, type RealSize, testEnv, noUpdateCheck, completeLines, removeTempDir } from "./electron-window.mts";
-import type { ElectronApplication, Page } from "playwright";
+import { join } from "node:path";
+import { openFacet, type RealSize } from "./electron-window.mts";
+import { fakeBridge, launchApp, ROOT, skipWithoutElectron, until, type App, type TripCommand } from "./electron-app.mts";
+import type { Page } from "playwright";
 
-const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
-const require_ = createRequire(import.meta.url);
 // The two demo chests (app/fixtures/demo-*.json), side by side at 1000, 1000: Dorran's holds 40 of 125 items,
 // Kestrel's 120 of 125.
 const DORRAN = 0x700c0000, KESTREL = 0x700b0000;
-function unavailable(): string | null {
-  if (process.env.TEST_SKIP_ELECTRON) return "TEST_SKIP_ELECTRON is set";
-  for (const dep of ["electron", "playwright"]) {
-    try { require_.resolve(dep); } catch { return `${dep} is not installed`; }
-  }
-  return null;
-}
 interface SeedRule { id: string; name: string; names?: string[]; kind?: string[]; targets: number[] }
 const EMPTY_QUERY = { q: "", slot: [], rarity: "", rarityMin: "", rarityMax: "", kind: [], slayer: "", nogarg: false, med: false, hideTags: [], props: [] };
 // A data folder with the wizard done and, unless `rules` is null, both demo chests labelled and these rules.
@@ -41,33 +31,7 @@ function dataDirWith(rules: SeedRule[] | null): string {
 interface OrganizeFile { labels: Record<string, { name: string; color?: string; pinned?: boolean; origin: string }>; rules: Array<{ id: string; name: string; targets: number[]; origin: string; match: { query: Record<string, unknown>; names?: string[]; build?: string; skipSuits?: boolean } }>; catchAll: number | null; emptyBagsTo?: number | null; pinnedItems: number[] }
 const readOrganize = (dir: string): OrganizeFile | null => { try { return JSON.parse(readFileSync(join(dir, "organize.json"), "utf8")) as OrganizeFile; } catch { return null; } };
 // Poll a file-backed fact until it holds (a save is a PUT the page sends after the click).
-async function until<T>(read: () => T, ok: (v: T) => boolean, what: string): Promise<T> {
-  const end = Date.now() + 10_000;
-  let v = read();
-  while (!ok(v)) {
-    if (Date.now() > end) throw new Error(`timed out waiting for ${what}: ${JSON.stringify(v)}`);
-    await new Promise((r) => setTimeout(r, 100));
-    v = read();
-  }
-  return v;
-}
-async function launch(dataDir: string, want: RealSize = { width: 1440, height: 900 }, demo = true): Promise<{ app: ElectronApplication; page: Page; errors: string[]; size: RealSize }> {
-  const { _electron } = await import("playwright");
-  const app = await _electron.launch({ args: [ROOT, ...(demo ? ["--demo"] : []), "--data", noUpdateCheck(dataDir)], cwd: ROOT, timeout: 60_000, env: testEnv() });
-  // A launch that fails here happens before the caller's try, so its finally never closes the app: close it
-  // here, or the Electron process keeps the test file running long after its tests have finished.
-  try {
-    const page = await app.firstWindow();
-    const errors: string[] = [];
-    page.on("pageerror", (e) => errors.push(String(e)));
-    const size = await fitWindow(app, page, want);
-    await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
-    return { app, page, errors, size };
-  } catch (e) {
-    await app.close();
-    throw e;
-  }
-}
+const launch = (dataDir: string, want: RealSize = { width: 1440, height: 900 }, demo = true): Promise<App> => launchApp(dataDir, { demo, size: want, ready: "#inv-table tbody tr.item" });
 async function go(page: Page, hash: string, ready: string): Promise<void> {
   await page.evaluate((h) => { location.hash = h; }, hash);
   await page.waitForSelector(ready, { timeout: 15_000 });
@@ -75,10 +39,9 @@ async function go(page: Page, hash: string, ready: string): Promise<void> {
 const rowActions = (page: Page, root: number) => page.locator(`#cont-table tr[data-root="${root}"]`).getByRole("button", { name: /^Actions for / });
 
 test("[slow] Organize teaches labelling until a container is labelled, and Label… names a chest wherever it is shown", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   const dataDir = dataDirWith(null);
-  const { app, page, errors } = await launch(dataDir);
+  const { page, errors, close } = await launch(dataDir);
   try {
     // No labels: the screen says what labelling is for and takes the player to it.
     await go(page, "#/organize", "#tab-organize .org-empty");
@@ -114,16 +77,14 @@ test("[slow] Organize teaches labelling until a container is labelled, and Label
     assert.equal(await page.locator("#org-plan").count(), 0);
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
 test("[slow] Label… pinning a chest a rule fills names the rule and takes the chest off it, even when the rule came after the page loaded the setup (issue #123)", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   const dataDir = dataDirWith([{ id: "rule-1", name: "Reagents", kind: ["reagent"], targets: [DORRAN] }]);
-  const { app, page, errors } = await launch(dataDir);
+  const { page, errors, close } = await launch(dataDir);
   try {
     await go(page, "#/containers", `#cont-table tr[data-root="${KESTREL}"]`);
     await rowActions(page, KESTREL).click();
@@ -148,19 +109,17 @@ test("[slow] Label… pinning a chest a rule fills names the rule and takes the 
     assert.deepEqual(saved!.rules.map((r) => [r.id, r.targets]), [["rule-1", [DORRAN]], ["auto-gems", []]]);
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
 test("[slow] the Rules card: each rule's filter, targets with their fill and counts, the catch-all, and reordering by keyboard and by drag", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   const dataDir = dataDirWith([
     { id: "rule-1", name: "Magery reagents", names: ["sulfurous ash", "mandrake root"], targets: [DORRAN] },
     { id: "rule-2", name: "Rings", kind: ["gear"], targets: [KESTREL, DORRAN] },
   ]);
-  const { app, page, errors } = await launch(dataDir);
+  const { page, errors, close } = await launch(dataDir);
   try {
     await go(page, "#/organize", '.org-rule[data-rule="rule-2"]');
     const one = page.locator('.org-rule[data-rule="rule-1"]'), two = page.locator('.org-rule[data-rule="rule-2"]');
@@ -190,8 +149,7 @@ test("[slow] the Rules card: each rule's filter, targets with their fill and cou
     await until(() => readOrganize(dataDir), (f) => f?.rules.map((r) => r.id).join() === "rule-1,rule-2", "rule-1 first after the drag");
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
@@ -204,10 +162,9 @@ async function pickOption(page: Page, id: string, name: string, value: string): 
 }
 
 test("[slow] a save over a setup changed in another window is refused: the page reloads that setup and says the change was not saved, while the page's own quick saves never are (issue #280)", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   const dataDir = dataDirWith([{ id: "rule-1", name: "Reagents", kind: ["reagent"], targets: [DORRAN] }, { id: "rule-3", name: "Scrolls", names: ["blank scroll"], targets: [DORRAN] }]);
-  const { app, page, errors } = await launch(dataDir);
+  const { page, errors, close } = await launch(dataDir);
   try {
     await go(page, "#/organize", '.org-rule[data-rule="rule-1"]');
     // Another window saves a rule after this page read the setup.
@@ -248,20 +205,18 @@ test("[slow] a save over a setup changed in another window is refused: the page 
     assert.equal(conflicts, 1, "only the real conflict above was reported");
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
 test("[slow] + Rule from a preset, then targets in fill order; the editor lists a target no scan has", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   const GONE = 0x40000099;
   const dataDir = dataDirWith([]);
   const doc = readOrganize(dataDir)!;
   (doc.labels as Record<string, unknown>)[String(GONE)] = { serial: GONE, name: "Old chest", origin: "manual" };
   writeFileSync(join(dataDir, "organize.json"), JSON.stringify(doc));
-  const { app, page, errors } = await launch(dataDir);
+  const { page, errors, close } = await launch(dataDir);
   try {
     await go(page, "#/organize", "#org-add");
     await page.click("#org-add");
@@ -312,14 +267,12 @@ test("[slow] + Rule from a preset, then targets in fill order; the editor lists 
     await page.keyboard.press("Escape");
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
 test("[slow] a bag inside a labelled chest can be picked as a target, is labelled on save, and the editor counts what the rule would take", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   // The demo scans as the player's own, with a pouch inside Dorran's chest holding its Ring.
   const POUCH = 0x700c0100;
   const dataDir = dataDirWith([{ id: "rule-1", name: "Magery reagents", names: ["sulfurous ash"], targets: [DORRAN] }]);
@@ -332,7 +285,7 @@ test("[slow] a bag inside a labelled chest can be picked as a target, is labelle
     }
     writeFileSync(join(dataDir, "scans", `demo-${name}.json`), JSON.stringify(scan));
   }
-  const { app, page, errors } = await launch(dataDir, undefined, false);
+  const { page, errors, close } = await launch(dataDir, undefined, false);
   try {
     await go(page, "#/organize", "#org-add");
     await page.click("#org-add");
@@ -360,16 +313,14 @@ test("[slow] a bag inside a labelled chest can be picked as a target, is labelle
     assert.match(await page.locator('.org-rule[data-rule="rule-2"]').innerText(), /Pouch[\s\S]*1\/125/);
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
 test("[slow] Save as rule… keeps the Inventory's item filters and leaves the location out, saying so", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   const dataDir = dataDirWith([]);
-  const { app, page, errors } = await launch(dataDir);
+  const { page, errors, close } = await launch(dataDir);
   try {
     await page.fill("#f-text", "ring");
     // The search applies after its debounce; a filter picked before then would supersede it.
@@ -391,8 +342,7 @@ test("[slow] Save as rule… keeps the Inventory's item filters and leaves the l
     await page.waitForSelector('.org-rule[data-rule="rule-1"]');
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
@@ -407,10 +357,9 @@ function bigPlan(): unknown {
 }
 
 test("[slow] the plan puts its reports first and keeps a 600-move trip list collapsed; a client without trips gets no Run buttons", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   const dataDir = dataDirWith([{ id: "rule-1", name: "Magery reagents", names: ["black pearl"], targets: [DORRAN] }]);
-  const { app, page, errors } = await launch(dataDir);
+  const { page, errors, close } = await launch(dataDir);
   try {
     await page.route("**/api/organize/plan", (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(bigPlan()) }));
     await go(page, "#/organize", "#org-plan #org-headline");
@@ -444,33 +393,23 @@ test("[slow] the plan puts its reports first and keeps a 600-move trip list coll
     assert.match(await page.locator("#org-plan").innerText(), /can't carry out Organize trips\. Move the items by hand, then rescan\./);
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
 test("[slow] Run trip queues one trip; Stop writes the stop flag; a failed put leaves the item in the backpack and offers Pin this item", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   // Kestrel's Sulfurous Ash belongs in Dorran's chest, so the plan has one trip.
   const dataDir = dataDirWith([{ id: "rule-1", name: "Magery reagents", names: ["sulfurous ash"], targets: [DORRAN] }]);
-  const bridgeDir = join(dataDir, "bridge", "tazuo");
-  mkdirSync(bridgeDir, { recursive: true });
-  // The bridge, as far as the page can tell: a status file refreshed every second (online = answered within 8 s).
-  let results: Record<string, unknown> = {};
-  const writeStatus = (): void => writeFileSync(join(bridgeDir, "status.json"), JSON.stringify({ alive: new Date().toISOString(), character: "Tester", current: null, counts: { done: 0, failed: 0 }, results }));
-  writeStatus();
-  const alive = setInterval(writeStatus, 1000).unref();   // unref: a failed launch (before the try) must not keep the file running
-  const { app, page, errors } = await launch(dataDir);
+  const bridge = fakeBridge(dataDir);
+  const { page, errors, close } = await launch(dataDir);
   try {
     await go(page, "#/organize", "#org-plan #org-headline");
     assert.match(await page.locator("#org-headline").innerText(), /^\d+ items? to move in 1 trip, (under a minute|about \d+ minutes?)$/);
     await page.waitForSelector("#org-run:not([disabled])", { timeout: 15_000 });
     await page.click("#org-run");
-    const queue = join(bridgeDir, "queue.jsonl");
-    const lines = await until(() => completeLines(queue), (l) => l.length === 1, "one queued trip");
-    const cmd = JSON.parse(lines[0]!) as { id: string; action: string; index: number; takes: { serial: number }[] };
-    assert.deepEqual([cmd.action, cmd.index], ["trip", 1]);
+    const [cmd] = await until(() => bridge.queue<TripCommand>(), (l) => l.length === 1, "one queued trip");
+    assert.deepEqual([cmd!.action, cmd!.index], ["trip", 1]);
     await page.waitForSelector("#org-stop");
     assert.match(await page.locator("#org-status").innerText(), /^Trip 1 running/);
     assert.ok(await page.locator("#org-run").isDisabled(), "no second trip while one runs");
@@ -479,14 +418,14 @@ test("[slow] Run trip queues one trip; Stop writes the stop flag; a failed put l
     await until(() => existsSync(join(dataDir, "bridge", "stop")), (v) => v, "the stop flag");
 
     // The bridge reports: every take worked, the first put bounced.
-    const [first, ...rest] = cmd.takes.map((x) => x.serial);
+    const [first, ...rest] = cmd!.takes.map((x) => x.serial);
     const t0 = new Date().toISOString();
-    results = { [cmd.id]: { ok: true, msg: "trip 1: 1 put failed", t: t0, partial: false, stopped: false, steps: [
-      ...cmd.takes.map((x) => ({ op: "take", serial: x.serial, ok: true, msg: "took it" })),
+    bridge.status.results = { [cmd!.id]: { ok: true, msg: "trip 1: 1 put failed", t: t0, partial: false, stopped: false, steps: [
+      ...cmd!.takes.map((x) => ({ op: "take", serial: x.serial, ok: true, msg: "took it" })),
       { op: "put", serial: first, ok: false, msg: "bounced (full, or refused)" },
       ...rest.map((s) => ({ op: "put", serial: s, ok: true, msg: "put away" })),
     ] } };
-    writeStatus();
+    bridge.write();
     await page.waitForSelector("text=Pin this item", { timeout: 20_000 });
     assert.equal(await page.locator("#org-stop").count(), 0, "the trip is over");
     assert.match(await page.locator("#org-plan").innerText(), /Trip 1: 1 step failed\./);
@@ -497,32 +436,23 @@ test("[slow] Run trip queues one trip; Stop writes the stop flag; a failed put l
     await until(() => readOrganize(dataDir), (f) => !!f?.pinnedItems.includes(first!), "the item pinned");
     assert.deepEqual(errors, []);
   } finally {
-    clearInterval(alive);
-    await app.close();
-    removeTempDir(dataDir);
+    bridge.stop();
+    await close();
   }
 });
 
 test("[slow] a page reloaded mid-trip picks the trip back up: shown as running, Stop works, and its report is read", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   const dataDir = dataDirWith([{ id: "rule-1", name: "Magery reagents", names: ["sulfurous ash"], targets: [DORRAN] }]);
-  const bridgeDir = join(dataDir, "bridge", "tazuo");
-  mkdirSync(bridgeDir, { recursive: true });
-  let current: unknown = null, results: Record<string, unknown> = {};
-  const writeStatus = (): void => writeFileSync(join(bridgeDir, "status.json"), JSON.stringify({ alive: new Date().toISOString(), character: "Tester", current, counts: { done: 0, failed: 0 }, results }));
-  writeStatus();
-  const alive = setInterval(writeStatus, 1000).unref();   // unref: a failed launch (before the try) must not keep the file running
-  const { app, page, errors } = await launch(dataDir);
+  const bridge = fakeBridge(dataDir);
+  const { page, errors, close } = await launch(dataDir);
   try {
     await go(page, "#/organize", "#org-plan #org-headline");
     await page.waitForSelector("#org-run:not([disabled])", { timeout: 15_000 });
     await page.click("#org-run");
-    const queue = join(bridgeDir, "queue.jsonl");
-    const [line] = await until(() => completeLines(queue), (l) => l.length === 1, "one queued trip");
-    const cmd = JSON.parse(line!) as { id: string };
-    current = { id: cmd.id, action: "trip" };
-    writeStatus();
+    const [cmd] = await until(() => bridge.queue<TripCommand>(), (l) => l.length === 1, "one queued trip");
+    bridge.status.current = { id: cmd!.id, action: "trip" };
+    bridge.write();
 
     // The reloaded page knows nothing of the trip until the plan names it.
     await page.reload();
@@ -534,32 +464,26 @@ test("[slow] a page reloaded mid-trip picks the trip back up: shown as running, 
 
     await page.click("#org-stop");
     await until(() => existsSync(join(dataDir, "bridge", "stop")), (v) => v, "the stop flag");
-    current = null;
-    results = { [cmd.id]: { ok: true, msg: "trip 1: stopped", t: new Date().toISOString(), partial: false, stopped: true, steps: [] } };
-    writeStatus();
+    bridge.status.current = null;
+    bridge.status.results = { [cmd!.id]: { ok: true, msg: "trip 1: stopped", t: new Date().toISOString(), partial: false, stopped: true, steps: [] } };
+    bridge.write();
     await page.waitForSelector("#org-stop", { state: "detached", timeout: 20_000 });
     assert.match(await page.locator("#org-plan").innerText(), /Trip 1 was stopped\./);
     assert.deepEqual(errors, []);
   } finally {
-    clearInterval(alive);
-    await app.close();
-    removeTempDir(dataDir);
+    bridge.stop();
+    await close();
   }
 });
 
 test("[slow] Organize fits a 1000 × 700 window: rows reflow, nothing scrolls sideways, Run and the drawer stay reachable", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   const dataDir = dataDirWith([
     { id: "rule-1", name: "Magery reagents", names: ["sulfurous ash", "mandrake root", "black pearl", "bloodmoss"], targets: [DORRAN, KESTREL] },
     { id: "rule-2", name: "Rings", kind: ["gear"], targets: [KESTREL] },
   ]);
-  const bridgeDir = join(dataDir, "bridge", "tazuo");
-  mkdirSync(bridgeDir, { recursive: true });
-  const writeStatus = (): void => writeFileSync(join(bridgeDir, "status.json"), JSON.stringify({ alive: new Date().toISOString(), character: "Tester", current: null, counts: { done: 0, failed: 0 }, results: {} }));
-  writeStatus();
-  const alive = setInterval(writeStatus, 1000).unref();   // unref: a failed launch (before the try) must not keep the file running
-  const { app, page, errors, size } = await launch(dataDir, { width: 1000, height: 700 });
+  const bridge = fakeBridge(dataDir);
+  const { page, errors, size, close } = await launch(dataDir, { width: 1000, height: 700 });
   t.diagnostic(`window ${size.width} × ${size.height}`);
   try {
     await go(page, "#/organize", "#org-plan #org-headline");
@@ -594,48 +518,40 @@ test("[slow] Organize fits a 1000 × 700 window: rows reflow, nothing scrolls si
     await page.keyboard.press("Escape");
     assert.deepEqual(errors, []);
   } finally {
-    clearInterval(alive);
-    await app.close();
-    removeTempDir(dataDir);
+    bridge.stop();
+    await close();
   }
 });
 
 test("[slow] a hand-edited organize.json that lost a rule says so, refuses trips, and Save setup clears it", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   const dataDir = dataDirWith([{ id: "rule-1", name: "Magery reagents", names: ["sulfurous ash"], targets: [DORRAN] }, { id: "rule-2", name: "Rings", targets: [KESTREL] }]);
   const doc = readOrganize(dataDir)!;
   doc.rules[1]!.match.query.loc = ["Metal Chest"];   // not a rule filter: the read drops rule-2
   writeFileSync(join(dataDir, "organize.json"), JSON.stringify(doc));
-  const bridgeDir = join(dataDir, "bridge", "tazuo");
-  mkdirSync(bridgeDir, { recursive: true });
-  const writeStatus = (): void => writeFileSync(join(bridgeDir, "status.json"), JSON.stringify({ alive: new Date().toISOString(), character: "Tester", current: null, counts: { done: 0, failed: 0 }, results: {} }));
-  writeStatus();
-  const alive = setInterval(writeStatus, 1000).unref();   // unref: a failed launch (before the try) must not keep the file running
-  const { app, page, errors } = await launch(dataDir);
+  const bridge = fakeBridge(dataDir);
+  const { page, errors, close } = await launch(dataDir);
   try {
     await go(page, "#/organize", "#org-save-setup");
     assert.match(await page.locator("#org-body").innerText(), /Part of organize\.json could not be read[\s\S]*rules\[1\]\.match\.query\.loc is not a rule filter/);
     await page.waitForSelector("#org-run:not([disabled])", { timeout: 15_000 });
     await page.click("#org-run");
     await page.waitForFunction(() => /no trip runs until you have checked the setup and pressed Save setup/.test(document.querySelector("#org-plan")?.textContent || ""), undefined, { timeout: 10_000 });
-    assert.equal(existsSync(join(bridgeDir, "queue.jsonl")), false, "nothing was queued");
+    assert.equal(existsSync(join(bridge.bridgeDir, "queue.jsonl")), false, "nothing was queued");
     await page.click("#org-save-setup");
     await until(() => readOrganize(dataDir), (f) => f?.rules.length === 1, "the setup saved as it now reads");
     await page.waitForSelector("#org-save-setup", { state: "detached" });
     assert.deepEqual(errors, []);
   } finally {
-    clearInterval(alive);
-    await app.close();
-    removeTempDir(dataDir);
+    bridge.stop();
+    await close();
   }
 });
 
 test("[slow] Auto organize: Simple proposes groups for the ticked chests, Accept saves strategy labels and rules, and running it again changes nothing", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   const dataDir = dataDirWith(null);
-  const { app, page, errors } = await launch(dataDir);
+  const { page, errors, close } = await launch(dataDir);
   const ready = '#auto-drawer:not([hidden]) #auto-proposal[aria-busy="false"] #auto-headline';
   try {
     // Nothing labelled yet: the empty state offers Auto organize next to Open Containers.
@@ -695,16 +611,14 @@ test("[slow] Auto organize: Simple proposes groups for the ticked chests, Accept
     assert.deepEqual(readOrganize(dataDir), edited, "closing without Accept saves nothing");
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
 test("[slow] the Auto organize drawer fits a 1000 × 700 window: nothing scrolls sideways and Accept stays reachable", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   const dataDir = dataDirWith(null);
-  const { app, page, errors, size } = await launch(dataDir, { width: 1000, height: 700 });
+  const { page, errors, size, close } = await launch(dataDir, { width: 1000, height: 700 });
   t.diagnostic(`window ${size.width} × ${size.height}`);
   try {
     await go(page, "#/organize", "#org-auto");
@@ -726,17 +640,15 @@ test("[slow] the Auto organize drawer fits a 1000 × 700 window: nothing scrolls
     await page.keyboard.press("Escape");
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
 test("[slow] Review unclassified items opens the Other items, Classify this… moves one out at once, and Settings exports and imports the kinds (issue #150)", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   const dataDir = dataDirWith([]);
   const saved = join(dataDir, "exported.json");
-  const { app, page, errors } = await launch(dataDir);
+  const { app, page, errors, close } = await launch(dataDir);
   try {
     // The demo's one item Pack Rat cannot classify is Dorran's "2 Greater Heal" (a scroll graphic, no scroll name).
     await go(page, "#/organize", "#org-review-other");
@@ -781,7 +693,6 @@ test("[slow] Review unclassified items opens the Other items, Classify this… m
     await page.getByText(/Imported incoming\.json: you now have 2 item kinds\. 1 entry left out: graphics "0x1f49": "rock" is not a kind\./).waitFor({ timeout: 10_000 });
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
