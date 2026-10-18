@@ -220,7 +220,9 @@ export async function startServer(config: Config = ensureLayout(resolveConfig())
   }
 
   const scanStore = createScansStore({ dir: SCANS, shard: () => appSettings.current().shard });
-  const houseService = createHousesService({ settings: appSettings.current, uoFolderFinder: (id) => setupService.adapters().find((a) => a.id === id)?.uoFolder ?? null });
+  // The adapters folder doesn't change while the server runs, so each adapter's UO-folder finder is read once.
+  const uoFolderFinders = new Map(setupService.adapters().map((a) => [a.id, a.uoFolder]));
+  const houseService = createHousesService({ settings: appSettings.current, uoFolderFinder: (id) => uoFolderFinders.get(id) ?? null });
 
   const uiPrefsStore = createUiPrefsStore(join(CONFIG.dataDir, "ui-prefs.json"));
   // The TazUO panel's hotkey and show-at-login choice (app/tazuo-panel.mts); the in-game panel writes it too.

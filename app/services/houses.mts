@@ -14,26 +14,30 @@ import { buildHouseModel, type HouseContainerInput, type HouseModel } from "../h
 import type { HouseSource } from "../house-capture.mts";
 import type { Inventory } from "../vault-lib.mts";
 import type { SettingsDoc } from "../store/settings.mts";
+import type { AdapterManifestV1Install } from "../schema/types.d.mts";
 
 // How the house map finds the UO folder through a client, named by its manifest's install.uoFolder: from the client's scripts folder to the UO folder, or null.
-const UO_FOLDER_FINDERS: Record<"tazuo-profile", (scriptsDir: string) => string | null> = {
+// Its keys are the values the manifest schema allows (app/schema/adapter-manifest.v1.schema.json, install.uoFolder).
+type UoFolderFinder = NonNullable<AdapterManifestV1Install["uoFolder"]>;
+const UO_FOLDER_FINDERS: Record<UoFolderFinder, (scriptsDir: string) => string | null> = {
   "tazuo-profile": uoFolderFromTazuo,
 };
+const isFinder = (v: string | null): v is UoFolderFinder => v !== null && Object.hasOwn(UO_FOLDER_FINDERS, v);
 
 // `settings` is the settings this run uses, read on every call: the UO folder and the client come from it. `uoFolderFinder` is an
 // adapter's install.uoFolder (setupService's adapters), null when it has none.
 export function createHousesService({ settings, uoFolderFinder }: { settings: () => SettingsDoc; uoFolderFinder: (adapter: string) => string | null }) {
   // Where the house map's tiledata.mul comes from (issue #10): the UO folder set in Settings wins; else the folder the chosen client's finder names (TazUO: its launcher profile). `reason` says why there is none, for the page to put in words: the folder set here lost its tiledata.mul (or, hand-edited into settings.json, is not an absolute non-UNC path: refused on its shape before any filesystem call, as PUT /api/settings does, and not passed over for the automatic one, since the player chose a folder), no client to look through, no TazUO profile naming one, or a file that is not a 7.x tiledata.mul.
-  interface TileDataFrom { td: TileData | null; folder: string | null; source: "settings" | "tazuo-profile" | null; reason: null | "override-missing" | "no-client" | "no-tazuo-profile" | "unreadable" }
-  type UoFolder = { folder: string; source: "settings" | "tazuo-profile" } | { folder: null; reason: "override-missing" | "no-client" | "no-tazuo-profile" };
+  interface TileDataFrom { td: TileData | null; folder: string | null; source: "settings" | UoFolderFinder | null; reason: null | "override-missing" | "no-client" | `no-${UoFolderFinder}` | "unreadable" }
+  type UoFolder = { folder: string; source: "settings" | UoFolderFinder } | { folder: null; reason: "override-missing" | "no-client" | `no-${UoFolderFinder}` };
   function uoFolder(): UoFolder {
     const o = settings().uoFolder;
     if (o != null && o !== "") return typeof o !== "string" || badPathShape(o) ? { folder: null, reason: "override-missing" } : { folder: o, source: "settings" };
     const c = settings().client;
     const finder = c ? uoFolderFinder(c.adapter) : null;
-    if (!c || finder !== "tazuo-profile") return { folder: null, reason: "no-client" };
+    if (!c || !isFinder(finder)) return { folder: null, reason: "no-client" };
     const uo = UO_FOLDER_FINDERS[finder](c.scriptsDir);
-    return uo ? { folder: uo, source: "tazuo-profile" } : { folder: null, reason: "no-tazuo-profile" };
+    return uo ? { folder: uo, source: finder } : { folder: null, reason: `no-${finder}` };
   }
   function houseTileData(): TileDataFrom {
     const at = uoFolder();
