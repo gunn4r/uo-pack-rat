@@ -1,0 +1,3 @@
+# Changelog fragments
+
+Each pull request that matters to a player or a contributor adds one file here, `changelog.d/<short-name>.md` (lower case, hyphens or underscores: the branch name with `/` replaced by `-`, so `338-changelog-fragments.md`), instead of editing `CHANGELOG.md`. The file holds one or more entries in `CHANGELOG.md`'s style, one line each, every line starting with `- `. At release, `node scripts/changelog.mts --release <version>` puts the fragments together into `CHANGELOG.md`, newest first by the issue number the name starts with, and deletes them (`RELEASING.md`). `node scripts/changelog.mts` prints what the next release would say, and `scripts/changelog.test.mts` checks every fragment's shape.
