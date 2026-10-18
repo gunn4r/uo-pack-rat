@@ -30,8 +30,13 @@ async function reloadProfiles(): Promise<void> {
   state.profilesStamp = r.stamp;
   state.builtinTemplates = r.builtinTemplates || {};
 }
-async function send(edit: ProfilesEdit, again = false): Promise<ProfilesSave> {
-  if (edit(state.profiles!) === false) return { ok: false, error: again ? STALE : GONE, reloaded: again };
+// `made`: the copy the edit was first made on. A copy read since (a scan's reload queued ahead) may hold another
+// window's changes, so an edit that no longer applies there is not this page's own doing.
+async function send(edit: ProfilesEdit, made: ProfilesV3 | null, again = false): Promise<ProfilesSave> {
+  if (edit(state.profiles!) === false) {
+    const elsewhere = again || state.profiles !== made;
+    return { ok: false, error: elsewhere ? STALE : GONE, reloaded: elsewhere };
+  }
   // The answer's stamp is this copy's: taken only while the page still holds it, never over a copy read meanwhile.
   const sent = state.profiles;
   try {
@@ -41,7 +46,7 @@ async function send(edit: ProfilesEdit, again = false): Promise<ProfilesSave> {
   } catch (e) {
     if ((e as ApiError).code !== "stale") return { ok: false, error: (e as Error).message, reloaded: again };
     try { await reloadProfiles(); } catch (r) { return { ok: false, error: (r as Error).message, reloaded: again }; }
-    return again ? { ok: false, error: STALE, reloaded: true } : send(edit, true);
+    return again ? { ok: false, error: STALE, reloaded: true } : send(edit, made, true);
   }
 }
 let queue: Promise<unknown> = Promise.resolve();
@@ -55,8 +60,9 @@ function inTurn<T>(run: () => Promise<T>): Promise<T> {
 // a copy read before it landed.
 export function loadProfiles(): Promise<void> { return inTurn(reloadProfiles); }
 export function saveProfiles(edit: ProfilesEdit): Promise<ProfilesSave> {
-  edit(state.profiles!);
-  return inTurn(() => send(edit));
+  const made = state.profiles;
+  edit(made!);
+  return inTurn(() => send(edit, made));
 }
 // Edits to the profiles (app/profile-edits.mts) sent as themselves (PATCH /api/profiles), so the server makes them on
 // the file as it is and nothing else of this page's copy goes with them. They are made on the page's copy at once, and

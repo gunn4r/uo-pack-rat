@@ -157,3 +157,15 @@ test("[fast] profiles: edits answered after a copy was read meanwhile read the f
   assert.equal((state.profiles!.characters.Bo as { label?: string }).label, "Main", "the page's copy is the file, label included");
   assert.equal(state.profilesStamp, stamp());
 });
+
+test("[fast] profiles: an edit that no longer applies after a reload queued ahead of it blames the other window, not the page's own last change", async () => {
+  fresh({ characters: {}, templates: { T: { spec: {} } } });
+  delete server.doc.templates.T; server.n++;   // another window deleted T
+  const loaded = loadProfiles();   // a scan's reload, queued first
+  const update = saveProfiles((p) => { if (!Object.hasOwn(p.templates, "T")) return false; (p.templates as Record<string, unknown>).T = { spec: { x: 1 } }; });
+  await loaded;
+  const r = await update;
+  assert.equal(r.ok, false);
+  assert.equal(r.reloaded, true);
+  assert.match(r.error!, /another window/);
+});
