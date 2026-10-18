@@ -398,7 +398,7 @@ for (const seed of HUGE_SEEDS) {
   });
 }
 
-// Issue #316: the core's own copy of the slack (scripts/optimizer-core.mts optSlack, behind optLexCmp) matches slackAt.
+// Issue #316: the core's Strict order compare (optLexCmp) reads the same slack as the MIP (app/solver/scoring.mts slackAt).
 test("[fast] the relative score slack: 1e-3 for small scores, 1e-12 of a large one, the same in the core", () => {
   assert.equal(slackAt(1e-3, 5, -7), 1e-3);
   assert.equal(slackAt(1e-3, 3e10), 3e10 * 1e-12);

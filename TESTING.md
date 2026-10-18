@@ -136,6 +136,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `app/solver-large.test.mts` — app/solver.test.mts's one real-sized case, a 3,000-item generated cell, in a file of its own.
 - `app/solver-templates.test.mts` — HiGHS and the core agree on the fixture for every shipped default template, and with soft floors.
 - `app/solver.test.mts` — solver equivalence: HiGHS must never disagree with the core's own exact branch-and-bound about what the best suit is worth.
+- `app/solver/scoring.test.mts` — `app/solver/scoring.mts`, the scoring constants both solvers read (issue #338).
 - `app/store/json-file.test.mts` — `app/store/json-file.mts`: each bad-file policy and the writer.
 - `app/store/stores.test.mts` — each store in `app/store/` on its own: size caps, bad files and the exact bytes written.
 - `app/strict-order.test.mts` — Strict order and fewest changes in both solvers, checked by hand and against brute force.

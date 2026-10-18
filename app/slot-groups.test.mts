@@ -17,7 +17,7 @@ test("[fast] slot groups: every gear slot has exactly one group, in the four gro
   assert.equal(SLOT_GROUP.outerLegs, "Clothing");
 });
 
-// The optimizer core keeps its own copies (it is pasted without imports); app/solver.test.mts checks them against
+// The optimizer core keeps its own slot lists; app/solver.test.mts checks them against
 // GEAR_SLOTS and REQUIRED_SLOTS, and this ties REQUIRED_SLOTS to the Armor group.
 test("[fast] slot groups: the slots a search keeps filled are the Armor group less the neck", () => {
   assert.deepEqual(REQUIRED_SLOTS, SLOTS_IN_GROUP.Armor.filter((s) => s !== "neck"));
