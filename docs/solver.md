@@ -7,8 +7,8 @@ Read this section first; the rest of the file is the reference, feature by featu
 **The modules, in the order a build runs through them:**
 
 1. `app/build-spec.mts` (`planBuild`): a character's BuildSpec into the base, plan, profile, buffs, pool and options. The page, MCP and the route all build through it.
-2. `app/http/routes/optimize.mts` (`POST /api/optimize`): validates the body, then prepares the solve in this order: the optional slots (`optionalSlotsFor`), the rarity tie costs (`stampTieCost`), the reachable Resisting Spells steps (`withReachableResistSteps`), the SSI step table and the scaled hard-floor bonus (`poolStepsFor`, `withHardFloorBonus`), the run key (`runKey`, `app/runs-lib.mts`), then the pre-build diagnostics. `app/services/jobs.mts` runs the job in a worker.
-3. `app/optimize-worker.mts`: works out the step table again, runs `solveExact` (`app/exact-solver.mts`) or, when HiGHS doesn't load, the core's `optimizeSuit`, then finishes the result with `finishResult` (`app/solver/finish.mts`): the swing (`app/swing.mts`), the tie-break and Strict order summaries, the diagnostics (`app/diagnostics.mts`) and the score shares.
+2. `app/http/routes/optimize.mts` (`POST /api/optimize`): validates the body and builds the pool (the optional slots, `optionalSlotsFor`), then calls `prepareSolve` (`app/solver/prepare.mts`), which transforms the input in this order: the rarity tie costs (`stampTieCost`), the search defaults, the reachable Resisting Spells steps (`withReachableResistSteps`), the SSI step table and the scaled hard-floor bonus (`poolStepsFor`, `withHardFloorBonus`), the run key (`runKey`, `app/runs-lib.mts`), then the pre-build diagnostics. `app/services/jobs.mts` runs the job in a worker, the step table with it.
+3. `app/optimize-worker.mts`: runs `solveExact` (`app/exact-solver.mts`) or, when HiGHS doesn't load, the core's `optimizeSuit`, then finishes the result with `finishResult` (`app/solver/finish.mts`): the swing (`app/swing.mts`), the tie-break and Strict order summaries, the diagnostics (`app/diagnostics.mts`) and the score shares.
 4. `scripts/optimizer-core.mts`: the heuristic search, its branch-and-bound, and `scoreSet`, the scorer of record.
 5. `app/mip.mts` (`buildSuitMip`, `startVector`, `heldModel`) builds the MIP; `app/mip-solve.mts` is the narrow adapter around HiGHS; `app/exact-solver.mts` runs the stages and hands the winning suit back to the core.
 6. `app/evaluate.mts` (`evaluateSuit`): one suit's paperdoll for every screen and tool; `app/vault-lib.mts`'s `requirementReport` gives the requirement rows.
@@ -17,7 +17,7 @@ Read this section first; the rest of the file is the reference, feature by featu
 
 - The core is the one scorer of record. `solveExact` always hands its winning suit back to the core, and every number a result carries is the core's. Its guards revoke `proven` and warn when HiGHS's objective, the core's re-score and the heuristic disagree.
 - For any suit, the MIP's objective at `startVector(suit)` plus `scoreOffset` equals the core's `scoreSet(suit)`. `app/solver/agreement.test.mts` checks it suit by suit over generated profiles, with the weight terms `scoreShares` reads, so a drift fails at the term that drifted; the exact solver also checks it on every suit it returns (HiGHS's objective against the core's re-score).
-- Every profile transform happens before `runKey`, so the key covers it. A transform added after it silently reuses runs it shouldn't.
+- Every profile transform happens in `prepareSolve`, before `runKey`, so the key covers it. A transform added after it silently reuses runs it shouldn't.
 - A change to what a build returns bumps `SOLVER_VERSION` (`app/runs-lib.mts`, with a line in its comment), so saved runs stop being reused as instant repeats.
 - The same seed gives byte-identical results.
 - `alternatives` never contains the returned suit.

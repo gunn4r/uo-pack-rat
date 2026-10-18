@@ -9,7 +9,7 @@ import { poolPart, runRecord, stripOpts, type PoolSnapshot, type RunOpts, type R
 import type { WorkerMessage, WorkerDoneMessage } from "../optimize-worker.mts";
 import type { OptResult, ExactSolveResult, SolveProgress } from "../exact-solver.mts";
 import { sse } from "./events.mts";
-import { DEFAULT_BUDGET_MS } from "../solver/scoring.mts";
+import { DEFAULT_BUDGET_MS, type SsiStepPoint } from "../solver/scoring.mts";
 import type { Diagnostic } from "../runs-types.mts";
 
 // A job keeps its last progress snapshot and its final result, so a page that reconnects (or
@@ -29,6 +29,8 @@ export interface JobInput {
   current: unknown;
   profile: unknown;
   opts: RunOpts;
+  ssiSteps: SsiStepPoint[] | null;   // the SSI step table both solvers score with, and why there is none when steps were asked for (app/solver/prepare.mts)
+  swingNote: string | null;
   diagnostics?: Diagnostic[] | undefined;   // what the pool settings say before the search (the weapon properties, app/diagnostics.mts), put ahead of the result's own
 }
 export type JobState = "running" | "done" | "cancelled" | "error";
@@ -122,7 +124,7 @@ export function createJobsService({ coreUrl, timings = {}, runStore, log, create
     t.unref(); timers.add(t); job.stuckTimer = t;
     return job;
   }
-  function spawnWorker(job: Job, data: { pools: unknown; current: unknown; profile: unknown; opts: RunOpts }, onProgress: (p: SolveProgress) => void, onWarn?: (message: string) => void): Promise<WorkerDoneMessage> {
+  function spawnWorker(job: Job, data: Omit<JobInput, "diagnostics">, onProgress: (p: SolveProgress) => void, onWarn?: (message: string) => void): Promise<WorkerDoneMessage> {
     return new Promise((resolve, reject) => {
       const w = createWorker({ coreUrl, ...data });
       job.workers.add(w);
@@ -140,10 +142,10 @@ export function createJobsService({ coreUrl, timings = {}, runStore, log, create
   function emitProgress(job: Job, p: SolveProgress): void { job.progress = p; broadcast(job, "progress", p); }
 
   async function runJob(job: Job): Promise<void> {
-    const { pools, current, profile, opts } = job.input;
+    const { diagnostics: _pre, ...data } = job.input;
     const t0 = Date.now();
     const onWarn = (message: string) => log(`${new Date().toISOString()} job ${job.id} warn: ${message}\n`);
-    const { result: found } = await spawnWorker(job, { pools, current, profile, opts }, (p) => emitProgress(job, p), onWarn);
+    const { result: found } = await spawnWorker(job, data, (p) => emitProgress(job, p), onWarn);
     const pre = job.input.diagnostics, result = pre?.length ? { ...found, diagnostics: [...pre, ...(found.diagnostics || [])] } : found;
     if (job.state !== "running") return;
     job.state = "done"; job.result = result; job.ms = Date.now() - t0;

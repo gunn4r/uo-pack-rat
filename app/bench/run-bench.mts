@@ -29,7 +29,7 @@ import { resolveConfig, corePath } from "../config.mts";
 import { upgradeScan } from "../scan-schema.mts";
 import { loadRules } from "../rules.mts";
 import { characterProfile, migrateProfilesV3 } from "../build-spec.mts";
-import { DEFAULT_OPTIONAL_SLOTS } from "../mip.mts";
+import { DEFAULT_OPTIONAL_SLOTS, poolStepsFor } from "../mip.mts";
 import type * as VaultLib from "../vault-lib.mts";
 import type * as Core from "../../scripts/optimizer-core.mts";
 import type { OptPools, OptAssignment, OptProfile, OptResult, SolveProgress, ExactSolveResult } from "../exact-solver.mts";
@@ -183,9 +183,11 @@ interface RunWorkerResult {
 
 // One optimizeSuit call in the server's worker under a hard wall cap. Phase times come from the progress stream:
 // every phase change emits unconditionally, so heuristic / prune / exact durations are exact.
-function runWorker(data: Omit<OptimizeWorkerData, "coreUrl">, capMs: number, logThis = true): Promise<RunWorkerResult> {
+function runWorker(data: Omit<OptimizeWorkerData, "coreUrl" | "ssiSteps" | "swingNote">, capMs: number, logThis = true): Promise<RunWorkerResult> {
   return new Promise((resolve) => {
-    const w = new Worker(new URL("../optimize-worker.mts", import.meta.url), { workerData: { coreUrl: CORE_URL, ...data } });
+    // the step table the server would prepare for this pool (app/solver/prepare.mts)
+    const { ssiSteps, note } = poolStepsFor(data.profile as Parameters<typeof poolStepsFor>[0], data.pools as Parameters<typeof poolStepsFor>[1], data.current as Parameters<typeof poolStepsFor>[2], data.opts.optionalSlots);
+    const w = new Worker(new URL("../optimize-worker.mts", import.meta.url), { workerData: { coreUrl: CORE_URL, ...data, ssiSteps, swingNote: note } });
     const t0 = Date.now(), phases: Record<string, number> = {};
     let heurScore: number | null | undefined = null, last: SolveProgress | null = null, settled = false;
     const finish = (extra: Partial<Pick<RunWorkerResult, "result" | "killed" | "error">>): void => {
