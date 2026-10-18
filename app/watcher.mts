@@ -56,6 +56,7 @@ import { jsonErrorReason } from "./paste-scan.mts";
 import { writeFileAtomic } from "./atomic-write.mts";
 import { DATA_DIR_MODE, DATA_FILE_MODE } from "./config.mts";
 import type { ScanV2 } from "./schema/types.d.mts";
+import { firstErrorText } from "./schema/validate.mts";
 
 const SCANNED_AT_RE = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?([+-]\d{2}:\d{2}|Z)$/;
 
@@ -179,7 +180,7 @@ export function ingestFile({ path, scansDir, shard, log = () => {} }: IngestFile
     return { ok: false, reason: errMessage(e) };
   }
   const { ok, errors } = validateScan(doc);
-  if (!ok) return { ok: false, reason: `${errors[0]!.path} ${errors[0]!.msg}` };
+  if (!ok) return { ok: false, reason: firstErrorText(errors) };
   const scan = doc as ScanV2;
 
   const existingAccepted = findExistingAccepted(scansDir, scan);

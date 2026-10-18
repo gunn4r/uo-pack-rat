@@ -17,7 +17,7 @@ import { addGrab } from "../../organize-state.mts";
 import { readBody } from "../../read-body.mts";
 import { appendCommand, writeStop } from "../../store/bridge.mts";
 import { validate, type ValidatorSchema } from "../../schema/validate.mts";
-import { send, asObject } from "../respond.mts";
+import { send, asObject, sendSchemaErrors } from "../respond.mts";
 import { APP_DIR } from "../../config.mts";
 import type { Route } from "../router.mts";
 import type { OkApiResponse } from "../../api/routes.mts";
@@ -38,7 +38,7 @@ export function routes(ctx: ServerContext): Route[] {
       if (cmd.action === "scan") {
         const line = { id: randomUUID(), action: "scan", script: cmd.script, queuedAt: new Date().toISOString(), protocol: BRIDGE_PROTOCOL };
         const { ok, errors } = validate(BRIDGE_SCHEMA.scan, line);
-        if (!ok) return send(res, 400, { ok: false, error: `${errors[0]!.path} ${errors[0]!.msg}`, errors });
+        if (!ok) return sendSchemaErrors(res, errors);
         const adapter = appSettings.bridgeAdapter();
         appendCommand(CONFIG.paths, adapter, JSON.stringify(line));
         return send(res, 200, { ok: true, id: line.id } satisfies BridgeQueueApiResponse);
@@ -60,7 +60,7 @@ export function routes(ctx: ServerContext): Route[] {
       // packrat-bridge.py refuses an unknown action itself, but the contract is the
       // deliverable, and it was unenforced at the only place the app writes it.
       const { ok, errors } = validate(BRIDGE_SCHEMA.command, line);
-      if (!ok) return send(res, 400, { ok: false, error: `${errors[0]!.path} ${errors[0]!.msg}`, errors });
+      if (!ok) return sendSchemaErrors(res, errors);
       // Queue into the CONFIGURED client's own bridge directory (appSettings.bridgeAdapter(), above) — not a
       // fixed "tazuo" — so a Razor Enhanced player's Highlight/Grab/Go-to buttons reach the bridge
       // script that's actually reading commands (Phase 6 final review follow-up).
