@@ -4,7 +4,7 @@
 // takes an injectable fetchImpl so callers (and tests) never depend on a real fetch global.
 //
 // map: installer
-// owns: `listAdapters`, `candidateClientRoots`, `validateScriptsDir`, `installedVersion`, `installScripts`, `checkForUpdates`, `checkScriptsDataDir`, `RUNNING_MESSAGE_OTHER`, `REGISTRARS`
+// owns: `listAdapters`, `candidateClientRoots`, `validateScriptsDir`, `installedVersion`, `installScripts`, `checkForUpdates`, `checkScriptsDataDir`, `heartbeatAlive`, `RUNNING_MESSAGE_OTHER`, `REGISTRARS`
 import {
   existsSync, statSync, lstatSync, readdirSync, readFileSync, copyFileSync, realpathSync,
   unlinkSync, constants, type Dirent, type Stats,
@@ -418,8 +418,9 @@ const FUTURE_SKEW_TOLERANCE_S = 300;
 
 // A heartbeat file a running script rewrites every couple of seconds: the bridge's status.json, and the
 // in-game panel's panel.json beside it (adapters/tazuo/packrat-panel.py), which has the same
-// alive/stopped shape. Either one fresh means a script is running against the folder about to change.
-function heartbeatAlive(heartbeatPath: string, now: number, log: (msg: string) => void = () => {}): boolean {
+// alive/stopped shape (app/schema/heartbeat.v1.schema.json, with the shared cases
+// app/fixtures/contract-cases/heartbeat.json). Either one fresh means a script is running against the folder about to change.
+export function heartbeatAlive(heartbeatPath: string, now: number, log: (msg: string) => void = () => {}): boolean {
   let st: Record<string, unknown>;
   try { st = JSON.parse(readFileSync(heartbeatPath, "utf8")) as Record<string, unknown>; }
   catch { return false; }

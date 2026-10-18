@@ -51,7 +51,7 @@ One directory holds everything, resolved the same way for the bare server and th
   rules/                user-defined or overriding shard rules files
   runs/                 one file per finished suit-build job, and per suit saved from Manual (scans/ and runs/ are pruned by settings.json's retention on startup and on Clean up now: app/retention.mts)
   bridge/<adapter>/     queue.jsonl (commands) and status.json (the bridge script's heartbeat); the CONFIGURED client's own directory, not a fixed "tazuo"
-    panel.json           bridge/tazuo/ only: the in-game panel's heartbeat (adapters/tazuo/packrat-panel.py), same alive/stopped shape as status.json
+    panel.json           bridge/tazuo/ only: the in-game panel's heartbeat (adapters/tazuo/packrat-panel.py), same alive/stopped shape as status.json (app/schema/heartbeat.v1.schema.json)
     putaway.json         the server's answer to the last Put away request (app/put-away.mts), which the panel reads (both files: app/schema/put-away.v1.schema.json)
   logs/
     server.log           the server's own request/error log (ref-keyed stack traces)
