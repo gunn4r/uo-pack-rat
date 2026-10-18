@@ -24,7 +24,7 @@ function fakeEl(): FakeEl {
   };
 }
 const pill = fakeEl(), notice = fakeEl();
-// The toast stack (components.mts's showToast): each toast appended to it is recorded with its text and class.
+// The toast stack (components.mts's toast): each toast appended to it is recorded with its text and class.
 const stack = Object.assign(fakeEl(), {
   append: (t: FakeEl) => toasts.push({ text: textOf(t), cls: t.className }),
   get children() { return []; },

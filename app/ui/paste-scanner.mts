@@ -9,7 +9,7 @@
 // owns: `scannerCopy`
 import { api } from "./api.mts";
 import { prefs } from "./prefs.mts";
-import { box, button, copyText, message, showToast, textarea } from "./components.mts";
+import { box, button, copyText, message, toast, textarea } from "./components.mts";
 import { errorText } from "./messages.mts";
 import type { PasteScannerApiResponse } from "./api-types.mts";
 
@@ -40,7 +40,7 @@ export function scannerCopy(adapter: string, { id, size, onCopied }: { id: strin
   const btn = button({ label: "Copy scanner script", icon: "clipboard", variant: "primary", ...(size ? { size } : {}), attrs: { id }, onClick: async () => {
     let s: PasteScannerApiResponse;
     try { s = await loadScanner(adapter); }
-    catch (e) { showToast(`Could not load the scanner: ${errorText(e)}`, "bad"); return; }
+    catch (e) { toast(`Could not load the scanner: ${errorText(e)}`, "bad"); return; }
     if (!await copyText(s.script)) {
       const ta = textarea({ value: s.script, rows: 8, attrs: { readonly: "", id: `${id}-text`, "aria-label": "Scanner script" } });
       fallback.replaceChildren(message({ tone: "warn", text: "Pack Rat could not reach the clipboard. The script is selected below: press ⌘C or Ctrl+C to copy it." }), ta);
@@ -48,7 +48,7 @@ export function scannerCopy(adapter: string, { id, size, onCopied }: { id: strin
       return;
     }
     fallback.replaceChildren();
-    showToast(COPIED_TEXT, "ok");
+    toast(COPIED_TEXT, "good");
     if (s.version) {
       copied = s.version;
       prefs.set({ copiedScanner: s.version }, { quiet: true });   // only the "newer scanner" hint depends on it

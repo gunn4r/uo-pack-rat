@@ -15,12 +15,12 @@ import { SLOT_LABELS, SLOT_GROUP, RESIST_KEYS, tagUnits, flagLabel } from "../va
 import type { Item } from "../vault-lib.mts";
 import type { Facets, ItemQuery, ItemQueryGroups, Place } from "../item-query.mts";
 import { state } from "./store.mts";
-import { el, label, full, slotLabel, toast, whereText } from "./dom.mts";
+import { el, label, full, slotLabel, whereText } from "./dom.mts";
 import { api } from "./api.mts";
 import { prefs } from "./prefs.mts";
 import { optionsKeeping, colsFromPrefs, COLS_VERSION } from "./view-state.mts";
 import { relativeWhen } from "./messages.mts";
-import { txt, box, icon, button, searchInput, filterChip, token, pill, segmented, switchControl, popover, closePopover, message, menu, input, nextId } from "./components.mts";
+import { txt, box, icon, button, searchInput, filterChip, token, pill, segmented, switchControl, popover, closePopover, message, menu, input, nextId, toast } from "./components.mts";
 import type { Kids, MenuItem, PopoverHandle } from "./components.mts";
 import { splitSerial, queryParams, withFixed, activeFilters, clearAll, matchLine, countFact, emptyCause, rowWindow, chunksToFetch, gridKey, colShort, colFull, groupColumns, COL_GROUPS, DEFAULT_COLS, ITEM_COLS, shortTier, rootName, slayerTree, slayerLabel } from "./inv-model.mts";
 import type { FilterToken } from "./inv-model.mts";
