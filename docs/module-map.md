@@ -335,7 +335,7 @@ The page is `app/index.html` plus `app/ui/`, compiled by `scripts/build-ui.mts` 
 | `app/ui/item-tip.mts` | Where the one item tooltip (dom.mts's #tip) gets the item it shows (issue #10). | `createTipResolver` |
 | `app/ui/items.mts` | resolveItems(serials): the page's one place to turn a bare serial into a full item record (location, tags, equippedBy…), now that GET /api/inventory no longer carries the whole item map (Task 5). | `resolveItems` |
 | `app/ui/prefs.mts` | The one writer of the page's view choices (PUT /api/ui-prefs). | `prefs` |
-| `app/ui/profiles.mts` | The one writer of the player's profiles (PUT /api/profiles with the stamp it read, app/build-spec.mts's v3 shape; a stale refusal reloads them and makes the edit again), and of a character's saved buffs and build label within them. | `saveProfiles`, `setCharacterBuffs`, `setCharacterLabel` |
+| `app/ui/profiles.mts` | The one writer of the player's profiles (PUT /api/profiles with the stamp it read, app/build-spec.mts's v3 shape; a stale refusal reloads them and makes the edit again), and of a character's saved buffs and build label within them. | `saveProfiles`, `loadProfiles`, `setCharacterBuffs`, `setCharacterLabel` |
 | `app/ui/store.mts` | The shared mutable state object, the bridge connection state, and invStamp. | `state`, `bridge`, `invStamp`, `AppState` |
 <!-- module-map:end -->
 

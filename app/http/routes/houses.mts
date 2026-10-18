@@ -1,5 +1,15 @@
 // houses.mts — the house map: GET /api/houses[/<id>], GET /api/facet-map/<facet>.png, GET /api/item-art/<graphic>.png, GET /api/house-map, PUT /api/house-map/<id>, GET /api/house-claims and DELETE /api/house-claims/<id>.
 //
+// The routes, what each takes and answers:
+// - `GET /api/houses` (the houses scans captured: app/house-capture.mts, each with its container serials, only those a claim covers (issue #299); tiledataFrom says where tiledata.mul came from, or why there is none)
+// - `GET /api/houses/<id>` (one house's model: app/house-model.mts, tiledata.mul via app/tiledata.mts or the uoFolder setting)
+// - `GET /api/facet-map/<facet>.png?x0&y0&x1&y1&w` (x-region: the region drawn, slid inside the facet; a facet overview from the same UO folder's facetNN.mul: app/facet-map.mts, app/png.mts; 404 {reason} when there is none)
+// - `GET /api/item-art/<graphic>.png?hue=<n>` (issue #174: an item's art from the same UO folder's artLegacyMUL.uop and hues.mul, cut to its opaque box, as an RGBA PNG: app/art.mts, app/png.mts; graphic and hue 0 to 65535 or a 400; an ETag over the files' stamps, the graphic and the hue, a 304 on If-None-Match; 404 {reason}: no-client, no-tazuo-profile, override-missing, missing, unreadable or no-art, never the path)
+// - `GET /api/house-map`
+// - `PUT /api/house-map/<id>` {name, bounds?, areas?} (`<data>/house-map.json`, the player's house names and drawn areas: app/house-names.mts; an empty name with no areas removes the entry; 400 on a bad name, area or id, 409 when a change would grow it past 500 names or 1 MB)
+// - `GET /api/house-claims`
+// - `DELETE /api/house-claims/<id>` (issue #299: unclaims that house, removing the claim of its id and every claim its bounds overlap on its facet, so it leaves the House map; 400 on a malformed id)
+//
 // map: server
 // owns: `routes`
 import { mkdirSync } from "node:fs";

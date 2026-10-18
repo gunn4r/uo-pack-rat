@@ -1,5 +1,9 @@
 // host.mts — what only the desktop shell can do (POST /api/host/pick-folder and /api/host/open-path) and the shared event stream (GET /api/events).
 //
+// The routes, what each takes and answers:
+// - `GET /api/events` — SSE, one stream shared by every connected client (not per-job like the optimize events above): hello {ok, watching: [adapter ids]} on connect, inventory {file, character, scannedAt, at} once an inbox file is accepted into paths.scans, rejected {file, reason, at} once one is moved to its adapter's rejected/ folder, changed {what: "inventory"|"organize"|"runs", by?, at} (by: the x-client-id of the tab, or `mcp`, that made the change) after a forget, forget-character, an Organize trip reporting back, a run deletion or retention prune (so other open tabs reload), or an Organize setup save (`PUT /api/organize`, `what: "organize"`: the tabs reload only the setup), ping every 15s. A normal token-protected /api/* route (no SSE exemption — unlike `/api/optimize/<id>/events`, this stream carries no per-job secret an EventSource couldn't send anyway). Non-demo mode starts one app/watcher.mts per `adapters/<id>/` directory that ships a capabilities.json (today: tazuo, razor-enhanced and classicuo-web), watching paths.inboxFor(id) and normalising accepted files into paths.scans; --demo starts none (paths.scans there is the committed app/fixtures/, which must never be written to).
+// - `POST /api/host/pick-folder` {title} and POST /api/host/open-path {which: "data"|"logs"} — both need the optional `host` startServer({..}, {host}) was given (a folder-picker/opener the Electron shell supplies); 501 on the bare server. GET/PUT /api/settings additionally carries setupDone and client ({adapter, scriptsDir} | null).
+//
 // map: server
 // owns: `routes`
 import { isBoundedString } from "../../guards.mts";

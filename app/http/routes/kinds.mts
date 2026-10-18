@@ -1,5 +1,9 @@
 // kinds.mts — the player's item kinds: GET|POST /api/item-kinds and POST /api/item-kinds/import.
 //
+// The routes, what each takes and answers:
+// - `GET|POST {name?, graphic?, kind} /api/item-kinds`
+// - `POST /api/item-kinds/import` {names?, graphics?} (`<data>/item-kinds.json`, the player's own item kinds: app/item-kinds.mts; kind null resets, an import merges)
+//
 // map: server
 // owns: `routes`
 import { isBoundedInt } from "../../guards.mts";
