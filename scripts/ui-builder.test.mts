@@ -5,40 +5,13 @@
 // Each of the older cases is maintainer feedback on the redesign (PR #43), plus the resist cap overrides (issue #44), the weapon exclusions (issue #45) and the Weapon must have chip (issue #214). Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, mkdirSync, copyFileSync, readFileSync, readdirSync, existsSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import { createRequire } from "node:module";
-import { fitWindow, noUpdateCheck, removeTempDir, pickCharacter, pickTemplate, settle, sideways, sidewaysAt } from "./electron-window.mts";
-import type { ElectronApplication, Locator, Page } from "playwright";
+import { writeFileSync, readFileSync, readdirSync, existsSync } from "node:fs";
+import { join } from "node:path";
+import { fitWindow, pickCharacter, pickTemplate, settle, sideways, sidewaysAt } from "./electron-window.mts";
+import { ROOT, launchApp, skipWithoutElectron, tempDataDir, type App } from "./electron-app.mts";
+import type { Locator, Page } from "playwright";
 
-const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
-const require_ = createRequire(import.meta.url);
-function unavailable(): string | null {
-  if (process.env.TEST_SKIP_ELECTRON) return "TEST_SKIP_ELECTRON is set";
-  for (const dep of ["electron", "playwright"]) {
-    try { require_.resolve(dep); } catch { return `${dep} is not installed`; }
-  }
-  return null;
-}
-// A writable data directory holding the two demo scans, set up so the first-run wizard stays closed.
-function seedDataDir(prefix: string): string {
-  const dataDir = mkdtempSync(join(tmpdir(), prefix));
-  mkdirSync(join(dataDir, "scans"), { recursive: true });
-  for (const f of ["demo-Dorran.json", "demo-Kestrel.json"]) copyFileSync(join(ROOT, "app", "fixtures", f), join(dataDir, "scans", f));
-  writeFileSync(join(dataDir, "settings.json"), JSON.stringify({ schemaVersion: 1, shard: "uoalive", setupDone: true }));
-  return dataDir;
-}
-async function launch(dataDir: string): Promise<{ app: ElectronApplication; page: Page; errors: string[] }> {
-  const { _electron } = await import("playwright");
-  const app = await _electron.launch({ args: [ROOT, "--data", noUpdateCheck(dataDir)], cwd: ROOT, timeout: 60_000 });
-  const page = await app.firstWindow();
-  const errors: string[] = [];
-  page.on("pageerror", (e) => errors.push(String(e)));
-  await fitWindow(app, page, { width: 1440, height: 900 });
-  return { app, page, errors };
-}
+const launch = (dataDir: string): Promise<App> => launchApp(dataDir, { size: { width: 1440, height: 900 } });
 // The Settings drawer (issue #272) open on one of its tabs, and closed again (the focus back on the Settings button). On the
 // Goals tab, the weights the goals set are shown too (issue #292), unless `weights` is false.
 async function settings(page: Page, tab: "requirements" | "weights" | "buffs" | "pool" | "advanced", { weights = true }: { weights?: boolean } = {}): Promise<void> {
@@ -64,10 +37,9 @@ async function pressBuild(page: Page): Promise<void> { await page.click(await pa
 const built = (page: Page): Promise<void> => page.waitForFunction(() => !document.querySelector<HTMLButtonElement>("#b-run")?.disabled && /Best suit for/.test(document.querySelector("#b-result h2")?.textContent || ""), undefined, { timeout: 60_000 }).then(() => {});
 
 test("[slow] ⌘↵ builds from anywhere on the Builder screen, and not from behind a drawer", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const dataDir = seedDataDir("packrat-ui-buildkey-");
-  const { app, page, errors } = await launch(dataDir);
+  if (skipWithoutElectron(t)) return;
+  const dataDir = tempDataDir("packrat-ui-buildkey-", { demoScans: true });
+  const { page, errors, close } = await launch(dataDir);
   try {
     await openBuilder(page);
     let starts = 0;   // build requests the page sent (a repeat of the same settings saves no second run)
@@ -98,8 +70,7 @@ test("[slow] ⌘↵ builds from anywhere on the Builder screen, and not from beh
     assert.equal(starts, 2);
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
@@ -109,10 +80,9 @@ test("[slow] ⌘↵ builds from anywhere on the Builder screen, and not from beh
 // remembered across a reload. Round 1 of review: Esc from anywhere, ⌘, over a popover, focus after a drawer build, the
 // count following the runs drawer's diff and every knob, and the top bar at 1366 and 1024.
 test("[slow] the Settings drawer: ⌘, and its button, Esc, the tabs, an error's tab, the changes count, the remembered tab", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const dataDir = seedDataDir("packrat-ui-drawer-");
-  const { app, page, errors } = await launch(dataDir);
+  if (skipWithoutElectron(t)) return;
+  const dataDir = tempDataDir("packrat-ui-drawer-", { demoScans: true });
+  const { app, page, errors, close } = await launch(dataDir);
   try {
     await openBuilder(page);   // leaves it closed, on Advanced
     const drawer = page.locator("#b-drawer"), focused = (): Promise<string | undefined> => page.evaluate(() => document.activeElement?.id);
@@ -243,8 +213,7 @@ test("[slow] the Settings drawer: ⌘, and its button, Esc, the tabs, an error's
     assert.ok(bar.height < 170, `the pickers wrap once at most, got ${bar.height}`);
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
@@ -261,10 +230,9 @@ async function hoverTip(page: Page, target: Locator): Promise<string> {
 }
 
 test("[slow] the Fetch list's pieces show the item tooltip on hover and on keyboard focus", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const dataDir = seedDataDir("packrat-ui-fetchtip-");
-  const { app, page, errors } = await launch(dataDir);
+  if (skipWithoutElectron(t)) return;
+  const dataDir = tempDataDir("packrat-ui-fetchtip-", { demoScans: true });
+  const { page, errors, close } = await launch(dataDir);
   try {
     await openBuilder(page);
     await pressBuild(page);
@@ -281,17 +249,15 @@ test("[slow] the Fetch list's pieces show the item tooltip on hover and on keybo
     assert.equal(await tipName(page), name);
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
 // Issue #75: a Plan row's two names each show their own piece's tooltip; the rest of the row shows none.
 test("[slow] the Plan's worn and replacement names each show their own piece's tooltip", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const dataDir = seedDataDir("packrat-ui-plantip-");
-  const { app, page, errors } = await launch(dataDir);
+  if (skipWithoutElectron(t)) return;
+  const dataDir = tempDataDir("packrat-ui-plantip-", { demoScans: true });
+  const { page, errors, close } = await launch(dataDir);
   try {
     await openBuilder(page);
     await pressBuild(page);
@@ -320,16 +286,14 @@ test("[slow] the Plan's worn and replacement names each show their own piece's t
     assert.equal(await hoverTip(page, kept), await kept.innerText());
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
 test("[slow] a Fetch list row shows its whole place, wrapped not cut, and copies the container serial", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const dataDir = seedDataDir("packrat-ui-fetchplace-");
-  const { app, page, errors } = await launch(dataDir);
+  if (skipWithoutElectron(t)) return;
+  const dataDir = tempDataDir("packrat-ui-fetchplace-", { demoScans: true });
+  const { app, page, errors, close } = await launch(dataDir);
   try {
     await openBuilder(page);
     await pressBuild(page);
@@ -364,17 +328,15 @@ test("[slow] a Fetch list row shows its whole place, wrapped not cut, and copies
     assert.equal(await app.evaluate(({ clipboard }) => clipboard.readText()), hex);
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
 // Issue #217: a hard requirement no suit reaches (Luck 100000) is named with the best possible above the progress panel while the build runs, then in the result's "Check your settings"; Lower and Make soft edit the panel and the template badge, turn into their done state and never start a build.
 test("[slow] Check your settings: the block shows before and after the build, and Lower and Make soft edit the panel", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const dataDir = seedDataDir("packrat-ui-checks-");
-  const { app, page, errors } = await launch(dataDir);
+  if (skipWithoutElectron(t)) return;
+  const dataDir = tempDataDir("packrat-ui-checks-", { demoScans: true });
+  const { page, errors, close } = await launch(dataDir);
   try {
     await openBuilder(page);
     await settings(page, "requirements");
@@ -410,8 +372,7 @@ test("[slow] Check your settings: the block shows before and after the build, an
     assert.equal(starts, 1, "only the one build that was asked for");
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
@@ -425,13 +386,12 @@ test("[slow] Check your settings: the block shows before and after the build, an
 // back; at 420 px the page never scrolls sideways. Kestrel's saved profile, written with weights and no goals, opens on
 // its weights as before goals, and its run loaded over Melee's goals leaves goal mode.
 test("[slow] goals: the ranked list, its counts, =, spare points, How the goals went, fine-tune and back, a profile with no goals", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const dataDir = seedDataDir("packrat-ui-goals-");
+  if (skipWithoutElectron(t)) return;
+  const dataDir = tempDataDir("packrat-ui-goals-", { demoScans: true });
   const pool = { lockedSlots: [], excludeTags: [], excludeSkills: [], excludeRoots: [], excludeWeapons: [], ubwsAnyWeapon: true, allowOthersWorn: false, allowGargoyle: false, medOnly: false, strLimit: "character" };
   writeFileSync(join(dataDir, "profiles.json"), JSON.stringify({ schemaVersion: 3, templates: {}, characters: { Kestrel: { race: "human", template: "builtin:melee",
     spec: { intent: { floors: {}, softFloors: [], weights: { dci: 10, luck: 1 }, floorBonus: 1000, resistCaps: {} }, buffs: { on: [], skills: {} }, pool } } } }));
-  const { app, page, errors } = await launch(dataDir);
+  const { app, page, errors, close } = await launch(dataDir);
   try {
     await openBuilder(page);
     await pickCharacter(page, "Dorran");
@@ -526,8 +486,7 @@ test("[slow] goals: the ranked list, its counts, =, spare points, How the goals 
     assert.equal(await page.locator("#b-sec-goals").isHidden(), true, "the run had no goals: the panel's weights are its own");
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
@@ -536,10 +495,9 @@ test("[slow] goals: the ranked list, its counts, =, spare points, How the goals 
 // the strategy; the fewest-changes checkbox and the strategy are saved with the profile across a reload; no sideways
 // scroll at 420 px.
 test("[slow] strict order: the strategy's subtitle, a strict build without trades, and fewest changes saved with the profile", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const dataDir = seedDataDir("packrat-ui-strict-");
-  const { app, page, errors } = await launch(dataDir);
+  if (skipWithoutElectron(t)) return;
+  const dataDir = tempDataDir("packrat-ui-strict-", { demoScans: true });
+  const { app, page, errors, close } = await launch(dataDir);
   const text = (sel: string, re: RegExp): Promise<unknown> => page.waitForFunction(([q, src]) => new RegExp(src!).test(document.querySelector(q!)?.textContent || ""), [sel, re.source], { timeout: 10_000 });
   const noSideways = async (what: string): Promise<void> => {
     const over = await sidewaysAt(app, page, { width: 420, height: 900 });
@@ -584,8 +542,7 @@ test("[slow] strict order: the strategy's subtitle, a strict build without trade
     assert.equal(await page.locator('#b-strategy [data-value="strict"]').getAttribute("aria-checked"), "true", "so is the strategy");
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
@@ -594,10 +551,9 @@ test("[slow] strict order: the strategy's subtitle, a strict build without trade
 // banner names the run's goals by their names; a newer scan that swaps the worn weapon for a slower one under another name,
 // and the reopened run's Swing speed line is the one the build showed, set for the weapon it was built with.
 test("[slow] goals runs: the first-visit goals, the run line in goal names, and a reopened run keeping its swing goal's weapon", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const dataDir = seedDataDir("packrat-ui-goalruns-");
-  const { app, page, errors } = await launch(dataDir);
+  if (skipWithoutElectron(t)) return;
+  const dataDir = tempDataDir("packrat-ui-goalruns-", { demoScans: true });
+  const { app, page, errors, close } = await launch(dataDir);
   try {
     await openBuilder(page);
     await page.waitForFunction(() => /Melee will build for/.test(document.querySelector("#b-start .b-start-sum")?.textContent || ""), undefined, { timeout: 10_000 });
@@ -642,22 +598,20 @@ test("[slow] goals runs: the first-visit goals, the run line in goal names, and 
     assert.ok(await sidewaysAt(app, page, { width: 420, height: 900 }) <= 0, "no sideways scroll at 420 on the reopened run");
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
 // Issues #217, #274: Kestrel's Melee weights with Luck at importance 2000, from a profile saved with Melee's weights before goals (issue #292: its goals' few weights leave the demo suit thin, so nothing would dominate). The Luck row shows the template's per-point 0.05 as importance 5.6, and its hover names the trade-off with the top weight until Luck becomes the top one; the build names Luck in "Check your settings" with Set Luck; a weight changed since the build leaves Set Luck doing nothing, and on a fresh build it sets the panel's weight and marks the template badge.
 test("[slow] weight scale: the row shows importance with a trade-off hover, and Set weight edits the panel only while it holds the build's weight", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const dataDir = seedDataDir("packrat-ui-weights-");
+  if (skipWithoutElectron(t)) return;
+  const dataDir = tempDataDir("packrat-ui-weights-", { demoScans: true });
   const pool = { lockedSlots: [], excludeTags: [], excludeSkills: [], excludeRoots: [], excludeWeapons: [], ubwsAnyWeapon: true, allowOthersWorn: false, allowGargoyle: false, medOnly: false, strLimit: "character" };
   const resists = (n: number): Record<string, number> => ({ physResist: n, fireResist: n, coldResist: n, poisonResist: n, energyResist: n });
   const weights = { ...resists(6), dci: 10, hci: 10, ssi: 5, di: 3, hpRegen: 4, dexBonus: 4, strBonus: 3, hpi: 3, stamRegen: 3, stamInc: 2, lmc: 1, luck: 0.05, tagPenalty: -25 };
   writeFileSync(join(dataDir, "profiles.json"), JSON.stringify({ schemaVersion: 3, templates: {}, characters: { Kestrel: { race: "human", template: "builtin:melee",
     spec: { intent: { floors: resists(65), softFloors: [], weights, floorBonus: 1000, resistCaps: {} }, buffs: { on: [], skills: {} }, pool } } } }));
-  const { app, page, errors } = await launch(dataDir);
+  const { page, errors, close } = await launch(dataDir);
   try {
     await openBuilder(page);
     await pickCharacter(page, "Kestrel");
@@ -701,17 +655,15 @@ test("[slow] weight scale: the row shows importance with a trade-off hover, and 
     assert.equal(await block.getByRole("button", { name: "Set ✓" }).isDisabled(), true);
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
 // Issue #272 part 2, on Kestrel's melee build (the best suit gives up some of what she wears): What changes shows Gauges by default, only for moved non-resist properties the build weights or requires (no pool beside its bonus), a loss muted, and "+N more changes in Table" counting the rest and switching to it; Table lists every property, resists included, and hides the score breakdown; the choice is kept in ui-prefs across a reload; a breakdown row opens the drawer on Weights with that weight's field focused, or Add weight once the weight is gone, and Esc hands the focus back to the row; with Enemy of One planned, its past-cap amount shows under What changes and after the DI cap in the Table; at 420 px the page never scrolls sideways (the table scrolls in its own labelled box, its Property column staying put).
 test("[slow] What changes: Gauges for what the build asks, Table with every property, the choice kept, breakdown rows open their weight, past-cap notes, no sideways scroll at 420", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const dataDir = seedDataDir("packrat-ui-changes-");
-  const { app, page, errors } = await launch(dataDir);
+  if (skipWithoutElectron(t)) return;
+  const dataDir = tempDataDir("packrat-ui-changes-", { demoScans: true });
+  const { app, page, errors, close } = await launch(dataDir);
   try {
     await openBuilder(page);
     await pickCharacter(page, "Kestrel");
@@ -799,20 +751,18 @@ test("[slow] What changes: Gauges for what the build asks, Table with every prop
     assert.match(await di.locator(".b-cap-past").getAttribute("title") ?? "", /past the cap \(Enemy of One\)/);
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
 // Issue #272 part 3, the Settings drawer's extras on Kestrel given Chivalry 68.2 and Bushido 74 in her scan: a weight's slider moves in steps of 5 from the arrow keys with the number field following and its aria-valuetext the signed weight, the trade-off under the list following it, and another row's bar staying as it was; a typed 178 fills the bar and tags it "▸178", a typed 12.5 is kept; ± flips the sign and the bar takes the warn style. Buffs are listed by school with Kestrel's skill, only the castable ones until Show all, which adds Necromancy's forms greyed with what they need. After a build each requirement says what it came to. At 420 px the drawer never scrolls the page sideways.
 test("[slow] drawer extras: notched weight sliders, buffs by school, each requirement's last-build status, no sideways scroll at 420", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const dataDir = seedDataDir("packrat-ui-extras-");
+  if (skipWithoutElectron(t)) return;
+  const dataDir = tempDataDir("packrat-ui-extras-", { demoScans: true });
   const scan = join(dataDir, "scans", "demo-Kestrel.json"), raw = readFileSync(scan, "utf8");
   assert.ok(raw.includes('"skills": {},'));
   writeFileSync(scan, raw.replace('"skills": {},', '"skills": { "Chivalry": { "base": 68.2, "value": 68.2, "cap": 100 }, "Bushido": { "base": 74, "value": 74, "cap": 100 }, "Necromancy": { "base": 50, "value": 50, "cap": 100 } },'));
-  const { app, page, errors } = await launch(dataDir);
+  const { app, page, errors, close } = await launch(dataDir);
   try {
     await openBuilder(page);
     await pickCharacter(page, "Kestrel");
@@ -959,22 +909,20 @@ test("[slow] drawer extras: notched weight sliders, buffs by school, each requir
     }
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
 // Issue #217 (swing steps), on Kestrel with her worn War Axe made the best weapon in the pool (strong properties, Swordsmanship), so the result holds the worn weapon: the SSI weight row's switch, on from Melee's Swing speed goal (issue #292) with the worn weapon's steps under it, marks the template changed when turned off; the build says SSI was scored per point (the pool holds weapons of several speeds) and offers Lock Weapon (1H), shows the swing line, and Next step follows the result's swing (none before the build); Lock edits the panel without a build, and the next build scores by step with no warning; the switch is kept in the saved run's settings and by Save profile across a reload.
 test("[slow] swing steps: the switch, the swing line, Next step from the result, Lock, and the switch saved with the run and the profile", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const dataDir = seedDataDir("packrat-ui-swing-");
+  if (skipWithoutElectron(t)) return;
+  const dataDir = tempDataDir("packrat-ui-swing-", { demoScans: true });
   const scanFile = join(dataDir, "scans", "demo-Kestrel.json"), scan = JSON.parse(readFileSync(scanFile, "utf8")) as { equipped: Array<{ name: string; tooltip: string[] }> };
   const axe = scan.equipped.find((i) => i.name === "War Axe")!;
   axe.tooltip = [...axe.tooltip.filter((l) => !/^(Antique|Defense Chance Increase|Swing Speed Increase|Skill Required)/.test(l)), "Skill Required: Swordsmanship", "Hit Chance Increase 45%", "Defense Chance Increase 45%",
     "Damage Increase 100%", "Hit Point Increase 25", "Dexterity Bonus 25", "Strength Bonus 25", "Physical Resist 20%", "Fire Resist 20%", "Cold Resist 20%", "Poison Resist 20%", "Energy Resist 20%"];
   writeFileSync(scanFile, JSON.stringify(scan));
-  const { app, page, errors } = await launch(dataDir);
+  const { page, errors, close } = await launch(dataDir);
   try {
     await openBuilder(page);
     await pickCharacter(page, "Kestrel");
@@ -1030,17 +978,15 @@ test("[slow] swing steps: the switch, the swing line, Next step from the result,
     assert.equal(await page.locator("#b-swing-steps").isChecked(), true, "Save profile kept the switch");
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
 // Issue #213: the demo characters have no casting skills, so the Faster Casting cap starts at 2 and says why; naming Chivalry under Advanced raises it to 4, marks the template changed, and an FC requirement added then starts at 4 with the cap's source on its row.
 test("[slow] casting school: the FC cap's source beside the select and on the FC requirement row", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const dataDir = seedDataDir("packrat-ui-fccap-");
-  const { app, page, errors } = await launch(dataDir);
+  if (skipWithoutElectron(t)) return;
+  const dataDir = tempDataDir("packrat-ui-fccap-", { demoScans: true });
+  const { page, errors, close } = await launch(dataDir);
   try {
     await openBuilder(page);
     await settings(page, "advanced");
@@ -1058,8 +1004,7 @@ test("[slow] casting school: the FC cap's source beside the select and on the FC
     assert.equal(await row.locator(".b-fc-cap").innerText(), "cap 4: Chivalry (chosen)");
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
@@ -1067,10 +1012,9 @@ test("[slow] casting school: the FC cap's source beside the select and on the FC
 // Solver details carry the Rarity row with the rarity total; Save profile keeps it across a reload; and applying a
 // template that has no preference clears it. Every read polls, so a later redraw cannot race it.
 test("[slow] rarity preference: the segmented control, its help line, the result's Rarity row, Save profile and template Apply", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const dataDir = seedDataDir("packrat-ui-rarity-");
-  const { app, page, errors } = await launch(dataDir);
+  if (skipWithoutElectron(t)) return;
+  const dataDir = tempDataDir("packrat-ui-rarity-", { demoScans: true });
+  const { page, errors, close } = await launch(dataDir);
   const text = (sel: string, re: RegExp): Promise<unknown> => page.waitForFunction(([q, src]) => new RegExp(src!).test(document.querySelector(q!)?.textContent || ""), [sel, re.source], { timeout: 10_000 });
   const lowerOn = (on: boolean): Promise<unknown> => page.waitForFunction((want) => document.querySelector('#b-rarity [data-value="lower"]')?.getAttribute("aria-checked") === String(want), on, { timeout: 10_000 });
   try {
@@ -1098,16 +1042,14 @@ test("[slow] rarity preference: the segmented control, its help line, the result
     await page.waitForFunction(() => (document.querySelector("#b-rarity-help") as HTMLElement | null)?.hidden === true);
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
 test("[slow] STR limit sits beside Race under Advanced, and a bad value opens the drawer there", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const dataDir = seedDataDir("packrat-ui-strlimit-");
-  const { app, page, errors } = await launch(dataDir);
+  if (skipWithoutElectron(t)) return;
+  const dataDir = tempDataDir("packrat-ui-strlimit-", { demoScans: true });
+  const { page, errors, close } = await launch(dataDir);
   try {
     await openBuilder(page);
     await settings(page, "advanced");
@@ -1123,8 +1065,7 @@ test("[slow] STR limit sits beside Race under Advanced, and a bad value opens th
     assert.equal(await page.getAttribute("#b-tab-advanced", "aria-selected"), "true", "on Advanced");
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
@@ -1132,10 +1073,9 @@ test("[slow] STR limit sits beside Race under Advanced, and a bad value opens th
 // result is measured against it and says so, the saved run shows it, and Save profile keeps it across a reload.
 // A cap out of range stops the build with its reason under the field; the reset puts the shard's cap back.
 test("[slow] a raised resist cap is marked, built with, shown in the result and the run, and saved with the profile; a buff is planned with", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const dataDir = seedDataDir("packrat-ui-rescaps-");
-  const { app, page, errors } = await launch(dataDir);
+  if (skipWithoutElectron(t)) return;
+  const dataDir = tempDataDir("packrat-ui-rescaps-", { demoScans: true });
+  const { page, errors, close } = await launch(dataDir);
   try {
     await openBuilder(page);
     const fire = page.locator("#b-cap-fireResist"), fireRow = page.locator("#b-sec-caps .rule-row[data-key=fireResist]");
@@ -1193,18 +1133,16 @@ test("[slow] a raised resist cap is marked, built with, shown in the result and 
     assert.match(await page.locator("#b-sec-caps .rule-row[data-key=fireResist]").innerText(), /shard cap/);
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
 // Review of #48: a requirement above its resist's cap warns on its row; a race change drops an override that is now
 // the race's own cap, so Save does not store it; and an out-of-range cap stops Build with the drawer closed.
 test("[slow] resist caps: a floor past its cap warns, a race change drops a now-default override, a closed drawer still blocks Build", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const dataDir = seedDataDir("packrat-ui-rescaps2-");
-  const { app, page, errors } = await launch(dataDir);
+  if (skipWithoutElectron(t)) return;
+  const dataDir = tempDataDir("packrat-ui-rescaps2-", { demoScans: true });
+  const { page, errors, close } = await launch(dataDir);
   try {
     await openBuilder(page);
     await settings(page, "advanced");
@@ -1244,18 +1182,16 @@ test("[slow] resist caps: a floor past its cap warns, a race change drops a now-
     assert.equal(await page.locator("#b-run").isDisabled(), false, "no build started");
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
 // Weapon exclusions (issue #45): checked skills in the Weapons popover say so on the chip, and Save profile keeps
 // them across a reload, with the Use Best Weapon Skill check (issue #187).
 test("[slow] excluded weapon skills and the Use Best Weapon Skill check show on the chip and are saved with the profile", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const dataDir = seedDataDir("packrat-ui-weapons-");
-  const { app, page, errors } = await launch(dataDir);
+  if (skipWithoutElectron(t)) return;
+  const dataDir = tempDataDir("packrat-ui-weapons-", { demoScans: true });
+  const { page, errors, close } = await launch(dataDir);
   try {
     await openBuilder(page);
     await settings(page, "pool");
@@ -1287,18 +1223,16 @@ test("[slow] excluded weapon skills and the Use Best Weapon Skill check show on 
     assert.deepEqual(await page.locator(".pop .b-checks input:checked").evaluateAll((is) => is.map((i) => (i as HTMLInputElement).value)), ["archery", "fencing", "mace fighting", "throwing"]);
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
 // Spellbooks (issue #259): the Weapons popover ends in a Spellbooks row that adds ", no spellbooks" to the chip and is saved
 // with the profile.
 test("[slow] the Weapons popover's Spellbooks row excludes spellbooks and is saved with the profile", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const dataDir = seedDataDir("packrat-ui-books-");
-  const { app, page, errors } = await launch(dataDir);
+  if (skipWithoutElectron(t)) return;
+  const dataDir = tempDataDir("packrat-ui-books-", { demoScans: true });
+  const { page, errors, close } = await launch(dataDir);
   try {
     await openBuilder(page);
     await settings(page, "pool");
@@ -1320,18 +1254,16 @@ test("[slow] the Weapons popover's Spellbooks row excludes spellbooks and is sav
     assert.deepEqual(await page.locator(".pop .b-checks input:checked").evaluateAll((is) => is.map((i) => (i as HTMLInputElement).value)), ["throwing", "spellbook"]);
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
 // Weapon properties (issue #214): the Weapon must have chip beside Weapons says what is checked, and Save profile keeps it
 // across a reload; unchecking everything leaves the chip plain again.
 test("[slow] the Weapon must have chip shows the checked properties and is saved with the profile", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const dataDir = seedDataDir("packrat-ui-wflags-");
-  const { app, page, errors } = await launch(dataDir);
+  if (skipWithoutElectron(t)) return;
+  const dataDir = tempDataDir("packrat-ui-wflags-", { demoScans: true });
+  const { page, errors, close } = await launch(dataDir);
   try {
     await openBuilder(page);
     await settings(page, "pool");
@@ -1357,16 +1289,14 @@ test("[slow] the Weapon must have chip shows the checked properties and is saved
     assert.equal(await chip.innerText(), "Weapon must have");
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
 test("[slow] the Only containers chip narrows the pool, is built with, kept by the run and saved with the profile (issue #12)", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const dataDir = seedDataDir("packrat-ui-onlyroots-");
-  const { app, page, errors } = await launch(dataDir);
+  if (skipWithoutElectron(t)) return;
+  const dataDir = tempDataDir("packrat-ui-onlyroots-", { demoScans: true });
+  const { page, errors, close } = await launch(dataDir);
   try {
     await openBuilder(page);
     await settings(page, "pool");
@@ -1404,18 +1334,16 @@ test("[slow] the Only containers chip narrows the pool, is built with, kept by t
     assert.equal(pool().onlyRoots, undefined, "an empty list is not stored");
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
 // A switch's off and on states read apart at a glance: the on track's fill is at least 3:1 against the off
 // track's (hollow, the surface's own colour), and the knob moves from left to right.
 test("[slow] a switch's on state stands apart from its off state in each theme and mode", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const dataDir = seedDataDir("packrat-ui-switch-");
-  const { app, page, errors } = await launch(dataDir);
+  if (skipWithoutElectron(t)) return;
+  const dataDir = tempDataDir("packrat-ui-switch-", { demoScans: true });
+  const { page, errors, close } = await launch(dataDir);
   try {
     // reduced motion: a slow runner can otherwise read the track's colour half-way through its transition
     await page.emulateMedia({ reducedMotion: "reduce" });
@@ -1439,8 +1367,7 @@ test("[slow] a switch's on state stands apart from its off state in each theme a
     }
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
@@ -1448,10 +1375,9 @@ test("[slow] a switch's on state stands apart from its off state in each theme a
 // and the picker stays on that slot with the row marked as the one in it; the undo key takes it out, redo puts it back. Esc closes it onto the slot card, and the
 // suit is kept in ui-prefs.json. A buff turned on marks the totals it moves.
 test("[slow] Manual mode: a picked piece fills its slot, moves the totals and leaves the picker on the slot", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const dataDir = seedDataDir("packrat-ui-manual-");
-  const { app, page, errors } = await launch(dataDir);
+  if (skipWithoutElectron(t)) return;
+  const dataDir = tempDataDir("packrat-ui-manual-", { demoScans: true });
+  const { page, errors, close } = await launch(dataDir);
   try {
     await openBuilder(page);
     await page.click('#b-mode [data-value="manual"]');
@@ -1515,8 +1441,7 @@ test("[slow] Manual mode: a picked piece fills its slot, moves the totals and le
     assert.deepEqual(bp.manualBuffs, ["divineFury"], "the buffs are kept for the next launch");
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
@@ -1524,10 +1449,9 @@ test("[slow] Manual mode: a picked piece fills its slot, moves the totals and le
 // placed piece; Save as run puts the suit in the runs drawer as a manual run, which opens in the result view with
 // Open in Manual; and an Automatic result's Start from this result loads it into Manual in one undo step.
 test("[slow] Manual hand-offs: fill the rest, save as run, reopen it, and start from an Automatic result", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const dataDir = seedDataDir("packrat-ui-handoffs-");
-  const { app, page, errors } = await launch(dataDir);
+  if (skipWithoutElectron(t)) return;
+  const dataDir = tempDataDir("packrat-ui-handoffs-", { demoScans: true });
+  const { page, errors, close } = await launch(dataDir);
   try {
     await openBuilder(page);
     await page.click('#b-mode [data-value="manual"]');
@@ -1587,8 +1511,7 @@ test("[slow] Manual hand-offs: fill the rest, save as run, reopen it, and start 
     await fury.waitFor();
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
@@ -1598,10 +1521,9 @@ test("[slow] Manual hand-offs: fill the rest, save as run, reopen it, and start 
 // (counted) as one undo step, and Undo puts Bless and the switch back; a buff turned on since marks the template
 // changed; Save as stores the buffs with the copy, listed under "Your templates".
 test("[slow] templates: built-ins first with their description, Apply sets Manual's buffs in one undo step, the badge and Save as count buffs", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const dataDir = seedDataDir("packrat-ui-templates-");
-  const { app, page, errors } = await launch(dataDir);
+  if (skipWithoutElectron(t)) return;
+  const dataDir = tempDataDir("packrat-ui-templates-", { demoScans: true });
+  const { app, page, errors, close } = await launch(dataDir);
   const SOURCE = "https://uoalive.com/wiki/PlayerGuide:Lazy_Pally";
   try {
     await openBuilder(page);
@@ -1749,8 +1671,7 @@ test("[slow] templates: built-ins first with their description, Apply sets Manua
     assert.deepEqual(errors, []);
   } finally {
     await page.unrouteAll({ behavior: "ignoreErrors" });
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
@@ -1758,10 +1679,9 @@ test("[slow] templates: built-ins first with their description, Apply sets Manua
 // disabled while no bridge is online, its run in the drawer, Save profile kept across a reload, Manual on its No
 // character, and a character picked again showing that character's own panel.
 test("[slow] No character: built in Automatic from its own profile, saved as a run, kept by Save profile, shared with Manual (issue #12)", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const dataDir = seedDataDir("packrat-ui-nobody-");
-  const { app, page, errors } = await launch(dataDir);
+  if (skipWithoutElectron(t)) return;
+  const dataDir = tempDataDir("packrat-ui-nobody-", { demoScans: true });
+  const { page, errors, close } = await launch(dataDir);
   try {
     await openBuilder(page);
     await pickCharacter(page, "_nobody");
@@ -1832,8 +1752,7 @@ test("[slow] No character: built in Automatic from its own profile, saved as a r
     assert.equal(await page.locator("#b-race").count(), 1);
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
@@ -1843,10 +1762,9 @@ test("[slow] No character: built in Automatic from its own profile, saved as a r
 // on Dorran his last run opens again. A reload comes back to the run, New build returns to the first-visit view, the other
 // character's card opens Dorran's run again, and a newer scan puts up the gear-changed banner whose Build again builds.
 test("[slow] arriving: the first-visit view, coming back to the latest run, other characters' runs, New build, the gear-changed banner", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const dataDir = seedDataDir("packrat-ui-arrive-");
-  const { app, page, errors } = await launch(dataDir);
+  if (skipWithoutElectron(t)) return;
+  const dataDir = tempDataDir("packrat-ui-arrive-", { demoScans: true });
+  const { app, page, errors, close } = await launch(dataDir);
   try {
     await openBuilder(page);
     assert.equal(await page.locator("#b-start h2").innerText(), "What should Dorran's suit be for?");
@@ -1936,8 +1854,7 @@ test("[slow] arriving: the first-visit view, coming back to the latest run, othe
     await built(page);
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
@@ -1945,10 +1862,9 @@ test("[slow] arriving: the first-visit view, coming back to the latest run, othe
 // piece the build swaps in is gone (its Grab goes with it), one is in the other character's container, one is worn by
 // Kestrel, and a copy of the gone one is a new piece in the pool.
 test("[slow] gear changed since a run: the banner lists the changes, the Plan marks the pieces, no sideways scroll at 420", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const dataDir = seedDataDir("packrat-ui-gear-");
-  const { app, page, errors } = await launch(dataDir);
+  if (skipWithoutElectron(t)) return;
+  const dataDir = tempDataDir("packrat-ui-gear-", { demoScans: true });
+  const { app, page, errors, close } = await launch(dataDir);
   try {
     await openBuilder(page);
     await page.click("#b-start-build");
@@ -2009,8 +1925,7 @@ test("[slow] gear changed since a run: the banner lists the changes, the Plan ma
     assert.equal(await row(labels[2]).locator(".b-mark-narrow").innerText(), "Now worn by Kestrel");
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
@@ -2018,10 +1933,9 @@ test("[slow] gear changed since a run: the banner lists the changes, the Plan ma
 // tuned and saved weights): Cancel leaves the saved profile as it was on disk, Replace saves the card's template. And a runs
 // list refreshed right as a character is switched to never leaves the builder blank.
 test("[slow] arriving: a card asks before replacing tuned settings, and a list refresh during a switch still lands", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const dataDir = seedDataDir("packrat-ui-arrive2-");
-  const { app, page, errors } = await launch(dataDir);
+  if (skipWithoutElectron(t)) return;
+  const dataDir = tempDataDir("packrat-ui-arrive2-", { demoScans: true });
+  const { page, errors, close } = await launch(dataDir);
   try {
     await openBuilder(page);
     await pickCharacter(page, "Kestrel");
@@ -2055,8 +1969,7 @@ test("[slow] arriving: a card asks before replacing tuned settings, and a list r
     await page.waitForSelector("#b-result #b-start, #b-result .b-head-card", { timeout: 10_000 });
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
@@ -2066,10 +1979,9 @@ test("[slow] arriving: a card asks before replacing tuned settings, and a list r
 // after a yes, and starting over from a built-in template asks first, as a template card does. At 420 px the sentence's words
 // go, the pickers take the width and nothing scrolls sideways, the pickers' lists included.
 test("[slow] the sentence bar: typeahead pickers by keyboard, the build's state in words, going back and starting over", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const dataDir = seedDataDir("packrat-ui-header-");
-  const { app, page, errors } = await launch(dataDir);
+  if (skipWithoutElectron(t)) return;
+  const dataDir = tempDataDir("packrat-ui-header-", { demoScans: true });
+  const { app, page, errors, close } = await launch(dataDir);
   try {
     await openBuilder(page);
     const active = (): Promise<string | null | undefined> => page.evaluate(() => document.activeElement?.id || document.activeElement?.getAttribute("role"));
@@ -2172,18 +2084,16 @@ test("[slow] the sentence bar: typeahead pickers by keyboard, the build's state 
     await fitWindow(app, page, { width: 1440, height: 900 });
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
 // Issue #333: side by side, the result's main column scrolls and its side column ("How the goals went", the character's
 // runs) stays put; at 420 px the side column stacks under the result and nothing scrolls sideways.
 test("[slow] the result scrolls on its own and the side column stays put; stacked at 420 with no sideways scroll", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const dataDir = seedDataDir("packrat-ui-scroll-");
-  const { app, page, errors } = await launch(dataDir);
+  if (skipWithoutElectron(t)) return;
+  const dataDir = tempDataDir("packrat-ui-scroll-", { demoScans: true });
+  const { app, page, errors, close } = await launch(dataDir);
   try {
     await openBuilder(page);
     await pressBuild(page);
@@ -2210,8 +2120,7 @@ test("[slow] the result scrolls on its own and the side column stays put; stacke
     await fitWindow(app, page, { width: 1440, height: 900 });
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
@@ -2221,10 +2130,9 @@ test("[slow] the result scrolls on its own and the side column stays put; stacke
 // the unsaved edits come first; Esc closes it onto the chip; a row opens Build Settings on that setting; Reset to “Melee”…
 // asks first and leaves nothing changed. No sideways scroll at 420 with it open.
 test("[slow] the What changed chip and its popover: unsaved first, by group, a row opens its setting, Reset asks", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const dataDir = seedDataDir("packrat-ui-changes-");
-  const { app, page, errors } = await launch(dataDir);
+  if (skipWithoutElectron(t)) return;
+  const dataDir = tempDataDir("packrat-ui-changes-", { demoScans: true });
+  const { app, page, errors, close } = await launch(dataDir);
   try {
     await openBuilder(page);
     const chip = page.locator("#b-chg");
@@ -2296,7 +2204,6 @@ test("[slow] the What changed chip and its popover: unsaved first, by group, a r
     await fitWindow(app, page, { width: 1440, height: 900 });
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });

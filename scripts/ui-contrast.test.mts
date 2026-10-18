@@ -7,23 +7,13 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import { createRequire } from "node:module";
-import type { ElectronApplication, Page } from "playwright";
-import { fitWindow, openFacet, setRows, type RealSize, testEnv, noUpdateCheck, removeTempDir, pickCharacter, characterNames } from "./electron-window.mts";
+import { join } from "node:path";
+import type { Page } from "playwright";
+import { openFacet, setRows, pickCharacter, characterNames } from "./electron-window.mts";
+import { ROOT, launchApp, skipWithoutElectron, type App } from "./electron-app.mts";
 import { probeContrast, failures, describeFailures, type ContrastRow } from "./contrast-probe.mts";
 
-const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const KESTREL = readFileSync(join(ROOT, "app", "fixtures", "demo-Kestrel.json"), "utf8");
-const require_ = createRequire(import.meta.url);
-function unavailable(): string | null {
-  if (process.env.TEST_SKIP_ELECTRON) return "TEST_SKIP_ELECTRON is set";
-  for (const dep of ["electron", "playwright"]) {
-    try { require_.resolve(dep); } catch { return `${dep} is not installed`; }
-  }
-  return null;
-}
 
 // Each scene brings the page into one state; the probe then measures whatever is visible, and `leave` undoes
 // what must not carry over (an open overlay). Scenes run in order in one window, so a scene may rely on the
@@ -363,24 +353,15 @@ const SCENES: Scene[] = [
   } },
 ];
 
-async function launch(dataDir: string): Promise<{ app: ElectronApplication; page: Page; errors: string[]; size: RealSize }> {
-  const { _electron } = await import("playwright");
-  const app = await _electron.launch({ args: [ROOT, "--demo", "--data", noUpdateCheck(dataDir)], cwd: ROOT, timeout: 60_000, env: testEnv() });
-  const page = await app.firstWindow();
-  const errors: string[] = [];
-  page.on("pageerror", (e) => errors.push(String(e)));
-  // The real window, as close to 1440 × 900 as the screen allows (scripts/electron-window.mts): the scenes
-  // measure whichever layout that width shows.
-  const size = await fitWindow(app, page, { width: 1440, height: 900 });
-  return { app, page, errors, size };
-}
+// The real window, as close to 1440 × 900 as the screen allows (scripts/electron-window.mts): the scenes measure whichever layout
+// that width shows.
+const launch = (dataDir: string): Promise<App> => launchApp(dataDir, { demo: true, size: { width: 1440, height: 900 } });
 
 // Every theme family the page ships, each measured in both modes on every scene.
 const FAMILIES = ["default", "britannia"] as const;
 
 test("[slow] every text, control edge, icon and status dot on the real page passes contrast in both themes, light and dark", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   const dataDir = mkdtempSync(join(tmpdir(), "packrat-contrast-"));
   // setupDone skips the first-run wizard; --demo reads the committed demo scans.
   writeFileSync(join(dataDir, "settings.json"), JSON.stringify({ schemaVersion: 1, shard: "uoalive", setupDone: true }));
@@ -389,7 +370,7 @@ test("[slow] every text, control edge, icon and status dot on the real page pass
   writeFileSync(join(dataDir, "organize.json"), JSON.stringify({ version: 1, catchAll: null, pinnedItems: [],
     labels: { [0x700c0000]: { serial: 0x700c0000, name: "Reagents", color: "#2f7f7f", origin: "manual" }, [0x700b0000]: { serial: 0x700b0000, name: "Jewellery", pinned: true, origin: "manual" } },
     rules: [{ id: "rule-1", name: "Magery reagents", match: { query: { q: "", slot: [], rarity: "", rarityMin: "", rarityMax: "", kind: [], slayer: "", nogarg: false, med: false, hideTags: [], props: [] }, names: ["sulfurous ash"] }, targets: [0x700c0000], origin: "manual" }] }));
-  const { app, page, errors, size } = await launch(dataDir);
+  const { page, errors, size, close } = await launch(dataDir);
   t.diagnostic(`window ${size.width} × ${size.height}`);
   try {
     await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
@@ -429,7 +410,6 @@ test("[slow] every text, control edge, icon and status dot on the real page pass
     const canary = failures(await page.evaluate(probeContrast)).filter((r) => r.text === "pale");
     assert.equal(canary.length, 1, "a #bbb on white label is a failing pair");
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });

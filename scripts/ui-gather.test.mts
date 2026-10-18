@@ -7,23 +7,13 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import { createRequire } from "node:module";
-import { fitWindow, sidewaysAt, testEnv, noUpdateCheck, completeLines, removeTempDir } from "./electron-window.mts";
+import { join } from "node:path";
+import { fitWindow, sidewaysAt } from "./electron-window.mts";
+import { fakeBridge, launchApp, skipWithoutElectron, until } from "./electron-app.mts";
 import { houseScan } from "../app/organize-fixture.mts";
 
-const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
-const require_ = createRequire(import.meta.url);
 const CHEST = 0x40000001, BAG = 0x40000002, PACK = 0x40000003;
 const RINGS = [0x40008001, 0x40008002, 0x40008003];
-function unavailable(): string | null {
-  if (process.env.TEST_SKIP_ELECTRON) return "TEST_SKIP_ELECTRON is set";
-  for (const dep of ["electron", "playwright"]) {
-    try { require_.resolve(dep); } catch { return `${dep} is not installed`; }
-  }
-  return null;
-}
 // Three rings with HCI and DCI 15 (Enchanted Essence, weight 240) in a chest, a fourth in a backpack (Move to leaves it); an empty bag on the ground.
 function dataDir(): string {
   const dir = mkdtempSync(join(tmpdir(), "packrat-gather-"));
@@ -38,47 +28,13 @@ function dataDir(): string {
   writeFileSync(join(dir, "scans", "house.json"), JSON.stringify(scan));
   return dir;
 }
-// The bridge, as far as the page can tell: a status file refreshed every half second that answers each queued trip, a second later, with every step done.
-function standInBridge(dir: string): { stop: () => void; trips: () => Array<{ id: string; puts: Array<{ serial: number; dest: number[] }> }> } {
-  const bridgeDir = join(dir, "bridge", "tazuo");
-  mkdirSync(bridgeDir, { recursive: true });
-  const results: Record<string, unknown> = {}, seen = new Set<string>();
-  const trips = () => completeLines(join(bridgeDir, "queue.jsonl")).map((l) => JSON.parse(l) as { id: string; action: string; takes: Array<{ serial: number }>; puts: Array<{ serial: number; dest: number[] }> }).filter((c) => c.action === "trip");
-  const tick = (): void => {
-    for (const c of trips()) {
-      if (seen.has(c.id)) continue;
-      seen.add(c.id);
-      setTimeout(() => { results[c.id] = { ok: true, msg: "trip done", t: new Date().toISOString(), partial: false, stopped: false, steps: [...c.takes.map((t) => ({ op: "take", serial: t.serial, ok: true, msg: "took" })), ...c.puts.map((p) => ({ op: "put", serial: p.serial, ok: true, msg: "put" }))] }; }, 1000).unref();
-    }
-    writeFileSync(join(bridgeDir, "status.json"), JSON.stringify({ alive: new Date().toISOString(), character: "Tester", current: null, counts: { done: 0, failed: 0 }, results }));
-  };
-  tick();
-  const timer = setInterval(tick, 500).unref();
-  return { stop: () => clearInterval(timer), trips };
-}
-async function until<T>(read: () => T | Promise<T>, ok: (v: T) => boolean, what: string): Promise<T> {
-  const end = Date.now() + 20_000;
-  let v = await read();
-  while (!ok(v)) {
-    if (Date.now() > end) throw new Error(`timed out waiting for ${what}: ${JSON.stringify(v)}`);
-    await new Promise((r) => setTimeout(r, 100));
-    v = await read();
-  }
-  return v;
-}
 
 test("[slow] Gather into a bag: pick a bag through Move to, the Move runs, the bag is remembered, and the dialog fits at 420 px", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const dir = dataDir(), bridge = standInBridge(dir);
+  if (skipWithoutElectron(t)) return;
+  const dir = dataDir(), bridge = fakeBridge(dir, { every: 500, answerTrips: 1000 });
   const bags = (): unknown => JSON.parse(readFileSync(join(dir, "settings.json"), "utf8")).unravelBag;
-  const { _electron } = await import("playwright");
-  const app = await _electron.launch({ args: [ROOT, "--data", noUpdateCheck(dir)], cwd: ROOT, timeout: 60_000, env: testEnv() });
+  const { app, page, errors, close } = await launchApp(dir, { size: { width: 1024, height: 768 } });
   try {
-    const page = await app.firstWindow();
-    const errors: string[] = [];
-    page.on("pageerror", (e) => errors.push(String(e)));
-    await fitWindow(app, page, { width: 1024, height: 768 });
     await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
     await page.getByRole("radio", { name: "Unravel", exact: true }).click();
     await page.locator(".unr-row").first().waitFor({ timeout: 15_000 });
@@ -140,7 +96,6 @@ test("[slow] Gather into a bag: pick a bag through Move to, the Move runs, the b
     assert.deepEqual(errors, []);
   } finally {
     bridge.stop();
-    await app.close();
-    removeTempDir(dir);
+    await close();
   }
 });
