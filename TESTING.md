@@ -172,6 +172,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `scripts/changelog.test.mts` — `scripts/changelog.mts`: a [smoke] guard that the committed fragments and CHANGELOG.md are in shape, a [smoke] release of a copy of them, and the release that puts the fragments together.
 - `scripts/compat-shims.test.mts` — a [fast] guard that docs/architecture.md's "Compatibility shims" table and the code's `compat: <id>` comments name the same shims.
 - `scripts/css-guard.test.mts` — a [smoke] guard that keeps screen stylesheets from restyling the shared components, the window breakpoints in one list, and every color a token.
+- `scripts/docs-freshness.test.mts` — a [smoke] guard that the Markdown stays readable and true to the code (issue #338).
 - `scripts/docs-links.test.mts` — a [smoke] guard that every repo path the Markdown names in backticks exists.
 - `scripts/electron-app.test.mts` — a [smoke] guard that keeps the Electron UI tests on their shared fixture (scripts/electron-app.mts, issue #338).
 - `scripts/electron-guards.test.mts` — the Electron shell's guards, from the phase-7 review: unit tests of the pure decisions and source-level checks on `electron/main.mts`.

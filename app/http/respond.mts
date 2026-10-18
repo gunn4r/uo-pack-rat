@@ -1,9 +1,10 @@
-// respond.mts — how the server answers: send() with the headers every response carries, the event streams' own header set, the Content-Security-Policy, the guard that turns a body that is not a JSON object into a 400, and the answer the setup and settings routes give for a folder that is not a client's.
+// respond.mts — how the server answers: send() with the headers every response carries, the event streams' own header set, the Content-Security-Policy, the guard that turns a body that is not a JSON object into a 400, the demo's read-only refusal, a schema refusal's 400, and the answer the setup and settings routes give for a folder that is not a client's.
 //
 // map: server
-// owns: `send`, `SSE_HEADERS`, `CSP`, `asObject`, `NO_CLIENT_FOLDER`
+// owns: `send`, `SSE_HEADERS`, `CSP`, `asObject`, `refuseDemo`, `sendSchemaErrors`, `NO_CLIENT_FOLDER`
 import type http from "node:http";
 import type { HttpError } from "../read-body.mts";
+import { firstErrorText, type ValidationError } from "../schema/validate.mts";
 
 // Global Constraints CSP: no inline/external script beyond same-origin, no framing, no form posts
 // off-page. Applied to every text/html response; every response also gets nosniff and
@@ -55,4 +56,15 @@ export function asObject(body: unknown): Record<string, unknown> {
     throw e;
   }
   return body as Record<string, unknown>;
+}
+
+// --demo serves the committed fixtures (app/fixtures/), which a write must never change: the routes that would write
+// there call this first. Throws a 409 like store/json-file.mts's refuseNewer, which the server's handler answers.
+export function refuseDemo(ctx: { config: { demo: boolean } }): void {
+  if (ctx.config.demo) throw Object.assign(new Error("demo data is read-only"), { statusCode: 409 }) as HttpError;
+}
+
+// A body its schema refused: 400 with the first error as the sentence and every error beside it.
+export function sendSchemaErrors(res: http.ServerResponse, errors: ValidationError[]): void {
+  send(res, 400, { ok: false, error: firstErrorText(errors), errors });
 }

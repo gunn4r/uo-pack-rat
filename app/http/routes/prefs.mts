@@ -16,10 +16,10 @@ import { applyProfileEdits, profileEditError, type ProfileEdit } from "../../pro
 import { isPseudoCharacter } from "../../scan-schema.mts";
 import { isBoundedString } from "../../guards.mts";
 import { readBody } from "../../read-body.mts";
-import { validate, type ValidatorSchema } from "../../schema/validate.mts";
+import { validate, type ValidatorSchema, firstErrorText } from "../../schema/validate.mts";
 import { isColWidths, isDrawerWidth, UI_PREF_CHOICES, UI_PREF_LISTS, UI_PREF_VERSIONS } from "../../store/ui-prefs.mts";
 import { panelPrefsError } from "../../tazuo-panel.mts";
-import { send, asObject } from "../respond.mts";
+import { send, asObject, refuseDemo } from "../respond.mts";
 import { APP_DIR } from "../../config.mts";
 import type { Route } from "../router.mts";
 import type { OkApiResponse } from "../../api/routes.mts";
@@ -42,7 +42,7 @@ export async function patchProfiles(store: ServerContext["profilesStore"], list:
     const refused = applyProfileEdits(next, list, { builtins: store.builtins(), canLabel });
     if (refused) return { status: 409, body: { ok: false, code: "conflict", error: refused } };
     const { ok, errors } = validate(PROFILES_SCHEMA, next);
-    if (!ok) return { status: 400, body: { ok: false, error: `${errors[0]!.path} ${errors[0]!.msg}`, errors } };
+    if (!ok) return { status: 400, body: { ok: false, error: firstErrorText(errors), errors } };
     const bad = profilesSpecError(next, stored);
     if (bad) return { status: 400, body: { ok: false, error: bad } };
     const saved = store.write(next, was);
@@ -52,7 +52,7 @@ export async function patchProfiles(store: ServerContext["profilesStore"], list:
 }
 
 export function routes(ctx: ServerContext): Route[] {
-  const { config: CONFIG, panelPrefsStore, profilesStore, uiPrefsStore, getInventory } = ctx;
+  const { panelPrefsStore, profilesStore, uiPrefsStore, getInventory } = ctx;
   return [
     // The player's profiles, and the shard's built-in templates beside them (read-only, never written into the file).
     // `readOnly`: why the file cannot be saved (a newer Pack Rat made it), when it cannot; every PATCH is then a 409.
@@ -138,7 +138,7 @@ export function routes(ctx: ServerContext): Route[] {
       const body = asObject(await readBody(req, { limit: 8e3 }));
       const bad = panelPrefsError(body);
       if (bad) return send(res, 400, { ok: false, error: bad });
-      if (CONFIG.demo) return send(res, 409, { ok: false, error: "demo data is read-only" });
+      refuseDemo(ctx);
       panelPrefsStore.save(body);
       return send(res, 200, { ok: true, prefs: panelPrefsStore.read() } satisfies TazuoPanelApiResponse);
     } },
