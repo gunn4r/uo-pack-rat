@@ -146,6 +146,8 @@ test("[fast] every module the shell, the server and the workers load at run time
     for (const [, spec] of refs) queue.push(relative(root, join(root, dirname(rel), spec!)).split(sep).join("/"));
   }
   assert.ok(seen.has("app/vault-server.mts") && seen.has("app/data-dir-notice.mts"), "the walk must reach the server and what it imports");
+  // app/http/routes/static.mts reads the shared modules' list from it at start, so the server cannot start without it.
+  assert.ok(ships("tsconfig.browser.json"), "tsconfig.browser.json is read at run time but build.files leaves it out of the package");
 });
 
 test("[fast] the bundle excludes the page's TypeScript sources (the compiled app/dist/ui/ is what runs) but still ships its stylesheet", () => {

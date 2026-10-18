@@ -138,6 +138,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `app/solver-templates.test.mts` — HiGHS and the core agree on the fixture for every shipped default template, and with soft floors.
 - `app/solver.test.mts` — solver equivalence: HiGHS must never disagree with the core's own exact branch-and-bound about what the best suit is worth.
 - `app/solver/agreement.test.mts` — the solvers agree on one suit's score (issue #338): for random suits over generated pools and profiles, the core's `scoreSet` equals the MIP's objective at `startVector` plus `scoreOffset` (the hard floors built as soft terms for every suit, and as rows for a suit that meets them), each weighted property's part of that objective is its `scoreShares` share of the terms' total size, and the core's score with the floors taken out is the sum of those parts.
+- `app/solver/budget.test.mts` — `app/solver/budget.mts`, the exact solver's time budget (issue #338).
 - `app/solver/finish.test.mts` — `app/solver/finish.mts`, everything a build does after the search (issue #338).
 - `app/solver/prepare.test.mts` — `app/solver/prepare.mts`, everything a build does to its input before the search, and the run key (issue #338).
 - `app/solver/scoring.test.mts` — `app/solver/scoring.mts`, the scoring constants both solvers read (issue #338).
@@ -183,6 +184,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `scripts/optimizer-core.test.mts` — the offline test harness for the suit optimizer core (`scripts/optimizer-core.mts`).
 - `scripts/packaging.test.mts` — the electron-builder config, which is product interface: which files reach a player's machine, under which target, with which identifiers.
 - `scripts/run-suite.test.mts` — `scripts/run-suite.mts`, the counting half of the test runner, driven against throwaway test files in a temp directory.
+- `scripts/schema-index.test.mts` — a [fast] guard that app/schema/README.md's contract index lists every schema file in app/schema/, and nothing else.
 - `scripts/scrub.test.mts` — a [smoke] guard: this repository is public, and nothing tracked in it may carry private details.
 - `scripts/select-tests.test.mts` — `scripts/select-tests.mts`, the changed-paths → test-files mapping behind `./scripts/test_runner.sh --changed`.
 - `scripts/shell-smoke.test.mts` — proves the packaged Electron shell (`electron/main.mts` + `electron/server-entry.mts`) boots, serves the page and exits clean.

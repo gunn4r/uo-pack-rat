@@ -13,6 +13,8 @@
     "app/vault-lib.*",
     "app/item-query.*",
     "app/unravel.*",
+    "app/organize-config.*",
+    "app/profile-edits.*",
     "app/scan-schema.*",
     "app/paste-scan.*",
     "app/buffs.*",
