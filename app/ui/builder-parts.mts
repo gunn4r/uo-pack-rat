@@ -1,10 +1,12 @@
 // ui/builder-parts.mts — what more than one Suit Builder module draws or reads, holding no state of its own: a piece's
 // key properties and item tooltip, a result's verdict, the Fetch list and its Grab all (the result's and Manual's), and
-// an optimize job's event stream and progress words (the Automatic build's and Manual's fill).
+// an optimize job's event stream and progress words (the Automatic build's and Manual's fill), a template's shown name and
+// the no-character line.
 //
 // map: builder
-// owns: `fetchCard`, `grabAllButton`, `verdict`, `followJob`, `progressText`
+// owns: `fetchCard`, `grabAllButton`, `verdict`, `followJob`, `progressText`, `plainName`, `NO_CHARACTER`
 import { RESIST_META } from "../vault-lib.mts";
+import { templateName } from "../build-spec.mts";
 import type { Item, PropMap } from "../vault-lib.mts";
 import { state, bridge } from "./store.mts";
 import { el, label, fmtN, itemTip, toast, whereText } from "./dom.mts";
@@ -18,6 +20,10 @@ import type { Diagnostic } from "../runs-types.mts";
 import type { OptimizeResult, OptimizeProgress, JobSnapshotEvent, JobDoneEvent, JobFailedEvent, JobCancelledEvent } from "./api-types.mts";
 
 export const RESIST_NAMES: Record<string, [string, string]> = Object.fromEntries(RESIST_META.map((r) => [r.key, [r.long, r.token]]));
+// A template's name as the build picker shows it: a built-in's own name, without templateLabel's "(built-in)".
+export const plainName = (ref: string): string => templateName(state.builtinTemplates, ref);
+// With no character there is nothing to build or save: what the disabled Build and save buttons and template actions say.
+export const NO_CHARACTER = "There is no character to build for yet. Import a scan first.";
 const serialHex = (s: number): string => `0x${s.toString(16)}`;
 
 // A piece's key properties, strongest first: "SSI 35 · DCI 11 · Hit Fireball 36".
