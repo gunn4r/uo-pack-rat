@@ -7,8 +7,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { writeFileSync, readFileSync, readdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { fitWindow, pickCharacter, pickTemplate, settle, sideways } from "./electron-window.mts";
-import { skipWithoutElectron, tempDataDir } from "./electron-app.mts";
+import { fitWindow, pickCharacter, pickTemplate, settle, sideways, animationsDone } from "./electron-window.mts";
+import { skipWithoutElectron, tempDataDir, until } from "./electron-app.mts";
 import { built, closeSettings, launch, openBuilder, pressBuild, settings } from "./builder-ui.mts";
 import type { Locator } from "playwright";
 
@@ -125,8 +125,7 @@ test("[slow] the Settings drawer: ⌘, and its button, Esc, the tabs, an error's
 
     // The tab is kept in ui-prefs (a PUT the page does not wait on: poll the file), and the drawer comes back on it.
     const tabSaved = (): boolean => { try { return (JSON.parse(readFileSync(join(dataDir, "ui-prefs.json"), "utf8")) as { builderTab?: string }).builderTab === "weights"; } catch { return false; } };
-    for (let i = 0; i < 50 && !tabSaved(); i++) await page.waitForTimeout(100);
-    assert.ok(tabSaved(), "the tab is in ui-prefs.json");
+    assert.ok(await until(tabSaved, (v) => v, "the tab in ui-prefs.json"), "the tab is in ui-prefs.json");
     await page.reload();
     await page.waitForSelector("#tab-builder:not([hidden]) #b-result .b-head-card", { timeout: 30_000 });   // coming back: the latest run
     assert.equal(await drawer.isHidden(), true, "closed after a reload");
@@ -258,7 +257,7 @@ test("[slow] drawer extras: notched weight sliders, buffs by school, each requir
     assert.equal(await rows.nth(3).locator(".b-wsign").getAttribute("aria-pressed"), "true");
     // the pressed ± is drawn tinted, unlike a positive row's, with the pointer away
     await page.mouse.move(0, 0);
-    await page.waitForTimeout(400);   // the button's color transition
+    await animationsDone(page);   // the button's color transition
     const look = (i: number): Promise<string> => rows.nth(i).locator(".b-wsign").evaluate((b) => { const c = getComputedStyle(b); return `${c.color} ${c.backgroundColor} ${c.borderColor}`; });
     assert.notEqual(await look(3), await look(0));
     assert.match(await rows.nth(3).locator(".b-wtrack").getAttribute("class") ?? "", /\bneg\b/);
@@ -410,8 +409,7 @@ test("[slow] swing steps: the switch, the swing line, Next step from the result,
     // the saved run keeps the switch (the server writes it as the build finishes: wait for the file)
     const kept = (): boolean => existsSync(join(dataDir, "runs")) && readdirSync(join(dataDir, "runs")).filter((f: string) => f.endsWith(".json"))
       .some((f: string) => (JSON.parse(readFileSync(join(dataDir, "runs", f), "utf8")) as { settings?: { swingSteps?: boolean } }).settings?.swingSteps === true);
-    for (let i = 0; i < 50 && !kept(); i++) await page.waitForTimeout(100);
-    assert.ok(kept(), "the saved run keeps the switch");
+    assert.ok(await until(kept, (v) => v, "the switch in the saved run"), "the saved run keeps the switch");
     await settings(page, "weights");
     await page.click("#b-save");
     await page.waitForFunction(() => /Profile for .* saved/.test(document.body.textContent || ""), undefined, { timeout: 10_000 });

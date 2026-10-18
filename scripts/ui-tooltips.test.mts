@@ -153,7 +153,7 @@ test("[slow] the item tooltip skips action buttons, hides on Esc and on a scroll
     const row = page.locator("#map-drawer .map-item-row").first();
     // the row's actions are a data-no-tip zone
     await row.locator(".map-item-acts button").first().hover();
-    await page.waitForTimeout(700);
+    await page.waitForTimeout(700);   // sleep: past the tooltip's 400 ms delay, proving none shows
     assert.equal(await shown(page), false, "no tooltip over the row's actions");
     // a scroll that moves the item out from under the pointer hides it
     await tipShows(page, row.locator(".map-item"), "a drawer row");
@@ -179,7 +179,7 @@ test("[slow] the item tooltip skips action buttons, hides on Esc and on a scroll
     await page.waitForSelector(".item-pop");
     await page.mouse.move(2, 2);
     await slot.hover();
-    await page.waitForTimeout(700);
+    await page.waitForTimeout(700);   // sleep: past the tooltip's 400 ms delay, proving none shows
     assert.equal(await shown(page), false, "no hover tooltip while the slot's pop is open");
     assert.deepEqual(errors, []);
   } finally {

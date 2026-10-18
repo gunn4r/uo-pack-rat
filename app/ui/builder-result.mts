@@ -173,12 +173,12 @@ function whatChanges(rows: ChangeRow[], matter: string[], nextSsi: number | null
       loose.length ? box("div", { class: "b-past" }, ...loose.map((k) => txt(`${label(k)} ${past[k]!.text}`, "t-sm muted"))) : null,
       more ? button({ label: `+${plural(more, "more change")} in Table`, variant: "ghost", size: "sm", cls: "b-chg-more", onClick: () => show("table") }) : null]));
 }
-// One gauge: the short name (the full one for a screen reader), the suit's total against its cap and the change in what counts, a track filled to the suit's total with a tick at what is worn now, and its note. A change against the build (builder-model.mts worse) is muted, not red.
+// One gauge: the short name (the full one for a screen reader), the suit's total against its cap and the change in what counts, a track filled to the suit's total with a tick at what is worn now, and its note. A change against the build (builder-model.mts worse) is in the bad tone, a gain in the ok tone.
 function gauge(r: ChangeRow, nextSsi: number | null, past: string | undefined): HTMLElement {
   const note = gaugeNote(r, nextSsi), t = gaugeTrack(r), loss = worse(r);
   return box("li", { class: `b-gauge${loss ? " loss" : ""}` },
     box("span", { class: "b-gauge-top" }, el("span", { class: "b-gauge-name muted", title: propName(r.key), "aria-hidden": "true" }, label(r.key)), txt(propName(r.key), "sr"), txt(numText(r.suit), "b-gauge-val"), r.cap != null ? txt(`/ ${numText(r.cap)}`, "muted") : null,
-      el("span", { class: "spacer" }), txt(r.delta ? signed(r.delta) : "0", `b-gauge-delta ${loss || !r.delta ? "muted" : "tone-ok"}`), txt(`, was ${numText(r.now)}`, "sr")),
+      el("span", { class: "spacer" }), txt(r.delta ? signed(r.delta) : "0", `b-gauge-delta ${!r.delta ? "muted" : loss ? "tone-bad" : "tone-ok"}`), txt(`, was ${numText(r.now)}`, "sr")),
     box("span", { class: "b-gauge-track", "aria-hidden": "true" }, el("i", { style: `width:${t.fill}%` }), el("s", { style: `left:${t.tick}%` })),
     txt(note.text, `t-sm ${note.warn ? "tone-warn" : "muted"}`), past ? txt(past, "t-sm muted") : null);
 }
@@ -190,7 +190,7 @@ function changesTable(rows: ChangeRow[], past: PastNotes, hasShares: boolean): A
   // a total past its cap says by how much, as a gauge does
   const suit = (r: ChangeRow): HTMLElement => (r.cap != null && r.suit > r.cap ? box("span", {}, txt(numText(r.suit), "strong"), txt(` (${numText(r.suit - r.cap)} over)`, "t-sm muted")) : txt(numText(r.suit), "strong"));
   const cells = rows.map((r) => ({ cells: [txt(propName(r.key)), txt(numText(r.now), "muted"), suit(r), cap(r),
-    txt(r.delta ? signed(r.delta) : "0", r.delta && !worse(r) ? "tone-ok" : "muted"),
+    txt(r.delta ? signed(r.delta) : "0", !r.delta ? "muted" : worse(r) ? "tone-bad" : "tone-ok"),
     !hasShares ? txt("—", "muted") : r.share == null ? txt("") : tuneButton({ key: r.key, name: `${propName(r.key)} ${sharePct(r.share)}`, cls: "b-tune" }, meter(Math.round(Math.abs(r.share) * 1000), 1000, { tone: r.share < 0 ? "warn" : undefined }), txt(sharePct(r.share), `b-share-pct${r.share < 0 ? " tone-warn" : ""}`))] }));
   const t = table({ label: "What changes", columns: [{ label: "Property" }, { label: "Now", num: true }, { label: "Suit", num: true }, { label: "Cap", num: true }, { label: "Change", num: true }, { label: "Share of score" }], rows: cells });
   t.classList.add("b-chg-tbl");
