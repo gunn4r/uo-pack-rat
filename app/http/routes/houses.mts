@@ -115,9 +115,11 @@ export function routes(ctx: ServerContext): Route[] {
       let id: string | null;
       try { id = decodeURIComponent(url.pathname.slice("/api/house-claims/".length)); } catch { id = null; }
       if (id == null || !isHouseId(id)) return send(res, 400, { ok: false, error: "that is not a house id (<facet>-<x>-<y>)" });
-      const house = (await getInventory()).houses.find((h) => h.id === id), claims = houseClaimsStore.read();
-      const over = new Set(house ? claimsOver(claims, house.facet, tileBounds(house.tiles)) : []);
-      houseClaimsStore.write(claims.filter((c) => c.id !== id && !over.has(c)));
+      const house = (await getInventory()).houses.find((h) => h.id === id);
+      houseClaimsStore.update((claims) => {
+        const over = new Set(house ? claimsOver(claims, house.facet, tileBounds(house.tiles)) : []);
+        return claims.filter((c) => c.id !== id && !over.has(c));
+      });
       return send(res, 200, { ok: true } satisfies OkApiResponse);
     } },
   ];

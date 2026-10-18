@@ -8,7 +8,7 @@ import { APP_DIR } from "../config.mts";
 import type { HouseMapDoc } from "../house-names.mts";
 import type { HouseClaimsV1Item, HouseClaimsV1ItemBounds } from "../schema/types.d.mts";
 import { validate, type ValidatorSchema } from "../schema/validate.mts";
-import { readJsonFile, writeJsonFile } from "./json-file.mts";
+import { readJsonFile, updater, writeJsonFile } from "./json-file.mts";
 
 export type ClaimBounds = HouseClaimsV1ItemBounds;
 export type HouseClaim = HouseClaimsV1Item;
@@ -30,11 +30,11 @@ export function createHouseClaimsStore(file: string) {
       .map(({ id, facet, bounds: { x0, y0, x1, y1 }, claimedAt, by }) => ({ id, facet, bounds: { x0, y0, x1, y1 }, claimedAt, ...(by !== undefined ? { by } : {}) })) });
   }
   function write(claims: HouseClaim[]): void { writeJsonFile(file, claims, { indent: 1 }); }
-  return { read, write, exists: (): boolean => existsSync(file) };
+  return { read, write, update: updater(read, write), exists: (): boolean => existsSync(file) };
 }
 
 // The claims a house with bounds `box` on `facet` falls under: on the same facet (an unknown one matches only an unknown one), their bounds overlapping, so a house customized since it was claimed (a new id) still counts.
-export const claimsOver = (claims: HouseClaim[], facet: number | null, box: ClaimBounds): HouseClaim[] =>
+export const claimsOver = (claims: readonly HouseClaim[], facet: number | null, box: ClaimBounds): HouseClaim[] =>
   claims.filter((c) => c.facet === facet && c.bounds.x0 <= box.x1 && box.x0 <= c.bounds.x1 && c.bounds.y0 <= box.y1 && box.y0 <= c.bounds.y1);
 
 // The claims for the houses the player named or drew areas for in `map` (house-map.json), less the ones removed from the House map before claims (issue #298's `forgotten`): what the app writes when house-claims.json does not exist yet, so houses already in use stay claimed. A house's bounds are those saved with its entry, else the corner tile its id names, which lies inside the house.

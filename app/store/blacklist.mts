@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { APP_DIR } from "../config.mts";
 import type { BlacklistEntry } from "../vault-lib.mts";
 import { validate, type ValidatorSchema } from "../schema/validate.mts";
-import { readJsonFile, writeJsonFile } from "./json-file.mts";
+import { readJsonFile, updater, writeJsonFile } from "./json-file.mts";
 
 // One entry's schema (app/schema/blacklist.v1.schema.json).
 const ENTRY = (JSON.parse(readFileSync(join(APP_DIR, "schema", "blacklist.v1.schema.json"), "utf8")) as { items: ValidatorSchema }).items;
@@ -24,5 +24,5 @@ export function createBlacklistStore(file: string) {
       .slice(0, 1000).map(({ serial, name, addedAt, where }) => ({ serial, name, addedAt, ...(where ? { where } : {}) })) });
   }
   function write(entries: BlacklistEntry[]): void { writeJsonFile(file, entries, { indent: 1 }); }
-  return { read, write };
+  return { read, write, update: updater(read, write) };
 }

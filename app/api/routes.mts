@@ -19,6 +19,7 @@ import type { OrganizeConfig, RuleMatch } from "../organize-config.mts";
 import type { ProfileEdit } from "../profile-edits.mts";
 import type { PanelPrefs } from "../tazuo-panel-prefs.mts";
 import type { ProfilesApiResponse, ProfilesPatchApiResponse, TazuoPanelApiResponse, UiPrefs, UiPrefsApiResponse } from "./prefs.mts";
+import type { EvaluateApiResponse, OptimizeCancelApiResponse, OptimizeStartApiResponse, OptimizeStatusApiResponse } from "./optimize.mts";
 import type { RunBody, RunsListBody, RunSummary } from "../runs-types.mts";
 import type { CleanupApiResponse, CleanupBody, InstallApiResponse, InstallBody, LocateApiResponse, LocateBody, PasteScannerApiResponse, RulesApiResponse, SettingsApiResponse, SettingsPutBody, SetupApiResponse, UpdateCheckApiResponse } from "./setup.mts";
 
@@ -74,17 +75,17 @@ export interface ApiRoutes {
   "PUT /api/mcp": ApiEntry<McpApiResponse, McpPutBody>;
   "POST /api/mcp/token": ApiEntry<McpApiResponse, Record<string, never>>;
   // optimize.mts: builds
-  "POST /api/optimize": Untyped;
+  "POST /api/optimize": ApiEntry<OptimizeStartApiResponse, unknown>;   // the request bodies of the builds are not typed yet
   "GET /api/optimize/<id>/events": ApiEntry<EventStream>;
-  "POST /api/optimize/<id>/cancel": Untyped;
-  "GET /api/optimize/<id>/status": Untyped;
-  "POST /api/evaluate": Untyped;
+  "POST /api/optimize/<id>/cancel": ApiEntry<OptimizeCancelApiResponse>;
+  "GET /api/optimize/<id>/status": ApiEntry<OptimizeStatusApiResponse>;
+  "POST /api/evaluate": ApiEntry<EvaluateApiResponse, unknown>;
   // optimize.mts: saved runs
   "GET /api/runs": ApiEntry<RunsListBody>;
   "POST /api/runs": ApiEntry<RunBody<RunSummary>, unknown>;   // the request bodies of POST and PUT are not typed yet
   "GET /api/runs/<id>": ApiEntry<RunBody>;
   "PUT /api/runs/<id>": ApiEntry<RunBody<RunSummary>, unknown>;
-  "DELETE /api/runs/<id>": Untyped;
+  "DELETE /api/runs/<id>": ApiEntry<OkApiResponse>;
   // organize.mts
   "GET /api/organize": ApiEntry<OrganizeApiResponse>;
   "PUT /api/organize": ApiEntry<OrganizePutApiResponse, OrganizeConfig & { base?: string }>;

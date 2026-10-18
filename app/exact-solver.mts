@@ -29,6 +29,7 @@
 // owns: `solveExact`
 import type * as Core from "../scripts/optimizer-core.mts";
 import type { OptItem } from "./vault-lib.mts";
+import type { AltShortfall, ExactSolveResult as SharedExactSolveResult, SolveProgress, StrictStageProgress } from "./api/optimize.mts";
 import { buildSuitMip, startVector, pickedOf, tieBreakModel, heldModel, stageObjective, tieCosts, changeCostFor, DEFAULT_SLOTS, DEFAULT_OPTIONAL_SLOTS, type BuiltMip } from "./mip.mts";
 import { DEFAULT_BUDGET_MS, DEFAULT_RESTARTS, FLOAT_EPS, TIE_SLACK, slackAt } from "./solver/scoring.mts";
 import {
@@ -54,62 +55,10 @@ export interface CoreModule {
   optChanges: typeof Core.optChanges;
 }
 
-// Every phase this file reports through onProgress (the heuristic step 1's own progress,
-// pass-through unchanged but for `at`; the exact phase's bound/gap summary; the k-best
-// alternatives phase's found/wanted summary) in one loose shape — not every field applies to
-// every phase, so everything but `phase` is optional.
-export interface SolveProgress {
-  phase: string;
-  elapsedMs?: number | undefined;
-  restartsDone?: number | undefined;
-  restarts?: number | undefined;
-  nodes?: number | undefined;
-  explored?: number | undefined;
-  budgetMs?: number | undefined;
-  improvements?: number | undefined;
-  lastImprovementMs?: number | undefined;
-  bestScore?: number | null | undefined;
-  currentScore?: number | undefined;
-  floorsMet?: number | undefined;
-  floorsTotal?: number | undefined;
-  candidates?: number | undefined;
-  bound?: number | null | undefined;
-  gapPoints?: number | null | undefined;
-  solver?: string | undefined;
-  found?: number | undefined;
-  wanted?: number | undefined;
-  at?: number | undefined;
-  stage?: StrictStageProgress | undefined;   // strict order: the stage being solved
-}
-
-export interface ExactSolveResult extends OptResult {
-  method: string;
-  solver: string;
-  bound: number | null;
-  gapPoints: number | null;
-  mipMs: number;
-  heuristicMs: number;
-  unreachableFloors: string[];
-  fallbackReason?: string | undefined;
-  floorsConflict?: boolean | undefined;
-  altShortfall?: AltShortfall | undefined;
-  tieBreak?: TieBreakResult | undefined;
-  strictProven?: number | undefined;   // strict order: how many stages, in order, HiGHS proved (all of them when `proven`)
-}
-// A tie-break's outcome (opts.tieBreak, issue #262): the best score found, the returned suit's summed tie cost, and,
-// from the exact search, the preference and tolerance it ran with and whether that cost is proven the lowest (`proven`
-// is the score's proof alone: a second stage that runs out of time leaves it, and says so here). With fewest changes,
-// `changes` is how many slots the suit changes.
-export interface TieBreakResult { topScore: number; cost: number; changes?: number | undefined; rarity?: string | undefined; fewestChanges?: boolean | undefined; tolerance?: number | undefined; costProven?: boolean | undefined }
-// A strict-order stage in progress: which of how many, what it scores and its properties (scripts/optimizer-core.mts OptStage).
-export interface StrictStageProgress { at: number; of: number; kind: string; keys: string[] | null }
-// A strict-order build's outcome (issue #292), as the worker puts it on the result: each stage (optStrictStages: its kind,
-// a weights stage's properties) with the returned suit's value there, scaled as the core scales it, how many stages, in
-// order, are proven best, and with fewest changes how many slots the suit changes.
-export interface StrictResult { stages: Array<{ kind: string; keys: string[] | null; value: number }>; proven: number; changes?: number | undefined }
-// Why the k-best search returned fewer alternatives than asked: the time budget ran out, the next
-// suit scored outside the tolerance, or no other suit exists.
-export type AltShortfall = "budget" | "tolerance" | "exhausted" | "unequal";   // unequal: strict order, no more suits match on every goal
+// The result and progress shapes (the exact search's own fields, the tie-break's and strict order's outcomes, why fewer
+// alternatives than asked) are shared with the core, the worker and the page: app/api/optimize.mts.
+export type { AltShortfall, StrictResult, StrictStageProgress, SolveProgress, TieBreakResult } from "./api/optimize.mts";
+export type ExactSolveResult = SharedExactSolveResult<OptAssignment>;
 
 export interface SolveExactArgs {
   core: CoreModule;

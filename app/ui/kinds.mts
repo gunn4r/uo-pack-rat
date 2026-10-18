@@ -9,9 +9,9 @@
 // map: ui-screens
 // owns: `openClassify`, `exportKinds`, `importKinds`
 import { OVERRIDE_KINDS, gameName, kindNameKey, kindGraphicKey, ownKind, type Item } from "../vault-lib.mts";
-import { el, toast } from "./dom.mts";
+import { el } from "./dom.mts";
 import { api } from "./api.mts";
-import { box, button, field, openDialog, select, txt } from "./components.mts";
+import { box, button, field, openDialog, select, txt, toast } from "./components.mts";
 import { errorText } from "./messages.mts";
 
 import type { ItemKindsApiResponse } from "./api-types.mts";
@@ -77,6 +77,6 @@ export async function importKinds(file: File): Promise<void> {
   let r: ItemKindsApiResponse;
   try { r = await api<ItemKindsApiResponse>("/api/item-kinds/import", { method: "POST", body }); } catch (e) { toast(errorText(e), "bad"); return; }
   const n = Object.keys(r.names).length + Object.keys(r.graphics).length;
-  toast(`Imported ${file.name}: you now have ${plural(n, "item kind")}.${r.skipped ? ` ${plural(r.skipped, "entry", "entries")} left out: ${r.problems?.[0]}.` : ""}`, r.skipped ? "" : "good");
+  toast(`Imported ${file.name}: you now have ${plural(n, "item kind")}.${r.skipped ? ` ${plural(r.skipped, "entry", "entries")} left out: ${r.problems?.[0]}.` : ""}`, r.skipped ? "info" : "good");
   await (await import("./inventory-data.mts")).reload();
 }

@@ -13,10 +13,10 @@ import { isBoundedInt, MAX_SERIAL } from "../guards.mts";
 import { unravelYield, expectedYield, onHand, LEFT_OUT, INGREDIENTS, type Ingredient, type LeftOut, type UnravelYield } from "../unravel.mts";
 import type { UnravelRow } from "../item-query.mts";
 import { state } from "./store.mts";
-import { $, el, itemTip, toast, whereText } from "./dom.mts";
+import { $, el, itemTip, whereText } from "./dom.mts";
 import { api } from "./api.mts";
 import { fetchAllItems } from "./inventory-data.mts";
-import { txt, box, button, message, select, openDialog, icon, segmented } from "./components.mts";
+import { txt, box, button, message, select, openDialog, icon, segmented, toast } from "./components.mts";
 import { prefs } from "./prefs.mts";
 import { errorText } from "./messages.mts";
 

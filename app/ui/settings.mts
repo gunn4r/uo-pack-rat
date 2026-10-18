@@ -14,7 +14,7 @@ import { state } from "./store.mts";
 import { $, compactChildren, el, noteEl } from "./dom.mts";
 import { api } from "./api.mts";
 import { prefs } from "./prefs.mts";
-import { badge, box, button, check, confirmDialog, copyText, input, message, segmented, select, switchControl, txt, showToast, type Kids } from "./components.mts";
+import { badge, box, button, check, confirmDialog, copyText, input, message, segmented, select, switchControl, txt, toast, type Kids } from "./components.mts";
 
 import { applyLook, currentLook, resolveTheme, BUILT_THEMES, type Appearance } from "./theme.mts";
 import { changeShard } from "./shard.mts";
@@ -220,7 +220,7 @@ function uoFolderCard(from: TiledataFrom, error: string | null): HTMLElement {
     } catch (e) {
       // 501: no desktop shell (a bare `node vault-server.mts`), so the typed path is the way in; 504: the shell never answered.
       if ((e as ApiError).status === 501) { uoHostPicker = false; void syncUoFolderCard(); }
-      else showToast(hostErrorMessage(e, "Could not open the folder picker"), "bad");
+      else toast(hostErrorMessage(e, "Could not open the folder picker"), "bad");
     }
   };
   const help = from.folder
@@ -246,10 +246,10 @@ function pathRow(label: string, which: string, path: string, canOpen: boolean): 
     ? button({ label: "Open", icon: "folder", size: "sm", attrs: { "aria-label": `Open the ${label.toLowerCase()}` }, onClick: async () => {
       try { await api("/api/host/open-path", { method: "POST", body: { which } }); }
       // 504 (the shell never answered) reads as a bare "did not answer" without this — messages.mts's hostErrorMessage.
-      catch (e) { showToast(hostErrorMessage(e, `Could not open the ${label.toLowerCase()}`), "bad"); }
+      catch (e) { toast(hostErrorMessage(e, `Could not open the ${label.toLowerCase()}`), "bad"); }
     } })
     : button({ label: "Copy path", icon: "clipboard", size: "sm", attrs: { "aria-label": `Copy the ${label.toLowerCase()} path` }, onClick: async () => {
-      if (await copyText(path)) showToast(`Copied ${path}`, "ok"); else showToast(`Could not copy the ${label.toLowerCase()} path.`, "bad");
+      if (await copyText(path)) toast(`Copied ${path}`, "good"); else toast(`Could not copy the ${label.toLowerCase()} path.`, "bad");
     } });
   return box("div", { class: "set-path" }, txt(label, "t-md strong"), el("span", { class: "mono ellip", title: path }, path), action);
 }
@@ -270,8 +270,8 @@ function blacklistCard(list: BlacklistEntry[]): HTMLElement {
     row({ title: "Blacklisted containers", help: list.length ? "Scans never open these." : "None. Blacklist a ground container from its ⋯ menu in Containers, or in game with packrat-blacklist.py (TazUO, Razor Enhanced)." }),
     ...[...list].reverse().map((e) => row({ title: e.name, help: [e.where, `added ${relativeWhen(e.addedAt)}`].filter(Boolean).join(" · "),
       control: button({ label: "Unblacklist", size: "sm", attrs: { "aria-label": `Unblacklist ${e.name}` }, onClick: async () => {
-        try { await api(`/api/blacklist/${e.serial}`, { method: "DELETE" }); showToast(`Unblacklisted ${e.name}: the next scan reads it again.`, "ok"); }
-        catch (err) { showToast(errorText(err), "bad"); }
+        try { await api(`/api/blacklist/${e.serial}`, { method: "DELETE" }); toast(`Unblacklisted ${e.name}: the next scan reads it again.`, "good"); }
+        catch (err) { toast(errorText(err), "bad"); }
         void syncSettingsBlacklist();
       } }) })));
 }
@@ -321,15 +321,15 @@ function retentionCard(): HTMLElement | null {
   const clean = button({ label: "Clean up now", disabled: r.keepAll, attrs: { id: "set-ret-clean" }, onClick: async () => {
     try {
       const plan = await api<CleanupApiResponse>("/api/retention/cleanup", { method: "POST", body: { dryRun: true } });
-      if (!plan.scans && !plan.runs) { showToast(plan.refused ? keptScans : "Nothing to clean up: everything is inside the limits.", plan.refused ? "info" : "ok"); return; }
+      if (!plan.scans && !plan.runs) { toast(plan.refused ? keptScans : "Nothing to clean up: everything is inside the limits.", plan.refused ? "info" : "good"); return; }
       if (!await confirmDialog({ title: "Clean up old data?", body: `This removes ${counts(plan)} from the data folder for good. The inventory stays the same.`, confirmLabel: `Remove ${counts(plan)}` })) return;
       const done = await api<CleanupApiResponse>("/api/retention/cleanup", { method: "POST", body: { dryRun: false } });
-      showToast([done.scans || done.runs ? `Removed ${counts(done)}.` : "Nothing was removed.", done.refused ? keptScans : ""].filter(Boolean).join(" "), done.refused ? "info" : "ok");
-    } catch (e) { showToast(`Could not clean up: ${errorText(e)}`, "bad"); }
+      toast([done.scans || done.runs ? `Removed ${counts(done)}.` : "Nothing was removed.", done.refused ? keptScans : ""].filter(Boolean).join(" "), done.refused ? "info" : "good");
+    } catch (e) { toast(`Could not clean up: ${errorText(e)}`, "bad"); }
   } });
   const keep = switchControl({ label: "Keep everything", checked: r.keepAll, attrs: { id: "set-ret-keep" }, onChange: async (on) => {
     const bad = await save({ keepAll: on });
-    if (bad) { keep.input.checked = !on; showToast(`Could not save: ${bad}`, "bad"); return; }
+    if (bad) { keep.input.checked = !on; toast(`Could not save: ${bad}`, "bad"); return; }
     days.f.disabled = runs.f.disabled = clean.disabled = on;
   } });
   return box("div", { class: "card set-card", id: "set-retention" },
@@ -394,12 +394,12 @@ async function syncMcpCard(): Promise<void> {
 const mcpCommand = (url: string, token: string): string => `claude mcp add --transport http --scope user pack-rat ${url} --header "Authorization: Bearer ${token}"`;
 const mcpJson = (url: string, token: string): string => JSON.stringify({ mcpServers: { "pack-rat": { type: "http", url, headers: { Authorization: `Bearer ${token}` } } } }, null, 2);
 async function copyWith(text: string, what: string): Promise<void> {
-  if (await copyText(text)) showToast(`Copied the ${what}.`, "ok"); else showToast(`Could not copy the ${what}.`, "bad");
+  if (await copyText(text)) toast(`Copied the ${what}.`, "good"); else toast(`Could not copy the ${what}.`, "bad");
 }
 function mcpCard(r: McpApiResponse): HTMLElement {
   const { config: c, live } = r;
   const save = async (change: { enabled?: boolean; allowActions?: boolean }): Promise<void> => {
-    try { await api("/api/mcp", { method: "PUT", body: change }); } catch (e) { showToast(`Could not save: ${errorText(e)}`, "bad"); }
+    try { await api("/api/mcp", { method: "PUT", body: change }); } catch (e) { toast(`Could not save: ${errorText(e)}`, "bad"); }
     void syncMcpCard();
   };
   const on = switchControl({ label: c.enabled ? "On" : "Off", checked: c.enabled, attrs: { id: "set-mcp-on" }, onChange: (v) => { void save({ enabled: v }); } });
@@ -421,8 +421,8 @@ function mcpCard(r: McpApiResponse): HTMLElement {
           button({ label: "Copy", attrs: { id: "set-mcp-copy-token", "aria-label": "Copy token" }, onClick: () => { void copyWith(token, "token"); } }),
           button({ label: "New token", attrs: { id: "set-mcp-new-token" }, onClick: async () => {
             if (!await confirmDialog({ title: "Make a new token?", body: "Every MCP client set up with the current token stops connecting until you give it the new one: copy the command or the JSON again.", confirmLabel: "New token" })) return;
-            try { await api("/api/mcp/token", { method: "POST", body: {} }); showToast("New token made. Copy the command or the JSON again.", "ok"); }
-            catch (e) { showToast(`Could not make a new token: ${errorText(e)}`, "bad"); }
+            try { await api("/api/mcp/token", { method: "POST", body: {} }); toast("New token made. Copy the command or the JSON again.", "good"); }
+            catch (e) { toast(`Could not make a new token: ${errorText(e)}`, "bad"); }
             void syncMcpCard();
           } })) }),
       row({ title: "Claude Code", help: el("span", {}, "Run this once in a terminal. ", el("span", { class: "mono" }, "--scope user"), " makes Pack Rat available in every project."),
@@ -455,7 +455,7 @@ function updatesSection(setup: SetupApiResponse): HTMLElement {
   } });
   const auto = switchControl({ label: "Check automatically", checked: state.settings?.autoUpdateCheck !== false, attrs: { id: "set-auto-update" }, onChange: async (on) => {
     try { state.settings = (await api<SettingsApiResponse>("/api/settings", { method: "PUT", body: { autoUpdateCheck: on } })).settings; }
-    catch (e) { auto.input.checked = !on; showToast(`Could not save: ${errorText(e)}`, "bad"); return; }
+    catch (e) { auto.input.checked = !on; toast(`Could not save: ${errorText(e)}`, "bad"); return; }
     scheduleUpdateChecks();
   } });
   return section("set-updates", "Updates", box("div", { class: "card set-card" },

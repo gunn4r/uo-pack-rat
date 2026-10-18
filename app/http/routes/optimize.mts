@@ -24,6 +24,8 @@ import { OPTS_LIMITS, runSettingsError, type RunSettings } from "../../run-setti
 import { manualBase, manualPlan } from "../../buffs.mts";
 import { evaluateSuit } from "../../evaluate.mts";
 import type { GearChanges, RunBody, RunsListBody, RunSummary, ScoreShare } from "../../runs-types.mts";
+import type { EvaluateApiResponse, OptimizeCancelApiResponse, OptimizeStatusApiResponse } from "../../api/optimize.mts";
+import type { OkApiResponse } from "../../api/routes.mts";
 import { sse } from "../../services/events.mts";
 import type { Job } from "../../services/jobs.mts";
 import { isManualSuit } from "../../store/ui-prefs.mts";
@@ -43,12 +45,18 @@ import type { ServerContext } from "../context.mts";
 // Important 5). Every helper here returns the reason it refused (for a 400) or null.
 
 // One optimizer candidate: vault-lib's OptItem, {serial, name, slot, props}. The core reads `.props`
-// off every entry with no null guard of its own, so both a literal null and an item with no props
-// have to be refused here.
+// off every entry with no null guard of its own, keys candidates and changes by `.serial`, names a change
+// by `.name` and offers a piece only in the slot its `.slot` names, so a piece missing any of them (or
+// with a property that is not a number) can't be searched as sent and is refused here. A worn piece
+// goes back in the start answer's `current` as it came, so this is also what keeps that answer an OptItem.
 function optItemError(it: unknown): string | null {
   if (!it || typeof it !== "object" || Array.isArray(it)) return "every candidate must be an object";
-  const props = (it as Record<string, unknown>).props;
+  const { serial, name, slot, props } = it as Record<string, unknown>;
   if (!props || typeof props !== "object" || Array.isArray(props)) return "every candidate needs a props object";
+  if (typeof serial !== "number" || !Number.isFinite(serial)) return "every candidate needs a numeric serial";
+  if (typeof name !== "string") return "every candidate needs a name";
+  if (slot !== null && typeof slot !== "string") return "every candidate needs a slot (a string, or null)";
+  for (const [k, v] of Object.entries(props)) if (typeof v !== "number" || !Number.isFinite(v)) return `props.${short(k)} must be a number`;
   return null;
 }
 function poolsError(pools: unknown): string | null {
@@ -288,7 +296,7 @@ export function routes(ctx: ServerContext): Route[] {
       const worn = character ? Object.values(inv.items).filter((it) => it.equippedBy === character) : [];
       const evaluation = evaluateSuit({ profile: manualBase(p, c), character: c, suit: Object.fromEntries(Object.entries(pieces).map(([slot, it]) => [slot, toOptItem(it)])),
         buffs: manualPlan(c, worn, pieces, c ? p.race || "human" : null, b?.on ?? [], b?.skills ?? {}) });
-      return send(res, 200, { ok: true, evaluation });
+      return send(res, 200, { ok: true, evaluation } satisfies EvaluateApiResponse);
     } },
     { method: "GET", path: "/api/runs", handle: async (_req, res, url) => {
       const who = url.searchParams.get("character");
@@ -312,7 +320,7 @@ export function routes(ctx: ServerContext): Route[] {
         const { poolSerials: _serials, picked: _picked, poolStrength: _strength, ...shown } = run;
         return send(res, 200, { ok: true, run: shown, ...(gear ? { gearChanges: gear } : {}) } satisfies RunBody);
       }
-      if (req.method === "DELETE") { runStore.remove(id); eventBus.broadcast("changed", { what: "runs", at: Date.now() }); return send(res, 200, { ok: true }); }
+      if (req.method === "DELETE") { runStore.remove(id); eventBus.broadcast("changed", { what: "runs", at: Date.now() }); return send(res, 200, { ok: true } satisfies OkApiResponse); }
       if (req.method === "PUT") {
         const { label = "" } = asObject(await readBody(req, { limit: 8e3 }));
         // String() throws on an object with a null prototype or a throwing toString — a 500 plus a
@@ -329,8 +337,8 @@ export function routes(ctx: ServerContext): Route[] {
     { method: "*", path: /^\/api\/optimize\/([\w-]+)\/(events|cancel|status)$/, handle: (req, res, url, jobMatch) => {
       const job = jobService.get(jobMatch[1]!);
       if (!job) return send(res, 404, { ok: false, error: "no such job (the server may have restarted)" });
-      if (jobMatch[2] === "cancel" && req.method === "POST") { jobService.cancel(job); return send(res, 200, { ok: true, state: job.state }); }
-      if (jobMatch[2] === "status") return send(res, 200, { ok: true, ...jobService.snapshot(job) });
+      if (jobMatch[2] === "cancel" && req.method === "POST") { jobService.cancel(job); return send(res, 200, { ok: true, state: job.state } satisfies OptimizeCancelApiResponse); }
+      if (jobMatch[2] === "status") return send(res, 200, { ok: true, ...jobService.snapshot(job) } satisfies OptimizeStatusApiResponse);
       if (jobMatch[2] === "events" && req.method === "GET") {
         // The events route is exempt from the bearer token (EventSource can't send one), so this
         // ownership check is what stops a different client from reading this job's progress: the

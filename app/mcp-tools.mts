@@ -176,7 +176,7 @@ function resultSummary(result: Record<string, unknown> | null | undefined, ev: E
     ...(Array.isArray(result.alternatives) && result.alternatives.length ? { otherSuits: (result.alternatives as Array<{ best: Record<string, { serial: number; name: string } | null>; score: number }>).map((a) => ({ score: a.score, suit: suitRows(a.best) })) } : {}),
   };
 }
-interface JobStatus { id: string; state: string; progress: Record<string, unknown> | null; result: Record<string, unknown> | null; ms: number | null; error: string | null; runId: string | null }
+type JobStatus = ApiResponse<"GET /api/optimize/<id>/status">;
 // A build that filled empty slots around pinned pieces (memory.filled) leaves out currentScore: it is the pins' own and
 // reads as a huge gain beside the score.
 function jobSummary(j: JobStatus, memory: ToolContext["memory"], ev: EvalInputs | null = memory.plans.get(j.id) ?? null): Record<string, unknown> {

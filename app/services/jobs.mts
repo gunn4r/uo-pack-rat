@@ -7,7 +7,8 @@ import { Worker } from "node:worker_threads";
 import { randomUUID } from "node:crypto";
 import { poolPart, runRecord, stripOpts, type PoolSnapshot, type RunOpts, type RunSettingsRaw } from "../runs-lib.mts";
 import type { WorkerMessage, WorkerDoneMessage } from "../optimize-worker.mts";
-import type { OptResult, ExactSolveResult, SolveProgress } from "../exact-solver.mts";
+import type { OptAssignment } from "../exact-solver.mts";
+import type { JobCancelledEvent, JobDoneEvent, JobFailedEvent, JobSnapshot, OptimizeResult, SolveProgress } from "../api/optimize.mts";
 import { sse } from "./events.mts";
 import { DEFAULT_BUDGET_MS, type SsiStepPoint } from "../solver/scoring.mts";
 import type { Diagnostic } from "../runs-types.mts";
@@ -50,7 +51,7 @@ export interface Job {
   state: JobState;
   startedAt: number;
   progress: SolveProgress | null;
-  result: OptResult | ExactSolveResult | null;
+  result: OptimizeResult<OptAssignment> | null;
   ms: number | null;
   error: string | null;
   runId: string | null;
@@ -118,7 +119,7 @@ export function createJobsService({ coreUrl, timings = {}, runStore, log, create
       const ref = randomUUID().slice(0, 8);
       log(`${new Date().toISOString()} ${ref} job ${job.id}\n${(e && ((e as Error).stack || (e as Error).message)) || e}\n`);
       job.state = "error"; job.error = `internal error (ref ${ref})`;
-      finish(job, "failed", { error: job.error });
+      finish(job, "failed", { error: job.error } satisfies JobFailedEvent);
     });
     const t = setTimeout(() => { timers.delete(t); job.stuckTimer = null; cancelJob(job); }, (input.opts.timeBudgetMs ?? DEFAULT_TIME_BUDGET_MS) + JOB_RUN_GRACE_MS);
     t.unref(); timers.add(t); job.stuckTimer = t;
@@ -150,16 +151,16 @@ export function createJobsService({ coreUrl, timings = {}, runStore, log, create
     if (job.state !== "running") return;
     job.state = "done"; job.result = result; job.ms = Date.now() - t0;
     if (job.save) try { job.runId = saveRun(job).id; } catch (e) { console.error(`could not save run ${job.id}: ${(e as Error).message}`); }
-    finish(job, "done", { result, ms: job.ms, runId: job.runId });
+    finish(job, "done", { result, ms: job.ms, runId: job.runId } satisfies JobDoneEvent<OptAssignment>);
   }
   function cancelJob(job: Job): void {
     if (job.state !== "running") return;
     job.state = "cancelled";
     job.ms = Date.now() - job.startedAt;
     for (const w of job.workers) w.terminate();
-    finish(job, "cancelled", { ms: job.ms });
+    finish(job, "cancelled", { ms: job.ms } satisfies JobCancelledEvent);
   }
-  function jobSnapshot(job: Job) { return { id: job.id, state: job.state, progress: job.progress, result: job.result, ms: job.ms, error: job.error, runId: job.runId }; }
+  function jobSnapshot(job: Job): JobSnapshot<OptAssignment> { return { id: job.id, state: job.state, progress: job.progress, result: job.result, ms: job.ms, error: job.error, runId: job.runId }; }
   function broadcast(job: Job, event: string, data: unknown): void { for (const c of job.clients) sse(c, event, data); }
   // The retention clock starts here, when the job ends — however it ends.
   function finish(job: Job, event: string, data: unknown): void {

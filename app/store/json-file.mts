@@ -4,8 +4,10 @@
 // - "aside": a bad file (oversized, unparsable, unreadable, or refused by `check`) is moved aside as <file>.corrupt and reported, so the next write cannot overwrite what was in it. A missing file reads as `{missing: true}`. With `ioErrors: "throw"`, a failed read (a missing file included) throws instead, since it says nothing about the file's contents.
 // - "skip": any failure throws, for a reader that skips that file and says why (one scan or run in a folder).
 //
+// The read-modify-write rule: every read-modify-write of a data file has no await between the read and the write (one request runs at a time between awaits), so no other change can land in between and be lost. `update(fn)` (`updater`), which reads, calls the synchronous `fn` and writes, is the way to write one; anything awaited (a request body, the inventory) is awaited before it. The stamp-guarded saves (profiles, Organize's setup) and the single-step saves (item kinds, UI prefs, the house map, the TazUO panel prefs) already read and write in one synchronous step.
+//
 // map: server
-// owns: `readJsonFile`, `writeJsonFile`, `newerOnDisk`, `refuseNewer`, `fileStamp`
+// owns: `readJsonFile`, `writeJsonFile`, `updater`, `newerOnDisk`, `refuseNewer`, `fileStamp`
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync } from "node:fs";
 import { basename, dirname } from "node:path";
@@ -48,6 +50,16 @@ export function readJsonFile(path: string, opts: { maxBytes?: number; onBad: "em
 export function writeJsonFile(path: string, doc: unknown, { indent, newline = true }: { indent?: number; newline?: boolean } = {}): void {
   mkdirSync(dirname(path), { recursive: true, mode: DATA_DIR_MODE });
   writeFileAtomic(path, JSON.stringify(doc, null, indent) + (newline ? "\n" : ""), DATA_FILE_MODE);
+}
+
+// A store's update(fn): reads, applies `fn` and writes what it returns, with no await between, so no other change can land in between and be lost. `fn` must be synchronous and is handed the state read-only, so it returns the next one; returning undefined writes nothing. Answers what the file holds after.
+export function updater<T>(read: () => T, write: (next: T) => void): (fn: (current: Readonly<T>) => T | undefined) => T {
+  return (fn) => {
+    const current = read(), next = fn(current);
+    if (next === undefined) return current;
+    write(next);
+    return next;
+  };
 }
 
 // Why `path` may not be written, or null: the document on disk was made by a newer Pack Rat (app/migrate.mts), and a

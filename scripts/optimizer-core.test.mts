@@ -2,7 +2,7 @@
 //
 // the suit optimizer core (`scripts/optimizer-core.mts`), loaded straight from source (no build step) through Node's native TypeScript type stripping. All `[fast]` — the one exact search (dominance pruning and the bound on a negatively weighted, floored property) runs on a single two-ring slot.
 //
-// How the core is loaded: no build step. Every caller (this harness, the server, the bench) imports scripts/optimizer-core.mts straight from source, via Node's native TypeScript type stripping, by the path config.mts's corePath()/paths.core resolves (PACKRAT_CORE overrides it). The core imports only `app/solver/scoring.mts` and exports through its one trailing `export { ... }` line, and this harness exercises the exact file that ships. Requires Node >= 24 (stable type stripping); verified on v24. If a future runtime drops native stripping, the fallback is `npx tsx` on this same file.
+// How the core is loaded: no build step. Every caller (this harness, the server, the bench) imports scripts/optimizer-core.mts straight from source, via Node's native TypeScript type stripping, by the path config.mts's corePath()/paths.core resolves (PACKRAT_CORE overrides it). At run time the core imports only `app/solver/scoring.mts` (its result types come from `app/api/optimize.mts` as a type import, which is erased) and exports through its one trailing `export { ... }` line, and this harness exercises the exact file that ships. Requires Node >= 24 (stable type stripping); verified on v24. If a future runtime drops native stripping, the fallback is `npx tsx` on this same file.
 //
 // None of the cases below use an exact or budgeted search (no `exact: true`, no `timeBudgetMs`): every one is a cheap heuristic-restart run.
 //
