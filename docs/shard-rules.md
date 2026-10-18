@@ -61,7 +61,7 @@ Every one of these keys except `resistMinimum`, `tagInfo`, `scrollBinder`, `slay
 
 ## The resist minimum
 
-Resisting Spells does not add to a resist. It sets a floor each resist cannot fall below, and gear above that floor counts as usual: armor giving 30 with a minimum of 40 reads 40, armor giving 45 reads 45. `minResistAt(value)` (`app/vault-lib.mts`) is ServUO's `PlayerMobile.GetMinResistance`, with `fixed` the skill times 10 and integer division:
+Resisting Spells does not add to a resist. It sets a floor each resist cannot fall below, and gear above that floor counts as usual: armor giving 30 with a minimum of 40 reads 40, armor giving 45 reads 45. `minResistAt(value)` (`app/domain/profile.mts`) is ServUO's `PlayerMobile.GetMinResistance`, with `fixed` the skill times 10 and integer division:
 
 ```js
 export function minResistAt(value) {
