@@ -67,20 +67,25 @@ function poolsError(pools: unknown): string | null {
   }
   return null;
 }
-// current is the worn suit: slot -> candidate, or null/absent for an empty slot.
+// current is the worn suit: slot -> candidate, or null/absent for an empty slot. The game never wears a two-handed weapon
+// beside a one-hander, and only the core empties the one-hand slot under one (optSanitize); the MIP reads `current` as
+// it is, so a hand-built suit wearing both is refused here, as Manual's Fill is (services/builds.mts's manualSuitError).
 function currentError(current: unknown): string | null {
   if (!current || typeof current !== "object" || Array.isArray(current)) return "current must be an object";
   for (const [slot, it] of Object.entries(current as Record<string, unknown>)) {
     if (it == null) continue;
     const e = optItemError(it); if (e) return `current.${short(slot)}: ${e}`;
   }
+  const { oneHanded, twoHanded } = current as Record<string, { twoHanded?: unknown } | null | undefined>;
+  if (twoHanded?.twoHanded === true && oneHanded != null) return "current: a two-handed weapon leaves the one-hand slot empty";
   return null;
 }
 // The search options a caller may set, and the range each one may sit in (app/run-settings.mts OPTS_LIMITS). An
 // allowlist rather than a shape check, so an unknown key is refused rather than handed to the solver — which also means
 // an own `__proto__` key out of JSON.parse never reaches the Object.assign that builds fullOpts.
-// optionalSlots/warmStart are set by the route itself after this runs; seed/restarts/timeBudgetMs/
-// exact/alternatives are what app/ui/builder.mts actually sends.
+// optionalSlots and warmStart are set after this runs by services/builds.mts: optionalSlots for the character and fill
+// forms only (a hand-built request keeps the core's default optional slots), warmStart from the last run with the same
+// key. seed/restarts/timeBudgetMs/exact/alternatives are what app/ui/builder.mts actually sends.
 export { OPTS_LIMITS };
 // A profile's Resisting Spells steps (vault-lib.mts EffectiveProfile.resistSteps) as both solvers read them alike: each
 // `at` a bonus in (0, 1000], strictly increasing, and every step's `mins` a finite number for every resist.
