@@ -241,10 +241,10 @@ The thresholds are the shard rules' `unravel` (Shard rules, above); `GET /api/it
 | `app/store/blacklist.mts` | <data>/scan-blacklist.json: the containers scans never open (GET/POST/DELETE /api/blacklist). | `createBlacklistStore` |
 | `app/store/house-claims.mts` | <data>/house-claims.json (issue #299): the houses the player claimed, which the TazUO panel writes too: only valid entries read, which claims a house's bounds fall under, and the claims made at the first start from the houses already named. | `createHouseClaimsStore`, `claimsOver`, `claimsFromHouseMap`, `MAX_CLAIMS` |
 | `app/store/item-kinds.mts` | <data>/item-kinds.json: the player's own item kinds (issue #150, app/item-kinds.mts; the /api/item-kinds routes). | `createItemKindsStore` |
-| `app/store/json-file.mts` | The one way a store reads and writes a JSON data file: each reader's bad-file policy named (empty, aside, skip), the writer's folder, atomic write, indent and trailing newline, and the 409 for a file a newer Pack Rat made. | `readJsonFile`, `writeJsonFile`, `newerOnDisk`, `refuseNewer` |
+| `app/store/json-file.mts` | The one way a store reads and writes a JSON data file: each reader's bad-file policy named (empty, aside, skip), the writer's folder, atomic write, indent and trailing newline, the 409 for a file a newer Pack Rat made, and a file's content stamp for saves that name what they read. | `readJsonFile`, `writeJsonFile`, `newerOnDisk`, `refuseNewer`, `fileStamp` |
 | `app/store/organize-state.mts` | <data>/organize-state.json: Organize's results overlay (app/organize-state.mts). | `createOrganizeStateStore` |
 | `app/store/organize.mts` | <data>/organize.json: Organize's setup (issue #11, app/organize-config.mts; GET/PUT /api/organize). | `createOrganizeStore` |
-| `app/store/profiles.mts` | <data>/profiles.json, the Suit Builder's characters and templates (GET/PUT /api/profiles): seeded from the defaults, a damaged file moved aside and reseeded, an old shape migrated (with <data>/ui-prefs.json beside it) after a dated backup of each, a newer one read-only, and the shard's built-in templates read. | `createProfilesStore` |
+| `app/store/profiles.mts` | <data>/profiles.json, the Suit Builder's characters and templates (GET/PUT /api/profiles): seeded from the defaults, a damaged file moved aside and reseeded, an old shape migrated (with <data>/ui-prefs.json beside it) after a dated backup of each, a newer one read-only, a write given a stale stamp refused, and the shard's built-in templates read. | `createProfilesStore` |
 | `app/store/runs.mts` | <data>/runs/: one JSON file per saved run (finished builds and Manual suits; /api/runs). | `createRunsStore` |
 | `app/store/scans.mts` | <data>/scans/: every accepted scan, one JSON file each (the watcher writes them, /api/forget* adds tombstones, retention removes old ones). | `createScansStore` |
 | `app/store/settings.mts` | <data>/settings.json: the shard, the client, the setup and retention choices. | `createSettingsStore`, `SettingsDoc`, `ClientSettings` |
@@ -336,7 +336,7 @@ The page is `app/index.html` plus `app/ui/`, compiled by `scripts/build-ui.mts` 
 | `app/ui/item-tip.mts` | Where the one item tooltip (dom.mts's #tip) gets the item it shows (issue #10). | `createTipResolver` |
 | `app/ui/items.mts` | resolveItems(serials): the page's one place to turn a bare serial into a full item record (location, tags, equippedBy…), now that GET /api/inventory no longer carries the whole item map (Task 5). | `resolveItems` |
 | `app/ui/prefs.mts` | The one writer of the page's view choices (PUT /api/ui-prefs). | `prefs` |
-| `app/ui/profiles.mts` | The one writer of the player's profiles (PUT /api/profiles, app/build-spec.mts's v3 shape), and of a character's saved buffs and build label within them. | `putProfiles`, `setCharacterBuffs` |
+| `app/ui/profiles.mts` | The one writer of the player's profiles (PUT /api/profiles with the stamp it read, app/build-spec.mts's v3 shape; a stale refusal reloads them and makes the edit again), and of a character's saved buffs and build label within them. | `saveProfiles`, `loadProfiles`, `setCharacterBuffs`, `setCharacterLabel` |
 | `app/ui/store.mts` | The shared mutable state object, the bridge connection state, and invStamp. | `state`, `bridge`, `invStamp`, `AppState` |
 <!-- module-map:end -->
 
