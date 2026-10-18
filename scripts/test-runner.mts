@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 // test-runner.mts — the project's standard test interface behind scripts/test_runner.sh: --smoke, --fast, --changed, full.
-//   node scripts/test-runner.mts [--smoke|--fast|--changed[=<ref>]]      (full when no flag)
+//   node scripts/test-runner.mts [--smoke|--fast|--changed[=<ref>]] [--only-node|--only-electron] [--shard=<k>/<n>]   (full when no mode flag)
 // Drives node:test's run() over every **/*.test.mts found by a recursive walk of app/ + scripts/
 // (node_modules/dist/fixtures excluded) and writes test_logs/latest_summary.json. Tags are name
 // prefixes: [smoke] [fast] [slow]. TEST_SKIP_SLOW=1 skips the [slow] cases (see individual files).
 // The counting itself lives in scripts/run-suite.mts, where scripts/run-suite.test.mts can prove it.
 // --changed runs only the test files scripts/select-tests.mts maps this branch's changes to (every
 // test in them, [slow] included), against the merge base with origin/main or with <ref>.
+// --only-node / --only-electron keep the files that open no Electron window, or only those, and --shard=k/n runs the k-th
+// of n shards of what is left (scripts/select-tests.mts's partOf), so CI can run the parts as separate jobs (issue #338).
 //
 // The adapters' Python tests are not spawned from here any more. This file used to run
 // adapters/tazuo/test_paths.py by name; app/adapters.test.mts now walks adapters/ for every
@@ -25,7 +27,7 @@ import { fileURLToPath } from "node:url";
 import { buildUi } from "./build-ui.mts";
 import { buildSchemaTypes } from "./build-schema-types.mts";
 import { runSuite, type Mode, type SuiteResult } from "./run-suite.mts";
-import { selectTests } from "./select-tests.mts";
+import { ELECTRON_FILE, parsePart, partOf, selectTests } from "./select-tests.mts";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const changedArg = process.argv.find((a) => a === "--changed" || a.startsWith("--changed="));
@@ -43,8 +45,7 @@ const CONCURRENCY = Number(process.env.TEST_CONCURRENCY) || availableParallelism
 // one desktop share its pointer and keyboard focus, so a window shown by one file closes another file's
 // hover and focus tooltips (seen on Windows CI). On Linux each of them has an X display of its own
 // (scripts/electron-window.mts), so they run in parallel there.
-const OPENS_A_WINDOW = /^scripts\/(ui-[^/]+|shell-smoke)\.test\.mts$/;
-const serial = (file: string): boolean => process.platform !== "linux" && OPENS_A_WINDOW.test(file);
+const serial = (file: string): boolean => process.platform !== "linux" && ELECTRON_FILE.test(file);
 
 // Recursive so a test file in a new subdirectory (app/schema/validate.test.mts was the one this
 // missed) is picked up automatically — a hard-coded third/fourth top-level directory is what
@@ -80,6 +81,9 @@ function changedSelection(ref: string): { files: string[] | undefined; note: str
 }
 const selection = changedArg ? changedSelection(changedArg.split("=")[1] ?? "origin/main") : { files: undefined, note: undefined };
 if (selection.note) console.log(`changed: ${selection.note}`);
+const part = parsePart(process.argv.slice(2));
+if ("error" in part) { console.error(part.error); process.exit(2); }
+const partNote = [part.only && `${part.only} files only`, part.shard && `shard ${part.shard.k} of ${part.shard.n}`].filter(Boolean).join(", ");
 
 // The house rule is to read test_logs/latest_summary.json for results, never raw console output — so
 // every failure, the builds included, has to end up in a freshly written summary rather than leave
@@ -104,10 +108,14 @@ const { durations, ...summary }: SuiteResult = selection.files?.length === 0
     // the others (see scripts/build-ui.mts). Every test file's process inherits this.
     process.env.PACKRAT_UI_BUILT = "1";
     const all = ["app", "scripts"].flatMap((d) => walk(join(ROOT, d)));
-    return selection.files ? all.filter((p) => selection.files!.includes(repoPath(p))) : all;
+    const picked = selection.files ? all.filter((p) => selection.files!.includes(repoPath(p))) : all;
+    if (!part.only && !part.shard) return picked;
+    const keep = new Set(partOf(picked.map((p) => ({ path: repoPath(p), tests: (readFileSync(p, "utf8").match(/^\s*test\(/gm) || []).length })), part));
+    return picked.filter((p) => keep.has(repoPath(p)));
   },
 });
-if (selection.note) summary.note = selection.note;
+const note = [selection.note, partNote].filter(Boolean).join("; ");
+if (note) summary.note = note;
 mkdirSync(join(ROOT, "test_logs"), { recursive: true });
 writeFileSync(join(ROOT, "test_logs", "latest_summary.json"), JSON.stringify(summary, null, 2) + "\n");
 // The slowest files, so a run (a CI log included) shows where its time went.
