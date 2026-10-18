@@ -13,7 +13,8 @@
 //  10. every command in builder-session.mts's BuilderCommands is provided by exactly one app/ui/ module's provide() call, and no provide() names anything else: a missing one would only fail at run time, as `undefined is not a function`.
 //      Likewise every BuilderNews key has exactly one onChange() listener in app/ui/ (an announce() nobody hears redraws nothing), and onChange() names only a news key or a BuilderState field.
 //  11. no route module in app/http/routes/ imports another (type imports included): what two route families share lives in a module both import.
-// Rules 2-4 follow runtime imports only: `import type` and `export type` are erased, so they load nothing.
+//  12. a feature's screen modules (FEATURES: the module that registers the screen and the parts only that feature uses) import no other feature's, beyond SCREEN_EDGES_ALLOWED, the edges 20-ui.md 3.5 leaves for now, each with its reason; every module that registers a screen is in FEATURES, and an allowed edge that is gone fails until it is taken off the list.
+// Rules 2-4 and 12 follow runtime imports only: `import type` and `export type` are erased, so they load nothing.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -92,7 +93,7 @@ test("[smoke] layering: no import cycles outside app/ui/", () => {
 });
 
 // The import cycles app/ui/ still has, each a group whose members may import each other. dom ↔ components is documented
-// as safe (dom.mts's toast); the second is the Settings screen, the first-run wizard and the Characters screen, which open
+// as safe (dom.mts's import of tag and tooltip); the second is the Settings screen, the first-run wizard and the Characters screen, which open
 // each other. A new cycle, or one that joins two groups, fails; a group that shrinks is fine, and is shrunk here.
 const UI_CYCLES = [
   ["dom", "components"],
@@ -115,6 +116,42 @@ const BUILDER = ["builder", "builder-header", "builder-templates", "builder-requ
 test("[smoke] layering: the Suit Builder's modules never import each other (builder-session.mts is their interface)", () => {
   const found = BUILDER.flatMap((f) => edges.get(f)!.filter((e) => !e.typeOnly && e.to && BUILDER.includes(e.to)).map((e) => `${f} → ${e.spec}`));
   assert.deepEqual(found, []);
+});
+
+// Each feature's screen modules: the one that registers the screen, then the parts only that feature uses. Modules in
+// no feature (item-browser, move-to, kinds, roster, the data and model modules…) are shared parts any screen may use.
+const FEATURES: Record<string, string[]> = {
+  inventory: ["inventory", "peek"],
+  containers: ["containers"],
+  map: ["house-map"],
+  characters: ["characters"],
+  builder: BUILDER.map((f) => posix.basename(f, ".mts")),
+  organize: ["organize", "rule-editor", "auto-organize"],
+  scrolls: ["scrolls"],
+  unravel: ["unravel"],
+  settings: ["settings"],
+  setup: ["wizard"],
+};
+const featureOf = new Map<string, string>(Object.entries(FEATURES).flatMap(([name, ms]) => ms.map((m) => [`app/ui/${m}.mts`, name] as const)));
+// The screen-to-screen imports that stay for now (20-ui.md 3.5), each with where it is meant to go. One that is gone
+// must leave this list, so the list only shrinks.
+const SCREEN_EDGES_ALLOWED: Record<string, string> = {
+  "house-map → containers": "labelContainer, which moves to organize-data.mts beside the label save it performs",
+  "house-map → peek": "propertyLines and RESISTS, which move to item-parts.mts",
+  "characters → builder": "selectCharacter, which becomes commands.selectCharacter or a #/builder/<name> route",
+  "characters → wizard": "openWizard, which becomes a #/setup route or a nav.mts command",
+  "settings → wizard": "openWizard, likewise",
+  "wizard → settings": "renderSettings after the wizard, which becomes a setupchange event",
+  "settings → characters": "forgetCharacter, which moves into the profiles data module",
+};
+test("[smoke] layering: a feature's screen modules import no other feature's screen modules, beyond the listed edges", () => {
+  const screens = modules.filter((f) => isUi(f) && /^registerScreen\(/m.test(readFileSync(posix.join(root, f), "utf8")));
+  assert.ok(screens.length >= 8, `screens read: ${screens.join(", ")}`);
+  assert.deepEqual(screens.filter((f) => !featureOf.has(f)), [], "every module that registers a screen is in FEATURES");
+  const short = (f: string): string => posix.basename(f, ".mts");
+  const found = [...new Set([...featureOf].flatMap(([f, feature]) => runtime(f).filter((e) => e.to && featureOf.has(e.to) && featureOf.get(e.to) !== feature).map((e) => `${short(f)} → ${short(e.to!)}`)))];
+  assert.deepEqual(found.filter((edge) => !(edge in SCREEN_EDGES_ALLOWED)), [], "a new screen-to-screen import: move what it needs into a shared module");
+  assert.deepEqual(Object.keys(SCREEN_EDGES_ALLOWED).filter((edge) => !found.includes(edge)), [], "an allowed edge is gone: take it off SCREEN_EDGES_ALLOWED");
 });
 
 // The top-level keys of each object literal passed to provide({...}), by module: `name` or `name: value`, at depth 1.
