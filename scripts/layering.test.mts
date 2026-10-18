@@ -132,7 +132,7 @@ const FEATURES: Record<string, string[]> = {
   settings: ["settings"],
   setup: ["wizard"],
 };
-const featureOf = new Map(Object.entries(FEATURES).flatMap(([name, ms]) => ms.map((m) => [`app/ui/${m}.mts`, name] as const)));
+const featureOf = new Map<string, string>(Object.entries(FEATURES).flatMap(([name, ms]) => ms.map((m) => [`app/ui/${m}.mts`, name] as const)));
 // The screen-to-screen imports that stay for now (20-ui.md 3.5), each with where it is meant to go. One that is gone
 // must leave this list, so the list only shrinks.
 const SCREEN_EDGES_ALLOWED: Record<string, string> = {
