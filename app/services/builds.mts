@@ -17,7 +17,7 @@ import { prepareSolve } from "../solver/prepare.mts";
 import { GEAR_SLOTS, NOBODY, buildPools, getRules as rulesNow, missingFlags, type Character, type Inventory, type OptItem, type RarityPreference } from "../vault-lib.mts";
 import type { RulesV1 } from "../schema/types.d.mts";
 import type { JobsService } from "./jobs.mts";
-import type { OptimizeStartApiResponse } from "../api/optimize.mts";
+import type { OptimizeStartApiResponse, Suit } from "../api/optimize.mts";
 
 // A build's settings with their nulls dropped: a `null` in an optional field (as a saved run's settings can carry, e.g.
 // re-posted from the runs drawer) means "use the default", exactly like an absent field.
@@ -58,10 +58,6 @@ export interface BuildRequest {
   pinned: Record<string, number> | null;   // Manual's suit, {slot: serial}: a fill, never saved as a run nor answered by one
 }
 export type BuildAnswer = { status: number; body: Record<string, unknown> };
-// What the start answer holds today, against the shared OptimizeStartApiResponse (W2c finding F3): a hand-built
-// request's `current` is the caller's own objects, checked only for a props object, and `warning` repeats the request's
-// meta.warning when it set one. Until a follow-up checks both, the answers satisfy this looser form.
-type StartAnswer = Omit<OptimizeStartApiResponse, "current" | "warning"> & { current: Record<string, unknown>; warning?: unknown };
 export interface BuildsService { start(req: BuildRequest, clientId: string | string[] | null): Promise<BuildAnswer> }
 
 export function createBuildsService({ getInventory, getRules = rulesNow, runStore, jobService }: {
@@ -133,7 +129,9 @@ export function createBuildsService({ getInventory, getRules = rulesNow, runStor
     if (character) { meta.poolSize = poolSize; meta.skipped = skipped; }
     // The requirements no suit in the pool can reach, said before the search starts (app/diagnostics.mts); the result repeats them.
     const diagnostics = [...poolDiagnostics, ...preDiagnostics];
-    if (hit) return { status: 200, body: { ok: true, cached: true, run: hit, poolSize, skipped, current, blocked, diagnostics } satisfies StartAnswer };
+    // `current` is a suit of OptItems on every path: the server built it (by character, a fill), or the route checked
+    // each piece of a hand-built one (app/http/routes/optimize.mts optItemError).
+    if (hit) return { status: 200, body: { ok: true, cached: true, run: hit, poolSize, skipped, current: current as Suit, blocked, diagnostics } satisfies OptimizeStartApiResponse };
     // warm start: this character's newest saved suit, re-scored under the new settings
     const last = fill ? null : runs.find((r) => r.character === meta.character && r.result && r.result.best);
     // last.result/.best were both truthy-checked by the .find() predicate just above; `.best`'s
@@ -145,7 +143,9 @@ export function createBuildsService({ getInventory, getRules = rulesNow, runStor
     if (!started) return refuse(429, "too many builds are already running; try again in a moment");
     const { job, superseded } = started;
     if (poolSize > 50000) job.meta.warning = "over 50,000 candidates; the exact solver may take a while";
-    return { status: 200, body: { ok: true, id: job.id, warmFrom: last ? last.id : null, superseded, warning: job.meta.warning, poolSize, skipped, current, blocked, diagnostics } satisfies StartAnswer };
+    // the answer passes on a warning only as text: the caller's own meta can carry anything under that name
+    const warning = job.meta.warning;
+    return { status: 200, body: { ok: true, id: job.id, warmFrom: last ? last.id : null, superseded, ...(typeof warning === "string" ? { warning } : {}), poolSize, skipped, current: current as Suit, blocked, diagnostics } satisfies OptimizeStartApiResponse };
   }
   return { start };
 }
