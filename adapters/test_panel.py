@@ -346,6 +346,12 @@ class Panel(unittest.TestCase):
         self.assertEqual(mid.get("character"), "Tester")
         self.assertNotIn("stopped", mid)
         self.assertIs(self.heartbeat().get("stopped"), True)
+        # the shapes of app/fixtures/contract-cases/heartbeat.json's first two cases, which the app's install guard reads
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "app", "fixtures", "contract-cases", "heartbeat.json"), encoding="utf-8") as f:
+            running, stopped = [c["doc"] for c in json.load(f)["cases"][:2]]
+        for got, case in ((mid, running), (self.heartbeat(), stopped)):
+            self.assertEqual({k: type(v) for k, v in got.items()}, {k: type(v) for k, v in case.items()})
+            self.assertRegex(got["alive"], r"\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(Z|[+-]\d{2}:\d{2})\Z")
         self.assertIn("Pack Rat - Tester", self.labels(api))
         self.assertIn("Last scan: just now", self.labels(api))
 
