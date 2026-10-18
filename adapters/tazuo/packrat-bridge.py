@@ -107,15 +107,17 @@ def script_prefix(self_name):
 # END generated: tazuo/scripts
 
 
+# BEGIN generated: manifest
 ADAPTER_ID = "tazuo"
 ADAPTER_VERSION = "2.20.0"
 CAPABILITIES = {
-    "layers": ["OneHanded", "TwoHanded", "Shoes", "Pants", "Shirt", "Helmet", "Gloves",
-               "Ring", "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic",
-               "Earrings", "Arms", "Cloak", "Robe", "Skirt", "Legs"],
+    "layers": ["OneHanded", "TwoHanded", "Shoes", "Pants", "Shirt", "Helmet", "Gloves", "Ring",
+               "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic", "Earrings", "Arms",
+               "Cloak", "Robe", "Skirt", "Legs"],
     "arms": True, "bank": True, "ground": True, "nested": True, "tooltips": "opl",
     "bridge": ["highlight", "grab", "goto", "trip", "trip-bags", "scan"],
 }
+# END generated: manifest
 # The actions a queue line may name. "trip-bags" is not one: it is a feature, telling the app this bridge's trips
 # check a bag is empty before taking it (issue #128), so an older bridge is never sent one. It stays in this list,
 # where every Pack Rat reads it, until an app that reads a scan's adapter.features has been out for a release.

@@ -8,6 +8,9 @@
 //   # END generated: <fragment>
 // and the lines between them are replaced by adapters/_shared/<fragment>.py. A fragment named
 // "<adapter>/<name>" belongs to that adapter alone; one without a slash is shared by every adapter.
+// Two fragments are rendered instead of read: "manifest" (ADAPTER_ID, ADAPTER_VERSION and CAPABILITIES) and
+// "manifest_version" (the first two), from the script's own adapters/<id>/capabilities.json, so a version bump is one
+// edit there and a run of this script.
 // A fragment a Razor Enhanced script carries must stay ASCII with no f-strings, since Razor Enhanced
 // runs IronPython.
 //
@@ -15,7 +18,7 @@
 //        node scripts/gen-contracts.mts --check   rewrites nothing; exits 1 naming each stale script
 //
 // map: installer
-// owns: `generate`, `splice`, `fragmentProblems`
+// owns: `generate`, `splice`, `fragmentProblems`, `renderManifest`
 import { readFileSync, writeFileSync, readdirSync, existsSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -79,6 +82,58 @@ export function splice(source: string, fragment: (name: string) => string | null
   return { text: out.join("\n"), used };
 }
 
+// The manifest fragments, rendered from capabilities.json rather than read from adapters/_shared/.
+export const MANIFEST_FRAGMENTS = ["manifest", "manifest_version"];
+const WIDTH = 100;
+// A JSON value as a Python literal: True/False/None, and ASCII strings (IronPython), so the same text runs everywhere.
+function py(v: unknown, at: string): string {
+  if (v === true) return "True";
+  if (v === false) return "False";
+  if (v === null) return "None";
+  if (typeof v === "number" && Number.isFinite(v)) return String(v);
+  if (typeof v === "string") {
+    if (/[^\x20-\x7e]/.test(v)) throw new Error(`${at} must be printable ASCII, since Razor Enhanced runs IronPython`);
+    return JSON.stringify(v);
+  }
+  if (Array.isArray(v)) return `[${v.map((x, i) => py(x, `${at}[${i}]`)).join(", ")}]`;
+  throw new Error(`${at} must be a list, a string, a number, true, false or null`);
+}
+// `items` after `prefix`, separated by ", ", wrapped at WIDTH under the first item, the last one followed by `close`.
+function wrap(prefix: string, items: string[], close: string): string[] {
+  if (!items.length) return [prefix + close];
+  const pad = " ".repeat(prefix.length), lines: string[] = [];
+  let line = prefix;
+  items.forEach((item, i) => {
+    const piece = item + (i === items.length - 1 ? close : ",");
+    const fresh = line === prefix || line === pad;
+    if (!fresh && line.length + 1 + piece.length > WIDTH) { lines.push(line); line = pad + piece; }
+    else line += (fresh ? "" : " ") + piece;
+  });
+  lines.push(line);
+  return lines;
+}
+// Fragment `name` ("manifest" or "manifest_version") for the manifest `doc` (an adapter's capabilities.json). A list
+// in CAPABILITIES gets its own line, wrapped; the values between lists share one.
+export function renderManifest(name: string, doc: unknown, at = "capabilities.json"): string {
+  const m = doc as { adapter?: unknown; version?: unknown; capabilities?: unknown };
+  const lines = [`ADAPTER_ID = ${py(m.adapter, `${at} adapter`)}`, `ADAPTER_VERSION = ${py(m.version, `${at} version`)}`];
+  if (name === "manifest") {
+    const caps = m.capabilities;
+    if (!caps || typeof caps !== "object" || Array.isArray(caps)) throw new Error(`${at} capabilities must be an object`);
+    lines.push("CAPABILITIES = {");
+    let scalars: string[] = [];
+    const flush = (): void => { if (scalars.length) lines.push(...wrap("    ", scalars, ",")); scalars = []; };
+    for (const [k, v] of Object.entries(caps)) {
+      const key = py(k, `${at} capabilities key`);
+      if (Array.isArray(v)) { flush(); lines.push(...wrap(`    ${key}: [`, v.map((x, i) => py(x, `${at} capabilities.${k}[${i}]`)), "],")); }
+      else scalars.push(`${key}: ${py(v, `${at} capabilities.${k}`)}`);
+    }
+    flush();
+    lines.push("}");
+  }
+  return `${lines.join("\n")}\n`;
+}
+
 function readFragment(shared: string): (name: string) => string | null {
   return (name) => {
     if (!/^(?:[a-z0-9-]+\/)?[a-z0-9_]+$/.test(name)) return null;
@@ -104,6 +159,7 @@ export function fragmentNames(shared = SHARED): string[] {
 export function generate(adapters = ADAPTERS): { files: Map<string, string>; stale: string[]; unused: string[] } {
   const shared = join(adapters, "_shared");
   const fragment = readFragment(shared);
+  const manifestOf = (adapter: string): unknown => JSON.parse(readFileSync(join(adapters, adapter, "capabilities.json"), "utf8"));
   const files = new Map<string, string>();
   const stale: string[] = [];
   const seen = new Set<string>();
@@ -113,7 +169,9 @@ export function generate(adapters = ADAPTERS): { files: Map<string, string>; sta
     const eol = raw.includes("\r\n") ? "\r\n" : "\n";
     const before = raw.replace(/\r\n/g, "\n");
     const adapter = relative(adapters, dirname(p));
-    const { text, used } = splice(before, fragment, adapter, relative(dirname(adapters), p));
+    const label = relative(dirname(adapters), p);
+    const forScript = (name: string): string | null => (MANIFEST_FRAGMENTS.includes(name) ? renderManifest(name, manifestOf(adapter), `adapters/${adapter}/capabilities.json`) : fragment(name));
+    const { text, used } = splice(before, forScript, adapter, label);
     used.forEach((n) => seen.add(n));
     files.set(p, eol === "\n" ? text : text.replace(/\n/g, eol));
     if (text !== before) stale.push(p);

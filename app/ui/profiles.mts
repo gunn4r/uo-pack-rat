@@ -12,7 +12,7 @@ import type { ApiError, ProfilesApiResponse } from "./api-types.mts";
 // `reloaded`: the page's copy was read again (the file had another window's saves, or the edits were refused), so a
 // caller showing the profiles redraws.
 export interface ProfilesSave { ok: boolean; error?: string; reloaded?: boolean }
-// A stamp no file has: the page's copy is not known to be the file, so the next save is refused as stale and reads it.
+// A stamp no file has: the page's copy is not known to be the file, so the next save lands on the file as it is and the page then reloads it (no answer's `was` matches this stamp).
 const UNREAD = "unread";
 
 async function reloadProfiles(): Promise<void> {

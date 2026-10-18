@@ -4,7 +4,7 @@
 // see docs/solver.md for the model and app/bench/REPORT.md for the evidence.
 //
 // map: builder
-// owns: `buildSuitMip`, `propertyReach`, `startVector`, `pickedOf`, `noGoodRow`, `HARD_FLOOR_BONUS`, `DEFAULT_SLOTS`, `optionalSlotsFor`
+// owns: `buildSuitMip`, `propertyReach`, `startVector`, `pickedOf`, `noGoodRow`, `HARD_FLOOR_BONUS`, `DEFAULT_SLOTS`, `optionalSlotsFor`, `heldModel`, `tieBreakModel`, `stageObjective`, `tieCosts`, `withHardFloorBonus`, `hardFloorSpread`
 import { GEAR_SLOTS, REQUIRED_SLOTS, RESIST_SKILL_KEY, RESIST_STEP_SLACK, type OptItem, type ResistStep } from "./vault-lib.mts";
 import { stepsFor } from "./swing.mts";
 
@@ -413,7 +413,7 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
     // a hard floor's partial credit is shared among the hard floors, as the core's (issue #204)
     const bonus = isHard ? HB : FB, sMax = bonus * PARTIAL / (isHard ? nHard : 1), k = sMax / f;
     const y = unreachable ? null : addCol({ name: `y_${d}`, kind: "y", dim: d }, bonus, 0, 1, true);
-    // a soft floor's partial credit is a part of its own, which strict order's requirements stage leaves out (scripts/optimizer-core.mts optLexSpaces)
+    // a soft floor's partial credit is a part of its own, which strict order's requirements stage leaves out (scripts/optimizer-core.mts optStrictSpaces)
     if (parts && !isHard) part = parts.softPartial;
     const sv = addCol({ name: `s_${d}`, kind: "s", dim: d }, 1, 0, sMax, false);
     part = parts ? parts.floors : null;
