@@ -4,6 +4,9 @@
 // saved runs. Before a build the first-visit view (ui/builder-start.mts) has the screen. The numbers come from
 // ui/builder-model.mts; the bridge actions are gated by ui/bridge.mts's bridgeActionReason(). It shares the builder's
 // state through ui/builder-session.mts and provides the result and compare commands there.
+//
+// map: builder
+// owns: `applyResultPrefs`
 import { GEAR_SLOTS, NOBODY, RESIST_KEYS, STRICT_PROMISE, TAGGED_NOTE, resistSkillOf, resistSkillCapOf, toOptItem, totalsOf, requirementReport, resistCapsFor, profileResistCaps, fcCapFor } from "../vault-lib.mts";
 import type { EffectiveProfile, Goals, GoalSwingWeapon, Item, PropMap, ResistCap } from "../vault-lib.mts";
 import { state } from "./store.mts";

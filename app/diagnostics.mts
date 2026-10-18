@@ -1,4 +1,7 @@
 // diagnostics.mts — settings that work against a build, each with the change that would fix it (issue #217): a requirement no suit in the pool can reach, hard requirements the suit could reach one at a time but not together, a weight that swamps the rest, and a required weapon property no weapon has. Pure and browser-safe. The server sends the floor ones with POST /api/optimize before the search starts; the worker attaches the full list to every result, on both solver paths, so a saved run keeps it.
+//
+// map: builder
+// owns: `preBuildDiagnostics`, `resultDiagnostics`, `swingDiagnostics`, `weightDiagnostics`, `weaponFlagDiagnostics`, `onlyRootsDiagnostics`
 import { propertyReach, hardFloorSpread, HARD_FLOOR_BONUS_MAX, DEFAULT_OPTIONAL_SLOTS, DEFAULT_SLOTS } from "./mip.mts";
 import { RESIST_KEYS, RESIST_SKILL_KEY, SLOT_LABELS, flagLabel, importanceOf, liftedMin, propName, roundImportance, type OptItem, type ResistCap, type ResistStep } from "./vault-lib.mts";
 import { delayText, heldWeapon, stepCredit, swingSeconds, type Held, type SsiStepPoint, type SwingResult } from "./swing.mts";

@@ -1,4 +1,7 @@
 // kinds.mts — the player's item kinds: GET|POST /api/item-kinds and POST /api/item-kinds/import.
+//
+// map: server
+// owns: `routes`
 import { isBoundedInt } from "../../guards.mts";
 import { isKindName, kindCount, kindsDocument, kindsFor, salvageKindOverrides, withKinds, withoutKinds, KIND_LIMITS, MAX_KINDS_BYTES, OVERRIDE_KINDS } from "../../item-kinds.mts";
 import { readBody } from "../../read-body.mts";

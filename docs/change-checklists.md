@@ -6,10 +6,10 @@ Walk the list for each kind your change is, and say in the pull request which ki
 
 ## Always
 
-- `CHANGELOG.md`: one line under Unreleased when the change matters to a player or a contributor, in the file's style.
+- A changelog fragment, `changelog.d/<short-name>.md`, when the change matters to a player or a contributor: one line per entry in `CHANGELOG.md`'s style. Never edit `CHANGELOG.md` itself (`CONTRIBUTING.md`, Changelog).
 - Tests next to every module you touched, each test name tagged `[smoke]`, `[fast]` or `[slow]`. Every test file opens with a header saying what it covers (`TESTING.md`); after adding one or changing a header's first sentence, run `npm run gen:test-index`.
 - `npm run typecheck`, then `./scripts/test_runner.sh --changed` and `--fast` (`TESTING.md`).
-- `docs/module-map.md` when you add, move, delete or rename a module, or move a concept from one module to another.
+- `npm run gen:modules` when you add, move, delete or rename a module, or change its header's first sentence, `// map:` or `// owns:` line (moving a concept between modules changes the `// owns:` lines). The tables in `docs/module-map.md` are generated; never edit them by hand.
 - The docs for the area you changed (the one `docs/` file, an adapter README, `README.md` for what players see). Below, `docs/ui.md` means the core page or the screen's own page under `docs/ui/`, whichever holds what changed.
 
 ## Add or change a gear slot
@@ -21,7 +21,7 @@ Examples: `d3bbb2e` (#202 part A), `532b7cc` (#202 part B), `4982888`.
 3. UI: `MANUAL_GROUPS` in `app/ui/manual-model.mts` (a layout, so place the slot by hand); check `SLOT_GROUPS` in `app/ui/sheet.mts` still reads well with the new slot; `app/ui/builder-manual.mts`, `app/ui/builder-model.mts`, `app/ui/builder-result.mts`, `app/ui/builder.mts`, `app/ui/runs.mts`, `app/ui/builder.css`.
 4. Organize: the Armor and Jewelry groups in `app/organize-strategies.mts` (kept by hand: they move real items); the slot presets in `app/organize-presets.mts`.
 5. MCP: `build_suit`'s `pinned` description in `app/mcp-tools.mts` (it lists `GEAR_SLOTS`; check the wording still fits).
-6. Tests: `app/slot-groups.test.mts`, `scripts/slot-lists.test.mts` (its allow-list, if a hand-kept list changed size), `app/gear-vault.test.mts`, `app/manual-model.test.mts`, `app/manual-handoffs.test.mts`, `app/solver.test.mts`, `app/solver-fuzz.test.mts`, `app/solver-buffs-fuzz.test.mts`, `app/buffs-plan.test.mts`, `scripts/optimizer-core.test.mts`, `app/organize-strategies.test.mts`, `app/server-builder.test.mts`, `app/server-host.test.mts`, `app/ui-render.test.mts`, `scripts/ui-builder.test.mts`; the fixture `app/solver-fixture.mts`.
+6. Tests: `app/slot-groups.test.mts`, `scripts/slot-lists.test.mts` (its allow-list, if a hand-kept list changed size), `app/gear-vault.test.mts`, `app/manual-model.test.mts`, `app/manual-handoffs.test.mts`, `app/solver.test.mts`, `app/solver-fuzz.test.mts`, `app/solver-buffs-fuzz.test.mts`, `app/buffs-plan.test.mts`, `scripts/optimizer-core.test.mts`, `app/organize-strategies.test.mts`, `app/server-builder.test.mts`, `app/server-host.test.mts`, `app/ui-render.test.mts`, `scripts/ui-builder-*.test.mts`; the fixture `app/solver-fixture.mts`.
 7. Docs: `docs/solver.md`, `docs/ui.md`, `docs/scan-schema.md`, `docs/architecture.md` (the data model and the classification gotchas).
 8. If adapters start recording the layer, this is also a scan-format change (below).
 
@@ -57,7 +57,7 @@ Examples: `02b052e`, `e0b1eb0`.
 2. Server: the routes in `app/http/routes/`; `app/ui/api-types.mts`.
 3. UI: `app/ui/builder-buffs.mts`, `app/ui/builder-manual.mts`, `app/ui/builder.mts`, `app/ui/builder-model.mts`, `app/ui/builder-result.mts`, `app/ui/manual-model.mts`, `app/ui/sheet.mts`, `app/ui/components.mts`, `app/ui/runs.mts`, `app/ui/app.mts`, `app/ui/builder.css`, `app/ui/tokens.css`.
 4. MCP: `BUFF_LIST` in `app/mcp-tools.mts` (built from `BUFFS`; two tools send it).
-5. Tests: `app/buffs.test.mts`, `app/buffs-plan.test.mts`, `app/evaluate.test.mts`, `app/solver-buffs-fuzz.test.mts`, `app/solver.test.mts`, `app/builder-model.test.mts`, `app/ui-components.test.mts`, `scripts/ui-builder.test.mts`, `scripts/ui-contrast.test.mts`.
+5. Tests: `app/buffs.test.mts`, `app/buffs-plan.test.mts`, `app/evaluate.test.mts`, `app/solver-buffs-fuzz.test.mts`, `app/solver.test.mts`, `app/builder-model.test.mts`, `app/ui-components.test.mts`, `scripts/ui-builder-*.test.mts`, `scripts/ui-contrast.test.mts`.
 6. Docs: `docs/solver.md`, `docs/shard-rules.md`, `docs/ui.md`, `README.md`, `PRIVACY.md` if what is stored changes.
 
 ## Add or change a BuildSpec field
@@ -68,7 +68,7 @@ Examples: `166eb05`, `d311bdb`, `f1eced4`.
 2. Logic: `app/vault-lib.mts` (templates, `settingsDiff`); `app/evaluate.mts` if a suit's totals or requirements read it; `app/runs-lib.mts` (run identity and instant repeats: bump `SOLVER_VERSION` if results change); `app/run-settings.mts` (`runSettingsError`, the one check `POST /api/optimize`, `POST /api/runs` and `POST /api/evaluate` hold a run's settings to, `RUN_SETTING_LIMITS`, `OPTS_LIMITS` and `RUN_DEFAULTS`); `app/bench/mip-spike.mts`, `app/bench/run-bench.mts`.
 3. UI: `app/ui/builder-model.mts`, `app/ui/builder.mts`, `app/ui/builder-result.mts`, `app/ui/runs.mts` (`settingsSnapshot`), `app/ui/sheet.mts`, `app/ui/components.mts`, `app/ui/builder.css`.
 4. MCP: the `build_suit` and `score_suit` arguments in `app/mcp-tools.mts` if a model should set it.
-5. Tests: `app/builder-model.test.mts`, `app/gear-vault.test.mts`, `app/server-builder.test.mts`, `app/solver.test.mts`, `app/ui-render.test.mts`, `scripts/ui-builder.test.mts`, `scripts/ui-contrast.test.mts`, `scripts/ui-state.test.mts`.
+5. Tests: `app/builder-model.test.mts`, `app/gear-vault.test.mts`, `app/server-builder.test.mts`, `app/solver.test.mts`, `app/ui-render.test.mts`, `scripts/ui-builder-*.test.mts`, `scripts/ui-contrast.test.mts`, `scripts/ui-state.test.mts`.
 6. Docs: `docs/ui.md`, `docs/solver.md`, `docs/shard-rules.md` (cap overrides), `README.md`.
 
 ## Add an HTTP route

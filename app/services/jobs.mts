@@ -1,4 +1,7 @@
 // jobs.mts — optimizer jobs: one worker thread per build, its progress and outcome for the per-job event stream, one running build per client (a newer one supersedes it), a server-wide ceiling, and a finished build saved as a run.
+//
+// map: services
+// owns: `createJobsService`, `Job`, `JobTimings`
 import type http from "node:http";
 import { Worker } from "node:worker_threads";
 import { randomUUID } from "node:crypto";

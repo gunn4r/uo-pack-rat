@@ -1,4 +1,4 @@
-// validate.mts — a hand-written JSON Schema SUBSET validator. Zero dependencies, browser-safe (no
+// validate.mts — the hand-written JSON Schema SUBSET validator every schema here is checked with, browser-safe. Zero dependencies, browser-safe (no
 // Node imports), served to the page as well as used from Node tests/servers. Supports exactly the
 // keywords Pack Rat's own contracts need: type (string or array; "integer" is distinct from
 // "number"), properties, required, additionalProperties (false to close a shape, or a schema applied
@@ -14,6 +14,9 @@
 //
 // validate(schema, doc, path = "") → { ok, errors: [{ path, msg }] }. Only the first 20 errors are
 // collected (a huge invalid document should not turn validation into a second parse pass).
+//
+// map: scan
+// owns: `validate`, the supported keyword subset
 const MAX_ERRORS = 20;
 
 // The runtime keyword subset above, as a type — deliberately its own small shape rather than a

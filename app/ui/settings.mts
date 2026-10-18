@@ -7,6 +7,9 @@
 // the built-in MCP server's two switches and how to connect a client (issue #211); Updates the version, the update check and its automatic switch. Always re-fetches GET
 // /api/setup on render (a cheap directory listing) so it reflects whatever the wizard, or this screen's
 // own actions, just changed.
+//
+// map: ui-screens
+// owns: `renderSettings`
 import { state } from "./store.mts";
 import { $, compactChildren, el, noteEl } from "./dom.mts";
 import { api } from "./api.mts";

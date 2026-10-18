@@ -2,6 +2,9 @@
 // "What changes" gauges and table and "after the change" values, the compare table's differing rows and best values,
 // and a saved run's label and badges. No DOM and no page state, so app/builder-model.test.mts can check it
 // all directly; ui/builder.mts, ui/builder-result.mts and ui/runs.mts draw what it returns.
+//
+// map: builder
+// owns: `KNOB_RANGES`, `changeRows`, `compareModel`, `runAutoLabel`, `who`
 import { NOBODY, PROPERTIES, labelOf, paperdollResist, propName, importanceOf, withCurrentActions, weightOfImportance, RESIST_SKILL_KEY, GEAR_SLOTS, NOT_BUILDER_KEYS, RESIST_KEYS, RESIST_CAP_LIMITS, SLOT_LABELS, settingsDiff, shardResistCap, WEAPON_SKILLS, WEAPON_EXCLUDES, SPELLBOOKS, MELEE_SKILLS, ubwsLetsIn, flagLabel, rankImportance, LEFTOVER_GROUPS, LEFTOVER_LABELS, goalLabel, goalWord } from "../vault-lib.mts";
 import type { FcCap, Goals, PlannedBuffs, PropMap, ResistCap, RunSettings } from "../vault-lib.mts";
 import { applyBuffs, buffById, buffsDiff, capWord, signed, type BuffResult } from "../buffs.mts";

@@ -1,4 +1,7 @@
 // retention.mts — the retention service (issue #28): which old scans and saved runs settings.json's `retention` lets go, and removing them, one prune at a time. The rules themselves are app/retention.mts.
+//
+// map: services
+// owns: `createRetentionService`
 import { lstatSync, unlinkSync } from "node:fs";
 import { basename, join } from "node:path";
 import { retentionOf, runsToPrune, scansToPrune, type ScanFile } from "../retention.mts";

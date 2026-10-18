@@ -1,4 +1,7 @@
 // facet-fixture.mts — builds a synthetic facetNN.mul for tests (no game data ships in the repo): the int16 width and height, then per row an int32 byte count and its runs, each a uint8 pixel count and a uint16 ARGB1555 colour. `rows` are written as given, so a test can make a row that does not add up.
+//
+// map: house
+// owns: `syntheticFacet`
 export type Run = [count: number, colour: number];
 
 export function syntheticFacet(width: number, height: number, rows: Run[][]): Buffer {

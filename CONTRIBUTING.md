@@ -39,7 +39,8 @@ npm run dist:dir           # an unpacked app into dist/, no installer
 
 - **Prose.** American spelling; plain words; no hard-wrapped paragraphs (one paragraph is one line, in Markdown, comments, commit bodies and pull request bodies); "container", not "chest", in generic text.
 - **Tests.** Every test name starts with a tag (`[smoke]`, `[fast]` or `[slow]`), and every test file opens with a header saying what it covers; `TESTING.md` says how. After adding a test file or changing a header's first sentence, run `npm run gen:test-index`.
-- **Docs.** A backticked repo path in any Markdown file must exist (`scripts/docs-links.test.mts`), and a new module gets a row in `docs/module-map.md` in the same change (`scripts/module-map.test.mts`).
+- **Docs.** A backticked repo path in any Markdown file must exist (`scripts/docs-links.test.mts`), and every module's header carries its `docs/module-map.md` row: a `// <name> — <role>.` first line, then `// map: <area>` and `// owns: …` lines; after adding, moving or renaming a module or changing those lines, run `npm run gen:modules` (`scripts/module-map.test.mts` checks the tables are current).
+- **Changelog.** A change that matters to a player or a contributor adds a fragment, `changelog.d/<short-name>.md`, and never edits `CHANGELOG.md` (see Changelog below).
 - **Commits.** Imperative mood, naming the issue (`(#123)`); no trailers.
 - **Dependencies.** No new runtime dependencies without a spec change. `highs` (MIT, compiled to WebAssembly) is the one: `app/mip-solve.mts` loads it to run the exact suit solve (`docs/solver.md`), and `optimize-worker.mts` falls back to the core's own heuristic when it fails to load. Everything else — the server, the page, the adapters — is Node's standard library and plain browser APIs, no npm imports. The built-in MCP server (`app/mcp.mts`) speaks its protocol by hand for the same reason; `@modelcontextprotocol/sdk` is a pinned dev dependency only, for the interop test in `app/mcp.test.mts` that connects the SDK's own client to it.
 
@@ -68,6 +69,10 @@ A type describes a shape; it proves nothing about data that crossed a boundary t
 - **Actions are pinned by SHA.** Every `uses:` in `.github/workflows/*.yml` names a full 40-character commit SHA with the tag in a trailing comment. A `@v4` is a mutable pointer; see `RELEASING.md` for how to resolve a SHA and why the trailing comment matters to Dependabot.
 - **A new schema keyword must be enforced by the validator AND known to the types generator.** `app/schema/validate.mts` implements a deliberate subset and silently ignores anything outside it, so a bound written into a schema file that the validator does not implement is documentation, not a check. `scripts/build-schema-types.mts` throws on a construct it does not understand rather than emitting `any`. Adding a keyword means both files, plus a test that a document violating it is actually rejected.
 
+## Changelog
+
+`CHANGELOG.md` changes only at release. Each pull request that matters to a player or a contributor adds its own file instead, `changelog.d/<short-name>.md` (lower case, hyphens or underscores: the branch name with `/` replaced by `-`, so `338-changelog-fragments.md`), holding one or more entries in the changelog's style: one line each, starting with `- `, usually `- **What changed** (issue #N): …`. Two pull requests then never touch the same file. At release, `node scripts/changelog.mts --release <version>` puts the fragments together into `CHANGELOG.md`, newest first by the issue number the name starts with (names without one first, ties by name; the file names alone decide, not git history), and deletes them (`RELEASING.md`). A release with no fragments changes nothing. `scripts/changelog.test.mts` checks each fragment's shape, and fails when `CHANGELOG.md` gains an entry by hand or a released entry is edited: the file carries a SHA-256 seal of its released part. To correct a released entry on purpose, edit it and run `node scripts/changelog.mts --seal`.
+
 ## Working in parallel
 
 Several people or agents often work on this repository at once, each on a branch in its own worktree. These rules come from the merges that needed resolving by hand:
@@ -87,7 +92,7 @@ If it fires on something you wrote: reword the offending line so the information
 
 ## Where the rest is written down
 
-- `docs/module-map.md` lists every module, area by area: its role and the concepts it owns, and which concepts are still copied by hand in more than one place. `scripts/module-map.test.mts` fails when a module is missing from it or a path it names is gone.
+- `docs/module-map.md` lists every module, area by area: its role and the concepts it owns, and which concepts are still copied by hand in more than one place. Its module tables are generated from the modules' headers (`npm run gen:modules`). `scripts/module-map.test.mts` fails when a table is out of date or a path it names is gone.
 - `docs/architecture.md`: the Electron shell (`electron/`), the inbox watcher (`app/watcher.mts`), the installer (`app/installer.mts`), the data folder, every HTTP route, the dev loop in detail, the server's request checks, the data model the fold produces, and the parsing and classification gotchas.
 - `docs/solver.md`: the suit solver, the core's own search, saved runs, profile semantics, templates and build jobs.
 - `docs/ui.md`: the page's hard rules, tokens, components and import rules, with one page per screen under `docs/ui/`.

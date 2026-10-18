@@ -1,4 +1,7 @@
 // art.mts — item art from the player's own client files (issue #174): the UOP container artLegacyMUL.uop (its table of entries, each found by the lookup3 hash of its name), one item's static art in it, and the colours of hues.mul. Pure, apart from the read callback the caller passes: nothing here throws on a file that does not add up or reads past a buffer; every decoder answers null instead. The table is read block by block and an entry only when it is asked for, never the whole payload.
+//
+// map: house
+// owns: `readUopTable`, `readUopEntry`, `uopHash`, `decodeStatic`, `readHues`, `hueOf`, `toRgba`
 import { inflateSync } from "node:zlib";
 
 // Jenkins' lookup3 hashlittle2 with both seeds 0, as the UOP format names its entries: the 64-bit result is b << 32 | c.

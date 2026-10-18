@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// test-runner.mts — the project's standard test interface.
+// test-runner.mts — the project's standard test interface behind scripts/test_runner.sh: --smoke, --fast, --changed, full.
 //   node scripts/test-runner.mts [--smoke|--fast|--changed[=<ref>]]      (full when no flag)
 // Drives node:test's run() over every **/*.test.mts found by a recursive walk of app/ + scripts/
 // (node_modules/dist/fixtures excluded) and writes test_logs/latest_summary.json. Tags are name
@@ -14,6 +14,9 @@
 // same probe for python3-then-python), skipping with a note when neither is on PATH. That covers the
 // same file in the same modes, counts into the same summary, and picks up a new adapter's tests with
 // no edit here — so the copy that lived in this file was doing nothing the suite wasn't.
+//
+// map: tooling
+// owns: the summary file, test_logs/latest_summary.json
 import { writeFileSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { availableParallelism } from "node:os";

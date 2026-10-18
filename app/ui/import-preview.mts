@@ -1,6 +1,9 @@
 // ui/import-preview.mts — the Import drawer's preview card, as data: what a parsed scan holds, whether it
 // replaces one already in Pack Rat, and the sentence the primary button says. Pure and DOM-free (like
 // ui/messages.mts) so app/import-preview.test.mts pins the counts, plurals and wording.
+//
+// map: ui-models
+// owns: `scanPreview`
 import type { ScanV2 } from "../schema/types.d.mts";
 import { shortName, type AdapterForCopy } from "./adapter-copy.mts";
 

@@ -6,6 +6,9 @@
 // POST /api/import/paste applies, so the preview never calls clean what the server then refuses. Rescan
 // inbox is the escape hatch for a player whose folder watcher missed a drop. A scan that lands reaches
 // the inventory through the SSE "inventory" event (ui/events.mts), not a call made from here.
+//
+// map: ui-screens
+// owns: `renderImport`
 import { state } from "./store.mts";
 import { $, el } from "./dom.mts";
 import { api } from "./api.mts";

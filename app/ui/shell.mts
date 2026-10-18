@@ -2,6 +2,9 @@
 // bridge status control and its popover), collapsing to icons below 1180 px or when pinned collapsed, the
 // nav's counts and current item, and ⌘I for Import. The routes themselves live in nav.mts; each screen is
 // its own <main> in index.html with its h1 in the top bar.
+//
+// map: ui-bootstrap
+// owns: `initShell`, `renderNavCounts`
 import { state } from "./store.mts";
 import { session } from "./builder-session.mts";
 import { $, el } from "./dom.mts";

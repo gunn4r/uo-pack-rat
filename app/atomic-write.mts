@@ -5,6 +5,9 @@
 // the server keeps in its own data directory (settings, profiles, saved runs, accepted scans,
 // tombstones, a pasted scan's inbox file). moveAside sets an unreadable data file aside as
 // <file>.corrupt before the server starts that file afresh.
+//
+// map: server
+// owns: `atomicReplace`, `writeFileAtomic`, `moveAside`
 import { closeSync, constants, existsSync, fstatSync, lstatSync, openSync, readSync, renameSync, unlinkSync, writeFileSync, type Stats } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { basename } from "node:path";

@@ -6,6 +6,9 @@
 // selection with the same planner, are the only callers, so the page can never hand the bridge a trip
 // of its own making. The line is checked against app/schema/bridge-trip.v1.schema.json here and again,
 // field by field, by check_trip in every packrat-bridge.py: the queue file is not the server's to guard.
+//
+// map: bridge
+// owns: `queueTrip`, `writeBridgeStop`
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
