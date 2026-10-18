@@ -72,7 +72,7 @@ Profiles, buffs, pools, solvers, saved runs and Manual. `docs/solver.md` describ
 <!-- module-map:start builder -->
 | Module | Role | Owns |
 |---|---|---|
-| `app/bench/compare-cores.mts` | Runs the optimizer core at a git ref and the working tree's core on identical inputs and checks their results are byte-identical, so a solver refactor can show it changes nothing. | — |
+| `app/bench/compare-cores.mts` | Runs the solvers' code at a git ref and the working tree's on identical inputs and checks every output is byte-identical, so a solver refactor can show it changes nothing. | — |
 | `app/bench/gen-inventory.mts` | Synthetic scan generator for the suit-builder scale benchmark. | `learnModel`, `generateScan` |
 | `app/bench/make-fixtures.mts` | Regenerate app/fixtures/demo-*.json from the empirical model. | — |
 | `app/bench/mip-spike.mts` | SPIKE (Sep 13 2026): solve the suit problem as a mixed-integer program with HiGHS (WASM) and compare against the core's proven scores. | — |
@@ -85,6 +85,7 @@ Profiles, buffs, pools, solvers, saved runs and Manual. `docs/solver.md` describ
 | `app/mip-solve.mts` | The HiGHS runtime wrapper around app/mip.mts's pure builder. | `loadHighs`, `openModel`, `solveModel`, `addNoGood`, `closeModel`, `gapFromEvents` |
 | `app/mip.mts` | The suit problem as a mixed-integer program, built as HiGHS sparse (CSR) arrays. | `buildSuitMip`, `propertyReach`, `startVector`, `pickedOf`, `noGoodRow`, `HARD_FLOOR_BONUS`, `DEFAULT_SLOTS`, `optionalSlotsFor`, `heldModel`, `tieBreakModel`, `stageObjective`, `tieCosts`, `withHardFloorBonus`, `hardFloorSpread` |
 | `app/optimize-worker.mts` | Runs one optimize call off the server's main thread: the core's own heuristic search (opts.exact falsy) or the HiGHS-backed exact orchestrator (opts.exact true, app/exact-solver.mts, which falls back to the core's heuristic when HiGHS does not load); it resolves the swing step table before either solver runs and finishes the result (app/solver/finish.mts: the swing, the summaries, diagnostics and shares), and cancel terminates the job's worker. | the worker message types |
+| `app/profile-edits.mts` | The changes a page or a tool makes to the player's profiles, as data (quality pass 1, W1a): a closed `ProfileEdit` union and `applyProfileEdit`, pure and browser-safe. | `ProfileEdit`, `applyProfileEdit`, `applyProfileEdits`, `profileEditError` |
 | `app/run-settings.mts` | A build's run settings: their shape, the one check every route holds them to (`settings` and `meta.settings` on POST /api/optimize, a manual run's `settings` on POST /api/runs), the search knobs' ranges the page's Advanced fields share, and the defaults. | `runSettingsError`, `RUN_SETTING_LIMITS`, `OPTS_LIMITS`, `RUN_DEFAULTS`, `defaultStrLimit` |
 | `app/runs-lib.mts` | Saved suit-builder runs: the cache key (pools, worn suit, scoring profile and options, minus budget and warm start), the reuse rule (proven, heuristic, or a budget already as large; never a fallback result), the list summary, a manual run, the one constructor of a saved run's document, and what changed in the gear since a run (the pool serials and suit places a search run keeps, compared with its pool rebuilt now, issue #291); bump SOLVER_VERSION on any change to the model, the orchestration or the core's scoring. | `SOLVER_VERSION`, `runKey`, `reusableRun`, `runSummary`, `manualRun`, `runRecord`, `poolSnapshot`, `gearChanges` |
 | `app/runs-types.mts` | A saved suit-builder run and its list summary (app/runs-lib.mts), and the GET /api/runs and /api/runs/<id> responses built from them. | `SavedRun`, `RunSummary`, `RunResult`, `SwingResult`, `RunSettingsRaw`, `RunsListBody`, `RunBody`, `GearChanges` |
@@ -233,7 +234,7 @@ The thresholds are the shard rules' `unravel` (Shard rules, above); `GET /api/it
 | `app/http/routes/mcp.mts` | The built-in MCP server's settings: GET\|PUT /api/mcp and POST /api/mcp/token. | `routes` |
 | `app/http/routes/optimize.mts` | The Suit Builder's builds and saved runs: POST /api/optimize, the per-job /api/optimize/<id>/events\|cancel\|status, POST\|GET /api/runs and GET\|PUT\|DELETE /api/runs/<id>, and POST /api/evaluate. | `routes` |
 | `app/http/routes/organize.mts` | Organize: GET\|PUT /api/organize, GET /api/organize/presets, POST /api/organize/match and /api/organize/propose, GET /api/organize/plan and POST /api/organize/trip; and Move to (issue #270), which runs as Organize trips: POST /api/move/plan and /api/move/trip. | `routes` |
-| `app/http/routes/prefs.mts` | The player's saved choices: GET\|PUT /api/profiles, PUT /api/profiles/label, /api/ui-prefs and /api/tazuo-panel. | `routes` |
+| `app/http/routes/prefs.mts` | The player's saved choices: GET\|PUT\|PATCH /api/profiles, /api/ui-prefs and /api/tazuo-panel. | `routes`, `patchProfiles` |
 | `app/http/routes/settings.mts` | GET\|PUT /api/settings, POST /api/retention/cleanup and GET /api/rules. | `routes` |
 | `app/http/routes/setup.mts` | The setup wizard: GET /api/setup, GET /api/setup/scanner, POST /api/setup/locate and /api/setup/install, and GET /api/update-check. | `routes`, `MAX_PATH_LEN`, `NO_CLIENT_FOLDER` |
 | `app/http/routes/static.mts` | The page and the browser-shared modules: GET / (index.html), the favicon and logo, each module the page imports at run time (/<name>.mjs, compiled into app/dist/), GET /ui/<name> and GET /ui/fonts/<name>.woff2. | `routes` |
@@ -338,7 +339,7 @@ The page is `app/index.html` plus `app/ui/`, compiled by `scripts/build-ui.mts` 
 | `app/ui/item-tip.mts` | Where the one item tooltip (dom.mts's #tip) gets the item it shows (issue #10). | `createTipResolver` |
 | `app/ui/items.mts` | resolveItems(serials): the page's one place to turn a bare serial into a full item record (location, tags, equippedBy…), now that GET /api/inventory no longer carries the whole item map (Task 5). | `resolveItems` |
 | `app/ui/prefs.mts` | The one writer of the page's view choices (PUT /api/ui-prefs). | `prefs` |
-| `app/ui/profiles.mts` | The one writer of the player's profiles (PUT /api/profiles with the stamp it read, app/build-spec.mts's v3 shape; a stale refusal reloads them and makes the edit again), and of a character's saved buffs and build label within them. | `saveProfiles`, `loadProfiles`, `setCharacterBuffs`, `setCharacterLabel` |
+| `app/ui/profiles.mts` | The one writer of the player's profiles (app/build-spec.mts's v3 shape), one save at a time and in order, each made on the page's copy at once so the page shows it. | `saveProfiles`, `editProfiles`, `loadProfiles`, `setCharacterBuffs`, `setCharacterLabel` |
 | `app/ui/store.mts` | The shared mutable state object, the bridge connection state, and invStamp. | `state`, `bridge`, `invStamp`, `AppState` |
 <!-- module-map:end -->
 

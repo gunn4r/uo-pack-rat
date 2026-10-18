@@ -161,12 +161,50 @@ test("[fast] PUT /api/profiles: a stale window's save is refused and drops nothi
     assert.match(asJson<ErrorBody>(await (await put(again.profiles)).json()).error, /reload the page/);
     assert.equal((await put(again.profiles, "x".repeat(65))).status, 400);
     assert.equal(readFileSync(join(dir, "profiles.json"), "utf8"), before, "neither wrote");
-    // a label save answers the stamp it saved over and the one after; a whole-file save from before it is stale
+    // an edit answers the stamp it saved over and the one after; a whole-file save from before it is stale
     const old = await get();
-    const label = asJson<{ was: string; stamp: string }>(await (await fetch(`${s.url}/api/profiles/label`, { method: "PUT", headers: JSON_HEADERS, body: JSON.stringify({ character: "Dorran", label: "Main" }) })).json());
+    const label = asJson<{ was: string; stamp: string }>(await (await fetch(`${s.url}/api/profiles`, { method: "PATCH", headers: JSON_HEADERS, body: JSON.stringify({ edits: [{ op: "setLabel", name: "Dorran", label: "Main" }] }) })).json());
     assert.deepEqual([label.was === old.stamp, label.stamp === old.stamp], [true, false]);
     assert.equal((await put(old.profiles, old.stamp)).status, 409, "the label is not dropped");
     assert.equal(disk().characters.Dorran!.label, "Main");
+  } finally { await s.close(); rmSync(dir, { recursive: true, force: true }); }
+});
+
+// Quality pass 1, W1a: PATCH /api/profiles makes a list of edits (app/profile-edits.mts) on the file as it is on the server,
+// so two windows' edits made from the same old copy both land; a list that can't be made, or whose result the checks
+// refuse, writes nothing.
+test("[fast] PATCH /api/profiles: two windows' edits land side by side; a refused list writes nothing; bad edits are 400 naming why", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-edits-"));
+  const stored = { schemaVersion: 3, characters: { Dorran: { template: "Mine", spec: specFromProfile({}) } }, templates: { Mine: { spec: templateSpecFrom({}, []) } } };
+  const cfg = ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {}));
+  writeFileSync(join(dir, "profiles.json"), JSON.stringify(stored));
+  const s = await startServer(cfg);
+  const patch = (edits: unknown): Promise<Response> => fetch(`${s.url}/api/profiles`, { method: "PATCH", headers: JSON_HEADERS, body: JSON.stringify({ edits }) });
+  const file = (): string => readFileSync(join(dir, "profiles.json"), "utf8");
+  const disk = (): ProfilesV3 => JSON.parse(file()) as ProfilesV3;
+  try {
+    const { stamp: s0 } = asJson<{ stamp: string }>(await (await fetch(`${s.url}/api/profiles`)).json());
+    // two windows, both on the first copy: Dorran's buffs, and a new template
+    const one = asJson<{ was: string; stamp: string }>(await (await patch([{ op: "setBuffs", name: "Dorran", buffs: { on: ["bless"] } }])).json());
+    const two = asJson<{ was: string; stamp: string }>(await (await patch([{ op: "putTemplate", id: "Spare", entry: { spec: templateSpecFrom({}, []) } }])).json());
+    assert.deepEqual([one.was === s0, two.was === one.stamp, two.stamp !== one.stamp], [true, true, true], "each answers the stamp before and after");
+    assert.deepEqual([disk().characters.Dorran!.spec.buffs?.on, Object.keys(disk().templates).sort()], [["bless"], ["Mine", "Spare"]], "both landed");
+    // a rename takes the characters made from it along
+    assert.equal((await patch([{ op: "renameTemplate", from: "Mine", to: "Main" }])).status, 200);
+    assert.equal(disk().characters.Dorran!.template, "Main");
+    // all or nothing: an edit that can't be made refuses the list, and the edit before it is not written
+    const before = file();
+    const gone = await patch([{ op: "setBuffs", name: "Dorran", buffs: { on: [] } }, { op: "updateTemplate", id: "Mine", spec: templateSpecFrom({}, []), savedAt: "2026-10-17T00:00:00.000Z" }]);
+    assert.equal(gone.status, 409);
+    assert.deepEqual([asJson<{ code: string }>(await gone.clone().json()).code, asJson<ErrorBody>(await gone.json()).error], ["conflict", "the Mine template was deleted elsewhere, so it was not updated"]);
+    for (const [edits, msg] of [[[], /1 to 100 edits/], [Array.from({ length: 101 }, () => ({ op: "deleteCharacter", name: "x" })), /1 to 100 edits/], ["x", /1 to 100 edits/], [[{ op: "nope" }], /unknown edit "nope"/],
+      [[{ op: "setLabel", name: "Dorran", label: "a\nb" }], /one line/], [[{ op: "putTemplate", id: "builtin:x", entry: { spec: templateSpecFrom({}, []) } }], /can't start with "builtin:"/],
+      [[{ op: "putTemplate", id: "Bad", entry: { spec: { ...templateSpecFrom({}, []), extra: 1 } } }], /\/templates\/Bad\/spec/]] as const) {
+      const r = await patch(edits);
+      assert.equal(r.status, 400, JSON.stringify(edits).slice(0, 120));
+      assert.match(asJson<ErrorBody>(await r.json()).error, msg);
+    }
+    assert.equal(file(), before, "nothing refused was written");
   } finally { await s.close(); rmSync(dir, { recursive: true, force: true }); }
 });
 
