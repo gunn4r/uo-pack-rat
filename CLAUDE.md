@@ -2,12 +2,19 @@
 
 Read this first, then `CONTRIBUTING.md` for the full contributor guide.
 
-## Reading order
+## Guides
 
-1. `docs/module-map.md`: where each concept lives, area by area, and which concepts are still copied by hand.
-2. `docs/change-checklists.md`: for your kind of change, every place that has to change with it.
-3. Touching the game scripts or a file they share: `adapters/CLAUDE.md` (the adapter invariants and how to extend and test them) and `app/schema/README.md` (the contract index: every shared file, its schema, writers, readers and cases).
-4. The one doc for your area: `docs/server.md` (routes, stores and services; `app/http/CLAUDE.md` is its short form), `docs/solver.md` (Suit Builder; `docs/guides/suit-builder.md` is its short guide), `docs/ui.md` (the page, with `app/ui/CLAUDE.md` as its short guide, then `docs/ui/<screen>.md` for the screen you touch), `docs/scan-schema.md`, `docs/bridge-protocol.md`, `docs/shard-rules.md`, `docs/adapter-guide.md`, `docs/mcp.md`, `docs/architecture.md` (processes and the data folder), `docs/threat-model.md` (security).
+Every change: `docs/module-map.md` (where each concept lives, and which are still copied by hand) and `docs/change-checklists.md` (every place a kind of change touches). Then the guide for your area. Each guide opens with Read with:, Invariants, Extend it, Tests and Traps, and points at its full doc.
+
+| Area | Guide | Full doc |
+| --- | --- | --- |
+| The server: routes, stores, services | `app/http/CLAUDE.md` | `docs/server.md` |
+| The page | `app/ui/CLAUDE.md` | `docs/ui.md`, then `docs/ui/<screen>.md` |
+| The Suit Builder's core and solvers | `docs/guides/suit-builder.md` | `docs/solver.md` |
+| The game scripts and the files they share | `adapters/CLAUDE.md` | `docs/adapter-guide.md`, `app/schema/README.md` |
+| Tests and tooling | `scripts/CLAUDE.md` | `TESTING.md` |
+
+Other docs: `docs/scan-schema.md`, `docs/bridge-protocol.md`, `docs/shard-rules.md`, `docs/mcp.md`, `docs/architecture.md` (processes and the data folder), `docs/threat-model.md` (security).
 
 ## Conventions reviews keep enforcing
 
@@ -16,41 +23,33 @@ Read this first, then `CONTRIBUTING.md` for the full contributor guide.
 - No shard-rule or attended-play commentary in the UI or the docs.
 - No session links and no co-author or other trailers in commits, PRs or issues. This repository is public: no home paths, no real names (`scripts/scrub.test.mts`).
 - Say "container", not "chest", in generic text.
-- Every test name starts with a tag: `[smoke]`, `[fast]` or `[slow]` (`TESTING.md`). Every test file opens with a header comment saying what it covers, kept current with its tests; after adding a test file or changing a header's first sentence, run `npm run gen:test-index` (`scripts/test-index.test.mts` checks `TESTING.md`'s index). Every other module's header also carries its `docs/module-map.md` row (`// map: <area>`, `// owns: …`): after adding, moving or renaming a module or changing its header, run `npm run gen:modules`.
-- A changelog entry goes in a new `changelog.d/<short-name>.md` (one line per entry, starting with `- `), never in `CHANGELOG.md`: `scripts/changelog.test.mts` fails a hand edit (`CONTRIBUTING.md`, Changelog).
-- A backticked repo path in a Markdown file must exist (`scripts/docs-links.test.mts`).
+- Every test name starts with a tag: `[smoke]`, `[fast]` or `[slow]` (`TESTING.md`). Every test file opens with a header comment saying what it covers, kept current with its tests; after adding a test file or changing a header's first sentence, run `npm run gen:test-index`. Every other module's header carries its `docs/module-map.md` row (`// map: <area>`, `// owns: …`): after adding, moving or renaming a module or changing its header, run `npm run gen:modules`.
+- A changelog entry goes in a new `changelog.d/<issue>-<short-name>.md` (one line per entry, starting with `- `), never in `CHANGELOG.md` (`scripts/changelog.test.mts`).
+- Docs stay checkable: a backticked repo path must exist (`scripts/docs-links.test.mts`); a backticked code name must be in the code, each doc keeps to its size budget, and no prose line passes 2,500 characters (`scripts/docs-freshness.test.mts`).
+- One source of truth: define a concept once and derive every other list from it. Where `docs/module-map.md` lists a concept as restated, update every copy until it is removed.
 - Plain words. Match the surrounding code's comment density and naming.
 
 ## Local test loop
 
-`scripts/CLAUDE.md` is the guide to the runner, the guards and the Electron fixture; `TESTING.md` is the full reference.
-
-- `npm run typecheck`.
-- `TEST_SKIP_ELECTRON=1 ./scripts/test_runner.sh --changed`, then `TEST_SKIP_ELECTRON=1 ./scripts/test_runner.sh --fast`.
+- `npm run typecheck`, then `TEST_SKIP_ELECTRON=1 ./scripts/test_runner.sh --changed`, then `--fast` before the first push.
 - Read `test_logs/latest_summary.json` for results, not the console.
-- Do not run the Electron UI tests locally (`TEST_SKIP_ELECTRON=1` skips them). CI runs the full suite on macOS, Windows and Linux, and that is the merge gate.
-- The Electron tests reach into page modules by name (`page.evaluate` importing `/ui/<module>.mjs` and calling an export). Before moving or renaming an export under `app/ui/`, grep `scripts/ui-*.test.mts` for it: a test that calls a moved function fails only on CI.
-- Windows checks text files out with CRLF line endings (`.gitattributes` has `* text=auto`). Never compare a checked-in text fixture byte for byte with what the code writes; compare parsed JSON, or normalize `\r\n` first.
-- An Electron test that clicks something and then reads a file or a count must wait for the server or the page to finish (poll until it changes), not read once: slow CI runners expose every such race.
+- Do not run the Electron UI tests locally. CI runs the full suite on macOS, Windows and Linux, and that is the merge gate.
+- The traps (exports the Electron tests call by name, CRLF checkouts, read-once races) are in `scripts/CLAUDE.md`.
 
 ## Working in parallel
 
 - Merge `origin/main` before each push; never rebase or force-push a branch with a pull request.
-- After a merge, re-run every generator (`npm run gen:test-index`, `npm run gen:modules`, `npm run gen:contracts`) rather than hand-resolving a generated block; resolve the conflicts first, then run the generators, since a generator run over leftover conflict markers leaves one side's lines behind.
-- A changelog entry is a new `changelog.d/<issue>-<short-name>.md` (the issue number orders it at release), never a line in `CHANGELOG.md`.
+- After a merge, resolve the conflicts first, then re-run every generator (`npm run gen:test-index`, `npm run gen:modules`, `npm run gen:contracts`) rather than hand-resolving a generated block: a generator run over leftover conflict markers leaves one side's lines behind.
 - Two sessions on the same screen module are serialized, or their briefs name disjoint functions; a brief lists the files it touches.
 - `npm run try -- <pr> <pr>…` tests a stack of pull requests together.
 - A flaky CI failure is re-run once and named in the pull request; a second failure, or a new flake, gets an issue with the run link first (`CONTRIBUTING.md`, Working in parallel).
 
 ## Contract rules
 
-- A JSON Schema in `app/schema/` and its TypeScript copy change together: the scan schema has an inline copy in `app/scan-schema.mts` that a test compares, and the generated types come from `npm run build:types`. A new schema keyword needs both `app/schema/validate.mts` and `scripts/build-schema-types.mts`.
-- A change to what an adapter script does or writes bumps that adapter's version (a comment or marker edit does not): `version` in its `capabilities.json`, then `npm run gen:contracts` writes every script's `ADAPTER_VERSION`, the web scanner's included (`docs/adapter-guide.md`, Versions).
-- A helper between `# BEGIN generated: <fragment>` / `# END generated: <fragment>` lines in an adapter script is a copy: edit `adapters/_shared/<fragment>.py`, then run `npm run gen:contracts`. `scripts/gen-contracts.test.mts` fails while any copy differs (`docs/adapter-guide.md`, Shared helpers).
-- A data file's shape changes through `app/migrate.mts`: a rename, removal, change of meaning or newly required field raises the kind's version and adds a numbered, pure, idempotent step; an added optional field does not. Keep a golden file per version in `app/fixtures/golden/<kind>/` (`docs/change-checklists.md`, "Change the shape of a data file"). A file newer than the build is read-only, never overwritten.
-- A solver change that can change a result bumps `SOLVER_VERSION` in `app/runs-lib.mts`, so older saved runs stop being reused.
-- A route's response and its type change together. Every /api route's answer is a shared type in `app/api/` (or a domain's `*-types.mts`) that the route `satisfies` and `app/ui/api-types.mts` re-exports, so the typecheck catches a mismatch (`docs/server.md`).
+Each is spelled out in its guide; these are the ones that break another side when forgotten.
 
-## The architecture pass
-
-Issue #218 is moving each concept to one source of truth. Its rule applies to new code now: define a concept once and derive every other list from it, rather than adding another copy. Where `docs/module-map.md` lists a concept as restated, update every copy until it is removed.
+- A JSON Schema in `app/schema/` and its TypeScript copy change together (`npm run build:types`; the scan schema's inline copy in `app/scan-schema.mts`). A new schema keyword needs both `app/schema/validate.mts` and `scripts/build-schema-types.mts`.
+- A change to what an adapter script does or writes bumps that adapter's version, and a generated block is edited in its `adapters/_shared/` fragment, then `npm run gen:contracts` (`adapters/CLAUDE.md`).
+- A data file's shape changes through `app/migrate.mts`, with a golden file per version; a file newer than the build is read-only, never overwritten (`docs/change-checklists.md`, "Change the shape of a data file").
+- A solver change that can change a result bumps `SOLVER_VERSION` in `app/runs-lib.mts` (`docs/guides/suit-builder.md`).
+- A route's response and its type change together: every /api route's answer is a shared type that the route `satisfies` (`app/http/CLAUDE.md`).

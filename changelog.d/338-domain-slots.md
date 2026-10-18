@@ -1,0 +1,1 @@
+- **For contributors: slot classification moved to `app/domain/slots.mts`** (issue #338): the gear slots and their groups, the layer and wearable-graphic tables, `classify` and the spell schools, re-exported from `app/vault-lib.mts` under the same names. `scripts/gen-graphic-layers.mts` now rewrites the table there. A pure move: no behaviour changes.

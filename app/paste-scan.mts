@@ -8,6 +8,7 @@
 // owns: `parsePastedScan`, `PASTE_BEGIN`/`PASTE_END`, `jsonErrorReason`
 import { upgradeScan, validateScan, type UnvalidatedScan } from "./scan-schema.mts";
 import type { ScanV2 } from "./schema/types.d.mts";
+import { firstErrorText } from "./schema/validate.mts";
 
 // The web-client scanner wraps its printed JSON in these so a player can select-all the console/chat
 // output (log noise and all) and paste the whole thing; a paste of the JSON alone must work too.
@@ -97,6 +98,6 @@ export function parsePastedScan(text: unknown): ParsePastedScanResult {
     return { ok: false, error: (e as Error).message };
   }
   const { ok, errors } = validateScan(doc);
-  if (!ok) return { ok: false, error: `${errors[0]!.path} ${errors[0]!.msg}` };
+  if (!ok) return { ok: false, error: firstErrorText(errors) };
   return { ok: true, doc: doc as ScanV2 };
 }

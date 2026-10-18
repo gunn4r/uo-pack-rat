@@ -16,7 +16,7 @@ Walk the list for each kind your change is, and say in the pull request which ki
 
 Examples: `d3bbb2e` (#202 part A), `532b7cc` (#202 part B), `4982888`.
 
-1. The slot table first: put the slot in its group in `GEAR_SLOT_GROUPS` in `app/vault-lib.mts` (the sheet's tiles, the item browser's slot filter and the meditation slot set follow from it). Then the classifier there: `LAYER_TO_SLOT` (which gives `GEAR_SLOTS`), `REQUIRED_SLOTS`, `SLOT_LABELS`, `JEWEL_SLOTS`, and `ARMOR_SLOT_SET` if the slot's material should not count for meditation; the wearable-graphic table, regenerated with `scripts/gen-graphic-layers.mts`.
+1. The slot table first: put the slot in its group in `GEAR_SLOT_GROUPS` in `app/domain/slots.mts` (the sheet's tiles, the item browser's slot filter and the meditation slot set follow from it). Then the classifier there: `LAYER_TO_SLOT` (which gives `GEAR_SLOTS`), `REQUIRED_SLOTS`, `SLOT_LABELS`, `JEWEL_SLOTS`, and `ARMOR_SLOT_SET` in `app/domain/kinds.mts` if the slot's material should not count for meditation; the wearable-graphic table, regenerated with `scripts/gen-graphic-layers.mts`.
 2. Solvers: the slot lists in `scripts/optimizer-core.mts` (`optDefaultSlots`, `optDefaultOptionalSlots`); `app/mip.mts` (derived from `GEAR_SLOTS`, check it still is); `app/buffs.mts`; `app/runs-lib.mts` (saved runs that name the old slot); `app/bench/make-fixtures.mts`, `app/bench/run-bench.mts`.
 3. UI: `MANUAL_GROUPS` in `app/ui/manual-model.mts` (a layout, so place the slot by hand); check `SLOT_GROUPS` in `app/ui/sheet.mts` still reads well with the new slot; `app/ui/builder-manual.mts`, `app/ui/builder-model.mts`, `app/ui/builder-result.mts`, `app/ui/builder.mts`, `app/ui/runs.mts`, `app/ui/builder.css`.
 4. Organize: the Armor and Jewelry groups in `app/organize-strategies.mts` (kept by hand: they move real items); the slot presets in `app/organize-presets.mts`.
@@ -29,7 +29,7 @@ Examples: `d3bbb2e` (#202 part A), `532b7cc` (#202 part B), `4982888`.
 
 Examples: `ee9da51`, `97c6363`.
 
-1. `app/vault-lib.mts` (`KINDS`, `kindOf`, `OVERRIDE_KINDS`), `app/item-kinds.mts` (the player's overrides, `<data>/item-kinds.json`).
+1. `app/domain/kinds.mts` (`KINDS`, `kindOf`, `OVERRIDE_KINDS`), `app/item-kinds.mts` (the player's overrides, `<data>/item-kinds.json`).
 2. Organize: `app/organize-config.mts`, `app/organize-strategies.mts`, `app/organize.mts`, `app/ui/rule-editor.mts`.
 3. UI: `app/ui/kinds.mts`, `app/ui/inventory.mts`, `app/ui/organize.mts`, `app/ui/settings.mts`, `app/ui/api-types.mts`.
 4. Server: the routes in `app/http/routes/`. If a server module becomes page-visible, the browser-shared list (see Add an HTTP route).
@@ -41,7 +41,7 @@ Examples: `ee9da51`, `97c6363`.
 
 Examples: `1486452`, `826f586`.
 
-1. Parsing: `PROP_PATTERNS`, `PROP_LABELS` and `PROP_FULL` in `app/vault-lib.mts`; the shard caps in `app/rules/uoalive.json` and `app/rules/generic-osi.json` if it is capped.
+1. Parsing: the registry, `PROPERTIES` in `app/domain/properties.mts` (`PROP_PATTERNS`, `PROP_LABELS` and `PROP_FULL` derive from it); the shard caps in `app/rules/uoalive.json` and `app/rules/generic-osi.json` if it is capped.
 2. Query: `app/item-query.mts` (and `EXTRA_COLS` if it is a column); the property rules in `app/organize-config.mts`; `app/organize-fixture.mts`.
 3. UI: `app/ui/inv-model.mts`, `app/ui/inventory.mts`, `app/ui/organize-model.mts`, `app/ui/store.mts`, `app/ui/view-state.mts`; `SHEET_GROUPS` in `app/ui/sheet.mts` if the sheet shows it.
 4. Solver: `toOptItem` and the optimizer keys if the builder can weight it; the profile schema if it gets a floor (see Add or change a profile field).
@@ -109,7 +109,7 @@ Examples: `2b30944`, `9b03dcc`, `219861a`.
 1. Contract: `app/schema/scan.v2.schema.json` and the inline copy in `app/scan-schema.mts` together (a test keeps them equal), the upgrade and checks in `app/scan-schema.mts` (a new scan version is also a step in `app/migrate.mts`, "Change the shape of a data file"), the generated types (`scripts/build-schema-types.mts`).
 2. Every adapter: `adapters/tazuo/packrat-scanner.py`, `adapters/tazuo/packrat-character-refresh.py`, `adapters/tazuo/packrat-house-map-refresh.py`, `adapters/tazuo/packrat-bridge.py`, `adapters/tazuo/packrat-panel.py`; `adapters/razor-enhanced/packrat-scanner.py`, `adapters/razor-enhanced/packrat-character-refresh.py`, `adapters/razor-enhanced/packrat-bridge.py`; `adapters/classicuo-web/packrat-scanner.ts`; each `capabilities.json`; a version bump per adapter (`docs/adapter-guide.md`, Versions). A helper inside a `# BEGIN generated:` block is edited once, in its `adapters/_shared/` fragment, then `npm run gen:contracts`.
 3. Fixtures and fakes: `adapters/tazuo/fixture.scan.json`, `scripts/make-adapter-fixture.mts`, `adapters/fake_clients.py`, `adapters/test_scanners.py`, `adapters/tazuo/test_paths.py`.
-4. Fold and consumers: `app/vault-lib.mts`, `app/retention.mts`, `app/house-capture.mts`, `app/item-query.mts`; `app/ui/inv-model.mts`, `app/ui/inventory.mts`, `app/ui/sheet.mts`, `app/ui/store.mts`, `app/ui/view-state.mts`.
+4. Fold and consumers: `app/domain/fold.mts`, `app/retention.mts`, `app/house-capture.mts`, `app/item-query.mts`; `app/ui/inv-model.mts`, `app/ui/inventory.mts`, `app/ui/sheet.mts`, `app/ui/store.mts`, `app/ui/view-state.mts`.
 5. Tests: `app/scan-schema.test.mts`, `app/contracts.test.mts`, `app/classicuo-web-adapter.test.mts`, `app/gear-vault.test.mts`, `app/house-capture.test.mts`, `app/house-model.test.mts`, `app/house-server.test.mts`, `app/ui-state.test.mts`, `scripts/ui-state.test.mts`.
 6. Docs: `docs/scan-schema.md`, `docs/adapter-guide.md`, `docs/bridge-protocol.md`, each adapter `README.md`, the version table under `TESTING.md`'s "Not under automated test".
 
