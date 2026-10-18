@@ -5,7 +5,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { selectTests, SCREENS, parseShard, partOf } from "./select-tests.mts";
+import { selectTests, SCREENS, parsePart, parseShard, partOf } from "./select-tests.mts";
 
 const SOURCES: Record<string, string> = {
   "app/lib.mts": `export const x = 1;`,
@@ -97,7 +97,23 @@ test("[fast] select-tests: partOf keeps the Node or the Electron files, and deal
   assert.deepEqual([...shards[0]!, ...shards[1]!].sort(), ui, "every file in exactly one shard");
   assert.deepEqual(shards, [["scripts/ui-big.test.mts", "scripts/ui-zero.test.mts"], ["scripts/shell-smoke.test.mts", "scripts/ui-mid.test.mts", "scripts/ui-small.test.mts"]], "the largest first, each to the lighter shard (the first on a tie)");
   assert.deepEqual(partOf(files, { only: "electron", shard: { k: 1, n: 2 } }), shards[0], "the same shards every run");
-  assert.deepEqual(partOf(files, { only: "node", shard: { k: 3, n: 3 } }), [], "a shard can be empty");
+});
+
+test("[fast] select-tests: a part that selects no file throws, so a CI job that would run nothing fails", () => {
+  const files = [{ path: "app/a.test.mts", tests: 9 }, { path: "scripts/ui-one.test.mts", tests: 3 }];
+  assert.throws(() => partOf(files, { only: "node", shard: { k: 2, n: 2 } }), /^Error: --only-node --shard=2\/2 selected no test files$/);
+  assert.throws(() => partOf([{ path: "app/a.test.mts", tests: 9 }], { only: "electron" }), /--only-electron selected no test files/, "an Electron pattern that no longer matches");
+  assert.throws(() => partOf(files, { shard: { k: 3, n: 3 } }), /--shard=3\/3 selected no test files/);
+  assert.deepEqual(partOf([], {}), [], "no part asked for: nothing to refuse");
+});
+
+test("[fast] select-tests: parsePart reads --only-node, --only-electron and --shard, and refuses a typo, both --only flags or a bad shard", () => {
+  assert.deepEqual(parsePart([]), { only: undefined, shard: undefined });
+  assert.deepEqual(parsePart(["--full", "--only-electron", "--shard=2/2"]), { only: "electron", shard: { k: 2, n: 2 } });
+  assert.deepEqual(parsePart(["--only-node"]), { only: "node", shard: undefined });
+  assert.deepEqual(parsePart(["--only-electon"]), { error: "--only-electon: expected --only-node or --only-electron" });
+  assert.deepEqual(parsePart(["--only-node", "--only-electron"]), { error: "--only-node and --only-electron: give one" });
+  assert.deepEqual(parsePart(["--shard=3/2"]), { error: "--shard=3/2: expected --shard=<k>/<n> with 1 <= k <= n" });
 });
 
 test("[fast] select-tests: parseShard reads k/n with 1 <= k <= n", () => {

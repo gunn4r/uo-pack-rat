@@ -134,8 +134,10 @@ jobs:
     # only when all the Node and Electron jobs passed; the failing job itself is the one to open.
     name: Test on ${{ matrix.os }}
     needs: [node, electron]
-    if: always()
+    # !cancelled() rather than always(): it still runs when a job failed, but not for a run a newer push cancelled.
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     strategy:
       matrix:
         os: [macos-latest, windows-latest, ubuntu-latest]

@@ -285,7 +285,8 @@ test("[fast] CI runs the Node part and every Electron shard, and the required Te
   assert.match(ci, /npm test -- --only-node/);
   assert.match(ci, /shard: \[1, 2\]/);
   assert.equal((ci.match(/npm test -- --only-electron --shard=\$\{\{ matrix\.shard \}\}\/2/g) || []).length, 2, "both the Linux and the other step run the job's shard of 2");
-  assert.match(ci, /name: Test on \$\{\{ matrix\.os \}\}\n\s+needs: \[node, electron\]\n\s+if: always\(\)/, "the required checks keep their names and wait for every job");
+  assert.match(ci, /name: Test on \$\{\{ matrix\.os \}\}\n\s+needs: \[node, electron\]\n(\s+#.*\n)*\s+if: \$\{\{ !cancelled\(\) \}\}/, "the required checks keep their names, wait for every job, and run after a failure but not after a cancel");
+  assert.doesNotMatch(ci.slice(ci.indexOf("\n  test:")), /if: always\(\)/, "always() would run the gates for a cancelled, superseded run");
   assert.match(ci, /test "\$\{\{ needs\.node\.result \}\}" = success && test "\$\{\{ needs\.electron\.result \}\}" = success/);
 });
 
