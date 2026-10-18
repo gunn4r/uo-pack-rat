@@ -105,7 +105,7 @@ TazUO's `packrat-house-map-refresh.py` (2.12.0 and later) records the house with
 | `tooltips` | string, `"opl"` or `"label"` | Whether item text comes from the client's full on-paperdoll-line tooltip (`"opl"`, every property line readable) or just the bare name label (`"label"`, no properties). |
 | `bridge` | array of strings | Which bridge actions (`"highlight"`, `"grab"`, `"goto"`, and `"trip"` for Organize) this adapter's bridge script can execute — see `docs/bridge-protocol.md`. Empty for an adapter that ships no bridge. The TazUO scripts also list the `"trip-bags"` feature here (its trips take a bag only once they have read it empty), where every Pack Rat reads it. |
 
-Other keys are allowed and ignored. Which Highlight/Grab/Go-to buttons and Organize trips are offered is one decision per configured client (`bridgeFeatures` in `app/vault-lib.mts`): the running bridge's own report first, then the newest scan made with that adapter (its `capabilities.bridge` and `features`), then the client's shipped `capabilities.json` (`docs/bridge-protocol.md`, Features). The bridge script itself is still the final word on what it will actually do.
+Other keys are allowed and ignored. Which Highlight/Grab/Go-to buttons and Organize trips are offered is one decision per configured client (`bridgeFeatures` in `app/domain/bridge-features.mts`): the running bridge's own report first, then the newest scan made with that adapter (its `capabilities.bridge` and `features`), then the client's shipped `capabilities.json` (`docs/bridge-protocol.md`, Features). The bridge script itself is still the final word on what it will actually do.
 
 ## `roots`
 

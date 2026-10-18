@@ -117,7 +117,7 @@ Every queue line carries `protocol`, the version of the line format it is writte
 
 What a bridge can do is one set of names: the actions it runs (`highlight`, `grab`, `goto`, `trip`, `scan`) and what it does besides (`trip-bags`: its trips take a bag only once they have read it empty, issue #128). A scan's adapter block and `capabilities.json` may keep them in two lists, `capabilities.bridge` for the actions and `features` for the rest, and the app reads a name from either. The shipped scripts still list `trip-bags` in `capabilities.bridge` and write no `features` into scans: an older app refuses a scan whose adapter block has a field it does not know, so a scan gains `features` only once an app that accepts it has been out for a release. The status `adapter.features` is the one list.
 
-The page (Highlight, Grab and Go to, and Organize's Run buttons), Organize's planner and trip route, Put away and the MCP tools all ask `bridgeFeatures` (`app/vault-lib.mts`), which answers from:
+The page (Highlight, Grab and Go to, and Organize's Run buttons), Organize's planner and trip route, Put away and the MCP tools all ask `bridgeFeatures` (`app/domain/bridge-features.mts`), which answers from:
 
 1. the running bridge's own report, `status.json`'s `adapter.features`, while it is online;
 2. otherwise the newest scan made with that adapter (its scripts were installed with the bridge; a v1 scan's adapter block is the app's own stand-in and is skipped);

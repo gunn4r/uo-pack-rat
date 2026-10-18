@@ -19,6 +19,7 @@
     "app/domain/fold.*",
     "app/domain/pools.*",
     "app/domain/goals.*",
+    "app/domain/bridge-features.*",
     "app/item-query.*",
     "app/unravel.*",
     "app/organize-config.*",
