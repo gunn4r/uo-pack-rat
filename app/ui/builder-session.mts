@@ -1,12 +1,12 @@
-// ui/builder-session.mts — the Suit Builder's one session: the state its five modules share (builder.mts's panel and
-// job, builder-start.mts's first-visit view, builder-result.mts's result, builder-manual.mts's Manual mode, runs.mts's saved
-// runs) and the commands they call on each other. The five never import each other: each reads and sets the session here, and registers the commands it
+// ui/builder-session.mts — the Suit Builder's one session: the state its six modules share (builder.mts's panel and
+// job, builder-header.mts's sentence bar, builder-start.mts's first-visit view, builder-result.mts's result, builder-manual.mts's
+// Manual mode, runs.mts's saved runs) and the commands they call on each other. The six never import each other: each reads and sets the session here, and registers the commands it
 // performs for the others with provide(). Today a session is one character, one result and one job.
 //
 // map: builder
 // owns: `session`, `commands`, `provide`, `readControls`, `applyKnobs`
 import { RUN_DEFAULTS } from "../run-settings.mts";
-import type { EffectiveProfile, PropMap, RunBuffs, RunSettings } from "../vault-lib.mts";
+import type { EffectiveProfile, PropMap, RunBuffs, RunSettings, SettingsChange } from "../vault-lib.mts";
 import type { BuffPlan, Stats } from "../buffs.mts";
 import type { PlannedBuild } from "../build-spec.mts";
 import { knobError, type Knobs } from "./builder-model.mts";
@@ -77,6 +77,9 @@ export function applyKnobs(st: RunSettings): void {
 }
 
 // ---------------------------------------------------------------- commands
+// The build picker's state line and its full text (builder-model.mts buildStateText, buildStateDetail), whether the panel
+// drifted from its template or from the saved profile, and the changes behind each (builder.mts buildState).
+export interface BuildState { text: string; detail: string; drift: boolean; unsaved: boolean; template: string | null; changed: SettingsChange[]; unsavedList: SettingsChange[] }
 // A character's buff numbers (or No character's, for null) with its edits, which inputs are planned, the raw stats Bless
 // takes a share of and the race (builder-manual.mts buffInputsOf).
 export type BuffInputs = { values: Record<string, number>; planned: Set<string>; stats: Stats | null; race: string | null };
@@ -89,11 +92,20 @@ export interface BuilderCommands {
   buffPlan(name: string, race: string | null | undefined, buffs: RunBuffs | undefined): BuffPlan;
   loadRunBuffs(b: RunBuffs | undefined): void;
   tuneWeight(key: string | null, from: HTMLElement): void;
-  pickTemplate(ref: string): void;
+  pickTemplate(ref: string, again?: boolean): void;
   selectCharacter(name: string, open?: string | true): void;
   build(): void;
   openSettingsTab(tab: string): void;
+  buildState(): BuildState;
+  unsavedChanges(): SettingsChange[];
+  openChange(c: SettingsChange, from: HTMLElement): void;   // a What changed row's setting, in the drawer
+  saveTemplateAs(): void;
+  openTemplatesDrawer(from: HTMLElement): void;
+  // builder-header.mts: the sentence bar
   showCharacter(name: string): void;   // the character picker's face (builder-manual.mts decides who is shown)
+  refreshCharPicker(): void;
+  refreshBuildPicker(): void;
+  paintChangesChip(st: BuildState): void;
   // builder-start.mts: the first-visit view
   renderCurrentSuit(name: string, keepCards?: boolean): void;
   refreshCurrentSuit(): void;
@@ -125,6 +137,6 @@ export interface BuilderCommands {
   startOver(): void;
   lastRunDays(): Promise<Record<string, string> | null>;   // each character's latest run, as "today, 10:40 PM"; null when unknown
 }
-// Filled by each module as it loads (app.mts imports all five), so every command is there before the page calls one.
+// Filled by each module as it loads (app.mts imports all six), so every command is there before the page calls one.
 export const commands = {} as BuilderCommands;
 export function provide(c: Partial<BuilderCommands>): void { Object.assign(commands, c); }

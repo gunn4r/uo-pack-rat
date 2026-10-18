@@ -12,6 +12,7 @@ import { initFilters, applyUiPrefs, inventoryFailed } from "./inventory.mts";
 import { showCharacter } from "./characters.mts";
 import { applyPanelPrefs, initBuilder, closeSettings } from "./builder.mts";
 import { applyBuilderPrefs, initManual } from "./builder-manual.mts";
+import { initPickers } from "./builder-header.mts";   // also provides the sentence bar's commands to ui/builder-session.mts
 import { applyResultPrefs } from "./builder-result.mts";   // also provides the result commands to ui/builder-session.mts
 import "./builder-start.mts";   // provides the first-visit view's commands to ui/builder-session.mts
 import { connectEvents } from "./events.mts";
@@ -85,7 +86,7 @@ async function load(): Promise<void> {
   renderImport();
   connectEvents();
   if (setupRes.firstRun && !state.wizardShown) { state.wizardShown = true; openWizard({ firstRun: true }); }
-  if (!wired) { wired = true; initBuilder(); initManual(); }
+  if (!wired) { wired = true; initPickers(); initBuilder(); initManual(); }
   try { await reload(); } catch (e) { loadFailed(e, DATA_PANELS); }
 }
 
