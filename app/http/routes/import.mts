@@ -1,4 +1,7 @@
 // import.mts — POST /api/import/paste and /api/import/rescan.
+//
+// map: server
+// owns: `routes`
 import { short } from "../../guards.mts";
 import { parsePastedScan, writeScanToInbox } from "../../import.mts";
 import { safeAppendLog } from "../../log.mts";

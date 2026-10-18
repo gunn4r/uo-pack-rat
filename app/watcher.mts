@@ -1,5 +1,5 @@
 // watcher.mts — inbox ingestion: adapters drop scan files into <data>/inbox/<adapter>/ (temp-then-
-// rename, per adapter contract) instead of writing straight into <data>/scans/. This file turns an
+// rename, per adapter contract) instead of writing straight into <data>/scans/; one watcher per adapter, fs.watch with a 300 ms debounce, retry then quarantine to <data>/inbox/<adapter>/rejected/, and normalize-then-move into <data>/scans/; a symlink, directory or device, or a file over MAX_INBOX_BYTES (32 MiB), is refused unread; idempotent, never throws. This file turns an
 // inbox file into a normalised, schema-valid v2 scan under <data>/scans/, and watches an inbox
 // directory for new drops (plus a startup sweep for files that landed while the app was closed).
 //
@@ -42,6 +42,9 @@
 // 'error' from it is logged and the watch re-armed, a deleted inbox is recreated (and watched again)
 // by the next sweep, and scanOnce() returns false when it could not sweep at all. A live watch is also swept every
 // sweepMs (5 s), since the OS can drop its notifications altogether.
+//
+// map: scan
+// owns: `startWatcher`, `ingestFile`, `acceptedName` (the one place scan text becomes a file name), `MAX_INBOX_BYTES`
 import {
   existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, renameSync, unlinkSync, lstatSync, statSync, realpathSync,
   watch as fsWatch, type WatchListener,

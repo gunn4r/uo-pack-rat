@@ -4,6 +4,9 @@
 // that size clamped to the screen's work area, and the test reads back the width it really got and drives the
 // layout that width shows (a collapsed sidebar, facet chips folded into "+ Filter" below 1180 px). An assertion
 // only reachable above the real width is skipped with that reason, and still runs where the screen allows.
+//
+// map: tooling
+// owns: `fitWindow`, `testEnv`
 import { spawn } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -94,6 +97,25 @@ export async function settle<T>(read: () => Promise<T>, ok: (v: T) => boolean, m
   }
   return v;
 }
+// Waits until every finite animation and transition on the page has finished (a drawer sliding in, a column's width, a colour), so a
+// read sees the end state; an endless one (a spinner) is left out. document.getAnimations() brings style up to date first, so a
+// transition the last change started is counted (issue #338: these replace fixed sleeps).
+export async function animationsDone(page: Page, ms = 5_000): Promise<void> {
+  await page.waitForFunction(() => document.getAnimations().every((a) => a.playState !== "running" || a.effect?.getComputedTiming().iterations === Infinity), undefined, { timeout: ms });
+}
+// Waits until `read` gives the same answer twice in a row, 50 ms apart (a layout that is still moving), and fails past `ms`.
+// Best effort: a layout that has not started to move yet reads as steady, so a later assertion still has to check the result.
+export async function steady<T>(read: () => Promise<T>, ms = 5_000): Promise<T> {
+  const end = Date.now() + ms;
+  let last = JSON.stringify(await read());
+  for (;;) {
+    await new Promise((r) => setTimeout(r, 50));
+    const v = await read(), now = JSON.stringify(v);
+    if (now === last) return v;
+    if (Date.now() > end) throw new Error(`steady(): still changing after ${ms} ms: ${now}`);
+    last = now;
+  }
+}
 // Resize the window (fitWindow), then sideways().
 export async function sidewaysAt(app: ElectronApplication, page: Page, want: RealSize, inside: string[] = []): Promise<number> {
   await fitWindow(app, page, want);
@@ -136,7 +158,8 @@ export async function characterNames(page: Page): Promise<string[]> {
 export async function pickTemplate(page: Page, ref: string): Promise<void> {
   await page.click("#b-tpl");
   await page.click(`.pop [role=option][data-value="${ref}"]`);
-  await page.waitForTimeout(300);
+  // the pick either asks first or applies at once (both from the click itself)
+  await page.waitForFunction((r) => document.querySelector("dialog[open] [data-confirm]") || document.querySelector("#b-tpl")?.getAttribute("data-value") === r, ref, { timeout: 10_000 });
   const ask = page.locator("dialog[open] [data-confirm]");
   if (await ask.count()) await ask.click();
   await page.waitForFunction((r) => document.querySelector("#b-tpl")?.getAttribute("data-value") === r && !document.querySelector("dialog[open]"), ref, { timeout: 10_000 });

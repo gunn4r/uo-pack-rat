@@ -10,7 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Page } from "playwright";
 import { removeTempDir } from "./electron-window.mts";
-import { launchApp, skipWithoutElectron } from "./electron-app.mts";
+import { launchApp, skipWithoutElectron, until } from "./electron-app.mts";
 
 
 // The Inventory's row actions (ui/inventory.mts): icon buttons named by aria-label, drawn on every row
@@ -113,10 +113,7 @@ test("[slow] the rows' actions follow the client the wizard just set up, without
     await page.click("#wiz-primary");
     await page.locator("#wizard").getByRole("button", { name: "Finish", exact: true }).click();
     await page.waitForSelector("#wizard", { state: "hidden", timeout: 10_000 });
-    const until = Date.now() + 10_000;
-    let reason = await actionReason(page, "Grab to backpack");
-    while (!/can't Grab/.test(reason) && Date.now() < until) reason = await actionReason(page, "Grab to backpack");
-    assert.match(reason, /can't Grab from Pack Rat/);
+    assert.match(await until(() => actionReason(page, "Grab to backpack"), (r) => /can't Grab/.test(r), "Grab's reason naming the client", 10_000), /can't Grab from Pack Rat/);
   } finally {
     await close();
   }

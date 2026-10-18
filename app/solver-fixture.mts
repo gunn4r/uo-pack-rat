@@ -2,6 +2,9 @@
 // and pooled, the shipped default templates, cell() to build a solver input from one of them, and
 // runBoth() to run HiGHS and the core on it and check they agree. Split out so the slow cases can live
 // in files of their own, which the runner runs in parallel.
+//
+// map: builder
+// owns: `cell`, `runBoth`, `fuzzSlots`
 import type { TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";

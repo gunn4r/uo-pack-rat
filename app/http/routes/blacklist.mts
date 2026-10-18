@@ -1,4 +1,7 @@
 // blacklist.mts — GET|POST /api/blacklist and DELETE /api/blacklist/<serial>.
+//
+// map: server
+// owns: `routes`
 import { isBoundedInt, MAX_SERIAL } from "../../guards.mts";
 import { readBody } from "../../read-body.mts";
 import { send, asObject } from "../respond.mts";

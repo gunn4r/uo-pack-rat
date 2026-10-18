@@ -1,4 +1,4 @@
-// run-bench.mts — suit-builder scale benchmark. Sweeps inventory size x gear fraction x profile, measuring the
+// run-bench.mts — the suit builder's scale benchmark, a sweep through app/optimize-worker.mts. Sweeps inventory size x gear fraction x profile, measuring the
 // fold, the /api/inventory payload, pool sizes, dominance pruning, and the heuristic + exact phases (the exact
 // phase runs through app/optimize-worker.mts exactly as the server would: HiGHS when it loads, the core's own
 // heuristic as the honest fallback otherwise) and writes results/<stamp>.json + results/<stamp>.md. Reads real
@@ -17,6 +17,8 @@
 // was retired along with that search path — see CHANGELOG.md Phase 3 — so a cell that fails to prove within
 // budget is simply reported unproven; a smaller, cheaper probe budget then covers larger N so the sweep doesn't
 // keep burning the full budget on cells already known to fail.)
+//
+// map: builder
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { tmpdir, availableParallelism } from "node:os";

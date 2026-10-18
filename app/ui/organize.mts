@@ -5,6 +5,9 @@
 // this file draws them and talks to the server (GET /api/organize/plan, POST /api/organize/trip, POST
 // /api/bridge/stop; saves go through ui/organize-data.mts). The rule editor drawer is ui/rule-editor.mts, Auto organize's ui/auto-organize.mts;
 // Containers' Label… is ui/containers.mts.
+//
+// map: organize
+// owns: `showOrganize`
 import { state, bridge } from "./store.mts";
 import { $, el, itemTip, toast, compactChildren } from "./dom.mts";
 import { api } from "./api.mts";

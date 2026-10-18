@@ -5,4 +5,6 @@
 // module-scope `localStorage.getItem` read. Importing this file FIRST (as its own module, with no
 // dependencies of its own) puts the stub in place before anything that imports it afterward evaluates.
 // See app/bridge-adapter-fallback.test.mts for the case this exists for.
+//
+// map: tooling
 globalThis.localStorage ??= { getItem: () => null, setItem() {}, removeItem() {} } as unknown as Storage;   // only getItem/setItem/removeItem are ever called on this stub; the rest of Storage is deliberately unimplemented

@@ -9,6 +9,9 @@
 // with the page). writeScanToInbox does the one bit of IO: an atomic temp-then-rename write, named by
 // app/watcher.mts's own acceptedName so a paste-written file and a watcher-ingested file are never
 // named by two different rules.
+//
+// map: scan
+// owns: `writeScanToInbox`
 import { mkdirSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { acceptedName } from "./watcher.mts";

@@ -1,4 +1,7 @@
 // organize.mts — Organize: GET|PUT /api/organize, GET /api/organize/presets, POST /api/organize/match and /api/organize/propose, GET /api/organize/plan and POST /api/organize/trip; and Move to (issue #270), which runs as Organize trips: POST /api/move/plan and /api/move/trip.
+//
+// map: server
+// owns: `routes`
 import { isBoundedInt, isBoundedString, MAX_SERIAL } from "../../guards.mts";
 import { againstRules, backSteps, destProblem, leftReason, MAX_SELECTION, planMoves, resolveSelection, type LeftReason, type MoveStep, type Selection } from "../../move.mts";
 import { applyOverlay } from "../../organize.mts";

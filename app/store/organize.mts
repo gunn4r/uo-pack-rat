@@ -1,4 +1,7 @@
 // organize.mts — <data>/organize.json: Organize's setup (issue #11, app/organize-config.mts; GET/PUT /api/organize).
+//
+// map: server
+// owns: `createOrganizeStore`
 import { existsSync } from "node:fs";
 import { basename } from "node:path";
 import { emptyOrganizeConfig, salvageOrganizeConfig, MAX_SETUP_BYTES, type OrganizeConfig } from "../organize-config.mts";

@@ -1,5 +1,8 @@
 // ui/dom.mts — DOM helpers, formatting/label helpers, rarity, and the in-game style hover tooltip.
 // Moved verbatim out of index.html's inline <script type="module"> (Task 4, the page split).
+//
+// map: ui-infra
+// owns: `el`, `$`, `fmtN`, `slotLabel`, `rarityColor`, `toast`, `installTooltip`
 import { SLOT_LABELS, labelOf, fullOf, tagInfo, gameName } from "../vault-lib.mts";
 import type { Item } from "../vault-lib.mts";
 import { EXTRA_COLS, rarityRank as rarityRankOf } from "../item-query.mts";

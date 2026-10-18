@@ -1,4 +1,7 @@
 // static.mts — the page and the browser-shared modules: GET / (index.html), the favicon and logo, each module the page imports at run time (/<name>.mjs, compiled into app/dist/), GET /ui/<name> and GET /ui/fonts/<name>.woff2.
+//
+// map: server
+// owns: `routes`
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { send } from "../respond.mts";

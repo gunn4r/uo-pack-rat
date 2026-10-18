@@ -1,6 +1,9 @@
 // bridge-contract.mts — the bridge protocol this app writes and the limits every packrat-bridge.py enforces on an Organize
 // trip, as plain constants with no I/O, so a planner (app/organize.mts) can use them without loading the trip writer
 // (app/bridge-trip.mts).
+//
+// map: bridge
+// owns: `BRIDGE_PROTOCOL`, `TRIP_MAX_BYTES`, `TRIP_NAME_MAX`
 
 // The protocol of every queue line this app writes (POST /api/bridge, queueTrip). A bridge refuses a line in a newer
 // protocol than its own PROTOCOL; raise this, and every shipped capabilities.json's "protocol", when a line's meaning

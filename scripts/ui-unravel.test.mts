@@ -9,7 +9,7 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { settle, sidewaysAt } from "./electron-window.mts";
-import { ROOT, launchApp, skipWithoutElectron } from "./electron-app.mts";
+import { ROOT, launchApp, skipWithoutElectron, until } from "./electron-app.mts";
 
 // The demo scans, with Kestrel at Imbuing 70.
 function seed(dataDir: string): void {
@@ -79,8 +79,7 @@ test("[slow] the Unravel view forecasts, groups the candidates by ingredient, ke
     assert.match(await back.locator(".unr-sub").innerText(), /Kept/i);
     await back.locator(".unr-keep").click();
     await page.waitForFunction((s) => document.querySelector(`.unr-row[data-serial="${s}"] .unr-keep`)?.textContent === "Keep", serial);
-    for (let i = 0; i < 50 && JSON.stringify(kept()) !== "[]"; i++) await page.waitForTimeout(100);
-    assert.deepEqual(kept(), []);
+    assert.deepEqual(await until(kept, (k) => JSON.stringify(k) === "[]", "the Keep list emptied"), []);
 
     // A row's checkbox selects it alone, shift-click the rows from it to another (the Inventory's selection model), and
     // Clear hides the bar.
@@ -134,10 +133,7 @@ test("[slow] the Unravel view folds its groups, condenses its rows, and keeps it
   const dataDir = mkdtempSync(join(tmpdir(), "packrat-unravel-polish-"));
   seed(dataDir);
   const uiPrefs = (): Record<string, unknown> => { try { return JSON.parse(readFileSync(join(dataDir, "ui-prefs.json"), "utf8")); } catch { return {}; } };
-  const until = async (ok: () => boolean, what: string): Promise<void> => {
-    for (let i = 0; i < 100 && !ok(); i++) await new Promise((r) => setTimeout(r, 100));
-    assert.ok(ok(), what);
-  };
+  const saved = async (ok: () => boolean, what: string): Promise<void> => { assert.ok(await until(ok, (v) => v, what, 10_000), what); };
   const { app, page, errors, close } = await launchApp(dataDir, { size: { width: 1024, height: 768 } });
   try {
     await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
@@ -171,7 +167,7 @@ test("[slow] the Unravel view folds its groups, condenses its rows, and keeps it
     assert.equal(await fold.getAttribute("aria-expanded"), "false");
     assert.equal(await page.locator(".unr-group.held .unr-row").count(), 0);
     assert.match(await fold.innerText(), new RegExp(`Wait for Imbuing 95\\s*${held}$`));
-    await until(() => JSON.stringify(uiPrefs().unravelCollapsed) === '["held"]', "unravelCollapsed saved");
+    await saved(() => JSON.stringify(uiPrefs().unravelCollapsed) === '["held"]', "unravelCollapsed saved");
     // Select these still takes a folded group's pieces.
     await page.locator('[data-select="held"]').click();
     assert.match(await page.locator("#unr-selbar").innerText(), new RegExp(`^${held} selected`));
@@ -185,7 +181,7 @@ test("[slow] the Unravel view folds its groups, condenses its rows, and keeps it
     assert.ok((await row.boundingBox())!.height < fullHeight, "a condensed row is shorter");
     assert.match((await row.getAttribute("title")) ?? "", / · 50% at 70, else Residue$/, "the place and the chance are the row's title");
     assert.equal(await row.locator(".unr-where").isVisible(), false);
-    await until(() => uiPrefs().unravelRows === "condensed", "unravelRows saved");
+    await saved(() => uiPrefs().unravelRows === "condensed", "unravelRows saved");
 
     // Both survive a reload; unfolding brings the rows back.
     await page.reload();
@@ -194,7 +190,7 @@ test("[slow] the Unravel view folds its groups, condenses its rows, and keeps it
     assert.equal(await page.locator("#unr-list.condensed").count(), 1);
     await page.locator('[data-fold="held"]').click();
     assert.equal(await page.locator(".unr-group.held .unr-row").count(), held);
-    await until(() => JSON.stringify(uiPrefs().unravelCollapsed) === "[]", "unravelCollapsed cleared");
+    await saved(() => JSON.stringify(uiPrefs().unravelCollapsed) === "[]", "unravelCollapsed cleared");
 
     // At 420 px the whole view scrolls instead, with nothing sideways.
     const over = await sidewaysAt(app, page, { width: 420, height: 900 });

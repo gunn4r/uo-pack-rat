@@ -3,6 +3,9 @@
 // it. Node-only (reads files) — never imported by vault-lib.mts, which only exposes setRules/
 // getRules. The server calls loadRules() once at startup and again on a PUT /api/settings shard
 // change; the page instead fetches the already-loaded rules object from GET /api/rules.
+//
+// map: rules
+// owns: `loadRules`, `listRules`, `DEFAULT_SHARD`, `scrollBinderProblem`, `slayerGroupsProblem`
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";

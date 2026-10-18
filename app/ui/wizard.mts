@@ -7,6 +7,9 @@
 // marks setup done so the wizard never traps the user or reopens itself, and Settings keeps a reminder
 // while no client is set up. What the wizard says about a client is written per adapter
 // (ui/adapter-copy.mts), never assembled from its README title.
+//
+// map: ui-screens
+// owns: `openWizard`
 import { state } from "./store.mts";
 import { $, el, noteEl } from "./dom.mts";
 import { api } from "./api.mts";

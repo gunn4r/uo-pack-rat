@@ -8,6 +8,9 @@
 // source text (which kept matching with every one of these guards switched off). Nothing else belongs
 // here: this module stays dependency-free and side-effect-free, and main.mts owns the clock, the log
 // and the actual OS call.
+//
+// map: shell
+// owns: `navigationDecision`, `externalOpenDecision`
 
 // Bound, scheme and rate limit on anything the page asks the OS browser to open. No host allowlist:
 // the one external link the UI has today is the "View release" GitHub URL in app/ui/settings.mts, and

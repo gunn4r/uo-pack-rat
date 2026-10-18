@@ -1,6 +1,9 @@
 // ui/builder-parts.mts — what more than one Suit Builder module draws or reads, holding no state of its own: a piece's
 // key properties and item tooltip, a result's verdict, the Fetch list and its Grab all (the result's and Manual's), and
 // an optimize job's event stream and progress words (the Automatic build's and Manual's fill).
+//
+// map: builder
+// owns: `fetchCard`, `grabAllButton`, `verdict`, `followJob`, `progressText`
 import { RESIST_META } from "../vault-lib.mts";
 import type { Item, PropMap } from "../vault-lib.mts";
 import { state, bridge } from "./store.mts";

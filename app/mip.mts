@@ -2,6 +2,9 @@
 // no solver import here (app/mip-solve.mts owns the runtime). Every modelling choice reproduces
 // app/bench/mip-spike.mts, which was validated to the decimal against the core's proven optima —
 // see docs/solver.md for the model and app/bench/REPORT.md for the evidence.
+//
+// map: builder
+// owns: `buildSuitMip`, `propertyReach`, `startVector`, `pickedOf`, `noGoodRow`, `HARD_FLOOR_BONUS`, `DEFAULT_SLOTS`, `optionalSlotsFor`
 import { GEAR_SLOTS, REQUIRED_SLOTS, RESIST_SKILL_KEY, RESIST_STEP_SLACK, type OptItem, type ResistStep } from "./vault-lib.mts";
 import { stepsFor } from "./swing.mts";
 

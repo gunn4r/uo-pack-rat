@@ -1,4 +1,7 @@
 // blacklist.mts — <data>/scan-blacklist.json: the containers scans never open (GET/POST/DELETE /api/blacklist).
+//
+// map: server
+// owns: `createBlacklistStore`
 import type { BlacklistEntry } from "../vault-lib.mts";
 import { isBoundedInt, isBoundedString, MAX_SERIAL } from "../guards.mts";
 import { readJsonFile, writeJsonFile } from "./json-file.mts";

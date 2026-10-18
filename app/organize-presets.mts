@@ -4,6 +4,9 @@
 // Transcendence scroll and school scroll presets above Spell scrolls, and a rule for spellbooks above Weapons (a spellbook sits in the one-handed slot). Pure,
 // so the page can list them too. The undesirables at the end (issue #133) belong at the top of the rules, so they claim
 // first; they skip every piece of a saved suit, and Auto organize never uses them.
+//
+// map: organize
+// owns: `PRESETS`, `ruleFromPreset`
 import { emptyRuleQuery, SCHOOLS, type OrganizeRule, type RuleMatch } from "./organize-config.mts";
 import type { RuleQuery } from "./item-query.mts";
 import { INSTRUMENTS, NECK_ARMOR_WORDS } from "./vault-lib.mts";

@@ -4,6 +4,9 @@
 // whole file with the stamp the page read it at (PUT /api/profiles): one refused as stale (another window or an AI
 // assistant saved since) reloads the file, makes the edit again on it and sends that, so a stale copy never drops or
 // reverts anything another window saved.
+//
+// map: ui-infra
+// owns: `saveProfiles`, `editProfiles`, `setCharacterBuffs`, `setCharacterLabel`
 import type { BuildBuffs, ProfilesV3 } from "../build-spec.mts";
 import { applyProfileEdits, type ProfileEdit, type ProfileEditContext } from "../profile-edits.mts";
 import { state } from "./store.mts";

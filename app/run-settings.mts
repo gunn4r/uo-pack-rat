@@ -1,6 +1,9 @@
 // run-settings.mts — a build's run settings: their shape, the one check every route holds them to (`settings` and
 // `meta.settings` on POST /api/optimize, a manual run's `settings` on POST /api/runs), the search knobs' ranges the
 // page's Advanced fields share, and the defaults. Pure and browser-safe: the page imports the ranges and defaults.
+//
+// map: builder
+// owns: `runSettingsError`, `RUN_SETTING_LIMITS`, `OPTS_LIMITS`, `RUN_DEFAULTS`, `defaultStrLimit`
 import { isRunBuffs } from "./buffs.mts";
 import { isBoundedInt, isBoundedString, MAX_SERIAL, short } from "./guards.mts";
 import { CASTING_SCHOOLS, RARITY_PREFERENCES, excludeWeaponsError, goalsError, resistCapsError, weaponMustHaveError, type RarityPreference } from "./vault-lib.mts";

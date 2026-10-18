@@ -8,6 +8,9 @@
 // lscript.json.bak first. Whether the panel shows its window at login, and its show/hide hotkey, live in
 // <data>/tazuo-panel.json, which the app (Settings, the wizard) and the panel's own button both write and
 // the panel re-reads.
+//
+// map: installer
+// owns: `readPanelPrefs`, `writePanelPrefs`, `addPanelAutostart`, `tazuoRunning`
 import { constants, copyFileSync, existsSync, lstatSync, readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { basename, dirname, join } from "node:path";

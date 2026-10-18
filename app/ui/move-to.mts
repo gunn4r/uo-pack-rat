@@ -1,4 +1,7 @@
 // ui/move-to.mts — the Inventory's selection and Move to (issue #270): the checkboxes' hooks for the item browser, the selection bar (#inv-selbar: the count, why worn rows were left out, Select all matching, Grab, Move to… and Clear), the Move to… picker, and the result line (#inv-move-result) that follows a Move's trips, with Stop, Pin them here and Move back. The rules and every word come from ui/move-model.mts; this file draws them and talks to the server (POST /api/move/plan, /api/move/trip, /api/bridge/stop). A Move runs as Organize trips, one at a time: each trip that reports back clean asks the server for the next. Another view can start a Move with its own selection and result line (`openPicker`, `startMove`): the Unravel view's Gather into a bag (issue #271).
+//
+// map: ui-screens
+// owns: `selectionHooks`, `attachMoveTo`
 import { applyItemQuery } from "../item-query.mts";
 import { bagLabel, type Container, type Item } from "../vault-lib.mts";
 import { state, bridge } from "./store.mts";
