@@ -1,1 +1,0 @@
-- **For contributors: tooltip parsing moved to `app/domain/tooltip.mts`** (issue #338): `parseTooltip`, the tag units and info, the rarity pattern and the item-name helpers, re-exported from `app/vault-lib.mts` under the same names. A pure move: no behaviour changes.

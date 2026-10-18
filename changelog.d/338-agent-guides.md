@@ -1,1 +1,0 @@
-- **For contributors: two short guides for agents** (issue #338): `adapters/CLAUDE.md` lists the adapter invariants and how to extend and test the scripts, and `app/schema/README.md` is the contract index, every shared file with its schema, writers, readers and shared cases, plus the versioning rules. A test keeps the index in step with `app/schema/`.
