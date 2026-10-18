@@ -111,8 +111,10 @@ def script_prefix(self_name):
 # END generated: tazuo/scripts
 
 
+# BEGIN generated: manifest_version
 ADAPTER_ID = "tazuo"
 ADAPTER_VERSION = "2.20.0"
+# END generated: manifest_version
 
 SELF = "packrat-panel.py"
 BRIDGE, BLACKLIST = "packrat-bridge.py", "packrat-blacklist.py"
