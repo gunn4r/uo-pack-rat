@@ -7,9 +7,9 @@
 // map: organize
 // owns: `openAutoOrganize`
 import { state } from "./store.mts";
-import { $, el, toast, compactChildren } from "./dom.mts";
+import { $, el, compactChildren } from "./dom.mts";
 import { api } from "./api.mts";
-import { box, txt, button, badge, message, segmented, check, table, tipWrap, createDrawer, type DrawerHandle } from "./components.mts";
+import { box, txt, button, badge, message, segmented, check, table, tipWrap, createDrawer, type DrawerHandle, toast } from "./components.mts";
 import { containerArt } from "./item-art.mts";
 import { errorText } from "./messages.mts";
 

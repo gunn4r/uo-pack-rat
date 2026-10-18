@@ -3,10 +3,10 @@
 // map: house
 // owns: `showMap`, `applyMapPrefs`
 import { state, bridge } from "./store.mts";
-import { $, el, itemTip, safeColor, fmtN, toast } from "./dom.mts";
+import { $, el, itemTip, safeColor, fmtN } from "./dom.mts";
 import { api } from "./api.mts";
 import { prefs } from "./prefs.mts";
-import { box, txt, button, segmented, pill, message, meter, keyValue, modalOpen, tipWrap, input, copyText, icon, kbd, menu, popover, closePopover, confirmDialog, select as selectEl, searchInput, badge } from "./components.mts";
+import { box, txt, button, segmented, pill, message, meter, keyValue, modalOpen, tipWrap, input, copyText, icon, kbd, menu, popover, closePopover, confirmDialog, select as selectEl, searchInput, badge, toast } from "./components.mts";
 import { labelContainer } from "./containers.mts";
 import { parseRoute, registerScreen, showContainer, showSearch } from "./nav.mts";
 import { itemMenu, itemActions, rarityEl, tagEls } from "./item-parts.mts";
@@ -1387,7 +1387,7 @@ async function highlightStack(m: HouseModel, s: Stack, chests: ChestView[]): Pro
     highlighting = false;
     drawPanel();
   }
-  toast(stopped ? `${sent} of ${chests.length} queued, stopped at ${stopped}` : `${plural(sent, "highlight")} queued for ${bridge.character}`, stopped ? "bad" : "");
+  toast(stopped ? `${sent} of ${chests.length} queued, stopped at ${stopped}` : `${plural(sent, "highlight")} queued for ${bridge.character}`, stopped ? "bad" : "info");
 }
 // ---------------------------------------------------------------- the contents drawer
 // A column after the panel that lists a chest of the selected stack without leaving the map: the chest shown (null when no scan opened any chest of the stack), the filter typed (kept from chest to chest), the bags closed, its items as last fetched (kept on screen while a rescan's are fetched), the list's scroll, and the chest whose Show items opened it, where focus goes back on close.

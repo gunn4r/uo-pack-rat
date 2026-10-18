@@ -5,9 +5,9 @@
 import type { BuildBuffs } from "../build-spec.mts";
 import { applyProfileEdits, type ProfileEdit, type ProfileEditContext } from "../profile-edits.mts";
 import { state } from "./store.mts";
-import { toast } from "./dom.mts";
 import { api } from "./api.mts";
 import type { ApiError, ProfilesApiResponse } from "./api-types.mts";
+import { toast } from "./components.mts";
 
 // `reloaded`: the page's copy was read again (the file had another window's saves, or the edits were refused), so a
 // caller showing the profiles redraws.

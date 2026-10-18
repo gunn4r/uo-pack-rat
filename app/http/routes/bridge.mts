@@ -18,7 +18,6 @@ import { isBoundedString } from "../../guards.mts";
 import { addGrab } from "../../organize-state.mts";
 import { readBody } from "../../read-body.mts";
 import { validate, type ValidatorSchema } from "../../schema/validate.mts";
-import type { BridgeV1Status } from "../../schema/types.d.mts";
 import { send, asObject } from "../respond.mts";
 import { APP_DIR } from "../../config.mts";
 import type { Route } from "../router.mts";
@@ -77,8 +76,7 @@ export function routes(ctx: ServerContext): Route[] {
       // A Grab is remembered like a trip (issue #148), so when it reports back the item reads as in the backpack
       // and the container it left has that slot free again (harvestTrips), until a scan says otherwise.
       if (line.action === "grab") {
-        const state = organizeStateStore.read();
-        organizeStateStore.write(addGrab(state, { id, adapter, serial: line.serial as number, name: line.name as string, from: (line.chain as number[]).at(-1) ?? null, queuedAt: line.queuedAt }));
+        organizeStateStore.update((state) => addGrab(state, { id, adapter, serial: line.serial as number, name: line.name as string, from: (line.chain as number[]).at(-1) ?? null, queuedAt: line.queuedAt }));
       }
       return send(res, 200, { ok: true, id } satisfies BridgeQueueApiResponse);
     } },
@@ -96,9 +94,7 @@ export function routes(ctx: ServerContext): Route[] {
       if (!status) return send(res, 200, { ok: true, online: false } satisfies BridgeStatusApiResponse);
       // The file's own fields go first, so a stray ok/online/age in a hand-edited or foreign file can never override
       // what this server computed.
-      // `current` and `results` are status.json's own objects, which the schema leaves open, while BridgeStatusApiResponse
-      // names the fields the page reads off them.
-      return send(res, 200, { ...status, ok: true, online, age: Math.round(age) } satisfies Omit<BridgeStatusApiResponse, "current" | "results"> & Pick<BridgeV1Status, "current" | "results">);
+      return send(res, 200, { ...status, ok: true, online, age: Math.round(age) } satisfies BridgeStatusApiResponse);
     } },
   ];
 }

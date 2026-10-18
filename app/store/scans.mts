@@ -1,14 +1,27 @@
-// scans.mts — <data>/scans/: every accepted scan, one JSON file each (the watcher writes them, /api/forget* adds tombstones, retention removes old ones).
+// scans.mts — <data>/scans/: every accepted scan, one JSON file each (the watcher writes them, writeTombstone adds the tombstones /api/forget* asks for, retention removes old ones).
 //
 // map: server
-// owns: `createScansStore`
+// owns: `createScansStore`, `TombstoneRoot`
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { isKnownKind, validateScan } from "../scan-schema.mts";
 import { migrate } from "../migrate.mts";
 import type { ScanV2 } from "../schema/types.d.mts";
 import type { ScanFile } from "../retention.mts";
-import { readJsonFile } from "./json-file.mts";
+import { readJsonFile, writeJsonFile } from "./json-file.mts";
+
+export type TombstoneRoot = { serial: number; kind: string; name: string; opened: boolean };
+
+// A `_vault` tombstone scan, which the fold reads as "forget": the roots it lists (POST /api/forget) or, with
+// forgetCharacter, that character (POST /api/forget-character). The key order is the bytes written.
+function tombstone(scannedAt: string, shard: string, roots: TombstoneRoot[], forgetCharacter?: string) {
+  return {
+    schemaVersion: 2, character: "_vault", scannedAt, ...(forgetCharacter === undefined ? {} : { forgetCharacter }),
+    adapter: { id: "app", version: "1", client: "Pack Rat", clientVersion: null,
+      capabilities: { layers: [], arms: false, bank: false, ground: false, nested: false, tooltips: "label", bridge: [] } },
+    shard, stats: {}, equipped: [], roots, containers: {}, items: [],
+  };
+}
 
 // `shard` is the current shard, read on every call: a v1 scan is upgraded under it.
 export function createScansStore({ dir, shard }: { dir: string; shard: () => string }) {
@@ -49,5 +62,14 @@ export function createScansStore({ dir, shard }: { dir: string; shard: () => str
     return readdirSync(dir).filter((f) => f.endsWith(".json")).sort()
       .map((f) => { const st = statSync(join(dir, f)); return `${f}:${st.mtimeMs}:${st.size}`; }).join("|");
   }
-  return { dir, files, all, signature };
+  // A tombstone dated now under the current shard, written compact as <dir>/<name> (created if missing), replacing an
+  // earlier one of that name. It is checked against the same contract files() checks every scan against first, so
+  // nothing written here is a file the fold then skips; a failure is this app's own bug and throws, with no file written.
+  function writeTombstone(name: string, forget: { roots: TombstoneRoot[] } | { character: string }): void {
+    const snap = "character" in forget ? tombstone(new Date().toISOString(), shard(), [], forget.character) : tombstone(new Date().toISOString(), shard(), forget.roots);
+    const { ok, errors } = validateScan(snap);
+    if (!ok) throw new Error(`refusing to write an invalid tombstone: ${errors.map((e) => `${e.path} ${e.msg}`).join("; ")}`);
+    writeJsonFile(join(dir, name), snap, { newline: false });
+  }
+  return { dir, files, all, signature, writeTombstone };
 }

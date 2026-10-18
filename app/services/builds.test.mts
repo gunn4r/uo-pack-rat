@@ -1,6 +1,6 @@
 // builds.test.mts — `app/services/builds.mts`, a checked build request into a started job or a saved run that answers it (issue #338).
 //
-// `[fast]`, on the TazUO fixture's inventory with a stand-in jobs service and run store: a by-character build submits the prepared input under its run key, saved, with the pool's figures on its meta and in the answer; a character with no scans is a 404; a saved run with the same key answers at once, and the newest run of the character is the warm start otherwise; a fill is never saved nor answered by a saved run, even one under its own key, and a pin that is no gear piece of its slot is a 400; a hand-built request skips the pool step; and a full jobs service is a 429.
+// `[fast]`, on the TazUO fixture's inventory with a stand-in jobs service and run store: a by-character build submits the prepared input under its run key, saved, with the pool's figures on its meta and in the answer; the answer passes on a meta warning only when it is text; a character with no scans is a 404; a saved run with the same key answers at once, and the newest run of the character is the warm start otherwise; a fill is never saved nor answered by a saved run, even one under its own key, and a pin that is no gear piece of its slot is a 400; a hand-built request skips the pool step; and a full jobs service is a 429.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { fixture, defaultProfiles } from "../solver-fixture.mts";
@@ -37,6 +37,12 @@ test("[fast] builds: a by-character build submits the prepared input under its k
   assert.ok(meta.pool, "the pool the saved run keeps");
   assert.deepEqual([body.poolSize, body.skipped], [meta.poolSize, meta.skipped]);
   assert.equal((await builds.start(request({ character: "Nobody Scanned" }), null)).status, 404);
+});
+
+test("[fast] builds: the answer passes on a warning only as text", async () => {
+  const answer = async (warning: unknown) => (await service().builds.start(request({ meta: { warning } }), null)).body;
+  assert.equal((await answer("check the pool")).warning, "check the pool");
+  for (const odd of [{ html: "<b>" }, 5, ["x"]]) assert.equal("warning" in (await answer(odd)), false, JSON.stringify(odd));
 });
 
 test("[fast] builds: a saved run with the key answers, else the character's newest run is the warm start", async () => {

@@ -13,7 +13,7 @@
 import { state } from "./store.mts";
 import { $, el, noteEl } from "./dom.mts";
 import { api } from "./api.mts";
-import { box, button, check, field, input, message, select, stepper, txt, badge, showToast } from "./components.mts";
+import { box, button, check, field, input, message, select, stepper, txt, badge, toast } from "./components.mts";
 import { clientErrorMessage, errorText, hostErrorMessage, installedIntoNote, pathsFileNote } from "./messages.mts";
 import { renderSettings } from "./settings.mts";
 import { changeShard } from "./shard.mts";
@@ -74,7 +74,7 @@ export async function openWizard({ firstRun = false }: { firstRun?: boolean } = 
   if (!dialog) return;
   let setup: SetupApiResponse;
   try { setup = await api<SetupApiResponse>("/api/setup"); }
-  catch (e) { showToast(`Could not load setup info: ${errorText(e)}`, "bad"); return; }
+  catch (e) { toast(`Could not load setup info: ${errorText(e)}`, "bad"); return; }
   state.setup = setup;
   const client = setup.settings.client;
   wiz = {
@@ -245,7 +245,7 @@ async function pickFolder(title: string): Promise<void> {
     // 501: no desktop shell (a bare `node vault-server.mts`) — the typed path is the way in.
     if ((e as ApiError).status === 501) { wiz!.hostPicker = false; render(); $<HTMLInputElement>("#wiz-path")?.focus(); }
     // 504: the shell never answered the picker (app/vault-server.mts's withHostTimeout).
-    else showToast(hostErrorMessage(e, "Could not open the folder picker"), "bad");
+    else toast(hostErrorMessage(e, "Could not open the folder picker"), "bad");
   }
 }
 async function locate(dir: string): Promise<void> {
@@ -380,7 +380,7 @@ async function persistSetupDone(): Promise<void> {
   try {
     const r = await api<SettingsApiResponse>("/api/settings", { method: "PUT", body: { setupDone: true } });
     state.settings = r.settings;
-  } catch (e) { showToast(errorText(e), "bad"); }
+  } catch (e) { toast(errorText(e), "bad"); }
   // The Inventory's row actions and the peek read the client from state.setup, which renderSettings
   // refreshes; they redraw on "bridgechange" (bridge.mts), so the client set up here reaches them at once.
   void renderSettings().then(() => document.dispatchEvent(new Event("bridgechange")));
@@ -404,7 +404,7 @@ async function finish(then?: string): Promise<void> {
       // PUT /api/settings validates client.scriptsDir before persisting it and answers 400 naming the
       // field when the folder is no longer one it will read — clientErrorMessage turns that into a
       // sentence with a next step in it (messages.mts).
-    } catch (e) { showToast(clientErrorMessage(e), "bad"); }
+    } catch (e) { toast(clientErrorMessage(e), "bad"); }
   }
   await persistSetupDone();
   closeAs("done");

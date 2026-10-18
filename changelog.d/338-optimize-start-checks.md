@@ -1,0 +1,1 @@
+- **A hand-built build request is checked piece by piece** (issue #338): `POST /api/optimize` refuses a candidate or worn piece without a numeric serial, a name, a slot (a string or null) or numeric properties with a 400, as it already refused one without properties, since the search can't use such a piece as sent. The start answer passes on a warning only when it is text.

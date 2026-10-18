@@ -9,9 +9,9 @@
 //
 // map: ui-components
 // owns: `changeShard`
-import { toast } from "./dom.mts";
 import { api } from "./api.mts";
 import type { SettingsApiResponse } from "./api-types.mts";
+import { toast } from "./components.mts";
 
 // Resolves to true on success (the caller can expect the page to be reloading out from under it) or
 // false on failure (already toasted here; the caller should restore its control's displayed value).
