@@ -21,7 +21,7 @@ import type { InstallApiResponse, LocateApiResponse, PasteScannerApiResponse, Se
 import type { ServerContext } from "../context.mts";
 
 export function routes(ctx: ServerContext): Route[] {
-  const { config: CONFIG, appSettings, clientRunning, clientSearch, host, packageJson: PACKAGE_JSON, savePanel, setupService, updateFetch } = ctx;
+  const { config: CONFIG, appSettings, clientRunning, clientSearch, host, packageJson: PACKAGE_JSON, panelPrefsStore, setupService, updateFetch } = ctx;
   const ADAPTERS_DIR = setupService.adaptersDir;
   // GET /api/update-check's last successful answer (see that route).
   const UPDATE_CHECK_TTL_MS = 60 * 60 * 1000;
@@ -129,7 +129,7 @@ export function routes(ctx: ServerContext): Route[] {
       appSettings.save({ client: { adapter: adapter as string, scriptsDir: destDir } });
       // The wizard sends its panel options. The adapter's own install step (its manifest's install.register, run by
       // installScripts) put the TazUO panel in TazUO's autostart list, or said why not.
-      if (panel !== undefined && !CONFIG.demo) savePanel(panel as object);
+      if (panel !== undefined && !CONFIG.demo) panelPrefsStore.save(panel as object);
       // pathsFile: what happened to packrat-paths.json on the way in (written/unchanged/kept/
       // backed-up) — installScripts no longer silently clobbers a hand-authored one, and the page
       // can say so.
