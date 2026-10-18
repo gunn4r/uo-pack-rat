@@ -1,0 +1,1 @@
+- **For contributors: item kinds moved to `app/domain/kinds.mts`** (issue #338): `KINDS`, `kindOf`, the kind overrides, `slayersOf` and the meditation rule (`medableOf`), re-exported from `app/vault-lib.mts` under the same names. A pure move: no behaviour changes.
