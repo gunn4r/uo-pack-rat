@@ -8,6 +8,7 @@
 // map: kinds
 // owns: `salvageKindOverrides`, `withKinds`, `withoutKinds`, `kindsDocument`, `MAX_KINDS_BYTES`
 import { OVERRIDE_KINDS, kindNameKey, kindGraphicKey, type KindOverrides } from "./vault-lib.mts";
+import { isPlainObject } from "./guards.mts";
 export { OVERRIDE_KINDS };
 
 // Entries across both maps, and an item name's length (a scan's own limit on a name); the largest file a read
@@ -26,10 +27,9 @@ export const kindCount = (o: KindOverrides): number => Object.keys(o.names).leng
 // The map key an item name or a graphic key from a file is kept under, or null when it is not one.
 const nameKeyOf = (k: string): string | null => (isKindName(k) ? kindNameKey(k) : null);
 const graphicKeyOf = (k: string): string | null => (GRAPHIC_KEY.test(k) ? kindGraphicKey(parseInt(k, 16)) : null);
-const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 
 export function salvageKindOverrides(raw: unknown): { overrides: KindOverrides; problems: string[] } {
-  if (!isObj(raw)) return { overrides: emptyKindOverrides(), problems: ["it is not a JSON object"] };
+  if (!isPlainObject(raw)) return { overrides: emptyKindOverrides(), problems: ["it is not a JSON object"] };
   if (raw.version !== undefined && raw.version !== 1) return { overrides: emptyKindOverrides(), problems: ["it is not a version 1 file"] };
   const problems: string[] = [];
   let room: number = KIND_LIMITS.entries;
@@ -37,7 +37,7 @@ export function salvageKindOverrides(raw: unknown): { overrides: KindOverrides; 
   const read = (field: "names" | "graphics", keyOf: (k: string) => string | null, what: string): Record<string, string> => {
     const map = raw[field];
     if (map === undefined) return {};
-    if (!isObj(map)) { problems.push(`${field} is not an object`); return {}; }
+    if (!isPlainObject(map)) { problems.push(`${field} is not an object`); return {}; }
     const kept: Array<[string, string]> = [];
     for (const [k, v] of Object.entries(map)) {
       const key = keyOf(k), at = `${field} ${JSON.stringify(k.slice(0, 40))}`;

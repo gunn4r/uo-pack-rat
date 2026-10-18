@@ -11,6 +11,7 @@
 // owns: `PUT_AWAY_REQUEST`, `PUT_AWAY_REPLY`, `checkPutAwayRequest`
 import { parseStamp } from "./scan-schema.mts";
 import type { PackKept, Plan } from "./organize.mts";
+import { isPlainObject, isBoundedInt, MAX_SERIAL } from "./guards.mts";
 
 export const PUT_AWAY_REQUEST = "putaway-request.json";
 export const PUT_AWAY_REPLY = "putaway.json";
@@ -33,28 +34,25 @@ export interface PutAwayRequest { id: string; container: number; character: stri
 // bridge's status.json; with none, nothing was queued and `msg`/`detail` say why.
 export interface PutAwayReply { id: string | null; ok: boolean; msg: string; detail?: string | undefined; trip?: string | undefined; t: string }
 
-const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
-const isInt = (v: unknown, lo: number, hi: number): v is number => typeof v === "number" && Number.isInteger(v) && v >= lo && v <= hi;
-
 // The id, when the file names a usable one: the panel matches the answer to its request by it.
-export const requestId = (raw: unknown): string | null => (isObj(raw) && typeof raw.id === "string" && /^[A-Za-z0-9-]{1,64}$/.test(raw.id) ? raw.id : null);
+export const requestId = (raw: unknown): string | null => (isPlainObject(raw) && typeof raw.id === "string" && /^[A-Za-z0-9-]{1,64}$/.test(raw.id) ? raw.id : null);
 
 export function checkPutAwayRequest(raw: unknown, now: number): { ok: true; request: PutAwayRequest } | { ok: false; error: string } {
   const fail = (error: string): { ok: false; error: string } => ({ ok: false, error });
-  if (!isObj(raw)) return fail("the request is not a Put away request");
+  if (!isPlainObject(raw)) return fail("the request is not a Put away request");
   const bad = Object.keys(raw).find((k) => !KEYS.includes(k));
   if (bad !== undefined) return fail("the request has a field Put away does not take");
   const id = requestId(raw);
   if (!id) return fail("the request has no id");
-  if (!isInt(raw.container, 1, 0xFFFFFFFF)) return fail("the request names no container");
+  if (!isBoundedInt(raw.container, 1, MAX_SERIAL)) return fail("the request names no container");
   const { character, requestedAt, clickedAt, at } = raw;
   if (typeof character !== "string" || !character || character.length > 64 || /\p{Cc}/u.test(character)) return fail("the request names no character");
   const t = typeof requestedAt === "string" && requestedAt.length <= 40 ? parseStamp(requestedAt) : NaN;
   if (!Number.isFinite(t) || now - t > MAX_AGE_MS || t - now > SKEW_MS) return fail("the request is too old: click Put away again");
   const c = typeof clickedAt === "string" && clickedAt.length <= 40 ? parseStamp(clickedAt) : NaN;
   if (!Number.isFinite(c) || c > t + SKEW_MS || t - c > MAX_RUN_MS) return fail("the request does not say when Put away was clicked");
-  if (!isObj(at) || Object.keys(at).some((k) => k !== "x" && k !== "y" && k !== "facet") || !isInt(at.x, 0, 7168) || !isInt(at.y, 0, 4096)
-    || (at.facet !== undefined && !isInt(at.facet, 0, 5))) return fail("the request does not say where you stand");
+  if (!isPlainObject(at) || Object.keys(at).some((k) => k !== "x" && k !== "y" && k !== "facet") || !isBoundedInt(at.x, 0, 7168) || !isBoundedInt(at.y, 0, 4096)
+    || (at.facet !== undefined && !isBoundedInt(at.facet, 0, 5))) return fail("the request does not say where you stand");
   return { ok: true, request: { id, container: raw.container, character, requestedAt: requestedAt as string, clickedAt: clickedAt as string, at: { x: at.x, y: at.y, ...(at.facet !== undefined ? { facet: at.facet as number } : {}) } } };
 }
 
