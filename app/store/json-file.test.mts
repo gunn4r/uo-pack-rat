@@ -1,13 +1,13 @@
 // json-file.test.mts — `app/store/json-file.mts`: each bad-file policy and the writer.
 //
-// `app/store/json-file.mts`: a symlink or FIFO under the name is refused (not followed, never waited on), and each bad-file policy on a missing, oversized, unparsable or refused file (`empty` hands the salvage undefined, also when the salvage throws, and moves nothing; `aside` moves the file to `.corrupt`, a newer one to a timestamped name, and says why, with `ioErrors: "throw"` throwing a failed read; `skip` throws), and the writer creating the folder with the indent, trailing newline and the data folder's file and folder modes. All `[fast]`.
+// `app/store/json-file.mts`: a symlink or FIFO under the name is refused (not followed, never waited on), and each bad-file policy on a missing, oversized, unparsable or refused file (`empty` hands the salvage undefined, also when the salvage throws, and moves nothing; `aside` moves the file to `.corrupt`, a newer one to a timestamped name, and says why, with `ioErrors: "throw"` throwing a failed read; `skip` throws), the writer creating the folder with the indent, trailing newline and the data folder's file and folder modes, and `updater` reading once, writing what its function returns and nothing for undefined. All `[fast]`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { tmpdir } from "node:os";
-import { readJsonFile, writeJsonFile } from "./json-file.mts";
+import { readJsonFile, updater, writeJsonFile } from "./json-file.mts";
 
 const dir = (): string => mkdtempSync(join(tmpdir(), "pr-json-file-"));
 
@@ -93,4 +93,14 @@ test("[fast] json-file: a symlink to a regular file reads as the file, a FIFO (o
   writeFileSync(real, "{\"x\":\"" + "y".repeat(50) + "\"}");
   const big = readJsonFile(real, { maxBytes: 20, onBad: "aside" });
   assert.ok("bad" in big && big.bad.why === "too-big", "a file past the cap is too big, not a corrupt prefix");
+});
+
+test("[fast] json-file: updater reads once, writes what the function returns and answers it, and writes nothing for undefined", () => {
+  let held = [1], reads = 0;
+  const writes: number[][] = [];
+  const update = updater(() => { reads++; return held; }, (next) => { writes.push(next); held = next; });
+  assert.deepEqual(update((c) => [...c, 2]), [1, 2]);
+  assert.deepEqual([reads, writes], [1, [[1, 2]]]);
+  assert.deepEqual(update(() => undefined), [1, 2]);
+  assert.deepEqual([reads, writes], [2, [[1, 2]]]);
 });

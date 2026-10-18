@@ -77,8 +77,7 @@ export function routes(ctx: ServerContext): Route[] {
       // A Grab is remembered like a trip (issue #148), so when it reports back the item reads as in the backpack
       // and the container it left has that slot free again (harvestTrips), until a scan says otherwise.
       if (line.action === "grab") {
-        const state = organizeStateStore.read();
-        organizeStateStore.write(addGrab(state, { id, adapter, serial: line.serial as number, name: line.name as string, from: (line.chain as number[]).at(-1) ?? null, queuedAt: line.queuedAt }));
+        organizeStateStore.update((state) => addGrab(state, { id, adapter, serial: line.serial as number, name: line.name as string, from: (line.chain as number[]).at(-1) ?? null, queuedAt: line.queuedAt }));
       }
       return send(res, 200, { ok: true, id } satisfies BridgeQueueApiResponse);
     } },

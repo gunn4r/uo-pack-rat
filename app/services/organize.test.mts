@@ -12,6 +12,7 @@ import { resolveConfig } from "../config.mts";
 import { emptyOrganizeConfig } from "../organize-config.mts";
 import { emptyOrganizeState } from "../organize-state.mts";
 import { loadRules } from "../rules.mts";
+import { updater } from "../store/json-file.mts";
 import { createOrganizeService } from "./organize.mts";
 
 function setup() {
@@ -21,7 +22,7 @@ function setup() {
   const service = createOrganizeService({
     paths, getInventory: async () => { throw new Error("not planned"); },
     organizeStore: { read: () => ({ config: emptyOrganizeConfig(), problems: [] }), stamp: () => "none" },
-    organizeStateStore: { read: () => { stateReads++; return emptyOrganizeState(); }, write: () => { stateWrites++; } },
+    organizeStateStore: { update: updater(() => { stateReads++; return emptyOrganizeState(); }, () => { stateWrites++; }) },
     blacklistStore: { read: () => [] }, runStore: { all: () => { runReads++; return []; } },
     rules: () => loadRules("uoalive"), bridgeAdapter: () => "tazuo", manifest: () => null, events: { broadcast: (e) => events.push(e) }, log: (line) => logged.push(line),
   });

@@ -24,7 +24,7 @@ export function createOrganizeService({ paths, getInventory, organizeStore, orga
   paths: Pick<ConfigPaths, "bridgeFor" | "bridgeQueueFor" | "bridgeStatusFor">;
   getInventory: () => Promise<{ fold: Inventory }>;
   organizeStore: { read(): { config: OrganizeConfig; problems: string[] }; stamp(): string };
-  organizeStateStore: { read(): OrganizeState; write(state: OrganizeState): void };
+  organizeStateStore: { update(fn: (current: OrganizeState) => OrganizeState | undefined): OrganizeState };
   blacklistStore: { read(): BlacklistEntry[] };
   runStore: { all(): SavedRun[] };
   rules: () => RulesV1;
@@ -58,12 +58,15 @@ export function createOrganizeService({ paths, getInventory, organizeStore, orga
   // every view even with Organize closed; when it brought moves in, the state file is rewritten and every open page
   // told to reload its inventory. A Grab is harvested the same way. With nothing pending it only reads the state file.
   function harvestNow(now: number): { state: OrganizeState; bridges: Record<string, BridgeView> } {
-    const before = organizeStateStore.read();
-    if (!before.pending.length && !before.grabs.length) return { state: before, bridges: {} };
-    const bridges = Object.fromEntries([...new Set([...before.pending, ...before.grabs].map((p) => p.adapter))].map((a) => [a, bridgeView(a, now)]));
-    const state = harvestTrips(before, bridges, now);
-    if (JSON.stringify(state) !== JSON.stringify(before)) organizeStateStore.write(state);
-    if (JSON.stringify(state.moves) !== JSON.stringify(before.moves)) events.broadcast("changed", { what: "inventory", at: now });
+    let bridges: Record<string, BridgeView> = {}, moved = false;
+    const state = organizeStateStore.update((before) => {
+      if (!before.pending.length && !before.grabs.length) return undefined;
+      bridges = Object.fromEntries([...new Set([...before.pending, ...before.grabs].map((p) => p.adapter))].map((a) => [a, bridgeView(a, now)]));
+      const next = harvestTrips(before, bridges, now);
+      moved = JSON.stringify(next.moves) !== JSON.stringify(before.moves);
+      return JSON.stringify(next) !== JSON.stringify(before) ? next : undefined;
+    });
+    if (moved) events.broadcast("changed", { what: "inventory", at: now });
     return { state, bridges };
   }
   // What a plan starts from now: finished trips harvested, entries a newer scan has settled dropped, labels' last-seen
@@ -74,9 +77,11 @@ export function createOrganizeService({ paths, getInventory, organizeStore, orga
     const { fold } = await getInventory();
     const { config, problems } = organizeStore.read(), stamp = organizeStore.stamp();
     const now = Date.now();
-    const { state: harvested, bridges } = harvestNow(now);
-    const state = noteSeen(pruneOverlay(harvested, fold, now), config, fold);
-    if (JSON.stringify(state) !== JSON.stringify(harvested)) organizeStateStore.write(state);
+    const { bridges } = harvestNow(now);
+    const state = organizeStateStore.update((harvested) => {
+      const next = noteSeen(pruneOverlay(harvested, fold, now), config, fold);
+      return JSON.stringify(next) !== JSON.stringify(harvested) ? next : undefined;
+    });
     return { fold, config, stamp, state, problems, bridges, features: featuresOf(adapter, fold, now) };
   }
   const planOf = (fold: Inventory, config: OrganizeConfig, state: OrganizeState, features: ReadonlySet<string>, putAway?: PutAway): Plan =>
@@ -96,7 +101,7 @@ export function createOrganizeService({ paths, getInventory, organizeStore, orga
     const queued = queueTrip(paths, adapter, putAway ? { ...input, putAway } : input, now);
     if (!queued.ok) return queued;
     const steps = plan.moves.filter((m) => m.trip === index).map(({ serial, name, from, to }) => ({ serial, name, from, to }));
-    organizeStateStore.write({ ...state, pending: [...state.pending, { id: queued.id, adapter, index, stamp: plan.stamp, queuedAt: now.toISOString(), steps }] });
+    organizeStateStore.update((current) => ({ ...current, pending: [...current.pending, { id: queued.id, adapter, index, stamp: plan.stamp, queuedAt: now.toISOString(), steps }] }));
     return queued;
   }
   // Put away (issue #131, app/put-away.mts): the TazUO panel's request, handed over by the watcher of the inbox it was

@@ -1,6 +1,6 @@
 // stores.test.mts — each store in `app/store/` on its own: size caps, bad files and the exact bytes written.
 //
-// each store in `app/store/` on its own: its size cap at the cap and one byte past it (blacklist and house claims 256 KiB, organize-state 4 MB, item-kinds and organize their own limits), what a missing, damaged or partly bad file reads as (moved aside, empty, salvaged or skipped) with the exact warning, log or problem text, and the exact bytes each write leaves (indent, trailing newline, a run compact with none); a file a newer Pack Rat made (organize, item-kinds, profiles) read as far as it can be, marked read-only and never written over. The house claims (issue #299): which claims a house's bounds fall under, and the claims made at the first start from the houses named or given areas. All `[fast]`; they pin the policies the routes rely on while the server is split.
+// each store in `app/store/` on its own: its size cap at the cap and one byte past it (blacklist and house claims 256 KiB, organize-state 4 MB, item-kinds and organize their own limits), what a missing, damaged or partly bad file reads as (moved aside, empty, salvaged or skipped) with the exact warning, log or problem text, and the exact bytes each write leaves (indent, trailing newline, a run compact with none); a file a newer Pack Rat made (organize, item-kinds, profiles) read as far as it can be, marked read-only and never written over; `update(fn)` on the blacklist, house claims and organize-state writing the same bytes as `write` and nothing when `fn` answers undefined. The house claims (issue #299): which claims a house's bounds fall under, and the claims made at the first start from the houses named or given areas. All `[fast]`; they pin the policies the routes rely on while the server is split.
 import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -204,6 +204,25 @@ test("[fast] stores: house claims read up to 256 KiB, a larger, missing or damag
   assert.equal(readFileSync(f, "utf8"), JSON.stringify([unsigned], null, 1) + "\n");
 });
 
+
+test("[fast] stores: update(fn) on the blacklist, house claims and organize-state reads, writes what fn returns with the bytes write leaves, and writes nothing for undefined", () => {
+  const d = dir();
+  const entry = { serial: 1234, name: "Chest", addedAt: "2026-01-01T00:00:00.000Z" };
+  const claim = { id: "1-3000-1000", facet: 1, bounds: { x0: 3000, y0: 1000, x1: 3006, y1: 1006 }, claimedAt: "2026-10-16T10:00:00Z" };
+  const state = { ...emptyOrganizeState(), seen: { "1234": "2026-01-01T00:00:00.000Z" } };
+  function check<T>(file: string, update: (fn: (current: T) => T | undefined) => T, next: T): void {
+    const seen: T[] = [];
+    assert.deepEqual(update((c) => { seen.push(c); return undefined; }), seen[0]);
+    assert.ok(!existsSync(file), `${file}: nothing written for undefined`);
+    assert.deepEqual(update(() => next), next);
+    assert.equal(readFileSync(file, "utf8"), JSON.stringify(next, null, 1) + "\n");
+    assert.deepEqual(update((c) => { assert.deepEqual(c, next); return undefined; }), next);
+  }
+  const files = { blacklist: join(d, "scan-blacklist.json"), claims: join(d, "house-claims.json"), state: join(d, "organize-state.json") };
+  check(files.blacklist, createBlacklistStore(files.blacklist).update, [entry]);
+  check(files.claims, createHouseClaimsStore(files.claims).update, [claim]);
+  check(files.state, createOrganizeStateStore(files.state).update, state);
+});
 
 // The cases app/fixtures/contract-cases/blacklist.json shares with adapters/test_adapters.py, which runs the scripts' read_blacklist over them.
 test("[fast] stores: the blacklist keeps every shared valid case, with only the fields it knows, and drops every shared invalid one", () => {
