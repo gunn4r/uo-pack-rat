@@ -1,0 +1,1 @@
+- **For contributors: screens stay apart** (issue #338): `scripts/layering.test.mts` now fails when one feature's screen modules import another feature's (Unravel importing Scrolls, say). The seven edges that remain for now are listed with where each is meant to go, and the list can only shrink.

@@ -1429,6 +1429,9 @@ export function buildPools(inv: Inventory, character: string | null, opts: Build
   // A worn piece the filters rule out (wrong weapon type, a forbidden skill bonus, a missing weapon property) must not
   // stay a candidate through the "keep what you wear" rule. A pinned piece is never blocked, and a locked slot keeps a
   // weapon that lacks a required property: the player chose it.
+  // The game never wears a two-handed weapon beside a one-hander (a demo fixture does): the one hand reads as empty, as
+  // the core's optSanitize would leave it, so the exact search never starts from a suit nobody can wear.
+  if (current.twoHanded?.twoHanded && current.oneHanded) delete current.oneHanded;
   const wornAt = (sl: string): Item | null => (current[sl] && pinned?.[sl] == null ? inv.items[current[sl]!.serial] || ({} as Item) : null);
   const kept = weaponMustHave.length ? HAND_SLOTS.filter((sl) => lockedSlots.includes(sl) && wornAt(sl) && !weaponHasFlags(wornAt(sl)!, weaponMustHave)) : [];
   const blocked = GEAR_SLOTS.filter((sl) => {
