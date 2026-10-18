@@ -81,15 +81,17 @@ def read_blacklist(path):
 # END generated: read_blacklist
 
 
+# BEGIN generated: manifest
 ADAPTER_ID = "tazuo"
 ADAPTER_VERSION = "2.20.0"
 CAPABILITIES = {
-    "layers": ["OneHanded", "TwoHanded", "Shoes", "Pants", "Shirt", "Helmet", "Gloves",
-               "Ring", "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic",
-               "Earrings", "Arms", "Cloak", "Robe", "Skirt", "Legs"],
+    "layers": ["OneHanded", "TwoHanded", "Shoes", "Pants", "Shirt", "Helmet", "Gloves", "Ring",
+               "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic", "Earrings", "Arms",
+               "Cloak", "Robe", "Skirt", "Legs"],
     "arms": True, "bank": True, "ground": True, "nested": True, "tooltips": "opl",
     "bridge": ["highlight", "grab", "goto", "trip", "trip-bags", "scan"],
 }
+# END generated: manifest
 
 
 # BEGIN generated: tazuo/house_limits
