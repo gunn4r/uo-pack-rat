@@ -6,7 +6,7 @@ Walk the list for each kind your change is, and say in the pull request which ki
 
 ## Always
 
-- A changelog fragment, `changelog.d/<short-name>.md`, when the change matters to a player or a contributor: one line per entry in `CHANGELOG.md`'s style. Never edit `CHANGELOG.md` itself (`CONTRIBUTING.md`, Changelog).
+- A changelog fragment, `changelog.d/<short-name>.md`, when the change matters to a player or a contributor: one line per entry in `CHANGELOG.md`'s style, an entry only contributors care about titled `- **For contributors: …**` (the release puts those under their own subheading, below the player-facing ones). Never edit `CHANGELOG.md` itself (`CONTRIBUTING.md`, Changelog).
 - Tests next to every module you touched, each test name tagged `[smoke]`, `[fast]` or `[slow]`. Every test file opens with a header saying what it covers (`TESTING.md`); after adding one or changing a header's first sentence, run `npm run gen:test-index`.
 - `npm run typecheck`, then `./scripts/test_runner.sh --changed` and `--fast` (`TESTING.md`).
 - `npm run gen:modules` when you add, move, delete or rename a module, or change its header's first sentence, `// map:` or `// owns:` line (moving a concept between modules changes the `// owns:` lines). The tables in `docs/module-map.md` are generated; never edit them by hand.

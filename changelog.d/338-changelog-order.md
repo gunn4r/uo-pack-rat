@@ -1,0 +1,1 @@
+- **For contributors: release notes put players first** (issue #338): `node scripts/changelog.mts --release` now writes a version's player-facing entries first and moves every entry titled "For contributors: …" under a `### For contributors` subheading below them, without that prefix, each group keeping its order. Sections already released are unchanged.
