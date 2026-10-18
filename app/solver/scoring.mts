@@ -5,7 +5,7 @@
 // solvers". Pure, no imports: the core loads it from source, and the page compiles it with the modules that read it.
 //
 // map: builder
-// owns: `HARD_FLOOR_BONUS`, `HARD_FLOOR_BONUS_MAX`, `hardBonusOf`, `TIE_SLACK`, `SCORE_REL`, `slackAt`, `FLOAT_EPS`, `CHANGE_COST`, `GEAR_SLOT_COUNT`, `changeCost`, `RESIST_SKILL_KEY`, `RESIST_STEP_SLACK`, `DEFAULT_FLOOR_BONUS`, `DEFAULT_FLOOR_PARTIAL`, `DEFAULT_BUDGET_MS`, `DEFAULT_RESTARTS`
+// owns: `HARD_FLOOR_BONUS`, `HARD_FLOOR_BONUS_MAX`, `hardBonusOf`, `TIE_SLACK`, `SCORE_REL`, `slackAt`, `FLOAT_EPS`, `CHANGE_COST`, `GEAR_SLOT_COUNT`, `changeCost`, `RESIST_SKILL_KEY`, `RESIST_STEP_SLACK`, `DEFAULT_FLOOR_BONUS`, `DEFAULT_FLOOR_PARTIAL`, `DEFAULT_BUDGET_MS`, `DEFAULT_RESTARTS`, `scoringProfile`, `ScoringProfile`
 
 // A met hard floor's bonus, and the most app/mip.mts's withHardFloorBonus raises it to for a profile whose weights could
 // otherwise outweigh it (issue #311).
@@ -43,3 +43,49 @@ export const DEFAULT_FLOOR_BONUS = 1000;
 export const DEFAULT_FLOOR_PARTIAL = 0.5;
 export const DEFAULT_BUDGET_MS = 15_000;
 export const DEFAULT_RESTARTS = 200;
+
+// A profile as both solvers score it: every default filled in once, and the floor rules they share. `weights`, `caps`, `mins`
+// and `floors` are the profile's own maps (an absent one empty); `floorOf(d)` is the floor a suit can miss, 0 for none and for
+// one at or under the property's min, which every suit meets; `bonusOf(d)` a met floor's bonus (a hard floor's raised one,
+// hardBonusOf); `partialOf(d)` the credit at the floor, bonus × floorPartial, the hard floors sharing theirs (each gets
+// 1/hardCount, so together it stays under half one floor's bonus and can never buy a miss of a floor some suit meets, issue
+// #204). `hardCount` counts every hard floor a suit can miss, one each suit meets included.
+export interface ScoringInput {
+  weights?: Record<string, number> | undefined;
+  caps?: Record<string, number> | undefined;
+  mins?: Record<string, number> | undefined;
+  floors?: Record<string, number> | undefined;
+  hardFloors?: string[] | undefined;
+  floorBonus?: number | undefined;
+  floorPartial?: number | undefined;
+  hardFloorBonus?: number | undefined;
+}
+export interface ScoringProfile {
+  weights: Record<string, number>;
+  caps: Record<string, number>;
+  mins: Record<string, number>;
+  floors: Record<string, number>;
+  hard: Set<string>;
+  floorBonus: number;
+  floorPartial: number;
+  hardBonus: number;
+  hardCount: number;
+  floorOf: (d: string) => number;
+  bonusOf: (d: string) => number;
+  partialOf: (d: string) => number;
+}
+export function scoringProfile(profile: ScoringInput): ScoringProfile {
+  const weights = profile.weights || {}, caps = profile.caps || {}, mins = profile.mins || {}, floors = profile.floors || {};
+  const hard = new Set(profile.hardFloors || []);
+  const floorBonus = typeof profile.floorBonus === "number" ? profile.floorBonus : DEFAULT_FLOOR_BONUS;
+  const floorPartial = typeof profile.floorPartial === "number" ? profile.floorPartial : DEFAULT_FLOOR_PARTIAL;
+  const hardBonus = hardBonusOf(profile);
+  const floorOf = (d: string): number => {
+    const f = floors[d], m = mins[d];
+    return typeof f === "number" && !(f <= (typeof m === "number" ? m : -Infinity)) ? f : 0;
+  };
+  const hardCount = Object.keys(floors).filter((d) => hard.has(d) && floorOf(d) > 0).length;
+  const bonusOf = (d: string): number => (hard.has(d) ? hardBonus : floorBonus);
+  const partialOf = (d: string): number => (hard.has(d) ? bonusOf(d) * floorPartial / Math.max(1, hardCount) : bonusOf(d) * floorPartial);
+  return { weights, caps, mins, floors, hard, floorBonus, floorPartial, hardBonus, hardCount, floorOf, bonusOf, partialOf };
+}

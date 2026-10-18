@@ -22,7 +22,7 @@ Read this section first; the rest of the file is the reference, feature by featu
 - The same seed gives byte-identical results.
 - `alternatives` never contains the returned suit.
 
-**The shared scoring constants** live once in `app/solver/scoring.mts`, which both solvers import: the hard-floor bonus and its maximum (`HARD_FLOOR_BONUS`, `HARD_FLOOR_BONUS_MAX`, `hardBonusOf`), the score precision (`TIE_SLACK`, also HiGHS's `mip_abs_gap`), the relative slack (`SCORE_REL`, `slackAt`), float noise (`FLOAT_EPS`), the change cost (`CHANGE_COST`, `changeCost`), the Resisting Spells key and step slack, and the defaults an absent field means (`DEFAULT_FLOOR_BONUS`, `DEFAULT_FLOOR_PARTIAL`, `DEFAULT_BUDGET_MS`, `DEFAULT_RESTARTS`). Change a value there, never in a solver.
+**The shared scoring constants** live once in `app/solver/scoring.mts`, which both solvers import: the hard-floor bonus and its maximum (`HARD_FLOOR_BONUS`, `HARD_FLOOR_BONUS_MAX`, `hardBonusOf`), the score precision (`TIE_SLACK`, also HiGHS's `mip_abs_gap`), the relative slack (`SCORE_REL`, `slackAt`), float noise (`FLOAT_EPS`), the change cost (`CHANGE_COST`, `changeCost`), the Resisting Spells key and step slack, and the defaults an absent field means (`DEFAULT_FLOOR_BONUS`, `DEFAULT_FLOOR_PARTIAL`, `DEFAULT_BUDGET_MS`, `DEFAULT_RESTARTS`). So is the profile as both read it: `scoringProfile` fills those defaults in and says which floors ask for something (`floorOf`: none at or under the property's min), what a met floor earns (`bonusOf`) and the partial credit at it, the hard floors sharing theirs (`partialOf`). Change a value or a floor rule there, never in a solver.
 
 **The rules written twice.** The core states these as an evaluator and the MIP as rows, so a change to one is a change to both; the third column says what catches a mismatch:
 
@@ -33,7 +33,7 @@ Read this section first; the rest of the file is the reference, feature by featu
 | SSI step credit | `optStepCredit` | `stepCredit` (`app/swing.mts`), the step loop in `startVector` | the fuzz suite |
 | The slots | `optDefaultSlots` | `GEAR_SLOTS` (`app/vault-lib.mts`, read by `app/mip.mts`) | `app/solver.test.mts` |
 | The optional slots | `optDefaultOptionalSlots` | `DEFAULT_OPTIONAL_SLOTS` (`app/mip.mts`) | `app/solver.test.mts` |
-| A floor at or under its minimum asks for nothing, and the hard floors' partial share | `optBuildSpace` | `buildSuitMip` and `hardFloorSpread` (`app/mip.mts`), `app/diagnostics.mts` | the fuzz suite |
+| A floor at or under its minimum asks for nothing | `floorOf` (`scoringProfile`, which the MIP reads too) | `floorsOf` (`app/diagnostics.mts`), against the lifted minimum | `app/diagnostics.test.mts` |
 
 Issue #338's quality pass moves the profile normalisation and these term functions into `app/solver/` next; this table shrinks as that lands.
 

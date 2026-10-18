@@ -7,7 +7,7 @@
 // owns: `buildSuitMip`, `propertyReach`, `startVector`, `pickedOf`, `noGoodRow`, `HARD_FLOOR_BONUS`, `DEFAULT_SLOTS`, `optionalSlotsFor`, `heldModel`, `tieBreakModel`, `stageObjective`, `tieCosts`, `withHardFloorBonus`, `hardFloorSpread`
 import { GEAR_SLOTS, REQUIRED_SLOTS, RESIST_SKILL_KEY, RESIST_STEP_SLACK, type OptItem, type ResistStep } from "./vault-lib.mts";
 import { stepsFor } from "./swing.mts";
-import { CHANGE_COST, DEFAULT_FLOOR_BONUS, DEFAULT_FLOOR_PARTIAL, FLOAT_EPS, HARD_FLOOR_BONUS, HARD_FLOOR_BONUS_MAX, SCORE_REL, TIE_SLACK, changeCost, hardBonusOf, slackAt } from "./solver/scoring.mts";
+import { CHANGE_COST, FLOAT_EPS, HARD_FLOOR_BONUS, HARD_FLOOR_BONUS_MAX, SCORE_REL, TIE_SLACK, changeCost, hardBonusOf, scoringProfile, slackAt } from "./solver/scoring.mts";
 
 // The scoring constants this module and the core share live in app/solver/scoring.mts; they are re-exported here for the
 // modules that read them from the MIP.
@@ -214,10 +214,8 @@ export function poolStepsFor(profile: Parameters<typeof stepsFor>[0], pools: Par
 // table (the optimize route passes the one the worker will score with). null with no hard floor.
 export interface HardFloorSpread { soft: number; weights: Record<string, number> }
 export function hardFloorSpread(profile: MipProfile, pools: Partial<Record<string, OptItem[]>>, current: Partial<Record<string, OptItem | null | undefined>>, optionalSlots: string[] = DEFAULT_OPTIONAL_SLOTS, slots: string[] = DEFAULT_SLOTS): HardFloorSpread | null {
-  const W = profile.weights || {}, CAPS = profile.caps || {}, FL = profile.floors || {}, MINS = profile.mins || {}, hard = new Set(profile.hardFloors || []);
-  const floorOf = (d: string): number => (MINS[d] != null && (FL[d] || 0) <= MINS[d]! ? 0 : FL[d] || 0);
-  if (!Object.keys(FL).some((d) => hard.has(d) && floorOf(d) > 0)) return null;
-  const FB = typeof profile.floorBonus === "number" ? profile.floorBonus : DEFAULT_FLOOR_BONUS, PARTIAL = typeof profile.floorPartial === "number" ? profile.floorPartial : DEFAULT_FLOOR_PARTIAL;
+  const sp = scoringProfile(profile), { weights: W, caps: CAPS, floors: FL, mins: MINS, hard, floorOf, floorBonus: FB, floorPartial: PARTIAL } = sp;
+  if (!sp.hardCount) return null;
   const weighted = Object.keys(W).filter((d) => W[d]), reach = propertyReach(pools, current, optionalSlots, slots, weighted), weights: Record<string, number> = {};
   for (const d of weighted) {
     const cap = CAPS[d] ?? INF, mins = [MINS[d], ...(profile.resistSteps || []).map((st) => st.mins[d])].filter((m): m is number => typeof m === "number");
@@ -248,10 +246,7 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
   const parts: ObjectiveParts | null = withParts ? { weights: {}, floors: { cols: [], costs: [], offset: 0 }, softPartial: { cols: [], costs: [], offset: 0 } } : null;
   let part: ObjectivePart | null = null;
   const optional = new Set(optionalSlots);
-  const W = profile.weights || {}, CAPS = profile.caps || {}, FL = profile.floors || {}, MINS = profile.mins || {};
-  const hard = new Set(profile.hardFloors || []);
-  const FB = typeof profile.floorBonus === "number" ? profile.floorBonus : DEFAULT_FLOOR_BONUS;
-  const PARTIAL = typeof profile.floorPartial === "number" ? profile.floorPartial : DEFAULT_FLOOR_PARTIAL, HB = hardBonusOf(profile);
+  const { weights: W, caps: CAPS, floors: FL, mins: MINS, hard, floorOf, bonusOf, partialOf, hardBonus: HB } = scoringProfile(profile);
   // SSI by step (scripts/optimizer-core.mts optScoreVector): with a positive SSI weight, the SSI term is w × the best credit among the points the suit reaches, in place of w·min(t, cap). It needs the Stamina pool's total too.
   const steps = Array.isArray(profile.ssiSteps) && (W.ssi || 0) > 0 ? profile.ssiSteps : null;
   const dims = [...new Set([...Object.keys(W), ...Object.keys(CAPS), ...Object.keys(FL), ...(steps ? ["ssi", "stamPool"] : [])])];
@@ -307,10 +302,6 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
     forced = true;
     for (const { col, at } of resistStepCols) addRow([...rsXs, [col, -(rsReach.max - (at - RESIST_STEP_SLACK))]], -INF, at - RESIST_STEP_SLACK);
   };
-  // a floor at or under the property's min is met by every suit: dropped, as the core drops it
-  const floorOf = (d: string): number => (MINS[d] != null && (FL[d] || 0) <= MINS[d]! ? 0 : FL[d] || 0);
-  // every hard floor counts in the share, one each suit meets included, as in the core
-  const nHard = dims.filter((d) => hard.has(d) && floorOf(d) > 0).length;
   for (const d of dims) {
     part = parts ? (parts.weights[d] = { cols: [], costs: [], offset: 0 }) : null;
     const w = W[d] || 0, cap = CAPS[d], m = MINS[d], f = floorOf(d);
@@ -411,7 +402,7 @@ export function buildSuitMip({ pools = {}, current = {}, profile, optionalSlots 
     if (unreachable && isHard) unreachableFloors.push(d);
     // soft floor (or an unreachable / hardAsSoft hard floor): bonus·y + s with t ≥ f·y, s ≤ k·t, s ≤ bonus·partial·(1 − y)
     // a hard floor's partial credit is shared among the hard floors, as the core's (issue #204)
-    const bonus = isHard ? HB : FB, sMax = bonus * PARTIAL / (isHard ? nHard : 1), k = sMax / f;
+    const bonus = bonusOf(d), sMax = partialOf(d), k = sMax / f;
     const y = unreachable ? null : addCol({ name: `y_${d}`, kind: "y", dim: d }, bonus, 0, 1, true);
     // a soft floor's partial credit is a part of its own, which strict order's requirements stage leaves out (scripts/optimizer-core.mts optStrictSpaces)
     if (parts && !isHard) part = parts.softPartial;
