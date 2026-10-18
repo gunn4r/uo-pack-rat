@@ -1,0 +1,1 @@
+- **For contributors: each route module documents its own routes** (issue #338): the per-module route lists move from `docs/architecture.md` into the header of each `app/http/routes/` module, beside the routes themselves, so a route change edits one file; `docs/architecture.md` keeps how the routes are put together.

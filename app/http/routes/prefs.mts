@@ -1,5 +1,11 @@
 // prefs.mts — the player's saved choices: GET|PATCH /api/profiles, /api/ui-prefs and /api/tazuo-panel.
 //
+// The routes, what each takes and answers:
+// - `GET /api/profiles` (`<data>/profiles.json`; also answers `builtinTemplates`, the shard's built-in templates from `app/data/templates/<shard>.json`, and the file's content `stamp`, which a PATCH's `was` is compared with)
+// - `PATCH /api/profiles` (`{edits}`, quality pass 1: 1 to 100 `app/profile-edits.mts` edits made in order on the file as it is on the server and written once, with nothing awaited between the read and the write, so a page's save carries what it means and no other saved setting rides along. The ops: `setBuffs`, `setLabel` (issue #336's build label: trimmed, a blank one removed, at most 40 characters on one line, `labelError`; a scanned or saved character only, never a pseudo one), `saveCharacter`, `deleteCharacter`, `putTemplate`, `updateTemplate`, `deleteTemplate`, `renameTemplate` (its characters follow). A bad edit is 400 naming why; one that can't be made on the file now (a template deleted elsewhere, a name taken, no such character) is 409 `conflict`, and the list writes nothing; the result goes through the same schema and spec checks as a whole-file save. Answers the stamp before (`was`) and after the write. It replaces `PUT /api/profiles/label`.)
+// - `GET|PUT /api/tazuo-panel` ({hotkey?, showAtLogin?} -> {prefs}: the TazUO panel's hotkey and whether it shows its window at login, `<data>/tazuo-panel.json`, app/tazuo-panel.mts)
+// - `GET|PUT /api/ui-prefs` (`<data>/ui-prefs.json:` {cols?, colsVersion?, colWidths?, sheetProps?, theme?, appearance?, sidebar?, density?, areaLabels?, mapDrawerWidth?, builderMode?, builderTab?, builderChanges?, builderFineTune?, manualFor?, manualSuit?, manualBuffs?, manualBuffSkills?, buffsCount?, dismissedUpdate?, copiedScanner?}, the page's view choices; `autoBuffs` and `buffSkills` are refused, since a character's buffs are its profile's now)
+//
 // map: server
 // owns: `routes`
 import { readFileSync } from "node:fs";
@@ -30,8 +36,8 @@ export function routes(ctx: ServerContext): Route[] {
     // `readOnly`: why the file cannot be saved (a newer Pack Rat made it), when it cannot; every PATCH is then a 409.
     // `stamp`: the file's content stamp, which a PATCH's `was` is compared with.
     { method: "GET", path: "/api/profiles", handle: async (_req, res) => {
-      const profiles = await profilesStore.read(), readOnly = profilesStore.readOnly();
-      return send(res, 200, { ok: true, profiles, stamp: profilesStore.stamp(), builtinTemplates: profilesStore.builtins(), ...(readOnly ? { readOnly } : {}) });
+      const { profiles, stamp } = await profilesStore.readStamped(), readOnly = profilesStore.readOnly();
+      return send(res, 200, { ok: true, profiles, stamp, builtinTemplates: profilesStore.builtins(), ...(readOnly ? { readOnly } : {}) });
     } },
     // The one way to save the profiles: edits (app/profile-edits.mts), {edits: [...]}, 1 to 100, made in order on the file as it is on the
     // server and written once, so a page's save carries what it means and never its copy of the rest. Each edit's shape is
@@ -47,9 +53,8 @@ export function routes(ctx: ServerContext): Route[] {
       for (const e of edits) { const bad = profileEditError(e); if (bad) return send(res, 400, { ok: false, error: bad }); }
       const list = edits as ProfileEdit[];
       const inv = list.some((e) => e.op === "setLabel") ? (await getInventory()).inv : null;
-      const stored = await profilesStore.read();
-      // from here to the write nothing awaits, so no other save can come between them
-      const was = profilesStore.stamp(), next = structuredClone(stored);
+      // the file and its stamp as read; from here to the write nothing awaits, so no other save can come between them
+      const { profiles: stored, stamp: was } = await profilesStore.readStamped(), next = structuredClone(stored);
       const canLabel = (name: string): boolean => !isPseudoCharacter(name) && (Object.hasOwn(stored.characters, name) || !!inv && Object.hasOwn(inv.characters, name));
       const refused = applyProfileEdits(next, list, { builtins: profilesStore.builtins(), canLabel });
       if (refused) return send(res, 409, { ok: false, code: "conflict", error: refused });

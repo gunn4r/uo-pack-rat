@@ -1,7 +1,7 @@
 // ui/profiles.mts — the one writer of the player's profiles (app/build-spec.mts's v3 shape). Every save is a list of edits (app/profile-edits.mts) sent as themselves (PATCH /api/profiles), so the server makes them on the file as it is and nothing else of this page's copy goes with them: two windows' saves land side by side. They are made on the page's copy at once so the page shows them, one save at a time and in order.
 //
 // map: ui-infra
-// owns: `editProfiles`, `setCharacterBuffs`, `setCharacterLabel`
+// owns: `editProfiles`, `loadProfiles`, `setCharacterBuffs`, `setCharacterLabel`
 import type { BuildBuffs } from "../build-spec.mts";
 import { applyProfileEdits, type ProfileEdit, type ProfileEditContext } from "../profile-edits.mts";
 import { state } from "./store.mts";
@@ -20,12 +20,15 @@ async function reloadProfiles(): Promise<void> {
   state.builtinTemplates = r.builtinTemplates || {};
 }
 let queue: Promise<unknown> = Promise.resolve();
-// Saves run one at a time, so each answer's `was` is compared with the stamp the one before it left.
+// Saves and loadProfiles run one at a time, so each answer's `was` is compared with the stamp the one before it left.
 function inTurn<T>(run: () => Promise<T>): Promise<T> {
   const next = queue.then(run);
   queue = next.catch(() => null);
   return next;
 }
+// The profiles read again (a scan landed, a Forget): in turn with the saves, so a save in flight is never answered over
+// a copy read before it landed.
+export function loadProfiles(): Promise<void> { return inTurn(reloadProfiles); }
 // The edits are made on the page's copy at once, and again when their turn comes (a reload before then drops them from
 // the copy). The answer names the stamp the file had before them: this page's own, and the copy is the file; another,
 // and the page reads the file again. A list the server can't make (a template deleted elsewhere) is refused whole, says
@@ -35,9 +38,11 @@ export function editProfiles(edits: ProfileEdit[]): Promise<ProfilesSave> {
   applyProfileEdits(state.profiles!, edits, ctx());
   return inTurn(async () => {
     applyProfileEdits(state.profiles!, edits, ctx());
+    const sent = state.profiles;
     try {
       const r = await api<{ stamp: string; was: string }>("/api/profiles", { method: "PATCH", body: { edits } });
-      if (r.was === state.profilesStamp) { state.profilesStamp = r.stamp; return { ok: true }; }
+      // the copy plus the edits is the file only while the page still holds the copy they were made on
+      if (r.was === state.profilesStamp && state.profiles === sent) { state.profilesStamp = r.stamp; return { ok: true }; }
       await reloadProfiles();
       return { ok: true, reloaded: true };
     } catch (e) {
