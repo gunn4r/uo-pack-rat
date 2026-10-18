@@ -1,1 +1,0 @@
-- **Losses in red** in the Suit Builder's What changes gauges and table: a change against the build is now red, a gain stays green.

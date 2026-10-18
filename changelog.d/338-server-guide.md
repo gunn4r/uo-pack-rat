@@ -1,1 +1,0 @@
-- **For contributors: a server guide** (issue #338): `docs/server.md` sets out the server's layers and the import rule that enforces each, the rules every route, store and service keeps, where new code goes, and a recipe each for a route, a store and a service; `app/http/CLAUDE.md` is its short form.
