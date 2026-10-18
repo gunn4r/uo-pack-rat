@@ -17,7 +17,7 @@ The game-client scripts. Each adapter is a folder, `adapters/<id>/`, with its sc
 - **A shared helper:** add `adapters/_shared/<name>.py` (`_shared/<adapter>/<name>.py` for one adapter only), put an empty `BEGIN`/`END` pair in each script that needs it, run `npm run gen:contracts` (`docs/adapter-guide.md`, Shared helpers).
 - **A bridge action:** `docs/change-checklists.md`, "Add or change a bridge command".
 - **A scan field:** `docs/change-checklists.md`, "Change the scan format".
-- **A new client:** `docs/change-checklists.md`, "Add an adapter". Client-specific install steps and lookups are manifest values (`install.register`, `install.panel`, `install.uoFolder`), not `if adapter === ...` branches in the app.
+- **A new client:** `docs/change-checklists.md`, "Add an adapter". Client-specific install steps and lookups are manifest values (`install.register`, `install.panel`, `install.uoFolder`), not `if adapter === ...` branches in the app: a new step is an entry in `app/installer.mts`'s `REGISTRARS`, a new UO-folder lookup one in `app/services/houses.mts`'s `UO_FOLDER_FINDERS`, each with its value in the manifest schema's enum. The server reads each adapter's `install.uoFolder` once at startup, so restart it after changing a manifest.
 
 ## How to test
 
