@@ -1,4 +1,4 @@
-// ui/api-types.mts — every response shape the page reads off its own fetches: the house, Organize and saved-run shapes re-exported from the types-only modules (runs narrowed), the settings and setup shapes from app/api/setup.mts, the rest declared here. api.mts's `api()` call
+// ui/api-types.mts — every response shape the page reads off its own fetches: the house, Organize and saved-run shapes re-exported from the types-only modules (runs narrowed), the settings and setup shapes from app/api/setup.mts and the inventory shapes from app/api/inventory.mts, the rest declared here. api.mts's `api()` call
 // returns `unknown` at the boundary (Response.json() is genuinely unvalidated network input); every
 // caller narrows through one of the types below rather than sprinkling `as Whatever` at each read
 // site, per the migration plan's "type each endpoint's response in ONE place."
@@ -9,12 +9,10 @@
 //
 // map: ui-infra
 // owns: the hand-declared `*ApiResponse` types
-import type { Item, Container, Character, ScanSummary, OptItem, RunSettings, BlacklistEntry, KindOverrides } from "../vault-lib.mts";
+import type { OptItem, RunSettings, BlacklistEntry, KindOverrides } from "../vault-lib.mts";
 import type { ProfilesV3, TemplateMap } from "../build-spec.mts";
-import type { Facets, ItemQueryRows, ItemQueryGroups, HitRow } from "../item-query.mts";
 import type { AutostartOutcome, Hotkey as PanelHotkey, PanelPrefs } from "../tazuo-panel-prefs.mts";
 import type { OrganizeConfig, RuleMatch } from "../organize-config.mts";
-import type { MissingItem } from "../missing.mts";
 import type { Diagnostic, RunBody, RunsListBody, RunSummary, SavedRun, ScoreShare, SwingResult } from "../runs-types.mts";
 import type { HouseApiResponse } from "../house-model-types.mts";
 
@@ -67,40 +65,8 @@ export interface UiPrefsApiResponse {
 
 // ---------------------------------------------------------------- inventory / items
 
-// GET /api/inventory's `.inventory` — mirrors the object vault-server.mts's route builds by hand
-// (never the full fold's Inventory type from vault-lib.mts: `items` is deliberately absent since
-// Task 5, replaced by `worn`/`rootCounts`/`itemCount`/`facets`/`propKeys`, computed once server-side
-// over the whole set).
-export interface InventoryData {
-  scans: ScanSummary[];
-  characters: Record<string, Character>;
-  containers: Record<string, Container>;
-  worn: Record<string, Item[]>;
-  rootCounts: Record<string, number>;
-  // How many items each root has missing since its last scan (app/missing.mts); a root with none is absent.
-  missingCounts: Record<string, number>;
-  itemCount: number;
-  facets: Facets;
-  propKeys: string[];
-}
-export interface InventoryApiResponse {
-  ok: boolean;
-  snapshotCount: number;
-  demo: boolean;
-  inventory: InventoryData;
-}
-
-// GET /api/items — the same ItemQueryRows | ItemQueryGroups union applyItemQuery() returns
-// (item-query.mts), plus the request's own offset/limit echoed back.
-export type ItemsApiResponse = { ok: boolean; offset: number; limit: number } & (ItemQueryRows | ItemQueryGroups);
-// GET /api/items?fields=hits (the House map's search): each match's serial, name, amount, container, root and place.
-export interface ItemHitsApiResponse { ok: boolean; total: number; offset: number; limit: number; rows: HitRow[] }
-
-// GET /api/items/by-serial
-export interface ItemsBySerialApiResponse {
-  ok: boolean;
-  items: Record<string, Item>;
-}
+// The inventory routes' shapes come from app/api/inventory.mts.
+export type { InventoryData, InventoryApiResponse, MissingApiResponse, ItemsApiResponse, ItemHitsApiResponse, ItemsBySerialApiResponse } from "../api/inventory.mts";
 
 export interface ProfilesApiResponse {
   ok: boolean;
@@ -139,8 +105,6 @@ export interface RescanApiResponse {
   ok: boolean;
   adapters: string[];
 }
-// GET /api/missing?root= (issue #99).
-export interface MissingApiResponse { ok: boolean; items: MissingItem[] }
 export interface ForgetApiResponse {
   ok: boolean;
 }

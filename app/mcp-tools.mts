@@ -57,7 +57,7 @@ export const INSTRUCTIONS = [
 ].join("\n\n");
 
 // ---------------------------------------------------------------- shapes the routes answer with (only what is read)
-interface InventoryDoc { characters: Record<string, Character>; containers: Record<string, Container>; worn: Record<string, Item[]>; scans: Array<{ character: string; scannedAt: string; items: number; roots: number[] }>; itemCount: number; facets: Record<string, unknown> & { kinds: Array<{ name: string; count: number }>; propKeys: string[] } }
+type InventoryDoc = ApiResponse<"GET /api/inventory">["inventory"];
 interface BridgeStatus { online: boolean; age?: number; character?: string; adapter?: { features?: string[] }; current?: { id?: string } | null; results?: Record<string, BridgeResult> }
 interface BridgeResult { ok: boolean; msg: string; t?: string; partial?: boolean; stopped?: boolean; steps?: Array<{ op: string; serial: number; ok: boolean; msg: string }> }
 interface RunDoc { id: string; character?: string; createdAt: string; label?: string; settings?: Record<string, unknown>; result?: Record<string, unknown> | null; ms?: number | null; inventoryStamp?: string | null }
@@ -91,13 +91,13 @@ function row(it: Item): Record<string, unknown> {
   };
 }
 const nonZero = (m: PropMap | Record<string, number> | undefined): Record<string, number> => Object.fromEntries(Object.entries(m || {}).filter(([, v]) => v));
-const inventory = async (ctx: ToolContext): Promise<InventoryDoc> => (await ctx.api<{ inventory: InventoryDoc }>("/api/inventory")).inventory;
+const inventory = async (ctx: ToolContext): Promise<InventoryDoc> => (await ctx.api<ApiResponse<"GET /api/inventory">>("/api/inventory")).inventory;
 const scannedCharacter = (inv: InventoryDoc, name: string): Character => {
   if (!Object.hasOwn(inv.characters, name) || isPseudoCharacter(name)) throw new ToolError(`no scans for character ${JSON.stringify(name)}; list_characters names them`);
   return inv.characters[name]!;
 };
 async function itemsBySerial(ctx: ToolContext, serials: number[]): Promise<Record<string, Item>> {
-  return (await ctx.api<{ items: Record<string, Item> }>(`/api/items/by-serial?serials=${serials.join(",")}`)).items;
+  return (await ctx.api<ApiResponse<"GET /api/items/by-serial">>(`/api/items/by-serial?serials=${serials.join(",")}`)).items;
 }
 const newestStamp = (scans: InventoryDoc["scans"]): string => {
   let best = "", ms = -Infinity;
