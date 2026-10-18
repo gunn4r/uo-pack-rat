@@ -11,7 +11,7 @@
 // map: scan
 // owns: `Item`, `Container`, `Character`, `Inventory`, `ScanSummary`, `parseTooltip`, `foldSnapshots`, `locationOf`, `containerPath`, `capacityOf`, `TRASH_RE`, `groupByName`, `slayersOf`, `medableOf`
 import { delayText } from "./swing.mts";
-import { RESIST_SKILL_KEY, RESIST_STEP_SLACK } from "./solver/scoring.mts";
+import { RESIST_SKILL_KEY, RESIST_STEP_SLACK, floorMet, heldTotal, liftedMin, type ResistStep } from "./solver/scoring.mts";
 import { isPseudoCharacter, NOBODY, parseStamp, V1_ADAPTER_VERSION } from "./scan-schema.mts";
 export { isPseudoCharacter, NOBODY };
 import type { RulesV1, ScanV2, ScanV2Adapter } from "./schema/types.d.mts";
@@ -473,9 +473,9 @@ export function resistMinimum(skills: Record<string, unknown> | null | undefined
   const skill = resistSkillOf(skills);
   return skill == null ? null : minResistAt(skillInSuit(skill, bonus, resistSkillCapOf(skills)));
 }
-// One step of the Resisting Spells minimum a suit's own bonus lifts (EffectiveProfile.resistSteps): a suit whose
-// Resisting Spells bonus total is at least `at` holds each resist at `mins[k]`, in item terms.
-export interface ResistStep { at: number; mins: Record<string, number> }
+// One step of the Resisting Spells minimum a suit's own bonus lifts (EffectiveProfile.resistSteps), and the minimum a
+// resist is held at given the steps: app/solver/scoring.mts, re-exported here.
+export { liftedMin, type ResistStep };
 // RESIST_STEP_SLACK, half a tenth of a point: a suit reaches a step when its bonus total is at least `at` less this. Bonuses
 // come in tenths at the finest, so the margin changes nothing for a real total and lets the MIP tell "under" from "at" with
 // room to spare.
@@ -492,13 +492,6 @@ export function resistStepsFor(skill: number, cap: number | null, loss: number, 
     last = m;
   }
   return out;
-}
-// The minimum a resist is held at in a suit whose Resisting Spells bonus total is `bonus`: the highest step it
-// reaches, else the profile's own (`mins`), else none.
-export function liftedMin(profile: { mins?: Record<string, number> | undefined; resistSteps?: ResistStep[] | undefined }, k: string, bonus: number): number | null {
-  let m = profile.mins?.[k] ?? null;
-  for (const s of profile.resistSteps || []) if (bonus >= s.at - RESIST_STEP_SLACK && s.mins[k] != null) m = s.mins[k]!;
-  return m;
 }
 // What a rules file written before issue #261 must change, or null: it still carries the old additive
 // `resistSkillBonus`, which nothing reads, and no `resistMinimum`, so its characters get no minimum at all.
@@ -1815,9 +1808,9 @@ export function requirementReport(totals: PropMap, profile: RequirementProfileIn
   keys.delete("tagPenalty");
   for (const k of [...keys].sort((a, b) => (floors[b] ? 1 : 0) - (floors[a] ? 1 : 0) || a.localeCompare(b))) {
     // a resist under its minimum reaches the minimum, so its value says that, and `met` agrees with it
-    const v = totals[k] || 0, floor = floors[k], cap = caps[k], min = liftedMin(profile, k, totals[RESIST_SKILL_KEY] || 0), held = min != null && min > v ? min : v;
+    const v = totals[k] || 0, floor = floors[k], cap = caps[k], min = liftedMin(profile, k, totals[RESIST_SKILL_KEY] || 0), held = heldTotal(v, min);
     rows.push({ key: k, label: labelOf(k), value: held, floor: floor ?? null, cap: cap ?? null,
-      met: floor == null ? null : held >= floor, capped: cap != null && v >= cap, over: cap != null ? Math.max(0, v - cap) : 0 });
+      met: floor == null ? null : floorMet(v, floor, min), capped: cap != null && v >= cap, over: cap != null ? Math.max(0, v - cap) : 0 });
   }
   return rows;
 }
