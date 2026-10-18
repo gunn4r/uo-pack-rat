@@ -1,15 +1,15 @@
-// ui/api-types.mts — every response shape the page reads off its own fetches: the house, Organize and saved-run shapes re-exported from the types-only modules (runs narrowed), the settings and setup shapes from app/api/setup.mts and the inventory shapes from app/api/inventory.mts, the rest declared here. api.mts's `api()` call
+// ui/api-types.mts — every response shape the page reads off its own fetches: the house, Organize and saved-run shapes re-exported from the types-only modules (runs narrowed), the settings and setup shapes from app/api/setup.mts the inventory shapes from app/api/inventory.mts and the bridge's from app/api/bridge.mts, the rest declared here. api.mts's `api()` call
 // returns `unknown` at the boundary (Response.json() is genuinely unvalidated network input); every
 // caller narrows through one of the types below rather than sprinkling `as Whatever` at each read
 // site, per the migration plan's "type each endpoint's response in ONE place."
 //
 // A server-side module may be imported here, type or value, when it and everything it imports is browser-safe (no node: import anywhere in that chain), as the imports below are. One that reaches a node: module cannot be imported even for a type: the browser build (tsconfig.browser.json) type-checks with `"types": []`, a type-only import is erased only at emit time, and the imported file still has to type-check. So a server shape the page reads lives in a types-only module next to its owner (app/house-model-types.mts, app/organize-types.mts, app/runs-types.mts): the owner re-exports it, the server annotates its response with `satisfies`, and this file re-exports it (or narrows it with a mapped type), so a renamed field fails the typecheck on both sides. Never the other way around: nothing outside app/ui/ imports from app/ui/.
 //
-// What is still declared here by hand: GET /api/bridge/status (the server spreads the bridge's own status file into it, so it has no server-side type to share; see below) and the rest of the shapes below whose owners reach node: (app/exact-solver.mts, scripts/optimizer-core.mts, app/vault-server.mts). Each names the server-side type or route it mirrors, so a change on one side has somewhere obvious to update on the other. Nothing here is validated against the wire (HTTP responses are unvalidated network input, same trust level server.test.mts's own per-route interfaces document); it gives the page's own reads a name instead of `unknown`.
+// What is still declared here by hand: the rest of the shapes below whose owners reach node: (app/exact-solver.mts, scripts/optimizer-core.mts, app/vault-server.mts). Each names the server-side type or route it mirrors, so a change on one side has somewhere obvious to update on the other. Nothing here is validated against the wire (HTTP responses are unvalidated network input, same trust level server.test.mts's own per-route interfaces document); it gives the page's own reads a name instead of `unknown`.
 //
 // map: ui-infra
 // owns: the hand-declared `*ApiResponse` types
-import type { OptItem, RunSettings, BlacklistEntry, KindOverrides } from "../vault-lib.mts";
+import type { OptItem, RunSettings, KindOverrides } from "../vault-lib.mts";
 import type { ProfilesV3, TemplateMap } from "../build-spec.mts";
 import type { AutostartOutcome, Hotkey as PanelHotkey, PanelPrefs } from "../tazuo-panel-prefs.mts";
 import type { OrganizeConfig, RuleMatch } from "../organize-config.mts";
@@ -105,13 +105,8 @@ export interface RescanApiResponse {
   ok: boolean;
   adapters: string[];
 }
-export interface ForgetApiResponse {
-  ok: boolean;
-}
-export interface BlacklistApiResponse {
-  ok: boolean;
-  containers: BlacklistEntry[];
-}
+// POST /api/forget and /api/forget-character, and GET /api/blacklist: app/api/inventory.mts.
+export type { ForgetApiResponse, BlacklistApiResponse } from "../api/inventory.mts";
 // GET and POST /api/item-kinds, POST /api/item-kinds/import (issue #150): the whole item-kinds.json document after
 // the change; an import also says how many entries it left out and why (the first few).
 // `readOnly` (GET): why the file cannot be changed, when a newer Pack Rat made it (app/migrate.mts).
@@ -252,49 +247,8 @@ export interface JobCancelledEvent {
 }
 
 // ---------------------------------------------------------------- bridge
-
-// GET /api/bridge/status — mirrors app/schema/types.d.mts's BridgeV1Status (the file on disk) plus
-// the `online`/`age` fields vault-server.mts computes on top of it, spread together
-// (`{ok:true, online, age, ...st}`). Declared fresh rather than reusing BridgeV1Status directly: that
-// type's `current`/`results` stay Record<string, unknown> (the schema itself leaves them open), but
-// bridge.mts reads named fields off both (`current.action`/`current.name`, `results[id].ok/.msg`) —
-// narrowing them here, at the one place the response is parsed, is what lets bridge.mts read those
-// fields without its own casts.
-export interface BridgeCurrentCommand {
-  id?: string | undefined;           // the running command's id (a trip's, while Organize waits on it)
-  action?: string | undefined;
-  name?: string | undefined;
-}
-// One step of a trip's result (the bridge's trip action: every take and put it tried, in order).
-export interface TripStepResult { op: "take" | "put"; serial: number; ok: boolean; msg: string; ms?: number | undefined }
-export interface BridgeResultEntry {
-  ok: boolean;
-  msg: string;
-  t?: string | undefined;
-  partial?: boolean | undefined;     // a trip whose take phase ended early (too heavy or too full)
-  stopped?: boolean | undefined;     // a trip halted by the stop flag (POST /api/bridge/stop)
-  steps?: TripStepResult[] | undefined;
-  ms?: number | undefined;           // how long a trip took, in milliseconds (TazUO 2.9.0 onward)
-}
-// The running bridge itself (status.json's adapter; left out by bridges before TazUO 2.16.0 / Razor Enhanced 1.12.0).
-export interface BridgeAdapterReport {
-  id: string;
-  version: string;
-  protocol: number;
-  features: string[];          // every action and feature it has
-}
-export interface BridgeStatusApiResponse {
-  ok: boolean;
-  online: boolean;
-  character?: string | undefined;
-  adapter?: BridgeAdapterReport | undefined;
-  current?: BridgeCurrentCommand | null | undefined;
-  results?: Record<string, BridgeResultEntry> | undefined;
-}
-export interface BridgeQueueApiResponse {
-  ok: boolean;
-  id: string;
-}
+// The bridge routes' shapes come from app/api/bridge.mts.
+export type { BridgeCurrentCommand, TripStepResult, BridgeResultEntry, BridgeAdapterReport, BridgeStatusApiResponse, BridgeQueueApiResponse } from "../api/bridge.mts";
 
 // ---------------------------------------------------------------- organize (issue #11)
 // The setup's types come straight from app/organize-config.mts: unlike the modules listed at the top of this
