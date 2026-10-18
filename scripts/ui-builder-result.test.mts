@@ -145,7 +145,7 @@ test("[slow] What changes: Gauges for what the build asks, Table with every prop
     assert.ok(gauges.length > 0);
     const loss = page.locator(".b-gauge.loss").first();
     assert.ok(await page.locator(".b-gauge.loss").count(), "the suit gives something up");
-    assert.deepEqual(await loss.locator(".b-gauge-delta").evaluate((e) => [e.classList.contains("muted"), e.classList.contains("tone-bad")]), [true, false], "a loss is muted, not red");
+    assert.deepEqual(await loss.locator(".b-gauge-delta").evaluate((e) => [e.classList.contains("muted"), e.classList.contains("tone-bad")]), [false, true], "a loss is in the bad tone");
     const fill = (sel: string): Promise<string> => page.locator(sel).first().evaluate((e) => getComputedStyle(e).backgroundColor);
     assert.notEqual(await fill(".b-gauge.loss .b-gauge-track > i"), await fill(".b-gauge:not(.loss) .b-gauge-track > i"), "a loss's fill is grey, not the accent");
     assert.ok(await page.locator(".b-shares").count(), "the score breakdown shows with the gauges");
