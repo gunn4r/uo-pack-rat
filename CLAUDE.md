@@ -29,6 +29,15 @@ Read this first, then `CONTRIBUTING.md` for the full contributor guide.
 - Windows checks text files out with CRLF line endings (`.gitattributes` has `* text=auto`). Never compare a checked-in text fixture byte for byte with what the code writes; compare parsed JSON, or normalize `\r\n` first.
 - An Electron test that clicks something and then reads a file or a count must wait for the server or the page to finish (poll until it changes), not read once: slow CI runners expose every such race.
 
+## Working in parallel
+
+- Merge `origin/main` before each push; never rebase or force-push a branch with a pull request.
+- After a merge, re-run every generator (`npm run gen:test-index`, `npm run gen:modules`, `npm run gen:contracts`) rather than hand-resolving a generated block.
+- A changelog entry is a new `changelog.d/<short-name>.md`, never a line in `CHANGELOG.md`.
+- Two sessions on the same screen module are serialized, or their briefs name disjoint functions; a brief lists the files it touches.
+- `npm run try <pr> <pr>…` tests a stack of pull requests together.
+- A flaky CI failure is re-run once and named in the pull request; a second failure, or a new flake, gets an issue with the run link first (`CONTRIBUTING.md`, Working in parallel).
+
 ## Contract rules
 
 - A JSON Schema in `app/schema/` and its TypeScript copy change together: the scan schema has an inline copy in `app/scan-schema.mts` that a test compares, and the generated types come from `npm run build:types`. A new schema keyword needs both `app/schema/validate.mts` and `scripts/build-schema-types.mts`.

@@ -68,6 +68,17 @@ A type describes a shape; it proves nothing about data that crossed a boundary t
 - **Actions are pinned by SHA.** Every `uses:` in `.github/workflows/*.yml` names a full 40-character commit SHA with the tag in a trailing comment. A `@v4` is a mutable pointer; see `RELEASING.md` for how to resolve a SHA and why the trailing comment matters to Dependabot.
 - **A new schema keyword must be enforced by the validator AND known to the types generator.** `app/schema/validate.mts` implements a deliberate subset and silently ignores anything outside it, so a bound written into a schema file that the validator does not implement is documentation, not a check. `scripts/build-schema-types.mts` throws on a construct it does not understand rather than emitting `any`. Adding a keyword means both files, plus a test that a document violating it is actually rejected.
 
+## Working in parallel
+
+Several people or agents often work on this repository at once, each on a branch in its own worktree. These rules come from the merges that needed resolving by hand:
+
+- **Merge, don't rebase.** Merge `origin/main` into your branch before each push, and never force-push a branch that has a pull request.
+- **Re-run the generators after every merge.** A generated block is never resolved by hand: take either side of the conflict, then run `npm run gen:test-index` (`TESTING.md`'s test index), `npm run gen:modules` (`docs/module-map.md`'s tables) and `npm run gen:contracts` (the adapter scripts' shared helpers), and commit what they write. Their guard tests fail while a block is stale.
+- **One changelog fragment per pull request**, `changelog.d/<short-name>.md`, never a line in `CHANGELOG.md` (Changelog, above).
+- **One session per screen module at a time.** When two pieces of work touch the same screen module (`app/ui/builder.mts` took eight resolved merges in one day), whoever splits the work serializes them, or names in each brief the functions that work owns so the changes stay apart. A brief lists the files the work will touch, so an overlap with work already running shows before it starts.
+- **Test a stack together.** `npm run try <pr> <pr>…` (`scripts/try-pr.sh`) merges several pull requests into one scratch worktree and starts the app there (`TESTING.md`).
+- **A flaky test is re-run once, then filed.** Re-run a failed CI job once and say so in the pull request. If it fails again, or the failure is new, open an issue with the run's link and the test's name before re-running more; never retry silently.
+
 ## The scrub guard
 
 This repository is public. `scripts/scrub.test.mts` (`[smoke]`, so it runs even in `npm run test:smoke`) fails the whole suite if any tracked file carries the maintainer's name or machine, the private workspace this project grew out of, a real in-game character name, the project's retired product name, or a `/Users/<real name>` home path outside the `/Users/example` placeholder. Each pattern's exact allow-list — the handful of files deliberately permitted to carry the maintainer's public GitHub handle, such as `package.json`'s `author` field or the repository URL in `README.md` — lives in `scripts/scrub.test.mts` itself, next to the reason it's there.
