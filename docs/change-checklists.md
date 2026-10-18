@@ -60,6 +60,17 @@ Examples: `02b052e`, `e0b1eb0`.
 5. Tests: `app/buffs.test.mts`, `app/buffs-plan.test.mts`, `app/evaluate.test.mts`, `app/solver-buffs-fuzz.test.mts`, `app/solver.test.mts`, `app/builder-model.test.mts`, `app/ui-components.test.mts`, `scripts/ui-builder-*.test.mts`, `scripts/ui-contrast.test.mts`.
 6. Docs: `docs/solver.md`, `docs/shard-rules.md`, `docs/ui.md`, `README.md`, `PRIVACY.md` if what is stored changes.
 
+## Add or change a scoring term
+
+Examples: `9131ed4` (SSI by swing step), `8727195` (the Resisting Spells minimum), `50dc823` (the hard floors' shared partial credit), `1548d74` (the scaled hard-floor bonus). Read "Before you change the solvers" at the top of `docs/solver.md` first.
+
+1. Core: `scripts/optimizer-core.mts`: the space (`optBuildSpace`), the evaluator (`optScoreVector`) and the branch-and-bound's bound (`optBranchAndBound`), which reads the same per-dimension arrays; a rule the core and the MIP both state is written in both (the table in `docs/solver.md`).
+2. MIP: `app/mip.mts`: the rows in `buildSuitMip`, the start vector (`startVector`, which must give the same score as the core for the same suit) and the hard-floor spread (`hardFloorSpread`), which bounds every term over the pool; `stageObjective` if Strict order ranks it.
+3. Around the search: `app/diagnostics.mts` (`scoreShares` and the term values a result explains); `requirementReport` in `app/vault-lib.mts` if it is a requirement; `app/evaluate.mts` if a suit's paperdoll shows it; the route's preparation in `app/http/routes/optimize.mts` if the profile needs a transform (before `runKey`).
+4. Version: bump `SOLVER_VERSION` in `app/runs-lib.mts` with a line in its comment when any result changes.
+5. Tests: the generator in `app/solver-fuzz.test.mts` (so the brute-force oracle sees the term), `app/solver.test.mts`, `app/strict-order.test.mts` if Strict order ranks it, `app/solver-buffs-fuzz.test.mts` if a buff moves it, `app/diagnostics.test.mts`.
+6. Docs: `docs/solver.md` (the feature's section, and the "rules written twice" table if a new rule is mirrored).
+
 ## Add or change a BuildSpec field
 
 Examples: `166eb05`, `d311bdb`, `f1eced4`.
