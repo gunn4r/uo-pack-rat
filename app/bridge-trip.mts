@@ -13,7 +13,7 @@ import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { APP_DIR, type ConfigPaths } from "./config.mts";
 import { appendCommand } from "./store/bridge.mts";
-import { validate, type ValidatorSchema } from "./schema/validate.mts";
+import { validate, type ValidatorSchema, firstErrorText } from "./schema/validate.mts";
 import type { BridgeTripV1 } from "./schema/types.d.mts";
 import { BRIDGE_PROTOCOL, TRIP_MAX_BYTES, TRIP_NAME_MAX } from "./bridge-contract.mts";
 
@@ -35,7 +35,7 @@ export function queueTrip(paths: Pick<ConfigPaths, "bridgeFor" | "bridgeQueueFor
     roots: trip.roots, takes: cutNames(trip.takes), puts: cutNames(trip.puts), ...(trip.putAway ? { putAway: trip.putAway } : {}),
   };
   const { ok, errors } = validate(TRIP_SCHEMA, line);
-  if (!ok) return { ok: false, error: `${errors[0]!.path} ${errors[0]!.msg}` };
+  if (!ok) return { ok: false, error: firstErrorText(errors) };
   const keys = Object.keys(line.roots);
   const badKey = keys.find((k) => !SERIAL_KEY.test(k) || Number(k) > 0xFFFFFFFF);
   if (badKey !== undefined) return { ok: false, error: `roots key ${JSON.stringify(badKey)} is not a container serial` };
