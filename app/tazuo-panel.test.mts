@@ -1,11 +1,13 @@
 // tazuo-panel.test.mts — `app/tazuo-panel.mts`: the panel hotkey, the TazUO-is-running decision and the merge-only edit of TazUO's lscript.json.
 //
-// `app/tazuo-panel.mts`: hotkey validation, the TazUO-is-running decision for `pgrep` and `tasklist` answers, and the merge-only `lscript.json` edit (other keys kept, one BOM kept, `.bak`, idempotent, unreadable files left alone, nothing written while TazUO runs), all in temp folders.
+// `app/tazuo-panel.mts`: hotkey validation, the shared `tazuo-panel.json` cases (`app/fixtures/contract-cases/tazuo-panel.json`, which `adapters/test_adapters.py` runs through the panel's own reader) read field by field and checked against the schema, the TazUO-is-running decision for `pgrep` and `tasklist` answers, and the merge-only `lscript.json` edit (other keys kept, one BOM kept, `.bak`, idempotent, unreadable files left alone, nothing written while TazUO runs), all in temp folders.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { validate, type ValidatorSchema } from "./schema/validate.mts";
 import { panelPrefsError, panelPrefsOf, PANEL_DEFAULTS, readPanelPrefs, writePanelPrefs, addToGlobalAutostart, addPanelAutostart, tazuoRunning, lscriptPathFor, type Run } from "./tazuo-panel.mts";
 
 const BOM = Buffer.from([0xef, 0xbb, 0xbf]);
@@ -117,4 +119,20 @@ test("[fast] addPanelAutostart writes only while no client runs, asks only when 
   assert.equal(addPanelAutostart(client({ panel: false }).scriptsDir, running(false)).status, "error");
   const noData = mkdtempSync(join(tmpdir(), "qm-tazuo-panel-nodata-"));
   assert.equal(addPanelAutostart(noData, running(false)).status, "error");
+});
+
+// The cases app/fixtures/contract-cases/tazuo-panel.json shares with adapters/test_adapters.py, which runs the panel's own reader over them.
+test("[fast] tazuo-panel: every shared tazuo-panel.json case reads as the case says, a file larger than 4096 bytes as the defaults, and the schema takes the shapes it says", (t) => {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const cases = (JSON.parse(readFileSync(join(here, "fixtures", "contract-cases", "tazuo-panel.json"), "utf8")) as { cases: { why: string; doc: unknown; read: unknown; schema: boolean }[] }).cases;
+  const schema = JSON.parse(readFileSync(join(here, "schema", "tazuo-panel.v1.schema.json"), "utf8")) as ValidatorSchema;
+  const d = mkdtempSync(join(tmpdir(), "packrat-panel-cases-")), f = join(d, "tazuo-panel.json");
+  t.after(() => rmSync(d, { recursive: true, force: true }));
+  for (const c of cases) {
+    writeFileSync(f, JSON.stringify(c.doc));
+    assert.deepEqual(readPanelPrefs(f), c.read, c.why);
+    assert.equal(validate(schema, c.doc).ok, c.schema, `schema: ${c.why}`);
+  }
+  writeFileSync(f, JSON.stringify({ showAtLogin: false, pad: "x".repeat(4096) }));
+  assert.deepEqual(readPanelPrefs(f), PANEL_DEFAULTS, "past the panel's own 4096-byte cap");
 });

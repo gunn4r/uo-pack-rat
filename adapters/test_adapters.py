@@ -614,6 +614,18 @@ class UntrustedInput(unittest.TestCase):
                 self.assertIn("not a JSON object", why, name)
 
 
+def panel_readers():
+    """The TazUO panel's pure tazuo-panel.json readers (read_json, read_hotkey, read_show_at_login) and the
+    constants they use, lifted out of packrat-panel.py into a bare namespace."""
+    text = read_text(os.path.join(HERE, "tazuo", "packrat-panel.py"))
+    ns = {"re": re, "os": os, "json": json}
+    for name in ("MAX_PREFS_BYTES", "DEFAULT_HOTKEY", "HOTKEY_MODS", "HOTKEY_KEY_RE"):
+        exec(re.search(r"^%s = .*$" % name, text, re.M).group(0), ns)
+    for name in ("read_json", "read_hotkey", "read_show_at_login"):
+        exec(helper_source(text, name), ns)
+    return ns
+
+
 class SharedContractCases(unittest.TestCase):
     """The accept and reject cases app/fixtures/contract-cases/ shares with the TypeScript suite: each file the game
     scripts and the app both read, run through the scripts' own reader."""
@@ -637,6 +649,21 @@ class SharedContractCases(unittest.TestCase):
                 with open(f, "w", encoding="utf-8") as out:
                     json.dump([case["entry"]], out)
                 self.assertEqual(ns["read_claims"](f), [], case["why"])
+
+    def test_tazuo_panel_cases(self):
+        ns = panel_readers()
+        with tempfile.TemporaryDirectory() as d:
+            f = os.path.join(d, "tazuo-panel.json")
+            for case in self.cases("tazuo-panel")["cases"]:
+                with open(f, "w", encoding="utf-8") as out:
+                    json.dump(case["doc"], out)
+                doc = ns["read_json"](f)
+                read = case["read"]
+                self.assertEqual(ns["read_hotkey"](doc), "+".join(read["hotkey"]["mods"] + [read["hotkey"]["key"]]), case["why"])
+                self.assertEqual(ns["read_show_at_login"](doc), read["showAtLogin"], case["why"])
+            with open(f, "w", encoding="utf-8") as out:
+                json.dump({"showAtLogin": False, "pad": "x" * 4096}, out)
+            self.assertEqual(ns["read_json"](f), {}, "past 4096 bytes: the defaults")
 
 
 if __name__ == "__main__":
