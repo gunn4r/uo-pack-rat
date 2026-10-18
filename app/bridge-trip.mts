@@ -13,9 +13,10 @@ import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { APP_DIR, type ConfigPaths } from "./config.mts";
 import { appendCommand } from "./store/bridge.mts";
-import { validate, type ValidatorSchema } from "./schema/validate.mts";
+import { validate, type ValidatorSchema, firstErrorText } from "./schema/validate.mts";
 import type { BridgeTripV1 } from "./schema/types.d.mts";
 import { BRIDGE_PROTOCOL, TRIP_MAX_BYTES, TRIP_NAME_MAX } from "./bridge-contract.mts";
+import { MAX_SERIAL } from "./guards.mts";
 
 const TRIP_SCHEMA = JSON.parse(readFileSync(join(APP_DIR, "schema", "bridge-trip.v1.schema.json"), "utf8")) as ValidatorSchema;
 
@@ -35,9 +36,9 @@ export function queueTrip(paths: Pick<ConfigPaths, "bridgeFor" | "bridgeQueueFor
     roots: trip.roots, takes: cutNames(trip.takes), puts: cutNames(trip.puts), ...(trip.putAway ? { putAway: trip.putAway } : {}),
   };
   const { ok, errors } = validate(TRIP_SCHEMA, line);
-  if (!ok) return { ok: false, error: `${errors[0]!.path} ${errors[0]!.msg}` };
+  if (!ok) return { ok: false, error: firstErrorText(errors) };
   const keys = Object.keys(line.roots);
-  const badKey = keys.find((k) => !SERIAL_KEY.test(k) || Number(k) > 0xFFFFFFFF);
+  const badKey = keys.find((k) => !SERIAL_KEY.test(k) || Number(k) > MAX_SERIAL);
   if (badKey !== undefined) return { ok: false, error: `roots key ${JSON.stringify(badKey)} is not a container serial` };
   const used = new Set([...line.takes.map((t) => t.chain[0]), ...line.puts.map((p) => p.dest[0])].map(String));
   const unplaced = [...used].find((k) => !keys.includes(k));

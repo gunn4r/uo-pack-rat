@@ -22,6 +22,7 @@ import type { ValidatorSchema } from "./schema/validate.mts";
 import type { ApiResponse } from "./api/routes.mts";
 import { LIMITS, salvagedRefusal, type OrganizeConfig } from "./organize-config.mts";
 import { areaOfStack } from "./house-areas.mts";
+import { MAX_SERIAL } from "./guards.mts";
 
 // A tool's failure in words the model reads (a route's own refusal, a bad argument): a tool result with isError.
 // `code`: the route's own code for its refusal, if it gave one (PUT /api/organize's "stale").
@@ -66,7 +67,7 @@ const PAGE: Record<string, Schema> = {
   offset: { type: "integer", minimum: 0, maximum: 1_000_000, description: "Rows to skip, 0 by default." },
 };
 const pageOf = (a: Record<string, unknown>): { limit: number; offset: number } => ({ limit: (a.limit as number | undefined) ?? 25, offset: (a.offset as number | undefined) ?? 0 });
-const SERIAL: Schema = { type: "integer", minimum: 1, maximum: 0xFFFFFFFF, description: "An item or container serial (the decimal number in Pack Rat's rows)." };
+const SERIAL: Schema = { type: "integer", minimum: 1, maximum: MAX_SERIAL, description: "An item or container serial (the decimal number in Pack Rat's rows)." };
 const ID: Schema = { type: "string", pattern: "^[\\w-]{1,64}$" };
 const CHARACTER: Schema = { type: "string", minLength: 1, maxLength: 64, description: "A character's name as Pack Rat lists it (list_characters)." };
 const BUFF_LIST: Schema = { type: "array", maxItems: 40, items: { type: "string", enum: BUFFS.map((b) => b.id) }, description: "Buffs, forms and abilities counted as always on, by id (the enum lists them; divineFury is Divine Fury)." };

@@ -11,6 +11,7 @@ import { parseStamp } from "./scan-schema.mts";
 import { stampMs, type OverlayMove } from "./organize.mts";
 import type { Inventory } from "./vault-lib.mts";
 import type { OrganizeConfig } from "./organize-config.mts";
+import { isPlainObject, isBoundedInt, MAX_SERIAL } from "./guards.mts";
 
 export interface PendingStep { serial: number; name: string; from: number | null; to: number }
 export interface PendingTrip { id: string; adapter: string; index: number; stamp: string; queuedAt: string; steps: PendingStep[] }
@@ -26,54 +27,53 @@ export const PENDING_GRACE_MS = 90_000;
 // An entry no scan has settled in a week is dropped: by then its containers are stale anyway.
 export const OVERLAY_MAX_AGE_MS = 7 * 864e5;
 // Grabs: well above a Grab all of every piece a suit can have, queued at once.
-const MAX_PENDING = 50, MAX_GRABS = 500, MAX_MOVES = 5000, MAX_SERIAL = 0xFFFFFFFF;
+const MAX_PENDING = 50, MAX_GRABS = 500, MAX_MOVES = 5000;
 
-const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
-const isSerial = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v) && v >= 1 && v <= MAX_SERIAL;
+const isSerial = (v: unknown): v is number => isBoundedInt(v, 1, MAX_SERIAL);
 const isStamp = (v: unknown): v is string => typeof v === "string" && v.length <= 64 && Number.isFinite(parseStamp(v));
 const isText = (v: unknown, max: number): v is string => typeof v === "string" && v.length > 0 && v.length <= max;
 
 export function emptyOrganizeState(): OrganizeState { return { version: 1, pending: [], grabs: [], moves: [], seen: {} }; }
 
 function asStep(v: unknown): PendingStep | null {
-  if (!isObj(v) || !isSerial(v.serial) || typeof v.name !== "string" || v.name.length > 200 || !(v.from === null || isSerial(v.from)) || !isSerial(v.to)) return null;
+  if (!isPlainObject(v) || !isSerial(v.serial) || typeof v.name !== "string" || v.name.length > 200 || !(v.from === null || isSerial(v.from)) || !isSerial(v.to)) return null;
   return { serial: v.serial, name: v.name, from: v.from, to: v.to };
 }
 function asPending(v: unknown): PendingTrip | null {
-  if (!isObj(v) || !isText(v.id, 64) || typeof v.adapter !== "string" || !/^[a-z0-9-]{1,64}$/.test(v.adapter) || !Number.isInteger(v.index)
+  if (!isPlainObject(v) || !isText(v.id, 64) || typeof v.adapter !== "string" || !/^[a-z0-9-]{1,64}$/.test(v.adapter) || !Number.isInteger(v.index)
     || (v.index as number) < 1 || (v.index as number) > 10000 || !isText(v.stamp, 64) || !isStamp(v.queuedAt) || !Array.isArray(v.steps) || v.steps.length > 60) return null;
   const steps = v.steps.map(asStep);
   return steps.every((s) => s) ? { id: v.id, adapter: v.adapter, index: v.index as number, stamp: v.stamp, queuedAt: v.queuedAt, steps: steps as PendingStep[] } : null;
 }
 function asGrab(v: unknown): PendingGrab | null {
-  if (!isObj(v) || !isText(v.id, 64) || typeof v.adapter !== "string" || !/^[a-z0-9-]{1,64}$/.test(v.adapter) || !isSerial(v.serial)
+  if (!isPlainObject(v) || !isText(v.id, 64) || typeof v.adapter !== "string" || !/^[a-z0-9-]{1,64}$/.test(v.adapter) || !isSerial(v.serial)
     || typeof v.name !== "string" || v.name.length > 200 || !(v.from === null || isSerial(v.from)) || !isStamp(v.queuedAt)) return null;
   return { id: v.id, adapter: v.adapter, serial: v.serial, name: v.name, from: v.from, queuedAt: v.queuedAt };
 }
 // A Grab just queued, added under the same bound salvage reads the list with.
 export function addGrab(state: OrganizeState, grab: PendingGrab): OrganizeState { return { ...state, grabs: [...state.grabs, grab].slice(-MAX_GRABS) }; }
 function asMove(v: unknown): OverlayMove | null {
-  if (!isObj(v) || !isSerial(v.serial) || typeof v.name !== "string" || v.name.length > 200 || !(v.from === null || isSerial(v.from))
+  if (!isPlainObject(v) || !isSerial(v.serial) || typeof v.name !== "string" || v.name.length > 200 || !(v.from === null || isSerial(v.from))
     || !(v.to === null || isSerial(v.to)) || !isStamp(v.at) || !isText(v.trip, 64)) return null;
   return { serial: v.serial, name: v.name, from: v.from, to: v.to, at: v.at, trip: v.trip, ...(isText(v.character, 64) ? { character: v.character } : {}), ...(v.grab === true ? { grab: true as const } : {}) };
 }
 const present = <T,>(v: T | null): v is T => v !== null;
 
 export function salvageOrganizeState(raw: unknown): OrganizeState {
-  if (!isObj(raw) || raw.version !== 1) return emptyOrganizeState();
+  if (!isPlainObject(raw) || raw.version !== 1) return emptyOrganizeState();
   const pending = (Array.isArray(raw.pending) ? raw.pending : []).map(asPending).filter(present).slice(-MAX_PENDING);
   const grabs = (Array.isArray(raw.grabs) ? raw.grabs : []).map(asGrab).filter(present).slice(-MAX_GRABS);
   const moves = (Array.isArray(raw.moves) ? raw.moves : []).map(asMove).filter(present).slice(-MAX_MOVES);
   const seen: Record<string, string> = {};
-  if (isObj(raw.seen)) for (const [k, v] of Object.entries(raw.seen)) if (/^[1-9]\d{0,9}$/.test(k) && isStamp(v)) seen[k] = v;
+  if (isPlainObject(raw.seen)) for (const [k, v] of Object.entries(raw.seen)) if (/^[1-9]\d{0,9}$/.test(k) && isStamp(v)) seen[k] = v;
   return { version: 1, pending, grabs, moves, seen };
 }
 
 interface TripResult { t: string; steps: { op: "take" | "put"; serial: number; ok: boolean }[] }
 function asTripResult(v: unknown): TripResult | null {
-  if (!isObj(v) || !isStamp(v.t)) return null;
+  if (!isPlainObject(v) || !isStamp(v.t)) return null;
   const steps = (Array.isArray(v.steps) ? v.steps : []).filter((s): s is TripResult["steps"][number] =>
-    isObj(s) && (s.op === "take" || s.op === "put") && isSerial(s.serial) && typeof s.ok === "boolean");
+    isPlainObject(s) && (s.op === "take" || s.op === "put") && isSerial(s.serial) && typeof s.ok === "boolean");
   return { t: v.t, steps };
 }
 
@@ -107,7 +107,7 @@ export function harvestTrips(state: OrganizeState, bridges: Record<string, Bridg
     const bridge = bridgeOf(g.adapter);
     const result = bridge && Object.hasOwn(bridge.results, g.id) ? bridge.results[g.id] : undefined;
     if (result === undefined) { if (waiting(bridge, g.id, g.queuedAt)) grabs.push(g); continue; }
-    if (!isObj(result) || result.ok !== true || !isStamp(result.t)) continue;
+    if (!isPlainObject(result) || result.ok !== true || !isStamp(result.t)) continue;
     const prev = moves.get(g.serial);
     const from = prev && prev.to == null ? prev.from : g.from;
     moves.set(g.serial, { serial: g.serial, name: g.name, from, to: null, at: result.t, trip: g.id, ...(bridge?.character ? { character: bridge.character } : {}), grab: true });

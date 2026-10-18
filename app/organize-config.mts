@@ -9,6 +9,7 @@
 import type { RuleQuery } from "./item-query.mts";
 import { WEAPON_SKILLS } from "./vault-lib.mts";
 import type { SpellSchool } from "./vault-lib.mts";
+import { isPlainObject, isBoundedInt, MAX_SERIAL } from "./guards.mts";
 
 export type Origin = "manual" | `strategy:${string}`;
 export interface ContainerLabel { serial: number; name: string; color?: string | undefined; pinned?: boolean | undefined; origin: Origin }
@@ -36,7 +37,6 @@ export const LIMITS = { labels: 2000, rules: 200, targets: 20, names: 100, pinne
 // Room for the largest setup LIMITS allows as the server saves it (pretty-printed, about 5.8 MB): the body limit of
 // PUT /api/organize and the largest organize.json a read accepts.
 export const MAX_SETUP_BYTES = 6e6;
-const MAX_SERIAL = 0xFFFFFFFF;
 const SERIAL_KEY = /^[1-9]\d{0,9}$/;
 const RULE_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const COLOR = /^#[0-9a-fA-F]{6}$/;
@@ -63,8 +63,7 @@ export function emptyRuleQuery(): RuleQuery {
   return { q: "", slot: [], rarity: "", rarityMin: "", rarityMax: "", kind: [], slayer: "", nogarg: false, med: false, hideTags: [], props: [] };
 }
 
-const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
-const isSerial = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v) && v >= 1 && v <= MAX_SERIAL;
+const isSerial = (v: unknown): v is number => isBoundedInt(v, 1, MAX_SERIAL);
 const isText = (v: unknown, max: number = LIMITS.text): v is string => typeof v === "string" && v.length > 0 && v.length <= max;
 const isOrigin = (v: unknown): v is Origin => v === "manual" || (typeof v === "string" && STRATEGY.test(v));
 const textList = (v: unknown, max: number): v is string[] => Array.isArray(v) && v.length <= max && v.every((s) => isText(s));
@@ -74,7 +73,7 @@ const short = (v: unknown): string => String(v).slice(0, 32);
 function labelProblem(key: string, v: unknown): string | null {
   if (!SERIAL_KEY.test(key) || Number(key) > MAX_SERIAL) return `labels key ${JSON.stringify(key.slice(0, 20))} is not a container serial`;
   const at = `labels.${key}`;
-  if (!isObj(v)) return `${at} must be an object`;
+  if (!isPlainObject(v)) return `${at} must be an object`;
   const bad = extra(v, ["serial", "name", "color", "pinned", "origin"]);
   if (bad) return `${at}.${bad} is not a label field`;
   if (v.serial !== Number(key)) return `${at}.serial must be ${key}`;
@@ -86,7 +85,7 @@ function labelProblem(key: string, v: unknown): string | null {
 }
 
 function queryProblem(q: unknown, at: string): string | null {
-  if (!isObj(q)) return `${at} must be an object`;
+  if (!isPlainObject(q)) return `${at} must be an object`;
   const bad = extra(q, [...RULE_QUERY_KEYS, ...OPTIONAL_QUERY_KEYS]);
   if (bad) return `${at}.${bad} is not a rule filter (location, character and age filters never belong in a rule)`;
   const missing = RULE_QUERY_KEYS.find((k) => !(k in q));
@@ -106,7 +105,7 @@ function queryProblem(q: unknown, at: string): string | null {
   for (const k of ["nogarg", "med"] as const) if (typeof q[k] !== "boolean") return `${at}.${k} must be true or false`;
   if (!Array.isArray(q.props) || q.props.length > LIMITS.props) return `${at}.props must be a list of at most ${LIMITS.props} property filters`;
   for (const [i, p] of q.props.entries()) {
-    if (!isObj(p) || extra(p, ["key", "min", "op"]) || !isText(p.key) || typeof p.min !== "number" || !Number.isFinite(p.min)
+    if (!isPlainObject(p) || extra(p, ["key", "min", "op"]) || !isText(p.key) || typeof p.min !== "number" || !Number.isFinite(p.min)
       || (p.op !== undefined && p.op !== "le" && p.op !== "eq")) return `${at}.props[${i}] must be {key, min, op?: "le" | "eq"}`;
   }
   return null;
@@ -115,7 +114,7 @@ function queryProblem(q: unknown, at: string): string | null {
 // A rule's filter on its own: what PUT /api/organize checks inside every rule, and POST /api/organize/match
 // checks before counting what a filter being edited would take.
 export function matchProblem(m: unknown, at = "match"): string | null {
-  if (!isObj(m)) return `${at} must be an object`;
+  if (!isPlainObject(m)) return `${at} must be an object`;
   const badM = extra(m, ["query", "names", "build", "school", "skipSuits"]);
   if (badM) return `${at}.${badM} is not a match field`;
   const qp = queryProblem(m.query, `${at}.query`);
@@ -140,7 +139,7 @@ function containerProblem(v: unknown, labels: Record<string, ContainerLabel>, at
 
 function ruleProblem(r: unknown, i: number, labels: Record<string, ContainerLabel>): string | null {
   const at = `rules[${i}]`;
-  if (!isObj(r)) return `${at} must be an object`;
+  if (!isPlainObject(r)) return `${at} must be an object`;
   const bad = extra(r, ["id", "name", "match", "targets", "origin"]);
   if (bad) return `${at}.${bad} is not a rule field`;
   if (typeof r.id !== "string" || !RULE_ID.test(r.id)) return `${at}.id must be 1 to 64 letters, digits, - or _`;
@@ -165,11 +164,11 @@ export const salvagedRefusal = (problems: readonly string[]): string => `organiz
 
 export function checkOrganizeConfig(doc: unknown): { ok: true; config: OrganizeConfig } | { ok: false; error: string } {
   const fail = (error: string): { ok: false; error: string } => ({ ok: false, error });
-  if (!isObj(doc)) return fail("an Organize setup must be an object");
+  if (!isPlainObject(doc)) return fail("an Organize setup must be an object");
   const bad = extra(doc, ["version", "labels", "rules", "catchAll", "emptyBagsTo", "pinnedItems"]);
   if (bad) return fail(`${bad} is not an Organize field`);
   if (doc.version !== 1) return fail("version must be 1");
-  if (!isObj(doc.labels) || Object.keys(doc.labels).length > LIMITS.labels) return fail(`labels must be an object of at most ${LIMITS.labels} labels`);
+  if (!isPlainObject(doc.labels) || Object.keys(doc.labels).length > LIMITS.labels) return fail(`labels must be an object of at most ${LIMITS.labels} labels`);
   for (const [key, v] of Object.entries(doc.labels)) {
     const p = labelProblem(key, v);
     if (p) return fail(p);
@@ -195,9 +194,9 @@ export function checkOrganizeConfig(doc: unknown): { ok: true; config: OrganizeC
 
 export function salvageOrganizeConfig(raw: unknown): { config: OrganizeConfig; problems: string[] } {
   const config = emptyOrganizeConfig();
-  if (!isObj(raw) || raw.version !== 1) return { config, problems: ["organize.json is not a version 1 Organize file; Organize starts empty"] };
+  if (!isPlainObject(raw) || raw.version !== 1) return { config, problems: ["organize.json is not a version 1 Organize file; Organize starts empty"] };
   const problems: string[] = [];
-  if (isObj(raw.labels)) {
+  if (isPlainObject(raw.labels)) {
     for (const [key, v] of Object.entries(raw.labels).slice(0, LIMITS.labels)) {
       const p = labelProblem(key, v);
       if (p) problems.push(`${p}; label dropped`); else config.labels[key] = v as ContainerLabel;
@@ -209,7 +208,7 @@ export function salvageOrganizeConfig(raw: unknown): { config: OrganizeConfig; p
       // A target that is no longer a usable label (its label was dropped above, say) costs the rule that target,
       // not the whole rule.
       let r = entry;
-      if (isObj(r) && Array.isArray(r.targets)) {
+      if (isPlainObject(r) && Array.isArray(r.targets)) {
         const bad = r.targets.map((t) => containerProblem(t, config.labels, `rules[${i}].targets`)).filter((p): p is string => p !== null);
         for (const p of bad) problems.push(`${p}; target dropped`);
         if (bad.length) r = { ...r, targets: r.targets.filter((t) => !containerProblem(t, config.labels, "")) };

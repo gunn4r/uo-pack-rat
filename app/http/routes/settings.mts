@@ -15,7 +15,7 @@ import { readBody } from "../../read-body.mts";
 import { retentionError, retentionOf } from "../../retention.mts";
 import { loadRules, listRules } from "../../rules.mts";
 import { UNRAVEL_KEEP_MAX, unravelBagError, type ClientSettings, type SettingsDoc } from "../../store/settings.mts";
-import { send, asObject, NO_CLIENT_FOLDER } from "../respond.mts";
+import { send, asObject, NO_CLIENT_FOLDER, refuseDemo } from "../respond.mts";
 import type { Route } from "../router.mts";
 import type { CleanupApiResponse, RulesApiResponse, SettingsApiResponse } from "../../api/setup.mts";
 import type { ServerContext } from "../context.mts";
@@ -134,7 +134,7 @@ export function routes(ctx: ServerContext): Route[] {
       // `refused`: old scans were kept because the inventory would have changed without them.
       const { dryRun } = asObject(await readBody(req, { limit: 8e3 }));
       if (typeof dryRun !== "boolean") return send(res, 400, { ok: false, error: "dryRun must be a boolean" });
-      if (CONFIG.demo) return send(res, 409, { ok: false, error: "demo data is read-only" });
+      refuseDemo(ctx);
       if (dryRun) { const plan = await retentionService.plan(); return send(res, 200, { ok: true, scans: plan.scans.length, runs: plan.runs.length, refused: plan.refused } satisfies CleanupApiResponse); }
       return send(res, 200, { ok: true, ...await retentionService.prune("clean up now") } satisfies CleanupApiResponse);
     } },
