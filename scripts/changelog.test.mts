@@ -1,13 +1,13 @@
 // changelog.test.mts — `scripts/changelog.mts`: a [smoke] guard that the committed fragments and CHANGELOG.md are in shape, a [smoke] release of a copy of them, and the release that puts the fragments together.
 //
-// The guard fails a pull request that adds entries to CHANGELOG.md or edits its released part by hand (the seal no longer matches); its message names the fix, a fragment in `changelog.d/`. The rest drives `fragmentError`, `released` and `release` on strings and a throwaway folder.
+// The guard fails a pull request that adds entries to CHANGELOG.md or edits its released part by hand (the seal no longer matches); its message names the fix, a fragment in `changelog.d/`. The rest drives `fragmentError`, `sectionText` (player-facing entries first, then the contributor ones under `### For contributors` with their prefix dropped, each group in order), `released` and `release` on strings and a throwaway folder.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { CHANGELOG, FRAGMENTS, changelogError, fragmentError, fragmentNames, problems, release, released, sealed } from "./changelog.mts";
+import { CHANGELOG, CONTRIBUTORS_HEADING, FRAGMENTS, changelogError, fragmentError, fragmentNames, problems, release, released, sealed, sectionText, unreleasedLines } from "./changelog.mts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -39,6 +39,11 @@ test("[smoke] releasing the committed fragments leaves a tree the guard passes, 
   assert.deepEqual(readdirSync(join(dir, FRAGMENTS)), ["README.md"]);
   assert.deepEqual(problems(dir), [], "the release commit passes the guard with zero fragments");
   const after = readFileSync(join(dir, CHANGELOG), "utf8");
+  const section = after.slice(after.indexOf(`## ${version} `), after.indexOf("\n## ", after.indexOf(`## ${version} `) + 1));
+  assert.ok(!section.includes("**For contributors: "), "every contributor entry lost its prefix");
+  const contributors = new Set(unreleasedLines(root).filter((l) => l.startsWith("- **For contributors: ")).map((l) => sectionText([l]).split("\n").at(-1)));
+  const heading = section.indexOf(`\n${CONTRIBUTORS_HEADING}\n`);
+  assert.ok(!section.slice(0, heading < 0 ? section.length : heading).split("\n").some((l) => contributors.has(l)), "no contributor entry above the subheading");
   assert.equal(release(version, "2026-10-18", dir), 0);
   assert.equal(readFileSync(join(dir, CHANGELOG), "utf8"), after, "a second release writes nothing");
 });
@@ -65,10 +70,21 @@ test("[fast] fragmentError takes one-line entries in a lower-case file name", ()
   assert.match(fragmentError("heading.md", "## Unreleased\n- **Fixed.**\n")!, /starting with "- "/);
 });
 
+test("[fast] sectionText puts the player-facing entries first and the contributor ones under their subheading, prefix dropped, each group in order", () => {
+  const lines = ["- **Two.** Player.", "- **For contributors: one store** (issue #1): a.", "- **One.** Player.", "- **For contributors: `x.json` has a schema**: b."];
+  assert.equal(sectionText(lines), `- **Two.** Player.\n- **One.** Player.\n\n${CONTRIBUTORS_HEADING}\n\n- **One store** (issue #1): a.\n- **\`x.json\` has a schema**: b.`);
+  assert.equal(sectionText(["- **A.** Player."]), "- **A.** Player.", "no contributor entries: no subheading");
+  assert.equal(sectionText(["- **For contributors: only** this."]), `${CONTRIBUTORS_HEADING}\n\n- **Only** this.`, "only contributor entries: the subheading alone");
+  assert.equal(sectionText(["- **Not for contributors: x**"]), "- **Not for contributors: x**", "the prefix only at the start of the title");
+});
+
 test("[fast] released puts the entries above the earlier versions and re-seals", () => {
   const next = released(base(), ["- **B.** Second.", "- **A.** First."], "0.2.0", "2026-10-17");
   assert.equal(changelogError(next), null);
   assert.ok(next.includes(`## 0.2.0 — 2026-10-17\n\n- **B.** Second.\n- **A.** First.\n\n${OLD}`));
+  const grouped = released(base(), ["- **For contributors: c** x.", "- **P.** y."], "0.2.0", "2026-10-17");
+  assert.ok(grouped.includes(`## 0.2.0 — 2026-10-17\n\n- **P.** y.\n\n${CONTRIBUTORS_HEADING}\n\n- **C** x.\n\n${OLD}`), "contributor entries under their subheading, the earlier version untouched");
+  assert.equal(changelogError(grouped), null);
   assert.throws(() => released(next, ["- **C.**"], "0.2.0", "2026-10-18"), /already has 0\.2\.0/);
   assert.equal(released(base(), [], "0.2.0", "2026-10-17"), base(), "no entries: unchanged");
   assert.equal(released(next, [], "0.2.0", "2026-10-18"), next, "a repeated release with nothing new: unchanged");

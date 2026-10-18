@@ -1,6 +1,6 @@
 // changelog.mts — the changelog's fragments: each pull request adds `changelog.d/<short-name>.md`, and a release puts them together into CHANGELOG.md.
 //
-// A fragment holds one or more entries, one line each, every line starting with "- " in CHANGELOG.md's style. CHANGELOG.md itself holds only released versions: its Unreleased section is a fixed pointer to changelog.d/ plus a seal, the SHA-256 of everything below it, so a direct edit to the file shows up as a broken seal. At release, the fragments go in newest first and are deleted. Newest means the highest issue number at the start of the name (`338-changelog-fragments.md`, as the branch `338-changelog-fragments` names it), names without a number first, ties by name: the order depends on the file names alone, never on git history. A release with no fragments changes nothing.
+// A fragment holds one or more entries, one line each, every line starting with "- " in CHANGELOG.md's style. CHANGELOG.md itself holds only released versions: its Unreleased section is a fixed pointer to changelog.d/ plus a seal, the SHA-256 of everything below it, so a direct edit to the file shows up as a broken seal. At release, the fragments go in newest first and are deleted, the player-facing entries first and then, under `### For contributors`, every entry whose title starts with "For contributors: ", that prefix dropped (`sectionText`). Newest means the highest issue number at the start of the name (`338-changelog-fragments.md`, as the branch `338-changelog-fragments` names it), names without a number first, ties by name: the order depends on the file names alone, never on git history. A release with no fragments changes nothing.
 //
 //   node scripts/changelog.mts                       print the unreleased entries, as the release would write them
 //   node scripts/changelog.mts --check               exit 1 when a fragment or CHANGELOG.md is out of shape
@@ -10,7 +10,7 @@
 // scripts/changelog.test.mts runs --check's checks on the committed files.
 //
 // map: tooling
-// owns: `fragmentError`, `changelogError`, `release`
+// owns: `fragmentError`, `changelogError`, `sectionText`, `release`
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -77,6 +77,16 @@ export function sealed(changelog: string): string {
   return unreleasedBlock(s.released) + s.released;
 }
 
+// A version section's entries as released: the player-facing ones first, then the contributor ones under their own
+// subheading with the title's "For contributors: " prefix dropped (its next letter capitalised), each group in the order given.
+const CONTRIBUTOR = /^- \*\*For contributors: /;
+export const CONTRIBUTORS_HEADING = "### For contributors";
+export function sectionText(lines: string[]): string {
+  const players = lines.filter((l) => !CONTRIBUTOR.test(l));
+  const contributors = lines.filter((l) => CONTRIBUTOR.test(l)).map((l) => l.replace(CONTRIBUTOR, "- **").replace(/^- \*\*([a-z])/, (_m, c: string) => `- **${c.toUpperCase()}`));
+  return [players.join("\n"), contributors.length ? `${CONTRIBUTORS_HEADING}\n\n${contributors.join("\n")}` : ""].filter(Boolean).join("\n\n");
+}
+
 // CHANGELOG.md with `lines` released as `version` on `date`, above the earlier versions; unchanged when there are no lines, so an empty or repeated release is a no-op.
 export function released(changelog: string, lines: string[], version: string, date: string): string {
   const s = split(changelog);
@@ -85,7 +95,7 @@ export function released(changelog: string, lines: string[], version: string, da
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error(`"${date}" is not a date like 2026-10-17`);
   if (!lines.length) return changelog;
   if (s.released.split("\n").some((l) => l.startsWith(`## ${version} `))) throw new Error(`${CHANGELOG} already has ${version}: bump package.json's version for the new fragments`);
-  const next = `## ${version} — ${date}\n\n${lines.join("\n")}\n\n${s.released}`;
+  const next = `## ${version} — ${date}\n\n${sectionText(lines)}\n\n${s.released}`;
   return unreleasedBlock(next) + next;
 }
 
@@ -96,7 +106,7 @@ export function problems(root = ROOT): string[] {
   return c ? [...out, c] : out;
 }
 
-// The unreleased entries, newest fragment first.
+// The unreleased entries, newest fragment first (the plain order; sectionText groups them for the release).
 export function unreleasedLines(root = ROOT): string[] {
   return fragmentNames(root).flatMap((f) => entries(readFileSync(join(root, FRAGMENTS, f), "utf8")));
 }
@@ -132,7 +142,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       const path = join(ROOT, CHANGELOG);
       writeFileSync(path, sealed(readFileSync(path, "utf8")));
       console.log(`${CHANGELOG} re-sealed`);
-    } else console.log(unreleasedLines().join("\n"));
+    } else console.log(sectionText(unreleasedLines()));
   } catch (e) {
     console.error(e instanceof Error ? e.message : String(e));
     process.exit(1);
