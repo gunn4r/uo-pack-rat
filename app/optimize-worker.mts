@@ -8,7 +8,7 @@
 // This file's two boundaries — the workerData the server hands the Worker constructor, and every
 // message posted back through parentPort — are exactly where an unknown value crosses a thread.
 // OptimizeWorkerData and the Worker*Message types below name both shapes explicitly (exported so
-// the server, Task 8, can build/read against the same types this file narrows into and emits from)
+// the server (app/services/jobs.mts) can build and read against the same types this file narrows into and emits from)
 // rather than trusting `workerData`'s ambient `any`.
 //
 // map: builder

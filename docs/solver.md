@@ -1,5 +1,49 @@
 # The suit solver
 
+## Before you change the solvers
+
+Read this section first; the rest of the file is the reference, feature by feature. Before touching the exact search's scaling, also read `app/bench/REPORT.md`.
+
+**The modules, in the order a build runs through them:**
+
+1. `app/build-spec.mts` (`planBuild`): a character's BuildSpec into the base, plan, profile, buffs, pool and options. The page, MCP and the route all build through it.
+2. `app/http/routes/optimize.mts` (`POST /api/optimize`): validates the body, then prepares the solve in this order: the optional slots (`optionalSlotsFor`), the rarity tie costs (`stampTieCost`), the reachable Resisting Spells steps (`withReachableResistSteps`), the SSI step table and the scaled hard-floor bonus (`poolStepsFor`, `withHardFloorBonus`), the run key (`runKey`, `app/runs-lib.mts`), then the pre-build diagnostics. `app/services/jobs.mts` runs the job in a worker.
+3. `app/optimize-worker.mts`: works out the step table again, runs `solveExact` (`app/exact-solver.mts`) or, when HiGHS doesn't load, the core's `optimizeSuit`, then finishes the result: the swing (`app/swing.mts`), the tie-break and Strict order summaries, the diagnostics (`app/diagnostics.mts`) and the score shares.
+4. `scripts/optimizer-core.mts`: the heuristic search, its branch-and-bound, and `scoreSet`, the scorer of record.
+5. `app/mip.mts` (`buildSuitMip`, `startVector`, `heldModel`) builds the MIP; `app/mip-solve.mts` is the narrow adapter around HiGHS; `app/exact-solver.mts` runs the stages and hands the winning suit back to the core.
+6. `app/evaluate.mts` (`evaluateSuit`): one suit's paperdoll for every screen and tool; `app/vault-lib.mts`'s `requirementReport` gives the requirement rows.
+
+**The invariants.** Each is held by the tests or by the exact solver's own guards; a change that breaks one is a bug, not a trade-off:
+
+- The core is the one scorer of record. `solveExact` always hands its winning suit back to the core, and every number a result carries is the core's. Its guards revoke `proven` and warn when HiGHS's objective, the core's re-score and the heuristic disagree.
+- For any suit, the MIP's objective at `startVector(suit)` plus `scoreOffset` equals the core's `scoreSet(suit)`. The exact solver checks this on every suit it returns (HiGHS's objective against the core's re-score).
+- Every profile transform happens before `runKey`, so the key covers it. A transform added after it silently reuses runs it shouldn't.
+- A change to what a build returns bumps `SOLVER_VERSION` (`app/runs-lib.mts`, with a line in its comment), so saved runs stop being reused as instant repeats.
+- The same seed gives byte-identical results.
+- `alternatives` never contains the returned suit.
+
+**The rules written twice.** The core and the MIP keep their own copies of these, marked `==` in the code. A change to one is a change to both; the third column says what catches a mismatch:
+
+| Rule | Core (`scripts/optimizer-core.mts`) | Other copy | Caught by |
+|---|---|---|---|
+| Hard-floor bonus | `HARD_FLOOR_BONUS` | `HARD_FLOOR_BONUS` (`app/mip.mts`) | the fuzz suite |
+| The bonus a profile carries | `optHardBonus` | `hardBonusOf` (`app/mip.mts`) | nothing direct |
+| Tie and Strict order slack, 1e-3 | `LEX_EPS` | `TIE_SLACK` (`app/mip.mts`); `mip_abs_gap` (`app/mip-solve.mts`) | nothing direct |
+| Relative slack | `SCORE_REL`, `optSlack` | `SCORE_REL`, `slackAt` (`app/mip.mts`) | nothing direct |
+| Change cost | `CHANGE_COST` | `CHANGE_COST` (`app/mip.mts`) | `app/strict-order.test.mts` |
+| Change cost per pool (with the slot count 19 written in) | `optChangeCost` | `changeCostFor` (`app/mip.mts`) | one value in `app/strict-order.test.mts` |
+| A kept piece's value | `optChangeOf` | `keptOf` (`app/mip.mts`) | nothing direct |
+| Resisting Spells key and step slack | `RESIST_SKILL_KEY`, `RESIST_STEP_SLACK` | the same names in `app/vault-lib.mts` | nothing direct |
+| The minimum a resist is held at | `optScoreVector`'s step loop | `liftedMin` (`app/vault-lib.mts`), the step loop in `startVector` and the `h` rows in `buildSuitMip` | the fuzz suite |
+| SSI step credit | `optStepCredit` | `stepCredit` (`app/swing.mts`), the step loop in `startVector` | the fuzz suite |
+| The slots | `optDefaultSlots` | `GEAR_SLOTS` (`app/vault-lib.mts`, read by `app/mip.mts`) | `app/solver.test.mts` |
+| The optional slots | `optDefaultOptionalSlots` | `DEFAULT_OPTIONAL_SLOTS` (`app/mip.mts`) | `app/solver.test.mts` |
+| Default soft-floor bonus 1000 and partial credit 0.5 | in `optBuildSpace` and the profile normalisation | in `buildSuitMip` and `hardFloorSpread` (`app/mip.mts`); `SPEC_DEFAULTS.floorBonus` (`app/build-spec.mts`) | nothing direct |
+
+The core keeps its own copies because its header rule was "imports nothing, so it can be pasted into a game script". No adapter pastes it, and issue #338's quality pass moves these into one shared module; this table shrinks as that lands.
+
+**To add or change a scoring term**, follow "Add or change a scoring term" in `docs/change-checklists.md`. In short: the core's evaluator and its bound, the MIP's rows and `startVector`, `hardFloorSpread`, diagnostics, `requirementReport`, the fuzz generator, `SOLVER_VERSION`, and this file.
+
 The Suit Builder's "exact" mode does not search a decision tree in JavaScript. It builds the suit problem as a mixed-integer program (MIP) and hands it to [HiGHS](https://highs.dev/) (the `highs` npm package, MIT-licensed, compiled to WebAssembly), which proves optimality or reports a bound gap. `app/mip.mts` is the pure model builder (no solver import — it only produces sparse CSR arrays), `app/mip-solve.mts` owns the HiGHS runtime (load, solve, callbacks, no-good cuts), and `app/exact-solver.mts` is the orchestrator the rest of the app calls. This document describes the model as built; `app/bench/REPORT.md` has the measurements that motivated replacing the old branch-and-bound search with it, and `app/bench/mip-spike.mts` is the validation harness the model was checked against before it became app code.
 
 ## The problem
