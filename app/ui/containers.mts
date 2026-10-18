@@ -13,9 +13,9 @@
 import { bagLabel, compareNames } from "../vault-lib.mts";
 import type { Container } from "../vault-lib.mts";
 import { state } from "./store.mts";
-import { $, el, itemTip, toast, safeColor } from "./dom.mts";
+import { $, el, itemTip, safeColor } from "./dom.mts";
 import { api } from "./api.mts";
-import { txt, box, button, confirmDialog, menu, tableFoot, input, select, switchControl, field, message, openDialog, meter, tag } from "./components.mts";
+import { txt, box, button, confirmDialog, menu, tableFoot, input, select, switchControl, field, message, openDialog, meter, tag, toast } from "./components.mts";
 import { containerArt } from "./item-art.mts";
 import { relativeWhen, errorText } from "./messages.mts";
 import { loadOrganize, saveConfig } from "./organize-data.mts";

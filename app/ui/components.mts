@@ -5,7 +5,7 @@
 // bare string or number among its children. Nothing here sets innerHTML: icons are built node by node.
 //
 // map: ui-components
-// owns: `box`, `txt`, `button`, `input`, `select`, `popover`, `combobox`, `createDrawer`, `openDialog`, `confirmDialog`, `table`, `menu`, `FLEX_CLASSES`
+// owns: `box`, `txt`, `button`, `input`, `select`, `popover`, `combobox`, `createDrawer`, `openDialog`, `confirmDialog`, `table`, `menu`, `toast`, `FLEX_CLASSES`
 import { el } from "./dom.mts";
 import type { ElAttrs } from "./dom.mts";
 
@@ -562,20 +562,22 @@ export function confirmDialog({ title, body, confirmLabel, cancelLabel = "Cancel
 }
 
 // ---------------------------------------------------------------- toasts
-// The outcome of something the user just did. Bottom-right, newest at the bottom, at most three; success and
+// toast(text, tone) — the page's one toast call: the outcome of something the user just did. "info" (the
+// default), "good" a success, "bad" an error. Bottom-right, newest at the bottom, at most three; success and
 // info leave after 6 s, errors stay until dismissed. Cleared on page change (clearToasts).
-export type ToastTone = "ok" | "info" | "bad";
-const TOAST_ICON: Record<ToastTone, IconName> = { ok: "check", info: "info", bad: "alert" };
+export type ToastTone = "good" | "info" | "bad";
+const TOAST_CLASS: Record<ToastTone, string> = { good: "ok", info: "info", bad: "bad" };   // the tone's CSS class (components.css)
+const TOAST_ICON: Record<ToastTone, IconName> = { good: "check", info: "info", bad: "alert" };
 const MAX_TOASTS = 3;
 function toastStack(): HTMLElement {
   let s = document.getElementById("toasts");
   if (!s) { s = box("div", { id: "toasts", class: "toasts", "aria-live": "polite" }); document.body.append(s); }
   return s;
 }
-export function showToast(text: string, tone: ToastTone = "info", { action }: { action?: { label: string; onClick: () => void } } = {}): HTMLElement {
-  const stack = toastStack();
-  const t: HTMLDivElement = box("div", { class: `toast ${tone}`, role: tone === "bad" ? "alert" : "status" },
-    icon(TOAST_ICON[tone], { cls: `ic-${tone}` }), txt(text, "toast-text"),
+export function toast(text: string, tone: ToastTone = "info", { action }: { action?: { label: string; onClick: () => void } } = {}): HTMLElement {
+  const stack = toastStack(), cls = TOAST_CLASS[tone];
+  const t: HTMLDivElement = box("div", { class: `toast ${cls}`, role: tone === "bad" ? "alert" : "status" },
+    icon(TOAST_ICON[tone], { cls: `ic-${cls}` }), txt(text, "toast-text"),
     action ? button({ label: action.label, variant: "ghost", size: "sm", cls: "act", onClick: action.onClick }) : null,
     button({ label: "Dismiss", icon: "close", iconOnly: true, variant: "ghost", size: "sm", onClick: (): void => t.remove() }));
   stack.append(t);

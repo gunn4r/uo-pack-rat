@@ -7,9 +7,9 @@
 // map: ui-infra
 // owns: `prefs`
 import { api } from "./api.mts";
-import { toast } from "./dom.mts";
 import { prefsSaveFailed } from "./messages.mts";
 import type { UiPrefs } from "./api-types.mts";
+import { toast } from "./components.mts";
 
 export const prefs = {
   set(patch: UiPrefs, opts: { quiet?: boolean } = {}): void {

@@ -5,9 +5,9 @@
 import { applyItemQuery } from "../item-query.mts";
 import { bagLabel, type Container, type Item } from "../vault-lib.mts";
 import { state, bridge } from "./store.mts";
-import { $, el, toast } from "./dom.mts";
+import { $, el } from "./dom.mts";
 import { api } from "./api.mts";
-import { box, txt, button, meter, searchInput, openDialog, nextId, tipWrap } from "./components.mts";
+import { box, txt, button, meter, searchInput, openDialog, nextId, tipWrap, toast } from "./components.mts";
 import { errorText } from "./messages.mts";
 
 import { houseOfContainer } from "./house-links.mts";

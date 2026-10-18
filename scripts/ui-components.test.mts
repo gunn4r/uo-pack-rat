@@ -132,16 +132,16 @@ test("[slow] components: confirm dialog, drawer, popover, toasts and tooltip beh
     // --- toasts: bottom-right stack of at most three; an error is an alert and stays. Read in one go inside the
     // page: a success or info toast leaves after 6 s, which a slow runner can reach between separate steps.
     const stack = await page.evaluate(() => {
-      const C = (window as unknown as { C: { showToast: (t: string, tone?: string) => void } }).C;
+      const C = (window as unknown as { C: { toast: (t: string, tone?: string) => void } }).C;
       const texts = (): string[] => [...document.querySelectorAll("#toasts .toast .toast-text")].map((e) => e.textContent || "");
-      C.showToast("one", "ok"); C.showToast("two"); C.showToast("three", "bad"); C.showToast("four", "ok");
+      C.toast("one", "good"); C.toast("two"); C.toast("three", "bad"); C.toast("four", "good");
       const shown = texts(), role = document.querySelector("#toasts .toast.bad")?.getAttribute("role");
       document.querySelector<HTMLElement>("#toasts .toast.bad [aria-label=Dismiss]")!.click();
       return { shown, role, after: texts() };
     });
     assert.deepEqual(stack, { shown: ["two", "three", "four"], role: "alert", after: ["two", "four"] });
     // The error, unlike the others, is still there after 6 s.
-    await page.evaluate(() => (window as unknown as { C: { showToast: (t: string, tone?: string) => void } }).C.showToast("stays", "bad"));
+    await page.evaluate(() => (window as unknown as { C: { toast: (t: string, tone?: string) => void } }).C.toast("stays", "bad"));
     await page.waitForFunction(() => ![...document.querySelectorAll("#toasts .toast .toast-text")].some((e) => e.textContent === "four"), undefined, { timeout: 10_000 });
     assert.deepEqual(await page.locator("#toasts .toast .toast-text").allInnerTexts(), ["stays"]);
 

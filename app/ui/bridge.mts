@@ -5,9 +5,9 @@
 // map: bridge
 // owns: `sendBridge`, `runBridgeAction`, `grabAll`, `pollBridge`, `bridgeActionReason`, `bridgeFeatureSet`
 import { state, bridge } from "./store.mts";
-import { $, el, toast } from "./dom.mts";
+import { $, el } from "./dom.mts";
 import { api } from "./api.mts";
-import { confirmDialog, icon } from "./components.mts";
+import { confirmDialog, icon, toast } from "./components.mts";
 import { bridgeView, dataDirNotice, dataDirBanner } from "./messages.mts";
 import type { BridgeView } from "./messages.mts";
 import { containerChain, bridgeFeatures, bridgeRefusal, newestScanAdapter, BRIDGE_OFFLINE, BRIDGE_ACTION_LABELS } from "../vault-lib.mts";
@@ -152,7 +152,7 @@ export async function grabAll(items: Item[], me: string): Promise<void> {
     sent++;
     if (sent < todo.length) await new Promise((res) => setTimeout(res, 300));
   }
-  toast(stopped ? `${sent} of ${todo.length} queued, stopped at ${stopped}` : `${sent} grab${sent === 1 ? "" : "s"} queued for ${bridge.character}`, stopped ? "bad" : "");
+  toast(stopped ? `${sent} of ${todo.length} queued, stopped at ${stopped}` : `${sent} grab${sent === 1 ? "" : "s"} queued for ${bridge.character}`, stopped ? "bad" : "info");
 }
 // The sidebar's bridge status control (index.html's #bridge; ui/shell.mts opens its popover). pollBridge
 // redraws it every 2.5 s from GET /api/bridge/status; the view itself is messages.mts's bridgeView.
@@ -237,5 +237,5 @@ export function bridgeActionReason(action: BridgeAction, it: BridgeTarget): stri
 // the game's answer later).
 export async function runBridgeAction(action: BridgeAction, it: BridgeTarget, opts: { pos?: unknown } = {}): Promise<void> {
   const r = await sendBridge(action, it, opts);
-  toast(r.ok ? `${BRIDGE_ACTION_LABELS[action]}: ${it.name} queued for ${bridge.character}` : r.error, r.ok ? "" : "bad");
+  toast(r.ok ? `${BRIDGE_ACTION_LABELS[action]}: ${it.name} queued for ${bridge.character}` : r.error, r.ok ? "info" : "bad");
 }

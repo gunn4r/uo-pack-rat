@@ -2,7 +2,7 @@
 // Moved verbatim out of index.html's inline <script type="module"> (Task 4, the page split).
 //
 // map: ui-infra
-// owns: `el`, `$`, `fmtN`, `slotLabel`, `rarityColor`, `toast`, `installTooltip`
+// owns: `el`, `$`, `fmtN`, `slotLabel`, `rarityColor`, `installTooltip`
 import { SLOT_LABELS, labelOf, fullOf, tagInfo, gameName } from "../vault-lib.mts";
 import type { Item } from "../vault-lib.mts";
 import { EXTRA_COLS, rarityRank as rarityRankOf } from "../item-query.mts";
@@ -10,7 +10,7 @@ import { state } from "./store.mts";
 import { rarityToken } from "./items.mts";
 import { api } from "./api.mts";
 import type { ItemsBySerialApiResponse } from "./api-types.mts";
-import { showToast, tag, tooltip } from "./components.mts";
+import { tag, tooltip } from "./components.mts";
 import { createTipResolver, type TooltipItem } from "./item-tip.mts";
 
 export { EXTRA_COLS, colVal } from "../item-query.mts";
@@ -118,14 +118,6 @@ export function fmtRunTime(iso: string): string {
   if (isNaN(d as unknown as number)) return "?";
   const hm = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   return d.toDateString() === new Date().toDateString() ? hm : `${d.toLocaleDateString([], { month: "short", day: "numeric" })} ${hm}`;
-}
-
-// toast(text, cls) — the page's long-standing call, now the toast stack in components.mts (bottom-right, up to
-// three, errors stay until dismissed). cls keeps its old meaning: "" is information, "good" a success, "bad"
-// an error. (components.mts imports el() from here; the cycle is safe because neither module calls into the
-// other while it is still loading.)
-export function toast(text: string, cls = ""): void {
-  showToast(text, cls === "bad" ? "bad" : cls === "good" ? "ok" : "info");
 }
 
 // ---------------------------------------------------------------- in-game style tooltip
