@@ -158,7 +158,7 @@ function clientSection(setup: SetupApiResponse): HTMLElement {
         ...(() => { const n = r && autostartNote(r.autostart); return n ? [message({ tone: n.tone, text: n.text })] : []; })()] });
   }
   return sectionFlagged("set-client", "Game client", !setup.settings.client, box("div", { class: "card set-card" }, status, reinstallRow),
-    client?.adapter === "tazuo" && client.scriptsDir ? box("div", { class: "card set-card", id: "set-panel" }) : null,
+    adapter?.panel && client?.scriptsDir ? box("div", { class: "card set-card", id: "set-panel" }) : null,
     uoFolderCard(uoFrom, null));
 }
 
