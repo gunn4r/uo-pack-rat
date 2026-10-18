@@ -1,5 +1,5 @@
 // bridge-trip.mts — the one writer of an Organize trip (issue #11). queueTrip appends one `trip` line
-// to an adapter's bridge queue; writeBridgeStop writes the flag packrat-bridge.py checks between a
+// to an adapter's bridge queue (through app/store/bridge.mts); writeBridgeStop writes the flag packrat-bridge.py checks between a
 // trip's steps. Deliberately not a route: POST /api/bridge's command schema has no trip action, and
 // the Organize endpoint that builds a trip from the current plan (after checking the plan's stamp and
 // that the adapter declares "trip") and Move to's (issue #270), which builds one from the player's
@@ -9,11 +9,12 @@
 //
 // map: bridge
 // owns: `queueTrip`, `writeBridgeStop`
-import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
 import { APP_DIR, DATA_DIR_MODE, DATA_FILE_MODE, type ConfigPaths } from "./config.mts";
 import { writeFileAtomic } from "./atomic-write.mts";
+import { appendCommand } from "./store/bridge.mts";
 import { validate, type ValidatorSchema } from "./schema/validate.mts";
 import type { BridgeTripV1 } from "./schema/types.d.mts";
 import { BRIDGE_PROTOCOL, TRIP_MAX_BYTES, TRIP_NAME_MAX } from "./bridge-contract.mts";
@@ -51,8 +52,7 @@ export function queueTrip(paths: Pick<ConfigPaths, "bridgeFor" | "bridgeQueueFor
   const text = JSON.stringify(line);
   const bytes = Buffer.byteLength(text, "utf8");
   if (bytes > TRIP_MAX_BYTES) return { ok: false, error: `the trip is ${bytes} bytes; the bridge reads at most ${TRIP_MAX_BYTES}` };
-  mkdirSync(paths.bridgeFor(adapter), { recursive: true, mode: DATA_DIR_MODE });
-  appendFileSync(paths.bridgeQueueFor(adapter), text + "\n", { mode: DATA_FILE_MODE });
+  appendCommand(paths, adapter, text);
   return { ok: true, id: line.id };
 }
 
