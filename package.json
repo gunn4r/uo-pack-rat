@@ -50,6 +50,10 @@
     "playwright": "1.64.0",
     "typescript": "7.0.2"
   },
+  "overrides": {
+    "global-agent": "4.1.3",
+    "http-cache-semantics": "4.3.0"
+  },
   "build": {
     "appId": "com.gunn4r.packrat",
     "productName": "Pack Rat",
