@@ -5,8 +5,8 @@
 // map: ui-screens
 // owns: `renderCharacters`, `showCharacter`
 import { state } from "./store.mts";
-import { $, el, toast, tipNode, hideItemTip, compactChildren } from "./dom.mts";
-import { txt, box, badge, button, input, meter, table, searchInput, message, popover, menu, confirmDialog, tooltip, type Column } from "./components.mts";
+import { $, el, tipNode, hideItemTip, compactChildren } from "./dom.mts";
+import { txt, box, badge, button, input, meter, table, searchInput, message, popover, menu, confirmDialog, tooltip, type Column, toast } from "./components.mts";
 import { api } from "./api.mts";
 import { reload } from "./inventory-data.mts";
 import { editProfiles, setCharacterLabel } from "./profiles.mts";

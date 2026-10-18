@@ -367,7 +367,7 @@ The page is `app/index.html` plus `app/ui/`, compiled by `scripts/build-ui.mts` 
 |---|---|---|
 | `app/ui/api-types.mts` | Every response shape the page reads off its own fetches: the house, Organize and saved-run shapes re-exported from the types-only modules (runs narrowed), the settings and setup shapes from app/api/setup.mts the inventory shapes from app/api/inventory.mts and the bridge's from app/api/bridge.mts, the rest declared here. | the hand-declared `*ApiResponse` types |
 | `app/ui/api.mts` | The one place every page fetch goes through (Task 4, localhost security). | `api`, `CLIENT_ID` |
-| `app/ui/dom.mts` | DOM helpers, formatting/label helpers, rarity, and the in-game style hover tooltip. | `el`, `$`, `fmtN`, `slotLabel`, `rarityColor`, `toast`, `installTooltip` |
+| `app/ui/dom.mts` | DOM helpers, formatting/label helpers, rarity, and the in-game style hover tooltip. | `el`, `$`, `fmtN`, `slotLabel`, `rarityColor`, `installTooltip` |
 | `app/ui/events.mts` | The one shared EventSource("/api/events") for the page's life (Task 3, Phase 4). | `connectEvents` |
 | `app/ui/item-tip.mts` | Where the one item tooltip (dom.mts's #tip) gets the item it shows (issue #10). | `createTipResolver` |
 | `app/ui/items.mts` | resolveItems(serials): the page's one place to turn a bare serial into a full item record (location, tags, equippedBy…), now that GET /api/inventory no longer carries the whole item map (Task 5). | `resolveItems` |
@@ -381,7 +381,7 @@ The page is `app/index.html` plus `app/ui/`, compiled by `scripts/build-ui.mts` 
 <!-- module-map:start ui-components -->
 | Module | Role | Owns |
 |---|---|---|
-| `app/ui/components.mts` | The page's component primitives (docs/ui.md), as small DOM builders over dom.mts's el(). | `box`, `txt`, `button`, `input`, `select`, `popover`, `combobox`, `createDrawer`, `openDialog`, `confirmDialog`, `table`, `menu`, `FLEX_CLASSES` |
+| `app/ui/components.mts` | The page's component primitives (docs/ui.md), as small DOM builders over dom.mts's el(). | `box`, `txt`, `button`, `input`, `select`, `popover`, `combobox`, `createDrawer`, `openDialog`, `confirmDialog`, `table`, `menu`, `toast`, `FLEX_CLASSES` |
 | `app/ui/dialog.mts` | The one-field prompt dialog, on components.mts's openDialog. | `promptText` |
 | `app/ui/item-browser.mts` | The item browser (issue #12): the filter toolbar and its popovers, the active-filter strip, the columns and density popover, and the virtual table over its data source (GET /api/items by default), as a factory that can be mounted more than once. | `createItemBrowser`, `itemsSource` |
 | `app/ui/item-parts.mts` | The item widgets every screen shares: an item's rarity, tags and location as elements, the row actions (Highlight, Grab, Go to) and the ⋯ menu, and the filter context the filter wording needs. | `rarityEl`, `tagEls`, `locationEl`, `tagWords`, `itemActions`, `itemMenu`, `filterContext`, `setItemNav` |
