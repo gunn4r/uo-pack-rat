@@ -1,6 +1,6 @@
 // server-builder.test.mts — HTTP tests of the Suit Builder: `POST /api/optimize`, the saved runs and `GET|PATCH /api/profiles`.
 //
-// `POST /api/optimize`: one running job per client (a second `POST` supersedes the first) and none between callers with no client id, the events route's `?client=` check, the server-wide ceiling, a job that throws logging its stack under the ref the client sees, an exact build proven by HiGHS with the saved run's score, the by-character form building the client's pools, keeping the page's settings snapshot, treating null fields as absent and refusing a bad settings type, the time budget capping restarts, resist cap overrides, weapon exclusions and required weapon properties (the lock wins, an empty pool said), malformed pools, current, profile or opts refused, only known meta fields saved, a character with no scans a 404, and Manual's hand-offs (issue #12: `pinned` keeping the placed pieces, no run saved, and with no character only pieces nobody wears; No character's `_nobody` build from pieces nobody wears, saved, reused and listed under its name, others' worn gear on request, another pseudo name a 404, and its manual run; Only containers, `settings.onlyRoots`: a bad list 400, the pool narrowed to the listed container, the slots it leaves with nothing from a container and a hard floor it puts out of reach said before the search, and a No character build saved with the list and never answering one without it); SSI scored by swing step through the real worker (issue #217: per point with the reason while the weapon is not fixed, scoring what steps off scores, and the result's swing once the one-handed slot is locked); the job lifecycle (`jobTimings`, a parked core: a build past the retention kept, one past its budget cancelled, closing mid-build logging no failure); `GET|PUT|DELETE /api/runs/<id>` (a label type-checked, a truncated run a 404 that can still be deleted) and `POST /api/runs` saving a manual run with its checks; `POST /api/evaluate` answering what `evaluateSuit` computes from the same fixtures (the saved profile, a given profile with Divine Fury, a run's settings bringing their buffs, No character) and its checks; `PATCH /api/profiles` (413 by bytes, 400 naming the schema path) and a truncated `profiles.json` moved aside and reseeded. A rarity preference (issue #262): `POST /api/optimize` stamps tie costs on pooled and worn pieces in both forms (an unknown serial ranking 0), a hand-built worn suit with a two-handed weapon beside a one-hander refused (a shield beside one kept), keys each preference apart from none, and refuses a bad `opts.tieBreak`. What made up the score (issue #273): the best suit, each other suit and the saved run carry the shares, and a manual run stores its own. What changed in the gear (issue #291): a build by character saves its pool's serials, its suit's places and its STR limit, `GET /api/runs/<id>` leaves them out and against the same scans finds no changes, and a run whose settings the rebuild cannot use still opens, without changes, logging why.
+// `POST /api/optimize`: one running job per client (a second `POST` supersedes the first) and none between callers with no client id, the events route's `?client=` check, the server-wide ceiling, a job that throws logging its stack under the ref the client sees, an exact build proven by HiGHS with the saved run's score, and one by character for a character wearing a one-hander beside a two-hander (the worn one hand read empty), the by-character form building the client's pools, keeping the page's settings snapshot, treating null fields as absent and refusing a bad settings type, the time budget capping restarts, resist cap overrides, weapon exclusions and required weapon properties (the lock wins, an empty pool said), malformed pools, current, profile or opts refused, only known meta fields saved, a character with no scans a 404, and Manual's hand-offs (issue #12: `pinned` keeping the placed pieces, no run saved, and with no character only pieces nobody wears; No character's `_nobody` build from pieces nobody wears, saved, reused and listed under its name, others' worn gear on request, another pseudo name a 404, and its manual run; Only containers, `settings.onlyRoots`: a bad list 400, the pool narrowed to the listed container, the slots it leaves with nothing from a container and a hard floor it puts out of reach said before the search, and a No character build saved with the list and never answering one without it); SSI scored by swing step through the real worker (issue #217: per point with the reason while the weapon is not fixed, scoring what steps off scores, and the result's swing once the one-handed slot is locked); the job lifecycle (`jobTimings`, a parked core: a build past the retention kept, one past its budget cancelled, closing mid-build logging no failure); `GET|PUT|DELETE /api/runs/<id>` (a label type-checked, a truncated run a 404 that can still be deleted) and `POST /api/runs` saving a manual run with its checks; `POST /api/evaluate` answering what `evaluateSuit` computes from the same fixtures (the saved profile, a given profile with Divine Fury, a run's settings bringing their buffs, No character) and its checks; `PATCH /api/profiles` (413 by bytes, 400 naming the schema path) and a truncated `profiles.json` moved aside and reseeded. A rarity preference (issue #262): `POST /api/optimize` stamps tie costs on pooled and worn pieces in both forms (an unknown serial ranking 0), a hand-built worn suit with a two-handed weapon beside a one-hander refused (a shield beside one kept), keys each preference apart from none, and refuses a bad `opts.tieBreak`. What made up the score (issue #273): the best suit, each other suit and the saved run carry the shares, and a manual run stores its own. What changed in the gear (issue #291): a build by character saves its pool's serials, its suit's places and its STR limit, `GET /api/runs/<id>` leaves them out and against the same scans finds no changes, and a run whose settings the rebuild cannot use still opens, without changes, logging why.
 import { test, before, after, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, rmSync } from "node:fs";
@@ -293,6 +293,39 @@ test("[fast] POST /api/optimize exact: the job finishes with solver \"highs\", p
     assert.ok(status!.runId);
     const run = asJson<RunResponse>(await (await fetch(s2.url + `/api/runs/${status!.runId}`)).json());
     assert.equal(run.run.result.score, status!.result!.score);
+  } finally {
+    await s2.close();
+  }
+});
+
+// Demo Dorran wears a spellbook beside a two-handed staff, a suit the game never allows. The by-character form's worn
+// suit leaves the one hand empty (buildPools), as the core always read it, so the exact search starts from the same
+// suit and proves its answer. Before that, the fewest-changes tie-break counted changes from the impossible worn suit and
+// this build came back unproven (weights on the staff's own properties, so the best suit keeps it).
+test("[fast] POST /api/optimize by character, exact, for a character wearing a one-hander beside a two-hander: the worn one hand reads empty and the result is proven", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "qm-"));
+  const s2 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {})));
+  try {
+    const rules = asJson<RulesResponse>(await (await fetch(s2.url + "/api/rules")).json());
+    const profile = { caps: rules.rules.caps, weights: { hitLightning: 100, hitLifeLeech: 100 } };
+    const opts = { exact: true, timeBudgetMs: 20000, restarts: 50, seed: 2026, tieBreak: { tolerance: 25, fewestChanges: true } };
+    const r = await fetch(s2.url + "/api/optimize", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ character: "Dorran", settings: {}, profile, opts }),
+    });
+    const started = asJson<OptimizeJobResponse & { current: Record<string, { name: string; twoHanded?: boolean } | null> }>(await r.json());
+    assert.equal(r.status, 200, JSON.stringify(started));
+    assert.equal(started.current.twoHanded?.twoHanded, true, "Dorran wears a two-handed weapon");
+    assert.equal(started.current.oneHanded, undefined, "and the worn one hand reads empty");
+    let status: OptimizeJobResponse | undefined;
+    for (let i = 0; i < 300; i++) {
+      status = asJson<OptimizeJobResponse>(await (await fetch(s2.url + `/api/optimize/${started.id}/status`)).json());
+      if (status.state !== "running") break;
+      await new Promise((res) => setTimeout(res, 100));
+    }
+    assert.equal(status!.state, "done", JSON.stringify(status));
+    assert.equal(status!.result!.solver, "highs");
+    assert.equal(status!.result!.proven, true);
   } finally {
     await s2.close();
   }

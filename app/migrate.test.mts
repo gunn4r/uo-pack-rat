@@ -12,7 +12,7 @@ import { checkOrganizeConfig } from "./organize-config.mts";
 import { salvageOrganizeState } from "./organize-state.mts";
 import { salvageKindOverrides } from "./item-kinds.mts";
 import { checkHouseEntry, isHouseId } from "./house-names.mts";
-import { readMcpConfig } from "./mcp.mts";
+import { readMcpConfig } from "./store/mcp-config.mts";
 import { createSettingsStore } from "./store/settings.mts";
 import { createUiPrefsStore } from "./store/ui-prefs.mts";
 
