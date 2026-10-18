@@ -17,9 +17,10 @@ import { isPseudoCharacter, parseStamp } from "./scan-schema.mts";
 import { houseGroups, latestHouses } from "./house-capture.mts";
 import type { Inventory } from "./vault-lib.mts";
 import type { ScanV2 } from "./schema/types.d.mts";
+import type { Retention } from "./api/setup.mts";
 
-// settings.json's `retention`. keepAll turns pruning off.
-export interface Retention { keepAll: boolean; scanDays: number; runsPerCharacter: number }
+// settings.json's `retention` is the API's own type (app/api/setup.mts). keepAll turns pruning off.
+export type { Retention } from "./api/setup.mts";
 export const RETENTION_DEFAULTS: Retention = { keepAll: false, scanDays: 30, runsPerCharacter: 50 };
 export const RETENTION_LIMITS = { scanDays: { min: 1, max: 3650 }, runsPerCharacter: { min: 1, max: 1000 } } as const;
 const DAY_MS = 24 * 60 * 60 * 1000;

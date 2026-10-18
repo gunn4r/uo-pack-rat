@@ -11,6 +11,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { validate, type ValidatorSchema } from "./schema/validate.mts";
 import type { RulesV1 } from "./schema/types.d.mts";
+import type { ShardOption } from "./api/setup.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BUILTIN_DIR = join(HERE, "rules");
@@ -28,12 +29,8 @@ const SCHEMA = readJson(join(HERE, "schema", "rules.v1.schema.json")) as Validat
 
 export const DEFAULT_SHARD = "uoalive";
 
-interface RulesEntry {
-  id: string;
-  name: string;
-  source: "builtin" | "user";
-  path: string;
-}
+// One rules file listRules finds: GET /api/rules' `available` entry (app/api/setup.mts).
+type RulesEntry = ShardOption;
 
 // What the schema cannot say about the Scroll Binder's recipes (issue #181), which the Scrolls view's roll-up needs:
 // each step goes up and no two start at the same level, and the usable Transcendence totals rise in whole tenths.
