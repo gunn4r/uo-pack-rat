@@ -51,7 +51,7 @@ test("[fast] a plan that moves nothing says what stayed and why in one short lin
   assert.equal(nothingDetail({ unclaimed: 0, crossSite: [], rules: [] }, "that container"), "Nothing lies directly in that container.");
 });
 
-// The cases app/fixtures/contract-cases/put-away.json shares with adapters/test_panel.py, which checks the panel's real request against the first.
+// The cases app/fixtures/contract-cases/put-away.json; app/adapter-outputs.test.mts checks the panel's real requests against the schema and checkPutAwayRequest.
 test("[fast] every shared Put away request case is taken or refused as it says, and the schema passes the shapes it says", () => {
   const cases = JSON.parse(readFileSync(new URL("./fixtures/contract-cases/put-away.json", import.meta.url), "utf8")) as { now: string; valid: unknown[]; invalid: { why: string; entry: unknown; schema: boolean }[] };
   const schema = JSON.parse(readFileSync(new URL("./schema/put-away.v1.schema.json", import.meta.url), "utf8")) as ValidatorSchema & { $defs: Record<string, ValidatorSchema> };

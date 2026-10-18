@@ -1,5 +1,5 @@
 {
-  "$comment": "Cases for a Put away request, <data>/inbox/<adapter>/putaway-request.json (app/schema/put-away.v1.schema.json, $defs.request), checked at `now`. app/put-away.test.mts runs each through checkPutAwayRequest (a valid one taken, an invalid one refused) and the schema (`schema`: whether the shape passes; the time windows and a character's control characters are beyond it). adapters/test_panel.py checks the request the panel really writes has the first valid case's fields and types.",
+  "$comment": "Cases for a Put away request, <data>/inbox/<adapter>/putaway-request.json (app/schema/put-away.v1.schema.json, $defs.request), checked at `now`. app/put-away.test.mts runs each through checkPutAwayRequest (a valid one taken, an invalid one refused) and the schema (`schema`: whether the shape passes; the time windows and a character's control characters are beyond it). app/adapter-outputs.test.mts checks every request the panel really writes in the Python tests against the schema and checkPutAwayRequest.",
   "now": "2026-09-30T12:00:00Z",
   "valid": [
     { "id": "1727697600000-1", "container": 1073741825, "character": "Tester", "requestedAt": "2026-09-30T11:59:58Z", "clickedAt": "2026-09-30T11:55:00Z", "at": { "x": 1520, "y": 1631, "facet": 1 } },
