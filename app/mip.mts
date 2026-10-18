@@ -12,8 +12,8 @@ import { CHANGE_COST, DEFAULT_FLOOR_BONUS, DEFAULT_FLOOR_PARTIAL, FLOAT_EPS, HAR
 // The scoring constants this module and the core share live in app/solver/scoring.mts; they are re-exported here for the
 // modules that read them from the MIP.
 export { CHANGE_COST, HARD_FLOOR_BONUS, HARD_FLOOR_BONUS_MAX, SCORE_REL, TIE_SLACK, hardBonusOf, slackAt };
-// Every gear slot (issue #202); all but the five armor pieces may be left empty. The core keeps its own copy (it
-// imports nothing), and app/solver.test.mts checks the two agree.
+// Every gear slot (issue #202); all but the five armor pieces may be left empty. The core keeps its own list, and
+// app/solver.test.mts checks the two agree.
 export const DEFAULT_SLOTS: string[] = GEAR_SLOTS;
 export const DEFAULT_OPTIONAL_SLOTS: string[] = GEAR_SLOTS.filter((s) => !REQUIRED_SLOTS.includes(s));
 // A search's optional slots: the defaults less `keep` (the locked or pinned slots) and less a slot, the hands aside,

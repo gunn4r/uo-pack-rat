@@ -2,7 +2,7 @@
 //
 // a `[smoke]` guard for one slot vocabulary (issue #218): no tracked non-test `.mts` file outside `app/vault-lib.mts` and `scripts/optimizer-core.mts` may hold an array literal naming three or more gear slots, except the files in its `ALLOWED` table, each with how many lists it may hold and why (Manual's paperdoll layout, Organize's Armor and Jewelry bins, a superseded spike). A planted list checks the scan catches one. Derive a new slot list from `GEAR_SLOTS` or `GEAR_SLOT_GROUPS` instead of adding to `ALLOWED`.
 //
-// Gear slots and their groups are listed in app/vault-lib.mts (GEAR_SLOTS, GEAR_SLOT_GROUPS, REQUIRED_SLOTS) and copied in scripts/optimizer-core.mts, which is pasted without imports (app/solver.test.mts checks its copy). Any other array literal naming three or more gear slots is a second list that can drift.
+// Gear slots and their groups are listed in app/vault-lib.mts (GEAR_SLOTS, GEAR_SLOT_GROUPS, REQUIRED_SLOTS) and copied in scripts/optimizer-core.mts, which keeps its own lists (app/solver.test.mts checks its copy). Any other array literal naming three or more gear slots is a second list that can drift.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";

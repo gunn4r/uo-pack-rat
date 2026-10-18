@@ -82,7 +82,7 @@ export function stepTable({ speedS, stamBase, refStamina, share, stamRange, ssiM
   return all.filter((p, i) => !all.some((q, j) => j !== i && beats(q, p) && (!beats(p, q) || j < i)));
 }
 
-// The largest credit among the points a suit with `ssi` item SSI and `stam` gear Stamina pool reaches, 0 when it reaches none: what SSI by step scores (scripts/optimizer-core.mts optStepCredit, which keeps its own copy: the core imports nothing).
+// The largest credit among the points a suit with `ssi` item SSI and `stam` gear Stamina pool reaches, 0 when it reaches none: what SSI by step scores (scripts/optimizer-core.mts optStepCredit, the core's own copy of this rule; docs/solver.md's "rules written twice" table lists it).
 export function stepCredit(points: readonly SsiStepPoint[], ssi: number, stam: number): number {
   let best = 0;
   for (const p of points) if (ssi >= p.ssi - FLOAT_EPS && stam >= p.stam - FLOAT_EPS && p.credit > best) best = p.credit;
