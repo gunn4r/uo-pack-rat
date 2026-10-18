@@ -300,17 +300,18 @@ test("[fast] POST /api/optimize exact: the job finishes with solver \"highs\", p
 
 // Demo Dorran wears a spellbook beside a two-handed staff, a suit the game never allows. The by-character form's worn
 // suit leaves the one hand empty (buildPools), as the core always read it, so the exact search starts from the same
-// suit and proves its answer.
+// suit and proves its answer. Before that, the fewest-changes tie-break counted changes from the impossible worn suit and
+// this build came back unproven (weights on the staff's own properties, so the best suit keeps it).
 test("[fast] POST /api/optimize by character, exact, for a character wearing a one-hander beside a two-hander: the worn one hand reads empty and the result is proven", async () => {
   const dir = mkdtempSync(join(tmpdir(), "qm-"));
   const s2 = await startServer(ensureLayout(resolveConfig(["--demo", "--port", "0", "--data", dir], {})));
   try {
-    const profiles = asJson<ProfilesResponse>(await (await fetch(s2.url + "/api/profiles")).json());
     const rules = asJson<RulesResponse>(await (await fetch(s2.url + "/api/rules")).json());
-    const profile = { ...firstTemplate(profiles), caps: rules.rules.caps };
+    const profile = { caps: rules.rules.caps, weights: { hitLightning: 100, hitLifeLeech: 100 } };
+    const opts = { exact: true, timeBudgetMs: 20000, restarts: 50, seed: 2026, tieBreak: { tolerance: 25, fewestChanges: true } };
     const r = await fetch(s2.url + "/api/optimize", {
       method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ character: "Dorran", settings: {}, profile, opts: { exact: true, timeBudgetMs: 20000, restarts: 50, seed: 2026 } }),
+      body: JSON.stringify({ character: "Dorran", settings: {}, profile, opts }),
     });
     const started = asJson<OptimizeJobResponse & { current: Record<string, { name: string; twoHanded?: boolean } | null> }>(await r.json());
     assert.equal(r.status, 200, JSON.stringify(started));
