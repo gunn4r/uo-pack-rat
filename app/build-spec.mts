@@ -220,7 +220,7 @@ export function labelError(v: unknown): string | null {
   if (/[\u0000-\u001f\u007f]/.test(v)) return "label must be one line of text, with no control characters";
   return null;
 }
-// Labels are written only by PUT /api/profiles/label, which changes one character's label on the server: a whole-file
+// Labels are written only by a setLabel edit (PATCH /api/profiles), which changes one character's label on the server: a whole-file
 // save keeps each character's stored label, so a page holding an older copy of the file never drops or reverts one.
 export function keepLabels(next: Pick<ProfilesV3, "characters">, stored: Pick<ProfilesV3, "characters">): void {
   for (const [name, entry] of Object.entries(next.characters)) {

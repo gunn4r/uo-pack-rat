@@ -13,6 +13,7 @@
 // - `GET /buffs.mjs` (the Suit Builder's Manual buffs, same reason)
 // - `GET /evaluate.mjs` (one suit evaluation for Manual's totals and Automatic's buff picker, the one `POST /api/evaluate` and the MCP tools use)
 // - `GET /build-spec.mjs` (a build's intent as one document, which the Suit Builder turns into a build with the server's own rule, same reason)
+// - `GET /profile-edits.mjs` (the page makes each profiles edit on its own copy with the server's own rule, same reason)
 // - `GET /swing.mjs` (the Suit Builder's swing line and step hints, the formula both solvers score with, same reason)
 // - `GET /run-settings.mjs` and `GET /guards.mjs` (the Suit Builder's Advanced fields check against the server's run-setting ranges, same reason)
 // - `GET /data-dir-notice.mjs` (ui/messages.mts's import, same reason)
@@ -59,6 +60,8 @@ export function routes(_ctx: ServerContext): Route[] {
     { method: "GET", path: "/run-settings.mjs", handle: (_req, res) => send(res, 200, readFileSync(join(WEB, "run-settings.mjs"), "utf8"), "text/javascript") },
     // The Suit Builder plans a build, and reads and writes the profiles, through the server's own BuildSpec (app/build-spec.mts).
     { method: "GET", path: "/build-spec.mjs", handle: (_req, res) => send(res, 200, readFileSync(join(WEB, "build-spec.mjs"), "utf8"), "text/javascript") },
+    // The page makes its profile edits with the server's own function (app/profile-edits.mts, PATCH /api/profiles).
+    { method: "GET", path: "/profile-edits.mjs", handle: (_req, res) => send(res, 200, readFileSync(join(WEB, "profile-edits.mjs"), "utf8"), "text/javascript") },
     // The Suit Builder's swing line and step hints use the solvers' own swing formula (app/swing.mts).
     { method: "GET", path: "/swing.mjs", handle: (_req, res) => send(res, 200, readFileSync(join(WEB, "swing.mjs"), "utf8"), "text/javascript") },
     { method: "GET", path: "/house-areas.mjs", handle: (_req, res) => send(res, 200, readFileSync(join(WEB, "house-areas.mjs"), "utf8"), "text/javascript") },
