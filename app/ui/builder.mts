@@ -467,7 +467,8 @@ async function duplicateTemplate(ref: string): Promise<void> {
   const name = await askTemplateName(`Duplicate ${plainName(ref)}`, copyName(plainName(ref)));
   if (!name) return;
   const copy = { spec: structuredClone(from.spec), ...(from.description ? { description: from.description } : {}), savedAt: new Date().toISOString() };
-  const saving = saveTemplates(`Template ${name} saved.`, [{ op: "putTemplate", id: name, entry: copy }]);
+  // never over a template by that name made elsewhere since the name was checked
+  const saving = saveTemplates(`Template ${name} saved.`, [{ op: "putTemplate", id: name, entry: copy, create: true }]);
   openCard = name;
   renderPanel();
   paintTemplatesDrawer();
@@ -608,9 +609,11 @@ async function saveTemplateAs(): Promise<void> {
   const name = await promptText({ title: "Template name", value: was.startsWith(BUILTIN_PREFIX) ? "" : was });
   if (name?.startsWith(BUILTIN_PREFIX)) { toast(`A template's name can't start with "${BUILTIN_PREFIX}".`, "bad"); return; }
   if (name && name.length > TEMPLATE_NAME_MAX) { toast(`A template's name is at most ${TEMPLATE_NAME_MAX} characters.`, "bad"); return; }
-  if (!name || (state.profiles!.templates[name] && !await confirmDialog({ title: `Overwrite the ${name} template?`, body: `The ${name} template is replaced with these settings.`, confirmLabel: `Overwrite ${name}` }))) return;
+  const existed = !!name && Object.hasOwn(state.profiles!.templates, name);
+  if (!name || (existed && !await confirmDialog({ title: `Overwrite the ${name} template?`, body: `The ${name} template is replaced with these settings.`, confirmLabel: `Overwrite ${name}` }))) return;
   const entry = { spec: templateSpecFrom(readControls(), buffsOn()), savedAt: new Date().toISOString() };
-  const saving = saveTemplates(`Template ${name} saved.`, [{ op: "putTemplate", id: name, entry }]);
+  // over the template by that name only when that was confirmed: never over one made elsewhere since the prompt
+  const saving = saveTemplates(`Template ${name} saved.`, [{ op: "putTemplate", id: name, entry, ...(existed ? {} : { create: true }) }]);
   session.profile!.template = name;
   renderPanel();
   paintTemplatesDrawer();

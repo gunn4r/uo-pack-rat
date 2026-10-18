@@ -1,5 +1,9 @@
 // blacklist.mts — GET|POST /api/blacklist and DELETE /api/blacklist/<serial>.
 //
+// The routes, what each takes and answers:
+// - `GET|POST {serial, name, where?} /api/blacklist`
+// - `DELETE /api/blacklist/<serial>` (`<data>/scan-blacklist.json`, the containers scans never open)
+//
 // map: server
 // owns: `routes`
 import { isBoundedInt, MAX_SERIAL } from "../../guards.mts";

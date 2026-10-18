@@ -1,5 +1,10 @@
 // mcp.mts — the built-in MCP server's settings: GET|PUT /api/mcp and POST /api/mcp/token.
 //
+// The routes, what each takes and answers:
+// - `GET /api/mcp` -> {config: {enabled, allowActions, port, token}, live: {listening, port, portBusy}}
+// - `PUT /api/mcp` {enabled?, allowActions?}
+// - `POST /api/mcp/token` {} (rotate) — the built-in MCP server's settings (`<data>/mcp.json`, app/mcp.mts; it listens on its own port)
+//
 // map: server
 // owns: `routes`
 import { short } from "../../guards.mts";
