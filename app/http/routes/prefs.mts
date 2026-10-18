@@ -1,17 +1,18 @@
-// prefs.mts — the player's saved choices: GET|PUT /api/profiles, PUT /api/profiles/label, /api/ui-prefs and /api/tazuo-panel.
+// prefs.mts — the player's saved choices: GET|PUT|PATCH /api/profiles, /api/ui-prefs and /api/tazuo-panel.
 //
 // The routes, what each takes and answers:
 // - `GET|PUT /api/profiles` (`<data>/profiles.json`; GET also answers `builtinTemplates`, the shard's built-in templates from `app/data/templates/<shard>.json`; GET answers the file's `stamp` too, and PUT must name it as `base`: a file saved since is refused with 409 `stale` and the current stamp, left alone; PUT takes schemaVersion 3 only and refuses an older page's v2 body or a body without `base`; PUT keeps each character's stored build label, `build-spec.mts`'s `keepLabels`)
-// - `PUT /api/profiles/label` (`{character, label}`, issue #336: changes one character's build label in `profiles.json` on the server, reading and writing with nothing awaited between, so no other saved setting rides along; trimmed, a blank one removed, at most 40 characters on one line (`labelError`); a scanned character with no saved settings gets the ones the Suit Builder shows it; 404 for an unknown or pseudo character; answers the entry as saved)
+// - `PATCH /api/profiles` (`{edits}`, quality pass 1: 1 to 100 `app/profile-edits.mts` edits made in order on the file as it is on the server and written once, with nothing awaited between the read and the write, so a page's save carries what it means and no other saved setting rides along. The ops: `setBuffs`, `setLabel` (issue #336's build label: trimmed, a blank one removed, at most 40 characters on one line, `labelError`; a scanned or saved character only, never a pseudo one), `saveCharacter`, `deleteCharacter`, `putTemplate`, `updateTemplate`, `deleteTemplate`, `renameTemplate` (its characters follow). A bad edit is 400 naming why; one that can't be made on the file now (a template deleted elsewhere, a name taken, no such character) is 409 `conflict`, and the list writes nothing; the result goes through the same schema and spec checks as a whole-file save. Answers the stamp before (`was`) and after the write. It writes only over the file it read: when another save landed in between, it makes the edits again on the newer file, at most three times, then answers 409 `stale`. `__proto__`, `constructor` and `prototype` are refused as names. It replaces `PUT /api/profiles/label`.)
 // - `GET|PUT /api/tazuo-panel` ({hotkey?, showAtLogin?} -> {prefs}: the TazUO panel's hotkey and whether it shows its window at login, `<data>/tazuo-panel.json`, app/tazuo-panel.mts)
 // - `GET|PUT /api/ui-prefs` (`<data>/ui-prefs.json:` {cols?, colsVersion?, colWidths?, sheetProps?, theme?, appearance?, sidebar?, density?, areaLabels?, mapDrawerWidth?, builderMode?, builderTab?, builderChanges?, builderFineTune?, manualFor?, manualSuit?, manualBuffs?, manualBuffSkills?, buffsCount?, dismissedUpdate?, copiedScanner?}, the page's view choices; `autoBuffs` and `buffSkills` are refused, since a character's buffs are its profile's now)
 //
 // map: server
-// owns: `routes`
+// owns: `routes`, `patchProfiles`
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { isBuffList, isBuffSkills } from "../../buffs.mts";
-import { PROFILES_VERSION, characterBuffs, characterEntry, characterProfile, keepLabels, labelError, profilesSpecError, type ProfilesV3 } from "../../build-spec.mts";
+import { PROFILES_VERSION, keepLabels, profilesSpecError, type ProfilesV3 } from "../../build-spec.mts";
+import { applyProfileEdits, profileEditError, type ProfileEdit } from "../../profile-edits.mts";
 import { isPseudoCharacter } from "../../scan-schema.mts";
 import { isBoundedString } from "../../guards.mts";
 import { readBody } from "../../read-body.mts";
@@ -28,6 +29,28 @@ const PROFILES_SCHEMA = JSON.parse(readFileSync(join(HERE, "schema", "profiles.v
 // A page loaded before the update still holds the old shape, without the buffs that moved in, or saves without a stamp:
 // it is refused rather than migrated or taken, so it can never write over them.
 const OLD_PAGE = "profiles are saved in a newer shape now; reload the page and make the change again";
+// The most edits one PATCH /api/profiles makes (a page sends one or two).
+const MAX_EDITS = 100;
+
+// PATCH /api/profiles' edits made on the file as read and written only over that same file (the store's `base`). A
+// save that landed in between (two first reads can share one v2 migration, and so one copy) is never written over: the
+// edits are made again on the file it left, at most three times, then refused as stale. `scanned`: the characters a
+// label may go on besides the saved ones.
+export async function patchProfiles(store: ServerContext["profilesStore"], list: ProfileEdit[], scanned: string[]): Promise<{ status: number; body: Record<string, unknown> }> {
+  for (let i = 0; i < 3; i++) {
+    const { profiles: stored, stamp: was } = await store.readStamped(), next = structuredClone(stored);
+    const canLabel = (name: string): boolean => !isPseudoCharacter(name) && (Object.hasOwn(stored.characters, name) || scanned.includes(name));
+    const refused = applyProfileEdits(next, list, { builtins: store.builtins(), canLabel });
+    if (refused) return { status: 409, body: { ok: false, code: "conflict", error: refused } };
+    const { ok, errors } = validate(PROFILES_SCHEMA, next);
+    if (!ok) return { status: 400, body: { ok: false, error: `${errors[0]!.path} ${errors[0]!.msg}`, errors } };
+    const bad = profilesSpecError(next, stored);
+    if (bad) return { status: 400, body: { ok: false, error: bad } };
+    const saved = store.write(next, was);
+    if (saved.ok) return { status: 200, body: { ok: true, stamp: saved.stamp, was } };
+  }
+  return { status: 409, body: { ok: false, code: "stale", error: "the profiles kept changing while this save was made; reload them and make the change again" } };
+}
 
 export function routes(ctx: ServerContext): Route[] {
   const { config: CONFIG, panelPrefsFile: PANEL_PREFS, profilesStore, savePanel, uiPrefsStore, getInventory } = ctx;
@@ -38,8 +61,8 @@ export function routes(ctx: ServerContext): Route[] {
       const { profiles, stamp } = await profilesStore.readStamped(), readOnly = profilesStore.readOnly();
       return send(res, 200, { ok: true, profiles, stamp, builtinTemplates: profilesStore.builtins(), ...(readOnly ? { readOnly } : {}) });
     } },
-    // The whole file, with `base`: the stamp GET answered with. A file saved since (another window, an AI assistant, a
-    // label save) is refused with 409 "stale" and the current stamp, and left alone; the page reloads and makes its
+    // The whole file, with `base`: the stamp GET answered with. A file saved since (another window, an AI assistant, an
+    // edit) is refused with 409 "stale" and the current stamp, and left alone; the page reloads and makes its
     // change again. A save without one comes from a page loaded before stamps, and is refused like an old shape.
     { method: "PUT", path: "/api/profiles", handle: async (req, res) => {
       const { base, ...body } = asObject(await readBody(req, { limit: 1e6, tooLargeMsg: "profiles too large" }));
@@ -51,7 +74,7 @@ export function routes(ctx: ServerContext): Route[] {
       if (!ok) return send(res, 400, { ok: false, error: `${errors[0]!.path} ${errors[0]!.msg}`, errors });
       if (base === undefined) return send(res, 400, { ok: false, error: OLD_PAGE });
       if (!isBoundedString(base, 64)) return send(res, 400, { ok: false, error: "base must be the stamp GET /api/profiles answered with" });
-      // a template name already stored passes as it is; the stored labels stay (PUT /api/profiles/label owns them);
+      // a template name already stored passes as it is; the stored labels stay (only a setLabel edit changes one);
       // nothing awaits between this read and the write
       const stored = await profilesStore.read();
       const bad = profilesSpecError(body as ProfilesV3, stored);
@@ -61,30 +84,22 @@ export function routes(ctx: ServerContext): Route[] {
       if (!saved.ok) return send(res, 409, { ok: false, code: "stale", error: "the profiles were changed elsewhere since they were read; reload them", stamp: saved.stamp });
       return send(res, 200, { ok: true, stamp: saved.stamp });
     } },
-    // One character's build label (issue #336), changed in the file on the server so no other saved setting rides along:
-    // {character, label}, the label trimmed and a blank one removed. A character with no saved settings gets the ones
-    // the Suit Builder shows it (as a buff toggle does). Answers the character's entry as saved (null when none), the
-    // file's stamp after the save, and the one before it (`was`).
-    { method: "PUT", path: "/api/profiles/label", handle: async (req, res) => {
-      const body = asObject(await readBody(req, { limit: 4e3 }));
+    // Edits to the profiles (app/profile-edits.mts): {edits: [...]}, 1 to 100, made in order on the file as it is on the
+    // server and written once, so a page's save carries what it means and never its copy of the rest. Each edit's shape is
+    // checked first (400), then one that can't be made on the file now (a template deleted elsewhere, a name taken, a
+    // label for no such character) refuses the whole list (409 "conflict"), and the result is held to the same schema
+    // and spec checks as a whole-file save (400). Answers the file's stamp before (`was`) and after the write, so a page
+    // whose copy was the file before knows its copy plus the edits is the file now, and one holding another reloads.
+    { method: "PATCH", path: "/api/profiles", handle: async (req, res) => {
+      const { edits } = asObject(await readBody(req, { limit: 1e6, tooLargeMsg: "profiles too large" }));
       const readOnly = profilesStore.readOnly();
       if (readOnly) return send(res, 409, { ok: false, error: readOnly });
-      const name = body.character, label = body.label;
-      if (!isBoundedString(name, 64) || !name) return send(res, 400, { ok: false, error: "character must be a character's name" });
-      const bad = labelError(label);
-      if (bad) return send(res, 400, { ok: false, error: bad });
-      const { inv } = await getInventory();
-      const profiles = await profilesStore.read();
-      // from here to the write nothing awaits, so no other save can come between them
-      const had = Object.hasOwn(profiles.characters, name), text = (label as string).trim();
-      if (isPseudoCharacter(name) || (!had && !Object.hasOwn(inv.characters, name))) return send(res, 404, { ok: false, error: `no character named ${name}` });
-      // `was`: the stamp the file had before this save, so a page holding another one knows to reload the rest
-      const was = profilesStore.stamp();
-      if (!had && !text) return send(res, 200, { ok: true, entry: null, stamp: was, was });
-      const { label: _old, ...entry } = had ? profiles.characters[name]! : characterEntry(characterProfile(profiles, name, profilesStore.builtins()), characterBuffs(profiles, name));
-      profiles.characters[name] = text ? { ...entry, label: text } : entry;
-      const { stamp } = profilesStore.write(profiles);
-      return send(res, 200, { ok: true, entry: profiles.characters[name], stamp, was });
+      if (!Array.isArray(edits) || !edits.length || edits.length > MAX_EDITS) return send(res, 400, { ok: false, error: `edits must be a list of 1 to ${MAX_EDITS} edits` });
+      for (const e of edits) { const bad = profileEditError(e); if (bad) return send(res, 400, { ok: false, error: bad }); }
+      const list = edits as ProfileEdit[];
+      const inv = list.some((e) => e.op === "setLabel") ? (await getInventory()).inv : null;
+      const r = await patchProfiles(profilesStore, list, inv ? Object.keys(inv.characters) : []);
+      return send(res, r.status, r.body);
     } },
     { method: "GET", path: "/api/ui-prefs", handle: (_req, res) => {
       const { autoBuffs: _on, buffSkills: _skills, ...prefs } = uiPrefsStore.read();   // moved to profiles.json, waiting for its migration
