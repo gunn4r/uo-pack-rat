@@ -8,18 +8,23 @@
 // - the core's `optimizeSuit` and `scoreSet`;
 // - the MIP's `buildSuitMip` (with and without `hardAsSoft`, with `parts`), `startVector`, `hardFloorSpread` and `tieCosts`;
 // - `preBuildDiagnostics`, `resultDiagnostics`, `scoreShares` and `requirementReport`.
+// - the exact solver's `solveExact` (HiGHS) on the first `--exact` generated instances, plain and with each search's options
+//   (alternatives, tie-break, Strict order), its timing fields left out and its warnings compared too.
 // A kind is compared only where both sides export its function. The inputs are the fixture with every built-in template
 // (heuristic searches only: the core's branch-and-bound doesn't prove the fixture in reasonable time), then generated
 // inventories: negative values, two-handers, worn pieces, rarity tie costs, hard and soft floors (some exactly at their
 // min, some hard floors naming keys with no floor), floor bonuses and partial credit down to 0, mins, Resisting Spells and
 // SSI steps, hard-floor bonuses from 5 to 1e10; eight searches each (plain, exact with alternatives, tie-break (half of
 // them from a given top suit), Strict order, tie-break with alternatives, Strict order with a tie-break, few local-search
-// passes, and the exact solver's final call: no restarts, a warm start and a top suit), the exact ones with a ten-minute budget. An exact search that comes back unproven fails the check, since two
-// runs cut by the clock can differ on the clock alone.
+// passes, and the exact solver's final call: no restarts, a warm start and a top suit), the exact ones with a ten-minute
+// budget. A core exact search that comes back unproven fails the check, since two runs cut by the clock can differ on the
+// clock alone; so does an exact-solver build that differs and ran out of time (unproven, no guard warning).
 //
-//   node app/bench/compare-cores.mts [--base origin/main] [--generated 2000]
+//   node app/bench/compare-cores.mts [--base origin/main] [--generated 2000] [--exact 500]
 //
-// Prints a JSON summary and exits 1 when any output differs or any exact search is unproven.
+// Prints a JSON summary and exits 1 when any output differs, any of the core's exact searches is unproven, or an
+// exact-solver build differs because it ran out of time. An exact-solver build whose guards revoked the proof is counted
+// and listed with its warnings (`exactUnprovenCases`), not failed.
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -28,25 +33,35 @@ import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import * as fx from "../solver-fixture.mts";
 
-const { values: args } = parseArgs({ options: { base: { type: "string", default: "origin/main" }, generated: { type: "string", default: "2000" } } });
-const base = args.base!, generated = Number(args.generated);
-if (!/^\d+$/.test(args.generated!) || !Number.isSafeInteger(generated)) throw new Error(`--generated must be a whole number, not ${JSON.stringify(args.generated)}`);
+const { values: args } = parseArgs({ options: { base: { type: "string", default: "origin/main" }, generated: { type: "string", default: "2000" }, exact: { type: "string", default: "500" } } });
+const whole = (flag: string, v: string): number => { const n = Number(v); if (!/^\d+$/.test(v) || !Number.isSafeInteger(n)) throw new Error(`--${flag} must be a whole number, not ${JSON.stringify(v)}`); return n; };
+const base = args.base!, generated = whole("generated", args.generated!), exactRuns = whole("exact", args.exact!);
 
 const ROOT = resolve(import.meta.dirname, "../..");
 const dir = mkdtempSync(join(tmpdir(), "compare-cores-"));
 execFileSync("sh", ["-c", `git archive "$0" app scripts | tar -x -C "$1"`, base, dir], { cwd: ROOT, stdio: ["ignore", "ignore", "inherit"] });
 symlinkSync(join(ROOT, "node_modules"), join(dir, "node_modules"));
 type Fn = (...a: unknown[]) => unknown;
-type Side = Record<"core" | "mip" | "diag" | "lib", Record<string, unknown>>;
+type Side = Record<"core" | "mip" | "diag" | "lib" | "exact", Record<string, unknown>>;
 const load = async (root: string): Promise<Side> => {
   const at = (p: string): Promise<Record<string, unknown>> => import(pathToFileURL(join(root, p)).href);
-  return { core: await at("scripts/optimizer-core.mts"), mip: await at("app/mip.mts"), diag: await at("app/diagnostics.mts"), lib: await at("app/vault-lib.mts") };
+  return { core: await at("scripts/optimizer-core.mts"), mip: await at("app/mip.mts"), diag: await at("app/diagnostics.mts"), lib: await at("app/vault-lib.mts"), exact: await at("app/exact-solver.mts") };
 };
 const before = await load(dir), after = await load(ROOT);
-rmSync(dir, { recursive: true, force: true });
+// the copy stays until the end: the exact solver imports HiGHS on its first solve
+process.on("exit", () => rmSync(dir, { recursive: true, force: true }));
 
 const count: Record<string, [number, number]> = {};
 const diffs: string[] = [], unproven: string[] = [];
+// the first differing output's top-level keys whose values differ, to say where to look
+let firstDiff: { label: string; keys: string[] } | undefined;
+const exactUnproven: Array<Record<string, unknown>> = [];
+let exactUnprovenCount = 0;
+const keysThatDiffer = (a: unknown, b: unknown): string[] => {
+  if (!a || !b || typeof a !== "object" || typeof b !== "object") return ["(the whole value)"];
+  const x = a as Record<string, unknown>, y = b as Record<string, unknown>;
+  return [...new Set([...Object.keys(x), ...Object.keys(y)])].filter((k) => json(x[k]) !== json(y[k]));
+};
 const json = (v: unknown): string => JSON.stringify(v, (_k, x: unknown) => (x instanceof Float64Array ? Array.from(x) : x instanceof Set ? [...x] : x));
 const call = (x: Side, m: keyof Side, fn: string, ...a: unknown[]): unknown => (x[m][fn] as Fn)(...a);
 // One comparison: `uses` names the [module, function] pairs it needs on both sides; each side gets its own copy of `inputs`.
@@ -56,7 +71,7 @@ function cmp<I>(kind: string, label: string, uses: Array<[keyof Side, string]>, 
   const c = (count[kind] ||= [0, 0]);
   c[0]++;
   if (json(a) === json(b)) c[1]++;
-  else diffs.push(`${kind} ${label}`);
+  else { diffs.push(`${kind} ${label}`); firstDiff ??= { label: `${kind} ${label}`, keys: keysThatDiffer(a, b) }; }
   for (const r of [a, b]) if (r && typeof r === "object" && (r as { proven?: boolean }).proven === false) unproven.push(`${kind} ${label}`);
 }
 const SEARCH: Array<[keyof Side, string]> = [["core", "optimizeSuit"]];
@@ -76,6 +91,7 @@ for (const name of Object.keys(fx.defaultProfiles.templates)) {
 const fixtureRuns = Object.values(count).reduce((t, [c]) => t + c, 0);
 
 // 2. generated inventories
+const exactJobs: Array<{ label: string; inputs: { pools: unknown; current: unknown; profile: unknown; o: unknown } }> = [];
 let seed = 9001;
 const rnd = (): number => { seed = (Math.imul(seed, 1103515245) + 12345) >>> 0; return seed / 4294967296; };
 const int = (lo: number, hi: number): number => lo + Math.floor(rnd() * (hi - lo + 1));
@@ -130,6 +146,8 @@ for (let n = 0; n < generated; n++) {
     { ...opts, restarts: 0, warmStart: randomSuit(), tieBreak: { ...tieBreak(), topStart: randomSuit() }, ...(rnd() < 0.4 ? { strict: strict() } : {}) },
   ];
   for (const [i, o] of searches.entries()) cmp("optimizeSuit", `gen${n}/${i}`, SEARCH, { pools, current, profile, o }, (x, a) => call(x, "core", "optimizeSuit", a.pools, a.current, a.profile, a.o));
+  // the exact solver on the first --exact instances: plain, and each search above with exact on (HiGHS proves these small pools well inside the budget)
+  if (n < exactRuns) for (const [i, o] of [{ ...opts, exact: true, timeBudgetMs: 600000 }, ...searches.slice(1).map((o) => ({ ...o, exact: true }))].entries()) exactJobs.push({ label: `gen${n}/${i}`, inputs: { pools, current, profile, o } });
   const model = { pools, current, profile, optionalSlots, slots };
   for (const hardAsSoft of [false, true]) cmp("buildSuitMip", `gen${n}/${hardAsSoft}`, [["mip", "buildSuitMip"]], model, (x, a) => call(x, "mip", "buildSuitMip", { ...a, hardAsSoft, parts: true }));
   cmp("hardFloorSpread", `gen${n}`, [["mip", "hardFloorSpread"]], model, (x, a) => call(x, "mip", "hardFloorSpread", a.profile, a.pools, a.current, a.optionalSlots, a.slots));
@@ -148,6 +166,30 @@ for (let n = 0; n < generated; n++) {
   cmp("requirementReport", `gen${n}`, [["lib", "requirementReport"]], one, (x, a) => call(x, "lib", "requirementReport", a.totals, a.profile));
 }
 
+// 3. the exact solver (app/exact-solver.mts solveExact) on the queued instances, the timing fields left out, its warnings compared too
+const exactOf = async (x: Side, a: { pools: unknown; current: unknown; profile: unknown; o: unknown }): Promise<unknown> => {
+  const warnings: string[] = [];
+  const r = (await (x.exact.solveExact as Fn)({ core: x.core, pools: a.pools, current: a.current, profile: a.profile, opts: a.o, onProgress: () => {}, onWarn: (m: string) => warnings.push(m) })) as Record<string, unknown>;
+  const { mipMs: _m, heuristicMs: _h, ...rest } = r;
+  return { ...rest, warnings };
+};
+if (typeof before.exact.solveExact === "function" && typeof after.exact.solveExact === "function") {
+  for (const { label, inputs } of exactJobs) {
+    const a = await exactOf(before, structuredClone(inputs)), b = await exactOf(after, structuredClone(inputs));
+    const c = (count.solveExact ||= [0, 0]);
+    c[0]++;
+    // a build its guards left unproven carries a warning; one unproven without any ran out of time
+    const clockCut = (x: unknown): boolean => (x as { proven?: boolean; warnings: string[] }).proven === false && !(x as { warnings: string[] }).warnings.length;
+    if (json(a) === json(b)) c[1]++;
+    else if (clockCut(a) || clockCut(b)) unproven.push(`solveExact ${label} (out of time)`);   // the clock, not the code
+    else { diffs.push(`solveExact ${label}`); firstDiff ??= { label: `solveExact ${label}`, keys: keysThatDiffer(a, b) }; }
+    const r = b as { proven?: boolean; solver?: string; fallbackReason?: string; floorsConflict?: boolean; strictProven?: number; warnings: string[] };
+    // An exact build its guards left unproven is listed, not failed: its warnings are compared byte for byte with the rest.
+    if (r.proven === false && exactUnproven.length < 20) exactUnproven.push({ label: `solveExact ${label}`, solver: r.solver, fallbackReason: r.fallbackReason, strictProven: r.strictProven, warnings: r.warnings.slice(0, 2) });
+    if (r.proven === false) exactUnprovenCount++;
+  }
+}
+
 const runs = Object.values(count).reduce((t, [c]) => t + c, 0);
-console.log(JSON.stringify({ base, fixtureRuns, generatedRuns: runs - fixtureRuns, runs, identical: runs - diffs.length, byKind: count, diffs: diffs.slice(0, 20), unproven: unproven.slice(0, 20) }));
+console.log(JSON.stringify({ base, fixtureRuns, generatedRuns: runs - fixtureRuns, runs, identical: runs - diffs.length, byKind: count, diffs: diffs.slice(0, 20), ...(firstDiff ? { firstDiff } : {}), unproven: unproven.slice(0, 20), exactUnproven: exactUnprovenCount, ...(exactUnproven.length ? { exactUnprovenCases: exactUnproven } : {}) }));
 process.exitCode = diffs.length || unproven.length ? 1 : 0;
