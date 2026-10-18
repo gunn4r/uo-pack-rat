@@ -4,6 +4,9 @@
 // it is, its resists and its other properties, and a footer with Highlight, Grab and Go to (disabled with
 // the reason when they cannot run). ↑/↓ step through the table's rows and Esc closes, from the panel, the table or
 // the bare page. inventory.mts owns the rows; this module is handed how to step and where focus goes back.
+//
+// map: ui-screens
+// owns: `openPeek`, `closePeek`
 import { RESIST_META } from "../vault-lib.mts";
 import type { Item } from "../vault-lib.mts";
 import { $, el, slotLabel } from "./dom.mts";

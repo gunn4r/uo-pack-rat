@@ -1,4 +1,7 @@
 // events.mts — Server-Sent Events: one event written to a stream, and the shared bus behind GET /api/events that tells every open page what changed (a scan accepted or rejected, the inventory or the runs changed).
+//
+// map: services
+// owns: `sse`, `createEventBus`
 import type http from "node:http";
 
 export function sse(res: http.ServerResponse, event: string, data: unknown): void { res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`); }

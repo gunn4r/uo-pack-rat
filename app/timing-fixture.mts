@@ -4,6 +4,9 @@
 // then keep the FASTEST of several samples spread out a little in time: noise only ever adds time, so the minimum is the
 // closest reading of the code's own cost. Sampling stops at the first run inside the budget, so a passing check costs one
 // or two runs; a real regression is slow on every run and still fails, after `tries` of them.
+//
+// map: tooling
+// owns: `fastestMs`
 
 const pause = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 

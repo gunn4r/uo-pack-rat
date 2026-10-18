@@ -1,5 +1,8 @@
 // read-body.mts — reading a request's JSON body under a byte cap, shared by the app server (app/vault-server.mts) and
 // the MCP listener (app/mcp.mts).
+//
+// map: server
+// owns: `readBody`, `HttpError`, `isJsonContentType`
 import type http from "node:http";
 import { jsonErrorReason } from "./paste-scan.mts";
 

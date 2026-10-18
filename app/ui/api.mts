@@ -11,6 +11,9 @@
 // open it themselves with CLIENT_ID as a `?client=` query parameter instead (see ui/builder.mts),
 // which is what lets the server confirm a stream belongs to the job's own owner without needing
 // the token exemption to also mean "anyone can read anyone's progress".
+//
+// map: ui-infra
+// owns: `api`, `CLIENT_ID`
 import type { ApiError } from "./api-types.mts";
 
 function newId(): string {

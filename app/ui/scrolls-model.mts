@@ -4,6 +4,9 @@
 // the shard rules' `scrollBinder` (docs/shard-rules.md); a shard without them gets the plain holdings. No DOM and no
 // store.mts import, so app/scrolls-model.test.mts runs it under plain node:test. Points are whole tenths throughout
 // (0.3 is 3), never floats, so 0.1 + 0.2 adds up to exactly 0.3.
+//
+// map: scrolls
+// owns: `powerRows`, `sotPlan`, `bindEverything`
 import type { Item } from "../vault-lib.mts";
 import type { RulesV1ScrollBinderPowerScrollsItem } from "../schema/types.d.mts";
 import { plural } from "./inv-model.mts";

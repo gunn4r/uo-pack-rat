@@ -1,4 +1,7 @@
 // item-kinds.mts — <data>/item-kinds.json: the player's own item kinds (issue #150, app/item-kinds.mts; the /api/item-kinds routes).
+//
+// map: server
+// owns: `createItemKindsStore`
 import { basename } from "node:path";
 import type { KindOverrides } from "../vault-lib.mts";
 import { emptyKindOverrides, kindsText, salvageKindOverrides, KIND_LIMITS, MAX_KINDS_BYTES } from "../item-kinds.mts";

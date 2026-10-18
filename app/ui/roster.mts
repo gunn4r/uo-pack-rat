@@ -1,5 +1,8 @@
 // ui/roster.mts — the Characters roster's rows, filter and sort, and the sheet's scan summary, kept free of the
 // DOM and of app.mts so app/ui-characters.test.mts can import them.
+//
+// map: ui-models
+// owns: `rosterView`, `sheetMeta`, `characterNames`
 import type { ResistFigure } from "./sheet.mts";
 import { isPseudoCharacter, type Container } from "../vault-lib.mts";
 import { plural } from "./inv-model.mts";

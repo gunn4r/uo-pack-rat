@@ -1,4 +1,7 @@
 // ui/world-map-model.mts — the world map lightbox's pure rules (issue #164). A view is a box of world tiles (house-map-model's Box) shown in a viewport of screen pixels with the same shape (house-map-model's fit makes it so). It zooms about a point between the whole facet fitted and MAX_PX_PER_TILE, pans by screen pixels, and always keeps the facet in view: a view wider than the facet holds it in its middle (no empty band on one side), a narrower one stays inside it. The zoom buttons and keys zoom about the house while it is in view, so the first + homes in on it. The region it asks the server for is the visible tiles, whole and inside the facet, at screen resolution. No DOM; ui/world-map.mts draws what it returns.
+//
+// map: house
+// owns: `MAX_PX_PER_TILE`, `zoomView`, `panView`
 import { fit, whereOf, facetName, type Box, type Pt } from "./house-map-model.mts";
 import type { HouseSummary } from "./api-types.mts";
 

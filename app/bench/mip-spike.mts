@@ -4,6 +4,8 @@
 // Needs the `highs` npm package (WASM HiGHS, MIT) installed next to it or resolvable
 // from a scratch dir: `npm i highs`. node mip-spike.mts <N|real> <Profile> [timeLimitS]; CORE_CHECK=<s> also runs the
 // core on the same cell; DEBUG_DIMS=1 prints per-dimension contributions.
+//
+// map: builder
 import { readFileSync, readdirSync, writeFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";

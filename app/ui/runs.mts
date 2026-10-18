@@ -4,6 +4,9 @@
 // settings snapshot a run is saved with, putting a saved run's settings back into the panel, and arriving (issue #272):
 // a character's latest run opened when it is first shown, the "<name>'s runs" card beside a result, the other characters'
 // latest runs for the first-visit view, and New build back to it.
+//
+// map: builder
+// owns: `applySettings`, `openRunsDrawer`, `loadRuns`
 import { NOBODY, RESIST_KEYS, RESIST_SKILL_KEY, resistMinimum, resistSkillOf, resistSkillCapOf, totalsOf, resistCapsFor, fcCapFor, goalsActive, copyGoals } from "../vault-lib.mts";
 import { planBuild, specFromRunSettings } from "../build-spec.mts";
 import { buffById, plannedProfile, savedBuffs } from "../buffs.mts";

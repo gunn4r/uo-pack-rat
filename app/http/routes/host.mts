@@ -1,4 +1,7 @@
 // host.mts — what only the desktop shell can do (POST /api/host/pick-folder and /api/host/open-path) and the shared event stream (GET /api/events).
+//
+// map: server
+// owns: `routes`
 import { isBoundedString } from "../../guards.mts";
 import { readBody, type HttpError } from "../../read-body.mts";
 import { sse } from "../../services/events.mts";

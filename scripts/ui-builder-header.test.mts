@@ -41,7 +41,7 @@ test("[slow] ⌘↵ builds from anywhere on the Builder screen, and not from beh
     await page.click("#b-runs-open");
     await page.waitForSelector("#runs-drawer:not([hidden])");
     await page.keyboard.press("ControlOrMeta+Enter");
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(500);   // sleep: proves no build starts behind the drawer, which no event can show
     assert.equal(await page.locator("#b-run").isDisabled(), false, "no build started behind the drawer");
     assert.equal(starts, 2);
     assert.deepEqual(errors, []);
@@ -249,7 +249,7 @@ test("[slow] arriving: a card asks before replacing tuned settings, and a list r
     assert.match(await dialog.innerText(), /Replace Kestrel's saved settings with Archer\?[\s\S]*only kept in runs built with them/);
     await dialog.getByRole("button", { name: "Cancel" }).click();
     await dialog.waitFor({ state: "detached", timeout: 10_000 }).catch(() => dialog.waitFor({ state: "hidden", timeout: 10_000 }));
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(300);   // sleep: proves Cancel writes nothing, which no event can show
     assert.equal(saved(), before, "Cancel leaves the saved profile alone");
     assert.equal(await page.getAttribute("#b-tpl", "data-value"), "builtin:melee");
     await archer.click();

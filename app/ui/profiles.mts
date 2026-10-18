@@ -1,8 +1,12 @@
-// ui/profiles.mts — the one writer of the player's profiles (PUT /api/profiles, app/build-spec.mts's v3 shape), and of
-// a character's saved buffs and build label within them. A save is an edit to the page's copy, made at once so the page
+// ui/profiles.mts — the one writer of the player's profiles (PUT /api/profiles with the stamp it read, app/build-spec.mts's
+// v3 shape; a stale refusal reloads them and makes the edit again), and of a character's saved buffs and build label within
+// them. A save is an edit to the page's copy, made at once so the page
 // shows it, then sent as the whole file with the stamp the page read it at, one save at a time and in order. A file
 // saved elsewhere since (another window, an AI assistant) is refused as stale: the page reloads it, makes the edit again
 // on what it got, and sends that, so a stale copy never drops or reverts anything another window saved.
+//
+// map: ui-infra
+// owns: `saveProfiles`, `setCharacterBuffs`, `setCharacterLabel`
 import { characterBuffs, characterEntry, characterProfile, type BuildBuffs, type CharacterEntry, type ProfilesV3 } from "../build-spec.mts";
 import { state } from "./store.mts";
 import { toast } from "./dom.mts";

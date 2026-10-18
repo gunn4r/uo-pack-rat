@@ -8,6 +8,9 @@
 // between two spacer rows sized to the rest, and loads the matching rows from the server in 500-row
 // chunks as they scroll into view, so a large inventory costs one request per screenful reached, never
 // a pager click.
+//
+// map: ui-components
+// owns: `createItemBrowser`, `itemsSource`
 import { SLOT_LABELS, SLOT_GROUP, RESIST_KEYS, tagUnits, flagLabel } from "../vault-lib.mts";
 import type { Item } from "../vault-lib.mts";
 import type { Facets, ItemQuery, ItemQueryGroups, Place } from "../item-query.mts";

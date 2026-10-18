@@ -1,4 +1,7 @@
 // forget.mts — POST /api/forget and POST /api/forget-character.
+//
+// map: server
+// owns: `routes`
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { writeFileAtomic } from "../../atomic-write.mts";

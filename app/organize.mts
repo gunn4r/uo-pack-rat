@@ -2,6 +2,9 @@
 // and what does not fit. Pure and deterministic: the same inventory, setup and overlay give the same plan byte
 // for byte, because every walk below runs in serial order. Nothing here reads or writes a file; the server
 // (GET /api/organize/plan, POST /api/organize/trip) hands everything in.
+//
+// map: organize
+// owns: `planOrganize`, `tripCommand`, `packSite`, `scopeOf`, `claimOf`, `buildOf`, `CASTER_PROPS`, `MELEE_PROPS`, `TRIP_DEFAULTS`
 import { matchesItem } from "./item-query.mts";
 import { parseStamp } from "./scan-schema.mts";
 import { CATCH_ALL_ID, EMPTY_BAGS_ID, ruleMatchOf, type Build, type OrganizeConfig, type RuleMatch } from "./organize-config.mts";

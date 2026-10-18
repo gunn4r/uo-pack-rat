@@ -1,4 +1,7 @@
 // context.mts — what the route modules are built from: the config, what only the desktop shell or a test supplies, the stores and the services, all made once by startServer (app/vault-server.mts, the composition root).
+//
+// map: server
+// owns: `ServerContext`, `HostBridge`, `ClientSearch`
 import type { Config } from "../config.mts";
 import type { AdapterInfo, FetchLike } from "../installer.mts";
 import type { WatcherHandle } from "../watcher.mts";

@@ -1,5 +1,5 @@
 // gen-contracts.mts — copy the adapters' shared Python helpers from adapters/_shared/ into every script
-// that carries them. Each script must install as a single file (TazUO lists every .py in its scripts
+// that carries them, between `# BEGIN generated: <fragment>` / `# END generated: <fragment>` markers; --check fails when a committed script differs. Each script must install as a single file (TazUO lists every .py in its scripts
 // folder as a runnable script, and Razor Enhanced has no import path to a sibling file), so the copies
 // stay; this makes them generated instead of hand-kept.
 //
@@ -13,6 +13,9 @@
 //
 // Usage: node scripts/gen-contracts.mts           rewrites every script whose blocks are out of date
 //        node scripts/gen-contracts.mts --check   rewrites nothing; exits 1 naming each stale script
+//
+// map: installer
+// owns: `generate`, `splice`, `fragmentProblems`
 import { readFileSync, writeFileSync, readdirSync, existsSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";

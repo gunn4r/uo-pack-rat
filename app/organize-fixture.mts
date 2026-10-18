@@ -2,6 +2,9 @@
 // ground at chosen tiles, bags inside them and items inside those. Each container's Contents line is counted
 // from what the scan puts under it (every item and bag, however deep, as ServUO counts) unless a test sets
 // `count`. Not a test file: it registers no tests.
+//
+// map: organize
+// owns: `houseScan`
 import assert from "node:assert/strict";
 import { validateScan } from "./scan-schema.mts";
 import type { ScanV2 } from "./schema/types.d.mts";

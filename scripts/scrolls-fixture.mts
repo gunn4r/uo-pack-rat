@@ -2,6 +2,9 @@
 // (scripts/ui-scrolls.test.mts, issue #181): a skill that can bind now, one close to a roll-up, Scrolls of
 // Transcendence that make an exact 2.0, some that can only bind past 5.0, and an empty Scroll Binder. Written into a data folder's scans/, so the
 // committed demo fixtures, and every other test's counts, stay as they are.
+//
+// map: scrolls
+// owns: `writeScrollScans`
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";

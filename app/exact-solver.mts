@@ -24,6 +24,9 @@
 // core's is a plain `boolean`), so this file — which sits between the two — casts pools/current/
 // profile once at the top to the core's own shape before ever calling core.optimizeSuit/scoreSet,
 // rather than fighting that structural mismatch at every call site.
+//
+// map: builder
+// owns: `solveExact`
 import type * as Core from "../scripts/optimizer-core.mts";
 import type { OptItem } from "./vault-lib.mts";
 import { buildSuitMip, startVector, pickedOf, tieBreakModel, heldModel, stageObjective, tieCosts, changeCostFor, slackAt, TIE_SLACK, DEFAULT_SLOTS, DEFAULT_OPTIONAL_SLOTS, type BuiltMip } from "./mip.mts";

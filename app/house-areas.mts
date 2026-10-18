@@ -1,4 +1,7 @@
 // house-areas.mts — the player's areas on the House map (issue #10, house-map.json): which area a stack of containers sits in. Pure, page and server alike: the House map draws by it (app/ui/house-map-model.mts) and MCP's list_containers reports it.
+//
+// map: house
+// owns: `areaOfStack`, `inRects`
 export interface AreaTiles { x0: number; y0: number; x1: number; y1: number }
 // Rectangles of world tiles, inclusive.
 export const inRects = (rects: readonly AreaTiles[], x: number, y: number): boolean => rects.some((r) => x >= r.x0 && x <= r.x1 && y >= r.y0 && y <= r.y1);

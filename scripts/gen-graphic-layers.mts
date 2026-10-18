@@ -5,6 +5,9 @@
 //
 // Usage: node scripts/gen-graphic-layers.mts <path to tiledata.mul>
 // It rewrites only the block between the BEGIN/END markers in app/vault-lib.mts. Reads the 7.x layout through app/tiledata.mts; an older client's file is refused.
+//
+// map: kinds
+// owns: `wearableLayers`, `spliceTable`
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
