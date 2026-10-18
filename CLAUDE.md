@@ -7,7 +7,7 @@ Read this first, then `CONTRIBUTING.md` for the full contributor guide.
 1. `docs/module-map.md`: where each concept lives, area by area, and which concepts are still copied by hand.
 2. `docs/change-checklists.md`: for your kind of change, every place that has to change with it.
 3. Touching the game scripts or a file they share: `adapters/CLAUDE.md` (the adapter invariants and how to extend and test them) and `app/schema/README.md` (the contract index: every shared file, its schema, writers, readers and cases).
-4. The one doc for your area: `docs/solver.md` (Suit Builder), `docs/ui.md` (the page, then `docs/ui/<screen>.md` for the screen you touch), `docs/scan-schema.md`, `docs/bridge-protocol.md`, `docs/shard-rules.md`, `docs/adapter-guide.md`, `docs/mcp.md`, `docs/architecture.md` (processes and the data folder), `docs/threat-model.md` (security).
+4. The one doc for your area: `docs/server.md` (routes, stores and services; `app/http/CLAUDE.md` is its short form), `docs/solver.md` (Suit Builder), `docs/ui.md` (the page, then `docs/ui/<screen>.md` for the screen you touch), `docs/scan-schema.md`, `docs/bridge-protocol.md`, `docs/shard-rules.md`, `docs/adapter-guide.md`, `docs/mcp.md`, `docs/architecture.md` (processes and the data folder), `docs/threat-model.md` (security).
 
 ## Conventions reviews keep enforcing
 
@@ -47,7 +47,7 @@ Read this first, then `CONTRIBUTING.md` for the full contributor guide.
 - A helper between `# BEGIN generated: <fragment>` / `# END generated: <fragment>` lines in an adapter script is a copy: edit `adapters/_shared/<fragment>.py`, then run `npm run gen:contracts`. `scripts/gen-contracts.test.mts` fails while any copy differs (`docs/adapter-guide.md`, Shared helpers).
 - A data file's shape changes through `app/migrate.mts`: a rename, removal, change of meaning or newly required field raises the kind's version and adds a numbered, pure, idempotent step; an added optional field does not. Keep a golden file per version in `app/fixtures/golden/<kind>/` (`docs/change-checklists.md`, "Change the shape of a data file"). A file newer than the build is read-only, never overwritten.
 - A solver change that can change a result bumps `SOLVER_VERSION` in `app/runs-lib.mts`, so older saved runs stop being reused.
-- A route's response and its type change together. The houses, Organize plan and proposal, and `/api/runs` responses are shared types the route `satisfies` (`app/house-model-types.mts`, `app/organize-types.mts`, `app/runs-types.mts`), so the typecheck catches a mismatch; the rest are declared by hand in `app/ui/api-types.mts`.
+- A route's response and its type change together. Every /api route's answer is a shared type in `app/api/` (or a domain's `*-types.mts`) that the route `satisfies` and `app/ui/api-types.mts` re-exports, so the typecheck catches a mismatch (`docs/server.md`).
 
 ## The architecture pass
 
