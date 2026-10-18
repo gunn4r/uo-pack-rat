@@ -150,7 +150,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `app/ui-messages.test.mts` — `app/ui/messages.mts`, the plain sentences the page shows for an outcome the server reports as a count, a status code or a one-word field.
 - `app/ui-move.test.mts` — `app/ui/move-model.mts`, Move to's pure rules (issue #270).
 - `app/ui-organize.test.mts` — `app/ui/organize-model.mts`, the Organize screen's pure rules (issue #11).
-- `app/ui-profiles.test.mts` — `app/ui/profiles.mts`'s saves against a stand-in server: the stamp each save sends and keeps, the stale retry, and a reload racing a save.
+- `app/ui-profiles.test.mts` — `app/ui/profiles.mts`'s saves against a stand-in server: the stamp each save keeps, a file saved elsewhere, refused edits, and a reload racing a save.
 - `app/ui-render.test.mts` — the page's DOM builders for scan-supplied values (the character sheet, the tooltip, the peek's properties), which once built markup as a raw string.
 - `app/ui-state.test.mts` — `app/ui/view-state.mts`, the page's DOM-free state rules.
 - `app/ui-world-map.test.mts` — `app/ui/world-map-model.mts` (issue #164), the world map lightbox's view.
