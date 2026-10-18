@@ -10,6 +10,7 @@
 //   7. no app/ui/ module imports app/ui/app.mts, the page's bootstrap (routes are nav.mts, the inventory reload is inventory-data.mts);
 //   8. every app/ui/ module that registers a screen with nav.mts's registerScreen() is reached from app/ui/app.mts by runtime imports (a side-effect `import "./x.mts"` counts): a screen module nothing loads never registers its route;
 //   9. the Suit Builder's nine modules (builder, builder-header, builder-templates, builder-requirements, builder-job, builder-start, builder-manual, builder-result, runs) never import each other: they share state and call each other through builder-session.mts.
+//  10. every command in builder-session.mts's BuilderCommands is provided by exactly one app/ui/ module's provide() call, and no provide() names anything else: a missing one would only fail at run time, as `undefined is not a function`.
 // Rules 2-4 follow runtime imports only: `import type` and `export type` are erased, so they load nothing.
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -112,6 +113,33 @@ const BUILDER = ["builder", "builder-header", "builder-templates", "builder-requ
 test("[smoke] layering: the Suit Builder's modules never import each other (builder-session.mts is their interface)", () => {
   const found = BUILDER.flatMap((f) => edges.get(f)!.filter((e) => !e.typeOnly && e.to && BUILDER.includes(e.to)).map((e) => `${f} → ${e.spec}`));
   assert.deepEqual(found, []);
+});
+
+// The top-level keys of each object literal passed to provide({...}), by module: `name` or `name: value`, at depth 1.
+function providedKeys(text: string): string[] {
+  const keys: string[] = [];
+  for (const m of text.matchAll(/^provide\(\{/gm)) {
+    let depth = 0, start = m.index! + "provide(".length, part = "";
+    for (let i = start; i < text.length; i++) {
+      const c = text[i]!;
+      if ("{([".includes(c)) { depth++; if (depth === 1) continue; }
+      if ("})]".includes(c)) { depth--; if (depth === 0) { keys.push(part); break; } }
+      if (depth === 1 && c === ",") { keys.push(part); part = ""; continue; }
+      if (depth >= 1) part += c;
+    }
+  }
+  return keys.map((k) => k.trim().match(/^(\w+)/)?.[1] ?? "").filter(Boolean);
+}
+test("[smoke] layering: every BuilderCommands command is provided by exactly one module, and nothing else is", () => {
+  const session = readFileSync(posix.join(root, "app/ui/builder-session.mts"), "utf8");
+  const block = session.slice(session.indexOf("export interface BuilderCommands {"), session.indexOf("\n}\n", session.indexOf("export interface BuilderCommands {")));
+  const declared = [...block.matchAll(/^ {2}(\w+)\(/gm)].map((m) => m[1]!);
+  assert.ok(declared.length > 20, `commands read: ${declared.join(", ")}`);
+  const by = new Map<string, string[]>();
+  for (const f of modules.filter(isUi)) for (const k of providedKeys(readFileSync(posix.join(root, f), "utf8"))) by.set(k, [...(by.get(k) ?? []), f]);
+  const problems = [...declared.filter((k) => (by.get(k) ?? []).length !== 1).map((k) => `${k}: provided by ${(by.get(k) ?? []).join(", ") || "no module"}`),
+    ...[...by.keys()].filter((k) => !declared.includes(k)).map((k) => `${k}: provided by ${by.get(k)!.join(", ")} but not a BuilderCommands command`)];
+  assert.deepEqual(problems, []);
 });
 
 test("[smoke] layering: no app/ui/ module imports app/ui/app.mts", () => {

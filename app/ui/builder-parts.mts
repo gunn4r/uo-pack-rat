@@ -17,7 +17,7 @@ import { CLIENT_ID } from "./api.mts";
 import { bridgeActionReason, runBridgeAction, grabAll, grabbable } from "./bridge.mts";
 import { splitSerial } from "./item-parts.mts";
 import { locationCrumbs, plural, handledAction, actionWords, actionApplies, applyAction, strictDetail, stageProgress, fcCapText } from "./builder-model.mts";
-import { session, commands } from "./builder-session.mts";
+import { session, commands, announce } from "./builder-session.mts";
 import type { Diagnostic } from "../runs-types.mts";
 import type { OptimizeResult, OptimizeProgress, JobSnapshotEvent, JobDoneEvent, JobFailedEvent, JobCancelledEvent } from "./api-types.mts";
 
@@ -88,7 +88,7 @@ export function settingsCheck(diags: Diagnostic[], name: string): HTMLElement | 
         const p = session.profile;
         if (!p || session.character !== name || !actionApplies(p, a, from, d.code)) { toast(words.stale); b.disabled = true; return; }
         applyAction(p, a, from, d.code);
-        commands.renderPanel();
+        announce("panel");
         toast(words.toast, "good");
         b.replaceChildren(txt(words.done)); b.disabled = true;
       } });

@@ -26,7 +26,7 @@ import { setCharacterBuffs } from "./profiles.mts";
 import { resolveItems, rarityToken } from "./items.mts";
 import { fetchCard, followJob, grabAllButton, keyProps, progressText, verdict, RESIST_NAMES } from "./builder-parts.mts";
 import { capNote, fcCapSource, knobError, paperdollCaps, plural, who, type KnobField } from "./builder-model.mts";
-import { session, commands, provide, readControls, type BuffInputs, type BuilderMode } from "./builder-session.mts";
+import { session, commands, provide, onChange, readControls, type BuffInputs, type BuilderMode } from "./builder-session.mts";
 import { optimizeErrorMessage } from "./messages.mts";
 import { itemActions } from "./item-parts.mts";
 import { sheetParts, wornSet } from "./sheet.mts";
@@ -649,4 +649,7 @@ function fetchList(): HTMLElement {
   card.id = "mb-fetch";
   return card;
 }
-provide({ openInManual, templateBuffs, showAutomatic, paintCharSelect, setManualFor, renderManual, syncManual, buffEditsOf, buffInputsOf, editBuffInputs, applyRunInputs, filling });
+onChange("picker", paintCharSelect);
+onChange("selected", renderManual);
+onChange("roster", () => { void syncManual(); });
+provide({ openInManual, templateBuffs, showAutomatic, setManualFor, buffEditsOf, buffInputsOf, editBuffInputs, applyRunInputs, filling });

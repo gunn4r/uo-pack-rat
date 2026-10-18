@@ -14,7 +14,7 @@ import { promptText } from "./dialog.mts";
 import { box, txt, button, icon, message, confirmDialog, createDrawer, type DrawerHandle } from "./components.mts";
 import { editProfiles, setCharacterBuffs, type ProfilesSave } from "./profiles.mts";
 import type { ProfileEdit } from "../profile-edits.mts";
-import { session, commands, provide, readControls } from "./builder-session.mts";
+import { session, commands, announce, provide, readControls } from "./builder-session.mts";
 import { buffsOn, plainName } from "./builder-parts.mts";
 import { andList, needsLine, propName, topWeights, who } from "./builder-model.mts";
 
@@ -95,7 +95,7 @@ async function renameTemplate(ref: string): Promise<void> {
   const pointed = session.profile?.template === ref, opened = openCard === ref;
   if (pointed) session.profile!.template = name;
   if (opened) openCard = name;
-  commands.renderPanel();
+  announce("panel");
   paintTemplatesDrawer();
   if (!(await saving).ok && (pointed || opened)) unpoint(name, ref);
 }
@@ -109,7 +109,7 @@ async function duplicateTemplate(ref: string): Promise<void> {
   const saving = saveTemplates(`Template ${name} saved.`, [{ op: "putTemplate", id: name, entry: copy, create: true }]);
   const back = openCard ?? undefined;
   openCard = name;
-  commands.renderPanel();
+  announce("panel");
   paintTemplatesDrawer();
   if (!(await saving).ok) unpoint(name, back);
 }
@@ -118,7 +118,7 @@ async function saveTemplates(done: string, edits: ProfileEdit[]): Promise<Profil
   const r = await editProfiles(edits);
   // a refused save always says why
   toast(r.ok ? done : r.error!, r.ok ? "good" : "bad");
-  if (r.reloaded || !r.ok) { commands.renderPanel(); paintTemplatesDrawer(); }
+  if (r.reloaded || !r.ok) { announce("panel"); paintTemplatesDrawer(); }
   return r;
 }
 // After a refused save, the build and the open card go back to the template they showed before it (the name may be
@@ -126,7 +126,7 @@ async function saveTemplates(done: string, edits: ProfileEdit[]): Promise<Profil
 function unpoint(name: string, back: string | undefined): void {
   if (session.profile?.template === name) { if (back === undefined) delete session.profile.template; else session.profile.template = back; }
   if (openCard === name) openCard = back ?? null;
-  commands.renderPanel();
+  announce("panel");
   paintTemplatesDrawer();
 }
 // A template's settings into the panel. A template with buffs also sets the character's buffs, which are saved at once, and
@@ -141,8 +141,8 @@ function applyTemplate(ref: string): void {
     else setCharacterBuffs(session.character!, { on: t.spec.buffs.on, skills: { ...commands.buffEditsOf(session.character!), ...t.spec.buffs.skills } });
     commands.templateBuffs(t.spec.buffs.on, `${name} buffs`);
   }
-  commands.clearCapDrafts();
-  commands.renderPanel();
+  announce("caps");
+  announce("panel");
 }
 // A template picked as the starting point: a card in the first-visit view (ui/builder-start.mts), or a template in the build
 // picker ("Start over from"). It applies the template and saves it as the character's settings, so a build from it comes back
@@ -171,7 +171,7 @@ async function saveTemplateAs(): Promise<void> {
   const saving = saveTemplates(`Template ${name} saved.`, [{ op: "putTemplate", id: name, entry, ...(existed ? {} : { create: true }) }]);
   const back = session.profile!.template;
   session.profile!.template = name;
-  commands.renderPanel();
+  announce("panel");
   paintTemplatesDrawer();
   if (!(await saving).ok) unpoint(name, back);
 }
@@ -190,7 +190,7 @@ async function deleteTemplate(name: string, confirmed = false): Promise<void> {
   const saving = saveTemplates(`Template ${name} deleted.`, [{ op: "deleteTemplate", id: name }]);
   askDelete = null;
   if (openCard === name) openCard = null;
-  commands.renderPanel();
+  announce("panel");
   paintTemplatesDrawer();
   await saving;
 }
