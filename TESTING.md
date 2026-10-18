@@ -96,7 +96,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `app/mip.test.mts` — `app/mip.mts`, the pure MIP builder, and `app/mip-solve.mts`, the HiGHS solve.
 - `app/missing.test.mts` — `app/missing.mts`, Missing since last scan (issue #99): what left a root container between its last two scans and is nowhere else in the inventory now.
 - `app/move.test.mts` — `app/move.mts`, Move to's planner (issue #270), on hand-built house scans folded by the real fold.
-- `app/newer-files.test.mts` — data files made by a newer Pack Rat (app/migrate.mts), on a real server and temp data folder: `GET /api/organize`, `/api/item-kinds`, `/api/house-map` and `/api/profiles` read what they can and say `readOnly` ("made by a newer Pack Rat"), and every save to them (`PUT /api/organize`, `POST /api/item-kinds` and its import, `PUT /api/house-map/<id>`, `PUT /api/profiles`) is a 409 with that message, the file left byte for byte.
+- `app/newer-files.test.mts` — data files made by a newer Pack Rat (app/migrate.mts), on a real server and temp data folder: `GET /api/organize`, `/api/item-kinds`, `/api/house-map` and `/api/profiles` read what they can and say `readOnly` ("made by a newer Pack Rat"), and every save to them (`PUT /api/organize`, `POST /api/item-kinds` and its import, `PUT /api/house-map/<id>`, `PATCH /api/profiles`) is a 409 with that message, the file left byte for byte.
 - `app/organize-config.test.mts` — `app/organize-config.mts` (issue #11): the strict check PUT /api/organize runs on an Organize setup, and the salvage every read of a hand-edited organize.json goes through.
 - `app/organize-presets.test.mts` — `app/organize-presets.mts` (issue #11): every preset is a valid rule and finds what its name promises.
 - `app/organize-server.test.mts` — the Organize routes (issue #11) and the item kinds routes (issue #150) on a real server and temp data folder.
@@ -114,7 +114,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `app/scan-schema.test.mts` — `app/scan-schema.mts`: the scan v2 schema and the v1→v2 upgrade on read.
 - `app/schema/validate.test.mts` — `app/schema/validate.mts`, the zero-dependency JSON Schema subset validator.
 - `app/scrolls-model.test.mts` — `app/ui/scrolls-model.mts`, the Inventory's Scrolls view as data (issue #181).
-- `app/server-builder.test.mts` — HTTP tests of the Suit Builder: `POST /api/optimize`, the saved runs and `GET|PUT /api/profiles`.
+- `app/server-builder.test.mts` — HTTP tests of the Suit Builder: `POST /api/optimize`, the saved runs and `GET|PATCH /api/profiles`.
 - `app/server-host.test.mts` — HTTP tests of the event stream, the bridge, the host calls and the UI preferences.
 - `app/server-import.test.mts` — HTTP tests of `POST /api/import/paste` and `POST /api/import/rescan`.
 - `app/server-inventory.test.mts` — HTTP tests of the inventory routes, Forget and the blacklist.
@@ -154,7 +154,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `app/ui-messages.test.mts` — `app/ui/messages.mts`, the plain sentences the page shows for an outcome the server reports as a count, a status code or a one-word field.
 - `app/ui-move.test.mts` — `app/ui/move-model.mts`, Move to's pure rules (issue #270).
 - `app/ui-organize.test.mts` — `app/ui/organize-model.mts`, the Organize screen's pure rules (issue #11).
-- `app/ui-profiles.test.mts` — `app/ui/profiles.mts`'s saves against a stand-in server: the stamp each save sends and keeps, the stale retry, and a reload racing a save.
+- `app/ui-profiles.test.mts` — `app/ui/profiles.mts`'s saves against a stand-in server: the stamp each save keeps, a file saved elsewhere, refused edits, and a reload racing a save.
 - `app/ui-render.test.mts` — the page's DOM builders for scan-supplied values (the character sheet, the tooltip, the peek's properties), which once built markup as a raw string.
 - `app/ui-state.test.mts` — `app/ui/view-state.mts`, the page's DOM-free state rules.
 - `app/ui-world-map.test.mts` — `app/ui/world-map-model.mts` (issue #164), the world map lightbox's view.
@@ -163,6 +163,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `app/watcher.test.mts` — `app/watcher.mts`: the accepted-name rule, ingesting a file, and the watcher's debounce, retry, reject, sweep and self-healing.
 - `app/wizard-default-adapter.test.mts` — `app/ui/adapters.mts`'s adapter-selection helpers: the wizard and the Import tab never default to a paste client or to a client this OS can't run.
 - `scripts/american-spelling.test.mts` — a [smoke] guard for American spelling in what a player reads (issue #10).
+- `scripts/api-routes.test.mts` — a [smoke] guard that `app/api/routes.mts`'s route map and the routes `app/http/routes/` registers agree, both ways (issue #338).
 - `scripts/build-schema-types.test.mts` — the JSON Schema to TypeScript generator (`scripts/build-schema-types.mts`).
 - `scripts/build-ui.test.mts` — `scripts/build-ui.mts`'s `buildUi()`, the page build.
 - `scripts/changelog.test.mts` — `scripts/changelog.mts`: a [smoke] guard that the committed fragments and CHANGELOG.md are in shape, a [smoke] release of a copy of them, and the release that puts the fragments together.

@@ -14,6 +14,7 @@ import { fileURLToPath } from "node:url";
 import { atomicReplace, readBounded, writeFileAtomic } from "./atomic-write.mts";
 import type { DataDirCheckInfo } from "./data-dir-notice.mts";
 import type { AdapterManifestV1, AdapterManifestV1Install, AdapterManifestV1InstallRetiredItem } from "./schema/types.d.mts";
+import type { InstalledVersionInfo } from "./api/setup.mts";
 
 const VERSION_RE = /ADAPTER_VERSION\s*=\s*"([^"]+)"/;
 const ADAPTER_ID_RE = /^[a-z0-9-]+$/;
@@ -290,10 +291,7 @@ export function validateScriptsDir(dir: unknown, adapter: unknown, adaptersDir: 
 // (scriptsDir) and, by GET /api/setup, for the repo's own adapters/<id>/ to report the shipped version.
 // version comes from the scanner script (its name contains "scanner"; falls back to the first script
 // alphabetically so a differently-named future adapter still reports something) when present, else null.
-export interface InstalledVersionResult {
-  version: string | null;
-  files: Record<string, boolean>;
-}
+export type InstalledVersionResult = InstalledVersionInfo;
 
 export function installedVersion(scriptsDir: string, adapter: unknown): InstalledVersionResult {
   const names = scriptNamesIn(scriptsDir);
@@ -361,6 +359,7 @@ export interface CheckScriptsDataDirOptions {
 // GET /api/setup. The read is readHead's: a symlink or anything else that isn't a regular file is
 // refused (the scripts would follow it; this does not), and a file past the 64 KiB cap reads as
 // truncated JSON, so as malformed. The lstat here only tells a missing file (the default) apart.
+const DATA_DIR_SHAPE = /^(\/|\\\\|[A-Za-z]:[\\/]|~($|[\\/]))/;
 function scriptsDataDirIn(scriptsDir: string, home: string): { dataDir: string } | { error: string } | null {
   const file = join(scriptsDir, "packrat-paths.json");
   const fallback = { dataDir: join(home, ".pack-rat") };
@@ -375,6 +374,8 @@ function scriptsDataDirIn(scriptsDir: string, home: string): { dataDir: string }
   const d = (doc as { dataDir?: unknown }).dataDir;
   if (!d) return fallback;   // "", null, absent: the scripts' `if d:` falls through to the default
   if (typeof d !== "string") return { error: "its dataDir is not a folder path" };
+  // The shapes app/schema/packrat-paths.v1.schema.json allows: anything else (a relative path, ~user) the scripts refuse at start.
+  if (!DATA_DIR_SHAPE.test(d)) return { error: "its dataDir is not an absolute folder (or one starting with ~/)" };
   const expanded = d === "~" ? home : /^~[\\/]/.test(d) ? join(home, d.slice(2)) : d;
   return badPathShape(expanded) ? null : { dataDir: resolve(expanded) };
 }
@@ -643,7 +644,7 @@ export interface CheckForUpdatesParams {
 export type CheckForUpdatesResult =
   | { configured: false; error?: undefined; current?: undefined; latest?: undefined; url?: undefined; upToDate?: undefined }
   | { configured: true; error: string; current?: undefined; latest?: undefined; url?: undefined; upToDate?: undefined }
-  | { configured: true; current: string; latest: string; url: unknown; upToDate: boolean; error?: undefined };
+  | { configured: true; current: string; latest: string; url: string; upToDate: boolean; error?: undefined };
 
 export async function checkForUpdates(
   { current, repo, fetchImpl = fetch, timeoutMs = 10_000 }: CheckForUpdatesParams = {} as CheckForUpdatesParams,   // every real call site supplies current/repo (see app/installer.test.mts, app/vault-server.mts); this cast is compiler-only, matching config.mts's rawPort pattern
@@ -666,9 +667,8 @@ export async function checkForUpdates(
   catch (e) { return { configured: true, error: `invalid release response: ${(e as Error).message}` }; }
   // body is the parsed JSON of a GitHub releases/latest response — never schema-checked before this
   // (same unvalidated trust as elsewhere in this file); tag_name is coerced through String(), and
-  // html_url now goes through releaseUrl rather than being forwarded as-is. `url` stays typed
-  // `unknown` so the result's shape is unchanged for every caller, but at run time it is always a
-  // string this module vouched for.
+  // html_url now goes through releaseUrl rather than being forwarded as-is, so `url` is always a string this module
+  // vouched for.
   const release = body as { tag_name?: unknown; html_url?: unknown };
   const latest = String(release.tag_name || "").replace(/^v/, "");
   return { configured: true, current, latest, url: releaseUrl(release.html_url, repo), upToDate: compareSemver(current, latest) >= 0 };

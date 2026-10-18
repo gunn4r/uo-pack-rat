@@ -1,0 +1,11 @@
+{
+  "$comment": "Pack Rat packrat-paths.json v1: the file the installer writes beside the game scripts it installs (app/installer.mts's writePathsFile), naming the data folder they write into, and which the Razor Enhanced README has the player write by hand for a client on another machine. The scripts' data_dir() (the `paths` fragments in adapters/_shared/) reads dataDir, through os.path.expanduser; an empty or missing one, or no file, means $PACKRAT_DATA, else ~/.pack-rat. The app reads it back for Setup's data-folder check (checkScriptsDataDir), at most 64 KiB, comparing it with its own data folder. Restricted to the keyword subset app/schema/validate.mts supports. The shared cases are app/fixtures/contract-cases/packrat-paths.json. A dataDir that is not a string, or a document that is not an object, makes the scripts' data_dir() raise, on purpose: failing at start beats writing scans into a folder nobody chose; the app reports such a file as unreadable.",
+  "type": "object",
+  "properties": {
+    "dataDir": {
+      "type": "string",
+      "pattern": "^($|/|\\\\\\\\|[A-Za-z]:[\\\\/]|~($|[\\\\/]))",
+      "$comment": "absolute (starting with /, a UNC \\\\server, or a drive X:\\ or X:/), or ~ alone or followed by / or \\; an empty one means the default. Anything else (a relative path, ~user/...) the scripts refuse and the app reports as unreadable."
+    }
+  }
+}

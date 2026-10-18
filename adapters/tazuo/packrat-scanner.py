@@ -36,6 +36,11 @@ def data_dir():
         with open(cfg, "r", encoding="utf-8") as f:
             d = json.load(f).get("dataDir")
         if d:
+            # app/schema/packrat-paths.v1.schema.json's shapes: a relative path would land under the client's own
+            # working folder and ~user/ elsewhere, unseen by the app, so refuse to start instead.
+            drive = len(d) > 2 and "a" <= d[0].lower() <= "z" and d[1] == ":" and d[2] in "/\\"
+            if not (drive or d == "~" or d.startswith(("/", "\\\\", "~/", "~\\"))):
+                raise ValueError("packrat-paths.json: dataDir must be an absolute folder or start with ~/")
             return os.path.expanduser(d)
     return os.path.expanduser(os.environ.get("PACKRAT_DATA") or "~/.pack-rat")
 
@@ -76,7 +81,7 @@ def read_blacklist(path):
 
 # BEGIN generated: manifest
 ADAPTER_ID = "tazuo"
-ADAPTER_VERSION = "2.20.0"
+ADAPTER_VERSION = "2.21.0"
 CAPABILITIES = {
     "layers": ["OneHanded", "TwoHanded", "Shoes", "Pants", "Shirt", "Helmet", "Gloves", "Ring",
                "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic", "Earrings", "Arms",
@@ -150,12 +155,12 @@ TRASH_RE = re.compile(r"\btrash\b", re.I)
 WEARABLE_RE = re.compile(r"\b(plate\w*|chain\w*|ring\s*mail|studded|leather|armou?r)\b", re.I)
 # END generated: tazuo/wearable_re
 # Engraved bags and Backpacks match no name pattern — detect by graphic too (probe-verified Aug 2026).
-# BEGIN generated: tazuo/container_graphics
+# BEGIN generated: container_graphics
 CONTAINER_GRAPHICS = {0x0E75, 0x0E76, 0x0E79, 0x0E7D, 0x09AA, 0x09A8, 0x09A9, 0x09AB,
                       0x0E3C, 0x0E3D, 0x0E3E, 0x0E3F, 0x0E40, 0x0E41, 0x0E42, 0x0E43,
                       0x0E7C, 0x0E7E, 0x0E7F, 0xA32F, 0xA333,
                       0x4025, 0x4026}   # Gargish Chest: UO Alive's tiledata does not flag it
-# END generated: tazuo/container_graphics
+# END generated: container_graphics
 
 
 # BEGIN generated: tazuo/sysmsg
@@ -363,12 +368,13 @@ NOT_CLAIMED = "Not in one of your houses, so only your pack was scanned. Use Cla
 
 def read_claims(path):
     """The valid entries of <data directory>/house-claims.json, the houses the player claimed (issue #299:
-    {id, facet, bounds: {x0, y0, x1, y1}, claimedAt, by?}), the same checks app/store/house-claims.mts makes.
+    {id, facet, bounds: {x0, y0, x1, y1}, claimedAt, by?}), the same checks app/store/house-claims.mts makes
+    (app/schema/house-claims.v1.schema.json; both run app/fixtures/contract-cases/house-claims.json).
     A bad entry is dropped, and a missing, unreadable or oversized file reads as none: a scan then reads
     no ground container."""
     def ok(e):
         b = e.get("bounds") if isinstance(e, dict) else None
-        return (isinstance(b, dict) and isinstance(e.get("id"), str) and re.match(r"^(\d{1,3}|x)-\d{1,6}-\d{1,6}$", e["id"])
+        return (isinstance(b, dict) and isinstance(e.get("id"), str) and re.fullmatch(r"(\d{1,3}|x)-\d{1,6}-\d{1,6}", e["id"], re.ASCII)
                 and "facet" in e and (e["facet"] is None or (type(e["facet"]) is int and 0 <= e["facet"] <= 5))
                 and all(type(b.get(k)) is int and 0 <= b[k] <= 999999 for k in ("x0", "y0", "x1", "y1")) and b["x0"] <= b["x1"] and b["y0"] <= b["y1"]
                 and isinstance(e.get("claimedAt"), str) and 0 < len(e["claimedAt"]) <= 40 and ("by" not in e or (isinstance(e["by"], str) and 0 < len(e["by"]) <= 64)))

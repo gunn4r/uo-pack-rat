@@ -35,7 +35,8 @@ import { isPseudoCharacter, rulesUpgradeNote, type BlacklistEntry } from "../vau
 // Reinstall's own confirmation and result — separate from the wizard's, since this row acts on the client
 // that is already set up (no need to re-walk shard/client/folder).
 const reinstall: { checked: boolean; busy: boolean; error: string | null; result: InstallApiResponse | null } = { checked: false, busy: false, error: null, result: null };
-let lastUpdateCheck: UpdateCheckApiResponse | null = null;
+// The last check's answer, or the page's own stand-in when the fetch failed (no `ok`: it never came from the server).
+let lastUpdateCheck: Omit<UpdateCheckApiResponse, "ok"> | null = null;
 let checking = false;
 
 // The theme families, in the order the select lists them. A family is chooseable once its tokens ship,
@@ -434,7 +435,7 @@ function mcpCard(r: McpApiResponse): HTMLElement {
 }
 
 // ---------------------------------------------------------------- Updates
-function updateMessage(r: UpdateCheckApiResponse, current: string | undefined): HTMLElement {
+function updateMessage(r: Omit<UpdateCheckApiResponse, "ok">, current: string | undefined): HTMLElement {
   if (!r.configured) return message({ tone: "info", text: "This build has no update source, so it can't check for updates." });
   if (r.error) return message({ tone: "bad", text: `Could not check: ${r.error}. Try again later.` });
   if (r.upToDate) return message({ tone: "ok", text: `You have the latest version, ${r.current || current}.` });

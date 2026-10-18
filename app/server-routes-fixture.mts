@@ -10,7 +10,6 @@ import { foldSnapshots, type Item, type Inventory, type Template } from "./vault
 import { templateSettings, type ProfilesV3, type TemplateMap } from "./build-spec.mts";
 import { upgradeScan, validateScan } from "./scan-schema.mts";
 import type { RulesV1, ScanV2 } from "./schema/types.d.mts";
-import type { AdapterInfo, DataDirCheck } from "./installer.mts";
 
 // ---------------------------------------------------------------------------------------------
 // HTTP responses are unknown provenance — every route is reachable by any local caller, trusted
@@ -63,39 +62,8 @@ export interface ProfilesResponse {
 // The first built-in template's settings (a fresh data folder has no templates of its own), as a build's profile.
 export const firstTemplate = (r: ProfilesResponse): Template => templateSettings(Object.values(r.builtinTemplates)[0]!);
 
-export interface RulesResponse {
-  ok: boolean;
-  shard: string;
-  rules: RulesV1;
-  available: Array<{ id: string; name: string; source: string }>;
-  fallback: boolean;
-}
-
-export interface ClientSetting { adapter: string; scriptsDir: string; }
-
-export interface SettingsResponse {
-  ok?: boolean;
-  settings: { shard: string; setupDone?: boolean; client?: ClientSetting; autoUpdateCheck?: boolean };
-}
-
-export interface SetupAdapter extends Omit<AdapterInfo, "capabilities"> {
-  capabilities: { bridge: string[]; [key: string]: unknown };
-}
-
-export interface SetupResponse {
-  ok: boolean;
-  firstRun: boolean;
-  adapters: SetupAdapter[];
-  available: Record<string, string | null>;
-  installed: { version: string | null; files: Record<string, boolean> } | null;
-  dataDir: string;
-  candidates: Record<string, string[]>;
-  platform: string;
-  settings: { client?: ClientSetting };
-  bridgeAdapter: string | null;
-  dataDirCheck: DataDirCheck;
-  version: string;
-}
+// The setup and settings routes' answers are the API's own types (app/api/setup.mts), under the names these tests use.
+export type { ClientSettings as ClientSetting, RulesApiResponse as RulesResponse, SettingsApiResponse as SettingsResponse, SetupApiResponse as SetupResponse, AdapterSummary as SetupAdapter } from "./api/setup.mts";
 
 export interface ItemsPageResponse {
   ok: boolean;
@@ -245,10 +213,9 @@ export function sseReader(response: Response): SseReaderHandle {
 // ---- issue #18: server durability ------------------------------------------------------------------
 
 export const JSON_HEADERS = { "content-type": "application/json" };
-// PUT /api/profiles with the stamp a GET just answered (`base`), for a test that saves a whole file on purpose.
-export async function putProfiles(url: string, doc: unknown, headers: Record<string, string> = {}): Promise<Response> {
-  const { stamp } = (await (await fetch(`${url}/api/profiles`, { headers })).json()) as { stamp: string };
-  return fetch(`${url}/api/profiles`, { method: "PUT", headers: { ...JSON_HEADERS, ...headers }, body: JSON.stringify({ ...(doc as object), base: stamp }) });
+// PATCH /api/profiles with a list of edits (app/profile-edits.mts), for a test that saves profiles.
+export function patchProfiles(url: string, edits: unknown, headers: Record<string, string> = {}): Promise<Response> {
+  return fetch(`${url}/api/profiles`, { method: "PATCH", headers: { ...JSON_HEADERS, ...headers }, body: JSON.stringify({ edits }) });
 }
 
 export const logText = (dir: string): string => existsSync(join(dir, "logs", "server.log")) ? readFileSync(join(dir, "logs", "server.log"), "utf8") : "";
