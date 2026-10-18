@@ -1,7 +1,7 @@
 // optimize.mts — the Suit Builder's builds and saved runs: POST /api/optimize, the per-job /api/optimize/<id>/events|cancel|status, POST|GET /api/runs and GET|PUT|DELETE /api/runs/<id>, and POST /api/evaluate.
 //
 // The routes, what each takes and answers:
-// - `POST /api/optimize` {pools,current,profile,opts} -> {id}, or {character,settings,profile,opts} to have the server build the pools itself (buildPools, per-slot lockedSlots/blocked handling — see the route below; with `pinned`, Manual's suit {slot: serial}, it fills only the empty slots, for a character or none, and is never saved as a run; `character: "_nobody"`, the Suit Builder's No character, builds from the pieces nobody wears like a fill with no character, but is saved and reused as a run under `_nobody`); either form's response carries poolSize/skipped/current/blocked/warning?
+// - `POST /api/optimize` {pools,current,profile,opts} -> {id}, or {character,settings,profile,opts} to have the server build the pools itself (buildPools, per-slot lockedSlots/blocked handling, in app/services/builds.mts; with `pinned`, Manual's suit {slot: serial}, it fills only the empty slots, for a character or none, and is never saved as a run; `character: "_nobody"`, the Suit Builder's No character, builds from the pieces nobody wears like a fill with no character, but is saved and reused as a run under `_nobody`); either form's response carries poolSize/skipped/current/blocked/warning?
 // - `GET /api/optimize/<id>/events` (SSE: hello, progress, done|failed|cancelled)
 // - `POST /api/optimize/<id>/cancel`
 // - `GET /api/optimize/<id>/status`
@@ -16,11 +16,10 @@
 import { randomUUID } from "node:crypto";
 import http from "node:http";
 import { isBoundedInt, isBoundedString, short } from "../../guards.mts";
-import { optionalSlotsFor } from "../../mip.mts";
-import { prepareSolve } from "../../solver/prepare.mts";
-import { onlyRootsDiagnostics, scoreShares, weaponFlagDiagnostics, type Diagnostic, type DiagnosticsProfile } from "../../diagnostics.mts";
+import { givenSettings, manualSuitError, poolOptions, scannedWho } from "../../services/builds.mts";
+import { scoreShares, type DiagnosticsProfile } from "../../diagnostics.mts";
 import { readBody } from "../../read-body.mts";
-import { gearChanges, reusableRun, runSummary, manualRun, poolSerials, poolSnapshot, type RunOpts, type SavedRun } from "../../runs-lib.mts";
+import { gearChanges, runSummary, manualRun, poolSerials, type RunOpts, type SavedRun } from "../../runs-lib.mts";
 import { OPTS_LIMITS, runSettingsError, type RunSettings } from "../../run-settings.mts";
 import { manualBase, manualPlan } from "../../buffs.mts";
 import { evaluateSuit } from "../../evaluate.mts";
@@ -28,24 +27,14 @@ import type { GearChanges, RunBody, RunsListBody, RunSummary, ScoreShare } from 
 import { sse } from "../../services/events.mts";
 import type { Job } from "../../services/jobs.mts";
 import { isManualSuit } from "../../store/ui-prefs.mts";
-import { GEAR_SLOTS, GOAL_RANKS_MAX, GOAL_RANK_SIZE_MAX, NOBODY, RARITY_PREFERENCES, RESIST_KEYS, buildPools, getRules, missingFlags, toOptItem, totalsOf, type Character, type Inventory, type Item, type OptItem, type Profile, type RarityPreference, type RunBuffs } from "../../vault-lib.mts";
-import { characterProfile, planBuild, poolFromSpec, specFromRunSettings } from "../../build-spec.mts";
+import { GEAR_SLOTS, GOAL_RANKS_MAX, GOAL_RANK_SIZE_MAX, NOBODY, RARITY_PREFERENCES, RESIST_KEYS, buildPools, toOptItem, totalsOf, type Character, type Item, type OptItem, type Profile, type RarityPreference, type RunBuffs } from "../../vault-lib.mts";
+import { characterProfile, planBuild, specFromRunSettings } from "../../build-spec.mts";
 import { safeAppendLog } from "../../log.mts";
 import { stepsFor } from "../../swing.mts";
 import { send, asObject, SSE_HEADERS } from "../respond.mts";
 import { NEXT, type Route } from "../router.mts";
 import type { ServerContext } from "../context.mts";
 
-// Manual's suit against the inventory (a fill's `pinned`, a manual run's `suit`): each serial a gear piece of its slot in
-// the scans, and no two-handed weapon beside a one-hander.
-function manualSuitError(inv: Inventory, suit: Record<string, number>, path: string): string | null {
-  for (const [slot, serial] of Object.entries(suit)) {
-    const it = inv.items[serial];
-    if (!it?.gear || it.slot !== slot) return `${path}.${slot}: 0x${serial.toString(16)} is not a gear piece for that slot in your scans`;
-  }
-  if (suit.twoHanded != null && suit.oneHanded != null && inv.items[suit.twoHanded]!.twoHanded) return `${path}: a two-handed weapon leaves the one-hand slot empty`;
-  return null;
-}
 // ---- POST /api/optimize's request shape ---------------------------------------------------------
 // Everything below this comment runs on a body any local caller can send. Until this pass the route
 // checked `profile` for truthiness and nothing else, so a malformed pools entry reached the worker
@@ -141,22 +130,6 @@ function optsError(opts: Record<string, unknown>): string | null {
   }
   return null;
 }
-// A build's settings with their nulls dropped: a `null` in an optional field (as a saved run's settings can carry, e.g.
-// re-posted from the runs drawer) means "use the default", exactly like an absent field.
-const givenSettings = (settings: Record<string, unknown> | undefined): Record<string, unknown> => Object.fromEntries(Object.entries(settings || {}).filter(([, v]) => v != null));
-// The scanned character a build's pool is for: No character (NOBODY) builds from the pieces nobody wears, as a fill with no character does.
-const scannedWho = (character: string | null): string | null => (character === NOBODY ? null : character);
-// buildPools' options from a build's settings (`s`, givenSettings) for `character` (NOBODY: the pieces nobody wears;
-// null: a fill with no character), with the pool settings they come from; `pins`: a fill's placed pieces. A build uses
-// them, and a saved run's gear changes rebuild its pool with them (issue #291).
-function poolOptions(inv: Inventory, character: string | null, s: Record<string, unknown>, pins?: Record<string, number>) {
-  const who = scannedWho(character);
-  // runSettingsError checked every field of `s`. What it leaves out takes the build spec's default
-  // (app/build-spec.mts poolFromSpec, as planBuild), as the page and build_suit do: a missing strLimit is the character's STR, else 125.
-  const pool = poolFromSpec(specFromRunSettings(s as RunSettings), who ? inv.characters[who] as Character : null);
-  const { allowOthersWorn, strLimit, excludeTags, excludeRoots, allowGargoyle, medOnly, excludeWeapons, ubwsAnyWeapon, excludeSkills, lockedSlots, weaponMustHave } = pool;
-  return { pool, poolOpts: { allowOthersWorn: allowOthersWorn && !!character, strength: strLimit, excludeTags, excludeRoots, excludeGargoyle: !allowGargoyle, medOnly, excludeWeapons, ubwsAnyWeapon, excludeSkills, weaponMustHave, lockedSlots: pins ? [] : lockedSlots, ...(pins ? { pinned: pins } : {}) } };
-}
 // meta is the caller's own bookkeeping, and saveRun() used to persist it verbatim into
 // <data>/runs/<uuid>.json — a megabyte of padding in meta.settings became a megabyte on disk that
 // every later runStore.all() re-parsed, on the two hottest routes. Copy only the fields saveRun actually
@@ -173,7 +146,7 @@ function pickMeta(meta: Record<string, unknown>): Record<string, unknown> {
 }
 
 export function routes(ctx: ServerContext): Route[] {
-  const { eventBus, getInventory, jobService, profilesStore, runStore, timers } = ctx;
+  const { buildsService, eventBus, getInventory, jobService, profilesStore, runStore, timers } = ctx;
   function streamJob(job: Job, res: http.ServerResponse): void {
     res.writeHead(200, SSE_HEADERS);
     sse(res, "hello", jobService.snapshot(job));   // catch-up: last progress, or the final outcome if it already ended
@@ -225,11 +198,10 @@ export function routes(ctx: ServerContext): Route[] {
       // pool settings: held to the one rule a manual run's settings are (app/run-settings.mts).
       const badSettings = runSettingsError(meta.settings, "meta.settings") || runSettingsError(settings, "settings");
       if (badSettings) return send(res, 400, { ok: false, error: badSettings });
-      let skipped: Record<string, number> = {}, blocked: string[] = [], poolDiagnostics: Diagnostic[] = [], mustHave: string[] | undefined, only: number[] | undefined;
       // The by-character form: the caller sends {character, settings} instead of building pools/current
       // itself, and the server runs buildPools() against the cached inventory — the same function and
       // the same defaults the page's own optimizerProfile() uses (ui/builder.mts), so a request built
-      // this way and an equivalent hand-built {pools,current} request key identically (runKey below) and
+      // this way and an equivalent hand-built {pools,current} request key identically (the run key, app/solver/prepare.mts) and
       // reuse each other's saved runs.
       // character names a folded inventory key and lands in a saved run's own `character` field —
       // truthy-checked only, until this pass (see report).
@@ -239,54 +211,11 @@ export function routes(ctx: ServerContext): Route[] {
       // pieces nobody wears. A fill is never saved as a run, nor answered by one.
       if (pinned != null && !isManualSuit(pinned)) return send(res, 400, { ok: false, error: "pinned must map gear slots to serials" });
       const fill = pinned != null;
-      if (character || fill) {
-        // A `null` in any optional field (as a saved run's settings can carry — e.g. re-posted from
-        // the runs drawer) means "use the default", exactly like an absent field, not "the value is
-        // null": runSettingsError skips it, and normalising both to absent here lets the destructuring
-        // defaults treat null and undefined alike (post-review fix — null used to reach buildPools as a
-        // literal `strLimit: null` or throw when an array field's null hit code expecting an array).
-        const s = givenSettings(settings);
-        const { inv } = await getInventory();
-        // No character (NOBODY) builds as a fill with no character does, from the pieces nobody wears, but is saved and
-        // reused under its own name like a character's build: `who` is the scanned character, `character` the run's key.
-        const who = scannedWho(character as string | null);
-        // buildPools would happily build pools from every other character's gear and save the run
-        // under a name the inventory has never seen.
-        if (who && !Object.hasOwn(inv.characters, who)) return send(res, 404, { ok: false, error: `no scans for character ${JSON.stringify(character)}` });
-        const pins = (pinned || {}) as Record<string, number>;
-        const { pool: { onlyRoots, lockedSlots, weaponMustHave, strLimit }, poolOpts } = poolOptions(inv, character as string | null, s, fill ? pins : undefined);
-        const badPin = manualSuitError(inv, pins, "pinned");
-        if (badPin) return send(res, 400, { ok: false, error: badPin });
-        // a fill keeps the placed pieces in place of the locked slots: they are the only slots that keep their piece
-        const keep = fill ? Object.keys(pins) : lockedSlots;
-        const built = buildPools(inv, who || null, { ...poolOpts, onlyRoots });
-        // the pool a saved run keeps, to say later which pieces came and went (issue #291)
-        if (!fill) meta.pool = poolSnapshot(inv, built.pools, built.current, strLimit);
-        pools = built.pools; current = built.current; blocked = built.blocked;
-        // the weapon properties the build requires: a locked weapon without them, or no weapon with them (app/diagnostics.mts)
-        mustHave = weaponMustHave; only = onlyRoots;
-        if (built.weaponFlags && weaponMustHave) {
-          const kept = built.weaponFlags.kept.map((slot) => { const it = inv.items[built.current[slot]!.serial]!; return { slot, name: it.name, missing: missingFlags(it, weaponMustHave) }; });
-          poolDiagnostics = weaponFlagDiagnostics(weaponMustHave, kept, built.weaponFlags.none);
-        }
-        // the slots Only containers leaves with nothing from a container, though the other containers hold a piece for them
-        if (onlyRoots?.length) {
-          const wide = buildPools(inv, who || null, poolOpts), stored = (list: OptItem[] | undefined): boolean => (list || []).some((o) => inv.items[o.serial]?.root != null);
-          poolDiagnostics.push(...onlyRootsDiagnostics(GEAR_SLOTS.filter((sl) => !keep.includes(sl) && stored(wide.pools[sl]) && !stored(built.pools[sl]))));
-        }
-        skipped = Object.fromEntries(Object.entries(built.skipped).map(([k, v]) => [k, v.length]));
-        for (const slot of blocked) delete current[slot];       // a worn piece the filters now rule out must not stay "current"
-        if (!fill) for (const slot of lockedSlots) pools[slot] = [];   // a locked slot offers no alternatives — it always keeps current
-        opts = { ...(opts as RunOpts), optionalSlots: optionalSlotsFor(built.current, keep) };   // `current`, its blocked pieces deleted above
-        // The saved run keeps the page's whole settings snapshot (floors, weights, race, search knobs:
-        // the runs drawer labels, compares and re-applies runs from it), with the pool settings it
-        // actually ran on written over it.
-        meta = { ...meta, character, settings: { ...((meta.settings as Record<string, unknown> | undefined) || {}), ...s } };
-      } else {
+      if (!character && !fill) {
         // The hand-built form: pools/current came straight off the body, so this is where a literal
         // null candidate ({pools: {helmet: [null]}}) or an item with no props gets refused rather
         // than reaching the worker and ending the job in an internal-error ref. The by-character
-        // form above builds both itself, so it needs no element check.
+        // form and a fill build both on the server (app/services/builds.mts), so they need no element check.
         const badPools = poolsError(pools) || currentError(current);
         if (badPools) return send(res, 400, { ok: false, error: badPools });
       }
@@ -302,37 +231,9 @@ export function routes(ctx: ServerContext): Route[] {
       // a soft floor's bonus rewards reaching it: a negative one has no use, and the exact solver has no model for it (issue #315)
       if (floorBonus != null && (typeof floorBonus !== "number" || !Number.isFinite(floorBonus) || floorBonus < 0 || floorBonus > 1e6)) return send(res, 400, { ok: false, error: "profile.floorBonus must be a number from 0 to 1000000" });
       if (floorPartial != null && (typeof floorPartial !== "number" || !Number.isFinite(floorPartial) || floorPartial < 0 || floorPartial > 0.5)) return send(res, 400, { ok: false, error: "profile.floorPartial must be a number from 0 to 0.5" });
-      // every transform of the solve's input and the run key, in their one order (app/solver/prepare.mts)
-      const rarity = ((opts as RunOpts).tieBreak as { rarity?: RarityPreference } | undefined)?.rarity;
-      const { input, key, scaleDiagnostics, preDiagnostics } = prepareSolve({ pools, current, profile, opts: opts as RunOpts, weaponMustHave: mustHave, onlyRoots: only,
-        rarity: rarity ? { inv: (await getInventory()).inv, ladder: getRules().rarity || [] } : null });
-      const fullOpts = input.opts;
-      ({ pools, current } = input);
-      poolDiagnostics = [...poolDiagnostics, ...scaleDiagnostics];
-      const runs = runStore.all();
-      const hit = fill ? null : reusableRun(runs, key, fullOpts as { timeBudgetMs?: number });
-      // Warn (not block) once the candidate pool is large enough that the exact solver can
-      // take a while: the page shows this line above the progress panel.
-      const poolSize = typeof meta.poolSize === "number" ? meta.poolSize : Object.values(pools).reduce((a: number, v) => a + (Array.isArray(v) ? v.length : 0), 0);
-      // The by-character form doesn't hand the caller's meta a poolSize/skipped up front (unlike the
-      // old form, whose client computes them itself — ui/builder.mts) — fill them in now so a saved
-      // run started this way (the jobs service's saveRun() reads job.meta) carries the same figures the response does.
-      if (character) { meta.poolSize = poolSize; meta.skipped = skipped; }
-      // The requirements no suit in the pool can reach, said before the search starts (app/diagnostics.mts); the result repeats them.
-      const diagnostics = [...poolDiagnostics, ...preDiagnostics];
-      if (hit) return send(res, 200, { ok: true, cached: true, run: hit, poolSize, skipped, current, blocked, diagnostics });
-      // warm start: this character's newest saved suit, re-scored under the new settings
-      const last = fill ? null : runs.find((r) => r.character === meta.character && r.result && r.result.best);
-      // last.result/.best were both truthy-checked by the .find() predicate just above; `.best`'s
-      // real shape is an OptAssignment-like {slot -> {serial} | null} map, looser than RunResult's
-      // own declared fields (an index-signature read, same trust as everywhere else in this route).
-      if (last) fullOpts.warmStart = Object.fromEntries(Object.entries(last.result!.best as Record<string, { serial: number } | null>).map(([slot, it]) => [slot, it ? it.serial : null]));
-      // One running build per client, behind a server-wide ceiling (app/services/jobs.mts submit).
-      const started = jobService.submit({ ...input, ...(poolDiagnostics.length ? { diagnostics: poolDiagnostics } : {}) }, key, meta, headerClientId, !fill);
-      if (!started) return send(res, 429, { ok: false, error: "too many builds are already running; try again in a moment" });
-      const { job, superseded } = started;
-      if (poolSize > 50000) job.meta.warning = "over 50,000 candidates; the exact solver may take a while";
-      return send(res, 200, { ok: true, id: job.id, warmFrom: last ? last.id : null, superseded, warning: job.meta.warning, poolSize, skipped, current, blocked, diagnostics });
+      // the pool, the prepared solve, a saved run that answers it or the started job (app/services/builds.mts)
+      const { status, body: answer } = await buildsService.start({ pools, current, profile, opts: opts as RunOpts, meta, character: (character as string | null) || null, settings, pinned: (pinned as Record<string, number> | null | undefined) ?? null }, headerClientId);
+      return send(res, status, answer);
     } },
     { method: "POST", path: "/api/runs", handle: async (req, res) => {
       // Save Manual's suit as a run (issue #12): {character, suit: {slot: serial}, settings, inventoryStamp}. The
