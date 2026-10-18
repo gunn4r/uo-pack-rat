@@ -5,7 +5,7 @@
 // request and answers one `application/json` response — no SSE, no sessions. Methods: initialize (the protocol version
 // negotiated from PROTOCOL_VERSIONS), ping, tools/list and tools/call; a notification gets 202 and no body.
 //
-// Its own port and token, both kept in <data>/mcp.json, so a client's saved config survives restarts: the app
+// Its own port and token, both kept in <data>/mcp.json (app/store/mcp-config.mts), so a client's saved config survives restarts: the app
 // server's own port and token change every desktop launch. Off by default; turning it on or off opens or closes the
 // listener at once. A busy port falls back to an OS-assigned one for this run (live.portBusy), never persisted.
 //
@@ -18,20 +18,16 @@
 // own token, so every validation and safety check stays the route's.
 //
 // map: mcp
-// owns: `createMcp`, `readMcpConfig`, `writeMcpConfig`, `PROTOCOL_VERSIONS`, `MCP_DEFAULT_PORT`
+// owns: `createMcp`, `PROTOCOL_VERSIONS`
 import http from "node:http";
-import { existsSync, readFileSync } from "node:fs";
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import type { AddressInfo } from "node:net";
-import { writeFileAtomic } from "./atomic-write.mts";
-import { DATA_FILE_MODE } from "./config.mts";
 import { validate } from "./schema/validate.mts";
 import { INSTRUCTIONS, TOOLS, ToolError, type ToolContext } from "./mcp-tools.mts";
 import { isJsonContentType, readBody, type HttpError } from "./read-body.mts";
-import { migrate } from "./migrate.mts";
+import { createMcpConfigStore, defaultMcpConfig } from "./store/mcp-config.mts";
 import type { McpConfig, McpLive } from "./api/mcp.mts";
 
-export const MCP_DEFAULT_PORT = 47615;
 // Newest first: an initialize naming one of these gets it back, any other gets the newest.
 export const PROTOCOL_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26"];
 const MAX_BODY_BYTES = 1024 * 1024;
@@ -39,39 +35,7 @@ export const ACTIONS_OFF = "In-game actions are off in Pack Rat's Settings (Allo
 
 // <data>/mcp.json and the listener are the API's own types (app/api/mcp.mts).
 export type { McpConfig, McpLive } from "./api/mcp.mts";
-export const defaultMcpConfig = (): McpConfig => ({ version: 1, enabled: false, allowActions: false, port: MCP_DEFAULT_PORT, token: null });
-const TOKEN_RE = /^[A-Za-z0-9-]{16,128}$/;
-
-// A file that does not parse, or is not an object, reads as the defaults (off). Otherwise each field that is wrong
-// falls back to its default on its own (a switch to off), so one bad field never costs the token; each is logged, and
-// the next save replaces the file. A leading BOM (a Windows editor's) is ignored. A file with no usable token gets a
-// new one, saved; when it cannot be saved, the error is logged and MCP stays off for this run.
-export function readMcpConfig(file: string, warn: (msg: string) => void): McpConfig {
-  const cfg = defaultMcpConfig();
-  if (!existsSync(file)) return cfg;
-  let d: Record<string, unknown> | null = null;
-  try {
-    const doc: unknown = JSON.parse(readFileSync(file, "utf8").replace(/^\uFEFF/, ""));
-    if (doc && typeof doc === "object" && !Array.isArray(doc)) d = migrate("mcp", doc).doc as Record<string, unknown>;
-  } catch { d = null; }
-  if (!d) { warn("mcp.json does not parse; MCP stays off until a Settings switch replaces the file"); return cfg; }
-  const bad: string[] = [];
-  if (d.version !== 1) bad.push("version");
-  if (typeof d.enabled === "boolean") cfg.enabled = d.enabled; else bad.push("enabled");
-  if (typeof d.allowActions === "boolean") cfg.allowActions = d.allowActions; else bad.push("allowActions");
-  if (typeof d.port === "number" && Number.isInteger(d.port) && d.port >= 0 && d.port <= 65535) cfg.port = d.port; else bad.push("port");
-  if (typeof d.token === "string" && TOKEN_RE.test(d.token)) cfg.token = d.token;
-  if (bad.length) warn(`mcp.json: ${bad.join(", ")} not valid, read as the default`);
-  if (!cfg.token) {
-    cfg.token = randomUUID();
-    try { writeMcpConfig(file, cfg); }
-    catch (e) { warn(`mcp.json could not be saved with a new token (${(e as Error).message}); MCP stays off`); cfg.enabled = false; }
-  }
-  return cfg;
-}
-export function writeMcpConfig(file: string, cfg: McpConfig): void {
-  writeFileAtomic(file, JSON.stringify(cfg, null, 2) + "\n", DATA_FILE_MODE);
-}
+export { MCP_DEFAULT_PORT } from "./store/mcp-config.mts";
 
 export interface McpOptions {
   file: string;
@@ -102,13 +66,14 @@ const rpcError = (id: RpcId, code: number, message: string) => ({ jsonrpc: "2.0"
 const rpcResult = (id: RpcId, result: unknown) => ({ jsonrpc: "2.0", id, result });
 export function createMcp(opts: McpOptions): McpController {
   const warn = (msg: string): void => opts.log(`mcp: ${msg}`);
+  const store = createMcpConfigStore(opts.file, warn);
   let config: McpConfig;
-  try { config = readMcpConfig(opts.file, warn); }
+  try { config = store.read(); }
   catch (e) { warn(`mcp.json could not be read (${(e as Error).message}); MCP stays off`); config = defaultMcpConfig(); }
   let listener: http.Server | null = null, boundPort: number | null = null, portBusy: number | null = null;
   // Opening and closing run one at a time, in the order asked (a quick on/off/on ends on).
   let applying: Promise<void> = Promise.resolve();
-  const save = (): void => writeMcpConfig(opts.file, config);
+  const save = (): void => store.write(config);
 
   // The tools' loopback calls to the app's own routes, as the page makes them (with the app token when one is set).
   const ctx: ToolContext = {

@@ -41,8 +41,9 @@ export interface RunKeyInput {
   onlyRoots?: number[] | undefined;        // the containers the pool is narrowed to (issue #12): keyed only when it lists any, likewise
 }
 // The version of the search code a saved run's answer came from. Bump it on any change to the MIP
-// model (app/mip.mts), the orchestration (app/exact-solver.mts) or the core's scoring and search
-// (scripts/optimizer-core.mts) that can change a result, so runs saved before it stop matching and
+// model (app/mip.mts), the orchestration (app/exact-solver.mts and app/solver/exact/*: the build's
+// state, its objectives and its phases), the shared scoring rules (app/solver/scoring.mts) or the
+// core's scoring and search (scripts/optimizer-core.mts) that can change a result, so runs saved before it stop matching and
 // are never served as "reused". 2: soft floors allow negative totals, negative capped weights.
 // 3: the reach estimate respects the hands row; heuristic-only runs honour the time budget.
 // 4: a warm start keeps a slot that may not be empty filled (a locked slot's piece was dropped, and the search stuck).
