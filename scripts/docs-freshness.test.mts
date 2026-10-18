@@ -110,7 +110,7 @@ test("[smoke] docs-freshness: every doc is within its size budget, and every bud
   for (const f of docs) {
     const budget = isGuide(f) ? GUIDE_BUDGET : BUDGETS[f];
     if (budget === undefined) { unbudgeted.push(f); continue; }
-    const size = readFileSync(join(root, f)).length;
+    const size = Buffer.byteLength(readFileSync(join(root, f), "utf8").replace(/\r\n/g, "\n"));   // the committed size: Windows checks text out with CRLF
     if (size > budget) over.push(`${f}: ${size} bytes, budget ${budget}`);
   }
   assert.deepEqual(unbudgeted, [], "give each new doc an entry in BUDGETS, a little above its size");
