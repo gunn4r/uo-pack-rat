@@ -1,4 +1,4 @@
-// ui-profiles-sync.test.mts — [slow]: the page's profile saves against another window's in the real Electron window (quality pass 1, W1a), on a writable `--data` directory seeded with the demo scans. Another window's save (a whole-file PUT with its own stamp, sent from the page's origin) makes the page's copy stale: a buff toggle after it goes up as an edit (PATCH), lands beside the other window's character (marked by its buffs: a whole-file save keeps only stored labels) and template with no stale refusal, and the page reads the file again and lists that template; an Update of a template the other window deleted is not made again, the page says why, and the template stays deleted. Launched through `scripts/electron-app.mts`; skipped when Electron can't run here.
+// ui-profiles-sync.test.mts — [slow]: the page's profile saves against another window's in the real Electron window (quality pass 1, W1a), on a writable `--data` directory seeded with the demo scans. Another window's save (an edit sent from the page's origin) leaves the page's copy behind: a buff toggle after it lands beside the other window's character and template with no refusal, and the page reads the file again and lists that template; an Update of a template the other window deleted is refused (409 conflict), not made again, the page says why, and the template stays deleted. Launched through `scripts/electron-app.mts`; skipped when Electron can't run here.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -7,16 +7,12 @@ import type { Page } from "playwright";
 import { launchApp, skipWithoutElectron, tempDataDir, until } from "./electron-app.mts";
 
 interface Disk { characters: Record<string, { spec: { buffs?: { on: string[] } } }>; templates: Record<string, unknown> }
-// Another window's whole-file save, made with the stamp it reads now: `change` runs on its copy (in the page's context).
+// Another window's save (PATCH /api/profiles from the page's origin, not through this page's own state).
 type Change = "kestrelAndTemplate" | "deleteMine";
 const otherWindow = (page: Page, change: Change): Promise<number> => page.evaluate(async (c) => {
-  const got = await (await fetch("/api/profiles")).json() as { profiles: { characters: Record<string, Record<string, unknown>>; templates: Record<string, unknown> }; builtinTemplates: Record<string, unknown>; stamp: string };
-  const p = got.profiles;
-  if (c === "kestrelAndTemplate") {
-    p.characters.Kestrel = { ...p.characters.Dorran, spec: { ...(p.characters.Dorran as { spec: object }).spec, buffs: { on: ["bless"], skills: {} } } };
-    p.templates["Other window"] = got.builtinTemplates.melee;
-  } else delete p.templates.Mine;
-  const r = await fetch("/api/profiles", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...p, base: got.stamp }) });
+  const got = await (await fetch("/api/profiles")).json() as { builtinTemplates: Record<string, unknown> };
+  const edits = c === "kestrelAndTemplate" ? [{ op: "setBuffs", name: "Kestrel", buffs: { on: ["bless"] } }, { op: "putTemplate", id: "Other window", entry: got.builtinTemplates.melee }] : [{ op: "deleteTemplate", id: "Mine" }];
+  const r = await fetch("/api/profiles", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ edits }) });
   return r.status;
 }, change);
 
@@ -33,8 +29,8 @@ test("[slow] a stale window's saves: a buff toggle lands beside the other window
     await page.locator(`#abf-cb-${id}`).check();
     await page.keyboard.press("Escape");
   };
-  let stale = 0;   // the page's whole-file saves refused as stale
-  page.on("response", (r) => { if (r.request().method() === "PUT" && new URL(r.url()).pathname === "/api/profiles" && r.status() === 409) stale++; });
+  let refused = 0;   // the page's saves refused
+  page.on("response", (r) => { if (new URL(r.url()).pathname === "/api/profiles" && r.request().method() !== "GET" && r.status() >= 400) refused++; });
   try {
     await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
     await page.click('[data-nav="builder"]');
@@ -47,7 +43,7 @@ test("[slow] a stale window's saves: a buff toggle lands beside the other window
     assert.equal(await otherWindow(page, "kestrelAndTemplate"), 200);
     await buff("divineFury");
     await onDisk((d) => !!d.characters.Dorran?.spec.buffs?.on.includes("divineFury"), "the toggle saved after the reload");
-    assert.equal(stale, 0, "an edit is never stale");
+    assert.equal(refused, 0, "an edit is never stale");
     const after = disk();
     assert.deepEqual(after.characters.Dorran!.spec.buffs!.on.sort(), ["divineFury", "enemyOfOne"]);
     assert.deepEqual(after.characters.Kestrel?.spec.buffs?.on, ["bless"], "the other window's character stays");
@@ -70,9 +66,9 @@ test("[slow] a stale window's saves: a buff toggle lands beside the other window
     if (await card.locator(".tm-head").getAttribute("aria-expanded") !== "true") await card.locator(".tm-head").click();
     await card.getByRole("button", { name: /^Update Mine/ }).click();
     await page.locator("dialog[open]").getByRole("button", { name: "Update Mine" }).click();
-    await page.locator(".toast.bad", { hasText: "changed in another window" }).waitFor({ timeout: 10_000 });
+    await page.locator(".toast.bad", { hasText: "the Mine template was deleted elsewhere, so it was not updated" }).waitFor({ timeout: 10_000 });
     assert.equal(Object.hasOwn(disk().templates, "Mine"), false, "not made again");
-    assert.equal(stale, 1, "the Update's whole-file save was refused as stale");
+    assert.equal(refused, 1, "the Update refused");
     assert.ok(Object.hasOwn(disk().templates, "Other window") && disk().characters.Kestrel?.spec.buffs?.on[0] === "bless", "nothing else lost");
     await page.locator('#tpl-drawer .tm-card[data-template="Mine"]').waitFor({ state: "detached", timeout: 10_000 });
     assert.deepEqual(errors, []);

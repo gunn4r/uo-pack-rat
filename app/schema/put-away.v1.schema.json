@@ -1,0 +1,39 @@
+{
+  "$comment": "Pack Rat Put away v1 (issue #131), the two files between the TazUO panel and the app. `request`: <data>/inbox/<adapter>/putaway-request.json, written by the panel (adapters/tazuo/packrat-panel.py) and read by the app (app/put-away.mts's checkPutAwayRequest, at most 4096 bytes), which also refuses one whose requestedAt is over 60 s old or 5 s ahead, or whose clickedAt is after it or over an hour before; those time rules are beyond this schema. `reply`: <data>/bridge/<adapter>/putaway.json, written by the app (app/services/organize.mts) and read by the panel, which matches it to its request by id. Restricted to the keyword subset app/schema/validate.mts supports. The shared request cases are app/fixtures/contract-cases/put-away.json.",
+  "$defs": {
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "container", "character", "requestedAt", "clickedAt", "at"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[A-Za-z0-9-]{1,64}$" },
+        "container": { "type": "integer", "minimum": 1, "maximum": 4294967295, "$comment": "the serial of the container the player picked" },
+        "character": { "type": "string", "minLength": 1, "maxLength": 64, "$comment": "no control characters" },
+        "requestedAt": { "type": "string", "maxLength": 40, "$comment": "RFC 3339, when this request was written" },
+        "clickedAt": { "type": "string", "maxLength": 40, "$comment": "RFC 3339, when Put away was clicked: every request of one run carries it" },
+        "at": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["x", "y"],
+          "properties": {
+            "x": { "type": "integer", "minimum": 0, "maximum": 7168 },
+            "y": { "type": "integer", "minimum": 0, "maximum": 4096 },
+            "facet": { "type": "integer", "minimum": 0, "maximum": 5 }
+          }
+        }
+      }
+    },
+    "reply": {
+      "type": "object",
+      "required": ["id", "ok", "msg", "t"],
+      "properties": {
+        "id": { "type": ["string", "null"], "$comment": "the request's id, or null when the request named none the app could use" },
+        "ok": { "type": "boolean" },
+        "msg": { "type": "string" },
+        "detail": { "type": "string" },
+        "trip": { "type": "string", "minLength": 1, "$comment": "the queued trip's command id, whose result the panel reads from the bridge's status.json; with none, nothing was queued" },
+        "t": { "type": "string", "$comment": "RFC 3339, when the app answered" }
+      }
+    }
+  }
+}

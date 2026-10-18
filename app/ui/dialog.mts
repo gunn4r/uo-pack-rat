@@ -1,6 +1,6 @@
 // ui/dialog.mts — the one-field prompt dialog, on components.mts's openDialog. Exists because Electron
 // does not implement window.prompt() (it silently returns null/undefined with no error) —
-// ui/builder.mts's saveTemplateAs used to call prompt() directly and simply did nothing in the desktop
+// ui/builder-templates.mts's saveTemplateAs (then in ui/builder.mts) used to call prompt() directly and simply did nothing in the desktop
 // app, while working fine in a plain browser. Yes/no questions use components.mts's confirmDialog.
 //
 // map: ui-components

@@ -49,6 +49,11 @@ def data_dir():
         with open(cfg, "r", encoding="utf-8") as f:
             d = json.load(f).get("dataDir")
         if d:
+            # app/schema/packrat-paths.v1.schema.json's shapes: a relative path would land under the client's own
+            # working folder and ~user/ elsewhere, unseen by the app, so refuse to start instead.
+            drive = len(d) > 2 and "a" <= d[0].lower() <= "z" and d[1] == ":" and d[2] in "/\\"
+            if not (drive or d == "~" or d.startswith(("/", "\\\\", "~/", "~\\"))):
+                raise ValueError("packrat-paths.json: dataDir must be an absolute folder or start with ~/")
             return os.path.expanduser(d)
     return os.path.expanduser(os.environ.get("PACKRAT_DATA") or "~/.pack-rat")
 
@@ -109,7 +114,7 @@ def script_prefix(self_name):
 
 # BEGIN generated: manifest
 ADAPTER_ID = "tazuo"
-ADAPTER_VERSION = "2.20.0"
+ADAPTER_VERSION = "2.21.0"
 CAPABILITIES = {
     "layers": ["OneHanded", "TwoHanded", "Shoes", "Pants", "Shirt", "Helmet", "Gloves", "Ring",
                "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic", "Earrings", "Arms",
@@ -563,12 +568,12 @@ TRASH_RE = re.compile(r"\btrash\b", re.I)
 WEARABLE_RE = re.compile(r"\b(plate\w*|chain\w*|ring\s*mail|studded|leather|armou?r)\b", re.I)
 # END generated: tazuo/wearable_re
 # Engraved bags and Backpacks match no name pattern — detect by graphic too (probe-verified Aug 2026).
-# BEGIN generated: tazuo/container_graphics
+# BEGIN generated: container_graphics
 CONTAINER_GRAPHICS = {0x0E75, 0x0E76, 0x0E79, 0x0E7D, 0x09AA, 0x09A8, 0x09A9, 0x09AB,
                       0x0E3C, 0x0E3D, 0x0E3E, 0x0E3F, 0x0E40, 0x0E41, 0x0E42, 0x0E43,
                       0x0E7C, 0x0E7E, 0x0E7F, 0xA32F, 0xA333,
                       0x4025, 0x4026}   # Gargish Chest: UO Alive's tiledata does not flag it
-# END generated: tazuo/container_graphics
+# END generated: container_graphics
 
 results = {}              # id -> {ok, msg}
 # The ids in the order they were recorded: the client's Python does not keep a dict in insertion order

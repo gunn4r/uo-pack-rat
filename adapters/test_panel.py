@@ -301,6 +301,19 @@ class Panel(unittest.TestCase):
         self.assertIn("Show at login: On", seen["after"])
         self.assertTrue(api.windows[0].IsVisible, "the choice applies at the next login, not now")
 
+    def test_show_at_login_button_writes_an_invalid_hotkey_as_the_default(self):
+        path = os.path.join(self.data, "tazuo-panel.json")
+        for doc in ({"hotkey": {"mods": [], "key": "P"}, "showAtLogin": True}, {"hotkey": "CTRL+P", "showAtLogin": True},
+                    {"showAtLogin": True}, {"hotkey": {"mods": ["SHIFT", "CTRL", "CTRL"], "key": "P"}, "showAtLogin": True}):
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(doc, f)
+            w = World()
+            api = tazuo_panel_api(w)
+            w.clock.at(1, lambda: api.click(self.control(api, "Show at login: On")))
+            self.run_panel(w, api, until_s=2)
+            with open(path, encoding="utf-8") as f:
+                self.assertEqual(json.load(f), {"hotkey": {"mods": ["CTRL", "SHIFT"], "key": "P"}, "showAtLogin": False}, doc)
+
     def test_the_window_starts_hidden_when_show_at_login_is_off_and_the_hotkey_shows_it(self):
         for doc, visible in (({"showAtLogin": False, "hotkey": {"mods": ["ALT"], "key": "F5"}}, False),
                              ({"openAtLogin": False}, False),          # an older app's name for it
@@ -333,6 +346,12 @@ class Panel(unittest.TestCase):
         self.assertEqual(mid.get("character"), "Tester")
         self.assertNotIn("stopped", mid)
         self.assertIs(self.heartbeat().get("stopped"), True)
+        # the shapes of app/fixtures/contract-cases/heartbeat.json's first two cases, which the app's install guard reads
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "app", "fixtures", "contract-cases", "heartbeat.json"), encoding="utf-8") as f:
+            running, stopped = [c["doc"] for c in json.load(f)["cases"][:2]]
+        for got, case in ((mid, running), (self.heartbeat(), stopped)):
+            self.assertEqual({k: type(v) for k, v in got.items()}, {k: type(v) for k, v in case.items()})
+            self.assertRegex(got["alive"], r"\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(Z|[+-]\d{2}:\d{2})\Z")
         self.assertIn("Pack Rat - Tester", self.labels(api))
         self.assertIn("Last scan: just now", self.labels(api))
 
@@ -399,6 +418,14 @@ class Panel(unittest.TestCase):
         self.assertEqual(reqs[0]["character"], "Tester")
         self.assertEqual(reqs[0]["at"], {"x": w.px, "y": w.py, "facet": 1})
         self.assertNotEqual(reqs[0]["id"], reqs[1]["id"])
+        # the shape app/fixtures/contract-cases/put-away.json's first valid request has, which the app's check takes
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "app", "fixtures", "contract-cases", "put-away.json"), encoding="utf-8") as f:
+            case = json.load(f)["valid"][0]
+        for req in reqs:
+            self.assertEqual(sorted(req), sorted(case))
+            self.assertEqual({k: type(v) for k, v in req.items()}, {k: type(v) for k, v in case.items()})
+            self.assertEqual({k: type(v) for k, v in req["at"].items()}, {k: type(v) for k, v in case["at"].items()})
+            self.assertRegex(req["id"], r"\A[A-Za-z0-9-]{1,64}\Z")
         pouch, until = seen["consent"].split(":")
         self.assertEqual(int(pouch), POUCH, "the consent names the picked container")
         self.assertGreater(float(until), w.clock.start, "for as long as the run lasts")

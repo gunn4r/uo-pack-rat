@@ -7,14 +7,16 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, lstatSync, cpSync, symlinkSync } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { join, dirname } from "node:path";
+import { join, dirname, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import {
   listAdapters, candidateClientRoots, validateScriptsDir, installedVersion, installScripts,
-  repoFromPackage, checkForUpdates, checkScriptsDataDir, pasteScanner, RUNNING_MESSAGE_OTHER,
+  repoFromPackage, checkForUpdates, checkScriptsDataDir, heartbeatAlive, pasteScanner, RUNNING_MESSAGE_OTHER,
 } from "./installer.mts";
+import { readBridgeStatus } from "./bridge-status.mts";
 import type { AdapterManifestV1 } from "./schema/types.d.mts";
+import { validate, type ValidatorSchema } from "./schema/validate.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REAL_ADAPTERS_DIR = join(HERE, "..", "adapters");
@@ -88,6 +90,19 @@ test("[fast] listAdapters finds tazuo with its five scripts and a summary mentio
   assert.ok(tazuo.name.length > 0);
   assert.equal(tazuo.transport, "folder");
   assert.equal(tazuo.platform, null, "tazuo has no platform restriction — capabilities.json carries no platform field");
+});
+
+// capabilities.bridge is what the page and the MCP tools offer as bridge actions (GET /api/setup), so listAdapters always
+// hands it on as a list of names, whatever a capabilities.json wrote there; the rest of the object is passed on as is.
+test("[fast] listAdapters reads a missing or malformed capabilities.bridge as a list of its string entries", () => {
+  const dir = tmp("qm-installer-bridge-");
+  const cases: Record<string, unknown> = { none: { bank: true }, "not-a-list": { bridge: "grab" }, mixed: { bridge: ["grab", 3, null, "goto"] }, "no-capabilities": undefined, "capabilities-a-list": ["grab"] };
+  for (const [id, capabilities] of Object.entries(cases)) {
+    mkdirSync(join(dir, id));
+    writeFileSync(join(dir, id, "capabilities.json"), JSON.stringify({ adapter: id, transport: "folder", ...(capabilities === undefined ? {} : { capabilities }) }));
+  }
+  const got = Object.fromEntries(listAdapters(dir).map((a) => [a.id, a.capabilities]));
+  assert.deepEqual(got, { none: { bank: true, bridge: [] }, "not-a-list": { bridge: [] }, mixed: { bridge: ["grab", "goto"] }, "no-capabilities": { bridge: [] }, "capabilities-a-list": { bridge: [] } });
 });
 
 // Phase 6 final review follow-up: capabilities.json's optional top-level `platform` field (see
@@ -359,6 +374,19 @@ function scriptsFolder(prefix: string, paths?: string): string {
 }
 const pathsJson = (dataDir: unknown): string => `${JSON.stringify({ dataDir }, null, 1)}\n`;
 
+// The cases app/fixtures/contract-cases/packrat-paths.json shares with adapters/test_adapters.py, which runs the scripts' data_dir() over them.
+test("[fast] checkScriptsDataDir: every shared packrat-paths.json case reads the folder, the default or an error as it says, and the schema takes the shapes it says", () => {
+  const cases = (JSON.parse(readFileSync(join(HERE, "fixtures", "contract-cases", "packrat-paths.json"), "utf8")) as { cases: { why: string; doc: { dataDir?: unknown }; reads: "dataDir" | "default" | "error"; schema: boolean }[] }).cases;
+  const schema = JSON.parse(readFileSync(join(HERE, "schema", "packrat-paths.v1.schema.json"), "utf8")) as ValidatorSchema;
+  for (const c of cases) {
+    const home = tmp("qm-dd-home-"), scriptsDir = scriptsFolder("qm-dd-case-", JSON.stringify(c.doc));
+    const named = String(c.doc.dataDir ?? ""), expected = c.reads === "default" ? join(home, ".pack-rat") : named === "~" ? home : named.startsWith("~/") ? join(home, named.slice(2)) : resolve(named);
+    const r = checkScriptsDataDir({ dataDir: expected, client: { adapter: "tazuo", scriptsDir }, candidates: [], home, platform: "linux" });
+    assert.equal(r.status, c.reads === "error" ? "unreadable" : "match", c.why);
+    assert.equal(validate(schema, c.doc).ok, c.schema, `schema: ${c.why}`);
+  }
+});
+
 test("[fast] checkScriptsDataDir: a configured client whose packrat-paths.json names this data folder is a match", () => {
   const dataDir = tmp("qm-dd-data-");
   const scriptsDir = scriptsFolder("qm-dd-match-", pathsJson(dataDir));
@@ -518,6 +546,20 @@ test("[fast] installScripts proceeds when status.json says stopped: true", () =>
   const scriptsDir = tmp("qm-is-stopped-dest-");
   const result = installScripts({ adapter: "tazuo", adaptersDir: fakeAdaptersDir(), scriptsDir, dataDir: tmp("qm-is-data-"), bridgeStatusPath: sp });
   assert.equal(result.ok, true, JSON.stringify(result));
+});
+
+// The cases app/fixtures/contract-cases/heartbeat.json shares with adapters/test_panel.py, which checks the panel's real heartbeats have their shape.
+test("[fast] heartbeatAlive: every shared heartbeat case counts as running or not as it says, readBridgeStatus calls it online or not as it says, and the schema takes the shapes it says", () => {
+  const cases = JSON.parse(readFileSync(join(HERE, "fixtures", "contract-cases", "heartbeat.json"), "utf8")) as { now: string; cases: { why: string; doc: object; running: boolean; online: boolean; schema: boolean }[] };
+  const schema = JSON.parse(readFileSync(join(HERE, "schema", "heartbeat.v1.schema.json"), "utf8")) as ValidatorSchema;
+  const f = join(tmp("qm-hb-cases-"), "panel.json"), now = Date.parse(cases.now);
+  for (const c of cases.cases) {
+    writeFileSync(f, JSON.stringify(c.doc));
+    assert.equal(heartbeatAlive(f, now), c.running, c.why);
+    writeFileSync(f, JSON.stringify({ character: "", current: null, results: {}, counts: { done: 0, failed: 0 }, ...c.doc }));
+    assert.equal(readBridgeStatus(f, now).online, c.online, `online: ${c.why}`);
+    assert.equal(validate(schema, c.doc).ok, c.schema, `schema: ${c.why}`);
+  }
 });
 
 test("[fast] installScripts refuses while the in-game panel's panel.json beside status.json is alive, and proceeds once it says stopped", () => {

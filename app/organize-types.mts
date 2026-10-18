@@ -1,7 +1,7 @@
 // organize-types.mts — Organize's plan and Auto organize's proposal, and the GET /api/organize/plan and POST /api/organize/propose responses built from them; types only, importing only organize-config.mts's types, so the page's browser build can use them: app/organize.mts and app/organize-strategies.mts re-export them, the routes `satisfies` them, and ui/api-types.mts re-exports them.
 //
 // map: organize
-// owns: `Plan`, `PlanMove`, `PlanTrip`, `PlanWarning`, `WarningKind`, `RuleReport`, `RoomReport`, `Carried`, `EmptyBag`, `Proposal`, `ProposeResult`, `StrategyId`, `Family`, `Candidate`, `GroupReport`, `Layout`, `OrganizePlanApiResponse`, `OrganizeProposeApiResponse`
+// owns: `Plan`, `PlanMove`, `PlanTrip`, `PlanWarning`, `WarningKind`, `RuleReport`, `RoomReport`, `Carried`, `EmptyBag`, `Proposal`, `ProposeResult`, `StrategyId`, `Family`, `Candidate`, `GroupReport`, `Layout`, `OrganizePlanApiResponse`, `OrganizeProposeApiResponse`, `OrganizeProposeBody`
 import type { OrganizeConfig, Origin } from "./organize-config.mts";
 
 // ---------------------------------------------------------------- the plan (organize.mts planOrganize)
@@ -66,7 +66,9 @@ export interface Proposal {
 // POST /api/organize/propose answers the whole result: 200 with the proposal, or 409 with why there is none.
 export type ProposeResult = { ok: true; proposal: Proposal } | { ok: false; error: string };
 
-// ---------------------------------------------------------------- responses
+// ---------------------------------------------------------------- requests and responses
+// What POST /api/organize/propose reads: the strategy, and the chests it may use (every one it ticks by default when left out).
+export interface OrganizeProposeBody { strategy: StrategyId; containers?: number[] | undefined }
 // `running`: the trip the server has queued and not heard back about (`picked` = its bridge is running it now).
 export interface OrganizeRunningTrip { id: string; index: number; queuedAt: string; picked: boolean }
 export interface OrganizePlanApiResponse { ok: boolean; plan: Plan; running: OrganizeRunningTrip | null }
