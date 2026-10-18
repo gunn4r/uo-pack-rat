@@ -125,7 +125,7 @@ test("[fast] gen-contracts: a TypeScript script's blocks take the manifest as Ty
   const doc = { adapter: "classicuo-web", version: "1.5.0", capabilities: { layers: ["OneHanded"], arms: false, tooltips: "opl", bridge: [] } };
   assert.equal(renderManifest("manifest", doc, "x", "ts"), [
     'const ADAPTER_ID = "classicuo-web";', 'const ADAPTER_VERSION = "1.5.0";', "const CAPABILITIES = {",
-    '  layers: ["OneHanded"],', '  arms: false, tooltips: "opl",', "  bridge: [],", "};", "",
+    '  layers: ["OneHanded"],', '  arms: false, tooltips: "opl",', "  bridge: [] as string[],", "};", "",
   ].join("\n"));
   assert.equal(tsFragment("container_graphics", "CONTAINER_GRAPHICS = {0x0E75, 0x09AA,\n                      0x4025}   # Gargish Chest\n"), "const CONTAINER_GRAPHICS = [\n  0x0e75, 0x09aa, 0x4025\n];\n");
   assert.equal(tsFragment("trash_re", 'TRASH_RE = re.compile(r"\\btrash\\b", re.I)\n'), "const TRASH_RE = /\\btrash\\b/i;\n");

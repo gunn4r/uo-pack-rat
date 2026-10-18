@@ -54,6 +54,23 @@ def load_shared(fragment):
     return ns
 
 
+MANIFEST_LINE = re.compile(r"^(?:const )?(ADAPTER_ID|ADAPTER_VERSION|CAPABILITIES) =")
+MARKER = re.compile(r"^(?:#|//) (BEGIN|END) generated: (\S+)$")
+
+
+def stray_manifest_lines(text):
+    """The lines setting ADAPTER_ID, ADAPTER_VERSION or CAPABILITIES outside a manifest block, which
+    gen-contracts --check cannot see."""
+    out, block = [], None
+    for line in text.splitlines():
+        m = MARKER.match(line)
+        if m:
+            block = m.group(2) if m.group(1) == "BEGIN" else None
+        elif MANIFEST_LINE.match(line) and block not in ("manifest", "manifest_version"):
+            out.append(line)
+    return out
+
+
 def load_block(bridge_path):
     """exec the bridge's untrusted-input block in a bare namespace and hand back its globals."""
     m = BLOCK_RE.search(read_text(bridge_path))
@@ -147,6 +164,18 @@ class Conventions(unittest.TestCase):
                     continue
                 self.assertIn('ADAPTER_VERSION = "%s"' % version, t,
                               "%s/%s does not carry the manifest's version %s" % (name, f, version))
+
+    def test_the_manifest_constants_live_only_in_generated_blocks(self):
+        self.assertEqual(stray_manifest_lines('CAPABILITIES = {}\n# BEGIN generated: manifest\nADAPTER_ID = "x"\n'
+                                              '# END generated: manifest\n'), ["CAPABILITIES = {}"])
+        for name, d in adapter_dirs():
+            for f in sorted(os.listdir(d)):
+                if not re.match(r"packrat-.*\.(py|ts)$", f):
+                    continue
+                t = read_text(os.path.join(d, f))
+                self.assertEqual(stray_manifest_lines(t), [], "%s/%s sets a manifest constant by hand" % (name, f))
+                if f.startswith(("packrat-scanner.", "packrat-character-refresh.")):
+                    self.assertRegex(t, r"(?m)^(#|//) BEGIN generated: manifest$", "%s/%s has no manifest block" % (name, f))
 
     def test_bridges_never_call_a_public_speech_primitive(self):
         # Every in-game message an adapter prints is client-local. API.Msg / Player.ChatSay et al are

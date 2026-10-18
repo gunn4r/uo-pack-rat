@@ -42,7 +42,7 @@ Read this first, then `CONTRIBUTING.md` for the full contributor guide.
 ## Contract rules
 
 - A JSON Schema in `app/schema/` and its TypeScript copy change together: the scan schema has an inline copy in `app/scan-schema.mts` that a test compares, and the generated types come from `npm run build:types`. A new schema keyword needs both `app/schema/validate.mts` and `scripts/build-schema-types.mts`.
-- An adapter script change bumps that adapter's version: `version` in its `capabilities.json`, then `npm run gen:contracts` writes every script's `ADAPTER_VERSION`, the web scanner's included (`docs/adapter-guide.md`, Versions).
+- A change to what an adapter script does or writes bumps that adapter's version (a comment or marker edit does not): `version` in its `capabilities.json`, then `npm run gen:contracts` writes every script's `ADAPTER_VERSION`, the web scanner's included (`docs/adapter-guide.md`, Versions).
 - A helper between `# BEGIN generated: <fragment>` / `# END generated: <fragment>` lines in an adapter script is a copy: edit `adapters/_shared/<fragment>.py`, then run `npm run gen:contracts`. `scripts/gen-contracts.test.mts` fails while any copy differs (`docs/adapter-guide.md`, Shared helpers).
 - A data file's shape changes through `app/migrate.mts`: a rename, removal, change of meaning or newly required field raises the kind's version and adds a numbered, pure, idempotent step; an added optional field does not. Keep a golden file per version in `app/fixtures/golden/<kind>/` (`docs/change-checklists.md`, "Change the shape of a data file"). A file newer than the build is read-only, never overwritten.
 - A solver change that can change a result bumps `SOLVER_VERSION` in `app/runs-lib.mts`, so older saved runs stop being reused.

@@ -15,8 +15,9 @@ export type ProfileEdit =
   // and any other field, and the spec's parts the panel doesn't edit (goal, search)
   | { op: "saveCharacter"; name: string; entry: CharacterEntry }
   | { op: "deleteCharacter"; name: string }
-  // a template saved under a name (Save as template, Duplicate), over one already there
-  | { op: "putTemplate"; id: string; entry: TemplateEntry }
+  // a template saved under a name (Save as template, Duplicate), over one already there; with `create`, refused when
+  // another template has that name (one made elsewhere since the name was checked is never overwritten unasked)
+  | { op: "putTemplate"; id: string; entry: TemplateEntry; create?: boolean }
   // a template's settings replaced (Update), its other fields kept; refused when it is gone
   | { op: "updateTemplate"; id: string; spec: TemplateSpec; savedAt: string }
   | { op: "deleteTemplate"; id: string }
@@ -43,7 +44,7 @@ export function profileEditError(v: unknown): string | null {
     case "setLabel": return name() ?? labelError(v.label);
     case "saveCharacter": return name() ?? (isObject(v.entry) && isObject(v.entry.spec) ? null : "saveCharacter: entry must be a character entry");
     case "deleteCharacter": return name();
-    case "putTemplate": return id("id") ?? (isObject(v.entry) && isObject(v.entry.spec) ? null : "putTemplate: entry must be a template entry");
+    case "putTemplate": return id("id") ?? (isObject(v.entry) && isObject(v.entry.spec) ? null : "putTemplate: entry must be a template entry") ?? (v.create === undefined || typeof v.create === "boolean" ? null : "putTemplate: create must be true or false");
     case "updateTemplate": return id("id") ?? (isObject(v.spec) && typeof v.savedAt === "string" ? null : "updateTemplate: spec must be a template spec, savedAt a date");
     case "deleteTemplate": return id("id");
     case "renameTemplate": return id("from") ?? id("to");
@@ -83,6 +84,8 @@ export function applyProfileEdit(doc: ProfilesV3, edit: ProfileEdit, ctx: Profil
       delete chars[edit.name];
       return null;
     case "putTemplate":
+      // the same entry already there is this edit made before
+      if (edit.create && Object.hasOwn(tpls, edit.id) && JSON.stringify(tpls[edit.id]) !== JSON.stringify(edit.entry)) return `there is already a template named ${edit.id}`;
       tpls[edit.id] = edit.entry;
       return null;
     case "updateTemplate":
