@@ -23,7 +23,7 @@
 //
 // map: builder
 // owns: `optimizeSuit`, `scoreSet`, `optDefaultSlots`, `optDefaultOptionalSlots`, `optDominancePrune`
-import { CHANGE_COST, DEFAULT_BUDGET_MS, DEFAULT_FLOOR_BONUS, DEFAULT_RESTARTS, FLOAT_EPS, RESIST_SKILL_KEY, RESIST_STEP_SLACK, TIE_SLACK, changeCost, floorMet, keptValue, scoringProfile, slackAt, stepCredit, type SsiStepPoint } from "../app/solver/scoring.mts";
+import { CHANGE_COST, DEFAULT_BUDGET_MS, DEFAULT_RESTARTS, FLOAT_EPS, RESIST_SKILL_KEY, RESIST_STEP_SLACK, TIE_SLACK, changeCost, floorMet, keptValue, scoringProfile, slackAt, stepCredit, type SsiStepPoint } from "../app/solver/scoring.mts";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -537,7 +537,7 @@ function optGradientProfile(profile: OptProfile): OptProfile {
     weights: profile.weights,
     caps: profile.caps,
     floors: profile.floors,
-    floorBonus: typeof profile.floorBonus === "number" ? profile.floorBonus : DEFAULT_FLOOR_BONUS,
+    floorBonus: scoringProfile(profile).floorBonus,
     floorPartial: 1,
     hardFloors: profile.hardFloors,
     mins: profile.mins,
