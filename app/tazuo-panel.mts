@@ -6,32 +6,20 @@
 // process runs, since a running client saves its own copy over it at logout. The edit merges: every other
 // key and entry is kept, an existing UTF-8 BOM is kept, and the file it replaces is copied to
 // lscript.json.bak first. Whether the panel shows its window at login, and its show/hide hotkey, live in
-// <data>/tazuo-panel.json, which the app (Settings, the wizard) and the panel's own button both write and
-// the panel re-reads.
+// <data>/tazuo-panel.json (app/store/panel-prefs.mts), which the app (Settings, the wizard) and the panel's own
+// button both write and the panel re-reads.
 //
 // map: installer
-// owns: `readPanelPrefs`, `writePanelPrefs`, `addPanelAutostart`, `tazuoRunning`
+// owns: `addPanelAutostart`, `tazuoRunning`
 import { constants, copyFileSync, existsSync, lstatSync, readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { basename, dirname, join } from "node:path";
-import { atomicReplace, readBounded, writeFileAtomic } from "./atomic-write.mts";
-import { panelPrefsOf, type AutostartOutcome, type PanelPrefs } from "./tazuo-panel-prefs.mts";
+import { atomicReplace, writeFileAtomic } from "./atomic-write.mts";
+import type { AutostartOutcome } from "./tazuo-panel-prefs.mts";
 
 export const PANEL_SCRIPT = "packrat-panel.py";
 const MAX_LSCRIPT_BYTES = 1024 * 1024;
 export { HOTKEY_KEYS, HOTKEY_MODS, PANEL_DEFAULTS, panelPrefsError, panelPrefsOf, type AutostartOutcome, type Hotkey, type PanelPrefs } from "./tazuo-panel-prefs.mts";
-
-// The in-game panel writes tazuo-panel.json too, so it is read as untrusted: capped, each field validated.
-const MAX_PANEL_FILE_BYTES = 4096;   // the size packrat-panel.py reads too (MAX_PREFS_BYTES)
-export function readPanelPrefs(path: string): PanelPrefs {
-  let raw: unknown = null;
-  try { const r = readBounded(path, MAX_PANEL_FILE_BYTES); if (!r.tooBig) raw = JSON.parse(r.text); } catch { /* missing or unreadable: the defaults */ }
-  return panelPrefsOf(raw);
-}
-// Written normalised: only hotkey and showAtLogin reach the file.
-export function writePanelPrefs(path: string, prefs: object, mode?: number): void {
-  writeFileAtomic(path, JSON.stringify(panelPrefsOf(prefs), null, 2) + "\n", mode);
-}
 
 // <TazUO>/Data/lscript.json, where <TazUO> is the parent of the nearest folder named LegionScripts at or
 // above the scripts folder (a Script Manager group folder sits inside it). null when there is none, so

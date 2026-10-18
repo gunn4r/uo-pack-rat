@@ -65,6 +65,7 @@
       "electron/**",
       "scripts/optimizer-core.mts",
       "package.json",
+      "tsconfig.browser.json",
       "!**/*.test.mjs",
       "!**/*.test.mts",
       "!local/**",
