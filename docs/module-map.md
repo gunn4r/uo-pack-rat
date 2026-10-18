@@ -147,7 +147,7 @@ Profiles, buffs, pools, solvers, saved runs and Manual. `docs/solver.md` describ
 |---|---|---|
 | `app/bridge-contract.mts` | The bridge protocol this app writes and the limits every packrat-bridge.py enforces on an Organize trip, as plain constants with no I/O, so a planner (app/organize.mts) can use them without loading the trip writer (app/bridge-trip.mts). | `BRIDGE_PROTOCOL`, `TRIP_MAX_BYTES`, `TRIP_NAME_MAX` |
 | `app/bridge-status.mts` | The one reader of a bridge's status.json (docs/bridge-protocol.md, Status), checked against the status schema, with the one "online" definition; the status route and the Organize service read it. | `readBridgeStatus`, `ONLINE_S`, `BridgeStatus`, `BridgeResultRead` |
-| `app/bridge-trip.mts` | The one writer of an Organize trip (issue #11). | `queueTrip`, `writeBridgeStop` |
+| `app/bridge-trip.mts` | The one writer of an Organize trip (issue #11). | `queueTrip` |
 | `app/ui/bridge.mts` | Highlight / Grab / Go-to buttons and the packrat-bridge.py connection status. | `sendBridge`, `runBridgeAction`, `grabAll`, `pollBridge`, `bridgeActionReason`, `bridgeFeatureSet` |
 <!-- module-map:end -->
 
@@ -267,7 +267,7 @@ The route map is checked against the routes `app/http/routes/` registers by `scr
 | `app/migrate.mts` | The one registry of data-file migrations: for each kind of document Pack Rat keeps (scan, profiles, runs, organize, organize-state, item-kinds, house-map, mcp, settings, ui-prefs), the version this build writes and the ordered, numbered, pure steps that bring an older document up to it, each calling its kind's own domain function; a newer document comes back untouched and marked `newer`, and app/fixtures/golden/ holds golden files per version. | `migrate`, `DOC_KINDS`, `DocKind`, `versionOf`, `newerNotice`, `MigrateContext` |
 | `app/read-body.mts` | Reading a request's JSON body under a byte cap, shared by the app server (app/vault-server.mts) and the MCP listener (app/mcp.mts). | `readBody`, `HttpError`, `isJsonContentType` |
 | `app/store/blacklist.mts` | <data>/scan-blacklist.json: the containers scans never open (GET/POST/DELETE /api/blacklist). | `createBlacklistStore` |
-| `app/store/bridge.mts` | <data>/bridge/<adapter>/queue.jsonl: the one writer of an adapter's bridge queue (POST /api/bridge's commands and queueTrip's trips), one JSON line each, which packrat-bridge.py reads and checks itself. | `appendCommand` |
+| `app/store/bridge.mts` | <data>/bridge/<adapter>/: the one writer of an adapter's bridge queue (POST /api/bridge's commands and queueTrip's trips, one JSON line each in queue.jsonl, which packrat-bridge.py reads and checks itself), of the replies the server leaves there for the game scripts (Put away's putaway.json), and of Organize's Stop flag <data>/bridge/stop. | `appendCommand`, `writeReply`, `writeStop` |
 | `app/store/house-claims.mts` | <data>/house-claims.json (issue #299): the houses the player claimed, which the TazUO panel writes too: only valid entries read, which claims a house's bounds fall under, and the claims made at the first start from the houses already named. | `createHouseClaimsStore`, `claimsOver`, `claimsFromHouseMap`, `MAX_CLAIMS` |
 | `app/store/house-map.mts` | <data>/house-map.json (issues #164 and #10, app/house-names.mts): the player's house names and areas, read with a bad file moved aside and what a read left out logged once, and saved one entry at a time (GET /api/houses, GET\|PUT /api/house-map). | `createHouseMapStore`, `readHouseMap`, `saveHouseEntry` |
 | `app/store/item-kinds.mts` | <data>/item-kinds.json: the player's own item kinds (issue #150, app/item-kinds.mts; the /api/item-kinds routes). | `createItemKindsStore` |
@@ -384,7 +384,7 @@ The page is `app/index.html` plus `app/ui/`, compiled by `scripts/build-ui.mts` 
 <!-- module-map:start ui-components -->
 | Module | Role | Owns |
 |---|---|---|
-| `app/ui/components.mts` | The page's component primitives (docs/ui.md), as small DOM builders over dom.mts's el(). | `box`, `txt`, `button`, `input`, `select`, `popover`, `combobox`, `createDrawer`, `openDialog`, `confirmDialog`, `table`, `menu`, `toast`, `resistTile`, `FLEX_CLASSES` |
+| `app/ui/components.mts` | The page's component primitives (docs/ui.md), as small DOM builders over dom.mts's el(). | `box`, `txt`, `button`, `input`, `select`, `popover`, `combobox`, `createDrawer`, `openDialog`, `confirmDialog`, `table`, `menu`, `toast`, `resistTile`, `detailPane`, `FLEX_CLASSES` |
 | `app/ui/dialog.mts` | The one-field prompt dialog, on components.mts's openDialog. | `promptText` |
 | `app/ui/item-browser.mts` | The item browser (issue #12): the filter toolbar and its popovers, the active-filter strip, the columns and density popover, and the virtual table over its data source (GET /api/items by default), as a factory that can be mounted more than once. | `createItemBrowser`, `itemsSource` |
 | `app/ui/item-parts.mts` | The item widgets every screen shares: an item's rarity, tags and location as elements, the row actions (Highlight, Grab, Go to) and the ⋯ menu, and the filter context the filter wording needs. | `rarityEl`, `tagEls`, `locationEl`, `tagWords`, `itemActions`, `itemMenu`, `filterContext`, `setItemNav` |
