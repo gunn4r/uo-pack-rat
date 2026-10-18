@@ -7,14 +7,16 @@ import assert from "node:assert/strict";
 import type { ProfilesV3 } from "./build-spec.mts";
 import { state } from "./ui/store.mts";
 import { applyProfileEdits, type ProfileEdit } from "./profile-edits.mts";
-import { loadProfiles, saveProfiles, setCharacterLabel } from "./ui/profiles.mts";
+import { editProfiles, loadProfiles, saveProfiles, setCharacterLabel } from "./ui/profiles.mts";
 
 type Doc = { characters: Record<string, Record<string, unknown>>; templates: Record<string, unknown> };
-const server = { doc: { characters: {}, templates: {} } as Doc, n: 0, stale: 0, fail: 0, hold: null as Promise<void> | null };
+// `fail`: the next PUTs or PATCHes answered 500 (a PATCH's then takes the server `down` when `downAfter`); `down`: every request fails with no answer at all; `drop`: the next PATCH is saved, then its answer lost
+const server = { doc: { characters: {}, templates: {} } as Doc, n: 0, stale: 0, fail: 0, down: false, downAfter: false, drop: false, hold: null as Promise<void> | null };
 const stamp = (): string => `s${server.n}`;
 const answer = (status: number, body: unknown): Response => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 globalThis.fetch = (async (path: string, init?: RequestInit) => {
   const method = init?.method ?? "GET";
+  if (server.down) throw new TypeError("fetch failed");
   if (path === "/api/profiles" && method === "GET") return answer(200, { ok: true, profiles: structuredClone(server.doc), stamp: stamp(), builtinTemplates: {} });
   if (path === "/api/profiles" && method === "PUT") {
     const { base, ...body } = JSON.parse(String(init!.body)) as Doc & { base: string };
@@ -27,9 +29,11 @@ globalThis.fetch = (async (path: string, init?: RequestInit) => {
   if (path === "/api/profiles" && method === "PATCH") {
     const { edits } = JSON.parse(String(init!.body)) as { edits: ProfileEdit[] };
     if (server.hold) await server.hold;
+    if (server.fail) { server.fail--; server.down = server.downAfter; return answer(500, { ok: false, error: "internal error" }); }
     const was = stamp(), refused = applyProfileEdits(server.doc as unknown as ProfilesV3, edits, { builtins: {}, canLabel: () => true });
     if (refused) return answer(409, { ok: false, code: "conflict", error: refused });
     server.n++;
+    if (server.drop) { server.drop = false; throw new TypeError("fetch failed"); }
     return answer(200, { ok: true, stamp: stamp(), was });
   }
   throw new Error(`unexpected ${method} ${path}`);
@@ -37,7 +41,7 @@ globalThis.fetch = (async (path: string, init?: RequestInit) => {
 
 // A fresh server, and the page holding what it serves.
 function fresh(doc: Doc = { characters: {}, templates: {} }): void {
-  Object.assign(server, { doc: structuredClone(doc), n: 0, stale: 0, fail: 0, hold: null });
+  Object.assign(server, { doc: structuredClone(doc), n: 0, stale: 0, fail: 0, down: false, downAfter: false, drop: false, hold: null });
   state.profiles = structuredClone(doc) as unknown as ProfilesV3;
   state.profilesStamp = stamp();
 }
@@ -168,4 +172,29 @@ test("[fast] profiles: an edit that no longer applies after a reload queued ahea
   assert.equal(r.ok, false);
   assert.equal(r.reloaded, true);
   assert.match(r.error!, /another window/);
+});
+
+test("[fast] profiles: edits that fail while the file can't be read again either are taken back off the copy, and the next save reads the file first", async () => {
+  fresh({ characters: { Bo: { spec: {} } }, templates: {} });
+  server.fail = 1; server.downAfter = true;   // the PATCH fails, and the reload after it finds the server gone
+  const r = await editProfiles([{ op: "setLabel", name: "Bo", label: "Main" }]);
+  server.down = false;
+  assert.deepEqual(r, { ok: false, error: "internal error", reloaded: false });
+  assert.equal((state.profiles!.characters.Bo as { label?: string }).label, undefined, "the page does not show the label as saved");
+  assert.notEqual(state.profilesStamp, stamp(), "the copy's stamp no longer matches the file");
+  // a whole-file save made next is refused as stale, reads the file and makes its own edit again, never carrying the failed one
+  assert.equal((await saveProfiles(put("Next"))).ok, true);
+  assert.equal(server.doc.characters.Bo!.label, undefined);
+  assert.deepEqual(names(), ["Next"]);
+});
+
+test("[fast] profiles: edits whose answer was lost after the server saved them say the change may have been saved, and the copy shows that it was", async () => {
+  fresh({ characters: { Bo: { spec: {} } }, templates: {} });
+  server.drop = true;
+  const r = await editProfiles([{ op: "setLabel", name: "Bo", label: "Main" }]);
+  assert.equal(r.ok, false);
+  assert.equal(r.reloaded, true);
+  assert.match(r.error!, /may have been saved/);
+  assert.equal((state.profiles!.characters.Bo as { label?: string }).label, "Main", "read again: the label is there");
+  assert.equal(state.profilesStamp, stamp());
 });
