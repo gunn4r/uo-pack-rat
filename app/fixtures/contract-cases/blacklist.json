@@ -1,0 +1,27 @@
+{
+  "$comment": "Cases for one entry of <data>/scan-blacklist.json (app/schema/blacklist.v1.schema.json). app/store/stores.test.mts runs each through the app's reader (a valid entry kept, an invalid one dropped) and adapters/test_adapters.py through the scripts' read_blacklist, which keeps an entry when `scripts` is true: the scanners need only a valid serial, so they still skip a container whose entry the app drops, until the app's next write leaves that entry out.",
+  "valid": [
+    { "serial": 1073741825, "name": "A Wooden Chest", "addedAt": "2026-10-18T00:00:00Z", "where": "1520, 1631" },
+    { "serial": 1, "name": "c", "addedAt": "t" },
+    { "serial": 4294967295, "name": "0123456789012345678901234567890123456789012345678901234567890123", "addedAt": "0123456789012345678901234567890123456789", "where": "in 012345678901234567890123456789012345678901234567890123456789" },
+    { "serial": 1073741826, "name": "A Bag", "addedAt": "2026-10-18T00:00:00Z", "note": "a field a newer build adds" }
+  ],
+  "invalid": [
+    { "why": "not an object", "entry": 1073741825, "scripts": false },
+    { "why": "null", "entry": null, "scripts": false },
+    { "why": "no serial", "entry": { "name": "A Chest", "addedAt": "t" }, "scripts": false },
+    { "why": "serial 0", "entry": { "serial": 0, "name": "A Chest", "addedAt": "t" }, "scripts": false },
+    { "why": "a serial past 32 bits", "entry": { "serial": 4294967296, "name": "A Chest", "addedAt": "t" }, "scripts": false },
+    { "why": "a serial that is a string", "entry": { "serial": "1073741825", "name": "A Chest", "addedAt": "t" }, "scripts": false },
+    { "why": "a fractional serial", "entry": { "serial": 1.5, "name": "A Chest", "addedAt": "t" }, "scripts": false },
+    { "why": "a serial that is a boolean", "entry": { "serial": true, "name": "A Chest", "addedAt": "t" }, "scripts": false },
+    { "why": "no name", "entry": { "serial": 1073741825, "addedAt": "t" }, "scripts": true },
+    { "why": "an empty name", "entry": { "serial": 1073741825, "name": "", "addedAt": "t" }, "scripts": true },
+    { "why": "a name past 64 characters", "entry": { "serial": 1073741825, "name": "01234567890123456789012345678901234567890123456789012345678901234", "addedAt": "t" }, "scripts": true },
+    { "why": "a name of 60 characters past 64 UTF-16 units (5 outside the Basic Multilingual Plane)", "entry": { "serial": 1073741825, "name": "📦📦📦📦📦0123456789012345678901234567890123456789012345678901234", "addedAt": "t" }, "scripts": true },
+    { "why": "no addedAt", "entry": { "serial": 1073741825, "name": "A Chest" }, "scripts": true },
+    { "why": "an addedAt past 40 characters", "entry": { "serial": 1073741825, "name": "A Chest", "addedAt": "01234567890123456789012345678901234567890" }, "scripts": true },
+    { "why": "an empty where", "entry": { "serial": 1073741825, "name": "A Chest", "addedAt": "t", "where": "" }, "scripts": true },
+    { "why": "a where that is not a string", "entry": { "serial": 1073741825, "name": "A Chest", "addedAt": "t", "where": [1, 2] }, "scripts": true }
+  ]
+}

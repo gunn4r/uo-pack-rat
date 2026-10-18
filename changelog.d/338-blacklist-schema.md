@@ -1,0 +1,1 @@
+- **For contributors: `scan-blacklist.json` has a schema and shared cases** (issue #338): `app/schema/blacklist.v1.schema.json` describes one blacklisted container, the app checks entries against it, and `app/fixtures/contract-cases/blacklist.json` says what the app keeps and what the game scripts' reader (which needs only the serial) still skips; both test suites run the cases.

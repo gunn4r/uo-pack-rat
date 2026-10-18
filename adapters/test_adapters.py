@@ -621,6 +621,21 @@ class SharedContractCases(unittest.TestCase):
                     json.dump([case["entry"]], out)
                 self.assertEqual(ns["read_claims"](f), [], case["why"])
 
+    def test_blacklist_cases(self):
+        ns = load_shared("read_blacklist")
+        ns.update({"os": os, "json": json})
+        cases = self.cases("blacklist")
+        with tempfile.TemporaryDirectory() as d:
+            f = os.path.join(d, "scan-blacklist.json")
+            for entry in cases["valid"]:
+                with open(f, "w", encoding="utf-8") as out:
+                    json.dump([entry], out)
+                self.assertEqual(ns["read_blacklist"](f), [entry], json.dumps(entry))
+            for case in cases["invalid"]:
+                with open(f, "w", encoding="utf-8") as out:
+                    json.dump([case["entry"]], out)
+                self.assertEqual(ns["read_blacklist"](f), [case["entry"]] if case["scripts"] else [], case["why"])
+
     def test_tazuo_panel_cases(self):
         ns = panel_readers()
         with tempfile.TemporaryDirectory() as d:
