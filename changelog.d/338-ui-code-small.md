@@ -1,1 +1,0 @@
-- **For contributors: code guides at the top of the Characters, Forms and Organize screen docs** (issue #338): each `docs/ui/<screen>.md` opens with a `## Code` section (the modules and what each owns, the state, events and routes, the tests, and how to extend it), and the rest is split into `##` sections by area.

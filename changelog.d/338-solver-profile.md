@@ -1,1 +1,0 @@
-- **For contributors: both solvers read a profile the same way** (issue #338): `scoringProfile` in `app/solver/scoring.mts` fills in the defaults and states the floor rules (a floor at or under its min asks for nothing, a met floor's bonus, the hard floors' shared partial credit) that the optimizer core and the MIP each used to restate. Results are unchanged.

@@ -1,1 +1,0 @@
-- **For contributors: one "load once per inventory" helper** (issue #338): Unravel and Scrolls each kept their own fetch state (fetched-for inventory, error, running fetch) and the same `load()` that refetches when a reload landed meanwhile; both now use `inventoryLoader()` in `app/ui/inventory-data.mts`, beside `fetchAllItems()`. Nothing changes on screen.

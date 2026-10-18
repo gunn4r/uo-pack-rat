@@ -1,1 +1,0 @@
-- **For contributors: the adapter guides say where a client's install step and UO-folder lookup live** (issue #338): `adapters/CLAUDE.md` names `REGISTRARS` and `UO_FOLDER_FINDERS`, and both guides note that the server reads each adapter's `install.uoFolder` once at startup.

@@ -1,1 +1,0 @@
-- **For contributors: a code guide at the top of the House map screen doc** (issue #338): `docs/ui/house-map.md` opens with a `## Code` section (the modules, events, routes, tests and recipes), and its behavior text is split into `##` and `###` sections, its longest line down from 14,931 characters to about 510.

@@ -1,1 +1,0 @@
-- **For contributors: bridge feature resolution moved to `app/domain/bridge-features.mts`** (issue #338): `bridgeFeatures`, `bridgeRefusal`, `newestScanAdapter`, `BRIDGE_ACTION_LABELS` and `BRIDGE_OFFLINE`, re-exported from `app/vault-lib.mts` under the same names. A pure move: no behaviour changes.
