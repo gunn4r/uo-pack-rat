@@ -7,42 +7,22 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import { createRequire } from "node:module";
-import { fitWindow, type RealSize, testEnv, noUpdateCheck, removeTempDir } from "./electron-window.mts";
-import type { ElectronApplication, Page } from "playwright";
+import { join } from "node:path";
+import { fitWindow } from "./electron-window.mts";
+import { launchApp, skipWithoutElectron, tempDataDir, type App } from "./electron-app.mts";
+import type { Page } from "playwright";
 
-const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
-const require_ = createRequire(import.meta.url);
-function unavailable(): string | null {
-  if (process.env.TEST_SKIP_ELECTRON) return "TEST_SKIP_ELECTRON is set";
-  for (const dep of ["electron", "playwright"]) {
-    try { require_.resolve(dep); } catch { return `${dep} is not installed`; }
-  }
-  return null;
-}
-async function launch(dataDir: string, width = 1440): Promise<{ app: ElectronApplication; page: Page; errors: string[]; size: RealSize }> {
-  const { _electron } = await import("playwright");
-  const app = await _electron.launch({ args: [ROOT, "--demo", "--data", noUpdateCheck(dataDir)], cwd: ROOT, timeout: 60_000, env: testEnv() });
-  const page = await app.firstWindow();
-  const errors: string[] = [];
-  page.on("pageerror", (e) => errors.push(String(e)));
-  // The real window, as close to the width under test as the screen allows (scripts/electron-window.mts).
-  const size = await fitWindow(app, page, { width, height: 900 });
-  await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
-  return { app, page, errors, size };
-}
+// The real window, as close to the width under test as the screen allows (scripts/electron-window.mts).
+const launch = (dataDir: string, width = 1440): Promise<App> => launchApp(dataDir, { demo: true, size: { width, height: 900 }, ready: "#inv-table tbody tr.item" });
 const visibleScreens = (page: Page): Promise<string[]> => page.evaluate(() => [...document.querySelectorAll<HTMLElement>("main.screen")].filter((m) => !m.hidden).map((m) => m.id));
 const current = (page: Page): Promise<string[]> => page.evaluate(() => [...document.querySelectorAll<HTMLElement>("#sidebar [aria-current=page]")].map((a) => a.dataset.nav || ""));
 const drawerState = (page: Page, id: string): Promise<[boolean, boolean]> => page.evaluate((i) => { const r = document.getElementById(i)!; return [r.hidden, r.inert] as [boolean, boolean]; }, id);
 
 test("[slow] the shell: screens, routes, drawers, the bridge popover and Settings' shard picker", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   const dataDir = mkdtempSync(join(tmpdir(), "packrat-shell-"));
   writeFileSync(join(dataDir, "settings.json"), JSON.stringify({ schemaVersion: 1, shard: "uoalive", setupDone: true }));
-  const { app, page, errors } = await launch(dataDir);
+  const { page, errors, close } = await launch(dataDir);
   try {
     assert.deepEqual(await visibleScreens(page), ["tab-inventory"]);
     assert.deepEqual(await current(page), ["inventory"]);
@@ -116,16 +96,13 @@ test("[slow] the shell: screens, routes, drawers, the bridge popover and Setting
     assert.equal(await page.evaluate(() => document.activeElement?.id), "bridge", "focus returns to the control");
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
 test("[slow] the sidebar collapses to icons below 1180 px, and pinning it collapsed survives a restart", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const dataDir = mkdtempSync(join(tmpdir(), "packrat-shell-pin-"));
-  writeFileSync(join(dataDir, "settings.json"), JSON.stringify({ schemaVersion: 1, shard: "uoalive", setupDone: true }));
+  if (skipWithoutElectron(t)) return;
+  const dataDir = tempDataDir("packrat-shell-pin-");
   const collapsed = (page: Page): Promise<boolean> => page.evaluate(() => document.getElementById("app")!.classList.contains("collapsed"));
   const sidebarWidth = (page: Page): Promise<number> => page.evaluate(() => document.getElementById("sidebar")!.getBoundingClientRect().width);
   const prefs = (page: Page): Promise<{ sidebar?: string }> => page.evaluate(async () => (await (await fetch("/api/ui-prefs")).json()).prefs);
@@ -154,7 +131,7 @@ test("[slow] the sidebar collapses to icons below 1180 px, and pinning it collap
       await run.page.evaluate(() => fetch("/api/ui-prefs", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ sidebar: "collapsed" }) }));
     }
     assert.deepEqual(run.errors, []);
-  } finally { await run.app.close(); }
+  } finally { await run.close({ keepData: true }); }
   assert.equal(JSON.parse(readFileSync(join(dataDir, "ui-prefs.json"), "utf8")).sidebar, "collapsed");
   run = await launch(dataDir, 1440);
   try {
@@ -166,7 +143,6 @@ test("[slow] the sidebar collapses to icons below 1180 px, and pinning it collap
       assert.equal(await collapsed(run.page), false);
     });
   } finally {
-    await run.app.close();
-    removeTempDir(dataDir);
+    await run.close();
   }
 });

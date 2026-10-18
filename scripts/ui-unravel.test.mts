@@ -7,20 +7,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import { createRequire } from "node:module";
-import { fitWindow, settle, sidewaysAt, testEnv, noUpdateCheck, removeTempDir } from "./electron-window.mts";
+import { join } from "node:path";
+import { settle, sidewaysAt } from "./electron-window.mts";
+import { ROOT, launchApp, skipWithoutElectron } from "./electron-app.mts";
 
-const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
-const require_ = createRequire(import.meta.url);
-function unavailable(): string | null {
-  if (process.env.TEST_SKIP_ELECTRON) return "TEST_SKIP_ELECTRON is set";
-  for (const dep of ["electron", "playwright"]) {
-    try { require_.resolve(dep); } catch { return `${dep} is not installed`; }
-  }
-  return null;
-}
 // The demo scans, with Kestrel at Imbuing 70.
 function seed(dataDir: string): void {
   writeFileSync(join(dataDir, "settings.json"), JSON.stringify({ schemaVersion: 1, shard: "uoalive", setupDone: true }));
@@ -33,18 +23,12 @@ function seed(dataDir: string): void {
 }
 
 test("[slow] the Unravel view forecasts, groups the candidates by ingredient, keeps and unkeeps a piece, and fits at 420 px", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   const dataDir = mkdtempSync(join(tmpdir(), "packrat-unravel-"));
   seed(dataDir);
   const kept = (): unknown => JSON.parse(readFileSync(join(dataDir, "settings.json"), "utf8")).unravelKeep;
-  const { _electron } = await import("playwright");
-  const app = await _electron.launch({ args: [ROOT, "--data", noUpdateCheck(dataDir)], cwd: ROOT, timeout: 60_000, env: testEnv() });
+  const { app, page, errors, close } = await launchApp(dataDir, { size: { width: 1024, height: 768 } });
   try {
-    const page = await app.firstWindow();
-    const errors: string[] = [];
-    page.on("pageerror", (e) => errors.push(String(e)));
-    await fitWindow(app, page, { width: 1024, height: 768 });
     await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
 
     // The fourth view of the Inventory's switch.
@@ -138,8 +122,7 @@ test("[slow] the Unravel view forecasts, groups the candidates by ingredient, ke
     assert.ok(over <= 0, `no sideways scroll at 420 (${over} px)`);
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
@@ -147,8 +130,7 @@ test("[slow] the Unravel view forecasts, groups the candidates by ingredient, ke
 // both kept in ui-prefs.json across a reload; the top stays put while only the list scrolls, and at 420 px the whole view
 // scrolls with nothing sideways.
 test("[slow] the Unravel view folds its groups, condenses its rows, and keeps its top in place while the list scrolls", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   const dataDir = mkdtempSync(join(tmpdir(), "packrat-unravel-polish-"));
   seed(dataDir);
   const uiPrefs = (): Record<string, unknown> => { try { return JSON.parse(readFileSync(join(dataDir, "ui-prefs.json"), "utf8")); } catch { return {}; } };
@@ -156,13 +138,8 @@ test("[slow] the Unravel view folds its groups, condenses its rows, and keeps it
     for (let i = 0; i < 100 && !ok(); i++) await new Promise((r) => setTimeout(r, 100));
     assert.ok(ok(), what);
   };
-  const { _electron } = await import("playwright");
-  const app = await _electron.launch({ args: [ROOT, "--data", noUpdateCheck(dataDir)], cwd: ROOT, timeout: 60_000, env: testEnv() });
+  const { app, page, errors, close } = await launchApp(dataDir, { size: { width: 1024, height: 768 } });
   try {
-    const page = await app.firstWindow();
-    const errors: string[] = [];
-    page.on("pageerror", (e) => errors.push(String(e)));
-    await fitWindow(app, page, { width: 1024, height: 768 });
     await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
     await page.getByRole("radio", { name: "Unravel", exact: true }).click();
     await page.locator(".unr-row").first().waitFor({ timeout: 15_000 });
@@ -229,7 +206,6 @@ test("[slow] the Unravel view folds its groups, condenses its rows, and keeps it
     assert.ok(Math.abs(name!.y - ing!.y) < 8 && ing!.x > name!.x, `one line at 420 (${JSON.stringify([name, ing])})`);
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });

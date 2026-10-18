@@ -5,44 +5,17 @@
 // Each of the first cases is a bug the 2026-09-22 review reproduced in a browser: a refresh resetting the filter while the table stayed filtered, the table showing nothing after a Forget shrank it, Forget re-running the whole page load (duplicated weapon options, the builder jumping to the first character), a build shown under whichever character was selected when it finished, a failed request leaving Settings on "loading…" forever, and no way to forget a character.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, mkdirSync, copyFileSync, readFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync, mkdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import { createRequire } from "node:module";
-import { fitWindow, openFacet, settle, testEnv, noUpdateCheck, completeLines, removeTempDir, pickCharacter, characterNames } from "./electron-window.mts";
-import type { ElectronApplication, Page } from "playwright";
+import { join } from "node:path";
+import { fitWindow, openFacet, settle, removeTempDir, pickCharacter, characterNames } from "./electron-window.mts";
+import { ROOT, launchApp, skipWithoutElectron, tempDataDir, fakeBridge, until, type App, type FakeBridge, type QueuedCommand } from "./electron-app.mts";
+import type { Page } from "playwright";
 
-const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
-const require_ = createRequire(import.meta.url);
-function unavailable(): string | null {
-  if (process.env.TEST_SKIP_ELECTRON) return "TEST_SKIP_ELECTRON is set";
-  for (const dep of ["electron", "playwright"]) {
-    try { require_.resolve(dep); } catch { return `${dep} is not installed`; }
-  }
-  return null;
-}
-
-// A writable data directory holding the two demo scans (not --demo: Forget refuses to write into the
-// committed fixtures). setupDone skips the first-run wizard unless a case wants it.
-function seedDataDir(prefix: string, { setupDone = true } = {}): string {
-  const dataDir = mkdtempSync(join(tmpdir(), prefix));
-  mkdirSync(join(dataDir, "scans"), { recursive: true });
-  for (const f of ["demo-Dorran.json", "demo-Kestrel.json"]) copyFileSync(join(ROOT, "app", "fixtures", f), join(dataDir, "scans", f));
-  if (setupDone) writeFileSync(join(dataDir, "settings.json"), JSON.stringify({ schemaVersion: 1, shard: "uoalive", setupDone: true }));
-  return dataDir;
-}
-async function launch(dataDir: string): Promise<{ app: ElectronApplication; page: Page; errors: string[] }> {
-  const { _electron } = await import("playwright");
-  const app = await _electron.launch({ args: [ROOT, "--data", noUpdateCheck(dataDir)], cwd: ROOT, timeout: 60_000, env: testEnv() });
-  const page = await app.firstWindow();
-  const errors: string[] = [];
-  page.on("pageerror", (e) => errors.push(String(e)));
-  // The real window, as close to 1440 × 900 as the screen allows (scripts/electron-window.mts). Below 1180 px
-  // the facet chips fold into "+ Filter", and pickOption/openFacet reach them there.
-  await fitWindow(app, page, { width: 1440, height: 900 });
-  return { app, page, errors };
-}
+// The data folders hold the two demo scans (tempDataDir's demoScans), not --demo: Forget refuses to write into the committed fixtures.
+// The real window, as close to 1440 × 900 as the screen allows (scripts/electron-window.mts). Below 1180 px the facet chips fold
+// into "+ Filter", and pickOption/openFacet reach them there.
+const launch = (dataDir: string): Promise<App> => launchApp(dataDir, { size: { width: 1440, height: 900 } });
 const countText = (page: Page): Promise<string> => page.locator("#inv-foot .inv-count").innerText();
 // The table fetch is debounced and asynchronous: wait until the footer's count fact shows `want`.
 async function waitCount(page: Page, want: RegExp): Promise<void> {
@@ -79,10 +52,9 @@ async function openTab(page: Page, tab: string): Promise<void> {
 }
 
 test("[slow] refresh, Clear all, the virtual table and Forget keep the page's state", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const dataDir = seedDataDir("packrat-ui-state-");
-  const { app, page, errors } = await launch(dataDir);
+  if (skipWithoutElectron(t)) return;
+  const dataDir = tempDataDir("packrat-ui-state-", { demoScans: true });
+  const { page, errors, close } = await launch(dataDir);
   try {
     await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
 
@@ -172,8 +144,7 @@ test("[slow] refresh, Clear all, the virtual table and Forget keep the page's st
 
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
@@ -181,10 +152,9 @@ test("[slow] refresh, Clear all, the virtual table and Forget keep the page's st
 // selected, ↑/↓ step through the rows with it following, Esc closes it and hands focus back to the row,
 // and focusing a row for 400 ms shows the item tooltip.
 test("[slow] the item peek opens from a row, follows the arrow keys and closes with Esc", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const dataDir = seedDataDir("packrat-ui-peek-");
-  const { app, page, errors } = await launch(dataDir);
+  if (skipWithoutElectron(t)) return;
+  const dataDir = tempDataDir("packrat-ui-peek-", { demoScans: true });
+  const { page, errors, close } = await launch(dataDir);
   try {
     const rows = page.locator("#inv-table tbody tr.item");
     await rows.first().waitFor({ timeout: 30_000 });
@@ -251,16 +221,14 @@ test("[slow] the item peek opens from a row, follows the arrow keys and closes w
     await page.keyboard.press("Escape");
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
 test("[slow] a build finished for one character is never shown under another", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const dataDir = seedDataDir("packrat-ui-build-");
-  const { app, page, errors } = await launch(dataDir);
+  if (skipWithoutElectron(t)) return;
+  const dataDir = tempDataDir("packrat-ui-build-", { demoScans: true });
+  const { page, errors, close } = await launch(dataDir);
   try {
     await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
     await openTab(page, "builder");
@@ -289,8 +257,7 @@ test("[slow] a build finished for one character is never shown under another", a
 
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
@@ -298,10 +265,9 @@ test("[slow] a build finished for one character is never shown under another", a
 // never drop it on <body>: to the result's heading when it finishes, to "Build again" when cancelled, and back
 // to Build when the build could not start.
 test("[slow] focus moves on, not to the page body, when a build finishes, is cancelled or fails", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const dataDir = seedDataDir("packrat-ui-buildfocus-");
-  const { app, page, errors } = await launch(dataDir);
+  if (skipWithoutElectron(t)) return;
+  const dataDir = tempDataDir("packrat-ui-buildfocus-", { demoScans: true });
+  const { page, errors, close } = await launch(dataDir);
   const active = (): Promise<{ tag: string; id: string; text: string }> => page.evaluate(() => { const a = document.activeElement as HTMLElement; return { tag: a.tagName, id: a.id, text: (a.innerText || "").trim() }; });
   try {
     await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
@@ -335,19 +301,17 @@ test("[slow] focus moves on, not to the page body, when a build finishes, is can
     await page.unroute("**/api/optimize");
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
 // With no scans there is no character: the Build and save buttons are disabled and say why, rather than staying live
 // and only answering with a toast.
 test("[slow] with no character, Build, Save profile and Save as template are disabled with the reason", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   const dataDir = mkdtempSync(join(tmpdir(), "packrat-ui-nochar-"));
   writeFileSync(join(dataDir, "settings.json"), JSON.stringify({ schemaVersion: 1, shard: "uoalive", setupDone: true }));
-  const { app, page, errors } = await launch(dataDir);
+  const { page, errors, close } = await launch(dataDir);
   try {
     await openTab(page, "builder");
     await page.waitForSelector("#b-no-char", { state: "attached" });
@@ -362,16 +326,14 @@ test("[slow] with no character, Build, Save profile and Save as template are dis
     assert.equal(await page.locator("#b-chg").isVisible(), false);
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
 test("[slow] a character's sheet opens from the roster, and a character can be forgotten from its row menu", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const dataDir = seedDataDir("packrat-ui-forgetchar-");
-  const { app, page, errors } = await launch(dataDir);
+  if (skipWithoutElectron(t)) return;
+  const dataDir = tempDataDir("packrat-ui-forgetchar-", { demoScans: true });
+  const { page, errors, close } = await launch(dataDir);
   try {
     await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
     await openTab(page, "characters");
@@ -433,17 +395,15 @@ test("[slow] a character's sheet opens from the roster, and a character can be f
 
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
 test("[slow] a failed request during load shows an error, renders Settings and still opens the wizard", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   // No settings.json: a first run, so the wizard should open whatever the inventory fetch does.
-  const dataDir = seedDataDir("packrat-ui-loadfail-", { setupDone: false });
-  const { app, page } = await launch(dataDir);
+  const dataDir = tempDataDir("packrat-ui-loadfail-", { demoScans: true, settings: null });
+  const { page, close } = await launch(dataDir);
   try {
     await page.waitForSelector("#status", { state: "attached", timeout: 30_000 });   // attached, not visible: a narrow window collapses the sidebar, which hides the status line
     await page.route("**/api/profiles", (route) => route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ ok: false, error: "internal error" }) }));
@@ -457,21 +417,19 @@ test("[slow] a failed request during load shows an error, renders Settings and s
     await openTab(page, "builder");
     assert.match(await page.locator("#b-result").innerText(), /\/api\/profiles/, "the Suit Builder names the request that failed");
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
 // The desktop app serves the page from a new port on every launch, so a column choice kept in
 // localStorage (scoped to one origin) was gone at the next start. It is kept by the server now.
 test("[slow] the Inventory column choice survives a restart of the desktop app", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const dataDir = seedDataDir("packrat-ui-cols-");
+  if (skipWithoutElectron(t)) return;
+  const dataDir = tempDataDir("packrat-ui-cols-", { demoScans: true });
   try {
     let chip: string, origin: string;
     {
-      const { app, page } = await launch(dataDir);
+      const { page, close } = await launch(dataDir);
       try {
         await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
         origin = new URL(page.url()).origin;
@@ -485,10 +443,10 @@ test("[slow] the Inventory column choice survives a restart of the desktop app",
         // The PUT is fire-and-forget from the page; wait until the server has it.
         await page.waitForFunction(async () => ((await (await fetch("/api/ui-prefs")).json()).prefs.cols || []).length > 0, undefined, { timeout: 10_000 });
       } finally {
-        await app.close();
+        await close({ keepData: true });
       }
     }
-    const { app, page } = await launch(dataDir);
+    const { page, close } = await launch(dataDir);
     try {
       await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
       assert.notEqual(new URL(page.url()).origin, origin, "a new launch is a new origin");
@@ -496,7 +454,7 @@ test("[slow] the Inventory column choice survives a restart of the desktop app",
       await page.click("#inv-settings");
       assert.equal(await page.locator(`#inv-cols input[data-col="${chip}"]`).isChecked(), true, `the ${chip} column is still chosen after a restart`);
     } finally {
-      await app.close();
+      await close({ keepData: true });
     }
   } finally {
     removeTempDir(dataDir);
@@ -506,10 +464,9 @@ test("[slow] the Inventory column choice survives a restart of the desktop app",
 // The sheet's Properties card lists the chosen properties (issue #47): the default set carries the three
 // leeches, the "Properties shown" popover adds and removes rows, and Reset puts the default back.
 test("[slow] the character sheet's shown properties are chosen in a popover and reset", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const dataDir = seedDataDir("packrat-ui-sheetprops-");
-  const { app, page, errors } = await launch(dataDir);
+  if (skipWithoutElectron(t)) return;
+  const dataDir = tempDataDir("packrat-ui-sheetprops-", { demoScans: true });
+  const { page, errors, close } = await launch(dataDir);
   try {
     await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
     await page.evaluate(() => { location.hash = "#/characters/Dorran"; });
@@ -530,8 +487,7 @@ test("[slow] the character sheet's shown properties are chosen in a popover and 
     assert.ok(reset.includes("Hit Chance") && reset.includes("Hit Life Leech") && !reset.includes("Hit Fireball"), `Reset puts the default back, got ${JSON.stringify(reset)}`);
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
@@ -539,12 +495,11 @@ test("[slow] the character sheet's shown properties are chosen in a popover and 
 // durability 12/150" badge on its slot tile, inside the tile, and the sheet a one-line summary; Kestrel, with nothing
 // low, gets neither; the roster badges "1 low" beside Dorran's name, in the sticky Character column.
 test("[slow] a worn piece low on durability is badged on the sheet and beside its character's name on the roster", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const dataDir = seedDataDir("packrat-ui-durability-");
+  if (skipWithoutElectron(t)) return;
+  const dataDir = tempDataDir("packrat-ui-durability-", { demoScans: true });
   const scan = join(dataDir, "scans", "demo-Dorran.json");
   writeFileSync(scan, readFileSync(scan, "utf8").replace('"Durability 150 / 150"', '"Durability 12 / 150"'));
-  const { app, page, errors } = await launch(dataDir);
+  const { page, errors, close } = await launch(dataDir);
   try {
     await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
     await page.evaluate(() => { location.hash = "#/characters/Dorran"; });
@@ -577,8 +532,7 @@ test("[slow] a worn piece low on durability is badged on the sheet and beside it
     assert.equal(await page.locator('#char-table tr[data-name="Kestrel"] .badge').count(), 0, "nothing low, no badge");
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
@@ -586,14 +540,13 @@ test("[slow] a worn piece low on durability is badged on the sheet and beside it
 // Fire 72, Cold 41, Poison 32 and Energy 60. The minimum of 40 holds Physical and Poison up, which the tiles show and
 // the footnote names; the others are the gear's own, Fire capped at 70.
 test("[slow] the character sheet holds each resist at the Resisting Spells minimum and says which ones it lifts", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const dataDir = seedDataDir("packrat-ui-resistmin-");
+  if (skipWithoutElectron(t)) return;
+  const dataDir = tempDataDir("packrat-ui-resistmin-", { demoScans: true });
   const scan = join(dataDir, "scans", "demo-Dorran.json");
   const raw = readFileSync(scan, "utf8"), edited = raw.replace('"skills": {},', '"skills": { "Resisting Spells": { "base": 100, "value": 100, "cap": 100 } },');
   assert.notEqual(edited, raw, "the demo scan's empty skills were found and given Resisting Spells 100");
   writeFileSync(scan, edited);
-  const { app, page, errors } = await launch(dataDir);
+  const { page, errors, close } = await launch(dataDir);
   try {
     await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
     await page.evaluate(() => { location.hash = "#/characters/Dorran"; });
@@ -603,18 +556,16 @@ test("[slow] the character sheet holds each resist at the Resisting Spells minim
     assert.equal(await page.locator("#tab-characters .sheet-foot > p").innerText(), "Resists are capped at 70, and Resisting Spells keeps each at 40 or more. Physical 40, Poison 40: the Resisting Spells minimum.");
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
 // Inventory columns resize from the keyboard (issue #46): → on a header's resize handle widens the header
 // and the rows' cells with it, and table settings' "Reset column widths" puts the default back.
 test("[slow] an Inventory column is resized with the keyboard and reset in table settings", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const dataDir = seedDataDir("packrat-ui-colwidths-");
-  const { app, page, errors } = await launch(dataDir);
+  if (skipWithoutElectron(t)) return;
+  const dataDir = tempDataDir("packrat-ui-colwidths-", { demoScans: true });
+  const { page, errors, close } = await launch(dataDir);
   try {
     await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
     const widths = (): Promise<[number, number]> => page.evaluate(() => {
@@ -635,8 +586,7 @@ test("[slow] an Inventory column is resized with the keyboard and reset in table
     assert.deepEqual(await widths(), [head, cell], "Reset puts the default width back");
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
@@ -644,10 +594,9 @@ test("[slow] an Inventory column is resized with the keyboard and reset in table
 // drawing, and loadRuns fetches the list. A character switch during either must not draw one
 // character's run (or list) under another.
 test("[slow] a saved run or run list that lands after a character switch is not shown under the new character", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const dataDir = seedDataDir("packrat-ui-runs-");
-  const { app, page, errors } = await launch(dataDir);
+  if (skipWithoutElectron(t)) return;
+  const dataDir = tempDataDir("packrat-ui-runs-", { demoScans: true });
+  const { page, errors, close } = await launch(dataDir);
   try {
     await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
     await openTab(page, "builder");
@@ -681,8 +630,7 @@ test("[slow] a saved run or run list that lands after a character switch is not 
 
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
@@ -691,19 +639,14 @@ test("[slow] a saved run or run list that lands after a character switch is not 
 // lands on Settings › Data, where the full sentence names both folders; Dismiss hides it. The client is planted
 // in the test's own temp home (testEnv), never a real one.
 test("[slow] the data-folder banner is one line above every screen, which fits below it, and leads to Settings › Data", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const dataDir = seedDataDir("packrat-ui-notice-");
+  if (skipWithoutElectron(t)) return;
+  const dataDir = tempDataDir("packrat-ui-notice-", { demoScans: true });
   const home = mkdtempSync(join(tmpdir(), "packrat-ui-notice-home-"));
   const scripts = join(home, "Desktop", "TazUO", "TazUO", "LegionScripts");
   mkdirSync(scripts, { recursive: true });
   writeFileSync(join(scripts, "packrat-scanner.py"), "# planted by the test\n");
   writeFileSync(join(scripts, "packrat-paths.json"), JSON.stringify({ dataDir: join(home, "elsewhere") }));
-  const { _electron } = await import("playwright");
-  const app = await _electron.launch({ args: [ROOT, "--data", noUpdateCheck(dataDir)], cwd: ROOT, timeout: 60_000, env: testEnv({}, home) });
-  const page = await app.firstWindow();
-  const errors: string[] = [];
-  page.on("pageerror", (e) => errors.push(String(e)));
+  const { app, page, errors, close } = await launchApp(dataDir, { home });
   try {
     for (const size of [{ width: 1440, height: 900 }, { width: 1024, height: 700 }]) {
       const real = await fitWindow(app, page, size);
@@ -730,8 +673,7 @@ test("[slow] the data-folder banner is one line above every screen, which fits b
     await page.waitForSelector("#notice", { state: "hidden" });
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
     removeTempDir(home);
   }
 });
@@ -739,10 +681,9 @@ test("[slow] the data-folder banner is one line above every screen, which fits b
 // Issue #38: a ground container blacklisted from its ⋯ menu in Containers (Remove also forgets what was
 // scanned in it), listed in Settings › Data, and unblacklisted there.
 test("[slow] a ground container is blacklisted from Containers and unblacklisted in Settings", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const dataDir = seedDataDir("packrat-ui-blacklist-");
-  const { app, page, errors } = await launch(dataDir);
+  if (skipWithoutElectron(t)) return;
+  const dataDir = tempDataDir("packrat-ui-blacklist-", { demoScans: true });
+  const { page, errors, close } = await launch(dataDir);
   try {
     await openTab(page, "containers");
     const rows = page.locator("#cont-table tbody tr[data-root]");
@@ -766,8 +707,7 @@ test("[slow] a ground container is blacklisted from Containers and unblacklisted
     assert.deepEqual(JSON.parse(readFileSync(join(dataDir, "scan-blacklist.json"), "utf8")), []);
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
@@ -775,16 +715,15 @@ test("[slow] a ground container is blacklisted from Containers and unblacklisted
 // and with 64 fewer gold. Its row carries a "3 missing" badge and its menu Show missing items, whose dialog lists
 // them, each row with its item tooltip (drawn inside the dialog, and still on the page after it closes); Dorran's chest, scanned once, has neither. Recent stamps, or retention prunes the older scan at startup.
 test("[slow] a container with items missing since its last scan shows a badge and lists them", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const dataDir = seedDataDir("packrat-ui-missing-");
+  if (skipWithoutElectron(t)) return;
+  const dataDir = tempDataDir("packrat-ui-missing-", { demoScans: true });
   const kestrel = JSON.parse(readFileSync(join(ROOT, "app", "fixtures", "demo-Kestrel.json"), "utf8")) as { items: Array<{ name: string; amount: number; tooltip: string[] }> };
   const day = (n: number): string => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 19);   // v1 stamps are naive local time
   const later = kestrel.items.filter((it) => it.name !== "Runebook" && it.name !== "Drum")
     .map((it) => (it.name === "Gold Coin" ? { ...it, amount: it.amount - 64, tooltip: [`${it.amount - 64} Gold Coin`] } : it));
   writeFileSync(join(dataDir, "scans", "demo-Kestrel.json"), JSON.stringify({ ...kestrel, scannedAt: day(2) }));
   writeFileSync(join(dataDir, "scans", "demo-Kestrel-2.json"), JSON.stringify({ ...kestrel, scannedAt: day(1), items: later }));
-  const { app, page, errors } = await launch(dataDir);
+  const { page, errors, close } = await launch(dataDir);
   try {
     await openTab(page, "containers");
     const row = page.locator('#cont-table tr[data-root="1879769088"]');   // Kestrel's chest, 0x700b0000
@@ -818,21 +757,17 @@ test("[slow] a container with items missing since its last scan shows a badge an
     await page.waitForFunction(() => getComputedStyle(document.querySelector("#tip")!).display === "block", undefined, { timeout: 10_000 });
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
 // Highlight in game (issue #10): a ground container's row menu queues the bridge's highlight for the container
 // itself, with no chain (nothing to open) and its scanned tile; offline, the item is disabled with the reason.
 test("[slow] Highlight in game queues a highlight for a ground container, and is disabled while the bridge is offline", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const dataDir = seedDataDir("packrat-ui-highlight-");
-  const bridgeDir = join(dataDir, "bridge", "tazuo");
-  mkdirSync(bridgeDir, { recursive: true });
-  const { app, page, errors } = await launch(dataDir);
-  let alive: NodeJS.Timeout | undefined;
+  if (skipWithoutElectron(t)) return;
+  const dataDir = tempDataDir("packrat-ui-highlight-", { demoScans: true });
+  const { page, errors, close } = await launch(dataDir);
+  let bridge: FakeBridge | undefined;
   try {
     await openTab(page, "containers");
     const row = page.locator("#cont-table tbody tr[data-root]").last();   // the demo's roots are all ground containers
@@ -844,40 +779,29 @@ test("[slow] Highlight in game queues a highlight for a ground container, and is
     assert.match(await item.getAttribute("title") || "", /^Bridge offline/);
     await page.keyboard.press("Escape");
 
-    // The bridge, as far as the page can tell: a status file refreshed every second.
-    const writeStatus = (): void => writeFileSync(join(bridgeDir, "status.json"), JSON.stringify({ alive: new Date().toISOString(), character: "Tester", current: null, counts: { done: 0, failed: 0 }, results: {} }));
-    writeStatus();
-    alive = setInterval(writeStatus, 1000);
+    bridge = fakeBridge(dataDir);
     await page.waitForFunction(() => document.querySelector("#bridge")?.getAttribute("data-state") === "ready", undefined, { timeout: 15_000 });
     await row.getByRole("button", { name: /^Actions for / }).click();
     await item.click();
-    const queue = join(bridgeDir, "queue.jsonl");
-    const end = Date.now() + 10_000;
-    let lines: string[] = [];
-    while (!lines.length && Date.now() < end) {
-      await page.waitForTimeout(100);
-      lines = completeLines(queue);
-    }
+    const lines = await until(() => bridge!.queue<QueuedCommand & { serial: number; name: string; chain: number[]; pos: { x: number; y: number } | null }>(), (l) => l.length > 0, "a queued command");
     assert.equal(lines.length, 1, "one command queued");
-    const cmd = JSON.parse(lines[0]!) as { action: string; serial: number; name: string; chain: number[]; pos: { x: number; y: number } | null };
+    const cmd = lines[0]!;
     assert.deepEqual([cmd.action, cmd.serial, cmd.chain], ["highlight", serial, []]);
     assert.equal(cmd.name, "Metal Chest");
     assert.deepEqual([cmd.pos?.x, cmd.pos?.y], [1000, 1000]);
     assert.deepEqual(errors, []);
   } finally {
-    clearInterval(alive);
-    await app.close();
-    removeTempDir(dataDir);
+    bridge?.stop();
+    await close();
   }
 });
 
 // Rarity at most (issue #11): the Rarity popover's second list caps the tier. The strip and the chip say
 // so, and every tier left in the table is the one picked or a lower one.
 test("[slow] Rarity at most keeps the tier picked and the ones below it", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const dataDir = seedDataDir("packrat-ui-raritymax-");
-  const { app, page, errors } = await launch(dataDir);
+  if (skipWithoutElectron(t)) return;
+  const dataDir = tempDataDir("packrat-ui-raritymax-", { demoScans: true });
+  const { page, errors, close } = await launch(dataDir);
   try {
     await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
     await openFacet(page, "rarity", "Rarity");
@@ -890,16 +814,14 @@ test("[slow] Rarity at most keeps the tier picked and the ones below it", async 
     }
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
 test("[slow] a yes/no property picked in the property rule narrows the rows to the items that have it (issue #182)", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const dataDir = seedDataDir("packrat-ui-flag-");
-  const { app, page, errors } = await launch(dataDir);
+  if (skipWithoutElectron(t)) return;
+  const dataDir = tempDataDir("packrat-ui-flag-", { demoScans: true });
+  const { app, page, errors, close } = await launch(dataDir);
   try {
     await fitWindow(app, page, { width: 1024, height: 768 });
     await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
@@ -919,16 +841,14 @@ test("[slow] a yes/no property picked in the property rule narrows the rows to t
     await waitCount(page, /^[\d,]+ stacks/);
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
 test("[slow] Swordsmanship picked in the Weapon skill chip narrows the rows to swords (issue #188)", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const dataDir = seedDataDir("packrat-ui-wskill-");
-  const { app, page, errors } = await launch(dataDir);
+  if (skipWithoutElectron(t)) return;
+  const dataDir = tempDataDir("packrat-ui-wskill-", { demoScans: true });
+  const { app, page, errors, close } = await launch(dataDir);
   try {
     await fitWindow(app, page, { width: 1024, height: 768 });
     await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
@@ -943,16 +863,14 @@ test("[slow] Swordsmanship picked in the Weapon skill chip narrows the rows to s
     assert.ok(rows.length > 0 && rows.every((r) => swords.some((s) => r.includes(s))), JSON.stringify(rows));
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
 
 test("[slow] the Slayer filter lists each super slayer above its lesser slayers, and picking one narrows the rows (issue #189)", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
-  const dataDir = seedDataDir("packrat-ui-slayer-");
-  const { app, page, errors } = await launch(dataDir);
+  if (skipWithoutElectron(t)) return;
+  const dataDir = tempDataDir("packrat-ui-slayer-", { demoScans: true });
+  const { app, page, errors, close } = await launch(dataDir);
   try {
     await fitWindow(app, page, { width: 1024, height: 768 });
     await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
@@ -971,7 +889,6 @@ test("[slow] the Slayer filter lists each super slayer above its lesser slayers,
     assert.equal(await page.locator("#inv-table tbody tr.item").count(), Number(count));
     assert.deepEqual(errors, []);
   } finally {
-    await app.close();
-    removeTempDir(dataDir);
+    await close();
   }
 });
