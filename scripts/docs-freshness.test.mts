@@ -22,7 +22,7 @@ const BUDGETS: Record<string, number> = {
   "app/fixtures/README.md": 5000,
   "app/schema/README.md": 5000,
   "build/README.md": 3000,
-  "CLAUDE.md": 8000,
+  "CLAUDE.md": 7000,
   "CODE_OF_CONDUCT.md": 3000,
   "CONTRIBUTING.md": 21000,
   "docs/adapter-guide.md": 33000,
