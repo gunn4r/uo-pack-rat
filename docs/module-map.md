@@ -220,8 +220,9 @@ The thresholds are the shard rules' `unravel` (Shard rules, above); `GET /api/it
 <!-- module-map:start api -->
 | Module | Role | Owns |
 |---|---|---|
-| `app/api/inventory.mts` | What the inventory routes answer (app/http/routes/inventory.mts): GET /api/inventory's fold summary, GET /api/missing, GET /api/items in its rows, groups and hits forms, and GET /api/items/by-serial. | `InventoryData`, `InventoryApiResponse`, `MissingApiResponse`, `ItemsApiResponse`, `ItemHitsApiResponse`, `ItemsBySerialApiResponse` |
-| `app/api/routes.mts` | The HTTP API's route map: every /api route the server registers (app/http/routes/), keyed "METHOD /path" with a path parameter written <name>, and the type of what it answers with 200 (`res`) and of the JSON body it reads (`body`). | `ApiRoutes`, `ApiEntry`, `Untyped`, `EventStream`, `Png`, `ApiResponse`, `ApiBody` |
+| `app/api/bridge.mts` | What the bridge routes answer (app/http/routes/bridge.mts): GET /api/bridge/status, the command a POST /api/bridge queued, and POST /api/bridge/stop's acknowledgement. | `BridgeCurrentCommand`, `TripStepResult`, `BridgeResultEntry`, `BridgeAdapterReport`, `BridgeStatusApiResponse`, `BridgeQueueApiResponse` |
+| `app/api/inventory.mts` | What the inventory routes answer (app/http/routes/inventory.mts): GET /api/inventory's fold summary, GET /api/missing, GET /api/items in its rows, groups and hits forms, GET /api/items/by-serial, the scan blacklist and Forget. | `InventoryData`, `InventoryApiResponse`, `MissingApiResponse`, `ItemsApiResponse`, `ItemHitsApiResponse`, `ItemsBySerialApiResponse`, `BlacklistApiResponse`, `BlacklistPostBody`, `ForgetApiResponse` |
+| `app/api/routes.mts` | The HTTP API's route map: every /api route the server registers (app/http/routes/), keyed "METHOD /path" with a path parameter written <name>, and the type of what it answers with 200 (`res`) and of the JSON body it reads (`body`). | `ApiRoutes`, `ApiEntry`, `OkApiResponse`, `Untyped`, `EventStream`, `Png`, `ApiResponse`, `ApiBody` |
 | `app/api/setup.mts` | What the setup and settings routes answer and take (app/http/routes/setup.mts, settings.mts): settings.json as the server reports it, the shard's rules, the setup wizard's adapters, locate and install, the paste scanner, the update check and the retention clean-up. | `ClientSettings`, `Retention`, `SettingsData`, `SettingsApiResponse`, `SettingsPutBody`, `CleanupBody`, `CleanupApiResponse`, `ShardOption`, `RulesApiResponse`, `AdapterSummary`, `AdapterCapabilities`, `InstalledVersionInfo`, `SetupApiResponse`, `PasteScannerApiResponse`, `LocateApiResponse`, `InstallApiResponse`, `UpdateCheckApiResponse`, `LocateBody`, `InstallBody` |
 <!-- module-map:end -->
 
@@ -357,7 +358,7 @@ The page is `app/index.html` plus `app/ui/`, compiled by `scripts/build-ui.mts` 
 <!-- module-map:start ui-infra -->
 | Module | Role | Owns |
 |---|---|---|
-| `app/ui/api-types.mts` | Every response shape the page reads off its own fetches: the house, Organize and saved-run shapes re-exported from the types-only modules (runs narrowed), the settings and setup shapes from app/api/setup.mts and the inventory shapes from app/api/inventory.mts, the rest declared here. | the hand-declared `*ApiResponse` types |
+| `app/ui/api-types.mts` | Every response shape the page reads off its own fetches: the house, Organize and saved-run shapes re-exported from the types-only modules (runs narrowed), the settings and setup shapes from app/api/setup.mts the inventory shapes from app/api/inventory.mts and the bridge's from app/api/bridge.mts, the rest declared here. | the hand-declared `*ApiResponse` types |
 | `app/ui/api.mts` | The one place every page fetch goes through (Task 4, localhost security). | `api`, `CLIENT_ID` |
 | `app/ui/dom.mts` | DOM helpers, formatting/label helpers, rarity, and the in-game style hover tooltip. | `el`, `$`, `fmtN`, `slotLabel`, `rarityColor`, `toast`, `installTooltip` |
 | `app/ui/events.mts` | The one shared EventSource("/api/events") for the page's life (Task 3, Phase 4). | `connectEvents` |

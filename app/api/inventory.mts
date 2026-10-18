@@ -1,8 +1,8 @@
-// inventory.mts — what the inventory routes answer (app/http/routes/inventory.mts): GET /api/inventory's fold summary, GET /api/missing, GET /api/items in its rows, groups and hits forms, and GET /api/items/by-serial. Types only and node-free, so the routes `satisfies` these, the page re-exports them (app/ui/api-types.mts) and the route map names them (app/api/routes.mts).
+// inventory.mts — what the inventory routes answer (app/http/routes/inventory.mts): GET /api/inventory's fold summary, GET /api/missing, GET /api/items in its rows, groups and hits forms, GET /api/items/by-serial, the scan blacklist and Forget. Types only and node-free, so the routes `satisfies` these, the page re-exports them (app/ui/api-types.mts) and the route map names them (app/api/routes.mts).
 //
 // map: api
-// owns: `InventoryData`, `InventoryApiResponse`, `MissingApiResponse`, `ItemsApiResponse`, `ItemHitsApiResponse`, `ItemsBySerialApiResponse`
-import type { Item, Container, Character, ScanSummary } from "../vault-lib.mts";
+// owns: `InventoryData`, `InventoryApiResponse`, `MissingApiResponse`, `ItemsApiResponse`, `ItemHitsApiResponse`, `ItemsBySerialApiResponse`, `BlacklistApiResponse`, `BlacklistPostBody`, `ForgetApiResponse`
+import type { Item, Container, Character, ScanSummary, BlacklistEntry } from "../vault-lib.mts";
 import type { Facets, ItemQueryRows, ItemQueryGroups, HitRow } from "../item-query.mts";
 import type { MissingItem } from "../missing.mts";
 
@@ -39,4 +39,16 @@ export interface ItemHitsApiResponse { ok: boolean; total: number; offset: numbe
 export interface ItemsBySerialApiResponse {
   ok: boolean;
   items: Record<string, Item>;
+}
+
+// GET /api/blacklist: the containers scans never open (`<data>/scan-blacklist.json`). POST adds one, DELETE
+// /api/blacklist/<serial> takes one off; both answer {ok}.
+export interface BlacklistApiResponse {
+  ok: boolean;
+  containers: BlacklistEntry[];
+}
+export interface BlacklistPostBody { serial: number; name: string; where?: string }
+// POST /api/forget {root} and /api/forget-character {character}: the tombstone scan was written.
+export interface ForgetApiResponse {
+  ok: boolean;
 }

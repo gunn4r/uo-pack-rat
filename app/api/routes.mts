@@ -5,15 +5,18 @@
 // `satisfies` it.
 //
 // map: api
-// owns: `ApiRoutes`, `ApiEntry`, `Untyped`, `EventStream`, `Png`, `ApiResponse`, `ApiBody`
+// owns: `ApiRoutes`, `ApiEntry`, `OkApiResponse`, `Untyped`, `EventStream`, `Png`, `ApiResponse`, `ApiBody`
+import type { BridgeQueueApiResponse, BridgeStatusApiResponse } from "./bridge.mts";
 import type { HouseApiResponse, HousesApiResponse } from "../house-model-types.mts";
-import type { InventoryApiResponse, ItemHitsApiResponse, ItemsApiResponse, ItemsBySerialApiResponse, MissingApiResponse } from "./inventory.mts";
+import type { BlacklistApiResponse, BlacklistPostBody, ForgetApiResponse, InventoryApiResponse, ItemHitsApiResponse, ItemsApiResponse, ItemsBySerialApiResponse, MissingApiResponse } from "./inventory.mts";
 import type { OrganizePlanApiResponse, OrganizeProposeApiResponse, OrganizeProposeBody } from "../organize-types.mts";
 import type { RunBody, RunsListBody, RunSummary } from "../runs-types.mts";
 import type { CleanupApiResponse, CleanupBody, InstallApiResponse, InstallBody, LocateApiResponse, LocateBody, PasteScannerApiResponse, RulesApiResponse, SettingsApiResponse, SettingsPutBody, SetupApiResponse, UpdateCheckApiResponse } from "./setup.mts";
 
 // One route: what it answers with 200, and the JSON body it reads (undefined: none).
 export interface ApiEntry<Res, Body = undefined> { res: Res; body: Body }
+// The plain acknowledgement many routes answer with.
+export interface OkApiResponse { ok: boolean }
 // A route whose answer and body have no shared type yet: the handler's shape is all there is.
 export type Untyped = ApiEntry<unknown, unknown>;
 // Answers that are not JSON.
@@ -22,16 +25,16 @@ export interface Png { readonly kind: "image/png" }
 
 export interface ApiRoutes {
   // blacklist.mts
-  "GET /api/blacklist": Untyped;
-  "POST /api/blacklist": Untyped;
-  "DELETE /api/blacklist/<serial>": Untyped;
+  "GET /api/blacklist": ApiEntry<BlacklistApiResponse>;
+  "POST /api/blacklist": ApiEntry<OkApiResponse, BlacklistPostBody>;
+  "DELETE /api/blacklist/<serial>": ApiEntry<OkApiResponse>;
   // bridge.mts
-  "POST /api/bridge": Untyped;
-  "POST /api/bridge/stop": Untyped;
-  "GET /api/bridge/status": Untyped;
+  "POST /api/bridge": ApiEntry<BridgeQueueApiResponse, unknown>;
+  "POST /api/bridge/stop": ApiEntry<OkApiResponse, Record<string, never>>;
+  "GET /api/bridge/status": ApiEntry<BridgeStatusApiResponse>;
   // forget.mts
-  "POST /api/forget": Untyped;
-  "POST /api/forget-character": Untyped;
+  "POST /api/forget": ApiEntry<ForgetApiResponse, unknown>;
+  "POST /api/forget-character": ApiEntry<ForgetApiResponse, { character: string }>;
   // host.mts
   "POST /api/host/pick-folder": Untyped;
   "POST /api/host/open-path": Untyped;

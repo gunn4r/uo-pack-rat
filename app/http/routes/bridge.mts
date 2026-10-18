@@ -18,9 +18,12 @@ import { isBoundedString } from "../../guards.mts";
 import { addGrab } from "../../organize-state.mts";
 import { readBody } from "../../read-body.mts";
 import { validate, type ValidatorSchema } from "../../schema/validate.mts";
+import type { BridgeV1Status } from "../../schema/types.d.mts";
 import { send, asObject } from "../respond.mts";
 import { APP_DIR } from "../../config.mts";
 import type { Route } from "../router.mts";
+import type { OkApiResponse } from "../../api/routes.mts";
+import type { BridgeQueueApiResponse, BridgeStatusApiResponse } from "../../api/bridge.mts";
 import type { ServerContext } from "../context.mts";
 
 const HERE = APP_DIR;
@@ -41,7 +44,7 @@ export function routes(ctx: ServerContext): Route[] {
         const adapter = appSettings.bridgeAdapter();
         mkdirSync(CONFIG.paths.bridgeFor(adapter), { recursive: true, mode: DATA_DIR_MODE });
         appendFileSync(CONFIG.paths.bridgeQueueFor(adapter), JSON.stringify(line) + "\n", { mode: DATA_FILE_MODE });
-        return send(res, 200, { ok: true, id: line.id });
+        return send(res, 200, { ok: true, id: line.id } satisfies BridgeQueueApiResponse);
       }
       // Cheap bounded checks in front of the schema (post-review fix, Minor 9): a 500,000-character
       // name once took queue.jsonl to half a megabyte in one request. These are loose outer bounds on
@@ -77,23 +80,25 @@ export function routes(ctx: ServerContext): Route[] {
         const state = organizeStateStore.read();
         organizeStateStore.write(addGrab(state, { id, adapter, serial: line.serial as number, name: line.name as string, from: (line.chain as number[]).at(-1) ?? null, queuedAt: line.queuedAt }));
       }
-      return send(res, 200, { ok: true, id });
+      return send(res, 200, { ok: true, id } satisfies BridgeQueueApiResponse);
     } },
     { method: "POST", path: "/api/bridge/stop", handle: async (req, res) => {
       // Organize's Stop: the flag packrat-bridge.py checks between the steps of a trip. No fields;
       // the body is still read so the content-type and shape checks apply like every other POST.
       asObject(await readBody(req, { limit: 8e3 }));
       writeBridgeStop(CONFIG.paths);
-      return send(res, 200, { ok: true });
+      return send(res, 200, { ok: true } satisfies OkApiResponse);
     } },
     { method: "GET", path: "/api/bridge/status", handle: (_req, res) => {
       organizeService.harvestNow(Date.now());
       // readBridgeStatus is the one reader of status.json: a missing, unreadable or off-schema file reads as offline.
       const { status, online, age } = readBridgeStatus(CONFIG.paths.bridgeStatusFor(appSettings.bridgeAdapter()), Date.now());
-      if (!status) return send(res, 200, { ok: true, online: false });
+      if (!status) return send(res, 200, { ok: true, online: false } satisfies BridgeStatusApiResponse);
       // The file's own fields go first, so a stray ok/online/age in a hand-edited or foreign file can never override
       // what this server computed.
-      return send(res, 200, { ...status, ok: true, online, age: Math.round(age) });
+      // `current` and `results` are status.json's own objects, which the schema leaves open, while BridgeStatusApiResponse
+      // names the fields the page reads off them.
+      return send(res, 200, { ...status, ok: true, online, age: Math.round(age) } satisfies Omit<BridgeStatusApiResponse, "current" | "results"> & Pick<BridgeV1Status, "current" | "results">);
     } },
   ];
 }

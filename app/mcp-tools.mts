@@ -58,8 +58,8 @@ export const INSTRUCTIONS = [
 
 // ---------------------------------------------------------------- shapes the routes answer with (only what is read)
 type InventoryDoc = ApiResponse<"GET /api/inventory">["inventory"];
-interface BridgeStatus { online: boolean; age?: number; character?: string; adapter?: { features?: string[] }; current?: { id?: string } | null; results?: Record<string, BridgeResult> }
-interface BridgeResult { ok: boolean; msg: string; t?: string; partial?: boolean; stopped?: boolean; steps?: Array<{ op: string; serial: number; ok: boolean; msg: string }> }
+type BridgeStatus = ApiResponse<"GET /api/bridge/status">;
+type BridgeResult = NonNullable<BridgeStatus["results"]>[string];
 interface RunDoc { id: string; character?: string; createdAt: string; label?: string; settings?: Record<string, unknown>; result?: Record<string, unknown> | null; ms?: number | null; inventoryStamp?: string | null }
 interface OrganizeDoc { config: OrganizeConfig; problems: string[]; readOnly?: string; stamp: string }
 interface PlanDoc { stamp: string; inventoryStamp: string; moves: PlanMove[]; trips: Array<{ index: number; site: number }>; rules: unknown[]; warnings: unknown[]; seconds: number; unclaimed: number }
