@@ -369,10 +369,10 @@ def login_text():
 
 
 def on_login():
-    """Save whether the window shows at the next login, keeping the hotkey."""
-    doc = read_prefs()
-    out = {"hotkey": doc["hotkey"]} if isinstance(doc.get("hotkey"), dict) else {}
-    out["showAtLogin"] = not state["show_at_login"]
+    """Save whether the window shows at the next login, keeping the hotkey as read_hotkey reads it, so an
+    invalid one is written as the default, as the app's own write does."""
+    parts = read_hotkey(read_prefs()).split("+")
+    out = {"hotkey": {"mods": parts[:-1], "key": parts[-1]}, "showAtLogin": not state["show_at_login"]}
     try:
         write_json_atomic(PREFS, out)
     except Exception:

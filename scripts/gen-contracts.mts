@@ -1,5 +1,5 @@
 // gen-contracts.mts — copy the adapters' shared Python helpers from adapters/_shared/ into every script
-// that carries them, between `# BEGIN generated: <fragment>` / `# END generated: <fragment>` markers; --check fails when a committed script differs. Each script must install as a single file (TazUO lists every .py in its scripts
+// that carries them, between `# BEGIN generated: <fragment>` / `# END generated: <fragment>` markers, render each script's manifest constants from its capabilities.json, and write the web scanner's TypeScript copies (`// BEGIN generated:` blocks) through a TypeScript emitter; --check fails when a committed script differs. Each script must install as a single file (TazUO lists every .py in its scripts
 // folder as a runnable script, and Razor Enhanced has no import path to a sibling file), so the copies
 // stay; this makes them generated instead of hand-kept.
 //
@@ -135,7 +135,8 @@ export function renderManifest(name: string, doc: unknown, at = "capabilities.js
     let scalars: string[] = [];
     const flush = (): void => { if (scalars.length) lines.push(...wrap(indent, scalars, ",")); scalars = []; };
     for (const [k, v] of Object.entries(caps)) {
-      if (Array.isArray(v)) { flush(); lines.push(...wrap(`${indent}${key(k)}: [`, v.map((x, i) => lit(x, `${at} capabilities.${k}[${i}]`, lang)), "],")); }
+      // An empty TypeScript list is typed string[] (every capability list holds names), not never[].
+      if (Array.isArray(v)) { flush(); lines.push(...wrap(`${indent}${key(k)}: [`, v.map((x, i) => lit(x, `${at} capabilities.${k}[${i}]`, lang)), lang === "ts" && !v.length ? "] as string[]," : "],")); }
       else scalars.push(`${key(k)}: ${lit(v, `${at} capabilities.${k}`, lang)}`);
     }
     flush();

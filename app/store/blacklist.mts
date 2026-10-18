@@ -3,12 +3,14 @@
 // map: server
 // owns: `createBlacklistStore`
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { APP_DIR } from "../config.mts";
 import type { BlacklistEntry } from "../vault-lib.mts";
 import { validate, type ValidatorSchema } from "../schema/validate.mts";
 import { readJsonFile, writeJsonFile } from "./json-file.mts";
 
 // One entry's schema (app/schema/blacklist.v1.schema.json).
-const ENTRY = (JSON.parse(readFileSync(new URL("../schema/blacklist.v1.schema.json", import.meta.url), "utf8")) as { items: ValidatorSchema }).items;
+const ENTRY = (JSON.parse(readFileSync(join(APP_DIR, "schema", "blacklist.v1.schema.json"), "utf8")) as { items: ValidatorSchema }).items;
 const isEntry = (e: unknown): e is BlacklistEntry => validate(ENTRY, e).ok;
 
 // <data>/scan-blacklist.json: the containers scans never open, a JSON list of {serial, name, addedAt,
