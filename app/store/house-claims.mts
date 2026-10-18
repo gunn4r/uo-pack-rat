@@ -3,17 +3,20 @@
 // map: server
 // owns: `createHouseClaimsStore`, `claimsOver`, `claimsFromHouseMap`, `MAX_CLAIMS`
 import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { APP_DIR } from "../config.mts";
 import type { HouseMapDoc } from "../house-names.mts";
+import type { HouseClaimsV1Item, HouseClaimsV1ItemBounds } from "../schema/types.d.mts";
 import { validate, type ValidatorSchema } from "../schema/validate.mts";
 import { readJsonFile, writeJsonFile } from "./json-file.mts";
 
-export interface ClaimBounds { x0: number; y0: number; x1: number; y1: number }
-export interface HouseClaim { id: string; facet: number | null; bounds: ClaimBounds; claimedAt: string; by?: string | undefined }
+export type ClaimBounds = HouseClaimsV1ItemBounds;
+export type HouseClaim = HouseClaimsV1Item;
 export const MAX_CLAIMS = 500;
 const MAX_CLAIMS_BYTES = 256 * 1024;   // the size the game scripts read too
 
 // One entry's schema (app/schema/house-claims.v1.schema.json), and the rule it can't say: bounds run low to high.
-const CLAIM = (JSON.parse(readFileSync(new URL("../schema/house-claims.v1.schema.json", import.meta.url), "utf8")) as { items: ValidatorSchema }).items;
+const CLAIM = (JSON.parse(readFileSync(join(APP_DIR, "schema", "house-claims.v1.schema.json"), "utf8")) as { items: ValidatorSchema }).items;
 const isClaim = (v: unknown): v is HouseClaim => {
   if (!validate(CLAIM, v).ok) return false;
   const { x0, y0, x1, y1 } = (v as HouseClaim).bounds;
