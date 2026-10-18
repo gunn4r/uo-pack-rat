@@ -7,7 +7,7 @@
 // map: api
 // owns: `ApiRoutes`, `ApiEntry`, `Untyped`, `EventStream`, `Png`, `ApiResponse`, `ApiBody`
 import type { HouseApiResponse, HousesApiResponse } from "../house-model-types.mts";
-import type { OrganizePlanApiResponse, OrganizeProposeApiResponse, StrategyId } from "../organize-types.mts";
+import type { OrganizePlanApiResponse, OrganizeProposeApiResponse, OrganizeProposeBody } from "../organize-types.mts";
 import type { RunBody, RunsListBody, RunSummary } from "../runs-types.mts";
 
 // One route: what it answers with 200, and the JSON body it reads (undefined: none).
@@ -67,7 +67,7 @@ export interface ApiRoutes {
   "POST /api/evaluate": Untyped;
   // optimize.mts: saved runs
   "GET /api/runs": ApiEntry<RunsListBody>;
-  "POST /api/runs": ApiEntry<RunBody<RunSummary>, unknown>;
+  "POST /api/runs": ApiEntry<RunBody<RunSummary>, unknown>;   // the request bodies of POST and PUT are not typed yet
   "GET /api/runs/<id>": ApiEntry<RunBody>;
   "PUT /api/runs/<id>": ApiEntry<RunBody<RunSummary>, unknown>;
   "DELETE /api/runs/<id>": Untyped;
@@ -76,7 +76,7 @@ export interface ApiRoutes {
   "PUT /api/organize": Untyped;
   "GET /api/organize/presets": Untyped;
   "POST /api/organize/match": Untyped;
-  "POST /api/organize/propose": ApiEntry<OrganizeProposeApiResponse, { strategy: StrategyId; containers?: number[] | undefined }>;
+  "POST /api/organize/propose": ApiEntry<OrganizeProposeApiResponse, OrganizeProposeBody>;
   "GET /api/organize/plan": ApiEntry<OrganizePlanApiResponse>;
   "POST /api/organize/trip": Untyped;
   "POST /api/move/plan": Untyped;
