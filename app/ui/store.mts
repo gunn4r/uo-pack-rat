@@ -1,5 +1,8 @@
 // ui/store.mts — the shared mutable state object, the bridge connection state, and invStamp.
 // Moved verbatim out of index.html's inline <script type="module"> (Task 4, the page split).
+//
+// map: ui-infra
+// owns: `state`, `bridge`, `invStamp`, `AppState`
 import type { Item, EffectiveProfile, Goals, GoalSwingWeapon, RunSettings } from "../vault-lib.mts";
 import { goalsActive } from "../vault-lib.mts";
 import type { FlatProfile, ProfilesV3, TemplateMap } from "../build-spec.mts";

@@ -1,4 +1,7 @@
 // inventory.mts — the inventory every view and bridge command reads: the scans folded (cached), with Organize's results overlay applied (cached on its own).
+//
+// map: services
+// owns: `createInventoryService`, `FoldValue`, `InvValue`
 import { statSync } from "node:fs";
 import { foldSnapshots, type Inventory, type KindOverrides } from "../vault-lib.mts";
 import { missingSinceLastScan, type MissingItem } from "../missing.mts";

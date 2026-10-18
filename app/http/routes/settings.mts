@@ -1,4 +1,7 @@
 // settings.mts — GET|PUT /api/settings, POST /api/retention/cleanup and GET /api/rules.
+//
+// map: server
+// owns: `routes`
 import { statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { isBoundedString, isBoundedInt, MAX_SERIAL } from "../../guards.mts";

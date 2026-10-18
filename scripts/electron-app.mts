@@ -2,6 +2,9 @@
 // skip when Electron can't run here, a temp data folder, the launch itself (update check off, the test's own client home,
 // the page's errors collected, the page loaded before a test sets a hash, the window sized), the teardown, a stand-in
 // bridge and a poll for file-backed facts. Window sizing and layout reads stay in electron-window.mts.
+//
+// map: tooling
+// owns: `skipWithoutElectron`, `tempDataDir`, `launchApp`, `fakeBridge`, `until`
 import { copyFileSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";

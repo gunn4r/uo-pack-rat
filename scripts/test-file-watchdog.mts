@@ -9,6 +9,8 @@
 // file like that has to fail. The grace period lets those errors land and still bounds the file.
 //
 // The timer is unref'd, so a file that exits normally is not held open by it for a moment longer.
+//
+// map: tooling
 import { after } from "node:test";
 
 // run-suite.mts recognises a file this stopped by this exact text on its stderr (it cannot import it:

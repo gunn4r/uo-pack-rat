@@ -1,4 +1,7 @@
 // ui/move-model.mts — Move to's pure rules (issue #270): the Inventory's selection (ticked rows, a shift-click range, the rows loaded so far, then every item matching the filter; a worn item is never in it), the containers the picker offers, and the words of the selection bar, the picker and the result line. No DOM: app/ui-move.test.mts tests it under plain node:test; ui/move-to.mts draws it.
+//
+// map: ui-models
+// owns: `Selection`, `toggleRows`, `selectAllMatching`, `selectionBody`, `destGroups`
 import { bagLabel, compareNames, TRASH_RE, type Container, type Item } from "../vault-lib.mts";
 import type { ItemQuery } from "../item-query.mts";
 import { plural, queryParams } from "./inv-model.mts";

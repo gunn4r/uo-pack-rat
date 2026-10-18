@@ -1,5 +1,8 @@
 // builder-ui.mts — the Suit Builder Electron tests' shared steps (scripts/ui-builder-*.test.mts): the launch at 1440 × 900, Build Settings
 // open on a tab and closed again, the Suit Builder opened with a quick time budget, Build pressed, and the wait for its result.
+//
+// map: tooling
+// owns: `launch`, `settings`, `openBuilder`, `pressBuild`, `built`
 import type { Page } from "playwright";
 import { launchApp, type App } from "./electron-app.mts";
 

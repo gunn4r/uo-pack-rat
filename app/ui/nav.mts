@@ -1,6 +1,9 @@
 // ui/nav.mts — the hash routes, the screen registry they dispatch to, and the cross-screen ways into the
 // Inventory's Items view. Screens import these from here, not from app.mts or from another screen: each screen
 // registers what it does when its route is shown, and the Inventory hands over its Items view at startup.
+//
+// map: ui-bootstrap
+// owns: `parseRoute`, `routeFor`, `registerScreen`, `showRoute`, `showItem`, `showContainer`, `showSearch`, `showKind`, `showCharacterItems`
 import type { ItemQuery } from "../item-query.mts";
 import { session } from "./builder-session.mts";
 

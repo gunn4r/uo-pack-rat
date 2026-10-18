@@ -16,6 +16,9 @@
 //
 // The tools (app/mcp-tools.mts) are thin adapters over the app's own HTTP routes, called over loopback with the app's
 // own token, so every validation and safety check stays the route's.
+//
+// map: mcp
+// owns: `createMcp`, `readMcpConfig`, `writeMcpConfig`, `PROTOCOL_VERSIONS`, `MCP_DEFAULT_PORT`
 import http from "node:http";
 import { existsSync, readFileSync } from "node:fs";
 import { randomUUID, timingSafeEqual } from "node:crypto";

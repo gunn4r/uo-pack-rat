@@ -1,4 +1,7 @@
 // ui/profiles.mts — the one writer of the player's profiles (app/build-spec.mts's v3 shape). Every save is a list of edits (app/profile-edits.mts) sent as themselves (PATCH /api/profiles), so the server makes them on the file as it is and nothing else of this page's copy goes with them: two windows' saves land side by side. They are made on the page's copy at once so the page shows them, one save at a time and in order.
+//
+// map: ui-infra
+// owns: `editProfiles`, `setCharacterBuffs`, `setCharacterLabel`
 import type { BuildBuffs } from "../build-spec.mts";
 import { applyProfileEdits, type ProfileEdit, type ProfileEditContext } from "../profile-edits.mts";
 import { state } from "./store.mts";

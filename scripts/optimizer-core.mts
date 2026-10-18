@@ -1,5 +1,5 @@
 // ============================================================================
-// optimizer-core.mts — whole-suit gear optimizer CORE.
+// optimizer-core.mts — whole-suit gear optimizer CORE: the heuristic suit search and scoring, paste-able (no imports, one export line) and loaded from source by the path corePath() resolves.
 // ----------------------------------------------------------------------------
 // PURE LOGIC ONLY. No game globals (no `player`, `client`, `Gump`, ...), no imports, no
 // top-level exports — this file is meant to be PASTED INLINE into a game script, so it is
@@ -20,6 +20,9 @@
 //
 // Companion offline test: optimizer-core.test.mts (`node scripts/optimizer-core.test.mts`).
 // ============================================================================
+//
+// map: builder
+// owns: `optimizeSuit`, `scoreSet`, `optDefaultSlots`, `optDefaultOptionalSlots`, `optDominancePrune`
 
 // ---------------------------------------------------------------------------
 // Types

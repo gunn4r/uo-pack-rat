@@ -1,4 +1,7 @@
 // mcp.mts — the built-in MCP server's settings: GET|PUT /api/mcp and POST /api/mcp/token.
+//
+// map: server
+// owns: `routes`
 import { short } from "../../guards.mts";
 import { readBody } from "../../read-body.mts";
 import { send, asObject } from "../respond.mts";

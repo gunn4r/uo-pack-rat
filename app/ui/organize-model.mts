@@ -5,6 +5,9 @@
 // trip is watched until it reports back. No DOM and no store.mts import, so app/ui-organize.test.mts runs it
 // under plain node:test (the arrangement of ui/inv-model.mts). Every edit returns a new setup and never changes
 // the one it was given.
+//
+// map: organize
+// owns: `LABEL_COLOURS`, `targetView`, `tripRows`, `stepWatch`, `acceptGate`
 import { bagLabel } from "../vault-lib.mts";
 import type { Container } from "../vault-lib.mts";
 import { parseItemQuery } from "../item-query.mts";

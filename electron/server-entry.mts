@@ -24,6 +24,8 @@
 //       promise vault-server.mts is awaiting once main's matching host-result message arrives — or
 //       rejects it once ./pending-calls.mts's timeout expires, for an answer that never comes.
 //   <- ShutdownMessage                                 close the server, then exit(0)
+//
+// map: shell
 import { ensureLayout, resolveConfig } from "../app/config.mts";
 import { startServer } from "../app/vault-server.mts";
 import type { HostBridge } from "../app/vault-server.mts";

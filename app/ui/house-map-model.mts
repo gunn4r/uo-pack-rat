@@ -1,4 +1,7 @@
 // ui/house-map-model.mts — the House map's pure rules (issue #10, spec section 4): the projection (the client's angle, or top-down), the polygons of a tile and of a box, the painter's order, a level's bounds and their fit; below, the joins of a stack with the inventory and the Organize labels, the colour modes, the cut-away, the callout, the totals, the house picker, keyboard moves, the plain grid for chests outside any drawn house, and the scene of one level. No DOM and no store.mts import, so app/ui-map.test.mts runs it under plain node:test; ui/house-map.mts draws what it returns. Coordinates are relative to the house's corner (x0, y0); heights to the level's floor.
+//
+// map: house
+// owns: `project`, `paintOrder`, `chestViews`, `pickHouse`
 import { bagLabel, compareNames, itemOwnBlob, type Container, type Item } from "../vault-lib.mts";
 import { plural, splitSerial } from "./inv-model.mts";
 import { areaOfStack, inRects } from "../house-areas.mts";

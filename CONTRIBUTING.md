@@ -39,7 +39,7 @@ npm run dist:dir           # an unpacked app into dist/, no installer
 
 - **Prose.** American spelling; plain words; no hard-wrapped paragraphs (one paragraph is one line, in Markdown, comments, commit bodies and pull request bodies); "container", not "chest", in generic text.
 - **Tests.** Every test name starts with a tag (`[smoke]`, `[fast]` or `[slow]`), and every test file opens with a header saying what it covers; `TESTING.md` says how. After adding a test file or changing a header's first sentence, run `npm run gen:test-index`.
-- **Docs.** A backticked repo path in any Markdown file must exist (`scripts/docs-links.test.mts`), and a new module gets a row in `docs/module-map.md` in the same change (`scripts/module-map.test.mts`).
+- **Docs.** A backticked repo path in any Markdown file must exist (`scripts/docs-links.test.mts`), and every module's header carries its `docs/module-map.md` row: a `// <name> — <role>.` first line, then `// map: <area>` and `// owns: …` lines; after adding, moving or renaming a module or changing those lines, run `npm run gen:modules` (`scripts/module-map.test.mts` checks the tables are current).
 - **Changelog.** A change that matters to a player or a contributor adds a fragment, `changelog.d/<short-name>.md`, and never edits `CHANGELOG.md` (see Changelog below).
 - **Commits.** Imperative mood, naming the issue (`(#123)`); no trailers.
 - **Dependencies.** No new runtime dependencies without a spec change. `highs` (MIT, compiled to WebAssembly) is the one: `app/mip-solve.mts` loads it to run the exact suit solve (`docs/solver.md`), and `optimize-worker.mts` falls back to the core's own heuristic when it fails to load. Everything else — the server, the page, the adapters — is Node's standard library and plain browser APIs, no npm imports. The built-in MCP server (`app/mcp.mts`) speaks its protocol by hand for the same reason; `@modelcontextprotocol/sdk` is a pinned dev dependency only, for the interop test in `app/mcp.test.mts` that connects the SDK's own client to it.
@@ -81,7 +81,7 @@ If it fires on something you wrote: reword the offending line so the information
 
 ## Where the rest is written down
 
-- `docs/module-map.md` lists every module, area by area: its role and the concepts it owns, and which concepts are still copied by hand in more than one place. `scripts/module-map.test.mts` fails when a module is missing from it or a path it names is gone.
+- `docs/module-map.md` lists every module, area by area: its role and the concepts it owns, and which concepts are still copied by hand in more than one place. Its module tables are generated from the modules' headers (`npm run gen:modules`). `scripts/module-map.test.mts` fails when a table is out of date or a path it names is gone.
 - `docs/architecture.md`: the Electron shell (`electron/`), the inbox watcher (`app/watcher.mts`), the installer (`app/installer.mts`), the data folder, every HTTP route, the dev loop in detail, the server's request checks, the data model the fold produces, and the parsing and classification gotchas.
 - `docs/solver.md`: the suit solver, the core's own search, saved runs, profile semantics, templates and build jobs.
 - `docs/ui.md`: the page's hard rules, tokens, components and import rules, with one page per screen under `docs/ui/`.

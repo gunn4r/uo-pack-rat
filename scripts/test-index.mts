@@ -7,6 +7,9 @@
 //   node scripts/test-index.mts --check   exit 1 when TESTING.md's index is out of date
 //
 // scripts/test-index.test.mts holds every test file to a header and the committed index to --check.
+//
+// map: tooling
+// owns: `renderIndex`, `summaryOf`, `indexIsCurrent`
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";

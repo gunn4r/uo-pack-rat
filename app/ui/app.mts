@@ -1,6 +1,8 @@
 // ui/app.mts — bootstrap: load(), screen and drawer switching, tab-nav wiring, the tooltip/bridge kickoff.
 // Moved verbatim out of index.html's inline <script type="module"> (Task 4, the page split). The routes and the
 // screen registry are nav.mts; reload() and the inventorychange event are inventory-data.mts.
+//
+// map: ui-bootstrap
 import { setRules } from "../vault-lib.mts";
 import { state } from "./store.mts";
 import { $, el, installTooltip, toast } from "./dom.mts";

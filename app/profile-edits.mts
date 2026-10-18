@@ -1,4 +1,7 @@
 // profile-edits.mts — the changes a page or a tool makes to the player's profiles, as data (quality pass 1, W1a): a closed `ProfileEdit` union and `applyProfileEdit`, pure and browser-safe. PATCH /api/profiles applies a list of them to the file on the server in one write, and the page applies the same ones to its own copy, so a save sends what it means rather than the page's whole copy, and two windows' saves land side by side.
+//
+// map: builder
+// owns: `ProfileEdit`, `applyProfileEdit`, `applyProfileEdits`, `profileEditError`
 import { characterBuffs, characterEntry, characterProfile, labelError, type BuildBuffs, type CharacterEntry, type ProfilesV3, type TemplateEntry, type TemplateMap, type TemplateSpec } from "./build-spec.mts";
 import { isBoundedString } from "./guards.mts";
 

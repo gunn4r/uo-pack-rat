@@ -3,6 +3,9 @@
 // Pure (no node: imports), so the page can share the types and the checks. checkOrganizeConfig refuses a
 // document with any fault (PUT /api/organize replaces the whole file); salvageOrganizeConfig keeps every part
 // of a hand-edited file that still makes sense and names what it dropped (every read).
+//
+// map: organize
+// owns: `OrganizeConfig`, `checkOrganizeConfig`, `salvageOrganizeConfig`, `salvagedRefusal`, `ruleMatchOf`, `CATCH_ALL_ID`, `EMPTY_BAGS_ID`, `BUILDS`, `SCHOOLS`, `LIMITS`
 import type { RuleQuery } from "./item-query.mts";
 import { WEAPON_SKILLS } from "./vault-lib.mts";
 import type { SpellSchool } from "./vault-lib.mts";

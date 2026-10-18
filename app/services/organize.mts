@@ -1,4 +1,7 @@
 // organize.mts — the Organize service (issues #11, #127, #131): finished trips read back into the results overlay, what a plan starts from, the plan, a trip queued for the bridge, and Put away's requests from the in-game panel.
+//
+// map: services
+// owns: `createOrganizeService`
 import { mkdirSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";

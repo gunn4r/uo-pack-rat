@@ -2,6 +2,9 @@
 // then dispatches "inventorychange" on document, which every screen drawn from them listens for. No screen is
 // called by name from here; the sidebar's counts are redrawn first, as before the event, because the Runs count
 // reads the builder's character before the builder's listener picks a new one.
+//
+// map: ui-bootstrap
+// owns: `reload`, `retryLoad`
 import { state, newestStamp } from "./store.mts";
 import { forgetTipMisses } from "./dom.mts";
 import { api } from "./api.mts";

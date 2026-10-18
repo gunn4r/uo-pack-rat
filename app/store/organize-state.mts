@@ -1,4 +1,7 @@
 // organize-state.mts — <data>/organize-state.json: Organize's results overlay (app/organize-state.mts).
+//
+// map: server
+// owns: `createOrganizeStateStore`
 import { salvageOrganizeState, type OrganizeState } from "../organize-state.mts";
 import { migrate } from "../migrate.mts";
 import { readJsonFile, writeJsonFile } from "./json-file.mts";

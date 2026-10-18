@@ -6,6 +6,9 @@
 // paths behave identically. Before this module existed the wizard duplicated the PUT and only synced
 // the header <select>'s displayed value, leaving state.rules (and everything folded under it) on the
 // old shard until a manual reload — Phase 4 final review, Important 3.
+//
+// map: ui-components
+// owns: `changeShard`
 import { toast } from "./dom.mts";
 import { api } from "./api.mts";
 import type { SettingsApiResponse } from "./api-types.mts";

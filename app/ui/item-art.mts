@@ -1,4 +1,7 @@
 // ui/item-art.mts — a container's in-game art (issue #174), drawn from the player's own client files through GET /api/item-art: an <img> in a square tile of the given size, scaled down to fit, or twice its size (pixelated) when that still fits (art under 16 px both ways in a 32 px tile), so a pouch still reads as a pouch. When the art does not load (no UO folder, no art for the graphic), `fallback` takes the tile's place, and that URL is not asked again until the page reloads or the UO folder is saved in Settings, so a redraw shows the fallback at once and never a broken image.
+//
+// map: house
+// owns: `artTile`, `artUrl`, `containerArt`
 import { el } from "./dom.mts";
 import { state } from "./store.mts";
 

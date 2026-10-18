@@ -6,6 +6,9 @@
 // words. The file is untrusted like every file in the data folder: it carries only an id, the picked container, the
 // character and where the character stands; the server builds the trip itself from the setup with the ordinary
 // planner (organize.mts, PlanOptions.putAway) and queues it with queueTrip.
+//
+// map: organize
+// owns: `PUT_AWAY_REQUEST`, `PUT_AWAY_REPLY`, `checkPutAwayRequest`
 import { parseStamp } from "./scan-schema.mts";
 import type { PackKept, Plan } from "./organize.mts";
 

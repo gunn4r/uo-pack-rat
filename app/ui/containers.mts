@@ -7,6 +7,9 @@
 // containers) and "Forget…". A container labelled for Organize shows its label, colour and Pinned. The Forget and Blacklist handlers call `reload` from inventory-data.mts. reload(),
 // not load(): a Forget changes the inventory and nothing else, and must keep the filters and the builder
 // as they are.
+//
+// map: ui-screens
+// owns: `renderContainers`, `labelContainer`
 import { bagLabel, compareNames } from "../vault-lib.mts";
 import type { Container } from "../vault-lib.mts";
 import { state } from "./store.mts";

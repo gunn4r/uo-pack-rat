@@ -1,5 +1,8 @@
 // ui/unravel-model.mts — the words of the Unravel view's Gather into a bag dialog (issue #271), with no DOM, so app/unravel-model.test.mts
 // tests them under plain node:test. The move itself is Move to's (ui/move-to.mts, ui/move-model.mts).
+//
+// map: unravel
+// owns: `gatherWeight`, `gatherButton`
 import type { Item } from "../vault-lib.mts";
 import type { MovePlanSummary } from "./api-types.mts";
 import { plural } from "./inv-model.mts";

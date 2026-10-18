@@ -2,6 +2,9 @@
 // does not implement window.prompt() (it silently returns null/undefined with no error) —
 // ui/builder.mts's saveTemplateAs used to call prompt() directly and simply did nothing in the desktop
 // app, while working fine in a plain browser. Yes/no questions use components.mts's confirmDialog.
+//
+// map: ui-components
+// owns: `promptText`
 import { openDialog, button, field, input } from "./components.mts";
 
 // The one bit of promptText() worth testing without a DOM: what typed text becomes the resolved

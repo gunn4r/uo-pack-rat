@@ -1,6 +1,9 @@
 // ui/tazuo-panel.mts — the two options of the TazUO in-game panel (app/tazuo-panel.mts): whether it
 // shows its window at login, and its show/hide hotkey. Settings › Game client saves each change as it is made; the wizard's
 // install step shows the same controls and sends the choices with the install.
+//
+// map: ui-components
+// owns: `panelControls`
 import { box, check, select } from "./components.mts";
 import type { AutostartOutcome, PanelHotkey, PanelPrefs } from "./api-types.mts";
 

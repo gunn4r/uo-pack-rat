@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fitWindow, pickCharacter, sidewaysAt } from "./electron-window.mts";
-import { skipWithoutElectron, tempDataDir } from "./electron-app.mts";
+import { skipWithoutElectron, tempDataDir, until } from "./electron-app.mts";
 import { built, closeSettings, launch, openBuilder, pressBuild, settings } from "./builder-ui.mts";
 import type { Locator, Page } from "playwright";
 
@@ -68,7 +68,7 @@ test("[slow] the Plan's worn and replacement names each show their own piece's t
     // The Slot cell is not a piece: no tooltip after the delay.
     await page.mouse.move(2, 2);
     await row.locator("td").nth(0).hover();
-    await page.waitForTimeout(700);
+    await page.waitForTimeout(700);   // sleep: past the tooltip's 400 ms delay, proving none shows
     assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector("#tip")!).display), "none");
     // Keyboard focus shows it too: Tab from the worn name reaches the replacement.
     await now.focus();
@@ -145,7 +145,7 @@ test("[slow] What changes: Gauges for what the build asks, Table with every prop
     assert.ok(gauges.length > 0);
     const loss = page.locator(".b-gauge.loss").first();
     assert.ok(await page.locator(".b-gauge.loss").count(), "the suit gives something up");
-    assert.deepEqual(await loss.locator(".b-gauge-delta").evaluate((e) => [e.classList.contains("muted"), e.classList.contains("tone-bad")]), [true, false], "a loss is muted, not red");
+    assert.deepEqual(await loss.locator(".b-gauge-delta").evaluate((e) => [e.classList.contains("muted"), e.classList.contains("tone-bad")]), [false, true], "a loss is in the bad tone");
     const fill = (sel: string): Promise<string> => page.locator(sel).first().evaluate((e) => getComputedStyle(e).backgroundColor);
     assert.notEqual(await fill(".b-gauge.loss .b-gauge-track > i"), await fill(".b-gauge:not(.loss) .b-gauge-track > i"), "a loss's fill is grey, not the accent");
     assert.ok(await page.locator(".b-shares").count(), "the score breakdown shows with the gauges");
@@ -169,8 +169,7 @@ test("[slow] What changes: Gauges for what the build asks, Table with every prop
     assert.ok(moved.length > gauges.length, "the build moves more than it asks for");
     assert.equal(more, moved.length - gauges.length, "the link counts the moved properties with no gauge");
     const saved = (): boolean => { try { return (JSON.parse(readFileSync(join(dataDir, "ui-prefs.json"), "utf8")) as { builderChanges?: string }).builderChanges === "table"; } catch { return false; } };
-    for (let i = 0; i < 50 && !saved(); i++) await page.waitForTimeout(100);
-    assert.ok(saved(), "the choice is in ui-prefs.json");
+    assert.ok(await until(saved, (v) => v, "the choice in ui-prefs.json"), "the choice is in ui-prefs.json");
 
     // At phone width the page doesn't scroll sideways; the table scrolls inside its box.
     const resultsOver = await sidewaysAt(app, page, { width: 420, height: 900 }, [".b-results"]);

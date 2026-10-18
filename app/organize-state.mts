@@ -4,6 +4,9 @@
 // scan), and when each labelled container was last in a scan (`seen`, for "not seen since"). Pure: the server reads
 // the file, runs these and writes the result back. Everything read from the file or from the bridge's status.json
 // is checked field by field: both are plain files any local process can write.
+//
+// map: organize
+// owns: `OrganizeState`, `harvestTrips`, `addGrab`, `pruneOverlay`, `noteSeen`
 import { parseStamp } from "./scan-schema.mts";
 import { stampMs, type OverlayMove } from "./organize.mts";
 import type { Inventory } from "./vault-lib.mts";

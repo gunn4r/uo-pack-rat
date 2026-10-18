@@ -1,4 +1,7 @@
 // respond.mts — how the server answers: send() with the headers every response carries, the event streams' own header set, the Content-Security-Policy, and the guard that turns a body that is not a JSON object into a 400.
+//
+// map: server
+// owns: `send`, `SSE_HEADERS`, `CSP`, `asObject`
 import type http from "node:http";
 import type { HttpError } from "../read-body.mts";
 

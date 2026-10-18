@@ -1,4 +1,7 @@
-// house-model-types.mts — the house model's types (app/house-model.mts) and the GET /api/houses responses built from them. Types only, with no imports, so the page's browser build can use them: the server annotates its responses with these and ui/api-types.mts re-exports them.
+// house-model-types.mts — the house model's types and the GET /api/houses responses built from them; types only, with no imports, so the page's browser build can use them: app/house-model.mts re-exports them, the routes `satisfies` them, and ui/api-types.mts re-exports them.
+//
+// map: house
+// owns: `HouseModel`, `Level`, `Cell`, `Furniture`, `Stack`, `Spot`, `HouseSummary`, `HousesApiResponse`, `HouseApiResponse`
 
 // opened: false = a chest a house capture saw that no scan has opened (issue #10); absent = opened.
 export interface HouseContainerInput { serial: number; name: string; facet: number | null; x: number; y: number; z: number; opened?: boolean | undefined; graphic?: number | null | undefined; hue?: number | null | undefined }
