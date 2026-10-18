@@ -11,6 +11,8 @@ import { readBody, type HttpError } from "../../read-body.mts";
 import { sse } from "../../services/events.mts";
 import { send, asObject, SSE_HEADERS } from "../respond.mts";
 import type { Route } from "../router.mts";
+import type { OkApiResponse } from "../../api/routes.mts";
+import type { HostPickFolderApiResponse } from "../../api/host.mts";
 import type { ServerContext } from "../context.mts";
 
 export function routes(ctx: ServerContext): Route[] {
@@ -43,7 +45,7 @@ export function routes(ctx: ServerContext): Route[] {
       // shell's own default rather than crossing two process hops into a native, app-modal dialog
       // the user is being asked to trust (post-review fix, area-4 minor 1).
       const path = await withHostTimeout(host.pickFolder(isBoundedString(title, 120) ? { title } : {}));
-      return send(res, 200, { ok: true, path });
+      return send(res, 200, { ok: true, path } satisfies HostPickFolderApiResponse);
     } },
     { method: "POST", path: "/api/host/open-path", handle: async (req, res) => {
       if (!host || typeof host.openPath !== "function") return send(res, 501, { ok: false, error: "not available outside the desktop app" });
@@ -53,7 +55,7 @@ export function routes(ctx: ServerContext): Route[] {
       // Important 1): the shell owns the two directories it maps "data"/"logs" to, so this process —
       // the lower-trust half of the split — cannot name a third thing for the OS to launch.
       await withHostTimeout(host.openPath(which));
-      return send(res, 200, { ok: true });
+      return send(res, 200, { ok: true } satisfies OkApiResponse);
     } },
     { method: "GET", path: "/api/events", handle: (_req, res) => {
       res.writeHead(200, SSE_HEADERS);

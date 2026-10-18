@@ -88,23 +88,11 @@ export interface McpApiResponse {
   config: { enabled: boolean; allowActions: boolean; port: number; token: string | null };
   live: { listening: boolean; port: number | null; portBusy: number | null };
 }
-export interface HostPickFolderApiResponse {
-  ok: boolean;
-  path: string | null;
-}
+export type { HostPickFolderApiResponse } from "../api/host.mts";
 
 // ---------------------------------------------------------------- import
 
-export interface ImportPasteApiResponse {
-  ok: boolean;
-  written: string;
-  character: string;
-  warning?: string | undefined;
-}
-export interface RescanApiResponse {
-  ok: boolean;
-  adapters: string[];
-}
+export type { ImportPasteApiResponse, RescanApiResponse } from "../api/import.mts";
 // POST /api/forget and /api/forget-character, and GET /api/blacklist: app/api/inventory.mts.
 export type { ForgetApiResponse, BlacklistApiResponse } from "../api/inventory.mts";
 // GET and POST /api/item-kinds, POST /api/item-kinds/import (issue #150): the whole item-kinds.json document after
@@ -314,14 +302,5 @@ export type { MaterialFamily, Level, CellKind, Cell, Furniture, Stack, Spot, Til
 export type HouseModel = HouseApiResponse["house"];
 // GET /api/facet-map/<facet>.png answers a PNG, or a 404 with why there is none: no UO folder (as TiledataFrom), or the facet file missing or not a facet bitmap.
 export type FacetMapReason = "override-missing" | "no-client" | "no-tazuo-profile" | "missing" | "unreadable";
-// GET /api/house-map and PUT /api/house-map/<id> (app/house-names.mts, issues #164 and #10): the player's names and drawn
-// areas by house id, each with the footprint the house had when it was named or its areas drawn. `name` is "" for a house
-// with areas but no name. Other fields an entry or an area may carry later are kept, unread.
-export interface HouseBounds { x0: number; y0: number; x1: number; y1: number; facet: number | null }
-// World tiles, inclusive.
-export interface AreaRect { x0: number; y0: number; x1: number; y1: number }
-// `color` is a token name, "area-1" … "area-8" (--color-area-N).
-export interface HouseArea { id: string; name: string; level: number; color: string; rects: AreaRect[] }
-export interface HouseMapEntry { name: string; bounds?: HouseBounds | undefined; areas?: HouseArea[] | undefined }
-export interface HouseMapApiResponse { ok: boolean; houses: Record<string, HouseMapEntry>; readOnly?: string }
-export interface HouseMapPutApiResponse { ok: boolean; entry: HouseMapEntry | null }
+// GET /api/house-map, PUT /api/house-map/<id> and GET /api/house-claims: app/house-model-types.mts.
+export type { HouseBounds, AreaRect, HouseArea, HouseEntry as HouseMapEntry, HouseMapApiResponse, HouseMapPutApiResponse, HouseClaimsApiResponse } from "../house-model-types.mts";

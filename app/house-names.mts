@@ -7,12 +7,10 @@ import { basename } from "node:path";
 import { moveAside, writeFileAtomic } from "./atomic-write.mts";
 import { DATA_FILE_MODE } from "./config.mts";
 import { migrate, newerNotice } from "./migrate.mts";
+import type { AreaRect, HouseArea, HouseBounds, HouseEntry } from "./house-model-types.mts";
 
-export interface HouseBounds { x0: number; y0: number; x1: number; y1: number; facet: number | null }
-export interface AreaRect { x0: number; y0: number; x1: number; y1: number }
-export interface HouseArea { id: string; name: string; level: number; color: string; rects: AreaRect[]; [field: string]: unknown }
-// `name` is "" for a house with areas but no name of its own.
-export interface HouseEntry { name: string; bounds?: HouseBounds | undefined; areas?: HouseArea[] | undefined; [field: string]: unknown }
+// An entry's shape is the API's own (app/house-model-types.mts), which the page reads too.
+export type { HouseBounds, AreaRect, HouseArea, HouseEntry } from "./house-model-types.mts";
 export interface ForgottenHouse { id: string; capturedAt: string }
 export interface HouseMapDoc { version: 1; houses: Record<string, HouseEntry>; forgotten?: ForgottenHouse[] | undefined }
 export const NAME_MAX = 60;
