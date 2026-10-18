@@ -1,0 +1,1 @@
+- **For contributors: the optimizer pools moved to `app/domain/pools.mts`** (issue #338): `buildPools`, `toOptItem`, `totalsOf`, `requirementReport`, the weapon rules and the keys an inventory offers the builder and filters, re-exported from `app/vault-lib.mts` under the same names. A pure move: no behaviour changes.
