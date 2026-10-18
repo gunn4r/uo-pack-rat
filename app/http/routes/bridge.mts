@@ -12,11 +12,10 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { BRIDGE_PROTOCOL } from "../../bridge-contract.mts";
 import { readBridgeStatus } from "../../bridge-status.mts";
-import { writeBridgeStop } from "../../bridge-trip.mts";
 import { isBoundedString } from "../../guards.mts";
 import { addGrab } from "../../organize-state.mts";
 import { readBody } from "../../read-body.mts";
-import { appendCommand } from "../../store/bridge.mts";
+import { appendCommand, writeStop } from "../../store/bridge.mts";
 import { validate, type ValidatorSchema } from "../../schema/validate.mts";
 import { send, asObject } from "../respond.mts";
 import { APP_DIR } from "../../config.mts";
@@ -82,7 +81,7 @@ export function routes(ctx: ServerContext): Route[] {
       // Organize's Stop: the flag packrat-bridge.py checks between the steps of a trip. No fields;
       // the body is still read so the content-type and shape checks apply like every other POST.
       asObject(await readBody(req, { limit: 8e3 }));
-      writeBridgeStop(CONFIG.paths);
+      writeStop(CONFIG.paths);
       return send(res, 200, { ok: true } satisfies OkApiResponse);
     } },
     { method: "GET", path: "/api/bridge/status", handle: (_req, res) => {
