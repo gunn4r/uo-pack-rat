@@ -473,9 +473,10 @@ async function duplicateTemplate(ref: string): Promise<void> {
   const name = await askTemplateName(`Duplicate ${plainName(ref)}`, copyName(plainName(ref)));
   if (!name) return;
   const copy = { spec: structuredClone(from.spec), ...(from.description ? { description: from.description } : {}), savedAt: new Date().toISOString() };
-  // a template by that name made elsewhere since the name was checked is never overwritten unasked
+  // a template by that name made elsewhere since the name was checked is never overwritten unasked; the same one (this
+  // edit landed already, with a save queued before it) is
   const saving = saveTemplates(`Template ${name} saved.`, (p) => {
-    if (Object.hasOwn(p.templates, name) && p.templates[name] !== copy) return false;
+    if (Object.hasOwn(p.templates, name) && JSON.stringify(p.templates[name]) !== JSON.stringify(copy)) return false;
     p.templates[name] = copy;
   });
   openCard = name;
@@ -621,9 +622,10 @@ async function saveTemplateAs(): Promise<void> {
   const existed = !!name && Object.hasOwn(state.profiles!.templates, name);
   if (!name || (existed && !await confirmDialog({ title: `Overwrite the ${name} template?`, body: `The ${name} template is replaced with these settings.`, confirmLabel: `Overwrite ${name}` }))) return;
   const entry = { spec: templateSpecFrom(readControls(), buffsOn()), savedAt: new Date().toISOString() };
-  // overwriting is what was confirmed; a template by that name made elsewhere since the prompt is never overwritten unasked
+  // overwriting is what was confirmed; a template by that name made elsewhere since the prompt is never overwritten unasked,
+  // and the same one is this edit landed already
   const saving = saveTemplates(`Template ${name} saved.`, (p) => {
-    if (!existed && Object.hasOwn(p.templates, name) && p.templates[name] !== entry) return false;
+    if (!existed && Object.hasOwn(p.templates, name) && JSON.stringify(p.templates[name]) !== JSON.stringify(entry)) return false;
     p.templates[name] = entry;
   });
   session.profile!.template = name;
