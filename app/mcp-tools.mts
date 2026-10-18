@@ -20,6 +20,7 @@ import { LEFT_OUT } from "./unravel.mts";
 import { RUN_DEFAULTS } from "./run-settings.mts";
 import type { ValidatorSchema } from "./schema/validate.mts";
 import type { PlanMove } from "./organize-types.mts";
+import type { ApiResponse } from "./api/routes.mts";
 import { LIMITS, salvagedRefusal, type OrganizeConfig } from "./organize-config.mts";
 import type { HouseModel, HouseSummary } from "./house-model-types.mts";
 import type { HouseArea } from "./house-names.mts";
@@ -57,7 +58,6 @@ export const INSTRUCTIONS = [
 
 // ---------------------------------------------------------------- shapes the routes answer with (only what is read)
 interface InventoryDoc { characters: Record<string, Character>; containers: Record<string, Container>; worn: Record<string, Item[]>; scans: Array<{ character: string; scannedAt: string; items: number; roots: number[] }>; itemCount: number; facets: Record<string, unknown> & { kinds: Array<{ name: string; count: number }>; propKeys: string[] } }
-interface SetupDoc { settings: { client?: { adapter: string } | null }; bridgeAdapter: string | null; adapters: Array<{ id: string; name?: string; capabilities?: { bridge?: string[] }; features?: string[] }> }
 interface BridgeStatus { online: boolean; age?: number; character?: string; adapter?: { features?: string[] }; current?: { id?: string } | null; results?: Record<string, BridgeResult> }
 interface BridgeResult { ok: boolean; msg: string; t?: string; partial?: boolean; stopped?: boolean; steps?: Array<{ op: string; serial: number; ok: boolean; msg: string }> }
 interface RunDoc { id: string; character?: string; createdAt: string; label?: string; settings?: Record<string, unknown>; result?: Record<string, unknown> | null; ms?: number | null; inventoryStamp?: string | null }
@@ -212,8 +212,8 @@ function rememberPlan(memory: ToolContext["memory"], id: string, ev: EvalInputs)
 
 // ---------------------------------------------------------------- in-game actions
 // The client the bridge routes to and its heartbeat, as the page's buttons see them.
-async function bridgeGate(ctx: ToolContext): Promise<{ adapter: SetupDoc["adapters"][number] | null; status: BridgeStatus }> {
-  const [setup, status] = await Promise.all([ctx.api<SetupDoc>("/api/setup"), ctx.api<BridgeStatus>("/api/bridge/status")]);
+async function bridgeGate(ctx: ToolContext): Promise<{ adapter: ApiResponse<"GET /api/setup">["adapters"][number] | null; status: BridgeStatus }> {
+  const [setup, status] = await Promise.all([ctx.api<ApiResponse<"GET /api/setup">>("/api/setup"), ctx.api<BridgeStatus>("/api/bridge/status")]);
   const id = setup.settings.client?.adapter ?? setup.bridgeAdapter;
   return { adapter: (id && setup.adapters.find((a) => a.id === id)) || null, status };
 }
@@ -507,7 +507,7 @@ export const TOOLS: Tool[] = [
     inputSchema: { type: "object", additionalProperties: false, properties: {} },
     annotations: { title: "Scan status", ...READ },
     async handler(_a, ctx) {
-      const [inv, st, { settings }] = await Promise.all([inventory(ctx), ctx.api<BridgeStatus>("/api/bridge/status"), ctx.api<{ settings: { client?: { adapter: string } | null } }>("/api/settings")]);
+      const [inv, st, { settings }] = await Promise.all([inventory(ctx), ctx.api<BridgeStatus>("/api/bridge/status"), ctx.api<ApiResponse<"GET /api/settings">>("/api/settings")]);
       return { scans: inv.scans.length, newestScan: newestStamp(inv.scans) || null, client: settings.client?.adapter ?? null,
         characters: Object.values(inv.characters).filter((c) => !isPseudoCharacter(c.name)).map((c) => ({ name: c.name, scannedAt: c.scannedAt })),
         bridge: { online: !!st.online, character: st.character ?? null, secondsSinceHeartbeat: Number.isFinite(st.age) ? st.age : null } };

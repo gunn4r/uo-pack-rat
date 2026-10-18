@@ -591,7 +591,7 @@ test("[fast] POST /api/setup/locate never echoes the path it probed", async () =
 // an environment folder or a fixed root.
 test("[fast] PACKRAT_CLIENT_HOME confines the client search to that folder", () => {
   const home = mkdtempSync(join(tmpdir(), "qm-clienthome-"));
-  const tazuo = { id: "tazuo", name: "TazUO", scripts: [], capabilities: {}, features: [], transport: "folder" as const, platform: null, summary: "" };
+  const tazuo = { id: "tazuo", name: "TazUO", scripts: [], capabilities: { bridge: [] }, features: [], transport: "folder" as const, platform: null, summary: "" };
   try {
     const empty = defaultClientSearch({ PACKRAT_CLIENT_HOME: home, LOCALAPPDATA: join(home, "..") });
     assert.equal(empty.home, home);

@@ -11,6 +11,7 @@ import { buffPlanOf, buffSkillValues, isBuffList, isBuffSkills, isBuffSkillsByCh
 import { RACES, RUN_DEFAULTS, RUN_SETTING_LIMITS, defaultStrLimit, isGoalSwing, runSettingsError } from "./run-settings.mts";
 import { compileGoals, copyGoals, goalsActive, migrateProfiles, templateFrom, TEMPLATE_KEYS, toOptItem, totalsOf, type Character, type EffectiveProfile, type Goals, type GoalSwingWeapon, type Item, type Profile, type ProfilesFile, type RarityPreference, type RunBuffs, type RunSettings, type Template, type TemplateSource } from "./vault-lib.mts";
 import { heldWeapon, ssiForTicks } from "./swing.mts";
+import { DEFAULT_FLOOR_BONUS } from "./solver/scoring.mts";
 
 // ---------------------------------------------------------------- the document
 // swingSteps: score SSI by swing step (app/swing.mts) rather than per point; absent means off, and a spec carries it only when on.
@@ -50,7 +51,7 @@ const POOL_KEYS = ["lockedSlots", "excludeTags", "excludeSkills", "excludeRoots"
 const SEARCH_KEYS = ["budgetMs", "exact", "restarts", "altCount", "altTol"] as const;
 const GOAL_KINDS = ["best", "cheapest"];
 // What an absent field means. The search knobs' defaults are run-settings.mts's RUN_DEFAULTS.
-export const SPEC_DEFAULTS = { floorBonus: 1000, ubwsAnyWeapon: true, strLimit: "character" as StrLimit } as const;
+export const SPEC_DEFAULTS = { floorBonus: DEFAULT_FLOOR_BONUS, ubwsAnyWeapon: true, strLimit: "character" as StrLimit } as const;
 const GOAL_SUITS = { min: 1, max: 100 } as const;
 
 // A spec with every field filled in, from a stored one (any field may be missing).

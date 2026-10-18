@@ -9,6 +9,7 @@
   },
   "include": [
     "app/ui/**/*",
+    "app/api/**/*",
     "app/vault-lib.*",
     "app/item-query.*",
     "app/unravel.*",
@@ -19,6 +20,7 @@
     "app/run-settings.*",
     "app/build-spec.*",
     "app/swing.*",
+    "app/solver/scoring.*",
     "app/house-areas.*",
     "app/guards.*",
     "app/data-dir-notice.*",

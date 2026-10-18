@@ -1,15 +1,15 @@
-// ui/builder-session.mts — the Suit Builder's one session: the state its six modules share (builder.mts's panel and
-// job, builder-header.mts's sentence bar, builder-start.mts's first-visit view, builder-result.mts's result, builder-manual.mts's
-// Manual mode, runs.mts's saved runs) and the commands they call on each other. The six never import each other: each reads and sets the session here, and registers the commands it
-// performs for the others with provide(). Today a session is one character, one result and one job.
+// ui/builder-session.mts — the Suit Builder's one session: the state its nine modules share (builder.mts's panel,
+// builder-header.mts's sentence bar, builder-templates.mts's templates, builder-requirements.mts's Requirements and Goals tabs, builder-job.mts's build job, builder-start.mts's first-visit view, builder-result.mts's result, builder-manual.mts's
+// Manual mode, runs.mts's saved runs) and the commands they call on each other. The nine never import each other: each reads and sets the session here, and registers the commands it
+// performs for the others with provide(); what changed that they draw is announced (announce) and listened for (onChange). Today a session is one character, one result and one job.
 //
 // map: builder
-// owns: `session`, `commands`, `provide`, `readControls`, `applyKnobs`
+// owns: `session`, `commands`, `provide`, `announce`, `onChange`, `readControls`, `applyKnobs`
 import { RUN_DEFAULTS } from "../run-settings.mts";
 import type { EffectiveProfile, PropMap, RunBuffs, RunSettings, SettingsChange } from "../vault-lib.mts";
 import type { BuffPlan, Stats } from "../buffs.mts";
 import type { PlannedBuild } from "../build-spec.mts";
-import { knobError, type Knobs } from "./builder-model.mts";
+import { knobError, type Knobs, type KnobField } from "./builder-model.mts";
 import type { BuilderProfile, BuilderJob, BuildMeta, FinishedBuild } from "./store.mts";
 import type { OptimizeResult, OptSuit, RunSummaryLike, SavedRunLike } from "./api-types.mts";
 import type { GearChanges, SwingResult } from "../runs-types.mts";
@@ -33,9 +33,26 @@ export interface BuilderState {
   outcome: ShownOutcome | null;   // set by builder-result.mts as it draws a result, null with none shown
 }
 const data: BuilderState = { character: null, profile: null, result: null, job: null, runs: [], compare: new Set(), openRun: null, altView: null, parked: null, mode: "automatic", outcome: null };
-// Every setter fires `builderchange` on the document, with the field's name as its detail.
-export type BuilderChange = CustomEvent<{ key: keyof BuilderState | "knobs" }>;
-const changed = (key: keyof BuilderState | "knobs"): void => { globalThis.document?.dispatchEvent(new CustomEvent("builderchange", { detail: { key } })); };
+// What changed that no field here carries, announced with announce() as a `builderchange` of that key; the module that
+// draws it listens (onChange) and redraws, so the one announcing need not know who that is:
+//   panel     the panel's profile was replaced or reloaded: the drawer is drawn again (builder.mts)
+//   caps      a new set of resist caps came in (another character, a template, a run's settings): a cap typed out of range is
+//             dropped (builder-requirements.mts)
+//   picker    who the character picker shows may have changed (builder-manual.mts decides: No character in Manual)
+//   selected  a character was selected and its panel set up: Manual follows it (builder-manual.mts)
+//   roster    the character list changed (a load, a scan, a Forget): Manual resolves its suit again (builder-manual.mts)
+//   settings  the panel's settings were edited: the first-visit view, while shown, is drawn again in place (builder-start.mts)
+//   view      the result view starts over: a result still resolving its pieces must not draw (builder-result.mts)
+// A listener that throws does not stop the one announcing: dispatchEvent reports the error as a page error and returns.
+export type BuilderNews = "panel" | "caps" | "picker" | "selected" | "roster" | "settings" | "view";
+// Every setter fires `builderchange` on the document, with the field's name as its detail; announce() fires the news.
+export type BuilderChange = CustomEvent<{ key: keyof BuilderState | "knobs" | BuilderNews }>;
+const changed = (key: BuilderChange["detail"]["key"]): void => { globalThis.document?.dispatchEvent(new CustomEvent("builderchange", { detail: { key } })); };
+export function announce(what: BuilderNews): void { changed(what); }
+// `fn` on every `builderchange` of `key`.
+export function onChange(key: BuilderChange["detail"]["key"], fn: () => void): void {
+  globalThis.document?.addEventListener("builderchange", (e) => { if ((e as BuilderChange).detail.key === key) fn(); });
+}
 function put<K extends keyof BuilderState>(key: K, value: BuilderState[K]): void { data[key] = value; changed(key); }
 
 // The solver knobs as typed (strings, so a bad value can sit in its field with its error until fixed): STR limit, beside
@@ -80,25 +97,42 @@ export function applyKnobs(st: RunSettings): void {
 // The build picker's state line and its full text (builder-model.mts buildStateText, buildStateDetail), whether the panel
 // drifted from its template or from the saved profile, and the changes behind each (builder.mts buildState).
 export interface BuildState { text: string; detail: string; drift: boolean; unsaved: boolean; template: string | null; changed: SettingsChange[]; unsavedList: SettingsChange[] }
+// The drawer's groups that redraw() draws again (`b-sec-<id>`), and the ones focusIn() reaches (each on a known tab).
+export type SectionId = "buffs" | "req" | "caps" | "goals" | "weights" | "pool" | "adv";
+export type FocusSection = "req" | "caps" | "goals" | "weights" | "adv";
 // A character's buff numbers (or No character's, for null) with its edits, which inputs are planned, the raw stats Bless
 // takes a share of and the race (builder-manual.mts buffInputsOf).
 export type BuffInputs = { values: Record<string, number>; planned: Set<string>; stats: Stats | null; race: string | null };
 // What one module does for the others, by the module that provides it.
 export interface BuilderCommands {
   // builder.mts: the panel, and the build it plans
-  renderPanel(): void;
-  clearCapDrafts(): void;
   panelBuild(): PlannedBuild;
   buffPlan(name: string, race: string | null | undefined, buffs: RunBuffs | undefined): BuffPlan;
   loadRunBuffs(b: RunBuffs | undefined): void;
   tuneWeight(key: string | null, from: HTMLElement): void;
-  pickTemplate(ref: string, again?: boolean): void;
   selectCharacter(name: string, open?: string | true): void;
-  build(): void;
-  openSettingsTab(tab: string): void;
+  openSettingsTab(tab: string, focus?: boolean): void;   // `focus` false when the caller focuses a control in it next
   buildState(): BuildState;
   unsavedChanges(): SettingsChange[];
   openChange(c: SettingsChange, from: HTMLElement): void;   // a What changed row's setting, in the drawer
+  updateTemplateBadge(): void;   // the build picker, the chip and the footer after an edit
+  saveProfile(said?: string): void;   // the panel's settings as the character's profile; `said` replaces the toast
+  redraw(id: SectionId): void;   // one group of the drawer (`b-sec-<id>`) drawn again in place
+  focusIn(sec: FocusSection, sel: string, selectText?: boolean): void;   // a control in a group, the drawer opened on its tab
+  focusKnob(f: KnobField, err: string): void;   // a bad search knob's field, its error under it, on the Advanced tab
+  paintChanges(): void;   // the drawer footer's "N changes since the last build"
+  showFinished(f: FinishedBuild, focus?: boolean): void;   // a finished build as the result on screen
+  // builder-requirements.mts: the Requirements and Goals tabs and the resist caps
+  requirementsSection(): HTMLElement;
+  capsSection(): HTMLElement;
+  goalsSection(): HTMLElement;
+  weightsSection(): HTMLElement;
+  showGoalWeights(): void;   // with goals in force, their weights shown under them (before a weight is opened)
+  badCapDraft(): string | undefined;   // a resist whose cap is typed out of range
+  // builder-job.mts: the build job
+  build(): void;
+  // builder-templates.mts: the Manage templates drawer, and a template picked as the starting point
+  pickTemplate(ref: string, again?: boolean): void;
   saveTemplateAs(): void;
   openTemplatesDrawer(from: HTMLElement): void;
   // builder-header.mts: the sentence bar
@@ -108,10 +142,8 @@ export interface BuilderCommands {
   paintChangesChip(st: BuildState): void;
   // builder-start.mts: the first-visit view
   renderCurrentSuit(name: string, keepCards?: boolean): void;
-  refreshCurrentSuit(): void;
   // builder-result.mts: the result and the compare view
   renderResult(res: OptimizeResult, current: OptSuit, prof: EffectiveProfile, name: string, meta?: BuildMeta): Promise<void>;
-  resetResultView(): void;
   setResultGear(gear: GearChanges | null): Promise<void>;
   resultLoadError(e: unknown): void;
   closeCompare(): void;
@@ -120,10 +152,7 @@ export interface BuilderCommands {
   openInManual(suit: OptSuit, covered: readonly string[], runB: RunBuffs | undefined, label: string): Promise<void>;
   templateBuffs(on: readonly string[], label: string): void;
   showAutomatic(): void;
-  paintCharSelect(): void;
   setManualFor(character: string | null): void;
-  renderManual(): void;
-  syncManual(): Promise<void>;
   buffEditsOf(name: string | null): Record<string, number>;
   buffInputsOf(name: string | null): BuffInputs;
   editBuffInputs(name: string | null, values: Readonly<Record<string, number | null>>): void;
@@ -137,6 +166,6 @@ export interface BuilderCommands {
   startOver(): void;
   lastRunDays(): Promise<Record<string, string> | null>;   // each character's latest run, as "today, 10:40 PM"; null when unknown
 }
-// Filled by each module as it loads (app.mts imports all six), so every command is there before the page calls one.
+// Filled by each module as it loads (app.mts imports all nine), so every command is there before the page calls one.
 export const commands = {} as BuilderCommands;
 export function provide(c: Partial<BuilderCommands>): void { Object.assign(commands, c); }

@@ -9,6 +9,7 @@ import { poolPart, runRecord, stripOpts, type PoolSnapshot, type RunOpts, type R
 import type { WorkerMessage, WorkerDoneMessage } from "../optimize-worker.mts";
 import type { OptResult, ExactSolveResult, SolveProgress } from "../exact-solver.mts";
 import { sse } from "./events.mts";
+import { DEFAULT_BUDGET_MS } from "../solver/scoring.mts";
 import type { Diagnostic } from "../runs-types.mts";
 
 // A job keeps its last progress snapshot and its final result, so a page that reconnects (or
@@ -84,7 +85,7 @@ export function createJobsService({ coreUrl, timings = {}, runStore, log, create
   // core's 15 s default when it names none) — never before the budget the route accepted for it. The
   // grace covers the heuristic restarts that run ahead of the exact phase's budget.
   const JOB_RUN_GRACE_MS = timings.runGraceMs ?? 10 * 60 * 1000;
-  const DEFAULT_TIME_BUDGET_MS = 15000;
+  const DEFAULT_TIME_BUDGET_MS = DEFAULT_BUDGET_MS;
   // Set by stop(): a worker terminated by shutdown is not a failed build.
   let closing = false;
   // A server-wide ceiling on live worker threads, on top of the per-X-Client-Id supersede below: that

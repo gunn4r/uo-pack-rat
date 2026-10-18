@@ -1,24 +1,22 @@
-// ui/api-types.mts — every response shape the page reads off its own fetches: the house, Organize and saved-run shapes re-exported from the types-only modules (runs narrowed), the rest declared here. api.mts's `api()` call
+// ui/api-types.mts — every response shape the page reads off its own fetches: the house, Organize and saved-run shapes re-exported from the types-only modules (runs narrowed), the settings and setup shapes from app/api/setup.mts, the rest declared here. api.mts's `api()` call
 // returns `unknown` at the boundary (Response.json() is genuinely unvalidated network input); every
 // caller narrows through one of the types below rather than sprinkling `as Whatever` at each read
 // site, per the migration plan's "type each endpoint's response in ONE place."
 //
 // A server-side module may be imported here, type or value, when it and everything it imports is browser-safe (no node: import anywhere in that chain), as the imports below are. One that reaches a node: module cannot be imported even for a type: the browser build (tsconfig.browser.json) type-checks with `"types": []`, a type-only import is erased only at emit time, and the imported file still has to type-check. So a server shape the page reads lives in a types-only module next to its owner (app/house-model-types.mts, app/organize-types.mts, app/runs-types.mts): the owner re-exports it, the server annotates its response with `satisfies`, and this file re-exports it (or narrows it with a mapped type), so a renamed field fails the typecheck on both sides. Never the other way around: nothing outside app/ui/ imports from app/ui/.
 //
-// What is still declared here by hand: GET /api/bridge/status (the server spreads the bridge's own status file into it, so it has no server-side type to share; see below) and the rest of the shapes below whose owners reach node: (app/installer.mts, app/exact-solver.mts, scripts/optimizer-core.mts, app/vault-server.mts). Each names the server-side type or route it mirrors, so a change on one side has somewhere obvious to update on the other. Nothing here is validated against the wire (HTTP responses are unvalidated network input, same trust level server.test.mts's own per-route interfaces document); it gives the page's own reads a name instead of `unknown`.
+// What is still declared here by hand: GET /api/bridge/status (the server spreads the bridge's own status file into it, so it has no server-side type to share; see below) and the rest of the shapes below whose owners reach node: (app/exact-solver.mts, scripts/optimizer-core.mts, app/vault-server.mts). Each names the server-side type or route it mirrors, so a change on one side has somewhere obvious to update on the other. Nothing here is validated against the wire (HTTP responses are unvalidated network input, same trust level server.test.mts's own per-route interfaces document); it gives the page's own reads a name instead of `unknown`.
 //
 // map: ui-infra
 // owns: the hand-declared `*ApiResponse` types
 import type { Item, Container, Character, ScanSummary, OptItem, RunSettings, BlacklistEntry, KindOverrides } from "../vault-lib.mts";
 import type { ProfilesV3, TemplateMap } from "../build-spec.mts";
 import type { Facets, ItemQueryRows, ItemQueryGroups, HitRow } from "../item-query.mts";
-import type { RulesV1 } from "../schema/types.d.mts";
 import type { AutostartOutcome, Hotkey as PanelHotkey, PanelPrefs } from "../tazuo-panel-prefs.mts";
 import type { OrganizeConfig, RuleMatch } from "../organize-config.mts";
 import type { MissingItem } from "../missing.mts";
 import type { Diagnostic, RunBody, RunsListBody, RunSummary, SavedRun, ScoreShare, SwingResult } from "../runs-types.mts";
 import type { HouseApiResponse } from "../house-model-types.mts";
-import type { DataDirCheckInfo } from "../data-dir-notice.mts";
 
 // ---------------------------------------------------------------- shared fragments
 
@@ -31,40 +29,9 @@ export interface SkillEntry {
   cap: number;
 }
 
-// settings.client / setup.settings.client (POST /api/settings, GET /api/setup) — mirrors
-// app/vault-server.mts's ClientSettings.
-export interface ClientSetting {
-  adapter: string;
-  scriptsDir: string;
-}
-// settings.retention (app/retention.mts): the server answers with all three fields.
-export interface RetentionSetting {
-  keepAll: boolean;
-  scanDays: number;
-  runsPerCharacter: number;
-}
-export interface SettingsData {
-  shard: string;
-  setupDone?: boolean | undefined;
-  client?: ClientSetting | null | undefined;
-  retention?: RetentionSetting | undefined;
-  autoUpdateCheck?: boolean | undefined;   // Settings › Updates' automatic check (the server answers true unless it was turned off)
-  uoFolder?: string | null | undefined;    // Settings › UO folder (house map): the folder holding tiledata.mul; absent or null = found through TazUO's launcher
-  unravelKeep?: number[] | undefined;      // Inventory › Unravel's Keep list: pieces never suggested for unraveling (issue #271)
-  unravelBag?: Record<string, number> | undefined;   // Inventory › Unravel's Gather into a bag: the bag each character gathers into (issue #271)
-}
-// POST /api/retention/cleanup: what a dry run would remove, or what a real run removed; refused when
-// old scans were kept because the inventory would have changed without them.
-export interface CleanupApiResponse {
-  ok: boolean;
-  scans: number;
-  runs: number;
-  refused: boolean;
-}
-export interface SettingsApiResponse {
-  ok: boolean;
-  settings: SettingsData;
-}
+// The settings and setup routes' shapes (settings.json, the rules, the wizard, the update check) come from app/api/setup.mts.
+export type { ClientSettings as ClientSetting, Retention as RetentionSetting, SettingsData, SettingsApiResponse, CleanupApiResponse, ShardOption, RulesApiResponse,
+  AdapterSummary, InstalledVersionInfo, DataDirCheckInfo, SetupApiResponse, PasteScannerApiResponse, LocateApiResponse, InstallApiResponse, UpdateCheckApiResponse } from "../api/setup.mts";
 
 // GET /api/ui-prefs — the page's own view choices, kept in <data>/ui-prefs.json. Every field is
 // optional: absent means "never chosen", and the page keeps its default.
@@ -96,20 +63,6 @@ export interface UiPrefs {
 export interface UiPrefsApiResponse {
   ok: boolean;
   prefs: UiPrefs;
-}
-
-// GET /api/rules' `available` list — mirrors app/rules.mts's RulesEntry, trimmed to what the page
-// ever reads (id, name) off state.availableShards.
-export interface ShardOption {
-  id: string;
-  name: string;
-}
-export interface RulesApiResponse {
-  ok: boolean;
-  shard: string;
-  rules: RulesV1;
-  available: ShardOption[];
-  fallback: boolean;
 }
 
 // ---------------------------------------------------------------- inventory / items
@@ -159,66 +112,6 @@ export interface ProfilesApiResponse {
 
 // ---------------------------------------------------------------- setup / wizard / adapters
 
-// One entry of GET /api/setup's `adapters` — mirrors app/installer.mts's AdapterInfo, restated here
-// (not imported — see the module header) with `capabilities` narrowed to the one field the page
-// actually reads off it (`.bridge`); the rest of an adapter's capabilities.json content is real but
-// unused by the page.
-export interface AdapterSummary {
-  id: string;
-  name: string;
-  transport: string;
-  platform: string | null;
-  summary: string;
-  capabilities: { bridge: string[]; [key: string]: unknown };
-  features: string[];
-}
-export interface InstalledVersionInfo {
-  version: string | null;
-  files: Record<string, boolean>;
-}
-// GET /api/setup's dataDirCheck (app/data-dir-notice.mts).
-export type { DataDirCheckInfo };
-export interface SetupApiResponse {
-  ok: boolean;
-  firstRun: boolean;
-  settings: SettingsData;
-  adapters: AdapterSummary[];
-  candidates: Record<string, string[]>;
-  installed: InstalledVersionInfo | null;
-  available: Record<string, string | null>;
-  dataDir: string;
-  platform: string;
-  bridgeAdapter: string | null;
-  dataDirCheck: DataDirCheckInfo;
-  version?: string | undefined;   // package.json's version (Settings › Updates)
-  canOpenFolders?: boolean | undefined;   // the desktop shell can open a folder (POST /api/host/open-path)
-}
-// GET /api/setup/scanner?adapter=<id> — a paste-transport adapter's bundled scanner (installer.mts's pasteScanner).
-export interface PasteScannerApiResponse {
-  ok: boolean;
-  version: string | null;
-  script: string;
-}
-export interface LocateApiResponse {
-  ok: boolean;
-  scriptsDir: string;
-  installed: InstalledVersionInfo;
-}
-// POST /api/setup/install — mirrors app/installer.mts's InstallScriptsResult's `ok: true` branch (the
-// `ok: false` branch never reaches the page as a parsed success value; api.mts throws on a non-2xx
-// response instead, so callers read that through the thrown Error, not this type), plus the two
-// fields the route itself adds: `scriptsDir`, the folder the server RESOLVED out of what the page
-// sent (a client root becomes its nested scripts folder), and `pathsFile`, what became of
-// packrat-paths.json — "written" | "unchanged" | "kept" | "backed-up" (installer.mts's
-// PathsFileOutcome, restated as a string union here; ui/messages.mts turns it into a sentence).
-export interface InstallApiResponse {
-  ok: boolean;
-  installed: string[];
-  version: string | null;
-  scriptsDir?: string | undefined;
-  pathsFile?: string | undefined;
-  autostart?: AutostartOutcome | null | undefined;
-}
 // The TazUO panel (app/tazuo-panel-prefs.mts): GET/PUT /api/tazuo-panel, and POST /api/setup/install's `panel`.
 export type { AutostartOutcome, PanelHotkey, PanelPrefs };
 export interface TazuoPanelApiResponse { ok: boolean; prefs: PanelPrefs }
@@ -232,22 +125,6 @@ export interface McpApiResponse {
 export interface HostPickFolderApiResponse {
   ok: boolean;
   path: string | null;
-}
-
-// GET /api/update-check — mirrors app/installer.mts's CheckForUpdatesResult. `url` is typed `string`
-// here although the server-side type still says `unknown`: checkForUpdates() no longer forwards
-// GitHub's `html_url` as it found it, it runs it through installer.mts's releaseUrl(), which returns
-// either that value once it has been proved an https://github.com/<this repo>/releases… address or
-// the repository's own releases page. The wire is still unvalidated network input like every other
-// response here — what changed is that the one field with a security claim on it now has a server
-// that vouches for it, so the page no longer needs a cast with a warning attached.
-export interface UpdateCheckApiResponse {
-  configured: boolean;
-  error?: string | undefined;
-  current?: string | undefined;
-  latest?: string | undefined;
-  url?: string | undefined;
-  upToDate?: boolean | undefined;
 }
 
 // ---------------------------------------------------------------- import
@@ -331,7 +208,7 @@ export interface TieBreakResult { topScore: number; cost: number; changes?: numb
 // A strict-order build's stages, each with the suit's value there, and how many are proven in order.
 export interface StrictResult { stages: Array<{ kind: string; keys: string[] | null; value: number }>; proven: number; changes?: number | undefined }
 // SolveProgress (app/exact-solver.mts) as reported over the job's SSE stream and read by
-// builder.mts's runPanel(). Every field but `phase` is optional — not every phase reports every one.
+// builder-job.mts's runPanel(). Every field but `phase` is optional — not every phase reports every one.
 export interface OptimizeProgress {
   phase: string;
   elapsedMs?: number | undefined;

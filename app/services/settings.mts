@@ -1,14 +1,17 @@
 // settings.mts — the settings this run uses and the shard's rules: settings.json as saved, with the two startup fallbacks laid over it, and the rules that settings.json names, handed to vault-lib.
 //
 // map: services
-// owns: `createSettingsService`
+// owns: `createSettingsService`, `EffectiveSettings`
 import { loadRules, DEFAULT_SHARD } from "../rules.mts";
 import { retentionOf } from "../retention.mts";
 import { rulesUpgradeNote, setRules } from "../vault-lib.mts";
 import type { RulesV1 } from "../schema/types.d.mts";
 import type { SettingsDoc } from "../store/settings.mts";
+import type { Retention } from "../api/setup.mts";
 import { short } from "../guards.mts";
 
+// What this run uses: settings.json with `retention` and `autoUpdateCheck` always filled in, and the fallbacks laid over it.
+export type EffectiveSettings = SettingsDoc & { retention: Retention; autoUpdateCheck: boolean };
 // `store` is settings.json's store; `rulesDir` the data folder's rules overrides; `isKnownAdapter` says whether this
 // install ships an adapter id; `warn` is the server's startup warning (the console and the log).
 export function createSettingsService({ store, rulesDir, isKnownAdapter, warn }: {
@@ -40,7 +43,7 @@ export function createSettingsService({ store, rulesDir, isKnownAdapter, warn }:
   let clientIgnored = !clientIsKnown(savedSettings);
   // The shard fallback below sets this; declared here so effectiveSettings() can read it.
   let rulesFallback = false;
-  function effectiveSettings(): SettingsDoc {
+  function effectiveSettings(): EffectiveSettings {
     return { ...savedSettings, retention: retentionOf(savedSettings.retention), autoUpdateCheck: savedSettings.autoUpdateCheck !== false, ...(clientIgnored ? { client: null } : {}), ...(rulesFallback ? { shard: DEFAULT_SHARD } : {}) };
   }
   let currentSettings = effectiveSettings();
@@ -97,7 +100,7 @@ export function createSettingsService({ store, rulesDir, isKnownAdapter, warn }:
   const bridgeAdapter = (): string => currentSettings.client?.adapter || DEFAULT_BRIDGE_ADAPTER;
 
   return {
-    current: (): SettingsDoc => currentSettings,
+    current: (): EffectiveSettings => currentSettings,
     saved: (): SettingsDoc => savedSettings,
     rules: (): RulesV1 => currentRules,
     rulesFallback: (): boolean => rulesFallback,

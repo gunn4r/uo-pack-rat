@@ -18,6 +18,7 @@ import { UNRAVEL_KEEP_MAX, unravelBagError, type ClientSettings, type SettingsDo
 import { send, asObject } from "../respond.mts";
 import { MAX_PATH_LEN, NO_CLIENT_FOLDER } from "./setup.mts";
 import type { Route } from "../router.mts";
+import type { CleanupApiResponse, RulesApiResponse, SettingsApiResponse } from "../../api/setup.mts";
 import type { ServerContext } from "../context.mts";
 
 const NO_TILEDATA = "no tiledata.mul found in that folder";
@@ -26,7 +27,7 @@ export function routes(ctx: ServerContext): Route[] {
   const { config: CONFIG, appSettings, retentionService, setupService } = ctx;
   const USER_RULES_DIR = CONFIG.paths.rules;
   return [
-    { method: "GET", path: "/api/settings", handle: (_req, res) => send(res, 200, { ok: true, settings: appSettings.current() }) },
+    { method: "GET", path: "/api/settings", handle: (_req, res) => send(res, 200, { ok: true, settings: appSettings.current() } satisfies SettingsApiResponse) },
     { method: "PUT", path: "/api/settings", handle: async (req, res) => {
       // Any subset of {shard, setupDone, client} — Task 2 extended this route to carry the setup
       // wizard's own state without disturbing the shard-switch contract above it. Each field present
@@ -123,7 +124,7 @@ export function routes(ctx: ServerContext): Route[] {
       if (hasRetention) changes.retention = { ...retentionOf(appSettings.saved().retention), ...(body.retention as object) };
       appSettings.save(changes);
       appSettings.applyRules(nextRules, nextFallback);
-      return send(res, 200, { ok: true, settings: appSettings.current() });
+      return send(res, 200, { ok: true, settings: appSettings.current() } satisfies SettingsApiResponse);
     } },
     { method: "POST", path: "/api/retention/cleanup", handle: async (req, res) => {
       // Settings › Data's Clean up now: {dryRun: true} counts what the pruning would remove (the
@@ -132,11 +133,11 @@ export function routes(ctx: ServerContext): Route[] {
       const { dryRun } = asObject(await readBody(req, { limit: 8e3 }));
       if (typeof dryRun !== "boolean") return send(res, 400, { ok: false, error: "dryRun must be a boolean" });
       if (CONFIG.demo) return send(res, 409, { ok: false, error: "demo data is read-only" });
-      if (dryRun) { const plan = await retentionService.plan(); return send(res, 200, { ok: true, scans: plan.scans.length, runs: plan.runs.length, refused: plan.refused }); }
-      return send(res, 200, { ok: true, ...await retentionService.prune("clean up now") });
+      if (dryRun) { const plan = await retentionService.plan(); return send(res, 200, { ok: true, scans: plan.scans.length, runs: plan.runs.length, refused: plan.refused } satisfies CleanupApiResponse); }
+      return send(res, 200, { ok: true, ...await retentionService.prune("clean up now") } satisfies CleanupApiResponse);
     } },
     { method: "GET", path: "/api/rules", handle: (_req, res) => {
-      return send(res, 200, { ok: true, shard: appSettings.current().shard, rules: appSettings.rules(), available: listRules({ userRulesDir: USER_RULES_DIR }), fallback: appSettings.rulesFallback() });
+      return send(res, 200, { ok: true, shard: appSettings.current().shard, rules: appSettings.rules(), available: listRules({ userRulesDir: USER_RULES_DIR }), fallback: appSettings.rulesFallback() } satisfies RulesApiResponse);
     } },
   ];
 }
