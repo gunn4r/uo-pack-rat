@@ -149,6 +149,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `app/ui-messages.test.mts` — `app/ui/messages.mts`, the plain sentences the page shows for an outcome the server reports as a count, a status code or a one-word field.
 - `app/ui-move.test.mts` — `app/ui/move-model.mts`, Move to's pure rules (issue #270).
 - `app/ui-organize.test.mts` — `app/ui/organize-model.mts`, the Organize screen's pure rules (issue #11).
+- `app/ui-profiles.test.mts` — `app/ui/profiles.mts`'s saves against a stand-in server: the stamp each save sends and keeps, the stale retry, and a reload racing a save.
 - `app/ui-render.test.mts` — the page's DOM builders for scan-supplied values (the character sheet, the tooltip, the peek's properties), which once built markup as a raw string.
 - `app/ui-state.test.mts` — `app/ui/view-state.mts`, the page's DOM-free state rules.
 - `app/ui-world-map.test.mts` — `app/ui/world-map-model.mts` (issue #164), the world map lightbox's view.
@@ -195,6 +196,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `scripts/ui-map.test.mts` — [slow]: the House map (issues #10 and #164) in the real Electron window over a seeded data folder.
 - `scripts/ui-move.test.mts` — [slow]: the Inventory's selection, Move to and Move back (issue #270) in the real Electron window.
 - `scripts/ui-organize.test.mts` — [slow]: Organize (issue #11) in the real Electron window over the demo scans.
+- `scripts/ui-profiles-sync.test.mts` — [slow]: the page's profile saves against another window's in the real Electron window (quality pass 1, W1a), on a writable `--data` directory seeded with the demo scans.
 - `scripts/ui-scrolls.test.mts` — [slow]: the Inventory's Scrolls view (issue #181) in the real Electron window.
 - `scripts/ui-shell.test.mts` — [slow]: the app shell (design spec 3.1) in the real Electron window.
 - `scripts/ui-smoke.test.mts` — [slow]: the Playwright-driven render check that the page renders and its tabs work.
