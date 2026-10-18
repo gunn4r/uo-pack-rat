@@ -12,8 +12,8 @@
 // (heuristic searches only: the core's branch-and-bound doesn't prove the fixture in reasonable time), then generated
 // inventories: negative values, two-handers, worn pieces, rarity tie costs, hard and soft floors (some exactly at their
 // min, some hard floors naming keys with no floor), floor bonuses and partial credit down to 0, mins, Resisting Spells and
-// SSI steps, hard-floor bonuses from 5 to 1e10; four searches each (plain, exact with alternatives, tie-break, Strict
-// order), the exact ones with a ten-minute budget. An exact search that comes back unproven fails the check, since two
+// SSI steps, hard-floor bonuses from 5 to 1e10; four searches each (plain, exact with alternatives, tie-break (half of
+// them from a given top suit), Strict order), the exact ones with a ten-minute budget. An exact search that comes back unproven fails the check, since two
 // runs cut by the clock can differ on the clock alone.
 //
 //   node app/bench/compare-cores.mts [--base origin/main] [--generated 2000]
@@ -110,7 +110,9 @@ for (let n = 0; n < generated; n++) {
   if (rnd() < 0.35 && (weights.ssi || 0) > 0) profile.ssiSteps = [{ ssi: 5, stam: 0, credit: 8 }, { ssi: 15, stam: 10, credit: 20 }, { ssi: 30, stam: 25, credit: 45 }];
   const optionalSlots = slots.filter(() => rnd() < 0.6), opts = { seed: n, restarts: 15, slots, optionalSlots };
   const ranks = [[keys[int(0, 5)]!], [keys[int(0, 8)]!]].map((r) => [...new Set(r)]);
-  const searches = [opts, { ...opts, exact: true, timeBudgetMs: 600000, alternatives: { count: 3, tolerance: int(0, 1) * 5 } }, { ...opts, exact: rnd() < 0.5, timeBudgetMs: 600000, tieBreak: { tolerance: int(0, 1) * 3, fewestChanges: rnd() < 0.5 } }, { ...opts, exact: rnd() < 0.5, timeBudgetMs: 600000, strict: { ranks, fewestChanges: rnd() < 0.5 } }];
+  // half the tie-break searches start from a given top suit (the exact solver's hand-back passes one): each slot's last piece, or empty
+  const topStart = rnd() < 0.5 ? Object.fromEntries(slots.map((s) => [s, rnd() < 0.2 ? null : (pools[s]![pools[s]!.length - 1] as { serial: number }).serial])) : null;
+  const searches = [opts, { ...opts, exact: true, timeBudgetMs: 600000, alternatives: { count: 3, tolerance: int(0, 1) * 5 } }, { ...opts, exact: rnd() < 0.5, timeBudgetMs: 600000, tieBreak: { tolerance: int(0, 1) * 3, fewestChanges: rnd() < 0.5, ...(topStart ? { topStart } : {}) } }, { ...opts, exact: rnd() < 0.5, timeBudgetMs: 600000, strict: { ranks, fewestChanges: rnd() < 0.5 } }];
   for (const [i, o] of searches.entries()) cmp("optimizeSuit", `gen${n}/${i}`, SEARCH, { pools, current, profile, o }, (x, a) => call(x, "core", "optimizeSuit", a.pools, a.current, a.profile, a.o));
   const model = { pools, current, profile, optionalSlots, slots };
   for (const hardAsSoft of [false, true]) cmp("buildSuitMip", `gen${n}/${hardAsSoft}`, [["mip", "buildSuitMip"]], model, (x, a) => call(x, "mip", "buildSuitMip", { ...a, hardAsSoft, parts: true }));
