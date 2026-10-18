@@ -359,7 +359,7 @@ test("[fast] opts.slots narrows the MIP like the heuristic", async () => {
 });
 
 // Issue #202: both solvers search every gear slot, one per paperdoll layer, from one list (vault-lib's GEAR_SLOTS; the
-// paste-able core keeps a copy, checked here), and only the five armor pieces must stay filled.
+// core keeps its own list, checked here), and only the five armor pieces must stay filled.
 test("[fast] the slot lists: every gear slot in both solvers, from one source; the new slots are optional", () => {
   assert.deepEqual(DEFAULT_SLOTS, GEAR_SLOTS);
   assert.deepEqual(core.optDefaultSlots(), GEAR_SLOTS, "the core's copy");
