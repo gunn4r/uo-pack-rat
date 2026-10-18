@@ -1,0 +1,1 @@
+- **For contributors: everything after the search in one function** (issue #338): `finishResult` in `app/solver/finish.mts` adds the swing, the tie-break and Strict order summaries, the diagnostics and the score shares to either solver's result. The optimize worker calls it, and a test can call it on a result built by hand. Results are unchanged.
