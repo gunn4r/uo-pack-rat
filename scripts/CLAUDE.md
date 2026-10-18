@@ -24,6 +24,7 @@ The guide to `scripts/`: the test runner, the guards, the Electron test fixture 
   - `ALLOWED` in `scripts/slot-lists.test.mts` takes a file, how many slot lists it may hold, and why;
   - `BANNED` in `scripts/scrub.test.mts` lists the paths allowed to carry each pattern;
   - `FAN_OUT` in `scripts/api-routes.test.mts` covers a handler that serves several map entries.
+  - `BUDGETS`, `EXTERNAL` and `PENDING` in `scripts/docs-freshness.test.mts`: a doc's size budget, a code name the docs use that no file here defines, and a doc excused from the line and name checks for now.
   
   A guard whose listed exception is gone fails too, so each list stays current.
 - **A new guard:** a `[smoke]` test in `scripts/` that reads the sources (`git ls-files`, untracked files included, as `scripts/layering.test.mts` does). Its failure message names the fix.
