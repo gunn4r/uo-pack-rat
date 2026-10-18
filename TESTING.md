@@ -160,6 +160,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `app/watcher.test.mts` — `app/watcher.mts`: the accepted-name rule, ingesting a file, and the watcher's debounce, retry, reject, sweep and self-healing.
 - `app/wizard-default-adapter.test.mts` — `app/ui/adapters.mts`'s adapter-selection helpers: the wizard and the Import tab never default to a paste client or to a client this OS can't run.
 - `scripts/american-spelling.test.mts` — a [smoke] guard for American spelling in what a player reads (issue #10).
+- `scripts/api-routes.test.mts` — a [smoke] guard that `app/api/routes.mts`'s route map and the routes `app/http/routes/` registers agree, both ways (issue #338).
 - `scripts/build-schema-types.test.mts` — the JSON Schema to TypeScript generator (`scripts/build-schema-types.mts`).
 - `scripts/build-ui.test.mts` — `scripts/build-ui.mts`'s `buildUi()`, the page build.
 - `scripts/changelog.test.mts` — `scripts/changelog.mts`: a [smoke] guard that the committed fragments and CHANGELOG.md are in shape, a [smoke] release of a copy of them, and the release that puts the fragments together.
