@@ -5,7 +5,7 @@
 // bare string or number among its children. Nothing here sets innerHTML: icons are built node by node.
 //
 // map: ui-components
-// owns: `box`, `txt`, `button`, `input`, `select`, `popover`, `combobox`, `createDrawer`, `openDialog`, `confirmDialog`, `table`, `menu`, `toast`, `FLEX_CLASSES`
+// owns: `box`, `txt`, `button`, `input`, `select`, `popover`, `combobox`, `createDrawer`, `openDialog`, `confirmDialog`, `table`, `menu`, `toast`, `resistTile`, `FLEX_CLASSES`
 import { el } from "./dom.mts";
 import type { ElAttrs } from "./dom.mts";
 
@@ -292,6 +292,12 @@ export function keyValue(pairs: Array<[string, Content]>): HTMLDivElement {
 export function card({ title, titleTag = "h2", actions = [], body = [], pad = true, attrs = {} }: { title?: string | undefined; titleTag?: "h2" | "h3"; actions?: HTMLElement[]; body?: Kids; pad?: boolean; attrs?: ElAttrs }): HTMLElement {
   const head = title ? box("div", { class: "card-head" }, el(titleTag, {}, title), actions.length ? el("span", { class: "spacer" }) : null, ...actions) : null;
   return el("section", { class: "card", ...attrs }, head, el("div", { class: pad ? "card-body card-pad" : "card-body" }, ...body.filter((k): k is Node => !!k)));
+}
+// A resist tile (the item peek, the Suit Builder's result): the element's name in its colour, so the word carries
+// the element and not colour alone, then the caller's value parts. `token` is the resist's --res-* colour token
+// (RESIST_META); the tile's tint class is named after it.
+export function resistTile(name: string, token: string, ...kids: Kids): HTMLDivElement {
+  return box("div", { class: `resist tint tint-${token.slice(6)}` }, el("span", { class: "t-sm resist-name", style: `color:var(${token})` }, name), ...kids);
 }
 
 // ---------------------------------------------------------------- table

@@ -12,7 +12,7 @@ import type { Item } from "../vault-lib.mts";
 import { $, el, slotLabel } from "./dom.mts";
 import { bridgeActionReason, runBridgeAction } from "./bridge.mts";
 import { relativeWhen } from "./messages.mts";
-import { txt, box, button, badge, meter, tipWrap, kbd } from "./components.mts";
+import { txt, box, button, badge, meter, tipWrap, kbd, resistTile } from "./components.mts";
 import type { IconName } from "./components.mts";
 
 import { rarityEl, locationEl, tagEls, tagWords } from "./item-parts.mts";
@@ -95,10 +95,6 @@ function kvRows(rows: Array<[string, HTMLElement | string, boolean?]>, cls = "")
   ]));
 }
 const section = (title: string, ...kids: Array<HTMLElement | null>): HTMLElement => box("section", { class: "peek-sec", "aria-label": title }, txt(title, "caps"), ...kids);
-// A resist tile: the element's name in its colour (information is in the word too, not colour alone), the value.
-function resistTile(name: string, value: number, token: string): HTMLElement {
-  return box("div", { class: `resist tint tint-${token.slice(6)}` }, el("span", { class: "t-sm resist-name", style: `color:var(${token})` }, name), txt(String(value), "t-lg"));
-}
 const ACTIONS: Array<["highlight" | "grab" | "goto", string, IconName]> = [["highlight", "Highlight", "highlight"], ["grab", "Grab", "grab"], ["goto", "Go to", "goto"]];
 
 function draw(it: Item, focus: boolean): void {
@@ -133,7 +129,7 @@ function draw(it: Item, focus: boolean): void {
       box("div", { class: "peek-meta" }, rarityEl(it.rarity, "strong"), ...tagEls(it, { describe: true }), it.gear && it.medable ? badge("Meditation-safe", "ok") : null)),
     box("div", { class: "peek-body" },
       section("Where it is", kvRows(where)),
-      hasResists ? section("Resists", box("div", { class: "peek-resists" }, ...RESISTS.map(([k, short, token]) => resistTile(short, it.props[k] || 0, token)))) : null,
+      hasResists ? section("Resists", box("div", { class: "peek-resists" }, ...RESISTS.map(([k, short, token]) => resistTile(short, token, txt(String(it.props[k] || 0), "t-lg"))))) : null,
       props.length ? section("Properties", kvRows(props.map((l) => [l.name, l.value, l.muted]), "peek-props")) : null),
     box("div", { class: "overlay-foot peek-foot" },
       box("div", { class: "peek-acts" }, ...acts),
