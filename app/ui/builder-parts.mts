@@ -4,7 +4,7 @@
 // the no-character line.
 //
 // map: builder
-// owns: `fetchCard`, `grabAllButton`, `verdict`, `followJob`, `progressText`
+// owns: `fetchCard`, `grabAllButton`, `verdict`, `followJob`, `progressText`, `plainName`, `NO_CHARACTER`
 import { RESIST_META } from "../vault-lib.mts";
 import { templateName } from "../build-spec.mts";
 import type { Item, PropMap } from "../vault-lib.mts";

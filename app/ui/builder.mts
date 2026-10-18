@@ -1,6 +1,6 @@
-// ui/builder.mts — the Suit Builder screen (design spec 4.6, issues #272, #321): the sentence bar (the character and
-// build pickers, Build Settings, Build), the Build Settings drawer (its tabs: Requirements, Goals, Buffs, Pool, Advanced) with
-// its footer and the optimize job (inline progress card over SSE). The first-visit view is ui/builder-start.mts; the result, the compare view and the Solver details are ui/builder-result.mts; the saved-runs drawer
+// ui/builder.mts — the Suit Builder screen (design spec 4.6, issues #272, #321): the sentence bar's Build Settings and Build,
+// the Build Settings drawer (its tabs: Requirements, Goals, Buffs, Pool, Advanced) with its footer and the optimize job (inline
+// progress card over SSE). The sentence bar's pickers and What changed chip are ui/builder-header.mts; the first-visit view is ui/builder-start.mts; the result, the compare view and the Solver details are ui/builder-result.mts; the saved-runs drawer
 // is ui/runs.mts; they share the builder's state and call each other through ui/builder-session.mts. The panel is drawn
 // from the session's profile plus its Advanced knobs, so what a build sends, what a profile saves and what a run
 // snapshots are read from state, never from the DOM.
