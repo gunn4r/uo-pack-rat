@@ -36,8 +36,9 @@ Each import rule and the `scripts/layering.test.mts` rule that enforces it:
 | A module the page loads has its own static route in `app/http/routes/static.mts` | rule 4 |
 | `app/store/` and `app/services/` import nothing from `app/http/`, type imports included | rule 5 |
 | Only `electron/`, `scripts/`, the fixtures and the tests import `app/vault-server.mts` | rule 6 |
+| A route module in `app/http/routes/` imports no other route module, type imports included | rule 11 |
 
-Not enforced, kept by review: a route module imports no other route module (`routes/settings.mts` takes two constants from `routes/setup.mts`), and a service gets the stores and other services it uses as arguments from `startServer`, not by import (`services/builds.mts` imports only the `JobsService` type).
+Not enforced, kept by review: a service gets the stores and other services it uses as arguments from `startServer`, not by import (`services/builds.mts` imports only the `JobsService` type).
 
 ### The rules
 
@@ -47,7 +48,7 @@ Not enforced, kept by review: a route module imports no other route module (`rou
 4. **A save that could overwrite another page's save is guarded by the file's content stamp** (`fileStamp`, 16 hex digits of its SHA-256). Either the client sends back the stamp it read, as `PUT /api/organize`'s `base`, and a changed file refuses the save with a 409. Or the client sends edits instead of the whole file, as `PATCH /api/profiles` does, and the server redoes them on the newer file (at most three times) and answers the stamps before (`was`) and after.
 5. **Route modules keep no state between requests.** A cache or anything long-lived belongs in a service. The one exception is `updateCheckCache` in `routes/setup.mts`. A timer a route starts goes in `ctx.timers`, so `close()` stops it.
 6. **Errors answer `{ ok: false, error }`.** A handler sends its 4xx itself, or throws an `HttpError` (an `Error` with a `statusCode`), which `startServer` answers with that status and the message. Anything else is a 500 "internal error" with a `ref` that points at the logged stack.
-7. **Every body read has a size cap.** `readBody(req, { limit })` takes a cap (8e3 for a few fields, a document's own constant such as `MAX_SETUP_BYTES` for Organize's setup) and refuses a PUT or POST that does not declare JSON. `asObject` then refuses anything that is not a JSON object. `PUT /api/settings` still takes the 50 MB default.
+7. **Every body read has a size cap.** `readBody(req, { limit })` takes a cap (8e3 for a few fields, a document's own constant such as `MAX_SETUP_BYTES` for Organize's setup) and refuses a PUT or POST that does not declare JSON. `asObject` then refuses anything that is not a JSON object. `PUT /api/settings` takes 256 KB, far above its largest valid body.
 8. **Every /api route has its entry in the route map, and its 200 answer `satisfies` the entry's type.** The map is `ApiRoutes` in `app/api/routes.mts`, keyed "METHOD /path" with each path parameter written `<name>`. The types live in the family modules beside it, `app/ui/api-types.mts` re-exports them for the page, and the MCP tools read them through `ApiResponse`. No entry is `Untyped` today, and a new one should not be.
 
 ## Extend it

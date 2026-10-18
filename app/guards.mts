@@ -1,7 +1,7 @@
 // guards.mts — the checks a request field or a hand-edited data file is held to: a real string of bounded length, an integer in an inclusive range, a serial. Shared by the HTTP layer and the stores, so neither imports the other.
 //
 // map: server
-// owns: `isBoundedString`, `isBoundedInt`, `MAX_SERIAL`, `short`
+// owns: `isBoundedString`, `isBoundedInt`, `MAX_SERIAL`, `MAX_PATH_LEN`, `short`
 
 // A request field that must be a real string of bounded length. `unknown` in, a narrowed string out,
 // so a route reads the value directly after the check instead of casting it.
@@ -18,3 +18,5 @@ export function short(v: unknown): string { return String(v).slice(0, 64); }
 
 // The largest serial the scan contract accepts (app/schema/scan.v2.schema.json: a 32-bit unsigned).
 export const MAX_SERIAL = 0xFFFFFFFF;
+// The longest folder path a route takes (the setup and settings routes' scripts and UO folders).
+export const MAX_PATH_LEN = 4096;
