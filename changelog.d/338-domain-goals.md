@@ -1,0 +1,1 @@
+- **For contributors: the Suit Builder's goals moved to `app/domain/goals.mts`** (issue #338): `Goals`, `compileGoals`, `goalsError`, `goalsText`, `goalLabel`, `copyGoals` and the strategy texts, re-exported from `app/vault-lib.mts` under the same names. A pure move: no behaviour changes.
