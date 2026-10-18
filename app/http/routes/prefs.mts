@@ -18,7 +18,7 @@ import { isBoundedString } from "../../guards.mts";
 import { readBody } from "../../read-body.mts";
 import { validate, type ValidatorSchema, firstErrorText } from "../../schema/validate.mts";
 import { isColWidths, isDrawerWidth, isManualSuit, UI_PREF_CHOICES, UI_PREF_LISTS, UI_PREF_VERSIONS } from "../../store/ui-prefs.mts";
-import { panelPrefsError, readPanelPrefs } from "../../tazuo-panel.mts";
+import { panelPrefsError } from "../../tazuo-panel.mts";
 import { send, asObject, refuseDemo } from "../respond.mts";
 import { APP_DIR } from "../../config.mts";
 import type { Route } from "../router.mts";
@@ -52,7 +52,7 @@ export async function patchProfiles(store: ServerContext["profilesStore"], list:
 }
 
 export function routes(ctx: ServerContext): Route[] {
-  const { panelPrefsFile: PANEL_PREFS, profilesStore, savePanel, uiPrefsStore, getInventory } = ctx;
+  const { panelPrefsStore, profilesStore, uiPrefsStore, getInventory } = ctx;
   return [
     // The player's profiles, and the shard's built-in templates beside them (read-only, never written into the file).
     // `readOnly`: why the file cannot be saved (a newer Pack Rat made it), when it cannot; every PATCH is then a 409.
@@ -132,15 +132,15 @@ export function routes(ctx: ServerContext): Route[] {
       return send(res, 200, { ok: true } satisfies OkApiResponse);
     } },
     { method: "GET", path: "/api/tazuo-panel", handle: (_req, res) => {
-      return send(res, 200, { ok: true, prefs: readPanelPrefs(PANEL_PREFS) } satisfies TazuoPanelApiResponse);
+      return send(res, 200, { ok: true, prefs: panelPrefsStore.read() } satisfies TazuoPanelApiResponse);
     } },
     { method: "PUT", path: "/api/tazuo-panel", handle: async (req, res) => {
       const body = asObject(await readBody(req, { limit: 8e3 }));
       const bad = panelPrefsError(body);
       if (bad) return send(res, 400, { ok: false, error: bad });
       refuseDemo(ctx);
-      savePanel(body);
-      return send(res, 200, { ok: true, prefs: readPanelPrefs(PANEL_PREFS) } satisfies TazuoPanelApiResponse);
+      panelPrefsStore.save(body);
+      return send(res, 200, { ok: true, prefs: panelPrefsStore.read() } satisfies TazuoPanelApiResponse);
     } },
   ];
 }
