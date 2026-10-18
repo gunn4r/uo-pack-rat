@@ -103,7 +103,7 @@ const CAPABILITIES = {
            "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic", "Earrings", "Arms",
            "Cloak", "Robe", "Skirt", "Legs"],
   arms: false, bank: false, ground: true, nested: true, tooltips: "opl",
-  bridge: [],
+  bridge: [] as string[],
 };
 // END generated: manifest
 
