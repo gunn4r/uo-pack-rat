@@ -205,6 +205,21 @@ test("[fast] stores: house claims read up to 256 KiB, a larger, missing or damag
 });
 
 
+// The cases app/fixtures/contract-cases/blacklist.json shares with adapters/test_adapters.py, which runs the scripts' read_blacklist over them.
+test("[fast] stores: the blacklist keeps every shared valid case, with only the fields it knows, and drops every shared invalid one", () => {
+  const cases = JSON.parse(readFileSync(join(APP, "fixtures", "contract-cases", "blacklist.json"), "utf8")) as { valid: { serial: number; name: string; addedAt: string; where?: string }[]; invalid: { why: string; entry: unknown }[] };
+  const d = dir(), f = join(d, "scan-blacklist.json"), store = createBlacklistStore(f);
+  for (const entry of cases.valid) {
+    writeFileSync(f, JSON.stringify([entry]));
+    const { serial, name, addedAt, where } = entry;
+    assert.deepEqual(store.read(), [{ serial, name, addedAt, ...(where !== undefined ? { where } : {}) }], JSON.stringify(entry));
+  }
+  for (const { why, entry } of cases.invalid) {
+    writeFileSync(f, JSON.stringify([entry]));
+    assert.deepEqual(store.read(), [], why);
+  }
+});
+
 // The cases app/fixtures/contract-cases/house-claims.json shares with adapters/test_adapters.py, which runs the TazUO scripts' reader over them.
 test("[fast] stores: house claims keep every shared valid case, with only the fields they know, and drop every shared invalid one", () => {
   const cases = JSON.parse(readFileSync(join(APP, "fixtures", "contract-cases", "house-claims.json"), "utf8")) as { valid: HouseClaim[]; invalid: { why: string; entry: unknown }[] };

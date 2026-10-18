@@ -967,6 +967,16 @@ class TazUOBlacklist(DataDir, unittest.TestCase):
         self.assertRegex(chest["addedAt"], r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}([+-]\d{2}:\d{2}|Z)$")
         self.assertEqual(w.calls, [], "nothing in the world is opened or moved")
 
+    def test_a_name_outside_the_basic_multilingual_plane_is_cut_in_utf16_units_as_the_app_counts(self):
+        w = World(); home(w)
+        w.items[CHEST].Opened = True
+        w.items[CHEST].Name = "\U0001F400" * 40    # 80 UTF-16 units
+        self.pick(w, CHEST)
+        self.pick(w, BAG)
+        [chest, bag] = self.listed()
+        self.assertEqual(chest["name"], "\U0001F400" * 32, "64 units, the schema's maxLength")
+        self.assertEqual(bag["where"], "in " + "\U0001F400" * 30, "a pair is never split")
+
     def test_a_cancelled_cursor_the_backpack_or_a_non_container_writes_nothing(self):
         w = World(); home(w)
         w.items[PACK].Opened = True
@@ -1270,6 +1280,16 @@ class RazorBlacklist(DataDir, unittest.TestCase):
         self.assertRegex(chest["addedAt"], r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}([+-]\d{2}:\d{2}|Z)$")
         self.assertEqual(w.calls, [], "nothing in the world is opened or moved")
         self.assertIn("Pack Rat: Wooden Chest is already blacklisted.", w.messages)
+
+    def test_a_name_outside_the_basic_multilingual_plane_is_cut_in_utf16_units_as_the_app_counts(self):
+        w = World(); home(w)
+        w.items[CHEST].Opened = True
+        w.items[CHEST].Name = "\U0001F400" * 40    # 80 UTF-16 units
+        self.pick(w, CHEST)
+        self.pick(w, BAG)
+        [chest, bag] = self.listed()
+        self.assertEqual(chest["name"], "\U0001F400" * 32, "64 units, the schema's maxLength")
+        self.assertEqual(bag["where"], "in " + "\U0001F400" * 30, "a pair is never split")
 
     def test_a_cancelled_cursor_the_backpack_or_a_non_container_writes_nothing(self):
         w = World(); home(w)
