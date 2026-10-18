@@ -12,7 +12,11 @@ import { initFilters, applyUiPrefs, inventoryFailed } from "./inventory.mts";
 import { showCharacter } from "./characters.mts";
 import { applyPanelPrefs, initBuilder, closeSettings } from "./builder.mts";
 import { applyBuilderPrefs, initManual } from "./builder-manual.mts";
+import { initPickers } from "./builder-header.mts";   // also provides the sentence bar's commands to ui/builder-session.mts
 import { applyResultPrefs } from "./builder-result.mts";   // also provides the result commands to ui/builder-session.mts
+import { applyRequirementsPrefs } from "./builder-requirements.mts";   // also provides the Requirements and Goals tabs' commands to ui/builder-session.mts
+import "./builder-job.mts";   // provides Build to ui/builder-session.mts
+import "./builder-templates.mts";   // provides the templates' commands to ui/builder-session.mts
 import "./builder-start.mts";   // provides the first-visit view's commands to ui/builder-session.mts
 import { connectEvents } from "./events.mts";
 import { openWizard } from "./wizard.mts";
@@ -75,6 +79,7 @@ async function load(): Promise<void> {
   applyUnravelPrefs(prefs ? prefs.prefs : null);
   applyBuilderPrefs(prefs ? prefs.prefs : null);
   applyPanelPrefs(prefs ? prefs.prefs : null);
+  applyRequirementsPrefs(prefs ? prefs.prefs : null);
   applyResultPrefs(prefs ? prefs.prefs : null);
   // Settings, Import, the live-scan stream and the first-run wizard need nothing from the inventory,
   // so they come up before it: a failed inventory or profiles fetch must not take the Settings tab
@@ -85,7 +90,7 @@ async function load(): Promise<void> {
   renderImport();
   connectEvents();
   if (setupRes.firstRun && !state.wizardShown) { state.wizardShown = true; openWizard({ firstRun: true }); }
-  if (!wired) { wired = true; initBuilder(); initManual(); }
+  if (!wired) { wired = true; initPickers(); initBuilder(); initManual(); }
   try { await reload(); } catch (e) { loadFailed(e, DATA_PANELS); }
 }
 

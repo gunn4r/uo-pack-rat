@@ -9,6 +9,7 @@
   },
   "include": [
     "app/ui/**/*",
+    "app/api/**/*",
     "app/vault-lib.*",
     "app/item-query.*",
     "app/unravel.*",

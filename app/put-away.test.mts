@@ -1,11 +1,13 @@
 // put-away.test.mts — `app/put-away.mts` (issue #131): the strict check on the TazUO panel's Put away request.
 //
-// `app/put-away.mts` (issue #131): the Put away request's strict check (every field, the picked container, the 60-second window, the click time, the tile) and the one-line reason a plan moves nothing. All `[fast]`.
+// `app/put-away.mts` (issue #131): the shared request cases (`app/fixtures/contract-cases/put-away.json`) through the check and the schema, the Put away request's strict check (every field, the picked container, the 60-second window, the click time, the tile) and the one-line reason a plan moves nothing. All `[fast]`.
 //
 // Pure.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { checkPutAwayRequest, nothingDetail, requestId } from "./put-away.mts";
+import { validate, type ValidatorSchema } from "./schema/validate.mts";
 
 const NOW = Date.parse("2026-09-30T12:00:00Z");
 const good = (over: Record<string, unknown> = {}): Record<string, unknown> =>
@@ -47,4 +49,19 @@ test("[fast] a plan that moves nothing says what stayed and why in one short lin
   assert.equal(nothingDetail({ unclaimed: 0, crossSite: [], rules: [] }, "your pack", { bags: 1, pinned: 0 }), "1 container stays in your pack");
   assert.equal(nothingDetail({ unclaimed: 2, crossSite: [], rules: [] }, "your pack", { bags: 0, pinned: 1 }), "1 pinned, 2 with no rule stay in your pack");
   assert.equal(nothingDetail({ unclaimed: 0, crossSite: [], rules: [] }, "that container"), "Nothing lies directly in that container.");
+});
+
+// The cases app/fixtures/contract-cases/put-away.json shares with adapters/test_panel.py, which checks the panel's real request against the first.
+test("[fast] every shared Put away request case is taken or refused as it says, and the schema passes the shapes it says", () => {
+  const cases = JSON.parse(readFileSync(new URL("./fixtures/contract-cases/put-away.json", import.meta.url), "utf8")) as { now: string; valid: unknown[]; invalid: { why: string; entry: unknown; schema: boolean }[] };
+  const schema = JSON.parse(readFileSync(new URL("./schema/put-away.v1.schema.json", import.meta.url), "utf8")) as ValidatorSchema & { $defs: Record<string, ValidatorSchema> };
+  const request = { $ref: "#/$defs/request", $defs: schema.$defs } as ValidatorSchema, now = Date.parse(cases.now);
+  for (const entry of cases.valid) {
+    assert.equal(checkPutAwayRequest(entry, now).ok, true, JSON.stringify(entry));
+    assert.equal(validate(request, entry).ok, true, JSON.stringify(entry));
+  }
+  for (const c of cases.invalid) {
+    assert.equal(checkPutAwayRequest(c.entry, now).ok, false, c.why);
+    assert.equal(validate(request, c.entry).ok, c.schema, `schema: ${c.why}`);
+  }
 });

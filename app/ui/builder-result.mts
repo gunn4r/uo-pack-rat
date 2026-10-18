@@ -17,7 +17,7 @@ import { prefs } from "./prefs.mts";
 import { sheetNode, sheetParts } from "./sheet.mts";
 import { bridgeActionReason, runBridgeAction } from "./bridge.mts";
 import { resolveItems } from "./items.mts";
-import { session, commands, provide } from "./builder-session.mts";
+import { session, commands, announce, provide, onChange } from "./builder-session.mts";
 import { RESIST_NAMES, keyProps, tipTarget, verdict, grabAllButton, fetchCard, settingsCheck } from "./builder-parts.mts";
 import { savedBuffs, plannedFromWorn, buffById, buffsDiff, runBuffs, signed } from "../buffs.mts";
 import type { RunBuffs } from "../vault-lib.mts";
@@ -298,7 +298,7 @@ function planCard(current: OptSuit, suit: OptSuit, name: string, all: string[], 
     const acts: Parameters<typeof rowActions>[0] = [];
     if (p && session.character === name) acts.push({ label: locked ? `Unlock ${slotLabel(slot)}` : `Lock ${slotLabel(slot)} in the next build`, icon: "lock", onClick: () => {
       p.lockedSlots = locked ? p.lockedSlots!.filter((x) => x !== slot) : [...(p.lockedSlots || []), slot];
-      commands.renderPanel(); rerender();
+      announce("panel"); rerender();
     } });
     if (item && !item.equippedBy) {
       acts.push({ label: `Highlight ${item.name}`, icon: "highlight", disabled: bridgeActionReason("highlight", item), onClick: () => runBridgeAction("highlight", item) });
@@ -533,4 +533,5 @@ function openRunCompare(runs: SavedRunLike[], titleOf: (r: SavedRunLike) => stri
       onRemove: (i) => { const gone = list[i]!; list = list.filter((_, j) => j !== i); onRemove(gone.id); if (list.length < 2) closeCompare(); else showCompare(openSpec!); } };
   });
 }
-provide({ renderResult, resetResultView, setResultGear, resultLoadError, closeCompare, openRunCompare });
+onChange("view", resetResultView);
+provide({ renderResult, setResultGear, resultLoadError, closeCompare, openRunCompare });

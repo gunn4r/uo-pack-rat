@@ -1,0 +1,14 @@
+{
+  "$comment": "Pack Rat <data>/scan-blacklist.json v1: the containers scans never open, a JSON list written by the app (GET/POST/DELETE /api/blacklist, app/store/blacklist.mts) and by the game clients' packrat-blacklist.py, which add an entry to the list they read. The app keeps the entries that pass, the first 1000, from a file of at most 256 KiB; its next write leaves the rest out. The scanners and the bridges (adapters/_shared/read_blacklist.py) need only the serial, so they skip any container whose entry has a valid one. Lengths are in UTF-16 units, as the app counts them. Restricted to the keyword subset app/schema/validate.mts supports. The shared cases are app/fixtures/contract-cases/blacklist.json.",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["serial", "name", "addedAt"],
+    "properties": {
+      "serial": { "type": "integer", "minimum": 1, "maximum": 4294967295 },
+      "name": { "type": "string", "minLength": 1, "maxLength": 64 },
+      "addedAt": { "type": "string", "minLength": 1, "maxLength": 40, "$comment": "RFC 3339, when it was blacklisted" },
+      "where": { "type": "string", "minLength": 1, "maxLength": 64, "$comment": "where it was: the tile on the ground, or \"in <the container it was in>\"" }
+    }
+  }
+}

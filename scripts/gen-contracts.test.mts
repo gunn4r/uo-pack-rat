@@ -1,12 +1,12 @@
 // gen-contracts.test.mts — `scripts/gen-contracts.mts`, the generator that copies `adapters/_shared/` fragments into the adapter scripts.
 //
-// `scripts/gen-contracts.mts`: every adapter script's generated blocks match their `adapters/_shared/` fragments and every fragment is carried by some script (`[smoke]`, the same check as `--check`); a block's inner lines rewritten and nothing else, a second run changing nothing; an unmatched or nested marker, a missing fragment and another adapter's fragment refused; a fragment a Razor Enhanced script carries refused when it is not ASCII or uses an f-string; and `generate()` naming a stale script and an unused fragment while writing nothing; the `manifest` blocks rendered from an adapter's `capabilities.json`, and a version bump there making every script that carries one stale. The rest `[fast]`.
+// `scripts/gen-contracts.mts`: every adapter script's generated blocks match their `adapters/_shared/` fragments and every fragment is carried by some script (`[smoke]`, the same check as `--check`); a block's inner lines rewritten and nothing else, a second run changing nothing; an unmatched or nested marker, a missing fragment and another adapter's fragment refused; a fragment a Razor Enhanced script carries refused when it is not ASCII or uses an f-string; and `generate()` naming a stale script and an unused fragment while writing nothing; the `manifest` blocks rendered from an adapter's `capabilities.json`, and a version bump there making every script that carries one stale; a TypeScript script's `//` blocks, its manifest in TypeScript, and the TypeScript form of the container graphics and the trash rule from their Python fragments. The rest `[fast]`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { generate, splice, fragmentProblems, renderManifest } from "./gen-contracts.mts";
+import { generate, splice, fragmentProblems, renderManifest, tsFragment } from "./gen-contracts.mts";
 
 test("[smoke] gen-contracts: every adapter script's generated blocks match adapters/_shared, and every fragment is used", () => {
   const { stale, unused } = generate();
@@ -119,4 +119,21 @@ test("[fast] gen-contracts: a version bump in capabilities.json makes every scri
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("[fast] gen-contracts: a TypeScript script's blocks take the manifest as TypeScript and the TS form of the shared Python fragments", () => {
+  const doc = { adapter: "classicuo-web", version: "1.5.0", capabilities: { layers: ["OneHanded"], arms: false, tooltips: "opl", bridge: [] } };
+  assert.equal(renderManifest("manifest", doc, "x", "ts"), [
+    'const ADAPTER_ID = "classicuo-web";', 'const ADAPTER_VERSION = "1.5.0";', "const CAPABILITIES = {",
+    '  layers: ["OneHanded"],', '  arms: false, tooltips: "opl",', "  bridge: [] as string[],", "};", "",
+  ].join("\n"));
+  assert.equal(tsFragment("container_graphics", "CONTAINER_GRAPHICS = {0x0E75, 0x09AA,\n                      0x4025}   # Gargish Chest\n"), "const CONTAINER_GRAPHICS = [\n  0x0e75, 0x09aa, 0x4025\n];\n");
+  assert.equal(tsFragment("trash_re", 'TRASH_RE = re.compile(r"\\btrash\\b", re.I)\n'), "const TRASH_RE = /\\btrash\\b/i;\n");
+  assert.equal(tsFragment("trash_re", 'TRASH_RE = re.compile(r"a/b")\n'), "const TRASH_RE = /a\\/b/;\n", "a slash is escaped, no flag without re.I");
+  assert.throws(() => tsFragment("container_graphics", "CONTAINER_GRAPHICS = {0x0E75, # a comment\n 0x09AA}\n"), /one CONTAINER_GRAPHICS/);
+  assert.throws(() => tsFragment("trash_re", "TRASH_RE = re.compile(r'x')\n"), /one TRASH_RE/);
+  const src = "const A = 1;\n// BEGIN generated: trash_re\nold\n// END generated: trash_re\n# BEGIN generated: trash_re\n";
+  const get = (n: string): string | null => (n === "trash_re" ? tsFragment(n, 'TRASH_RE = re.compile(r"x")\n') : null);
+  assert.equal(splice(src, get, "classicuo-web", "s.ts", "ts").text, src.replace("old", "const TRASH_RE = /x/;"), "a Python marker in a TypeScript file is plain text");
+  assert.throws(() => splice("// BEGIN generated: nope\n// END generated: nope\n", get, "classicuo-web", "s.ts", "ts"), /no TypeScript form of nope/);
 });
