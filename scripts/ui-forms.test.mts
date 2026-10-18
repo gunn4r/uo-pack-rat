@@ -9,7 +9,7 @@ import { mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { removeTempDir } from "./electron-window.mts";
-import { ROOT, launchApp, skipWithoutElectron, type App } from "./electron-app.mts";
+import { ROOT, launchApp, skipWithoutElectron, type App, until } from "./electron-app.mts";
 import type { Page } from "playwright";
 
 const KESTREL = readFileSync(join(ROOT, "app", "fixtures", "demo-Kestrel.json"), "utf8");
@@ -211,9 +211,7 @@ test("[slow] ClassicUO web client: Settings copies the bundled scanner and says 
     // The real copy, from inside the modal wizard (everything outside it is inert): the clipboard gets the script.
     await app.evaluate(({ clipboard }) => clipboard.clear());
     await page.click("#wiz-copy-scanner");
-    let got = "";
-    for (const until = Date.now() + 5_000; !got && Date.now() < until; await page.waitForTimeout(100)) got = await clipboardText();
-    assert.equal(got, script, "copied from inside the wizard");
+    assert.equal(await until(clipboardText, (t) => !!t, "the clipboard filled", 5_000), script, "copied from inside the wizard");
     await page.evaluate(() => {
       navigator.clipboard.writeText = () => Promise.reject(new Error("denied"));
       document.execCommand = () => false;
@@ -309,10 +307,7 @@ test("[slow] Settings › AI assistants (MCP): the switch opens the server, the 
   writeFileSync(join(dataDir, "mcp.json"), JSON.stringify({ version: 1, enabled: false, allowActions: false, port: 0, token: "11111111-2222-3333-4444-555555555555" }));
   const mcp = (): { enabled: boolean; allowActions: boolean; token: string } => JSON.parse(readFileSync(join(dataDir, "mcp.json"), "utf8"));
   // The page updates a switch before the server has written mcp.json, so wait for the file rather than read it once.
-  const fileShows = async (want: (m: ReturnType<typeof mcp>) => boolean): Promise<ReturnType<typeof mcp>> => {
-    for (const until = Date.now() + 10_000; !want(mcp()) && Date.now() < until;) await new Promise((r) => setTimeout(r, 100));
-    return mcp();
-  };
+  const fileShows = (want: (m: ReturnType<typeof mcp>) => boolean): Promise<ReturnType<typeof mcp>> => until(mcp, want, "mcp.json", 10_000);
   const { page, errors, close } = await launch(dataDir);
   try {
     await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
@@ -376,8 +371,7 @@ test("[slow] Settings › Updates: the automatic check shows a dismissible notic
     // After a reload the page checks again on its own, and the same release stays dismissed.
     const before = checks;
     await page.reload();
-    for (const until = Date.now() + 20_000; checks === before && Date.now() < until;) await page.waitForTimeout(200);
-    assert.ok(checks > before, "the reloaded page checked again");
+    assert.ok(await until(() => checks, (n) => n > before, "the reloaded page's update check") > before, "the reloaded page checked again");
     assert.equal(await page.locator("#update-notice").isHidden(), true, "a dismissed release does not show again");
 
     // Turning the check off is saved; turning it back on checks again, and a later release shows.
