@@ -15,6 +15,11 @@ import type { Plan } from "./organize.mts";
 import type { Container, Item } from "./vault-lib.mts";
 import { PRESETS } from "./organize-presets.mts";
 import type { Proposal } from "./organize-strategies.mts";
+import { validate, type ValidatorSchema } from "./schema/validate.mts";
+
+// The answer the app writes for the TazUO panel (app/schema/put-away.v1.schema.json's reply).
+const PUT_AWAY_SCHEMA = JSON.parse(readFileSync(new URL("./schema/put-away.v1.schema.json", import.meta.url), "utf8")) as { $defs: Record<string, ValidatorSchema> };
+const PUT_AWAY_REPLY_SCHEMA = { $ref: "#/$defs/reply", $defs: PUT_AWAY_SCHEMA.$defs } as ValidatorSchema;
 
 const A = 0x40000001, B = 0x40000002, PEARL = 0x40001001, RUBY = 0x40001002;
 const CONFIG_DOC: OrganizeConfig = {
@@ -532,7 +537,10 @@ test("[fast] Put away: a request dropped after a refresh plans the fresh backpac
     // by the watcher's 5 s sweep instead, and the fold and plan then run on a loaded machine.
     for (let i = 0; i < 400; i++) {
       const reply = existsSync(replyPath) ? JSON.parse(readFileSync(replyPath, "utf8")) as Record<string, unknown> : null;
-      if (reply && reply.id === (over.id === undefined ? id : null) && !existsSync(join(inbox, "putaway-request.json"))) return reply;
+      if (reply && reply.id === (over.id === undefined ? id : null) && !existsSync(join(inbox, "putaway-request.json"))) {
+        assert.deepEqual(validate(PUT_AWAY_REPLY_SCHEMA, reply).errors, [], "the answer is a put-away.v1 reply");
+        return reply;
+      }
       await new Promise((r) => setTimeout(r, 50));
     }
     throw new Error(`no answer to ${id}`);
