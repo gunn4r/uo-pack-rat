@@ -114,7 +114,7 @@ Everything above except the token, the host bridge, and the two `logs/shell.log`
 
 ## HTTP routes
 
-Every route lives in `app/http/routes/`, one module per area, each exporting `routes(ctx)`. `app/vault-server.mts` builds the context (`app/http/context.mts`), runs the Host, Origin and token checks, and tries the routes through `app/http/router.mts` in the order of the modules below; a route may pass a request on (the run and optimize-job routes do for a method they do not handle), and a request no route answers is a 404 "not found", never a 405. Each route module's header lists its routes and what each takes and answers; `docs/module-map.md`'s Server table has one line per module.
+Every route lives in `app/http/routes/`, one module per area, each exporting `routes(ctx)`. `app/vault-server.mts` builds the context (`app/http/context.mts`), runs the Host, Origin and token checks, and tries the routes through `app/http/router.mts` in the order of the modules below; a route may pass a request on (the run and optimize-job routes do for a method they do not handle), and a request no route answers is a 404 "not found", never a 405. Each route module's header lists its routes and what each takes and answers; `docs/module-map.md`'s Server table has one line per module. `app/api/routes.mts` is the route map: every /api route with the type of its answer and body (node-free, so the page and the MCP server can import it), kept in step with the registered routes by `scripts/api-routes.test.mts`.
 
 ## Logs
 

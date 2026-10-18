@@ -212,6 +212,16 @@ The thresholds are the shard rules' `unravel` (Shard rules, above); `GET /api/it
 | `app/mcp.mts` | Pack Rat's built-in MCP server (issue #211): a second loopback listener inside the server process that speaks the stateless subset of MCP's Streamable HTTP transport, so Claude Code and other MCP clients can search the inventory, read character sheets and saved runs, run the Suit Builder and, with a second switch, act in game. | `createMcp`, `readMcpConfig`, `writeMcpConfig`, `PROTOCOL_VERSIONS`, `MCP_DEFAULT_PORT` |
 <!-- module-map:end -->
 
+## HTTP API contract
+
+<!-- module-map:start api -->
+| Module | Role | Owns |
+|---|---|---|
+| `app/api/routes.mts` | The HTTP API's route map: every /api route the server registers (app/http/routes/), keyed "METHOD /path" with a path parameter written <name>, and the type of what it answers with 200 (`res`) and of the JSON body it reads (`body`). | `ApiRoutes`, `ApiEntry`, `Untyped`, `EventStream`, `Png`, `ApiResponse`, `ApiBody` |
+<!-- module-map:end -->
+
+The route map is checked against the routes `app/http/routes/` registers by `scripts/api-routes.test.mts`, both ways.
+
 ## Server
 
 <!-- module-map:start server -->
