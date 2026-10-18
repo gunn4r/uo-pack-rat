@@ -1,20 +1,22 @@
 // ui/builder-parts.mts — what more than one Suit Builder module draws or reads, holding no state of its own: a piece's
 // key properties and item tooltip, a result's verdict, the Fetch list and its Grab all (the result's and Manual's), and
-// an optimize job's event stream and progress words (the Automatic build's and Manual's fill), a template's shown name and
-// the no-character line.
+// an optimize job's event stream and progress words (the Automatic build's and Manual's fill), a template's shown name, the
+// panel's buffs on and the no-character line, a drawer group's frame, the checklist popover behind a chip, and the panel's
+// Faster Casting cap with its note.
 //
 // map: builder
-// owns: `fetchCard`, `grabAllButton`, `verdict`, `followJob`, `progressText`, `plainName`, `NO_CHARACTER`
-import { RESIST_META } from "../vault-lib.mts";
-import { templateName } from "../build-spec.mts";
-import type { Item, PropMap } from "../vault-lib.mts";
+// owns: `fetchCard`, `grabAllButton`, `verdict`, `followJob`, `progressText`, `plainName`, `NO_CHARACTER`, `buffsOn`, `group`, `checklist`, `panelFcCap`, `fcCapNote`
+import { RESIST_META, fcCapFor } from "../vault-lib.mts";
+import { characterBuffs, templateName } from "../build-spec.mts";
+import { normalizeBuffs } from "../buffs.mts";
+import type { FcCap, Item, PropMap } from "../vault-lib.mts";
 import { state, bridge } from "./store.mts";
 import { el, label, fmtN, itemTip, toast, whereText } from "./dom.mts";
-import { box, txt, button, message, tipWrap, tooltip, copyText } from "./components.mts";
+import { box, txt, button, message, tipWrap, tooltip, copyText, check, searchInput, popover } from "./components.mts";
 import { CLIENT_ID } from "./api.mts";
 import { bridgeActionReason, runBridgeAction, grabAll, grabbable } from "./bridge.mts";
 import { splitSerial } from "./item-parts.mts";
-import { locationCrumbs, plural, handledAction, actionWords, actionApplies, applyAction, strictDetail, stageProgress } from "./builder-model.mts";
+import { locationCrumbs, plural, handledAction, actionWords, actionApplies, applyAction, strictDetail, stageProgress, fcCapText } from "./builder-model.mts";
 import { session, commands } from "./builder-session.mts";
 import type { Diagnostic } from "../runs-types.mts";
 import type { OptimizeResult, OptimizeProgress, JobSnapshotEvent, JobDoneEvent, JobFailedEvent, JobCancelledEvent } from "./api-types.mts";
@@ -22,6 +24,33 @@ import type { OptimizeResult, OptimizeProgress, JobSnapshotEvent, JobDoneEvent, 
 export const RESIST_NAMES: Record<string, [string, string]> = Object.fromEntries(RESIST_META.map((r) => [r.key, [r.long, r.token]]));
 // A template's name as the build picker shows it: a built-in's own name, without templateLabel's "(built-in)".
 export const plainName = (ref: string): string => templateName(state.builtinTemplates, ref);
+// The panel's buffs on: the character's saved list, healed as a saved one is read back (normalizeBuffs): a hand edit's second
+// form replaces the first.
+export const buffsOn = (): string[] => normalizeBuffs(characterBuffs(state.profiles!, session.character!).on) ?? [];
+// A group of settings, `b-sec-<id>`: a heading where its tab holds more than one, then its controls.
+export function group(id: string, title: string | null, body: () => Array<Node | null>): HTMLElement {
+  const hid = `b-sec-${id}-h`;
+  return box("section", { class: "b-sec", id: `b-sec-${id}`, ...(title ? { "aria-labelledby": hid } : {}) }, title ? el("h3", { id: hid, class: "t-md strong" }, title) : null, ...body());
+}
+// The panel's Faster Casting cap: the casting school's, from the profile's choice or the character's skills.
+export const panelFcCap = (): FcCap => fcCapFor(state.inv!.characters[session.character!]?.skills, session.profile!.castingSchool);
+// The FC row's note: its cap and where that comes from.
+export const fcCapNote = (): HTMLElement => el("span", { class: "t-sm muted b-fc-cap" }, fcCapText(panelFcCap()));
+// The checklist popover behind a chip; `changed` repaints what shows the list.
+export function checklist(anchor: HTMLElement, title: string, get: () => string[], set: (v: string[]) => void, all: Array<{ value: string; label: string }>, searchable: boolean, changed: () => void): void {
+  const list = box("div", { class: "b-checks" });
+  const paint = (q: string): void => {
+    const hits = all.filter((o) => !q || o.label.toLowerCase().includes(q));
+    list.replaceChildren(...(hits.length ? hits.map((o) => check({ label: o.label, checked: get().includes(o.value), attrs: { value: o.value }, onChange: (on) => {
+      set(on ? [...get(), o.value] : get().filter((x) => x !== o.value));
+      changed(); commands.updateTemplateBadge();
+    } }).root) : [el("p", { class: "t-sm muted" }, all.length ? "Nothing matches." : "Nothing to choose from yet.")]));
+  };
+  const s = searchable && all.length > 7 ? searchInput({ label: `Search ${title.toLowerCase()}`, placeholder: "Search" }) : null;
+  s?.input.addEventListener("input", () => paint(s.input.value.trim().toLowerCase()));
+  paint("");
+  popover(anchor, [s?.root, list], { label: title, width: 300 });
+}
 // With no character there is nothing to build or save: what the disabled Build and save buttons and template actions say.
 export const NO_CHARACTER = "There is no character to build for yet. Import a scan first.";
 const serialHex = (s: number): string => `0x${s.toString(16)}`;

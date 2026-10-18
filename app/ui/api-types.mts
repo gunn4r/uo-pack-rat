@@ -331,7 +331,7 @@ export interface TieBreakResult { topScore: number; cost: number; changes?: numb
 // A strict-order build's stages, each with the suit's value there, and how many are proven in order.
 export interface StrictResult { stages: Array<{ kind: string; keys: string[] | null; value: number }>; proven: number; changes?: number | undefined }
 // SolveProgress (app/exact-solver.mts) as reported over the job's SSE stream and read by
-// builder.mts's runPanel(). Every field but `phase` is optional — not every phase reports every one.
+// builder-job.mts's runPanel(). Every field but `phase` is optional — not every phase reports every one.
 export interface OptimizeProgress {
   phase: string;
   elapsedMs?: number | undefined;
