@@ -57,7 +57,7 @@ function profilesIn(d: string, logged: string[] = [], shard = "uoalive", scanned
 }
 const backups = (d: string): string[] => readdirSync(d).filter((n) => n.includes(".backup-")).sort();
 
-test("[fast] stores: profiles seeds a missing file from the defaults, moves a damaged one aside and reseeds it with a log line, and writes indent 2 with a newline", async () => {
+test("[fast] stores: profiles seeds a missing file from the defaults, moves a damaged one aside and reseeds it with a log line, and writes indent 2 with a newline only over the file it read", async () => {
   const d = dir(), f = join(d, "profiles.json"), defaults = join(APP, "data", "profiles.default.json"), logged: string[] = [];
   const store = profilesIn(d, logged);
   const seeded = await store.read();
@@ -67,7 +67,8 @@ test("[fast] stores: profiles seeds a missing file from the defaults, moves a da
   assert.equal(readFileSync(`${f}.corrupt`, "utf8"), "null");
   assert.equal(logged.length, 1);
   assert.match(logged[0]!, /^\S+ profiles\.json is unreadable \(not a JSON object\); reseeded from the defaults — the old file was kept as .*profiles\.json\.corrupt\n$/);
-  store.write({ schemaVersion: 3, characters: {}, templates: {} });
+  assert.deepEqual(store.write({ schemaVersion: 3, characters: {}, templates: {} }, "not this file's stamp"), { ok: false, stamp: store.stamp() }, "a file changed since its base is left alone");
+  assert.equal(store.write({ schemaVersion: 3, characters: {}, templates: {} }, store.stamp()).ok, true);
   assert.equal(readFileSync(f, "utf8"), "{\n  \"schemaVersion\": 3,\n  \"characters\": {},\n  \"templates\": {}\n}\n");
   assert.deepEqual(backups(d), [], "a new or reseeded file needs no backup");
 });
@@ -132,7 +133,7 @@ test("[fast] stores: concurrent first reads run one migration, and a save made w
   const s2 = profilesIn(d2, [], "uoalive", () => { g2.asked++; return g2.wait; });
   const first = s2.read(), second = s2.read();
   const saved = { schemaVersion: 3 as const, characters: { Saved: { spec: buildSpec() } }, templates: {} };
-  s2.write(saved);
+  s2.write(saved, s2.stamp());
   g2.open();
   assert.deepEqual(await first, saved);
   assert.deepEqual(await second, saved);
@@ -335,7 +336,7 @@ test("[fast] stores: a file made by a newer Pack Rat is read as far as this buil
   writeFileSync(join(pd, "ui-prefs.json"), JSON.stringify({ theme: "default", autoBuffs: { Kestrel: ["bless"] } }));
   assert.deepEqual(await profiles.read(), JSON.parse(newerProfiles));
   assert.equal(profiles.readOnly(), notice("profiles.json", 4));
-  assert.throws(() => profiles.write({ schemaVersion: 3, characters: {}, templates: {} }), (e: Error & { statusCode?: number }) => e.statusCode === 409);
+  assert.throws(() => profiles.write({ schemaVersion: 3, characters: {}, templates: {} }, profiles.stamp()), (e: Error & { statusCode?: number }) => e.statusCode === 409);
   assert.equal(readFileSync(join(pd, "profiles.json"), "utf8"), newerProfiles);
   assert.deepEqual(JSON.parse(readFileSync(join(pd, "ui-prefs.json"), "utf8")), { theme: "default", autoBuffs: { Kestrel: ["bless"] } }, "ui-prefs.json left alone");
   assert.deepEqual(backups(pd), []);

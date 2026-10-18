@@ -575,7 +575,7 @@ test("[fast] PUT /api/ui-prefs keeps the Suit Builder's mode, its Manual suit an
       { manualBuffSkills: { "Mastery level": 2.5 } }, { manualBuffSkills: { Dorran: { Chivalry: 105 } } }, { manualBuffSkills: [] }, { buffsCount: "yes" }]) {
       assert.equal((await put(s2.url, bad)).status, 400, JSON.stringify(bad));
     }
-    // Automatic's buffs and a character's numbers are the character's profile now (PUT /api/profiles): an older page's are refused
+    // Automatic's buffs and a character's numbers are the character's profile now (saved with PATCH /api/profiles): an older page's are refused
     for (const bad of [{ autoBuffs: { Dorran: ["bless"] } }, { buffSkills: { Dorran: { Chivalry: 105 } } }]) {
       const r = await put(s2.url, bad);
       assert.equal(r.status, 400, JSON.stringify(bad));
