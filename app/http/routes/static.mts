@@ -13,6 +13,7 @@
 // - `GET /buffs.mjs` (the Suit Builder's Manual buffs, same reason)
 // - `GET /evaluate.mjs` (one suit evaluation for Manual's totals and Automatic's buff picker, the one `POST /api/evaluate` and the MCP tools use)
 // - `GET /build-spec.mjs` (a build's intent as one document, which the Suit Builder turns into a build with the server's own rule, same reason)
+// - `GET /profile-edits.mjs` (the page makes each profiles edit on its own copy with the server's own rule, same reason)
 // - `GET /swing.mjs` (the Suit Builder's swing line and step hints, the formula both solvers score with, same reason)
 // - `GET /run-settings.mjs` and `GET /guards.mjs` (the Suit Builder's Advanced fields check against the server's run-setting ranges, same reason)
 // - `GET /data-dir-notice.mjs` (ui/messages.mts's import, same reason)
