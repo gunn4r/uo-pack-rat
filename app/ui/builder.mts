@@ -1,16 +1,16 @@
-// ui/builder.mts — the Suit Builder screen (design spec 4.6, issues #272, #321): the sentence bar (the character and
-// build pickers, Build Settings, Build), the Build Settings drawer (its tabs: Requirements, Goals, Buffs, Pool, Advanced) with
-// its footer and the optimize job (inline progress card over SSE). The first-visit view is ui/builder-start.mts; the result, the compare view and the Solver details are ui/builder-result.mts; the saved-runs drawer
+// ui/builder.mts — the Suit Builder screen (design spec 4.6, issues #272, #321): the sentence bar's Build Settings and Build,
+// the Build Settings drawer (its tabs: Requirements, Goals, Buffs, Pool, Advanced) with its footer and the optimize job (inline
+// progress card over SSE). The sentence bar's pickers and What changed chip are ui/builder-header.mts; the first-visit view is ui/builder-start.mts; the result, the compare view and the Solver details are ui/builder-result.mts; the saved-runs drawer
 // is ui/runs.mts; they share the builder's state and call each other through ui/builder-session.mts. The panel is drawn
 // from the session's profile plus its Advanced knobs, so what a build sends, what a profile saves and what a run
 // snapshots are read from state, never from the DOM.
 //
 // map: builder
 // owns: `initBuilder`, `applyPanelPrefs`, `selectCharacter`, `cancelJob`
-import { NOBODY, PROP_LABELS, NOT_BUILDER_KEYS, importanceOf, weightOfImportance, GEAR_SLOTS, tagUnits, WEAPON_EXCLUDES, MELEE_SKILLS, WEAPON_MUST_HAVE, flagLabel, getRules, RESIST_KEYS, RESIST_CAP_LIMITS, resistCapsFor, templateFrom, settingsChanges, changesList, bagLabel, toOptItem, totalsOf, fcCapFor, CASTING_SCHOOLS, compileGoals, goalsActive, GOAL_LEFTOVERS, LEFTOVER_GROUPS, LEFTOVER_LABELS, GOAL_RANKS_MAX, GOAL_RANK_SIZE_MAX, STRATEGY_HELP, FEWEST_HELP } from "../vault-lib.mts";
+import { NOBODY, PROP_LABELS, NOT_BUILDER_KEYS, importanceOf, weightOfImportance, GEAR_SLOTS, tagUnits, WEAPON_EXCLUDES, MELEE_SKILLS, WEAPON_MUST_HAVE, flagLabel, getRules, RESIST_KEYS, RESIST_CAP_LIMITS, resistCapsFor, templateFrom, settingsChanges, bagLabel, toOptItem, totalsOf, fcCapFor, CASTING_SCHOOLS, compileGoals, goalsActive, GOAL_LEFTOVERS, LEFTOVER_GROUPS, LEFTOVER_LABELS, GOAL_RANKS_MAX, GOAL_RANK_SIZE_MAX, STRATEGY_HELP, FEWEST_HELP } from "../vault-lib.mts";
 import { delayText, heldWeapon, ssiShareOf, swingOf, type SwingResult } from "../swing.mts";
-import { BUILTIN_PREFIX, TEMPLATE_NAME_MAX, characterBuffs, characterEntry, characterLabel, characterProfile, findTemplate, goalSsiCap, planBuild, specFromProfile, templateName, templateRefs, templateSettings, templateSpecFrom, type PlannedBuild } from "../build-spec.mts";
-import type { FcCap, Goals, ResistCap, RunBuffs, RunSettings, Character, SettingsChange, SettingsGroup, UnsavedChange } from "../vault-lib.mts";
+import { BUILTIN_PREFIX, TEMPLATE_NAME_MAX, characterBuffs, characterEntry, characterProfile, findTemplate, goalSsiCap, planBuild, specFromProfile, templateRefs, templateSettings, templateSpecFrom, type PlannedBuild } from "../build-spec.mts";
+import type { FcCap, Goals, ResistCap, RunBuffs, RunSettings, Character, SettingsChange, SettingsGroup } from "../vault-lib.mts";
 import { BUFFS, BUFF_GROUPS, BUFF_INPUTS, buffAvailability, buffById, buffEffectTags, isSchool, gearNeedsText, overrideNote, planBuffs, normalizeBuffs, runBuffs, toggleBuff, buffPlanOf, type Buff, type BuffPlan } from "../buffs.mts";
 import { defaultStrLimit } from "../run-settings.mts";
 import { evaluateSuit } from "../evaluate.mts";
@@ -18,7 +18,7 @@ import { state, invStamp, goalsMeta } from "./store.mts";
 import type { BuilderJob, BuilderJobUi, FinishedBuild, BuildMeta } from "./store.mts";
 import { $, el, label, full, fmtN, fmtSecs, slotLabel, toast } from "./dom.mts";
 import { promptText } from "./dialog.mts";
-import { box, txt, button, kbd, badge, token, message, select, input, field, switchControl, check, segmented, filterChip, pill, popover, closePopover, searchInput, stepper, progress, tooltip, refreshTooltips, icon, confirmDialog, modalOpen, rowActions, tipWrap, tag, bindDrawer, createDrawer, combobox, type DrawerHandle, type ComboboxHandle, type ComboGroup, type ComboOption, type ComboFace, type ComboAction } from "./components.mts";
+import { box, txt, button, kbd, badge, token, message, select, input, field, switchControl, check, segmented, filterChip, pill, popover, closePopover, searchInput, stepper, progress, tooltip, refreshTooltips, icon, confirmDialog, modalOpen, rowActions, tipWrap, bindDrawer, createDrawer, type DrawerHandle } from "./components.mts";
 import { api } from "./api.mts";
 import { createBuffPicker, type BuffPicker, type BuffView, type PickerActions } from "./builder-buffs.mts";
 import { optimizeErrorMessage } from "./messages.mts";
@@ -26,10 +26,10 @@ import { parseRoute, registerScreen, routeFor } from "./nav.mts";
 import { setNavBusy } from "./shell.mts";
 import { editProfiles, setCharacterBuffs, type ProfilesSave } from "./profiles.mts";
 import type { ProfileEdit } from "../profile-edits.mts";
-import { session, commands, provide, readControls, type BuilderChange } from "./builder-session.mts";
-import { followJob, progressText, settingsCheck } from "./builder-parts.mts";
+import { session, commands, provide, readControls, type BuilderChange, type BuildState } from "./builder-session.mts";
+import { followJob, progressText, settingsCheck, plainName, NO_CHARACTER } from "./builder-parts.mts";
 import { characterNames } from "./roster.mts";
-import { needStatus, needsLine, topWeights, shownImportance, nextSwingStep, speedText, swingLines, propName, newWeight, editedValue, runSettingsDiff, plural, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistMinimumText, pruneResistCaps, floorCapWarning, weaponsChipText, weaponMustHaveChipText, withStoredRoots, weaponName, toggleWeapon, weightTradeoff, fcCapText, rarityHelp, templateBuffsLine, sourceTitle, who, buildStateText, buildStateDetail, topSkills, templateLine, goalRows, moveGoal, spareKeys, andList, linkGoal, removeGoal, addGoal, type KnobField } from "./builder-model.mts";
+import { needStatus, needsLine, topWeights, shownImportance, nextSwingStep, speedText, swingLines, propName, newWeight, editedValue, runSettingsDiff, plural, knobError, firstKnobError, knobFromServerError, ruleValueError, resistCapError, withResistCap, capNote, resistMinimumText, pruneResistCaps, floorCapWarning, weaponsChipText, weaponMustHaveChipText, withStoredRoots, weaponName, toggleWeapon, weightTradeoff, fcCapText, rarityHelp, templateBuffsLine, sourceTitle, who, buildStateText, buildStateDetail, goalRows, moveGoal, spareKeys, andList, linkGoal, removeGoal, addGoal, type KnobField } from "./builder-model.mts";
 import type { OptimizeResult, SavedRunLike, OptimizeStartApiResponse, OptimizeCancelApiResponse, UiPrefs } from "./api-types.mts";
 import { prefs } from "./prefs.mts";
 
@@ -56,7 +56,6 @@ const KNOB_IDS: Record<KnobField, string> = { strLimit: "b-str", restarts: "b-re
 // The builder's listeners, attached once for the page's life (app.mts's load()). Everything that depends on
 // the inventory is syncBuilderCharacters()'s job, which runs on every load and refresh.
 export function initBuilder(): void {
-  initPickers();
   $<HTMLButtonElement>("#b-run")!.onclick = runBuild;
   $<HTMLButtonElement>("#b-run-foot")!.onclick = runBuild;
   $<HTMLButtonElement>("#b-save")!.onclick = () => saveProfile();
@@ -153,7 +152,7 @@ registerScreen({ name: "builder", show: (r) => {
   if (!state.inv) return;
   if (r.character && r.character !== session.character && (state.inv.characters[r.character] || (r.character === NOBODY && Object.keys(state.inv.characters).length > 0))) selectCharacter(r.character);
   else if (!r.character && session.character) history.replaceState(null, "", routeFor("builder"));
-  charPicker?.refresh();   // a build label edited on the Characters page shows at once
+  commands.refreshCharPicker();   // a build label edited on the Characters page shows at once
 } });
 export function syncBuilderCharacters(): void {
   const names = characterNames(state.inv!.characters, state.profiles!.characters);
@@ -166,7 +165,7 @@ export function syncBuilderCharacters(): void {
     selectCharacter(names.includes(want as string) || want === NOBODY ? want as string : names[0]!);
   } else {
     session.character = null; session.profile = null;
-    buildPicker?.refresh();
+    commands.refreshBuildPicker();
     $<HTMLElement>("#b-drawer-tpl")!.textContent = ""; $<HTMLElement>("#b-changes")!.textContent = "";
     $<HTMLElement>("#b-tpl-info")!.replaceWith(templateInfo(""));
     $<HTMLElement>("#b-panel-body")!.replaceChildren(el("p", { class: "muted b-no-char", id: "b-no-char" }, txt(NO_CHARACTER)));
@@ -176,9 +175,8 @@ export function syncBuilderCharacters(): void {
   commands.paintCharSelect();
   void commands.syncManual();
 }
-// With no character there is nothing to build or save: the Build and save buttons are disabled, and say why — in
+// With no character there is nothing to build or save: the Build and save buttons are disabled, and say why (NO_CHARACTER) — in
 // their title, and in the drawer's own line that they are described by.
-const NO_CHARACTER = "There is no character to build for yet. Import a scan first.";
 function setNoCharacter(none: boolean): void {
   for (const id of ["#b-run", "#b-run-foot", "#b-save", "#b-save-tpl"]) {
     const b = $<HTMLButtonElement>(id)!;
@@ -244,142 +242,18 @@ function group(id: string, title: string | null, body: () => Array<Node | null>)
   return box("section", { class: "b-sec", id: `b-sec-${id}`, ...(title ? { "aria-labelledby": hid } : {}) }, title ? el("h3", { id: hid, class: "t-md strong" }, title) : null, ...body());
 }
 
-// ---- the sentence bar's pickers (issue #321): the character, and the build with the templates to start over from
-let charPicker: ComboboxHandle | null = null, buildPicker: ComboboxHandle | null = null;
-// The character the picker shows (builder-manual.mts's paintCharSelect decides: No character when it is Manual's choice).
-let shownCharacter = "";
-// When each character last ran ("today, 10:40 PM"), fetched as the picker opens; it redraws when they are in. Null until known.
-let lastRuns: Record<string, string> | null = null;
-const NOBODY_LINE = "Raw item totals, no character's bonuses";
-// A character's initial on a tint of one of eight colors, the same for a name every time; a box icon for No character.
-const hueOf = (name: string): number => ([...name].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7) % 8) + 1;
-const avatar = (name: string): HTMLElement => (name === NOBODY ? box("span", { class: "b-av b-av-none", "aria-hidden": "true" }, icon("inventory", { size: "sm" }))
-  : box("span", { class: "b-av", "data-hue": String(hueOf(name)), "aria-hidden": "true" }, txt(name.slice(0, 1).toUpperCase())));
-const buildIcon = (): HTMLElement => box("span", { class: "b-ic", "aria-hidden": "true" }, icon("settings", { size: "sm" }));
-// The build picker's own rows: the panel as it is, and (with unsaved changes) the character's saved settings to go back to.
-const OWN = "\u0000own", SAVED = "\u0000saved";
-function initPickers(): void {
-  // the subline: the character's build label, else their top skills; the search looks in both
-  const skills = (n: string): string => (n === NOBODY ? NOBODY_LINE : topSkills(state.inv?.characters[n]?.skills));
-  const subline = (n: string): string => (n === NOBODY ? NOBODY_LINE : characterLabel(state.profiles, n) ?? skills(n));
-  charPicker = combobox({ label: "Character", placeholder: "Find a character, label or skill…", width: 400, empty: "No character matches.", attrs: { id: "b-char", class: "b-pick" },
-    face: () => (shownCharacter ? { value: shownCharacter, title: who(shownCharacter), subtitle: subline(shownCharacter) || "No skills in the scan", icon: avatar(shownCharacter) }
-      : { value: "", title: "No characters yet", subtitle: "Import a scan first" }),
-    groups: () => {
-      const names = state.inv && state.profiles ? characterNames(state.inv.characters, state.profiles.characters) : [];
-      const row = (n: string): ComboOption => ({ value: n, title: who(n), subtitle: subline(n), match: `${who(n)} ${characterLabel(state.profiles, n) ?? ""} ${skills(n)}`, meta: lastRuns ? lastRuns[n] ?? "no runs" : undefined, icon: () => avatar(n), current: n === shownCharacter });
-      return names.length ? [{ label: "Characters", options: names.map(row) }, { label: "Without a character", options: [row(NOBODY)] }] : [];
-    },
-    onPick: pickCharacter });
-  $<HTMLElement>("#b-char-slot")!.replaceWith(charPicker.button);
-  charPicker.button.addEventListener("click", () => { void commands.lastRunDays().then((d) => { if (d) { lastRuns = d; charPicker!.refresh(); } }); });
-  buildPicker = combobox({ label: "Build", placeholder: "Find a template…", width: 420, empty: "No template matches.", attrs: { id: "b-tpl", class: "b-pick", "aria-describedby": "b-tpl-state" },
-    face: buildFace, groups: buildGroups, actions: buildActions, onPick: pickBuild });
-  // the full state shows as a tooltip; a screen reader gets it once, from #b-tpl-state (the tooltip's describer is taken back off)
-  changesChip = box("button", { type: "button", class: "b-chg-chip", id: "b-chg", "aria-haspopup": "dialog", "aria-expanded": "false", hidden: "" });
-  changesChip.addEventListener("click", () => openChangesPopover(changesChip!));
-  $<HTMLElement>("#b-tpl-top")!.replaceChildren(txt("using", "b-w"), buildPicker.button, changesChip, el("span", { class: "sr", id: "b-tpl-state" }));
-}
-// The What changed chip beside the build picker (issue #336): "16 changes from **melee** template", a dot and "3 unsaved"
-// when the panel differs from the saved profile; hidden when neither. A click opens the changes as a table.
-let changesChip: HTMLButtonElement | null = null;
-function paintChangesChip(st: ReturnType<typeof buildState>): void {
-  const chip = changesChip;
-  if (!chip) return;
-  // the popover's count (changesList), so the chip and the popover's header say the same number
-  const n = st.template && st.changed.length ? changesList(st.changed, st.unsavedList).count : 0, u = st.unsavedList.length;
-  chip.hidden = !n && !u;
-  chip.replaceChildren(...[icon("list", { size: "sm" }),
-    n && st.template ? el("span", {}, `${plural(n, "change")} from `, el("strong", {}, st.template), " template") : null,
-    n && st.template && u ? txt("·", "faint") : null,
-    u ? el("span", { class: "b-chg-dot", "aria-hidden": "true" }) : null, u ? txt(`${u} unsaved`) : null].filter((x): x is HTMLSpanElement | SVGSVGElement => !!x));
-}
-// Which Build Settings tab a change lives on, and the group's heading in the popover.
+// A What changed row's setting (builder-header.mts's popover, closed first): a weight through tuneWeight (Add weight when it
+// was removed), a requirement's field (Add requirement when it was removed), a resist cap's field; anything else opens its tab
+// with its group scrolled into view. Closing the drawer gives the focus back to `from`, the chip.
 const CHANGE_TAB: Record<SettingsGroup, Tab> = { requirements: "requirements", weights: "weights", pool: "pool", buffs: "buffs", character: "advanced", search: "advanced" };
 const CHANGE_SEC: Record<SettingsGroup, string> = { requirements: "req", weights: "weights", pool: "pool", buffs: "buffs", character: "char", search: "adv" };
-const CHANGE_HEAD: Record<SettingsGroup, string> = { requirements: "Requirements", weights: "Weights per point", pool: "Pool", buffs: "Buffs", character: "Character", search: "Search" };
-// The popover: a header with the count and whether any are unsaved; the unsaved edits first (template → saved → now), then the changes
-// from the template by group (template → this build), an added requirement marked and a soft one tagged; each row's name
-// opens Build Settings on that setting; Reset to the template (asks first) and Save as template at the foot.
-function openChangesPopover(anchor: HTMLButtonElement): void {
-  if (!session.profile || !session.character) return;
-  const st = buildState(), name = who(session.character), tplName = st.template ?? "";
-  // a row opens its setting: a weight through tuneWeight (Add weight when it was removed), a requirement's field (Add requirement
-  // when it was removed), a resist cap's field; anything else opens its tab with its group scrolled into view
-  const open = (c: SettingsChange): void => {
-    closePopover();
-    if (c.group === "weights" && c.key) { tuneWeight(c.key, anchor); return; }
-    opener = anchor;
-    const req = c.key ? `.rule-row[data-key="${CSS.escape(c.key)}"] input[type=number]` : "";
-    if (c.group === "requirements" && c.key) focusIn("req", document.querySelector(`#b-sec-req ${req}`) ? req : "#b-addfloor", true);
-    else if (c.group === "character" && c.key && (RESIST_KEYS as readonly string[]).includes(c.key)) { focusIn("caps", `#b-cap-${c.key}`, true); document.getElementById(`b-cap-${c.key}`)?.closest(".rule-row")?.scrollIntoView({ block: "nearest" }); }
-    else { openSettings(CHANGE_TAB[c.group]); document.getElementById(`b-sec-${CHANGE_SEC[c.group]}`)?.scrollIntoView({ block: "start" }); }
-  };
-  // a table of changes, its value columns headed `cols` (template → saved → now for an unsaved edit with a template)
-  const table = (rows: UnsavedChange[], cols: string[]): HTMLElement => el("table", { class: "b-diff" },
-    el("thead", {}, el("tr", {}, el("th", { scope: "col" }, txt("Setting", "sr")), ...cols.flatMap((h, i) => [...(i ? [el("th", { scope: "col" }, txt("to", "sr"))] : []), el("th", { scope: "col" }, h)]))),
-    el("tbody", {}, ...rows.map((c) => {
-      const vals = c.from == null ? null : cols.length === 3 ? [c.template ?? "", c.from, c.to ?? ""] : [c.from, c.to ?? ""];
-      return el("tr", {},
-        el("td", {}, button({ label: c.label ?? c.text, variant: "ghost", size: "sm", cls: "b-diff-open", onClick: () => open(c) }), c.soft ? tag("soft") : null),
-        ...(vals ? vals.flatMap((v, i) => [...(i ? [el("td", { class: "b-diff-arrow", "aria-hidden": "true" }, "→")] : []), el("td", { class: i === vals.length - 1 ? (c.added ? "b-diff-add" : "") : "b-diff-from" }, v)])
-          : [el("td", { colspan: String(cols.length * 2 - 1), class: "muted" }, c.label ? c.text : "")]));
-    })));
-  const section = (head: string, rows: UnsavedChange[], cols: string[]): HTMLElement[] => [el("h3", { class: "b-diff-h" }, `${head} · ${rows.length}`), table(rows, cols)];
-  // an unsaved edit is listed and counted once, in its own section, with the template's value beside it (changesList)
-  const list = changesList(st.template ? st.changed : null, st.unsavedList);
-  const groups = (Object.keys(CHANGE_HEAD) as SettingsGroup[]).flatMap((g) => { const rows = list.others.filter((c) => c.group === g); return rows.length ? section(CHANGE_HEAD[g], rows, [tplName, name]) : []; });
-  const n = list.count, u = list.unsaved.length, fromTpl = !!tplName && st.changed.length > 0;
-  const head = box("header", { class: "b-diff-head" },
-    el("strong", {}, ...(fromTpl ? [`${plural(n, "change")} from `, el("b", {}, tplName), " template"] : [`${plural(u, "unsaved change")}`])),
-    txt(u ? `${plural(u, "change")} not saved to ${name}'s profile yet, listed first.` : `Saved in ${name}'s build. No unsaved changes.`, "t-sm muted"));
-  const body = box("div", { class: "b-diff-body" }, ...(u ? section("Not saved yet", list.unsaved, tplName ? [tplName, "Saved", "Now"] : ["Saved", "Now"]) : []), ...groups);
-  const foot = box("footer", { class: "b-diff-foot" }, txt("Click a setting to open it.", "t-sm muted"),
-    box("span", { class: "b-diff-acts" },
-      tplName ? button({ label: `Reset to “${tplName}”…`, size: "sm", onClick: () => { closePopover(); void pickTemplate(session.profile!.template!, true); } }) : null,
-      button({ label: "Save as template…", size: "sm", onClick: () => { closePopover(); void saveTemplateAs(); } })));
-  const h = popover(anchor, [head, body, foot], { label: fromTpl ? `Changes from the ${tplName} template` : "Unsaved changes", width: 480 });
-  if (h.isOpen()) h.root.classList.add("pop-diff");
-}
-// A character picked. "No character" (NOBODY) is Manual's in both modes, and Automatic's own when picked there; picked in
-// Manual it leaves Automatic's character as it is (back from it to the same one keeps its panel and result).
-function pickCharacter(v: string): void {
-  const none = v === NOBODY;
-  commands.setManualFor(none ? null : v);
-  if (v !== session.character && (!none || session.mode !== "manual")) selectCharacter(v);
-  commands.paintCharSelect();
-}
-function showCharacter(name: string): void { shownCharacter = name; charPicker?.refresh(); }
-// The build picker's face: "<name>'s build" over where its settings came from and how they stand.
-function buildFace(): ComboFace {
-  const name = session.character;
-  if (!session.profile || !name) return { value: "", title: "No build yet", subtitle: "Import a scan first", icon: buildIcon() };
-  return { value: session.profile.template || "", title: `${who(name)}'s build`, subtitle: buildState().text, icon: buildIcon() };
-}
-// Its list: the character's own build (and its saved settings, when they differ), then the player's templates and the
-// built-ins to start over from, each with a line saying what it is.
-function buildGroups(): ComboGroup[] {
-  const name = session.character;
-  if (!session.profile || !name) return [];
-  const refs = templateRefs(state.profiles!, state.builtinTemplates), builtin = (r: string): boolean => r.startsWith(BUILTIN_PREFIX);
-  const face = buildFace(), unsaved = unsavedChanges().length;
-  const users = (ref: string): string[] => Object.keys(state.profiles!.characters).filter((c) => state.profiles!.characters[c]!.template === ref);
-  const tpl = (ref: string): ComboOption => {
-    const t = findTemplate(state.profiles!, state.builtinTemplates, ref);
-    return { value: ref, title: plainName(ref), subtitle: builtin(ref) ? t?.description || "Ships with Pack Rat" : templateLine(t ?? {}, users(ref)) };
-  };
-  return [
-    { label: `${who(name)}'s own`, options: [{ value: OWN, title: face.title, subtitle: face.subtitle, match: face.title, icon: buildIcon, current: true },
-      ...(unsaved ? [{ value: SAVED, title: `${who(name)}'s saved build`, subtitle: `Go back to it, dropping ${plural(unsaved, "unsaved change")}`, match: `${who(name)}'s saved build`, icon: buildIcon }] : [])] },
-    { label: "Start over from a saved template", options: refs.filter((r) => !builtin(r)).map(tpl) },
-    { label: "Start over from a built-in template", options: refs.filter(builtin).map(tpl) },
-  ];
-}
-// The template management that was the ⋯ menu's: Save as, and Manage templates, a menu with Update and Delete for each of
-// the player's templates and the built-ins, in the Manage templates drawer (issue #336).
-function buildActions(): ComboAction[] {
-  return [{ label: "Save as template…", icon: "plus", onSelect: () => { void saveTemplateAs(); }, disabled: session.profile ? null : NO_CHARACTER },
-    { label: "Manage templates…", onSelect: () => openTemplatesDrawer(buildPicker!.button), disabled: session.profile ? null : NO_CHARACTER }];
+function openChange(c: SettingsChange, from: HTMLElement): void {
+  if (c.group === "weights" && c.key) { tuneWeight(c.key, from); return; }
+  opener = from;
+  const req = c.key ? `.rule-row[data-key="${CSS.escape(c.key)}"] input[type=number]` : "";
+  if (c.group === "requirements" && c.key) focusIn("req", document.querySelector(`#b-sec-req ${req}`) ? req : "#b-addfloor", true);
+  else if (c.group === "character" && c.key && (RESIST_KEYS as readonly string[]).includes(c.key)) { focusIn("caps", `#b-cap-${c.key}`, true); document.getElementById(`b-cap-${c.key}`)?.closest(".rule-row")?.scrollIntoView({ block: "nearest" }); }
+  else { openSettings(CHANGE_TAB[c.group]); document.getElementById(`b-sec-${CHANGE_SEC[c.group]}`)?.scrollIntoView({ block: "start" }); }
 }
 // ---- the Manage templates drawer (issue #336): the shared drawer, like Saved runs. At its top, Save the current build settings
 // as a template; then the player's templates as cards (name, description, when it was changed, the characters that use it,
@@ -476,22 +350,6 @@ async function duplicateTemplate(ref: string): Promise<void> {
   paintTemplatesDrawer();
   if (!(await saving).ok) unpoint(name, back);
 }
-function pickBuild(v: string): void {
-  if (v === OWN) return;
-  if (v === SAVED) void revertToSaved();
-  else void pickTemplate(v, true);
-}
-// Back to the settings saved in the character's profile, after a yes: the unsaved changes go.
-async function revertToSaved(): Promise<void> {
-  const name = session.character!, n = unsavedChanges().length;
-  if (n && !await confirmDialog({ title: `Drop ${plural(n, "unsaved change")}?`, body: `${who(name)}'s build goes back to the settings saved in the profile.`, confirmLabel: "Drop changes" })) return;
-  if (session.character !== name) return;
-  session.profile = characterProfile(state.profiles!, name, state.builtinTemplates);
-  session.profile!.excludeRoots ??= [];
-  clearCapDrafts();
-  knobs.strLimit = String(session.profile!.strLimit ?? defaultStrLimit(state.inv!.characters[name]));
-  renderPanel();
-}
 // Race, STR limit and the casting school: the character's, saved with the profile; race and STR limit decide which pieces
 // are candidates at all, the school the Faster Casting cap.
 function charSection(): HTMLElement {
@@ -503,8 +361,6 @@ function charSection(): HTMLElement {
   str.classList.add("b-str");
   return group("char", "Character", () => [box("div", { class: "b-race-row" }, session.character === NOBODY ? null : box("div", { class: "field" }, el("span", { class: "label", id: "b-race-l" }, "Race"), race), str), castingSchoolField()]);
 }
-// A template's name as the picker shows it: a built-in's own name, without templateLabel's "(built-in)".
-const plainName = (ref: string): string => templateName(state.builtinTemplates, ref);
 // Under the picker, for a template with a description: a built-in's badge, the description, the buffs it loads and its
 // source pages (a built-in with none is the shard's defaults).
 function templateInfo(ref: string): HTMLElement {
@@ -532,7 +388,7 @@ function unsavedChanges(): SettingsChange[] {
   return settingsChanges(cmp(saved), cmp(readControls()));
 }
 // The build picker's state line and its full text (builder-model.mts buildStateText, buildStateDetail).
-function buildState(): { text: string; detail: string; drift: boolean; unsaved: boolean; template: string | null; changed: SettingsChange[]; unsavedList: SettingsChange[] } {
+function buildState(): BuildState {
   const p = session.profile!, ref = p.template, tpl = ref ? findTemplate(state.profiles!, state.builtinTemplates, ref) : undefined;
   const st = { template: ref ? plainName(ref) : null, missing: !!ref && !tpl }, changed = tpl ? templateChanges(tpl) : [], unsavedList = unsavedChanges();
   const changedLines = changed.map((c) => c.text), unsavedLines = unsavedList.map((c) => c.text);
@@ -544,8 +400,8 @@ function buildState(): { text: string; detail: string; drift: boolean; unsaved: 
 export function updateTemplateBadge(): void {
   if (!session.profile) return;
   const st = buildState();
-  buildPicker?.refresh();
-  paintChangesChip(st);
+  commands.refreshBuildPicker();
+  commands.paintChangesChip(st);
   $<HTMLElement>("#b-tpl-state")!.textContent = `${st.text}. ${st.detail}`;
   $<HTMLElement>("#b-drawer-tpl")!.textContent = st.text;
   paintChanges();
@@ -1625,4 +1481,5 @@ async function saveProfile(said?: string): Promise<void> {
   toast(r.ok ? said ?? `Profile for ${who(name)} saved.` : r.error!, r.ok ? "good" : "bad");
   updateTemplateBadge();
 }
-provide({ showCharacter, renderPanel, clearCapDrafts, panelBuild, buffPlan, loadRunBuffs, tuneWeight, pickTemplate: (ref) => { void pickTemplate(ref); }, selectCharacter, build: () => { void runBuild(); }, openSettingsTab: (t) => openSettings(t as Tab) });
+provide({ renderPanel, clearCapDrafts, panelBuild, buffPlan, loadRunBuffs, tuneWeight, pickTemplate: (ref, again) => { void pickTemplate(ref, again); }, selectCharacter, build: () => { void runBuild(); }, openSettingsTab: (t) => openSettings(t as Tab),
+  buildState, unsavedChanges, openChange, saveTemplateAs: () => { void saveTemplateAs(); }, openTemplatesDrawer });
