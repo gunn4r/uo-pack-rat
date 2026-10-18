@@ -1,4 +1,4 @@
-// routes.mts — the HTTP API's route map: every /api route the server registers (app/http/routes/), keyed "METHOD /path" with a path parameter written <name>, and the type of what it answers with 200 (`res`) and of the JSON body it reads (`body`). Types only, importing only other node-free type modules, so the page, the MCP server and the routes can all use it.
+// routes.mts — the HTTP API's route map: every /api route the server registers (app/http/routes/), keyed "METHOD /path" with a path parameter written <name>, and the type of what it answers with 200 (`res`) and of the JSON body it reads (`body`). Types only, importing only other node-free type modules (this folder's families and the house, Organize and run types), so the page, the MCP server and the routes can all use it.
 //
 // `scripts/api-routes.test.mts` fails on a route registered with no entry here and on an entry no route serves. A route
 // whose answer has no shared type yet is `Untyped`; W2c (issue #338) gives each family its type and has its routes
@@ -9,6 +9,7 @@
 import type { HouseApiResponse, HousesApiResponse } from "../house-model-types.mts";
 import type { OrganizePlanApiResponse, OrganizeProposeApiResponse, OrganizeProposeBody } from "../organize-types.mts";
 import type { RunBody, RunsListBody, RunSummary } from "../runs-types.mts";
+import type { CleanupApiResponse, InstallApiResponse, InstallBody, LocateApiResponse, LocateBody, PasteScannerApiResponse, RulesApiResponse, SettingsApiResponse, SettingsPutBody, SetupApiResponse, UpdateCheckApiResponse } from "./setup.mts";
 
 // One route: what it answers with 200, and the JSON body it reads (undefined: none).
 export interface ApiEntry<Res, Body = undefined> { res: Res; body: Body }
@@ -89,16 +90,16 @@ export interface ApiRoutes {
   "GET /api/tazuo-panel": Untyped;
   "PUT /api/tazuo-panel": Untyped;
   // settings.mts
-  "GET /api/settings": Untyped;
-  "PUT /api/settings": Untyped;
-  "POST /api/retention/cleanup": Untyped;
-  "GET /api/rules": Untyped;
+  "GET /api/settings": ApiEntry<SettingsApiResponse>;
+  "PUT /api/settings": ApiEntry<SettingsApiResponse, SettingsPutBody>;
+  "POST /api/retention/cleanup": ApiEntry<CleanupApiResponse, { dryRun: boolean }>;
+  "GET /api/rules": ApiEntry<RulesApiResponse>;
   // setup.mts
-  "GET /api/setup": Untyped;
-  "GET /api/setup/scanner": Untyped;
-  "POST /api/setup/locate": Untyped;
-  "POST /api/setup/install": Untyped;
-  "GET /api/update-check": Untyped;
+  "GET /api/setup": ApiEntry<SetupApiResponse>;
+  "GET /api/setup/scanner": ApiEntry<PasteScannerApiResponse>;
+  "POST /api/setup/locate": ApiEntry<LocateApiResponse, LocateBody>;
+  "POST /api/setup/install": ApiEntry<InstallApiResponse, InstallBody>;
+  "GET /api/update-check": ApiEntry<UpdateCheckApiResponse>;
 }
 export type ApiResponse<K extends keyof ApiRoutes> = ApiRoutes[K]["res"];
 export type ApiBody<K extends keyof ApiRoutes> = ApiRoutes[K]["body"];
