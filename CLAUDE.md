@@ -22,6 +22,8 @@ Read this first, then `CONTRIBUTING.md` for the full contributor guide.
 
 ## Local test loop
 
+`scripts/CLAUDE.md` is the guide to the runner, the guards and the Electron fixture; `TESTING.md` is the full reference.
+
 - `npm run typecheck`.
 - `TEST_SKIP_ELECTRON=1 ./scripts/test_runner.sh --changed`, then `TEST_SKIP_ELECTRON=1 ./scripts/test_runner.sh --fast`.
 - Read `test_logs/latest_summary.json` for results, not the console.
