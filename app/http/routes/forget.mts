@@ -15,6 +15,7 @@ import { readBody } from "../../read-body.mts";
 import { isPseudoCharacter, validateScan } from "../../scan-schema.mts";
 import { send, asObject } from "../respond.mts";
 import type { Route } from "../router.mts";
+import type { ForgetApiResponse } from "../../api/inventory.mts";
 import type { ServerContext } from "../context.mts";
 
 // A `_vault` tombstone scan, which the fold reads as "forget": the roots it lists (POST /api/forget) or, with
@@ -74,7 +75,7 @@ export function routes(ctx: ServerContext): Route[] {
       // name has never been what orders them).
       writeFileAtomic(join(SCANS, `_forget-${serial.toString(16)}.json`), JSON.stringify(snap), DATA_FILE_MODE);
       eventBus.broadcast("changed", { what: "inventory", by: req.headers["x-client-id"], at: Date.now() });
-      return send(res, 200, { ok: true });
+      return send(res, 200, { ok: true } satisfies ForgetApiResponse);
     } },
     { method: "POST", path: "/api/forget-character", handle: async (req, res) => {
       // A character tombstone: a `_vault` scan naming the character in `forgetCharacter`, which the
@@ -93,7 +94,7 @@ export function routes(ctx: ServerContext): Route[] {
       // replaced with a newer stamp if the character is forgotten again.
       writeFileAtomic(join(SCANS, `_forget-char-${Buffer.from(character).toString("hex")}.json`), JSON.stringify(snap), DATA_FILE_MODE);
       eventBus.broadcast("changed", { what: "inventory", by: req.headers["x-client-id"], at: Date.now() });
-      return send(res, 200, { ok: true });
+      return send(res, 200, { ok: true } satisfies ForgetApiResponse);
     } },
   ];
 }
