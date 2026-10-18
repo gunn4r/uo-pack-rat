@@ -1351,7 +1351,7 @@ export interface OptItem {
 // buildPools() only ever stores an item after `!it.slot` has already sent it to `continue` — every
 // item it hands the solver has passed that filter, so its slot is honestly a string, not the plain
 // OptItem's `string | null`. scripts/optimizer-core.mts declares its own (unexported) OptItem with a
-// required, non-null `slot` — the two are independently declared (the core imports only
+// required, non-null `slot` — the two are independently declared (at run time the core imports only
 // app/solver/scoring.mts; see its own header comment) describing the same runtime objects, and they already
 // drifted once with nothing to catch it (app/solver.test.mts's compile-time assignability guard, next
 // to its own note on the cast this boundary needs, is what catches it now).

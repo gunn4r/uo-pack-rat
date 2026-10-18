@@ -6,10 +6,11 @@
 //
 // map: builder
 // owns: `finishResult`, `FinishInput`, `WorkerResult`
-import { resultDiagnostics, scoreShares, withDiagnostics, type Diagnostic, type DiagnosticsProfile, type ScoreShare } from "../diagnostics.mts";
+import { resultDiagnostics, scoreShares, withDiagnostics, type DiagnosticsProfile, type ScoreShare } from "../diagnostics.mts";
+import type { OptimizeResult } from "../api/optimize.mts";
 import type { ExactSolveResult, OptAssignment, OptPools, OptProfile, StrictResult } from "../exact-solver.mts";
 import { DEFAULT_SLOTS } from "../mip.mts";
-import { heldWeapon, ssiShareOf, swingOf, type SwingResult } from "../swing.mts";
+import { heldWeapon, ssiShareOf, swingOf } from "../swing.mts";
 import { totalsOf, type EffectiveProfile, type OptItem } from "../vault-lib.mts";
 import type * as Core from "../../scripts/optimizer-core.mts";
 
@@ -18,7 +19,7 @@ type OptResult = ReturnType<typeof Core.optimizeSuit>;
 
 // Either path's result, with the settings that worked against it (app/diagnostics.mts; no `diagnostics` when computing them failed) and the suit's swing (app/swing.mts).
 // Each suit carries what made up its score (scoreShares), with the minimums this build held resists at.
-export type WorkerResult = (OptResult | ExactSolveResult) & { diagnostics?: Diagnostic[]; swing?: SwingResult | undefined; shares?: ScoreShare[]; strict?: StrictResult | undefined };
+export type WorkerResult = OptimizeResult<OptAssignment>;
 
 export interface FinishInput {
   core: typeof Core;
