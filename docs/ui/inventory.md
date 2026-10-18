@@ -93,7 +93,7 @@ The filter state is the browser's `query`, the shape `item-query.mts`'s `parseIt
 - **Yes/no properties** are required with `flag` (issue #182: `flag=spell channeling`, repeated; every one must be present).
   - They are offered from the facets' `flagKeys` as the property rule's last group, **Yes or no**; each option's muted second line reads "Yes / no".
   - Picking one hides the comparison and the number, moves the focus to Add rule, and shows a Title Case token ("Spell Channeling").
-  - `vault-lib.mts`'s `flagKeys` says which tooltip flags count: a known yes/no property such as "(imbued)", read Imbued, or a plain-words line on gear. Never a slayer, a race lock, free text or a resource's material.
+  - `domain/pools.mts`'s `flagKeys` says which tooltip flags count: a known yes/no property such as "(imbued)", read Imbued, or a plain-words line on gear. Never a slayer, a race lock, free text or a resource's material.
   - Its `flagKey` folds every "part of an armor set (N pieces)" into one Part of an Armor Set and lower-cases, for the facet and for matching alike.
 - **Tags** are hidden (`hide`) or required, any of them (`tag`), from the one Tags… popover.
 
