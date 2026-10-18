@@ -17,7 +17,7 @@ The guide to `scripts/`: the test runner, the guards, the Electron test fixture 
 
 ## Extend it
 
-- **A test file:** a header comment, a tag on every test, then `npm run gen:test-index`. A new `app/ui/` screen stem also needs its Electron test in `SCREENS` (`scripts/select-tests.mts`), or `--changed` runs every Electron file.
+- **A test file:** a header comment, a tag on every test, then `npm run gen:test-index`. A new `app/ui/` module or stylesheet goes in `SCREENS` (`scripts/select-tests.mts`) with the Electron tests that drive it, or in `SHARED_UI` with the reason it selects every Electron test; `scripts/select-tests.test.mts` fails on one in neither.
 - **A guard's allow-list:** add the entry together with its reason, and never to hide something that moved. Fix the code or the doc instead.
   - `ALLOWED` in `scripts/docs-links.test.mts` takes a path and its reason;
   - `ALLOWED` in `scripts/css-guard.test.mts` takes a reason and its selectors;

@@ -35,7 +35,7 @@ It also uses the Inventory's item pieces (`item-parts.mts`, `peek.mts`'s `proper
 ### Tests
 
 - **Pure:** `app/ui-map.test.mts` (`house-map-model.mts`), `app/ui-world-map.test.mts`, `app/houses-data.test.mts`. `app/theme.test.mts` checks the area and map color tokens.
-- **Electron:** `scripts/ui-map.test.mts`. `SCREENS` maps `house-map`, `house-map-model`, `world-map` and `world-map-model` to it. `houses-data` and `house-links` have no entry, so a change to one runs every Electron file.
+- **Electron:** `scripts/ui-map.test.mts`. `SCREENS` maps `house-map`, `house-map-model`, `world-map`, `world-map-model` and `houses-data` to it, and `house-links` to it and `scripts/ui-state.test.mts`.
 - **Server side:** the model is built and tested outside the page (`app/house-server.test.mts` and the house-capture tests).
 
 ### How to extend it

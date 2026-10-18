@@ -16,7 +16,7 @@
 //      stylesheet adds the contrast test. A path nothing reaches runs the full suite.
 //
 // map: tooling
-// owns: `selectTests`, `SCREENS`
+// owns: `selectTests`, `SCREENS`, `SHARED_UI`
 import { posix } from "node:path";
 
 export type Selection = { full: string } | { tests: Record<string, string[]> };
@@ -25,12 +25,18 @@ const IGNORED = /(^|\/)[^/]+\.md$|^docs\/|^\.github\/|^LICENSE$|^node_modules(\/
 const FULL = /^(scripts\/(test-runner|run-suite|test-file-watchdog|electron-window|build-ui|build-schema-types)\.mts|scripts\/test_runner\.sh|package(-lock)?\.json|tsconfig[^/]*\.json|app\/schema\/.*|electron\/.*)$/;
 
 // app/ui file stem → the Electron test(s) that drive that screen; a name ending in * stands for every Electron test whose name
-// starts with the rest (the Suit Builder's are split by area). A stem not listed here (tokens, dom, store, app, theme...) is
-// shared by every screen, so it selects all of them.
+// starts with the rest (the Suit Builder's are split by area). A stem not listed here selects all of them; every such stem is
+// in SHARED_UI below with the reason, which scripts/select-tests.test.mts checks.
 export const SCREENS: Record<string, string | string[]> = {
   builder: "ui-builder-*", "builder-model": "ui-builder-*", "builder-result": "ui-builder-*",
+  "builder-parts": "ui-builder-*", "builder-start": "ui-builder-*", dialog: "ui-builder-*",
   components: "ui-components",
   import: "ui-forms", "import-preview": "ui-forms", wizard: "ui-forms", settings: "ui-forms", shard: "ui-forms",
+  "adapter-copy": "ui-forms", adapters: "ui-forms", "tazuo-panel": "ui-forms",
+  "move-to": ["ui-move", "ui-gather"], "move-model": ["ui-move", "ui-unravel", "ui-gather"],
+  unravel: ["ui-unravel", "ui-gather"], "unravel-model": ["ui-unravel", "ui-gather"],
+  "item-tip": "ui-tooltips",
+  "houses-data": "ui-map", "house-links": ["ui-map", "ui-state"],
   shell: "ui-shell",
   inventory: "ui-state", "inv-model": "ui-state", characters: "ui-state", roster: "ui-state", sheet: "ui-state",
   runs: "ui-state", peek: "ui-state", containers: "ui-state", "view-state": "ui-state",
@@ -40,6 +46,35 @@ export const SCREENS: Record<string, string | string[]> = {
   "organize-model": ["ui-organize", "ui-map"], kinds: "ui-organize",
   "builder-buffs": "ui-builder-*", "builder-header": "ui-builder-*", "builder-templates": "ui-builder-*", "builder-requirements": "ui-builder-*", "builder-job": "ui-builder-*", "builder-manual": "ui-builder-*", "manual-model": "ui-builder-*",
   "item-browser": ["ui-state", "ui-builder-*"],
+};
+
+// app/ui file stems that select every Electron test, each with the reason: the page's infrastructure, and the pieces and data
+// modules more screens use than a short list would stay right for.
+export const SHARED_UI: Record<string, string> = {
+  app: "the page's bootstrap",
+  api: "every fetch",
+  "api-types": "every screen's response types",
+  store: "the page's shared state",
+  dom: "the DOM helpers and the item tooltip every screen draws",
+  nav: "the routes and the screen registry",
+  events: "the one server event stream",
+  bridge: "the bridge state and actions most screens gate on",
+  messages: "the outcome sentences every screen shows",
+  format: "number and plural formatting",
+  prefs: "the view choices every screen saves",
+  theme: "the theme and appearance",
+  breakpoints: "the window breakpoints",
+  items: "the item helpers every item list uses",
+  "item-parts": "the item widgets most screens draw",
+  "item-art": "container art on five screens",
+  "inventory-data": "the inventory every screen draws from",
+  "organize-data": "Organize's setup, read by the Inventory views and Move to as well",
+  profiles: "the profiles the Suit Builder and Characters both write",
+  "builder-session": "the builder's session, which Characters, the shell and nav also reach",
+  "paste-scanner": "the scanner copy, run at startup and in Settings and the wizard",
+  tokens: "the design tokens",
+  britannia: "a theme family's tokens",
+  styles: "the older shared classes",
 };
 
 const LITERAL = /["'`](\.\.?\/[^"'`\s]+)["'`]/g;
