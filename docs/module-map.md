@@ -332,6 +332,7 @@ Stylesheets (`app/ui/tokens.css`, `app/ui/britannia.css`, `app/ui/components.css
 | `scripts/test-runner.mts` | The test interface behind `scripts/test_runner.sh`: `--smoke`, `--fast`, `--changed`, full. | the summary file, test_logs/latest_summary.json |
 | `scripts/run-suite.mts` | The counting half of the runner: build, discover, run, fold the events into the summary. | `runSuite`, `patternsFor` |
 | `scripts/select-tests.mts` | Which test files `--changed` runs for the changed paths. | `selectTests`, `SCREENS` |
+| `scripts/changelog.mts` | The changelog's fragments in `changelog.d/`: their check, the seal on `CHANGELOG.md`'s released part, and the release that puts them together (`--check`, `--release`, `--seal`). | `fragmentError`, `changelogError`, `release` |
 | `scripts/test-index.mts` | The test index in `TESTING.md`: each test file with its header's first sentence (`--write`, `--check`). | `renderIndex`, `summaryOf`, `indexIsCurrent` |
 | `scripts/test-file-watchdog.mts` | Ends a test file's process that does not exit on its own after its tests. | — |
 | `scripts/build-ui.mts` | Compiles the page into app/dist/ (git-ignored). | `buildUi` |
