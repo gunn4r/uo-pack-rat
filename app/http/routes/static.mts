@@ -40,6 +40,8 @@ export function routes(_ctx: ServerContext): Route[] {
     { method: "GET", path: "/build-spec.mjs", handle: (_req, res) => send(res, 200, readFileSync(join(WEB, "build-spec.mjs"), "utf8"), "text/javascript") },
     // The Suit Builder's swing line and step hints use the solvers' own swing formula (app/swing.mts).
     { method: "GET", path: "/swing.mjs", handle: (_req, res) => send(res, 200, readFileSync(join(WEB, "swing.mjs"), "utf8"), "text/javascript") },
+    // swing.mjs, vault-lib.mjs and build-spec.mjs import the solvers' shared scoring constants (app/solver/scoring.mts).
+    { method: "GET", path: "/solver/scoring.mjs", handle: (_req, res) => send(res, 200, readFileSync(join(WEB, "solver", "scoring.mjs"), "utf8"), "text/javascript") },
     { method: "GET", path: "/house-areas.mjs", handle: (_req, res) => send(res, 200, readFileSync(join(WEB, "house-areas.mjs"), "utf8"), "text/javascript") },
     { method: "GET", path: "/guards.mjs", handle: (_req, res) => send(res, 200, readFileSync(join(WEB, "guards.mjs"), "utf8"), "text/javascript") },
     { method: "GET", path: "/data-dir-notice.mjs", handle: (_req, res) => send(res, 200, readFileSync(join(WEB, "data-dir-notice.mjs"), "utf8"), "text/javascript") },

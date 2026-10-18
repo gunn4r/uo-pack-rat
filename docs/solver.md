@@ -22,25 +22,20 @@ Read this section first; the rest of the file is the reference, feature by featu
 - The same seed gives byte-identical results.
 - `alternatives` never contains the returned suit.
 
-**The rules written twice.** The core and the MIP keep their own copies of these, marked `==` in the code. A change to one is a change to both; the third column says what catches a mismatch:
+**The shared scoring constants** live once in `app/solver/scoring.mts`, which both solvers import: the hard-floor bonus and its maximum (`HARD_FLOOR_BONUS`, `HARD_FLOOR_BONUS_MAX`, `hardBonusOf`), the score precision (`TIE_SLACK`, also HiGHS's `mip_abs_gap`), the relative slack (`SCORE_REL`, `slackAt`), float noise (`FLOAT_EPS`), the change cost (`CHANGE_COST`, `changeCost`), the Resisting Spells key and step slack, and the defaults an absent field means (`DEFAULT_FLOOR_BONUS`, `DEFAULT_FLOOR_PARTIAL`, `DEFAULT_BUDGET_MS`, `DEFAULT_RESTARTS`). Change a value there, never in a solver.
+
+**The rules written twice.** The core states these as an evaluator and the MIP as rows, so a change to one is a change to both; the third column says what catches a mismatch:
 
 | Rule | Core (`scripts/optimizer-core.mts`) | Other copy | Caught by |
 |---|---|---|---|
-| Hard-floor bonus | `HARD_FLOOR_BONUS` | `HARD_FLOOR_BONUS` (`app/mip.mts`) | the fuzz suite |
-| The bonus a profile carries | `optHardBonus` | `hardBonusOf` (`app/mip.mts`) | nothing direct |
-| Tie and Strict order slack, 1e-3 | `LEX_EPS` | `TIE_SLACK` (`app/mip.mts`); `mip_abs_gap` (`app/mip-solve.mts`) | nothing direct |
-| Relative slack | `SCORE_REL`, `optSlack` | `SCORE_REL`, `slackAt` (`app/mip.mts`) | nothing direct |
-| Change cost | `CHANGE_COST` | `CHANGE_COST` (`app/mip.mts`) | `app/strict-order.test.mts` |
-| Change cost per pool (with the slot count 19 written in) | `optChangeCost` | `changeCostFor` (`app/mip.mts`) | one value in `app/strict-order.test.mts` |
-| A kept piece's value | `optChangeOf` | `keptOf` (`app/mip.mts`) | nothing direct |
-| Resisting Spells key and step slack | `RESIST_SKILL_KEY`, `RESIST_STEP_SLACK` | the same names in `app/vault-lib.mts` | nothing direct |
+| A kept piece's value (fewest changes) | `optChangeOf` | `keptOf` (`app/mip.mts`) | nothing direct |
 | The minimum a resist is held at | `optScoreVector`'s step loop | `liftedMin` (`app/vault-lib.mts`), the step loop in `startVector` and the `h` rows in `buildSuitMip` | the fuzz suite |
 | SSI step credit | `optStepCredit` | `stepCredit` (`app/swing.mts`), the step loop in `startVector` | the fuzz suite |
 | The slots | `optDefaultSlots` | `GEAR_SLOTS` (`app/vault-lib.mts`, read by `app/mip.mts`) | `app/solver.test.mts` |
 | The optional slots | `optDefaultOptionalSlots` | `DEFAULT_OPTIONAL_SLOTS` (`app/mip.mts`) | `app/solver.test.mts` |
-| Default soft-floor bonus 1000 and partial credit 0.5 | in `optBuildSpace` and the profile normalisation | in `buildSuitMip` and `hardFloorSpread` (`app/mip.mts`); `SPEC_DEFAULTS.floorBonus` (`app/build-spec.mts`) | nothing direct |
+| A floor at or under its minimum asks for nothing, and the hard floors' partial share | `optBuildSpace` | `buildSuitMip` and `hardFloorSpread` (`app/mip.mts`), `app/diagnostics.mts` | the fuzz suite |
 
-The core keeps its own copies because its header rule was "imports nothing, so it can be pasted into a game script". No adapter pastes it, and issue #338's quality pass moves these into one shared module; this table shrinks as that lands.
+Issue #338's quality pass moves the profile normalisation and these term functions into `app/solver/` next; this table shrinks as that lands.
 
 **To add or change a scoring term**, follow "Add or change a scoring term" in `docs/change-checklists.md`. In short: the core's evaluator and its bound, the MIP's rows and `startVector`, `hardFloorSpread`, diagnostics, `requirementReport`, the fuzz generator, `SOLVER_VERSION`, and this file.
 

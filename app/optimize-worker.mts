@@ -17,6 +17,7 @@ import { parentPort, workerData } from "node:worker_threads";
 import { solveExact, type OptPools, type OptAssignment, type OptProfile, type ExactSolveResult, type SolveProgress, type StrictResult } from "./exact-solver.mts";
 import { resultDiagnostics, scoreShares, withDiagnostics, type Diagnostic, type DiagnosticsProfile, type ScoreShare } from "./diagnostics.mts";
 import { DEFAULT_SLOTS, poolStepsFor } from "./mip.mts";
+import { DEFAULT_BUDGET_MS } from "./solver/scoring.mts";
 import { heldWeapon, ssiShareOf, swingOf, type SwingResult } from "./swing.mts";
 import { totalsOf, type EffectiveProfile, type OptItem } from "./vault-lib.mts";
 import type * as Core from "../scripts/optimizer-core.mts";
@@ -74,7 +75,7 @@ try {
   const solveProfile: OptProfile = ssiSteps ? { ...profile, ssiSteps } : profile;
   const result: OptResult | ExactSolveResult = opts.exact
     ? await solveExact({ core, pools, current, profile: solveProfile, opts, onProgress, onWarn: (m) => port.postMessage({ type: "warn", message: m } satisfies WorkerWarnMessage) })
-    : core.optimizeSuit(pools, current, solveProfile, { ...opts, heuristicBudgetMs: opts.timeBudgetMs ?? 15000, onProgress });   // the same default budget as solveExact and the server's job timer
+    : core.optimizeSuit(pools, current, solveProfile, { ...opts, heuristicBudgetMs: opts.timeBudgetMs ?? DEFAULT_BUDGET_MS, onProgress });   // the same default budget as solveExact and the server's job timer
   // the suit's swing, whether steps were on or not, when it holds a weapon with a speed and the build has a character
   const weapon = heldWeapon(result.best), sw = prof.swing;
   const swing = weapon && sw ? swingOf(weapon.speed!, sw.stamBase, result.totals?.after || {}, ssiShareOf(prof)) : undefined;

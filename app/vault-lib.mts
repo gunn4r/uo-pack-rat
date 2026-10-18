@@ -11,6 +11,7 @@
 // map: scan
 // owns: `Item`, `Container`, `Character`, `Inventory`, `ScanSummary`, `parseTooltip`, `foldSnapshots`, `locationOf`, `containerPath`, `capacityOf`, `TRASH_RE`, `groupByName`, `slayersOf`, `medableOf`
 import { delayText } from "./swing.mts";
+import { RESIST_SKILL_KEY, RESIST_STEP_SLACK } from "./solver/scoring.mts";
 import { isPseudoCharacter, NOBODY, parseStamp, V1_ADAPTER_VERSION } from "./scan-schema.mts";
 export { isPseudoCharacter, NOBODY };
 import type { RulesV1, ScanV2, ScanV2Adapter } from "./schema/types.d.mts";
@@ -438,8 +439,9 @@ export function minResistAt(value: number): number | null {
   if (fixed >= 1000) return 40 + Math.floor((fixed - 1000) / 50);
   return fixed >= 400 ? Math.floor((fixed - 400) / 15) : null;
 }
-// The property an item's Resisting Spells skill bonus is read into ("Resisting Spells +10" on a bracelet).
-export const RESIST_SKILL_KEY = "sk:resisting spells";
+// The property an item's Resisting Spells skill bonus is read into ("Resisting Spells +10" on a bracelet): RESIST_SKILL_KEY,
+// from app/solver/scoring.mts, re-exported here with RESIST_STEP_SLACK for the modules that read them from the kernel.
+export { RESIST_SKILL_KEY, RESIST_STEP_SLACK };
 // A character's own Resisting Spells, without what its worn suit adds: the scan's base (its value when the scan has no
 // base), null when the scan has no such skill. A suit's own bonus (RESIST_SKILL_KEY) goes on top of it, so a minimum
 // is never taken from pieces the suit may not keep.
@@ -474,10 +476,9 @@ export function resistMinimum(skills: Record<string, unknown> | null | undefined
 // One step of the Resisting Spells minimum a suit's own bonus lifts (EffectiveProfile.resistSteps): a suit whose
 // Resisting Spells bonus total is at least `at` holds each resist at `mins[k]`, in item terms.
 export interface ResistStep { at: number; mins: Record<string, number> }
-// Half a tenth of a point: a suit reaches a step when its bonus total is at least `at` less this. Bonuses come in tenths
-// at the finest, so the margin changes nothing for a real total and lets the MIP tell "under" from "at" with room to
-// spare. scripts/optimizer-core.mts keeps its own copy.
-export const RESIST_STEP_SLACK = 0.05;
+// RESIST_STEP_SLACK, half a tenth of a point: a suit reaches a step when its bonus total is at least `at` less this. Bonuses
+// come in tenths at the finest, so the margin changes nothing for a real total and lets the MIP tell "under" from "at" with
+// room to spare.
 // Every step the minimum takes as a suit's Resisting Spells bonus rises from 0, a tenth at a time, until the skill
 // reaches its cap: `skill` the character's own, `cap` its cap (null: SKILL_CAP_TOP), `loss` what the planned buffs take
 // off it (Protection's), `share` a resist's in-cap share from the buffs. Empty when no bonus can change the minimum.

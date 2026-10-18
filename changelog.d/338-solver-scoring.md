@@ -1,0 +1,1 @@
+- **For contributors: one home for the solvers' scoring constants** (issue #338): the hard-floor bonus, the score slacks, the change cost, the Resisting Spells key and step slack, float noise and the defaults both the optimizer core and the MIP read now live in `app/solver/scoring.mts`; the core imports it instead of keeping its own copies. Results are unchanged.

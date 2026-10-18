@@ -19,6 +19,7 @@
     "app/run-settings.*",
     "app/build-spec.*",
     "app/swing.*",
+    "app/solver/scoring.*",
     "app/house-areas.*",
     "app/guards.*",
     "app/data-dir-notice.*",

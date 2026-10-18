@@ -1,4 +1,4 @@
-// swing.mts — swing speed (issue #217): how long a weapon takes between swings for a character's stamina and Swing Speed Increase, the steps SSI moves it through, and the table both solvers score SSI with when the build scores it by step. Pure and browser-safe, with no imports beyond types.
+// swing.mts — swing speed (issue #217): how long a weapon takes between swings for a character's stamina and Swing Speed Increase, the steps SSI moves it through, and the table both solvers score SSI with when the build scores it by step. Pure and browser-safe: it imports types and the shared scoring constants (app/solver/scoring.mts).
 //
 // The formula is stock ServUO's (ML and later, BaseWeapon.GetDelay), in whole quarter seconds: ticks = max(5, floor(N · 100 / (100 + S))) with N = round(4 × weapon speed) − floor(stamina / 30) and S the SSI, capped at 60. A delay is ticks × 0.25 s. Stamina here is full stamina, so a tired character swings slower than shown.
 //
@@ -6,6 +6,7 @@
 // owns: `swingSeconds`, `ssiForTicks`, `swingSteps`, `stepTable`, `stepsFor`, `swingOf`, `weaponSpeedOf`, `heldWeapon`
 import type { EffectiveProfile } from "./vault-lib.mts";
 import type { SwingResult, SwingStep } from "./runs-types.mts";
+import { FLOAT_EPS } from "./solver/scoring.mts";
 
 export type { SwingResult, SwingStep } from "./runs-types.mts";
 
@@ -84,7 +85,7 @@ export function stepTable({ speedS, stamBase, refStamina, share, stamRange, ssiM
 // The largest credit among the points a suit with `ssi` item SSI and `stam` gear Stamina pool reaches, 0 when it reaches none: what SSI by step scores (scripts/optimizer-core.mts optStepCredit, which keeps its own copy: the core imports nothing).
 export function stepCredit(points: readonly SsiStepPoint[], ssi: number, stam: number): number {
   let best = 0;
-  for (const p of points) if (ssi >= p.ssi - 1e-9 && stam >= p.stam - 1e-9 && p.credit > best) best = p.credit;
+  for (const p of points) if (ssi >= p.ssi - FLOAT_EPS && stam >= p.stam - FLOAT_EPS && p.credit > best) best = p.credit;
   return best;
 }
 
