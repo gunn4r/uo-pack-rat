@@ -19,7 +19,7 @@ import type { InventoryApiResponse, ItemHitsApiResponse, ItemsApiResponse, Items
 import type { ServerContext } from "../context.mts";
 
 export function routes(ctx: ServerContext): Route[] {
-  const { config: CONFIG, appSettings, blacklistStore, getInventory, runStore, organizeStore } = ctx;
+  const { config: CONFIG, appSettings, getInventory, organizeService, runStore, organizeStore } = ctx;
   // An unravel query's context (issue #271): the pieces of every saved run's suit, Organize's pinned items and the Keep list.
   function unravelContext(): UnravelContext {
     const left = { suits: suitPieces(runStore.all()), pins: new Set(organizeStore.read().config.pinnedItems), kept: new Set(unravelKeep(appSettings.current())) };
@@ -36,8 +36,8 @@ export function routes(ctx: ServerContext): Route[] {
       }
       const facets = facetsOf(itemsArr, { rarity: appSettings.rules().rarity });
       // A blacklisted container is never opened again, so its last two scans are stale: it reports nothing.
-      const listed = new Set(blacklistStore.read().map((e) => String(e.serial)));
-      const missingCounts = Object.fromEntries(Object.entries(missing).filter(([root]) => !listed.has(root)).map(([root, list]) => [root, list.length]));
+      const listed = organizeService.blacklisted();
+      const missingCounts = Object.fromEntries(Object.entries(missing).filter(([root]) => !listed.has(+root)).map(([root, list]) => [root, list.length]));
       const inventory = { scans: inv.scans, characters: inv.characters, containers: inv.containers, worn, rootCounts, missingCounts, itemCount: itemsArr.length, facets, propKeys: facets.propKeys };
       return send(res, 200, { ok: true, snapshotCount, demo: CONFIG.demo, inventory } satisfies InventoryApiResponse);
     } },
@@ -47,7 +47,7 @@ export function routes(ctx: ServerContext): Route[] {
       const root = url.searchParams.get("root") || "";
       if (!/^\d{1,10}$/.test(root)) return send(res, 400, { ok: false, error: "root must be a container serial" });
       const { missing } = await getInventory();
-      const listed = blacklistStore.read().some((e) => e.serial === +root);
+      const listed = organizeService.blacklisted().has(+root);
       return send(res, 200, { ok: true, items: (!listed && missing[String(+root)]) || [] } satisfies MissingApiResponse);
     } },
     { method: "GET", path: "/api/items", handle: async (_req, res, url) => {

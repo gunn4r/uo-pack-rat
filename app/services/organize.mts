@@ -36,6 +36,12 @@ export function createOrganizeService({ paths, getInventory, organizeStore, orga
   // Every saved suit's pieces, for Organize (issue #133), read only when a rule asks to skip them: the live count
   // asks on every pause in typing, and few setups have such a rule.
   function suitsFor(matches: RuleMatch[]): Set<number> | undefined { return matches.some((m) => m.skipSuits) ? suitPieces(runStore.all()) : undefined; }
+  // The blacklisted containers' serials: never opened by a scan, so never labeled, planned into or put away from.
+  const blacklisted = (): Set<number> => new Set(blacklistStore.read().map((e) => e.serial));
+  // What the planners are given besides the inventory and the setup: the time, the shard's rarity tiers, the pieces in
+  // saved suits (only when a rule skips them), the blacklist and when each container was last seen.
+  const planContext = (config: OrganizeConfig, state: OrganizeState): { now: number; rarity: RulesV1["rarity"]; suitPieces: Set<number> | undefined; blacklist: number[]; seen: OrganizeState["seen"] } =>
+    ({ now: Date.now(), rarity: rules().rarity, suitPieces: suitsFor(config.rules.map((r) => r.match)), blacklist: [...blacklisted()], seen: state.seen });
   // What harvestTrips needs of one adapter's status.json (GET /api/bridge/status reads the same file for the page).
   // `current` counts only while the bridge's heartbeat is under PENDING_GRACE_MS (90 s) old either way, a longer wait
   // than "online" (8 s): a trip in flight is not given up on for a missed heartbeat, but a client that quit mid-trip
@@ -85,7 +91,7 @@ export function createOrganizeService({ paths, getInventory, organizeStore, orga
     return { fold, config, stamp, state, problems, bridges, features: featuresOf(adapter, fold, now) };
   }
   const planOf = (fold: Inventory, config: OrganizeConfig, state: OrganizeState, features: ReadonlySet<string>, putAway?: PutAway): Plan =>
-    planOrganize(fold, config, state.moves, { now: Date.now(), rarity: rules().rarity, suitPieces: suitsFor(config.rules.map((r) => r.match)), blacklist: blacklistStore.read().map((e) => e.serial), seen: state.seen, features, putAway });
+    planOrganize(fold, config, state.moves, { ...planContext(config, state), features, putAway });
   async function organizeNow(): Promise<{ fold: Inventory; config: OrganizeConfig; stamp: string; state: OrganizeState; plan: Plan; problems: string[]; bridges: Record<string, BridgeView>; features: Set<string> }> {
     const got = await organizeInputs();
     return { ...got, plan: planOf(got.fold, got.config, got.state, got.features) };
@@ -155,7 +161,7 @@ export function createOrganizeService({ paths, getInventory, organizeStore, orga
     if (root.kind === "backpack" && root.scannedBy === req.character) source = { from: "pack", container: +picked.serial, at: req.at };
     else if (root.kind === "ground" && config.labels[String(root.serial)]) source = { from: "ground", container: +picked.serial };
     else return { ok: false, msg: root.kind === "ground" ? "That container is not labeled for Organize." : "Pick your backpack, a container in it,", detail: root.kind === "ground" ? "Label it in the app first." : "or a container in a labeled one on the ground." };
-    const black = new Set(blacklistStore.read().map((e) => e.serial));
+    const black = blacklisted();
     if (chain.some((s) => black.has(s))) return { ok: false, msg: "That container is blacklisted.", detail: "Pack Rat never opens it." };
     if (chain.some((s) => config.labels[String(s)]?.pinned)) return { ok: false, msg: "That container is pinned.", detail: "Organize never takes items out of it." };
     const plan = planOf(fold, config, state, features, source);
@@ -171,6 +177,6 @@ export function createOrganizeService({ paths, getInventory, organizeStore, orga
     if (!queued.ok) return queued.waiting === undefined ? { ok: false, msg: "The trip could not be queued.", detail: queued.error } : { ok: false, msg: `Trip ${queued.waiting} has not reported back yet.` };
     return { ok: true, msg: tripMsg(trip.puts.length, plan.moves.length - trip.puts.length), trip: queued.id };
   }
-  return { harvestNow, organizeInputs, organizeNow, queuePlanTrip, putAway, suitsFor };
+  return { harvestNow, organizeInputs, organizeNow, queuePlanTrip, putAway, suitsFor, blacklisted, planContext };
 }
 export type OrganizeService = ReturnType<typeof createOrganizeService>;
