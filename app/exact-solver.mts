@@ -92,7 +92,6 @@ export interface ExactSolveResult extends OptResult {
   fallbackReason?: string | undefined;
   floorsConflict?: boolean | undefined;
   altShortfall?: AltShortfall | undefined;
-  workers?: undefined;
   tieBreak?: TieBreakResult | undefined;
   strictProven?: number | undefined;   // strict order: how many stages, in order, HiGHS proved (all of them when `proven`)
 }
@@ -310,7 +309,7 @@ export async function solveExact({
       return {
         ...final, method: "exact", proven: false, solver: "highs", bound, gapPoints: bound != null ? bound - final.score : null,
         nodes: solve.nodes, restarts, evaluations: heur.evaluations + final.evaluations, alternatives: undefined, altTolerance: undefined,
-        mipMs, heuristicMs, floorsConflict: false, unreachableFloors: active.unreachableFloors, pruned: undefined, workers: undefined,
+        mipMs, heuristicMs, floorsConflict: false, unreachableFloors: active.unreachableFloors, pruned: undefined,
       };
     }
 
@@ -462,7 +461,6 @@ export async function solveExact({
       floorsConflict,
       unreachableFloors: active.unreachableFloors,
       pruned: undefined,
-      workers: undefined,
       ...(tb && final.tieBreak ? { tieBreak: { topScore: Math.max(mipScore, topOf(final)), cost: final.tieBreak.cost, ...(final.tieBreak.changes != null ? { changes: final.tieBreak.changes, fewestChanges: true } : {}), ...(tb.rarity ? { rarity: tb.rarity } : {}), tolerance: tb.tolerance, costProven: proven && stage2Optimal } } : {}),
     };
   } finally {

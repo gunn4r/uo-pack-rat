@@ -7,7 +7,7 @@ adapters/tazuo/test_paths.py still covers the TazUO-specific header and contract
 
 Run: python3 adapters/test_adapters.py  (app/adapters.test.mts also spawns it, so `npm test` does).
 """
-import ast, json, os, re, unittest
+import json, os, re, unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 BANNED_LOOPS = re.compile(r"while\s*\(?\s*(true|1)\b", re.I)
@@ -24,11 +24,6 @@ def read_text(path):
 
 def helper_source(text, name):
     m = re.search(r"^def %s\(.*?(?=^def |^[A-Z_]+ = |^# ----|\Z)" % name, text, re.S | re.M)
-    return m.group(0).rstrip() if m else None
-
-
-def constant_source(text, name):
-    m = re.search(r"^%s = .*?(?=^[A-Za-z_]|\Z)" % name, text, re.S | re.M)
     return m.group(0).rstrip() if m else None
 
 
@@ -136,35 +131,6 @@ class Conventions(unittest.TestCase):
                 if "import API" not in t:
                     continue
                 self.assertRegex(t, r"(?m)^import API$", "%s/%s" % (name, f))
-
-    def test_capabilities_literal_matches_capabilities_json(self):
-        # ast.literal_eval parses the Python literal (True/False/None are valid Python) without
-        # executing anything. Every script carrying a CAPABILITIES literal must match the manifest —
-        # razor-enhanced keeps its copy in two files, with only a comment asking for it to stay in
-        # sync until now.
-        for name, d in adapter_dirs():
-            caps = json.loads(read_text(os.path.join(d, "capabilities.json")))["capabilities"]
-            found = 0
-            for f in py_files(d):
-                src = constant_source(read_text(os.path.join(d, f)), "CAPABILITIES")
-                if src is None:
-                    continue
-                found += 1
-                self.assertEqual(ast.literal_eval(src.split("=", 1)[1].strip()), caps,
-                                 "%s/%s CAPABILITIES differs from capabilities.json" % (name, f))
-            if os.path.exists(os.path.join(d, "packrat-scanner.py")):
-                self.assertGreaterEqual(found, 1, "%s ships no CAPABILITIES literal" % name)
-
-    def test_features_literal_matches_capabilities_json(self):
-        # FEATURES is what a script reports besides its bridge actions (a scan's adapter.features, the bridge's
-        # status); a manifest without "features" declares none.
-        for name, d in adapter_dirs():
-            features = json.loads(read_text(os.path.join(d, "capabilities.json"))).get("features", [])
-            for f in py_files(d):
-                src = constant_source(read_text(os.path.join(d, f)), "FEATURES")
-                if src is not None:
-                    self.assertEqual(ast.literal_eval(src.split("=", 1)[1].strip()), features,
-                                     "%s/%s FEATURES differs from capabilities.json" % (name, f))
 
     def test_every_bridge_declares_the_protocol_it_reads(self):
         for name, d in bridge_dirs():

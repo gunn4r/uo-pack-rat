@@ -1561,10 +1561,9 @@ test("[fast] fold: a nested container folds whether the scanner said kind \"bag\
 // No build step — corePath() resolves straight to scripts/optimizer-core.mts, so this file also runs
 // standalone (`node --test app/gear-vault.test.mts`) with no npm `pretest` hook needed first.
 const core = (await import(pathToFileURL(corePath()).href)) as typeof Core;
-// optimizer-core.mts's OptProgress isn't itself exported (see its own header: no top-level exports
-// but the final `export { ... }` of functions — this file is meant to be pasted inline into a game
-// script), so it's derived the same way app/exact-solver.mts derives OptOptions: off the one exported
-// function's own signature.
+// optimizer-core.mts's OptProgress isn't itself exported (it exports only through its final
+// `export { ... }` of functions), so it's derived the same way app/exact-solver.mts derives OptOptions:
+// off the one exported function's own signature.
 type OptProgress = Parameters<NonNullable<NonNullable<Parameters<typeof Core.optimizeSuit>[3]>["onProgress"]>>[0];
 const demoInv = foldSnapshots([kestrel, dorran]);
 const builtinTemplates = (JSON.parse(readFileSync(join(HERE, "data", "templates", "uoalive.json"), "utf8")) as { templates: TemplateMap }).templates;

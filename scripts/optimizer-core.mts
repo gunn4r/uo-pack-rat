@@ -1,10 +1,12 @@
 // ============================================================================
-// optimizer-core.mts — whole-suit gear optimizer CORE: the heuristic suit search and scoring, paste-able (no imports, one export line) and loaded from source by the path corePath() resolves.
+// optimizer-core.mts — whole-suit gear optimizer CORE: the heuristic suit search and scoring of record, loaded from source by the path corePath() resolves.
 // ----------------------------------------------------------------------------
-// PURE LOGIC ONLY. No game globals (no `player`, `client`, `Gump`, ...), no imports, no
-// top-level exports — this file is meant to be PASTED INLINE into a game script, so it is
-// written as plain interfaces + function declarations. Everything is deterministic given a
-// seed (mulberry32 — `Math.random` is banned in the sandbox and is never called here).
+// PURE LOGIC ONLY. No game globals (no `player`, `client`, `Gump`, ...) and no I/O. It imports
+// nothing today and exports through the one `export { ... }` line at the end: a rule from when it
+// was pasted into game scripts. Nothing pastes it any more, so the rules it shares with app/mip.mts
+// (marked `==` below, listed in docs/solver.md "Before you change the solvers") can move to a shared
+// module (issue #338). Everything is deterministic given a seed (mulberry32; `Math.random` is never
+// called here).
 //
 // The problem: you have ~30 candidate items per slot across 19 slots. Exhaustive search is
 // 30^19. The point of optimizing a SET rather than each slot independently is that scoring is
