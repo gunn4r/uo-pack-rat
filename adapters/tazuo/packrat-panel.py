@@ -69,6 +69,11 @@ def data_dir():
         with open(cfg, "r", encoding="utf-8") as f:
             d = json.load(f).get("dataDir")
         if d:
+            # app/schema/packrat-paths.v1.schema.json's shapes: a relative path would land under the client's own
+            # working folder and ~user/ elsewhere, unseen by the app, so refuse to start instead.
+            drive = len(d) > 2 and "a" <= d[0].lower() <= "z" and d[1] == ":" and d[2] in "/\\"
+            if not (drive or d == "~" or d.startswith(("/", "\\\\", "~/", "~\\"))):
+                raise ValueError("packrat-paths.json: dataDir must be an absolute folder or start with ~/")
             return os.path.expanduser(d)
     return os.path.expanduser(os.environ.get("PACKRAT_DATA") or "~/.pack-rat")
 
@@ -369,10 +374,10 @@ def login_text():
 
 
 def on_login():
-    """Save whether the window shows at the next login, keeping the hotkey."""
-    doc = read_prefs()
-    out = {"hotkey": doc["hotkey"]} if isinstance(doc.get("hotkey"), dict) else {}
-    out["showAtLogin"] = not state["show_at_login"]
+    """Save whether the window shows at the next login, keeping the hotkey as read_hotkey reads it, so an
+    invalid one is written as the default, as the app's own write does."""
+    parts = read_hotkey(read_prefs()).split("+")
+    out = {"hotkey": {"mods": parts[:-1], "key": parts[-1]}, "showAtLogin": not state["show_at_login"]}
     try:
         write_json_atomic(PREFS, out)
     except Exception:

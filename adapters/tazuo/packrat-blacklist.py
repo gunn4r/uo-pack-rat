@@ -24,6 +24,11 @@ def data_dir():
         with open(cfg, "r", encoding="utf-8") as f:
             d = json.load(f).get("dataDir")
         if d:
+            # app/schema/packrat-paths.v1.schema.json's shapes: a relative path would land under the client's own
+            # working folder and ~user/ elsewhere, unseen by the app, so refuse to start instead.
+            drive = len(d) > 2 and "a" <= d[0].lower() <= "z" and d[1] == ":" and d[2] in "/\\"
+            if not (drive or d == "~" or d.startswith(("/", "\\\\", "~/", "~\\"))):
+                raise ValueError("packrat-paths.json: dataDir must be an absolute folder or start with ~/")
             return os.path.expanduser(d)
     return os.path.expanduser(os.environ.get("PACKRAT_DATA") or "~/.pack-rat")
 
@@ -62,6 +67,24 @@ def read_blacklist(path):
 # END generated: read_blacklist
 
 
+# BEGIN generated: cut_utf16
+def cut_utf16(s, units):
+    """s cut to at most `units` UTF-16 code units, the unit the app's maxLength counts (a character outside the
+    Basic Multilingual Plane is two), never splitting a character. IronPython's strings are UTF-16 already, so
+    there a pair's first half is dropped rather than left alone at the end."""
+    out, n = [], 0
+    for c in s:
+        w = 2 if ord(c) > 0xFFFF else 1
+        if n + w > units:
+            break
+        out.append(c)
+        n += w
+    if out and 0xD800 <= ord(out[-1]) <= 0xDBFF:
+        out.pop()
+    return "".join(out)
+# END generated: cut_utf16
+
+
 TARGET_S = 30            # how long the target cursor waits for a click
 ALARM_HUE, OK_HUE, INFO_HUE = 33, 68, 88
 
@@ -92,8 +115,8 @@ def main():
     if it is None or serial in own or not bool(getattr(it, "IsContainer", False)) or bool(getattr(it, "IsCorpse", False)):
         API.SysMsg("Pack Rat: that is not a container a scan can skip (your backpack and bank are always read).", ALARM_HUE)
         return
-    # 60, not 64: the app bounds names in UTF-16 units, and this keeps any name inside the bound.
-    name = (name_of(serial) or str(getattr(it, "Name", "") or "") or "container")[:60]
+    # Cut in UTF-16 units, as the app counts (app/schema/blacklist.v1.schema.json), so it never drops the entry.
+    name = cut_utf16(name_of(serial) or str(getattr(it, "Name", "") or "") or "container", 64)
     if any(e["serial"] == serial for e in listed):
         API.SysMsg(f"Pack Rat: {name} is already blacklisted.", INFO_HUE)
         return
@@ -101,7 +124,7 @@ def main():
         where = f"{int(it.X)}, {int(it.Y)}"
     else:
         pname = name_of(int(getattr(it, "Container", 0) or 0))
-        where = ("in " + pname)[:60] if pname else ""
+        where = cut_utf16("in " + pname, 64) if pname else ""
     entry = {"serial": serial, "name": name, "addedAt": rfc3339_now()}
     if where:
         entry["where"] = where

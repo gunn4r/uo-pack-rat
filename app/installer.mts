@@ -361,6 +361,7 @@ export interface CheckScriptsDataDirOptions {
 // GET /api/setup. The read is readHead's: a symlink or anything else that isn't a regular file is
 // refused (the scripts would follow it; this does not), and a file past the 64 KiB cap reads as
 // truncated JSON, so as malformed. The lstat here only tells a missing file (the default) apart.
+const DATA_DIR_SHAPE = /^(\/|\\\\|[A-Za-z]:[\\/]|~($|[\\/]))/;
 function scriptsDataDirIn(scriptsDir: string, home: string): { dataDir: string } | { error: string } | null {
   const file = join(scriptsDir, "packrat-paths.json");
   const fallback = { dataDir: join(home, ".pack-rat") };
@@ -375,6 +376,8 @@ function scriptsDataDirIn(scriptsDir: string, home: string): { dataDir: string }
   const d = (doc as { dataDir?: unknown }).dataDir;
   if (!d) return fallback;   // "", null, absent: the scripts' `if d:` falls through to the default
   if (typeof d !== "string") return { error: "its dataDir is not a folder path" };
+  // The shapes app/schema/packrat-paths.v1.schema.json allows: anything else (a relative path, ~user) the scripts refuse at start.
+  if (!DATA_DIR_SHAPE.test(d)) return { error: "its dataDir is not an absolute folder (or one starting with ~/)" };
   const expanded = d === "~" ? home : /^~[\\/]/.test(d) ? join(home, d.slice(2)) : d;
   return badPathShape(expanded) ? null : { dataDir: resolve(expanded) };
 }

@@ -301,6 +301,19 @@ class Panel(unittest.TestCase):
         self.assertIn("Show at login: On", seen["after"])
         self.assertTrue(api.windows[0].IsVisible, "the choice applies at the next login, not now")
 
+    def test_show_at_login_button_writes_an_invalid_hotkey_as_the_default(self):
+        path = os.path.join(self.data, "tazuo-panel.json")
+        for doc in ({"hotkey": {"mods": [], "key": "P"}, "showAtLogin": True}, {"hotkey": "CTRL+P", "showAtLogin": True},
+                    {"showAtLogin": True}, {"hotkey": {"mods": ["SHIFT", "CTRL", "CTRL"], "key": "P"}, "showAtLogin": True}):
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(doc, f)
+            w = World()
+            api = tazuo_panel_api(w)
+            w.clock.at(1, lambda: api.click(self.control(api, "Show at login: On")))
+            self.run_panel(w, api, until_s=2)
+            with open(path, encoding="utf-8") as f:
+                self.assertEqual(json.load(f), {"hotkey": {"mods": ["CTRL", "SHIFT"], "key": "P"}, "showAtLogin": False}, doc)
+
     def test_the_window_starts_hidden_when_show_at_login_is_off_and_the_hotkey_shows_it(self):
         for doc, visible in (({"showAtLogin": False, "hotkey": {"mods": ["ALT"], "key": "F5"}}, False),
                              ({"openAtLogin": False}, False),          # an older app's name for it

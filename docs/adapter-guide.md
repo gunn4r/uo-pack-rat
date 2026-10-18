@@ -70,7 +70,7 @@ Two blocks are rendered from the script's own `adapters/<id>/capabilities.json` 
 
 ## Versions
 
-Any change to an adapter's scripts bumps that adapter's version: edit `version` in its `capabilities.json` and run `npm run gen:contracts`, which rewrites the `ADAPTER_VERSION` line in every script, the web scanner's included. Settings compares the version installed in the client folder with the one the app ships and asks the player to reinstall when they differ, so a change shipped without a bump never reaches a player who already installed the scripts.
+Any change to what an adapter's scripts do or write bumps that adapter's version (a comment or marker edit does not): edit `version` in its `capabilities.json` and run `npm run gen:contracts`, which rewrites the `ADAPTER_VERSION` line in every script, the web scanner's included. Settings compares the version installed in the client folder with the one the app ships and asks the player to reinstall when they differ, so a change shipped without a bump never reaches a player who already installed the scripts.
 
 Each bridge's `PROTOCOL` (in the shared untrusted-input block) matches `protocol` in its `capabilities.json` (`adapters/test_adapters.py`). The bridge reports its id, version, protocol and every action and feature in `status.json` (`adapter`), and the app decides what to offer from that report while the bridge runs, so a feature an installed bridge lacks is not offered even before the player reinstalls (`docs/bridge-protocol.md`, Features). Raise the protocol only when a queue line's meaning changes in a way an older bridge would misread.
 
