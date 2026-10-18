@@ -1,1 +1,0 @@
-- **Scrolls: big stacks read like everywhere else** (issue #338): a scroll stack's amount in a skill's detail and a place's scroll count now print with thousands separators ("×1,200" instead of "×1200"), as the House map and the item list already do. A deliberate visible change, only at 1,000 or more.

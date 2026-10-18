@@ -1,1 +1,0 @@
-- **For contributors: one toast call** (issue #338): `dom.mts`'s `toast(text, cls)` (a wrapper) and `components.mts`'s `showToast(text, tone, {action})` become one `toast(text, tone, {action})` in `app/ui/components.mts`, with the tones `"info"` (the default), `"good"` and `"bad"`. Every caller imports it from there; the toasts look and behave as before.

@@ -1,1 +1,0 @@
-- **For contributors: the Suit Builder's doc opens with a code guide** (issue #338): `docs/ui/suit-builder.md` starts with a `## Code` section (which module holds each part of the screen, the session's state, commands and news, what the layering tests check, and how to add a section, a command or a news key), and the rest of the page now has headings by area.

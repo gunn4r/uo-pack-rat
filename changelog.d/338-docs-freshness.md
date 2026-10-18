@@ -1,1 +1,0 @@
-- **For contributors: a docs freshness check** (issue #338): `scripts/docs-freshness.test.mts` fails when a doc grows past its size budget (a guide past 5 KB), a prose line passes 2,500 characters, a backticked code name is in no file, a guide lacks its five headings, or the root `CLAUDE.md` does not name a guide; `adapters/CLAUDE.md` takes the five guide headings.

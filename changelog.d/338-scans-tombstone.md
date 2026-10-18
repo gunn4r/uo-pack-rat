@@ -1,1 +1,0 @@
-- **For contributors: Forget's tombstones are written by the scans store** (issue #338): `app/store/scans.mts` gains `writeTombstone(name, forget)`, which builds the `_vault` tombstone, checks it against the scan contract and writes it into the scans folder. `POST /api/forget` and `/api/forget-character` no longer write into `scans/` themselves. The files are the same as before.

@@ -1,1 +1,0 @@
-- **For contributors: no prose line over 2,500 characters** (issue #338): the run-on paragraphs in the Suit Builder screen doc, the architecture, MCP and bridge-protocol docs, the TazUO adapter README and TESTING.md are split at sentence boundaries with no words changed, ahead of the docs freshness check.
