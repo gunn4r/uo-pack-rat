@@ -650,6 +650,13 @@ class SharedContractCases(unittest.TestCase):
                     json.dump([case["entry"]], out)
                 self.assertEqual(ns["read_claims"](f), [], case["why"])
 
+    def test_cut_utf16_counts_as_the_app_does_and_never_splits_a_character(self):
+        cut = load_shared("cut_utf16")["cut_utf16"]
+        self.assertEqual(cut("abc", 64), "abc")
+        self.assertEqual(cut("a" * 70, 64), "a" * 64)
+        self.assertEqual(cut("a" + "\U0001F400" * 40, 64), "a" + "\U0001F400" * 31, "an astral character is two units")
+        self.assertEqual(cut("a\ud83d\udc00", 2), "a", "IronPython's surrogate pair is not left half-cut")
+
     def test_blacklist_cases(self):
         ns = load_shared("read_blacklist")
         ns.update({"os": os, "json": json})
