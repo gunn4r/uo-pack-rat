@@ -1,11 +1,11 @@
 // select-tests.test.mts — `scripts/select-tests.mts`, the changed-paths → test-files mapping behind `./scripts/test_runner.sh --changed`.
 //
-// `scripts/select-tests.mts`, the changed-paths-to-test-files mapping behind `--changed`, over a small fake source tree: a module selects every test that reaches it directly or through other modules, a changed test runs itself and a deleted one is dropped, a data file is reached by its quoted name and a `new URL()` by its relative path, an `app/ui` screen adds its Electron test(s) and a shared UI module all of them, every `SCREENS` entry names a real module and real Electron tests, `adapters/` runs the adapters tests, docs select nothing, and shared infrastructure or an unreached path falls back to the full suite. All `[fast]`.
+// `scripts/select-tests.mts`, the changed-paths-to-test-files mapping behind `--changed`, over a small fake source tree: a module selects every test that reaches it directly or through other modules, a changed test runs itself and a deleted one is dropped, a data file is reached by its quoted name and a `new URL()` by its relative path, an `app/ui` screen adds its Electron test(s) and a shared UI module all of them, every `SCREENS` entry names a real module and real Electron tests, every `app/ui` module and stylesheet is in `SCREENS` or in `SHARED_UI` with a reason (never both), `adapters/` runs the adapters tests, docs select nothing, and shared infrastructure or an unreached path falls back to the full suite. All `[fast]`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { selectTests, SCREENS, parsePart, parseShard, partOf } from "./select-tests.mts";
+import { selectTests, SCREENS, SHARED_UI, parsePart, parseShard, partOf } from "./select-tests.mts";
 
 const SOURCES: Record<string, string> = {
   "app/lib.mts": `export const x = 1;`,
@@ -65,6 +65,16 @@ test("[fast] select-tests: every SCREENS entry names a real app/ui module and re
       else assert.ok(existsSync(`${root}scripts/${n}.test.mts`), `${stem} → scripts/${n}.test.mts`);
     }
   }
+});
+
+test("[fast] select-tests: every app/ui module and stylesheet maps to its Electron tests, or is listed in SHARED_UI with a reason", () => {
+  const root = fileURLToPath(new URL("..", import.meta.url));
+  const stems = [...new Set(readdirSync(`${root}app/ui`).filter((f) => /\.(mts|css)$/.test(f) && !f.endsWith(".d.mts")).map((f) => f.replace(/\.(mts|css)$/, "")))];
+  const unlisted = stems.filter((s) => !(s in SCREENS) && !(s in SHARED_UI));
+  assert.deepEqual(unlisted, [], "add each to SCREENS (the Electron tests that drive it) or to SHARED_UI (with why it selects every Electron test)");
+  assert.deepEqual(stems.filter((s) => s in SCREENS && s in SHARED_UI), [], "a stem is in SCREENS or SHARED_UI, not both");
+  assert.deepEqual(Object.keys(SHARED_UI).filter((s) => !stems.includes(s)), [], "a SHARED_UI entry names a real app/ui module or stylesheet");
+  for (const [stem, why] of Object.entries(SHARED_UI)) assert.ok(why.trim(), `${stem} needs its reason`);
 });
 
 test("[fast] select-tests: anything under adapters/ runs the adapters tests", () => {
