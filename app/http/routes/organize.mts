@@ -50,6 +50,7 @@ export function routes(ctx: ServerContext): Route[] {
     { method: "PUT", path: "/api/organize", handle: async (req, res) => {
       // `base`: the stamp GET answered with. A setup saved by someone else since is refused (409, code "stale", with the
       // current stamp) and the file is left alone; a PUT without one (a page from an older build) is still taken.
+      // compat: organize-put-no-base, remove in Pack Rat 0.3.0 (docs/architecture.md, Compatibility shims)
       const { base, ...doc } = asObject(await readBody(req, { limit: MAX_SETUP_BYTES, tooLargeMsg: "the Organize setup is too large" }));
       if (base !== undefined && !isBoundedString(base, 64)) return send(res, 400, { ok: false, error: "base must be the stamp GET /api/organize answered with" });
       const checked = checkOrganizeConfig(doc);

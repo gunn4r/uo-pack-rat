@@ -165,7 +165,8 @@ export const BRIDGE_OFFLINE = "Bridge offline. Press Play on packrat-bridge.py i
 // running bridge's own report first (status.json's adapter, while it is online), then the newest scan made with that
 // adapter, then the manifest this app ships (docs/bridge-protocol.md, Features).
 // A manifest (capabilities.json) or a scan's adapter block: its bridge actions and its features. Scripts before TazUO
-// 2.16.0 listed "trip-bags" among the actions, so a name counts from either list.
+// 2.16.0 listed "trip-bags" among the actions, so a name counts from either list (compat: trip-bags-action, remove in
+// Pack Rat 0.3.0 (docs/architecture.md, Compatibility shims)).
 export interface FeatureDeclaration { capabilities?: { bridge?: readonly string[] | undefined } | undefined; features?: readonly string[] | undefined }
 export type FeatureSource = "bridge" | "scan" | "app";
 const featureNames = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);

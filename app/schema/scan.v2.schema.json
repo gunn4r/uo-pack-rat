@@ -33,7 +33,7 @@
             "bridge": { "type": "array", "items": { "type": "string" } }
           }
         },
-        "features": { "type": "array", "maxItems": 64, "items": { "type": "string", "minLength": 1, "maxLength": 64 }, "$comment": "Optional: what the adapter's bridge does besides the actions in capabilities.bridge, by name (\"trip-bags\", TazUO 2.16.0 and later; older scripts listed it in capabilities.bridge, where it is still recognized). A name this app does not know is ignored. The shipped scanners do not write it yet: trip-bags stays in capabilities.bridge, which every Pack Rat reads, until an app that accepts this field has been out for a release." }
+        "features": { "type": "array", "maxItems": 64, "items": { "type": "string", "minLength": 1, "maxLength": 64 }, "$comment": "Optional: what the adapter's bridge does besides the actions in capabilities.bridge, by name (\"trip-bags\", TazUO 2.16.0 and later; older scripts listed it in capabilities.bridge, where it is still recognized). A name this app does not know is ignored. The shipped scanners do not write it yet: trip-bags stays in capabilities.bridge, which every Pack Rat reads, until an app that accepts this field has been out for a release (compat: scan-features-unwritten, remove in Pack Rat 0.3.0 (docs/architecture.md, Compatibility shims))." }
       }
     },
     "stats": { "type": "object", "additionalProperties": { "type": "number" } },
