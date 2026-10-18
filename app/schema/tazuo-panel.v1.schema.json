@@ -1,0 +1,16 @@
+{
+  "$comment": "Pack Rat <data>/tazuo-panel.json v1: the TazUO in-game panel's show/hide hotkey and whether it shows its window at login. Written by the app (Settings, the wizard: app/tazuo-panel.mts) and by the panel's own button (adapters/tazuo/packrat-panel.py), read by both. Restricted to the keyword subset app/schema/validate.mts supports. Each reader takes the fields one by one, reading a missing or invalid one as its default (hotkey Ctrl+Shift+P, showAtLogin true), from a file of at most 4096 bytes. Two hotkey rules this schema can't say are checked beside it on both sides: each modifier at most once, and a letter or digit needs a modifier (on its own it would fire while the player types in chat). openAtLogin is the name an older app wrote, read when showAtLogin is not true or false. The shared cases are app/fixtures/contract-cases/tazuo-panel.json.",
+  "type": "object",
+  "properties": {
+    "hotkey": {
+      "type": "object",
+      "required": ["mods", "key"],
+      "properties": {
+        "mods": { "type": "array", "maxItems": 3, "items": { "type": "string", "enum": ["CTRL", "ALT", "SHIFT"] } },
+        "key": { "type": "string", "pattern": "^([A-Z0-9]|F[1-9]|F1[0-2])$" }
+      }
+    },
+    "showAtLogin": { "type": "boolean" },
+    "openAtLogin": { "type": "boolean" }
+  }
+}

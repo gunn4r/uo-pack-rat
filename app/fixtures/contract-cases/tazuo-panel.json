@@ -1,0 +1,25 @@
+{
+  "$comment": "Cases for <data>/tazuo-panel.json (app/schema/tazuo-panel.v1.schema.json), which each reader takes field by field: `read` is what both app/tazuo-panel-prefs.mts's panelPrefsOf and the panel's read_hotkey/read_show_at_login make of `doc` (app/tazuo-panel.test.mts, adapters/test_adapters.py), and `schema` whether the schema accepts it.",
+  "cases": [
+    { "why": "both fields", "doc": { "hotkey": { "mods": ["CTRL", "ALT"], "key": "F5" }, "showAtLogin": false }, "read": { "hotkey": { "mods": ["CTRL", "ALT"], "key": "F5" }, "showAtLogin": false }, "schema": true },
+    { "why": "modifiers in any order come back in CTRL, ALT, SHIFT order", "doc": { "hotkey": { "mods": ["SHIFT", "CTRL"], "key": "K" } }, "read": { "hotkey": { "mods": ["CTRL", "SHIFT"], "key": "K" }, "showAtLogin": true }, "schema": true },
+    { "why": "an F-key alone is fine", "doc": { "hotkey": { "mods": [], "key": "F12" } }, "read": { "hotkey": { "mods": [], "key": "F12" }, "showAtLogin": true }, "schema": true },
+    { "why": "empty: the defaults", "doc": {}, "read": { "hotkey": { "mods": ["CTRL", "SHIFT"], "key": "P" }, "showAtLogin": true }, "schema": true },
+    { "why": "an older app's openAtLogin", "doc": { "openAtLogin": false }, "read": { "hotkey": { "mods": ["CTRL", "SHIFT"], "key": "P" }, "showAtLogin": false }, "schema": true },
+    { "why": "showAtLogin wins over openAtLogin", "doc": { "showAtLogin": true, "openAtLogin": false }, "read": { "hotkey": { "mods": ["CTRL", "SHIFT"], "key": "P" }, "showAtLogin": true }, "schema": true },
+    { "why": "a showAtLogin that is not true or false falls back to openAtLogin", "doc": { "showAtLogin": "yes", "openAtLogin": false }, "read": { "hotkey": { "mods": ["CTRL", "SHIFT"], "key": "P" }, "showAtLogin": false }, "schema": false },
+    { "why": "a field a newer build adds is ignored", "doc": { "showAtLogin": false, "theme": "dark" }, "read": { "hotkey": { "mods": ["CTRL", "SHIFT"], "key": "P" }, "showAtLogin": false }, "schema": true },
+    { "why": "a letter alone would fire in chat", "doc": { "hotkey": { "mods": [], "key": "P" }, "showAtLogin": false }, "read": { "hotkey": { "mods": ["CTRL", "SHIFT"], "key": "P" }, "showAtLogin": false }, "schema": true },
+    { "why": "a digit alone would fire in chat", "doc": { "hotkey": { "mods": [], "key": "7" } }, "read": { "hotkey": { "mods": ["CTRL", "SHIFT"], "key": "P" }, "showAtLogin": true }, "schema": true },
+    { "why": "a modifier twice", "doc": { "hotkey": { "mods": ["CTRL", "CTRL"], "key": "P" } }, "read": { "hotkey": { "mods": ["CTRL", "SHIFT"], "key": "P" }, "showAtLogin": true }, "schema": true },
+    { "why": "an unknown modifier", "doc": { "hotkey": { "mods": ["META"], "key": "P" } }, "read": { "hotkey": { "mods": ["CTRL", "SHIFT"], "key": "P" }, "showAtLogin": true }, "schema": false },
+    { "why": "a lower-case key", "doc": { "hotkey": { "mods": ["CTRL"], "key": "p" } }, "read": { "hotkey": { "mods": ["CTRL", "SHIFT"], "key": "P" }, "showAtLogin": true }, "schema": false },
+    { "why": "F13", "doc": { "hotkey": { "mods": ["CTRL"], "key": "F13" } }, "read": { "hotkey": { "mods": ["CTRL", "SHIFT"], "key": "P" }, "showAtLogin": true }, "schema": false },
+    { "why": "two keys", "doc": { "hotkey": { "mods": ["CTRL"], "key": "PQ" } }, "read": { "hotkey": { "mods": ["CTRL", "SHIFT"], "key": "P" }, "showAtLogin": true }, "schema": false },
+    { "why": "a key with a trailing newline", "doc": { "hotkey": { "mods": ["CTRL"], "key": "P\n" } }, "read": { "hotkey": { "mods": ["CTRL", "SHIFT"], "key": "P" }, "showAtLogin": true }, "schema": false },
+    { "why": "mods not a list", "doc": { "hotkey": { "mods": "CTRL", "key": "P" } }, "read": { "hotkey": { "mods": ["CTRL", "SHIFT"], "key": "P" }, "showAtLogin": true }, "schema": false },
+    { "why": "a hotkey that is a string", "doc": { "hotkey": "CTRL+SHIFT+P", "showAtLogin": false }, "read": { "hotkey": { "mods": ["CTRL", "SHIFT"], "key": "P" }, "showAtLogin": false }, "schema": false },
+    { "why": "a hotkey with no key", "doc": { "hotkey": { "mods": ["CTRL"] } }, "read": { "hotkey": { "mods": ["CTRL", "SHIFT"], "key": "P" }, "showAtLogin": true }, "schema": false },
+    { "why": "not an object", "doc": ["CTRL", "P"], "read": { "hotkey": { "mods": ["CTRL", "SHIFT"], "key": "P" }, "showAtLogin": true }, "schema": false }
+  ]
+}

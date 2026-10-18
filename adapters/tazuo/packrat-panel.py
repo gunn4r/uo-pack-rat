@@ -320,7 +320,8 @@ def read_json(path, limit=MAX_PREFS_BYTES):
 
 
 def read_prefs():
-    """<data>/tazuo-panel.json (the hotkey and showAtLogin)."""
+    """<data>/tazuo-panel.json (the hotkey and showAtLogin; app/schema/tazuo-panel.v1.schema.json, and the cases both
+    readers run, app/fixtures/contract-cases/tazuo-panel.json)."""
     return read_json(PREFS)
 
 
@@ -339,10 +340,18 @@ def read_hotkey(doc):
         return DEFAULT_HOTKEY
 
 
+def read_show_at_login(doc):
+    """The file's showAtLogin, else openAtLogin (the name an older app wrote), else True: the first that is
+    true or false, as app/tazuo-panel-prefs.mts reads it."""
+    for k in ("showAtLogin", "openAtLogin"):
+        if isinstance(doc.get(k), bool):
+            return doc[k]
+    return True
+
+
 def load_prefs():
     doc = read_prefs()
-    on = doc.get("showAtLogin", doc.get("openAtLogin"))     # openAtLogin: the name an older app wrote
-    state["show_at_login"] = on if isinstance(on, bool) else True
+    state["show_at_login"] = read_show_at_login(doc)
     set_text("login_btn", login_text())
     hk = read_hotkey(doc)
     if hk == state["hotkey"]:
