@@ -163,7 +163,7 @@ test("[fast] build spec: onlyRoots is stored only when non-empty, checked, kept 
 });
 
 // ---- planBuild against the assemblies it replaced
-// The page (ui/builder.mts runBuild, optimizerProfile, poolSettings, searchOpts; ui/runs.mts settingsSnapshot), as written.
+// The page (ui/builder-job.mts runBuild, optimizerProfile, poolSettings, searchOpts; ui/runs.mts settingsSnapshot), as written.
 interface Knobs { strLimit: string; restarts: string; exact: boolean; budgetS: string; altCount: string; altTol: string }
 function pageBuild(p: FlatProfile, c: Character, worn: Item[], on: string[], edits: Record<string, number>, knobs: Knobs) {
   const panelBuffs = runBuffs(on, buffSkillValues(c.skills || {}, edits).values);

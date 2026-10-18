@@ -18,7 +18,7 @@ import type { BridgeAdapterReport, InventoryData, SettingsData, ShardOption, Set
 // required-and-then-immediately-defaulted.
 export type BuilderProfile = FlatProfile;
 
-// The suit builder's live-progress UI object (builder.mts's runPanel() return value) — kept here,
+// The suit builder's live-progress UI object (builder-job.mts's runPanel() return value) — kept here,
 // next to BuilderJob, since it's part of what the builder session's job (builder-session.mts) actually holds.
 export interface BuilderJobUi {
   root: HTMLElement;
@@ -26,7 +26,7 @@ export interface BuilderJobUi {
   tick: (j: BuilderJob) => void;
   cancelling: () => void;
 }
-// One in-flight (or just-finished) optimize job, as builder.mts's runBuild() builds and mutates it.
+// One in-flight (or just-finished) optimize job, as builder-job.mts's runBuild() builds and mutates it.
 // Not server state — this is the page's own bookkeeping around the SSE stream at
 // /api/optimize/<id>/events, rebuilt fresh for every Build.
 export interface BuilderJob {
@@ -52,7 +52,7 @@ export interface BuilderJob {
   // `typeof setInterval` ambiguous between the two configs.
   timer: number | null;
   // Set once, the first time the exact phase's progress is seen (`j.exactStartMs ??= p.elapsedMs`,
-  // builder.mts's runPanel) — absent for the whole heuristic phase and for a job that never goes exact.
+  // builder-job.mts's runPanel) — absent for the whole heuristic phase and for a job that never goes exact.
   exactStartMs?: number | undefined;
 }
 // A finished build and everything needed to draw it for the character it was built for.
