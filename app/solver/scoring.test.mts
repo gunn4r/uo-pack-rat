@@ -1,9 +1,9 @@
 // scoring.test.mts — `app/solver/scoring.mts`, the scoring constants both solvers read (issue #338).
 //
-// `[fast]`: `app/solver/scoring.mts`: the slot count the change cost is built on is the gear slot list's length, the change cost stays at its floor for the shipped rarity ladders and rises above what the slots can sum to, the relative slack reads magnitudes, a raised hard-floor bonus is read and a lower one never is, the defaults the BuildSpec and the core read are these, and `scoringProfile` fills the defaults in, drops a floor at or under its min, and shares the hard floors' partial credit among the hard floors that ask for something.
+// `[fast]`: `app/solver/scoring.mts`: the slot count the change cost is built on is the gear slot list's length, the change cost stays at its floor for the shipped rarity ladders and rises above what the slots can sum to, the relative slack reads magnitudes, a raised hard-floor bonus is read and a lower one never is, the defaults the BuildSpec and the core read are these, and `scoringProfile` fills the defaults in, drops a floor at or under its min, shares the hard floors' partial credit among the hard floors that ask for something, and the single-suit terms: a floor met by the total or by the min it is held at, a total held at its min, the step credit a suit reaches, and a piece's kept value against the worn one.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { CHANGE_COST, DEFAULT_FLOOR_BONUS, DEFAULT_FLOOR_PARTIAL, GEAR_SLOT_COUNT, HARD_FLOOR_BONUS, TIE_SLACK, changeCost, hardBonusOf, scoringProfile, slackAt } from "./scoring.mts";
+import { CHANGE_COST, DEFAULT_FLOOR_BONUS, DEFAULT_FLOOR_PARTIAL, GEAR_SLOT_COUNT, HARD_FLOOR_BONUS, TIE_SLACK, changeCost, floorMet, hardBonusOf, heldTotal, keptValue, scoringProfile, slackAt, stepCredit } from "./scoring.mts";
 import { GEAR_SLOTS } from "../vault-lib.mts";
 import { SPEC_DEFAULTS } from "../build-spec.mts";
 
@@ -32,4 +32,12 @@ test("[fast] scoring: scoringProfile fills the defaults in, drops a floor at or 
   assert.deepEqual([sp.bonusOf("a"), sp.bonusOf("d")], [3e8, 200]);
   assert.deepEqual([sp.partialOf("a"), sp.partialOf("d")], [3e8 * 0.25 / 2, 200 * 0.25]);
   assert.equal(scoringProfile({ floors: { a: 5 }, hardFloors: ["a"], mins: { a: 9 } }).partialOf("a"), HARD_FLOOR_BONUS * DEFAULT_FLOOR_PARTIAL, "with no hard floor asking for something the share is whole");
+});
+
+test("[fast] scoring: the single-suit terms (floor met, held total, step credit, kept value)", () => {
+  assert.deepEqual([floorMet(50, 50, null), floorMet(49, 50, null), floorMet(30, 50, 50), floorMet(30, 50, 49)], [true, false, true, false]);
+  assert.deepEqual([heldTotal(30, 40), heldTotal(45, 40), heldTotal(-5, null)], [40, 45, -5]);
+  const points = [{ ssi: 10, stam: 0, credit: 15 }, { ssi: 25, stam: 30, credit: 30 }];
+  assert.deepEqual([stepCredit(points, 9, 99), stepCredit(points, 10 - 1e-10, 0), stepCredit(points, 30, 29), stepCredit(points, 30, 30)], [0, 15, 15, 30]);
+  assert.deepEqual([keptValue({ serial: 1 }, { serial: 1 }), keptValue({ serial: 1 }, { serial: 2 }), keptValue({ serial: 1 }, null)], [1, 0, -1]);
 });

@@ -23,7 +23,7 @@
 //
 // map: builder
 // owns: `optimizeSuit`, `scoreSet`, `optDefaultSlots`, `optDefaultOptionalSlots`, `optDominancePrune`
-import { CHANGE_COST, DEFAULT_BUDGET_MS, DEFAULT_RESTARTS, FLOAT_EPS, RESIST_SKILL_KEY, RESIST_STEP_SLACK, TIE_SLACK, changeCost, scoringProfile, slackAt } from "../app/solver/scoring.mts";
+import { CHANGE_COST, DEFAULT_BUDGET_MS, DEFAULT_RESTARTS, FLOAT_EPS, RESIST_SKILL_KEY, RESIST_STEP_SLACK, TIE_SLACK, changeCost, floorMet, keptValue, scoringProfile, slackAt, stepCredit, type SsiStepPoint } from "../app/solver/scoring.mts";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -180,7 +180,7 @@ interface OptSpace {
   // SSI by step (OptProfile.ssiSteps): the ssi and stamPool dimensions (-1 when steps are off) and the points.
   stepSsi: number;
   stepStam: number;
-  steps: { ssi: number[]; stam: number[]; credit: number[] };
+  steps: SsiStepPoint[];
   // Resisting Spells steps (OptProfile.resistSteps): the bonus dimension (-1 with no steps), each step's threshold (at less the slack) and each step's min per dimension (the dimension's own `min` where the step names none).
   rs: number;
   rsTau: number[];
@@ -278,7 +278,6 @@ function optCollectKeys(pools: Record<string, OptItem[]>, current: OptAssignment
 }
 
 function optBuildSpace(keys: string[], profile: OptProfile): OptSpace {
-  const steps = { ssi: [] as number[], stam: [] as number[], credit: [] as number[] };
   const index: Record<string, number> = {};
   const w: number[] = [];
   const cap: number[] = [];
@@ -322,7 +321,7 @@ function optBuildSpace(keys: string[], profile: OptProfile): OptSpace {
     evals: 0,
     stepSsi: stepped ? index["ssi"]! : -1,
     stepStam: stepped ? index["stamPool"]! : -1,
-    steps: stepped ? { ssi: profile.ssiSteps!.map((p) => p.ssi), stam: profile.ssiSteps!.map((p) => p.stam), credit: profile.ssiSteps!.map((p) => p.credit) } : steps,
+    steps: stepped ? profile.ssiSteps! : [],
     rs: lifted ? index[RESIST_SKILL_KEY]! : -1,
     rsTau: lifted ? rSteps.map((st) => st.at - RESIST_STEP_SLACK) : [],
     rsMin: lifted ? rSteps.map((st) => keys.map((k, i) => (typeof st.mins[k] === "number" ? st.mins[k] : min[i]!))) : [],
@@ -342,8 +341,7 @@ function optMinAt(space: OptSpace, i: number, li: number): number {
 }
 // Whether dimension i's floor is met at total t with the min m: the total or the min reaches it.
 function optFloorMetAt(space: OptSpace, i: number, t: number, m: number): boolean {
-  const f = space.floor[i]!;
-  return t >= f || m >= f;
+  return floorMet(t, space.floor[i]!, m);
 }
 function optFloorMet(space: OptSpace, totals: number[], i: number): boolean {
   return optFloorMetAt(space, i, totals[i]!, optMinAt(space, i, space.rs >= 0 ? optLiftIndex(space, totals[space.rs]!) : -1));
@@ -351,10 +349,7 @@ function optFloorMet(space: OptSpace, totals: number[], i: number): boolean {
 
 // The largest step credit a suit with `ssi` SSI and `stam` Stamina pool reaches (0 when it reaches none). It never falls as either total rises, so its value at the top of a reachable range bounds every suit below it.
 function optStepCredit(space: OptSpace, ssi: number, stam: number): number {
-  const st = space.steps;
-  let best = 0;
-  for (let i = 0; i < st.credit.length; i++) if (ssi >= st.ssi[i]! - FLOAT_EPS && stam >= st.stam[i]! - FLOAT_EPS && st.credit[i]! > best) best = st.credit[i]!;
-  return best;
+  return stepCredit(space.steps, ssi, stam);
 }
 
 function optVec(it: OptItem | null, space: OptSpace): number[] {
@@ -376,6 +371,8 @@ function optVec(it: OptItem | null, space: OptSpace): number[] {
 
 // Score a totals VECTOR. Over-cap points are worth exactly zero — that is the whole reason
 // this is a set-level problem. A total under its min counts as the min (the Resisting Spells step its bonus reaches).
+// The hot loop: it states `heldTotal` (v < m ? m : v) and `floorMet` (t >= f || m >= f) from app/solver/scoring.mts inline
+// over the space's arrays rather than calling them.
 function optScoreVector(totals: number[], space: OptSpace): number {
   space.evals++;
   let s = 0;
@@ -487,7 +484,7 @@ function optStrictSpaces(keys: string[], profile: OptProfile, stages: OptStage[]
 }
 // A piece's value in the CHANGES_KEY dimension against the worn suit `cur`.
 function optChangeOf(cur: OptAssignment): (it: OptItem) => number {
-  return function (it) { const w = cur[it.slot]; return !w ? -1 : w.serial === it.serial ? 1 : 0; };
+  return function (it) { return keptValue(it, cur[it.slot]); };
 }
 // A suit's stage values under opts.strict, for a caller holding the suit alone (app/exact-solver.mts's other suits).
 function optStrictScore(items: OptAssignment, current: OptAssignment, profile: OptProfile, strict: { ranks: string[][]; fewestChanges?: boolean | undefined }, slots?: string[]): number[] {
