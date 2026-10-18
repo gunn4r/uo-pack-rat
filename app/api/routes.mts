@@ -14,8 +14,12 @@ import type { ItemKindsApiResponse, ItemKindsPostBody } from "./kinds.mts";
 import type { McpApiResponse, McpPutBody } from "./mcp.mts";
 import type { KindOverrides } from "../vault-lib.mts";
 import type { BlacklistApiResponse, BlacklistPostBody, ForgetApiResponse, InventoryApiResponse, ItemHitsApiResponse, ItemsApiResponse, ItemsBySerialApiResponse, MissingApiResponse } from "./inventory.mts";
+import type { MoveBackApiResponse, MovePlanApiResponse, MoveTripApiResponse, OrganizeApiResponse, OrganizeMatchApiResponse, OrganizePlanApiResponse, OrganizePresetsApiResponse, OrganizeProposeApiResponse, OrganizeProposeBody, OrganizePutApiResponse, OrganizeTripApiResponse } from "../organize-types.mts";
+import type { OrganizeConfig, RuleMatch } from "../organize-config.mts";
+import type { ProfileEdit } from "../profile-edits.mts";
+import type { PanelPrefs } from "../tazuo-panel-prefs.mts";
+import type { ProfilesApiResponse, ProfilesPatchApiResponse, TazuoPanelApiResponse, UiPrefs, UiPrefsApiResponse } from "./prefs.mts";
 import type { EvaluateApiResponse, OptimizeCancelApiResponse, OptimizeStartApiResponse, OptimizeStatusApiResponse } from "./optimize.mts";
-import type { OrganizePlanApiResponse, OrganizeProposeApiResponse, OrganizeProposeBody } from "../organize-types.mts";
 import type { RunBody, RunsListBody, RunSummary } from "../runs-types.mts";
 import type { CleanupApiResponse, CleanupBody, InstallApiResponse, InstallBody, LocateApiResponse, LocateBody, PasteScannerApiResponse, RulesApiResponse, SettingsApiResponse, SettingsPutBody, SetupApiResponse, UpdateCheckApiResponse } from "./setup.mts";
 
@@ -83,22 +87,22 @@ export interface ApiRoutes {
   "PUT /api/runs/<id>": ApiEntry<RunBody<RunSummary>, unknown>;
   "DELETE /api/runs/<id>": ApiEntry<OkApiResponse>;
   // organize.mts
-  "GET /api/organize": Untyped;
-  "PUT /api/organize": Untyped;
-  "GET /api/organize/presets": Untyped;
-  "POST /api/organize/match": Untyped;
+  "GET /api/organize": ApiEntry<OrganizeApiResponse>;
+  "PUT /api/organize": ApiEntry<OrganizePutApiResponse, OrganizeConfig & { base?: string }>;
+  "GET /api/organize/presets": ApiEntry<OrganizePresetsApiResponse>;
+  "POST /api/organize/match": ApiEntry<OrganizeMatchApiResponse, { match: RuleMatch }>;
   "POST /api/organize/propose": ApiEntry<OrganizeProposeApiResponse, OrganizeProposeBody>;
   "GET /api/organize/plan": ApiEntry<OrganizePlanApiResponse>;
-  "POST /api/organize/trip": Untyped;
-  "POST /api/move/plan": Untyped;
-  "POST /api/move/trip": Untyped;
+  "POST /api/organize/trip": ApiEntry<OrganizeTripApiResponse, { index: number; stamp: string }>;
+  "POST /api/move/plan": ApiEntry<MovePlanApiResponse | MoveBackApiResponse, unknown>;   // MoveBackApiResponse for {back}
+  "POST /api/move/trip": ApiEntry<MoveTripApiResponse, unknown>;
   // prefs.mts
-  "GET /api/profiles": Untyped;
-  "PATCH /api/profiles": Untyped;
-  "GET /api/ui-prefs": Untyped;
-  "PUT /api/ui-prefs": Untyped;
-  "GET /api/tazuo-panel": Untyped;
-  "PUT /api/tazuo-panel": Untyped;
+  "GET /api/profiles": ApiEntry<ProfilesApiResponse>;
+  "PATCH /api/profiles": ApiEntry<ProfilesPatchApiResponse, { edits: ProfileEdit[] }>;
+  "GET /api/ui-prefs": ApiEntry<UiPrefsApiResponse>;
+  "PUT /api/ui-prefs": ApiEntry<OkApiResponse, UiPrefs>;
+  "GET /api/tazuo-panel": ApiEntry<TazuoPanelApiResponse>;
+  "PUT /api/tazuo-panel": ApiEntry<TazuoPanelApiResponse, PanelPrefs>;
   // settings.mts
   "GET /api/settings": ApiEntry<SettingsApiResponse>;
   "PUT /api/settings": ApiEntry<SettingsApiResponse, SettingsPutBody>;

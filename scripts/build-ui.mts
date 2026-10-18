@@ -1,6 +1,5 @@
 #!/usr/bin/env node
-// build-ui.mts — compile the browser-facing TypeScript (app/ui/**, vault-lib.*, item-query.*, unravel.*,
-// organize-config.*, buffs.*, evaluate.*, run-settings.*, build-spec.*, swing.*, solver/scoring.*, guards.*, data-dir-notice.*, scan-schema.*, schema/validate.*) via tsconfig.browser.json into app/dist/, which is what
+// build-ui.mts — compile the browser-facing TypeScript (app/ui/** and the shared modules tsconfig.browser.json's include lists) via tsconfig.browser.json into app/dist/, which is what
 // the server actually serves the page from (never the source tree — see app/http/routes/static.mts). Unlike the optimizer core (plain modules Node runs from source with no build
 // step at all), this needs the real tsc: module resolution across app/ui/*.mts.
 //

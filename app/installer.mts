@@ -121,6 +121,11 @@ export interface AdapterInfo {
   capabilities: AdapterCapabilities;
   // What the bridge does besides the actions in capabilities.bridge (capabilities.json's optional "features").
   features: string[];
+  // install.panel: the client runs Pack Rat's in-game panel, whose options the wizard and Settings show.
+  panel: boolean;
+  // install.uoFolder: how the house map finds the UO folder through this client (app/services/houses.mts's
+  // UO_FOLDER_FINDERS), or null when it can't.
+  uoFolder: string | null;
   transport: "folder" | "paste";
   platform: string | null;
   summary: string;
@@ -163,7 +168,10 @@ export function listAdapters(adaptersDir: string): AdapterInfo[] {
     } catch { /* no README — fall back to the directory name */ }
     const scripts = scriptNamesIn(dir);
     const features = Array.isArray(raw.features) ? raw.features.filter((f): f is string => typeof f === "string") : [];
-    out.push({ id: d.name, name, scripts, capabilities, features, transport, platform, summary: summarize(capabilities) });
+    const install = raw.install && typeof raw.install === "object" ? raw.install as Record<string, unknown> : {};
+    const panel = install.panel === true;
+    const uoFolder = typeof install.uoFolder === "string" ? install.uoFolder : null;
+    out.push({ id: d.name, name, scripts, capabilities, features, panel, uoFolder, transport, platform, summary: summarize(capabilities) });
   }
   return out;
 }
@@ -285,7 +293,7 @@ export function validateScriptsDir(dir: unknown, adapter: unknown, adaptersDir: 
   if (!dir || typeof dir !== "string") return { ok: false, error: "a folder is required" };
   const shapeError = badPathShape(dir);
   if (shapeError) return { ok: false, error: `${shapeError}: ${dir}` };
-  const suffixes = suffixesFor(adapter, adaptersDir) ?? suffixesFor("tazuo", adaptersDir) ?? [];
+  const suffixes = suffixesFor(adapter, adaptersDir) ?? [];
   // Check the more-specific nested forms first: a picked folder that itself happens to exist (it
   // almost always does — it's a folder the user or a file dialog chose) must not shadow a real
   // scripts folder one or more levels below it.
@@ -439,7 +447,8 @@ export function heartbeatAlive(heartbeatPath: string, now: number, log: (msg: st
   if (st.stopped === true || st.alive == null) return false;
   // st.alive is whatever the file's own "alive" field held (a Legion-script-written file — see
   // adapters/tazuo's bridge and panel scripts) — Date.parse ToStrings a non-string argument regardless of what
-  // TS is told its type is here, so this cast describes the existing (unvalidated) trust, not a change.
+  // TS is told its type is here, so this cast describes the existing (unvalidated) trust, not a change. A number is an
+  // older bridge's epoch seconds (compat: numeric-alive, remove in Pack Rat 0.3.0 (docs/architecture.md, Compatibility shims)).
   const aliveMs = typeof st.alive === "number" ? st.alive * 1000 : Date.parse(st.alive as string);
   if (Number.isNaN(aliveMs)) return false;
   const ageS = (now - aliveMs) / 1000;

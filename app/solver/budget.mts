@@ -11,7 +11,7 @@ import { TIE_STAGE_SHARE } from "./scoring.mts";
 export interface Budget {
   readonly ms: number;                 // the whole build's budget
   readonly startedAt: number;          // now() when the build started, for a phase that read the clock itself
-  readonly heuristicMs: number;        // the most the heuristic's restarts may take: half, so HiGHS always keeps the other half
+  readonly heuristicCapMs: number;     // the most the heuristic's restarts may take: half, so HiGHS always keeps the other half
   elapsedMs(): number;                 // since the build started
   over(): boolean;                     // the budget is spent
   leftS(): number;                     // what is left for a HiGHS call, in seconds, never below 0 (a limit of 0 still returns the MIP start)
@@ -24,7 +24,7 @@ export function startBudget(ms: number, now: () => number): Budget {
   return {
     ms,
     startedAt: t0,
-    heuristicMs: ms / 2,
+    heuristicCapMs: ms / 2,
     elapsedMs: () => now() - t0,
     over: () => now() - t0 >= ms,
     leftS,

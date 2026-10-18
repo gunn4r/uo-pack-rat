@@ -1,11 +1,7 @@
-// house-names.mts — <data>/house-map.json (issues #164 and #10): what the player says about each house, by house id ({ version: 1, houses: { "<id>": { name, bounds?, areas? } } }). `name`, `bounds` and `areas` are checked; any other field on an entry or an area is kept, so notes can join the same entry later. `bounds` is the house's footprint when it was named or its areas drawn, so a redesigned or moved house (a new id) can be offered the old name and areas. `areas` are the player's own areas on the House map: each a name, a level, a colour from a fixed palette and up to MAX_RECTS rectangles of world tiles (inclusive). `forgotten` (issue #298) lists the houses the player removed from the House map before claims (issue #299) replaced that: it is kept as it is and read only so the houses claimed at the first start with claims leave them out (app/store/house-claims.mts). Written only by PUT /api/house-map/<id>, whole entry at a time; a file that does not parse is moved aside as house-map.json.corrupt (the way organize.json is) and reads as empty.
+// house-names.mts — <data>/house-map.json (issues #164 and #10): what the player says about each house, by house id ({ version: 1, houses: { "<id>": { name, bounds?, areas? } } }). `name`, `bounds` and `areas` are checked; any other field on an entry or an area is kept, so notes can join the same entry later. `bounds` is the house's footprint when it was named or its areas drawn, so a redesigned or moved house (a new id) can be offered the old name and areas. `areas` are the player's own areas on the House map: each a name, a level, a colour from a fixed palette and up to MAX_RECTS rectangles of world tiles (inclusive). `forgotten` (issue #298) lists the houses the player removed from the House map before claims (issue #299) replaced that: it is kept as it is and read only so the houses claimed at the first start with claims leave them out (app/store/house-claims.mts). Written only by PUT /api/house-map/<id>, whole entry at a time, through app/store/house-map.mts; a file that does not parse is moved aside as house-map.json.corrupt (the way organize.json is) and reads as empty.
 //
 // map: house
-// owns: `checkHouseEntry`, `readHouseMap`, `saveHouseEntry`, `NAME_MAX`, `MAX_AREAS`, `AREA_COLORS`
-import { existsSync, lstatSync, readFileSync } from "node:fs";
-import { basename } from "node:path";
-import { moveAside, writeFileAtomic } from "./atomic-write.mts";
-import { DATA_FILE_MODE } from "./config.mts";
+// owns: `checkHouseEntry`, `salvageHouseMap`, `NAME_MAX`, `MAX_AREAS`, `AREA_COLORS`
 import { migrate, newerNotice } from "./migrate.mts";
 import type { AreaRect, HouseArea, HouseBounds, HouseEntry } from "./house-model-types.mts";
 
@@ -95,54 +91,22 @@ export function checkHouseEntry(v: unknown): { ok: true; entry: HouseEntry | nul
 }
 
 
-// The file as the server reads it. A file that is too big, does not parse or is not version 1 is moved aside and reads
-// as empty (the next PUT would otherwise overwrite it); an entry with a bad id, name or area is left out of the read and the
-// file is left alone until the next save, which drops it. `problem` says what happened, for the log. A file made by a
-// newer Pack Rat is read as far as this build understands it, and `readOnly` says why it must not be saved over.
-export function readHouseMap(file: string): { doc: HouseMapDoc; problem: string | null; readOnly: string | null } {
-  if (!existsSync(file)) return { doc: emptyHouseMap(), problem: null, readOnly: null };
-  let why: string | null = null, raw: unknown = null;
-  if (lstatSync(file).size > MAX_HOUSE_MAP_BYTES) why = `is over ${MAX_HOUSE_MAP_BYTES / 1e6} MB`;
-  else {
-    try { raw = JSON.parse(readFileSync(file, "utf8")); }
-    catch (e) {
-      if (!(e instanceof SyntaxError)) throw e;
-      why = "did not parse";
-    }
-    if (!why) {
-      const m = migrate("house-map", raw);
-      raw = m.doc;
-      if (!(isObj(raw) && (m.fromVersion === 1 || m.newer) && isObj(raw.houses))) why = "is not a version 1 house map";
-    }
-  }
-  if (why) return { doc: emptyHouseMap(), problem: `house-map.json ${why}; it was moved to ${basename(moveAside(file))} and the houses start unnamed`, readOnly: null };
-  const houses: Record<string, HouseEntry> = {};
-  let dropped = 0;
-  for (const [id, v] of Object.entries((raw as { houses: Record<string, unknown> }).houses)) {
-    const r = isHouseId(id) ? checkHouseEntry(v) : null;
-    if (r?.ok && r.entry) houses[id] = r.entry; else dropped++;
-  }
-  const forgotten = Array.isArray((raw as { forgotten?: unknown }).forgotten) ? ((raw as { forgotten: unknown[] }).forgotten).filter(isForgottenEntry) : [];
-  return { doc: { version: 1, houses, ...(forgotten.length ? { forgotten } : {}) }, problem: dropped ? `house-map.json: ${dropped} ${dropped === 1 ? "entry" : "entries"} with a bad id, name or area left out` : null,
-    readOnly: newerNotice(basename(file), "house-map", raw) };
-}
-
 const isStamp = (v: unknown): v is string => typeof v === "string" && v.length <= 40 && Number.isFinite(Date.parse(v));
 const isForgottenEntry = (v: unknown): v is ForgottenHouse => isObj(v) && typeof v.id === "string" && isHouseId(v.id) && isStamp(v.capturedAt);
 
-const textOf = (doc: HouseMapDoc): string => JSON.stringify(doc, null, 2) + "\n";
-// Sets one house's entry (null removes it) in `doc`, the map as read, and writes the map; or says why not. Only a change
-// that grows the map is refused: a new id past MAX_HOUSES names, or a file growing past the size a read accepts (it would
-// be moved aside as corrupt on the next read). Clearing or shortening a name always goes through.
-export function saveHouseEntry(file: string, doc: HouseMapDoc, id: string, entry: HouseEntry | null): string | null {
-  const houses = { ...doc.houses };
-  if (entry) houses[id] = entry; else delete houses[id];
-  const next: HouseMapDoc = { ...doc, houses }, text = textOf(next);
-  if (entry) {
-    if (!doc.houses[id] && Object.keys(doc.houses).length >= MAX_HOUSES) return `at most ${MAX_HOUSES} houses can be named; clear some names first`;
-    const size = Buffer.byteLength(text);
-    if (size > MAX_HOUSE_MAP_BYTES && size > Buffer.byteLength(textOf(doc))) return `that would make house-map.json larger than ${MAX_HOUSE_MAP_BYTES / 1e6} MB`;
+// The house map in `parsed` (house-map.json's JSON), migrated: null when it is not a version 1 (or newer) map, else the
+// map with every entry that has a bad id, name or area left out (`dropped` counts them) and, for a file a newer Pack Rat
+// made, `readOnly` saying why it must not be saved over (`fileName` names it there). app/store/house-map.mts reads the file.
+export function salvageHouseMap(parsed: unknown, fileName: string): { doc: HouseMapDoc; dropped: number; readOnly: string | null } | null {
+  const m = migrate("house-map", parsed), raw = m.doc;
+  if (!(isObj(raw) && (m.fromVersion === 1 || m.newer) && isObj(raw.houses))) return null;
+  const houses: Record<string, HouseEntry> = {};
+  let dropped = 0;
+  for (const [id, v] of Object.entries(raw.houses)) {
+    const r = isHouseId(id) ? checkHouseEntry(v) : null;
+    if (r?.ok && r.entry) houses[id] = r.entry; else dropped++;
   }
-  writeFileAtomic(file, text, DATA_FILE_MODE);
-  return null;
+  const forgotten = Array.isArray(raw.forgotten) ? raw.forgotten.filter(isForgottenEntry) : [];
+  return { doc: { version: 1, houses, ...(forgotten.length ? { forgotten } : {}) }, dropped, readOnly: newerNotice(fileName, "house-map", raw) };
 }
+

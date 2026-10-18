@@ -9,10 +9,10 @@
 // owns: `openPeek`, `closePeek`
 import { RESIST_META } from "../vault-lib.mts";
 import type { Item } from "../vault-lib.mts";
-import { $, el, slotLabel } from "./dom.mts";
+import { $, slotLabel } from "./dom.mts";
 import { bridgeActionReason, runBridgeAction } from "./bridge.mts";
 import { relativeWhen } from "./messages.mts";
-import { txt, box, button, badge, meter, tipWrap, kbd } from "./components.mts";
+import { txt, box, button, badge, meter, tipWrap, resistTile, detailPane, detailSection } from "./components.mts";
 import type { IconName } from "./components.mts";
 
 import { rarityEl, locationEl, tagEls, tagWords } from "./item-parts.mts";
@@ -94,11 +94,6 @@ function kvRows(rows: Array<[string, HTMLElement | string, boolean?]>, cls = "")
     box("div", { class: `kv-v${muted ? " muted" : ""}` }, typeof v === "string" ? txt(v) : v),
   ]));
 }
-const section = (title: string, ...kids: Array<HTMLElement | null>): HTMLElement => box("section", { class: "peek-sec", "aria-label": title }, txt(title, "caps"), ...kids);
-// A resist tile: the element's name in its colour (information is in the word too, not colour alone), the value.
-function resistTile(name: string, value: number, token: string): HTMLElement {
-  return box("div", { class: `resist tint tint-${token.slice(6)}` }, el("span", { class: "t-sm resist-name", style: `color:var(${token})` }, name), txt(String(value), "t-lg"));
-}
 const ACTIONS: Array<["highlight" | "grab" | "goto", string, IconName]> = [["highlight", "Highlight", "highlight"], ["grab", "Grab", "grab"], ["goto", "Go to", "goto"]];
 
 function draw(it: Item, focus: boolean): void {
@@ -123,21 +118,16 @@ function draw(it: Item, focus: boolean): void {
     const b = button({ label: text, icon: ic, size: "md", block: true, variant: action === "grab" ? "primary" : "secondary", disabled: !!why, onClick: () => { runBridgeAction(action, it); } });
     return why ? tipWrap(b, why) : b;
   });
-  p.setAttribute("aria-labelledby", nameId);
-  p.replaceChildren(
-    box("div", { class: "peek-head" },
-      box("div", { class: "peek-title" }, el("h2", { class: "t-lg", id: nameId }, it.name),
-        button({ label: "Previous item", icon: "chevron-up", iconOnly: true, variant: "ghost", size: "sm", onClick: () => hooks.step(-1) }),
-        button({ label: "Next item", icon: "chevron-down", iconOnly: true, variant: "ghost", size: "sm", onClick: () => hooks.step(1) }),
-        button({ label: "Close detail", icon: "close", iconOnly: true, variant: "ghost", size: "sm", attrs: { "data-peek-close": "" }, onClick: () => closePeek(true) })),
-      box("div", { class: "peek-meta" }, rarityEl(it.rarity, "strong"), ...tagEls(it, { describe: true }), it.gear && it.medable ? badge("Meditation-safe", "ok") : null)),
-    box("div", { class: "peek-body" },
-      section("Where it is", kvRows(where)),
-      hasResists ? section("Resists", box("div", { class: "peek-resists" }, ...RESISTS.map(([k, short, token]) => resistTile(short, it.props[k] || 0, token)))) : null,
-      props.length ? section("Properties", kvRows(props.map((l) => [l.name, l.value, l.muted]), "peek-props")) : null),
-    box("div", { class: "overlay-foot peek-foot" },
-      box("div", { class: "peek-acts" }, ...acts),
-      box("p", { class: "t-sm muted peek-keys" }, kbd("↑"), kbd("↓"), txt("step through rows"), kbd("Esc"), txt("close"))));
+  detailPane(p, {
+    title: it.name, titleId: nameId, noun: "item", nouns: "rows",
+    meta: [rarityEl(it.rarity, "strong"), ...tagEls(it, { describe: true }), it.gear && it.medable ? badge("Meditation-safe", "ok") : null],
+    sections: [
+      detailSection("Where it is", kvRows(where)),
+      hasResists ? detailSection("Resists", box("div", { class: "peek-resists" }, ...RESISTS.map(([k, short, token]) => resistTile(short, token, txt(String(it.props[k] || 0), "t-lg"))))) : null,
+      props.length ? detailSection("Properties", kvRows(props.map((l) => [l.name, l.value, l.muted]), "peek-props")) : null],
+    actions: acts,
+    onStep: (d) => hooks.step(d), onClose: () => closePeek(true),
+  });
   p.hidden = false;
   if (focus) p.querySelector<HTMLElement>("[data-peek-close]")?.focus();
 }

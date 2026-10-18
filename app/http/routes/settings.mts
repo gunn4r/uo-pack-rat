@@ -9,19 +9,21 @@
 // owns: `routes`
 import { statSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { isBoundedString, isBoundedInt, MAX_SERIAL } from "../../guards.mts";
+import { isBoundedString, isBoundedInt, MAX_PATH_LEN, MAX_SERIAL } from "../../guards.mts";
 import { validateScriptsDir, badPathShape } from "../../installer.mts";
 import { readBody } from "../../read-body.mts";
 import { retentionError, retentionOf } from "../../retention.mts";
 import { loadRules, listRules } from "../../rules.mts";
 import { UNRAVEL_KEEP_MAX, unravelBagError, type ClientSettings, type SettingsDoc } from "../../store/settings.mts";
-import { send, asObject } from "../respond.mts";
-import { MAX_PATH_LEN, NO_CLIENT_FOLDER } from "./setup.mts";
+import { send, asObject, NO_CLIENT_FOLDER } from "../respond.mts";
 import type { Route } from "../router.mts";
 import type { CleanupApiResponse, RulesApiResponse, SettingsApiResponse } from "../../api/setup.mts";
 import type { ServerContext } from "../context.mts";
 
 const NO_TILEDATA = "no tiledata.mul found in that folder";
+
+// PUT /api/settings' body cap: far above the largest valid body (a full Unravel Keep list of 5,000 serials and 200 bags, about 70 KB, plus two folder paths).
+const MAX_SETTINGS_BODY = 256e3;
 
 export function routes(ctx: ServerContext): Route[] {
   const { config: CONFIG, appSettings, retentionService, setupService } = ctx;
@@ -38,7 +40,7 @@ export function routes(ctx: ServerContext): Route[] {
       // a bare typeof check, after which GET /api/setup readdir/readFileSync'd whatever it named on
       // every page load, hanging the whole single-threaded process on a FIFO and dialling out over
       // SMB for a UNC path). These three are the only fields this route persists.
-      const body = asObject(await readBody(req));
+      const body = asObject(await readBody(req, { limit: MAX_SETTINGS_BODY, tooLargeMsg: "settings too large" }));
       let nextRules = appSettings.rules(), nextFallback = appSettings.rulesFallback();
       const hasShard = Object.prototype.hasOwnProperty.call(body, "shard");
       if (hasShard) {
