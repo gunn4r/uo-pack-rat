@@ -181,6 +181,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `scripts/optimizer-core.test.mts` — the offline test harness for the suit optimizer core (`scripts/optimizer-core.mts`).
 - `scripts/packaging.test.mts` — the electron-builder config, which is product interface: which files reach a player's machine, under which target, with which identifiers.
 - `scripts/run-suite.test.mts` — `scripts/run-suite.mts`, the counting half of the test runner, driven against throwaway test files in a temp directory.
+- `scripts/schema-index.test.mts` — a [fast] guard that app/schema/README.md's contract index lists every schema file in app/schema/, and nothing else.
 - `scripts/scrub.test.mts` — a [smoke] guard: this repository is public, and nothing tracked in it may carry private details.
 - `scripts/select-tests.test.mts` — `scripts/select-tests.mts`, the changed-paths → test-files mapping behind `./scripts/test_runner.sh --changed`.
 - `scripts/shell-smoke.test.mts` — proves the packaged Electron shell (`electron/main.mts` + `electron/server-entry.mts`) boots, serves the page and exits clean.
