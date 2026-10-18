@@ -10,14 +10,12 @@
 // owns: `routes`, `patchProfiles`
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { isBuffList, isBuffSkills } from "../../buffs.mts";
-import { profilesSpecError, isManualSuit } from "../../build-spec.mts";
+import { profilesSpecError } from "../../build-spec.mts";
 import { applyProfileEdits, profileEditError, type ProfileEdit } from "../../profile-edits.mts";
 import { isPseudoCharacter } from "../../scan-schema.mts";
-import { isBoundedString } from "../../guards.mts";
 import { readBody } from "../../read-body.mts";
 import { validate, type ValidatorSchema, firstErrorText } from "../../schema/validate.mts";
-import { isColWidths, isDrawerWidth, UI_PREF_CHOICES, UI_PREF_LISTS, UI_PREF_VERSIONS } from "../../store/ui-prefs.mts";
+import { UI_PREF_FIELDS } from "../../store/ui-prefs.mts";
 import { panelPrefsError } from "../../tazuo-panel.mts";
 import { send, asObject, refuseDemo } from "../respond.mts";
 import { APP_DIR } from "../../config.mts";
@@ -88,45 +86,10 @@ export function routes(ctx: ServerContext): Route[] {
       // origin, on every launch. Only known fields, each checked, are written.
       const body = asObject(await readBody(req, { limit: 16e3 }));
       const next = uiPrefsStore.read();
-      for (const key of UI_PREF_LISTS) {
-        if (!Object.prototype.hasOwnProperty.call(body, key)) continue;
-        const v = body[key];
-        if (!Array.isArray(v) || v.length > 200 || !v.every((c) => isBoundedString(c, 64))) return send(res, 400, { ok: false, error: `${key} must be a list of at most 200 keys` });
-        next[key] = v as string[];
-      }
-      for (const [key, allowed] of Object.entries(UI_PREF_CHOICES)) {
-        if (!Object.prototype.hasOwnProperty.call(body, key)) continue;
-        const v = body[key];
-        if (typeof v !== "string" || !(allowed as readonly string[]).includes(v)) return send(res, 400, { ok: false, error: `${key} must be one of ${allowed.join(", ")}` });
-        (next as Record<string, unknown>)[key] = v;   // one of its allowed values, just checked
-      }
-      if (Object.prototype.hasOwnProperty.call(body, "colWidths")) {
-        if (!isColWidths(body.colWidths)) return send(res, 400, { ok: false, error: "colWidths must map at most 200 column keys to whole widths from 40 to 1200 px" });
-        next.colWidths = body.colWidths;
-      }
-      if (Object.prototype.hasOwnProperty.call(body, "mapDrawerWidth")) {
-        if (!isDrawerWidth(body.mapDrawerWidth)) return send(res, 400, { ok: false, error: "mapDrawerWidth must be a whole width from 320 to 4000 px" });
-        next.mapDrawerWidth = body.mapDrawerWidth;
-      }
-      if (Object.prototype.hasOwnProperty.call(body, "manualSuit")) {
-        if (!isManualSuit(body.manualSuit)) return send(res, 400, { ok: false, error: "manualSuit must map the suit's slots to item serials" });
-        next.manualSuit = body.manualSuit;
-      }
-      // Manual's buffs (app/buffs.mts): catalog ids, and the numbers they scale with, each within its bounds.
-      if (Object.prototype.hasOwnProperty.call(body, "manualBuffs")) {
-        if (!isBuffList(body.manualBuffs)) return send(res, 400, { ok: false, error: "manualBuffs must list known buffs, each once, one form at most" });
-        next.manualBuffs = body.manualBuffs;
-      }
-      if (Object.prototype.hasOwnProperty.call(body, "manualBuffSkills")) {
-        if (!isBuffSkills(body.manualBuffSkills)) return send(res, 400, { ok: false, error: "manualBuffSkills must map known buff skills to numbers within their ranges" });
-        next.manualBuffSkills = body.manualBuffSkills;
-      }
-      // Automatic's buffs and the numbers edited for a character are the character's profile now (a setBuffs edit, PATCH /api/profiles).
-      for (const key of ["autoBuffs", "buffSkills"]) if (Object.prototype.hasOwnProperty.call(body, key)) return send(res, 400, { ok: false, error: `${key} is kept with the profiles now; reload the page` });
-      for (const key of UI_PREF_VERSIONS) {
-        if (!Object.prototype.hasOwnProperty.call(body, key)) continue;
-        if (!isBoundedString(body[key], 64)) return send(res, 400, { ok: false, error: `${key} must be a version of at most 64 characters` });
-        next[key] = body[key];
+      for (const f of UI_PREF_FIELDS) {
+        if (!Object.prototype.hasOwnProperty.call(body, f.key)) continue;
+        if (!f.check(body[f.key])) return send(res, 400, { ok: false, error: f.error });
+        (next as Record<string, unknown>)[f.key] = body[f.key];   // a value its check just accepted
       }
       uiPrefsStore.write(next);
       return send(res, 200, { ok: true } satisfies OkApiResponse);
