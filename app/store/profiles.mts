@@ -1,4 +1,4 @@
-// profiles.mts — <data>/profiles.json, the Suit Builder's characters and templates (GET/PUT /api/profiles): seeded from the defaults, a damaged file moved aside and reseeded, an old shape migrated (with <data>/ui-prefs.json beside it) after a dated backup of each, a newer one read-only, a write given a stale stamp refused, and the shard's built-in templates read.
+// profiles.mts — <data>/profiles.json, the Suit Builder's characters and templates (GET/PATCH /api/profiles): seeded from the defaults, a damaged file moved aside and reseeded, an old shape migrated (with <data>/ui-prefs.json beside it) after a dated backup of each, a newer one read-only, and the shard's built-in templates read.
 //
 // map: server
 // owns: `createProfilesStore`
@@ -82,7 +82,8 @@ export function createProfilesStore({ file, defaults, templatesDir, shard, log, 
     }
     return profiles;
   }
-  // The file's content stamp (Organize's pattern, json-file.mts's fileStamp).
+  // The file's content stamp, which GET /api/profiles answers with and PATCH answers before and after its write
+  // (json-file.mts's fileStamp).
   const stamp = (): string => fileStamp(file);
   // The file migrated and the stamp of what it holds then, taken with no await between them.
   const stamped = (doc: unknown, names: Set<string> | null): { profiles: ProfilesV3; stamp: string } => ({ profiles: migrateNow(doc, names), stamp: stamp() });
@@ -105,11 +106,12 @@ export function createProfilesStore({ file, defaults, templatesDir, shard, log, 
     return migration;
   }
   const read = async (): Promise<ProfilesV3> => (await readStamped()).profiles;
-  // The whole file, already checked against the schema and app/build-spec.mts's buildSpecError. Given the stamp it was
-  // read at (`base`), a file changed since is left alone (ok false, with the stamp it has now): a page's stale copy can't
-  // drop or revert what another window saved. The check and the write run with no await between them.
-  function write(doc: ProfilesV3, base?: string): { ok: boolean; stamp: string } {
-    if (base !== undefined && stamp() !== base) return { ok: false, stamp: stamp() };
+  // PATCH /api/profiles: the edited file, already checked against the schema and app/build-spec.mts's profilesSpecError,
+  // written only over the file it was made from (`base`, the stamp read with it). A file changed since is left alone (ok
+  // false, with the stamp it has now), so a save made from an older copy can't drop another save's edits. The check and
+  // the write run with no await between them.
+  function write(doc: ProfilesV3, base: string): { ok: boolean; stamp: string } {
+    if (stamp() !== base) return { ok: false, stamp: stamp() };
     refuseNewer(file, "profiles");
     writeJsonFile(file, doc, { indent: 2 });
     return { ok: true, stamp: stamp() };
