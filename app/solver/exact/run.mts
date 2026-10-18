@@ -5,7 +5,7 @@
 // conflict and the build retries with them soft. The core's types are derived from its functions, as in exact-solver.mts.
 //
 // map: builder
-// owns: `ExactRun`, `CoreModule`, `OptPools`, `OptAssignment`, `OptProfile`, `OptResult`, `OptOptionsFull`, `TieBreakAsked`, `startRun`, `topOf`, `dot`
+// owns: `ExactRun`, `CoreModule`, `OptPools`, `OptAssignment`, `OptProfile`, `OptResult`, `OptOptionsFull`, `TieBreakAsked`, `startRun`, `topOf`, `dot`, `assignmentOf`, `tieCostOf`, `serialsOf`, `serialsKey`
 import type * as Core from "../../../scripts/optimizer-core.mts";
 import type { OptItem } from "../../vault-lib.mts";
 import type { SolveProgress, StrictStageProgress } from "../../api/optimize.mts";
@@ -41,6 +41,7 @@ export interface ExactRun {
   budget: Budget;
   now: () => number;
   onProgress: (p: SolveProgress) => void;
+  onWarn: (message: string) => void;
   pools: OptPools;
   current: OptAssignment;
   profile: OptProfile;
@@ -48,6 +49,10 @@ export interface ExactRun {
   slots: string[];
   mipCurrent: Partial<Record<string, OptItem>>;
   heur: OptResult;                                   // the heuristic's result, the incumbent HiGHS starts from
+  heuristicMs: number;                               // how long the heuristic took
+  heurTop: Partial<Pick<OptOptionsFull, "tieBreak">>;  // its top suit as a tie-break start, for a hand-back from its suit
+  restarts: number;                                  // the heuristic's restarts, as the result reports them
+  eps: number;                                       // equal scores: the slack the guards compare within
   candidates: number;                                // candidate pieces in the model, for progress
   tb: TieBreakAsked | null;
   alt: { count: number; tolerance: number } | null;  // opts.alternatives, when it asks for any
@@ -83,3 +88,13 @@ export function startRun(given: Omit<ExactRun, "toScore" | "onEvent">): ExactRun
 // A result's best score: with a tie-break the returned suit may score under it (OptResult.tieBreak.topScore).
 export const topOf = (r: OptResult): number => r.tieBreak ? r.tieBreak.topScore : r.score;
 export const dot = (a: ArrayLike<number>, b: ArrayLike<number>): number => { let s = 0; for (let j = 0; j < a.length; j++) s += a[j]! * b[j]!; return s; };
+// A model's picked pieces as a suit over `slots` (an empty slot null). picked's values are mip.mts's OptItem (vault-lib's),
+// one field looser than the core's own item shape — the same runtime objects either way.
+export const assignmentOf = (picked: Partial<Record<string, OptItem>>, slots: string[]): OptAssignment =>
+  Object.fromEntries(slots.map((s): [string, OptItem | null] => [s, picked[s] || null])) as unknown as OptAssignment;
+// The summed tie cost of the picked pieces (a rarity preference's, app/mip.mts tieCosts).
+export const tieCostOf = (picked: Partial<Record<string, OptItem>>): number => Object.values(picked).reduce((n, it) => n + (it?.tieCost || 0), 0);
+// A suit as slot -> serial (an empty slot null), the shape warm starts and tie-break starts take; and as a key.
+export const serialsOf = (suit: Partial<Record<string, { serial: number } | null>> | null | undefined): Record<string, number | null> =>
+  Object.fromEntries(Object.entries(suit || {}).map(([slot, it]): [string, number | null] => [slot, it ? it.serial : null]));
+export const serialsKey = (a: OptAssignment): string => JSON.stringify(serialsOf(a));
