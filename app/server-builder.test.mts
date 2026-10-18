@@ -839,6 +839,12 @@ test("[fast] POST /api/optimize rejects a malformed pools/current/profile (hardF
       { pools: { helmet: "not-an-array" }, current: {}, profile, opts: {} },
       { pools: [], current: {}, profile, opts: {} },
       { pools: {}, current: { helmet: 5 }, profile, opts: {} },
+      // a piece the search can't use as sent: no serial, no name, a slot that is no string, a property that is no number
+      { pools: {}, current: { helmet: { name: "x", slot: "helmet", props: {} } }, profile, opts: {} },
+      { pools: {}, current: { helmet: { serial: 1, slot: "helmet", props: {} } }, profile, opts: {} },
+      { pools: {}, current: { helmet: { serial: 1, name: "x", slot: 7, props: {} } }, profile, opts: {} },
+      { pools: {}, current: { helmet: { serial: 1, name: "x", slot: "helmet", props: { hci: "5" } } }, profile, opts: {} },
+      { pools: { helmet: [{ serial: "1", name: "x", slot: "helmet", props: {} }] }, current: {}, profile, opts: {} },
       { pools: {}, current: {}, profile: "not-an-object", opts: {} },
       { pools: {}, current: {}, profile, opts: { restarts: 1e12 } },
       { pools: {}, current: {}, profile, opts: { timeBudgetMs: Number.MAX_SAFE_INTEGER } },
