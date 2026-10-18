@@ -1,5 +1,11 @@
 // inventory.mts — the inventory: GET /api/inventory, /api/missing, /api/items and /api/items/by-serial.
 //
+// The routes, what each takes and answers:
+// - `GET /api/inventory` (the cached fold of every scan, with Organize's results overlay applied — getInventory(), keyed by a signature of the scans directory + shard, and of organize-state.json for the overlay, so an edited/added/removed scan file or a finished trip is picked up on the next request with no restart; each scan file is upgraded v1→v2 and schema- validated on read — scanStore.all() — an invalid or unparsable file is logged and skipped) — the response carries facets/worn/rootCounts/missingCounts/itemCount/propKeys — never the full item map (that stopped shipping in Task 5, once the page moved to paging GET /api/items instead)
+// - `GET /api/missing?root=` — what left that root since its last scan (app/missing.mts, issue #99)
+// - `GET /api/items?q=&slot=&loc=&rarity=&kind=&seenDays=&slayer=&nogarg=&med=&hide=&prop=&group=&sort=&dir=&offset=&limit=` — a paged, server-side search/sort over the same folded inventory (parseItemQuery/applyItemQuery, app/item-query.mts); &fields=hits answers lean rows (hitRow), up to HIT_LIMIT a page, for the House map's search; &unravel=1 keeps only unravel candidates, each row with `unravel: {ingredient, weight, maybe, leftOut?}` (app/unravel.mts, issue #271), less the pieces left out by default (worn, in a saved run, insured, pinned in Organize, imbued, blessed, kept) unless &unravelShow= names those reasons (or `all`); sort=unravel is by weight
+// - `GET /api/items/by-serial?serials=1,2,3` — full item records (location/tags/equippedBy…) by serial, 1-200 at a time (400 otherwise); a serial with no item is simply absent from the response
+//
 // map: server
 // owns: `routes`
 import { parseItemQuery, applyItemQuery, facetsOf, wantsHits, hitRow, type ItemQueryRows, type ItemQueryGroups, type UnravelContext } from "../../item-query.mts";

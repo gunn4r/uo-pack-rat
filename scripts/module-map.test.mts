@@ -2,11 +2,11 @@
 //
 // Every tracked non-test `.mts` file under `app/`, `scripts/` and `electron/` (fixtures included) carries its row in its header, and the map's generated tables must be what `node scripts/module-index.mts --check` expects; every repo path the map names in backticks must exist. A failure names the fix: the header line to add, or `npm run gen:modules`. Runs over `git ls-files`, and a guard test fails if it sees no modules or no named paths. Also unit cases of `headerOf` and `withTables`.
 //
-// app/dist/ is excluded, and untracked files count too, so a new module counts before it is added.
+// app/dist/ is excluded, and untracked files count too, so a new module counts before it is added. Each route module under `app/http/routes/` also lists every path it registers in its header.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { generated, headerOf, moduleFiles, withTables } from "./module-index.mts";
@@ -67,4 +67,22 @@ test("[fast] withTables replaces only what lies between the markers, whatever th
   const doc = "# M\r\n\r\n<!-- module-map:start a -->\r\nold\r\n<!-- module-map:end -->\r\n\r\nprose\r\n<!-- module-map:start b -->\r\n<!-- module-map:end -->\r\n";
   const out = withTables(doc, new Map([["a", "| Module | Role | Owns |\n|---|---|---|\n| `x` | X. | — |"]]));
   assert.equal(out, "# M\n\n<!-- module-map:start a -->\n| Module | Role | Owns |\n|---|---|---|\n| `x` | X. | — |\n<!-- module-map:end -->\n\nprose\n<!-- module-map:start b -->\n| Module | Role | Owns |\n|---|---|---|\n<!-- module-map:end -->\n");
+});
+
+// A route module's header is where its routes are written down (docs/architecture.md, HTTP routes), so a registered path missing from it is a route nobody documented.
+test("[fast] every route module's header lists each path it registers", () => {
+  const dir = join(root, "app/http/routes");
+  const files = readdirSync(dir).filter((f) => f.endsWith(".mts") && !f.endsWith(".test.mts"));
+  assert.ok(files.length >= 10, `expected the route modules in ${dir}`);
+  const missing: string[] = [];
+  for (const f of files) {
+    const text = readFileSync(join(dir, f), "utf8").replace(/\r\n/g, "\n");
+    const lines = text.split("\n");
+    const header = lines.slice(0, lines.findIndex((l) => !l.startsWith("//"))).join("\n");
+    for (const [, path] of text.matchAll(/\bpath: "([^"]+)"/g)) {
+      const esc = path!.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      if (!new RegExp(`(?<![\\w.-])${esc}(?![\\w/.-])`).test(header)) missing.push(`app/http/routes/${f}: ${path}`);
+    }
+  }
+  assert.deepEqual(missing, [], "add each route to its module's header, beside the others");
 });

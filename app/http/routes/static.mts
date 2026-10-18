@@ -1,5 +1,26 @@
 // static.mts — the page and the browser-shared modules: GET / (index.html), the favicon and logo, each module the page imports at run time (/<name>.mjs, compiled into app/dist/), GET /ui/<name> and GET /ui/fonts/<name>.woff2.
 //
+// The routes, what each takes and answers:
+// - `GET /` (index.html)
+// - `GET /favicon.png` (app/assets/, the logo at 64 px)
+// - `GET /logo-mark.png` (the rat's head cropped from the logo, 80 px, the sidebar's mark)
+// - `GET /vault-lib.mjs`
+// - `GET /item-query.mjs` (pure filter/sort/facet logic shared by the browser and GET /api/items below — no DOM, no node: imports, servable byte for byte like vault-lib.mts)
+// - `GET /unravel.mjs` (item-query.mts's import: what unraveling a piece gives, which the Unravel view reads too, same reason)
+// - `GET /scan-schema.mjs` (vault-lib.mts imports it for parseStamp, so it must be servable to the browser the same way)
+// - `GET /schema/validate.mjs` (scan-schema.mts's own import, same reason)
+// - `GET /organize-config.mjs` (the rule editor's import, same reason)
+// - `GET /buffs.mjs` (the Suit Builder's Manual buffs, same reason)
+// - `GET /evaluate.mjs` (one suit evaluation for Manual's totals and Automatic's buff picker, the one `POST /api/evaluate` and the MCP tools use)
+// - `GET /build-spec.mjs` (a build's intent as one document, which the Suit Builder turns into a build with the server's own rule, same reason)
+// - `GET /swing.mjs` (the Suit Builder's swing line and step hints, the formula both solvers score with, same reason)
+// - `GET /run-settings.mjs` and `GET /guards.mjs` (the Suit Builder's Advanced fields check against the server's run-setting ranges, same reason)
+// - `GET /data-dir-notice.mjs` (ui/messages.mts's import, same reason)
+// - `GET /house-areas.mjs` (the House map's areas, the rule MCP's `list_containers` uses too, same reason)
+// - `GET /paste-scan.mjs` (the Import drawer's instant preview parses a paste with the server's own rule, same reason)
+// - `GET /ui/<name>` (name matching /^[a-z0-9-]+\.(mjs|css)$/, served from app/ui/, else 404)
+// - `GET /ui/fonts/<name>.woff2` (the bundled IBM Plex faces, app/ui/fonts/, as binary font/woff2)
+//
 // map: server
 // owns: `routes`
 import { readFileSync, existsSync } from "node:fs";

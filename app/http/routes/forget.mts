@@ -1,5 +1,9 @@
 // forget.mts — POST /api/forget and POST /api/forget-character.
 //
+// The routes, what each takes and answers:
+// - `POST /api/forget` {root} (drop a container from the inventory: writes a tombstone scan; 409 under --demo, which must never write into the committed app/fixtures/)
+// - `POST /api/forget-character` {character} (drop a character's card, worn set, backpack and bank: a `_vault` tombstone carrying forgetCharacter; 409 under --demo)
+//
 // map: server
 // owns: `routes`
 import { mkdirSync } from "node:fs";
