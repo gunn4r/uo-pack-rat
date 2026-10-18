@@ -89,7 +89,7 @@ Whichever transport an adapter uses, the scan and bridge **schemas themselves do
 
 ## Declared actions
 
-`capabilities` says what an adapter can **read** — which layers, whether it sees the bank, the ground, nested bags — plus a `bridge` list of action names. None of that says the adapter also **walks the character, opens containers and moves items**. A player or a reviewer reading `capabilities.json` could not tell that installing an adapter grants a movement primitive, which is the sort of thing that should be declared rather than discovered.
+`capabilities` says what an adapter can **read** — which layers, whether it sees the bank, the ground, nested bags — plus a `bridge` list of action names (the app reads a missing `bridge`, or one that is not a list, as no actions, and keeps only its string entries). None of that says the adapter also **walks the character, opens containers and moves items**. A player or a reviewer reading `capabilities.json` could not tell that installing an adapter grants a movement primitive, which is the sort of thing that should be declared rather than discovered.
 
 `actions` is that declaration: a required top-level array naming, in this app's own vocabulary, what the adapter's scripts do in the world. The terms are fixed, and `app/adapters.test.mts` holds them as a contract in both directions — an adapter that calls one of these primitives without declaring it fails the build, and one that declares a term no script calls fails too.
 

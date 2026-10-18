@@ -11,7 +11,7 @@
 // owns: `routes`, `MAX_PATH_LEN`, `NO_CLIENT_FOLDER`
 import { join } from "node:path";
 import { short } from "../../guards.mts";
-import { validateScriptsDir, installedVersion, installScripts, pasteScanner, repoFromPackage, checkForUpdates, type AdapterInfo, type CheckForUpdatesResult } from "../../installer.mts";
+import { validateScriptsDir, installedVersion, installScripts, pasteScanner, repoFromPackage, checkForUpdates, type CheckForUpdatesResult } from "../../installer.mts";
 import { safeAppendLog } from "../../log.mts";
 import { readBody } from "../../read-body.mts";
 import { addPanelAutostart, panelPrefsError } from "../../tazuo-panel.mts";
@@ -72,9 +72,7 @@ export function routes(ctx: ServerContext): Route[] {
         // page offers Open there and Copy path in a plain browser (npm start), instead of an Open that
         // answers 501 and vanishes.
         canOpenFolders: typeof host?.openPath === "function",
-      // `adapters` is installer.mts's AdapterInfo: its `capabilities` is capabilities.json's own object, which nothing
-      // checks has a `bridge` list, while SetupApiResponse's AdapterSummary says it does.
-      } satisfies Omit<SetupApiResponse, "adapters"> & { adapters: AdapterInfo[] });
+      } satisfies SetupApiResponse);
     } },
     { method: "GET", path: "/api/setup/scanner", handle: (_req, res, url) => {
       // Read-only and path-free: the id must name a known paste-transport adapter, and the script is that
