@@ -63,7 +63,7 @@ test("[slow] components: confirm dialog, drawer, popover, toasts and tooltip beh
     const answer = (click: string | null) => page.evaluate(async (sel) => {
       const C = (window as unknown as { C: { confirmDialog: (o: object) => Promise<boolean> } }).C;
       const p = C.confirmDialog({ title: "Forget Dorran?", body: "Their card leaves the inventory.", confirmLabel: "Forget Dorran" });
-      await new Promise((r) => setTimeout(r, 50));
+      for (let i = 0; i < 100 && !document.querySelector("dialog.dialog[open]")?.contains(document.activeElement); i++) await new Promise((r) => setTimeout(r, 10));   // sleep: one poll step, until the dialog holds the focus (1 s at most)
       const d = document.querySelector("dialog.dialog[open]")!;
       const info = { role: d.getAttribute("role"), focused: (document.activeElement as HTMLElement).dataset.cancel === "", danger: !!d.querySelector("[data-confirm].btn-danger") };
       if (sel) d.querySelector<HTMLElement>(sel)!.click(); else d.dispatchEvent(new Event("cancel", { cancelable: true }));
