@@ -91,7 +91,7 @@
       "current": {
         "type": ["object", "null"],
         "additionalProperties": true,
-        "$comment": "The command the bridge is carrying out, or null between commands: its id, action and name as queued (a trip's name is \"#<index>\", a scan's its script). readBridgeStatus checks it on its own: one off this shape reads as null, and the rest of the status still reads.",
+        "$comment": "The command the bridge is carrying out, or null between commands: its id, action and name as queued (a trip's name is \"#<index>\", a scan's its script). readBridgeStatus keeps it whenever its id is a string (an action or name that is not a string is dropped from it), and reads it as null otherwise; the rest of the status still reads.",
         "required": ["id"],
         "properties": {
           "id": { "type": "string", "minLength": 1, "maxLength": 64, "$comment": "What Organize follows a trip by. The shipped bridges always write action and name too." },
@@ -99,7 +99,7 @@
           "name": { "type": "string" }
         }
       },
-      "results": { "type": "object", "$comment": "Each finished command's result, keyed by its id: every value is one `result` (above; this validator has no $ref). readBridgeStatus checks each against `result` and drops one off its shape, keeping the rest." },
+      "results": { "type": "object", "$comment": "Each finished command's result, keyed by its id: every value is one `result` (above; this validator has no $ref). readBridgeStatus checks each against `result` opened for reading (any added field, step key or step op allowed; only a wrong-typed or missing ok, msg, t or step field fails) and drops one that fails, keeping the rest." },
       "counts": {
         "type": "object",
         "additionalProperties": true,

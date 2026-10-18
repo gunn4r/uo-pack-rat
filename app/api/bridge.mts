@@ -12,7 +12,8 @@ export interface BridgeCurrentCommand {
   name?: string | undefined;
 }
 // One step of a trip's result (the bridge's trip action: every take and put it tried, in order).
-export interface TripStepResult { op: "take" | "put"; serial: number; ok: boolean; msg: string; ms?: number | undefined }
+// `op` is "take" or "put"; a newer bridge may name another, which the readers skip.
+export interface TripStepResult { op: string; serial: number; ok: boolean; msg: string; ms?: number | undefined }
 export interface BridgeResultEntry {
   ok: boolean;
   msg: string;
