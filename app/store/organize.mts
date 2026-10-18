@@ -2,16 +2,12 @@
 //
 // map: server
 // owns: `createOrganizeStore`
-import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { basename } from "node:path";
 import { emptyOrganizeConfig, salvageOrganizeConfig, MAX_SETUP_BYTES, type OrganizeConfig } from "../organize-config.mts";
 import { jsonErrorReason } from "../paste-scan.mts";
 import { migrate, newerNotice } from "../migrate.mts";
-import { readJsonFile, refuseNewer, writeJsonFile } from "./json-file.mts";
-
-// The stamp of a missing organize.json (a content stamp is 16 hex digits, so it never reads as one).
-const MISSING_STAMP = "none";
+import { fileStamp, readJsonFile, refuseNewer, writeJsonFile } from "./json-file.mts";
 
 // Read through the salvage, so a hand edit that breaks one rule drops that rule, not the whole setup, and
 // `problems` says what went; a file that does not parse is moved aside (the way the settings store treats
@@ -36,11 +32,7 @@ export function createOrganizeStore(file: string) {
     const why = got.bad.why === "too-big" ? `is over ${MAX_SETUP_BYTES / 1e6} MB` : got.bad.why === "check" ? got.bad.reason : `did not parse (${jsonErrorReason(got.bad.error)})`;
     return { config: emptyOrganizeConfig(), problems: [`organize.json ${why}; it was moved to ${basename(got.aside)} and Organize starts empty`] };
   }
-  function stamp(): string {
-    let bytes: Buffer;
-    try { bytes = readFileSync(file); } catch (e) { if ((e as NodeJS.ErrnoException).code === "ENOENT") return MISSING_STAMP; throw e; }
-    return createHash("sha256").update(bytes).digest("hex").slice(0, 16);
-  }
+  const stamp = (): string => fileStamp(file);
   function write(config: OrganizeConfig, base?: string): { ok: boolean; stamp: string } {
     const now = base === undefined ? null : stamp();
     if (now !== null && now !== base) return { ok: false, stamp: now };

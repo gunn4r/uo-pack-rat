@@ -11,7 +11,8 @@ import { api } from "./api.mts";
 import { loadOrganize, refreshPlaces } from "./organize-data.mts";
 import { loadHouseLinks } from "./house-links.mts";
 import { renderNavCounts } from "./shell.mts";
-import type { InventoryApiResponse, ProfilesApiResponse } from "./api-types.mts";
+import { loadProfiles } from "./profiles.mts";
+import type { InventoryApiResponse } from "./api-types.mts";
 
 // api() throws with the server's own message ("internal error"); the panels a failed load writes into also need
 // to know which request it was.
@@ -23,8 +24,9 @@ export function get<T>(path: string): Promise<T> { return api<T>(path).catch((e:
 export async function reload(): Promise<void> {
   // The Organize setup comes with the inventory (labels change how locations read); a failed one leaves the
   // locations unlabelled, and the Organize screen says why when it is opened.
-  const [inv, prof] = await Promise.all([get<InventoryApiResponse>("/api/inventory"), get<ProfilesApiResponse>("/api/profiles"), loadOrganize().catch(() => undefined)]);
-  state.inv = inv.inventory; state.profiles = prof.profiles; state.builtinTemplates = prof.builtinTemplates || {};
+  // The profiles are read in turn with the page's saves (ui/profiles.mts), which set them.
+  const [inv] = await Promise.all([get<InventoryApiResponse>("/api/inventory"), loadProfiles().catch((e: Error) => { throw new Error(`/api/profiles failed: ${e.message}`); }), loadOrganize().catch(() => undefined)]);
+  state.inv = inv.inventory;
   void loadHouseLinks();   // Show on map, on item rows and in the Containers view
   state.itemCache.clear();   // a rescan can move or drop a piece — stale by-serial lookups must not survive it
   forgetTipMisses();
