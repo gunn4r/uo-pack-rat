@@ -64,10 +64,13 @@ test("[slow] refresh, Clear all, the virtual table and Forget keep the page's st
     // Wait for the filtered count: "160 of 160" is the moment before the filter applies.
     await waitCount(page, /^(?!160 of)\d+ of 160 stacks/);
     const filtered = await countText(page);
-    // The page's own module (same URL as its <script>, so the same instance). The refresh fetches the rows again: wait for that.
+    // The page's own module (same URL as its <script>, so the same instance). reload() redraws the filters (the chip) before it
+    // returns; the rows and their count follow from a debounced GET /api/items. The count is blanked first, so its coming back
+    // proves the table was drawn again from the refreshed answer.
     const refetched = page.waitForResponse((r) => new URL(r.url()).pathname === "/api/items");
+    await page.locator("#inv-foot .inv-count").evaluate((e) => { e.textContent = ""; });
     await page.evaluate(async (url) => { await (await import(url)).reload(); }, "/ui/inventory-data.mjs");
-    await refetched;
+    await (await refetched).finished();
     await waitCount(page, /stacks/);
     assert.equal(await page.locator("#f-slot").innerText(), "Slot: Bracelet", "the Slot chip still reads Bracelet after a refresh");
     assert.equal(await page.locator("#f-slot.set").count(), 1);

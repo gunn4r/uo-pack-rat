@@ -100,14 +100,16 @@ export async function settle<T>(read: () => Promise<T>, ok: (v: T) => boolean, m
 export async function animationsDone(page: Page, ms = 5_000): Promise<void> {
   await page.waitForFunction(() => document.getAnimations().every((a) => a.playState !== "running" || a.effect?.getComputedTiming().iterations === Infinity), undefined, { timeout: ms });
 }
-// Waits until `read` gives the same answer twice in a row, 50 ms apart (a layout that is still moving), up to `ms`.
+// Waits until `read` gives the same answer twice in a row, 50 ms apart (a layout that is still moving), and fails past `ms`.
+// Best effort: a layout that has not started to move yet reads as steady, so a later assertion still has to check the result.
 export async function steady<T>(read: () => Promise<T>, ms = 5_000): Promise<T> {
   const end = Date.now() + ms;
   let last = JSON.stringify(await read());
   for (;;) {
     await new Promise((r) => setTimeout(r, 50));
     const v = await read(), now = JSON.stringify(v);
-    if (now === last || Date.now() > end) return v;
+    if (now === last) return v;
+    if (Date.now() > end) throw new Error(`steady(): still changing after ${ms} ms: ${now}`);
     last = now;
   }
 }

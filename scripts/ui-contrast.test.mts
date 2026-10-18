@@ -34,7 +34,11 @@ function openWizardAt(steps: number): (page: Page) => Promise<void> {
   return async (page) => {
     await page.evaluate(async () => { await (await import("/ui/wizard.mjs" as string)).openWizard(); });
     await page.waitForSelector("#wizard[open] #wiz-primary");
-    for (let i = 0; i < steps; i++) await page.click("#wiz-primary");
+    for (let i = 0; i < steps; i++) {
+      const before = await page.locator("#wiz-q").innerText();
+      await page.click("#wiz-primary");
+      await page.waitForFunction((b) => document.querySelector("#wiz-q")?.textContent !== b, before, { timeout: 10_000 });   // the next step drawn
+    }
     await animationsDone(page);
   };
 }

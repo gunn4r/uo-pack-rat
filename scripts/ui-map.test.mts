@@ -1087,8 +1087,8 @@ test("[slow] House map: Show items opens the contents drawer as a column of its 
     assert.equal(await page.evaluate(() => document.activeElement?.closest("li[data-chest]")?.getAttribute("data-chest")), String(TOP));
     assert.equal(await page.evaluate(() => (document.activeElement as HTMLElement).dataset.act), "items");
     assert.equal(await page.locator("#map-panel li.open").count(), 0);
-    await animationsDone(page);
-    assert.ok(await page.locator("#tab-map .map-side").evaluate((e) => e.getBoundingClientRect().width) > 270, "the 280 px levels pane is back");
+    const side = (): Promise<number> => page.locator("#tab-map .map-side").evaluate((e) => e.getBoundingClientRect().width);
+    assert.ok(await until(side, (w) => w > 270, "the levels pane's width", 5_000) > 270, "the 280 px levels pane is back");
     // another stack swaps the drawer to that stack's top chest; ✕ closes it with focus on the stack
     await opener.click();
     await page.waitForSelector("#map-drawer .map-item");
@@ -1113,7 +1113,12 @@ test("[slow] House map: Show items opens the contents drawer as a column of its 
     assert.equal(await page.locator(`#map-drawer-bag-${SPARE}`).evaluate((e) => (e.parentElement as HTMLDetailsElement).open), false);
     const list = page.locator("#map-drawer-body");
     // resolved by the scroll event, after the drawer's own listener has kept the position
-    const scrolled = await list.evaluate((e) => new Promise<number>((done) => { e.addEventListener("scroll", () => done(e.scrollTop), { once: true }); e.scrollTop = 200; }));
+    // (or after 2 s with no scroll event, so a list that cannot scroll fails the check below instead of hanging)
+    const scrolled = await list.evaluate((e) => new Promise<number>((done) => {
+      const late = setTimeout(() => done(e.scrollTop), 2_000);   // sleep: the fallback when no scroll event comes
+      e.addEventListener("scroll", () => { clearTimeout(late); done(e.scrollTop); }, { once: true });
+      e.scrollTop = 200;
+    }));
     assert.ok(scrolled > 50, `the list scrolls (${scrolled})`);
     writeVault(dir, true, [{ serial: 0x40500300, name: "Pearl 41", in: SUPPLIES }]);
     await page.evaluate(async () => { await (await import("/ui/inventory-data.mjs" as string)).reload(); });
@@ -1231,7 +1236,7 @@ test("[slow] House map: the contents drawer's handle resizes it by drag (kept ac
         let min = Infinity;
         document.querySelector<HTMLButtonElement>(`#map-panel li[data-chest="${top}"] [data-act="items"]`)!.click();
         const t0 = performance.now();
-        while (performance.now() - t0 < 1500) { min = Math.min(min, stage.getBoundingClientRect().width); await new Promise((r) => { requestAnimationFrame(r); setTimeout(r, 50); }); }   // a throttled window's frames can stall
+        while (performance.now() - t0 < 1500) { min = Math.min(min, stage.getBoundingClientRect().width); await new Promise((r) => { requestAnimationFrame(r); setTimeout(r, 50); }); }   // sleep: one step of the 1.5 s sampling; a throttled window's frames can stall
         return Math.round(min);
       }, TOP);
       await page.waitForSelector("#map-drawer .map-item");
