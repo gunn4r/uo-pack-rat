@@ -8,18 +8,18 @@ Read this section first; the rest of the file is the reference, feature by featu
 
 1. `app/build-spec.mts` (`planBuild`): a character's BuildSpec into the base, plan, profile, buffs, pool and options. The page, MCP and the route all build through it.
 2. `app/http/routes/optimize.mts` (`POST /api/optimize`): validates the body, then prepares the solve in this order: the optional slots (`optionalSlotsFor`), the rarity tie costs (`stampTieCost`), the reachable Resisting Spells steps (`withReachableResistSteps`), the SSI step table and the scaled hard-floor bonus (`poolStepsFor`, `withHardFloorBonus`), the run key (`runKey`, `app/runs-lib.mts`), then the pre-build diagnostics. `app/services/jobs.mts` runs the job in a worker.
-3. `app/optimize-worker.mts`: works out the step table again, runs `solveExact` (`app/exact-solver.mts`) or, when HiGHS doesn't load, the core's `optimizeSuit`, then finishes the result: the swing (`app/swing.mts`), the tie-break and Strict order summaries, the diagnostics (`app/diagnostics.mts`) and the score shares.
+3. `app/optimize-worker.mts`: works out the step table again, runs `solveExact` (`app/exact-solver.mts`) for an exact build (which falls back to the core's heuristic when HiGHS doesn't load) or the core's `optimizeSuit` for a heuristic one, then finishes the result: the swing (`app/swing.mts`), the tie-break and Strict order summaries, the diagnostics (`app/diagnostics.mts`) and the score shares.
 4. `scripts/optimizer-core.mts`: the heuristic search, its branch-and-bound, and `scoreSet`, the scorer of record.
 5. `app/mip.mts` (`buildSuitMip`, `startVector`, `heldModel`) builds the MIP; `app/mip-solve.mts` is the narrow adapter around HiGHS; `app/exact-solver.mts` runs the stages and hands the winning suit back to the core.
 6. `app/evaluate.mts` (`evaluateSuit`): one suit's paperdoll for every screen and tool; `app/vault-lib.mts`'s `requirementReport` gives the requirement rows.
 
-**The invariants.** Each is held by the tests or by the exact solver's own guards; a change that breaks one is a bug, not a trade-off:
+**The invariants.** Each is held by the tests, the exact solver's guards or code review (the `runKey` one is a convention nothing checks); a change that breaks one is a bug, not a trade-off:
 
 - The core is the one scorer of record. `solveExact` always hands its winning suit back to the core, and every number a result carries is the core's. Its guards revoke `proven` and warn when HiGHS's objective, the core's re-score and the heuristic disagree.
-- For any suit, the MIP's objective at `startVector(suit)` plus `scoreOffset` equals the core's `scoreSet(suit)`. The exact solver checks this on every suit it returns (HiGHS's objective against the core's re-score).
+- For any suit, the MIP's objective at `startVector(suit)` plus `scoreOffset` equals the core's `scoreSet(suit)`. The exact solver's guards catch a disagreement on the suit it returns (they compare HiGHS's objective with the core's result after the hand-back, which re-climbs from HiGHS's suit), and the fuzz suite on whole searches; no test checks it suit by suit yet.
 - Every profile transform happens before `runKey`, so the key covers it. A transform added after it silently reuses runs it shouldn't.
 - A change to what a build returns bumps `SOLVER_VERSION` (`app/runs-lib.mts`, with a line in its comment), so saved runs stop being reused as instant repeats.
-- The same seed gives byte-identical results.
+- The same seed and inputs give byte-identical results when no time limit cuts the search (the restarts all run and the exact phase proves).
 - `alternatives` never contains the returned suit.
 
 **The rules written twice.** The core and the MIP keep their own copies of these, marked `==` in the code. A change to one is a change to both; the third column says what catches a mismatch:
@@ -38,7 +38,7 @@ Read this section first; the rest of the file is the reference, feature by featu
 | SSI step credit | `optStepCredit` | `stepCredit` (`app/swing.mts`), the step loop in `startVector` | the fuzz suite |
 | The slots | `optDefaultSlots` | `GEAR_SLOTS` (`app/vault-lib.mts`, read by `app/mip.mts`) | `app/solver.test.mts` |
 | The optional slots | `optDefaultOptionalSlots` | `DEFAULT_OPTIONAL_SLOTS` (`app/mip.mts`) | `app/solver.test.mts` |
-| Default soft-floor bonus 1000 and partial credit 0.5 | in `optBuildSpace` and the profile normalisation | in `buildSuitMip` and `hardFloorSpread` (`app/mip.mts`); `SPEC_DEFAULTS.floorBonus` (`app/build-spec.mts`) | nothing direct |
+| Default soft-floor bonus 1000 and partial credit 0.5 | in `optBuildSpace` and the profile normalization | in `buildSuitMip` and `hardFloorSpread` (`app/mip.mts`); `SPEC_DEFAULTS.floorBonus` (`app/build-spec.mts`) | nothing direct |
 
 The core keeps its own copies because its header rule was "imports nothing, so it can be pasted into a game script". No adapter pastes it, and issue #338's quality pass moves these into one shared module; this table shrinks as that lands.
 
