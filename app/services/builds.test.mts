@@ -1,6 +1,6 @@
 // builds.test.mts — `app/services/builds.mts`, a checked build request into a started job or a saved run that answers it (issue #338).
 //
-// `[fast]`, on the TazUO fixture's inventory with a stand-in jobs service and run store: a by-character build submits the prepared input under its run key, saved, with the pool's figures on its meta and in the answer; a character with no scans is a 404; a saved run with the same key answers at once, and the newest run of the character is the warm start otherwise; a fill is never saved nor answered by a run, and a pin that is no gear piece of its slot is a 400; a hand-built request skips the pool step; and a full jobs service is a 429.
+// `[fast]`, on the TazUO fixture's inventory with a stand-in jobs service and run store: a by-character build submits the prepared input under its run key, saved, with the pool's figures on its meta and in the answer; a character with no scans is a 404; a saved run with the same key answers at once, and the newest run of the character is the warm start otherwise; a fill is never saved nor answered by a saved run, even one under its own key, and a pin that is no gear piece of its slot is a 400; a hand-built request skips the pool step; and a full jobs service is a 429.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { fixture, defaultProfiles } from "../solver-fixture.mts";
@@ -54,12 +54,17 @@ test("[fast] builds: a saved run with the key answers, else the character's newe
   assert.ok(warm.submitted[0]!.input.opts.warmStart, "the warm start rides on the options");
 });
 
-test("[fast] builds: a fill is never saved nor answered by a run; a bad pin, a hand-built request and a full service", async () => {
+test("[fast] builds: a fill is never saved nor answered by a saved run, even one under its own key; a bad pin, a hand-built request and a full service", async () => {
   const piece = Object.values(inv.items).find((it) => it.gear && it.slot === "ring")!;
   const fill = service({ runs: [] });
   await fill.builds.start(request({ pinned: { ring: piece.serial } }), null);
   assert.equal(fill.submitted[0]!.save, false);
   assert.equal((await fill.builds.start(request({ pinned: { neck: piece.serial } }), null)).status, 400);
+  // a saved run under the fill's own key does not answer it: the fill is searched
+  const saved = { id: "run1", key: fill.submitted[0]!.key, character: "Fixture", result: { best: {}, method: "heuristic" } } as unknown as SavedRun;
+  const again = service({ runs: [saved] });
+  const searched = await again.builds.start(request({ pinned: { ring: piece.serial } }), null);
+  assert.deepEqual([searched.body.cached, again.submitted.length, again.submitted[0]!.key], [undefined, 1, saved.key]);
 
   const hand = service();
   const pools = { ring: [{ serial: 1, name: "r", slot: "ring", props: { hci: 5 } }] };
