@@ -214,7 +214,7 @@ The thresholds are the shard rules' `unravel` (Shard rules, above); `GET /api/it
 | Module | Role | Owns |
 |---|---|---|
 | `app/mcp-tools.mts` | The MCP server's tools (issue #211; the protocol and the listener are app/mcp.mts), one table entry each, calling the app's own routes over loopback, and where the page computes before a route, calling the same shared function; tools that wait stop at 45 s by default, 50 at most. | `TOOLS`, `INSTRUCTIONS`, `ToolContext` |
-| `app/mcp.mts` | Pack Rat's built-in MCP server (issue #211): a second loopback listener inside the server process that speaks the stateless subset of MCP's Streamable HTTP transport, so Claude Code and other MCP clients can search the inventory, read character sheets and saved runs, run the Suit Builder and, with a second switch, act in game. | `createMcp`, `readMcpConfig`, `writeMcpConfig`, `PROTOCOL_VERSIONS`, `MCP_DEFAULT_PORT` |
+| `app/mcp.mts` | Pack Rat's built-in MCP server (issue #211): a second loopback listener inside the server process that speaks the stateless subset of MCP's Streamable HTTP transport, so Claude Code and other MCP clients can search the inventory, read character sheets and saved runs, run the Suit Builder and, with a second switch, act in game. | `createMcp`, `PROTOCOL_VERSIONS` |
 <!-- module-map:end -->
 
 ## HTTP API contract
@@ -271,6 +271,7 @@ The route map is checked against the routes `app/http/routes/` registers by `scr
 | `app/store/house-claims.mts` | <data>/house-claims.json (issue #299): the houses the player claimed, which the TazUO panel writes too: only valid entries read, which claims a house's bounds fall under, and the claims made at the first start from the houses already named. | `createHouseClaimsStore`, `claimsOver`, `claimsFromHouseMap`, `MAX_CLAIMS` |
 | `app/store/item-kinds.mts` | <data>/item-kinds.json: the player's own item kinds (issue #150, app/item-kinds.mts; the /api/item-kinds routes). | `createItemKindsStore` |
 | `app/store/json-file.mts` | The one way a store reads and writes a JSON data file: each reader's bad-file policy named (empty, aside, skip), the writer's folder, atomic write, indent and trailing newline, the 409 for a file a newer Pack Rat made, and a file's content stamp for saves that name what they read. | `readJsonFile`, `writeJsonFile`, `updater`, `newerOnDisk`, `refuseNewer`, `fileStamp` |
+| `app/store/mcp-config.mts` | <data>/mcp.json (issue #211, app/mcp.mts): the built-in MCP server's switches, port and token, read field by field with each bad one falling back to its default, and written whole. | `createMcpConfigStore`, `readMcpConfig`, `writeMcpConfig`, `defaultMcpConfig`, `MCP_DEFAULT_PORT` |
 | `app/store/organize-state.mts` | <data>/organize-state.json: Organize's results overlay (app/organize-state.mts). | `createOrganizeStateStore` |
 | `app/store/organize.mts` | <data>/organize.json: Organize's setup (issue #11, app/organize-config.mts; GET/PUT /api/organize). | `createOrganizeStore` |
 | `app/store/profiles.mts` | <data>/profiles.json, the Suit Builder's characters and templates (GET/PATCH /api/profiles): seeded from the defaults, a damaged file moved aside and reseeded, an old shape migrated (with <data>/ui-prefs.json beside it) after a dated backup of each, a newer one read-only, and the shard's built-in templates read. | `createProfilesStore` |
