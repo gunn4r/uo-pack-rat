@@ -9,7 +9,7 @@
 // errors, listens and closes.
 // Every text/html response carries the Content-Security-Policy (app/http/respond.mts, including frame-ancestors
 // 'none'); every response carries x-content-type-options: nosniff and x-frame-options: DENY. Any
-// PUT/POST whose body is read must declare content-type: application/json, else 415 (readBody()) —
+// PUT/POST/PATCH whose body is read must declare content-type: application/json, else 415 (readBody()) —
 // the SSE cancel beacon sends no body, so it's exempt — and its body must be a JSON OBJECT, else 400
 // (asObject()). Files and directories this server creates are 0600/0700 (a no-op on Windows).
 // The optimizer is scripts/optimizer-core.mts, run straight from source (no build step) — every
