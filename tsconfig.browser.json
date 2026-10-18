@@ -11,6 +11,8 @@
     "app/ui/**/*",
     "app/api/**/*",
     "app/vault-lib.*",
+    "app/domain/rules.*",
+    "app/domain/properties.*",
     "app/item-query.*",
     "app/unravel.*",
     "app/organize-config.*",

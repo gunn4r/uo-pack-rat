@@ -11,6 +11,7 @@ Three files keep names from before the project became Pack Rat: `app/vault-serve
 <!-- module-map:start scan -->
 | Module | Role | Owns |
 |---|---|---|
+| `app/domain/properties.mts` | The property registry (every property key the app knows, in display order) and what is derived from it: the tooltip patterns, labels and full names, a property in words, the typical ranges and importance conversion, skill-bonus names, and the five resists' names. | `PROPERTIES`, `PropKey`, `PROP_PATTERNS`, `PROP_LABELS`, `PROP_FULL`, `NOT_BUILDER_KEYS`, `typicalRange`, `importanceOf`, `weightOfImportance`, `SKILL_NAMES`, `labelOf`, `fullOf`, `propName`, `RESIST_META`, `RESIST_KEYS` |
 | `app/import.mts` | The import paths that aren't "an adapter dropped a file and the watcher noticed": a player pasting what the ClassicUO web client's sandboxed scanner printed (it cannot write files at all), and a manual rescan for a player whose folder watcher missed a drop. | `writeScanToInbox` |
 | `app/missing.mts` | Missing since last scan (issue #99): what a root's previous scan saw that is nowhere in the fold now. | `missingSinceLastScan`, `MissingItem` |
 | `app/paste-scan.mts` | Making sense of a pasted scan: find the JSON in what the player pasted, parse it, and run it through the same upgrade + schema validation an inbox file gets. | `parsePastedScan`, `PASTE_BEGIN`/`PASTE_END`, `jsonErrorReason` |
@@ -56,6 +57,7 @@ Three files keep names from before the project became Pack Rat: `app/vault-serve
 <!-- module-map:start rules -->
 | Module | Role | Owns |
 |---|---|---|
+| `app/domain/rules.mts` | The shard rules the kernel reads, set once by the loader: setRules() hands them in (app/rules.mts loads and checks the file, Node-only), getRules() reads them and throws until then, so a forgotten call is loud rather than a silent wrong answer. | `setRules`, `getRules` |
 | `app/rules.mts` | Loads a shard's rules file (app/rules/<id>.json, or userRulesDir/<id>.json first when given) and validates it against app/schema/rules.v1.schema.json before anything downstream sees it. | `loadRules`, `listRules`, `DEFAULT_SHARD`, `scrollBinderProblem`, `slayerGroupsProblem` |
 <!-- module-map:end -->
 
