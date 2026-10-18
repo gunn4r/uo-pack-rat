@@ -37,9 +37,9 @@ const OVERFLOW_DRAIN_BYTES = 4 * 1024 * 1024;
 
 export function readBody(req: http.IncomingMessage, { limit = 50e6, tooLargeMsg = "body too large", requireBody = false }: ReadBodyOptions = {}): Promise<unknown> {
   return new Promise((resolve, reject) => {
-    // Global Constraint (spec §4.5): a PUT/POST must declare a JSON body. The SSE cancel beacon
+    // Global Constraint (spec §4.5): a PUT/POST/PATCH must declare a JSON body. The SSE cancel beacon
     // (navigator.sendBeacon, no body) never calls readBody, so it's naturally exempt.
-    if ((req.method === "PUT" || req.method === "POST") && !isJsonContentType(req.headers["content-type"])) {
+    if ((req.method === "PUT" || req.method === "POST" || req.method === "PATCH") && !isJsonContentType(req.headers["content-type"])) {
       req.resume();   // drain the body instead of leaving it unread — else a large rejected body can
                        // surface to the client as a connection error rather than the clean 415 below.
       const e = new Error("content-type must be application/json") as HttpError;
