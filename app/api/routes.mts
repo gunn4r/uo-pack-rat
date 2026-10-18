@@ -7,6 +7,7 @@
 // map: api
 // owns: `ApiRoutes`, `ApiEntry`, `Untyped`, `EventStream`, `Png`, `ApiResponse`, `ApiBody`
 import type { HouseApiResponse, HousesApiResponse } from "../house-model-types.mts";
+import type { InventoryApiResponse, ItemHitsApiResponse, ItemsApiResponse, ItemsBySerialApiResponse, MissingApiResponse } from "./inventory.mts";
 import type { OrganizePlanApiResponse, OrganizeProposeApiResponse, OrganizeProposeBody } from "../organize-types.mts";
 import type { RunBody, RunsListBody, RunSummary } from "../runs-types.mts";
 import type { CleanupApiResponse, CleanupBody, InstallApiResponse, InstallBody, LocateApiResponse, LocateBody, PasteScannerApiResponse, RulesApiResponse, SettingsApiResponse, SettingsPutBody, SetupApiResponse, UpdateCheckApiResponse } from "./setup.mts";
@@ -48,10 +49,10 @@ export interface ApiRoutes {
   "POST /api/import/paste": Untyped;
   "POST /api/import/rescan": Untyped;
   // inventory.mts
-  "GET /api/inventory": Untyped;
-  "GET /api/missing": Untyped;
-  "GET /api/items": Untyped;
-  "GET /api/items/by-serial": Untyped;
+  "GET /api/inventory": ApiEntry<InventoryApiResponse>;
+  "GET /api/missing": ApiEntry<MissingApiResponse>;
+  "GET /api/items": ApiEntry<ItemsApiResponse | ItemHitsApiResponse>;   // ItemHitsApiResponse with fields=hits
+  "GET /api/items/by-serial": ApiEntry<ItemsBySerialApiResponse>;
   // kinds.mts
   "GET /api/item-kinds": Untyped;
   "POST /api/item-kinds": Untyped;
