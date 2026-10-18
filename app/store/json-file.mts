@@ -1,12 +1,13 @@
-// json-file.mts — the one way a store reads and writes a JSON data file: each reader's bad-file policy named (empty, aside, skip), the writer's folder, atomic write, indent and trailing newline, and the 409 for a file a newer Pack Rat made. Reading names what a bad file means to its reader (onBad); writing creates the folder and replaces the file atomically with the data folder's file mode; refuseNewer keeps a save off a file a newer Pack Rat made.
+// json-file.mts — the one way a store reads and writes a JSON data file: each reader's bad-file policy named (empty, aside, skip), the writer's folder, atomic write, indent and trailing newline, the 409 for a file a newer Pack Rat made, and a file's content stamp for saves that name what they read. Reading names what a bad file means to its reader (onBad); writing creates the folder and replaces the file atomically with the data folder's file mode; refuseNewer keeps a save off a file a newer Pack Rat made.
 //
 // - "empty": a missing, oversized, unreadable or unparsable file reads as `salvage(undefined)`, and a parsed one as `salvage(doc)`; a salvage that throws on the parsed document reads as an empty file too. Nothing on disk changes.
 // - "aside": a bad file (oversized, unparsable, unreadable, or refused by `check`) is moved aside as <file>.corrupt and reported, so the next write cannot overwrite what was in it. A missing file reads as `{missing: true}`. With `ioErrors: "throw"`, a failed read (a missing file included) throws instead, since it says nothing about the file's contents.
 // - "skip": any failure throws, for a reader that skips that file and says why (one scan or run in a folder).
 //
 // map: server
-// owns: `readJsonFile`, `writeJsonFile`, `newerOnDisk`, `refuseNewer`
-import { mkdirSync } from "node:fs";
+// owns: `readJsonFile`, `writeJsonFile`, `newerOnDisk`, `refuseNewer`, `fileStamp`
+import { createHash } from "node:crypto";
+import { mkdirSync, readFileSync } from "node:fs";
 import { basename, dirname } from "node:path";
 import { moveAside, readBounded, writeFileAtomic } from "../atomic-write.mts";
 import { DATA_DIR_MODE, DATA_FILE_MODE } from "../config.mts";
@@ -60,4 +61,12 @@ export function newerOnDisk(path: string, kind: DocKind): string | null {
 export function refuseNewer(path: string, kind: DocKind): void {
   const why = newerOnDisk(path, kind);
   if (why) throw Object.assign(new Error(why), { statusCode: 409 }) as HttpError;
+}
+// A file's content stamp (issue #280): 16 hex digits of its SHA-256, or "none" for a missing file (never a stamp). A save
+// that names the stamp it read is refused once the file has changed, so two writers cannot overwrite each other.
+export const MISSING_STAMP = "none";
+export function fileStamp(path: string): string {
+  let bytes: Buffer;
+  try { bytes = readFileSync(path); } catch (e) { if ((e as NodeJS.ErrnoException).code === "ENOENT") return MISSING_STAMP; throw e; }
+  return createHash("sha256").update(bytes).digest("hex").slice(0, 16);
 }
