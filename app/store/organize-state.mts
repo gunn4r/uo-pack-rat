@@ -4,12 +4,12 @@
 // owns: `createOrganizeStateStore`
 import { salvageOrganizeState, type OrganizeState } from "../organize-state.mts";
 import { migrate } from "../migrate.mts";
-import { readJsonFile, writeJsonFile } from "./json-file.mts";
+import { readJsonFile, updater, writeJsonFile } from "./json-file.mts";
 
 // Only this server writes it; a damaged one reads as empty, which at worst plans a finished move again (the bridge
 // then finds the item gone and says so). `file` is also what the inventory's signature stats.
 export function createOrganizeStateStore(file: string) {
   const read = (): OrganizeState => readJsonFile(file, { maxBytes: 4e6, onBad: "empty", salvage: (doc) => salvageOrganizeState(migrate("organize-state", doc).doc) });
   const write = (state: OrganizeState): void => writeJsonFile(file, state, { indent: 1 });
-  return { file, read, write };
+  return { file, read, write, update: updater(read, write) };
 }
