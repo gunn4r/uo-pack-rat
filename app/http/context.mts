@@ -24,6 +24,7 @@ import type { createOrganizeStore } from "../store/organize.mts";
 import type { createOrganizeStateStore } from "../store/organize-state.mts";
 import type { createRunsStore } from "../store/runs.mts";
 import type { createScansStore } from "../store/scans.mts";
+import type { createPanelPrefsStore } from "../store/panel-prefs.mts";
 
 // What only a real desktop shell (Electron) can supply to startServer — see the `host` parameter
 // note in app/vault-server.mts. `title` stays `unknown` rather than `string` because it begins life as a request-body
@@ -69,9 +70,7 @@ export interface ServerContext {
   organizeStateStore: ReturnType<typeof createOrganizeStateStore>;
   runStore: ReturnType<typeof createRunsStore>;
   scanStore: ReturnType<typeof createScansStore>;
-  // <data>/tazuo-panel.json, and a change merged into it (app/tazuo-panel.mts)
-  panelPrefsFile: string;
-  savePanel: (change: object) => void;
+  panelPrefsStore: ReturnType<typeof createPanelPrefsStore>;
   watchers: Map<string, WatcherHandle>;
   // the timeouts and stream pings close() must stop
   timers: Set<NodeJS.Timeout>;
