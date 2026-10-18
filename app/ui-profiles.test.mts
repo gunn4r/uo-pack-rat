@@ -26,6 +26,7 @@ globalThis.fetch = (async (path: string, init?: RequestInit) => {
   }
   if (path === "/api/profiles" && method === "PATCH") {
     const { edits } = JSON.parse(String(init!.body)) as { edits: ProfileEdit[] };
+    if (server.hold) await server.hold;
     const was = stamp(), refused = applyProfileEdits(server.doc as unknown as ProfilesV3, edits, { builtins: {}, canLabel: () => true });
     if (refused) return answer(409, { ok: false, code: "conflict", error: refused });
     server.n++;
@@ -40,7 +41,7 @@ function fresh(doc: Doc = { characters: {}, templates: {} }): void {
   state.profiles = structuredClone(doc) as unknown as ProfilesV3;
   state.profilesStamp = stamp();
 }
-// Holds every PUT at the server until the returned function is called.
+// Holds every PUT and PATCH at the server until the returned function is called.
 function holdPuts(): () => void {
   let release!: () => void;
   server.hold = new Promise((r) => { release = r; });
@@ -141,5 +142,18 @@ test("[fast] profiles: a label saved over the file this page read takes its stam
   server.doc.templates.Other = { spec: {} }; server.n++;   // saved elsewhere since this page read it
   assert.equal(await setCharacterLabel("Bo", "Main"), true);
   assert.deepEqual(Object.keys(state.profiles!.templates), ["Other"], "the rest is read again");
+  assert.equal(state.profilesStamp, stamp());
+});
+
+test("[fast] profiles: edits answered after a copy was read meanwhile read the file again rather than take its stamp", async () => {
+  fresh({ characters: { Bo: { spec: {} } }, templates: {} });
+  const release = holdPuts();
+  const saving = setCharacterLabel("Bo", "Main");
+  // another reader answered before the label landed: the file without it, and its stamp
+  const before = await (await fetch("/api/profiles")).json() as { profiles: ProfilesV3; stamp: string };
+  state.profiles = before.profiles; state.profilesStamp = before.stamp;
+  release();
+  assert.equal(await saving, true);
+  assert.equal((state.profiles!.characters.Bo as { label?: string }).label, "Main", "the page's copy is the file, label included");
   assert.equal(state.profilesStamp, stamp());
 });
