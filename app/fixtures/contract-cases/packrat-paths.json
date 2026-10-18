@@ -1,0 +1,17 @@
+{
+  "$comment": "Cases for packrat-paths.json (app/schema/packrat-paths.v1.schema.json). `reads` is what both the scripts' data_dir() (adapters/test_adapters.py) and the app's data-folder check (app/installer.test.mts) make of `doc`: \"dataDir\" (the folder it names, `~` meaning the home folder), \"default\" (~/.pack-rat, with no $PACKRAT_DATA), or \"error\" (the scripts raise, so they fail at start, and Setup reports the file as unreadable). `schema` is whether the schema accepts it.",
+  "cases": [
+    { "why": "an absolute folder", "doc": { "dataDir": "/srv/pack-rat-data" }, "reads": "dataDir", "schema": true },
+    { "why": "a folder under the home folder", "doc": { "dataDir": "~/PackRatData" }, "reads": "dataDir", "schema": true },
+    { "why": "a field a newer build adds", "doc": { "dataDir": "/srv/pack-rat-data", "note": "x" }, "reads": "dataDir", "schema": true },
+    { "why": "the home folder itself", "doc": { "dataDir": "~" }, "reads": "dataDir", "schema": true },
+    { "why": "a relative folder, which would land under the game client's working folder", "doc": { "dataDir": "data" }, "reads": "error", "schema": false },
+    { "why": "another user's home folder", "doc": { "dataDir": "~user/x" }, "reads": "error", "schema": false },
+    { "why": "no dataDir", "doc": {}, "reads": "default", "schema": true },
+    { "why": "an empty dataDir", "doc": { "dataDir": "" }, "reads": "default", "schema": true },
+    { "why": "a null dataDir", "doc": { "dataDir": null }, "reads": "default", "schema": false },
+    { "why": "a dataDir that is a number", "doc": { "dataDir": 5 }, "reads": "error", "schema": false },
+    { "why": "a dataDir that is a list", "doc": { "dataDir": ["/srv"] }, "reads": "error", "schema": false },
+    { "why": "not an object", "doc": ["/srv/pack-rat-data"], "reads": "error", "schema": false }
+  ]
+}

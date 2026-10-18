@@ -259,6 +259,7 @@ The thresholds are the shard rules' `unravel` (Shard rules, above); `GET /api/it
 | Also here | Role | Owns |
 |---|---|---|
 | `app/schema/house-claims.v1.schema.json` | One entry of `<data>/house-claims.json`, which the app and the TazUO panel both write: `app/store/house-claims.mts` checks entries against it, and its accept and reject cases (`app/fixtures/contract-cases/house-claims.json`) run in the TypeScript and the Python suites. | the house claims shape |
+| `app/schema/blacklist.v1.schema.json` | One entry of `<data>/scan-blacklist.json`, which the app and the game clients' blacklist scripts both write: `app/store/blacklist.mts` checks entries against it, and its shared cases (`app/fixtures/contract-cases/blacklist.json`) say what the app keeps and what the scanners still skip. | the blacklist shape |
 
 The services below are factories with explicit dependencies (stores, getters, a log function), built once by `startServer` and never importing `app/http/`:
 
@@ -310,6 +311,7 @@ What still lives inside `startServer`: the startup warning; the wiring of the st
 | `adapters/tazuo/`, `adapters/razor-enhanced/`, `adapters/classicuo-web/` | Each game client's scripts, `adapters/<id>/capabilities.json` (the manifest, `app/schema/adapter-manifest.v1.schema.json`) and README (`docs/adapter-guide.md`). | the adapter contract and install facts, `ADAPTER_VERSION` |
 | `app/schema/tazuo-panel.v1.schema.json` | `<data>/tazuo-panel.json`, which the app and the TazUO panel both write and read field by field: the shape, and the shared cases (`app/fixtures/contract-cases/tazuo-panel.json`) both readers run. | the panel prefs shape |
 | `app/schema/put-away.v1.schema.json` | Put away's two files between the TazUO panel and the app: the request the panel drops in its inbox and the answer the app writes back, with the shared request cases (`app/fixtures/contract-cases/put-away.json`). | the Put away shapes |
+| `app/schema/packrat-paths.v1.schema.json` | The packrat-paths.json beside the installed game scripts, naming the data folder they write into: the shape, and the shared cases (`app/fixtures/contract-cases/packrat-paths.json`) the scripts' `data_dir()` and Setup's data-folder check both run. | the paths file shape |
 | `adapters/_shared/` | The shared Python helper fragments: one file per helper family, `<adapter>/` for one adapter's own. Not shipped. | the shared adapter helpers |
 | `adapters/fake_clients.py`, `adapters/test_adapters.py`, `adapters/test_scanners.py`, `adapters/test_bridges.py`, `adapters/test_panel.py` | Fake game clients and the adapter tests, run by `app/adapters.test.mts`. | — |
 
