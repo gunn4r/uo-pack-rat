@@ -14,8 +14,9 @@ import { bridgeActionReason, runBridgeAction } from "./bridge.mts";
 import { relativeWhen } from "./messages.mts";
 import { txt, box, button, badge, meter, tipWrap, kbd } from "./components.mts";
 import type { IconName } from "./components.mts";
-import { plural } from "./inv-model.mts";
+
 import { rarityEl, locationEl, tagEls, tagWords } from "./item-parts.mts";
+import { plural } from "./format.mts";
 
 let current: Item | null = null;
 let hooks: { step: (delta: number) => void; closed: (focusRow: boolean) => void } = { step: () => {}, closed: () => {} };

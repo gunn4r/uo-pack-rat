@@ -6,8 +6,7 @@
 // owns: `scanPreview`
 import type { ScanV2 } from "../schema/types.d.mts";
 import { shortName, type AdapterForCopy } from "./adapter-copy.mts";
-
-export const plural = (n: number, one: string, many = `${one}s`): string => `${n.toLocaleString("en-US")} ${n === 1 ? one : many}`;
+import { plural } from "./format.mts";
 
 // "44 KB pasted": the size of the text, so a player can see at a glance that a paste came through whole.
 export function sizeText(bytes: number): string {

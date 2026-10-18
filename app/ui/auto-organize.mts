@@ -12,10 +12,11 @@ import { api } from "./api.mts";
 import { box, txt, button, badge, message, segmented, check, table, tipWrap, createDrawer, type DrawerHandle } from "./components.mts";
 import { containerArt } from "./item-art.mts";
 import { errorText } from "./messages.mts";
-import { plural } from "./inv-model.mts";
+
 import { saveConfig } from "./organize-data.mts";
 import { STRATEGY_TEXT, TICK_SCOPE_TEXT, candidateGroups, candidateNote, proposalHeadline, groupStatus, groupAway, intoText, proposalNotes, proposalStays, canTrySimple, acceptGate, debounced, MATCH_DEBOUNCE_MS } from "./organize-model.mts";
 import type { AutoStrategy, OrganizeProposal, OrganizeProposeApiResponse } from "./api-types.mts";
+import { plural } from "./format.mts";
 
 // The drawer's state: the strategy, the ticked chests (null until the first proposal says which it ticks by
 // default), the last proposal and the setup it was worked out from (Accept works it out again when the setup has

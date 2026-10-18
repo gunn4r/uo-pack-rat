@@ -18,7 +18,7 @@ import { api } from "./api.mts";
 import { txt, box, button, message, select, openDialog, icon, segmented } from "./components.mts";
 import { prefs } from "./prefs.mts";
 import { errorText } from "./messages.mts";
-import { plural } from "./inv-model.mts";
+
 import { parseRoute, registerScreen } from "./nav.mts";
 import { rarityEl } from "./item-parts.mts";
 import { grabAll } from "./bridge.mts";
@@ -26,6 +26,7 @@ import { emptySelection, isSelected, isWorn, toggleRows, toggleLoaded, grabItems
 import { openPicker, startMove, placeOf, gate } from "./move-to.mts";
 import { gatherWeight, gatherButton, GATHER_LOOSE, GATHER_GROUND } from "./unravel-model.mts";
 import type { ItemsApiResponse, MovePlanApiResponse, SettingsApiResponse, UiPrefs } from "./api-types.mts";
+import { plural } from "./format.mts";
 
 type Group = "relic" | "held" | "essence" | "residue";
 let rows: UnravelRow[] | null = null;
