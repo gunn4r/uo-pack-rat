@@ -79,9 +79,9 @@ Several people or agents often work on this repository at once, each on a branch
 
 - **Merge, don't rebase.** Merge `origin/main` into your branch before each push, and never force-push a branch that has a pull request.
 - **Re-run the generators after every merge.** A generated block is never resolved by hand: take either side of the conflict, then run `npm run gen:test-index` (`TESTING.md`'s test index), `npm run gen:modules` (`docs/module-map.md`'s tables) and `npm run gen:contracts` (the adapter scripts' shared helpers), and commit what they write. Their guard tests fail while a block is stale.
-- **One changelog fragment per pull request**, `changelog.d/<short-name>.md`, never a line in `CHANGELOG.md` (Changelog, above).
+- **One changelog fragment per pull request**, `changelog.d/<issue>-<short-name>.md`, never a line in `CHANGELOG.md` (Changelog, above). The leading issue number is what orders the fragments at release, newest first.
 - **One session per screen module at a time.** When two pieces of work touch the same screen module (`app/ui/builder.mts` took eight resolved merges in one day), whoever splits the work serializes them, or names in each brief the functions that work owns so the changes stay apart. A brief lists the files the work will touch, so an overlap with work already running shows before it starts.
-- **Test a stack together.** `npm run try <pr> <pr>…` (`scripts/try-pr.sh`) merges several pull requests into one scratch worktree and starts the app there (`TESTING.md`).
+- **Test a stack together.** `npm run try -- <pr> <pr>…` (`scripts/try-pr.sh`) merges several pull requests into one scratch worktree and starts the app there (`TESTING.md`).
 - **A flaky test is re-run once, then filed.** Re-run a failed CI job once and say so in the pull request. If it fails again, or the failure is new, open an issue with the run's link and the test's name before re-running more; never retry silently.
 
 ## The scrub guard

@@ -34,9 +34,9 @@ Read this first, then `CONTRIBUTING.md` for the full contributor guide.
 
 - Merge `origin/main` before each push; never rebase or force-push a branch with a pull request.
 - After a merge, re-run every generator (`npm run gen:test-index`, `npm run gen:modules`, `npm run gen:contracts`) rather than hand-resolving a generated block.
-- A changelog entry is a new `changelog.d/<short-name>.md`, never a line in `CHANGELOG.md`.
+- A changelog entry is a new `changelog.d/<issue>-<short-name>.md` (the issue number orders it at release), never a line in `CHANGELOG.md`.
 - Two sessions on the same screen module are serialized, or their briefs name disjoint functions; a brief lists the files it touches.
-- `npm run try <pr> <pr>…` tests a stack of pull requests together.
+- `npm run try -- <pr> <pr>…` tests a stack of pull requests together.
 - A flaky CI failure is re-run once and named in the pull request; a second failure, or a new flake, gets an issue with the run link first (`CONTRIBUTING.md`, Working in parallel).
 
 ## Contract rules
