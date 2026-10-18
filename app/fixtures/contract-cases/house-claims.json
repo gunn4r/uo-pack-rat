@@ -38,6 +38,10 @@
     { "why": "claimedAt past 40 characters", "entry": { "id": "1-1-1", "facet": 1, "bounds": { "x0": 1, "y0": 1, "x1": 2, "y1": 2 }, "claimedAt": "01234567890123456789012345678901234567890" } },
     { "why": "by empty", "entry": { "id": "1-1-1", "facet": 1, "bounds": { "x0": 1, "y0": 1, "x1": 2, "y1": 2 }, "claimedAt": "t", "by": "" } },
     { "why": "by null", "entry": { "id": "1-1-1", "facet": 1, "bounds": { "x0": 1, "y0": 1, "x1": 2, "y1": 2 }, "claimedAt": "t", "by": null } },
-    { "why": "by past 64 characters", "entry": { "id": "1-1-1", "facet": 1, "bounds": { "x0": 1, "y0": 1, "x1": 2, "y1": 2 }, "claimedAt": "t", "by": "01234567890123456789012345678901234567890123456789012345678901234" } }
+    { "why": "by past 64 characters", "entry": { "id": "1-1-1", "facet": 1, "bounds": { "x0": 1, "y0": 1, "x1": 2, "y1": 2 }, "claimedAt": "t", "by": "01234567890123456789012345678901234567890123456789012345678901234" } },
+    { "why": "id with surrounding spaces", "entry": { "id": " 1-1-1 ", "facet": 1, "bounds": { "x0": 1, "y0": 1, "x1": 2, "y1": 2 }, "claimedAt": "t" } },
+    { "why": "bounds null", "entry": { "id": "1-1-1", "facet": 1, "bounds": null, "claimedAt": "t" } },
+    { "why": "claimedAt a number", "entry": { "id": "1-1-1", "facet": 1, "bounds": { "x0": 1, "y0": 1, "x1": 2, "y1": 2 }, "claimedAt": 20261018 } },
+    { "why": "by a number", "entry": { "id": "1-1-1", "facet": 1, "bounds": { "x0": 1, "y0": 1, "x1": 2, "y1": 2 }, "claimedAt": "t", "by": 7 } }
   ]
 }
