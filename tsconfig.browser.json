@@ -13,6 +13,7 @@
     "app/vault-lib.*",
     "app/domain/rules.*",
     "app/domain/properties.*",
+    "app/domain/tooltip.*",
     "app/item-query.*",
     "app/unravel.*",
     "app/organize-config.*",
