@@ -89,3 +89,11 @@ test("[fast] profileEditError: each op's fields, an unknown op and a non-object"
     assert.match(profileEditError(bad) ?? "", msg, JSON.stringify(bad));
   }
 });
+
+test("[fast] profileEditError refuses a name or template id that is an object's own machinery (__proto__, constructor, prototype)", () => {
+  for (const bad of ["__proto__", "constructor", "prototype"]) {
+    assert.match(profileEditError({ op: "setBuffs", name: bad, buffs: {} }) ?? "", /name must be/, bad);
+    assert.match(profileEditError({ op: "putTemplate", id: bad, entry: { spec: {} } }) ?? "", /id must be/, bad);
+    assert.match(profileEditError({ op: "renameTemplate", from: "Mine", to: bad }) ?? "", /to must be/, bad);
+  }
+});

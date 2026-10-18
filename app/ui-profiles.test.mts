@@ -10,18 +10,22 @@ import { applyProfileEdits, type ProfileEdit } from "./profile-edits.mts";
 import { editProfiles, loadProfiles, setCharacterLabel } from "./ui/profiles.mts";
 
 type Doc = { characters: Record<string, Record<string, unknown>>; templates: Record<string, unknown> };
-const server = { doc: { characters: {}, templates: {} } as Doc, n: 0, hold: null as Promise<void> | null };
+// `fail`: the next PATCHes answered 500 (then taking the server `down` when `downAfter`); `down`: every request fails with no answer at all; `drop`: the next PATCH is saved, then its answer lost
+const server = { doc: { characters: {}, templates: {} } as Doc, n: 0, fail: 0, down: false, downAfter: false, drop: false, hold: null as Promise<void> | null };
 const stamp = (): string => `s${server.n}`;
 const answer = (status: number, body: unknown): Response => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 globalThis.fetch = (async (path: string, init?: RequestInit) => {
   const method = init?.method ?? "GET";
+  if (server.down) throw new TypeError("fetch failed");
   if (path === "/api/profiles" && method === "GET") return answer(200, { ok: true, profiles: structuredClone(server.doc), stamp: stamp(), builtinTemplates: {} });
   if (path === "/api/profiles" && method === "PATCH") {
     const { edits } = JSON.parse(String(init!.body)) as { edits: ProfileEdit[] };
     if (server.hold) await server.hold;   // the body is still on its way: anything else the server answers meanwhile goes first
+    if (server.fail) { server.fail--; server.down = server.downAfter; return answer(500, { ok: false, error: "internal error" }); }
     const next = structuredClone(server.doc), was = stamp(), refused = applyProfileEdits(next as unknown as ProfilesV3, edits, { builtins: {}, canLabel: () => true });
     if (refused) return answer(409, { ok: false, code: "conflict", error: refused });
     server.doc = next; server.n++;
+    if (server.drop) { server.drop = false; throw new TypeError("fetch failed"); }
     return answer(200, { ok: true, stamp: stamp(), was });
   }
   throw new Error(`unexpected ${method} ${path}`);
@@ -29,7 +33,7 @@ globalThis.fetch = (async (path: string, init?: RequestInit) => {
 
 // A fresh server, and the page holding what it serves.
 function fresh(doc: Doc = { characters: {}, templates: {} }): void {
-  Object.assign(server, { doc: structuredClone(doc), n: 0, hold: null });
+  Object.assign(server, { doc: structuredClone(doc), n: 0, fail: 0, down: false, downAfter: false, drop: false, hold: null });
   state.profiles = structuredClone(doc) as unknown as ProfilesV3;
   state.profilesStamp = stamp();
 }
@@ -110,4 +114,29 @@ test("[fast] profiles: an edit that no longer applies after a reload queued ahea
   assert.equal(r.reloaded, true);
   assert.match(r.error!, /deleted elsewhere/);
   assert.deepEqual(names(state.profiles!), []);
+});
+
+test("[fast] profiles: edits that fail while the file can't be read again either are taken back off the copy, and the next save reads the file first", async () => {
+  fresh({ characters: { Bo: { spec: {} } }, templates: {} });
+  server.fail = 1; server.downAfter = true;   // the PATCH fails, and the reload after it finds the server gone
+  const r = await editProfiles([{ op: "setLabel", name: "Bo", label: "Main" }]);
+  server.down = false;
+  assert.deepEqual(r, { ok: false, error: "internal error", reloaded: false });
+  assert.equal((state.profiles!.characters.Bo as { label?: string }).label, undefined, "the page does not show the label as saved");
+  assert.notEqual(state.profilesStamp, stamp(), "the copy's stamp no longer matches the file");
+  // the next save lands on the file and reads it, never carrying the failed edit
+  assert.deepEqual(await editProfiles(put("Next")), { ok: true, reloaded: true });
+  assert.equal(server.doc.characters.Bo!.label, undefined);
+  assert.deepEqual(names(state.profiles!), ["Next"]);
+});
+
+test("[fast] profiles: edits whose answer was lost after the server saved them say the change may have been saved, and the copy shows that it was", async () => {
+  fresh({ characters: { Bo: { spec: {} } }, templates: {} });
+  server.drop = true;
+  const r = await editProfiles([{ op: "setLabel", name: "Bo", label: "Main" }]);
+  assert.equal(r.ok, false);
+  assert.equal(r.reloaded, true);
+  assert.match(r.error!, /may have been saved/);
+  assert.equal((state.profiles!.characters.Bo as { label?: string }).label, "Main", "read again: the label is there");
+  assert.equal(state.profilesStamp, stamp());
 });

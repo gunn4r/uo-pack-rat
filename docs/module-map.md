@@ -231,7 +231,7 @@ The thresholds are the shard rules' `unravel` (Shard rules, above); `GET /api/it
 | `app/http/routes/mcp.mts` | The built-in MCP server's settings: GET\|PUT /api/mcp and POST /api/mcp/token. | `routes` |
 | `app/http/routes/optimize.mts` | The Suit Builder's builds and saved runs: POST /api/optimize, the per-job /api/optimize/<id>/events\|cancel\|status, POST\|GET /api/runs and GET\|PUT\|DELETE /api/runs/<id>, and POST /api/evaluate. | `routes` |
 | `app/http/routes/organize.mts` | Organize: GET\|PUT /api/organize, GET /api/organize/presets, POST /api/organize/match and /api/organize/propose, GET /api/organize/plan and POST /api/organize/trip; and Move to (issue #270), which runs as Organize trips: POST /api/move/plan and /api/move/trip. | `routes` |
-| `app/http/routes/prefs.mts` | The player's saved choices: GET\|PUT\|PATCH /api/profiles, /api/ui-prefs and /api/tazuo-panel. | `routes` |
+| `app/http/routes/prefs.mts` | The player's saved choices: GET\|PUT\|PATCH /api/profiles, /api/ui-prefs and /api/tazuo-panel. | `routes`, `patchProfiles` |
 | `app/http/routes/settings.mts` | GET\|PUT /api/settings, POST /api/retention/cleanup and GET /api/rules. | `routes` |
 | `app/http/routes/setup.mts` | The setup wizard: GET /api/setup, GET /api/setup/scanner, POST /api/setup/locate and /api/setup/install, and GET /api/update-check. | `routes`, `MAX_PATH_LEN`, `NO_CLIENT_FOLDER` |
 | `app/http/routes/static.mts` | The page and the browser-shared modules: GET / (index.html), the favicon and logo, each module the page imports at run time (/<name>.mjs, compiled into app/dist/), GET /ui/<name> and GET /ui/fonts/<name>.woff2. | `routes` |

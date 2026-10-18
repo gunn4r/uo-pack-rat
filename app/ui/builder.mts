@@ -24,7 +24,7 @@ import { createBuffPicker, type BuffPicker, type BuffView, type PickerActions } 
 import { optimizeErrorMessage } from "./messages.mts";
 import { parseRoute, registerScreen, routeFor } from "./nav.mts";
 import { setNavBusy } from "./shell.mts";
-import { editProfiles, setCharacterBuffs } from "./profiles.mts";
+import { editProfiles, setCharacterBuffs, type ProfilesSave } from "./profiles.mts";
 import type { ProfileEdit } from "../profile-edits.mts";
 import { session, commands, provide, readControls, type BuilderChange } from "./builder-session.mts";
 import { followJob, progressText, settingsCheck } from "./builder-parts.mts";
@@ -455,11 +455,12 @@ async function renameTemplate(ref: string): Promise<void> {
   if (!name) return;
   // the characters made from it, and this build, now say "from <new name>"
   const saving = saveTemplates(`Template ${ref} renamed to ${name}.`, [{ op: "renameTemplate", from: ref, to: name }]);
-  if (session.profile?.template === ref) session.profile.template = name;
-  if (openCard === ref) openCard = name;
+  const pointed = session.profile?.template === ref, opened = openCard === ref;
+  if (pointed) session.profile!.template = name;
+  if (opened) openCard = name;
   renderPanel();
   paintTemplatesDrawer();
-  await saving;
+  if (!(await saving).ok && (pointed || opened)) unpoint(name, ref);
 }
 async function duplicateTemplate(ref: string): Promise<void> {
   const from = findTemplate(state.profiles!, state.builtinTemplates, ref);
@@ -469,10 +470,11 @@ async function duplicateTemplate(ref: string): Promise<void> {
   const copy = { spec: structuredClone(from.spec), ...(from.description ? { description: from.description } : {}), savedAt: new Date().toISOString() };
   // never over a template by that name made elsewhere since the name was checked
   const saving = saveTemplates(`Template ${name} saved.`, [{ op: "putTemplate", id: name, entry: copy, create: true }]);
+  const back = openCard ?? undefined;
   openCard = name;
   renderPanel();
   paintTemplatesDrawer();
-  await saving;
+  if (!(await saving).ok) unpoint(name, back);
 }
 function pickBuild(v: string): void {
   if (v === OWN) return;
@@ -568,11 +570,21 @@ function paintChanges(): void {
     out.textContent = n ? `${plural(n, "change")} since the last build` : "No changes since the last build";
   }, 150);
 }
-async function saveTemplates(done: string, edits: ProfileEdit[]): Promise<void> {
+// The copy changes when it is read again, and when a failed save puts it back, so either redraws.
+async function saveTemplates(done: string, edits: ProfileEdit[]): Promise<ProfilesSave> {
   const r = await editProfiles(edits);
   // a refused save always says why
   toast(r.ok ? done : r.error!, r.ok ? "good" : "bad");
-  if (r.reloaded) { renderPanel(); paintTemplatesDrawer(); }
+  if (r.reloaded || !r.ok) { renderPanel(); paintTemplatesDrawer(); }
+  return r;
+}
+// After a refused save, the build and the open card go back to the template they showed before it (the name may be
+// another window's template), unless something else was picked meanwhile.
+function unpoint(name: string, back: string | undefined): void {
+  if (session.profile?.template === name) { if (back === undefined) delete session.profile.template; else session.profile.template = back; }
+  if (openCard === name) openCard = back ?? null;
+  renderPanel();
+  paintTemplatesDrawer();
 }
 // A template's settings into the panel. A template with buffs also sets the character's buffs, which are saved at once, and
 // Manual's when Manual is for the same character (one undo step there).
@@ -614,10 +626,11 @@ async function saveTemplateAs(): Promise<void> {
   const entry = { spec: templateSpecFrom(readControls(), buffsOn()), savedAt: new Date().toISOString() };
   // over the template by that name only when that was confirmed: never over one made elsewhere since the prompt
   const saving = saveTemplates(`Template ${name} saved.`, [{ op: "putTemplate", id: name, entry, ...(existed ? {} : { create: true }) }]);
+  const back = session.profile!.template;
   session.profile!.template = name;
   renderPanel();
   paintTemplatesDrawer();
-  await saving;
+  if (!(await saving).ok) unpoint(name, back);
 }
 async function updateTemplate(name: string): Promise<void> {
   if (!Object.hasOwn(state.profiles!.templates, name) || !await confirmDialog({ title: `Update the ${name} template?`, body: `The ${name} template is overwritten with these settings.`, confirmLabel: `Update ${name}` })) return;
