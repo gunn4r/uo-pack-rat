@@ -365,6 +365,7 @@ test("[fast] installedVersion reads a bounded head of the script, not the whole 
 // nothing here looks at a real client folder. platform is passed explicitly so the case-folding rule
 // under test is the one named, not whatever machine runs it.
 
+const PATHS_SCHEMA = JSON.parse(readFileSync(join(HERE, "schema", "packrat-paths.v1.schema.json"), "utf8")) as ValidatorSchema;
 // A scripts folder holding one Pack Rat script and, when `paths` is a string, that packrat-paths.json.
 function scriptsFolder(prefix: string, paths?: string): string {
   const dir = tmp(prefix);
@@ -377,13 +378,12 @@ const pathsJson = (dataDir: unknown): string => `${JSON.stringify({ dataDir }, n
 // The cases app/fixtures/contract-cases/packrat-paths.json shares with adapters/test_adapters.py, which runs the scripts' data_dir() over them.
 test("[fast] checkScriptsDataDir: every shared packrat-paths.json case reads the folder, the default or an error as it says, and the schema takes the shapes it says", () => {
   const cases = (JSON.parse(readFileSync(join(HERE, "fixtures", "contract-cases", "packrat-paths.json"), "utf8")) as { cases: { why: string; doc: { dataDir?: unknown }; reads: "dataDir" | "default" | "error"; schema: boolean }[] }).cases;
-  const schema = JSON.parse(readFileSync(join(HERE, "schema", "packrat-paths.v1.schema.json"), "utf8")) as ValidatorSchema;
   for (const c of cases) {
     const home = tmp("qm-dd-home-"), scriptsDir = scriptsFolder("qm-dd-case-", JSON.stringify(c.doc));
     const named = String(c.doc.dataDir ?? ""), expected = c.reads === "default" ? join(home, ".pack-rat") : named === "~" ? home : named.startsWith("~/") ? join(home, named.slice(2)) : resolve(named);
     const r = checkScriptsDataDir({ dataDir: expected, client: { adapter: "tazuo", scriptsDir }, candidates: [], home, platform: "linux" });
     assert.equal(r.status, c.reads === "error" ? "unreadable" : "match", c.why);
-    assert.equal(validate(schema, c.doc).ok, c.schema, `schema: ${c.why}`);
+    assert.equal(validate(PATHS_SCHEMA, c.doc).ok, c.schema, `schema: ${c.why}`);
   }
 });
 
@@ -548,7 +548,7 @@ test("[fast] installScripts proceeds when status.json says stopped: true", () =>
   assert.equal(result.ok, true, JSON.stringify(result));
 });
 
-// The cases app/fixtures/contract-cases/heartbeat.json shares with adapters/test_panel.py, which checks the panel's real heartbeats have their shape.
+// The cases app/fixtures/contract-cases/heartbeat.json; app/adapter-outputs.test.mts checks the panel's real heartbeats against the schema.
 test("[fast] heartbeatAlive: every shared heartbeat case counts as running or not as it says, readBridgeStatus calls it online or not as it says, and the schema takes the shapes it says", () => {
   const cases = JSON.parse(readFileSync(join(HERE, "fixtures", "contract-cases", "heartbeat.json"), "utf8")) as { now: string; cases: { why: string; doc: object; running: boolean; online: boolean; schema: boolean }[] };
   const schema = JSON.parse(readFileSync(join(HERE, "schema", "heartbeat.v1.schema.json"), "utf8")) as ValidatorSchema;
@@ -609,7 +609,17 @@ test("[fast] installScripts installs byte-identical copies, leaves no .new files
   }
   const leftoverNew = readdirSync(scriptsDir).filter((f) => f.endsWith(".new"));
   assert.deepEqual(leftoverNew, []);
-  assert.deepEqual(JSON.parse(readFileSync(join(scriptsDir, "packrat-paths.json"), "utf8")), { dataDir });
+  const written = JSON.parse(readFileSync(join(scriptsDir, "packrat-paths.json"), "utf8")) as unknown;
+  assert.deepEqual(written, { dataDir });
+  assert.deepEqual(validate(PATHS_SCHEMA, written).errors, [], "app/schema/packrat-paths.v1.schema.json takes it");
+});
+
+test("[fast] both adapters' packrat-paths.example.json, and a Windows data folder the installer writes, fit app/schema/packrat-paths.v1.schema.json", () => {
+  for (const adapter of ["tazuo", "razor-enhanced"]) {
+    const doc = JSON.parse(readFileSync(join(HERE, "..", "adapters", adapter, "packrat-paths.example.json"), "utf8")) as unknown;
+    assert.deepEqual(validate(PATHS_SCHEMA, doc).errors, [], adapter);
+  }
+  assert.equal(validate(PATHS_SCHEMA, { dataDir: "C:\\Users\\Player\\AppData\\Roaming\\Pack Rat" }).ok, true);
 });
 
 // TazUO 2.12.0 and Razor Enhanced 1.10.0 renamed packrat-refresh.py to packrat-character-refresh.py (issue #10): an install removes the

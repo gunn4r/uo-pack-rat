@@ -9,8 +9,8 @@ moves only when the script pauses, so an 8-second highlight takes no real time.
 run_script() execs a script file with the fake installed: TazUO's `API` module, or Razor Enhanced's
 `Items` / `Player` / `Misc` globals, plus a fake `time` module while the script loads.
 
-With PACKRAT_TEST_OUTPUTS set to a folder, run_script() also copies every scan and bridge status.json
-the script writes into it, so app/adapter-outputs.test.mts can check them against the schemas.
+With PACKRAT_TEST_OUTPUTS set to a folder, run_script() also copies every data file the script writes
+(OUTPUT_KINDS) into it, so app/adapter-outputs.test.mts can check each against its schema.
 """
 import hashlib
 import json
@@ -585,27 +585,40 @@ def razor_globals(world, backpack, bank=None, skills=None):
     return {"Items": Items, "Player": Player, "Misc": Misc, "Target": Target}
 
 
-def keep_output(dst):
-    """Copy a scan (<data>/inbox/<adapter>/*.json) or a bridge status (<data>/bridge/<adapter>/status.json)
-    into $PACKRAT_TEST_OUTPUTS, named by kind, adapter and content hash. A status is hashed without its
-    timestamps, so the thousands of heartbeats a bridge test writes collapse into one file per shape."""
-    out = os.environ.get("PACKRAT_TEST_OUTPUTS")
+# The JSON files the adapter scripts write, by where they land in the data folder: (folder, file name or
+# None for any .json) -> kind. A kind's timestamps are left out of its hash, so the thousands of heartbeats a
+# test writes collapse into one file per shape.
+OUTPUT_KINDS = [(("bridge", "status.json"), "status"), (("bridge", "panel.json"), "heartbeat"),
+                (("inbox", "putaway-request.json"), "putaway-request"), (("inbox", None), "scan"),
+                ((None, "scan-blacklist.json"), "blacklist"), ((None, "house-claims.json"), "house-claims"),
+                ((None, "tazuo-panel.json"), "tazuo-panel")]
+
+
+def output_kind(dst):
     parts = os.path.normpath(dst).split(os.sep)
-    if not out or len(parts) < 3 or not parts[-1].endswith(".json"):
-        return
-    if parts[-3] == "inbox":
-        kind = "scan"
-    elif parts[-3] == "bridge" and parts[-1] == "status.json":
-        kind = "status"
-    else:
+    for (folder, name), kind in OUTPUT_KINDS:
+        if parts[-1] == name if name else parts[-1].endswith(".json"):
+            if folder is None or (len(parts) >= 3 and parts[-3] == folder):
+                return kind
+    return None
+
+
+def keep_output(dst, adapter):
+    """Copy a data file `adapter`'s script wrote (OUTPUT_KINDS) into $PACKRAT_TEST_OUTPUTS, named by kind,
+    adapter and content hash."""
+    out = os.environ.get("PACKRAT_TEST_OUTPUTS")
+    kind = output_kind(dst) if out else None
+    if kind is None:
         return
     with open(dst, encoding="utf-8") as f:
         doc = json.load(f)
     if kind == "status" and isinstance(doc, dict):
         doc = dict(doc, alive=None, results=dict((k, dict(r, t=None) if isinstance(r, dict) else r)
                                                  for k, r in (doc.get("results") or {}).items()))
+    elif kind == "heartbeat" and isinstance(doc, dict):
+        doc = dict(doc, alive=None)
     digest = hashlib.sha1(json.dumps(doc, sort_keys=True).encode("utf-8")).hexdigest()[:16]
-    shutil.copyfile(dst, os.path.join(out, "%s--%s--%s.json" % (kind, parts[-2], digest)))
+    shutil.copyfile(dst, os.path.join(out, "%s--%s--%s.json" % (kind, adapter, digest)))
 
 
 def run_script(path, world, api=None, extra_globals=None, with_file=True):
@@ -620,10 +633,11 @@ def run_script(path, world, api=None, extra_globals=None, with_file=True):
         sys.modules["API"] = api
     sys.modules["time"] = world.clock.module()
     real_replace = os.replace
+    adapter = os.path.basename(os.path.dirname(os.path.abspath(path)))
 
     def replace(src, dst):
         real_replace(src, dst)
-        keep_output(dst)
+        keep_output(dst, adapter)
     os.replace = replace
     try:
         with open(path, encoding="utf-8") as f:
