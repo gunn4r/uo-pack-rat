@@ -1,0 +1,10 @@
+{
+  "$comment": "Pack Rat heartbeat v1: <data>/bridge/<adapter>/panel.json, which the TazUO in-game panel (adapters/tazuo/packrat-panel.py) rewrites every 2 s while it runs and ends with stopped: true. The bridge's status.json carries the same alive/stopped pair (app/schema/bridge.v1.schema.json's status). The app's installer (app/installer.mts's heartbeatAlive) reads either as a running script while alive is under 30 s old and not over 5 minutes ahead, and stopped is not true, and then refuses to replace the scripts. A numeric alive (seconds since the epoch) is what an older bridge build wrote, still read. Restricted to the keyword subset app/schema/validate.mts supports. The shared cases are app/fixtures/contract-cases/heartbeat.json.",
+  "type": "object",
+  "required": ["alive"],
+  "properties": {
+    "alive": { "type": ["string", "number"], "$comment": "RFC 3339, when it was written; a number is an older bridge's epoch seconds" },
+    "character": { "type": "string", "$comment": "the logged-in character, empty right after login" },
+    "stopped": { "type": "boolean", "$comment": "true in the last heartbeat, written on Stop" }
+  }
+}
