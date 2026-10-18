@@ -20,7 +20,7 @@ import { containerArt } from "./item-art.mts";
 import { relativeWhen, errorText } from "./messages.mts";
 import { loadOrganize, saveConfig } from "./organize-data.mts";
 import { withLabel, withoutLabel, pinNote, LABEL_COLOURS, fillTone } from "./organize-model.mts";
-import { plural } from "./inv-model.mts";
+
 import { reload } from "./inventory-data.mts";
 import { houseOfContainer, showOnMap } from "./house-links.mts";
 import { openedRoots } from "./roster.mts";
@@ -28,6 +28,7 @@ import { registerScreen, showContainer } from "./nav.mts";
 import { splitSerial } from "./item-parts.mts";
 import { bridgeActionReason, runBridgeAction } from "./bridge.mts";
 import type { ContainerLabel, ForgetApiResponse, MissingApiResponse, OrganizeConfig } from "./api-types.mts";
+import { plural } from "./format.mts";
 
 const KIND_NAMES: Record<string, string> = { backpack: "Backpack", bank: "Bank", ground: "On the ground" };
 // Same total width as before the Fill column, so the table still fits a 1000 px window without scrolling.

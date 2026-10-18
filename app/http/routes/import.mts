@@ -13,6 +13,7 @@ import { readBody } from "../../read-body.mts";
 import { MAX_INBOX_BYTES } from "../../watcher.mts";
 import { send, asObject } from "../respond.mts";
 import type { Route } from "../router.mts";
+import type { ImportPasteApiResponse, RescanApiResponse } from "../../api/import.mts";
 import type { ServerContext } from "../context.mts";
 
 export function routes(ctx: ServerContext): Route[] {
@@ -50,7 +51,7 @@ export function routes(ctx: ServerContext): Route[] {
       // file is already on disk.
       watchers.get(adapter as string)?.scanOnce();
       return send(res, 200, { ok: true, written: file, character,
-        ...(mismatch ? { warning: `filed under "${adapter}", but this scan says it's from "${declaredAdapter}" — check the Adapter picker above` } : {}) });
+        ...(mismatch ? { warning: `filed under "${adapter}", but this scan says it's from "${declaredAdapter}" — check the Adapter picker above` } : {}) } satisfies ImportPasteApiResponse);
     } },
     { method: "POST", path: "/api/import/rescan", handle: async (req, res) => {
       asObject(await readBody(req, { limit: 8e3 }));   // {} — no fields read, but every POST still needs a declared JSON object body (readBody's content-type check, asObject's shape check)
@@ -59,7 +60,7 @@ export function routes(ctx: ServerContext): Route[] {
       const adapters: string[] = [], failed: string[] = [];
       for (const [id, handle] of watchers) (handle.scanOnce() ? adapters : failed).push(id);
       if (failed.length) return send(res, 503, { ok: false, error: `could not sweep the inbox for ${failed.join(", ")} — see the log`, adapters, failed });
-      return send(res, 200, { ok: true, adapters });
+      return send(res, 200, { ok: true, adapters } satisfies RescanApiResponse);
     } },
   ];
 }

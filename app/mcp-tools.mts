@@ -22,8 +22,6 @@ import type { ValidatorSchema } from "./schema/validate.mts";
 import type { PlanMove } from "./organize-types.mts";
 import type { ApiResponse } from "./api/routes.mts";
 import { LIMITS, salvagedRefusal, type OrganizeConfig } from "./organize-config.mts";
-import type { HouseModel, HouseSummary } from "./house-model-types.mts";
-import type { HouseArea } from "./house-names.mts";
 import { areaOfStack } from "./house-areas.mts";
 
 // A tool's failure in words the model reads (a route's own refusal, a bad argument): a tool result with isError.
@@ -181,7 +179,7 @@ function resultSummary(result: Record<string, unknown> | null | undefined, ev: E
     ...(Array.isArray(result.alternatives) && result.alternatives.length ? { otherSuits: (result.alternatives as Array<{ best: Record<string, { serial: number; name: string } | null>; score: number }>).map((a) => ({ score: a.score, suit: suitRows(a.best) })) } : {}),
   };
 }
-interface JobStatus { id: string; state: string; progress: Record<string, unknown> | null; result: Record<string, unknown> | null; ms: number | null; error: string | null; runId: string | null }
+type JobStatus = ApiResponse<"GET /api/optimize/<id>/status">;
 // A build that filled empty slots around pinned pieces (memory.filled) leaves out currentScore: it is the pins' own and
 // reads as a huge gain beside the score.
 function jobSummary(j: JobStatus, memory: ToolContext["memory"], ev: EvalInputs | null = memory.plans.get(j.id) ?? null): Record<string, unknown> {
@@ -275,7 +273,7 @@ const SCAN_SCRIPTS: Record<string, string> = { here: "scanner", character: "refr
 async function newestScanOf(ctx: ToolContext, what: string, character: string | null, inv?: InventoryDoc): Promise<{ ms: number; scan: Record<string, unknown> | null }> {
   let best: { ms: number; scan: Record<string, unknown> | null } = { ms: -Infinity, scan: null };
   if (what === "house") {
-    for (const h of (await ctx.api<{ houses: HouseSummary[] }>("/api/houses")).houses) {
+    for (const h of (await ctx.api<ApiResponse<"GET /api/houses">>("/api/houses")).houses) {
       const ms = Date.parse(h.capturedAt);
       if (ms > best.ms) best = { ms, scan: { character, at: h.capturedAt, house: h.name ?? h.id, containers: h.containers } };
     }
@@ -440,7 +438,7 @@ export const TOOLS: Tool[] = [
     inputSchema: { type: "object", additionalProperties: false, properties: {} },
     annotations: { title: "Item kinds", ...READ },
     async handler(_a, ctx) {
-      const [inv, own] = await Promise.all([inventory(ctx), ctx.api<{ names: Record<string, string>; graphics: Record<string, string> }>("/api/item-kinds")]);
+      const [inv, own] = await Promise.all([inventory(ctx), ctx.api<ApiResponse<"GET /api/item-kinds">>("/api/item-kinds")]);
       return { kinds: inv.facets.kinds, playerSet: { names: own.names, graphics: own.graphics } };
     },
   },
@@ -657,7 +655,7 @@ export const TOOLS: Tool[] = [
     async handler(a, ctx) {
       const { limit, offset } = pageOf(a);
       if (a.outside && a.house !== undefined) throw new ToolError("name a house, or set outside (not both)");
-      const [inv, { houses }, map, org] = await Promise.all([inventory(ctx), ctx.api<{ houses: HouseSummary[] }>("/api/houses"), ctx.api<{ houses: Record<string, { areas?: HouseArea[] }> }>("/api/house-map"), ctx.api<OrganizeDoc>("/api/organize")]);
+      const [inv, { houses }, map, org] = await Promise.all([inventory(ctx), ctx.api<ApiResponse<"GET /api/houses">>("/api/houses"), ctx.api<ApiResponse<"GET /api/house-map">>("/api/house-map"), ctx.api<OrganizeDoc>("/api/organize")]);
       let picked = houses;
       if (typeof a.house === "string") {
         const q = a.house.toLowerCase();
@@ -674,7 +672,7 @@ export const TOOLS: Tool[] = [
           rows.push({ serial: c.serial, name: c.name ?? null, kind: c.kind, label: label(c.serial), fill: fill(c), house: null, area: null, level: null, position: c.pos ? { x: c.pos.x, y: c.pos.y, z: c.pos.z } : null, scanned: true });
         }
       } else {
-        const models = await Promise.all(picked.map((h) => ctx.api<{ house: HouseModel }>(`/api/houses/${enc(h.id)}`)));
+        const models = await Promise.all(picked.map((h) => ctx.api<ApiResponse<"GET /api/houses/<id>">>(`/api/houses/${enc(h.id)}`)));
         picked.forEach((h, i) => {
           const m = models[i]!.house, areas = map.houses[h.id]?.areas ?? [];
           for (const st of m.stacks) {

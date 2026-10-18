@@ -1,0 +1,1 @@
+- **For contributors: one paged item fetch** (issue #338): Unravel and Scrolls each paged through `GET /api/items` with their own identical copy; both now call `fetchAllItems(params)` in `app/ui/inventory-data.mts`, beside `get()`.

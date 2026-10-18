@@ -121,6 +121,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `app/server-settings.test.mts` — HTTP tests of the settings, the shard's rules and retention.
 - `app/server-setup.test.mts` — HTTP tests of the setup wizard's routes, the TazUO panel, the update check and the client search.
 - `app/server.test.mts` — HTTP tests of what every route shares, on a real listening server (ephemeral port, temp data folder).
+- `app/services/builds.test.mts` — `app/services/builds.mts`, a checked build request into a started job or a saved run that answers it (issue #338).
 - `app/services/events.test.mts` — `app/services/events.mts` on its own: event frames, the broadcast and `close()`.
 - `app/services/houses.test.mts` — `app/services/houses.mts` on its own: why there is no tiledata.mul, facet or item art, and the facet and item art PNG caches.
 - `app/services/inventory.test.mts` — `app/services/inventory.mts` on its own: when the fold and the overlay are cached and when they are made again.

@@ -12,6 +12,7 @@ import type { EventBus } from "../services/events.mts";
 import type { HousesService } from "../services/houses.mts";
 import type { createRetentionService } from "../services/retention.mts";
 import type { JobsService } from "../services/jobs.mts";
+import type { BuildsService } from "../services/builds.mts";
 import type { InventoryService } from "../services/inventory.mts";
 import type { OrganizeService } from "../services/organize.mts";
 import type { createProfilesStore } from "../store/profiles.mts";
@@ -22,6 +23,7 @@ import type { createItemKindsStore } from "../store/item-kinds.mts";
 import type { createOrganizeStore } from "../store/organize.mts";
 import type { createOrganizeStateStore } from "../store/organize-state.mts";
 import type { createRunsStore } from "../store/runs.mts";
+import type { createScansStore } from "../store/scans.mts";
 
 // What only a real desktop shell (Electron) can supply to startServer — see the `host` parameter
 // note in app/vault-server.mts. `title` stays `unknown` rather than `string` because it begins life as a request-body
@@ -55,6 +57,7 @@ export interface ServerContext {
   houseService: HousesService;
   retentionService: ReturnType<typeof createRetentionService>;
   jobService: JobsService;
+  buildsService: BuildsService;
   organizeService: OrganizeService;
   getInventory: InventoryService["getInventory"];
   profilesStore: ReturnType<typeof createProfilesStore>;
@@ -65,6 +68,7 @@ export interface ServerContext {
   organizeStore: ReturnType<typeof createOrganizeStore>;
   organizeStateStore: ReturnType<typeof createOrganizeStateStore>;
   runStore: ReturnType<typeof createRunsStore>;
+  scanStore: ReturnType<typeof createScansStore>;
   // <data>/tazuo-panel.json, and a change merged into it (app/tazuo-panel.mts)
   panelPrefsFile: string;
   savePanel: (change: object) => void;

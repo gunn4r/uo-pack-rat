@@ -11,11 +11,12 @@ import { short } from "../../guards.mts";
 import { readBody } from "../../read-body.mts";
 import { send, asObject } from "../respond.mts";
 import type { Route } from "../router.mts";
+import type { McpApiResponse } from "../../api/mcp.mts";
 import type { ServerContext } from "../context.mts";
 
 export function routes(ctx: ServerContext): Route[] {
   const { mcp } = ctx;
-  const mcpState = () => { const { config: { version: _version, ...config }, live } = mcp.state(); return { ok: true, config, live }; };
+  const mcpState = (): McpApiResponse => { const { config: { version: _version, ...config }, live } = mcp.state(); return { ok: true, config, live } satisfies McpApiResponse; };
   return [
     { method: "GET", path: "/api/mcp", handle: (_req, res) => send(res, 200, mcpState()) },
     { method: "PUT", path: "/api/mcp", handle: async (req, res) => {
