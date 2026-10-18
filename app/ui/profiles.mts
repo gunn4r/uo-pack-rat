@@ -1,9 +1,11 @@
-// ui/profiles.mts — the one writer of the player's profiles (PUT /api/profiles, app/build-spec.mts's v3 shape), and of
-// a character's saved buffs and build label within them. A save is an edit to the page's copy, made at once so the page
-// shows it, then sent as the whole file with the stamp the page read it at, one save at a time and in order. A file
-// saved elsewhere since (another window, an AI assistant) is refused as stale: the page reloads it, makes the edit again
-// on what it got, and sends that, so a stale copy never drops or reverts anything another window saved.
-import { characterBuffs, characterEntry, characterProfile, type BuildBuffs, type CharacterEntry, type ProfilesV3 } from "../build-spec.mts";
+// ui/profiles.mts — the one writer of the player's profiles (app/build-spec.mts's v3 shape), one save at a time and in
+// order, each made on the page's copy at once so the page shows it. A character's buffs and build label go up as edits
+// (PATCH /api/profiles, app/profile-edits.mts), made on the file as it is on the server. The other saves still send the
+// whole file with the stamp the page read it at (PUT /api/profiles): one refused as stale (another window or an AI
+// assistant saved since) reloads the file, makes the edit again on it and sends that, so a stale copy never drops or
+// reverts anything another window saved.
+import type { BuildBuffs, ProfilesV3 } from "../build-spec.mts";
+import { applyProfileEdits, type ProfileEdit, type ProfileEditContext } from "../profile-edits.mts";
 import { state } from "./store.mts";
 import { toast } from "./dom.mts";
 import { api } from "./api.mts";
@@ -36,7 +38,7 @@ async function send(edit: ProfilesEdit, again = false): Promise<ProfilesSave> {
   }
 }
 let queue: Promise<unknown> = Promise.resolve();
-// Runs one at a time with the label saves, so each names the stamp the one before it left.
+// Saves run one at a time, so each names the stamp the one before it left.
 function inTurn<T>(run: () => Promise<T>): Promise<T> {
   const next = queue.then(run);
   queue = next.catch(() => null);
@@ -46,38 +48,37 @@ export function saveProfiles(edit: ProfilesEdit): Promise<ProfilesSave> {
   edit(state.profiles!);
   return inTurn(() => send(edit));
 }
+// Edits to the profiles (app/profile-edits.mts) sent as themselves (PATCH /api/profiles), so the server makes them on
+// the file as it is and nothing else of this page's copy goes with them. They are made on the page's copy at once, and
+// again when their turn comes (a reload before then drops them from the copy). Answered with the stamp the file had
+// before them: this page's own, and the copy is the file; another, and the page reads the file again. A list the server
+// can't make (a template deleted elsewhere) is refused whole, and the page reads the file again too.
+export function editProfiles(edits: ProfileEdit[]): Promise<ProfilesSave> {
+  const ctx = (): ProfileEditContext => ({ builtins: state.builtinTemplates });
+  applyProfileEdits(state.profiles!, edits, ctx());
+  return inTurn(async () => {
+    applyProfileEdits(state.profiles!, edits, ctx());
+    try {
+      const r = await api<{ stamp: string; was: string }>("/api/profiles", { method: "PATCH", body: { edits } });
+      if (r.was === state.profilesStamp) { state.profilesStamp = r.stamp; return { ok: true }; }
+      await reloadProfiles();
+      return { ok: true, reloaded: true };
+    } catch (e) {
+      try { await reloadProfiles(); } catch { /* the copy as it was */ }
+      return { ok: false, error: (e as Error).message, reloaded: true };
+    }
+  });
+}
 // A character's buffs (Automatic's ones on, and the numbers edited for it, which Manual shares) saved at once, like a
 // view choice: a character with no saved settings yet gets the ones the Suit Builder shows it, so nothing else changes.
 // A failed save says so in a toast.
 export function setCharacterBuffs(name: string, buffs: Partial<BuildBuffs>): void {
-  void saveProfiles((p) => {
-    const saved = Object.hasOwn(p.characters, name) ? p.characters[name] : undefined, next = { ...characterBuffs(p, name), ...buffs };
-    if (saved) saved.spec.buffs = next;
-    else p.characters[name] = characterEntry(characterProfile(p, name, state.builtinTemplates), next);
-  }).then((r) => { if (!r.ok) toast(r.error!, "bad"); });
+  void editProfiles([{ op: "setBuffs", name, buffs }]).then((r) => { if (!r.ok) toast(r.error!, "bad"); });
 }
-// A character's build label (issue #336) saved through PUT /api/profiles/label, which changes only that label in the
-// file on the server, so this page's copy of the rest never goes with it. The page's copy then takes the label (or the
-// entry the server made for a character with no saved settings), and the stamp it answers with. A refused save says why
-// in a toast.
-export function setCharacterLabel(name: string, label: string): Promise<boolean> {
-  return inTurn(async () => {
-    type LabelSave = { ok: boolean; error?: string; entry?: CharacterEntry | null; stamp?: string; was?: string };
-    let r: LabelSave;
-    try { r = await api<LabelSave>("/api/profiles/label", { method: "PUT", body: { character: name, label } }); }
-    catch (e) { r = { ok: false, error: (e as Error).message }; }
-    if (!r.ok) { toast(r.error!, "bad"); return false; }
-    // saved over the file this page read: the copy plus the label is the file. Saved over another one: the rest is read again.
-    if (r.was !== state.profilesStamp) {
-      try { await reloadProfiles(); } catch (e) { toast((e as Error).message, "bad"); }
-      return true;
-    }
-    state.profilesStamp = r.stamp!;
-    const chars = state.profiles!.characters, mine = Object.hasOwn(chars, name) ? chars[name]! : undefined;
-    if (!r.entry) return true;
-    if (!mine) chars[name] = r.entry;
-    else if (typeof r.entry.label === "string") mine.label = r.entry.label;
-    else delete mine.label;
-    return true;
-  });
+// A character's build label (issue #336), trimmed, a blank one removed: a character with no saved settings gets the ones
+// the Suit Builder shows it. A refused save says why in a toast.
+export async function setCharacterLabel(name: string, label: string): Promise<boolean> {
+  const r = await editProfiles([{ op: "setLabel", name, label }]);
+  if (!r.ok) toast(r.error!, "bad");
+  return r.ok;
 }

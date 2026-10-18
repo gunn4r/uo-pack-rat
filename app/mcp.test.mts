@@ -1009,34 +1009,35 @@ test("[fast] list_characters and character_sheet carry the build label, null for
     const port = await mcpPort(sv);
     const labels = async (): Promise<Record<string, unknown>> => Object.fromEntries((await call(port, "list_characters")).data.characters.map((c: { name: string; label: unknown }) => [c.name, c.label]));
     assert.deepEqual(await labels(), { Dorran: null, Kestrel: null });
-    assert.equal((await app(sv, "/api/profiles/label", "PUT", { character: "Kestrel", label: " Archer-Bard " })).status, 200);
+    assert.equal((await app(sv, "/api/profiles", "PATCH", { edits: [{ op: "setLabel", name: "Kestrel", label: " Archer-Bard " }] })).status, 200);
     assert.deepEqual(await labels(), { Dorran: null, Kestrel: "Archer-Bard" }, "trimmed");
     assert.equal((await call(port, "character_sheet", { character: "Kestrel" })).data.label, "Archer-Bard");
     assert.equal((await call(port, "character_sheet", { character: "Dorran" })).data.label, null);
   } finally { await sv.s.close(); }
 });
 
-// Issue #336: PUT /api/profiles/label changes one label in the file on the server, and a whole-file save keeps the stored
-// labels, so a label save and a Suit Builder save made from an older copy of the file both survive, in either order.
-test("[fast] PUT /api/profiles/label: one label changed on the server, checked, and kept by a whole-file save in either order", async () => {
+// Issue #336: a setLabel edit (PATCH /api/profiles) changes one label in the file on the server, and a whole-file save
+// keeps the stored labels, so a label save and a Suit Builder save made from an older copy of the file both survive, in
+// either order.
+test("[fast] a setLabel edit: one label changed on the server, checked, and kept by a whole-file save in either order", async () => {
   const sv = await serve();
   try {
     type Got = { profiles: ProfilesV3; builtinTemplates: TemplateMap };
     const get = async (): Promise<Got> => (await app<Got>(sv, "/api/profiles")).body;
-    const label = (character: string, text: unknown): Promise<{ status: number; body: Record<string, unknown> }> => app(sv, "/api/profiles/label", "PUT", { character, label: text });
+    const label = (name: string, text: unknown): Promise<{ status: number; body: Record<string, unknown> }> => app(sv, "/api/profiles", "PATCH", { edits: [{ op: "setLabel", name, label: text }] });
     const kestrel = async (): Promise<CharacterEntry | undefined> => (await get()).profiles.characters.Kestrel;
     // A scanned character with no saved settings gets the ones the Suit Builder shows it, with the label.
     assert.equal(await kestrel(), undefined);
     const made = await label("Kestrel", "Archer-Bard");
     assert.equal(made.status, 200);
-    assert.equal((made.body.entry as CharacterEntry).label, "Archer-Bard");
+    assert.equal((await kestrel())?.label, "Archer-Bard");
     assert.ok((await kestrel())?.spec, "an entry with a spec");
     // Refused: control characters and line breaks, over 40 characters, no text, an unknown or pseudo character.
     for (const bad of ["two\nlines", "tab\there", "nul\u0000", "x".repeat(41), 7]) assert.equal((await label("Kestrel", bad)).status, 400, JSON.stringify(bad));
-    assert.equal((await label("Nobody Here", "x")).status, 404);
-    assert.equal((await label("_nobody", "x")).status, 404);
+    assert.equal((await label("Nobody Here", "x")).status, 409);
+    assert.equal((await label("_nobody", "x")).status, 409);
     assert.equal((await label("", "x")).status, 400);
-    assert.equal((await label("Dorran", "  ")).body.entry, null, "a blank label on a character with no settings writes nothing");
+    assert.equal((await label("Dorran", "  ")).status, 200, "a blank label on a character with no settings writes nothing");
     assert.equal((await get()).profiles.characters.Dorran, undefined);
     // The schema refuses the same on a whole-file save.
     const now = await get();
