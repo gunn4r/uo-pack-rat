@@ -10,6 +10,7 @@ import { foldSnapshots, type Item, type Inventory, type Template } from "./vault
 import { templateSettings, type ProfilesV3, type TemplateMap } from "./build-spec.mts";
 import { upgradeScan, validateScan } from "./scan-schema.mts";
 import type { RulesV1, ScanV2 } from "./schema/types.d.mts";
+import type { InventoryApiResponse, InventoryData } from "./api/inventory.mts";
 
 // ---------------------------------------------------------------------------------------------
 // HTTP responses are unknown provenance — every route is reachable by any local caller, trusted
@@ -26,33 +27,12 @@ export function asJson<T = Record<string, unknown>>(body: unknown): T {
   return body as T;
 }
 
-export interface InventoryFacets {
-  kinds: unknown[];
-  gearSkills: string[];
-  flagKeys: string[];
-  weaponSkills: Array<{ name: string; count: number }>;
-  propKeys?: string[];
-  [key: string]: unknown;
-}
-
-export interface InventorySummary {
-  itemCount: number;
-  items?: undefined;
-  facets: InventoryFacets;
-  worn: Record<string, unknown>;
-  containers: Record<string, unknown>;
-  rootCounts: Record<string, unknown>;
-  missingCounts: Record<string, number>;
-  characters: Record<string, Record<string, unknown>>;
-  propKeys: string[];
-}
-
-export interface InventoryResponse {
-  ok: boolean;
-  snapshotCount: number;
-  scansDir?: string;
-  inventory: InventorySummary;
-}
+// The inventory routes' answers are the API's own types (app/api/inventory.mts), under the names these tests use. GET
+// /api/items stays loose (ItemsPageResponse, below): the tests read its rows and groups forms without narrowing.
+// `items?: undefined` lets a test assert the fold's item map is not sent.
+export type InventorySummary = InventoryData & { items?: undefined };
+export interface InventoryResponse extends InventoryApiResponse { inventory: InventorySummary }
+export type { ItemsBySerialApiResponse as ItemsBySerialResponse } from "./api/inventory.mts";
 
 export interface ProfilesResponse {
   ok?: boolean;
@@ -73,11 +53,6 @@ export interface ItemsPageResponse {
   stacks?: number;
   pieces?: number;
   limit?: number;
-}
-
-export interface ItemsBySerialResponse {
-  ok: boolean;
-  items: Record<string, Item>;
 }
 
 // Covers both a POST /api/optimize start response and a GET /api/optimize/<id>/status poll —
