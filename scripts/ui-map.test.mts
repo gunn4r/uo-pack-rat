@@ -7,10 +7,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import { createRequire } from "node:module";
-import { fitWindow, settle, sideways as sidewaysOf, type RealSize, testEnv, noUpdateCheck, removeTempDir } from "./electron-window.mts";
+import { join } from "node:path";
+import { fitWindow, settle, sideways as sidewaysOf, type RealSize } from "./electron-window.mts";
+import { fakeBridge, launchApp, skipWithoutElectron, until, type App, type QueuedCommand } from "./electron-app.mts";
 import { probeContrast, failures, describeFailures, type ContrastRow } from "./contrast-probe.mts";
 import { houseScan } from "../app/organize-fixture.mts";
 import { claimHouses, vaultHouse, courtyardHouse, castleHouse, fixtureTileData, FIXTURE_TILES } from "../app/house-fixture.mts";
@@ -21,17 +20,8 @@ import { itemArtName } from "../app/art.mts";
 import { buildHouseModel, type HouseModel } from "../app/house-model.mts";
 import { fastestMs } from "../app/timing-fixture.mts";
 import { anchorOf } from "../app/ui/house-map-model.mts";
-import type { ElectronApplication, Page } from "playwright";
+import type { Page } from "playwright";
 
-const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
-const require_ = createRequire(import.meta.url);
-function unavailable(): string | null {
-  if (process.env.TEST_SKIP_ELECTRON) return "TEST_SKIP_ELECTRON is set";
-  for (const dep of ["electron", "playwright"]) {
-    try { require_.resolve(dep); } catch { return `${dep} is not installed`; }
-  }
-  return null;
-}
 const VAULT = "1-3000-1000", COURT = "1-1000-2000", CASTLE = castleHouse().house.id;
 const LABELLED = 0x40010000, YARD_CHEST = 0x40030001, SEEN_ONLY = 0x40030002, YARD_RUBY = 0x40030100;
 // The models the server builds from the seeded scans, worked out here too so a test can name a stack by its tile.
@@ -103,48 +93,16 @@ function seed({ client = true, castle = false, facet = false, items = false, are
   if (areas) writeFileSync(join(dir, "house-map.json"), JSON.stringify({ version: 1, houses: { [VAULT]: { name: "", bounds: VAULT_BOUNDS, areas: [{ id: "a1", name: "North row", level: 0, color: "area-3", rects: [{ x0: 3001, y0: 1001, x1: 3005, y1: 1001 }] }] } } }));
   return { dir, uo };
 }
-async function launch(dataDir: string, { want = { width: 1440, height: 900 }, demo = false }: { want?: RealSize; demo?: boolean } = {}): Promise<{ app: ElectronApplication; page: Page; errors: string[]; size: RealSize }> {
-  const { _electron } = await import("playwright");
-  const app = await _electron.launch({ args: [ROOT, ...(demo ? ["--demo"] : []), "--data", noUpdateCheck(dataDir)], cwd: ROOT, timeout: 60_000, env: testEnv() });
-  // A launch that fails here happens before the caller's try: close it, or the Electron process outlives the test file.
-  try {
-    const page = await app.firstWindow();
-    const errors: string[] = [];
-    page.on("pageerror", (e) => errors.push(String(e)));
-    // go() sets the hash: on a page still loading, the document that replaces it would drop it (issue #330).
-    await page.waitForLoadState("load");
-    const size = await fitWindow(app, page, want);
-    return { app, page, errors, size };
-  } catch (e) {
-    await app.close();
-    throw e;
-  }
-}
-async function done(app: ElectronApplication, dir: string): Promise<void> {
-  await app.close();
-  removeTempDir(dir);
-}
+const launch = (dataDir: string, { want = { width: 1440, height: 900 }, demo = false }: { want?: RealSize; demo?: boolean } = {}): Promise<App> => launchApp(dataDir, { demo, size: want });
 async function go(page: Page, hash: string, ready: string): Promise<void> {
   await page.evaluate((h) => { location.hash = h; }, hash);
   await page.waitForSelector(ready, { timeout: 30_000 });
 }
-// Poll a file-backed fact until it holds.
-async function until<T>(read: () => T, ok: (v: T) => boolean, what: string): Promise<T> {
-  const end = Date.now() + 10_000;
-  let v = read();
-  while (!ok(v)) {
-    if (Date.now() > end) throw new Error(`timed out waiting for ${what}: ${JSON.stringify(v)}`);
-    await new Promise((r) => setTimeout(r, 100));
-    v = read();
-  }
-  return v;
-}
 
 test("[slow] House map: the nav entry opens it, the picker lists both houses with the biggest chosen, a pill per level, a stale deep link falls back, and without a client the no-tiledata note shows", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   const { dir } = seed({ client: false });
-  const { app, page, errors } = await launch(dir);
+  const { page, errors, close } = await launch(dir);
   try {
     await page.locator('#sidebar [data-nav="map"]').click();
     await page.waitForSelector("#tab-map:not([hidden]) #map-tiledata-note", { timeout: 30_000 });
@@ -163,14 +121,13 @@ test("[slow] House map: the nav entry opens it, the picker lists both houses wit
     await page.waitForFunction(() => location.hash === "#/map", undefined, { timeout: 15_000 });
     assert.equal(await page.locator("#map-house").inputValue(), VAULT);
     assert.deepEqual(errors, []);
-  } finally { await done(app, dir); }
+  } finally { await close(); }
 });
 
 test("[slow] House map: draws every vault chest and the courtyard's walls in both views, names each chest for screen readers, redraws a vault level and a castle level in under 100 ms, and keeps bare text out of flex and grid boxes", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   const { dir } = seed({ castle: true });
-  const { app, page, errors } = await launch(dir);
+  const { page, errors, close } = await launch(dir);
   // Click a level pill and time the synchronous redraw it triggers (sceneOf and the whole SVG build); fastestMs keeps the
   // fastest of several such redraws, so a busy runner times the code, not its neighbours.
   const timeLevel = (from: string, to: string): Promise<number> => page.evaluate(([a, b]) => {
@@ -219,13 +176,12 @@ test("[slow] House map: draws every vault chest and the courtyard's walls in bot
     });
     assert.deepEqual(split, [], "flex/grid containers holding bare text");
     assert.deepEqual(errors, []);
-  } finally { await done(app, dir); }
+  } finally { await close(); }
 });
 test("[slow] House map: hover shows a stack's callout, a click selects it and fills the panel, Esc clears, pan and zoom only move the viewBox, and an inner stack of the dense vault is reached through the cut-away and the keyboard", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   const { dir } = seed();
-  const { app, page, errors } = await launch(dir);
+  const { page, errors, close } = await launch(dir);
   try {
     await go(page, "#/map", "#map-svg .map-stack");
     await page.waitForTimeout(500);   // let the first layout settle before hovering
@@ -291,7 +247,7 @@ test("[slow] House map: hover shows a stack's callout, a click selects it and fi
     const moved = await page.evaluate(() => (document.activeElement as SVGElement | null)?.dataset?.stack ?? null);
     assert.ok(moved && moved !== inner, "an arrow key moves to the next stack that way");
     assert.deepEqual(errors, []);
-  } finally { await done(app, dir); }
+  } finally { await close(); }
 });
 
 const focused = (page: Page, sel: string): Promise<boolean> => page.evaluate((s) => !!document.activeElement?.matches(s), sel);
@@ -304,10 +260,9 @@ async function tabTo(page: Page, sel: string, key = "Tab"): Promise<void> {
   throw new Error(`${key} never reached ${sel}`);
 }
 test("[slow] House map: the keyboard alone walks the screen, and focus stays put through a level, an area, a selection, a reload and Esc from the panel", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   const { dir } = seed({ areas: true });
-  const { app, page, errors } = await launch(dir);
+  const { page, errors, close } = await launch(dir);
   try {
     await go(page, "#/map", "#map-svg .map-stack");
     const pill = (i: number) => `#map-levels [data-level="${i}"]`;
@@ -349,28 +304,17 @@ test("[slow] House map: the keyboard alone walks the screen, and focus stays put
     assert.equal(await page.locator('#map-svg [aria-pressed="true"]').count(), 0, "Esc cleared the selection");
     assert.ok(await focused(page, stack), "and focus went back to the stack");
     assert.deepEqual(errors, []);
-  } finally { await done(app, dir); }
+  } finally { await close(); }
 });
 
-// The bridge, as far as the page can tell: a status file refreshed every second until stop(). The page's commands land in bridgeDir's queue.jsonl.
-function bridgeOnline(dir: string): { bridgeDir: string; stop: () => void } {
-  const bridgeDir = join(dir, "bridge", "tazuo");
-  mkdirSync(bridgeDir, { recursive: true });
-  const write = (): void => writeFileSync(join(bridgeDir, "status.json"), JSON.stringify({ alive: new Date().toISOString(), character: "Tester", current: null, counts: { done: 0, failed: 0 }, results: {} }));
-  write();
-  const timer = setInterval(write, 1000);
-  return { bridgeDir, stop: () => clearInterval(timer) };
-}
-const readQueue = (d: string): Array<{ action: string; serial: number; name: string; chain: number[]; pos: Record<string, number> | null }> => {
-  try { return readFileSync(join(d, "queue.jsonl"), "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)); } catch { return []; }
-};
+// A command the page queued for the bridge, as these tests read it.
+type MapCommand = QueuedCommand & { serial: number; name: string; chain: number[]; pos: Record<string, number> | null };
 
 test("[slow] House map: the panel lists a vault stack top first with its label, Highlight queues for the bridge, Free space changes the legend, Label… opens, a label colour keeps its edge, a reload keeps the selection, and a chest no scan opened highlights by its place and cannot be labelled", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   const { dir } = seed();
-  const { bridgeDir, stop } = bridgeOnline(dir);
-  const { app, page, errors } = await launch(dir);
+  const { queue, stop } = fakeBridge(dir);
+  const { page, errors, close } = await launch(dir);
   try {
     await go(page, "#/map", "#map-svg .map-stack");
     await page.waitForFunction(() => document.querySelector("#bridge")?.getAttribute("data-state") === "ready", undefined, { timeout: 15_000 });
@@ -395,7 +339,7 @@ test("[slow] House map: the panel lists a vault stack top first with its label, 
     const mine = page.locator(`#map-panel li[data-chest="${LABELLED}"]`);
     assert.match(await mine.textContent() || "", /Reagents.*In game: Metal Chest/);
     await mine.locator('[data-act="highlight"]').click();
-    const [one] = await until(() => readQueue(bridgeDir), (l) => l.length === 1, "the highlight queued");
+    const [one] = await until(() => queue<MapCommand>(), (l) => l.length === 1, "the highlight queued");
     assert.deepEqual([one!.action, one!.serial, one!.name, one!.chain, one!.pos], ["highlight", LABELLED, "Reagents", [], { x: 3001, y: 1001, z: 7, facet: 1 }]);
 
     await page.getByRole("radio", { name: "Free space" }).click();
@@ -421,25 +365,24 @@ test("[slow] House map: the panel lists a vault stack top first with its label, 
     assert.equal(await row.locator('[data-act="label"]').isDisabled(), true);
     assert.equal(await row.locator('[data-act="items"]').isDisabled(), true);
     await row.locator('[data-act="highlight"]').click();
-    const lines = await until(() => readQueue(bridgeDir), (l) => l.length === 2, "the second highlight queued");
+    const lines = await until(() => queue<MapCommand>(), (l) => l.length === 2, "the second highlight queued");
     assert.deepEqual([lines[1]!.serial, lines[1]!.chain, lines[1]!.pos], [SEEN_ONLY, [], { x: 1012, y: 2012, z: 7, facet: 1 }]);
     assert.deepEqual(errors, []);
   } finally {
     stop();
-    await done(app, dir);
+    await close();
   }
 });
 
 test("[slow] House map: a chest's art from the client's files shows at 32 px in the panel with its swatch in the corner, small art twice its size; a chest with no art, or no art file, keeps the swatch with no broken image; no sideways scroll at 420 px (issue #174)", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   const pick = async (page: Page, x: number, y: number): Promise<void> => {
     await page.locator(`#map-svg [data-stack="${letter(courtModel, x, y)}"]`).focus();
     await page.keyboard.press("Enter");
   };
   for (const [art, width] of [[true, 1440], [true, 420], [false, 1440]] as const) {
     const { dir } = seed({ art });
-    const { app, page, errors } = await launch(dir, { want: { width, height: 900 } });
+    const { page, errors, close } = await launch(dir, { want: { width, height: 900 } });
     try {
       await go(page, `#/map/${COURT}`, "#map-svg .map-stack");
       await pick(page, 1012, 2012);
@@ -464,15 +407,14 @@ test("[slow] House map: a chest's art from the client's files shows at 32 px in 
         assert.equal(await page.locator(`#map-panel li[data-chest="${YARD_CHEST}"] img`).count(), 0, "no art file: no image");
       }
       assert.deepEqual(errors, []);
-    } finally { await done(app, dir); }
+    } finally { await close(); }
   }
 });
 
 test("[slow] a container's art from its scan record shows at 24 px in the Containers view and the Inventory's location column, and at 32 px in the contents drawer; a container scanned without one shows none (issue #174)", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   const { dir } = seed({ art: true });
-  const { app, page, errors } = await launch(dir);
+  const { page, errors, close } = await launch(dir);
   const loaded = (sel: string): Promise<unknown> => page.waitForFunction((s) => { const i = document.querySelector<HTMLImageElement>(s); return !!i && i.complete && i.naturalWidth === 10; }, sel, { timeout: 15_000 });
   const size = (sel: string): Promise<number[]> => page.locator(sel).first().evaluate((e) => { const r = e.getBoundingClientRect(); return [r.width, r.height]; });
   try {
@@ -495,15 +437,14 @@ test("[slow] a container's art from its scan record shows at 24 px in the Contai
     assert.deepEqual(await size("#map-drawer .map-drawer-title .art-tile"), [32, 32]);
     assert.ok((await page.locator(`#map-panel li[data-chest="${YARD_CHEST}"] .art-tile img`).getAttribute("src"))!.endsWith(`.png?hue=1153`), "the hue goes with it");
     assert.deepEqual(errors, []);
-  } finally { await done(app, dir); }
+  } finally { await close(); }
 });
 
 test("[slow] House map: Highlight the stack queues one highlight per chest top first, once however fast it is pressed, each by its scanned place or, for a chest no scan opened, by the place its capture saw it", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   const { dir } = seed();
-  const { bridgeDir, stop } = bridgeOnline(dir);
-  const { app, page, errors } = await launch(dir);
+  const { queue, stop } = fakeBridge(dir);
+  const { page, errors, close } = await launch(dir);
   try {
     await go(page, "#/map", "#map-svg .map-stack");
     await page.waitForFunction(() => document.querySelector("#bridge")?.getAttribute("data-state") === "ready", undefined, { timeout: 15_000 });
@@ -514,9 +455,9 @@ test("[slow] House map: Highlight the stack queues one highlight per chest top f
     assert.equal((await page.locator("#map-highlight-stack").textContent())?.trim(), "Highlight the stack");
     // two presses in a row (the second on the button the first one's redraw replaced) send the stack once
     await page.evaluate(() => { const b = document.querySelector<HTMLButtonElement>("#map-highlight-stack")!; b.click(); b.click(); });
-    const lines = await until(() => readQueue(bridgeDir), (l) => l.length === 5, "the stack's highlights queued");
+    const lines = await until(() => queue<MapCommand>(), (l) => l.length === 5, "the stack's highlights queued");
     await page.waitForSelector("#map-highlight-stack:not([disabled])");
-    assert.equal(readQueue(bridgeDir).length, 5, "Highlight the stack ran once");
+    assert.equal(queue<MapCommand>().length, 5, "Highlight the stack ran once");
     assert.deepEqual(lines.map((l) => [l.action, l.serial, l.chain, l.pos?.x, l.pos?.y]), top.map((s) => ["highlight", s, [], 3001, 1001]));
     assert.deepEqual(lines.map((l) => l.pos?.z), [...stack.zs].reverse());
 
@@ -527,23 +468,22 @@ test("[slow] House map: Highlight the stack queues one highlight per chest top f
     await page.keyboard.press("Enter");
     await page.waitForSelector("#map-highlight-stack:not([disabled])");
     await page.locator("#map-highlight-stack").click();
-    const all = await until(() => readQueue(bridgeDir), (l) => l.length === 6, "the seen-only chest's highlight queued");
+    const all = await until(() => queue<MapCommand>(), (l) => l.length === 6, "the seen-only chest's highlight queued");
     assert.deepEqual([all[5]!.serial, all[5]!.chain, all[5]!.pos], [SEEN_ONLY, [], { x: 1012, y: 2012, z: 7, facet: 1 }]);
     assert.deepEqual(errors, []);
   } finally {
     stop();
-    await done(app, dir);
+    await close();
   }
 });
 
 test("[slow] House map: ✎ renames a house (Esc cancels; Enter saves, and the heading, picker, crumb and page title follow with focus back on ✎), and a redesigned house is offered an earlier house's name and areas", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   const { dir } = seed();
   // A named house no longer captured, whose footprint overlaps the courtyard's (not the vault's).
   writeFileSync(join(dir, "house-map.json"), JSON.stringify({ version: 1, houses: { "1-1010-2010": { name: "Old courtyard", bounds: { x0: 1010, y0: 2010, x1: 1027, y1: 2027, facet: 1 },
     areas: [{ id: "a1", name: "Garden", level: 0, color: "area-7", rects: [{ x0: 1011, y0: 2011, x1: 1015, y1: 2016 }] }] } } }));
-  const { app, page, errors } = await launch(dir);
+  const { page, errors, close } = await launch(dir);
   const heading = (): Promise<string | null> => page.locator("#map-panel .map-house-title h2").textContent();
   const focused = (): Promise<string | undefined> => page.evaluate(() => document.activeElement?.id);
   try {
@@ -591,7 +531,7 @@ test("[slow] House map: ✎ renames a house (Esc cancels; Enter saves, and the h
     await go(page, "#/inventory", "#tab-inventory:not([hidden])");
     assert.equal(await page.title(), "Pack Rat", "another screen puts the page title back");
     assert.deepEqual(errors, []);
-  } finally { await done(app, dir); }
+  } finally { await close(); }
 });
 
 // The client point of a tile's middle on the floor of the level shown (the page's own projection and viewBox), scrolled into view first.
@@ -608,11 +548,10 @@ const readAreas = (dir: string): Array<{ id: string; name: string; color: string
 };
 
 test("[slow] House map: Unclaim this house asks in the page, then the house leaves the picker, its claim goes and it stays gone after a reload, at 1440 and 420 px with no sideways scroll (issue #299)", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   for (const width of [1440, 420]) {
     const { dir } = seed();
-    const { app, page, errors } = await launch(dir, { want: { width, height: 900 } });
+    const { page, errors, close } = await launch(dir, { want: { width, height: 900 } });
     try {
       await go(page, `#/map/${COURT}`, "#map-panel #map-unclaim");
       assert.ok(await sidewaysOf(page) <= 0, `${width} px: no sideways scroll`);
@@ -643,15 +582,14 @@ test("[slow] House map: Unclaim this house asks in the page, then the house leav
         await page.waitForFunction(() => document.activeElement?.id === "h-map", undefined, { timeout: 15_000 });
       }
       assert.deepEqual(errors, []);
-    } finally { await done(app, dir); }
+    } finally { await close(); }
   }
 });
 
 test("[slow] House map areas: a mouse drag draws an area, Enter asks its name, Save adds its row with its chest count and tints the map; ✎ renames it and ⋯ › Delete asks inline before it goes (1024 × 768)", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   const { dir } = seed();
-  const { app, page, errors } = await launch(dir, { want: { width: 1024, height: 768 } });
+  const { page, errors, close } = await launch(dir, { want: { width: 1024, height: 768 } });
   const rest = '.map-level:first-child .map-area-row.rest';
   try {
     await go(page, `#/map/${VAULT}`, "#map-svg .map-stack");
@@ -743,18 +681,17 @@ test("[slow] House map areas: a mouse drag draws an area, Enter asks its name, S
     assert.equal(await page.evaluate(() => document.activeElement?.id), "map-new-area-0");
     await until(() => readAreas(dir), (a) => a === undefined, "the vault's entry gone with its last area (it has no name)");
     assert.deepEqual(errors, []);
-  } finally { await done(app, dir); }
+  } finally { await close(); }
 });
 
 test("[slow] House map areas: a name pill per piece of an area at a fixed size, cut short to fit and whole on hover, never in the pointer's way; Hide area labels hides them and the choice survives a reload (1024 × 768)", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   const { dir } = seed();
   const LONG = "A very long name for a tiny spot";
   writeFileSync(join(dir, "house-map.json"), JSON.stringify({ version: 1, houses: { [VAULT]: { name: "", bounds: VAULT_BOUNDS, areas: [
     { id: "a1", name: "Loot Corner", level: 0, color: "area-2", rects: [{ x0: 3001, y0: 1001, x1: 3002, y1: 1002 }, { x0: 3004, y0: 1004, x1: 3005, y1: 1005 }] },
     { id: "a2", name: LONG, level: 0, color: "area-5", rects: [{ x0: 3005, y0: 1001, x1: 3005, y1: 1001 }] }] } } }));
-  const { app, page, errors } = await launch(dir, { want: { width: 1024, height: 768 } });
+  const { page, errors, close } = await launch(dir, { want: { width: 1024, height: 768 } });
   const pills = (id: string) => page.locator(`#map-pills .map-pill[data-area="${id}"]`);
   try {
     await go(page, `#/map/${VAULT}`, "#map-pills .map-pill");
@@ -795,14 +732,13 @@ test("[slow] House map areas: a name pill per piece of an area at a fixed size, 
     await page.locator("#map-labels").click();
     assert.equal(await pills("a1").count(), 2, "shown again");
     assert.deepEqual(errors, []);
-  } finally { await done(app, dir); }
+  } finally { await close(); }
 });
 
 test("[slow] House map areas: the keyboard alone draws an area (arrows move the cursor, Space starts and ends a rectangle, Shift+Space adds one, the size is announced, Enter finishes, Esc cancels)", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   const { dir } = seed();
-  const { app, page, errors } = await launch(dir, { want: { width: 1024, height: 768 } });
+  const { page, errors, close } = await launch(dir, { want: { width: 1024, height: 768 } });
   // The live region is emptied and refilled on the next frame: wait for the words.
   const live = async (want: string): Promise<void> => { await page.waitForFunction((w) => document.querySelector("#map-draw-live")?.textContent === w, want, { timeout: 15_000 }); };
   const keys = async (...ks: string[]): Promise<void> => { for (const k of ks) await page.keyboard.press(k); };
@@ -841,12 +777,11 @@ test("[slow] House map areas: the keyboard alone draws an area (arrows move the 
     assert.ok(await focused(page, '.map-area[data-area="a1"]'), "focus on the new area's row");
     assert.deepEqual((await until(() => readAreas(dir), (a) => !!a?.length, "the area saved"))![0]!.rects, [{ x0: 3001, y0: 1001, x1: 3005, y1: 1001 }, { x0: 3005, y0: 1001, x1: 3005, y1: 1005 }]);
     assert.deepEqual(errors, []);
-  } finally { await done(app, dir); }
+  } finally { await close(); }
 });
 
 test("[slow] House map: with no house captured the demo's ground chests stand on a plain grid with a hint to claim the house, and with nothing scanned an empty state says how to claim one (issue #299)", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   const demoDir = mkdtempSync(join(tmpdir(), "packrat-map-demo-"));
   writeFileSync(join(demoDir, "settings.json"), JSON.stringify({ schemaVersion: 1, shard: "uoalive", setupDone: true }));
   const demo = await launch(demoDir, { demo: true });
@@ -859,7 +794,7 @@ test("[slow] House map: with no house captured the demo's ground chests stand on
     await demo.page.keyboard.press("Enter");
     assert.equal(await demo.page.locator("#map-panel .map-chest-row").count(), 2);
     assert.deepEqual(demo.errors, []);
-  } finally { await done(demo.app, demoDir); }
+  } finally { await demo.close(); }
   const emptyDir = mkdtempSync(join(tmpdir(), "packrat-map-empty-"));
   writeFileSync(join(emptyDir, "settings.json"), JSON.stringify({ schemaVersion: 1, shard: "uoalive", setupDone: true }));
   const empty = await launch(emptyDir);
@@ -867,18 +802,17 @@ test("[slow] House map: with no house captured the demo's ground chests stand on
     await go(empty.page, "#/map", ".map-empty");
     assert.match(await empty.page.locator(".map-empty").textContent() || "", /Stand inside your house in game and press Claim this house in the Pack Rat panel\./);
     assert.deepEqual(empty.errors, []);
-  } finally { await done(empty.app, emptyDir); }
+  } finally { await empty.close(); }
 });
 
 test("[slow] Settings › UO folder (house map): shows where tiledata.mul is found, refuses a relative path, saves a folder and resets to automatic", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   const { dir, uo } = seed();
   const other = join(dir, "other-uo");
   mkdirSync(other);
   writeFileSync(join(other, "tiledata.mul"), syntheticTileData(FIXTURE_TILES));
   const saved = (): string | null | undefined => (JSON.parse(readFileSync(join(dir, "settings.json"), "utf8")) as { uoFolder?: string | null }).uoFolder;
-  const { app, page, errors } = await launch(dir);
+  const { page, errors, close } = await launch(dir);
   try {
     await go(page, "#/settings", "#set-uofolder .set-uofolder-where");   // the card as GET /api/houses tells it, not its first draw
     const card = page.locator("#set-uofolder");
@@ -896,19 +830,18 @@ test("[slow] Settings › UO folder (house map): shows where tiledata.mul is fou
     await until(saved, (v) => v === null, "back to automatic");
     await page.waitForFunction(() => /Found through TazUO's launcher/.test(document.querySelector("#set-uofolder")?.textContent || ""));
     assert.deepEqual(errors, []);
-  } finally { await done(app, dir); }
+  } finally { await close(); }
 });
 
 test("[slow] Settings › UO folder (house map): a folder set here whose tiledata.mul cannot be read, or is gone, says why under the folder", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   const { dir } = seed();
   const mine = join(dir, "my-uo");
   mkdirSync(mine);
   writeFileSync(join(mine, "tiledata.mul"), Buffer.alloc(100));
   const settings = JSON.parse(readFileSync(join(dir, "settings.json"), "utf8")) as Record<string, unknown>;
   writeFileSync(join(dir, "settings.json"), JSON.stringify({ ...settings, uoFolder: mine }));
-  const { app, page, errors } = await launch(dir);
+  const { page, errors, close } = await launch(dir);
   try {
     await go(page, "#/settings", "#set-uofolder .set-uofolder-where");   // the card as GET /api/houses tells it, not its first draw
     const card = page.locator("#set-uofolder");
@@ -925,7 +858,7 @@ test("[slow] Settings › UO folder (house map): a folder set here whose tiledat
     assert.match(await card.locator(".msg.warn").textContent() || "", /no tiledata\.mul any more.*plain colors/);
     assert.equal(await page.locator("#set-uofolder-path").inputValue(), mine);
     assert.deepEqual(errors, []);
-  } finally { await done(app, dir); }
+  } finally { await close(); }
 });
 
 // One scene measured in both theme families, light and dark (the page's own look only, as ui-contrast.test.mts does); some measured text must match `shows`, so the scene is the one meant.
@@ -947,10 +880,9 @@ async function measure(page: Page, name: string, shows: RegExp, rows: Array<Cont
 }
 
 test("[slow] House map: the Location section shows the house's coordinates under its heading and the facet overview with a marker per house, another house's marker opens its map by click or keyboard, and without the facet file a line says why", async (t) => {
-  const skip = unavailable();
-  if (skip) { t.skip(skip); return; }
+  if (skipWithoutElectron(t)) return;
   const { dir } = seed({ facet: true });
-  const { app, page, errors } = await launch(dir);
+  const { page, errors, close } = await launch(dir);
   try {
     await go(page, `#/map/${VAULT}`, "#map-panel #map-where");
     // The coordinates are the Location section's first line, under its heading; the heading area above has no coordinates or corners.
@@ -974,7 +906,7 @@ test("[slow] House map: the Location section shows the house's coordinates under
     await page.waitForSelector('#map-where .map-where-mark.current[aria-label="Trammel house at 1008, 2008 (this house)"]', { timeout: 30_000 });
     assert.equal(await page.locator("#map-where a.map-where-mark").count(), 0, "no other house within the courtyard's crop");
     assert.deepEqual(errors, []);
-  } finally { await done(app, dir); }
+  } finally { await close(); }
   const { dir: bare } = seed();
   const b = await launch(bare);
   try {
@@ -983,14 +915,13 @@ test("[slow] House map: the Location section shows the house's coordinates under
     assert.equal(await b.page.locator("#map-where #map-where-text").textContent(), "3003, 1003 · Trammel", "the heading and the coordinates stay, the reason under them");
     assert.deepEqual(await b.page.locator("#map-where > *").evaluateAll((es) => es.map((e) => e.id || e.className)), ["map-where-title", "map-where-coords", "map-where-note"]);
     assert.equal(await b.page.locator("#map-where img").count(), 0);
-  } finally { await done(b.app, bare); }
+  } finally { await b.close(); }
 });
 
 test("[slow] House map: the small map opens the world map lightbox by click or Enter; + asks for the visible region at screen resolution and lays it over the base; Esc and Close close it with focus back on the small map; another house's marker opens its map", async (t) => {
-  const skip = unavailable();
-  if (skip) { t.skip(skip); return; }
+  if (skipWithoutElectron(t)) return;
   const { dir } = seed({ facet: true });
-  const { app, page, errors } = await launch(dir);
+  const { page, errors, close } = await launch(dir);
   const asked: string[] = [];
   page.on("request", (r) => { if (r.url().includes("/api/facet-map/1.png")) asked.push(new URL(r.url()).search); });
   const isBase = (q: string): boolean => q.startsWith("?x0=0&y0=0&x1=8192&y1=8192&");
@@ -1029,15 +960,14 @@ test("[slow] House map: the small map opens the world map lightbox by click or E
     await page.waitForFunction((id) => location.hash === `#/map/${id}`, NEIGHBOUR, { timeout: 10_000 });
     await page.waitForSelector("dialog.world-map-dialog", { state: "detached", timeout: 10_000 });
     assert.deepEqual(errors, []);
-  } finally { await done(app, dir); }
+  } finally { await close(); }
 });
 
 test("[slow] House map: every text, control edge and icon passes contrast on the map, a selected stack, the contents drawer, a callout, the no-tiledata note and the empty state, in both theme families light and dark; at 1000 × 700 the panes stack and nothing scrolls sideways", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   const rows: Array<ContrastRow & { where: string }> = [];
   const { dir } = seed({ items: true });
-  const { app, page, errors, size } = await launch(dir);
+  const { app, page, errors, size, close } = await launch(dir);
   try {
     await go(page, "#/map", "#map-svg .map-stack");
     await page.mouse.move(size.width - 20, 4);
@@ -1077,7 +1007,7 @@ test("[slow] House map: every text, control edge and icon passes contrast on the
     assert.deepEqual(layout, { cols: 1, page: 0, body: 0, top: 0 });
     assert.deepEqual(await clippedPills(page), [], "every level pill shows whole beside the search box");
     assert.deepEqual(errors, []);
-  } finally { await done(app, dir); }
+  } finally { await close(); }
   const emptyDir = mkdtempSync(join(tmpdir(), "packrat-map-empty-"));
   writeFileSync(join(emptyDir, "settings.json"), JSON.stringify({ schemaVersion: 1, shard: "uoalive", setupDone: true }));
   const empty = await launch(emptyDir);
@@ -1085,7 +1015,7 @@ test("[slow] House map: every text, control edge and icon passes contrast on the
     await go(empty.page, "#/map", ".map-empty");
     await empty.page.mouse.move(empty.size.width - 20, 4);
     await measure(empty.page, "empty state", /No house|scan/i, rows);
-  } finally { await done(empty.app, emptyDir); }
+  } finally { await empty.close(); }
   const failed = failures(rows);
   assert.equal(failed.length, 0, `contrast failures (${failed.length} of ${rows.length} pairs):\n${describeFailures(failed)}`);
 });
@@ -1106,10 +1036,9 @@ async function drawerLayout(page: Page, width: number, mapBefore: number): Promi
 }
 
 test("[slow] House map: Show items opens the contents drawer as a column of its own and the map narrows (after the panel in one column on a small screen); its tabs switch chests, the filter narrows the list, another stack swaps it, Esc and ✕ close it with focus back where it came from, a new scan keeps its tab, filter, folded bag and scroll, and an item's Open details opens it in Inventory", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   const { dir } = seed({ items: true });
-  const { app, page, errors, size } = await launch(dir);
+  const { page, errors, size, close } = await launch(dir);
   try {
     await go(page, "#/map", "#map-svg .map-stack");
     const back = letter(vaultModel, 3001, 1001), front = letter(vaultModel, 3005, 1005);
@@ -1204,14 +1133,13 @@ test("[slow] House map: Show items opens the contents drawer as a column of its 
     await page.waitForSelector("#inv-peek:not([hidden]) #peek-title", { timeout: 15_000 });
     assert.equal(await page.locator("#peek-title").textContent(), "Pearl 01");
     assert.deepEqual(errors, []);
-  } finally { await done(app, dir); }
+  } finally { await close(); }
 });
 
 test("[slow] House map: a stack of up to four chests picks its chest in the drawer by tabs, not a select (1024 × 768)", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   const { dir } = seed();
-  const { app, page, errors } = await launch(dir, { want: { width: 1024, height: 768 } });
+  const { page, errors, close } = await launch(dir, { want: { width: 1024, height: 768 } });
   try {
     await go(page, `#/map/${COURT}`, `#map-svg [data-stack="${letter(courtModel, 1012, 2013)}"]`);
     await page.locator(`#map-svg [data-stack="${letter(courtModel, 1012, 2013)}"]`).click({ force: true });
@@ -1220,14 +1148,13 @@ test("[slow] House map: a stack of up to four chests picks its chest in the draw
     assert.equal(await page.locator(`#map-drawer [role=radio]#map-drawer-tab-${YARD_CHEST}`).getAttribute("aria-checked"), "true");
     assert.equal(await page.locator("#map-drawer-chest").count(), 0);
     assert.deepEqual(errors, []);
-  } finally { await done(app, dir); }
+  } finally { await close(); }
 });
 
 test("[slow] House map: in a 1920 × 1000 window the contents drawer is a fourth column and the levels pane stays", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   const { dir } = seed({ items: true });
-  const { app, page, size } = await launch(dir, { want: { width: 1920, height: 1000 } });
+  const { page, size, close } = await launch(dir, { want: { width: 1920, height: 1000 } });
   try {
     if (size.width < 1920) return t.skip(`this screen fits a window only ${size.width} px wide; the four columns need 1920`);
     await go(page, "#/map", "#map-svg .map-stack");
@@ -1239,15 +1166,14 @@ test("[slow] House map: in a 1920 × 1000 window the contents drawer is a fourth
     await page.waitForSelector("#map-drawer .map-item");
     await drawerLayout(page, size.width, before);
     assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector("#map-body")!).gridTemplateColumns.split(" ").length), 4);
-  } finally { await done(app, dir); }
+  } finally { await close(); }
 });
 
 test("[slow] House map: a contents drawer row shows the Inventory row's Highlight, Grab, Go to and ⋯ on hover and focus, reachable by Tab, and Highlight queues that item for the bridge", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   const { dir } = seed({ items: true });
-  const { bridgeDir, stop } = bridgeOnline(dir);
-  const { app, page, errors } = await launch(dir);
+  const { queue, stop } = fakeBridge(dir);
+  const { page, errors, close } = await launch(dir);
   const ARROWS = 0x40500013;
   try {
     await go(page, "#/map", "#map-svg .map-stack");
@@ -1272,19 +1198,18 @@ test("[slow] House map: a contents drawer row shows the Inventory row's Highligh
     await row.hover();
     assert.equal(await opacity(), "1");
     await acts.getByRole("button", { name: "Highlight in game" }).click();
-    const [one] = await until(() => readQueue(bridgeDir), (l) => l.length === 1, "the highlight queued");
+    const [one] = await until(() => queue<MapCommand>(), (l) => l.length === 1, "the highlight queued");
     assert.deepEqual([one!.action, one!.serial, one!.name], ["highlight", ARROWS, "Arrows"]);
     assert.deepEqual(errors, []);
-  } finally { stop(); await done(app, dir); }
+  } finally { stop(); await close(); }
 });
 
 test("[slow] House map: the contents drawer's handle resizes it by drag (kept across a reload), double-click (400 chosen, shown as wide as fits) and the keyboard, never under 320 px; a width saved wider than the window allows opens clamped without squeezing the map for a frame", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   const { dir } = seed({ items: true });
   // a width chosen on a far wider screen
   writeFileSync(join(dir, "ui-prefs.json"), JSON.stringify({ mapDrawerWidth: 4000 }));
-  const { app, page, errors, size } = await launch(dir);
+  const { page, errors, size, close } = await launch(dir);
   try {
     if (size.width < 1100) return t.skip(`this screen fits a window only ${size.width} px wide; below 1100 px the drawer stacks and has no handle`);
     const drawerCss = (): Promise<string> => page.evaluate(() => getComputedStyle(document.querySelector("#map-body")!).getPropertyValue("--drawer-w"));
@@ -1358,7 +1283,7 @@ test("[slow] House map: the contents drawer's handle resizes it by drag (kept ac
     await until(saved, (v) => v === clamp(max), "the keyboard's width saved once the keys pause");
     assert.equal(await page.evaluate(() => document.activeElement?.id), "map-drawer-grip", "focus stays on the handle");
     assert.deepEqual(errors, []);
-  } finally { await done(app, dir); }
+  } finally { await close(); }
 });
 
 // ---------------------------------------------------------------- search on the map, and Show on map (issue #10)
@@ -1380,10 +1305,9 @@ const clippedPills = (page: Page): Promise<string[]> => page.evaluate(() => {
 const callouts = (page: Page): Promise<string[]> => page.locator("#map-pins .map-pin:not([hidden])").evaluateAll((es) => es.map((e) => (e as HTMLElement).dataset.stack ?? ""));
 
 test("[slow] House map search: typing a query ghosts every other container, pins a callout per matching stack and lists the matches in the panel; a match selects its stack, the query is in the route and survives a reload, and Esc in the box clears it (1024 × 768)", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   const dir = seedRubies();
-  const { app, page, errors } = await launch(dir, { want: { width: 1024, height: 768 } });
+  const { app, page, errors, close } = await launch(dir, { want: { width: 1024, height: 768 } });
   try {
     await go(page, `#/map/${VAULT}`, "#map-svg .map-stack");
     const back = letter(vaultModel, 3001, 1001), front = letter(vaultModel, 3005, 1005);
@@ -1439,14 +1363,13 @@ test("[slow] House map search: typing a query ghosts every other container, pins
     assert.deepEqual(await callouts(page), []);
     assert.ok(await page.locator("#map-panel .kv").count(), "the house's totals are back");
     assert.deepEqual(errors, []);
-  } finally { await done(app, dir); }
+  } finally { await close(); }
 });
 
 test("[slow] House map search: a query with no match in the house leaves the map as it is and says where the matches are instead (another house a link that keeps the query), or that nothing matches", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   const dir = seedRubies();
-  const { app, page, errors } = await launch(dir, { want: { width: 1024, height: 768 } });
+  const { page, errors, close } = await launch(dir, { want: { width: 1024, height: 768 } });
   try {
     await go(page, `#/map/${COURT}?q=ruby`, "#map-search-note:not([hidden])");
     const note = page.locator("#map-search-note");
@@ -1469,14 +1392,13 @@ test("[slow] House map search: a query with no match in the house leaves the map
     await page.locator("#map-search-inventory").click();
     await page.waitForFunction(() => location.hash === "#/inventory" && (document.querySelector("#f-text") as HTMLInputElement | null)?.value === "ruby", undefined, { timeout: 10_000 });
     assert.deepEqual(errors, []);
-  } finally { await done(app, dir); }
+  } finally { await close(); }
 });
 
 test("[slow] Show on map: an Inventory item's ⋯ menu and a Containers view row open the map on that house with the container's stack selected, zoomed to and nothing else open (1024 × 768)", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   const dir = seedRubies();
-  const { app, page, errors } = await launch(dir, { want: { width: 1024, height: 768 } });
+  const { page, errors, close } = await launch(dir, { want: { width: 1024, height: 768 } });
   try {
     await go(page, "#/inventory", "tr.item");
     await page.fill("#f-text", "ruby");
@@ -1501,7 +1423,7 @@ test("[slow] Show on map: an Inventory item's ⋯ menu and a Containers view row
     await page.waitForSelector(`#map-svg [data-stack="${front}"].sel`);
     assert.equal(await page.locator("#map-panel li[data-chest]").count(), 5);
     assert.deepEqual(errors, []);
-  } finally { await done(app, dir); }
+  } finally { await close(); }
 });
 
 // ---------------------------------------------------------------- the Stack plan (issue #10)
@@ -1518,10 +1440,9 @@ const sideways = (page: Page): Promise<{ page: number; body: number }> => page.e
 });
 
 test("[slow] House map Stack plan: lists every container of the dense vault, a card per stack with its containers top first, the area on its tint; a row selects its stack, fills the panel and opens it in the drawer; the keyboard walks the cards; New area waits for a drawing view; nothing is clipped or scrolls sideways (1024 × 768)", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   const { dir } = seed({ items: true, areas: true });
-  const { app, page, errors } = await launch(dir, { want: { width: 1024, height: 768 } });
+  const { app, page, errors, close } = await launch(dir, { want: { width: 1024, height: 768 } });
   try {
     await go(page, `#/map/${VAULT}`, "#map-svg .map-stack");
     await page.locator('#map-view [data-value="plan"]').click();
@@ -1578,14 +1499,13 @@ test("[slow] House map Stack plan: lists every container of the dense vault, a c
     await page.locator('#map-view [data-value="angle"]').click();
     await page.waitForSelector(`#map-svg [data-stack="${next}"].sel`);
     assert.deepEqual(errors, []);
-  } finally { await done(app, dir); }
+  } finally { await close(); }
 });
 
 test("[slow] House map Stack plan: a search scrolls to its first matching card, marks the matching rows with the items found, fades the cards with no match and lists the matches in the panel, with no pins; Show on map scrolls to its card (1024 × 768)", async (t) => {
-  const why = unavailable();
-  if (why) return t.skip(why);
+  if (skipWithoutElectron(t)) return;
   const dir = seedRubies();
-  const { app, page, errors } = await launch(dir, { want: { width: 1024, height: 768 } });
+  const { page, errors, close } = await launch(dir, { want: { width: 1024, height: 768 } });
   try {
     await go(page, `#/map/${VAULT}`, "#map-svg .map-stack");
     await page.locator('#map-view [data-value="plan"]').click();
@@ -1621,5 +1541,5 @@ test("[slow] House map Stack plan: a search scrolls to its first matching card, 
     await page.waitForTimeout(200);
     assert.equal(await cardInView(page, front), true, "Show on map scrolls the plan to the card");
     assert.deepEqual(errors, []);
-  } finally { await done(app, dir); }
+  } finally { await close(); }
 });
