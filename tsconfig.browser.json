@@ -16,6 +16,7 @@
     "app/domain/tooltip.*",
     "app/domain/slots.*",
     "app/domain/kinds.*",
+    "app/domain/fold.*",
     "app/item-query.*",
     "app/unravel.*",
     "app/organize-config.*",

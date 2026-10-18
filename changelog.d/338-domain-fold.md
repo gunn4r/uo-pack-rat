@@ -1,0 +1,1 @@
+- **For contributors: the inventory and its fold moved to `app/domain/fold.mts`** (issue #338): `Item`, `Container`, `Character`, `Inventory`, `foldSnapshots`, `locationOf`, `containerPath`, `capacityOf`, `groupByName` and the rest, re-exported from `app/vault-lib.mts` under the same names. A pure move: no behaviour changes.
