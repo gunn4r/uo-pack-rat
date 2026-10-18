@@ -160,6 +160,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `scripts/american-spelling.test.mts` — a [smoke] guard for American spelling in what a player reads (issue #10).
 - `scripts/build-schema-types.test.mts` — the JSON Schema to TypeScript generator (`scripts/build-schema-types.mts`).
 - `scripts/build-ui.test.mts` — `scripts/build-ui.mts`'s `buildUi()`, the page build.
+- `scripts/changelog.test.mts` — `scripts/changelog.mts`: a [smoke] guard that the committed fragments and CHANGELOG.md are in shape, a [smoke] release of a copy of them, and the release that puts the fragments together.
 - `scripts/css-guard.test.mts` — a [smoke] guard that keeps screen stylesheets from restyling the shared components, and the window breakpoints in one list.
 - `scripts/docs-links.test.mts` — a [smoke] guard that every repo path the Markdown names in backticks exists.
 - `scripts/electron-app.test.mts` — a [smoke] guard that keeps the Electron UI tests on their shared fixture (scripts/electron-app.mts, issue #338).

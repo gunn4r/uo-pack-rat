@@ -19,3 +19,4 @@ Which tests cover this change — new ones you added, or existing ones that alre
 ## Checklist
 
 - [ ] `npm test` passes.
+- [ ] A `changelog.d/<short-name>.md` fragment, if this matters to a player or a contributor (never an edit to `CHANGELOG.md`).
