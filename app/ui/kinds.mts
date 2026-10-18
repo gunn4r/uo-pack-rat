@@ -13,8 +13,9 @@ import { el, toast } from "./dom.mts";
 import { api } from "./api.mts";
 import { box, button, field, openDialog, select, txt } from "./components.mts";
 import { errorText } from "./messages.mts";
-import { plural } from "./inv-model.mts";
+
 import type { ItemKindsApiResponse } from "./api-types.mts";
+import { plural } from "./format.mts";
 
 
 export async function openClassify(it: Item): Promise<void> {

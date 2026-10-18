@@ -3,9 +3,10 @@
 // map: house
 // owns: `project`, `paintOrder`, `chestViews`, `pickHouse`
 import { bagLabel, compareNames, itemOwnBlob, type Container, type Item } from "../vault-lib.mts";
-import { plural, splitSerial } from "./inv-model.mts";
+import { splitSerial } from "./inv-model.mts";
 import { areaOfStack, inRects } from "../house-areas.mts";
 import type { AreaRect, Cell, ContainerLabel, FacetMapReason, HouseArea, HouseMapEntry, HouseModel, HouseSummary, InventoryData, Spot, Stack, TiledataFrom } from "./api-types.mts";
+import { plural } from "./format.mts";
 
 // A tile is W units wide at the game angle (half as tall), and one z step lifts a point K units: the client draws a 44-px tile and 4 px per z, a little flatter than this, which reads better at the map's size.
 export const W = 32, K = 2;

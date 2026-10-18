@@ -9,7 +9,7 @@ import { $, el, toast } from "./dom.mts";
 import { api } from "./api.mts";
 import { box, txt, button, meter, searchInput, openDialog, nextId, tipWrap } from "./components.mts";
 import { errorText } from "./messages.mts";
-import { plural } from "./inv-model.mts";
+
 import { houseOfContainer } from "./house-links.mts";
 import { bridgeFeatureSet, currentAdapter, grabAll, BRIDGE_OFFLINE } from "./bridge.mts";
 import { tripGate, stepWatch, failedSteps, pinnedWith, type TripWatch } from "./organize-model.mts";
@@ -18,6 +18,7 @@ import { emptySelection, isSelected, isWorn, selectedCount, toggleRows, toggleLo
   selectedText, wornNote, loadedNote, allOffer, allNote, movingText, movedText, gatheredText, GATHER_NOTE, againstText, pinnedText, skippedText, noRoomText, GRAB_TOO_MANY, WORN_LOCK, OUTSIDE, type Matches, type Selection, type DestRow } from "./move-model.mts";
 import type { ItemBrowser, SelectionHooks } from "./item-browser.mts";
 import type { BridgeStatusApiResponse, MoveBackApiResponse, MovePlanApiResponse, MovePlanSummary, MoveTripApiResponse } from "./api-types.mts";
+import { plural } from "./format.mts";
 
 let browser: ItemBrowser | null = null;
 let sel: Selection = emptySelection();

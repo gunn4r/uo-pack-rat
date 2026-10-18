@@ -15,7 +15,8 @@ import { box, txt, button, icon, popover, closePopover, confirmDialog, tag, comb
 import { session, commands, announce, provide, type BuildState } from "./builder-session.mts";
 import { NO_CHARACTER, plainName } from "./builder-parts.mts";
 import { characterNames } from "./roster.mts";
-import { plural, topSkills, who, templateLine } from "./builder-model.mts";
+import { topSkills, who, templateLine } from "./builder-model.mts";
+import { plural } from "./format.mts";
 
 // ---- the sentence bar's pickers (issue #321): the character, and the build with the templates to start over from
 let charPicker: ComboboxHandle | null = null, buildPicker: ComboboxHandle | null = null;
