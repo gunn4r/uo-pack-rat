@@ -1,5 +1,9 @@
 // import.mts — POST /api/import/paste and /api/import/rescan.
 //
+// The routes, what each takes and answers:
+// - `POST /api/import/paste` {text, adapter} (413 past watcher.mts's MAX_INBOX_BYTES; app/import.mts's parsePastedScan: what the ClassicUO web-client scanner prints, marker block or bare JSON, upgraded/validated and written straight into that adapter's inbox — for a client whose sandbox can't write files at all)
+// - `POST /api/import/rescan` {} (scanOnce() on every running watcher, for a scan file the folder watcher missed; {adapters: [ids swept]}, empty under --demo; 503 with {failed: [ids]} when an inbox could not be swept)
+//
 // map: server
 // owns: `routes`
 import { short } from "../../guards.mts";

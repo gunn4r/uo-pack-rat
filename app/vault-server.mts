@@ -3,8 +3,8 @@
 // Exports startServer(config) → { server, port, url, close() } — nothing runs at import time, so a
 // test (or another launcher) can start and stop as many independent instances as it likes. The file
 // also self-starts when run directly (node app/vault-server.mts / node scripts/start.mts).
-// Routes: app/http/routes/, one module per area, tried in order through app/http/router.mts; docs/architecture.md
-// (HTTP routes) lists every route and what it takes and answers. This file is the composition root: it reads the
+// Routes: app/http/routes/, one module per area, tried in order through app/http/router.mts; each route module's
+// header lists its routes and what each takes and answers. This file is the composition root: it reads the
 // config, builds the stores, services and route table, runs the Host/Origin/token middleware, dispatches, maps
 // errors, listens and closes.
 // Every text/html response carries the Content-Security-Policy (app/http/respond.mts, including frame-ancestors
