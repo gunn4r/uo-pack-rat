@@ -1,6 +1,9 @@
 // ui/characters.mts — the Characters screen (design spec 4.4, 4.5): the roster at #/characters, one
 // 48 px row per character with their resists against the cap, and a character's sheet at
 // #/characters/<Name> (the sheet itself is sheet.mts's sheetNode, shared with the Suit Builder).
+//
+// map: ui-screens
+// owns: `renderCharacters`, `showCharacter`
 import { state } from "./store.mts";
 import { $, el, toast, tipNode, hideItemTip, compactChildren } from "./dom.mts";
 import { txt, box, badge, button, input, meter, table, searchInput, message, popover, menu, confirmDialog, tooltip, type Column } from "./components.mts";

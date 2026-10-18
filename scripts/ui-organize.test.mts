@@ -184,7 +184,7 @@ test("[slow] a save over a setup changed in another window is refused: the page 
     // the setup it left and names its stamp, so none is refused and none undoes another.
     let puts = 0;
     await page.route("**/api/organize", async (r) => {
-      if (r.request().method() === "PUT") { puts++; await new Promise((ok) => setTimeout(ok, 400)); }
+      if (r.request().method() === "PUT") { puts++; await new Promise((ok) => setTimeout(ok, 400)); }   // sleep: each PUT held back on purpose
       await r.continue();
     });
     // ↓ twice moves the rule twice, as pressed.
@@ -200,7 +200,7 @@ test("[slow] a save over a setup changed in another window is refused: the page 
     const both = await until(() => readOrganize(dataDir), (f) => f?.emptyBagsTo === DORRAN, "the empty bags saved");
     assert.equal(both!.catchAll, KESTREL, "the first edit was not undone by the second");
     assert.deepEqual(both!.rules.map((r) => r.id), ["rule-3", "other-window", "rule-1"]);
-    await page.waitForTimeout(800);
+    await page.waitForTimeout(800);   // sleep: proves no second conflict is reported, which no event can show
     const conflicts = await page.evaluate(() => [...document.querySelectorAll("#toasts .toast .toast-text")].filter((e) => /another window/.test(e.textContent || "")).length);
     assert.equal(conflicts, 1, "only the real conflict above was reported");
     assert.deepEqual(errors, []);

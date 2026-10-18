@@ -1,4 +1,7 @@
 // ui/houses-data.mts — the House map's data (issue #10): the houses the scans captured (GET /api/houses), the player's house names and areas (GET /api/house-map, one house's entry saved with PUT /api/house-map/<id>, a house unclaimed with DELETE /api/house-claims/<id>), and each house's model (GET /api/houses/<id>). The list and the names are fetched on every load, since a rename or a new UO folder can change them outside the page. A model is kept by its house id and capture stamp (capturedAt and captures) while the inventory and the tiledata it was built from stay the same, so showing the map again fetches only the models that changed.
+//
+// map: house
+// owns: `houses`, `housesData`
 import { api, type ApiOptions } from "./api.mts";
 import type { HouseApiResponse, HouseMapApiResponse, HouseMapEntry, HouseMapPutApiResponse, HouseSummary, HousesApiResponse } from "./api-types.mts";
 

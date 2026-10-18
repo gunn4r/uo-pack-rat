@@ -2,6 +2,9 @@
 // row actions (Highlight, Grab, Go to) and the ⋯ menu, and the filter context the filter wording needs. The
 // Inventory (inventory.mts) hands the ⋯ menu its two ways into the Items view at startup, so no screen imports
 // these from another screen.
+//
+// map: ui-components
+// owns: `rarityEl`, `tagEls`, `locationEl`, `tagWords`, `itemActions`, `itemMenu`, `filterContext`, `setItemNav`
 import { tagUnits } from "../vault-lib.mts";
 import type { Item } from "../vault-lib.mts";
 import { state } from "./store.mts";

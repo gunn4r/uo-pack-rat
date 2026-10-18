@@ -3,6 +3,9 @@
 // lives apart from the entry point so scripts/run-suite.test.mts can drive it against throwaway test
 // files in a temp directory, which is the only way to prove the runner counts what it claims to. The
 // entry point owns the process: writing test_logs/latest_summary.json, printing, the exit code.
+//
+// map: tooling
+// owns: `runSuite`, `patternsFor`
 import { run } from "node:test";
 import type { test as NodeTest } from "node:test";
 import { realpathSync } from "node:fs";

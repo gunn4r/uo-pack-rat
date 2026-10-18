@@ -1,7 +1,10 @@
-// installer.mts — pure functions behind the setup wizard: adapter discovery, client-folder
-// detection, script install/verify, scan import, and a GitHub-releases update check. node:fs and
+// installer.mts — pure functions behind the setup wizard and Settings: adapter discovery, client-folder
+// detection, script install/verify, the running-script guard, scan import, the data-folder check and a GitHub-releases update check, everything per client (scripts folders, the client folder's name, retired scripts, the stop hint, the registrar) coming from the adapter manifest's install section; it rejects relative and UNC folder paths, reads an installed version from regular files only (O_NOFOLLOW, first 64 KiB), writes each script atomically with packrat-paths.json last, accepts a release URL only under this repository's releases, and imports no Electron. node:fs and
 // node:path only; the one bit of I/O that isn't the local filesystem (checkForUpdates' HTTP call)
 // takes an injectable fetchImpl so callers (and tests) never depend on a real fetch global.
+//
+// map: installer
+// owns: `listAdapters`, `candidateClientRoots`, `validateScriptsDir`, `installedVersion`, `installScripts`, `checkForUpdates`, `checkScriptsDataDir`, `RUNNING_MESSAGE_OTHER`, `REGISTRARS`
 import {
   existsSync, statSync, lstatSync, readdirSync, readFileSync, copyFileSync, realpathSync,
   unlinkSync, constants, type Dirent, type Stats,

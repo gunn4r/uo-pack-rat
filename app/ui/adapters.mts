@@ -2,6 +2,9 @@
 // or app/ui/store.mts dependency (unlike most of ui/*.mts, which touch localStorage/document at
 // module scope and so can only run in a real browser or under Playwright) — kept separate on purpose
 // so it can be unit-tested directly under plain node:test. See app/wizard-default-adapter.test.mts.
+//
+// map: ui-data
+// owns: `defaultAdapterId`, `availableAdapters`, `platformCompatible`
 
 // The adapter fields these three functions actually read — not api-types.mts's AdapterSummary
 // (which this module deliberately has no dependency on, per the header comment above and

@@ -1,6 +1,9 @@
 // swing.mts — swing speed (issue #217): how long a weapon takes between swings for a character's stamina and Swing Speed Increase, the steps SSI moves it through, and the table both solvers score SSI with when the build scores it by step. Pure and browser-safe, with no imports beyond types.
 //
 // The formula is stock ServUO's (ML and later, BaseWeapon.GetDelay), in whole quarter seconds: ticks = max(5, floor(N · 100 / (100 + S))) with N = round(4 × weapon speed) − floor(stamina / 30) and S the SSI, capped at 60. A delay is ticks × 0.25 s. Stamina here is full stamina, so a tired character swings slower than shown.
+//
+// map: builder
+// owns: `swingSeconds`, `ssiForTicks`, `swingSteps`, `stepTable`, `stepsFor`, `swingOf`, `weaponSpeedOf`, `heldWeapon`
 import type { EffectiveProfile } from "./vault-lib.mts";
 import type { SwingResult, SwingStep } from "./runs-types.mts";
 

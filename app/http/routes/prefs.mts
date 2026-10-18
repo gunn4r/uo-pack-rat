@@ -1,4 +1,7 @@
 // prefs.mts — the player's saved choices: GET|PATCH /api/profiles, /api/ui-prefs and /api/tazuo-panel.
+//
+// map: server
+// owns: `routes`
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { isBuffList, isBuffSkills } from "../../buffs.mts";

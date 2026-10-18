@@ -1,4 +1,7 @@
 // ui/house-links.mts — which house holds each container (issue #10), the one index of it: Inventory's item rows and the Containers view offer "Show on map" by it without loading any house's model, and the House map's search says where its other matches are by it. GET /api/houses lists each house's container serials; every other ground container with a place of its own stands on the plain grid (house-map-model.mts houseIndex). Fetched again with every inventory load, and set again whenever the House map fetches the houses.
+//
+// map: house
+// owns: `houseOfContainer`, `houseOfItem`, `showOnMap`
 import { state } from "./store.mts";
 import { api } from "./api.mts";
 import { floorContainerOf, houseIndex, mapHash, type HouseRef } from "./house-map-model.mts";

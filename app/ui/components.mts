@@ -3,6 +3,9 @@
 // grid container holds only element children, and every run of text is one <span>. Builders that take text
 // wrap it themselves (txt()); box() is the flex/grid container builder for everything else, and it refuses a
 // bare string or number among its children. Nothing here sets innerHTML: icons are built node by node.
+//
+// map: ui-components
+// owns: `box`, `txt`, `button`, `input`, `select`, `popover`, `combobox`, `createDrawer`, `openDialog`, `confirmDialog`, `table`, `menu`, `FLEX_CLASSES`
 import { el } from "./dom.mts";
 import type { ElAttrs } from "./dom.mts";
 

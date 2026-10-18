@@ -3,6 +3,9 @@
 // (which of the ticked chests each group gets) and proposeOrganize (the whole setup Accept saves). Pure and
 // deterministic (node:util only for a deep compare): every walk runs in serial or table order. POST
 // /api/organize/propose hands everything in; the page saves the proposal's config with the ordinary PUT /api/organize.
+//
+// map: organize
+// owns: `STRATEGIES`, `groupItems`, `assignGroups`, `proposeOrganize`
 import { isDeepStrictEqual } from "node:util";
 import { checkOrganizeConfig, emptyRuleQuery, LIMITS, type Build, type ContainerLabel, type OrganizeConfig, type OrganizeRule, type Origin, type RuleMatch } from "./organize-config.mts";
 import { PRESETS } from "./organize-presets.mts";

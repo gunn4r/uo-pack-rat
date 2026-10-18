@@ -1,4 +1,7 @@
 // move.mts — Move to (issue #270): items the player selected in the Inventory put into one container they picked, or each put back where a Move took it from, planned as Organize trips (organize.mts's packSite) so the bridge runs them as it runs Organize's. Pure and deterministic, like the Organize planner: the server hands everything in.
+//
+// map: organize
+// owns: `resolveSelection`, `destProblem`, `planMoves`, `backSteps`, `againstRules`, `Selection`
 import { applyItemQuery, parseItemQuery } from "./item-query.mts";
 import { ancestry, applyOverlay, claimOf, inventoryStampOf, newSim, packSite, planStamp, posOk, scopeOf, sitesOf, TRIP_DEFAULTS, type OverlayMove, type ScopeOptions, type Want } from "./organize.mts";
 import { CATCH_ALL_ID, type OrganizeConfig } from "./organize-config.mts";

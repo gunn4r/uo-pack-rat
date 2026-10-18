@@ -1,4 +1,7 @@
 // setup.mts — the adapters this install ships and what the client setup needs of them: which ids are real, what each one's bridge declares it can do, and whether the client's installed scripts write to this data folder.
+//
+// map: services
+// owns: `createSetupService`
 import { listAdapters, checkScriptsDataDir, type AdapterInfo, type DataDirCheck } from "../installer.mts";
 import type { ClientSettings } from "../store/settings.mts";
 import type { FeatureDeclaration } from "../vault-lib.mts";

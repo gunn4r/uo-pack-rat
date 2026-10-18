@@ -4,6 +4,8 @@
 // drawer on its tab, and a big Build; beside it what the character wears now and the other characters' latest runs. It is
 // drawn from the panel's state (the session's profile and knobs), so an edit in the drawer redraws it. The numbers and
 // words come from ui/builder-model.mts; it shares the builder's state through ui/builder-session.mts.
+//
+// map: builder
 import { NOBODY, RESIST_KEYS, RESIST_SKILL_KEY, GEAR_SLOTS, resistMinimum, resistCapsFor, fcCapFor, totalsOf, roundImportance, goalsActive } from "../vault-lib.mts";
 import type { Goals, OptItem } from "../vault-lib.mts";
 import { BUILTIN_PREFIX, characterBuffs, findTemplate, templateName, templateRefs, templateSettings, type TemplateEntry } from "../build-spec.mts";

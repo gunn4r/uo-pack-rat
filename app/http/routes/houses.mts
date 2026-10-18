@@ -1,4 +1,7 @@
 // houses.mts — the house map: GET /api/houses[/<id>], GET /api/facet-map/<facet>.png, GET /api/item-art/<graphic>.png, GET /api/house-map, PUT /api/house-map/<id>, GET /api/house-claims and DELETE /api/house-claims/<id>.
+//
+// map: server
+// owns: `routes`
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { DATA_DIR_MODE } from "../../config.mts";

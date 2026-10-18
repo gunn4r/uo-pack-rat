@@ -1,4 +1,7 @@
 // tiledata-fixture.mts — builds a synthetic 7.x tiledata.mul for tests (no game data ships in the repo). The buffer holds the land block and as many item blocks as the highest graphic asked for needs.
+//
+// map: house
+// owns: `syntheticTileData`
 import { LAND_BYTES, ITEM_BLOCK, itemOffset } from "./tiledata.mts";
 
 export interface FixtureTile { graphic: number; flags: bigint; height?: number; name?: string; layer?: number }

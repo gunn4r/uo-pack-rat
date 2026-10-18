@@ -7,6 +7,9 @@
 // subset of that API this module calls; loadHighs() is the one place that trusts the real loader's
 // return value against that local shape (a cast, not `any`) — everything past it works only with
 // the local interfaces.
+//
+// map: builder
+// owns: `loadHighs`, `openModel`, `solveModel`, `addNoGood`, `closeModel`, `gapFromEvents`
 import type { BuiltMip } from "./mip.mts";
 import { noGoodRow } from "./mip.mts";
 

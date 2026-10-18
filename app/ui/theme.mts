@@ -2,6 +2,9 @@
 // app/ui/tokens.css reads both). The choice is the ui-prefs "theme" and "appearance" fields; "system"
 // follows prefers-color-scheme live, so switching the OS to dark flips an open page. Pure resolution is
 // split from the DOM so app/theme.test.mts can run it under plain node:test.
+//
+// map: ui-bootstrap
+// owns: `resolveTheme`, `resolveMode`, `applyLook`, `BUILT_THEMES`
 import type { UiPrefs } from "./api-types.mts";
 
 export type Appearance = "light" | "system" | "dark";

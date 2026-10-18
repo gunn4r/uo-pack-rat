@@ -5,6 +5,9 @@
 // itself with an "organizechange" event on document, on which the Organize screen, the Containers view and the
 // Items rows redraw. A save names the setup it was made from (its stamp, issue #280): one saved elsewhere since (another
 // window, an AI assistant) is refused, and the page reloads that one instead of writing over it.
+//
+// map: organize
+// owns: `loadOrganize`, `saveConfig`, `matchCount`
 import { state } from "./store.mts";
 import { api } from "./api.mts";
 import { errorText } from "./messages.mts";

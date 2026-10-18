@@ -14,6 +14,9 @@
 //   node app/bench/gen-inventory.mts --n 5000 --gear 0.3 --seed 1 --out <dir>
 //
 // Library use: learnModel(snapshots, lib) -> model; generateScan(model, {n, gearFraction, seed}) -> scan object.
+//
+// map: builder
+// owns: `learnModel`, `generateScan`
 import { readFileSync, readdirSync, writeFileSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";

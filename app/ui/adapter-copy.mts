@@ -3,6 +3,9 @@
 // the sentence this replaces). Pure and DOM-free like ui/adapters.mts, so the wording is pinned by
 // app/adapter-copy.test.mts. An adapter this table does not know yet (a new one added to adapters/)
 // still gets plain, correct text built from its own name and summary, never a blank.
+//
+// map: ui-data
+// owns: `adapterCopy`, `shortName`, `wizardSteps`
 import type { AdapterLike } from "./adapters.mts";
 import { platformCompatible } from "./adapters.mts";
 

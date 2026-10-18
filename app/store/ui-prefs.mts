@@ -1,4 +1,7 @@
 // ui-prefs.mts — <data>/ui-prefs.json: the page's view choices (GET/PUT /api/ui-prefs), the fields it may hold, and the checks a request's or a hand-edited file's value is held to.
+//
+// map: server
+// owns: `createUiPrefsStore`, `UI_PREF_CHOICES`, `UI_PREF_LISTS`, `UI_PREF_VERSIONS`, `isColWidths`, `isDrawerWidth`, `isManualSuit`
 import { GEAR_SLOTS } from "../vault-lib.mts";
 import { isBuffSkills, isBuffSkillsByCharacter, normalizeBuffs, normalizeBuffListsByCharacter } from "../buffs.mts";
 import { isBoundedInt, isBoundedString, MAX_SERIAL } from "../guards.mts";

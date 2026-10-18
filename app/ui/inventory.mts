@@ -2,6 +2,9 @@
 // index.html's #inv-view-items, with the item peek (peek.mts) as its detail panel, its columns saved to ui-prefs,
 // and the Inventory's ids kept. Its rows can be ticked and moved (move-to.mts, issue #270). Also what other screens' ways into the Items view do (nav.mts hands them here); the
 // row actions and ⋯ menu live in item-parts.mts.
+//
+// map: ui-screens
+// owns: `initFilters`, `fetchItems`
 import type { Item } from "../vault-lib.mts";
 import type { ItemQuery } from "../item-query.mts";
 import { $ } from "./dom.mts";

@@ -2,6 +2,9 @@
 // job, builder-start.mts's first-visit view, builder-result.mts's result, builder-manual.mts's Manual mode, runs.mts's saved
 // runs) and the commands they call on each other. The five never import each other: each reads and sets the session here, and registers the commands it
 // performs for the others with provide(). Today a session is one character, one result and one job.
+//
+// map: builder
+// owns: `session`, `commands`, `provide`, `readControls`, `applyKnobs`
 import { RUN_DEFAULTS } from "../run-settings.mts";
 import type { EffectiveProfile, PropMap, RunBuffs, RunSettings } from "../vault-lib.mts";
 import type { BuffPlan, Stats } from "../buffs.mts";

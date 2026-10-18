@@ -1,4 +1,7 @@
 // server-routes-fixture.mts — test fixture for the route test files (app/server.test.mts and app/server-<family>.test.mts): the response shapes they read, asJson(), the shard's rules, and the helpers more than one of them uses (raw requests, an SSE reader, the demo fold, the log).
+//
+// map: tooling
+// owns: `asJson`, `UOALIVE`, `rawReq`, `sseReader`, `foldFixtures`, `logText`
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
