@@ -382,7 +382,7 @@ The page is `app/index.html` plus `app/ui/`, compiled by `scripts/build-ui.mts` 
 <!-- module-map:start ui-components -->
 | Module | Role | Owns |
 |---|---|---|
-| `app/ui/components.mts` | The page's component primitives (docs/ui.md), as small DOM builders over dom.mts's el(). | `box`, `txt`, `button`, `input`, `select`, `popover`, `combobox`, `createDrawer`, `openDialog`, `confirmDialog`, `table`, `menu`, `toast`, `FLEX_CLASSES` |
+| `app/ui/components.mts` | The page's component primitives (docs/ui.md), as small DOM builders over dom.mts's el(). | `box`, `txt`, `button`, `input`, `select`, `popover`, `combobox`, `createDrawer`, `openDialog`, `confirmDialog`, `table`, `menu`, `toast`, `resistTile`, `FLEX_CLASSES` |
 | `app/ui/dialog.mts` | The one-field prompt dialog, on components.mts's openDialog. | `promptText` |
 | `app/ui/item-browser.mts` | The item browser (issue #12): the filter toolbar and its popovers, the active-filter strip, the columns and density popover, and the virtual table over its data source (GET /api/items by default), as a factory that can be mounted more than once. | `createItemBrowser`, `itemsSource` |
 | `app/ui/item-parts.mts` | The item widgets every screen shares: an item's rarity, tags and location as elements, the row actions (Highlight, Grab, Go to) and the ⋯ menu, and the filter context the filter wording needs. | `rarityEl`, `tagEls`, `locationEl`, `tagWords`, `itemActions`, `itemMenu`, `filterContext`, `setItemNav` |
