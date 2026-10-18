@@ -220,6 +220,7 @@ The thresholds are the shard rules' `unravel` (Shard rules, above); `GET /api/it
 | Module | Role | Owns |
 |---|---|---|
 | `app/api/routes.mts` | The HTTP API's route map: every /api route the server registers (app/http/routes/), keyed "METHOD /path" with a path parameter written <name>, and the type of what it answers with 200 (`res`) and of the JSON body it reads (`body`). | `ApiRoutes`, `ApiEntry`, `Untyped`, `EventStream`, `Png`, `ApiResponse`, `ApiBody` |
+| `app/api/setup.mts` | What the setup and settings routes answer and take (app/http/routes/setup.mts, settings.mts): settings.json as the server reports it, the shard's rules, the setup wizard's adapters, locate and install, the paste scanner, the update check and the retention clean-up. | `ClientSettings`, `Retention`, `SettingsData`, `SettingsApiResponse`, `SettingsPutBody`, `CleanupBody`, `CleanupApiResponse`, `ShardOption`, `RulesApiResponse`, `AdapterSummary`, `InstalledVersionInfo`, `SetupApiResponse`, `PasteScannerApiResponse`, `LocateApiResponse`, `InstallApiResponse`, `UpdateCheckApiResponse`, `LocateBody`, `InstallBody` |
 <!-- module-map:end -->
 
 The route map is checked against the routes `app/http/routes/` registers by `scripts/api-routes.test.mts`, both ways.
@@ -263,7 +264,7 @@ The route map is checked against the routes `app/http/routes/` registers by `scr
 | `app/store/profiles.mts` | <data>/profiles.json, the Suit Builder's characters and templates (GET/PATCH /api/profiles): seeded from the defaults, a damaged file moved aside and reseeded, an old shape migrated (with <data>/ui-prefs.json beside it) after a dated backup of each, a newer one read-only, and the shard's built-in templates read. | `createProfilesStore` |
 | `app/store/runs.mts` | <data>/runs/: one JSON file per saved run (finished builds and Manual suits; /api/runs). | `createRunsStore` |
 | `app/store/scans.mts` | <data>/scans/: every accepted scan, one JSON file each (the watcher writes them, /api/forget* adds tombstones, retention removes old ones). | `createScansStore` |
-| `app/store/settings.mts` | <data>/settings.json: the shard, the client, the setup and retention choices. | `createSettingsStore`, `SettingsDoc`, `ClientSettings` |
+| `app/store/settings.mts` | <data>/settings.json: the shard, the client, the setup and retention choices. | `createSettingsStore`, `SettingsDoc` |
 | `app/store/ui-prefs.mts` | <data>/ui-prefs.json: the page's view choices (GET/PUT /api/ui-prefs), the fields it may hold, and the checks a request's or a hand-edited file's value is held to. | `createUiPrefsStore`, `UI_PREF_CHOICES`, `UI_PREF_LISTS`, `UI_PREF_VERSIONS`, `isColWidths`, `isDrawerWidth`, `isManualSuit` |
 | `app/vault-server.mts` | Pack Rat's local HTTP server and its composition root: startServer(config) returns { server, port, url, close() } and nothing runs at import time; it builds the stores, services and route table, runs the Host, Origin and token checks, dispatches, maps errors to statuses and listens, and close() tears down every timer, stream and worker; every HTML response carries the Content-Security-Policy, every response sent through send() carries nosniff, no-store and DENY framing, a body-reading PUT or POST must declare JSON, and headersTimeout is 60 s and requestTimeout 300 s, with only the idle-socket timeout off so an SSE stream survives (docs/architecture.md, "The server's request checks"). | `startServer`, `defaultClientSearch`, `ServerHandle`, `StartServerOptions`; re-exports `OPTS_LIMITS`, `HostBridge`, `ClientSearch`, `JobTimings` |
 <!-- module-map:end -->
@@ -284,7 +285,7 @@ The services below are factories with explicit dependencies (stores, getters, a 
 | `app/services/jobs.mts` | Optimizer jobs: one worker thread per build, its progress and outcome for the per-job event stream, one running build per client (a newer one supersedes it), a server-wide ceiling, and a finished build saved as a run. | `createJobsService`, `Job`, `JobTimings` |
 | `app/services/organize.mts` | The Organize service (issues #11, #127, #131): finished trips read back into the results overlay, what a plan starts from, the plan, a trip queued for the bridge, and Put away's requests from the in-game panel. | `createOrganizeService` |
 | `app/services/retention.mts` | The retention service (issue #28): which old scans and saved runs settings.json's `retention` lets go, and removing them, one prune at a time. | `createRetentionService` |
-| `app/services/settings.mts` | The settings this run uses and the shard's rules: settings.json as saved, with the two startup fallbacks laid over it, and the rules that settings.json names, handed to vault-lib. | `createSettingsService` |
+| `app/services/settings.mts` | The settings this run uses and the shard's rules: settings.json as saved, with the two startup fallbacks laid over it, and the rules that settings.json names, handed to vault-lib. | `createSettingsService`, `EffectiveSettings` |
 | `app/services/setup.mts` | The adapters this install ships and what the client setup needs of them: which ids are real, what each one's bridge declares it can do, and whether the client's installed scripts write to this data folder. | `createSetupService` |
 <!-- module-map:end -->
 
@@ -353,7 +354,7 @@ The page is `app/index.html` plus `app/ui/`, compiled by `scripts/build-ui.mts` 
 <!-- module-map:start ui-infra -->
 | Module | Role | Owns |
 |---|---|---|
-| `app/ui/api-types.mts` | Every response shape the page reads off its own fetches: the house, Organize and saved-run shapes re-exported from the types-only modules (runs narrowed), the rest declared here. | the hand-declared `*ApiResponse` types |
+| `app/ui/api-types.mts` | Every response shape the page reads off its own fetches: the house, Organize and saved-run shapes re-exported from the types-only modules (runs narrowed), the settings and setup shapes from app/api/setup.mts, the rest declared here. | the hand-declared `*ApiResponse` types |
 | `app/ui/api.mts` | The one place every page fetch goes through (Task 4, localhost security). | `api`, `CLIENT_ID` |
 | `app/ui/dom.mts` | DOM helpers, formatting/label helpers, rarity, and the in-game style hover tooltip. | `el`, `$`, `fmtN`, `slotLabel`, `rarityColor`, `toast`, `installTooltip` |
 | `app/ui/events.mts` | The one shared EventSource("/api/events") for the page's life (Task 3, Phase 4). | `connectEvents` |
