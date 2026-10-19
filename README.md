@@ -96,7 +96,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for running from source, the tests and th
 
 ## Support
 
-If Pack Rat saves you time, you can [buy me a coffee on Ko-fi](https://ko-fi.com/gunn4r).
+If Pack Rat saves you time, you can buy me a coffee.
+
+[![Support me on Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/gunn4r)
 
 ## License
 

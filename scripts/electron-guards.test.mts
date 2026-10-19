@@ -130,8 +130,12 @@ test("[fast] the sidebar's Ko-fi link opens in a new window, which the shell han
   const page = readFileSync(join(root, "app", "index.html"), "utf8");
   const link = /<a class="sidebar-support" id="sidebar-support" href="([^"]+)" target="_blank" rel="noopener noreferrer" aria-label="Enjoying Pack Rat\? Buy me a coffee on Ko-fi">/.exec(page);
   assert.ok(link, "the link is a target=_blank anchor, so it never navigates the app window");
-  assert.match(link[1]!, /^https:\/\/ko-fi\.com\/[\w-]+$/, "it points at a Ko-fi page");
-  assert.deepEqual(externalOpenDecision(link[1], 10_000, null), { open: link[1] }, "no allowlist stands in its way");
+  const href = link[1]!.replaceAll("&amp;", "&");   // the attribute's one escape; a bare & in it would be invalid HTML
+  assert.ok(!/&(?!amp;)/.test(link[1]!), "every & in the attribute is written &amp;");
+  const url = new URL(href);
+  assert.equal(url.origin, "https://ko-fi.com", "it points at Ko-fi, over https");
+  assert.match(url.pathname, /^\/[\w-]+\/?$/, "a Ko-fi page");
+  assert.deepEqual(externalOpenDecision(href, 10_000, null), { open: href }, "no allowlist stands in its way, and the href goes to the OS unchanged");
 });
 
 test("[fast] an external link opens only over https, parsed rather than pattern-matched", () => {

@@ -98,7 +98,7 @@ test("[slow] the shell: screens, routes, drawers, the bridge popover and Setting
     // The Ko-fi link goes to the OS browser (shell.openExternal, stubbed here so no browser opens), never into the app window.
     const kofi = page.getByRole("link", { name: "Enjoying Pack Rat? Buy me a coffee on Ko-fi", exact: true });
     const href = await kofi.getAttribute("href");
-    assert.match(href ?? "", /^https:\/\/ko-fi\.com\/[\w-]+$/);
+    assert.equal(new URL(href ?? "").origin, "https://ko-fi.com");
     await app.evaluate(({ shell }) => {
       const g = globalThis as { opened?: string[] };
       g.opened = [];
