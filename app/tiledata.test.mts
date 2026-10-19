@@ -1,6 +1,6 @@
 // tiledata.test.mts — `app/tiledata.mts` (issue #10): reading a 7.x tiledata.mul, classifying a tile the way the house map draws it, and finding the file.
 //
-// `app/tiledata.mts` (issue #10) against synthetic 7.x tiledata.mul files built byte by byte: an item graphic's flags, height and name (a 20-character name with no terminator read whole), a file of the wrong layout refused, `classify` (door, stair, roof, window, wall, floor, block, other, and impassable = wall without the file), finding the UO folder through TazUO's launcher profiles (a profile whose folder has no tiledata.mul passed over, and with several profiles the newest one's folder winning), and `loadTileData`'s cache by mtime and size. All `[fast]`.
+// `app/tiledata.mts` (issue #10) against synthetic 7.x tiledata.mul files built byte by byte: an item graphic's flags, height and name (a 20-character name with no terminator read whole), and its layer, anim and partial-hue flag (issue #57), a file of the wrong layout refused, `classify` (door, stair, roof, window, wall, floor, block, other, and impassable = wall without the file), finding the UO folder through TazUO's launcher profiles (a profile whose folder has no tiledata.mul passed over, and with several profiles the newest one's folder winning), and `loadTileData`'s cache by mtime and size. All `[fast]`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, writeFileSync, utimesSync } from "node:fs";
@@ -12,11 +12,22 @@ import { syntheticTileData } from "./tiledata-fixture.mts";
 test("[fast] tiledata: reads flags, height and name of an item graphic", () => {
   const td = readTileData(syntheticTileData([{ graphic: 40, flags: FLAG.impassable | FLAG.surface, height: 6, name: "table" }]));
   assert.equal(td.count, 64);
-  assert.deepEqual(td.info(40), { flags: FLAG.impassable | FLAG.surface, height: 6, name: "table" });
-  assert.deepEqual(td.info(41), { flags: 0n, height: 0, name: "" });
+  assert.deepEqual(td.info(40), { flags: FLAG.impassable | FLAG.surface, height: 6, name: "table", layer: 0, anim: 0 });
+  assert.deepEqual(td.info(41), { flags: 0n, height: 0, name: "", layer: 0, anim: 0 });
   assert.equal(td.info(64), null, "past the end");
   assert.equal(td.info(-1), null);
   assert.equal(td.info(1.5), null);
+});
+
+test("[fast] tiledata: a worn item's layer, anim and partial-hue flag, for the paperdoll (issue #57)", () => {
+  // The hair and face graphics a live scan recorded; the layers are the game's (Hair 11, Face 15), the anims made up.
+  const td = readTileData(syntheticTileData([
+    { graphic: 0x2FCC, flags: FLAG.wearable | FLAG.partialHue, layer: 11, anim: 0x0BB8 },
+    { graphic: 0x3B46, flags: FLAG.wearable, layer: 15, anim: 0xFFFE },
+  ]));
+  const hair = td.info(0x2FCC)!, face = td.info(0x3B46)!;
+  assert.deepEqual([hair.layer, hair.anim, (hair.flags & FLAG.partialHue) !== 0n], [11, 0x0BB8, true]);
+  assert.deepEqual([face.layer, face.anim, (face.flags & FLAG.partialHue) !== 0n], [15, 0xFFFE, false], "a 16-bit anim read whole");
 });
 
 test("[fast] tiledata: a 20-character name with no terminator is read whole", () => {
@@ -29,7 +40,7 @@ test("[fast] tiledata: refuses a file that is not the 7.x layout", () => {
 });
 
 test("[fast] tiledata: classify follows door, stair, roof, window, wall, floor, block, other", () => {
-  const t = (flags: bigint, name = "x") => ({ flags, height: 0, name });
+  const t = (flags: bigint, name = "x") => ({ flags, height: 0, name, layer: 0, anim: 0 });
   assert.equal(classify(t(FLAG.door | FLAG.wall | FLAG.impassable), true), "door");
   assert.equal(classify(t(FLAG.stairBack | FLAG.surface), false), "stair");
   assert.equal(classify(t(FLAG.surface, "stone stairs"), false), "stair");
