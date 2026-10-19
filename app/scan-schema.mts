@@ -36,6 +36,9 @@ const GRAPHIC = { type: ["number", "null"], minimum: 0, maximum: 65535 };
 // A container's graphic and hue (issue #174): whole numbers, which the scanners leave out rather than write out of range.
 const COLOR = { type: ["integer", "null"], minimum: 0, maximum: 65535 };
 const AMOUNT = { type: "number", minimum: 0, maximum: 4294967295 };
+// A character's look (issue #57): a body graphic or a hue, and what sits on the hair, beard or face layer (null when empty).
+const UINT16 = { type: "integer", minimum: 0, maximum: 65535 };
+const LOOK_LAYER = { type: ["object", "null"], required: ["graphic", "hue"], additionalProperties: false, properties: { graphic: UINT16, hue: UINT16 } };
 const NAME = { type: "string", maxLength: 256 };
 const TOOLTIP = { type: "array", maxItems: 256, items: { type: "string", maxLength: 512 } };
 // stats/maxes/resists/position are keyed by the adapter (str/dex/int, hits/stam/mana, phys/fire/...)
@@ -188,6 +191,13 @@ export const SCAN_V2_SCHEMA = {
           layer: { type: ["string", "null"], maxLength: 64 },
         },
       },
+    },
+    appearance: {
+      type: "object",
+      "$comment": "The character's look for the paperdoll (issue #57): body is the player mobile's body graphic (which says race and sex), hue its skin hue, and hair, beard and face the graphic and hue of the item on that layer (Hair 11, Beard 16, Face 15), null when the layer is empty. Those layers are never in equipped. Left out when the adapter cannot read it; the fold then keeps the look an earlier scan recorded. Other keys are allowed, so a newer adapter's addition never makes an older app drop the scan. Written by TazUO 2.22.0 and later.",
+      required: ["body", "hue", "hair", "beard", "face"],
+      additionalProperties: true,
+      properties: { body: UINT16, hue: UINT16, hair: LOOK_LAYER, beard: LOOK_LAYER, face: LOOK_LAYER },
     },
   },
 };

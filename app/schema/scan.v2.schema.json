@@ -133,6 +133,13 @@
           "layer": { "type": ["string", "null"], "maxLength": 64 }
         }
       }
+    },
+    "appearance": {
+      "type": "object",
+      "$comment": "The character's look for the paperdoll (issue #57): body is the player mobile's body graphic (which says race and sex), hue its skin hue, and hair, beard and face the graphic and hue of the item on that layer (Hair 11, Beard 16, Face 15), null when the layer is empty. Those layers are never in equipped. Left out when the adapter cannot read it; the fold then keeps the look an earlier scan recorded. Other keys are allowed, so a newer adapter's addition never makes an older app drop the scan. Written by TazUO 2.22.0 and later.",
+      "required": ["body", "hue", "hair", "beard", "face"],
+      "additionalProperties": true,
+      "properties": { "body": { "type": "integer", "minimum": 0, "maximum": 65535 }, "hue": { "type": "integer", "minimum": 0, "maximum": 65535 }, "hair": { "type": ["object", "null"], "required": ["graphic", "hue"], "additionalProperties": false, "properties": { "graphic": { "type": "integer", "minimum": 0, "maximum": 65535 }, "hue": { "type": "integer", "minimum": 0, "maximum": 65535 } } }, "beard": { "type": ["object", "null"], "required": ["graphic", "hue"], "additionalProperties": false, "properties": { "graphic": { "type": "integer", "minimum": 0, "maximum": 65535 }, "hue": { "type": "integer", "minimum": 0, "maximum": 65535 } } }, "face": { "type": ["object", "null"], "required": ["graphic", "hue"], "additionalProperties": false, "properties": { "graphic": { "type": "integer", "minimum": 0, "maximum": 65535 }, "hue": { "type": "integer", "minimum": 0, "maximum": 65535 } } } }
     }
   }
 }

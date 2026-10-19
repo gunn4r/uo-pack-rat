@@ -16,6 +16,8 @@ Claimed houses (issue #299): the TazUO tests write a claim over the house home()
 
 Issue #174: every container record (a ground root, the backpack, a nested bag) carries its graphic and hue in the TazUO and Razor Enhanced scanners and the TazUO refresh, and a TazUO house row carries the hue as its sixth element.
 
+Issue #57: the TazUO scanner and refresh record the character's look as `appearance` (the player's body graphic and skin hue, and the graphic and hue on the hair, beard and face layers, null for an empty one) without adding those layers to `equipped`, and leave it out when the client cannot say the body.
+
 The Razor scanner records a worn piece on its own layer (`GetItemOnLayer` in the fake answers an item added with `Layer=`); that test's world is the one `adapters/razor-enhanced/fixture.scan.json` is made from. With `PACKRAT_TEST_OUTPUTS` set to a folder, `fake_clients.py`'s `run_script` copies every scan a script writes into it, for `app/adapter-outputs.test.mts`.
 
 Run: python3 adapters/test_scanners.py  (app/adapters.test.mts also spawns it, so `npm test` does).
@@ -40,6 +42,17 @@ def home(world):
     world.add(CHEST, 0, name="Wooden Chest", X=11, Y=10)
     world.add(BAG, CHEST, name="Bag", OnGround=False)
     world.add(RING, BAG, name="Ruby Ring", container_like=False, OnGround=False)
+
+
+# An elf woman's body and skin, her hair and face, and no beard (issue #57).
+LOOK = {"body": 0x025E, "hue": 0x8401, "hair": {"graphic": 0x2FBF, "hue": 0x044E}, "beard": None, "face": {"graphic": 0x3B44, "hue": 0x8401}}
+
+
+def look(world):
+    """Give the player LOOK: the body and skin on the mobile, the hair and face as items on their layers."""
+    world.body, world.skin = LOOK["body"], LOOK["hue"]
+    world.layers = {"Hair": types.SimpleNamespace(Serial=0x40000700, Graphic=0x2FBF, Hue=0x044E),
+                    "Face": types.SimpleNamespace(Serial=0x40000701, Graphic=0x3B44, Hue=0x8401)}
 
 
 # Things the client may call a container, or whose name says "chest", that are not item containers:
@@ -156,6 +169,20 @@ class TazUOScanner(DataDir, unittest.TestCase):
         self.assertTrue(self.root(s, CHEST)["opened"])
         self.assertEqual(sorted(i["serial"] for i in s["items"]), [RING, RING2])
         self.assertIn(str(BAG), json.loads(json.dumps(s["containers"])))
+
+    def test_the_look_is_recorded_and_the_look_layers_are_not_worn_gear(self):
+        w = World(); home(w); look(w)
+        self.scan(w)
+        [s] = self.scans("tazuo")
+        self.assertEqual(s["appearance"], LOOK)
+        self.assertEqual(s["equipped"], [])
+
+    def test_a_client_that_cannot_say_the_body_writes_no_look(self):
+        w = World(); home(w); look(w)
+        w.body = None
+        self.scan(w)
+        [s] = self.scans("tazuo")
+        self.assertNotIn("appearance", s)
 
     def test_only_a_claimed_house_has_its_ground_scanned_and_its_house_captured(self):
         for name, claim, multis, opened in (
@@ -808,6 +835,12 @@ class TazUOScanner(DataDir, unittest.TestCase):
 
 class TazUORefresh(DataDir, unittest.TestCase):
     SCRIPT = adapter_path("tazuo", "packrat-character-refresh.py")
+
+    def test_the_look_is_recorded(self):
+        w = World(); home(w); look(w)
+        run_script(self.SCRIPT, w, api=tazuo_api(w, PACK))
+        [s] = self.scans("tazuo")
+        self.assertEqual(s["appearance"], LOOK)
 
     def test_a_bag_in_the_backpack_that_did_not_open_is_marked_unopened(self):
         w = World(); home(w)
