@@ -4,7 +4,23 @@
 
 Entries not yet released are in `changelog.d/`, one file per pull request (`CONTRIBUTING.md`, Changelog). `node scripts/changelog.mts --release <version>` moves them here.
 
-<!-- released-sha256: 1a8f376e1463dfa663c391b97611446c0f74c791195c0a4cf91df68b78182e78 (written by node scripts/changelog.mts) -->
+<!-- released-sha256: fda4e067de40634106c97f5d92e391a8cf8fe9530c87fe8f332c4aa90f7603d8 (written by node scripts/changelog.mts) -->
+
+## 0.2.2 — 2026-10-19
+
+### Highlights
+
+A small release.
+
+- **A Buy me a coffee link.** If Pack Rat saves you time, there's now a small "Enjoying Pack Rat? Buy me a coffee." link at the bottom of the sidebar. It opens the developer's Ko-fi page in your browser. Pack Rat stays free, with every feature for everyone.
+
+No game script changes in this release, so there's nothing to reinstall.
+
+<details><summary>All changes (1)</summary>
+
+- **A "Buy me a coffee" link**: the bottom of the sidebar has a small "Enjoying Pack Rat? Buy me a coffee." link to the maintainer's Ko-fi page, for anyone who wants to support Pack Rat. It opens in your web browser. Pack Rat stays free, and nothing changes if you never click it.
+
+</details>
 
 ## 0.2.1 — 2026-10-19
 
