@@ -96,7 +96,7 @@ test("[slow] the shell: screens, routes, drawers, the bridge popover and Setting
     assert.equal(await page.evaluate(() => document.activeElement?.id), "bridge", "focus returns to the control");
 
     // The Ko-fi link goes to the OS browser (shell.openExternal, stubbed here so no browser opens), never into the app window.
-    const kofi = page.getByRole("link", { name: "Buy me a coffee" });
+    const kofi = page.getByRole("link", { name: "Enjoying Pack Rat? Buy me a coffee on Ko-fi", exact: true });
     const href = await kofi.getAttribute("href");
     assert.match(href ?? "", /^https:\/\/ko-fi\.com\/[\w-]+$/);
     await app.evaluate(({ shell }) => {
@@ -131,8 +131,8 @@ test("[slow] the sidebar collapses to icons below 1180 px, and pinning it collap
     // Collapsed, every nav item keeps its name for a screen reader.
     assert.ok(await run.page.getByRole("link", { name: "Characters" }).isVisible());
     // Collapsed, the Ko-fi link is a cup icon, named for a screen reader and by a tooltip on hover.
-    await run.page.getByRole("link", { name: "Buy me a coffee" }).hover();
-    await run.page.locator(".tip", { hasText: "Buy me a coffee" }).waitFor();
+    await run.page.getByRole("link", { name: "Enjoying Pack Rat? Buy me a coffee on Ko-fi", exact: true }).hover();
+    await run.page.locator(".tip", { hasText: "Enjoying Pack Rat? Buy me a coffee." }).waitFor();
     await run.page.mouse.move(700, 450);
 
     // Wider than 1180 px — only where the screen allows a window that wide (locally, Ubuntu's virtual display).
@@ -144,7 +144,7 @@ test("[slow] the sidebar collapses to icons below 1180 px, and pinning it collap
       // Expanded, its label shows, so no tooltip repeats it.
       await run.page.hover("#sidebar-support");
       await run.page.waitForTimeout(800);   // sleep: past the 400 ms tooltip delay, proving no tooltip shows
-      assert.equal(await run.page.locator(".tip", { hasText: "Buy me a coffee" }).count(), 0);
+      assert.equal(await run.page.locator(".tip", { hasText: "Enjoying Pack Rat? Buy me a coffee." }).count(), 0);
       await run.page.click("#sidebar-pin");
       assert.equal(await collapsed(run.page), true, `pinned collapsed at ${wide.width} px`);
       await run.page.waitForFunction(async () => (await (await fetch("/api/ui-prefs")).json()).prefs.sidebar === "collapsed");

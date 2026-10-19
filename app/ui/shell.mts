@@ -96,7 +96,7 @@ export function initShell(): void {
   $<HTMLButtonElement>("#sidebar-pin")!.addEventListener("click", togglePin);
   // The Ko-fi link (a target=_blank link, so the desktop app hands it to the OS browser): its label shows while the
   // sidebar is expanded, so the tooltip only while collapsed.
-  tooltip($<HTMLElement>("#sidebar-support")!, "Buy me a coffee", { side: "right", when: () => $<HTMLElement>("#app")!.classList.contains("collapsed") });
+  tooltip($<HTMLElement>("#sidebar-support")!, "Enjoying Pack Rat? Buy me a coffee.", { side: "right", when: () => $<HTMLElement>("#app")!.classList.contains("collapsed") });
   $<HTMLElement>("#sidebar")!.addEventListener("keydown", navKeys);
   $<HTMLButtonElement>("#bridge")!.addEventListener("click", () => openBridgePopover());
   // ⌘I (Ctrl+I off the Mac) opens Import over whatever page is showing — not over a modal dialog.
