@@ -1,10 +1,11 @@
 // electron-app.mts — the one way an Electron UI test launches Pack Rat (issue #338, the quality pass's shared fixture): the
 // skip when Electron can't run here, a temp data folder, the launch itself (update check off, the test's own client home,
 // the page's errors collected, the page loaded before a test sets a hash, the window sized), the teardown, a stand-in
-// bridge and a poll for file-backed facts. Window sizing and layout reads stay in electron-window.mts.
+// bridge, a poll for file-backed facts, and what the page showed when a wait failed. Window sizing and layout reads stay in
+// electron-window.mts.
 //
 // map: tooling
-// owns: `skipWithoutElectron`, `tempDataDir`, `launchApp`, `fakeBridge`, `until`
+// owns: `skipWithoutElectron`, `tempDataDir`, `launchApp`, `pageState`, `explained`, `fakeBridge`, `until`
 import { copyFileSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -74,16 +75,49 @@ export async function launchApp(dataDir: string, o: AppOptions = {}): Promise<Ap
     const page = await launched.firstWindow();
     const errors: string[] = [];
     page.on("pageerror", (e) => errors.push(String(e)));
+    const failed: string[] = [];
+    failedRequests.set(page, failed);
+    const fail = (line: string): void => { if (failed.push(line) > 5) failed.shift(); };
+    page.on("requestfailed", (r) => fail(`${r.method()} ${new URL(r.url()).pathname} ${r.failure()?.errorText ?? "failed"}`));
+    page.on("response", (r) => { if (r.status() >= 500) fail(`${r.request().method()} ${new URL(r.url()).pathname} ${r.status()}`); });
     await page.waitForLoadState("load");
     if (o.colorScheme) await page.emulateMedia({ colorScheme: o.colorScheme });
     const size = o.size ? await fitWindow(launched, page, o.size) : await page.evaluate(() => ({ width: innerWidth, height: innerHeight }));
-    if (o.ready) await page.locator(o.ready).first().waitFor({ timeout: 30_000 });
+    if (o.ready) await explained(page, page.locator(o.ready).first().waitFor({ timeout: 30_000 }));
     const close = async ({ keepData = false } = {}): Promise<void> => {
       try { await launched.close(); } finally { if (!keepData) removeTempDir(dataDir); }
     };
     return { app: launched, page, errors, dataDir, size, close };
   } catch (e) {
     try { await app?.close(); } catch { /* the launch's own error is the one to report */ } finally { removeTempDir(dataDir); }
+    throw e;
+  }
+}
+
+// The last five requests of a launch's page that failed or got a 5xx, for pageState.
+const failedRequests = new WeakMap<Page, string[]>();
+// What the page was showing, for a failure that would otherwise say only "Timeout 30000ms exceeded" (issues #437, #443, #457):
+// its route and status line, the screen showing, the item table's state, whatever sticks out past the right edge, and the
+// last requests that failed.
+export async function pageState(page: Page): Promise<string> {
+  const shown = await page.evaluate(() => {
+    const name = (e: Element): string => e.tagName.toLowerCase() + (e.id ? `#${e.id}` : "") + [...e.classList].map((c) => `.${c}`).join("");
+    const table = document.querySelector("#inv-table");
+    return {
+      hash: location.hash, status: document.querySelector("#status")?.textContent ?? null,
+      screen: [...document.querySelectorAll<HTMLElement>(".screen")].filter((s) => !s.hidden).map((s) => s.id).join(", "),
+      items: table ? `${table.querySelectorAll("tbody tr.item").length} rows${table.getAttribute("aria-busy") ? ", loading" : ""}: ${(table.querySelector("tbody")?.textContent ?? "").replace(/\s+/g, " ").trim().slice(0, 160)}` : null,
+      width: `${document.documentElement.scrollWidth} of ${innerWidth} px`,
+      past: [...document.querySelectorAll("body *")].map((e) => ({ e, right: e.getBoundingClientRect().right })).filter((x) => x.right > innerWidth + 0.5).sort((x, y) => y.right - x.right)
+        .slice(0, 3).map((x) => `${name(x.e)} (${getComputedStyle(x.e).position}) to ${Math.round(x.right)} px`),
+    };
+  }).catch((e: unknown) => ({ unreadable: String(e) }));
+  return JSON.stringify({ ...shown, failed: failedRequests.get(page) ?? [] });
+}
+// `wait`, failing with pageState added to its error.
+export async function explained<T>(page: Page, wait: Promise<T>): Promise<T> {
+  try { return await wait; } catch (e) {
+    if (e instanceof Error) e.message += `\npage: ${await pageState(page)}`;
     throw e;
   }
 }
