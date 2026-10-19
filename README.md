@@ -52,6 +52,19 @@ The Unravel view lists the pieces worth unraveling for imbuing ingredients, grou
 
 Turn on **Settings › AI assistants (MCP)** and Claude Code, or another MCP client, can search your inventory and run the Suit Builder for you: "what's my best LRC ring?". See [docs/mcp.md](docs/mcp.md).
 
+## How it works with the game
+
+Pack Rat's scripts run inside your game client. The scanner reads your gear, and the bridge carries out what you ask for in the app, such as a Grab or an Organize trip. The in-game panel starts both. More in [The game scripts](docs/user-guide.md#the-game-scripts).
+
+![The in-game Pack Rat panel in TazUO, showing the bridge running and a scan from just now, next to a character standing among the chests in a house](docs/images/ingame-panel.jpg)
+
+<table><tr>
+<td><img src="docs/images/grab-game.gif" width="280" alt="In game, a stack of 50 garlic moves from a bag into the backpack, which goes from 16 to 17 items"></td>
+<td><img src="docs/images/grab-app.gif" width="560" alt="In the app, Garlic is selected and Grab is pressed, then the messages Grab queued and grabbed Garlic, it is in your backpack appear"></td>
+</tr></table>
+
+![A Put away trip: three gem stacks leave the backpack, which drops from 20 to 17 items, and land in a metal chest, which goes from 5 to 8](docs/images/put-away-trip.gif)
+
 ## Get started
 
 1. **Download** the file for your computer from the [Releases page](https://github.com/gunn4r/uo-pack-rat/releases): the `.dmg` for a Mac (`arm64` for Apple chips, `x64` for Intel), the `.exe` for Windows, or the `.AppImage` for Linux.
