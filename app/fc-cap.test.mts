@@ -19,7 +19,7 @@ import { core } from "./solver-fixture.mts";
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 setRules(JSON.parse(readFileSync(join(HERE, "rules", "uoalive.json"), "utf8")) as RulesV1);
 const skills = (s: Record<string, number>): Record<string, unknown> => Object.fromEntries(Object.entries(s).map(([k, v]) => [k, { base: v, value: v, cap: 100 }]));
-const char = (s: Record<string, number>): Character => ({ name: "Caster", stats: {}, scannedAt: "", position: null, maxes: null, resists: null, skills: skills(s), adapter: null });
+const char = (s: Record<string, number>): Character => ({ name: "Caster", stats: {}, scannedAt: "", position: null, maxes: null, resists: null, skills: skills(s), adapter: null, appearance: null });
 
 test("[fast] fc cap: each school named, the skills' choice, the Chivalry drop at 70, No character", () => {
   const named = Object.fromEntries(CASTING_SCHOOLS.map((s) => [s, fcCapFor(null, s).cap]));

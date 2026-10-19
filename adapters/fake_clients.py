@@ -201,6 +201,10 @@ def tazuo_api(world, backpack, bank=0, skills=None):
     player = types.SimpleNamespace(Name="Tester", X=world.px, Y=world.py, Strength=50, Dexterity=50,
                                    Intelligence=50, HitsMax=1, StaminaMax=1, ManaMax=1,
                                    Weight=0, WeightMax=getattr(world, "weight_max", 400))
+    # The look (issue #57): a human male's body and a skin hue, unless the world sets `body`/`skin`; None for a build that
+    # cannot say. `world.layers` maps a layer name to what FindLayer answers for it.
+    if getattr(world, "body", 0x0190) is not None:
+        player.Graphic, player.Hue = getattr(world, "body", 0x0190), getattr(world, "skin", 0x83EA)
     api.Player = player
     api.Backpack = backpack
     api.Bank = bank
@@ -236,7 +240,7 @@ def tazuo_api(world, backpack, bank=0, skills=None):
             def __setattr__(self, name, v):
                 setattr(self._it, name, v)
         api.FindItem = lambda s: (lambda it: None if it is None else NoOpened(it))(world.known(int(s)))
-    api.FindLayer = lambda layer: None
+    api.FindLayer = lambda layer: getattr(world, "layers", {}).get(layer)
     api.shared = getattr(world, "shared", {})   # Legion's shared variables, one dict per client
     api.SetSharedVar = lambda name, v: api.shared.__setitem__(name, v)
     api.GetSharedVar = lambda name: api.shared.get(name)
