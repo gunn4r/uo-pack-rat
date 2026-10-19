@@ -1,10 +1,10 @@
 // art.test.mts — `app/art.mts` (issue #174), the item art decoder, on synthetic client files.
 //
-// `app/art.mts` (issue #174) on synthetic files from `app/art-fixture.mts`: the lookup3 hash against its published vectors and the item art entry names; a UOP table read across chained blocks with a stored and a deflated entry, empty entries left out, only the table read until an entry is asked for, and malformed tables (bad magic or version, a looping chain, a chain past the block cap, a block or an entry past the end) refused; an entry packed another way, too big, or inflating to the wrong length refused; static art decoded, a run past the width, a row start or run past the buffer, a missing row end and a zero or huge size refused; hues.mul groups, a hue out of range or 0 giving none; full and partial hues; the cut to the opaque box and art with no opaque pixel. All `[fast]`.
+// `app/art.mts` (issue #174) on synthetic files from `app/art-fixture.mts`: the lookup3 hash against its published vectors and the item art entry names; a UOP table read across chained blocks with a stored and a deflated entry, empty entries left out, only the table read until an entry is asked for, and malformed tables (bad magic or version, a looping chain, a chain past the block cap, a block or an entry past the end) refused; an entry packed another way, too big, or inflating to the wrong length refused; static art decoded, a run past the width, a row start or run past the buffer, a missing row end and a zero or huge size refused; hues.mul groups, a hue out of range or 0 giving none; full and partial hues; the cut to the opaque box and art with no opaque pixel. The paperdoll's gumps (issue #57): a flag 3 entry inflated and BWT-decoded, and one that does not unpack refused; the BWT port of ClassicUO's BwtDecompress undoing `bwtPack` (empty, one symbol, every symbol on a tie, random data), ignoring the header and the last byte, matching what ClassicUO itself decodes from three corrupted packs, and refusing a short or cut input, a negative count or a length past the cap; gumps decoded (colour 0 transparent, 0x0001 opaque, the last row's pairs up to the end, a run past its row cut there) and malformed ones refused. All `[fast]`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { decodeStatic, hueOf, itemArtName, readHues, readUopEntry, readUopTable, toRgba, uopHash, type ReadAt } from "./art.mts";
-import { syntheticArt, syntheticHues, syntheticUop } from "./art-fixture.mts";
+import { bwtDecompress, decodeGump, decodeStatic, gumpArtName, hueOf, itemArtName, readHues, readUopEntry, readUopTable, toRgba, uopHash, type ReadAt } from "./art.mts";
+import { bwtList, bwtPack, mtfPack, syntheticArt, syntheticGump, syntheticHues, syntheticUop } from "./art-fixture.mts";
 import { rgb555 } from "./facet-fixture.mts";
 
 // A reader over a buffer that counts what it was asked for, and answers null past the end as a file read would come up short.
@@ -63,9 +63,9 @@ test("[fast] art: an empty entry is left out; a bad magic or version, a looping 
 test("[fast] art: an entry packed any other way, or deflated to another length than it says, is not read", () => {
   const file = syntheticUop([{ name: "x/a", data: Buffer.from("aaaa"), zlib: true }, { name: "x/b", data: Buffer.from("b") }]);
   const r = reader(file);
-  const flag3 = Buffer.from(file);
-  flag3.writeInt16LE(3, 28 + 12 + 32 + 34);
-  assert.equal(readUopEntry(table(flag3)!, "x/b", reader(flag3).read), null);
+  const flag2 = Buffer.from(file);
+  flag2.writeInt16LE(2, 28 + 12 + 32 + 34);
+  assert.equal(readUopEntry(table(flag2)!, "x/b", reader(flag2).read), null);
   const long = Buffer.from(file);
   long.writeInt32LE(5, 28 + 12 + 16);
   assert.equal(readUopEntry(table(long)!, "x/a", reader(long).read), null);
@@ -114,4 +114,72 @@ test("[fast] art: RGBA is cut to the opaque box; a full hue recolours every pixe
   assert.deepEqual([...toRgba(art, { colours: hue, partial: false })!.rgba], [0, 0, 255, 255, 0, 255, 0, 255], "red 31 and grey 8 each take their colour");
   assert.deepEqual([...toRgba(art, { colours: hue, partial: true })!.rgba], [255, 0, 0, 255, 0, 255, 0, 255], "only the grey pixel takes a partial hue");
   assert.equal(toRgba(decodeStatic(syntheticArt(2, 2, [[], []]))!), null, "no opaque pixel");
+});
+
+test("[fast] art: a flag 3 entry is inflated and then BWT-decoded, and one that does not unpack, or is packed past the cap, is not read", () => {
+  const gump = syntheticGump(2, 1, [[[R, 2]]]);
+  const file = syntheticUop([{ name: gumpArtName(13), data: gump, bwt: true }, { name: "x/raw", data: Buffer.from("not deflated") }]);
+  assert.equal(gumpArtName(13), "build/gumpartlegacymul/00000013.tga");
+  const r = reader(file), t = table(file)!;
+  assert.deepEqual(Buffer.from(readUopEntry(t, gumpArtName(13), r.read)!), gump);
+  assert.equal(t.flag[t.hashes.indexOf(uopHash(gumpArtName(13)))], 3);
+  const raw = Buffer.from(file);
+  raw.writeInt16LE(3, 28 + 12 + 32 + 34);
+  assert.equal(readUopEntry(table(raw)!, "x/raw", reader(raw).read), null, "not deflated");
+  assert.equal(readUopEntry(t, gumpArtName(13), r.read, 1030), null, "its BWT-packed length is past the cap");
+});
+
+test("[fast] art: the BWT port undoes bwtPack and ignores the header and the last byte, which ClassicUO never decodes", () => {
+  const cases = [Buffer.alloc(0), Buffer.alloc(999, 7), Buffer.from(Array.from({ length: 2560 }, (_, i) => i % 256)), Buffer.from("abracadabra"),
+    Buffer.from(Array.from({ length: 3000 }, (_, i) => (i * 7919) % 97 % 13))];
+  for (const data of cases) assert.deepEqual(Buffer.from(bwtDecompress(bwtPack(data))!), data, `${data.length} bytes`);
+  const p = bwtPack(Buffer.from("abracadabra"), 0xdeadbeef, 0xff);
+  assert.deepEqual(Buffer.from(bwtDecompress(p)!), Buffer.from("abracadabra"));
+  assert.deepEqual(Buffer.from(bwtDecompress(Buffer.concat([p.subarray(0, -1), Buffer.from([0x42])]))!), Buffer.from("abracadabra"), "the last byte is never read");
+});
+
+test("[fast] art: on corrupted packs the BWT port decodes what ClassicUO's own BwtDecompress does", () => {
+  // Outputs recorded from ClassicUO's BwtDecompress.cs (ee79d7e), built and run on these synthetic inputs.
+  const p = bwtPack(Buffer.from("abracadabra"));
+  for (const [at, v, cuo] of [[1031, 2, "6272026364627272727272"], [1034, 1, "7262647262036363636363"], [1037, 0, "6162646103616361626262"]] as const) {
+    const m = Buffer.from(p);
+    m[at] = v;
+    assert.equal(Buffer.from(bwtDecompress(m)!).toString("hex"), cuo, `byte ${at} set to ${v}`);
+  }
+});
+
+test("[fast] art: the BWT port refuses a short or cut input, a negative count, and a length past the cap", () => {
+  const p = bwtPack(Buffer.from("abracadabra"));
+  assert.equal(bwtDecompress(p.subarray(0, 4)), null, "no first byte");
+  assert.equal(bwtDecompress(p.subarray(0, 1000)), null, "the counts cut short");
+  assert.equal(bwtDecompress(p.subarray(0, p.length - 3)), null, "the blocks cut short");
+  // The list "abracadabra" packs to, with symbol 0 counted -1 and "a" 6: the counts still sum to 11.
+  const list = bwtList(Buffer.from("abracadabra"));
+  list.writeInt32LE(-1, 0);
+  list.writeInt32LE(6, 0x61 * 4);
+  assert.equal(bwtDecompress(mtfPack(list)), null, "a negative count");
+  assert.equal(bwtDecompress(bwtPack(Buffer.alloc(2000, 1)), 1999), null, "past maxBytes");
+  assert.equal(bwtDecompress(bwtPack(Buffer.alloc(2000, 1)), 2000)!.length, 2000);
+});
+
+test("[fast] gump: rows of (colour, run) pairs, colour 0 transparent and 0x0001 opaque, the last row up to the end, and a run past its row cut there", () => {
+  const g = decodeGump(syntheticGump(3, 3, [[[0, 1], [R, 2]], [[1, 1], [0, 1], [G, 5]], [[GREY, 3]]]))!;
+  assert.deepEqual([g.width, g.height], [3, 3]);
+  assert.deepEqual([...g.pixels], [0, 0x8000 | R, 0x8000 | R, 0x8001, 0, 0x8000 | G, 0x8000 | GREY, 0x8000 | GREY, 0x8000 | GREY]);
+  assert.deepEqual([...decodeGump(syntheticGump(2, 1, [[[0x8000 | R, 2]]]))!.pixels], [0x8000 | R, 0x8000 | R], "the top bit of a colour is dropped");
+  assert.equal(toRgba(g)!.width, 3, "drawn like item art");
+});
+
+test("[fast] gump: a size of 0 or past the cap, row starts out of order or past the end, or a buffer too short is null", () => {
+  assert.equal(decodeGump(syntheticGump(0, 1, [[]])), null, "no width");
+  assert.equal(decodeGump(syntheticGump(2000, 1, [[[R, 1]]])), null, "too wide");
+  assert.equal(decodeGump(syntheticGump(2, 5, [[[R, 1]]])), null, "more rows than the buffer has row starts");
+  const two = syntheticGump(2, 2, [[[R, 2]], [[G, 2]]]);
+  const swap = Buffer.from(two); swap.writeInt32LE(4, 8); swap.writeInt32LE(2, 12);
+  assert.equal(decodeGump(swap), null, "rows out of order");
+  const far = Buffer.from(two); far.writeInt32LE(99, 12);
+  assert.equal(decodeGump(far), null, "a row start past the end");
+  const inside = Buffer.from(two); inside.writeInt32LE(1, 8);
+  assert.equal(decodeGump(inside), null, "a row start inside the row table");
+  assert.equal(decodeGump(Buffer.alloc(7)), null);
 });
