@@ -1,1 +1,0 @@
-- **For contributors: the README shows the game side**: a new "How it works with the game" section has the in-game panel, a Grab seen in game and in the app at the same moment, and a Put away trip, all captured in game and kept by hand in `docs/images/` (not by `npm run readme:shots`).
