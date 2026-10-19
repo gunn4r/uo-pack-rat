@@ -1,7 +1,7 @@
 // art.mts — art from the player's own client files: the UOP container (its table of entries, each found by the lookup3 hash of its name, and an entry stored, inflated, or inflated and BWT-decoded), one item's static art in artLegacyMUL.uop (issue #174), one gump in gumpartLegacyMUL.uop (the paperdoll, issue #57), and the colours of hues.mul. Pure, apart from the read callback the caller passes: nothing here throws on a file that does not add up or reads past a buffer; every decoder answers null instead. The table is read block by block and an entry only when it is asked for, never the whole payload.
 //
 // map: house
-// owns: `readUopTable`, `readUopEntry`, `uopHash`, `bwtDecompress`, `gumpArtName`, `decodeGump`, `decodeStatic`, `readHues`, `hueOf`, `toRgba`
+// owns: `readUopTable`, `readUopEntry`, `uopHash`, `bwtDecompress`, `gumpArtName`, `decodeGump`, `decodeStatic`, `readHues`, `hueOf`, `hueFor`, `toRgba`
 import { inflateSync } from "node:zlib";
 
 // Jenkins' lookup3 hashlittle2 with both seeds 0, as the UOP format names its entries: the 64-bit result is b << 32 | c.
@@ -233,14 +233,20 @@ const GROUP = 708, HUE = 88;
 export function readHues(buf: Uint8Array): Hues | null {
   return buf.length === 0 || buf.length % GROUP !== 0 ? null : { buf, count: (buf.length / GROUP) * 8 };
 }
-// A hue's 32 colours (15-bit) and whether it is partial (bit 0x8000: only grey pixels take it); null for hue 0 or one the file does not have. The hue number is its low 14 bits, 1-based.
+// A hue's 32 colours (15-bit) and whether it is partial (bit 0x8000: only grey pixels take it); null for hue 0 or a number at or past the file's count (ClassicUO's `color < HuesCount`). The hue number is its low 14 bits, 1-based.
 export function hueOf(hues: Hues, hue: number): { colours: Uint16Array; partial: boolean } | null {
   const h = hue & 0x3fff;
-  if (h === 0 || h > hues.count) return null;
+  if (h === 0 || h >= hues.count) return null;
   const at = Math.floor((h - 1) / 8) * GROUP + 4 + ((h - 1) % 8) * HUE, v = new DataView(hues.buf.buffer, hues.buf.byteOffset, hues.buf.byteLength);
   const colours = new Uint16Array(32);
   for (let k = 0; k < 32; k++) colours[k] = v.getUint16(at + k * 2, true) & 0x7fff;
   return { colours, partial: (hue & 0x8000) !== 0 };
+}
+
+// A hue as the paperdoll applies it (issue #57): hueOf's colours, with the partial switch the caller passes instead of the hue's own 0x8000 bit. The body's skin is always partial; a worn item, hair, beard or face is partial only when its tiledata has the partial-hue flag.
+export function hueFor(hues: Hues, hue: number, partial: boolean): { colours: Uint16Array; partial: boolean } | null {
+  const h = hueOf(hues, hue);
+  return h && { colours: h.colours, partial };
 }
 
 // The art as 8-bit RGBA cut to its opaque box, the hue applied (each pixel's 5-bit red channel picks one of its 32 colours; a partial hue only grey pixels, r = g = b). Null when no pixel is opaque.

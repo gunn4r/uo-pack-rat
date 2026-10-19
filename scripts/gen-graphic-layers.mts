@@ -11,20 +11,18 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { LAND_BYTES, ITEM_BLOCK, FLAG, itemOffset, assertItemLayout } from "../app/tiledata.mts";
+import { FLAG, readTileData } from "../app/tiledata.mts";
 
 // Layers that are a piece of gear: hair (11), face (15), beard (16), backpack (21) and mount (25) are not.
 const GEAR_LAYERS = new Set([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 17, 18, 19, 20, 22, 23, 24]);
 
 // [graphic, layer] for every wearable gear graphic, in graphic order.
 export function wearableLayers(buf: Buffer): Array<[number, number]> {
-  assertItemLayout(buf);
-  const count = ((buf.length - LAND_BYTES) / ITEM_BLOCK) * 32;
+  const td = readTileData(buf);
   const out: Array<[number, number]> = [];
-  for (let g = 0; g < count; g++) {
-    const at = itemOffset(g);
-    const layer = buf[at + 9]!;
-    if ((buf.readBigUInt64LE(at) & FLAG.wearable) !== 0n && GEAR_LAYERS.has(layer)) out.push([g, layer]);
+  for (let g = 0; g < td.count; g++) {
+    const { flags, layer } = td.info(g)!;
+    if ((flags & FLAG.wearable) !== 0n && GEAR_LAYERS.has(layer)) out.push([g, layer]);
   }
   return out;
 }
