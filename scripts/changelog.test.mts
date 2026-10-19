@@ -1,13 +1,13 @@
 // changelog.test.mts — `scripts/changelog.mts`: a [smoke] guard that the committed fragments and CHANGELOG.md are in shape, a [smoke] release of a copy of them, and the release that puts the fragments together.
 //
-// The guard fails a pull request that adds entries to CHANGELOG.md or edits its released part by hand (the seal no longer matches); its message names the fix, a fragment in `changelog.d/`. The rest drives `fragmentError`, `sectionText` (player-facing entries first, then the contributor ones under `### For contributors` with their prefix dropped, each group in order), `released` and `release` on strings and a throwaway folder.
+// The guard fails a pull request that adds entries to CHANGELOG.md or edits its released part by hand (the seal no longer matches); its message names the fix, a fragment in `changelog.d/`. The rest drives `fragmentError`, `sectionText` (player-facing entries first, then the contributor ones under `### For contributors` with their prefix dropped, each group in order; with highlights, a `### Highlights` summary on top and both lists folded into `<details>`), `highlightsError`, `released`, `withHighlights` (a released section given or re-given its highlights, every other section byte for byte as it was, and a section of another shape refused) and `release` (`_highlights.md` used and deleted, never read as a fragment) on strings and a throwaway folder.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { CHANGELOG, CONTRIBUTORS_HEADING, FRAGMENTS, changelogError, fragmentError, fragmentNames, problems, release, released, sealed, sectionText, unreleasedLines } from "./changelog.mts";
+import { CHANGELOG, CONTRIBUTORS_HEADING, FRAGMENTS, HIGHLIGHTS, changelogError, fragmentError, fragmentNames, highlightsError, problems, release, released, sealed, sectionText, unreleasedLines, withHighlights } from "./changelog.mts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -116,4 +116,48 @@ test("[fast] release writes CHANGELOG.md from the fragments, deletes them, and w
   rmSync(join(dir, FRAGMENTS, "bad.md"));
   assert.equal(release("0.2.0", "2026-10-18", dir), 0, "an empty release is a no-op, not an error");
   assert.equal(readFileSync(join(dir, CHANGELOG), "utf8"), out);
+});
+
+const HL = "Pack Rat X is a big one.\n\n**Group**\n- One thing.\n- Another.";
+test("[fast] highlights open the section under their heading and fold both entry lists, with their counts", () => {
+  assert.equal(sectionText(["- **P.** p.", "- **For contributors: c** c.", "- **Q.** q."], `\n${HL}\n\n`),
+    `### Highlights\n\n${HL}\n\n<details><summary>All changes (2)</summary>\n\n- **P.** p.\n- **Q.** q.\n\n</details>\n\n${CONTRIBUTORS_HEADING}\n\n<details><summary>Contributor notes (1)</summary>\n\n- **C** c.\n\n</details>`);
+  assert.equal(sectionText(["- **P.** p."]), "- **P.** p.", "no highlights: nothing folded");
+  assert.equal(highlightsError(HL), null);
+  assert.match(highlightsError(" \n")!, /empty/);
+  assert.match(highlightsError("## Highlights\n- x")!, /no headings/);
+});
+
+test("[fast] withHighlights gives a released section its highlights or replaces them, re-seals, and leaves every other section as it was", () => {
+  const two = released(base(), ["- **For contributors: c** c.", "- **P.** p."], "0.2.0", "2026-10-17");
+  const three = released(two, ["- **N.** n."], "0.3.0", "2026-10-18");
+  const set = withHighlights(three, "0.2.0", HL);
+  assert.equal(changelogError(set), null, "re-sealed");
+  const sectionOf = (c: string, v: string): string => { const a = c.indexOf(`## ${v} `); const b = c.indexOf("\n## ", a + 1); return c.slice(a, b < 0 ? undefined : b); };
+  assert.equal(sectionOf(set, "0.2.0"), `## 0.2.0 — 2026-10-17\n\n${sectionText(["- **P.** p.", "- **For contributors: c** c."], HL)}\n`);
+  assert.equal(sectionOf(set, "0.3.0"), sectionOf(three, "0.3.0"), "a later section untouched");
+  assert.ok(set.endsWith(OLD), "an earlier section untouched");
+  assert.equal(withHighlights(set, "0.2.0", HL), set, "the same highlights again change nothing");
+  const other = withHighlights(set, "0.2.0", "Something else.");
+  assert.ok(other.includes("### Highlights\n\nSomething else.\n\n<details><summary>All changes (1)</summary>") && !other.includes("big one"), "new highlights replace the old");
+  assert.throws(() => withHighlights(set, "0.9.0", HL), /no released 0\.9\.0/);
+  assert.throws(() => withHighlights(set, "0.2.0", "# Title"), /no headings/);
+  const security = sealed(base().replace("- **First.** The first release.\n", "- **First.** The first release.\n\n### Security\n\n- **S.** s.\n"));
+  assert.throws(() => withHighlights(security, "0.1.0", HL), /can't place: "### Security"/);
+});
+
+test("[fast] release takes changelog.d/_highlights.md as the section's highlights, never as a fragment, and deletes it", (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "packrat-changelog-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(join(dir, FRAGMENTS));
+  writeFileSync(join(dir, "package.json"), JSON.stringify({ version: "0.2.0" }));
+  writeFileSync(join(dir, CHANGELOG), base());
+  writeFileSync(join(dir, FRAGMENTS, "1-a.md"), "- **A.** a.\n");
+  writeFileSync(join(dir, FRAGMENTS, HIGHLIGHTS), "## Not allowed\n");
+  assert.deepEqual(fragmentNames(dir), ["1-a.md"]);
+  assert.throws(() => release("0.2.0", "2026-10-17", dir), /no headings/, "highlights out of shape stop the release");
+  writeFileSync(join(dir, FRAGMENTS, HIGHLIGHTS), `${HL}\n`);
+  assert.equal(release("0.2.0", "2026-10-17", dir), 1);
+  assert.ok(readFileSync(join(dir, CHANGELOG), "utf8").includes(`## 0.2.0 — 2026-10-17\n\n${sectionText(["- **A.** a."], HL)}\n\n## 0.1.0`));
+  assert.deepEqual(readdirSync(join(dir, FRAGMENTS)), [], "the highlights went with the fragments");
 });

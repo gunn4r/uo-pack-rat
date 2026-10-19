@@ -14,6 +14,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const ALLOWED: Record<string, string> = {
   "adapters/outlands/": "docs/adapter-guide.md names the adapter folder a shard's rules forbid, which must never exist",
   "app/shared-search.mjs": "app/bench/README.md tells the history of a module retired in Phase 3",
+  "changelog.d/_highlights.md": "a release's summary, written by hand only while a release is cut (RELEASING.md step 3) and deleted by the release",
 };
 
 const PATH = /^[A-Za-z0-9_.-]+(\/[A-Za-z0-9_.-]+)*\/?$/;
