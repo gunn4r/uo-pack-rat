@@ -4,6 +4,7 @@
   "transport": "folder",
   "protocol": 1,
   "platform": "win32",
+  "appearance": false,
   "actions": ["open-container", "move-to-own-backpack", "pathfind-local", "client-local-highlight"],
   "capabilities": {
     "layers": ["RightHand", "LeftHand", "Shoes", "Pants", "Shirt", "Head", "Gloves", "Ring",
