@@ -4,9 +4,45 @@
 
 Entries not yet released are in `changelog.d/`, one file per pull request (`CONTRIBUTING.md`, Changelog). `node scripts/changelog.mts --release <version>` moves them here.
 
-<!-- released-sha256: c72aefeb22a33de3bdff5cd0b98e6a93f4a451b8c4d7b1f52eea66894d3a8346 (written by node scripts/changelog.mts) -->
+<!-- released-sha256: 990497dda011c41ea64f3b30bb2a38a626ea1c8b7fd6bb6b77a237fe40b8e9df (written by node scripts/changelog.mts) -->
 
 ## 0.2.0 — 2026-10-18
+
+### Highlights
+
+Pack Rat 0.2.0 is a big one: a new **Organize** screen that sorts your storage for you, a **House map**, a much smarter **Suit Builder**, and **Unravel** suggestions.
+
+**Organize your storage**
+- **Auto organize** proposes a layout for your house, by item kind or by build, with rules for gear you never want.
+- Pack Rat then moves the items for you in trips, chest to chest. **Put away** files what you're carrying from inside the game.
+
+**House map**
+- See your house from above, with each container drawn in its own art. Find an item and jump to it on the map.
+- Name your houses, draw your own areas, and see what's in a chest without walking to it.
+
+**Suit Builder**
+- Say what the suit is for with **goals**, put them in strict order, or ask for the fewest changes. Thirteen UO Alive build templates are built in.
+- Build a suit by hand in **Manual** mode, plan around your buffs, and hand suits back and forth between Manual and Automatic.
+- The result says what changes, as gauges or a table, with losses in red. It shows what made up the score and which requirement is out of reach, and by how much.
+- A saved build tells you what changed in your gear since.
+
+**Inventory**
+- Select items and **move** them.
+- Filter by weapon skill, slot, rarity and yes/no properties. Hover any item for its tooltip.
+- **Scrolls** rolls up your power scrolls and Scrolls of Transcendence for the Scroll Binder.
+
+**Unravel**
+- See which pieces are worth unraveling, then gather them into a bag in one trip.
+
+**AI assistants**
+- Ask Claude Code about your gear. Assistants can also refresh your inventory and label your house containers.
+
+**Safer with your data**
+- Two open windows can't overwrite each other's settings.
+- A file from a newer Pack Rat is never emptied or overwritten.
+- Saves hold up on Windows while another program has the file open.
+
+<details><summary>All changes (135)</summary>
 
 - **Losses in red** in the Suit Builder's What changes gauges and table: a change against the build is now red, a gain stays green.
 - **A bridge status with one malformed entry still reads as online** (issue #338): Pack Rat now checks the bridge's command results in status.json one by one, as it already did the bridge's report of itself: a result with a wrong-typed or missing field is dropped and the others kept, while a newer bridge's added field, step detail or step kind is still read. The running command is kept whenever it names its id, so a running trip is never lost over its other fields. `bridge.v1.schema.json` describes the running command and points each result at the `result` shape, so GET /api/bridge/status now answers its declared type.
@@ -144,7 +180,11 @@ Entries not yet released are in `changelog.d/`, one file per pull request (`CONT
 - **Auto organize: a bag for each group sharing a chest, and the layout to aim for** (issue #132): when a kind's small groups share a chest, each gets one of the empty bags already lying in that chest, labelled with the group's name, and its rule fills that bag, so the groups no longer mix inside the chest; a group that finds no bag left shares the chest loose, marked "No bag". The proposal also works out the layout the strategy wants: no chest over 80% full so new loot has room, and a bag for every group that shares one. Where your chests allow it that is what Auto organize proposes (a group that fills most of one chest gets a second, and the drawer says so), except in a house its earlier run already sorted, which stays as it is; where they do not, it fills them to the top as before and says what to add, for example "add 1 more chest and 8 bags: 5 in the Armour chest, 1 in …, 2 in a new Scrolls chest", counting the empty bags already in your chests that can be moved in first. Rescan and run it again once they are in place. Running it again after the trips keeps every group in its bag and moves nothing.
 - **Saves hold up on Windows while another program has the file open**: Windows refuses to replace a file that an antivirus scan, a search indexer or a backup tool is reading at that moment, and a save (a rule, a label, your settings) used to fail with "operation not permitted". Pack Rat now tries again for about a second first.
 
+</details>
+
 ### For contributors
+
+<details><summary>Contributor notes (97)</summary>
 
 - **An adapter's bridge actions are always a list** (issue #338): `listAdapters` reads a capabilities.json whose `capabilities.bridge` is missing or not a list as no bridge actions, and keeps only its string entries, so GET /api/setup's adapters carry the `bridge: string[]` the page and the MCP tools read, and the route now checks against `SetupApiResponse` whole.
 - **Every file the game scripts write is checked against its schema** (issue #338): `app/adapter-outputs.test.mts` now validates each data file the Python scripts write in their tests (scans, bridge status, the panel's heartbeat, Put away requests, `scan-blacklist.json`, `house-claims.json` and `tazuo-panel.json`), and checks the app's own reader takes each as written, replacing two field-and-type comparisons. The installer's `packrat-paths.json` and both example files are checked against their schema too.
@@ -243,6 +283,8 @@ Entries not yet released are in `changelog.d/`, one file per pull request (`CONT
 - **Screens register their routes and redraw on an inventory event** (issue #218): the hash routes and the ways into the Items view live in `app/ui/nav.mts`, where each screen registers what it shows for its route; `app/ui/inventory-data.mts` reloads the inventory and dispatches `inventorychange`, which each screen drawn from it listens for. No `app/ui/` module imports `app/ui/app.mts`, and `scripts/layering.test.mts` fails on a new UI import cycle.
 - **What the Python adapters write is checked against the schemas** (issue #218): `app/adapter-outputs.test.mts` validates every scan and bridge `status.json` the TazUO and Razor Enhanced scripts write during their fake-client tests; Razor Enhanced has a `fixture.scan.json` made from the fake client, so the contract test covers it too; and the schema validator follows local `#/$defs/<name>` refs, which `profiles.v2.schema.json` now uses for its one entry subschema.
 - **A module map and change checklists** (issue #218): `docs/module-map.md` says where each module and concept lives, `docs/change-checklists.md` lists everything else to change for each kind of change, the pull request template asks which kinds a change is, and `CLAUDE.md` is a short guide for coding agents. A test keeps the map current.
+
+</details>
 
 ## 0.1.1 — 2026-09-28
 
