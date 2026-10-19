@@ -78,6 +78,9 @@ export interface AdapterSummary {
   panel: boolean;
   // install.uoFolder: how the house map finds the UO folder through this client, or null (app/services/houses.mts).
   uoFolder: string | null;
+  // Whether the scanner writes the character's look (capabilities.json's "appearance", issue #57): with it, a scan
+  // without a look is an old one; without it, the client can't read the look.
+  appearance: boolean;
 }
 // capabilities.json's `capabilities` object as listAdapters reads it: `bridge` always a list of action names ([] when
 // the file has none or not a list); the rest as the file wrote it.

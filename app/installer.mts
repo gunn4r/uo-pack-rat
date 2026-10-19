@@ -128,6 +128,8 @@ export interface AdapterInfo {
   uoFolder: string | null;
   transport: "folder" | "paste";
   platform: string | null;
+  // Whether the scanner writes the character's look (capabilities.json's optional "appearance", issue #57).
+  appearance: boolean;
   summary: string;
 }
 
@@ -171,7 +173,7 @@ export function listAdapters(adaptersDir: string): AdapterInfo[] {
     const install = raw.install && typeof raw.install === "object" ? raw.install as Record<string, unknown> : {};
     const panel = install.panel === true;
     const uoFolder = typeof install.uoFolder === "string" ? install.uoFolder : null;
-    out.push({ id: d.name, name, scripts, capabilities, features, panel, uoFolder, transport, platform, summary: summarize(capabilities) });
+    out.push({ id: d.name, name, scripts, capabilities, features, panel, uoFolder, transport, platform, appearance: raw.appearance === true, summary: summarize(capabilities) });
   }
   return out;
 }
