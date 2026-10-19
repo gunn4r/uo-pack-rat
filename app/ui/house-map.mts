@@ -130,13 +130,16 @@ search.input.addEventListener("input", () => { searchClear.hidden = !search.inpu
 search.input.addEventListener("keydown", (e) => { if (e.key === "Escape" && search.input.value) { e.preventDefault(); e.stopPropagation(); setQuery(""); } });
 // Another house keeps the query: the box's text, even one typed in the last 150 ms (its pending update is dropped, or it would put the old house back in the route).
 $<HTMLSelectElement>("#map-house")!.addEventListener("change", (e) => { clearTimeout(searchTimer); location.hash = mapHash({ house: (e.target as HTMLSelectElement).value, q: search.input.value }); });
+// Rewrites the map's route in place, only while the route is still the map: a search's 150 ms wait, or a load, can end after the
+// player (or a link) has already left for another screen, and writing the map's hash then would take them back (issue #443).
+function replaceMapRoute(hash: string): void { if (parseRoute().tab === "map") history.replaceState(null, "", hash); }
 function setQuery(text: string): void {
   clearTimeout(searchTimer);
   if (search.input.value !== text) search.input.value = text;
   const q = text.trim();
   if (q === query) { paintSearch(); return; }
   query = q;
-  if (!$<HTMLElement>("#tab-map")!.hidden) history.replaceState(null, "", mapHash({ house: parseMapHash(location.hash).house ?? S.id, q }));
+  if (!$<HTMLElement>("#tab-map")!.hidden) replaceMapRoute(mapHash({ house: parseMapHash(location.hash).house ?? S.id, q }));
   void runSearch(true);
 }
 // Every match as GET /api/items?fields=hits gives it (its lean rows, HIT_LIMIT a page, so one request is normal; each serial once); an answer for a query no longer asked is dropped. `refit` asks to zoom to the matches once they are in.
@@ -322,7 +325,7 @@ export async function showMap(r: MapRoute): Promise<void> {
   }
   const choices = [...S.models.map((m) => ({ id: m.id, containers: chestCount(m) })), ...(S.plain ? [{ id: PLAIN, containers: chestCount(S.plain) }] : [])];
   const id = pickHouse(choices, want, S.id);
-  if (want && id !== want) history.replaceState(null, "", mapHash({ q: query }));
+  if (want && id !== want) replaceMapRoute(mapHash({ q: query }));
   if (id !== S.id) { S.id = id; renaming = null; nameError = null; stopEditing(); S.level = 0; S.area = null; S.selected = null; S.hover = null; S.focus = null; S.vb = null; if (query) zoomNext = "hits"; }
   S.model = id === PLAIN ? S.plain : S.models.find((m) => m.id === id) ?? null;
   if (S.model && S.level >= S.model.levels.length) { S.level = 0; S.vb = null; stopEditing(); }
@@ -330,7 +333,7 @@ export async function showMap(r: MapRoute): Promise<void> {
   if (r.select != null) {
     const st = S.model?.stacks.find((s) => s.serials.includes(r.select!));
     if (st) { stopEditing(); S.level = st.level; S.area = null; S.selected = r.select; S.hover = null; S.focus = st.letter; S.vb = null; D = null; drawerSeq++; zoomNext = { stacks: [st], room: false }; }
-    history.replaceState(null, "", mapHash({ house: S.id, q: query }));
+    replaceMapRoute(mapHash({ house: S.id, q: query }));
   }
   if (query && (newQuery || found?.inv !== state.inv)) void runSearch(newQuery);   // a new query, or a new scan under the old one
   if (S.area && !areaById(S.area)) S.area = null;   // deleted meanwhile
@@ -1218,7 +1221,7 @@ async function askUnclaim(m: HouseModel, h: NonNullable<ReturnType<typeof summar
   if (!await confirmDialog({ title: `Unclaim ${name}?`, body: "It leaves the House map, and scans there read only your pack, until you claim it again in game. Its name, its areas, its containers and what is in them are kept.", confirmLabel: "Unclaim house" })) { $<HTMLElement>("#map-unclaim")?.focus(); return; }
   try { await houses.unclaim(m.id); } catch (e) { toast(errorText(e), "bad"); $<HTMLElement>("#map-unclaim")?.focus(); return; }
   toast(`Unclaimed ${name}.`, "good");
-  history.replaceState(null, "", mapHash({ q: query }));
+  replaceMapRoute(mapHash({ q: query }));
   await showMap({ house: null, q: query, select: null });
   const pick = $<HTMLSelectElement>("#map-house"), heading = $<HTMLElement>("#h-map");
   if (pick && !pick.disabled) { pick.focus(); return; }
