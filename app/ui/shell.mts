@@ -9,7 +9,7 @@ import { state } from "./store.mts";
 import { session } from "./builder-session.mts";
 import { $, el } from "./dom.mts";
 import { prefs } from "./prefs.mts";
-import { box, button, keyValue, popover, txt, type PopoverHandle, modalOpen } from "./components.mts";
+import { box, button, keyValue, popover, tooltip, txt, type PopoverHandle, modalOpen } from "./components.mts";
 import { currentBridgeView, bridgeLastAnswered, currentAdapter, pollBridge } from "./bridge.mts";
 import { relativeWhen } from "./messages.mts";
 import type { UiPrefs } from "./api-types.mts";
@@ -94,6 +94,9 @@ export function initShell(): void {
   if (typeof matchMedia === "function") { narrow = matchMedia(NARROW); narrow.addEventListener("change", paintCollapse); }
   paintCollapse();
   $<HTMLButtonElement>("#sidebar-pin")!.addEventListener("click", togglePin);
+  // The Ko-fi link (a target=_blank link, so the desktop app hands it to the OS browser): its label shows while the
+  // sidebar is expanded, so the tooltip only while collapsed.
+  tooltip($<HTMLElement>("#sidebar-support")!, "Enjoying Pack Rat? Buy me a coffee.", { side: "right", when: () => $<HTMLElement>("#app")!.classList.contains("collapsed") });
   $<HTMLElement>("#sidebar")!.addEventListener("keydown", navKeys);
   $<HTMLButtonElement>("#bridge")!.addEventListener("click", () => openBridgePopover());
   // ⌘I (Ctrl+I off the Mac) opens Import over whatever page is showing — not over a modal dialog.

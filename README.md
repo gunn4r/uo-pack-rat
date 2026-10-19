@@ -94,6 +94,12 @@ Something not working? Start with [Troubleshooting](docs/user-guide.md#troublesh
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for running from source, the tests and the architecture, and [SECURITY.md](SECURITY.md) for reporting a security problem.
 
+## Support
+
+If Pack Rat saves you time, you can buy me a coffee.
+
+[![Support me on Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/gunn4r)
+
 ## License
 
 MIT, see `LICENSE`. The bundled IBM Plex Sans and IBM Plex Mono fonts (`app/ui/fonts/`) are © IBM Corp., and the Cinzel font the Britannia theme uses is © The Cinzel Project Authors, all under the SIL Open Font License 1.1; their license texts sit next to them. The Britannia theme's frames and textures are drawn by the app itself; it uses no art from any game or game client.

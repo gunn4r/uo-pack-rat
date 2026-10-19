@@ -13,8 +13,9 @@
 // owns: `navigationDecision`, `externalOpenDecision`
 
 // Bound, scheme and rate limit on anything the page asks the OS browser to open. No host allowlist:
-// the one external link the UI has today is the "View release" GitHub URL in app/ui/settings.mts, and
-// that value is host-checked where it is born (app/installer.mts, which owns the GitHub API response)
+// the external links the UI has today are the "View release" GitHub URL in app/ui/settings.mts, which
+// is host-checked where it is born (app/installer.mts, which owns the GitHub API response), and the
+// sidebar's fixed Ko-fi link in app/index.html
 // — a second list here would silently break the next legitimate link (a wiki page, an issue URL)
 // without adding a control the born-side check doesn't already give.
 export const MAX_EXTERNAL_URL = 2048;
