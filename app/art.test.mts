@@ -1,9 +1,9 @@
 // art.test.mts — `app/art.mts` (issue #174), the item art decoder, on synthetic client files.
 //
-// `app/art.mts` (issue #174) on synthetic files from `app/art-fixture.mts`: the lookup3 hash against its published vectors and the item art entry names; a UOP table read across chained blocks with a stored and a deflated entry, empty entries left out, only the table read until an entry is asked for, and malformed tables (bad magic or version, a looping chain, a chain past the block cap, a block or an entry past the end) refused; an entry packed another way, too big, or inflating to the wrong length refused; static art decoded, a run past the width, a row start or run past the buffer, a missing row end and a zero or huge size refused; hues.mul groups, a hue out of range or 0 giving none; full and partial hues; the cut to the opaque box and art with no opaque pixel. The paperdoll's gumps (issue #57): a flag 3 entry inflated and BWT-decoded, and one that does not unpack refused; the BWT port of ClassicUO's BwtDecompress undoing `bwtPack` (empty, one symbol, every symbol on a tie, random data), ignoring the header and the last byte, matching what ClassicUO itself decodes from three corrupted packs, and refusing a short or cut input, a negative count or a length past the cap; gumps decoded (colour 0 transparent, 0x0001 opaque, the last row's pairs up to the end, a run past its row cut there) and malformed ones refused. All `[fast]`.
+// `app/art.mts` (issue #174) on synthetic files from `app/art-fixture.mts`: the lookup3 hash against its published vectors and the item art entry names; a UOP table read across chained blocks with a stored and a deflated entry, empty entries left out, only the table read until an entry is asked for, and malformed tables (bad magic or version, a looping chain, a chain past the block cap, a block or an entry past the end) refused; an entry packed another way, too big, or inflating to the wrong length refused; static art decoded, a run past the width, a row start or run past the buffer, a missing row end and a zero or huge size refused; hues.mul groups, a hue at or past the file's count or 0 giving none; full and partial hues; the cut to the opaque box and art with no opaque pixel. The paperdoll's gumps (issue #57): a flag 3 entry inflated and BWT-decoded, and one that does not unpack refused; the BWT port of ClassicUO's BwtDecompress undoing `bwtPack` (empty, one symbol, every symbol on a tie, random data), ignoring the header and the last byte, matching what ClassicUO itself decodes from three corrupted packs, and refusing a short or cut input, a negative count or a length past the cap; gumps decoded (colour 0 transparent, 0x0001 opaque, the last row's pairs up to the end, a run past its row cut there) and malformed ones refused; the figure's hues (`hueFor`, on a live scan's skin, hair and face numbers) taking the partial switch from the caller and the ramp index from the red channel. All `[fast]`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { bwtDecompress, decodeGump, decodeStatic, gumpArtName, hueOf, itemArtName, readHues, readUopEntry, readUopTable, toRgba, uopHash, type ReadAt } from "./art.mts";
+import { bwtDecompress, decodeGump, decodeStatic, gumpArtName, hueFor, hueOf, itemArtName, readHues, readUopEntry, readUopTable, toRgba, uopHash, type ReadAt } from "./art.mts";
 import { bwtList, bwtPack, mtfPack, syntheticArt, syntheticGump, syntheticHues, syntheticUop } from "./art-fixture.mts";
 import { rgb555 } from "./facet-fixture.mts";
 
@@ -99,6 +99,7 @@ test("[fast] art: hues.mul is whole groups; a hue is its low 14 bits, 1-based, a
   assert.equal(hueOf(hues, 1)!.partial, false);
   assert.equal(hueOf(hues, 0), null);
   assert.equal(hueOf(hues, 17), null);
+  assert.equal(hueOf(hues, 16), null, "a number equal to the file's count is none, as in ClassicUO");
   assert.equal(hueOf(hues, 0x4001)!.colours[1], h1[1], "only the low 14 bits name the hue");
   assert.equal(readHues(Buffer.alloc(708 * 2 + 1)), null);
   assert.equal(readHues(Buffer.alloc(0)), null);
@@ -182,4 +183,23 @@ test("[fast] gump: a size of 0 or past the cap, row starts out of order or past 
   const inside = Buffer.from(two); inside.writeInt32LE(1, 8);
   assert.equal(decodeGump(inside), null, "a row start inside the row table");
   assert.equal(decodeGump(Buffer.alloc(7)), null);
+});
+
+test("[fast] art: the paperdoll's hues: the low 14 bits name the hue, and the caller, not the 0x8000 bit, says whether it is partial (issue #57)", () => {
+  // A live scan's numbers: an elf's skin 0x851D (hue 1309), her hair 519 and her face 0x824D (hue 589), in a file of 1,400 hues.
+  const ramp = (g: number) => new Uint16Array(32).map((_, k) => rgb555(k, g, 31 - k));
+  const list = Array.from({ length: 1400 }, () => new Uint16Array(32));
+  list[1309 - 1] = ramp(1); list[519 - 1] = ramp(2); list[589 - 1] = ramp(3);
+  const hues = readHues(syntheticHues(list))!;
+  const skin = hueFor(hues, 0x851D, true)!, hair = hueFor(hues, 519, false)!, face = hueFor(hues, 0x824D, false)!;
+  assert.deepEqual([skin.colours[0], skin.partial], [rgb555(0, 1, 31), true], "hue 1309, partial");
+  assert.deepEqual([hair.colours[0], hair.partial], [rgb555(0, 2, 31), false]);
+  assert.deepEqual([face.colours[0], face.partial], [rgb555(0, 3, 31), false], "the high bit stripped, and not partial without the tiledata flag");
+  assert.equal(hueFor(hues, 0x8000, true), null, "hue 0 with the high bit is still no hue");
+  // The ramp index is the pixel's red channel, with no shader corner: red 0 takes entry 0 and red 31 entry 31.
+  const art = decodeStatic(syntheticArt(3, 1, [[[0, GREY, 0x8000, rgb555(31, 31, 31)]]]))!;
+  const px = (h: ReturnType<typeof hueFor>) => [...toRgba(art, h)!.rgba];
+  assert.deepEqual(px(hueFor(hues, 519, false)), [66, 16, 189, 255, 0, 16, 255, 255, 255, 16, 0, 255]);
+  const tinted = decodeStatic(syntheticArt(2, 1, [[[0, GREY, R]]]))!;
+  assert.deepEqual([...toRgba(tinted, skin)!.rgba], [66, 8, 189, 255, 255, 0, 0, 255], "the skin tints only the grey pixel");
 });
