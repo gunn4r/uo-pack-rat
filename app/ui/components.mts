@@ -457,19 +457,20 @@ export function closePopover(): void { openPopover?.close(); }
 // ---------------------------------------------------------------- tooltip
 // A small text tooltip on hover (after --delay-tooltip) and on keyboard focus, described-by the anchor. Above
 // the anchor by default (below when there is no room); side "right" puts it beside the anchor instead, for an
-// anchor with text right above it that the tooltip must not cover (above again when there is no room).
+// anchor with text right above it that the tooltip must not cover (above again when there is no room). `when`, if
+// given, is asked as the tooltip would show, and false keeps it hidden (a label that is only hidden some of the time).
 // The tooltips on screen whose text follows the page, so refreshTooltips() can redraw them while they show (a weight's
 // trade-off as its slider is dragged).
 const liveTips = new Map<HTMLElement, () => string>();
 export function refreshTooltips(): void { for (const [tip, text] of liveTips) tip.textContent = text(); }
-export function tooltip(anchor: HTMLElement, text: string | (() => string), { side = "top" }: { side?: "top" | "right" } = {}): HTMLElement {
+export function tooltip(anchor: HTMLElement, text: string | (() => string), { side = "top", when }: { side?: "top" | "right"; when?: () => boolean } = {}): HTMLElement {
   const tip = el("div", { class: "tip", role: "tooltip", id: nextId("tip") }, typeof text === "string" ? text : "");
   let timer = 0;
   anchor.setAttribute("aria-describedby", [anchor.getAttribute("aria-describedby"), tip.id].filter(Boolean).join(" "));
   const show = (delay: number): void => {
     clearTimeout(timer);
     timer = setTimeout(() => {
-      if (!anchor.isConnected) return;
+      if (!anchor.isConnected || (when && !when())) return;
       if (typeof text === "function") { tip.textContent = text(); liveTips.set(tip, text); }   // a text that follows the page, read as it shows
       document.body.append(tip);
       const a = anchor.getBoundingClientRect(), w = tip.offsetWidth, h = tip.offsetHeight;

@@ -8,6 +8,15 @@ body { height: 100vh; overflow: hidden; }
 .sidebar { overflow-y: auto; overflow-x: hidden; }
 .sidebar-meta { padding: 0 var(--space-0-5); overflow-wrap: anywhere; }
 .sidebar .nav-sub .i { display: none; }          /* Runs is indented under Suit Builder while the labels show */
+/* the Ko-fi link above the foot (it, not the foot, takes the free space above): two quiet lines, the ask in faint
+   text and the offer in medium-weight muted text that turns link teal on hover, the cup centered beside both; one hit target */
+.sidebar-support { margin: auto 0 var(--space-1); display: flex; align-items: center; gap: var(--space-2); padding: var(--space-1-5) var(--space-2); border-radius: var(--radius-md); font-size: var(--text-sm); line-height: var(--lh-sm); text-decoration: none; white-space: nowrap; }
+.sidebar-support .nav-label { display: flex; flex-direction: column; min-width: 0; }
+.sidebar-support + .sidebar-foot { margin-top: 0; }
+.pr a.sidebar-support { color: var(--color-text-muted); }
+.sidebar-support-ask { color: var(--color-text-faint); }
+.sidebar-support-cta { font-weight: var(--weight-medium); }
+.pr a.sidebar-support:hover { color: var(--color-link); background: var(--color-surface-subtle); }
 .pr .sidebar-pin { height: var(--control-sm); font-size: var(--text-sm); }
 @media (max-width: 1179px) { .sidebar-pin { display: none; } }   /* below 1180 px the width alone collapses it */
 .bridge-pop-head { display: flex; align-items: center; gap: var(--space-2); }
@@ -22,6 +31,7 @@ body { height: 100vh; overflow: hidden; }
 .shell.collapsed :is(.nav-label, .brand-name, .bridge-label) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .shell.collapsed :is(.nav-item .count, .nav-item .kbd, .sidebar-meta, .bridge > .i) { display: none; }
 .shell.collapsed .sidebar-foot { padding: var(--space-2) 0 0; align-items: center; width: 100%; }
+.shell.collapsed .sidebar-support { width: 40px; height: var(--control-sm); justify-content: center; padding: 0; }
 .shell.collapsed .bridge { width: 40px; justify-content: center; padding: 0; }
 .shell.collapsed .topbar { padding: 0 var(--space-4); }
 .shell.collapsed .page { padding: var(--space-4); }

@@ -100,7 +100,7 @@ const ALLOWED: Record<string, [reason: string, selectors: string[]][]> = {
   ],
   "shell.css": [
     ["the shell's own frame: the page column, and the sidebar collapsed to icons (these parts are drawn only by the shell)", [".shell", ".sidebar", ".shell.collapsed .sidebar", ".shell.collapsed .brand", ".shell.collapsed .nav-item", ".shell.collapsed :is(.nav-label, .brand-name, .bridge-label)", ".shell.collapsed :is(.nav-item .count, .nav-item .kbd, .sidebar-meta, .bridge > .i)", ".shell.collapsed .sidebar-foot", ".shell.collapsed .bridge", ".shell.collapsed .topbar", ".shell.collapsed .page", ".screen > .page"]],
-    [PLACEMENT, [":is(#notice, #update-notice) > .btn"]],
+    [PLACEMENT, [":is(#notice, #update-notice) > .btn", ".sidebar-support + .sidebar-foot"]],
   ],
   "styles.css": [
     ["the legacy shared sheet (docs/ui.md, Stylesheets): the older field and tag looks, until their screens move onto components", [".field", ".tag", ".tag.cursed", ".tag.brittle", ".tag.antique", ".tag.slayer", ".tipcard-host .tip-head .tag"]],
