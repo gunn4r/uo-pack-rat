@@ -1,7 +1,7 @@
-// art.mts — item art from the player's own client files (issue #174): the UOP container artLegacyMUL.uop (its table of entries, each found by the lookup3 hash of its name), one item's static art in it, and the colours of hues.mul. Pure, apart from the read callback the caller passes: nothing here throws on a file that does not add up or reads past a buffer; every decoder answers null instead. The table is read block by block and an entry only when it is asked for, never the whole payload.
+// art.mts — art from the player's own client files: the UOP container (its table of entries, each found by the lookup3 hash of its name, and an entry stored, inflated, or inflated and BWT-decoded), one item's static art in artLegacyMUL.uop (issue #174), one gump in gumpartLegacyMUL.uop (the paperdoll, issue #57), and the colours of hues.mul. Pure, apart from the read callback the caller passes: nothing here throws on a file that does not add up or reads past a buffer; every decoder answers null instead. The table is read block by block and an entry only when it is asked for, never the whole payload.
 //
 // map: house
-// owns: `readUopTable`, `readUopEntry`, `uopHash`, `decodeStatic`, `readHues`, `hueOf`, `toRgba`
+// owns: `readUopTable`, `readUopEntry`, `uopHash`, `bwtDecompress`, `gumpArtName`, `decodeGump`, `decodeStatic`, `readHues`, `hueOf`, `toRgba`
 import { inflateSync } from "node:zlib";
 
 // Jenkins' lookup3 hashlittle2 with both seeds 0, as the UOP format names its entries: the 64-bit result is b << 32 | c.
@@ -78,7 +78,7 @@ export function readUopTable(read: ReadAt, fileSize: number): UopTable | null {
   return t;
 }
 
-// The entry of that name's data: read as stored (flag 0) or inflated (flag 1, which must come out at its decompressed length); null when there is no such entry, it does not read, or it is packed any other way. `maxBytes` caps what is read or inflated.
+// The entry of that name's data: read as stored (flag 0), inflated (flag 1), or inflated and then BWT-decoded (flag 3, every gump of a 7.x gumpartLegacyMUL.uop; `bwtDecompress`). An inflated entry must come out at its decompressed length. Null when there is no such entry, it does not read, it does not unpack, or it is packed any other way. `maxBytes` caps what is read, inflated or BWT-decoded.
 export function readUopEntry(t: UopTable, name: string, read: ReadAt, maxBytes = 1 << 20): Uint8Array | null {
   const h = uopHash(name);
   let lo = 0, hi = t.hashes.length - 1;
@@ -88,14 +88,117 @@ export function readUopEntry(t: UopTable, name: string, read: ReadAt, maxBytes =
     else if (x > h) hi = mid - 1;
     else {
       const flag = t.flag[mid]!, stored = t.stored[mid]!, size = t.size[mid]!;
-      if (stored > maxBytes || (flag !== 0 && flag !== 1) || (flag === 1 && size > maxBytes)) return null;
+      if (stored > maxBytes || (flag !== 0 && flag !== 1 && flag !== 3) || (flag !== 0 && size > maxBytes)) return null;
       const data = read(t.at[mid]!, stored);
       if (!data || data.length < stored) return null;
       if (flag === 0) return data;
-      try { const out = inflateSync(data, { maxOutputLength: maxBytes }); return out.length === size ? out : null; } catch { return null; }
+      let out: Uint8Array;
+      try { out = inflateSync(data, { maxOutputLength: maxBytes }); } catch { return null; }
+      if (out.length !== size) return null;
+      return flag === 1 ? out : bwtDecompress(out, maxBytes);
     }
   }
   return null;
+}
+
+// The gump of that id in gumpartLegacyMUL.uop.
+export const gumpArtName = (id: number): string => `build/gumpartlegacymul/${String(id).padStart(8, "0")}.tga`;
+
+// The BWT stage of a flag 3 UOP entry, a line-by-line port of ClassicUO's BwtDecompress.Decompress (src/ClassicUO.Utility/BwtDecompress.cs at ee79d7e); keep it literal. Null where the C# would throw (fewer than 5 bytes, a read past the input) or answers an empty array (the counts do not sum to a length), and also for a negative count or a length past `maxBytes`, which no real file has.
+//
+// Stage 1 is a move-to-front decode of everything after a uint32 header. The C# sorts a 65,536-entry table built from the first byte, but that sort always gives 0..65535, so the 256 entries it ever touches start as the identity. It reads one byte ahead, so the last input byte is never decoded and the output's last slot stays 0.
+export function bwtDecompress(buf: Uint8Array, maxBytes = 1 << 20): Uint8Array | null {
+  if (buf.length < 5) return null;
+  const table = new Uint8Array(256);
+  for (let i = 0; i < 256; i++) table[i] = i;
+  const list = new Uint8Array(buf.length - 4);
+  for (let at = 4, i = 0; at + 1 < buf.length; at++) {
+    const current = buf[at]!, value = table[current]!;
+    table.copyWithin(1, 0, current);
+    table[0] = value;
+    list[i++] = value;
+  }
+  return bwtInverse(list, maxBytes);
+}
+
+// Stage 2, ClassicUO's InternalDecompress: 256 int32 symbol counts, whose sum is the output length, then each symbol's block, in order of count (highest first, the lowest symbol first on a tie): its place in the starting symbol table, then for each later occurrence how many places on it goes back in.
+function bwtInverse(input: Uint8Array, maxBytes: number): Uint8Array | null {
+  if (input.length < 1024) return null;
+  const symbolTable = new Uint8Array(256);
+  for (let i = 0; i < 256; i++) symbolTable[i] = i;
+  const partialInput = new Int32Array(256 * 3), v = new DataView(input.buffer, input.byteOffset, input.byteLength);
+  let sum = 0, nonZeroCount = 0;
+  for (let i = 0; i < 256; i++) {
+    const n = v.getInt32(i * 4, true);
+    if (n < 0) return null;
+    partialInput[i] = n;
+    sum += n;
+    if (n !== 0) nonZeroCount++;
+  }
+  if (sum > maxBytes) return null;
+  const len = sum, output = new Uint8Array(len);
+  const frequency = byCount(partialInput);
+  const at = (i: number): number | null => (i + 1024 < input.length ? input[i + 1024]! : null);
+  for (let i = 0, m = 0; i < nonZeroCount; ++i) {
+    const freq = frequency[i]!, place = at(m);
+    if (place === null) return null;
+    symbolTable[place] = freq;
+    partialInput[freq + 256] = m + 1;
+    m += partialInput[freq]!;
+    partialInput[freq + 512] = m;
+  }
+  let val = symbolTable[0]!;
+  for (let count = 0; count < len; count++) {
+    output[count] = val;
+    if (partialInput[val + 256]! >= partialInput[val + 512]!) {
+      if (nonZeroCount-- > 0) {
+        symbolTable.copyWithin(0, 1, nonZeroCount + 1);
+        val = symbolTable[0]!;
+      }
+    } else {
+      const idx = at(partialInput[val + 256]!);
+      if (idx === null) return null;
+      partialInput[val + 256]!++;
+      if (idx !== 0) {
+        symbolTable.copyWithin(0, 1, idx + 1);
+        symbolTable[idx] = val;
+        val = symbolTable[0]!;
+      }
+    }
+  }
+  return output;
+}
+
+// ClassicUO's Frequency: the symbols with a count, highest count first, the lowest symbol first on a tie.
+function byCount(counts: Int32Array): Uint8Array {
+  const tmp = counts.slice(0, 256), out = new Uint8Array(256);
+  for (let i = 0; i < 256; i++) {
+    let value = 0, index = 0;
+    for (let j = 0; j < 256; j++) if (tmp[j]! > value) { index = j; value = tmp[j]!; }
+    if (value === 0) break;
+    out[i] = index;
+    tmp[index] = 0;
+  }
+  return out;
+}
+
+// A gump, as a flag 0 or flag 3 entry unpacks: uint32 width and height, `height` int32 row starts (in 4-byte units from the start of that table), then each row's (uint16 colour, uint16 run) pairs; row y has the pairs up to the next row's start, the last row those up to the end. Colour 0 is transparent and any other is opaque, 0x0001 included (the low 15 bits are RGB555). A run that would spill past its row is cut at the row's end. `pixels` is laid out as StaticArt's, so `toRgba` draws it.
+export function decodeGump(buf: Uint8Array): StaticArt | null {
+  if (buf.length < 8) return null;
+  const v = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  const width = v.getUint32(0, true), height = v.getUint32(4, true), words = (buf.length - 8) >> 2;
+  if (width === 0 || height === 0 || width > MAX_ART_SIDE || height > MAX_ART_SIDE || height > words) return null;
+  const pixels = new Uint16Array(width * height), row = (y: number): number => v.getInt32(8 + y * 4, true);
+  for (let y = 0; y < height; y++) {
+    const start = row(y), end = y < height - 1 ? row(y + 1) : words;
+    if (start < height || end < start || end > words) return null;
+    for (let k = start, x = 0; k < end && x < width; k++) {
+      const colour = v.getUint16(8 + k * 4, true), run = Math.min(v.getUint16(10 + k * 4, true), width - x);
+      if (colour !== 0) pixels.fill(0x8000 | (colour & 0x7fff), y * width + x, y * width + x + run);
+      x += run;
+    }
+  }
+  return { width, height, pixels };
 }
 
 // Item art: an int32, uint16 width and height, `height` uint16 row starts (in 16-bit words from the end of that table), then per row runs of (x skip, run length, `run` ARGB1555 pixels) ending in (0, 0). A pixel of value 0 is transparent. `pixels` is width × height with 0 transparent and anything else opaque (bit 0x8000 set, the colour in the low 15 bits).
