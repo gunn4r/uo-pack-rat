@@ -67,6 +67,7 @@ export function scansToPrune(scans: ScanFile[], fold: (s: ScanV2[]) => Inventory
   for (const s of scans) {
     if (stamp(s) >= cutoff || isPseudoCharacter(s.doc.character)) keep.add(s.file);
     for (const root of s.doc.roots || []) if (root.opened !== false) claim(`${+root.serial}`, s);
+    if (s.doc.appearance) claim(`look:${s.doc.character}`, s);   // the fold keeps a character's look from its newest scan that has one
   }
   for (const s of newest.values()) keep.add(s.file);
   let folded: Inventory | undefined;

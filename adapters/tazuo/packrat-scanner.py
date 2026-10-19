@@ -81,7 +81,7 @@ def read_blacklist(path):
 
 # BEGIN generated: manifest
 ADAPTER_ID = "tazuo"
-ADAPTER_VERSION = "2.21.1"
+ADAPTER_VERSION = "2.22.0"
 CAPABILITIES = {
     "layers": ["OneHanded", "TwoHanded", "Shoes", "Pants", "Shirt", "Helmet", "Gloves", "Ring",
                "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic", "Earrings", "Arms",
@@ -692,6 +692,27 @@ def read_skills():
 # END generated: tazuo/skills
 
 
+# BEGIN generated: tazuo/appearance
+LOOK_LAYERS = [("hair", "Hair"), ("beard", "Beard"), ("face", "Face")]
+
+
+def read_appearance(p):
+    """The character's look for the app's paperdoll (issue #57): the body graphic and skin hue of the player mobile `p`,
+    and the graphic and hue of the item on the hair, beard and face layers (None for an empty layer). None when the
+    client cannot say, so the scan leaves it out and the app keeps the last one it knew. Never added to `equipped`."""
+    def worn(layer):
+        it = API.FindLayer(layer)
+        return None if it is None else {"graphic": int(it.Graphic), "hue": int(it.Hue)}
+    try:
+        look = {"body": int(p.Graphic), "hue": int(p.Hue)}
+        for key, layer in LOOK_LAYERS:
+            look[key] = worn(layer)
+        return look
+    except Exception:
+        return None
+# END generated: tazuo/appearance
+
+
 def moved_away(start):
     """True once the player stands more than MOVED_AWAY tiles from `start` (x, y, facet) or on another
     facet. A facet the client cannot say is not compared."""
@@ -730,6 +751,9 @@ def main():
                         "energy": int(getattr(p, "EnergyResistance", 0) or 0)},
             "skills": read_skills(),
             "equipped": [], "roots": [], "containers": {}, "items": []}
+    look = read_appearance(p)
+    if look is not None:
+        snap["appearance"] = look
     seen = set()
 
     # 1) equipped layers (arms included — Legion reads every layer)

@@ -307,6 +307,7 @@ The game scripts run inside a live client, which no test has. Beyond the fake cl
 | 2.11.0 | The house container list (issue #10) | no |
 | 2.12.0 | The house map refresh and the character refresh rename (issue #10) | no |
 | 2.15.0 | The bridge closing the container windows it opened (issue #196) | no |
+| 2.22.0 | The character's look: body, skin hue, hair, beard and face (issue #57) | no |
 
 Open for the house capture's live check: whether a scan taken aboard a boat writes a `house` section from the boat's own tiles (the app keeps a capture past the retention window only while a ground chest of the inventory stands on its footprint, so such a capture ages out with its scan, but the scanner itself has no boat signal yet). The scripts require TazUO v26.0923.64 or later. Which Legion build defines `__file__` is unverified too, which is why `data_dir()` falls back to `API.ScriptPath`. `python3 -m py_compile <file>` is the only offline check of a script outside the fake clients.
 

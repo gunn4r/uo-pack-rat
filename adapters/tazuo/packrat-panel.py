@@ -118,7 +118,7 @@ def script_prefix(self_name):
 
 # BEGIN generated: manifest_version
 ADAPTER_ID = "tazuo"
-ADAPTER_VERSION = "2.21.1"
+ADAPTER_VERSION = "2.22.0"
 # END generated: manifest_version
 
 SELF = "packrat-panel.py"

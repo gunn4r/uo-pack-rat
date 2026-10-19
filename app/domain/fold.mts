@@ -3,7 +3,7 @@
 // map: scan
 // owns: `Item`, `Container`, `Character`, `Inventory`, `ScanSummary`, `ItemLocation`, `containerChain`, `foldSnapshots`, `locationOf`, `containerPath`, `bagLabel`, `capacityOf`, `TRASH_RE`, `BlacklistEntry`, `groupByName`
 import { isPseudoCharacter, parseStamp } from "../scan-schema.mts";
-import type { ScanV2, ScanV2Adapter } from "../schema/types.d.mts";
+import type { ScanV2, ScanV2Adapter, ScanV2Appearance } from "../schema/types.d.mts";
 import type { ExtrasMap, PropMap } from "./properties.mts";
 import { displayName, parseTooltip, stripHtml } from "./tooltip.mts";
 import { classify, SPELLBOOK_RE } from "./slots.mts";
@@ -95,6 +95,8 @@ export interface Character {
   resists: Record<string, unknown> | null;
   skills: Record<string, unknown>;
   adapter: ScanV2Adapter | null;
+  // The look from the newest scan that had one (issue #57), or null: a scan without it keeps what an earlier one said.
+  appearance: ScanV2Appearance | null;
 }
 
 export interface ScanSummary {
@@ -266,7 +268,8 @@ export function foldSnapshots(snapshots: ScanV2[], overrides: KindOverrides = NO
     }
     if (!isPseudoCharacter(char)) {
       inv.characters[char] = { name: char, stats: snap.stats || {}, scannedAt: snap.scannedAt, position: snap.position || null,
-        maxes: snap.maxes || null, resists: snap.resists || null, skills: snap.skills || {}, adapter: snap.adapter || null };
+        maxes: snap.maxes || null, resists: snap.resists || null, skills: snap.skills || {}, adapter: snap.adapter || null,
+        appearance: snap.appearance ?? inv.characters[char]?.appearance ?? null };
     }
     inv.scans.push({ character: char, scannedAt: snap.scannedAt, items: (snap.items || []).length, roots: [...roots] });
   }
