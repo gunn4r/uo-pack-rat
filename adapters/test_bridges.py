@@ -2,9 +2,9 @@
 
 The fake client is fake_clients.py: lines appear in the queue file while the bridge runs, the fake clock moves only when the script pauses (so an 8-second highlight costs nothing), and the test reads back what the bridge did in the world and wrote to its status file. Covers what the pure-block tests in test_adapters.py cannot reach: the heartbeat during long actions, refusals reaching the page under the command's own id, and the container chain checks that decide what may be double-clicked.
 
-Covers: the status heartbeat never lapses more than 3 seconds during a highlight or a walk that never arrives; a backpack grab needs no walk; a Grab all is never refused by the chain check; a stranger's pack (as root or tucked after a real chest), a book or a piece of armour, and a chain that does not nest are refused without being opened; an expired command, or one in a newer protocol, is recorded under its own id with the reason; the status reports the bridge itself (id, version, protocol and every action and feature); and a duplicate line in one read runs once.
+Covers: the status heartbeat never lapses more than 3 seconds during a highlight or a walk that never arrives; a backpack grab needs no walk; a grab that merges onto a stack in the backpack is a success and a bounce still a failure (issue #460); a Grab all is never refused by the chain check; a stranger's pack (as root or tucked after a real chest), a book or a piece of armour, and a chain that does not nest are refused without being opened; an expired command, or one in a newer protocol, is recorded under its own id with the reason; the status reports the bridge itself (id, version, protocol and every action and feature); and a duplicate line in one read runs once.
 
-TazUO trips: takes at an explicit drop spot, puts only of the bridge's carried set, the stop flag between steps (a Stop pressed while a trip waited ends it before its first step, a flag left over from before is cleared, a directory in its place wedges nothing), the backpack item and weight cut-off (`partial`), untaken items' puts skipped, takes refused from your own backpack or bank, and puts refused into your own pack, a stranger's pack, a corpse, trash, a container whose name has not loaded or a blacklisted container. Issue #122: a put of an item that cannot stack reads none of the container's contents while a stackable one merges through `FindTypeAll` (only stacks directly in the container count), falling back to reading every child when the call is missing or fails, and an unreadable stackable flag means stackable. Issue #131: a `putAway` trip refused whole without the panel's shared variable naming that container (missing, not a consent, expired, another container, or a container not in the pack), and with it putting only what lies directly in the picked container (an item in a bag inside it refused; the bag picked next gives up its own; a bag dragged out of the pack mid-trip stopping the remaining puts), never a bag, a blessed or insured item put like any other, nothing joining the carried set. Issue #155: an item a failed trip left carried is put away from the picked bag it was dropped in (and leaves the carried set), while one dropped in a bag the player did not pick is still refused as no longer at the top of the backpack.
+TazUO trips: takes at an explicit drop spot, puts only of the bridge's carried set, the stop flag between steps (a Stop pressed while a trip waited ends it before its first step, a flag left over from before is cleared, a directory in its place wedges nothing), a take that merges onto a stack anyway counted taken and a bounce still reported (issue #460), the backpack item and weight cut-off (`partial`), untaken items' puts skipped, takes refused from your own backpack or bank, and puts refused into your own pack, a stranger's pack, a corpse, trash, a container whose name has not loaded or a blacklisted container. Issue #122: a put of an item that cannot stack reads none of the container's contents while a stackable one merges through `FindTypeAll` (only stacks directly in the container count), falling back to reading every child when the call is missing or fails, and an unreadable stackable flag means stackable. Issue #131: a `putAway` trip refused whole without the panel's shared variable naming that container (missing, not a consent, expired, another container, or a container not in the pack), and with it putting only what lies directly in the picked container (an item in a bag inside it refused; the bag picked next gives up its own; a bag dragged out of the pack mid-trip stopping the remaining puts), never a bag, a blessed or insured item put like any other, nothing joining the carried set. Issue #155: an item a failed trip left carried is put away from the picked bag it was dropped in (and leaves the carried set), while one dropped in a bag the player did not pick is still refused as no longer at the top of the backpack.
 
 The TazUO bridge's window closing (2.15.0, issue #196): a trip or a Grab closes the windows it opened, innermost first, and only after the last move; a window already open, the backpack, and a chest holding a window the player opened stay open; a Highlight closes nothing; a stopped trip's result and the stopped marker are written before the first close, and after a Stop closing gives up 0.5 s after the Stop was first seen; a stopped or failed command still closes what it opened; a client without `GetContainerGump()` or `Dispose()` gets one message per container per bridge run; and a failing message or an interrupt mid-close never breaks the next command.
 
@@ -197,6 +197,28 @@ class BridgeCase(object):
         self.assertTrue(final["results"]["b1"]["ok"], final["results"]["b1"])
         self.assertEqual([c for c in w.calls if c[0] == "walk"], [])
         self.assertEqual(self.moved(w), [RING])
+
+    def test_a_grab_that_merges_onto_a_stack_in_the_backpack_counts_as_grabbed(self):
+        # Issue #460: the merge takes the moved serial away, so only the stack's growth shows it landed.
+        w = home()
+        w.merges = True
+        w.add(STACK, PACK, name="Black Pearl", container_like=False, OnGround=False, Amount=20)
+        w.add(OTHER_GEM, POUCH, name="Black Pearl", container_like=False, OnGround=False, Amount=47)
+        final, _ = self.run_bridge(w, 1, [self.cmd("b1", "grab", OTHER_GEM, [PACK, POUCH])])
+        self.assertTrue(final["results"]["b1"]["ok"], final["results"]["b1"])
+        self.assertNotIn(OTHER_GEM, w.items)
+        self.assertEqual(w.items[STACK].Amount, 67)
+
+    def test_a_grab_that_bounces_is_still_reported_with_a_matching_stack_in_the_backpack(self):
+        w = home()
+        w.merges = True
+        w.refuse = {PACK}
+        w.add(STACK, PACK, name="Black Pearl", container_like=False, OnGround=False, Amount=20)
+        w.add(OTHER_GEM, POUCH, name="Black Pearl", container_like=False, OnGround=False, Amount=47)
+        final, _ = self.run_bridge(w, 1, [self.cmd("b1", "grab", OTHER_GEM, [PACK, POUCH])])
+        self.assertFalse(final["results"]["b1"]["ok"])
+        self.assertIn("move bounced", final["results"]["b1"]["msg"])
+        self.assertEqual((w.items[OTHER_GEM].Container, w.items[STACK].Amount), (POUCH, 20))
 
     # ---- the chain -------------------------------------------------------------------------------
 
@@ -787,6 +809,25 @@ class TazUOBridge(BridgeCase, unittest.TestCase):
         [call] = [c for c in w.calls if c[0] == "move"]
         self.assertEqual(call[1:], (AMULET, PACK, 0, 60, 90))
         self.assertEqual(w.items[AMULET].Container, PACK)
+
+    def test_a_take_that_merges_onto_a_stack_anyway_counts_as_taken(self):
+        # Issue #460: a server that merges a drop at a spot takes the serial away; the stack's growth shows it landed.
+        w = trip_home()
+        w.merges = w.merges_at_spot = True      # LOOSE, in the pack, has the amulet's graphic and hue
+        final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG])])])
+        self.assertTrue(final["results"]["t1"]["ok"], final["results"]["t1"])
+        self.assertIn("joined a stack", final["results"]["t1"]["steps"][0]["msg"])
+        self.assertNotIn(AMULET, w.items)
+        self.assertEqual(w.items[LOOSE].Amount, 2)
+
+    def test_a_take_that_bounces_is_still_reported_with_a_matching_stack_in_the_backpack(self):
+        w = trip_home()
+        w.merges = w.merges_at_spot = True
+        w.refuse = {PACK}
+        final, _ = self.run_bridge(w, 1, [self.trip("t1", takes=[(AMULET, [CHEST, BAG])])])
+        self.assertFalse(final["results"]["t1"]["ok"])
+        self.assertIn("move bounced", final["results"]["t1"]["steps"][0]["msg"])
+        self.assertEqual((w.items[AMULET].Container, w.items[LOOSE].Amount), (BAG, 1))
 
     def test_the_stop_flag_halts_a_trip_between_steps_and_one_queued_before_it_and_the_taken_item_can_still_be_put_away(self):
         w = self.far_dest(trip_home())

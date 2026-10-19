@@ -114,7 +114,7 @@ def script_prefix(self_name):
 
 # BEGIN generated: manifest
 ADAPTER_ID = "tazuo"
-ADAPTER_VERSION = "2.21.0"
+ADAPTER_VERSION = "2.21.1"
 CAPABILITIES = {
     "layers": ["OneHanded", "TwoHanded", "Shoes", "Pants", "Shirt", "Helmet", "Gloves", "Ring",
                "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic", "Earrings", "Arms",
@@ -1006,11 +1006,18 @@ def do_grab(cmd):
     root = resolve_root(int(cmd["serial"]), find)
     if root not in own_roots(cmd.get("chain")):
         return False, f"refused: {name} is not in your backpack, your bank, or the container this command opened"
+    # A drop with no spot merges onto a matching stack in the pack and the moved serial disappears (#460):
+    # then the stack's growth is the proof it landed.
+    stacks = stackable(it)
+    graphic, hue = int(getattr(it, "Graphic", 0) or 0), int(getattr(it, "Hue", 0) or 0)
+    before = stack_total(pack, graphic, hue) if stacks else 0
     API.MoveItem(int(cmd["serial"]), pack)
     API.Pause(1.2)
     it2 = find(cmd["serial"])
-    if it2 is not None and int(getattr(it2, "Container", 0) or 0) == pack:
+    if inside(it2, pack):
         return True, f"grabbed {name} — it is in your backpack"
+    if it2 is None and stacks and stack_total(pack, graphic, hue) > before:
+        return True, f"grabbed {name} — it joined a stack in your backpack"
     return False, f"move bounced for {name} (too far, or backpack full?)"
 
 
@@ -1234,12 +1241,21 @@ def do_take(t, it):
     pack = int(API.Backpack)
     if not room_for(it, pack):
         return False, f"your backpack cannot take {name} — trip cut short", True
-    # Dropped at a spot, a stack never merges into a matching stack already in the pack, so it keeps
-    # the serial this trip's put names.
-    it2 = trip_move(serial, pack, lambda x: inside(x, pack), 0, TAKE_DROP[0], TAKE_DROP[1])
+    # Dropped at a spot, a stack does not merge into a matching stack already in the pack, so it keeps
+    # the serial this trip's put names. Should it merge anyway, its serial is gone and the stack's growth
+    # says it landed (#460); the put then has nothing of its own to move.
+    stacks = stackable(it)
+    graphic, hue = int(getattr(it, "Graphic", 0) or 0), int(getattr(it, "Hue", 0) or 0)
+    before = stack_total(pack, graphic, hue) if stacks else 0
+
+    def merged(x):
+        return x is None and stacks and stack_total(pack, graphic, hue) > before
+    it2 = trip_move(serial, pack, lambda x: inside(x, pack) or merged(x), 0, TAKE_DROP[0], TAKE_DROP[1])
     if inside(it2, pack):
         carried.add(serial)
         return True, f"took {name}", False
+    if merged(it2):
+        return True, f"took {name} — it joined a stack in your backpack, so put it away by hand", False
     return False, f"move bounced for {name} (too far, or backpack full?)", False
 
 

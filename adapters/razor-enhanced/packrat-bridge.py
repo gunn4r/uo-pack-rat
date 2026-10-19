@@ -75,7 +75,7 @@ def rfc3339_now():
 
 # BEGIN generated: manifest
 ADAPTER_ID = "razor-enhanced"
-ADAPTER_VERSION = "1.13.1"
+ADAPTER_VERSION = "1.13.2"
 CAPABILITIES = {
     "layers": ["RightHand", "LeftHand", "Shoes", "Pants", "Shirt", "Head", "Gloves", "Ring",
                "Talisman", "Neck", "Waist", "InnerTorso", "Bracelet", "MiddleTorso", "Earrings",
@@ -750,6 +750,10 @@ def do_grab(cmd):
     root = resolve_root(as_int(cmd["serial"]), find)
     if root not in own_roots(cmd.get("chain")):
         return False, "refused: {0} is not in your backpack, your bank, or the container this command opened".format(name)
+    # A drop with no spot merges onto a matching stack in the pack and the moved serial disappears (#460):
+    # then the stack's growth is the proof it landed.
+    graphic, hue = as_int(getattr(it, "ItemID", 0)), as_int(getattr(it, "Hue", 0))
+    before = stack_total(pack, graphic, hue)
     try:
         Items.Move(as_int(cmd["serial"]), pack, -1)
     except Exception as e:
@@ -758,7 +762,23 @@ def do_grab(cmd):
     it2 = find(cmd["serial"])
     if it2 is not None and as_int(getattr(it2, "Container", 0)) == pack:
         return True, "grabbed {0} -- it is in your backpack".format(name)
+    if it2 is None and stack_total(pack, graphic, hue) > before:
+        return True, "grabbed {0} -- it joined a stack in your backpack".format(name)
     return False, "move bounced for {0} (too far, or backpack full?)".format(name)
+
+
+def stack_total(container, graphic, hue):
+    """The summed amount of the items directly in `container` with this graphic and hue (the stacks a
+    drop with no spot could merge onto), 0 when none or the container cannot be read."""
+    total = 0
+    try:
+        kids = list(getattr(find(container), "Contains", None) or [])
+    except Exception:
+        return 0
+    for k in kids:
+        if as_int(getattr(k, "ItemID", 0)) == graphic and as_int(getattr(k, "Hue", 0)) == hue:
+            total += max(1, as_int(getattr(k, "Amount", 1), 1))
+    return total
 
 
 def run(cmd):

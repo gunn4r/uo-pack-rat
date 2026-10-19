@@ -305,7 +305,8 @@ def tazuo_api(world, backpack, bank=0, skills=None):
 
     def move(s, dst, *a):
         """The server's drop: `refuse` bounces it (a full or locked container), a drop with no spot
-        stacks onto a matching stack when `merges` is set, and the player's weight follows the pack.
+        stacks onto a matching stack when `merges` is set (a drop at a spot too, with `merges_at_spot`), and
+        the player's weight follows the pack.
         `on_move(serial, dst)` runs first, like a click the player makes mid-trip."""
         s, dst = int(s), int(dst)
         world.calls.append(("move", s, dst) + tuple(a))
@@ -320,13 +321,8 @@ def tazuo_api(world, backpack, bank=0, skills=None):
             player.Weight -= stones
         if dst == backpack:
             player.Weight += stones
-        if getattr(world, "merges", False) and not a:
-            same = [k for k in world.items.values()
-                    if k.Container == dst and k.Serial != s and (k.Graphic, k.Hue) == (it.Graphic, it.Hue)]
-            if same:
-                same[0].Amount += it.Amount
-                del world.items[s]
-                return
+        if getattr(world, "merges", False) and (not a or getattr(world, "merges_at_spot", False)) and merge(world, s, dst):
+            return
         lag = getattr(world, "move_lag", 0)
         if lag:        # the server applied the drop; the client hears of it `lag` fake seconds later
             world.clock.at(world.clock.now - world.clock.start + lag, lambda: setattr(it, "Container", dst))
@@ -444,6 +440,18 @@ class Pos(object):
         self.X, self.Y, self.Z = x, y, z
 
 
+def merge(world, s, dst):
+    """Stack item `s` onto the first matching stack (same graphic and hue) directly in `dst`, as the
+    server does with a drop that merges: the moved serial disappears. Whether there was one."""
+    it = world.items[s]
+    same = [k for k in world.items.values()
+            if k.Container == dst and k.Serial != s and (k.Graphic, k.Hue) == (it.Graphic, it.Hue)]
+    if same:
+        same[0].Amount += it.Amount
+        del world.items[s]
+    return bool(same)
+
+
 def razor_globals(world, backpack, bank=None, skills=None):
     """Razor Enhanced's Items / Player / Misc, over the same World. Items carry .Position, .ItemID and
     .Contains (what the client has loaded) the way RE's Item does."""
@@ -499,7 +507,12 @@ def razor_globals(world, backpack, bank=None, skills=None):
 
         @staticmethod
         def Move(s, dst, amount):
+            """`refuse` bounces it and, with `merges`, it stacks onto a matching stack (no spot is given)."""
             world.calls.append(("move", int(s), int(dst)))
+            if int(dst) in getattr(world, "refuse", ()):
+                return
+            if getattr(world, "merges", False) and merge(world, int(s), int(dst)):
+                return
             world.items[int(s)].Container = int(dst)
 
         @staticmethod
