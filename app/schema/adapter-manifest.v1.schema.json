@@ -9,6 +9,7 @@
     "transport": { "type": "string", "enum": ["folder", "paste"] },
     "protocol": { "type": "integer", "minimum": 1, "$comment": "The bridge queue-line protocol its bridge reads; declared by an adapter that ships a bridge." },
     "platform": { "type": "string", "enum": ["win32", "darwin", "linux"], "$comment": "The one process.platform the client runs on; absent means every platform." },
+    "appearance": { "type": "boolean", "$comment": "Whether the scanner writes the character's look (the scan's appearance block, issue #57); absent means it does not. The app reads it here, not from a scan, so an old scan is told apart from a client that cannot read the look." },
     "actions": { "type": "array", "items": { "type": "string" }, "$comment": "What the scripts do in the world; app/adapters.test.mts holds the vocabulary." },
     "capabilities": { "type": "object" },
     "features": { "type": "array", "items": { "type": "string" } },

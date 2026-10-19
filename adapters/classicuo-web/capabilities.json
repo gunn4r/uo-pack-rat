@@ -2,6 +2,7 @@
   "adapter": "classicuo-web",
   "version": "1.5.0",
   "transport": "paste",
+  "appearance": false,
   "actions": [],
   "capabilities": {
     "layers": ["OneHanded", "TwoHanded", "Shoes", "Pants", "Shirt", "Helmet", "Gloves",
