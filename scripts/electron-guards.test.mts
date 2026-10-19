@@ -126,6 +126,14 @@ test("[fast] Chromium's own DevTools frontend may navigate itself", () => {
   assert.deepEqual(navigationDecision("devtools://devtools/bundled/devtools_app.html", null), { allowed: true });
 });
 
+test("[fast] the sidebar's Ko-fi link opens in a new window, which the shell hands to the OS browser as it is", () => {
+  const page = readFileSync(join(root, "app", "index.html"), "utf8");
+  const link = /<a class="sidebar-support" id="sidebar-support" href="([^"]+)" target="_blank" rel="noopener noreferrer">/.exec(page);
+  assert.ok(link, "the link is a target=_blank anchor, so it never navigates the app window");
+  assert.match(link[1]!, /^https:\/\/ko-fi\.com\/[\w-]+$/, "it points at a Ko-fi page");
+  assert.deepEqual(externalOpenDecision(link[1], 10_000, null), { open: link[1] }, "no allowlist stands in its way");
+});
+
 test("[fast] an external link opens only over https, parsed rather than pattern-matched", () => {
   assert.deepEqual(externalOpenDecision("https://github.com/example/project/releases", 10_000, null), { open: "https://github.com/example/project/releases" });
   // What goes to the OS is the parser's normalised href, never the raw string.

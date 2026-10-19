@@ -1,0 +1,1 @@
+- **A "Buy me a coffee" link**: the bottom of the sidebar has a small link to the maintainer's Ko-fi page, for anyone who wants to support Pack Rat. It opens in your web browser. Pack Rat stays free, and nothing changes if you never click it.

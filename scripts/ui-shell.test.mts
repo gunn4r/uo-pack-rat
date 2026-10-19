@@ -1,6 +1,6 @@
 // ui-shell.test.mts — [slow]: the app shell (design spec 3.1) in the real Electron window.
 //
-// `[slow]`: the app shell in the real Electron window (`app/ui/shell.mts`, `app/ui/nav.mts`'s routes): one `<main>` screen at a time with its `h1` and the sidebar item marked `aria-current`; `#/containers` as Inventory's second view and its Items/Containers switch; ⌘I and `#/import` opening the Import drawer over the screen that was showing (the shell inert behind it) and Esc putting the route back; `#/runs` opening the builder with the saved-runs drawer and navigating away closing it; closed drawers hidden and inert; the bridge control's popover (state, last answered, focus back to the control on Esc); the shard picker in Settings; and the sidebar collapsing to 56 px icons below 1180 px (labels still named for a screen reader), pinned collapsed at 1440 px, the pin surviving a restart through `ui-prefs.json`.
+// `[slow]`: the app shell in the real Electron window (`app/ui/shell.mts`, `app/ui/nav.mts`'s routes): one `<main>` screen at a time with its `h1` and the sidebar item marked `aria-current`; `#/containers` as Inventory's second view and its Items/Containers switch; ⌘I and `#/import` opening the Import drawer over the screen that was showing (the shell inert behind it) and Esc putting the route back; `#/runs` opening the builder with the saved-runs drawer and navigating away closing it; closed drawers hidden and inert; the bridge control's popover (state, last answered, focus back to the control on Esc); the shard picker in Settings; and the Ko-fi link handed to the OS browser (`shell.openExternal` stubbed), never the app window; the sidebar collapsing to 56 px icons below 1180 px (labels still named for a screen reader, the Ko-fi cup's tooltip only while collapsed), pinned collapsed at 1440 px, the pin surviving a restart through `ui-prefs.json`.
 //
 // Same launch as scripts/ui-smoke.test.mts. The sidebar pin is a ui-prefs field, not localStorage. Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
 import test from "node:test";
@@ -9,7 +9,7 @@ import { mkdtempSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fitWindow } from "./electron-window.mts";
-import { launchApp, skipWithoutElectron, tempDataDir, type App } from "./electron-app.mts";
+import { launchApp, skipWithoutElectron, tempDataDir, until, type App } from "./electron-app.mts";
 import type { Page } from "playwright";
 
 // The real window, as close to the width under test as the screen allows (scripts/electron-window.mts).
@@ -22,7 +22,7 @@ test("[slow] the shell: screens, routes, drawers, the bridge popover and Setting
   if (skipWithoutElectron(t)) return;
   const dataDir = mkdtempSync(join(tmpdir(), "packrat-shell-"));
   writeFileSync(join(dataDir, "settings.json"), JSON.stringify({ schemaVersion: 1, shard: "uoalive", setupDone: true }));
-  const { page, errors, close } = await launch(dataDir);
+  const { app, page, errors, close } = await launch(dataDir);
   try {
     assert.deepEqual(await visibleScreens(page), ["tab-inventory"]);
     assert.deepEqual(await current(page), ["inventory"]);
@@ -94,6 +94,22 @@ test("[slow] the shell: screens, routes, drawers, the bridge popover and Setting
     await page.keyboard.press("Escape");
     assert.equal(await pop.count(), 0);
     assert.equal(await page.evaluate(() => document.activeElement?.id), "bridge", "focus returns to the control");
+
+    // The Ko-fi link goes to the OS browser (shell.openExternal, stubbed here so no browser opens), never into the app window.
+    const kofi = page.getByRole("link", { name: "Buy me a coffee" });
+    const href = await kofi.getAttribute("href");
+    assert.match(href ?? "", /^https:\/\/ko-fi\.com\/[\w-]+$/);
+    await app.evaluate(({ shell }) => {
+      const g = globalThis as { opened?: string[] };
+      g.opened = [];
+      shell.openExternal = async (url: string) => { g.opened!.push(url); };
+    });
+    const before = page.url();
+    await kofi.click();
+    const opened = await until(() => app.evaluate(() => (globalThis as { opened?: string[] }).opened ?? []), (o) => o.length > 0, "the Ko-fi link handed to the OS browser");
+    assert.deepEqual(opened, [href]);
+    assert.equal(page.url(), before, "the app window stays on the app");
+    assert.equal(app.windows().length, 1, "no second window");
     assert.deepEqual(errors, []);
   } finally {
     await close();
@@ -114,6 +130,10 @@ test("[slow] the sidebar collapses to icons below 1180 px, and pinning it collap
     assert.equal(await run.page.locator("#sidebar-pin").isVisible(), false, "below 1180 px the width alone collapses it, so there is no pin");
     // Collapsed, every nav item keeps its name for a screen reader.
     assert.ok(await run.page.getByRole("link", { name: "Characters" }).isVisible());
+    // Collapsed, the Ko-fi link is a cup icon, named for a screen reader and by a tooltip on hover.
+    await run.page.getByRole("link", { name: "Buy me a coffee" }).hover();
+    await run.page.locator(".tip", { hasText: "Buy me a coffee" }).waitFor();
+    await run.page.mouse.move(700, 450);
 
     // Wider than 1180 px — only where the screen allows a window that wide (locally, Ubuntu's virtual display).
     const wide = await fitWindow(run.app, run.page, { width: 1440, height: 900 });
@@ -121,6 +141,10 @@ test("[slow] the sidebar collapses to icons below 1180 px, and pinning it collap
       if (wide.width < 1180) return st.skip(`this screen fits a window only ${wide.width} px wide; the expanded sidebar needs 1180`);
       await run.page.waitForFunction(() => !document.getElementById("app")!.classList.contains("collapsed"));
       assert.equal(await sidebarWidth(run.page), 216);
+      // Expanded, its label shows, so no tooltip repeats it.
+      await run.page.hover("#sidebar-support");
+      await run.page.waitForTimeout(800);   // sleep: past the 400 ms tooltip delay, proving no tooltip shows
+      assert.equal(await run.page.locator(".tip", { hasText: "Buy me a coffee" }).count(), 0);
       await run.page.click("#sidebar-pin");
       assert.equal(await collapsed(run.page), true, `pinned collapsed at ${wide.width} px`);
       await run.page.waitForFunction(async () => (await (await fetch("/api/ui-prefs")).json()).prefs.sidebar === "collapsed");

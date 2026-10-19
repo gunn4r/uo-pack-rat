@@ -21,7 +21,9 @@ const BANNED: [RegExp, string, string[]][] = [
   [/gunnar|gabrielson/i, "the maintainer's name or machine", ["scripts/scrub.test.mts"]],
   [/gunn4r/i, "the maintainer's account — only the repository URL may carry it",
     ["package.json", "package-lock.json", "README.md", "docs/user-guide.md", "CONTRIBUTING.md", "SECURITY.md", "RELEASING.md",
-     ".github/ISSUE_TEMPLATE/config.yml", "scripts/packaging.test.mts", "scripts/scrub.test.mts",
+     ".github/ISSUE_TEMPLATE/config.yml",
+     // the Ko-fi page: GitHub's Sponsor button, and the sidebar's "Buy me a coffee" link
+     ".github/FUNDING.yml", "app/index.html", "scripts/packaging.test.mts", "scripts/scrub.test.mts",
      // LICENSE: MIT needs an identifiable copyright holder, and gunn4r is the public account name —
      // already the repository owner, the electron-builder appId and package.json's author.
      "LICENSE"]],
