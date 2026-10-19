@@ -9,7 +9,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fitWindow, settle, sideways as sidewaysOf, type RealSize, animationsDone, steady } from "./electron-window.mts";
-import { fakeBridge, launchApp, skipWithoutElectron, until, type App, type QueuedCommand } from "./electron-app.mts";
+import { explained, fakeBridge, launchApp, skipWithoutElectron, until, type App, type QueuedCommand } from "./electron-app.mts";
 import { probeContrast, failures, describeFailures, type ContrastRow } from "./contrast-probe.mts";
 import { houseScan } from "../app/organize-fixture.mts";
 import { claimHouses, vaultHouse, courtyardHouse, castleHouse, fixtureTileData, FIXTURE_TILES } from "../app/house-fixture.mts";
@@ -96,7 +96,7 @@ function seed({ client = true, castle = false, facet = false, items = false, are
 const launch = (dataDir: string, { want = { width: 1440, height: 900 }, demo = false }: { want?: RealSize; demo?: boolean } = {}): Promise<App> => launchApp(dataDir, { demo, size: want });
 async function go(page: Page, hash: string, ready: string): Promise<void> {
   await page.evaluate((h) => { location.hash = h; }, hash);
-  await page.waitForSelector(ready, { timeout: 30_000 });
+  await explained(page, page.waitForSelector(ready, { timeout: 30_000 }));
 }
 
 test("[slow] House map: the nav entry opens it, the picker lists both houses with the biggest chosen, a pill per level, a stale deep link falls back, and without a client the no-tiledata note shows", async (t) => {
@@ -1537,8 +1537,13 @@ test("[slow] House map Stack plan: a search scrolls to its first matching card, 
     await page.locator(`#map-panel .map-hit[data-chest="${RUBY_FRONT}"] .map-hit-pick`).click();
     await page.waitForSelector(`#map-plan .sp-card.sel[data-stack="${front}"]`);
     // Show on map with the plan up: the container's card selected and scrolled into view
-    await page.fill("#map-q", "");
-    await go(page, "#/containers", `tr[data-root="${RUBY_FRONT}"]`);
+    // The search cleared and the route gone to Containers before its 150 ms wait ends (the URL changed, its hashchange not
+    // handled yet): the search's update leaves the route alone (issue #443).
+    await page.evaluate(() => { const q = document.querySelector<HTMLInputElement>("#map-q")!; q.value = ""; q.dispatchEvent(new Event("input")); history.pushState(null, "", "#/containers"); });
+    await page.waitForTimeout(300);   // sleep: past the search's 150 ms wait, to prove its update does not put the map's route back
+    assert.equal(await page.evaluate(() => location.hash), "#/containers", "the search's update kept the route the player went to");
+    await page.evaluate(() => { dispatchEvent(new HashChangeEvent("hashchange")); });
+    await explained(page, page.waitForSelector(`tr[data-root="${RUBY_FRONT}"]`, { timeout: 30_000 }));
     await page.locator(`tr[data-root="${RUBY_FRONT}"] .cont-act button`).click();
     await page.getByRole("menuitem", { name: /Show on map/ }).click();
     await page.waitForSelector(`#map-plan .sp-card.sel[data-stack="${front}"]`);
