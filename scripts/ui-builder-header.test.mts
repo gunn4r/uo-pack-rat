@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import { writeFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fitWindow, pickCharacter, settle, sideways, sidewaysAt } from "./electron-window.mts";
-import { ROOT, skipWithoutElectron, tempDataDir } from "./electron-app.mts";
+import { ROOT, pageState, skipWithoutElectron, tempDataDir } from "./electron-app.mts";
 import { built, closeSettings, launch, openBuilder, settings } from "./builder-ui.mts";
 import type { Locator } from "playwright";
 
@@ -451,7 +451,7 @@ test("[slow] the What changed chip and its popover: unsaved first, by group, a r
     await chip.click();
     await pop.waitFor();
     await page.waitForFunction(() => document.documentElement.scrollWidth <= innerWidth, undefined, { timeout: 5_000 }).catch(() => {});
-    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), "no sideways scroll at 420");
+    if (!await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)) assert.fail(`no sideways scroll at 420: ${await pageState(page)}`);
     // Reset to “Melee”… asks first, then nothing is changed
     await pop.getByRole("button", { name: "Reset to “Melee”…" }).click();
     const dialog = page.locator("dialog.dialog[open]");

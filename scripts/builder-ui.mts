@@ -4,7 +4,7 @@
 // map: tooling
 // owns: `launch`, `settings`, `openBuilder`, `pressBuild`, `built`
 import type { Page } from "playwright";
-import { launchApp, type App } from "./electron-app.mts";
+import { explained, launchApp, type App } from "./electron-app.mts";
 
 export const launch = (dataDir: string): Promise<App> => launchApp(dataDir, { size: { width: 1440, height: 900 } });
 // The Settings drawer (issue #272) open on one of its tabs, and closed again (the focus back on the Settings button). On the
@@ -20,7 +20,7 @@ export async function closeSettings(page: Page): Promise<void> {
 }
 // The Suit Builder with its first character's first-visit view showing, and a 2 s time budget so builds are quick.
 export async function openBuilder(page: Page): Promise<void> {
-  await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
+  await explained(page, page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 }));
   await page.click('[data-nav="builder"]');
   await page.waitForSelector("#tab-builder:not([hidden]) #b-start", { timeout: 10_000 });
   await settings(page, "advanced");
