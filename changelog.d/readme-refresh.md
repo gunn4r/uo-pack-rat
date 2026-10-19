@@ -1,2 +1,0 @@
-- **A shorter README with screenshots**: the README is now a quick tour, a picture or short animation for each feature and four steps to get started. The full detail moved to a new user guide, `docs/user-guide.md`.
-- **For contributors: the README's images regenerate with one command**: `npm run readme:shots` (`scripts/readme-shots.mts`) takes them from the demo characters in headless Chromium and makes the GIFs with ffmpeg.

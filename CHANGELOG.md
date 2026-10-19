@@ -4,7 +4,33 @@
 
 Entries not yet released are in `changelog.d/`, one file per pull request (`CONTRIBUTING.md`, Changelog). `node scripts/changelog.mts --release <version>` moves them here.
 
-<!-- released-sha256: 990497dda011c41ea64f3b30bb2a38a626ea1c8b7fd6bb6b77a237fe40b8e9df (written by node scripts/changelog.mts) -->
+<!-- released-sha256: 1a8f376e1463dfa663c391b97611446c0f74c791195c0a4cf91df68b78182e78 (written by node scripts/changelog.mts) -->
+
+## 0.2.1 — 2026-10-19
+
+### Highlights
+
+A fix release for 0.2.0.
+
+- **Grab and Organize no longer report a false failure.** Grabbing or taking an item that merges into a stack already in your backpack used to say "move bounced" even though it worked. Re-install the game scripts after updating (TazUO 2.21.1, Razor Enhanced 1.13.2).
+
+<details><summary>All changes (3)</summary>
+
+- **A shorter README with screenshots**: the README is now a quick tour, a picture or short animation for each feature and four steps to get started. The full detail moved to a new user guide, `docs/user-guide.md`.
+- **Grab and Organize no longer report a false failure when a stack merges** (issue #460): grabbing a stackable item (reagents, gems) into a backpack that already holds a loose stack of the same item merged the two in game, but Pack Rat reported "move bounced … (too far, or backpack full?)". A Grab, or an Organize or Put away trip's take, now counts as done when the stack in your backpack grew. Reinstall the scripts from Settings (TazUO 2.21.1, Razor Enhanced 1.13.2).
+- **Release notes open with a summary**: each version in the changelog now starts with its highlights, what players will notice in a few short groups, and the full list of changes and the contributor notes are folded below them. 0.2.0 has its highlights too.
+
+</details>
+
+### For contributors
+
+<details><summary>Contributor notes (3)</summary>
+
+- **The README shows the game side**: a new "How it works with the game" section has the in-game panel, a Grab seen in game and in the app at the same moment, and a Put away trip, all captured in game and kept by hand in `docs/images/` (not by `npm run readme:shots`).
+- **The README's images regenerate with one command**: `npm run readme:shots` (`scripts/readme-shots.mts`) takes them from the demo characters in headless Chromium and makes the GIFs with ffmpeg.
+- **A release's highlights** (issue #338): `changelog.d/_highlights.md`, written when a release is cut, becomes the section's `### Highlights` at `--release` and is deleted with the fragments; the entries are then folded into collapsed `<details>` blocks with their counts. `node scripts/changelog.mts --highlights X.Y.Z <file>` sets or replaces a released version's highlights and re-seals the file. RELEASING.md's steps 3 and 9 say to write them and to paste them into the GitHub release notes.
+
+</details>
 
 ## 0.2.0 — 2026-10-18
 
