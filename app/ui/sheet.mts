@@ -7,15 +7,15 @@
 // HTML/CSS injection inside the app window through this builder.
 //
 // map: ui-components
-// owns: `sheetNode`, `SLOT_GROUPS`, `SHEET_GROUPS`, `RESISTS`, `forgetHueColors`
+// owns: `sheetNode`, `SLOT_GROUPS`, `SHEET_GROUPS`, `RESISTS`
 import { totalsOf, resistMinimum, paperdollResist, RESIST_SKILL_KEY, PROP_FULL, SLOTS_IN_GROUP, RESIST_META } from "../vault-lib.mts";
 import type { ExtrasMap, OptItem, ResistCap } from "../vault-lib.mts";
 import { state } from "./store.mts";
+import { rarityToken } from "./items.mts";
 import { el, itemTip, slotLabel } from "./dom.mts";
 import { prefs } from "./prefs.mts";
 import { txt, box, badge, tag, meter, message, button, check, searchInput, popover } from "./components.mts";
-import { api } from "./api.mts";
-import type { HueColorsApiResponse, SkillEntry } from "./api-types.mts";
+import type { SkillEntry } from "./api-types.mts";
 import { capNote } from "./builder-model.mts";
 import { STAT_MAX } from "../buffs.mts";
 import { plural } from "./format.mts";
@@ -234,19 +234,6 @@ export function sheetNode(name: string, before: SheetAssignment, after: SheetAss
     gear ? box("div", { class: `sheet-row${doll ? "" : " sheet-row-nodoll"}` }, doll, box("div", { class: "sheet-gear-cell" }, gear)) : null,
     props);
 }
-// The worn-gear list's hue swatches, colored from the client's hues.mul (GET /api/hue-colors, at most 64 hues a request) once the colors arrive; a swatch whose hue has no color (no client files, or a hue the file lacks) shows nothing. Settings clears the colors when the UO folder changes (forgetHueColors).
-const hueColorCache = new Map<number, string | null>();
-export const forgetHueColors = (): void => { hueColorCache.clear(); };
-function paintHues(root: HTMLElement): void {
-  const spans = [...root.querySelectorAll<HTMLElement>(".gear-hue")];
-  const paint = (): void => { for (const s of spans) { const c = hueColorCache.get(Number(s.dataset.hue)); if (c) { s.style.background = c; s.dataset.painted = ""; } } };
-  const want = [...new Set(spans.map((s) => Number(s.dataset.hue)).filter((h) => !hueColorCache.has(h)))];
-  paint();
-  for (let i = 0; i < want.length; i += 64) {
-    const batch = want.slice(i, i + 64);
-    void api<HueColorsApiResponse>(`/api/hue-colors?hues=${batch.join(",")}`).then((r) => { for (const h of batch) hueColorCache.set(h, r.colors[String(h)] ?? null); paint(); }).catch(() => { /* no client files: no swatches */ });
-  }
-}
 // The sheet's parts: the KPI row's five resist tiles and its Attributes and Pools lists, the worn gear card and the
 // properties card (with the skills). The Suit Builder's Manual mode draws the lists and the properties for its suit;
 // with no character (`name` null) they are the items' own totals, the attributes and pools "—" and no skills.
@@ -300,7 +287,7 @@ export function sheetParts(name: string | null, before: SheetAssignment, after: 
   const lists = [box("div", { class: "resist kpi kpi-list" }, txt("Attributes", "t-sm muted"), attrs),
     box("div", { class: "resist kpi kpi-list" }, txt("Pools", "t-sm muted"), pools)];
 
-  // worn gear (design 1B, issue #57): the shown suit plus the extras as a list, one row per worn slot in the slot groups' order, anything else as "Other"; each row the slot, then the piece (its hue's swatch, the name, the quality tags and a low-durability tag) as a button that shows the piece's tooltip and, pressed, its detail
+  // worn gear (design 1B, issue #57): the shown suit plus the extras as a list, one row per worn slot in the slot groups' order, anything else as "Other"; each row the slot, then the piece (the name in its rarity's color, the quality tags and a low-durability tag) as a button that shows the piece's tooltip and, pressed, its detail
   const gearCard = (): HTMLElement => {
     const bySlot = new Map<string, SheetItem>(), other: SheetItem[] = [];
     const nowSerials = new Set(Object.values(extras(before)).filter(Boolean).map((x) => (x as SheetItem).serial));
@@ -311,10 +298,11 @@ export function sheetParts(name: string | null, before: SheetAssignment, after: 
     const row = (slot: string | null, it: SheetItem): HTMLElement => {
       const isNew = diff && !nowSerials.has(it.serial);
       // only the one-suit sheet: an optimizer piece carries no durability, so a before/after sheet would tag some pieces and not others
-      const low = single ? lowDurability(it) : null, hue = (it.hue ?? 0) & 0x3fff;
+      const low = single ? lowDurability(it) : null, token = rarityToken(it.rarity), nm = txt(it.name, "nm");
+      // the tier's --rarity-* token (legible in each mode), as Manual's slot cards and the tooltip title color a name
+      if (token) nm.style.color = `var(${token})`;
       const piece = box("button", { type: "button", class: "gear-piece", "data-serial": String(it.serial) },
-        el("span", hue ? { class: "gear-hue", "data-hue": String(hue), "aria-hidden": "true" } : { class: "gear-hue-none", "aria-hidden": "true" }),
-        txt(it.name, "nm"), isNew ? badge("New", "accent") : null,
+        nm, isNew ? badge("New", "accent") : null,
         ...(it.tags || []).filter((x) => QUALITY_TAGS.has(x)).map((x) => tag(x, tagTone(x))), low ? tag(low, "warn") : null);
       if (opts.onSlot) piece.addEventListener("click", () => opts.onSlot!(it, piece));
       return el("tr", {}, el("td", { class: "t-sm muted" }, slot ? slotLabel(slot) : "Other"), el("td", {}, itemTip(piece, it)));
@@ -323,7 +311,6 @@ export function sheetParts(name: string | null, before: SheetAssignment, after: 
     const rows = [...SLOT_GROUPS.flatMap(([, slots]) => slots.filter((s) => bySlot.has(s)).map((s) => row(s, bySlot.get(s)!))), ...other.map((it) => row(it.slot, it))];
     const table = el("table", { class: "gear-tbl" }, el("thead", {}, el("tr", {}, el("th", { scope: "col" }, "Slot"), el("th", { scope: "col" }, "Piece"))),
       el("tbody", {}, ...(rows.length ? rows : [el("tr", {}, el("td", { colspan: "2", class: "t-sm muted" }, "Nothing worn."))])));
-    paintHues(table);
     return el("section", { class: "card sheet-gear", "aria-label": "Worn gear" },
       box("div", { class: "card-head" }, el("h2", {}, "Worn gear"), txt(`${bySlot.size} of ${[...FIXED_SLOTS].filter(shown).length} slots`, "t-sm muted"), el("span", { class: "spacer" }), opts.onSlot ? txt("Click a piece for its detail", "t-sm muted") : null),
       box("div", { class: "gear-scroll" }, table));
