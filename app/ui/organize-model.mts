@@ -90,7 +90,7 @@ export function newRuleId(rules: ReadonlyArray<{ id: string }>): string {
 // are dropped (spec §1: a rule must keep matching an item after it moves); `dropped` names them for the note.
 export function ruleQueryFrom(q: ItemQuery): { query: RuleQuery; dropped: string[] } {
   const query: RuleQuery = { q: q.q, slot: [...q.slot], rarity: q.rarity, rarityMin: q.rarityMin, rarityMax: q.rarityMax, kind: [...q.kind], slayer: q.slayer, nogarg: q.nogarg, med: q.med, hideTags: [...q.hideTags], tags: [...q.tags], props: q.props.map((p) => ({ ...p })), flags: [...q.flags], wskill: [...q.wskill] };
-  const dropped = [...(q.loc.length || q.roots.length ? ["Location"] : []), ...(q.chars.length ? ["Character"] : []), ...(q.seenDays ? ["Seen"] : [])];
+  const dropped = [...(q.loc.length || q.roots.length || q.houses.length ? ["Location"] : []), ...(q.chars.length ? ["Character"] : []), ...(q.seenDays ? ["Seen"] : [])];
   return { query, dropped };
 }
 export const blankQuery = (): RuleQuery => ruleQueryFrom(BASE).query;

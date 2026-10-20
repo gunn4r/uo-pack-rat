@@ -10,7 +10,7 @@ import { api } from "./api.mts";
 import { box, txt, button, meter, searchInput, openDialog, nextId, tipWrap, toast } from "./components.mts";
 import { errorText } from "./messages.mts";
 
-import { houseOfContainer } from "./house-links.mts";
+import { houseIds, houseOfContainer } from "./house-links.mts";
 import { bridgeFeatureSet, currentAdapter, grabAll, BRIDGE_OFFLINE } from "./bridge.mts";
 import { tripGate, stepWatch, failedSteps, pinnedWith, type TripWatch } from "./organize-model.mts";
 import { loadOrganize, saveConfig } from "./organize-data.mts";
@@ -83,7 +83,8 @@ async function selectAll(): Promise<void> {
   try { r = await api<MovePlanApiResponse>("/api/move/plan", { method: "POST", body: { selection: selectionBody({ ...emptySelection(), all: { query, count: 0, worn: 0 } }) } }); }
   catch (e) { toast(errorText(e), "bad"); return; }
   const q = { ...query, group: false, offset: 0, limit: 1 }, rarity = state.rules?.rarity || [];
-  matchesAll = (it) => applyItemQuery([it], q, { rarity }).total === 1;
+  const houseOf = houseIds();
+  matchesAll = (it) => applyItemQuery([it], q, { rarity, houseOf }).total === 1;
   change(selectAllMatching(sel, query, r.selected - r.worn, r.worn, matches), wornNote(r.wornNames.slice(0, r.worn === 1 ? 1 : 0), r.worn));
 }
 async function grabSelected(): Promise<void> {

@@ -85,7 +85,8 @@ Part of the UI docs: [`docs/ui.md`](../ui.md) has the hard rules, tokens, compon
 
 The filter state is the browser's `query`, the shape `item-query.mts`'s `parseItemQuery` reads. Every control goes through `setQuery()`, which redraws the chips (in place, so an open popover keeps its anchor) and the active strip, and refetches.
 
-- **Any-of lists:** Character, Slot, Location (as bag texts `loc` and whole root containers `root`), Kind and Weapon skill.
+- **Any-of lists:** Character, Slot, Location (as bag texts `loc`, whole root containers `root` and houses `house`), Kind and Weapon skill.
+  - Location lists the houses on the House map under **Houses** (claimed ones, by their House map names, `house-links.mts`'s `mapHouses`), each with its count, then each house's containers under its name, then the ground containers in no house under **On the ground**. A house's checkbox takes every container standing in it, now and as later scans add more: the server reads `house=<id>` through `HousesService.houseOfContainers` (the house model's stacks), and its token reads "Location: <house name>".
   - Weapon skill (issue #188) is written `wskill=swordsmanship`, with lower-cased skill names, and its tokens read "Weapon skill: Swordsmanship".
   - The facets' `weaponSkills` counts each skill from `vault-lib.mts`'s `weaponSkillsOf`. A Use Best Weapon Skill weapon also counts under Swordsmanship, Fencing and Mace Fighting, which the chip's popover says.
 - **Rarity** is a range (`rarityMin`, `rarityMax`). An item with no tier counts as below every tier, and a Reforged tier ranks with its base tier.

@@ -17,6 +17,7 @@ import type { PaperdollOptionsApiResponse } from "../api/paperdoll.mts";
 import { encodePngRgba } from "../png.mts";
 import { buildHouseModel, type HouseContainerInput, type HouseModel } from "../house-model.mts";
 import type { HouseSource } from "../house-capture.mts";
+import { claimedHouses, type HouseClaim } from "../store/house-claims.mts";
 import type { Inventory } from "../vault-lib.mts";
 import type { SettingsDoc } from "../store/settings.mts";
 import type { AdapterManifestV1Install } from "../schema/types.d.mts";
@@ -221,6 +222,13 @@ export function createHousesService({ settings, uoFolderFinder }: { settings: ()
     }
     return m;
   }
-  return { tileData: houseTileData, facetBitmap, facetPng, itemArt, paperdoll, paperdollOptions, hueColors, model: houseModel };
+  // Which house on the House map (a claim covers it) each container on the ground stands in, by serial (its stack on the
+  // house's model): the Inventory's house filter.
+  function houseOfContainers(inv: Inventory, houses: readonly HouseSource[], claims: readonly HouseClaim[]): Map<number, string> {
+    const td = houseTileData().td, out = new Map<number, string>();
+    for (const h of claimedHouses(claims, houses)) for (const st of houseModel(inv, h, td).stacks) for (const s of st.serials) out.set(s, h.id);
+    return out;
+  }
+  return { tileData: houseTileData, facetBitmap, facetPng, itemArt, paperdoll, paperdollOptions, hueColors, model: houseModel, houseOfContainers };
 }
 export type HousesService = ReturnType<typeof createHousesService>;

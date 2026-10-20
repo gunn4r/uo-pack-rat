@@ -1,6 +1,6 @@
 // item-query.test.mts — `app/item-query.mts`, the item-list filtering, sorting, paging and faceting shared by the page and `GET /api/items`.
 //
-// `app/item-query.mts` (the pure item-list filtering/sorting/paging/faceting shared by the browser and the server's `GET /api/items`): `parseItemQuery`'s defaults and clamping, the list filters taken as repeated params (character, slot, kind, location, root container), prop rules with an operator (at least, at most, exactly, anything but, an item without the property reading 0), every `applyItemQuery` filter (kind, slot, location, root, character, rarity and rarity-at-least, seenDays, slayer, nogarg, med, hideTags, a prop rule incl. `EXTRA_COLS` keys) and sort (by prop column, by rarity ladder order), paging (offset/limit against `total`/`pieces`), group mode's JSON-safe shape and its stack and piece counts, `facetsOf` (including the places the Location filter's tree is built from), `rarityRank` (a Reforged tier with its base tier, eight tiers in both shipped ladders), `rarityMax` (an item with no tier or one off the ladder counting as below every tier, an unknown ceiling ignored, a floor above the ceiling matching nothing), and `matchesItem` (an Organize rule's per-item checks, agreeing with `applyItemQuery` on every filter a rule keeps, its free text never matching location text), and `unravel`/`unravelShow` read off the query string (issue #271). All `[fast]`.
+// `app/item-query.mts` (the pure item-list filtering/sorting/paging/faceting shared by the browser and the server's `GET /api/items`): `parseItemQuery`'s defaults and clamping, the list filters taken as repeated params (character, slot, kind, location, root container, house), prop rules with an operator (at least, at most, exactly, anything but, an item without the property reading 0), every `applyItemQuery` filter (kind, slot, location, root, character, rarity and rarity-at-least, seenDays, slayer, nogarg, med, hideTags, a prop rule incl. `EXTRA_COLS` keys) and sort (by prop column, by rarity ladder order), paging (offset/limit against `total`/`pieces`), group mode's JSON-safe shape and its stack and piece counts, `facetsOf` (including the places the Location filter's tree is built from), `rarityRank` (a Reforged tier with its base tier, eight tiers in both shipped ladders), `rarityMax` (an item with no tier or one off the ladder counting as below every tier, an unknown ceiling ignored, a floor above the ceiling matching nothing), and `matchesItem` (an Organize rule's per-item checks, agreeing with `applyItemQuery` on every filter a rule keeps, its free text never matching location text), and `unravel`/`unravelShow` read off the query string (issue #271). All `[fast]`.
 //
 // applyItemQuery's predicate and sort keep parity with what the Inventory screen used to do on its own. Hand-built fixture items (no scan files, no server) keep this fast and pure.
 import { test } from "node:test";
@@ -60,7 +60,7 @@ const names = (r: Item[]): string[] => r.map((it) => it.name);
 
 test("[fast] parseItemQuery: defaults with no params", () => {
   const q = parseItemQuery(new URLSearchParams());
-  assert.deepEqual(q, { q: "", chars: [], slot: [], loc: [], roots: [], rarity: "", rarityMin: "", rarityMax: "", kind: [], seenDays: 0, slayer: "", nogarg: false, med: false, hideTags: [], tags: [], props: [], flags: [], wskill: [], group: false, sort: "name", dir: 1, offset: 0, limit: 200 });
+  assert.deepEqual(q, { q: "", chars: [], slot: [], loc: [], roots: [], houses: [], rarity: "", rarityMin: "", rarityMax: "", kind: [], seenDays: 0, slayer: "", nogarg: false, med: false, hideTags: [], tags: [], props: [], flags: [], wskill: [], group: false, sort: "name", dir: 1, offset: 0, limit: 200 });
 });
 
 test("[fast] parseItemQuery: clamps limit to [1, 500], offset to >= 0", () => {
@@ -323,6 +323,17 @@ test("[fast] facetsOf: extraKeys lists the numeric extras, never a skill bonus o
   const f = facetsOf(SPLINTERS);
   assert.deepEqual(f.extraKeys, ["splintering weapon", "weapon speed"]);
   assert.deepEqual(f.propKeys, []);
+});
+
+test("[fast] applyItemQuery: a house filter takes the items whose root stands in that house, by houseOf, with a root or a place as any of", () => {
+  const items = [mk({ name: "Heater Shield", root: 11, location: { text: "Metal Chest" } }), mk({ name: "Black Pearl", root: 12, location: { text: "Wooden Box" } }), mk({ name: "Ruby", root: 13, location: { text: "Kestrel's bank" } })];
+  const houseOf = new Map([[11, "1-3000-1000"], [12, "1-4000-1000"]]);
+  const rows = (s: string, opts: Parameters<typeof applyItemQuery>[2] = { ...ctx, houseOf }): string[] => names((applyItemQuery(items, parseItemQuery(new URLSearchParams(s)), opts) as ItemQueryRows).rows).sort();
+  assert.deepEqual(parseItemQuery(new URLSearchParams("house=1-3000-1000&house=1-4000-1000")).houses, ["1-3000-1000", "1-4000-1000"]);
+  assert.deepEqual(rows("house=1-3000-1000"), ["Heater Shield"]);
+  assert.deepEqual(rows("house=1-3000-1000&house=1-4000-1000"), ["Black Pearl", "Heater Shield"]);
+  assert.deepEqual(rows("house=1-3000-1000&root=13"), ["Heater Shield", "Ruby"]);
+  assert.deepEqual(rows("house=1-3000-1000", ctx), [], "without houseOf no item is in a house");
 });
 
 test("[fast] applyItemQuery: prop rules at most and exactly", () => {

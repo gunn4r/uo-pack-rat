@@ -61,7 +61,7 @@ export interface PropFilter { key: string; min: number; op?: PropOp | undefined;
 // `unravel` (issue #271) keeps only pieces that unravel into something, each row carrying what (`UnravelRow`), less the ones
 // left out by default (unravel.mts's LEFT_OUT) unless `unravelShow` names their reasons; sort `unravel` is by weight.
 export interface ItemQuery {
-  q: string; chars: string[]; slot: string[]; loc: string[]; roots: number[]; rarity: string; rarityMin: string; rarityMax: string; kind: string[];
+  q: string; chars: string[]; slot: string[]; loc: string[]; roots: number[]; houses: string[]; rarity: string; rarityMin: string; rarityMax: string; kind: string[];
   seenDays: number; slayer: string; nogarg: boolean; med: boolean; hideTags: string[]; tags: string[]; props: PropFilter[]; flags: string[]; wskill: string[]; group: boolean;
   sort: string; dir: 1 | -1; offset: number; limit: number;
   unravel?: boolean | undefined; unravelShow?: LeftOut[] | undefined;
@@ -70,12 +70,13 @@ export interface ItemQuery {
 // An Organize rule's query (issue #11): the Inventory's filters on the item itself. Location, character and
 // seen filters are left out, and so are the view and paging, because a rule must keep matching an item after
 // it moves. `tags`, `flags` and `wskill` are optional: rules saved before them (issues #133, #182, #188) have none.
-export type RuleQuery = Omit<ItemQuery, "loc" | "roots" | "chars" | "seenDays" | "group" | "sort" | "dir" | "offset" | "limit" | "tags" | "flags" | "wskill" | "unravel" | "unravelShow"> & { tags?: string[]; flags?: string[]; wskill?: string[] };
+export type RuleQuery = Omit<ItemQuery, "loc" | "roots" | "houses" | "chars" | "seenDays" | "group" | "sort" | "dir" | "offset" | "limit" | "tags" | "flags" | "wskill" | "unravel" | "unravelShow"> & { tags?: string[]; flags?: string[]; wskill?: string[] };
 
 // Reads every filter/sort/paging knob off a URLSearchParams (GET /api/items' query string, or the page's
 // own future use of the same parser). `hide`, `tag`, `prop`, `slot`, `kind` and `wskill` accept either a single
 // comma-separated value (hide=a,b) or repeated params (hide=a&hide=b) — both are flattened the same way.
-// `char` and `loc` are repeated params only: a character or container name may itself hold a comma.
+// `char` and `loc` are repeated params only: a character or container name may itself hold a comma. So is `house`, a
+// House map house id: every container standing in that house, as applyItemQuery's `houseOf` says.
 // `flag` (issue #182) is repeated only too, one yes/no property each (`flag=spell channeling`), lower-cased as
 // parseTooltip keeps them: a separate param rather than a `prop` op, because a prop rule is a number on a key.
 // A prop rule is `key:min` (at least) or `key:op:min` with op one of ge, le, eq, ne. `unravel=1` lists unravel candidates and
@@ -106,6 +107,7 @@ export function parseItemQuery(searchParams: URLSearchParams): ItemQuery {
     slot: splitAll("slot"),
     loc: listOf("loc"),
     roots: listOf("root").map(Number).filter(Number.isFinite),
+    houses: listOf("house"),
     rarity: sp.get("rarity") || "",
     rarityMin: sp.get("rarityMin") || "",
     rarityMax: sp.get("rarityMax") || "",
@@ -152,11 +154,11 @@ function itemPasses(it: Item, q: RuleQuery, needle: string, blob: (it: Item) => 
   if (needle && !blob(it).includes(needle)) return false;
   return true;
 }
-function matches(it: Item, q: ItemQuery, seenCut: number, minRank: number, maxRank: number, ladder: RulesV1RarityItem[]): boolean {
+function matches(it: Item, q: ItemQuery, seenCut: number, minRank: number, maxRank: number, ladder: RulesV1RarityItem[], houseOf: ReadonlyMap<number, string>): boolean {
   if (q.chars.length && !q.chars.includes(it.location?.character as string)) return false;
   if (seenCut && Date.parse(it.seenAt) < seenCut) return false;
-  // A location matches by its exact text or by the root container it sits in (every bag inside it).
-  if ((q.loc.length || q.roots.length) && !(q.loc.includes(it.location?.text as string) || (it.root != null && q.roots.includes(+it.root)))) return false;
+  // A location matches by its exact text, by the root container it sits in (every bag inside it) or by the house that root stands in.
+  if ((q.loc.length || q.roots.length || q.houses.length) && !(q.loc.includes(it.location?.text as string) || (it.root != null && (q.roots.includes(+it.root) || q.houses.includes(houseOf.get(+it.root) as string))))) return false;
   return itemPasses(it, q, q.q, itemSearchBlob, minRank, maxRank, ladder);
 }
 
@@ -196,12 +198,13 @@ export interface UnravelContext { rules: Pick<RulesV1, "unravel">; leftOut: (it:
 export interface ItemQueryGroups { groups: ItemGroupJson[]; total: number; stacks: number; pieces: number; }
 
 // applyItemQuery(items, query, {rarity, now}) → {rows, total, pieces} normally, or {groups, total} when
-// query.group is set — see the module header for the exact page behavior this reproduces.
-export function applyItemQuery(items: Item[], query: ItemQuery, { rarity = [], now = Date.now(), unravel }: { rarity?: RulesV1RarityItem[]; now?: number; unravel?: UnravelContext } = {}): ItemQueryRows | ItemQueryGroups {
+// query.group is set — see the module header for the exact page behavior this reproduces. `houseOf` names the house
+// each container on the ground stands in, by its serial, for `houses`; without it a house filter matches nothing.
+export function applyItemQuery(items: Item[], query: ItemQuery, { rarity = [], now = Date.now(), unravel, houseOf = new Map() }: { rarity?: RulesV1RarityItem[]; now?: number; unravel?: UnravelContext; houseOf?: ReadonlyMap<number, string> } = {}): ItemQueryRows | ItemQueryGroups {
   const seenCut = query.seenDays ? now - query.seenDays * 864e5 : 0;
   const minRank = query.rarityMin ? rarityRank(rarity, query.rarityMin) : 0;
   const maxRank = query.rarityMax ? rarityRank(rarity, query.rarityMax) : 0;
-  let found = items.filter((it) => matches(it, query, seenCut, minRank, maxRank, rarity));
+  let found = items.filter((it) => matches(it, query, seenCut, minRank, maxRank, rarity, houseOf));
   if (query.unravel) found = unravelRows(found, query.unravelShow ?? [], unravel);
   const pieces = found.reduce((a, i) => a + (i.amount || 1), 0);
   const k = query.sort, d = query.dir;

@@ -25,7 +25,7 @@ import type { Look, Worn } from "../../paperdoll-look.mts";
 import type { HueColorsApiResponse, PaperdollOptionsApiResponse } from "../../api/paperdoll.mts";
 import { encodePng } from "../../png.mts";
 import { readBody } from "../../read-body.mts";
-import { claimsOver } from "../../store/house-claims.mts";
+import { claimedHouses, claimsOver } from "../../store/house-claims.mts";
 import { send } from "../respond.mts";
 import type { Route } from "../router.mts";
 import type { ServerContext } from "../context.mts";
@@ -36,7 +36,7 @@ export function routes(ctx: ServerContext): Route[] {
     // The houses the scans captured (issue #10): GET /api/houses lists each with its size, chest count and container serials (what Inventory's "Show on map" looks an item's container up in), GET /api/houses/<id> serves one house's whole model. Both come from the fold's cache and the built models are memoised (houseModel); an id that names no house (or does not decode) is a 404. Only the houses the player claimed are served (issue #299): a house whose bounds overlap a claim on its facet.
     { method: "GET", path: /^\/api\/houses(?:\/|$)/, handle: async (_req, res, url) => {
       const { inv, houses: all } = await getInventory(), map = houseMapStore.read().doc, claims = houseClaimsStore.read();
-      const houses = all.filter((h) => claimsOver(claims, h.facet, tileBounds(h.tiles)).length);
+      const houses = claimedHouses(claims, all);
       let one: HouseSource | undefined;
       if (url.pathname !== "/api/houses") {
         let id: string | null;

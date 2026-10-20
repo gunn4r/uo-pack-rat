@@ -1,6 +1,6 @@
 // move.test.mts — `app/move.mts`, Move to's planner (issue #270), on hand-built house scans folded by the real fold.
 //
-// `app/move.mts` on hand-built house scans (`app/organize-fixture.mts`) folded by the real fold: the selection resolved from serials and an Inventory query less its exceptions, which containers can be filled, the trips into one container with its room simulated (all fit, some fit, none fit), the items left where they are and why (worn, in a backpack, a bag, blacklisted, in another house, already there), a trip command `queueTrip` accepts, Move back to where the overlay says each item came from (skipping items moved again or no longer known), and the moved items an Organize rule would take out again. All `[fast]`.
+// `app/move.mts` on hand-built house scans (`app/organize-fixture.mts`) folded by the real fold: the selection resolved from serials and an Inventory query less its exceptions, which containers can be filled, the trips into one container with its room simulated (all fit, some fit, none fit), the items left where they are and why (worn, in a backpack, a bag, blacklisted, in another house, already there), a trip command `queueTrip` accepts, Move back to where the overlay says each item came from (skipping items moved again or no longer known), a query's house filter read through `houseOf`, and the moved items an Organize rule would take out again. All `[fast]`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync } from "node:fs";
@@ -42,6 +42,7 @@ test("[fast] a selection is its listed serials the scans still have and every it
   assert.deepEqual(resolveSelection(inv, { query: "q=ring", except: [] }).map((it) => it.serial), [RING, WORN]);
   assert.deepEqual(resolveSelection(inv, { query: "q=ring", except: [WORN] }).map((it) => it.serial), [RING]);
   assert.deepEqual(resolveSelection(inv, { query: "q=ring", except: [WORN], serials: [PEARL] }).map((it) => it.serial), [PEARL, RING], "rows ticked outside the query join it");
+  assert.deepEqual(resolveSelection(inv, { query: "house=1-100-100" }, [], new Map([[FAR, "1-100-100"]])).map((it) => it.serial), [FARAWAY], "a house filter, by the house each ground container stands in");
 });
 
 test("[fast] only a container on the ground with a known place and fill, not blacklisted and not trash, can be filled", () => {

@@ -16,7 +16,7 @@ import { containerArt } from "./item-art.mts";
 import type { MenuItem } from "./components.mts";
 import { splitSerial } from "./inv-model.mts";
 import { openClassify } from "./kinds.mts";
-import { houseOfItem, showOnMap } from "./house-links.mts";
+import { houseOfItem, houseNameOf, showOnMap } from "./house-links.mts";
 export { splitSerial } from "./inv-model.mts";
 
 // ---------------------------------------------------------------- the filter context
@@ -26,6 +26,7 @@ export function filterContext() {
     propLabel: (k: string) => label(k),
     places: state.facets?.places || [],
     ladder: (state.rules?.rarity || []).map((r) => r.name),
+    houseName: houseNameOf,
   };
 }
 
