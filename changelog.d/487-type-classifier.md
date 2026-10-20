@@ -1,0 +1,2 @@
+- **Spellbooks and shields read one way everywhere**: Organize's By build rules and the Suit Builder's "no spellbooks" setting now tell a spellbook and a shield apart the way the Inventory's Type filter does, so an artifact book or shield whose name doesn't say so is still a spellbook (Caster) or a shield (Tank).
+- For contributors: `organize.mts`'s `buildOf` and `pools.mts`'s `weaponAllowed` read `itemTypeOf` (#486) instead of the name lists; on a copy of real scans no piece's build or pool membership changed.

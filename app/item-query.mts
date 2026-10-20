@@ -15,7 +15,7 @@
 //
 // map: query
 // owns: `parseItemQuery`, `matchesItem`, `applyItemQuery`, `facetsOf`, `propCounts`, `ItemQuery`, `RuleQuery`, `EXTRA_COLS`, `colVal`, `rarityRank`, `HIT_LIMIT`
-import { itemSearchBlob, itemOwnBlob, groupByName, compareNames, KINDS, SLOT_LABELS, propertyKeys, extraKeys, flagKeys, flagKey, gearSkills, weaponSkillsOf, WEAPON_SKILLS, PROPERTIES, itemTypeOf, ITEM_TYPES } from "./vault-lib.mts";
+import { itemSearchBlob, itemOwnBlob, gargoyleOk, meditationOk, hasTag, hasFlag, groupByName, compareNames, KINDS, SLOT_LABELS, propertyKeys, extraKeys, flagKeys, flagKey, gearSkills, weaponSkillsOf, WEAPON_SKILLS, PROPERTIES, itemTypeOf, ITEM_TYPES } from "./vault-lib.mts";
 import type { Item, ItemGroup } from "./vault-lib.mts";
 import type { RulesV1, RulesV1RarityItem } from "./schema/types.d.mts";
 import { unravelInfo, LEFT_OUT, type LeftOut, type UnravelInfo } from "./unravel.mts";
@@ -156,18 +156,17 @@ function passes(v: number, f: PropFilter): boolean {
 // when there is a needle.
 function itemPasses(it: Item, q: RuleQuery, needle: string, blob: (it: Item) => string, minRank: number, maxRank: number, ladder: RulesV1RarityItem[]): boolean {
   if (q.kind.length && !q.kind.includes(it.kind)) return false;
-  if (q.nogarg && it.gargoyle) return false;
-  if (q.med && !it.medable) return false;
+  if (!gargoyleOk(it, q.nogarg) || !meditationOk(it, q.med)) return false;
   // "?" is the unknown slot: an item with none.
   if (q.slot.length && !q.slot.includes(it.slot || "?")) return false;
   if (q.rarity && it.rarity !== q.rarity) return false;
   if (minRank && rarityRank(ladder, it.rarity) < minRank) return false;
   if (maxRank && rarityRank(ladder, it.rarity) > maxRank) return false;
   if (q.slayer === "*" ? !it.slayers?.length : q.slayer && !it.slayers?.includes(q.slayer)) return false;
-  if (it.tags.some((t) => q.hideTags.includes(t))) return false;
-  if (q.tags?.length && !it.tags.some((t) => q.tags!.includes(t))) return false;
+  if (hasTag(it, q.hideTags)) return false;
+  if (q.tags?.length && !hasTag(it, q.tags)) return false;
   for (const f of q.props) if (!passes(colVal(it, f.key), f)) return false;
-  if (q.flags?.some((f) => !it.flags?.some((x) => flagKey(x) === flagKey(f)))) return false;
+  if (q.flags?.some((f) => !hasFlag(it, f))) return false;
   if (q.wskill?.length && !weaponSkillsOf(it).some((w) => q.wskill!.some((s) => s.toLowerCase() === w))) return false;
   if (q.type?.length && !q.type.some((t) => t.toLowerCase() === itemTypeOf(it))) return false;
   if (needle && !blob(it).includes(needle)) return false;
