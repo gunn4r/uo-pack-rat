@@ -332,12 +332,13 @@ function totalsCard(): HTMLElement {
   const name = manualCharacter(), prof = profile(), resists = profileResistCaps(prof), base = paperdollCaps(resists, prof.caps.fc);
   const suit = suitOpt(), ev = evaluated(), r = ev.buffs, t = ev.effectiveTotals, caps = ev.caps;
   // One compact row: each total as "value / cap", in the ok tone at its cap, with "+N" (warn) for what is wasted past
-  // it; the line a fuller tile would show ("23 to cap") is its tooltip and, for a screen reader, part of its text.
+  // it; the property's full name and the line a fuller tile would show ("Lower Mana Cost: 23 to cap") are its tooltip, the
+  // line also part of a screen reader's text after the short head.
   // Under a total the buffs touch, their marker line; a cap they raised is underlined.
   const cell = (k: string, cap: number | undefined, head: HTMLElement, note: string | null, sep: boolean): HTMLElement => {
     const v = t[k] || 0, { shown, wasted } = capped(v, cap), line = `${capLine(v, cap).text}${note ? `, cap ${note}` : ""}`;
     const raised = cap != null && cap !== base[k];
-    return box("div", { class: `mb-total${sep ? " mb-sep" : ""}`, "data-key": k, title: line }, head,
+    return box("div", { class: `mb-total${sep ? " mb-sep" : ""}`, "data-key": k, title: `${propName(k)}: ${line}` }, head,
       box("span", { class: "mb-total-v" }, txt(shown, `strong${cap != null && v >= cap ? " tone-ok" : ""}`),
         cap == null ? null : raised ? el("span", { class: "muted" }, "/ ", el("span", { class: "bf-capup" }, String(cap))) : txt(`/ ${cap}`, note ? "strong b-cap-note" : "muted"),
         wasted ? txt(`+${wasted}`, "t-sm tone-warn") : null, el("span", { class: "sr" }, `: ${line}`)),
