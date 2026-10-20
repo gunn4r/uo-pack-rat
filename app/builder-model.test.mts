@@ -10,7 +10,7 @@ import { NOBODY, setRules, resistCapsFor, settingsDiff, settingsChanges, changes
 import { buffSkillValues, runBuffs } from "./buffs.mts";
 import type { RulesV1 } from "./schema/types.d.mts";
 import {
-  propName, withStoredRoots, knobError, firstKnobError, knobFromServerError, ruleValueError,
+  propName, withStoredRoots, rootOptions, knobError, firstKnobError, knobFromServerError, ruleValueError,
   resistOutcome, locationCrumbs, changeRows, gaugeRows, gaugeNote, worse, gaugeTrack, changesSummary, afterChange, compareModel, hiddenRowsNote, toggleCompare, runAutoLabel, runBadges, KNOB_RANGES,
   resistCapError, withResistCap, capNote, resistMinimumText, capsLine, anyOverridden, effectiveFloor, floorCapWarning, pruneResistCaps,
   weaponsChipText, weaponMustHaveChipText, toggleWeapon, weaponName, withBuffs, pastCapNotes, runSettingsDiff, weightTradeoff, newWeight, editedValue, NEW_WEIGHT_IMPORTANCE, templateBuffsLine, sourceTitle, who, rarityHelp, rarityTotal, rarityDetail, strictDetail, stageProgress, shareRows, needStatus, shownImportance,
@@ -41,7 +41,16 @@ test("[fast] builder model: property names read as words in rule rows", () => {
 });
 
 test("[fast] builder model: the Only containers chip keeps a listed container that is no longer a root", () => {
-  assert.deepEqual(withStoredRoots([{ value: "10", label: "Chest" }], [10, 0x4000abcd]), [{ value: "10", label: "Chest" }, { value: String(0x4000abcd), label: "Unknown container 0x4000ABCD (not in the scans)" }], "a listed serial that is no longer a root can still be unchecked");
+  assert.deepEqual(withStoredRoots([{ value: "10", label: "Chest" }], [10, 0x4000abcd]), [{ value: "10", label: "Chest" }, { value: String(0x4000abcd), label: "Unknown container 0x4000ABCD (not in the scans)", group: "Not in the scans" }], "a listed serial that is no longer a root can still be unchecked");
+  // The containers grouped like the Location filter: each character's backpack and bank, then by house, then the ground; an Organize label first.
+  const roots = [{ serial: 3, kind: "ground", scannedBy: "Kestrel", name: "Metal Chest (0x3)" }, { serial: 1, kind: "bank", scannedBy: "Kestrel", name: "Bank Box" },
+    { serial: 2, kind: "backpack", scannedBy: "Kestrel", name: "Backpack" }, { serial: 4, kind: "ground", scannedBy: "Kestrel", name: "Wooden Box" }, { serial: 5, kind: "ground", scannedBy: "Dorran", name: "Armoire" },
+    { serial: 6, kind: "backpack", scannedBy: "Dorran", name: "Backpack" }];
+  assert.deepEqual(rootOptions(roots, (t) => (t === "Metal Chest (0x3)" ? "Shields" : t), (s) => (s === 3 || s === 4 ? "Main house" : null)), [
+    { value: "6", label: "Backpack", group: "Dorran" }, { value: "2", label: "Backpack", group: "Kestrel" }, { value: "1", label: "Bank", group: "Kestrel" },
+    { value: "3", label: "Shields · Metal Chest (0x3)", group: "Main house" }, { value: "4", label: "Wooden Box", group: "Main house" },
+    { value: "5", label: "Armoire", group: "On the ground" },
+  ]);
   assert.deepEqual(withStoredRoots([{ value: "10", label: "Chest" }]), [{ value: "10", label: "Chest" }]);
 });
 

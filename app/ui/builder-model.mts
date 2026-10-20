@@ -107,11 +107,26 @@ export function rarityDetail(tb: TieBreakResult, total: number): string {
   const most = tb.rarity === "higher" ? "highest" : "lowest";
   return `${most[0]!.toUpperCase()}${most.slice(1)}-rarity pieces among equal suits · rarity total ${total.toLocaleString("en-US")}${tb.costProven ? "" : ` (the ${most} found, not proven)`}`;
 }
-// The Only containers chip's options (issue #12): the root containers, then any listed serial that is no longer one (gone from
-// the scans, or set by hand), so it can still be unchecked.
-export function withStoredRoots(options: Array<{ value: string; label: string }>, stored: readonly number[] = []): Array<{ value: string; label: string }> {
+// The Skip / Only containers chips' options (issue #12, #487): the root containers grouped as the Inventory's Location filter
+// groups them, each character's backpack and bank under the character, then the containers on the ground by the house they
+// stand in (`houseOf`, the House map's) and last those in no house. A container labelled for Organize reads by its label
+// with its scanned name after it (`labelled`: its place text, as locationOf gives it, to the same by label), so a search
+// finds either.
+export interface RootOption { value: string; label: string; group?: string | undefined }
+export interface RootSource { serial: number; kind: string | null | undefined; scannedBy: string; name: string }
+export function rootOptions(roots: readonly RootSource[], labelled: (text: string) => string, houseOf: (serial: number) => string | null): RootOption[] {
+  const ON_GROUND = "On the ground";
+  const rows = roots.map((r): RootOption & { order: number } => {
+    if (r.kind === "backpack" || r.kind === "bank") return { value: String(r.serial), label: r.kind === "bank" ? "Bank" : "Backpack", group: r.scannedBy, order: 0 };
+    const shown = labelled(r.name), house = houseOf(r.serial);
+    return { value: String(r.serial), label: shown === r.name ? r.name : `${shown} · ${r.name}`, group: house ?? ON_GROUND, order: house ? 1 : 2 };
+  });
+  return rows.sort((a, b) => a.order - b.order || a.group!.localeCompare(b.group!) || a.label.localeCompare(b.label)).map(({ order, ...o }) => o);
+}
+// Then any listed serial that is no longer a root (gone from the scans, or set by hand), so it can still be unchecked.
+export function withStoredRoots(options: RootOption[], stored: readonly number[] = []): RootOption[] {
   const gone = stored.filter((v) => !options.some((o) => o.value === String(v)));
-  return [...options, ...gone.map((v) => ({ value: String(v), label: `Unknown container 0x${v.toString(16).toUpperCase()} (not in the scans)` }))];
+  return [...options, ...gone.map((v) => ({ value: String(v), label: `Unknown container 0x${v.toString(16).toUpperCase()} (not in the scans)`, group: "Not in the scans" }))];
 }
 
 // ---------------------------------------------------------------- weapons
