@@ -189,33 +189,33 @@ test("[fast] slayerLabel names a slayer the way its item does", () => {
   assert.equal(slayerLabel("Exorcism (demons)"), "Exorcism Slayer", "a lower-case bracket only describes the group and goes");
   assert.equal(slayerLabel("Repond (humanoids)"), "Repond Slayer");
 });
+const sup = (value: string, count: number, label = `${value} Slayer`) => ({ kind: "super", value, label, count, first: true });
+const les = (value: string, count: number, level: 0 | 1 = 1) => ({ kind: "slayer", value, label: `${value} Slayer`, count, level });
 test("[fast] slayerTree puts each super slayer before its lesser slayers, in the table's order", () => {
   assert.deepEqual(slayerTree(f(["Bat", 1], ["Dragon", 2], ["Reptile", 3], ["Snake", 4], ["Undead (Silver)", 5]), GROUPS), [
-    { kind: "super", value: "Reptile", label: "Reptile Slayer", count: 3, first: true },
-    { kind: "slayer", value: "Dragon", label: "Dragon Slayer", count: 2, level: 1 },
-    { kind: "slayer", value: "Snake", label: "Snake Slayer", count: 4, level: 1 },
-    { kind: "super", value: "Undead (Silver)", label: "Undead Slayer (Silver)", count: 5, first: true },
-    { kind: "title", label: "Talisman slayers", first: true },
-    { kind: "slayer", value: "Bat", label: "Bat Slayer", count: 1, level: 0 },
+    sup("Demon", 0), les("Gargoyle", 0),
+    sup("Reptile", 3), les("Dragon", 2), les("Snake", 4),
+    sup("Undead (Silver)", 5, "Undead Slayer (Silver)"),
+    sup("Fey", 0),
+    { kind: "title", label: "Talisman slayers", first: true }, les("Bat", 1, 0), les("Mage", 0, 0),
   ]);
 });
-test("[fast] slayerTree keeps a missing super slayer as a heading over its lesser slayers, and hides empty groups", () => {
-  assert.deepEqual(slayerTree(f(["Gargoyle", 7]), GROUPS), [
-    { kind: "super", value: null, label: "Demon Slayer", count: 0, first: true },
-    { kind: "slayer", value: "Gargoyle", label: "Gargoyle Slayer", count: 7, level: 1 },
+test("[fast] slayerTree lists every slayer of the table, at 0 when the inventory has none, a super slayer by its first name", () => {
+  assert.deepEqual(slayerTree([], GROUPS), [
+    sup("Demon", 0), les("Gargoyle", 0), sup("Reptile", 0), les("Dragon", 0), les("Snake", 0), sup("Undead", 0), sup("Fey", 0),
+    { kind: "title", label: "Talisman slayers", first: true }, les("Bat", 0, 0), les("Mage", 0, 0),
   ]);
-  assert.deepEqual(slayerTree([], GROUPS), []);
 });
 test("[fast] slayerTree files a slayer the table lacks under Other, A–Z, and matches names in any case", () => {
-  assert.deepEqual(slayerTree(f(["Zebra", 1], ["fey", 2], ["Balron", 3]), GROUPS), [
-    { kind: "super", value: "fey", label: "Fey Slayer", count: 2, first: true },
+  const tree = slayerTree(f(["Zebra", 1], ["fey", 2], ["Balron", 3]), GROUPS);
+  assert.deepEqual(tree[6], sup("fey", 2, "Fey Slayer"));
+  assert.deepEqual(tree.slice(-3), [
     { kind: "title", label: "Other", first: true },
-    { kind: "slayer", value: "Balron", label: "Balron Slayer", count: 3, level: 0 },
-    { kind: "slayer", value: "Zebra", label: "Zebra Slayer", count: 1, level: 0 },
+    les("Balron", 3, 0), les("Zebra", 1, 0),
   ]);
 });
 test("[fast] slayerTree marks the first row of every group, so two super slayers in a row from different groups are kept apart", () => {
-  assert.deepEqual(slayerTree(f(["Fey", 1], ["Undead", 2], ["Undead (Silver)", 3]), GROUPS).map((r) => r.kind !== "title" && "first" in r ? `${r.label} first` : r.label),
+  assert.deepEqual(slayerTree(f(["Fey", 1], ["Undead", 2], ["Undead (Silver)", 3]), GROUPS).map((r) => r.kind !== "title" && "first" in r ? `${r.label} first` : r.label).slice(5, 8),
     ["Undead Slayer first", "Undead Slayer (Silver)", "Fey Slayer first"]);
 });
 test("[fast] slayerTree without a table is the plain A–Z list", () => {
