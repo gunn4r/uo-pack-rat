@@ -213,7 +213,7 @@ test("[slow] What changes: Gauges for what the build asks, Table with every prop
     await closeSettings(page);
     assert.match(await page.locator(".b-chg").innerText(), /\+\d+ past the cap \(Enemy of One\)/, "the note under What changes");
     await page.click("#b-chg-view [data-value=table]");
-    const di = page.locator(".b-chg-tbl tbody tr", { has: page.locator("td:first-child", { hasText: /^Damage$/ }) }).locator("td").nth(3);
+    const di = page.locator(".b-chg-tbl tbody tr", { has: page.locator("td:first-child", { hasText: /^Damage Increase$/ }) }).locator("td").nth(3);
     assert.match(await di.innerText(), /· \+\d+ past/);
     assert.match(await di.locator(".b-cap-past").getAttribute("title") ?? "", /past the cap \(Enemy of One\)/);
     assert.deepEqual(errors, []);
