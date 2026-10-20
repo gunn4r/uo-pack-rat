@@ -1044,7 +1044,7 @@ test("[fast] weapon filter: a Use Best Weapon Skill weapon passes while any mele
 
 // Issue #259: "spellbook" in the list keeps every spellbook out; weapons are judged by their skills as before.
 test("[fast] weapon filter: an excluded Spellbooks row keeps spellbooks out and nothing else", () => {
-  const book = { slot: "oneHanded", name: "Scrapper's Compendium", skillReq: null, flags: [] } as unknown as Item;
+  const book = { slot: "oneHanded", gear: true, name: "Scrapper's Compendium", skillReq: null, flags: [] } as unknown as Item;
   assert.ok(!weaponAllowed(book, ["spellbook"]), "a spellbook out");
   assert.ok(!weaponAllowed({ ...book, name: "Book of Chivalry" }, ["archery", "spellbook"]));
   assert.ok(weaponAllowed(book, ["archery"]), "not excluded: it stays");
@@ -1052,6 +1052,7 @@ test("[fast] weapon filter: an excluded Spellbooks row keeps spellbooks out and 
   assert.ok(weaponAllowed({ slot: "oneHanded", name: "Kryss", skillReq: "fencing", flags: ["use best weapon skill"] } as unknown as Item, ["fencing", "spellbook"]), "a UBWS weapon unaffected");
   assert.ok(weaponAllowed({ slot: "oneHanded", name: "Sledge Hammer", skillReq: null, flags: ["use best weapon skill"] } as unknown as Item, ["spellbook"], false), "no weapon skill excluded: a UBWS weapon with no Skill Required line stays");
   assert.ok(weaponAllowed({ slot: "twoHanded", name: "Order Shield", skillReq: null, flags: [] } as unknown as Item, ["spellbook"]), "a shield stays");
+  assert.ok(!weaponAllowed({ ...book, name: "Song Of The Seas" }, ["spellbook"]), "a spellbook by the Type filter's test (#487), whatever its name");
   const mk = (serial: number, name: string, extra: Record<string, unknown> = {}): Item => ({ serial, name, slot: "oneHanded", gear: true, props: { hci: 1 }, tags: [], strReq: 0, root: 1, equippedBy: null, gargoyle: false, medable: true, ...extra } as unknown as Item);
   const inv = { items: { 1: mk(1, "Spellbook"), 2: mk(2, "Katana", { skillReq: "swordsmanship" }), 3: mk(3, "Necromancer Spellbook", { equippedBy: "Kestrel", root: null }) } } as unknown as Inventory;
   const r = buildPools(inv, "Kestrel", { excludeWeapons: ["spellbook"] });
