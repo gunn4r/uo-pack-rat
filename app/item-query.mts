@@ -154,12 +154,12 @@ function itemPasses(it: Item, q: RuleQuery, needle: string, blob: (it: Item) => 
   if (needle && !blob(it).includes(needle)) return false;
   return true;
 }
-function matches(it: Item, q: ItemQuery, seenCut: number, minRank: number, maxRank: number, ladder: RulesV1RarityItem[], houseOf: ReadonlyMap<number, string>): boolean {
+function matches(it: Item, q: ItemQuery, seenCut: number, minRank: number, maxRank: number, ladder: RulesV1RarityItem[], blob: (it: Item) => string, houseOf: ReadonlyMap<number, string>): boolean {
   if (q.chars.length && !q.chars.includes(it.location?.character as string)) return false;
   if (seenCut && Date.parse(it.seenAt) < seenCut) return false;
   // A location matches by its exact text, by the root container it sits in (every bag inside it) or by the house that root stands in.
   if ((q.loc.length || q.roots.length || q.houses.length) && !(q.loc.includes(it.location?.text as string) || (it.root != null && (q.roots.includes(+it.root) || q.houses.includes(houseOf.get(+it.root) as string))))) return false;
-  return itemPasses(it, q, q.q, itemSearchBlob, minRank, maxRank, ladder);
+  return itemPasses(it, q, q.q, blob, minRank, maxRank, ladder);
 }
 
 // Whether an item passes an Organize rule's query (issue #11): the Inventory's per-item checks, with the free
@@ -198,13 +198,15 @@ export interface UnravelContext { rules: Pick<RulesV1, "unravel">; leftOut: (it:
 export interface ItemQueryGroups { groups: ItemGroupJson[]; total: number; stacks: number; pieces: number; }
 
 // applyItemQuery(items, query, {rarity, now}) → {rows, total, pieces} normally, or {groups, total} when
-// query.group is set — see the module header for the exact page behavior this reproduces. `houseOf` names the house
-// each container on the ground stands in, by its serial, for `houses`; without it a house filter matches nothing.
-export function applyItemQuery(items: Item[], query: ItemQuery, { rarity = [], now = Date.now(), unravel, houseOf = new Map() }: { rarity?: RulesV1RarityItem[]; now?: number; unravel?: UnravelContext; houseOf?: ReadonlyMap<number, string> } = {}): ItemQueryRows | ItemQueryGroups {
+// query.group is set — see the module header for the exact page behavior this reproduces. `places` is
+// vault-lib.mts's labelledPlaces, so the free text also finds an item by its container's Organize label. `houseOf` names the
+// house each container on the ground stands in, by its serial, for `houses`; without it a house filter matches nothing.
+export function applyItemQuery(items: Item[], query: ItemQuery, { rarity = [], now = Date.now(), unravel, places, houseOf = new Map() }: { rarity?: RulesV1RarityItem[]; now?: number; unravel?: UnravelContext; places?: ReadonlyMap<string, string>; houseOf?: ReadonlyMap<number, string> } = {}): ItemQueryRows | ItemQueryGroups {
   const seenCut = query.seenDays ? now - query.seenDays * 864e5 : 0;
   const minRank = query.rarityMin ? rarityRank(rarity, query.rarityMin) : 0;
   const maxRank = query.rarityMax ? rarityRank(rarity, query.rarityMax) : 0;
-  let found = items.filter((it) => matches(it, query, seenCut, minRank, maxRank, rarity, houseOf));
+  const blob = places?.size ? (it: Item): string => `${itemSearchBlob(it)} \n ${(places.get(it.location?.text as string) || "").toLowerCase()}` : itemSearchBlob;
+  let found = items.filter((it) => matches(it, query, seenCut, minRank, maxRank, rarity, blob, houseOf));
   if (query.unravel) found = unravelRows(found, query.unravelShow ?? [], unravel);
   const pieces = found.reduce((a, i) => a + (i.amount || 1), 0);
   const k = query.sort, d = query.dir;

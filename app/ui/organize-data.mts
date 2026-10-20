@@ -11,7 +11,7 @@
 import { state } from "./store.mts";
 import { api } from "./api.mts";
 import { errorText } from "./messages.mts";
-import { labelledPlaces } from "./organize-model.mts";
+import { labelledPlaces } from "../vault-lib.mts";
 import type { ApiError, BlacklistApiResponse, OrganizeApiResponse, OrganizeConfig, OrganizeMatchApiResponse, OrganizePresetsApiResponse, OrganizePutApiResponse, RuleMatch } from "./api-types.mts";
 
 export function refreshPlaces(): void {
