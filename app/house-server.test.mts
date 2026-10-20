@@ -1,6 +1,6 @@
 // house-server.test.mts — the house routes (issue #10) and the facet overview (issue #164) on a real server and temp data folder.
 //
-// `GET /api/houses` and `GET /api/houses/<id>` (issue #10) on a real server and temp data folder: a scan with a house capture listed with its size and chest count and served as a model holding all its ground chests (a backpack root with a position left out), the same model served again while nothing changes and a newer capture replacing it, a footprint grown west replacing the old house so a chest inside both counts once, a house holding no ground chest listed with 0 containers, the tiledata.mul found through a temp TazUO launcher profile, the model still built without one, and an unknown, path-like or malformed id answered 404; a chest a capture saw and no scan opened served as not opened with its tiledata name and kept out of `GET /api/inventory`; the `uoFolder` setting (it wins over TazUO's launcher, `tiledataFrom` names the reason when there is no tiledata: override-missing, unreadable, no-client; PUT refuses a relative path, a UNC path and a folder without tiledata.mul without echoing it, a hand-edited UNC or relative one reads as override-missing without touching the filesystem, and a TazUO client with no launcher profile reports no-tazuo-profile). All `[fast]`. A house-only file (issue #10) moves the served house's `capturedAt` on while `GET /api/inventory` stays identical (the card, its stats and its worn set included) but for `snapshotCount`. The areas (issue #10): a PUT with 32 areas of 16 rectangles (past the old 8 kB body cap) saved and read back, an area-only house giving no name in the houses list or the model, a bad colour a 400, and no name with no areas removing the entry. Also the house names (issue #164): `GET /api/house-map` empty, a `PUT /api/house-map/<id>` stored trimmed and shown in the houses list and the model, an empty name removing it, and a bad name, a malformed id or a non-JSON body refused. A trash container an earlier capture listed in `trash` (issue #162) is no stack and not unopened when a later far capture lists it, while an opened chest in the same list is still drawn. Claimed houses (issue #299): a house never claimed hidden from the list and the model, one whose bounds overlap a claim on its facet served (a claim made before it was customized included), `GET /api/house-claims` listing the claims, `DELETE /api/house-claims/<id>` removing every claim over that house and keeping the rest, a malformed id a 400, a newer capture not bringing an unclaimed house back; the first start with claims claiming the houses named or given areas (their saved bounds, else the id's corner tile), less the ones removed before (`forgotten`), never again once the file exists, and writing nothing when there is nothing to claim. The facet overview (issue #164): each listed house's `plot` (its bounds without the front steps), `GET /api/facet-map/<facet>.png` from a temp UO folder holding a synthetic `facet01.mul` (a PNG of a region, never larger than asked or than the region, the aspect ratio kept, `x-region` naming the region drawn; a region reaching past the facet slid inside it, and one larger than the facet cut to it), a 400 for a facet outside 0 to 5, a missing, malformed or partial region or a bad size, and a 404 `{ok:false, reason}` for a missing (`missing`) or undecodable (`unreadable`) file, a UO folder set in Settings that is gone (`override-missing`) and without a client (`no-client`), the folder never in the answer; an image at most 2048 pixels on either side (1024 by default, a tall region capped by its height). Item art (issue #174): `GET /api/item-art/<graphic>.png` from a temp UO folder holding a synthetic `artLegacyMUL.uop`, an ETag answered 304 on a repeat, a 400 for a graphic or hue that is not a whole number to 65535, and a 404 reason (`no-art`, `missing`, `no-client`), the folder never in the answer.
+// `GET /api/houses` and `GET /api/houses/<id>` (issue #10) on a real server and temp data folder: a scan with a house capture listed with its size and chest count and served as a model holding all its ground chests (a backpack root with a position left out), the same model served again while nothing changes and a newer capture replacing it, a footprint grown west replacing the old house so a chest inside both counts once, a house holding no ground chest listed with 0 containers, the tiledata.mul found through a temp TazUO launcher profile, the model still built without one, and an unknown, path-like or malformed id answered 404; a chest a capture saw and no scan opened served as not opened with its tiledata name and kept out of `GET /api/inventory`; the `uoFolder` setting (it wins over TazUO's launcher, `tiledataFrom` names the reason when there is no tiledata: override-missing, unreadable, no-client; PUT refuses a relative path, a UNC path and a folder without tiledata.mul without echoing it, a hand-edited UNC or relative one reads as override-missing without touching the filesystem, and a TazUO client with no launcher profile reports no-tazuo-profile). All `[fast]`. A house-only file (issue #10) moves the served house's `capturedAt` on while `GET /api/inventory` stays identical (the card, its stats and its worn set included) but for `snapshotCount`. The areas (issue #10): a PUT with 32 areas of 16 rectangles (past the old 8 kB body cap) saved and read back, an area-only house giving no name in the houses list or the model, a bad colour a 400, and no name with no areas removing the entry. Also the house names (issue #164): `GET /api/house-map` empty, a `PUT /api/house-map/<id>` stored trimmed and shown in the houses list and the model, an empty name removing it, and a bad name, a malformed id or a non-JSON body refused. A trash container an earlier capture listed in `trash` (issue #162) is no stack and not unopened when a later far capture lists it, while an opened chest in the same list is still drawn. Claimed houses (issue #299): a house never claimed hidden from the list and the model, one whose bounds overlap a claim on its facet served (a claim made before it was customized included), `GET /api/house-claims` listing the claims, `DELETE /api/house-claims/<id>` removing every claim over that house and keeping the rest, a malformed id a 400, a newer capture not bringing an unclaimed house back; the first start with claims claiming the houses named or given areas (their saved bounds, else the id's corner tile), less the ones removed before (`forgotten`), never again once the file exists, and writing nothing when there is nothing to claim. The facet overview (issue #164): each listed house's `plot` (its bounds without the front steps), `GET /api/facet-map/<facet>.png` from a temp UO folder holding a synthetic `facet01.mul` (a PNG of a region, never larger than asked or than the region, the aspect ratio kept, `x-region` naming the region drawn; a region reaching past the facet slid inside it, and one larger than the facet cut to it), a 400 for a facet outside 0 to 5, a missing, malformed or partial region or a bad size, and a 404 `{ok:false, reason}` for a missing (`missing`) or undecodable (`unreadable`) file, a UO folder set in Settings that is gone (`override-missing`) and without a client (`no-client`), the folder never in the answer; an image at most 2048 pixels on either side (1024 by default, a tall region capped by its height). Item art (issue #174): `GET /api/item-art/<graphic>.png` from a temp UO folder holding a synthetic `artLegacyMUL.uop`, an ETag answered 304 on a repeat, a 400 for a graphic or hue that is not a whole number to 65535, and a 404 reason (`no-art`, `missing`, `no-client`), the folder never in the answer. The paperdoll (issue #57): `GET /api/paperdoll.png` from a temp UO folder holding synthetic gumps (packed as 7.x packs them), tiledata.mul and hues.mul: the live scan's elf wearing a piece cut to its box plus 6 px, an ETag answered 304 (the same for the same pieces in any order), a pair's two sides the same size, `grey=1` grey, a 400 for a malformed body, hue, piece, list or grey, and a 404 reason (`no-body` for a form's body, `missing` without the gumps, `no-client`), the folder never in the answer.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -14,8 +14,9 @@ import { claimHouses, vaultHouse, G } from "./house-fixture.mts";
 import { syntheticTileData } from "./tiledata-fixture.mts";
 import { syntheticFacet, rgb555, type Run } from "./facet-fixture.mts";
 import { FLAG } from "./tiledata.mts";
-import { itemArtName } from "./art.mts";
-import { syntheticArt, syntheticUop } from "./art-fixture.mts";
+import { gumpArtName, itemArtName } from "./art.mts";
+import { syntheticArt, syntheticGump, syntheticHues, syntheticUop } from "./art-fixture.mts";
+import { inflateSync } from "node:zlib";
 import type { HouseModel } from "./house-model.mts";
 
 const PACK = 0x40020001;
@@ -488,6 +489,62 @@ test("[fast] item art: a graphic's art is a PNG with an ETag (a 304 on a repeat)
   const { s: bare } = await serve(false);
   try {
     assert.deepEqual(await get(bare, "/api/item-art/1.png"), { status: 404, body: { ok: false, reason: "no-client" } });
+  } finally { await bare.close(); }
+});
+
+// A PNG's RGBA pixels (the encoder writes one IDAT run with filter 0 on every row).
+const pngPixels = (b: Buffer): number[] => {
+  const [w] = ihdrSize(b), parts: Buffer[] = [];
+  for (let o = 8; o < b.length;) { const n = b.readUInt32BE(o), type = b.toString("latin1", o + 4, o + 8); if (type === "IDAT") parts.push(b.subarray(o + 8, o + 8 + n)); o += 12 + n; }
+  const raw = inflateSync(Buffer.concat(parts)), out: number[] = [];
+  for (let o = 0; o < raw.length; o += 1 + w * 4) out.push(...raw.subarray(o + 1, o + 1 + w * 4));
+  return out;
+};
+
+test("[fast] paperdoll: a figure is a PNG cut to its box plus 6 px with an ETag (a 304 on a repeat); a pair's sides match; grey=1 is grey; a bad query a 400; a form's body, no gumps or no UO folder a 404 with a reason and never the path", async () => {
+  const { s } = await serve(true);
+  // The live scan's elf (body 606, skin 0x851D, hair 0x2FCC hue 519, face 0x3B46 hue 0x824D) and a 4-pixel-wide piece (anim 0x200) on her torso.
+  const uo = uoFolderWith(syntheticTileData([
+    { graphic: 0x2fcc, flags: FLAG.wearable, layer: 11, anim: 0x100 }, { graphic: 0x3b46, flags: FLAG.wearable, layer: 15, anim: 0x101 }, { graphic: 0x1415, flags: FLAG.wearable, layer: 13, anim: 0x200 },
+  ]));
+  const grey = rgb555(16, 16, 16), solid = (x0: number, w: number) => syntheticGump(x0 + w, 1, [[[0, x0], [grey, w]]]);
+  writeFileSync(join(uo, "gumpartLegacyMUL.uop"), syntheticUop([
+    { name: gumpArtName(0x0f), data: solid(10, 2), bwt: true }, { name: gumpArtName(60000 + 0x100), data: solid(10, 1), bwt: true },
+    { name: gumpArtName(60000 + 0x101), data: solid(11, 1), bwt: true }, { name: gumpArtName(60000 + 0x200), data: solid(12, 4), bwt: true },
+  ]));
+  const hues = Array.from({ length: 1400 }, () => new Uint16Array(32).fill(rgb555(0, 0, 31)));
+  writeFileSync(join(uo, "hues.mul"), syntheticHues(hues));
+  const elf = "body=606&hue=34077&hair=12236:519&face=15174:33357";
+  try {
+    assert.equal((await put(s, { uoFolder: uo })).status, 200);
+    const r = await fetch(`${s.url}/api/paperdoll.png?${elf}`);
+    assert.equal(r.status, 200);
+    assert.equal(r.headers.get("content-type"), "image/png");
+    assert.deepEqual(ihdrSize(Buffer.from(await r.arrayBuffer())), [2 + 12, 1 + 6], "the body's 2 pixels and 6 px around, kept on the canvas at its top");
+    const worn = await fetch(`${s.url}/api/paperdoll.png?${elf}&worn=${0x1415}:0`), etag = worn.headers.get("etag")!;
+    assert.deepEqual(ihdrSize(Buffer.from(await worn.arrayBuffer())), [6 + 12, 7], "the piece widens the box");
+    assert.match(etag, /^"[0-9a-f]+"$/);
+    assert.equal((await fetch(`${s.url}/api/paperdoll.png?${elf}&worn=${0x1415}:0`, { headers: { "if-none-match": etag } })).status, 304);
+    const order = async (worn: string): Promise<string> => (await fetch(`${s.url}/api/paperdoll.png?${elf}&worn=${worn}&pair=${worn}`)).headers.get("etag")!;
+    assert.equal(await order(`${0x1415}:0,9:2,9:1`), await order(`9:1,${0x1415}:0,9:2`), "the same pieces in another order are the same image");
+    const side = await fetch(`${s.url}/api/paperdoll.png?${elf}&pair=${0x1415}:0`);
+    assert.deepEqual(ihdrSize(Buffer.from(await side.arrayBuffer())), [18, 7], "the bare side cut to the pair's box");
+    const px = pngPixels(Buffer.from(await (await fetch(`${s.url}/api/paperdoll.png?${elf}&grey=1`)).arrayBuffer()));
+    const at = (x: number, y: number) => px.slice((y * 14 + x) * 4, (y * 14 + x) * 4 + 4);
+    assert.deepEqual(at(6, 0), [28, 28, 28, 255], "the blue skin, grey");
+    for (const q of ["body=65536&hue=0", "body=1&hue=-1", "body=1", "hue=1", "body=1&hue=1&hair=1", "body=1&hue=1&hair=1:2:3", "body=1&hue=1&worn=1:1,", "body=1&hue=1&pair=x",
+      `body=1&hue=1&worn=${Array.from({ length: 33 }, () => "1:1").join(",")}`, "body=1&hue=1&grey=yes"]) {
+      assert.equal((await get(s, `/api/paperdoll.png?${q}`)).status, 400, q);
+    }
+    const form = await fetch(`${s.url}/api/paperdoll.png?body=746&hue=0`), text = await form.text();
+    assert.deepEqual([form.status, JSON.parse(text)], [404, { ok: false, reason: "no-body" }]);
+    assert.ok(!text.includes(uo));
+    rmSync(join(uo, "gumpartLegacyMUL.uop"));
+    assert.deepEqual(await get(s, `/api/paperdoll.png?${elf}`), { status: 404, body: { ok: false, reason: "missing" } });
+  } finally { await s.close(); rmSync(uo, { recursive: true, force: true }); }
+  const { s: bare } = await serve(false);
+  try {
+    assert.deepEqual(await get(bare, `/api/paperdoll.png?${elf}`), { status: 404, body: { ok: false, reason: "no-client" } });
   } finally { await bare.close(); }
 });
 

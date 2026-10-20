@@ -1,4 +1,4 @@
-// houses.mts — the house map's client files and models (issues #10, #164, #174): the UO folder, its tiledata.mul and facetNN.mul, the facet PNGs cut from them, the item art PNGs drawn from its artLegacyMUL.uop and hues.mul, and the house models built from the inventory, each kept while its inputs stay the same.
+// houses.mts — the house map's client files and models (issues #10, #164, #174): the UO folder, its tiledata.mul and facetNN.mul, the facet PNGs cut from them, the item art PNGs drawn from its artLegacyMUL.uop and hues.mul, the paperdoll figures drawn from its gumps (issue #57), and the house models built from the inventory, each kept while its inputs stay the same.
 //
 // map: services
 // owns: `createHousesService`
@@ -8,7 +8,8 @@ import { join } from "node:path";
 import { badPathShape } from "../installer.mts";
 import { uoFolderFromTazuo, loadTileData, type TileData } from "../tiledata.mts";
 import { decodeFacet, type FacetBitmap } from "../facet-map.mts";
-import { decodeStatic, hueOf, itemArtName, readHues, readUopEntry, readUopTable, toRgba, type Hues, type ReadAt, type StaticArt, type UopTable } from "../art.mts";
+import { decodeStatic, gumpArtName, hueOf, itemArtName, readHues, readUopEntry, readUopTable, toRgba, uopIndex, type Hues, type ReadAt, type StaticArt, type UopTable } from "../art.mts";
+import { createPaperdoll, figureBox, greyRgba, gumpSource, readEquipConv, readGumpDef, type Look, type Worn } from "../paperdoll.mts";
 import { encodePngRgba } from "../png.mts";
 import { buildHouseModel, type HouseContainerInput, type HouseModel } from "../house-model.mts";
 import type { HouseSource } from "../house-capture.mts";
@@ -39,6 +40,13 @@ export function createHousesService({ settings, uoFolderFinder }: { settings: ()
     const uo = UO_FOLDER_FINDERS[finder](c.scriptsDir);
     return uo ? { folder: uo, source: finder } : { folder: null, reason: `no-${finder}` };
   }
+  // The UO folder for reading art: a folder set in Settings that is gone reads as override-missing.
+  function artFolder(): { folder: string } | { reason: string } {
+    const at = uoFolder();
+    if (at.folder === null) return { reason: at.reason };
+    if (at.source === "settings") { try { if (!statSync(at.folder).isDirectory()) return { reason: "override-missing" }; } catch { return { reason: "override-missing" }; } }
+    return { folder: at.folder };
+  }
   function houseTileData(): TileDataFrom {
     const at = uoFolder();
     if (at.folder === null) return { td: null, folder: null, source: null, reason: at.reason };
@@ -51,9 +59,8 @@ export function createHousesService({ settings, uoFolderFinder }: { settings: ()
   let facetPngBytes = 0;
   const FACET_MAX_BYTES = 64 * 1024 * 1024, FACET_PNG_BYTES = 32 * 1024 * 1024;
   function facetBitmap(facet: number): { bitmap: FacetBitmap; key: string } | { reason: string } {
-    const at = uoFolder();
-    if (at.folder === null) return { reason: at.reason };
-    if (at.source === "settings") { try { if (!statSync(at.folder).isDirectory()) return { reason: "override-missing" }; } catch { return { reason: "override-missing" }; } }
+    const at = artFolder();
+    if ("reason" in at) return at;
     const path = join(at.folder, `facet0${facet}.mul`);
     let key: string;
     try { const st = statSync(path); if (!st.isFile()) return { reason: "missing" }; if (st.size > FACET_MAX_BYTES) return { reason: "unreadable" }; key = `${path}:${st.mtimeMs}:${st.size}`; } catch { return { reason: "missing" }; }
@@ -75,22 +82,21 @@ export function createHousesService({ settings, uoFolderFinder }: { settings: ()
     facetPngBytes += out.length;
     return out;
   }
-  // Item art (issue #174): the UO folder's artLegacyMUL.uop table (its table blocks only, never the payload) and hues.mul, each read once while the file stays the same, and an entry read only when its graphic is asked for. A table that does not read is tried again after 30 s (a passing read error), sooner when the file changes. The PNGs are kept by file stamps, graphic and hue up to 4 MB in all, the least recently used dropped first, and never written to disk. `etag` names the files' stamps, graphic and hue (hashed, so never the path). A hue the hues.mul does not have, or with no hues.mul, draws the art unhued. `reason` as for the facet: no folder, the art file missing or not a UOP table, or no art for that graphic.
+  // Item art (issue #174): the UO folder's artLegacyMUL.uop table (its table blocks only, never the payload) and hues.mul, each read once while the file stays the same, and an entry read only when its graphic is asked for. A table that does not read is tried again after 30 s (a passing read error), sooner when the file changes. The PNGs are kept by file stamps, graphic and hue up to 4 MB in all (the paperdoll's figures with them), the least recently used dropped first, and never written to disk. `etag` names the files' stamps, graphic and hue (hashed, so never the path). A hue the hues.mul does not have, or with no hues.mul, draws the art unhued. `reason` as for the facet: no folder, the art file missing or not a UOP table, or no art for that graphic.
   let artMemo: { key: string; table: UopTable | null; at: number } | null = null, hueMemo: { key: string; hues: Hues | null } | null = null;
   const artPngs = new Map<string, Buffer>();
   let artPngBytes = 0;
   const ART_PNG_BYTES = 4 * 1024 * 1024, ART_RETRY_MS = 30_000;
   const stamp = (path: string): string | null => { try { const st = statSync(path); return st.isFile() ? `${path}:${st.mtimeMs}:${st.size}` : null; } catch { return null; } };
   function itemArt(graphic: number, hue: number): { png: Buffer; etag: string } | { reason: string } {
-    const at = uoFolder();
-    if (at.folder === null) return { reason: at.reason };
-    if (at.source === "settings") { try { if (!statSync(at.folder).isDirectory()) return { reason: "override-missing" }; } catch { return { reason: "override-missing" }; } }
+    const at = artFolder();
+    if ("reason" in at) return at;
     const artPath = join(at.folder, "artLegacyMUL.uop"), artKey = stamp(artPath);
     if (!artKey) return { reason: "missing" };
     const huesPath = join(at.folder, "hues.mul"), huesKey = hue & 0x3fff ? stamp(huesPath) : null;
     const key = `${artKey}|${huesKey ?? ""}|${graphic}|${hue}`, etag = `"${createHash("sha1").update(key).digest("hex").slice(0, 20)}"`;
-    const kept = artPngs.get(key);
-    if (kept) { artPngs.delete(key); artPngs.set(key, kept); return { png: kept, etag }; }
+    const hit = kept(key);
+    if (hit) return { png: hit, etag };
     let fd: number;
     try { fd = openSync(artPath, "r"); } catch { return { reason: "missing" }; }
     try {
@@ -104,13 +110,63 @@ export function createHousesService({ settings, uoFolderFinder }: { settings: ()
       const hues = huesKey ? hueMemo?.hues : null, img = toRgba(art, hues ? hueOf(hues, hue) : null);
       if (!img) return { reason: "no-art" };
       const png = encodePngRgba(img.width, img.height, img.rgba);
-      if (png.length <= ART_PNG_BYTES) {
-        for (const [k, v] of artPngs) { if (artPngBytes + png.length <= ART_PNG_BYTES) break; artPngs.delete(k); artPngBytes -= v.length; }
-        artPngs.set(key, png);
-        artPngBytes += png.length;
-      }
+      keep(key, png);
       return { png, etag };
     } finally { closeSync(fd); }
+  }
+  // Keeps a drawn PNG (item art or a paperdoll figure) up to ART_PNG_BYTES in all, the least recently used dropped first.
+  function keep(key: string, png: Buffer): void {
+    if (png.length > ART_PNG_BYTES) return;
+    for (const [k, v] of artPngs) { if (artPngBytes + png.length <= ART_PNG_BYTES) break; artPngs.delete(k); artPngBytes -= v.length; }
+    artPngs.set(key, png);
+    artPngBytes += png.length;
+  }
+  // A kept PNG, marked as just used.
+  function kept(key: string): Buffer | undefined {
+    const png = artPngs.get(key);
+    if (png) { artPngs.delete(key); artPngs.set(key, png); }
+    return png;
+  }
+  // The paperdoll figure (issue #57): `look` wearing `worn`, drawn by app/paperdoll.mts from the UO folder's gumpartLegacyMUL.uop, tiledata.mul and hues.mul, with gump.def and Equipconv.def when the folder has them. The files are opened once while their stamps stay the same, and every gump is read only when a figure needs it. `pair` is the other figure shown beside this one: both are cut to the same box, the union of their opaque boxes plus 6 px. `grey` draws the stand-in's grey. The PNG is kept like item art; `etag` names the files' stamps and the request. `reason`: no folder, a file missing (`missing`) or not readable (`unreadable`), a body the figure does not draw (`no-body`), or nothing drawn at all (`empty`).
+  const DOLL_FILES = ["gumpartLegacyMUL.uop", "tiledata.mul", "hues.mul", "gump.def", "Equipconv.def"] as const;
+  let dollMemo: { key: string; doll: ReturnType<typeof createPaperdoll> | null; at: number } | null = null;
+  function paperdoll(look: Look, worn: Worn[], pair: Worn[] | null, grey: boolean): { png: Buffer; etag: string } | { reason: string } {
+    const at = artFolder();
+    if ("reason" in at) return at;
+    const [gumps, tiles, hues, gumpDef, equipConv] = DOLL_FILES.map((f) => join(at.folder, f));
+    const stamps = [gumps!, tiles!, hues!, gumpDef!, equipConv!].map(stamp);
+    if (!stamps[0] || !stamps[1]) return { reason: "missing" };
+    // The pieces in one order, so the same suit asked in another order is the same image, ETag and cache entry.
+    const byPiece = (a: Worn, b: Worn): number => a.graphic - b.graphic || a.hue - b.hue;
+    worn = [...worn].sort(byPiece); pair = pair && [...pair].sort(byPiece);
+    const filesKey = stamps.join("|"), key = `${filesKey}|doll|${JSON.stringify([look, worn, pair, grey])}`, etag = `"${createHash("sha1").update(key).digest("hex").slice(0, 20)}"`;
+    const hit = kept(key);
+    if (hit) return { png: hit, etag };
+    if (dollMemo?.key !== filesKey || (!dollMemo.doll && Date.now() - dollMemo.at > ART_RETRY_MS)) dollMemo = { key: filesKey, doll: openPaperdoll(gumps!, tiles!, stamps[2] ? hues! : null, stamps[3] ? gumpDef! : null, stamps[4] ? equipConv! : null), at: Date.now() };
+    if (!dollMemo.doll) return { reason: "unreadable" };
+    const fig = dollMemo.doll.compose(look, worn);
+    if (!fig) return { reason: "no-body" };
+    const other = pair ? dollMemo.doll.compose(look, pair) : null, box = figureBox(other ? [fig, other] : [fig]), img = box && toRgba(fig, null, box);
+    if (!img) return { reason: "empty" };
+    const out = encodePngRgba(img.width, img.height, grey ? greyRgba(img.rgba) : img.rgba);
+    keep(key, out);
+    return { png: out, etag };
+  }
+  // The renderer over these files, or null when the gumps or tiledata do not read. Each gump read opens the file for that read only.
+  function openPaperdoll(gumps: string, tiles: string, hues: string | null, gumpDef: string | null, equipConv: string | null): ReturnType<typeof createPaperdoll> | null {
+    const read: ReadAt = (position, length) => {
+      let fd: number | null = null;
+      try { fd = openSync(gumps, "r"); const b = Buffer.alloc(length); return readSync(fd, b, 0, length, position) === length ? b : null; } catch { return null; } finally { if (fd !== null) closeSync(fd); }
+    };
+    let table: UopTable | null, size: number;
+    try { size = statSync(gumps).size; table = readUopTable(read, size); } catch { table = null; }
+    const td = loadTileData(tiles);
+    if (!table || !td) return null;
+    const text = (path: string | null): string => { try { return path ? readFileSync(path, "latin1") : ""; } catch { return ""; } };
+    let huesFile: Hues | null;
+    try { huesFile = hues ? readHues(readFileSync(hues)) : null; } catch { huesFile = null; }
+    const defs = readGumpDef(text(gumpDef), (id) => uopIndex(table, gumpArtName(id)) >= 0);
+    return createPaperdoll({ gump: gumpSource(table, read, defs), tiles: td, hues: huesFile, equipConv: readEquipConv(text(equipConv)) });
   }
   // Built house models, kept while the served inventory (a new object whenever the scans, the item kinds or the overlay change; the houses come from the same fold) and the tiledata (loadTileData answers the same object until the file changes) stay the same. The ground chests are the inventory's ground roots with a position, as Organize picks them.
   let houseMemo: { inv: Inventory | null; td: TileData | null; ground: HouseContainerInput[]; models: Map<string, HouseModel> } = { inv: null, td: null, ground: [], models: new Map() };
@@ -129,6 +185,6 @@ export function createHousesService({ settings, uoFolderFinder }: { settings: ()
     }
     return m;
   }
-  return { tileData: houseTileData, facetBitmap, facetPng, itemArt, model: houseModel };
+  return { tileData: houseTileData, facetBitmap, facetPng, itemArt, paperdoll, model: houseModel };
 }
 export type HousesService = ReturnType<typeof createHousesService>;
