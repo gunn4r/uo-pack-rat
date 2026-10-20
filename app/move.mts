@@ -21,7 +21,7 @@ export function resolveSelection(inv: Inventory, sel: Selection, rarity: RulesV1
   if (sel.query != null) {
     const except = new Set(sel.except ?? []);
     const q = { ...parseItemQuery(new URLSearchParams(sel.query)), group: false, offset: 0, limit: Number.MAX_SAFE_INTEGER };
-    for (const it of (applyItemQuery(Object.values(inv.items), q, { rarity, places: labelledPlaces(inv.containers, labels), houseOf }) as { rows: Item[] }).rows) if (!except.has(+it.serial)) out.set(+it.serial, it);
+    for (const it of (applyItemQuery(Object.values(inv.items), q, { rarity, places: labelledPlaces(inv.containers, labels), houseOf, containers: inv.containers }) as { rows: Item[] }).rows) if (!except.has(+it.serial)) out.set(+it.serial, it);
   }
   return [...out.values()].sort((a, b) => a.serial - b.serial);
 }
