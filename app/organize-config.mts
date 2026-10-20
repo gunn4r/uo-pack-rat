@@ -7,7 +7,7 @@
 // map: organize
 // owns: `OrganizeConfig`, `checkOrganizeConfig`, `salvageOrganizeConfig`, `salvagedRefusal`, `ruleMatchOf`, `CATCH_ALL_ID`, `EMPTY_BAGS_ID`, `BUILDS`, `SCHOOLS`, `LIMITS`
 import type { RuleQuery } from "./item-query.mts";
-import { WEAPON_SKILLS } from "./vault-lib.mts";
+import { ITEM_TYPES, WEAPON_SKILLS } from "./vault-lib.mts";
 import type { SpellSchool } from "./vault-lib.mts";
 import { isPlainObject, isBoundedInt, MAX_SERIAL } from "./guards.mts";
 
@@ -33,7 +33,7 @@ export interface OrganizeConfig { version: 1; labels: Record<string, ContainerLa
 // take either.
 export const CATCH_ALL_ID = "catch-all";
 export const EMPTY_BAGS_ID = "empty-bags";
-export const LIMITS = { labels: 2000, rules: 200, targets: 20, names: 100, pinnedItems: 5000, text: 64, q: 200, list: 50, tags: 10, flags: 10, wskill: WEAPON_SKILLS.length, props: 20 } as const;
+export const LIMITS = { labels: 2000, rules: 200, targets: 20, names: 100, pinnedItems: 5000, text: 64, q: 200, list: 50, tags: 10, flags: 10, wskill: WEAPON_SKILLS.length, type: ITEM_TYPES.length, props: 20 } as const;
 // Room for the largest setup LIMITS allows as the server saves it (pretty-printed, about 5.8 MB): the body limit of
 // PUT /api/organize and the largest organize.json a read accepts.
 export const MAX_SETUP_BYTES = 6e6;
@@ -43,7 +43,7 @@ const COLOR = /^#[0-9a-fA-F]{6}$/;
 const STRATEGY = /^strategy:[a-z0-9-]{1,32}$/;
 const RULE_QUERY_KEYS = ["q", "slot", "rarity", "rarityMin", "rarityMax", "kind", "slayer", "nogarg", "med", "hideTags", "props"] as const;
 // Filters added after rules were first saved, so a rule from before may leave them out.
-const OPTIONAL_QUERY_KEYS = ["tags", "flags", "wskill"] as const;
+const OPTIONAL_QUERY_KEYS = ["tags", "flags", "wskill", "type"] as const;
 
 // Issue #150: crafting tools were tools until they got a kind of their own. An Auto setup saved before that (none of
 // Auto's rules asks for the crafting kind) reads its rules for tools as taking crafting tools too, until Auto organize
@@ -102,6 +102,7 @@ function queryProblem(q: unknown, at: string): string | null {
   if (q.flags !== undefined && !textList(q.flags, LIMITS.flags)) return `${at}.flags must be a list of at most ${LIMITS.flags} properties`;
   // The weapon skills (issue #188), whatever their case, as matching reads them.
   if (q.wskill !== undefined && !(textList(q.wskill, LIMITS.wskill) && q.wskill.every((w) => WEAPON_SKILLS.includes(w.toLowerCase())))) return `${at}.wskill must be a list of at most ${LIMITS.wskill} weapon skills (${WEAPON_SKILLS.join(", ")})`;
+  if (q.type !== undefined && !(textList(q.type, LIMITS.type) && q.type.every((t) => (ITEM_TYPES as readonly string[]).includes(t.toLowerCase())))) return `${at}.type must be a list of at most ${LIMITS.type} types (${ITEM_TYPES.join(", ")})`;
   for (const k of ["nogarg", "med"] as const) if (typeof q[k] !== "boolean") return `${at}.${k} must be true or false`;
   if (!Array.isArray(q.props) || q.props.length > LIMITS.props) return `${at}.props must be a list of at most ${LIMITS.props} property filters`;
   for (const [i, p] of q.props.entries()) {

@@ -1,6 +1,6 @@
 // ui-inventory.test.mts — `app/ui/inv-model.mts`, the Inventory screen's pure rules.
 //
-// `app/ui/inv-model.mts`, the Inventory screen's pure rules: `plural` ("1 stack", "1,204 pieces"), `queryParams` round-tripping a full filter state through the server's `parseItemQuery`, the active-filter tokens (their words, each removing only itself, the search counted as a filter and cleared by Clear all, the Rarity at most token and its empty-result sentence), the strip's "45 of 160 stacks match" and the footer's count fact, the empty-result sentence (the one filter that excludes everything alone, a single filter being its own cause, else the combination), tier and rule labels, a Location option named by its Organize label with the scanned name beside its serial (`placeNames`), the property popover's ≠ 0 note (`neZeroHint`), the nine default columns and the column picker's groups and order, the virtual table's row window (clamped at the end) and chunk fetches, and the table's keyboard model (arrows, Home/End, Page keys, Enter/Space, Esc). All `[fast]`.
+// `app/ui/inv-model.mts`, the Inventory screen's pure rules: `plural` ("1 stack", "1,204 pieces"), `queryParams` round-tripping a full filter state through the server's `parseItemQuery`, the active-filter tokens (their words, a type's among them, each removing only itself, the search counted as a filter and cleared by Clear all, the Rarity at most token and its empty-result sentence), the strip's "45 of 160 stacks match" and the footer's count fact, the empty-result sentence (the one filter that excludes everything alone, a single filter being its own cause, else the combination), tier and rule labels, a Location option named by its Organize label with the scanned name beside its serial (`placeNames`), the property popover's ≠ 0 note (`neZeroHint`), the nine default columns and the column picker's groups and order, the virtual table's row window (clamped at the end) and chunk fetches, and the table's keyboard model (arrows, Home/End, Page keys, Enter/Space, Esc). All `[fast]`.
 //
 // The rendered screen is driven by scripts/ui-state.test.mts.
 import test from "node:test";
@@ -27,7 +27,7 @@ test("[fast] plural agrees with its count and groups thousands", () => {
 });
 
 test("[fast] queryParams round-trips through the server's parser", () => {
-  const q: ItemQuery = { ...BASE, q: "ring", chars: ["Dorran", "Kestrel"], slot: ["ring", "?"], loc: ["Metal Chest, left"], roots: [12], rarityMin: "Greater Magic Item", kind: ["gear"], seenDays: 7, slayer: "*", nogarg: true, med: true, hideTags: ["cursed"], tags: ["brittle", "antique"], props: [{ key: "lmc", min: 8 }, { key: "hci", min: 5, op: "le" }], flags: ["spell channeling", "mage armor"], wskill: ["fencing", "mace fighting"], group: true, sort: "hci", dir: -1, offset: 500, limit: 500 };
+  const q: ItemQuery = { ...BASE, type: ["shield", "two-handed"], q: "ring", chars: ["Dorran", "Kestrel"], slot: ["ring", "?"], loc: ["Metal Chest, left"], roots: [12], rarityMin: "Greater Magic Item", kind: ["gear"], seenDays: 7, slayer: "*", nogarg: true, med: true, hideTags: ["cursed"], tags: ["brittle", "antique"], props: [{ key: "lmc", min: 8 }, { key: "hci", min: 5, op: "le" }], flags: ["spell channeling", "mage armor"], wskill: ["fencing", "mace fighting"], group: true, sort: "hci", dir: -1, offset: 500, limit: 500 };
   assert.deepEqual(parseItemQuery(queryParams(q)), q);
   assert.deepEqual(parseItemQuery(queryParams(BASE)), BASE);
 });
@@ -71,6 +71,15 @@ test("[fast] a weapon skill is a token of its own, and Clear all clears it (issu
   assert.deepEqual(tokens[0]!.remove(q).wskill, ["mace fighting"], "removing one leaves the other");
   assert.equal(tokens[0]!.cause(3), "None of the 3 stacks is a Swordsmanship weapon.");
   assert.deepEqual(clearAll(q).wskill, []);
+});
+
+test("[fast] a type is a token of its own, named as the Type chip names it, and Clear all clears it", () => {
+  const q: ItemQuery = { ...BASE, type: ["shield", "two-handed"] };
+  const tokens = activeFilters(q, CTX);
+  assert.deepEqual(tokens.map((t) => t.label), ["Type: Shield", "Type: Two-handed weapon"]);
+  assert.deepEqual(tokens[0]!.remove(q).type, ["two-handed"]);
+  assert.equal(tokens[0]!.cause(3), "None of the 3 stacks has the type Shield.");
+  assert.deepEqual(clearAll(q).type, []);
 });
 
 test("[fast] activeFilters counts the search as a filter, and Clear all clears it too", () => {
