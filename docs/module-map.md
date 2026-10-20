@@ -405,7 +405,7 @@ The page is `app/index.html` plus `app/ui/`, compiled by `scripts/build-ui.mts` 
 | `app/ui/paste-scanner.mts` | The Copy scanner script button for a paste-transport client (the ClassicUO web client): the wizard's copy step and Settings › Game client both use it. | `scannerCopy` |
 | `app/ui/shard.mts` | changeShard(shard): the one place a shard switch is persisted and applied. | `changeShard` |
 | `app/ui/sheet-doll.mts` | The character sheet's paperdoll (issue #57, layout 1B): the character's look wearing the suit the sheet shows, on a doll card kept per screen and character, so a redraw of the same suit fetches nothing again. | `sheetDoll` |
-| `app/ui/sheet.mts` | The character sheet (design spec 4.5), shared by the Characters screen and the Suit Builder's result panel: a KPI row (five resists against their caps, attributes, pools), the paperdoll beside the worn gear as a list (layout 1B, issue #57), the properties as key/value lists, the skills and a footnote. | `sheetNode`, `SLOT_GROUPS`, `SHEET_GROUPS`, `RESISTS`, `forgetHueColors` |
+| `app/ui/sheet.mts` | The character sheet (design spec 4.5), shared by the Characters screen and the Suit Builder's result panel: a KPI row (five resists against their caps, attributes, pools), the paperdoll beside the worn gear as a list (layout 1B, issue #57), the properties as key/value lists, the skills and a footnote. | `sheetNode`, `SLOT_GROUPS`, `SHEET_GROUPS`, `RESISTS` |
 | `app/ui/tazuo-panel.mts` | The two options of the TazUO in-game panel (app/tazuo-panel.mts): whether it shows its window at login, and its show/hide hotkey. | `panelControls` |
 <!-- module-map:end -->
 
