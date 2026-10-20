@@ -431,21 +431,23 @@ function setPreview(next: ManualDollState["preview"]): void {
   preview = next;
   paintDoll();
 }
-// A picker row hovered, or given keyboard focus, previews its piece in the slot. The pointer leaving the rows (onto the search, the filters, the header, the footer or out of the picker) hands the preview back to the focused row, if one has focus, else restores the New suit; so does focus leaving the rows.
+// A picker row hovered, or given keyboard focus, previews its piece in the slot. When the pointer leaves the rows (onto the search, the filters, the header, the footer or out of the picker), a preview the pointer made goes back to the focused row's piece, or to the New suit when no row has focus; focus leaving the rows ends it too. A preview Esc took off stays off until another row is hovered or focused.
+let hoverPreview = false;
 function wirePreview(host: HTMLElement): void {
   const rowItem = (t: EventTarget | null): Item | null => {
     const tr = (t as HTMLElement | null)?.closest?.<HTMLElement>("tr.item[data-index]");
     return tr && browser ? browser.page.rows[+tr.dataset.index!] ?? null : null;
   };
-  const show = (it: Item | null): void => {
+  const show = (it: Item | null, byPointer: boolean): void => {
     const slot = pickSlot;
+    hoverPreview = byPointer;
     if (!slot || !it || slots[slot] === it.serial) { setPreview(null); return; }
     setPreview({ slot, item: it, cleared: handConflict(slot, it, held()) });
   };
-  const focusedRow = (): Item | null => (host.contains(document.activeElement) ? rowItem(document.activeElement) : null);
-  host.addEventListener("mouseover", (e) => { show((e.target as HTMLElement).closest("tbody") ? rowItem(e.target) : focusedRow()); });
-  host.addEventListener("mouseleave", () => show(focusedRow()));
-  host.addEventListener("focusin", (e) => { const it = rowItem(e.target); if (it) show(it); });
+  const leaveRows = (): void => { if (hoverPreview && preview) show(host.contains(document.activeElement) ? rowItem(document.activeElement) : null, false); };
+  host.addEventListener("mouseover", (e) => { const it = (e.target as HTMLElement).closest("tbody") ? rowItem(e.target) : null; if (it) { if (it.serial !== preview?.item.serial) show(it, true); } else leaveRows(); });
+  host.addEventListener("mouseleave", leaveRows);
+  host.addEventListener("focusin", (e) => { const it = rowItem(e.target); if (it) show(it, false); });
   host.addEventListener("focusout", (e) => { if (!rowItem(e.relatedTarget)) setPreview(null); });
 }
 

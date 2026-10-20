@@ -36,7 +36,8 @@ test("[slow] Manual mode: a picked piece fills its slot, moves the totals and le
     // the live doll (issue #57): its pill names the empty slot being chosen, then the focused row previewed in it; Esc first
     // goes back to the New suit and leaves the picker open
     const pill = (): Promise<string> => page.locator("#mb-doll-card .doll-pill").evaluate((e) => e.textContent || "");
-    assert.equal(await pill(), "Ring: empty");
+    await page.mouse.move(0, 0);   // the click that opened the picker can leave the pointer over a row, which previews it
+    await page.waitForFunction(() => document.querySelector("#mb-doll-card .doll-pill")?.textContent === "Ring: empty");
     await row.focus();
     await page.waitForFunction((n) => document.querySelector("#mb-doll-card .doll-pill")?.textContent === `Preview · Ring: ${n}`, name);
     await page.keyboard.press("Escape");
