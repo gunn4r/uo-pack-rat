@@ -15,8 +15,8 @@
 //
 // map: query
 // owns: `parseItemQuery`, `matchesItem`, `applyItemQuery`, `facetsOf`, `propCounts`, `ItemQuery`, `RuleQuery`, `EXTRA_COLS`, `colVal`, `rarityRank`, `HIT_LIMIT`
-import { itemSearchBlob, itemOwnBlob, groupByName, compareNames, KINDS, SLOT_LABELS, propertyKeys, extraKeys, flagKeys, flagKey, gearSkills, weaponSkillsOf, WEAPON_SKILLS, PROPERTIES, itemTypeOf, ITEM_TYPES } from "./vault-lib.mts";
-import type { Item, ItemGroup } from "./vault-lib.mts";
+import { containerChain, itemSearchBlob, itemOwnBlob, groupByName, compareNames, KINDS, SLOT_LABELS, propertyKeys, extraKeys, flagKeys, flagKey, gearSkills, weaponSkillsOf, WEAPON_SKILLS, PROPERTIES, itemTypeOf, ITEM_TYPES } from "./vault-lib.mts";
+import type { Container, Item, ItemGroup } from "./vault-lib.mts";
 import type { RulesV1, RulesV1RarityItem } from "./schema/types.d.mts";
 import { unravelInfo, LEFT_OUT, type LeftOut, type UnravelInfo } from "./unravel.mts";
 
@@ -82,12 +82,14 @@ export interface ItemQuery {
   seenDays: number; slayer: string; nogarg: boolean; med: boolean; hideTags: string[]; tags: string[]; props: PropFilter[]; flags: string[]; wskill: string[]; type: string[]; group: boolean;
   sort: string; dir: 1 | -1; offset: number; limit: number;
   unravel?: boolean | undefined; unravelShow?: LeftOut[] | undefined;
+  // `within=<container serial>` (#487): items anywhere inside one of these containers, a bag inside a bag included.
+  within?: number[] | undefined;
 }
 
 // An Organize rule's query (issue #11): the Inventory's filters on the item itself. Location, character and
 // seen filters are left out, and so are the view and paging, because a rule must keep matching an item after
 // it moves. `tags`, `flags`, `wskill` and `type` are optional: rules saved before them (issues #133, #182, #188) have none.
-export type RuleQuery = Omit<ItemQuery, "loc" | "roots" | "houses" | "chars" | "seenDays" | "group" | "sort" | "dir" | "offset" | "limit" | "tags" | "flags" | "wskill" | "type" | "unravel" | "unravelShow"> & { tags?: string[]; flags?: string[]; wskill?: string[]; type?: string[] };
+export type RuleQuery = Omit<ItemQuery, "loc" | "roots" | "houses" | "chars" | "seenDays" | "group" | "sort" | "dir" | "offset" | "limit" | "tags" | "flags" | "wskill" | "type" | "unravel" | "unravelShow" | "within"> & { tags?: string[]; flags?: string[]; wskill?: string[]; type?: string[] };
 
 // Reads every filter/sort/paging knob off a URLSearchParams (GET /api/items' query string, or the page's
 // own future use of the same parser). `hide`, `tag`, `prop`, `slot`, `kind`, `wskill` and `type` accept either a single
@@ -125,6 +127,7 @@ export function parseItemQuery(searchParams: URLSearchParams): ItemQuery {
     loc: listOf("loc"),
     roots: listOf("root").map(Number).filter(Number.isFinite),
     houses: listOf("house"),
+    ...(sp.has("within") ? { within: listOf("within").map(Number).filter(Number.isFinite) } : {}),
     rarity: sp.get("rarity") || "",
     rarityMin: sp.get("rarityMin") || "",
     rarityMax: sp.get("rarityMax") || "",
@@ -173,7 +176,8 @@ function itemPasses(it: Item, q: RuleQuery, needle: string, blob: (it: Item) => 
   if (needle && !blob(it).includes(needle)) return false;
   return true;
 }
-function matches(it: Item, q: ItemQuery, seenCut: number, minRank: number, maxRank: number, ladder: RulesV1RarityItem[], blob: (it: Item) => string, houseOf: ReadonlyMap<number, string>): boolean {
+function matches(it: Item, q: ItemQuery, seenCut: number, minRank: number, maxRank: number, ladder: RulesV1RarityItem[], blob: (it: Item) => string, houseOf: ReadonlyMap<number, string>, containers: Record<string, Container>): boolean {
+  if (q.within?.length && !containerChain(containers, it.container).some((s) => q.within!.includes(s))) return false;
   if (q.chars.length && !q.chars.includes(it.location?.character as string)) return false;
   if (seenCut && Date.parse(it.seenAt) < seenCut) return false;
   // A location matches by its exact text, by the root container it sits in (every bag inside it) or by the house that root stands in.
@@ -220,12 +224,13 @@ export interface ItemQueryGroups { groups: ItemGroupJson[]; total: number; stack
 // query.group is set — see the module header for the exact page behavior this reproduces. `places` is
 // vault-lib.mts's labelledPlaces, so the free text also finds an item by its container's Organize label. `houseOf` names the
 // house each container on the ground stands in, by its serial, for `houses`; without it a house filter matches nothing.
-export function applyItemQuery(items: Item[], query: ItemQuery, { rarity = [], now = Date.now(), unravel, places, houseOf = new Map() }: { rarity?: RulesV1RarityItem[]; now?: number; unravel?: UnravelContext; places?: ReadonlyMap<string, string>; houseOf?: ReadonlyMap<number, string> } = {}): ItemQueryRows | ItemQueryGroups {
+// `containers` (the inventory's) tells `within` which bags sit in which; without them `within` matches nothing.
+export function applyItemQuery(items: Item[], query: ItemQuery, { rarity = [], now = Date.now(), unravel, places, houseOf = new Map(), containers = {} }: { rarity?: RulesV1RarityItem[]; now?: number; unravel?: UnravelContext; places?: ReadonlyMap<string, string>; houseOf?: ReadonlyMap<number, string>; containers?: Record<string, Container> } = {}): ItemQueryRows | ItemQueryGroups {
   const seenCut = query.seenDays ? now - query.seenDays * 864e5 : 0;
   const minRank = query.rarityMin ? rarityRank(rarity, query.rarityMin) : 0;
   const maxRank = query.rarityMax ? rarityRank(rarity, query.rarityMax) : 0;
   const blob = places?.size ? (it: Item): string => `${itemSearchBlob(it)} \n ${(places.get(it.location?.text as string) || "").toLowerCase()}` : itemSearchBlob;
-  let found = items.filter((it) => matches(it, query, seenCut, minRank, maxRank, rarity, blob, houseOf));
+  let found = items.filter((it) => matches(it, query, seenCut, minRank, maxRank, rarity, blob, houseOf, containers));
   if (query.unravel) found = unravelRows(found, query.unravelShow ?? [], unravel);
   const pieces = found.reduce((a, i) => a + (i.amount || 1), 0);
   const k = query.sort, d = query.dir;

@@ -84,7 +84,7 @@ async function selectAll(): Promise<void> {
   catch (e) { toast(errorText(e), "bad"); return; }
   const q = { ...query, group: false, offset: 0, limit: 1 }, rarity = state.rules?.rarity || [];
   const houseOf = houseIds();
-  matchesAll = (it) => applyItemQuery([it], q, { rarity, places: state.organize.places, houseOf }).total === 1;
+  matchesAll = (it) => applyItemQuery([it], q, { rarity, places: state.organize.places, houseOf, containers: state.inv?.containers ?? {} }).total === 1;
   change(selectAllMatching(sel, query, r.selected - r.worn, r.worn, matches), wornNote(r.wornNames.slice(0, r.worn === 1 ? 1 : 0), r.worn));
 }
 async function grabSelected(): Promise<void> {

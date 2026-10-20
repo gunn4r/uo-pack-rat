@@ -1619,7 +1619,7 @@ async function loadDrawer(): Promise<void> {
   const my = ++drawerSeq, rows = new Map<number, Item>();   // by serial: a page that shifted under a change between requests repeats none
   try {
     for (let offset = 0, total = Infinity; offset < total;) {
-      const r = await api<ItemsApiResponse>(`/api/items?root=${chest}&offset=${offset}&limit=${ITEMS_CHUNK}`);
+      const r = await api<ItemsApiResponse>(`/api/items?within=${chest}&offset=${offset}&limit=${ITEMS_CHUNK}`);
       if (my !== drawerSeq) return;
       const got = "rows" in r ? r.rows : [];
       for (const it of got) rows.set(it.serial, it);
