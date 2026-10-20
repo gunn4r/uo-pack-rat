@@ -264,7 +264,9 @@
 .b-fetch-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); color: var(--color-text-muted); min-width: 0; }
 .b-after { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--space-3); padding: var(--space-3) var(--space-4); }
 .b-after-note { padding: 0 var(--space-4) var(--space-3); }
-.b-sheet-wrap { padding: 0 var(--space-4) var(--space-4); overflow-x: auto; }
+/* the result's after-the-change doll card (layout 2A, issue #57), then the Full sheet under it as the result's next item, in the page's theme */
+.b-after-group { display: contents; }
+.b-sheet-wrap { overflow-x: auto; }
 .pr .b-disclose { display: flex; align-items: center; gap: var(--space-3); width: 100%; padding: var(--space-3) var(--space-4); border: 0; background: none; color: var(--color-text); text-align: left; cursor: pointer; font-weight: var(--weight-regular); border-radius: var(--radius-lg); }
 .pr .b-disclose:hover { background: var(--color-surface-subtle); color: var(--color-text); }
 .b-disclose .t-sm { flex: 1 1 auto; min-width: 0; }
