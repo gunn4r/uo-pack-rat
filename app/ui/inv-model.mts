@@ -6,7 +6,7 @@
 //
 // map: ui-models
 // owns: `DEFAULT_COLS`, `ITEM_COLS`, `COL_GROUPS`, `queryParams`, `activeFilters`
-import type { ItemQuery, PropFilter, Place } from "../item-query.mts";
+import { passes, type ItemQuery, type PropFilter, type PropOp, type Place } from "../item-query.mts";
 import { clearedQuery } from "./view-state.mts";
 import { flagLabel, ITEM_TYPE_LABELS, type ItemType } from "../vault-lib.mts";
 import { plural } from "./format.mts";
@@ -147,13 +147,14 @@ export const propRuleLabel = (f: PropFilter, propLabel: (k: string) => string): 
 // The note under a Mage Weapon rule: the value is the tooltip's own, a negative skill penalty, so the comparisons read as
 // numbers do (≥ -20 is a penalty of 20 or less), and an item without it reads 0.
 export const MAGE_WEAPON_HINT = "Mage Weapon is negative, as on its tooltip: ≥ -20 keeps penalties of 20 or less, and items that are no mage weapon read 0.";
-// The note under a property rule about the items without the property, which read 0 (item-query.mts's colVal): a ≠ or ≤
-// rule that 0 passes lets them through ("FC ≠ -1" takes every reagent), and ≠ 0 leaves them out. Shown by the property
-// popover and, for each of a rule's property filters, by the Organize rule editor (`missingHints`).
+// The note under a property rule about the items without the property, which read 0 (item-query.mts's colVal): any rule
+// that 0 passes, by the matcher's own `passes`, lets them through ("FC ≠ -1" or "FC = 0" takes every reagent), and ≠ 0
+// leaves them out. Shown by the property popover and, for each of a rule's property filters, by the Organize rule editor
+// (`missingHints`).
 export function missingHint(op: string, value: string, name: string): string | null {
   if (value.trim() === "" || !Number.isFinite(+value)) return null;
-  if (op === "ne" && +value === 0) return `Items without ${name} count as 0.`;
-  return op === "ne" || (op === "le" && +value >= 0) ? `Items without ${name} also match (they count as 0).` : null;
+  if (passes(0, { key: "", min: +value, ...(op === "ge" ? {} : { op: op as PropOp }) })) return `Items without ${name} also match (they count as 0).`;
+  return op === "ne" && +value === 0 ? `Items without ${name} count as 0.` : null;
 }
 export const missingHints = (props: PropFilter[], nameOf: (key: string) => string): string[] =>
   [...new Set(props.map((f) => missingHint(f.op || "ge", String(f.min), nameOf(f.key))).filter((h): h is string => h != null))];

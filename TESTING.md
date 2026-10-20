@@ -173,7 +173,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `scripts/api-routes.test.mts` — a [smoke] guard that `app/api/routes.mts`'s route map and the routes `app/http/routes/` registers agree, both ways (issue #338).
 - `scripts/build-schema-types.test.mts` — the JSON Schema to TypeScript generator (`scripts/build-schema-types.mts`).
 - `scripts/build-ui.test.mts` — `scripts/build-ui.mts`'s `buildUi()`, the page build.
-- `scripts/changelog.test.mts` — `scripts/changelog.mts`: a [smoke] guard that the committed fragments and CHANGELOG.md are in shape, a [smoke] release of a copy of them, and the release that puts the fragments together.
+- `scripts/changelog.test.mts` — `scripts/changelog.mts`: a [smoke] guard that the committed fragments and CHANGELOG.md are in shape and every fragment's name starts with its issue number, a [smoke] release of a copy of them, and the release that puts the fragments together.
 - `scripts/compat-shims.test.mts` — a [fast] guard that docs/architecture.md's "Compatibility shims" table and the code's `compat: <id>` comments name the same shims.
 - `scripts/css-guard.test.mts` — a [smoke] guard that keeps screen stylesheets from restyling the shared components, the window breakpoints in one list, and every color a token.
 - `scripts/docs-freshness.test.mts` — a [smoke] guard that the Markdown stays readable and true to the code (issue #338).

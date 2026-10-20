@@ -539,7 +539,7 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
     const list = box("div", { class: "inv-opts inv-prop-list", role: "listbox", "aria-label": "Properties" });
     const num = input({ type: "number", value: 1, size: "sm", attrs: { "aria-label": "Value" } });
     const hint = txt("", "t-sm muted");
-    const showHint = (): void => { const h = flag || !key ? null : missingHint(op, num.value, full(key)) ?? (key === "mageWeapon" ? MAGE_WEAPON_HINT : null); hint.textContent = h || ""; hint.hidden = !h; };
+    const showHint = (): void => { const h = flag || !key ? null : key === "mageWeapon" ? MAGE_WEAPON_HINT : missingHint(op, num.value, full(key)); hint.textContent = h || ""; hint.hidden = !h; };
     showHint();
     num.addEventListener("input", showHint);
     const opSeg = segmented({ label: "Comparison", options: [{ value: "ge", label: "≥" }, { value: "le", label: "≤" }, { value: "eq", label: "=" }, { value: "ne", label: "≠" }], value: "ge", onChange: (v) => { op = v; showHint(); } });

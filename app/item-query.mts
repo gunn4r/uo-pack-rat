@@ -14,7 +14,7 @@
 // property column; alphabetical is the useful default for a name column), reproduced exactly, not fixed.
 //
 // map: query
-// owns: `parseItemQuery`, `matchesItem`, `applyItemQuery`, `queryWhere`, `facetsOf`, `propCounts`, `ItemQuery`, `RuleQuery`, `EXTRA_COLS`, `colVal`, `rarityRank`, `HIT_LIMIT`
+// owns: `parseItemQuery`, `matchesItem`, `applyItemQuery`, `queryWhere`, `passes`, `facetsOf`, `propCounts`, `ItemQuery`, `RuleQuery`, `EXTRA_COLS`, `colVal`, `rarityRank`, `HIT_LIMIT`
 import { containerChain, labelledPlaces, itemSearchBlob, itemOwnBlob, gargoyleOk, meditationOk, hasTag, hasFlag, groupByName, compareNames, KINDS, SLOT_LABELS, propertyKeys, extraKeys, flagKeys, flagKey, gearSkills, weaponSkillsOf, WEAPON_SKILLS, PROPERTIES, itemTypeOf, ITEM_TYPES } from "./vault-lib.mts";
 import type { Container, Item, ItemGroup } from "./vault-lib.mts";
 import type { RulesV1, RulesV1RarityItem } from "./schema/types.d.mts";
@@ -151,7 +151,8 @@ export function parseItemQuery(searchParams: URLSearchParams): ItemQuery {
   };
 }
 
-function passes(v: number, f: PropFilter): boolean {
+// Whether a value passes a property rule; an item without the property is checked as 0 (colVal).
+export function passes(v: number, f: PropFilter): boolean {
   return f.op === "le" ? v <= f.min : f.op === "eq" ? v === f.min : f.op === "ne" ? v !== f.min : v >= f.min;
 }
 // The checks on the item itself, shared by the Inventory's query (matches) and an Organize rule (matchesItem).
