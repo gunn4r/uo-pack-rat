@@ -97,6 +97,7 @@ export function queryParams(q: ItemQuery): URLSearchParams {
   for (const l of q.loc) p.append("loc", l);
   for (const r of q.roots) p.append("root", String(r));
   for (const h of q.houses) p.append("house", h);
+  for (const w of q.within ?? []) p.append("within", String(w));
   if (q.rarity) p.set("rarity", q.rarity);
   if (q.rarityMin) p.set("rarityMin", q.rarityMin);
   if (q.rarityMax) p.set("rarityMax", q.rarityMax);
