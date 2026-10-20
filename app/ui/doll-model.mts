@@ -17,9 +17,13 @@ export function dollUrl(look: Look, worn: readonly Worn[], pair: readonly Worn[]
 
 // A message the card shows. Its buttons all open Settings › Game client, where the UO folder is chosen and the scripts reinstalled; the first is the primary one.
 export interface DollNote { tone: "info" | "warn"; title: string; text?: string; actions?: string[] }
-// What a card draws for a character (`name` null for no character): the look to draw, whether it is the stand-in (drawn gray), and the note under it.
+// What a card draws for a character (`name` null for no character): the look to draw, whether it is the stand-in (drawn gray), and the note under it. A look the player customized (`custom`) is drawn in color in its place; a stand-in keeps its note.
 export interface DollPlan { look: Look; gray: boolean; note: DollNote | null }
-export function dollPlan({ name, appearance, readsLook, client }: { name: string | null; appearance: Look | null | undefined; readsLook: boolean; client: string }): DollPlan {
+export function dollPlan(o: { name: string | null; appearance: Look | null | undefined; readsLook: boolean; client: string; custom?: Look | null | undefined }): DollPlan {
+  const plan = basePlan(o);
+  return o.custom ? { ...plan, look: o.custom, gray: false } : plan;
+}
+function basePlan({ name, appearance, readsLook, client }: { name: string | null; appearance: Look | null | undefined; readsLook: boolean; client: string }): DollPlan {
   if (name === null) return { look: lookOf(null).look, gray: true, note: { tone: "info", title: "No character is chosen, so the suit is shown on a stand-in body." } };
   const { look, standIn } = lookOf(appearance);
   if (standIn === "form") return { look, gray: true, note: { tone: "info", title: `${name} was in another form when scanned.`, text: "Scan again in their own form to show their look." } };

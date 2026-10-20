@@ -52,6 +52,7 @@ export type { ImportPasteApiResponse, RescanApiResponse } from "../api/import.mt
 // POST /api/forget and /api/forget-character, and GET /api/blacklist: app/api/inventory.mts.
 export type { ForgetApiResponse, BlacklistApiResponse } from "../api/inventory.mts";
 export type { ItemKindsApiResponse } from "../api/kinds.mts";
+export type { PaperdollOptionsApiResponse, CreationRace, Swatch, HairStyle } from "../api/paperdoll.mts";
 
 // ---------------------------------------------------------------- suit builder: optimize / runs
 

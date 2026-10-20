@@ -1,4 +1,4 @@
-// houses.mts — the house map: GET /api/houses[/<id>], GET /api/facet-map/<facet>.png, GET /api/item-art/<graphic>.png, GET /api/paperdoll.png, GET /api/house-map, PUT /api/house-map/<id>, GET /api/house-claims and DELETE /api/house-claims/<id>.
+// houses.mts — the house map: GET /api/houses[/<id>], GET /api/facet-map/<facet>.png, GET /api/item-art/<graphic>.png, GET /api/paperdoll.png, GET /api/paperdoll/options, GET /api/house-map, PUT /api/house-map/<id>, GET /api/house-claims and DELETE /api/house-claims/<id>.
 //
 // The routes, what each takes and answers:
 // - `GET /api/houses` (the houses scans captured: app/house-capture.mts, each with its container serials, only those a claim covers (issue #299); tiledataFrom says where tiledata.mul came from, or why there is none)
@@ -6,6 +6,7 @@
 // - `GET /api/facet-map/<facet>.png?x0&y0&x1&y1&w` (x-region: the region drawn, slid inside the facet; a facet overview from the same UO folder's facetNN.mul: app/facet-map.mts, app/png.mts; 404 {reason} when there is none)
 // - `GET /api/item-art/<graphic>.png?hue=<n>` (issue #174: an item's art from the same UO folder's artLegacyMUL.uop and hues.mul, cut to its opaque box, as an RGBA PNG: app/art.mts, app/png.mts; graphic and hue 0 to 65535 or a 400; an ETag over the files' stamps, the graphic and the hue, a 304 on If-None-Match; 404 {reason}: no-client, no-tazuo-profile, override-missing, missing, unreadable or no-art, never the path)
 // - `GET /api/paperdoll.png?body&hue&hair&beard&face&worn&pair&gray` (issue #57: a character's figure from the same UO folder's gumpartLegacyMUL.uop, tiledata.mul and hues.mul, with gump.def and Equipconv.def: app/paperdoll.mts. body and hue whole numbers to 65535; hair, beard and face each `graphic:hue` or left out; worn and pair each a comma list of at most 32 `graphic:hue` pieces, pair the other figure of a side-by-side pair, both cut to one box; gray=1 for the stand-in's gray; a 400 for anything else. An ETag over the files' stamps and the request, a 304 on If-None-Match; 404 {reason}: no-client, no-tazuo-profile, override-missing, missing, unsupported, unreadable, no-body or empty, never the path)
+// - `GET /api/paperdoll/options` (issue #57: the game's character-creation choices for the doll card's Customize popover, each race's skin and hair-colour swatches as "#rrggbb" from the UO folder's hues.mul and its hair and facial-hair styles named from Cliloc.enu: app/paperdoll-creation.mts; 404 {reason}: the UO folder's reasons, missing or unreadable, never the path)
 // - `GET /api/house-map`
 // - `PUT /api/house-map/<id>` {name, bounds?, areas?} (`<data>/house-map.json`, the player's house names and drawn areas: app/house-names.mts; an empty name with no areas removes the entry; 400 on a bad name, area or id, 409 when a change would grow it past 500 names or 1 MB)
 // - `GET /api/house-claims`
@@ -20,6 +21,7 @@ import type { OkApiResponse } from "../../api/routes.mts";
 import { plotBounds, plotSize } from "../../house-model.mts";
 import { checkHouseEntry, isHouseId, MAX_ENTRY_BYTES } from "../../house-names.mts";
 import type { Look, Worn } from "../../paperdoll-look.mts";
+import type { PaperdollOptionsApiResponse } from "../../api/paperdoll.mts";
 import { encodePng } from "../../png.mts";
 import { readBody } from "../../read-body.mts";
 import { claimsOver } from "../../store/house-claims.mts";
@@ -84,6 +86,12 @@ export function routes(ctx: ServerContext): Route[] {
       if ("reason" in got) return send(res, 404, { ok: false, reason: got.reason });
       const headers = { "cache-control": "private, no-cache", etag: got.etag };
       return req.headers["if-none-match"] === got.etag ? send(res, 304, "", "image/png", headers) : send(res, 200, got.png, "image/png", headers);
+    } },
+    // The Customize popover's choices (issue #57): the same for every character, from the UO folder's hues.mul and Cliloc.enu.
+    { method: "GET", path: "/api/paperdoll/options", handle: (_req, res) => {
+      const got = houseService.paperdollOptions();
+      if ("reason" in got) return send(res, 404, { ok: false, reason: got.reason });
+      return send(res, 200, got satisfies PaperdollOptionsApiResponse);
     } },
     // The house names and areas (issues #164, #10): GET the whole map; PUT /api/house-map/<id> {name, bounds?, areas?, …}
     // replaces that house's entry (an empty name with no areas removes it). Any id of the house-id shape is taken, listed or not: a name kept for a house

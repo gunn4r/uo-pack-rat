@@ -1,4 +1,4 @@
-// houses.mts — the house map's client files and models (issues #10, #164, #174): the UO folder, its tiledata.mul and facetNN.mul, the facet PNGs cut from them, the item art PNGs drawn from its artLegacyMUL.uop and hues.mul, the paperdoll figures drawn from its gumps (issue #57), and the house models built from the inventory, each kept while its inputs stay the same.
+// houses.mts — the house map's client files and models (issues #10, #164, #174): the UO folder, its tiledata.mul and facetNN.mul, the facet PNGs cut from them, the item art PNGs drawn from its artLegacyMUL.uop and hues.mul, the paperdoll figures drawn from its gumps and the Customize popover's choices (issue #57), and the house models built from the inventory, each kept while its inputs stay the same.
 //
 // map: services
 // owns: `createHousesService`
@@ -11,6 +11,9 @@ import { decodeFacet, type FacetBitmap } from "../facet-map.mts";
 import { decodeStatic, gumpArtName, hueOf, itemArtName, readHues, readUopEntry, readUopTable, toRgba, uopIndex, type Hues, type ReadAt, type StaticArt, type UopTable } from "../art.mts";
 import { createPaperdoll, figureBox, grayRgba, gumpSource, readEquipConv, readGumpDef } from "../paperdoll.mts";
 import type { Look, Worn } from "../paperdoll-look.mts";
+import { CREATION_LABELS, creationOptions } from "../paperdoll-creation.mts";
+import { readCliloc } from "../cliloc.mts";
+import type { PaperdollOptionsApiResponse } from "../api/paperdoll.mts";
 import { encodePngRgba } from "../png.mts";
 import { buildHouseModel, type HouseContainerInput, type HouseModel } from "../house-model.mts";
 import type { HouseSource } from "../house-capture.mts";
@@ -151,6 +154,22 @@ export function createHousesService({ settings, uoFolderFinder }: { settings: ()
     keep(key, out);
     return { png: out, etag };
   }
+  // The Customize popover's choices (issue #57): the game's character-creation lists with swatch colours from the UO folder's hues.mul and names from its Cliloc.enu (names fall back to "Style n" without it), kept while both files' stamps stay the same. `reason`: no folder, or no hues.mul (`missing`) or one that does not read (`unreadable`).
+  let optionsMemo: { key: string; options: PaperdollOptionsApiResponse | null } | null = null;
+  function paperdollOptions(): PaperdollOptionsApiResponse | { reason: string } {
+    const at = artFolder();
+    if ("reason" in at) return at;
+    const huesPath = join(at.folder, "hues.mul"), clilocPath = join(at.folder, "Cliloc.enu"), huesKey = stamp(huesPath);
+    if (!huesKey) return { reason: "missing" };
+    const key = `${huesKey}|${stamp(clilocPath) ?? ""}`;
+    if (optionsMemo?.key !== key) {
+      let hues: Hues | null, labels: Map<number, string> | null;
+      try { hues = readHues(readFileSync(huesPath)); } catch { hues = null; }
+      try { labels = readCliloc(readFileSync(clilocPath), CREATION_LABELS); } catch { labels = null; }
+      optionsMemo = { key, options: hues ? creationOptions(hues, labels ?? new Map()) : null };
+    }
+    return optionsMemo.options ?? { reason: "unreadable" };
+  }
   // The renderer over these files, or null when the gumps or tiledata do not read. Each gump read opens the file for that read only.
   function openPaperdoll(gumps: string, tiles: string, hues: string | null, gumpDef: string | null, equipConv: string | null): ReturnType<typeof createPaperdoll> | null {
     const read: ReadAt = (position, length) => {
@@ -184,6 +203,6 @@ export function createHousesService({ settings, uoFolderFinder }: { settings: ()
     }
     return m;
   }
-  return { tileData: houseTileData, facetBitmap, facetPng, itemArt, paperdoll, model: houseModel };
+  return { tileData: houseTileData, facetBitmap, facetPng, itemArt, paperdoll, paperdollOptions, model: houseModel };
 }
 export type HousesService = ReturnType<typeof createHousesService>;
