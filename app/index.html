@@ -109,7 +109,7 @@
 
     <!-- ========================================================== Suit Builder (ui/builder.mts, ui/runs.mts, ui/builder.css) -->
     <main class="screen" id="tab-builder" aria-labelledby="h-builder" hidden>
-      <!-- The sentence bar (issue #321): "Best suit for [character] using [build]", then Build Settings and Build; under it
+      <!-- The sentence bar (issue #321): "Best suit for [character] using [build]", then Auto Build Settings and Build; under it
            Automatic | Manual and Saved runs. The two pickers are components.mts comboboxes, made by ui/builder.mts. -->
       <header class="topbar b-topbar" id="b-topbar">
         <h1 id="h-builder" class="sr">Suit Builder</h1>
@@ -121,7 +121,7 @@
             <span class="b-tpl-top" id="b-tpl-top"></span>
           </span>
           <span class="b-top-acts">
-            <button class="btn btn-lg" type="button" id="b-settings" aria-expanded="false" aria-controls="b-drawer" aria-keyshortcuts="Meta+Comma Control+Comma"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"></path></svg><span>Build Settings</span><kbd class="kbd" aria-hidden="true">⌘,</kbd></button>
+            <button class="btn btn-lg" type="button" id="b-settings" aria-expanded="false" aria-controls="b-drawer" aria-keyshortcuts="Meta+Comma Control+Comma"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"></path></svg><span>Auto Build Settings</span><kbd class="kbd" aria-hidden="true">⌘,</kbd></button>
             <button class="btn btn-lg btn-primary" type="button" id="b-run" aria-keyshortcuts="Meta+Enter Control+Enter"><span>Build</span><kbd class="kbd" aria-hidden="true">⌘↵</kbd></button>
           </span>
         </div>
@@ -204,17 +204,18 @@
   </aside>
 </div>
 
-<!-- Build Settings drawer (ui/builder.mts, ui/builder.css): one tab panel per tab, each drawn from the session's profile -->
+<!-- Auto Build Settings drawer (ui/builder.mts, ui/builder.css): one tab panel per tab, each drawn from the session's profile.
+     Opened from Manual (`manual` on the root, ui/builder-manual.mts) it hides Buffs and Save as template and its footer fills the rest. -->
 <div class="drawer-root" id="b-drawer-root" hidden inert>
   <div class="scrim" data-drawer-close></div>
   <aside class="drawer drawer-wide" id="b-drawer" role="dialog" aria-modal="true" aria-labelledby="b-drawer-title">
     <header class="overlay-head">
-      <span class="overlay-titles"><h2 id="b-drawer-title">Build Settings</h2><span class="t-sm muted overlay-sub" id="b-drawer-tpl"></span></span>
+      <span class="overlay-titles"><h2 id="b-drawer-title">Auto Build Settings</h2><span class="t-sm muted overlay-sub"><span class="b-shared">Shared with Automatic · </span><span id="b-drawer-tpl"></span></span></span>
       <span class="spacer"></span>
-      <button class="btn btn-ghost btn-icon" type="button" id="b-drawer-close" data-drawer-close aria-label="Close Build Settings (Esc)"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"></path></svg></button>
+      <button class="btn btn-ghost btn-icon" type="button" id="b-drawer-close" data-drawer-close aria-label="Close Auto Build Settings (Esc)"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"></path></svg></button>
     </header>
     <div id="b-tpl-info" hidden></div>
-    <div class="b-tabs" role="tablist" aria-label="Build Settings">
+    <div class="b-tabs" role="tablist" aria-label="Auto Build Settings">
       <button class="b-tab" type="button" role="tab" id="b-tab-requirements" data-tab="requirements" aria-controls="b-tabp-requirements">Requirements</button>
       <button class="b-tab" type="button" role="tab" id="b-tab-weights" data-tab="weights" aria-controls="b-tabp-weights">Goals</button>
       <button class="b-tab" type="button" role="tab" id="b-tab-buffs" data-tab="buffs" aria-controls="b-tabp-buffs">Buffs</button>
@@ -227,6 +228,7 @@
       <button class="btn" type="button" id="b-save-tpl"><span>Save as template</span></button>
       <span class="t-sm muted b-changes" id="b-changes"></span>
       <button class="btn btn-primary" type="button" id="b-run-foot"><span>Build</span></button>
+      <button class="btn btn-primary" type="button" id="b-fill-foot"><span>Fill the rest</span></button>
     </footer>
   </aside>
 </div>
