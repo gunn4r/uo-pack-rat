@@ -334,3 +334,18 @@
 .art-img { display: block; max-width: 100%; max-height: 100%; }
 .art-img.art-2x { image-rendering: pixelated; max-width: none; max-height: none; }
 .art-tile > :not(.art-img) { position: absolute; right: 0; bottom: 0; }
+
+/* ---- the doll card (ui/doll-card.mts, issue #57): dark in both themes (data-mode="dark" takes the theme family's dark tokens), the head and the backdrop one surface, the backdrop a radial gradient that reaches the card's own colour before any edge (closest-side), so there is no seam; the figure frameless, at whole-pixel scale */
+.doll-card { display: block; overflow: hidden; }
+.doll-head { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4) 0; min-height: 48px; }
+.doll-name { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 var(--space-2); min-width: 0; flex: 1 1 auto; }
+.doll-name h2 { font-family: var(--font-display); font-size: var(--text-md); line-height: var(--lh-md); font-weight: var(--weight-semibold); color: var(--color-text); }
+.doll-controls { display: flex; align-items: center; gap: var(--space-2); flex: none; }
+.doll-stage { display: flex; justify-content: center; align-items: center; padding: var(--space-6) var(--space-6) var(--space-8); background: radial-gradient(ellipse closest-side at 50% 48%, var(--doll-centre) 0%, var(--color-surface) 88%); }
+.doll-stage.doll-compact { padding: var(--space-4); }
+.doll-figs { display: flex; justify-content: center; align-items: flex-end; gap: var(--space-6); flex-wrap: wrap; }
+.doll-fig { display: flex; flex-direction: column; align-items: center; gap: var(--space-2); margin: 0; }
+.doll-img { display: block; image-rendering: pixelated; max-width: 100%; height: auto; }
+.doll-empty { display: flex; flex: 1 1 auto; }
+.doll-note:empty { display: none; }
+.doll-note { padding: 0 var(--space-4) var(--space-4); }

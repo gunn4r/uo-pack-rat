@@ -22,6 +22,7 @@
 
 /* ---------------------------------------------------------------- Britannia, light: parchment and brass */
 [data-theme="britannia"][data-mode="light"], [data-theme="britannia"] [data-mode="light"] {
+  --doll-centre: #150e08;           /* the doll card's backdrop centre: always the dark leather's, as the card is always dark */
   /* surfaces and plain text */
   --color-bg: #efe3c4;              /* the logo parchment, under the grain */
   --color-surface: #faf4e3;         /* aged paper: cards, tables, sidebar, top bar */
@@ -98,6 +99,7 @@
 
 /* ---------------------------------------------------------------- Britannia, dark: wood, leather and brass */
 [data-theme="britannia"][data-mode="dark"], [data-theme="britannia"] [data-mode="dark"] {
+  --doll-centre: #150e08;           /* the doll card's backdrop centre: dark leather */
   --color-bg: #1a120b;              /* dark wood, under the grain */
   --color-surface: #2a1c11;         /* leather */
   --color-surface-subtle: #322216;

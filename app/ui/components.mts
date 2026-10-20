@@ -35,6 +35,7 @@ export const FLEX_CLASSES = [
   "tbl-foot", "rowact", "overlay-head", "overlay-foot", "overlay-titles", "toast", "toasts", "msg", "msg-body", "msg-actions",
   "meter", "stepper", "step", "step-dot", "kv", "kv-k", "kv-v", "resist", "slot", "drawer", "drawer-body",
   "dialog", "dialog-body", "dialog-foot", "pop-body", "tipwrap", "empty-state", "art-tile", "cbx", "cbx-text", "cbx-opt", "cbx-foot",
+  "doll-head", "doll-name", "doll-controls", "doll-stage", "doll-figs", "doll-fig", "doll-empty",
 ] as const;
 
 // ---------------------------------------------------------------- icons

@@ -1,9 +1,10 @@
-// paperdoll.mts — the paperdoll figure (issue #57), composed from the player's own client files the way ClassicUO's paperdoll draws it (references at ClassicUO ee79d7e): the body gump by body graphic (PaperDollInteractable.UpdateUI), each worn piece's gump from its tiledata anim through Equipconv.def and gump.def (GetAnimID, GumpsLoader), the layer order (PaperdollOrder.Build) and the layers a robe, legs or a hood hide (MobileView.IsCovered). Two rules of its own: a 0x0001 lining pixel is drawn only over something already drawn, and a body outside the human, elf and gargoyle set is not drawn (the caller shows the stand-in). Pure: the caller passes the gumps, tiledata and hues.
+// paperdoll.mts — the paperdoll figure (issue #57), composed from the player's own client files the way ClassicUO's paperdoll draws it (references at ClassicUO ee79d7e): the body gump by body graphic (PaperDollInteractable.UpdateUI), each worn piece's gump from its tiledata anim through Equipconv.def and gump.def (GetAnimID, GumpsLoader), the layer order (PaperdollOrder.Build) and the layers a robe, legs or a hood hide (MobileView.IsCovered). Two rules of its own: a 0x0001 lining pixel is drawn only over something already drawn, and a body outside the human, elf and gargoyle set (app/paperdoll-look.mts) is not drawn (the caller shows the stand-in). Pure: the caller passes the gumps, tiledata and hues.
 //
 // map: house
-// owns: `LAYER`, `CANVAS`, `readGumpDef`, `readEquipConv`, `gumpSource`, `paperdollOrder`, `isCovered`, `drawsBody`, `lookOf`, `STAND_IN`, `createPaperdoll`, `figureBox`, `greyRgba`
+// owns: `LAYER`, `CANVAS`, `readGumpDef`, `readEquipConv`, `gumpSource`, `paperdollOrder`, `isCovered`, `createPaperdoll`, `figureBox`, `grayRgba`
 import { decodeGump, gumpArtName, hueFor, huePixel, opaqueBox, readUopEntry, uopIndex, type Box, type Hues, type ReadAt, type StaticArt, type UopTable } from "./art.mts";
 import { FLAG, type TileData } from "./tiledata.mts";
+import { BODY_GUMP, type Look, type Worn } from "./paperdoll-look.mts";
 
 // ClassicUO's Layer numbers.
 export const LAYER = {
@@ -111,22 +112,8 @@ export function gumpSource(table: UopTable, read: ReadAt, defs: GumpDefs, cacheB
 }
 
 // ---- body -----------------------------------------------------------------------------------------------------------
-// The body gump of each body the figure draws (PaperDollInteractable.UpdateUI): human, elf, gargoyle (alive 666/667, dead 694/695) and the GM body 0x3DB.
-const BODY_GUMP = new Map<number, number>([[400, 0x000c], [401, 0x000d], [403, 0x000d], [605, 0x000e], [606, 0x000f], [666, 0x029a], [694, 0x029a], [667, 0x0299], [695, 0x0299], [0x03db, 0x000c]]);
 const FEMALE = new Set([401, 403, 606, 667, 695]);
 const GARGOYLE = new Set([666, 667, 694, 695]);
-// Whether the figure draws this body. Any other body is a form's (Horrific Beast, a polymorph and the like): the caller shows the stand-in instead of ClassicUO's fallback body.
-export const drawsBody = (body: number): boolean => BODY_GUMP.has(body);
-
-export interface Worn { graphic: number; hue: number }
-export interface Look { body: number; hue: number; hair: Worn | null; beard: Worn | null; face: Worn | null }
-// The stand-in: a human male body with no hue, no hair and no beard.
-export const STAND_IN: Look = { body: 400, hue: 0, hair: null, beard: null, face: null };
-// The look to draw for a character's scanned appearance: that look, or the stand-in when there is none ("none") or its body is not one the figure draws ("form"), whose hair, beard and face are not used either.
-export function lookOf(appearance: Look | null | undefined): { look: Look; standIn: "none" | "form" | null } {
-  if (!appearance) return { look: STAND_IN, standIn: "none" };
-  return drawsBody(appearance.body) ? { look: appearance, standIn: null } : { look: STAND_IN, standIn: "form" };
-}
 
 // ---- gump id ----------------------------------------------------------------------------------------------------------
 // GetAnimID: a dead gargoyle's shroud, then Equipconv.def for this body, then the female (60000) or male (50000) offset, taking the other one when that gump is missing. Not ported: Bodyconv.def (no human, elf or gargoyle body is converted) and tileart.uop's appearance remap.
@@ -389,8 +376,8 @@ export function figureBox(figures: StaticArt[], pad = 6): Box | null {
   return box && { x0: Math.max(0, box.x0 - pad), y0: Math.max(0, box.y0 - pad), x1: Math.min(CANVAS.width - 1, box.x1 + pad), y1: Math.min(CANVAS.height - 1, box.y1 + pad) };
 }
 
-// The stand-in's grey: each RGBA pixel set to its luminance (0.30 R + 0.59 G + 0.11 B), in place.
-export function greyRgba(rgba: Buffer): Buffer {
+// The stand-in's gray: each RGBA pixel set to its luminance (0.30 R + 0.59 G + 0.11 B), in place.
+export function grayRgba(rgba: Buffer): Buffer {
   for (let o = 0; o < rgba.length; o += 4) {
     const v = Math.round(0.3 * rgba[o]! + 0.59 * rgba[o + 1]! + 0.11 * rgba[o + 2]!);
     rgba[o] = rgba[o + 1] = rgba[o + 2] = v;

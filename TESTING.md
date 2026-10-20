@@ -69,6 +69,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `app/contracts.test.mts` — folds every adapter's fixture.scan.json against its own capabilities.json, checking the two agree with each other and with the shared scan and bridge schemas.
 - `app/diagnostics.test.mts` — `app/diagnostics.mts` and the per-slot bound it shares with the MIP (`app/mip.mts` propertyReach, issue #217).
 - `app/dialog-prompt.test.mts` — `app/ui/dialog.mts`'s `normalizePromptValue()`, the DOM-free part of the in-page prompt.
+- `app/doll-model.test.mts` — `app/ui/doll-model.mts` (issue #57): what a doll card shows, as data.
 - `app/evaluate.test.mts` — `evaluateSuit` (`app/evaluate.mts`, issue #216) against the three assemblies it replaced.
 - `app/facet-map.test.mts` — `app/facet-map.mts` (issue #164): decoding a facetNN.mul overview bitmap and cutting a region out of it.
 - `app/fc-cap.test.mts` — the Faster Casting cap by casting school (issue #213): `fcCapFor` in `app/vault-lib.mts` and where the cap goes.
@@ -103,7 +104,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `app/organize-state.test.mts` — `app/organize-state.mts` (issue #11): trip results read into the overlay, settled entries dropped and a damaged state file salvaged.
 - `app/organize-strategies.test.mts` — `app/organize-strategies.mts`, Organize's Auto mode (issue #11, spec §5).
 - `app/organize.test.mts` — `app/organize.mts`, Organize's planner (issue #11), on hand-built house scans folded by the real fold.
-- `app/paperdoll.test.mts` — `app/paperdoll.mts` (issue #57), the paperdoll figure, on synthetic client files.
+- `app/paperdoll.test.mts` — `app/paperdoll.mts` and `app/paperdoll-look.mts` (issue #57), the paperdoll figure, on synthetic client files.
 - `app/png.test.mts` — `app/png.mts` (issue #164), the PNG writer.
 - `app/profile-edits.test.mts` — `app/profile-edits.mts`: each ProfileEdit made on a profiles file (buffs, a label, a character's settings kept around what the panel doesn't edit, a deleted character, a template put, updated, deleted and renamed with its characters following), each made again changing nothing more, the ones that can't be made refused with why (a template gone, a name taken, a label for no such character), a list stopping at the first refusal, and the shape check.
 - `app/profiles-patch.test.mts` — `patchProfiles` (PATCH /api/profiles' save, `app/http/routes/prefs.mts`) when two saves race the first read of a v2 file: neither loses the other's edits.

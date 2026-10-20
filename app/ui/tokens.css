@@ -66,6 +66,7 @@
 
 /* ---------------------------------------------------------------- Default theme, light (also the base) */
 :root, [data-theme="default"][data-mode="light"], [data-theme="default"] [data-mode="light"] {
+  --doll-centre: #0a0e0f;           /* the doll card's backdrop centre (ui/doll-card.mts): the card is always dark, so both modes carry the dark value */
   /* brand constants */
   --brand-teal: #1f4a4f; --brand-brass: #c9a24a; --brand-crimson: #8e2433; --brand-leather: #8a5a2b; --brand-parchment: #efe3c4;
 
@@ -150,6 +151,7 @@
 
 /* ---------------------------------------------------------------- Default theme, dark */
 [data-theme="default"][data-mode="dark"], [data-theme="default"] [data-mode="dark"] {
+  --doll-centre: #0a0e0f;           /* the doll card's backdrop centre (ui/doll-card.mts); the card is dark in both modes */
   --color-bg: #0f1516; --color-surface: #151c1d; --color-surface-subtle: #1b2324; --color-surface-sunken: #0b1011;
   --color-surface-raised: #1d2627; --color-surface-inverse: #e6ecec;
   --color-text: #e6ecec; --color-text-muted: #9eafb1; --color-text-faint: #8fa1a3; --color-placeholder: #9eafb1;

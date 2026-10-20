@@ -13,6 +13,7 @@ import type { BridgeView } from "./messages.mts";
 import { containerChain, bridgeFeatures, bridgeRefusal, newestScanAdapter, BRIDGE_OFFLINE, BRIDGE_ACTION_LABELS } from "../vault-lib.mts";
 import type { BridgeAction, Item } from "../vault-lib.mts";
 import type { BridgeQueueApiResponse, BridgeStatusApiResponse } from "./api-types.mts";
+import { showSettings } from "./nav.mts";
 
 // ---------------------------------------------------------------- bridge (Highlight / Grab / Go to)
 // What a command needs of its target: an item, or a container highlighted as itself (the Containers view's
@@ -211,20 +212,9 @@ export function renderDataDirNotice(): void {
   if (box.hidden) { box.replaceChildren(); return; }
   box.replaceChildren(
     el("span", {}, text!),
-    el("a", { class: "btn btn-sm", href: "#/settings", onclick: (e: MouseEvent) => { e.preventDefault(); showDataSection(); } }, "Show details"),
+    el("a", { class: "btn btn-sm", href: "#/settings", onclick: (e: MouseEvent) => { e.preventDefault(); showSettings("set-data"); } }, "Show details"),
     el("button", { type: "button", class: "btn btn-ghost btn-sm", onclick: () => { dismissedNotice = full; renderDataDirNotice(); } }, "Dismiss"),
   );
-}
-// Settings › Data, scrolled into view once Settings has drawn it (its render waits on GET /api/setup).
-function showDataSection(): void {
-  location.hash = "#/settings";
-  const until = Date.now() + 3000;
-  const tick = (): void => {
-    const sec = document.getElementById("set-data");
-    if (sec?.offsetParent) sec.scrollIntoView({ block: "start" });
-    else if (Date.now() < until) setTimeout(tick, 50);
-  };
-  tick();
 }
 
 // ---- inventory
