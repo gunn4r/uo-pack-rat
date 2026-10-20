@@ -46,7 +46,7 @@ export const SCREENS: Record<string, string | string[]> = {
   "organize-model": ["ui-organize", "ui-map"], kinds: "ui-organize",
   "builder-buffs": "ui-builder-*", "builder-header": "ui-builder-*", "builder-templates": "ui-builder-*", "builder-requirements": "ui-builder-*", "builder-job": "ui-builder-*", "builder-manual": "ui-builder-*", "manual-model": "ui-builder-*",
   "item-browser": ["ui-state", "ui-builder-*"],
-  "doll-card": "ui-contrast", "doll-model": "ui-contrast", "doll-customizer": "ui-contrast", "customize-model": "ui-contrast",
+  "doll-card": "ui-contrast", "doll-model": "ui-contrast", "sheet-doll": ["ui-state", "ui-contrast", "ui-builder-*"], "doll-customizer": "ui-contrast", "customize-model": "ui-contrast",
 };
 
 // app/ui file stems that select every Electron test, each with the reason: the page's infrastructure, and the pieces and data

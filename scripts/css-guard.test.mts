@@ -71,9 +71,9 @@ const ALLOWED: Record<string, [reason: string, selectors: string[]][]> = {
     ["look: a set cap or planned skill field is outlined in the accent, a negative weight's ± is tinted warn, a pressed row button is filled, a planned buff token is dashed, the buff tags are tinted, the pick list is regular weight", [".pr .rule-row .input.cap-set:not([aria-invalid=\"true\"])", ".pr .btn.b-wsign[aria-pressed=\"true\"]", ".pr .bf-skill .input.num.bf-plan", ".pr .rowact .btn.on", ".token.bf-planned", ".tag.bf-tag-accent", ".tag.bf-tag-ok", ".pr .b-pick-list .menu-item"]],
   ],
   "characters.css": [
-    [PLACEMENT, ["#char-table .char-name .badge", ".res-cell .meter", ".kpi-value .badge", ".sheet .slot > .badge", ".pop.item-pop .pop-body > .btn"]],
+    [PLACEMENT, ["#char-table .char-name .badge", ".res-cell .meter", ".kpi-value .badge", ".pop.item-pop .pop-body > .btn"]],
     ["smaller: the sheet's tight key-value lists and the item popover", [".kv.kv-tight .kv-k", ".kv.kv-tight .kv-v", ".pop.item-pop .pop-body"]],
-    ["look: a resist at its cap is outlined in success; the sheet's slots are buttons, with the slot's own look kept on hover and focus", [".resist.at-cap", ".pr .sheet button.slot", ".sheet .slot.empty", ".pr .sheet button.slot:hover", ".pr .sheet button.slot:focus-visible"]],
+    ["look: a resist at its cap is outlined in success", [".resist.at-cap"]],
   ],
   "house-map.css": [
     [PLACEMENT, [".map-levels > .pill", "#tab-map .map-page > :is(.msg, .map-empty, .panel)", ".map-area-row > .btn", ".map-area-new-field > .input", ".map-stage > .msg", ".map-house-title > .btn", ".map-where-coords > .btn", ".map-drawer-fill > .meter", ".map-drawer-tabs > .seg", ".map-drawer-pick > .select", ".map-drawer-tools > .input", ".map-drawer-body > .msg", ".map-item-l1 > .tag", ".map-item-l2 > .rar-tier", ".sp-l2 > .meter"]],

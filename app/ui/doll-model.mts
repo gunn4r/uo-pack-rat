@@ -1,7 +1,7 @@
 // ui/doll-model.mts — what a doll card (issue #57) shows, as data: the figure's GET /api/paperdoll.png address, whether it is a stand-in and why, and the message under or in place of the figure. Pure, so a node test covers it.
 //
 // map: house
-// owns: `dollUrl`, `dollPlan`, `failureNote`, `dollRequests`, `DOLL_REASONS`, `DollNote`, `DollPlan`
+// owns: `dollUrl`, `dollPlan`, `failureNote`, `dollRequests`, `wornPieces`, `DOLL_REASONS`, `DollNote`, `DollPlan`
 import { lookOf, type Look, type Worn } from "../paperdoll-look.mts";
 
 const piece = (w: Worn): string => `${w.graphic}:${w.hue}`;
@@ -13,6 +13,11 @@ export function dollUrl(look: Look, worn: readonly Worn[], pair: readonly Worn[]
   if (pair) q.set("pair", pair.map(piece).join(","));
   if (gray) q.set("gray", "1");
   return `/api/paperdoll.png?${q.toString().replace(/%3A/g, ":").replace(/%2C/g, ",")}`;
+}
+
+// The pieces a figure wears: each one's graphic and hue (a piece with no graphic, from a scan that did not record one, is left out). The server takes each one's layer from tiledata.
+export function wornPieces(pieces: ReadonlyArray<{ graphic?: number | null | undefined; hue?: number | null | undefined }>): Worn[] {
+  return pieces.flatMap((it) => (it.graphic != null ? [{ graphic: it.graphic, hue: it.hue ?? 0 }] : []));
 }
 
 // A message the card shows. Each button opens Settings at the part it names: the UO folder card (`uofolder`) or the Game client's scanner row (`scanner`, where the scanner is reinstalled or copied; the app has no separate scan guide). The first is the primary one.
