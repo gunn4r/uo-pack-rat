@@ -1,11 +1,12 @@
 // house-claims.mts — <data>/house-claims.json (issue #299): the houses the player claimed, which the TazUO panel writes too: only valid entries read, which claims a house's bounds fall under, and the claims made at the first start from the houses already named. A TazUO scan opens ground containers, and captures the house, only inside one, and the House map shows only those. A JSON list of {id, facet, bounds: {x0, y0, x1, y1}, claimedAt, by?} that TazUO's packrat-panel.py writes too (Claim this house), read there with the same checks (adapters/_shared/tazuo/claims.py): the entry schema app/schema/house-claims.v1.schema.json, whose accept and reject cases both run (app/fixtures/contract-cases/house-claims.json); `by` is the character that claimed it, left out of the claims the app makes itself.
 //
 // map: server
-// owns: `createHouseClaimsStore`, `claimsOver`, `claimsFromHouseMap`, `MAX_CLAIMS`
+// owns: `createHouseClaimsStore`, `claimsOver`, `claimedHouses`, `claimsFromHouseMap`, `MAX_CLAIMS`
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { APP_DIR } from "../config.mts";
 import type { HouseMapDoc } from "../house-names.mts";
+import { tileBounds, type HouseSource } from "../house-capture.mts";
 import type { HouseClaimsV1Item, HouseClaimsV1ItemBounds } from "../schema/types.d.mts";
 import { validate, type ValidatorSchema } from "../schema/validate.mts";
 import { readJsonFile, updater, writeJsonFile } from "./json-file.mts";
@@ -36,6 +37,8 @@ export function createHouseClaimsStore(file: string) {
 // The claims a house with bounds `box` on `facet` falls under: on the same facet (an unknown one matches only an unknown one), their bounds overlapping, so a house customized since it was claimed (a new id) still counts.
 export const claimsOver = (claims: readonly HouseClaim[], facet: number | null, box: ClaimBounds): HouseClaim[] =>
   claims.filter((c) => c.facet === facet && c.bounds.x0 <= box.x1 && box.x0 <= c.bounds.x1 && c.bounds.y0 <= box.y1 && box.y0 <= c.bounds.y1);
+// The captured houses a claim covers: the ones on the House map.
+export const claimedHouses = (claims: readonly HouseClaim[], houses: readonly HouseSource[]): HouseSource[] => houses.filter((h) => claimsOver(claims, h.facet, tileBounds(h.tiles)).length);
 
 // The claims for the houses the player named or drew areas for in `map` (house-map.json), less the ones removed from the House map before claims (issue #298's `forgotten`): what the app writes when house-claims.json does not exist yet, so houses already in use stay claimed. A house's bounds are those saved with its entry, else the corner tile its id names, which lies inside the house.
 export function claimsFromHouseMap(map: HouseMapDoc, claimedAt: string): HouseClaim[] {
