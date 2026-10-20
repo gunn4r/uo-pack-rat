@@ -85,7 +85,9 @@ Part of the UI docs: [`docs/ui.md`](../ui.md) has the hard rules, tokens, compon
 
 The filter state is the browser's `query`, the shape `item-query.mts`'s `parseItemQuery` reads. Every control goes through `setQuery()`, which redraws the chips (in place, so an open popover keeps its anchor) and the active strip, and refetches.
 
-- **Any-of lists:** Character, Slot, Location (as bag texts `loc` and whole root containers `root`), Kind and Weapon skill.
+- **Any-of lists:** Character, Slot, Location (as bag texts `loc` and whole root containers `root`), Kind, Type and Weapon skill.
+  - Type (`type=shield`) is what a piece is, from `domain/pools.mts`'s `itemTypeOf`: Shield, Two-handed weapon, One-handed weapon, Spellbook, Armor, Jewelry, Clothing or Other. A weapon (`isWeapon`: a held piece with a Skill Required or Weapon Speed line) is one- or two-handed by its tooltip's "One-handed Weapon" / "Two-handed Weapon" line, which classify reads ahead of the name; a held piece that is no weapon is a Shield in the two-handed slot, whatever its name, and a Spellbook in the one-handed one. Everything that is not gear is Other.
+  - The chip sits beside Kind, with the facets' `types` counts. A browser fixed to slots (the Manual picker) offers only the types those slots hold (`typesOfSlot`), and hides the chip when that is one. While Type names no weapon type, the Weapon skill chip is hidden unless set.
   - Weapon skill (issue #188) is written `wskill=swordsmanship`, with lower-cased skill names, and its tokens read "Weapon skill: Swordsmanship".
   - The facets' `weaponSkills` counts each skill from `vault-lib.mts`'s `weaponSkillsOf`. A Use Best Weapon Skill weapon also counts under Swordsmanship, Fencing and Mace Fighting, which the chip's popover says.
 - **Rarity** is a range (`rarityMin`, `rarityMax`). An item with no tier counts as below every tier, and a Reforged tier ranks with its base tier.

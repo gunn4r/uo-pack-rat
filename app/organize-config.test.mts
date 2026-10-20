@@ -47,6 +47,8 @@ test("[fast] checkOrganizeConfig accepts an empty setup and a full one", () => {
   // Issue #188: and pick weapon skills; one saved before them (r1 here) still reads.
   built.rules[1]!.match.query.wskill = ["Fencing", "mace fighting"];
   built.rules[1]!.match.skipSuits = true;
+  // And pick types; one saved before them still reads.
+  built.rules[1]!.match.query.type = ["Shield", "spellbook"];
   const b = checkOrganizeConfig(built);
   assert.equal(b.ok, true, b.ok ? "" : b.error);
 });
@@ -72,6 +74,7 @@ test("[fast] checkOrganizeConfig refuses each broken part and names it", () => {
     ["too many required tags", (c) => { c.rules[0]!.match.query.tags = Array(11).fill("brittle"); }, /rules\[0\]\.match\.query\.tags must be a list of at most 10 tags/],
     ["too many required yes/no properties", (c) => { c.rules[0]!.match.query.flags = Array(11).fill("mage armor"); }, /rules\[0\]\.match\.query\.flags must be a list of at most 10 properties/],
     ["an unknown weapon skill", (c) => { c.rules[0]!.match.query.wskill = ["wrestling"]; }, /rules\[0\]\.match\.query\.wskill must be a list of at most 5 weapon skills \(archery, swordsmanship, fencing, mace fighting, throwing\)/],
+    ["an unknown type", (c) => { c.rules[0]!.match.query.type = ["wand"]; }, /rules\[0\]\.match\.query\.type must be a list of at most 8 types \(shield, two-handed, one-handed, spellbook, armor, jewelry, clothing, other\)/],
     ["too many weapon skills", (c) => { c.rules[0]!.match.query.wskill = Array(6).fill("fencing"); }, /rules\[0\]\.match\.query\.wskill must be a list of at most 5 weapon skills/],
     ["a skipSuits that is not true or false", (c) => { c.rules[0]!.match.skipSuits = "yes" as unknown as boolean; }, /rules\[0\]\.match\.skipSuits must be true or false/],
     ["a target that is not labelled", (c) => { c.rules[0]!.targets = [0x40000009]; }, /not a labeled container/],

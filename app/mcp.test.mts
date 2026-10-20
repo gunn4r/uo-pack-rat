@@ -305,6 +305,10 @@ test("[fast] search_items: property rules the route cannot parse are refused, an
     assert.match((await call(port, "search_items", { props: ["nosuchkey:5"] })).text, /no item has the property "nosuchkey"/);
     const total = async (args: Record<string, unknown>): Promise<number> => { const r = await call(port, "search_items", args); assert.equal(r.ok, true, r.text); return r.data.total; };
     assert.equal(await total({ props: ["LRC:20"] }), await total({ props: ["lrc:20"] }));
+    // The Type filter, as the facets name its types.
+    const types = (await call(port, "inventory_facets")).data.types as Array<{ name: string; count: number }>;
+    const shields = types.find((t) => t.name === "shield")!;
+    assert.equal(await total({ types: ["shield"] }), shields.count);
     // The extras the Inventory's property filter also offers.
     for (const rule of ["strReq:le:60", "weight:le:5"]) assert.ok(await total({ props: [rule] }) > 0, rule);
     assert.ok(((await call(port, "inventory_facets")).data.extraKeys as string[]).includes("strReq"));

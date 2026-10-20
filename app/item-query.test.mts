@@ -1,6 +1,6 @@
 // item-query.test.mts — `app/item-query.mts`, the item-list filtering, sorting, paging and faceting shared by the page and `GET /api/items`.
 //
-// `app/item-query.mts` (the pure item-list filtering/sorting/paging/faceting shared by the browser and the server's `GET /api/items`): `parseItemQuery`'s defaults and clamping, the list filters taken as repeated params (character, slot, kind, location, root container), prop rules with an operator (at least, at most, exactly), every `applyItemQuery` filter (kind, slot, location, root, character, rarity and rarity-at-least, seenDays, slayer, nogarg, med, hideTags, a prop rule incl. `EXTRA_COLS` keys) and sort (by prop column, by rarity ladder order), paging (offset/limit against `total`/`pieces`), group mode's JSON-safe shape and its stack and piece counts, `facetsOf` (including the places the Location filter's tree is built from), `rarityRank` (a Reforged tier with its base tier, eight tiers in both shipped ladders), `rarityMax` (an item with no tier or one off the ladder counting as below every tier, an unknown ceiling ignored, a floor above the ceiling matching nothing), and `matchesItem` (an Organize rule's per-item checks, agreeing with `applyItemQuery` on every filter a rule keeps, its free text never matching location text), and `unravel`/`unravelShow` read off the query string (issue #271). All `[fast]`.
+// `app/item-query.mts` (the pure item-list filtering/sorting/paging/faceting shared by the browser and the server's `GET /api/items`): `parseItemQuery`'s defaults and clamping, the list filters taken as repeated params (character, slot, kind, location, root container), prop rules with an operator (at least, at most, exactly), every `applyItemQuery` filter (kind, type by `itemTypeOf`, slot, location, root, character, rarity and rarity-at-least, seenDays, slayer, nogarg, med, hideTags, a prop rule incl. `EXTRA_COLS` keys) and sort (by prop column, by rarity ladder order), paging (offset/limit against `total`/`pieces`), group mode's JSON-safe shape and its stack and piece counts, `facetsOf` (including the places the Location filter's tree is built from), `rarityRank` (a Reforged tier with its base tier, eight tiers in both shipped ladders), `rarityMax` (an item with no tier or one off the ladder counting as below every tier, an unknown ceiling ignored, a floor above the ceiling matching nothing), and `matchesItem` (an Organize rule's per-item checks, agreeing with `applyItemQuery` on every filter a rule keeps, its free text never matching location text), and `unravel`/`unravelShow` read off the query string (issue #271). All `[fast]`.
 //
 // applyItemQuery's predicate and sort keep parity with what the Inventory screen used to do on its own. Hand-built fixture items (no scan files, no server) keep this fast and pure.
 import { test } from "node:test";
@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import { EXTRA_COLS, colVal, rarityRank, parseItemQuery, applyItemQuery, facetsOf, matchesItem } from "./item-query.mts";
 import type { ItemQueryRows, ItemQueryGroups, RuleQuery } from "./item-query.mts";
-import { KINDS, flagLabel, flagKeys } from "./vault-lib.mts";
+import { KINDS, flagLabel, flagKeys, itemTypeOf, typesOfSlot } from "./vault-lib.mts";
 import type { Item } from "./vault-lib.mts";
 import type { RulesV1RarityItem } from "./schema/types.d.mts";
 
@@ -60,7 +60,7 @@ const names = (r: Item[]): string[] => r.map((it) => it.name);
 
 test("[fast] parseItemQuery: defaults with no params", () => {
   const q = parseItemQuery(new URLSearchParams());
-  assert.deepEqual(q, { q: "", chars: [], slot: [], loc: [], roots: [], rarity: "", rarityMin: "", rarityMax: "", kind: [], seenDays: 0, slayer: "", nogarg: false, med: false, hideTags: [], tags: [], props: [], flags: [], wskill: [], group: false, sort: "name", dir: 1, offset: 0, limit: 200 });
+  assert.deepEqual(q, { q: "", chars: [], slot: [], loc: [], roots: [], rarity: "", rarityMin: "", rarityMax: "", kind: [], seenDays: 0, slayer: "", nogarg: false, med: false, hideTags: [], tags: [], props: [], flags: [], wskill: [], type: [], group: false, sort: "name", dir: 1, offset: 0, limit: 200 });
 });
 
 test("[fast] parseItemQuery: clamps limit to [1, 500], offset to >= 0", () => {
@@ -323,6 +323,24 @@ test("[fast] facetsOf: extraKeys lists the numeric extras, never a skill bonus o
   const f = facetsOf(SPLINTERS);
   assert.deepEqual(f.extraKeys, ["splintering weapon", "weapon speed"]);
   assert.deepEqual(f.propKeys, []);
+});
+
+test("[fast] itemTypeOf: a weapon by its hands, a held piece that is no weapon a shield or a spellbook, the rest by slot group; the type filter and facet", () => {
+  const held = (name: string, slot: string, twoHanded: boolean, skillReq: string | null) => mk({ name, slot, twoHanded, skillReq, gear: true });
+  const items = [held("Heater Shield", "twoHanded", false, null), held("Gnarled Staff Of Restoration", "twoHanded", true, "Mace Fighting"), held("Katana", "oneHanded", false, "Swordsmanship"),
+    held("Spellbook", "oneHanded", false, null), mk({ name: "Plate Gorget", slot: "neck", gear: true }), mk({ name: "Gold Ring", slot: "ring", gear: true }), mk({ name: "Cloak", slot: "cloak", gear: true }),
+    mk({ name: "Bandage", kind: "bandage", slot: null, gear: false }), mk({ name: "Odd Thing", slot: null, gear: true })];
+  assert.deepEqual(items.map(itemTypeOf), ["shield", "two-handed", "one-handed", "spellbook", "armor", "jewelry", "clothing", "other", "other"]);
+  assert.equal(itemTypeOf(mk({ name: "Bow", slot: "twoHanded", twoHanded: true, gear: true, extras: { "weapon speed": 4.25 } })), "two-handed");
+  const rows = (s: string): string[] => names((applyItemQuery(items, parseItemQuery(new URLSearchParams(s)), ctx) as ItemQueryRows).rows).sort();
+  assert.deepEqual(rows("type=shield"), ["Heater Shield"]);
+  assert.deepEqual(rows("type=Shield,two-handed"), ["Gnarled Staff Of Restoration", "Heater Shield"], "any of them, in any case");
+  assert.deepEqual(facetsOf(items).types, [{ name: "shield", count: 1 }, { name: "two-handed", count: 1 }, { name: "one-handed", count: 1 }, { name: "spellbook", count: 1 },
+    { name: "armor", count: 1 }, { name: "jewelry", count: 1 }, { name: "clothing", count: 1 }, { name: "other", count: 2 }]);
+  assert.equal(matchesItem(items[0]!, rule("type=shield")), true, "an Organize rule takes it too");
+  assert.equal(matchesItem(items[1]!, rule("type=shield")), false);
+  assert.deepEqual(typesOfSlot("twoHanded"), ["two-handed", "shield"]);
+  assert.deepEqual(typesOfSlot("helmet"), ["armor"]);
 });
 
 test("[fast] applyItemQuery: prop rules at most and exactly", () => {

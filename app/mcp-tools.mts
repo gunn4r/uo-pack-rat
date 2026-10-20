@@ -9,7 +9,7 @@
 //
 // map: mcp
 // owns: `TOOLS`, `INSTRUCTIONS`, `ToolContext`
-import { withCurrentActions, BRIDGE_ACTION_LABELS, BRIDGE_OFFLINE, GEAR_SLOTS, bridgeFeatures, bridgeRefusal, containerChain, newestScanAdapter, fullOf, isPseudoCharacter, NOBODY, RESIST_SKILL_KEY, resistMinimum, toOptItem, totalsOf, TRASH_RE, compileGoals, goalsError, GOAL_LEFTOVERS, GOAL_STRATEGIES, STRATEGY_HELP, SWING_GOALS, RANK_IMPORTANCE, LEFTOVER_IMPORTANCE } from "./vault-lib.mts";
+import { withCurrentActions, ITEM_TYPES, BRIDGE_ACTION_LABELS, BRIDGE_OFFLINE, GEAR_SLOTS, bridgeFeatures, bridgeRefusal, containerChain, newestScanAdapter, fullOf, isPseudoCharacter, NOBODY, RESIST_SKILL_KEY, resistMinimum, toOptItem, totalsOf, TRASH_RE, compileGoals, goalsError, GOAL_LEFTOVERS, GOAL_STRATEGIES, STRATEGY_HELP, SWING_GOALS, RANK_IMPORTANCE, LEFTOVER_IMPORTANCE } from "./vault-lib.mts";
 import type { BridgeAction, Character, Container, ContainerCapacity, Item, OptItem, Profile, PropMap, Goals } from "./vault-lib.mts";
 import { buffPlanOf, normalizeBuffs, savedBuffs, BUFFS } from "./buffs.mts";
 import { BUILTIN_PREFIX, characterBuffs, characterLabel, characterProfile, findTemplate, planBuild, specFromProfile, templateRefs, templateSettings, type PlannedBuild } from "./build-spec.mts";
@@ -288,14 +288,14 @@ async function newestScanOf(ctx: ToolContext, what: string, character: string | 
 export const TOOLS: Tool[] = [
   {
     name: "inventory_facets",
-    description: "What a search can name: the characters, gear slots, item kinds, rarities, slayers, weapon skills and yes/no flags in the inventory, and every numeric property key with its full name (lrc = Lower Reagent Cost). Call this first.",
+    description: "What a search can name: the characters, gear slots, item kinds, rarities, slayers, weapon skills, types (shield, two-handed, one-handed, spellbook, armor, jewelry, clothing, other) and yes/no flags in the inventory, and every numeric property key with its full name (lrc = Lower Reagent Cost). Call this first.",
     inputSchema: { type: "object", additionalProperties: false, properties: {} },
     annotations: { title: "Inventory facets", ...READ },
     async handler(_a, ctx) {
       const inv = await inventory(ctx);
       const f = inv.facets;
       return { characters: Object.keys(inv.characters).filter((n) => !isPseudoCharacter(n)).sort(), itemCount: inv.itemCount, slots: f.slots, kinds: f.kinds, rarities: f.rarities, slayers: f.slayers,
-        weaponSkills: f.weaponSkills, flags: f.flagKeys, properties: f.propKeys.map((key) => ({ key, name: fullOf(key) })), extraKeys: [...(f.extraKeys as string[]), ...Object.keys(EXTRA_COLS)] };
+        weaponSkills: f.weaponSkills, types: f.types, flags: f.flagKeys, properties: f.propKeys.map((key) => ({ key, name: fullOf(key) })), extraKeys: [...(f.extraKeys as string[]), ...Object.keys(EXTRA_COLS)] };
     },
   },
   {
@@ -315,6 +315,7 @@ export const TOOLS: Tool[] = [
       props: { type: "array", maxItems: 20, items: { type: "string", pattern: "^[A-Za-z0-9:_ .-]+$", maxLength: 80 }, description: "Property rules, one per entry: \"key:min\" (at least), \"key:le:max\" (at most), \"key:eq:value\" (exactly), keys from inventory_facets." },
       flags: { type: "array", maxItems: 20, items: { type: "string", maxLength: 64 }, description: "Yes/no properties every match must have (\"spell channeling\")." },
       weaponSkills: { type: "array", maxItems: 10, items: { type: "string", maxLength: 64 }, description: "Weapons counting under any of these skills." },
+      types: { type: "array", maxItems: 8, items: { type: "string", enum: [...ITEM_TYPES] }, description: "Only pieces of any of these types: shield, two-handed, one-handed (weapons), spellbook, armor, jewelry, clothing, other." },
       tags: { type: "array", maxItems: 10, items: { type: "string", maxLength: 32 }, description: "Only items with any of these tags (cursed, antique, brittle, prized, …)." },
       hideTags: { type: "array", maxItems: 10, items: { type: "string", maxLength: 32 }, description: "Leave out items with any of these tags." },
       noGargoyle: { type: "boolean", description: "Leave out gargoyle-only gear." },
@@ -351,7 +352,7 @@ export const TOOLS: Tool[] = [
       for (const name of ["q", "rarity", "rarityMin", "rarityMax", "sort", "seenDays"] as const) if (a[name] !== undefined) sp.set(name, String(a[name]));
       if (typeof a.slayer === "string") sp.set("slayer", a.slayer === "*" ? "*" : slayer(a.slayer));
       const lists: Array<[string, string, (v: string) => string]> = [["character", "char", String], ["slot", "slot", slot], ["kind", "kind", kind], ["location", "loc", String], ["container", "root", String],
-        ["flags", "flag", String], ["weaponSkills", "wskill", String], ["tags", "tag", lower], ["hideTags", "hide", lower]];
+        ["flags", "flag", String], ["weaponSkills", "wskill", String], ["types", "type", String], ["tags", "tag", lower], ["hideTags", "hide", lower]];
       for (const [arg, param, norm] of lists) for (const v of (a[arg] as unknown[] | undefined) || []) sp.append(param, norm(String(v)));
       for (const rule of props) sp.append("prop", rule);
       if (a.noGargoyle) sp.set("nogarg", "1");
