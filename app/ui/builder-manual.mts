@@ -119,7 +119,7 @@ export function initManual(): void {
     e.preventDefault();
     stepHistory(kind);
   });
-  const placeDoll = (): void => { doll.node.classList.toggle("doll-band", BAND.matches); $<HTMLElement>(BAND.matches ? "#mb-doll-band" : "#mb-doll")!.append(doll.node); };
+  const placeDoll = (): void => { doll.node.classList.toggle("doll-band", BAND.matches); $<HTMLElement>(BAND.matches ? "#mb-doll-band" : "#mb-doll")!.append(doll.node); paintDoll(); };
   placeDoll();
   BAND.addEventListener("change", placeDoll);
   wirePreview($<HTMLElement>("#mb-browser")!);
@@ -419,16 +419,19 @@ function slotCard(slot: string): HTMLElement {
 // ---------------------------------------------------------------- the doll
 // The doll in the suit as it is, or with the previewed piece; the slot card a preview would clear gets a dashed warn outline.
 function paintDoll(): void {
+  // the suit can change under a preview (undo, redo, a finished Fill, Start from what X wears): its cleared slot again, or none once the slot holds the piece
+  if (preview) preview = slots[preview.slot] === preview.item.serial ? null : { ...preview, cleared: handConflict(preview.slot, preview.item, held()) };
+  for (const c of document.querySelectorAll<HTMLElement>("#b-manual .mb-slot")) c.classList.toggle("mb-conflict", !!preview?.cleared && c.querySelector(`[data-slot="${preview.cleared}"]`) !== null);
+  if (doll.node.offsetParent === null || !state.inv) return;   // hidden (Automatic, or the band in a closed picker): no figure requests until it shows
   const name = manualCharacter();
   doll.paint({ name, suit: suitItems(), worn: name ? (state.inv!.worn[name] || []) : [], choosing: pickSlot, preview });
-  for (const c of document.querySelectorAll<HTMLElement>("#b-manual .mb-slot")) c.classList.toggle("mb-conflict", !!preview?.cleared && c.querySelector(`[data-slot="${preview.cleared}"]`) !== null);
 }
 function setPreview(next: ManualDollState["preview"]): void {
   if (next?.item.serial === preview?.item.serial && next?.slot === preview?.slot) return;
   preview = next;
   paintDoll();
 }
-// A picker row hovered, or given keyboard focus, previews its piece in the slot; leaving the rows (pointer or focus) restores the New suit.
+// A picker row hovered, or given keyboard focus, previews its piece in the slot. The pointer leaving the rows (onto the search, the filters, the header, the footer or out of the picker) hands the preview back to the focused row, if one has focus, else restores the New suit; so does focus leaving the rows.
 function wirePreview(host: HTMLElement): void {
   const rowItem = (t: EventTarget | null): Item | null => {
     const tr = (t as HTMLElement | null)?.closest?.<HTMLElement>("tr.item[data-index]");
@@ -439,8 +442,9 @@ function wirePreview(host: HTMLElement): void {
     if (!slot || !it || slots[slot] === it.serial) { setPreview(null); return; }
     setPreview({ slot, item: it, cleared: handConflict(slot, it, held()) });
   };
-  host.addEventListener("mouseover", (e) => { if ((e.target as HTMLElement).closest("tbody")) show(rowItem(e.target)); });
-  host.addEventListener("mouseleave", () => { if (!host.contains(document.activeElement) || !rowItem(document.activeElement)) setPreview(null); });
+  const focusedRow = (): Item | null => (host.contains(document.activeElement) ? rowItem(document.activeElement) : null);
+  host.addEventListener("mouseover", (e) => { show((e.target as HTMLElement).closest("tbody") ? rowItem(e.target) : focusedRow()); });
+  host.addEventListener("mouseleave", () => show(focusedRow()));
   host.addEventListener("focusin", (e) => { const it = rowItem(e.target); if (it) show(it); });
   host.addEventListener("focusout", (e) => { if (!rowItem(e.relatedTarget)) setPreview(null); });
 }

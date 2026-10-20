@@ -18,7 +18,8 @@ export interface DollView {
   appearance: Look | null | undefined;
   client: string;
   readsLook: boolean;
-  figures: Array<{ worn: Worn[]; caption?: string }>;
+  // `alt`: the figure's text alternative when the caller says more than the caption (Manual's preview).
+  figures: Array<{ worn: Worn[]; caption?: string; alt?: string }>;
   // The Suit Builder's result card (layout 2A): its own heading in place of the name, buttons after Customize (the Full sheet toggle), and what the card holds under the figures (the stat tiles).
   heading?: string;
   actions?: HTMLElement[];
@@ -64,7 +65,7 @@ export const forgetDollFigures = (): void => { filesEpoch++; };
 export function dollCard({ id, scale = 2, compact = false, adaptive = false, controls = [] }: { id?: string; scale?: 1 | 2; compact?: boolean; adaptive?: boolean; controls?: HTMLElement[] } = {}): { node: HTMLElement; show: (v: DollView) => void; frame: (v: Frame) => void } {
   const name = el("h2", {}), title = txt("", "t-sm muted doll-title");
   const stage = box("div", { class: `doll-stage${compact ? " doll-compact" : ""}` });
-  const pill = box("div", { class: "doll-pill" }), note = box("div", { class: "doll-note" }), below = box("div", { class: "doll-below" }), actions = box("div", { class: "doll-actions" });
+  const pill = box("div", { class: "doll-pill", "aria-live": "polite" }), note = box("div", { class: "doll-note" }), below = box("div", { class: "doll-below" }), actions = box("div", { class: "doll-actions" });
   const customized = tag("Customized");
   const customize = button({ label: "Customize", icon: "person", variant: "ghost", size: "sm", attrs: { "aria-haspopup": "dialog", "aria-expanded": "false" }, onClick: () => { if (view) openCustomizerFor(view); } });
   const node = el("section", { class: `card doll-card${adaptive ? " doll-adaptive" : ""}`, "data-mode": "dark", ...(id ? { id } : {}) },
@@ -112,8 +113,8 @@ export function dollCard({ id, scale = 2, compact = false, adaptive = false, con
         return;
       }
       stage.replaceChildren(box("div", { class: "doll-figs" }, ...got.map((g, i) => {
-        const f = g as { src: string; width: number; height: number }, caption = v.figures[i]!.caption;
-        const img = el("img", { class: "doll-img", src: f.src, alt: caption ? `${v.name ?? "Stand-in"}, ${caption}` : `${v.name ?? "Stand-in"}'s paperdoll`, width: String(f.width * scale), height: String(f.height * scale), style: `--doll-w:${f.width}px`, draggable: "false" });
+        const f = g as { src: string; width: number; height: number }, caption = v.figures[i]!.caption, alt = v.figures[i]!.alt;
+        const img = el("img", { class: "doll-img", src: f.src, alt: alt ?? (caption ? `${v.name ?? "Stand-in"}, ${caption}` : `${v.name ?? "Stand-in"}'s paperdoll`), width: String(f.width * scale), height: String(f.height * scale), style: `--doll-h:${f.height}px`, draggable: "false" });
         return el("figure", { class: "doll-fig" }, img, caption ? el("figcaption", { class: "caps" }, caption) : null);
       })));
       paintNote();

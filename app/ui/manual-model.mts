@@ -210,8 +210,9 @@ export function dollPill(s: ManualDollState, showingNow: boolean): { text: strin
   if (showingNow) return null;
   const p = s.preview;
   if (p) {
-    const text = `Preview · ${SLOT_NAME(p.slot)}: ${p.item.name}`, gone = p.cleared ? s.suit[p.cleared] : undefined;
-    return gone ? { text: `${text}. Picking it takes ${gone.name} off ${SLOT_NAME(p.cleared!)}.`, tone: "warn" } : { text, tone: "accent" };
+    const text = `Preview · ${SLOT_NAME(p.slot)}: ${p.item.name}`;
+    // a piece missing from the scans is still in the slot: named as pick() names it
+    return p.cleared ? { text: `${text}. Picking it takes ${s.suit[p.cleared]?.name || "the piece"} off ${SLOT_NAME(p.cleared)}.`, tone: "warn" } : { text, tone: "accent" };
   }
   if (s.choosing && !s.suit[s.choosing]) return { text: `${SLOT_NAME(s.choosing)}: empty`, tone: null };
   if (s.name === null) return { text: "No character: a default body", tone: null };

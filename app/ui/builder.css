@@ -426,6 +426,7 @@
    1,180 px window), so the doll moves into a band at the top of the picker (builder-manual.mts places it) */
 @media (max-width: 1279px) {
   .mb-doll { display: none; }
+  .mb-main { min-height: 620px; }   /* the band's 160 px on top, the list still keeps about six rows (Manual scrolls on a shorter window) */
 }
 /* narrow: the hint goes and the picker lies over the slot cards */
 @media (max-width: 1179px) {
