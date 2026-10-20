@@ -1,6 +1,6 @@
 // item-query.test.mts — `app/item-query.mts`, the item-list filtering, sorting, paging and faceting shared by the page and `GET /api/items`.
 //
-// `app/item-query.mts` (the pure item-list filtering/sorting/paging/faceting shared by the browser and the server's `GET /api/items`): `parseItemQuery`'s defaults and clamping, the list filters taken as repeated params (character, slot, kind, location, root container), prop rules with an operator (at least, at most, exactly), every `applyItemQuery` filter (kind, slot, location, root, character, rarity and rarity-at-least, seenDays, slayer, nogarg, med, hideTags, a prop rule incl. `EXTRA_COLS` keys) and sort (by prop column, by rarity ladder order), paging (offset/limit against `total`/`pieces`), group mode's JSON-safe shape and its stack and piece counts, `facetsOf` (including the places the Location filter's tree is built from), `rarityRank` (a Reforged tier with its base tier, eight tiers in both shipped ladders), `rarityMax` (an item with no tier or one off the ladder counting as below every tier, an unknown ceiling ignored, a floor above the ceiling matching nothing), and `matchesItem` (an Organize rule's per-item checks, agreeing with `applyItemQuery` on every filter a rule keeps, its free text never matching location text), and `unravel`/`unravelShow` read off the query string (issue #271). All `[fast]`.
+// `app/item-query.mts` (the pure item-list filtering/sorting/paging/faceting shared by the browser and the server's `GET /api/items`): `parseItemQuery`'s defaults and clamping, the list filters taken as repeated params (character, slot, kind, location, root container), prop rules with an operator (at least, at most, exactly), every `applyItemQuery` filter (free text, also by an Organize label through `places`, kind, slot, location, root, character, rarity and rarity-at-least, seenDays, slayer, nogarg, med, hideTags, a prop rule incl. `EXTRA_COLS` keys) and sort (by prop column, by rarity ladder order), paging (offset/limit against `total`/`pieces`), group mode's JSON-safe shape and its stack and piece counts, `facetsOf` (including the places the Location filter's tree is built from), `rarityRank` (a Reforged tier with its base tier, eight tiers in both shipped ladders), `rarityMax` (an item with no tier or one off the ladder counting as below every tier, an unknown ceiling ignored, a floor above the ceiling matching nothing), and `matchesItem` (an Organize rule's per-item checks, agreeing with `applyItemQuery` on every filter a rule keeps, its free text never matching location text), and `unravel`/`unravelShow` read off the query string (issue #271). All `[fast]`.
 //
 // applyItemQuery's predicate and sort keep parity with what the Inventory screen used to do on its own. Hand-built fixture items (no scan files, no server) keep this fast and pure.
 import { test } from "node:test";
@@ -87,6 +87,15 @@ test("[fast] applyItemQuery: text search hits itemSearchBlob (name)", () => {
   const q = parseItemQuery(new URLSearchParams("q=vile"));
   const { rows } = applyItemQuery(ITEMS, q, ctx) as ItemQueryRows;
   assert.deepEqual(names(rows), ["Vile Ring"]);
+});
+
+test("[fast] applyItemQuery: text search finds an item by its container's Organize label (places)", () => {
+  const items = [...ITEMS, mk({ name: "Heater Shield", slot: "twoHanded", location: { text: "Metal Chest › Bag" } })];
+  const q = parseItemQuery(new URLSearchParams("q=shields"));
+  assert.deepEqual(names((applyItemQuery(items, q, ctx) as ItemQueryRows).rows), [], "\"Heater Shield\" has no \"shields\" in it");
+  const places = new Map([["Metal Chest › Bag", "Shields › Bag"]]);
+  assert.deepEqual(names((applyItemQuery(items, q, { ...ctx, places }) as ItemQueryRows).rows), ["Heater Shield"]);
+  assert.deepEqual(names((applyItemQuery(items, parseItemQuery(new URLSearchParams("q=metal+chest")), { ...ctx, places }) as ItemQueryRows).rows), ["Heater Shield"], "the scanned name still finds it");
 });
 
 test("[fast] applyItemQuery: a Scroll of Transcendence is found by its skill, and sorts by skill then points (issue #181)", () => {

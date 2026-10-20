@@ -1,11 +1,11 @@
 // ui-inventory.test.mts — `app/ui/inv-model.mts`, the Inventory screen's pure rules.
 //
-// `app/ui/inv-model.mts`, the Inventory screen's pure rules: `plural` ("1 stack", "1,204 pieces"), `queryParams` round-tripping a full filter state through the server's `parseItemQuery`, the active-filter tokens (their words, each removing only itself, the search counted as a filter and cleared by Clear all, the Rarity at most token and its empty-result sentence), the strip's "45 of 160 stacks match" and the footer's count fact, the empty-result sentence (the one filter that excludes everything alone, a single filter being its own cause, else the combination), tier and rule labels, the nine default columns and the column picker's groups and order, the virtual table's row window (clamped at the end) and chunk fetches, and the table's keyboard model (arrows, Home/End, Page keys, Enter/Space, Esc). All `[fast]`.
+// `app/ui/inv-model.mts`, the Inventory screen's pure rules: `plural` ("1 stack", "1,204 pieces"), `queryParams` round-tripping a full filter state through the server's `parseItemQuery`, the active-filter tokens (their words, each removing only itself, the search counted as a filter and cleared by Clear all, the Rarity at most token and its empty-result sentence), the strip's "45 of 160 stacks match" and the footer's count fact, the empty-result sentence (the one filter that excludes everything alone, a single filter being its own cause, else the combination), tier and rule labels, a Location option named by its Organize label with the scanned name beside its serial (`placeNames`), the nine default columns and the column picker's groups and order, the virtual table's row window (clamped at the end) and chunk fetches, and the table's keyboard model (arrows, Home/End, Page keys, Enter/Space, Esc). All `[fast]`.
 //
 // The rendered screen is driven by scripts/ui-state.test.mts.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { queryParams, withFixed, activeFilters, clearAll, matchLine, countFact, emptyCause, rowWindow, chunksToFetch, gridKey, colGroup, groupColumns, DEFAULT_COLS, shortTier, propRuleLabel, slayerTree, slayerLabel } from "./ui/inv-model.mts";
+import { queryParams, withFixed, activeFilters, clearAll, matchLine, countFact, emptyCause, rowWindow, chunksToFetch, gridKey, colGroup, groupColumns, DEFAULT_COLS, shortTier, propRuleLabel, slayerTree, slayerLabel, placeNames } from "./ui/inv-model.mts";
 import { parseItemQuery } from "./item-query.mts";
 import type { ItemQuery } from "./item-query.mts";
 import { plural } from "./ui/format.mts";
@@ -216,4 +216,11 @@ test("[fast] slayerTree without a table is the plain A–Z list", () => {
   const plain = [{ kind: "slayer", value: "Dragon", label: "Dragon Slayer", count: 2, level: 0 }, { kind: "slayer", value: "Orc", label: "Orc Slayer", count: 1, level: 0 }];
   assert.deepEqual(slayerTree(f(["Orc", 1], ["Dragon", 2]), undefined), plain);
   assert.deepEqual(slayerTree(f(["Orc", 1], ["Dragon", 2]), []), plain);
+});
+
+test("[fast] placeNames: a Location option shows its Organize label, with the scanned name kept beside the serial", () => {
+  assert.deepEqual(placeNames("Metal Chest", "Metal Chest", "0x40000010"), { label: "Metal Chest", mono: "0x40000010" });
+  assert.deepEqual(placeNames("Metal Chest", "Shields", "0x40000010"), { label: "Shields", mono: "Metal Chest 0x40000010" });
+  assert.deepEqual(placeNames("Bag", "Reagents"), { label: "Reagents", mono: "Bag" });
+  assert.deepEqual(placeNames("Bag", "Bag"), { label: "Bag" });
 });

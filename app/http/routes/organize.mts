@@ -137,7 +137,7 @@ export function routes(ctx: ServerContext): Route[] {
       if (typeof sel === "string") return send(res, 400, { ok: false, error: sel });
       if (to !== undefined && !isBoundedInt(to, 1, MAX_SERIAL)) return send(res, 400, { ok: false, error: "to must be a container serial" });
       const { inv } = await getInventory();
-      const items = resolveSelection(inv, sel, appSettings.rules().rarity);
+      const items = resolveSelection(inv, sel, appSettings.rules().rarity, organizeStore.read().config.labels);
       const worn = items.filter((it) => it.equippedBy);
       // `movable`: the items a trip can take (in its destination's house or not); `here` counts only those; `left` counts the
       // others by why they stay (worn ones too, which `worn` also counts).
@@ -181,7 +181,7 @@ export function routes(ctx: ServerContext): Route[] {
         const problem = destProblem(applyOverlay(fold, state.moves).inv, to, blacklist());
         if (problem) return send(res, 409, { ok: false, error: problem });
         const { inv } = await getInventory();
-        steps = resolveSelection(inv, sel, appSettings.rules().rarity).map((it) => ({ serial: +it.serial, to }));
+        steps = resolveSelection(inv, sel, appSettings.rules().rarity, organizeStore.read().config.labels).map((it) => ({ serial: +it.serial, to }));
       }
       if (!features.has("trip")) return send(res, 409, { ok: false, error: `the ${adapter} bridge cannot run Organize trips` });
       const waiting = state.pending[0];
