@@ -6,7 +6,7 @@
 //
 // map: builder
 // owns: `applyRequirementsPrefs`, `requirementsSection`, `capsSection`, `goalsSection`, `weightsSection`
-import { NOBODY, PROP_LABELS, NOT_BUILDER_KEYS, importanceOf, weightOfImportance, getRules, RESIST_KEYS, RESIST_CAP_LIMITS, resistCapsFor, toOptItem, totalsOf, compileGoals, goalsActive, GOAL_LEFTOVERS, LEFTOVER_GROUPS, LEFTOVER_LABELS, GOAL_RANKS_MAX, GOAL_RANK_SIZE_MAX, STRATEGY_HELP, FEWEST_HELP } from "../vault-lib.mts";
+import { NOBODY, PROP_LABELS, catalogueGroups, NOT_BUILDER_KEYS, importanceOf, weightOfImportance, getRules, RESIST_KEYS, RESIST_CAP_LIMITS, resistCapsFor, toOptItem, totalsOf, compileGoals, goalsActive, GOAL_LEFTOVERS, LEFTOVER_GROUPS, LEFTOVER_LABELS, GOAL_RANKS_MAX, GOAL_RANK_SIZE_MAX, STRATEGY_HELP, FEWEST_HELP } from "../vault-lib.mts";
 import { delayText, heldWeapon, ssiShareOf, swingOf, type SwingResult } from "../swing.mts";
 import { goalSsiCap, planBuild, specFromProfile } from "../build-spec.mts";
 import type { Goals, ResistCap, RunBuffs, Character } from "../vault-lib.mts";
@@ -442,15 +442,17 @@ document.addEventListener("builderchange", (e) => { if ((e as BuilderChange).det
 // The searchable property combobox behind "+ Add requirement" / "+ Add weight": type to filter, ↓ into the
 // list, Enter picks the first match.
 function propertyPicker(anchor: HTMLElement, title: string, taken: string[], pick: (k: string) => void, offered: string[] = allPropKeys(), name: (k: string) => string = propName): void {
-  const keys = offered.filter((k) => !taken.includes(k)).sort((a, b) => name(a).localeCompare(name(b)));
+  const keys = offered.filter((k) => !taken.includes(k));
   const s = searchInput({ label: `${title}: search properties`, placeholder: "Search properties" });
   const list = box("div", { class: "b-pick-list", role: "listbox", "aria-label": "Properties" });
   const choose = (k: string): void => { closePopover(); pick(k); };
   const paint = (): void => {
     const q = s.input.value.trim().toLowerCase();
     const hits = keys.filter((k) => !q || `${name(k)} ${propName(k)} ${label(k)} ${full(k)}`.toLowerCase().includes(q));
-    list.replaceChildren(...(hits.length ? hits.map((k) => box("button", { class: "menu-item", type: "button", role: "option", "data-key": k, onclick: () => choose(k) }, txt(name(k)), txt(label(k), "t-sm muted")))
-      : [el("p", { class: "t-sm muted" }, "No property matches.")]));
+    // In the property catalogue's groups and order, as the Inventory's property rule lists them (#487).
+    const rows = catalogueGroups(hits, name).flatMap(({ group, keys: ks }) => [el("p", { class: "t-sm muted", role: "presentation" }, group),
+      ...ks.map((k) => box("button", { class: "menu-item", type: "button", role: "option", "data-key": k, onclick: () => choose(k) }, txt(name(k)), txt(label(k), "t-sm muted")))]);
+    list.replaceChildren(...(rows.length ? rows : [el("p", { class: "t-sm muted" }, "No property matches.")]));
   };
   s.input.addEventListener("input", paint);
   s.input.addEventListener("keydown", (e) => {
