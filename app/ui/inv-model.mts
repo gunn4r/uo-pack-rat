@@ -279,3 +279,9 @@ export function splitSerial(text: string): { name: string; serial: string } {
   const m = text.match(/^(.*?)\s*\((0x[0-9a-f]+)\)(.*)$/i);
   return m ? { name: `${m[1]}${m[3]}`, serial: m[2]! } : { name: text, serial: "" };
 }
+// A Location option's name and faint mono column: the name as the page shows it (`shown`, by its Organize label when it
+// has one), with the scanned name kept beside the serial when a label changed it, so the list's search finds either.
+export function placeNames(raw: string, shown: string, serial = ""): { label: string; mono?: string } {
+  const mono = [shown !== raw ? raw : "", serial].filter(Boolean).join(" ");
+  return mono ? { label: shown, mono } : { label: shown };
+}

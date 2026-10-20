@@ -1,7 +1,7 @@
 // domain/fold.mts — the inventory: its shapes (Item, Container, Character, Inventory) and the fold that builds it from the scans in time order (a scan replaces everything under each root it lists, and a character's worn set whole), each item read, classified and kinded on the way; plus where an item is, a container's path, label and capacity, and items grouped by name.
 //
 // map: scan
-// owns: `Item`, `Container`, `Character`, `Inventory`, `ScanSummary`, `ItemLocation`, `containerChain`, `foldSnapshots`, `locationOf`, `containerPath`, `bagLabel`, `capacityOf`, `TRASH_RE`, `BlacklistEntry`, `groupByName`
+// owns: `Item`, `Container`, `Character`, `Inventory`, `ScanSummary`, `ItemLocation`, `containerChain`, `foldSnapshots`, `locationOf`, `containerPath`, `bagLabel`, `labelledPlaces`, `capacityOf`, `TRASH_RE`, `BlacklistEntry`, `groupByName`
 import { isPseudoCharacter, parseStamp } from "../scan-schema.mts";
 import type { ScanV2, ScanV2Adapter, ScanV2Appearance } from "../schema/types.d.mts";
 import type { ExtrasMap, PropMap } from "./properties.mts";
@@ -370,6 +370,25 @@ export function bagLabel(c: BagLabelSource): string {
   const eng = (c.tooltip || []).map(stripHtml).find((l) => /engraved|^\[.*\]$/i.test(l));
   if (eng) return eng.replace(/^engraved:?\s*/i, "").trim();
   return c.name || `0x${(+c.serial).toString(16)}`;
+}
+
+// Each location text locationOf gives a container inside a labelled one (issue #11), mapped to the same path with
+// every labelled segment read by its label. The page's whereText and the Inventory's text search look texts up here.
+type PlaceSource = Pick<Container, "serial" | "parent" | "kind" | "name" | "tooltip" | "label" | "scannedBy">;
+export function labelledPlaces<L extends { name: string }>(containers: Readonly<Record<string, PlaceSource>>, labels: Readonly<Record<string, L>>): Map<string, string> {
+  const out = new Map<string, string>();
+  if (!Object.keys(labels).length) return out;
+  for (const c of Object.values(containers)) {
+    const chain: PlaceSource[] = [];
+    let cur: PlaceSource | undefined = c, guard = 0;
+    while (cur && guard++ < 8) { chain.unshift(cur); cur = cur.parent != null ? containers[String(cur.parent)] : undefined; }
+    if (!chain.some((x) => labels[String(x.serial)])) continue;
+    const root = chain[0]!;
+    const own = root.kind === "backpack" || root.kind === "bank" ? `${root.scannedBy}'s ${root.kind}` : null;
+    const seg = (x: PlaceSource, i: number, byLabel: boolean): string => (i === 0 && own ? own : (byLabel ? labels[String(x.serial)]?.name : undefined) || x.label || bagLabel(x));
+    out.set(chain.map((x, i) => seg(x, i, false)).join(" › "), chain.map((x, i) => seg(x, i, true)).join(" › "));
+  }
+  return out;
 }
 
 // A container's fill from its tooltip's Contents line (ServUO's clilocs): "Contents: 13/125 Items, 95 Stones" on
