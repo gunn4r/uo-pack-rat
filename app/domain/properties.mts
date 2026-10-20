@@ -1,7 +1,7 @@
 // domain/properties.mts — the property registry (every property key the app knows, in display order) and what is derived from it: the tooltip patterns, labels and full names, a property in words, the typical ranges and importance conversion, skill-bonus names, and the five resists' names.
 //
 // map: scan
-// owns: `PROPERTIES`, `PropKey`, `PROPERTY_CATALOGUE`, `FLAG_CATALOGUE`, `PROP_PATTERNS`, `PROP_LABELS`, `PROP_FULL`, `NOT_BUILDER_KEYS`, `typicalRange`, `importanceOf`, `weightOfImportance`, `SKILL_NAMES`, `labelOf`, `fullOf`, `propName`, `RESIST_META`, `RESIST_KEYS`
+// owns: `PROPERTIES`, `PropKey`, `PROPERTY_CATALOGUE`, `FLAG_CATALOGUE`, `catalogueGroups`, `PROP_PATTERNS`, `PROP_LABELS`, `PROP_FULL`, `NOT_BUILDER_KEYS`, `typicalRange`, `importanceOf`, `weightOfImportance`, `SKILL_NAMES`, `labelOf`, `fullOf`, `propName`, `RESIST_META`, `RESIST_KEYS`
 import type { Diagnostic } from "../runs-types.mts";
 
 // A tooltip line's parsed numeric property may carry a single value, or (durability-style) a
@@ -157,6 +157,16 @@ export const PROPERTY_CATALOGUE: readonly CatalogueEntry[] = [
 export const FLAG_CATALOGUE: readonly string[] = ["assassin honed", "balanced", "bane", "battle lust", "blessed", "blood drinker", "cannot be repaired", "crafting failure protection",
   "exceptional", "(imbued)", "insured", "mage armor", "night sight", "part of an armor set", "reactive paralyze", "searing weapon", "spell channeling", "use best weapon skill"];
 const CATALOGUE_NAMES: Record<string, string> = Object.fromEntries(PROPERTY_CATALOGUE.map((c) => [c.key, c.name]));
+// Any list of property keys in the catalogue's groups and order (#487: the Suit Builder's requirement, goal and weight
+// pickers and the character sheet's Properties shown), so every property list reads alike: the pools after the stats, a
+// skill bonus ("sk:magery") under Skill bonuses, anything else under Other, those by `nameOf`.
+const CATALOGUE_AT = new Map(PROPERTY_CATALOGUE.map((c, i) => [c.key, i]));
+export function catalogueGroups(keys: readonly string[], nameOf: (k: string) => string): Array<{ group: string; keys: string[] }> {
+  const groupOf = (k: string): string => (k.startsWith("sk:") ? "Skill bonuses" : k.endsWith("Pool") ? "Stats & pools" : PROPERTY_CATALOGUE[CATALOGUE_AT.get(k) ?? -1]?.group ?? "Other");
+  const at = (k: string): number => CATALOGUE_AT.get(k) ?? Infinity;
+  const order = [...CATALOGUE_GROUPS.filter((g) => g !== "Other"), "Skill bonuses", "Other"];
+  return order.map((group) => ({ group, keys: keys.filter((k) => groupOf(k) === group).sort((a, b) => at(a) - at(b) || nameOf(a).localeCompare(nameOf(b))) })).filter((g) => g.keys.length);
+}
 // A tooltip line no property models reads by its catalogue name ("Weapon Speed"), anything else by its key.
 export const labelOf = (k: string): string => (k.startsWith("sk:") ? "+" + titleCase(k.slice(3)) : PROP_LABELS[k] || CATALOGUE_NAMES[k] || k);
 export const fullOf = (k: string): string => (k.startsWith("sk:") ? `${titleCase(k.slice(3))} skill bonus from items` : PROP_FULL[k] || CATALOGUE_NAMES[k] || k);

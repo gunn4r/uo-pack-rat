@@ -8,7 +8,7 @@
 //
 // map: ui-components
 // owns: `sheetNode`, `SLOT_GROUPS`, `SHEET_GROUPS`, `RESISTS`
-import { totalsOf, resistMinimum, paperdollResist, RESIST_SKILL_KEY, PROP_FULL, SLOTS_IN_GROUP, RESIST_META } from "../vault-lib.mts";
+import { totalsOf, catalogueGroups, resistMinimum, paperdollResist, RESIST_SKILL_KEY, PROP_FULL, SLOTS_IN_GROUP, RESIST_META } from "../vault-lib.mts";
 import type { ExtrasMap, OptItem, ResistCap } from "../vault-lib.mts";
 import { state } from "./store.mts";
 import { rarityToken } from "./items.mts";
@@ -121,6 +121,8 @@ export const SHEET_CATALOGUE: Array<[string, SheetRow[]]> = [...SHEET_GROUPS, ["
   .filter((k) => !DEFAULT_SHEET_PROPS.includes(k) && !NOT_SHOWN.has(k) && !RESISTS.some(([r]) => r === k))
   .map((k): SheetRow => [k, PROP_FULL[k]!, k.startsWith("hit") ? "%" : ""])]];
 const CATALOGUE_KEYS = SHEET_CATALOGUE.flatMap(([, rows]) => rows.map(([k]) => k));
+const ROW_LABEL = new Map(SHEET_CATALOGUE.flatMap(([, rows]) => rows.map(([k, lbl]): [string, string] => [k, lbl])));
+const rowLabel = (k: string): string => ROW_LABEL.get(k) ?? k;
 // The rows shown: the saved choice (ui-prefs `sheetProps`, set by app.mts's load) or the default set.
 const shownProps = (): Set<string> => new Set(state.sheetProps ?? DEFAULT_SHEET_PROPS);
 // The "Properties shown" popover: the catalogue as grouped checkboxes with a search box. A change is
@@ -138,8 +140,9 @@ function openPropsPicker(anchor: HTMLElement, redraw: () => void): void {
   const list = box("div", { class: "inv-opts", id: "sheet-prop-opts" });
   const draw = (): void => {
     const shown = shownProps(), q = find.input.value.trim().toLowerCase();
-    const kids = SHEET_CATALOGUE.flatMap(([title, rows]) => {
-      const hits = rows.filter(([, lbl]) => lbl.toLowerCase().includes(q));
+    // In the property catalogue's groups and order, as the Inventory's property rule lists them (#487).
+    const kids = catalogueGroups(CATALOGUE_KEYS, rowLabel).flatMap(({ group: title, keys }) => {
+      const hits = keys.filter((k) => rowLabel(k).toLowerCase().includes(q)).map((k): [string, string] => [k, rowLabel(k)]);
       return hits.length ? [txt(title, "inv-opt-group t-sm muted"), ...hits.map(([k, lbl]) => {
         const c = check({ label: lbl, checked: shown.has(k), attrs: { value: k }, onChange: (on) => {
           const next = shownProps();

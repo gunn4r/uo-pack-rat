@@ -9,7 +9,7 @@
 //
 // map: mcp
 // owns: `TOOLS`, `INSTRUCTIONS`, `ToolContext`
-import { withCurrentActions, ITEM_TYPES, BRIDGE_ACTION_LABELS, BRIDGE_OFFLINE, GEAR_SLOTS, bridgeFeatures, bridgeRefusal, containerChain, newestScanAdapter, fullOf, isPseudoCharacter, NOBODY, RESIST_SKILL_KEY, resistMinimum, toOptItem, totalsOf, TRASH_RE, compileGoals, goalsError, GOAL_LEFTOVERS, GOAL_STRATEGIES, STRATEGY_HELP, SWING_GOALS, RANK_IMPORTANCE, LEFTOVER_IMPORTANCE } from "./vault-lib.mts";
+import { withCurrentActions, ITEM_TYPES, labelledPlaces, BRIDGE_ACTION_LABELS, BRIDGE_OFFLINE, GEAR_SLOTS, bridgeFeatures, bridgeRefusal, containerChain, newestScanAdapter, fullOf, isPseudoCharacter, NOBODY, RESIST_SKILL_KEY, resistMinimum, toOptItem, totalsOf, TRASH_RE, compileGoals, goalsError, GOAL_LEFTOVERS, GOAL_STRATEGIES, STRATEGY_HELP, SWING_GOALS, RANK_IMPORTANCE, LEFTOVER_IMPORTANCE } from "./vault-lib.mts";
 import type { BridgeAction, Character, Container, ContainerCapacity, Item, OptItem, Profile, PropMap, Goals } from "./vault-lib.mts";
 import { buffPlanOf, normalizeBuffs, savedBuffs, BUFFS } from "./buffs.mts";
 import { BUILTIN_PREFIX, characterBuffs, characterLabel, characterProfile, findTemplate, planBuild, specFromProfile, templateRefs, templateSettings, type PlannedBuild } from "./build-spec.mts";
@@ -67,6 +67,30 @@ const PAGE: Record<string, Schema> = {
   offset: { type: "integer", minimum: 0, maximum: 1_000_000, description: "Rows to skip, 0 by default." },
 };
 const pageOf = (a: Record<string, unknown>): { limit: number; offset: number } => ({ limit: (a.limit as number | undefined) ?? 25, offset: (a.offset as number | undefined) ?? 0 });
+// search_items' `location` and `house` as the route's params (#487): a location text as it is, or read through Organize's
+// labels (a labelled path back to its scanned text; a label alone to its container, a floor container as `root`), and each
+// house by id or name to `house=<id>`. An unknown house is refused, naming the houses.
+async function whereParams(ctx: ToolContext, locations: string[], houses: string[]): Promise<Array<[string, string]>> {
+  const out: Array<[string, string]> = [];
+  if (locations.length) {
+    const [inv, org] = await Promise.all([inventory(ctx), ctx.api<OrganizeDoc>("/api/organize")]);
+    const byLabel = new Map([...labelledPlaces(inv.containers, org.config.labels)].map(([raw, shown]): [string, string] => [shown.toLowerCase(), raw]));
+    for (const v of locations) {
+      const named = Object.values(org.config.labels).find((l) => l.name.toLowerCase() === v.toLowerCase()), c = named && inv.containers[String(named.serial)];
+      if (c && c.parent == null) out.push(["root", String(c.serial)]);
+      else out.push(["loc", byLabel.get(v.toLowerCase()) ?? v]);
+    }
+  }
+  if (houses.length) {
+    const { houses: all } = await ctx.api<ApiResponse<"GET /api/houses">>("/api/houses");
+    for (const v of houses) {
+      const h = all.find((x) => x.id.toLowerCase() === v.toLowerCase() || x.name?.toLowerCase() === v.toLowerCase());
+      if (!h) throw new ToolError(`no house ${JSON.stringify(v)}; the houses are ${all.map((x) => (x.name ? `${x.name} (${x.id})` : x.id)).join(", ") || "none (a scan with a house capture adds one)"}`);
+      out.push(["house", h.id]);
+    }
+  }
+  return out;
+}
 const SERIAL: Schema = { type: "integer", minimum: 1, maximum: MAX_SERIAL, description: "An item or container serial (the decimal number in Pack Rat's rows)." };
 const ID: Schema = { type: "string", pattern: "^[\\w-]{1,64}$" };
 const CHARACTER: Schema = { type: "string", minLength: 1, maxLength: 64, description: "A character's name as Pack Rat lists it (list_characters)." };
@@ -306,7 +330,8 @@ export const TOOLS: Tool[] = [
       character: { type: "array", maxItems: 50, items: { type: "string", maxLength: 64 }, description: "Only items these characters hold or wear." },
       slot: { type: "array", maxItems: 30, items: { type: "string", maxLength: 32 }, description: "Gear slots (inventory_facets lists them), \"?\" for none." },
       kind: { type: "array", maxItems: 30, items: { type: "string", maxLength: 32 }, description: "Item kinds: gear, reagent, scroll, …" },
-      location: { type: "array", maxItems: 50, items: { type: "string", maxLength: 300 }, description: "Exact location texts, as the rows' `where` shows them." },
+      location: { type: "array", maxItems: 50, items: { type: "string", maxLength: 300 }, description: "Exact location texts, as the rows' `where` shows them, or the same path with Organize labels in it. A label alone (\"Shields\", any case) is that labelled container: everything inside it when it stands on the floor." },
+      house: { type: "array", maxItems: 20, items: { type: "string", maxLength: 64 }, description: "Houses on the House map, by id (\"1-3000-1000\") or name, any case: everything in their containers." },
       container: { type: "array", maxItems: 50, items: SERIAL, description: "Root container serials: everything anywhere inside them." },
       rarity: { type: "string", maxLength: 64, description: "Exactly this rarity tier." },
       rarityMin: { type: "string", maxLength: 64, description: "This tier or any above it." },
@@ -351,7 +376,8 @@ export const TOOLS: Tool[] = [
       const sp = new URLSearchParams({ limit: String(limit), offset: String(offset) });
       for (const name of ["q", "rarity", "rarityMin", "rarityMax", "sort", "seenDays"] as const) if (a[name] !== undefined) sp.set(name, String(a[name]));
       if (typeof a.slayer === "string") sp.set("slayer", a.slayer === "*" ? "*" : slayer(a.slayer));
-      const lists: Array<[string, string, (v: string) => string]> = [["character", "char", String], ["slot", "slot", slot], ["kind", "kind", kind], ["location", "loc", String], ["container", "root", String],
+      for (const [param, v] of await whereParams(ctx, (a.location as string[] | undefined) ?? [], (a.house as string[] | undefined) ?? [])) sp.append(param, v);
+      const lists: Array<[string, string, (v: string) => string]> = [["character", "char", String], ["slot", "slot", slot], ["kind", "kind", kind], ["container", "root", String],
         ["flags", "flag", String], ["weaponSkills", "wskill", String], ["types", "type", String], ["tags", "tag", lower], ["hideTags", "hide", lower]];
       for (const [arg, param, norm] of lists) for (const v of (a[arg] as unknown[] | undefined) || []) sp.append(param, norm(String(v)));
       for (const rule of props) sp.append("prop", rule);

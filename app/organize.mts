@@ -8,7 +8,7 @@
 import { matchesItem } from "./item-query.mts";
 import { parseStamp } from "./scan-schema.mts";
 import { CATCH_ALL_ID, EMPTY_BAGS_ID, ruleMatchOf, type Build, type OrganizeConfig, type RuleMatch } from "./organize-config.mts";
-import { RESIST_KEYS, bridgeFeatures, gameName, spellSchoolOf, TRASH_RE, locationOf, type Character, type Container, type ContainerCapacity, type Inventory, type Item } from "./vault-lib.mts";
+import { RESIST_KEYS, bridgeFeatures, itemTypeOf, gameName, spellSchoolOf, TRASH_RE, locationOf, type Character, type Container, type ContainerCapacity, type Inventory, type Item } from "./vault-lib.mts";
 import type { RulesV1RarityItem } from "./schema/types.d.mts";
 import { TRIP_NAME_MAX } from "./bridge-contract.mts";
 import type { TripInput } from "./bridge-trip.mts";
@@ -134,21 +134,21 @@ export const MELEE_SKILLS = ["swordsmanship", "tactics", "anatomy", "archery", "
   "chivalry", "parrying"];
 // A piece's summed resists at least this, with no caster or melee marker, is Tank gear.
 const TANK_RESISTS = 20;
-// What makes a one-handed piece a spellbook (Spellbook, Necromancer Spellbook, Book Of Bushido…):
-// Detailed's Spellbooks group and By build (issue #129) read it the same way.
+// The names Detailed's Spellbooks group (issue #129) gathers: Spellbook, Necromancer Spellbook, Book Of Bushido…
 export const SPELLBOOK_NAMES: readonly string[] = ["spellbook", "book of", "tome"];
-// Which build a piece of gear is: the side with more distinct markers, Hybrid on a tie. A piece with none is Caster when
-// it is a spellbook (issue #129: every one, a Book Of Chivalry or Bushido too), Melee when it is a weapon (it has a
-// damage range), else Tank when it is a shield (issue #123: held in the two-handed slot and not a two-handed weapon, as
-// vault-lib classifies shields) or its resists add up to TANK_RESISTS, else Other.
+// Which build a piece of gear is: the side with more distinct markers, Hybrid on a tie. A piece with none is Melee when
+// it is a weapon (it has a damage range), Caster when it is a spellbook (issue #129: every one, a Book Of Chivalry or
+// Bushido too), else Tank when it is a shield (issue #123), or its resists add up to TANK_RESISTS, else Other. Spellbook
+// and shield are the Type filter's (vault-lib.mts's itemTypeOf, #487), so every screen tells them apart one way.
 export function buildOf(it: Item): Build {
   const n = (keys: string[], skills: string[]): number => keys.filter((k) => (k === "mageWeapon" ? !!it.props[k] : (it.props[k] ?? 0) > 0)).length
     + skills.filter((k) => { const v = it.extras[k]; return typeof v === "number" && v > 0; }).length;
   const caster = n(CASTER_PROPS, CASTER_SKILLS) + (it.flags.includes("spell channeling") ? 1 : 0), melee = n(MELEE_PROPS, MELEE_SKILLS);
   if (caster || melee) return caster > melee ? "caster" : melee > caster ? "melee" : "hybrid";
-  if (it.slot === "oneHanded" && hasName(it, SPELLBOOK_NAMES)) return "caster";
   if (Array.isArray(it.extras["weapon damage"])) return "melee";
-  if (it.slot === "twoHanded" && !it.twoHanded) return "tank";
+  const type = itemTypeOf(it);
+  if (type === "spellbook") return "caster";
+  if (type === "shield") return "tank";
   return RESIST_KEYS.reduce((sum, k) => sum + (it.props[k] ?? 0), 0) >= TANK_RESISTS ? "tank" : "other";
 }
 
