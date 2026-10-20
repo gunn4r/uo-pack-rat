@@ -1,6 +1,6 @@
 // ui/rule-editor.mts — the Organize rule editor (issue #11, spec §3): a drawer with the rule's name, what it
-// takes (a preset to start from, "name is any of", and the filter: search text, kinds and the rarity range, plus
-// any other filter it was saved with from the Inventory, as removable tokens) and where those items go
+// takes (a preset to start from, "name is any of", and the filter: the Inventory's filter bar without Character,
+// Location and Seen, with every filter it holds as a removable token) and where those items go
 // (labelled, unpinned containers and the bags inside them, in fill order, each with its fill). Opened from the
 // Organize screen's "+ Rule" and a rule's Edit…, and from the Inventory filter strip's "Save as rule…". Saving
 // writes the whole setup with PUT /api/organize (organize-data.mts's saveConfig). Also the target chip the Rules
@@ -10,12 +10,13 @@
 // owns: `openRuleEditor`
 import { state } from "./store.mts";
 import { $, el, safeColor, compactChildren } from "./dom.mts";
-import { box, txt, button, meter, message, field, input, select, textarea, pill, check, token, createDrawer, confirmDialog, toast, type DrawerHandle } from "./components.mts";
+import { box, txt, button, meter, message, field, input, select, textarea, check, token, createDrawer, confirmDialog, toast, type DrawerHandle } from "./components.mts";
 import { containerArt } from "./item-art.mts";
 import { errorText } from "./messages.mts";
 import { filterContext } from "./item-parts.mts";
+import { createFilterBar, itemsSource } from "./filter-bar.mts";
 import { loadOrganize, loadPresets, matchCount, refreshPlaces, saveConfig } from "./organize-data.mts";
-import { BUILD_TEXT, SCHOOL_TEXT, fillText, fillTone, withoutRule, newRuleId, ruleQueryFrom, blankQuery, droppedNote, ruleNameFrom, checkDraft, extraFilters, targetView, targetOptions, withTargetLabels, moveIn, upsertRule, matchLine, debounced, MATCH_DEBOUNCE_MS, type TargetView } from "./organize-model.mts";
+import { BUILD_TEXT, SCHOOL_TEXT, fillText, fillTone, withoutRule, newRuleId, ruleQueryFrom, blankQuery, droppedNote, ruleNameFrom, checkDraft, ruleTokens, BASE, targetView, targetOptions, withTargetLabels, moveIn, upsertRule, matchLine, debounced, MATCH_DEBOUNCE_MS, type TargetView } from "./organize-model.mts";
 import type { ItemQuery, RuleQuery } from "../item-query.mts";
 import { ruleMatchOf } from "../organize-config.mts";
 import type { Build, SpellSchool, OrganizeMatchApiResponse, OrganizeRule, Origin, RuleMatch } from "./api-types.mts";
@@ -92,20 +93,23 @@ function draw(focus?: string): void {
   });
   const namesIn = textarea({ value: d.namesText, rows: 4, placeholder: "black pearl\nbloodmoss", attrs: { id: "rule-names" } });
   namesIn.addEventListener("input", () => { d.namesText = namesIn.value; countSoon(); });
-  const qIn = input({ value: d.query.q, placeholder: "Words in the name or tooltip", attrs: { id: "rule-q" } });
-  qIn.addEventListener("input", () => { d.query = { ...d.query, q: qIn.value }; countSoon(); });
-  // Bags never move (they are places), so "container" is not offered as a kind a rule could take.
-  const kinds = [...new Set([...(state.facets?.kinds || []).map((k) => k.name).filter((k) => k !== "container"), ...d.query.kind])].sort();
-  const kindPills = box("div", { class: "rule-kinds", role: "group", "aria-label": "Kind" }, ...kinds.map((k) => pill({ label: k, pressed: d.query.kind.includes(k), onToggle: (on) => { d.query = { ...d.query, kind: on ? [...d.query.kind, k] : d.query.kind.filter((x) => x !== k) }; countSoon(); } })));
-  const ladder = [{ value: "", label: "Any" }, ...(state.rules?.rarity || []).map((r) => ({ value: r.name, label: r.name }))];
-  const rMin = select(ladder, d.query.rarityMin, { attrs: { id: "rule-rmin" } });
-  rMin.addEventListener("change", () => { d.query = { ...d.query, rarityMin: rMin.value }; countSoon(); });
-  const rMax = select(ladder, d.query.rarityMax, { attrs: { id: "rule-rmax" } });
-  rMax.addEventListener("change", () => { d.query = { ...d.query, rarityMax: rMax.value }; countSoon(); });
+  // The Inventory's filter bar (#487) on the rule's query; a change redraws only the tokens and the count, so an
+  // open popover keeps its anchor. Bags never move (they are places), so "container" is not a kind a rule takes.
+  const tokens = box("span", { class: "rule-extras" });
+  const filters = box("div", { class: "field" }, el("span", { class: "label" }, "Filtered by"), tokens);
+  const setQuery = (q: RuleQuery): void => { d.query = q; bar.sync(); drawTokens(); countSoon(); };
+  const bar = createFilterBar({ query: () => ({ ...BASE, ...d.query }), setQuery: (q) => setQuery(ruleQueryFrom(q).query), source: itemsSource,
+    omit: ["char", "loc", "seen"], hideKinds: ["container"], placeholder: "Search name, property, slayer", slashHint: false,
+    idOf: (n) => ({ id: n === "f-text" ? "rule-q" : `rule-${n}` }) });
   // A build (Auto organize's By build) or a spell school (a school's scroll preset) has no control of its own: it
   // shows as a token, and removing it drops it.
-  const extras = [...(d.build ? [{ label: `Build: ${BUILD_TEXT[d.build]}`, removeLabel: "Remove the build filter", remove: (q: RuleQuery) => { d.build = undefined; return q; } }] : []),
-    ...(d.school ? [{ label: `School: ${SCHOOL_TEXT[d.school]}`, removeLabel: "Remove the school filter", remove: (q: RuleQuery) => { d.school = undefined; return q; } }] : []), ...extraFilters(d.query, ctx)];
+  function drawTokens(): void {
+    const all = [...(d.build ? [{ label: `Build: ${BUILD_TEXT[d.build]}`, removeLabel: "Remove the build filter", remove: (q: RuleQuery) => { d.build = undefined; return q; } }] : []),
+      ...(d.school ? [{ label: `School: ${SCHOOL_TEXT[d.school]}`, removeLabel: "Remove the school filter", remove: (q: RuleQuery) => { d.school = undefined; return q; } }] : []), ...ruleTokens(d.query, ctx)];
+    filters.hidden = !all.length;
+    tokens.replaceChildren(...all.map((x) => token({ label: x.label, removeLabel: x.removeLabel, onRemove: () => setQuery(x.remove(d.query)) })));
+  }
+  drawTokens();
   // Issue #133: an Undesirables rule never takes a piece a saved Suit Builder run counts on.
   const suits = check({ label: "Skip pieces of saved suits", checked: d.skipSuits, attrs: { id: "rule-skip-suits" }, onChange: (on) => { d.skipSuits = on; countSoon(); } });
   const chosen = d.targets.map((s) => targetView(s, cfg, where));
@@ -127,10 +131,8 @@ function draw(focus?: string): void {
     el("h3", { class: "t-md" }, "Items it takes"),
     field({ label: "Start from a preset", control: presetSel, help: "Replaces the names and the filter below." }),
     field({ label: "Name is any of", control: namesIn, help: "One per line. Part of the name is enough, and case does not matter. Leave it empty to take every item the filter lets through.", error: d.errors.names }),
-    field({ label: "Search", control: qIn }),
-    box("div", { class: "field" }, el("span", { class: "label" }, "Kind"), kindPills),
-    box("div", { class: "rule-rarity" }, field({ label: "Rarity at least", control: rMin }), field({ label: "Rarity at most", control: rMax })),
-    extras.length ? box("div", { class: "field" }, el("span", { class: "label" }, "Also filtered by"), box("span", { class: "rule-extras" }, ...extras.map((x) => token({ label: x.label, removeLabel: x.removeLabel, onRemove: () => { d.query = x.remove(d.query); draw(); } })))) : null,
+    box("div", { class: "field" }, el("span", { class: "label" }, "Filter"), box("div", { class: "inv-toolbar rule-filters", role: "group", "aria-label": "Filter" }, bar.searchRoot, ...bar.chips, bar.addChip)),
+    filters,
     box("div", { class: "field" }, suits.root, txt("A piece of any suit the Suit Builder saved is left to the rules below, however well it fits this one.", "t-sm muted")),
     matchEl(),
     el("h3", { class: "t-md" }, "Where they go"),

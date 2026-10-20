@@ -75,8 +75,8 @@ Under the list are two pickers, each with its counts: "Everything no rule takes"
 
 - Name, and a preset to start from (`GET /api/organize/presets`; picking one replaces the names and the filter).
 - "Name is any of" (one per line).
-- Search, Kind pills and a rarity range.
-- Any other filter the rule carries, as removable tokens: slot, types, weapon skills, property rules, yes/no properties, slayer, hidden and required tags, and the build a By build rule takes ("Build: Caster").
+- **Filter:** the Inventory's filter bar (`ui/filter-bar.mts`, issue #487) without the Character, Location and Seen chips: search, Slot, Rarity, Kind (never "container": bags never move), Type, Weapon skill, and "+ Filter" for property rules (≥ ≤ = ≠ over the property catalogue, with counts), slayer, tags, gargoyle and meditation. Its text never mentions locations, since a rule's search does not match them.
+- **Filtered by:** every filter the rule carries, as removable tokens like the Inventory's strip, plus the build a By build rule takes ("Build: Caster") and a scroll preset's school. A change from the bar redraws only these tokens and the count, so an open popover stays put.
 - **Skip pieces of saved suits** (issue #133, `RuleMatch.skipSuits`): a piece of any saved Suit Builder run is left to the rules below, as the Undesirables presets have it.
 - A live count, "Matches 12 items (e.g. …)", from `POST /api/organize/match` about 300 ms after typing pauses. A note says when rules above this one may claim some of them first.
 - The targets in fill order, with ↑/↓/× per container. "Add a container…" lists each labeled container, with the scanned bags inside it indented under it, and never a pinned, blacklisted or unopened one. Picking an unlabeled bag labels it by its engraving or name when the rule is saved (`withTargetLabels`).

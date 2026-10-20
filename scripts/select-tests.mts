@@ -45,7 +45,7 @@ export const SCREENS: Record<string, string | string[]> = {
   organize: "ui-organize", "auto-organize": "ui-organize", "rule-editor": "ui-organize",
   "organize-model": ["ui-organize", "ui-map"], kinds: "ui-organize",
   "builder-buffs": "ui-builder-*", "builder-header": "ui-builder-*", "builder-templates": "ui-builder-*", "builder-requirements": "ui-builder-*", "builder-job": "ui-builder-*", "builder-manual": "ui-builder-*", "manual-model": "ui-builder-*",
-  "item-browser": ["ui-state", "ui-builder-*"],
+  "item-browser": ["ui-state", "ui-builder-*"], "filter-bar": ["ui-state", "ui-builder-*", "ui-organize"],
   "doll-card": "ui-contrast", "doll-model": "ui-contrast", "sheet-doll": ["ui-state", "ui-contrast", "ui-builder-*"], "manual-doll": ["ui-builder-manual", "ui-contrast"], "doll-customizer": "ui-contrast", "customize-model": "ui-contrast",
 };
 
