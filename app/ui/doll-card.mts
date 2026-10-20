@@ -18,14 +18,17 @@ export interface DollView {
   appearance: Look | null | undefined;
   client: string;
   readsLook: boolean;
-  figures: Array<{ worn: Worn[]; caption?: string }>;
+  // `alt`: the figure's text alternative when the caller says more than the caption (Manual's preview).
+  figures: Array<{ worn: Worn[]; caption?: string; alt?: string }>;
   // The Suit Builder's result card (layout 2A): its own heading in place of the name, buttons after Customize (the Full sheet toggle), and what the card holds under the figures (the stat tiles).
   heading?: string;
   actions?: HTMLElement[];
   below?: HTMLElement[];
+  // A pill above the figure (Manual's preview, an empty slot, No character's body).
+  pill?: HTMLElement | null;
 }
 
-type Frame = Pick<DollView, "name" | "heading" | "title" | "actions" | "below">;
+type Frame = Pick<DollView, "name" | "heading" | "title" | "actions" | "below" | "pill">;
 type Loaded = { src: string; width: number; height: number } | { reason: DollReason };
 // One figure as a data: URL (the page's CSP allows data: images, not blob:), decoded off-screen; or why there is none.
 async function load(url: string, signal: AbortSignal): Promise<Loaded> {
@@ -50,19 +53,23 @@ async function load(url: string, signal: AbortSignal): Promise<Loaded> {
 const noteNode = (n: DollNote): HTMLElement =>
   message({ tone: n.tone, title: n.title, text: n.text ?? "", actions: (n.actions ?? []).map((a, i) => button({ label: a.label, size: "sm", variant: i === 0 ? "primary" : "secondary", onClick: () => showSettings(a.to === "scanner" ? "set-scanner" : "set-uofolder") })) });
 
+// A box's children, left alone when they are already these nodes: moving a button out and back in mid-press would lose its click (Manual's toggle, held).
+function setKids(box: HTMLElement, kids: HTMLElement[]): void {
+  if (kids.length !== box.children.length || kids.some((k, i) => box.children[i] !== k)) box.replaceChildren(...kids);
+}
 // Bumped when the UO folder changes (Settings calls forgetDollFigures after a save), so every card asks for its figures again on its next update.
 let filesEpoch = 0;
 export const forgetDollFigures = (): void => { filesEpoch++; };
 
-// A doll card. `scale`: the figure's size, 2 (whole pixels, pixelated) or 1; `compact`: the Suit Builder's tighter padding; `controls`: what the card head carries on the right, before the "Customized" tag and the Customize button.
-export function dollCard({ id, scale = 2, compact = false, controls = [] }: { id?: string; scale?: 1 | 2; compact?: boolean; controls?: HTMLElement[] } = {}): { node: HTMLElement; show: (v: DollView) => void; frame: (v: Frame) => void } {
+// A doll card. `scale`: the figure's size, 2 (whole pixels, pixelated) or 1; `compact`: the Suit Builder's tighter padding; `adaptive`: 1× and no heading under the doll breakpoint (Manual's column; a `doll-band` class on the node lays it out as the narrow picker's band); `controls`: what the card head carries on the right, before the "Customized" tag and the Customize button.
+export function dollCard({ id, scale = 2, compact = false, adaptive = false, controls = [] }: { id?: string; scale?: 1 | 2; compact?: boolean; adaptive?: boolean; controls?: HTMLElement[] } = {}): { node: HTMLElement; show: (v: DollView) => void; frame: (v: Frame) => void } {
   const name = el("h2", {}), title = txt("", "t-sm muted doll-title");
   const stage = box("div", { class: `doll-stage${compact ? " doll-compact" : ""}` });
-  const note = box("div", { class: "doll-note" }), below = box("div", { class: "doll-below" }), actions = box("div", { class: "doll-actions" });
+  const pill = box("div", { class: "doll-pill", "aria-live": "polite" }), note = box("div", { class: "doll-note" }), below = box("div", { class: "doll-below" }), actions = box("div", { class: "doll-actions" });
   const customized = tag("Customized");
   const customize = button({ label: "Customize", icon: "person", variant: "ghost", size: "sm", attrs: { "aria-haspopup": "dialog", "aria-expanded": "false" }, onClick: () => { if (view) openCustomizerFor(view); } });
-  const node = el("section", { class: "card doll-card", "data-mode": "dark", ...(id ? { id } : {}) },
-    box("header", { class: "doll-head" }, box("div", { class: "doll-name" }, name, title), box("div", { class: "doll-controls" }, ...controls, customized, customize, actions)), stage, note, below);
+  const node = el("section", { class: `card doll-card${adaptive ? " doll-adaptive" : ""}`, "data-mode": "dark", ...(id ? { id } : {}) },
+    box("header", { class: "doll-head" }, box("div", { class: "doll-name" }, name, title), box("div", { class: "doll-controls" }, ...controls, customized, customize, actions)), pill, stage, note, below);
   const requests = dollRequests();
   let abort: AbortController | null = null, plan: DollPlan | null = null, drawn = false, view: DollView | null = null;
   // The note under a drawn figure, from the newest update.
@@ -79,8 +86,9 @@ export function dollCard({ id, scale = 2, compact = false, controls = [] }: { id
     name.textContent = v.heading ?? v.name ?? "No character";
     title.textContent = v.title ?? "";
     title.hidden = !v.title;
-    actions.replaceChildren(...(v.actions ?? []));
-    below.replaceChildren(...(v.below ?? []));
+    setKids(actions, v.actions ?? []);
+    setKids(below, v.below ?? []);
+    setKids(pill, v.pill ? [v.pill] : []);
   }
   function show(v: DollView): void {
     view = v;
@@ -105,8 +113,8 @@ export function dollCard({ id, scale = 2, compact = false, controls = [] }: { id
         return;
       }
       stage.replaceChildren(box("div", { class: "doll-figs" }, ...got.map((g, i) => {
-        const f = g as { src: string; width: number; height: number }, caption = v.figures[i]!.caption;
-        const img = el("img", { class: "doll-img", src: f.src, alt: caption ? `${v.name ?? "Stand-in"}, ${caption}` : `${v.name ?? "Stand-in"}'s paperdoll`, width: String(f.width * scale), height: String(f.height * scale), draggable: "false" });
+        const f = g as { src: string; width: number; height: number }, caption = v.figures[i]!.caption, alt = v.figures[i]!.alt;
+        const img = el("img", { class: "doll-img", src: f.src, alt: alt ?? (caption ? `${v.name ?? "Stand-in"}, ${caption}` : `${v.name ?? "Stand-in"}'s paperdoll`), width: String(f.width * scale), height: String(f.height * scale), style: `--doll-h:${f.height}px`, draggable: "false" });
         return el("figure", { class: "doll-fig" }, img, caption ? el("figcaption", { class: "caps" }, caption) : null);
       })));
       paintNote();
