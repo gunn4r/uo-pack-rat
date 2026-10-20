@@ -882,10 +882,12 @@ test("[slow] the Slayer filter lists each super slayer above its lesser slayers,
     await page.getByRole("menuitem", { name: "Slayer…" }).click();
     const list = page.locator(".pop").getByRole("radiogroup", { name: "Slayer" });
     const rows = (await list.locator(".inv-opt").allInnerTexts()).map((s) => s.split("\n")[0]!.trim());
-    // The demo scans hold Gargoyle Slayer items but no Demon Slayer one: Demon stays as their heading, with no radio.
+    // The demo scans hold Gargoyle Slayer items but no Demon Slayer one: Demon still heads them, pickable at 0, and so is every slayer of the table.
     const demon = rows.findIndex((s) => s.startsWith("Demon Slayer")), gargoyle = rows.indexOf("Gargoyle Slayer");
     assert.ok(demon >= 0 && gargoyle > demon, `Demon Slayer heads Gargoyle Slayer: ${JSON.stringify(rows)}`);
-    assert.equal(await list.locator(".inv-opt").nth(demon).locator("input").count(), 0, "a heading is not a radio");
+    assert.equal((await list.locator(".inv-opt").nth(demon).locator(".inv-opt-count").innerText()).trim(), "0", "a slayer the inventory lacks is listed at 0");
+    assert.equal(await list.locator('input[value="Demon"]').count(), 1, "and can be picked");
+    assert.ok(rows.includes("Wolf Slayer"), "every slayer of the table is listed");
     const count = (await list.locator(".inv-opt").nth(gargoyle).locator(".inv-opt-count").innerText()).trim();
     await list.locator('input[value="Gargoyle"]').click();
     await waitCount(page, new RegExp(`^${count} of `));
