@@ -9,7 +9,8 @@ import { badPathShape } from "../installer.mts";
 import { uoFolderFromTazuo, loadTileData, type TileData } from "../tiledata.mts";
 import { decodeFacet, type FacetBitmap } from "../facet-map.mts";
 import { decodeStatic, gumpArtName, hueOf, itemArtName, readHues, readUopEntry, readUopTable, toRgba, uopIndex, type Hues, type ReadAt, type StaticArt, type UopTable } from "../art.mts";
-import { createPaperdoll, figureBox, greyRgba, gumpSource, readEquipConv, readGumpDef, type Look, type Worn } from "../paperdoll.mts";
+import { createPaperdoll, figureBox, grayRgba, gumpSource, readEquipConv, readGumpDef } from "../paperdoll.mts";
+import type { Look, Worn } from "../paperdoll-look.mts";
 import { encodePngRgba } from "../png.mts";
 import { buildHouseModel, type HouseContainerInput, type HouseModel } from "../house-model.mts";
 import type { HouseSource } from "../house-capture.mts";
@@ -127,19 +128,20 @@ export function createHousesService({ settings, uoFolderFinder }: { settings: ()
     if (png) { artPngs.delete(key); artPngs.set(key, png); }
     return png;
   }
-  // The paperdoll figure (issue #57): `look` wearing `worn`, drawn by app/paperdoll.mts from the UO folder's gumpartLegacyMUL.uop, tiledata.mul and hues.mul, with gump.def and Equipconv.def when the folder has them. The files are opened once while their stamps stay the same, and every gump is read only when a figure needs it. `pair` is the other figure shown beside this one: both are cut to the same box, the union of their opaque boxes plus 6 px. `grey` draws the stand-in's grey. The PNG is kept like item art; `etag` names the files' stamps and the request. `reason`: no folder, a file missing (`missing`) or not readable (`unreadable`), a body the figure does not draw (`no-body`), or nothing drawn at all (`empty`).
+  // The paperdoll figure (issue #57): `look` wearing `worn`, drawn by app/paperdoll.mts from the UO folder's gumpartLegacyMUL.uop, tiledata.mul and hues.mul, with gump.def and Equipconv.def when the folder has them. The files are opened once while their stamps stay the same, and every gump is read only when a figure needs it. `pair` is the other figure shown beside this one: both are cut to the same box, the union of their opaque boxes plus 6 px. `gray` draws the stand-in's gray. The PNG is kept like item art; `etag` names the files' stamps and the request. `reason`: no folder, a file missing (`missing`), only an older client's gumpart.mul (`unsupported`), a file not readable (`unreadable`), a body the figure does not draw (`no-body`), or nothing drawn at all (`empty`).
   const DOLL_FILES = ["gumpartLegacyMUL.uop", "tiledata.mul", "hues.mul", "gump.def", "Equipconv.def"] as const;
   let dollMemo: { key: string; doll: ReturnType<typeof createPaperdoll> | null; at: number } | null = null;
-  function paperdoll(look: Look, worn: Worn[], pair: Worn[] | null, grey: boolean): { png: Buffer; etag: string } | { reason: string } {
+  function paperdoll(look: Look, worn: Worn[], pair: Worn[] | null, gray: boolean): { png: Buffer; etag: string } | { reason: string } {
     const at = artFolder();
     if ("reason" in at) return at;
     const [gumps, tiles, hues, gumpDef, equipConv] = DOLL_FILES.map((f) => join(at.folder, f));
     const stamps = [gumps!, tiles!, hues!, gumpDef!, equipConv!].map(stamp);
-    if (!stamps[0] || !stamps[1]) return { reason: "missing" };
+    if (!stamps[0]) return { reason: stamp(join(at.folder, "gumpart.mul")) ? "unsupported" : "missing" };
+    if (!stamps[1]) return { reason: "missing" };
     // The pieces in one order, so the same suit asked in another order is the same image, ETag and cache entry.
     const byPiece = (a: Worn, b: Worn): number => a.graphic - b.graphic || a.hue - b.hue;
     worn = [...worn].sort(byPiece); pair = pair && [...pair].sort(byPiece);
-    const filesKey = stamps.join("|"), key = `${filesKey}|doll|${JSON.stringify([look, worn, pair, grey])}`, etag = `"${createHash("sha1").update(key).digest("hex").slice(0, 20)}"`;
+    const filesKey = stamps.join("|"), key = `${filesKey}|doll|${JSON.stringify([look, worn, pair, gray])}`, etag = `"${createHash("sha1").update(key).digest("hex").slice(0, 20)}"`;
     const hit = kept(key);
     if (hit) return { png: hit, etag };
     if (dollMemo?.key !== filesKey || (!dollMemo.doll && Date.now() - dollMemo.at > ART_RETRY_MS)) dollMemo = { key: filesKey, doll: openPaperdoll(gumps!, tiles!, stamps[2] ? hues! : null, stamps[3] ? gumpDef! : null, stamps[4] ? equipConv! : null), at: Date.now() };
@@ -148,7 +150,7 @@ export function createHousesService({ settings, uoFolderFinder }: { settings: ()
     if (!fig) return { reason: "no-body" };
     const other = pair ? dollMemo.doll.compose(look, pair) : null, box = figureBox(other ? [fig, other] : [fig]), img = box && toRgba(fig, null, box);
     if (!img) return { reason: "empty" };
-    const out = encodePngRgba(img.width, img.height, grey ? greyRgba(img.rgba) : img.rgba);
+    const out = encodePngRgba(img.width, img.height, gray ? grayRgba(img.rgba) : img.rgba);
     keep(key, out);
     return { png: out, etag };
   }

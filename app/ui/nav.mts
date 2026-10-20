@@ -3,7 +3,7 @@
 // registers what it does when its route is shown, and the Inventory hands over its Items view at startup.
 //
 // map: ui-bootstrap
-// owns: `parseRoute`, `routeFor`, `registerScreen`, `showRoute`, `showItem`, `showContainer`, `showSearch`, `showKind`, `showCharacterItems`
+// owns: `parseRoute`, `routeFor`, `registerScreen`, `showRoute`, `showSettings`, `showItem`, `showContainer`, `showSearch`, `showKind`, `showCharacterItems`
 import type { ItemQuery } from "../item-query.mts";
 import { session } from "./builder-session.mts";
 
@@ -29,6 +29,17 @@ export interface Screen { name: string; show: (route: Route) => void }
 const screens = new Map<string, Screen>();
 export function registerScreen(screen: Screen): void { screens.set(screen.name, screen); }
 export function showRoute(route: Route): void { screens.get(route.tab)?.show(route); }
+// Settings with one of its parts ("set-client" Game client, "set-data" Data, "set-uofolder" the UO folder card, "set-scanner" the Game client's scanner row) scrolled into view once Settings has drawn it (its render waits on GET /api/setup).
+export function showSettings(section: "set-client" | "set-data" | "set-uofolder" | "set-scanner"): void {
+  location.hash = "#/settings";
+  const until = Date.now() + 3000;
+  const tick = (): void => {
+    const sec = document.getElementById(section);
+    if (sec?.offsetParent) sec.scrollIntoView({ block: "start" });
+    else if (Date.now() < until) setTimeout(tick, 50);
+  };
+  tick();
+}
 
 // ---------------------------------------------------------------- ways into the Items view
 // The Inventory (inventory.mts) fills these in at startup; each one sets the Items view's query and then goes to #/inventory.
