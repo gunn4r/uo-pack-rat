@@ -9,7 +9,7 @@
 // map: server
 // owns: `routes`
 import { parseItemQuery, applyItemQuery, facetsOf, wantsHits, hitRow, wantsPropCounts, propCounts, type ItemQueryRows, type ItemQueryGroups, type UnravelContext } from "../../item-query.mts";
-import type { Item } from "../../vault-lib.mts";
+import { labelledPlaces, type Item } from "../../vault-lib.mts";
 import { leftOutReasons } from "../../unravel.mts";
 import { suitPieces } from "../../runs-lib.mts";
 import { unravelKeep } from "../../store/settings.mts";
@@ -53,11 +53,12 @@ export function routes(ctx: ServerContext): Route[] {
     { method: "GET", path: "/api/items", handle: async (_req, res, url) => {
       const { inv } = await getInventory();
       const query = parseItemQuery(url.searchParams);
+      const places = labelledPlaces(inv.containers, organizeStore.read().config.labels);
       if (wantsPropCounts(url.searchParams)) {
-        const { rows, total } = applyItemQuery(Object.values(inv.items), { ...query, group: false, unravel: false, offset: 0, limit: Number.MAX_SAFE_INTEGER }, { rarity: appSettings.rules().rarity }) as ItemQueryRows;
+        const { rows, total } = applyItemQuery(Object.values(inv.items), { ...query, group: false, unravel: false, offset: 0, limit: Number.MAX_SAFE_INTEGER }, { rarity: appSettings.rules().rarity, places }) as ItemQueryRows;
         return send(res, 200, { ok: true, total, ...propCounts(rows) } satisfies ItemPropCountsApiResponse);
       }
-      const result = applyItemQuery(Object.values(inv.items), query, { rarity: appSettings.rules().rarity, ...(query.unravel ? { unravel: unravelContext() } : {}) });
+      const result = applyItemQuery(Object.values(inv.items), query, { rarity: appSettings.rules().rarity, places, ...(query.unravel ? { unravel: unravelContext() } : {}) });
       if (wantsHits(url.searchParams)) return send(res, 200, { ok: true, total: result.total, offset: query.offset, limit: query.limit, rows: (result as ItemQueryRows).rows.map(hitRow) } satisfies ItemHitsApiResponse);
       // applyItemQuery returns the ItemQueryRows | ItemQueryGroups union; narrow at each call site
       // by query.group, same as app/item-query.test.mts does — `total` is common to both branches.

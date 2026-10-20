@@ -86,6 +86,7 @@ Part of the UI docs: [`docs/ui.md`](../ui.md) has the hard rules, tokens, compon
 The filter state is the browser's `query`, the shape `item-query.mts`'s `parseItemQuery` reads. Every control goes through `setQuery()`, which redraws the chips (in place, so an open popover keeps its anchor) and the active strip, and refetches.
 
 - **Any-of lists:** Character, Slot, Location (as bag texts `loc` and whole root containers `root`), Kind and Weapon skill.
+  - A container labelled for Organize is listed in Location by its label, as the Location column shows it, with its scanned name beside the serial (`placeNames`); the list's own search finds either. The search box finds an item by its container's label too: `applyItemQuery` takes `labelledPlaces` as `places`, on the server and in Select all matching.
   - Weapon skill (issue #188) is written `wskill=swordsmanship`, with lower-cased skill names, and its tokens read "Weapon skill: Swordsmanship".
   - The facets' `weaponSkills` counts each skill from `vault-lib.mts`'s `weaponSkillsOf`. A Use Best Weapon Skill weapon also counts under Swordsmanship, Fencing and Mace Fighting, which the chip's popover says.
 - **Rarity** is a range (`rarityMin`, `rarityMax`). An item with no tier counts as below every tier, and a Reforged tier ranks with its base tier.

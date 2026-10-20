@@ -229,26 +229,6 @@ export function organizeStage(cfg: OrganizeConfig | null, groundRoots: number): 
   return "ready";
 }
 
-// ---------------------------------------------------------------- locations by label
-// Each location text the fold gives a container inside a labelled one (vault-lib.mts's locationOf: segments
-// joined by " › ", a backpack or bank root named after its owner), mapped to the same path with every labelled
-// segment read by its label. dom.mts's whereText looks location texts up here.
-export function labelledPlaces(containers: Readonly<Record<string, ContainerLike>>, labels: Readonly<Record<string, ContainerLabel>>): Map<string, string> {
-  const out = new Map<string, string>();
-  if (!Object.keys(labels).length) return out;
-  for (const c of Object.values(containers)) {
-    const chain: ContainerLike[] = [];
-    let cur: ContainerLike | undefined = c, guard = 0;
-    while (cur && guard++ < 8) { chain.unshift(cur); cur = cur.parent != null ? containers[String(cur.parent)] : undefined; }
-    if (!chain.some((x) => labels[String(x.serial)])) continue;
-    const root = chain[0]!;
-    const own = root.kind === "backpack" || root.kind === "bank" ? `${root.scannedBy}'s ${root.kind}` : null;
-    const seg = (x: ContainerLike, i: number, byLabel: boolean): string => (i === 0 && own ? own : (byLabel ? labels[String(x.serial)]?.name : undefined) || x.label || bagLabel(x));
-    out.set(chain.map((x, i) => seg(x, i, false)).join(" › "), chain.map((x, i) => seg(x, i, true)).join(" › "));
-  }
-  return out;
-}
-
 // ---------------------------------------------------------------- the plan
 export const ruleNameOf = (cfg: OrganizeConfig) => (id: string): string => (id === CATCH_ALL_ID ? "Everything else" : id === EMPTY_BAGS_ID ? "Empty bags" : cfg.rules.find((r) => r.id === id)?.name ?? id);
 export const containerNameOf = (cfg: OrganizeConfig, containers: Readonly<Record<string, ContainerLike>>) => (serial: number): string => targetView(serial, cfg, containers).name;

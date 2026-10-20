@@ -22,7 +22,7 @@ import { optionsKeeping, colsFromPrefs, COLS_VERSION } from "./view-state.mts";
 import { relativeWhen } from "./messages.mts";
 import { txt, box, icon, button, searchInput, filterChip, token, pill, segmented, switchControl, popover, closePopover, message, menu, input, nextId, toast } from "./components.mts";
 import type { Kids, MenuItem, PopoverHandle } from "./components.mts";
-import { splitSerial, queryParams, withFixed, activeFilters, clearAll, matchLine, countFact, emptyCause, rowWindow, chunksToFetch, gridKey, colShort, colFull, groupColumns, COL_GROUPS, DEFAULT_COLS, ITEM_COLS, shortTier, rootName, slayerTree, slayerLabel, neZeroHint, MAGE_WEAPON_HINT } from "./inv-model.mts";
+import { splitSerial, placeNames, queryParams, withFixed, activeFilters, clearAll, matchLine, countFact, emptyCause, rowWindow, chunksToFetch, gridKey, colShort, colFull, groupColumns, COL_GROUPS, DEFAULT_COLS, ITEM_COLS, shortTier, rootName, slayerTree, slayerLabel, neZeroHint, MAGE_WEAPON_HINT } from "./inv-model.mts";
 import type { FilterToken } from "./inv-model.mts";
 import type { ItemPropCountsApiResponse, ItemsApiResponse, UiPrefs } from "./api-types.mts";
 import { openRuleEditor } from "./rule-editor.mts";
@@ -221,28 +221,31 @@ function kindOptions(q: ItemQuery, f: Facets | null): Option[] {
   return keeping((f?.kinds || []).map((k) => ({ value: k.name, label: k.name, count: k.count })), q.kind, String);
 }
 // The Location tree: each character's worn set, backpack and bank (with the bags inside them), then the
-// containers on the ground. A root's checkbox takes everything inside it; a bag's takes just that bag.
+// containers on the ground. A root's checkbox takes everything inside it; a bag's takes just that bag. A container
+// labelled for Organize is listed by its label, as the Location column shows it.
 function locationOptions(q: ItemQuery, f: Facets | null): Option[] {
   const out: Option[] = [];
-  const add = (group: string, ps: Place[], nameOf: (p: Place) => string): void => {
+  const bags = (text: string): string => text.split(" › ").slice(1).join(" › ");
+  const add = (group: string, ps: Place[], fixed?: string): void => {
     const roots = new Map<number, Place[]>();
     for (const p of ps) if (p.root != null) roots.set(p.root, [...(roots.get(p.root) || []), p]);
     for (const [root, inRoot] of roots) {
       const top = inRoot.reduce((a, b) => (a.text.length <= b.text.length ? a : b));
-      const serial = splitSerial(top.rootName).serial;
-      out.push({ value: `root:${root}`, label: nameOf(top), group, count: inRoot.reduce((a, p) => a + p.count, 0), ...(serial ? { mono: serial } : {}) });
-      for (const p of inRoot) if (p.text.includes(" › ")) out.push({ value: `loc:${p.text}`, label: p.text.split(" › ").slice(1).join(" › "), group, sub: true, count: p.count });
+      const { name, serial } = splitSerial(top.rootName);
+      const shown = fixed ?? splitSerial(whereText(top.text).split(" › ")[0]!).name;
+      out.push({ value: `root:${root}`, group, count: inRoot.reduce((a, p) => a + p.count, 0), ...placeNames(fixed ?? name, shown, serial) });
+      for (const p of inRoot) if (p.text.includes(" › ")) out.push({ value: `loc:${p.text}`, group, sub: true, count: p.count, ...placeNames(bags(p.text), bags(whereText(p.text))) });
     }
   };
   const ground: Place[] = [];
   for (const [who, ps] of [...placesByCharacter(f)].sort(([a], [b]) => a.localeCompare(b))) {
     const worn = ps.find((p) => p.kind === "equipped");
     if (worn) out.push({ value: `loc:${worn.text}`, label: "Worn", group: who, count: worn.count });
-    add(who, ps.filter((p) => p.kind === "backpack"), () => "Backpack");
-    add(who, ps.filter((p) => p.kind === "bank"), () => "Bank");
+    add(who, ps.filter((p) => p.kind === "backpack"), "Backpack");
+    add(who, ps.filter((p) => p.kind === "bank"), "Bank");
     ground.push(...ps.filter((p) => !["equipped", "backpack", "bank"].includes(p.kind)));
   }
-  add("On the ground", ground, (p) => splitSerial(p.rootName).name);
+  add("On the ground", ground);
   for (const r of q.roots) if (!out.some((o) => o.value === `root:${r}`)) out.push({ value: `root:${r}`, label: `${rootName(r, [])} (none now)`, group: "No longer scanned" });
   for (const l of q.loc) if (!out.some((o) => o.value === `loc:${l}`)) out.push({ value: `loc:${l}`, label: `${l} (none now)`, group: "No longer scanned" });
   return out;
