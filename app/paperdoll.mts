@@ -87,13 +87,18 @@ export function readEquipConv(text: string): EquipConv {
 // One gump as the figure draws it: its pixels as decoded, and gump.def's hue for an alias (0 for none), applied in full before the piece's own hue.
 export interface Gump { art: StaticArt; hue: number }
 export type GumpSource = (id: number) => Gump | null;
-// The gumps of a gumpartLegacyMUL.uop with gump.def's aliases, each decoded once. Null for a gump the archive and gump.def don't have, or that does not decode, which ClassicUO treats the same (no texture).
-export function gumpSource(table: UopTable, read: ReadAt, defs: GumpDefs): GumpSource {
+// The decoded gumps kept, in bytes (2 a pixel): a page could otherwise sweep every wearable graphic into memory. Past it the cache starts over.
+const GUMP_CACHE_BYTES = 32 * 1024 * 1024;
+// The gumps of a gumpartLegacyMUL.uop with gump.def's aliases, each decoded once while it stays in the cache (`cacheBytes`). Null for a gump the archive and gump.def don't have, or that does not decode, which ClassicUO treats the same (no texture).
+export function gumpSource(table: UopTable, read: ReadAt, defs: GumpDefs, cacheBytes = GUMP_CACHE_BYTES): GumpSource {
   const decoded = new Map<number, StaticArt | null>();
+  let bytes = 0;
   const art = (id: number): StaticArt | null => {
     if (!decoded.has(id)) {
-      const buf = readUopEntry(table, gumpArtName(id), read);
-      decoded.set(id, buf ? decodeGump(buf) : null);
+      const buf = readUopEntry(table, gumpArtName(id), read), a = buf ? decodeGump(buf) : null, size = a ? a.pixels.length * 2 : 0;
+      if (bytes + size > cacheBytes) { decoded.clear(); bytes = 0; }
+      bytes += size;
+      decoded.set(id, a);
     }
     return decoded.get(id)!;
   };

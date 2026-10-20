@@ -140,6 +140,9 @@ export function createHousesService({ settings, uoFolderFinder }: { settings: ()
     const stamps = [gumps!, tiles!, hues!, gumpDef!, equipConv!].map(stamp);
     if (!stamps[0]) return { reason: stamp(join(at.folder, "gumpart.mul")) ? "unsupported" : "missing" };
     if (!stamps[1]) return { reason: "missing" };
+    // The pieces in one order, so the same suit asked in another order is the same image, ETag and cache entry.
+    const byPiece = (a: Worn, b: Worn): number => a.graphic - b.graphic || a.hue - b.hue;
+    worn = [...worn].sort(byPiece); pair = pair && [...pair].sort(byPiece);
     const filesKey = stamps.join("|"), key = `${filesKey}|doll|${JSON.stringify([look, worn, pair, gray])}`, etag = `"${createHash("sha1").update(key).digest("hex").slice(0, 20)}"`;
     const hit = kept(key);
     if (hit) return { png: hit, etag };
@@ -153,11 +156,13 @@ export function createHousesService({ settings, uoFolderFinder }: { settings: ()
     keep(key, out);
     return { png: out, etag };
   }
-  // A hues.mul read once while its stamp stays the same (item art, the paperdoll and its choices share it), or null when it is missing or not whole groups.
+  // A client file read whole, refused past `max` bytes (a hues.mul is about 260 KB, a Cliloc.enu about 5 MB): a wrong or damaged file is never loaded into memory.
+  const readCapped = (path: string, max: number): Buffer => { if (statSync(path).size > max) throw new Error("too large"); return readFileSync(path); };
+  // A hues.mul read once while its stamp stays the same (item art, the paperdoll and its choices share it), or null when it is missing, over 4 MB or not whole groups.
   function huesAt(path: string): Hues | null {
     const key = stamp(path);
     if (!key) return null;
-    if (hueMemo?.key !== key) { let hues: Hues | null; try { hues = readHues(readFileSync(path)); } catch { hues = null; } hueMemo = { key, hues }; }
+    if (hueMemo?.key !== key) { let hues: Hues | null; try { hues = readHues(readCapped(path, 4 << 20)); } catch { hues = null; } hueMemo = { key, hues }; }
     return hueMemo.hues;
   }
   // The colour a worn piece's hue swatch shows (issue #57, the character sheet's gear list): entry 18 of each hue's ramp as "#rrggbb", keyed by the hue as asked (its partial and spectral bits ignored); a hue the file lacks is left out. `reason`: no folder, or no readable hues.mul (`missing`).
@@ -179,7 +184,7 @@ export function createHousesService({ settings, uoFolderFinder }: { settings: ()
     if (optionsMemo?.key !== key) {
       const hues = huesAt(huesPath);
       let labels: Map<number, string> | null;
-      try { labels = readCliloc(readFileSync(clilocPath), CREATION_LABELS); } catch { labels = null; }
+      try { labels = readCliloc(readCapped(clilocPath, 32 << 20), CREATION_LABELS); } catch { labels = null; }
       optionsMemo = { key, options: hues ? creationOptions(hues, labels ?? new Map()) : null };
     }
     return optionsMemo.options ?? { reason: "unreadable" };

@@ -407,7 +407,8 @@ export function popoverPlacement(a: { top: number; bottom: number; left: number 
 // focus inside.
 // It lives on <body>, so one opened from inside a drawer (anchored or placed beside it) is raised over that drawer
 // and its scrim: a click in it lands in it, not on the scrim, and so never closes the drawer.
-export interface PopoverHandle { root: HTMLElement; close: () => void; isOpen: () => boolean }
+// `place`: measure and place it again, for a caller that changed its content after opening it.
+export interface PopoverHandle { root: HTMLElement; close: () => void; isOpen: () => boolean; place: () => void }
 let openPopover: PopoverHandle | null = null;
 export function popover(anchor: HTMLElement, content: Kids, { label, width, minWidth, onClose, role = "dialog", beside }: { label: string; width?: number | undefined; minWidth?: number | undefined; onClose?: (() => void) | undefined; role?: "dialog" | "menu" | "listbox"; beside?: HTMLElement | undefined } = { label: "" }): PopoverHandle {
   // a second press on the anchor of the open popover closes it and opens nothing: the caller gets that closed handle back
@@ -449,7 +450,7 @@ export function popover(anchor: HTMLElement, content: Kids, { label, width, minW
   anchor.addEventListener("keydown", onKey);
   addEventListener("resize", place);
   document.addEventListener("scroll", onScroll, true);
-  const handle: PopoverHandle = { root, close: () => close(), isOpen: () => open };
+  const handle: PopoverHandle = { root, close: () => close(), isOpen: () => open, place };
   openPopover = handle;
   (focusables(root)[0] || root).focus();
   return handle;
