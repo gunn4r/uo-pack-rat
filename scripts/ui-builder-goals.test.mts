@@ -195,8 +195,8 @@ test("[slow] goals runs: the first-visit goals, the run line in goal names, and 
     const most = await page.locator("#b-start .b-start-sum .b-imps").innerText();
     assert.match(most, /^1\. Swing speed\s+100\s+2\. Hit chance = Defense chance\s+80\s+3\. Damage\s+65$/);
     const sum = await page.locator("#b-start .b-start-sum").innerText();
-    assert.match(sum, /Spare points: Luck\s+Goals in Build Settings/);
-    assert.doesNotMatch(sum, /more in Build Settings/, "the spare points are no extra row");
+    assert.match(sum, /Spare points: Luck\s+Goals in Auto Build Settings/);
+    assert.doesNotMatch(sum, /more in Auto Build Settings/, "the spare points are no extra row");
     assert.ok(await sidewaysAt(app, page, { width: 420, height: 900 }) <= 0, "no sideways scroll at 420 on the first-visit view");
     await fitWindow(app, page, { width: 1440, height: 900 });
 
