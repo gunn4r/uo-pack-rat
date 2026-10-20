@@ -1,0 +1,2 @@
+- **Easier container chips in the Suit Builder**: Skip containers and Only containers now group the containers like the Inventory's Location filter, each character's backpack and bank under the character, then the containers in each house, then the rest on the ground. Containers labelled for Organize show their label first, and searching a house's name lists its containers.
+- For contributors: `builder-model.mts`'s `rootOptions` builds the grouped options (`RootOption.group`), and `builder-parts.mts`'s `checklist` heads each group.

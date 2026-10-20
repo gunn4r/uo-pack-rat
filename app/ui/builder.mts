@@ -15,7 +15,9 @@ import { defaultStrLimit } from "../run-settings.mts";
 import { evaluateSuit } from "../evaluate.mts";
 import { state } from "./store.mts";
 import type { FinishedBuild } from "./store.mts";
-import { $, el, slotLabel } from "./dom.mts";
+import { $, el, slotLabel, whereText } from "./dom.mts";
+import { houseOfContainer } from "./house-links.mts";
+import { PLAIN } from "./house-map-model.mts";
 import { box, txt, button, badge, select, input, field, switchControl, check, segmented, filterChip, pill, popover, closePopover, icon, modalOpen, bindDrawer, type DrawerHandle, toast } from "./components.mts";
 import { createBuffPicker, type BuffPicker, type BuffView, type PickerActions } from "./builder-buffs.mts";
 import { parseRoute, registerScreen, routeFor } from "./nav.mts";
@@ -23,7 +25,7 @@ import { editProfiles, setCharacterBuffs } from "./profiles.mts";
 import { session, commands, announce, provide, onChange, readControls, type BuilderChange, type BuildState, type SectionId, type FocusSection } from "./builder-session.mts";
 import { plainName, NO_CHARACTER, buffsOn, group, checklist, panelFcCap, fcCapNote } from "./builder-parts.mts";
 import { characterNames } from "./roster.mts";
-import { runSettingsDiff, knobError, pruneResistCaps, weaponsChipText, weaponMustHaveChipText, withStoredRoots, weaponName, toggleWeapon, fcCapText, rarityHelp, templateBuffsLine, sourceTitle, who, buildStateText, buildStateDetail, type KnobField } from "./builder-model.mts";
+import { runSettingsDiff, knobError, pruneResistCaps, weaponsChipText, weaponMustHaveChipText, withStoredRoots, rootOptions as rootOptionsOf, type RootOption, weaponName, toggleWeapon, fcCapText, rarityHelp, templateBuffsLine, sourceTitle, who, buildStateText, buildStateDetail, type KnobField } from "./builder-model.mts";
 import type { UiPrefs } from "./api-types.mts";
 import { prefs } from "./prefs.mts";
 import { plural } from "./format.mts";
@@ -500,10 +502,9 @@ function rarityField(): HTMLElement {
   return box("div", { class: "b-rarity" }, box("div", { class: "field" }, el("span", { class: "label" }, "Rarity"), seg), help);
 }
 const rarityHelpText = (): string => rarityHelp(session.profile!.rarity);
-function rootOptions(): Array<{ value: string; label: string }> {
-  return Object.values(state.inv!.containers).filter((c) => c.parent == null)
-    .map((r) => ({ value: String(r.serial), label: `${r.kind === "ground" ? "" : r.scannedBy + "'s "}${(r as { label?: string }).label || bagLabel(r)}` }))
-    .sort((a, b) => a.label.localeCompare(b.label));
+function rootOptions(): RootOption[] {
+  const roots = Object.values(state.inv!.containers).filter((c) => c.parent == null).map((r) => ({ serial: r.serial, kind: r.kind, scannedBy: r.scannedBy, name: r.label || bagLabel(r) }));
+  return rootOptionsOf(roots, whereText, (s) => { const h = houseOfContainer(s); return h && h.id !== PLAIN ? h.name : null; });
 }
 // A dropdown chip's label says what it holds ("Locked slots: 2") and is drawn set when it holds anything.
 function paintChip(chip: HTMLButtonElement, text: string, set: boolean): void {

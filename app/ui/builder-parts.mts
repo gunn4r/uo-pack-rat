@@ -38,14 +38,20 @@ export const panelFcCap = (): FcCap => fcCapFor(state.inv!.characters[session.ch
 // The FC row's note: its cap and where that comes from.
 export const fcCapNote = (): HTMLElement => el("span", { class: "t-sm muted b-fc-cap" }, fcCapText(panelFcCap()));
 // The checklist popover behind a chip; `changed` repaints what shows the list.
-export function checklist(anchor: HTMLElement, title: string, get: () => string[], set: (v: string[]) => void, all: Array<{ value: string; label: string }>, searchable: boolean, changed: () => void): void {
+// An option's `group` heads it and the options after it with the same group (the container chips' character or house).
+export function checklist(anchor: HTMLElement, title: string, get: () => string[], set: (v: string[]) => void, all: Array<{ value: string; label: string; group?: string | undefined }>, searchable: boolean, changed: () => void): void {
   const list = box("div", { class: "b-checks" });
   const paint = (q: string): void => {
-    const hits = all.filter((o) => !q || o.label.toLowerCase().includes(q));
-    list.replaceChildren(...(hits.length ? hits.map((o) => check({ label: o.label, checked: get().includes(o.value), attrs: { value: o.value }, onChange: (on) => {
-      set(on ? [...get(), o.value] : get().filter((x) => x !== o.value));
-      changed(); commands.updateTemplateBadge();
-    } }).root) : [el("p", { class: "t-sm muted" }, all.length ? "Nothing matches." : "Nothing to choose from yet.")]));
+    const hits = all.filter((o) => !q || `${o.label} ${o.group ?? ""}`.toLowerCase().includes(q));
+    const rows: HTMLElement[] = [];
+    hits.forEach((o, i) => {
+      if (o.group && o.group !== hits[i - 1]?.group) rows.push(el("p", { class: "t-sm muted" }, o.group));
+      rows.push(check({ label: o.label, checked: get().includes(o.value), attrs: { value: o.value }, onChange: (on) => {
+        set(on ? [...get(), o.value] : get().filter((x) => x !== o.value));
+        changed(); commands.updateTemplateBadge();
+      } }).root);
+    });
+    list.replaceChildren(...(rows.length ? rows : [el("p", { class: "t-sm muted" }, all.length ? "Nothing matches." : "Nothing to choose from yet.")]));
   };
   const s = searchable && all.length > 7 ? searchInput({ label: `Search ${title.toLowerCase()}`, placeholder: "Search" }) : null;
   s?.input.addEventListener("input", () => paint(s.input.value.trim().toLowerCase()));
