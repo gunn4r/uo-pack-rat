@@ -47,6 +47,7 @@ test("[fast] checkOrganizeConfig accepts an empty setup and a full one", () => {
   // Issue #188: and pick weapon skills; one saved before them (r1 here) still reads.
   built.rules[1]!.match.query.wskill = ["Fencing", "mace fighting"];
   built.rules[1]!.match.skipSuits = true;
+  built.rules[1]!.match.query.props.push({ key: "fc", min: -1, op: "ne" });
   const b = checkOrganizeConfig(built);
   assert.equal(b.ok, true, b.ok ? "" : b.error);
 });
@@ -65,7 +66,7 @@ test("[fast] checkOrganizeConfig refuses each broken part and names it", () => {
     ["a rule id that is the empty bags'", (c) => { c.rules[0]!.id = EMPTY_BAGS_ID; }, /reserved for the empty bags/],
     ["a rule query with a location filter", (c) => { Object.assign(c.rules[0]!.match.query, { loc: ["Chest"] }); }, /loc is not a rule filter/],
     ["a rule query missing a field", (c) => { delete (c.rules[0]!.match.query as Partial<RuleQuery>).kind; }, /kind is missing/],
-    ["a property filter with a bad operator", (c) => { c.rules[1]!.match.query.props = [{ key: "psLevel", min: 110, op: "ge" as "le" }]; }, /props\[0\]/],
+    ["a property filter with a bad operator", (c) => { c.rules[1]!.match.query.props = [{ key: "psLevel", min: 110, op: "ge" as "le" }]; }, /props\[0\] must be \{key, min, op\?: "le" \| "eq" \| "ne"\}/],
     ["an empty name in names", (c) => { c.rules[0]!.match.names = [""]; }, /names/],
     ["an unknown build", (c) => { c.rules[0]!.match.build = "wizard" as "caster"; }, /rules\[0\]\.match\.build must be one of caster, melee, hybrid, tank, other/],
     ["an unknown school", (c) => { c.rules[0]!.match.school = "pyromancy" as "magery"; }, /rules\[0\]\.match\.school must be one of magery, necromancy, mysticism, spellweaving/],
