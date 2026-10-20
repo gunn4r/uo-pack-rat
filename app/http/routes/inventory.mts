@@ -3,7 +3,7 @@
 // The routes, what each takes and answers:
 // - `GET /api/inventory` (the cached fold of every scan, with Organize's results overlay applied — getInventory(), keyed by a signature of the scans directory + shard, and of organize-state.json for the overlay, so an edited/added/removed scan file or a finished trip is picked up on the next request with no restart; each scan file is upgraded v1→v2 and schema- validated on read — scanStore.all() — an invalid or unparsable file is logged and skipped) — the response carries facets/worn/rootCounts/missingCounts/itemCount/propKeys — never the full item map (that stopped shipping in Task 5, once the page moved to paging GET /api/items instead)
 // - `GET /api/missing?root=` — what left that root since its last scan (app/missing.mts, issue #99)
-// - `GET /api/items?q=&slot=&loc=&rarity=&kind=&seenDays=&slayer=&nogarg=&med=&hide=&prop=&group=&sort=&dir=&offset=&limit=` — a paged, server-side search/sort over the same folded inventory (parseItemQuery/applyItemQuery, app/item-query.mts); &fields=hits answers lean rows (hitRow), up to HIT_LIMIT a page, for the House map's search; &fields=props answers how many matching stacks carry each property (propCounts), for the property rule's list; &unravel=1 keeps only unravel candidates, each row with `unravel: {ingredient, weight, maybe, leftOut?}` (app/unravel.mts, issue #271), less the pieces left out by default (worn, in a saved run, insured, pinned in Organize, imbued, blessed, kept) unless &unravelShow= names those reasons (or `all`); sort=unravel is by weight
+// - `GET /api/items?q=&slot=&loc=&root=&house=&rarity=&kind=&seenDays=&slayer=&nogarg=&med=&hide=&prop=&group=&sort=&dir=&offset=&limit=` — a paged, server-side search/sort over the same folded inventory (parseItemQuery/applyItemQuery, app/item-query.mts); &fields=hits answers lean rows (hitRow), up to HIT_LIMIT a page, for the House map's search; &unravel=1 keeps only unravel candidates, each row with `unravel: {ingredient, weight, maybe, leftOut?}` (app/unravel.mts, issue #271), less the pieces left out by default (worn, in a saved run, insured, pinned in Organize, imbued, blessed, kept) unless &unravelShow= names those reasons (or `all`); sort=unravel is by weight
 // - `GET /api/items/by-serial?serials=1,2,3` — full item records (location/tags/equippedBy…) by serial, 1-200 at a time (400 otherwise); a serial with no item is simply absent from the response
 //
 // map: server
@@ -19,7 +19,7 @@ import type { InventoryApiResponse, ItemHitsApiResponse, ItemPropCountsApiRespon
 import type { ServerContext } from "../context.mts";
 
 export function routes(ctx: ServerContext): Route[] {
-  const { config: CONFIG, appSettings, getInventory, organizeService, runStore, organizeStore } = ctx;
+  const { config: CONFIG, appSettings, getInventory, organizeService, runStore, organizeStore, houseService, houseClaimsStore } = ctx;
   // An unravel query's context (issue #271): the pieces of every saved run's suit, Organize's pinned items and the Keep list.
   function unravelContext(): UnravelContext {
     const left = { suits: suitPieces(runStore.all()), pins: new Set(organizeStore.read().config.pinnedItems), kept: new Set(unravelKeep(appSettings.current())) };
@@ -51,14 +51,16 @@ export function routes(ctx: ServerContext): Route[] {
       return send(res, 200, { ok: true, items: (!listed && missing[String(+root)]) || [] } satisfies MissingApiResponse);
     } },
     { method: "GET", path: "/api/items", handle: async (_req, res, url) => {
-      const { inv } = await getInventory();
+      const { inv, houses } = await getInventory();
       const query = parseItemQuery(url.searchParams);
       const places = labelledPlaces(inv.containers, organizeStore.read().config.labels);
+      const houseOf = query.houses.length ? houseService.houseOfContainers(inv, houses, houseClaimsStore.read()) : undefined;
+      const where = { rarity: appSettings.rules().rarity, places, ...(houseOf ? { houseOf } : {}) };
       if (wantsPropCounts(url.searchParams)) {
-        const { rows, total } = applyItemQuery(Object.values(inv.items), { ...query, group: false, unravel: false, offset: 0, limit: Number.MAX_SAFE_INTEGER }, { rarity: appSettings.rules().rarity, places }) as ItemQueryRows;
+        const { rows, total } = applyItemQuery(Object.values(inv.items), { ...query, group: false, unravel: false, offset: 0, limit: Number.MAX_SAFE_INTEGER }, where) as ItemQueryRows;
         return send(res, 200, { ok: true, total, ...propCounts(rows) } satisfies ItemPropCountsApiResponse);
       }
-      const result = applyItemQuery(Object.values(inv.items), query, { rarity: appSettings.rules().rarity, places, ...(query.unravel ? { unravel: unravelContext() } : {}) });
+      const result = applyItemQuery(Object.values(inv.items), query, { ...where, ...(query.unravel ? { unravel: unravelContext() } : {}) });
       if (wantsHits(url.searchParams)) return send(res, 200, { ok: true, total: result.total, offset: query.offset, limit: query.limit, rows: (result as ItemQueryRows).rows.map(hitRow) } satisfies ItemHitsApiResponse);
       // applyItemQuery returns the ItemQueryRows | ItemQueryGroups union; narrow at each call site
       // by query.group, same as app/item-query.test.mts does — `total` is common to both branches.

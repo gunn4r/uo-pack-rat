@@ -28,6 +28,7 @@ import type { ItemPropCountsApiResponse, ItemsApiResponse, UiPrefs } from "./api
 import { openRuleEditor } from "./rule-editor.mts";
 import { showItemTip, hideItemTip } from "./dom.mts";
 import { filterContext, tagEls, rarityEl, locationEl } from "./item-parts.mts";
+import { houseNameOf, mapHouses } from "./house-links.mts";
 import { retryLoad } from "./inventory-data.mts";
 import { BREAKPOINTS, upTo } from "./breakpoints.mts";
 import { plural } from "./format.mts";
@@ -128,14 +129,14 @@ export interface ItemBrowser {
 // A browser's filters and sort start here — the exact shape parseItemQuery (item-query.mts) reads off a
 // URLSearchParams (inv-model.mts's queryParams builds the query string from it; offset/limit are set per chunk).
 // Nothing hidden by default: power scrolls are Cursed.
-const BLANK_QUERY: ItemQuery ={ q: "", chars: [], slot: [], loc: [], roots: [], rarity: "", rarityMin: "", rarityMax: "", kind: [], seenDays: 0, slayer: "", nogarg: false, med: false, hideTags: [], tags: [], props: [], flags: [], wskill: [], type: [], group: false, sort: "name", dir: 1, offset: 0, limit: 500 };
+const BLANK_QUERY: ItemQuery ={ q: "", chars: [], slot: [], loc: [], roots: [], houses: [], rarity: "", rarityMin: "", rarityMax: "", kind: [], seenDays: 0, slayer: "", nogarg: false, med: false, hideTags: [], tags: [], props: [], flags: [], wskill: [], type: [], group: false, sort: "name", dir: 1, offset: 0, limit: 500 };
 
 // ---------------------------------------------------------------- the filter state
 type ChipId = "char" | "slot" | "loc" | "rarity" | "kind" | "type" | "wskill" | "slayer" | "seen";
 const FACETS: ChipId[] = ["char", "slot", "loc", "rarity", "kind", "type", "wskill"];
 const CHIP_NAMES: Record<ChipId, string> = { char: "Character", slot: "Slot", loc: "Location", rarity: "Rarity", kind: "Kind", type: "Type", wskill: "Weapon skill", slayer: "Slayer", seen: "Seen" };
 // The query fields each chip sets: a fixed one hides the chip.
-const CHIP_FIELDS: Record<ChipId, Array<keyof ItemQuery>> = { char: ["chars"], slot: ["slot"], loc: ["loc", "roots"], rarity: ["rarityMin", "rarityMax"], kind: ["kind"], type: ["type"], wskill: ["wskill"], slayer: ["slayer"], seen: ["seenDays"] };
+const CHIP_FIELDS: Record<ChipId, Array<keyof ItemQuery>> = { char: ["chars"], slot: ["slot"], loc: ["loc", "roots", "houses"], rarity: ["rarityMin", "rarityMax"], kind: ["kind"], type: ["type"], wskill: ["wskill"], slayer: ["slayer"], seen: ["seenDays"] };
 
 // Toolbar keyboard (spec 3.6): one tab stop; ←/→ move between the controls, Home/End jump. In the search
 // field the arrows move the caret until it reaches an end. The List/Grouped radios keep ↑/↓ for their value.
@@ -228,9 +229,10 @@ function typeOptions(q: ItemQuery, f: Facets | null, slots: string[] | undefined
 function kindOptions(q: ItemQuery, f: Facets | null): Option[] {
   return keeping((f?.kinds || []).map((k) => ({ value: k.name, label: k.name, count: k.count })), q.kind, String);
 }
-// The Location tree: each character's worn set, backpack and bank (with the bags inside them), then the
-// containers on the ground. A root's checkbox takes everything inside it; a bag's takes just that bag. A container
-// labelled for Organize is listed by its label, as the Location column shows it.
+// The Location tree: each character's worn set, backpack and bank (with the bags inside them), then the houses on the
+// House map, then each house's containers and last the containers on the ground in no house. A house's checkbox takes
+// every container standing in it, a root's everything inside it, a bag's just that bag. A container labelled for Organize
+// is listed by its label, as the Location column shows it.
 function locationOptions(q: ItemQuery, f: Facets | null): Option[] {
   const out: Option[] = [];
   const bags = (text: string): string => text.split(" › ").slice(1).join(" › ");
@@ -253,7 +255,15 @@ function locationOptions(q: ItemQuery, f: Facets | null): Option[] {
     add(who, ps.filter((p) => p.kind === "bank"), "Bank");
     ground.push(...ps.filter((p) => !["equipped", "backpack", "bank"].includes(p.kind)));
   }
-  add("On the ground", ground);
+  const houses = mapHouses(), houseOf = new Map(houses.flatMap((h) => h.serials.map((s): [number, string] => [s, h.id])));
+  const housed = ground.filter((p) => p.root != null && houseOf.has(p.root));
+  for (const h of houses) {
+    const count = housed.reduce((a, p) => a + (houseOf.get(p.root!) === h.id ? p.count : 0), 0);
+    if (count || q.houses.includes(h.id)) out.push({ value: `house:${h.id}`, label: h.name, group: "Houses", count });
+  }
+  for (const h of houses) add(h.name, housed.filter((p) => houseOf.get(p.root!) === h.id));
+  add("On the ground", ground.filter((p) => !housed.includes(p)));
+  for (const h of q.houses) if (!out.some((o) => o.value === `house:${h}`)) out.push({ value: `house:${h}`, label: `${houseNameOf(h)} (none now)`, group: "No longer scanned" });
   for (const r of q.roots) if (!out.some((o) => o.value === `root:${r}`)) out.push({ value: `root:${r}`, label: `${rootName(r, [])} (none now)`, group: "No longer scanned" });
   for (const l of q.loc) if (!out.some((o) => o.value === `loc:${l}`)) out.push({ value: `loc:${l}`, label: `${l} (none now)`, group: "No longer scanned" });
   return out;
@@ -368,7 +378,7 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
     switch (id) {
       case "char": return many(q.chars);
       case "slot": return many(q.slot.map((s) => (s === "?" ? "no slot" : slotLabel(s))));
-      case "loc": return many([...q.roots.map((r) => splitSerial(rootName(r, source.facets()?.places || [])).name), ...q.loc]);
+      case "loc": return many([...q.houses.map(houseNameOf), ...q.roots.map((r) => splitSerial(rootName(r, source.facets()?.places || [])).name), ...q.loc]);
       case "rarity": return q.rarityMin && q.rarityMax ? `Rarity: ${shortTier(q.rarityMin)} – ${shortTier(q.rarityMax)}`
         : q.rarityMin ? `Rarity ≥ ${shortTier(q.rarityMin)}` : q.rarityMax ? `Rarity ≤ ${shortTier(q.rarityMax)}` : name;
       case "kind": return many(q.kind);
@@ -383,7 +393,7 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
     switch (id) {
       case "char": return q.chars.length > 0;
       case "slot": return q.slot.length > 0;
-      case "loc": return q.loc.length + q.roots.length > 0;
+      case "loc": return q.loc.length + q.roots.length + q.houses.length > 0;
       case "rarity": return !!(q.rarityMin || q.rarityMax);
       case "kind": return q.kind.length > 0;
       case "type": return q.type.length > 0;
@@ -494,8 +504,8 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
       case "type": return checklist({ title: "Type", options: typeOptions(q, source.facets(), fixed.slot), selected: q.type, searchable: false, onChange: (v) => setQuery({ ...query, type: v }) });
       case "wskill": return [...checklist({ title: "Weapon skill", options: weaponSkillOptions(q, source.facets()), selected: q.wskill, searchable: false, onChange: (v) => setQuery({ ...query, wskill: v }) }),
         txt("Use Best Weapon Skill weapons count under Swordsmanship, Fencing and Mace Fighting.", "t-sm muted")];
-      case "loc": return checklist({ title: "Location", options: locationOptions(q, source.facets()), selected: [...q.roots.map((r) => `root:${r}`), ...q.loc.map((l) => `loc:${l}`)], searchable: true,
-        onChange: (v) => setQuery({ ...query, roots: v.filter((x) => x.startsWith("root:")).map((x) => +x.slice(5)), loc: v.filter((x) => x.startsWith("loc:")).map((x) => x.slice(4)) }) });
+      case "loc": return checklist({ title: "Location", options: locationOptions(q, source.facets()), selected: [...q.houses.map((h) => `house:${h}`), ...q.roots.map((r) => `root:${r}`), ...q.loc.map((l) => `loc:${l}`)], searchable: true,
+        onChange: (v) => setQuery({ ...query, houses: v.filter((x) => x.startsWith("house:")).map((x) => x.slice(6)), roots: v.filter((x) => x.startsWith("root:")).map((x) => +x.slice(5)), loc: v.filter((x) => x.startsWith("loc:")).map((x) => x.slice(4)) }) });
       case "rarity": return rarityPanel(close);
       case "slayer": return slayerPanel(close);
       case "seen": return seenPanel();

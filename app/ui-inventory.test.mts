@@ -27,9 +27,19 @@ test("[fast] plural agrees with its count and groups thousands", () => {
 });
 
 test("[fast] queryParams round-trips through the server's parser", () => {
-  const q: ItemQuery = { ...BASE, type: ["shield", "two-handed"], q: "ring", chars: ["Dorran", "Kestrel"], slot: ["ring", "?"], loc: ["Metal Chest, left"], roots: [12], rarityMin: "Greater Magic Item", kind: ["gear"], seenDays: 7, slayer: "*", nogarg: true, med: true, hideTags: ["cursed"], tags: ["brittle", "antique"], props: [{ key: "lmc", min: 8 }, { key: "hci", min: 5, op: "le" }], flags: ["spell channeling", "mage armor"], wskill: ["fencing", "mace fighting"], group: true, sort: "hci", dir: -1, offset: 500, limit: 500 };
+  const q: ItemQuery = { ...BASE, houses: ["1-3000-1000", "1-4000-1000"], type: ["shield", "two-handed"], q: "ring", chars: ["Dorran", "Kestrel"], slot: ["ring", "?"], loc: ["Metal Chest, left"], roots: [12], rarityMin: "Greater Magic Item", kind: ["gear"], seenDays: 7, slayer: "*", nogarg: true, med: true, hideTags: ["cursed"], tags: ["brittle", "antique"], props: [{ key: "lmc", min: 8 }, { key: "hci", min: 5, op: "le" }], flags: ["spell channeling", "mage armor"], wskill: ["fencing", "mace fighting"], group: true, sort: "hci", dir: -1, offset: 500, limit: 500 };
   assert.deepEqual(parseItemQuery(queryParams(q)), q);
   assert.deepEqual(parseItemQuery(queryParams(BASE)), BASE);
+});
+
+test("[fast] a house is a Location token named by the House map, and Clear all clears it", () => {
+  const q: ItemQuery = { ...BASE, houses: ["1-3000-1000"] };
+  const tokens = activeFilters(q, { ...CTX, houseName: (id: string) => (id === "1-3000-1000" ? "Main house" : id) });
+  assert.deepEqual(tokens.map((t) => t.label), ["Location: Main house"]);
+  assert.equal(tokens[0]!.cause(3), "None of the 3 stacks is in Main house.");
+  assert.deepEqual(tokens[0]!.remove(q).houses, []);
+  assert.equal(activeFilters(q, CTX)[0]!.label, "Location: 1-3000-1000", "the id when the map has no name for it");
+  assert.deepEqual(clearAll(q).houses, []);
 });
 
 test("[fast] withFixed lays the fixed fields over the player's filters and leaves the rest", () => {

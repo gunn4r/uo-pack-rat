@@ -96,6 +96,7 @@ export function queryParams(q: ItemQuery): URLSearchParams {
   for (const s of q.slot) p.append("slot", s);
   for (const l of q.loc) p.append("loc", l);
   for (const r of q.roots) p.append("root", String(r));
+  for (const h of q.houses) p.append("house", h);
   if (q.rarity) p.set("rarity", q.rarity);
   if (q.rarityMin) p.set("rarityMin", q.rarityMin);
   if (q.rarityMax) p.set("rarityMax", q.rarityMax);
@@ -129,6 +130,7 @@ export interface FilterContext {
   propLabel: (key: string) => string;
   places: Place[];
   ladder: string[];      // rarity tier names, lowest first
+  houseName?: ((id: string) => string) | undefined;   // a House map house by its id (the id itself when left out)
 }
 // One active filter, as the strip draws it: its token text, the × button's name, how to take it out of
 // a query, and the sentence that explains an empty result when this filter alone excludes everything.
@@ -163,6 +165,10 @@ export function activeFilters(q: ItemQuery, ctx: FilterContext): FilterToken[] {
   for (const s of q.slot) {
     const name = s === "?" ? "no known slot" : ctx.slotLabel(s);
     out.push({ id: `slot:${s}`, label: `Slot: ${name}`, removeLabel: `Remove filter: Slot ${name}`, remove: (x) => ({ ...x, slot: without(x.slot, s) }), cause: (t) => s === "?" ? `Every one of the ${plural(t, "stack")} has a known slot.` : `${none(t)} goes in the ${name} slot.` });
+  }
+  for (const h of q.houses) {
+    const name = ctx.houseName?.(h) ?? h;
+    out.push({ id: `house:${h}`, label: `Location: ${name}`, removeLabel: `Remove filter: Location ${name}`, remove: (x) => ({ ...x, houses: without(x.houses, h) }), cause: (t) => `${none(t)} is in ${name}.` });
   }
   for (const r of q.roots) {
     const name = rootName(r, ctx.places);
