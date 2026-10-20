@@ -1,7 +1,7 @@
 // domain/pools.mts — what the optimizer picks from: buildPools turns the inventory into each slot's candidates for a character (STR-gated, tag-filtered, weapons by skill and must-have flags), toOptItem an item into the solver's shape, totalsOf a suit's totals and requirementReport its rows; plus the property, extra, flag and skill keys an inventory offers the builder and the filters.
 //
 // map: builder
-// owns: `OptItem`, `buildPools`, `toOptItem`, `totalsOf`, `requirementReport`, `gearSkills`, `builderKeys`, `propertyKeys`, `extraKeys`, `flagKeys`, `flagKey`, `flagLabel`, `weaponAllowed`, `weaponSkillsOf`, `WEAPON_SKILLS`, `itemSearchBlob`
+// owns: `OptItem`, `buildPools`, `toOptItem`, `totalsOf`, `requirementReport`, `gearSkills`, `builderKeys`, `propertyKeys`, `extraKeys`, `flagKeys`, `flagKey`, `flagLabel`, `weaponAllowed`, `weaponSkillsOf`, `WEAPON_SKILLS`, `itemTypeOf`, `ITEM_TYPES`, `itemSearchBlob`
 import { floorMet, heldTotal, liftedMin, RESIST_SKILL_KEY, type ResistStep } from "../solver/scoring.mts";
 import { getRules } from "./rules.mts";
 import { labelOf, PROP_LABELS, SKILL_SET, type PropMap } from "./properties.mts";
