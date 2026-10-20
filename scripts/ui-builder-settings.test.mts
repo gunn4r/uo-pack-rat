@@ -374,9 +374,9 @@ test("[slow] swing steps: the switch, the swing line, Next step from the result,
     const sw = page.locator("#b-swing-steps");
     await sw.waitFor({ timeout: 10_000 });
     assert.equal(await sw.isChecked(), true, "Melee's Swing Speed Increase goal scores SSI by step");
-    assert.match(String(await page.locator("#b-sec-weights .b-swing-set").textContent()), /Counts SSI only where the swing gets faster\. War Axe 3 s at stamina \d+: .+ ≥ \d+/);
+    assert.match(String(await page.locator("#b-sec-weights .b-swing-set").textContent()), /Counts Swing Speed Increase only where the swing gets faster\. War Axe 3 s at stamina \d+: .+ ≥ \d+/);
     await sw.uncheck();
-    assert.match(await page.locator("#b-tpl-state").innerText(), /SSI by point/);
+    assert.match(await page.locator("#b-tpl-state").innerText(), /Swing Speed Increase by point/);
     await sw.check();
     assert.match(await page.locator("#b-tpl-state").innerText(), /equal the Melee template/);
     await settings(page, "requirements");
@@ -390,9 +390,9 @@ test("[slow] swing steps: the switch, the swing line, Next step from the result,
     await built(page);
     // read in the same poll that finds them, so a redraw can't land between the wait and the read
     const read = async (sel: string): Promise<string> => String(await (await page.waitForFunction((s) => document.querySelector(s)?.textContent || null, sel, { timeout: 10_000 })).jsonValue());
-    assert.match(await read(".b-head-card .b-check"), /SSI was scored per point: the pool holds weapons with \d+ different speeds\. Lock the weapon slot to score swing speed by step\./);
+    assert.match(await read(".b-head-card .b-check"), /Swing Speed Increase was scored per point: the pool holds weapons with \d+ different speeds\. Lock the weapon slot to score swing speed by step\./);
     const line = await read(".b-head-card .b-swing");
-    assert.match(line, /^War Axe 3 s · stamina \d+ · SSI \d+ → swings every [\d.]+ s/);
+    assert.match(line, /^War Axe 3 s · stamina \d+ · Swing Speed Increase \d+ → swings every [\d.]+ s/);
     // Next step is the first step the result's swing has not reached
     const unreached = /(?:: |· )[\d.]+ s ≥ (\d+)(?! ✓)(?: ·|$)/.exec(line.split("Steps at stamina")[1] || "")?.[1];
     assert.ok(unreached, line);
@@ -405,7 +405,7 @@ test("[slow] swing steps: the switch, the swing line, Next step from the result,
     await pressBuild(page);
     await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>("#b-run")?.disabled && /Best suit for/.test(document.querySelector("#b-result h2")?.textContent || "")
       && !/scored per point/.test(document.querySelector("#b-result")?.textContent || ""), undefined, { timeout: 60_000 });
-    assert.match(await read(".b-head-card .b-swing"), /^War Axe 3 s · stamina \d+ · SSI \d+ → swings every [\d.]+ s/);
+    assert.match(await read(".b-head-card .b-swing"), /^War Axe 3 s · stamina \d+ · Swing Speed Increase \d+ → swings every [\d.]+ s/);
     // the saved run keeps the switch (the server writes it as the build finishes: wait for the file)
     const kept = (): boolean => existsSync(join(dataDir, "runs")) && readdirSync(join(dataDir, "runs")).filter((f: string) => f.endsWith(".json"))
       .some((f: string) => (JSON.parse(readFileSync(join(dataDir, "runs", f), "utf8")) as { settings?: { swingSteps?: boolean } }).settings?.swingSteps === true);

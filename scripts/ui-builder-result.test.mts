@@ -159,7 +159,7 @@ test("[slow] What changes: Gauges for what the build asks, Table with every prop
     const names = rows.map((r) => r[0]);
     for (const r of ["Physical Resist", "Fire Resist", "Cold Resist", "Poison Resist", "Energy Resist"]) assert.ok(names.includes(r), `${r} in the table`);
     assert.ok(rows.some((r) => r[4] === "0"), "an unchanged property is listed too");
-    const moved = rows.filter((r) => r[4] !== "0" && !/ resist$/.test(r[0]!)).map((r) => r[0]!);
+    const moved = rows.filter((r) => r[4] !== "0" && !/ Resist$/.test(r[0]!)).map((r) => r[0]!);
     assert.ok(gauges.every((g) => moved.includes(g)), "a gauge only for a property that moves");
     // only what the build asks for: a non-zero weight or a requirement; a pool never beside its bonus
     const asked = await page.evaluate(() => [...document.querySelectorAll<HTMLInputElement>("#b-sec-weights .rule-row input[type=number], #b-sec-req .rule-row input[type=number]")]

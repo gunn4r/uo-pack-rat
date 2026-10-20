@@ -61,7 +61,7 @@ test("[slow] goals: the ranked list, its counts, =, spare points, How the goals 
     assert.match(went, /^How the goals went\n1\.\s*Swing Speed Increase\n[\d.]+ s with .+ · Swing Speed Increase \d+[\s\S]*3\.\s*Damage[\s\S]*Spare points(: none left over| went to: )/);
     assert.doesNotMatch(went, /as high as the gear allows|went to: \S+ −/, "no unproven verdict, and no loss as a destination");
     // built from goals, SSI counted per point is a note under the swing goal, not a warning in Check your settings
-    assert.doesNotMatch(await page.locator(".b-head-card").innerText(), /SSI was scored per point/);
+    assert.doesNotMatch(await page.locator(".b-head-card").innerText(), /Swing Speed Increase was scored per point/);
     assert.match(went, /Swing time isn't counted in steps here, because the suit isn't tied to one weapon\./);
     await page.click('#b-leftover [data-value="melee"]');
     await count("1 change since the last build");

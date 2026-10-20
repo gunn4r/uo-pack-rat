@@ -89,12 +89,12 @@ test("[slow] resist caps: a floor past its cap warns, a race change drops a now-
     await settings(page, "advanced");
     const fireReq = page.locator("#b-sec-req .rule-row[data-key=fireResist]");
     await page.fill("#b-cap-fireResist", "60");
-    assert.match(await fireReq.innerText(), /Counts only up to the Fire cap, 60/);
+    assert.match(await fireReq.innerText(), /Counts only up to the Fire Resist cap, 60/);
     await page.fill("#b-cap-fireResist", "70");
     assert.doesNotMatch(await fireReq.innerText(), /Counts only up to/);
     await settings(page, "requirements");
     await fireReq.locator("input[type=number]").fill("90");
-    assert.match(await fireReq.innerText(), /Counts only up to the Fire cap, 70/, "and it follows the floor as it is typed");
+    assert.match(await fireReq.innerText(), /Counts only up to the Fire Resist cap, 70/, "and it follows the floor as it is typed");
     await fireReq.locator("input[type=number]").fill("65");
     await settings(page, "advanced");
 
