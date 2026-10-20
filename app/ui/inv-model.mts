@@ -8,7 +8,7 @@
 // owns: `DEFAULT_COLS`, `ITEM_COLS`, `COL_GROUPS`, `queryParams`, `activeFilters`
 import type { ItemQuery, PropFilter, Place } from "../item-query.mts";
 import { clearedQuery } from "./view-state.mts";
-import { flagLabel } from "../vault-lib.mts";
+import { flagLabel, ITEM_TYPE_LABELS, type ItemType } from "../vault-lib.mts";
 import { plural } from "./format.mts";
 
 // ---------------------------------------------------------------- slayers
@@ -109,6 +109,7 @@ export function queryParams(q: ItemQuery): URLSearchParams {
   for (const f of q.props) p.append("prop", f.op ? `${f.key}:${f.op}:${f.min}` : `${f.key}:${f.min}`);
   for (const f of q.flags) p.append("flag", f);
   for (const w of q.wskill) p.append("wskill", w);
+  for (const t of q.type) p.append("type", t);
   if (q.group) p.set("group", "1");
   p.set("sort", q.sort);
   p.set("dir", String(q.dir));
@@ -181,6 +182,10 @@ export function activeFilters(q: ItemQuery, ctx: FilterContext): FilterToken[] {
   for (const w of q.wskill) {
     const name = flagLabel(w);
     out.push({ id: `wskill:${w}`, label: `Weapon skill: ${name}`, removeLabel: `Remove filter: Weapon skill ${name}`, remove: (x) => ({ ...x, wskill: without(x.wskill, w) }), cause: (t) => `${none(t)} is ${a(name)} weapon.` });
+  }
+  for (const ty of q.type) {
+    const name = ITEM_TYPE_LABELS[ty as ItemType] ?? ty;
+    out.push({ id: `type:${ty}`, label: `Type: ${name}`, removeLabel: `Remove filter: Type ${name}`, remove: (x) => ({ ...x, type: without(x.type, ty) }), cause: (t) => `${none(t)} has the type ${name}.` });
   }
   q.props.forEach((f, i) => {
     const text = propRuleLabel(f, ctx.propLabel);
