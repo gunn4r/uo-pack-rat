@@ -14,8 +14,8 @@
 // property column; alphabetical is the useful default for a name column), reproduced exactly, not fixed.
 //
 // map: query
-// owns: `parseItemQuery`, `matchesItem`, `applyItemQuery`, `facetsOf`, `propCounts`, `ItemQuery`, `RuleQuery`, `EXTRA_COLS`, `colVal`, `rarityRank`, `HIT_LIMIT`
-import { containerChain, itemSearchBlob, itemOwnBlob, gargoyleOk, meditationOk, hasTag, hasFlag, groupByName, compareNames, KINDS, SLOT_LABELS, propertyKeys, extraKeys, flagKeys, flagKey, gearSkills, weaponSkillsOf, WEAPON_SKILLS, PROPERTIES, itemTypeOf, ITEM_TYPES } from "./vault-lib.mts";
+// owns: `parseItemQuery`, `matchesItem`, `applyItemQuery`, `queryWhere`, `facetsOf`, `propCounts`, `ItemQuery`, `RuleQuery`, `EXTRA_COLS`, `colVal`, `rarityRank`, `HIT_LIMIT`
+import { containerChain, labelledPlaces, itemSearchBlob, itemOwnBlob, gargoyleOk, meditationOk, hasTag, hasFlag, groupByName, compareNames, KINDS, SLOT_LABELS, propertyKeys, extraKeys, flagKeys, flagKey, gearSkills, weaponSkillsOf, WEAPON_SKILLS, PROPERTIES, itemTypeOf, ITEM_TYPES } from "./vault-lib.mts";
 import type { Container, Item, ItemGroup } from "./vault-lib.mts";
 import type { RulesV1, RulesV1RarityItem } from "./schema/types.d.mts";
 import { unravelInfo, LEFT_OUT, type LeftOut, type UnravelInfo } from "./unravel.mts";
@@ -176,7 +176,7 @@ function itemPasses(it: Item, q: RuleQuery, needle: string, blob: (it: Item) => 
   return true;
 }
 function matches(it: Item, q: ItemQuery, seenCut: number, minRank: number, maxRank: number, ladder: RulesV1RarityItem[], blob: (it: Item) => string, houseOf: ReadonlyMap<number, string>, containers: Record<string, Container>): boolean {
-  if (q.within?.length && !containerChain(containers, it.container).some((s) => q.within!.includes(s))) return false;
+  if (q.within && !containerChain(containers, it.container).some((s) => q.within!.includes(s))) return false;
   if (q.chars.length && !q.chars.includes(it.location?.character as string)) return false;
   if (seenCut && Date.parse(it.seenAt) < seenCut) return false;
   // A location matches by its exact text, by the root container it sits in (every bag inside it) or by the house that root stands in.
@@ -219,12 +219,20 @@ export interface UnravelContext { rules: Pick<RulesV1, "unravel">; leftOut: (it:
 // In group mode `total` counts names; `stacks` and `pieces` are the matching stacks and pieces behind them.
 export interface ItemQueryGroups { groups: ItemGroupJson[]; total: number; stacks: number; pieces: number; }
 
+// What applyItemQuery reads an inventory's query against, built in one place so no caller leaves a part out: the shard's
+// rarity ladder, Organize's labels as `places`, the inventory's `containers` and, only when the query names a house (it is
+// costly), the house each ground container stands in from `houseOf()`.
+export interface QueryWhere { rarity: RulesV1RarityItem[]; places: ReadonlyMap<string, string>; houseOf: ReadonlyMap<number, string>; containers: Record<string, Container> }
+export function queryWhere(query: Pick<ItemQuery, "houses">, containers: Record<string, Container>, { labels = {}, rarity = [], houseOf }: { labels?: Readonly<Record<string, { name: string }>>; rarity?: RulesV1RarityItem[]; houseOf?: (() => ReadonlyMap<number, string>) | undefined } = {}): QueryWhere {
+  return { rarity, places: labelledPlaces(containers, labels), houseOf: query.houses.length && houseOf ? houseOf() : new Map(), containers };
+}
+
 // applyItemQuery(items, query, {rarity, now}) → {rows, total, pieces} normally, or {groups, total} when
 // query.group is set — see the module header for the exact page behavior this reproduces. `places` is
 // vault-lib.mts's labelledPlaces, so the free text also finds an item by its container's Organize label. `houseOf` names the
 // house each container on the ground stands in, by its serial, for `houses`; without it a house filter matches nothing.
 // `containers` (the inventory's) tells `within` which bags sit in which; without them `within` matches nothing.
-export function applyItemQuery(items: Item[], query: ItemQuery, { rarity = [], now = Date.now(), unravel, places, houseOf = new Map(), containers = {} }: { rarity?: RulesV1RarityItem[]; now?: number; unravel?: UnravelContext; places?: ReadonlyMap<string, string>; houseOf?: ReadonlyMap<number, string>; containers?: Record<string, Container> } = {}): ItemQueryRows | ItemQueryGroups {
+export function applyItemQuery(items: Item[], query: ItemQuery, { rarity = [], now = Date.now(), unravel, places, houseOf = new Map(), containers = {} }: { rarity?: RulesV1RarityItem[]; now?: number; unravel?: UnravelContext } & Partial<QueryWhere> = {}): ItemQueryRows | ItemQueryGroups {
   const seenCut = query.seenDays ? now - query.seenDays * 864e5 : 0;
   const minRank = query.rarityMin ? rarityRank(rarity, query.rarityMin) : 0;
   const maxRank = query.rarityMax ? rarityRank(rarity, query.rarityMax) : 0;

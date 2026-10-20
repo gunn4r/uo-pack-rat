@@ -16,6 +16,8 @@ export interface DollView {
   scannedAt?: string | null;
   title?: string | null;
   appearance: Look | null | undefined;
+  // The newest scan was taken in a form (Character's inForm): the card says so over the earlier look.
+  inForm?: boolean | undefined;
   client: string;
   readsLook: boolean;
   // `alt`: the figure's text alternative when the caller says more than the caption (Manual's preview).
@@ -76,7 +78,7 @@ export function dollCard({ id, scale = 2, compact = false, adaptive = false, con
   const paintNote = (): void => { note.replaceChildren(...(drawn && plan?.note ? [noteNode(plan.note)] : [])); };
   // The popover beside the card, starting from the scanned look (or the stand-in) and redrawing the card on every change, with the newest view of the same character (the page builds a new view on every redraw).
   function openCustomizerFor(v: DollView): void {
-    const base = dollPlan({ name: v.name, appearance: v.appearance, readsLook: v.readsLook, client: v.client });
+    const base = dollPlan({ name: v.name, appearance: v.appearance, inForm: v.inForm, readsLook: v.readsLook, client: v.client });
     openCustomizer(customize, node, { scanned: base.look, custom: customLook(v.name, v.scannedAt ?? null), standIn: base.gray, nobody: v.name === null,
       onChange: (look) => { setCustomLook(v.name, v.scannedAt ?? null, look); if (view && view.name === v.name) show(view); } });
   }
@@ -95,7 +97,7 @@ export function dollCard({ id, scale = 2, compact = false, adaptive = false, con
     frame(v);
     const custom = customLook(v.name, v.scannedAt ?? null);
     customized.hidden = !custom;
-    const p = plan = dollPlan({ name: v.name, appearance: v.appearance, readsLook: v.readsLook, client: v.client, custom });
+    const p = plan = dollPlan({ name: v.name, appearance: v.appearance, inForm: v.inForm, readsLook: v.readsLook, client: v.client, custom });
     const pair = v.figures.length === 2;
     const urls = v.figures.map((f, i) => dollUrl(p.look, f.worn, pair ? v.figures[1 - i]!.worn : null, p.gray));
     const my = requests.start(JSON.stringify([filesEpoch, urls, v.figures.map((f) => f.caption ?? ""), v.name]));

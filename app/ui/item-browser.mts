@@ -256,13 +256,13 @@ function locationOptions(q: ItemQuery, f: Facets | null): Option[] {
     ground.push(...ps.filter((p) => !["equipped", "backpack", "bank"].includes(p.kind)));
   }
   const houses = mapHouses(), houseOf = new Map(houses.flatMap((h) => h.serials.map((s): [number, string] => [s, h.id])));
-  const housed = ground.filter((p) => p.root != null && houseOf.has(p.root));
+  const housed = ground.filter((p) => p.root != null && houseOf.has(p.root)), inHouse = new Set(housed);
   for (const h of houses) {
     const count = housed.reduce((a, p) => a + (houseOf.get(p.root!) === h.id ? p.count : 0), 0);
     if (count || q.houses.includes(h.id)) out.push({ value: `house:${h.id}`, label: h.name, group: "Houses", count });
   }
   for (const h of houses) add(h.name, housed.filter((p) => houseOf.get(p.root!) === h.id));
-  add("On the ground", ground.filter((p) => !housed.includes(p)));
+  add("On the ground", ground.filter((p) => !inHouse.has(p)));
   for (const h of q.houses) if (!out.some((o) => o.value === `house:${h}`)) out.push({ value: `house:${h}`, label: `${houseNameOf(h)} (none now)`, group: "No longer scanned" });
   for (const r of q.roots) if (!out.some((o) => o.value === `root:${r}`)) out.push({ value: `root:${r}`, label: `${rootName(r, [])} (none now)`, group: "No longer scanned" });
   for (const l of q.loc) if (!out.some((o) => o.value === `loc:${l}`)) out.push({ value: `loc:${l}`, label: `${l} (none now)`, group: "No longer scanned" });
