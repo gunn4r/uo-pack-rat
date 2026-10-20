@@ -5,7 +5,7 @@
 // owns: `rosterView`, `sheetMeta`, `characterNames`
 import type { ResistFigure } from "./sheet.mts";
 import { isPseudoCharacter, type Container } from "../vault-lib.mts";
-import { plural } from "./format.mts";
+import { plural, textHit } from "./format.mts";
 
 
 // Every character the page knows of, scanned ones first, then ones with only a saved Suit Builder profile; a pseudo
@@ -22,14 +22,14 @@ export interface RosterRow {
   worn: number;
   lowDurability: number;   // worn pieces low on durability (sheet.mts's lowDurability)
   label?: string | null | undefined;   // the build label (issue #336), which the search looks in too
+  skills?: string | undefined;         // the top skills, as the Suit Builder's character picker shows them (#487), searched too
 }
 export type RosterSort = { key: "name" | "scan" | "physResist" | "fireResist" | "coldResist" | "poisonResist" | "energyResist"; dir: 1 | -1 };
-// Filter by the top-bar search (case-insensitive, anywhere in the name or the build label), then sort. Names break ties;
+// Filter by the top-bar search (format.mts's textHit: the name, the build label or the top skills), then sort. Names break ties;
 // an unscanned character sorts after every scanned one whichever way the column runs.
 export function rosterView(rows: RosterRow[], q: string, sort: RosterSort): RosterRow[] {
-  const needle = q.trim().toLowerCase();
   const val = (r: RosterRow): number | null => sort.key === "scan" ? (r.scannedAt ? Date.parse(r.scannedAt) : null) : sort.key === "name" ? null : r.resists?.find((f) => f.key === sort.key)?.value ?? null;
-  return rows.filter((r) => !needle || r.name.toLowerCase().includes(needle) || !!r.label?.toLowerCase().includes(needle)).sort((a, b) => {
+  return rows.filter((r) => textHit(q, r.name, r.label, r.skills)).sort((a, b) => {
     if (sort.key !== "name") {
       const va = val(a), vb = val(b);
       if (va == null || vb == null) { if (va !== vb) return va == null ? 1 : -1; }

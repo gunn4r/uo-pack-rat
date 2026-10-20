@@ -22,6 +22,7 @@ import type { Item } from "../vault-lib.mts";
 import type { RunsListApiResponse } from "./api-types.mts";
 import { characterNames, rosterView, triple, sheetMeta, type RosterRow, type RosterSort } from "./roster.mts";
 import { plural } from "./format.mts";
+import { topSkills } from "./builder-model.mts";
 
 
 const num = (v: unknown): number | null => (v != null && Number.isFinite(Number(v)) ? Number(v) : null);
@@ -41,6 +42,7 @@ function rosterRows(): RosterRow[] {
       worn: (state.inv!.worn[name] || []).length,
       lowDurability: lowDurabilityCount(state.inv!.worn[name] || []),
       label: characterLabel(state.profiles, name),
+      skills: topSkills(c?.skills),
     };
   });
 }

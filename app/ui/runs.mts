@@ -21,7 +21,7 @@ import { session, commands, announce, provide, applyKnobs } from "./builder-sess
 import { paperdollCaps, slotsOf, runAutoLabel, runBadges, runSettingsDiff, toggleCompare, who, withBuffs, latestShownRun, otherCharactersRuns, gearChangedSince, gearChangeLines } from "./builder-model.mts";
 import type { GearChanges } from "../runs-types.mts";
 import type { RunsListApiResponse, RunApiResponse, RunPutApiResponse, RunSummaryLike, SavedRunLike } from "./api-types.mts";
-import { plural } from "./format.mts";
+import { plural, textHit } from "./format.mts";
 
 // ---------------------------------------------------------------- settings snapshot / apply
 // Everything a run can differ by, read from the panel's state (the profile, the buffs and the Advanced fields):
@@ -144,7 +144,7 @@ export function renderRuns(): void {
   const kept = runs.map((run, i) => {
     const auto = autoLabel(run, runs[i + 1]);
     const title = run.label || auto.text;
-    if (q && !`${run.label || ""} ${auto.text} ${auto.diff.join(" ")} ${fmtRunTime(run.createdAt)}`.toLowerCase().includes(q)) return null;
+    if (!textHit(q, run.label, auto.text, auto.diff.join(" "), fmtRunTime(run.createdAt))) return null;
     // the resist caps the run was built with (its race, its overrides), against the shard's for that race
     // with the buffs it was planned with: their shares in its totals, the caps they leave, and their names
     const view = resistCapsFor(run.settings.race, run.settings.resistCaps), buffs = savedBuffs(run.settings);

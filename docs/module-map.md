@@ -442,7 +442,7 @@ The page is `app/index.html` plus `app/ui/`, compiled by `scripts/build-ui.mts` 
 <!-- module-map:start ui-models -->
 | Module | Role | Owns |
 |---|---|---|
-| `app/ui/format.mts` | Pure text formatting the whole page shares: a count and its noun. | `plural` |
+| `app/ui/format.mts` | Pure text formatting the whole page shares: a count and its noun, and the one rule a typed search matches a list's words by. | `plural`, `textHit` |
 | `app/ui/import-preview.mts` | The Import drawer's preview card, as data: what a parsed scan holds, whether it replaces one already in Pack Rat, and the sentence the primary button says. | `scanPreview` |
 | `app/ui/inv-model.mts` | The Inventory screen's pure rules: the query string a filter state sends, the active-filter tokens and their wording, the counts and plurals in the strip and the footer, the sentence that explains an empty result, which slice of rows the virtual table draws and fetches, and the table's keyboard model. | `DEFAULT_COLS`, `ITEM_COLS`, `COL_GROUPS`, `queryParams`, `activeFilters` |
 | `app/ui/move-model.mts` | Move to's pure rules (issue #270): the Inventory's selection (ticked rows, a shift-click range, the rows loaded so far, then every item matching the filter; a worn item is never in it), the containers the picker offers, and the words of the selection bar, the picker and the result line. | `Selection`, `toggleRows`, `selectAllMatching`, `selectionBody`, `destGroups` |
