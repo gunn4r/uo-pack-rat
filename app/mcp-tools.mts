@@ -67,17 +67,21 @@ const PAGE: Record<string, Schema> = {
   offset: { type: "integer", minimum: 0, maximum: 1_000_000, description: "Rows to skip, 0 by default." },
 };
 const pageOf = (a: Record<string, unknown>): { limit: number; offset: number } => ({ limit: (a.limit as number | undefined) ?? 25, offset: (a.offset as number | undefined) ?? 0 });
-// search_items' `location` and `house` as the route's params (#487): a location text as it is, or read through Organize's
-// labels (a labelled path back to its scanned text; a label alone to `within` its container, a floor container or a bag,
-// so every bag nested inside it counts), and each house by id or name to `house=<id>`. An unknown house is refused, naming the houses.
-async function whereParams(ctx: ToolContext, locations: string[], houses: string[]): Promise<Array<[string, string]>> {
+// search_items' `location`, `house` and `container` as the route's params (#487): a location text as it is, or read through
+// Organize's labels (a labelled path back to its scanned text; a label alone to every container carrying it, as labels need
+// not be unique), each house by id or name to `house=<id>`, and each container to `root=<serial>`. The route ORs `loc`, `root`
+// and `house`, but narrows by `within` on top of them: so a floor container's label goes as `root`, a bag's as `within` (which
+// reaches the bags inside it), and a bag's label beside any other place is refused. When every place is a label, all go as
+// `within`, which ORs among itself. An unknown house is refused, naming the houses.
+async function whereParams(ctx: ToolContext, locations: string[], houses: string[], containers: number[]): Promise<Array<[string, string]>> {
   const out: Array<[string, string]> = [];
+  const labelled: Container[] = [];
   if (locations.length) {
     const [inv, org] = await Promise.all([inventory(ctx), ctx.api<OrganizeDoc>("/api/organize")]);
     const byLabel = new Map([...labelledPlaces(inv.containers, org.config.labels)].map(([raw, shown]): [string, string] => [shown.toLowerCase(), raw]));
     for (const v of locations) {
-      const named = Object.values(org.config.labels).find((l) => l.name.toLowerCase() === v.toLowerCase()), c = named && inv.containers[String(named.serial)];
-      if (c) out.push(["within", String(c.serial)]);
+      const named = Object.values(org.config.labels).filter((l) => l.name.toLowerCase() === v.toLowerCase()).flatMap((l) => inv.containers[String(l.serial)] ?? []);
+      if (named.length) labelled.push(...named);
       else out.push(["loc", byLabel.get(v.toLowerCase()) ?? v]);
     }
   }
@@ -85,7 +89,10 @@ async function whereParams(ctx: ToolContext, locations: string[], houses: string
     const { houses: all } = await ctx.api<ApiResponse<"GET /api/houses">>("/api/houses");
     for (const v of houses) for (const h of housesNamed(all, v)) out.push(["house", h.id]);
   }
-  return out;
+  for (const c of containers) out.push(["root", String(c)]);
+  if (!out.length) return labelled.map((c) => ["within", String(c.serial)]);
+  if (labelled.some((c) => c.parent != null)) throw new ToolError("a label on a bag inside a container (everything inside that bag) cannot be combined with other locations, houses or containers in one search; search it separately");
+  return [...out, ...labelled.map((c): [string, string] => ["root", String(c.serial)])];
 }
 // The houses a House map id or name picks, whatever its case: every house of that name, as two can share one. None is refused, naming the houses.
 type HouseRow = ApiResponse<"GET /api/houses">["houses"][number];
@@ -333,7 +340,7 @@ export const TOOLS: Tool[] = [
       character: { type: "array", maxItems: 50, items: { type: "string", maxLength: 64 }, description: "Only items these characters hold or wear." },
       slot: { type: "array", maxItems: 30, items: { type: "string", maxLength: 32 }, description: "Gear slots (inventory_facets lists them), \"?\" for none." },
       kind: { type: "array", maxItems: 30, items: { type: "string", maxLength: 32 }, description: "Item kinds: gear, reagent, scroll, …" },
-      location: { type: "array", maxItems: 50, items: { type: "string", maxLength: 300 }, description: "Exact location texts, as the rows' `where` shows them, or the same path with Organize labels in it. A label alone (\"Shields\", any case) is everything inside that labelled container, bags in bags included; it is searched on its own, not with other locations, houses or containers." },
+      location: { type: "array", maxItems: 50, items: { type: "string", maxLength: 300 }, description: "Exact location texts, as the rows' `where` shows them, or the same path with Organize labels in it. A label alone (\"Shields\", any case) is everything inside every container with that label, bags in bags included; a label on a bag inside a container is searched on its own, not with other locations, houses or containers." },
       house: { type: "array", maxItems: 20, items: { type: "string", maxLength: 64 }, description: "Houses on the House map, by id (\"1-3000-1000\") or name, any case: everything in their containers." },
       container: { type: "array", maxItems: 50, items: SERIAL, description: "Root container serials: everything anywhere inside them." },
       rarity: { type: "string", maxLength: 64, description: "Exactly this rarity tier." },
@@ -380,12 +387,10 @@ export const TOOLS: Tool[] = [
       const sp = new URLSearchParams({ limit: String(limit), offset: String(offset) });
       for (const name of ["q", "rarity", "rarityMin", "rarityMax", "sort", "seenDays"] as const) if (a[name] !== undefined) sp.set(name, String(a[name]));
       if (typeof a.slayer === "string") sp.set("slayer", a.slayer === "*" ? "*" : slayer(a.slayer));
-      for (const [param, v] of await whereParams(ctx, (a.location as string[] | undefined) ?? [], (a.house as string[] | undefined) ?? [])) sp.append(param, v);
-      const lists: Array<[string, string, (v: string) => string]> = [["character", "char", String], ["slot", "slot", slot], ["kind", "kind", kind], ["container", "root", String],
+      for (const [param, v] of await whereParams(ctx, (a.location as string[] | undefined) ?? [], (a.house as string[] | undefined) ?? [], (a.container as number[] | undefined) ?? [])) sp.append(param, v);
+      const lists: Array<[string, string, (v: string) => string]> = [["character", "char", String], ["slot", "slot", slot], ["kind", "kind", kind],
         ["flags", "flag", String], ["weaponSkills", "wskill", String], ["types", "type", String], ["tags", "tag", lower], ["hideTags", "hide", lower]];
       for (const [arg, param, norm] of lists) for (const v of (a[arg] as unknown[] | undefined) || []) sp.append(param, norm(String(v)));
-      // The route takes `within` as a narrowing on top of the other places, which would turn "any of" into "both".
-      if (sp.has("within") && ["loc", "root", "house"].some((p) => sp.has(p))) throw new ToolError("a label alone (everything inside that container) cannot be combined with other locations, houses or containers in one search; search them separately");
       for (const rule of props) sp.append("prop", rule);
       if (a.noGargoyle) sp.set("nogarg", "1");
       if (a.medable) sp.set("med", "1");

@@ -8,8 +8,8 @@
 //
 // map: server
 // owns: `routes`
-import { parseItemQuery, applyItemQuery, facetsOf, wantsHits, hitRow, wantsPropCounts, propCounts, type ItemQueryRows, type ItemQueryGroups, type UnravelContext } from "../../item-query.mts";
-import { labelledPlaces, type Item } from "../../vault-lib.mts";
+import { parseItemQuery, applyItemQuery, queryWhere, facetsOf, wantsHits, hitRow, wantsPropCounts, propCounts, type ItemQueryRows, type ItemQueryGroups, type UnravelContext } from "../../item-query.mts";
+import type { Item } from "../../vault-lib.mts";
 import { leftOutReasons } from "../../unravel.mts";
 import { suitPieces } from "../../runs-lib.mts";
 import { unravelKeep } from "../../store/settings.mts";
@@ -53,9 +53,7 @@ export function routes(ctx: ServerContext): Route[] {
     { method: "GET", path: "/api/items", handle: async (_req, res, url) => {
       const { inv, houses } = await getInventory();
       const query = parseItemQuery(url.searchParams);
-      const places = labelledPlaces(inv.containers, organizeStore.read().config.labels);
-      const houseOf = query.houses.length ? houseService.houseOfContainers(inv, houses, houseClaimsStore.read()) : undefined;
-      const where = { rarity: appSettings.rules().rarity, places, containers: inv.containers, ...(houseOf ? { houseOf } : {}) };
+      const where = queryWhere(query, inv.containers, { labels: organizeStore.read().config.labels, rarity: appSettings.rules().rarity, houseOf: () => houseService.houseOfContainers(inv, houses, houseClaimsStore.read()) });
       if (wantsPropCounts(url.searchParams)) {
         const { rows, total } = applyItemQuery(Object.values(inv.items), { ...query, group: false, unravel: false, offset: 0, limit: Number.MAX_SAFE_INTEGER }, where) as ItemQueryRows;
         return send(res, 200, { ok: true, total, ...propCounts(rows) } satisfies ItemPropCountsApiResponse);
