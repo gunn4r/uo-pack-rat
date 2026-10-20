@@ -25,6 +25,7 @@ import { adapterCopy } from "./adapter-copy.mts";
 import { copiedScanner, loadScanner, scannerCopy } from "./paste-scanner.mts";
 import { clientErrorMessage, uoFolderErrorMessage, dataDirNotice, errorText, hostErrorMessage, installedIntoNote, pathsFileNote, relativeWhen } from "./messages.mts";
 import { forgetMissingArt } from "./item-art.mts";
+import { forgetDollFigures } from "./doll-card.mts";
 import { autostartNote, hotkeyLabel, panelControls } from "./tazuo-panel.mts";
 import { exportKinds, importKinds } from "./kinds.mts";
 import { tiledataNote } from "./house-map-model.mts";
@@ -157,6 +158,7 @@ function clientSection(setup: SetupApiResponse): HTMLElement {
         r ? noteEl(pathsFileNote(r.pathsFile)) : null,
         ...(() => { const n = r && autostartNote(r.autostart); return n ? [message({ tone: n.tone, text: n.text })] : []; })()] });
   }
+  reinstallRow.id = "set-scanner";   // the doll card's "How to rescan" scrolls here (showSettings)
   return sectionFlagged("set-client", "Game client", !setup.settings.client, box("div", { class: "card set-card" }, status, reinstallRow),
     adapter?.panel && client?.scriptsDir ? box("div", { class: "card set-card", id: "set-panel" }) : null,
     uoFolderCard(uoFrom, null));
@@ -210,7 +212,7 @@ function uoFolderCard(from: TiledataFrom, error: string | null): HTMLElement {
   const path = input({ value: uoDraft ?? state.settings?.uoFolder ?? "", placeholder: "The folder holding tiledata.mul", attrs: { id: "set-uofolder-path", class: "input set-uofolder-path" } });
   path.addEventListener("input", () => { uoDraft = path.value; });
   const save = async (folder: string | null): Promise<void> => {
-    try { state.settings = (await api<SettingsApiResponse>("/api/settings", { method: "PUT", body: { uoFolder: folder } })).settings; uoDraft = null; forgetMissingArt(); void syncUoFolderCard(); }
+    try { state.settings = (await api<SettingsApiResponse>("/api/settings", { method: "PUT", body: { uoFolder: folder } })).settings; uoDraft = null; forgetMissingArt(); forgetDollFigures(); void syncUoFolderCard(); }
     catch (e) { void syncUoFolderCard(uoFolderErrorMessage(e)); }
   };
   const pick = async (): Promise<void> => {

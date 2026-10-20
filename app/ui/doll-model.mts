@@ -1,7 +1,7 @@
 // ui/doll-model.mts — what a doll card (issue #57) shows, as data: the figure's GET /api/paperdoll.png address, whether it is a stand-in and why, and the message under or in place of the figure. Pure, so a node test covers it.
 //
 // map: house
-// owns: `dollUrl`, `dollPlan`, `failureNote`, `DOLL_REASONS`, `DollNote`, `DollPlan`
+// owns: `dollUrl`, `dollPlan`, `failureNote`, `dollRequests`, `DOLL_REASONS`, `DollNote`, `DollPlan`
 import { lookOf, type Look, type Worn } from "../paperdoll-look.mts";
 
 const piece = (w: Worn): string => `${w.graphic}:${w.hue}`;
@@ -15,8 +15,8 @@ export function dollUrl(look: Look, worn: readonly Worn[], pair: readonly Worn[]
   return `/api/paperdoll.png?${q.toString().replace(/%3A/g, ":").replace(/%2C/g, ",")}`;
 }
 
-// A message the card shows. Its buttons all open Settings › Game client, where the UO folder is chosen and the scripts reinstalled; the first is the primary one.
-export interface DollNote { tone: "info" | "warn"; title: string; text?: string; actions?: string[] }
+// A message the card shows. Each button opens Settings at the part it names: the UO folder card (`uofolder`) or the Game client's scanner row (`scanner`, where the scanner is reinstalled or copied; the app has no separate scan guide). The first is the primary one.
+export interface DollNote { tone: "info" | "warn"; title: string; text?: string; actions?: Array<{ label: string; to: "uofolder" | "scanner" }> }
 // What a card draws for a character (`name` null for no character): the look to draw, whether it is the stand-in (drawn gray), and the note under it. A look the player customized (`custom`) is drawn in color in its place; a stand-in keeps its note.
 export interface DollPlan { look: Look; gray: boolean; note: DollNote | null }
 export function dollPlan(o: { name: string | null; appearance: Look | null | undefined; readsLook: boolean; client: string; custom?: Look | null | undefined }): DollPlan {
@@ -29,7 +29,7 @@ function basePlan({ name, appearance, readsLook, client }: { name: string | null
   if (standIn === "form") return { look, gray: true, note: { tone: "info", title: `${name} was in another form when scanned.`, text: "Scan again in their own form to show their look." } };
   if (standIn === "none") {
     return readsLook
-      ? { look, gray: true, note: { tone: "info", title: `Rescan to show ${name}'s look`, text: "The figure is a stand-in: this scan has no body, skin or hair yet.", actions: ["How to rescan"] } }
+      ? { look, gray: true, note: { tone: "info", title: `Rescan to show ${name}'s look`, text: "The figure is a stand-in: this scan has no body, skin or hair yet. Update the scanner scripts if Settings offers a newer one, then scan again in game.", actions: [{ label: "How to rescan", to: "scanner" }] } }
       : { look, gray: true, note: { tone: "info", title: `${client}'s scripts can't read your character's look, so the figure is a stand-in.` } };
   }
   return { look, gray: false, note: null };
@@ -41,11 +41,24 @@ export type DollReason = (typeof DOLL_REASONS)[number];
 // Why there is no figure, shown in its place.
 export function failureNote(reason: DollReason): DollNote {
   switch (reason) {
-    case "unsupported": case "unreadable": case "empty":
-      return { tone: "warn", title: "This client's files aren't supported yet", text: "Pack Rat reads the 7.x client files (gumpartLegacyMUL.uop and a 7.x tiledata.mul). The folder you chose holds an older layout.", actions: ["Choose another folder"] };
+    case "unsupported":
+      return { tone: "warn", title: "This client's files aren't supported yet", text: "Pack Rat reads the 7.x client files (gumpartLegacyMUL.uop and a 7.x tiledata.mul). The folder you chose holds an older layout.", actions: [{ label: "Choose another folder", to: "uofolder" }] };
+    case "unreadable":
+      return { tone: "warn", title: "Your client files couldn't be read", text: "They may be damaged, or another program has them open. Try again, or choose another UO folder.", actions: [{ label: "Choose another folder", to: "uofolder" }] };
+    case "empty":
+      return { tone: "warn", title: "Nothing could be drawn", text: "Your client files have none of this figure's pieces.", actions: [{ label: "Check the UO folder", to: "uofolder" }] };
     case "error": case "no-body":
-      return { tone: "warn", title: "The figure couldn't be drawn", text: "Pack Rat couldn't read the figure from your client files. Try again, or check the UO folder in Settings › Game client.", actions: ["Open Settings"] };
+      return { tone: "warn", title: "The figure couldn't be drawn", text: "Pack Rat couldn't read the figure from your client files. Try again, or check the UO folder in Settings › Game client.", actions: [{ label: "Open Settings", to: "uofolder" }] };
     default:
-      return { tone: "warn", title: "Pack Rat couldn't find your Ultima Online client files", text: "Choose your UO folder in Settings › Game client. Playing in the web client? Download UO Alive's free client package and point Pack Rat at it; you don't have to play on it.", actions: ["Choose UO folder", "Why?"] };
+      return { tone: "warn", title: "Pack Rat couldn't find your Ultima Online client files", text: "Choose your UO folder in Settings › Game client. Playing in the web client? Download UO Alive's free client package and point Pack Rat at it; you don't have to play on it.", actions: [{ label: "Choose UO folder", to: "uofolder" }, { label: "Why?", to: "uofolder" }] };
   }
+}
+
+// The card's requests, newest wins: `start(key)` gives a new request's number, or null when `key` is the one last asked for (painted or on its way), so asking again for what is coming changes nothing while asking for anything else, the figure on screen included, starts over. `settle(n, ok)` says whether answer `n` is still the newest; a failed one is forgotten, so the same key asks again next time (after the UO folder is set, say).
+export function dollRequests(): { start: (key: string) => number | null; settle: (n: number, ok: boolean) => boolean } {
+  let requested: string | null = null, seq = 0;
+  return {
+    start(key) { if (key === requested) return null; requested = key; return ++seq; },
+    settle(n, ok) { if (n !== seq) return false; if (!ok) requested = null; return true; },
+  };
 }

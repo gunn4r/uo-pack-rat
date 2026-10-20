@@ -1,11 +1,11 @@
 // ui/doll-card.mts — the doll card (issue #57): a character's paperdoll figure, drawn by GET /api/paperdoll.png from the player's own client files, on a card that is dark in both themes. One figure, or a pair side by side (Wearing now / New suit) cut to the same box. Every update draws at once (no debounce); only the newest answer paints, and the figures on screen stay until the new ones have decoded, so an update never flickers. When there is no figure the card says why in its place (doll-model.mts failureNote), and a stand-in says why under it (dollPlan).
 //
 // map: house
-// owns: `dollCard`, `DollView`
+// owns: `dollCard`, `DollView`, `forgetDollFigures`
 import { box, message, button, tag, txt } from "./components.mts";
 import { el } from "./dom.mts";
 import { showSettings } from "./nav.mts";
-import { DOLL_REASONS, dollPlan, dollUrl, failureNote, type DollNote, type DollReason } from "./doll-model.mts";
+import { DOLL_REASONS, dollPlan, dollRequests, dollUrl, failureNote, type DollNote, type DollPlan, type DollReason } from "./doll-model.mts";
 import { customLook, setCustomLook } from "./customize-model.mts";
 import { openCustomizer } from "./doll-customizer.mts";
 import type { Look, Worn } from "../paperdoll-look.mts";
@@ -43,7 +43,11 @@ async function load(url: string, signal: AbortSignal): Promise<Loaded> {
 }
 
 const noteNode = (n: DollNote): HTMLElement =>
-  message({ tone: n.tone, title: n.title, text: n.text ?? "", actions: (n.actions ?? []).map((label, i) => button({ label, size: "sm", variant: i === 0 ? "primary" : "secondary", onClick: () => showSettings("set-client") })) });
+  message({ tone: n.tone, title: n.title, text: n.text ?? "", actions: (n.actions ?? []).map((a, i) => button({ label: a.label, size: "sm", variant: i === 0 ? "primary" : "secondary", onClick: () => showSettings(a.to === "scanner" ? "set-scanner" : "set-uofolder") })) });
+
+// Bumped when the UO folder changes (Settings calls forgetDollFigures after a save), so every card asks for its figures again on its next update.
+let filesEpoch = 0;
+export const forgetDollFigures = (): void => { filesEpoch++; };
 
 // A doll card. `scale`: the figure's size, 2 (whole pixels, pixelated) or 1; `compact`: the Suit Builder's tighter padding; `controls`: what the card head carries on the right, before the "Customized" tag and the Customize button.
 export function dollCard({ id, scale = 2, compact = false, controls = [] }: { id?: string; scale?: 1 | 2; compact?: boolean; controls?: HTMLElement[] } = {}): { node: HTMLElement; show: (v: DollView) => void } {
@@ -54,12 +58,15 @@ export function dollCard({ id, scale = 2, compact = false, controls = [] }: { id
   const customize = button({ label: "Customize", icon: "person", variant: "ghost", size: "sm", attrs: { "aria-haspopup": "dialog", "aria-expanded": "false" }, onClick: () => { if (view) openCustomizerFor(view); } });
   const node = el("section", { class: "card doll-card", "data-mode": "dark", ...(id ? { id } : {}) },
     box("header", { class: "doll-head" }, box("div", { class: "doll-name" }, name, title), box("div", { class: "doll-controls" }, ...controls, customized, customize)), stage, note);
-  let seq = 0, shown = "", abort: AbortController | null = null, view: DollView | null = null;
-  // The popover beside the card, starting from the scanned look (or the stand-in) and redrawing the card on every change.
+  const requests = dollRequests();
+  let abort: AbortController | null = null, plan: DollPlan | null = null, drawn = false, view: DollView | null = null;
+  // The note under a drawn figure, from the newest update.
+  const paintNote = (): void => { note.replaceChildren(...(drawn && plan?.note ? [noteNode(plan.note)] : [])); };
+  // The popover beside the card, starting from the scanned look (or the stand-in) and redrawing the card on every change, with the newest view of the same character (the page builds a new view on every redraw).
   function openCustomizerFor(v: DollView): void {
     const base = dollPlan({ name: v.name, appearance: v.appearance, readsLook: v.readsLook, client: v.client });
     openCustomizer(customize, node, { scanned: base.look, custom: customLook(v.name, v.scannedAt ?? null), standIn: base.gray, nobody: v.name === null,
-      onChange: (look) => { setCustomLook(v.name, v.scannedAt ?? null, look); if (view === v) show(v); } });
+      onChange: (look) => { setCustomLook(v.name, v.scannedAt ?? null, look); if (view && view.name === v.name) show(view); } });
   }
 
   function show(v: DollView): void {
@@ -69,21 +76,21 @@ export function dollCard({ id, scale = 2, compact = false, controls = [] }: { id
     title.hidden = !v.title;
     const custom = customLook(v.name, v.scannedAt ?? null);
     customized.hidden = !custom;
-    const plan = dollPlan({ name: v.name, appearance: v.appearance, readsLook: v.readsLook, client: v.client, custom });
+    const p = plan = dollPlan({ name: v.name, appearance: v.appearance, readsLook: v.readsLook, client: v.client, custom });
     const pair = v.figures.length === 2;
-    const urls = v.figures.map((f, i) => dollUrl(plan.look, f.worn, pair ? v.figures[1 - i]!.worn : null, plan.gray));
-    const key = JSON.stringify([urls, v.figures.map((f) => f.caption ?? "")]);
-    if (key === shown) return;
-    const my = ++seq;
+    const urls = v.figures.map((f, i) => dollUrl(p.look, f.worn, pair ? v.figures[1 - i]!.worn : null, p.gray));
+    const my = requests.start(JSON.stringify([filesEpoch, urls, v.figures.map((f) => f.caption ?? ""), v.name]));
+    // the same figures: only the note can have changed (a reinstalled client reads the look now, say)
+    if (my === null) { paintNote(); return; }
     abort?.abort();
     abort = new AbortController();
     void Promise.all(urls.map((u) => load(u, abort!.signal))).then((got) => {
-      if (my !== seq) return;
-      shown = key;
       const failed = got.find((g): g is { reason: DollReason } => "reason" in g);
+      if (!requests.settle(my, !failed)) return;
+      drawn = !failed;
       if (failed) {
         stage.replaceChildren(box("div", { class: "doll-empty" }, noteNode(failureNote(failed.reason))));
-        note.replaceChildren();
+        paintNote();
         return;
       }
       stage.replaceChildren(box("div", { class: "doll-figs" }, ...got.map((g, i) => {
@@ -91,7 +98,7 @@ export function dollCard({ id, scale = 2, compact = false, controls = [] }: { id
         const img = el("img", { class: "doll-img", src: f.src, alt: caption ? `${v.name ?? "Stand-in"}, ${caption}` : `${v.name ?? "Stand-in"}'s paperdoll`, width: String(f.width * scale), height: String(f.height * scale), draggable: "false" });
         return el("figure", { class: "doll-fig" }, img, caption ? el("figcaption", { class: "t-sm muted" }, caption) : null);
       })));
-      note.replaceChildren(...(plan.note ? [noteNode(plan.note)] : []));
+      paintNote();
     });
   }
   return { node, show };
