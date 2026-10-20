@@ -287,7 +287,7 @@ const SCENES: Scene[] = [
   }, leave: (p) => p.keyboard.press("Escape") },
   { name: "character slot detail", enter: async (p) => {
     await route(p, "#/characters/Dorran", "#tab-characters .sheet");
-    await p.locator("#tab-characters .sheet button.gear-piece").first().click();
+    await p.locator("#tab-characters .sheet button.gi").first().click();
     await p.waitForSelector(".pop.item-pop");
   }, leave: (p) => p.keyboard.press("Escape") },
   // ---- builder (phases 7-9): the result's lower cards, compare, the drawer's menu and rename, the Settings drawer's
