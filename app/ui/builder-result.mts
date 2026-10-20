@@ -205,7 +205,7 @@ function changesTable(rows: ChangeRow[], past: PastNotes, hasShares: boolean): A
   new ResizeObserver(edges).observe(scroller);
   return [scroller, hasShares ? null : el("p", { class: "t-sm muted b-chg-note" }, "Share of score: not recorded in this run.")];
 }
-// A share of the score as a button that opens the Build Settings drawer on its weight (builder.mts tuneWeight, which hands the focus back to it when the drawer closes); Other (null) on the Weights tab.
+// A share of the score as a button that opens the Auto Build Settings drawer on its weight (builder.mts tuneWeight, which hands the focus back to it when the drawer closes); Other (null) on the Weights tab.
 function tuneButton({ key, name, cls, title }: { key: string | null; name: string; cls: string; title?: string | null }, ...kids: Array<HTMLElement | null>): HTMLButtonElement {
   return box("button", { type: "button", class: cls, "aria-label": name, ...(title ? { title } : {}), onclick: (e: MouseEvent) => commands.tuneWeight(key, e.currentTarget as HTMLElement) }, ...kids);
 }
@@ -216,7 +216,7 @@ function scoreBreakdown(shares: ScoreShare[] | undefined): HTMLElement | null {
   if (!shares?.length) return null;
   const all = shareRows(shares, 0), folded = shareRows(shares), positive = folded.filter((r) => !r.negative);
   const shown = sharesAll ? all : [...positive.slice(0, 3), ...folded.filter((r) => r.negative)];
-  // each row opens its weight in the Build Settings drawer
+  // each row opens its weight in the Auto Build Settings drawer
   const items = shown.map((r, i) => box("li", { class: r.negative && !shown[i - 1]?.negative && i ? "b-share-neg" : "" },
     tuneButton({ key: r.key, name: `${r.label} ${r.pct}${r.holds ? `: ${r.holds}` : ""}${r.note ? ` (${r.note})` : ""}`, cls: "b-share", title: r.holds },
       box("span", { class: "b-share-name" }, txt(r.label), r.note ? el("span", { class: "t-sm muted", title: r.note }, " · incl. min") : null),

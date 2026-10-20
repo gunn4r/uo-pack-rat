@@ -108,11 +108,11 @@ Pick the **Britannia** theme in **Settings › Theme** for parchment, brass fram
 
 ## Suit Builder
 
-**Suit Builder** finds the best suit for a character from everything you own, with the stats, floors and caps you care about, and keeps saved runs you can reopen and compare. Start from a template (Melee, Caster, Archer, Tank and more), or tune the goals in **Build Settings**.
+**Suit Builder** finds the best suit for a character from everything you own, with the stats, floors and caps you care about, and keeps saved runs you can reopen and compare. Start from a template (Melee, Caster, Archer, Tank and more), or tune the goals in **Auto Build Settings**.
 
 Turn on the buffs and forms you fight with (Divine Fury, Reaper Form, Bless, potions…) and the search plans around them, so gear only supplies what they don't.
 
-**Manual** lets you build a suit by hand and see its totals, buffs included, then let the search fill the slots you left empty, save it as a run, or start from an automatic result.
+**Manual** lets you build a suit by hand and see its totals, buffs included, then let the search fill the slots you left empty (with the settings in **Auto Build Settings**, which Manual opens too), save it as a run, or start from an automatic result.
 
 ![A Suit Builder result: the best suit for the demo character, with each resist's before and after, what changes, and how each goal went](images/suit-builder.png)
 

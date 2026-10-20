@@ -13,7 +13,7 @@
 // owns: `createItemBrowser`, `itemsSource`
 import { SLOT_LABELS, SLOT_GROUP, RESIST_KEYS, tagUnits, flagLabel } from "../vault-lib.mts";
 import type { Item } from "../vault-lib.mts";
-import type { Facets, ItemQuery, ItemQueryGroups, Place } from "../item-query.mts";
+import type { Facets, ItemQuery, ItemQueryGroups, Place, PropOp } from "../item-query.mts";
 import { state } from "./store.mts";
 import { el, label, full, slotLabel, whereText } from "./dom.mts";
 import { api } from "./api.mts";
@@ -22,7 +22,7 @@ import { optionsKeeping, colsFromPrefs, COLS_VERSION } from "./view-state.mts";
 import { relativeWhen } from "./messages.mts";
 import { txt, box, icon, button, searchInput, filterChip, token, pill, segmented, switchControl, popover, closePopover, message, menu, input, nextId, toast } from "./components.mts";
 import type { Kids, MenuItem, PopoverHandle } from "./components.mts";
-import { splitSerial, placeNames, queryParams, withFixed, activeFilters, clearAll, matchLine, countFact, emptyCause, rowWindow, chunksToFetch, gridKey, colShort, colFull, groupColumns, COL_GROUPS, DEFAULT_COLS, ITEM_COLS, shortTier, rootName, slayerTree, slayerLabel } from "./inv-model.mts";
+import { splitSerial, placeNames, queryParams, withFixed, activeFilters, clearAll, matchLine, countFact, emptyCause, rowWindow, chunksToFetch, gridKey, colShort, colFull, groupColumns, COL_GROUPS, DEFAULT_COLS, ITEM_COLS, shortTier, rootName, slayerTree, slayerLabel, neZeroHint } from "./inv-model.mts";
 import type { FilterToken } from "./inv-model.mts";
 import type { ItemsApiResponse, UiPrefs } from "./api-types.mts";
 import { openRuleEditor } from "./rule-editor.mts";
@@ -499,7 +499,7 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
     );
     menu(addChip, entries, { label: "Add a filter" });
   }
-  // A property rule: the property (searchable, grouped like the column picker), ≥ ≤ =, a number. Rules
+  // A property rule: the property (searchable, grouped like the column picker), ≥ ≤ = ≠, a number. Rules
   // add up (an item must pass every one), which the popover says. A yes/no property (issue #182, the last group)
   // is just "has": picking one hides the comparison and the number.
   function propertyPanel(close: () => void): Kids {
@@ -511,16 +511,21 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
     find.input.classList.add("input-sm");
     const list = box("div", { class: "inv-opts inv-prop-list", role: "listbox", "aria-label": "Properties" });
     const num = input({ type: "number", value: 1, size: "sm", attrs: { "aria-label": "Value" } });
-    const opSeg = segmented({ label: "Comparison", options: [{ value: "ge", label: "≥" }, { value: "le", label: "≤" }, { value: "eq", label: "=" }], value: "ge", onChange: (v) => { op = v; } });
+    const hint = txt("", "t-sm muted");
+    const showHint = (): void => { const h = flag ? null : neZeroHint(op, num.value); hint.textContent = h || ""; hint.hidden = !h; };
+    showHint();
+    num.addEventListener("input", showHint);
+    const opSeg = segmented({ label: "Comparison", options: [{ value: "ge", label: "≥" }, { value: "le", label: "≤" }, { value: "eq", label: "=" }, { value: "ne", label: "≠" }], value: "ge", onChange: (v) => { op = v; showHint(); } });
     const add = button({ label: "Add rule", variant: "primary", size: "sm", disabled: true, onClick: () => {
       if (flag) { setQuery({ ...query, flags: [...new Set([...query.flags, key])] }); close(); return; }
       if (!key || num.value === "" || !Number.isFinite(+num.value)) { num.focus(); return; }
-      setQuery({ ...query, props: [...query.props, { key, min: +num.value, ...(op === "ge" ? {} : { op: op as "le" | "eq" }) }] });
+      setQuery({ ...query, props: [...query.props, { key, min: +num.value, ...(op === "ge" ? {} : { op: op as PropOp }) }] });
       close();
     } });
     const pick = (b: HTMLElement, k: string, name: string, isFlag: boolean): void => {
       key = k; flag = isFlag; chosen.textContent = name; chosen.className = "t-sm strong"; add.disabled = false;
       opSeg.hidden = num.hidden = isFlag;
+      showHint();
       for (const o of list.querySelectorAll("[role=option]")) o.setAttribute("aria-selected", String(o === b));
       if (isFlag) add.focus(); else { num.focus(); num.select(); }
     };
@@ -548,7 +553,7 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
     find.input.addEventListener("input", () => draw(find.input.value.trim().toLowerCase()));
     num.addEventListener("keydown", (e) => { if (e.key === "Enter") add.click(); });
     draw("");
-    return [box("div", { class: "inv-pop-head" }, txt("Property rule", "caps")), find.root, list, chosen, box("div", { class: "inv-rule" }, opSeg, num, add), txt("An item must pass every rule you add.", "t-sm muted")];
+    return [box("div", { class: "inv-pop-head" }, txt("Property rule", "caps")), find.root, list, chosen, box("div", { class: "inv-rule" }, opSeg, num, add), hint, txt("An item must pass every rule you add.", "t-sm muted")];
   }
 
   // ---------------------------------------------------------------- active-filter strip

@@ -1,11 +1,11 @@
 // ui-inventory.test.mts — `app/ui/inv-model.mts`, the Inventory screen's pure rules.
 //
-// `app/ui/inv-model.mts`, the Inventory screen's pure rules: `plural` ("1 stack", "1,204 pieces"), `queryParams` round-tripping a full filter state through the server's `parseItemQuery`, the active-filter tokens (their words, each removing only itself, the search counted as a filter and cleared by Clear all, the Rarity at most token and its empty-result sentence), the strip's "45 of 160 stacks match" and the footer's count fact, the empty-result sentence (the one filter that excludes everything alone, a single filter being its own cause, else the combination), tier and rule labels, a Location option named by its Organize label with the scanned name beside its serial (`placeNames`), the nine default columns and the column picker's groups and order, the virtual table's row window (clamped at the end) and chunk fetches, and the table's keyboard model (arrows, Home/End, Page keys, Enter/Space, Esc). All `[fast]`.
+// `app/ui/inv-model.mts`, the Inventory screen's pure rules: `plural` ("1 stack", "1,204 pieces"), `queryParams` round-tripping a full filter state through the server's `parseItemQuery`, the active-filter tokens (their words, each removing only itself, the search counted as a filter and cleared by Clear all, the Rarity at most token and its empty-result sentence), the strip's "45 of 160 stacks match" and the footer's count fact, the empty-result sentence (the one filter that excludes everything alone, a single filter being its own cause, else the combination), tier and rule labels, a Location option named by its Organize label with the scanned name beside its serial (`placeNames`), the property popover's ≠ 0 note (`neZeroHint`), the nine default columns and the column picker's groups and order, the virtual table's row window (clamped at the end) and chunk fetches, and the table's keyboard model (arrows, Home/End, Page keys, Enter/Space, Esc). All `[fast]`.
 //
 // The rendered screen is driven by scripts/ui-state.test.mts.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { queryParams, withFixed, activeFilters, clearAll, matchLine, countFact, emptyCause, rowWindow, chunksToFetch, gridKey, colGroup, groupColumns, DEFAULT_COLS, shortTier, propRuleLabel, slayerTree, slayerLabel, placeNames } from "./ui/inv-model.mts";
+import { queryParams, withFixed, activeFilters, clearAll, matchLine, countFact, emptyCause, rowWindow, chunksToFetch, gridKey, colGroup, groupColumns, DEFAULT_COLS, shortTier, propRuleLabel, neZeroHint, slayerTree, slayerLabel, placeNames } from "./ui/inv-model.mts";
 import { parseItemQuery } from "./item-query.mts";
 import type { ItemQuery } from "./item-query.mts";
 import { plural } from "./ui/format.mts";
@@ -121,6 +121,12 @@ test("[fast] tier and rule labels", () => {
   assert.equal(shortTier("Major Artifact"), "Major Artifact");
   assert.equal(propRuleLabel({ key: "lmc", min: 8 }, CTX.propLabel), "LMC ≥ 8");
   assert.equal(propRuleLabel({ key: "hci", min: 3, op: "eq" }, CTX.propLabel), "HCI = 3");
+  assert.equal(propRuleLabel({ key: "lmc", min: -1, op: "ne" }, CTX.propLabel), "LMC ≠ -1");
+});
+
+test("[fast] neZeroHint: the property popover's note shows under ≠ 0 only", () => {
+  assert.equal(neZeroHint("ne", "0"), "Items without this property count as 0.");
+  for (const [op, v] of [["ne", "1"], ["ne", ""], ["eq", "0"], ["ge", "0"]]) assert.equal(neZeroHint(op!, v!), null, `${op} ${v}`);
 });
 
 test("[fast] the default columns are Tags and the nine of the spec, and every column lands in a picker group", () => {

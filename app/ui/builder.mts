@@ -1,5 +1,5 @@
-// ui/builder.mts — the Suit Builder screen (design spec 4.6, issues #272, #321): the sentence bar's Build Settings and Build,
-// the Build Settings drawer (its tabs: Requirements, Goals, Buffs, Pool, Advanced) with its footer, the panel as a build and
+// ui/builder.mts — the Suit Builder screen (design spec 4.6, issues #272, #321): the sentence bar's Auto Build Settings and Build,
+// the Auto Build Settings drawer (its tabs: Requirements, Goals, Buffs, Pool, Advanced) with its footer, the panel as a build and
 // the finished build shown. The sentence bar's pickers and What changed chip are ui/builder-header.mts; the Manage templates drawer and the template actions are ui/builder-templates.mts; the Requirements and Goals tabs and the resist caps are ui/builder-requirements.mts; the optimize job and its progress card are ui/builder-job.mts; the first-visit view is ui/builder-start.mts; the result, the compare view and the Solver details are ui/builder-result.mts; the saved-runs drawer
 // is ui/runs.mts; they share the builder's state and call each other through ui/builder-session.mts. The panel is drawn
 // from the session's profile plus its Advanced knobs, so what a build sends, what a profile saves and what a run
@@ -29,7 +29,7 @@ import { prefs } from "./prefs.mts";
 import { plural } from "./format.mts";
 
 // ---------------------------------------------------------------- panel state
-// The solver knobs as typed (ui/builder-session.mts), and the Build Settings drawer's tab (ui-prefs `builderTab`).
+// The solver knobs as typed (ui/builder-session.mts), and the Auto Build Settings drawer's tab (ui-prefs `builderTab`).
 const knobs = session.knobs;
 type Tab = NonNullable<UiPrefs["builderTab"]>;
 const TABS: Tab[] = ["requirements", "weights", "buffs", "pool", "advanced"];
@@ -44,6 +44,8 @@ const KNOB_IDS: Record<KnobField, string> = { strLimit: "b-str", restarts: "b-re
 export function initBuilder(): void {
   $<HTMLButtonElement>("#b-run")!.onclick = () => commands.build();
   $<HTMLButtonElement>("#b-run-foot")!.onclick = () => commands.build();
+  // opened from Manual, the footer fills the rest instead, with the drawer closed so its progress shows
+  $<HTMLButtonElement>("#b-fill-foot")!.onclick = () => { closeSettings(); commands.fillRest(); };
   $<HTMLButtonElement>("#b-save")!.onclick = () => saveProfile();
   $<HTMLButtonElement>("#b-save-tpl")!.onclick = () => commands.saveTemplateAs();
   $<HTMLButtonElement>("#b-runs-open")!.onclick = () => commands.openRunsDrawer();
@@ -58,9 +60,9 @@ export function initBuilder(): void {
     e.preventDefault();
     commands.build();
   });
-  // The Build Settings drawer, the shared modal drawer (components.mts bindDrawer): its ×, the scrim and Esc close it.
-  // Its button and ⌘, (Ctrl+, off the Mac) open it while the builder's top bar shows the button (not in Manual, the
-  // compare view or another screen, nor behind a drawer or dialog), and ⌘, closes it again. Esc with the focus fallen
+  // The Auto Build Settings drawer, the shared modal drawer (components.mts bindDrawer): its ×, the scrim and Esc close it.
+  // Its button and ⌘, (Ctrl+, off the Mac) open it while the builder's top bar shows the button (in Automatic and Manual, not
+  // the compare view or another screen, nor behind a drawer or dialog), and ⌘, closes it again. Esc with the focus fallen
   // to <body> closes it too, an open popover closing first.
   settingsDrawer = bindDrawer($<HTMLElement>("#b-drawer-root")!);
   settingsDrawer.root.addEventListener("drawerclose", () => $<HTMLButtonElement>("#b-settings")!.setAttribute("aria-expanded", "false"));
@@ -73,12 +75,12 @@ export function initBuilder(): void {
     e.preventDefault();
     if (drawerOpen()) closeSettings(); else openSettings();
   });
-  // The tabs: a click, or ←/→ and Home/End with the focus following, shows one.
-  const tabs = [...document.querySelectorAll<HTMLButtonElement>("#b-drawer [role=tab]")];
-  for (const t of tabs) {
+  // The tabs: a click, or ←/→ and Home/End with the focus following, shows one (of those shown: Manual has no Buffs).
+  const all = [...document.querySelectorAll<HTMLButtonElement>("#b-drawer [role=tab]")];
+  for (const t of all) {
     t.onclick = () => showTab(t.dataset.tab as Tab);
     t.addEventListener("keydown", (e) => {
-      const i = tabs.indexOf(t), n = tabs.length;
+      const tabs = all.filter((x) => x.getClientRects().length), i = tabs.indexOf(t), n = tabs.length;
       const to = e.key === "ArrowRight" ? (i + 1) % n : e.key === "ArrowLeft" ? (i - 1 + n) % n : e.key === "Home" ? 0 : e.key === "End" ? n - 1 : -1;
       if (to < 0) return;
       e.preventDefault();
@@ -92,8 +94,6 @@ export function initBuilder(): void {
     if (key === "openRun" || key === "character") builtWith = null;
     if (["openRun", "runs", "result"].includes(key)) paintChanges();
   });
-  // Manual has no Build Settings button: the drawer closes on the way in
-  document.addEventListener("builderchange", (e) => { if ((e as BuilderChange).detail.key === "mode" && session.mode === "manual") closeSettings(); });
 }
 // The drawer's tab, at load, from ui-prefs (app.mts applies it before initBuilder runs).
 export function applyPanelPrefs(p: UiPrefs | null): void { if (p?.builderTab && TABS.includes(p.builderTab)) tab = p.builderTab; }
@@ -102,8 +102,10 @@ const drawerOpen = (): boolean => !!settingsDrawer?.isOpen();
 // The result's breakdown row or share that opens the drawer (tuneWeight), which takes the focus back when it closes.
 let opener: HTMLElement | null = null;
 // Open the drawer on `on` (else the tab it had) with the focus on that tab; `focus` false when the caller focuses a
-// control in it next. Closing it gives the focus back to the Build Settings button, or to the result row that opened it.
+// control in it next. Closing it gives the focus back to the Auto Build Settings button, or to the result row that opened it.
+// From Manual it opens on Requirements in place of Buffs, which it hides.
 function openSettings(on: Tab = tab, focus = true): void {
+  if (on === "buffs" && session.mode === "manual") on = "requirements";
   if (on !== tab) showTab(on);
   if (!drawerOpen()) {
     const b = $<HTMLButtonElement>("#b-settings")!;
@@ -111,6 +113,7 @@ function openSettings(on: Tab = tab, focus = true): void {
     b.setAttribute("aria-expanded", "true");
   }
   opener = null;
+  paintChanges();
   if (focus) $<HTMLElement>(`#b-tab-${tab}`)!.focus();
 }
 // Close it (a popover opened from it closes with it).
@@ -293,7 +296,7 @@ function updateTemplateBadge(): void {
   paintChanges();
   announce("settings");
 }
-// The footer's "N changes since the last build": what the runs drawer's diff (runSettingsDiff) names between the shown
+// The footer's "N changes since the last build" (opened from Manual: what Fill the rest plans, at once): what the runs drawer's diff (runSettingsDiff) names between the shown
 // run and the panel, hidden with no run shown. While the run on screen is the one a build just showed, it counts from
 // the settings that build was asked with: one answered from an earlier run carries that run's own search knobs. Any
 // other run shown (one opened from the drawer, that same run reopened, another character) clears it, so the count
@@ -303,10 +306,16 @@ let builtWith: { runId: string; settings: RunSettings } | null = null;
 let changesTimer: ReturnType<typeof setTimeout> | undefined;
 function paintChanges(): void {
   clearTimeout(changesTimer);
+  if (session.mode === "manual") {
+    const f = commands.fillFoot();
+    $<HTMLElement>("#b-changes")!.textContent = f.note;
+    $<HTMLButtonElement>("#b-fill-foot")!.disabled = !f.ready;
+    return;
+  }
   changesTimer = setTimeout(() => {
     const out = $<HTMLElement>("#b-changes")!, run = session.openRun ? session.runs.find((r) => r.id === session.openRun) : null;
     // the progress card and its Cancel are behind the drawer's scrim: say how to reach them
-    if (session.job) { out.textContent = "Building… Close Build Settings (Esc) to see its progress or cancel it."; return; }
+    if (session.job) { out.textContent = "Building… Close Auto Build Settings (Esc) to see its progress or cancel it."; return; }
     if (!run || !session.profile) { out.textContent = ""; return; }
     const n = runSettingsDiff(builtWith?.runId === run.id ? builtWith.settings : run.settings, panelBuild().snapshot).length;
     out.textContent = n ? `${plural(n, "change")} since the last build` : "No changes since the last build";
@@ -443,7 +452,7 @@ function focusIn(sec: FocusSection, sel: string, selectText = false): void {
   e?.focus();
   if (selectText) e?.select();
 }
-// A score breakdown row's property in the Build Settings drawer: its weight's field, else Add weight; Other (null) opens the Weights tab. Closing the drawer then puts the focus back on the row (`from`). With goals setting the weights, the weights are shown under them first (fineTune).
+// A score breakdown row's property in the Auto Build Settings drawer: its weight's field, else Add weight; Other (null) opens the Weights tab. Closing the drawer then puts the focus back on the row (`from`). With goals setting the weights, the weights are shown under them first (fineTune).
 function tuneWeight(key: string | null, from: HTMLElement): void {
   opener = from;
   commands.showGoalWeights();

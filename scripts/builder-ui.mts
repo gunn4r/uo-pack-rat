@@ -1,4 +1,4 @@
-// builder-ui.mts — the Suit Builder Electron tests' shared steps (scripts/ui-builder-*.test.mts): the launch at 1440 × 900, Build Settings
+// builder-ui.mts — the Suit Builder Electron tests' shared steps (scripts/ui-builder-*.test.mts): the launch at 1440 × 900, Auto Build Settings
 // open on a tab and closed again, the Suit Builder opened with a quick time budget, Build pressed, and the wait for its result.
 //
 // map: tooling
@@ -27,6 +27,6 @@ export async function openBuilder(page: Page): Promise<void> {
   await page.fill("#b-budget", "2");
   await closeSettings(page);
 }
-// Build: the top bar's Build, or the drawer footer's while Build Settings is open over the top bar (issue #320).
+// Build: the top bar's Build, or the drawer footer's while Auto Build Settings is open over the top bar (issue #320).
 export async function pressBuild(page: Page): Promise<void> { await page.click(await page.locator("#b-drawer").isVisible() ? "#b-run-foot" : "#b-run"); }
 export const built = (page: Page): Promise<void> => page.waitForFunction(() => !document.querySelector<HTMLButtonElement>("#b-run")?.disabled && /Best suit for/.test(document.querySelector("#b-result h2")?.textContent || ""), undefined, { timeout: 60_000 }).then(() => {});
