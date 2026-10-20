@@ -326,6 +326,13 @@ test("[fast] facetsOf: extraKeys lists gear's numeric extras, never a skill bonu
   assert.deepEqual(f.propKeys, []);
 });
 
+test("[fast] applyItemQuery: Mage Weapon keeps its tooltip's negative sign, so ≥ -20 is a penalty of 20 or less, and ≤ -1 leaves out what is no mage weapon", () => {
+  const items = [mk({ name: "Staff A", props: { mageWeapon: -10 } }), mk({ name: "Staff B", props: { mageWeapon: -30 } }), mk({ name: "Plain Staff", props: {} })];
+  const rows = (s: string): string[] => names((applyItemQuery(items, parseItemQuery(new URLSearchParams(s)), ctx) as ItemQueryRows).rows).sort();
+  assert.deepEqual(rows("prop=mageWeapon:ge:-20"), ["Plain Staff", "Staff A"]);
+  assert.deepEqual(rows("prop=mageWeapon:ge:-20&prop=mageWeapon:le:-1"), ["Staff A"]);
+});
+
 test("[fast] propCounts: how many stacks carry each numeric and yes/no property", () => {
   const items = [...SPLINTERS, mk({ name: "Ring", props: { hci: 5, fc: 1 }, strReq: 0, weight: 1, flags: ["Spell Channeling", "night sight"] }), mk({ name: "Bracelet", props: { hci: 0 }, flags: ["night sight"] })];
   const c = propCounts(items);

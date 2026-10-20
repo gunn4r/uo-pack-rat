@@ -141,6 +141,9 @@ export interface FilterToken {
 const OP_SIGN = { ge: "≥", le: "≤", eq: "=", ne: "≠" } as const;
 export const propRuleLabel = (f: PropFilter, propLabel: (k: string) => string): string => `${propLabel(f.key)} ${OP_SIGN[f.op || "ge"]} ${f.min}`;
 // The property popover's note under a ≠ 0 rule: an item without the property reads 0 (item-query.mts's colVal).
+// The note under a Mage Weapon rule: the value is the tooltip's own, a negative skill penalty, so the comparisons read as
+// numbers do (≥ -20 is a penalty of 20 or less), and an item without it reads 0.
+export const MAGE_WEAPON_HINT = "Mage Weapon is negative, as on its tooltip: ≥ -20 keeps penalties of 20 or less, and items that are no mage weapon read 0.";
 export const neZeroHint = (op: string, value: string): string | null => (op === "ne" && value.trim() !== "" && +value === 0 ? "Items without this property count as 0." : null);
 const without = <T,>(list: T[], v: T): T[] => list.filter((x) => x !== v);
 // "Greater Magic Item" reads "Greater Magic" on a chip; the token keeps the whole name.

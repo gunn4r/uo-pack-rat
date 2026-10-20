@@ -122,9 +122,9 @@ const titleCase = (x: string): string => x.replace(/\b\w/g, (c) => c.toUpperCase
 // The property catalogue: every gear property the Inventory's property rule offers, whether or not an item carries it, in
 // the list's groups and order, by the shard's names, with the unit its tooltip line shows. A modelled property is named
 // by its registry key; one no property models by the key parseTooltip files its line under in `extras` ("weapon speed"),
-// which a rule saved before it was listed already names. A property the shard has but no scan has shown yet (Hit Curse,
-// Lower Ammo Cost, Bane, Searing Weapon, Assassin Honed, the Resonances) is added once a real tooltip line shows how it
-// reads: an option nothing can match would only mislead. Scroll filters (psLevel, sotPoints) are not gear properties.
+// which a rule saved before it was listed already names. Every entry's line is one seen on the shard (a scan, or its
+// vendor listings: Hit Curse, the Resonances, Lower Ammo Cost); a property no tooltip has shown yet is left out, since an
+// option nothing can match would only mislead. Scroll filters (psLevel, sotPoints) are not gear properties.
 export const CATALOGUE_GROUPS = ["Resists", "Casting", "Combat", "Weapon", "Defense & eaters", "Stats & pools", "Other"] as const;
 export type CatalogueGroup = (typeof CATALOGUE_GROUPS)[number];
 export interface CatalogueEntry { key: string; name: string; unit: "" | "%" | "s" | "tiles" | "stones" | "skill"; group: CatalogueGroup }
@@ -134,13 +134,16 @@ export const PROPERTY_CATALOGUE: readonly CatalogueEntry[] = [
   ...(["physResist", "fireResist", "coldResist", "poisonResist", "energyResist"] as const).map((k) => fromRegistry(k, "%", "Resists")),
   fromRegistry("fc", "", "Casting"), fromRegistry("fcr", "", "Casting"), fromRegistry("lmc", "%", "Casting"), fromRegistry("lrc", "%", "Casting"),
   fromRegistry("sdi", "%", "Casting"), fromRegistry("manaRegen", "", "Casting"), fromRegistry("castingFocus", "%", "Casting"), fromRegistry("mageWeapon", "skill", "Casting"),
+  ...["fire", "cold", "poison", "energy", "kinetic"].map((e) => fromLine(`${e} resonance`, "%", "Casting")),
   ...(["hci", "dci", "ssi", "di", "reflectPhys", "hitLifeLeech", "hitStamLeech", "hitManaLeech"] as const).map((k) => fromRegistry(k, "%", "Combat")),
   fromLine("hit mana drain", "%", "Combat"), fromLine("hit fatigue", "%", "Combat"),
-  ...(["hitLowerDef", "hitLowerAttack", "hitFireball", "hitLightning", "hitHarm", "hitMagicArrow", "hitDispel", "hitPhysArea", "hitFireArea", "hitColdArea", "hitPoisonArea", "hitEnergyArea"] as const).map((k) => fromRegistry(k, "%", "Combat")),
+  ...(["hitLowerDef", "hitLowerAttack", "hitFireball", "hitLightning", "hitHarm", "hitMagicArrow", "hitDispel"] as const).map((k) => fromRegistry(k, "%", "Combat")),
+  fromLine("hit curse", "%", "Combat"),
+  ...(["hitPhysArea", "hitFireArea", "hitColdArea", "hitPoisonArea", "hitEnergyArea"] as const).map((k) => fromRegistry(k, "%", "Combat")),
   fromLine("splintering weapon", "%", "Combat"), fromLine("velocity", "%", "Combat"), fromLine("swarm", "%", "Combat"),
   fromLine("weapon speed", "s", "Weapon"),
   ...["physical", "fire", "cold", "poison", "energy", "chaos"].map((d) => fromLine(`${d} damage`, "%", "Weapon")),
-  fromLine("range", "tiles", "Weapon"), fromLine("archery damage modifier", "%", "Weapon"),
+  fromLine("range", "tiles", "Weapon"), fromLine("archery damage modifier", "%", "Weapon"), fromLine("lower ammo cost", "%", "Weapon"),
   ...["damage", "kinetic", "fire", "cold", "poison", "energy"].map((e) => fromLine(`${e} eater`, "%", "Defense & eaters")),
   fromLine("soul charge", "%", "Defense & eaters"), fromLine("last parry chance", "%", "Defense & eaters"),
   ...(["strBonus", "dexBonus", "intBonus", "hpi", "stamInc", "manaInc", "hpRegen", "stamRegen"] as const).map((k) => fromRegistry(k, "", "Stats & pools")),
@@ -148,9 +151,11 @@ export const PROPERTY_CATALOGUE: readonly CatalogueEntry[] = [
   fromRegistry("enhancePotions", "%", "Other"), fromRegistry("selfRepair", "", "Other"), fromLine("mining bonus", "", "Other"), fromLine("blacksmithing bonus", "%", "Other"),
   fromLine("artifact rarity", "", "Other"),
 ];
-// The yes/no properties (flag keys, pools.mts's flagKey), every one seen on gear in real scans.
-export const FLAG_CATALOGUE: readonly string[] = ["balanced", "battle lust", "blessed", "blood drinker", "crafting failure protection", "exceptional", "(imbued)", "insured",
-  "mage armor", "night sight", "part of an armor set", "reactive paralyze", "spell channeling", "use best weapon skill"];
+// The yes/no properties (flag keys, pools.mts's flagKey), A to Z by name: the ones seen on gear in real scans, Searing Weapon
+// and Cannot Be Repaired from the shard's vendor listings, and Bane and Assassin Honed, which the shard shows the same way
+// (its plain name on a line of its own) though no listing has confirmed them.
+export const FLAG_CATALOGUE: readonly string[] = ["assassin honed", "balanced", "bane", "battle lust", "blessed", "blood drinker", "cannot be repaired", "crafting failure protection",
+  "exceptional", "(imbued)", "insured", "mage armor", "night sight", "part of an armor set", "reactive paralyze", "searing weapon", "spell channeling", "use best weapon skill"];
 const CATALOGUE_NAMES: Record<string, string> = Object.fromEntries(PROPERTY_CATALOGUE.map((c) => [c.key, c.name]));
 // A tooltip line no property models reads by its catalogue name ("Weapon Speed"), anything else by its key.
 export const labelOf = (k: string): string => (k.startsWith("sk:") ? "+" + titleCase(k.slice(3)) : PROP_LABELS[k] || CATALOGUE_NAMES[k] || k);

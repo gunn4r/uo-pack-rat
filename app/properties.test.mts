@@ -108,6 +108,9 @@ const CATALOGUE_LINES: Record<string, string> = {
   "cold eater": "Cold Eater 13%", "poison eater": "Poison Eater 10%", "energy eater": "Energy Eater 8%", "soul charge": "Soul Charge 20%",
   "last parry chance": "Last Parry Chance: 32%", "lower requirements": "Lower Requirements 20%", "mining bonus": "Mining Bonus +3",
   "blacksmithing bonus": "Blacksmithing Bonus: 18%", "artifact rarity": "Artifact Rarity 11",
+  // From the shard's vendor listings.
+  "hit curse": "Hit Curse 10%", "fire resonance": "Fire Resonance 20%", "cold resonance": "Cold Resonance 20%", "poison resonance": "Poison Resonance 20%",
+  "energy resonance": "Energy Resonance 20%", "kinetic resonance": "Kinetic Resonance 20%", "lower ammo cost": "Lower Ammo Cost 10%",
 };
 test("[fast] PROPERTY_CATALOGUE: unique keys in known groups, gear properties only, and every unmodelled entry parses from its real tooltip line", () => {
   setRules(JSON.parse(readFileSync(join(HERE, "rules", "uoalive.json"), "utf8")) as RulesV1);
@@ -121,6 +124,10 @@ test("[fast] PROPERTY_CATALOGUE: unique keys in known groups, gear properties on
   assert.deepEqual(unmodelled.sort(), Object.keys(CATALOGUE_LINES).sort());
   for (const k of unmodelled) assert.equal(typeof parseTooltip(["Item", CATALOGUE_LINES[k]!]).extras[k], "number", `${CATALOGUE_LINES[k]} parses as ${k}`);
   for (const f of FLAG_CATALOGUE) assert.equal(flagKey(f), f, `${f} is a flag key`);
+  for (const line of ["Searing Weapon", "Cannot Be Repaired", "Bane", "Assassin Honed"]) assert.ok(parseTooltip(["Item", line]).flags.includes(line.toLowerCase()), `${line} is a yes/no line`);
+  // Signs as the tooltip shows them (the shard's vendor listings): a Mage Weapon penalty, a negative Damage Increase or resist.
+  const neg = parseTooltip(["Item", "Mage Weapon -10 Skill", "Damage Increase -40%", "Cold Resist -3%", "Weapon Speed 2.75s", "Range 10"]);
+  assert.deepEqual([neg.props.mageWeapon, neg.props.di, neg.props.coldResist, neg.extras["weapon speed"], neg.extras.range], [-10, -40, -3, 2.75, 10]);
   assert.deepEqual([...FLAG_CATALOGUE].sort((a, b) => flagLabel(a).localeCompare(flagLabel(b))), [...FLAG_CATALOGUE], "Yes or no is A to Z by name");
   assert.equal(labelOf("weapon speed"), "Weapon Speed", "a chip names an unmodelled property in Title Case");
   assert.equal(PROPERTY_CATALOGUE.find((c) => c.key === "hci")!.name, "Hit Chance Increase");
