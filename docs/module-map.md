@@ -256,7 +256,7 @@ The route map is checked against the routes `app/http/routes/` registers by `scr
 | `app/http/routes/bridge.mts` | The in-game bridge: POST /api/bridge, POST /api/bridge/stop and GET /api/bridge/status. | `routes` |
 | `app/http/routes/forget.mts` | POST /api/forget and POST /api/forget-character. | `routes` |
 | `app/http/routes/host.mts` | What only the desktop shell can do (POST /api/host/pick-folder and /api/host/open-path) and the shared event stream (GET /api/events). | `routes` |
-| `app/http/routes/houses.mts` | The house map: GET /api/houses[/<id>], GET /api/facet-map/<facet>.png, GET /api/item-art/<graphic>.png, GET /api/house-map, PUT /api/house-map/<id>, GET /api/house-claims and DELETE /api/house-claims/<id>. | `routes` |
+| `app/http/routes/houses.mts` | The house map: GET /api/houses[/<id>], GET /api/facet-map/<facet>.png, GET /api/item-art/<graphic>.png, GET /api/paperdoll.png, GET /api/house-map, PUT /api/house-map/<id>, GET /api/house-claims and DELETE /api/house-claims/<id>. | `routes` |
 | `app/http/routes/import.mts` | POST /api/import/paste and /api/import/rescan. | `routes` |
 | `app/http/routes/inventory.mts` | The inventory: GET /api/inventory, /api/missing, /api/items and /api/items/by-serial. | `routes` |
 | `app/http/routes/kinds.mts` | The player's item kinds: GET\|POST /api/item-kinds and POST /api/item-kinds/import. | `routes` |
@@ -299,7 +299,7 @@ The services below are factories with explicit dependencies (stores, getters, a 
 | Module | Role | Owns |
 |---|---|---|
 | `app/services/events.mts` | Server-Sent Events: one event written to a stream, and the shared bus behind GET /api/events that tells every open page what changed (a scan accepted or rejected, the inventory or the runs changed). | `sse`, `createEventBus` |
-| `app/services/houses.mts` | The house map's client files and models (issues #10, #164, #174): the UO folder, its tiledata.mul and facetNN.mul, the facet PNGs cut from them, the item art PNGs drawn from its artLegacyMUL.uop and hues.mul, and the house models built from the inventory, each kept while its inputs stay the same. | `createHousesService` |
+| `app/services/houses.mts` | The house map's client files and models (issues #10, #164, #174): the UO folder, its tiledata.mul and facetNN.mul, the facet PNGs cut from them, the item art PNGs drawn from its artLegacyMUL.uop and hues.mul, the paperdoll figures drawn from its gumps (issue #57), and the house models built from the inventory, each kept while its inputs stay the same. | `createHousesService` |
 | `app/services/inventory.mts` | The inventory every view and bridge command reads: the scans folded (cached), with Organize's results overlay applied (cached on its own). | `createInventoryService`, `FoldValue`, `InvValue` |
 | `app/services/jobs.mts` | Optimizer jobs: one worker thread per build, its progress and outcome for the per-job event stream, one running build per client (a newer one supersedes it), a server-wide ceiling, and a finished build saved as a run. | `createJobsService`, `Job`, `JobTimings` |
 | `app/services/organize.mts` | The Organize service (issues #11, #127, #131): finished trips read back into the results overlay, what a plan starts from, the plan, a trip queued for the bridge, and Put away's requests from the in-game panel. | `createOrganizeService` |

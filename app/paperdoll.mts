@@ -296,7 +296,8 @@ function hooded(robeGfx: number, body: number): boolean {
 // The figure canvas; every layer, the body included, is drawn at its (0, 0).
 export const CANVAS = { width: 260, height: 237 } as const;
 const LINING = 0x8001;   // raw colour 0x0001, as decodeGump stores it
-export interface PaperdollFiles { gump: GumpSource; tiles: TileData; hues: Hues; equipConv: EquipConv }
+// `hues` is null without a hues.mul: the figure is then drawn unhued.
+export interface PaperdollFiles { gump: GumpSource; tiles: TileData; hues: Hues | null; equipConv: EquipConv }
 interface HuedLayer { pixels: Uint16Array; width: number; height: number; lining: Uint8Array }
 const HUED_CACHE_MAX = 2048;
 
@@ -311,7 +312,7 @@ export function createPaperdoll(files: PaperdollFiles) {
       const g = files.gump(id);
       if (!g) hued.set(key, null);
       else {
-        const def = g.hue ? hueFor(files.hues, g.hue, false) : null, own = hueFor(files.hues, hue, partial), src = g.art.pixels;
+        const hues = files.hues, def = hues && g.hue ? hueFor(hues, g.hue, false) : null, own = hues && hueFor(hues, hue, partial), src = g.art.pixels;
         const pixels = new Uint16Array(src.length), lining = new Uint8Array(src.length);
         for (let i = 0; i < src.length; i++) {
           const p = src[i]!;

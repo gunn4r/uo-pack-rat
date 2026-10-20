@@ -54,6 +54,7 @@ export interface ApiRoutes {
   "GET /api/houses/<id>": ApiEntry<HouseApiResponse>;
   "GET /api/facet-map/<facet>.png": ApiEntry<Png>;
   "GET /api/item-art/<graphic>.png": ApiEntry<Png>;
+  "GET /api/paperdoll.png": ApiEntry<Png>;
   "GET /api/house-map": ApiEntry<HouseMapApiResponse>;
   "PUT /api/house-map/<id>": ApiEntry<HouseMapPutApiResponse, HouseEntry>;
   "GET /api/house-claims": ApiEntry<HouseClaimsApiResponse>;
