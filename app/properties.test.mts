@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { PROPERTIES, PROP_PATTERNS, PROP_LABELS, PROP_FULL, NOT_BUILDER_KEYS, PROPERTY_CATALOGUE, FLAG_CATALOGUE, CATALOGUE_GROUPS, flagKey, flagLabel, labelOf, parseTooltip, setRules } from "./vault-lib.mts";
+import { PROPERTIES, PROP_PATTERNS, PROP_LABELS, PROP_FULL, NOT_BUILDER_KEYS, PROPERTY_CATALOGUE, FLAG_CATALOGUE, CATALOGUE_GROUPS, catalogueGroups, flagKey, flagLabel, labelOf, parseTooltip, setRules } from "./vault-lib.mts";
 import type { RulesV1 } from "./schema/types.d.mts";
 import { EXTRA_COLS } from "./item-query.mts";
 
@@ -131,4 +131,17 @@ test("[fast] PROPERTY_CATALOGUE: unique keys in known groups, gear properties on
   assert.deepEqual([...FLAG_CATALOGUE].sort((a, b) => flagLabel(a).localeCompare(flagLabel(b))), [...FLAG_CATALOGUE], "Yes or no is A to Z by name");
   assert.equal(labelOf("weapon speed"), "Weapon Speed", "a chip names an unmodelled property in Title Case");
   assert.equal(PROPERTY_CATALOGUE.find((c) => c.key === "hci")!.name, "Hit Chance Increase");
+});
+
+test("[fast] catalogueGroups lists any keys in the catalogue's groups and order, pools with the stats, skill bonuses and the rest after (#487)", () => {
+  const name = (k: string): string => k;
+  assert.deepEqual(catalogueGroups(["luck", "sk:magery", "hci", "stamPool", "fc", "dexBonus", "sk:anatomy", "physResist", "oddKey", "ssi"], name), [
+    { group: "Resists", keys: ["physResist"] },
+    { group: "Casting", keys: ["fc"] },
+    { group: "Combat", keys: ["hci", "ssi"] },
+    { group: "Stats & pools", keys: ["dexBonus", "stamPool"] },
+    { group: "Skill bonuses", keys: ["sk:anatomy", "sk:magery"] },
+    { group: "Other", keys: ["luck", "oddKey"] },
+  ]);
+  assert.deepEqual(catalogueGroups([], name), []);
 });

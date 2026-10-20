@@ -75,7 +75,7 @@ Then comes a row (layout 1B, issue #57): the paperdoll on the left, 420 px wide,
 - **Worn gear:** a table with one row per filled slot, in the slot groups' order (Armor, Weapons and jewelry, Clothing, the Kilt / Skirt only while one is worn, issue #202), then anything else as Other. Each row is the slot and the piece: its name in its rarity's color (the tier's `--rarity-*` token, as Manual's slot cards and the tooltip title; no color for a tier without one), a "New" badge, its quality tags (antique, brittle, cursed, prized, blessed) and the low-durability tag. The list scrolls inside the row when it is longer than the doll; "Nothing worn." when no slot is filled.
 - **Properties:**
   - the chosen properties, as key/value lists with the shard cap muted, in Casting, Combat, Leech, Regeneration, Pools and other, and Other;
-  - the card's "Properties shown" popover picks them from every property the tooltip reader knows. The choice is saved as the ui-prefs `sheetProps`, default `SHEET_GROUPS`;
+  - the card's "Properties shown" popover picks them from every property the tooltip reader knows, listed in the property catalogue's groups and order (`catalogueGroups`, #487) like the Inventory's property rule. The choice is saved as the ui-prefs `sheetProps`, default `SHEET_GROUPS`;
   - the skills, or an info message when the scan has none;
   - the footnote: the resist cap, the Resisting Spells minimum, and each resist the minimum holds up ("Fire 44: the Resisting Spells minimum.").
 
