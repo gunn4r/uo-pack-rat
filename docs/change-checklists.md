@@ -41,7 +41,7 @@ Examples: `ee9da51`, `97c6363`.
 
 Examples: `1486452`, `826f586`.
 
-1. Parsing: the registry, `PROPERTIES` in `app/domain/properties.mts` (`PROP_PATTERNS`, `PROP_LABELS` and `PROP_FULL` derive from it); the shard caps in `app/rules/uoalive.json` and `app/rules/generic-osi.json` if it is capped.
+1. Parsing: the registry, `PROPERTIES` in `app/domain/properties.mts` (`PROP_PATTERNS`, `PROP_LABELS` and `PROP_FULL` derive from it), and its entry in `PROPERTY_CATALOGUE` so the property rule offers it; the shard caps in `app/rules/uoalive.json` and `app/rules/generic-osi.json` if it is capped.
 2. Query: `app/item-query.mts` (and `EXTRA_COLS` if it is a column); the property rules in `app/organize-config.mts`; `app/organize-fixture.mts`.
 3. UI: `app/ui/inv-model.mts`, `app/ui/inventory.mts`, `app/ui/organize-model.mts`, `app/ui/store.mts`, `app/ui/view-state.mts`; `SHEET_GROUPS` in `app/ui/sheet.mts` if the sheet shows it.
 4. Solver: `toOptItem` and the optimizer keys if the builder can weight it; the profile schema if it gets a floor (see Add or change a profile field).

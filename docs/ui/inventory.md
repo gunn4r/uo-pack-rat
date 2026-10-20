@@ -92,12 +92,16 @@ The filter state is the browser's `query`, the shape `item-query.mts`'s `parseIt
   - Weapon skill (issue #188) is written `wskill=swordsmanship`, with lower-cased skill names, and its tokens read "Weapon skill: Swordsmanship".
   - The facets' `weaponSkills` counts each skill from `vault-lib.mts`'s `weaponSkillsOf`. A Use Best Weapon Skill weapon also counts under Swordsmanship, Fencing and Mace Fighting, which the chip's popover says.
 - **Rarity** is a range (`rarityMin`, `rarityMax`). An item with no tier counts as below every tier, and a Reforged tier ranks with its base tier.
-- **Property rules** carry an operator (≥, ≤, = or ≠: `prop=lmc:le:4`, `prop=fc:ne:-1`), and can name a numeric tooltip line no property models (issue #133: the facets' `extraKeys`, such as `prop=splintering weapon:10`).
+- **Property rules** carry an operator (≥, ≤, = or ≠: `prop=lmc:le:4`, `prop=fc:ne:-1`), and can name a numeric tooltip line no property models (issue #133: the facets' `extraKeys`, gear's only, such as `prop=splintering weapon:10`).
+  - The popover lists the whole catalogue (`domain/properties.mts`'s `PROPERTY_CATALOGUE`): every gear property the tooltip reader reads, by the shard's names with the unit ("Hit Chance Increase %", "Weapon Speed s"), in the groups Resists, Casting, Combat, Weapon, Defense & eaters, Stats & pools and Other, then **Yes or no** (`FLAG_CATALOGUE`).
+  - Each option counts the stacks in view that carry it (`GET /api/items?…&fields=props`, `propCounts`, over the browser's query with its fixed fields): "Faster Casting 46". One no stack in view carries keeps its place, dimmed, with "0", and picking it gives the usual empty state ("None of the 300 stacks has Swarm ≥ 1.").
+  - Every entry's tooltip line has been seen on the shard, in a scan or its vendor listings (Hit Curse, the Resonances, Lower Ammo Cost, Searing Weapon, Cannot Be Repaired); Bane and Assassin Honed are offered as plain-name yes/no lines, as the shard shows such properties. A property no tooltip has shown yet stays out until one does.
+  - Values keep the tooltip's sign: Mage Weapon is negative ("Mage Weapon -10 Skill"), so a note under its rule (`MAGE_WEAPON_HINT`) says that ≥ -20 keeps penalties of 20 or less and that items with no Mage Weapon read 0. Power scroll level and Scroll of Transcendence points are scroll filters, not gear properties, so the popover does not offer them; a rule or link that names them still filters.
   - An item without the property reads 0 under every operator, so `fc:ne:-1` keeps the items with no FC, and ≠ 0 leaves them out, which a note under the rule says (`neZeroHint`).
 - **Yes/no properties** are required with `flag` (issue #182: `flag=spell channeling`, repeated; every one must be present).
-  - They are offered from the facets' `flagKeys` as the property rule's last group, **Yes or no**; each option's muted second line reads "Yes / no".
+  - They are offered from `FLAG_CATALOGUE` as the property rule's last group, **Yes or no**, each with its count like the numeric ones.
   - Picking one hides the comparison and the number, moves the focus to Add rule, and shows a Title Case token ("Spell Channeling").
-  - `domain/pools.mts`'s `flagKeys` says which tooltip flags count: a known yes/no property such as "(imbued)", read Imbued, or a plain-words line on gear. Never a slayer, a race lock, free text or a resource's material.
+  - `domain/pools.mts`'s `flagKeys` (the facet MCP reads) says which tooltip flags count: a known yes/no property such as "(imbued)", read Imbued, or a plain-words line on gear. Never a slayer, a race lock, free text or a resource's material.
   - Its `flagKey` folds every "part of an armor set (N pieces)" into one Part of an Armor Set and lower-cases, for the facet and for matching alike.
 - **Tags** are hidden (`hide`) or required, any of them (`tag`), from the one Tags… popover.
 
@@ -106,7 +110,7 @@ The filter state is the browser's `query`, the shape `item-query.mts`'s `parseIt
 The slayer filter (issue #189, "+ Filter" › Slayer…) is a single-choice radio list: "No slayer filter", "Any slayer", then the slayers laid out like the shard's slayer charts, from the rules' `slayerGroups` (`inv-model.mts`'s `slayerTree`).
 
 - **Order:** each super slayer ("Reptile Slayer", with a muted **Super** tag and its count) is followed by its lesser slayers, one step in ("Dragon Slayer"). A titled group ("Talisman slayers") follows, then **Other**, A–Z, for any slayer the table lacks. A hairline separates the groups (`slayerTree` marks each group's first row `first`). The "Super" tag is `aria-hidden`, and a heading row has `role="presentation"`.
-- **Only slayers the inventory holds are listed.** A super slayer it lacks stays as a muted heading with no radio while one of its lesser slayers is there, and the arrow keys pass over it. An empty group goes.
+- **Every slayer of the table is listed**, so any can be picked: one the inventory lacks is dimmed with a count of 0. A super slayer the inventory has under none of its names is listed by its first name.
 - **Labels** are Title Case plus " Slayer" (`slayerLabel`). A capitalized bracket, the item's own wording, moves after it ("Undead Slayer (Silver)"). A lower-case bracket that only describes the group goes: "Exorcism (demons)" reads "Exorcism Slayer". The chip and token read "Slayer: Dragon Slayer".
 - **Matching:** picking a lesser slayer finds the items with exactly that slayer, never its super slayer, which a muted line at the foot of the popover explains.
 
