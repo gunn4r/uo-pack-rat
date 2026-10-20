@@ -1,0 +1,1 @@
+- **Dyed item art keeps its own colors where the game does** (issue #504): an item whose client files mark it as partly hued, such as a colored axe, now takes its hue only on its grey parts, as it does in game, so its wooden handle stays wood instead of the whole picture being dyed.
