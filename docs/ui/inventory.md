@@ -249,6 +249,8 @@ It saves through `POST /api/item-kinds` and runs `reload()`, so the table, the K
 
 `ui/containers.mts`: one row per root container, grouped by character with the ground last, with a Fill column and a ⋯ menu (Show these items, Label…, Blacklist…, Forget…).
 
+Above it (`#cont-toolbar`, issue #487): a search over label, name, hex serial, scanner and kind, and **Kind** and **House** menus ("Not in a house" includes the plain grid), each value counted among what the other filters leave. Filtered, the footer reads "N of M containers"; nothing left shows **Clear filters**.
+
 ### Missing items
 
 A root with items missing since its last scan (issue #99) shows an "N missing" warn tag after its name, and gets **Show missing items**. That opens a dialog listing each item's name, amount (a stack that shrank in place reads "N fewer") and when it was last seen there, sorted by name, fetched from `GET /api/missing?root=`. `GET /api/inventory` carries only the counts (`missingCounts`).
