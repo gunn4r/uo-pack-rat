@@ -120,7 +120,7 @@ function showTab(tab: string): void {
   if (isInvView(tab)) showInventoryView(tab === "inventory" ? "items" : tab as InvView);
   if (tab !== "import") lastScreen = screen;
   if (tab === "import") importDrawer.open(); else importDrawer.close();
-  if (tab !== "builder") closeSettings();   // Build Settings is the builder's own drawer
+  if (tab !== "builder") closeSettings();   // Auto Build Settings is the builder's own drawer
   if (tab === "runs") openRunsDrawer(); else if (screen !== "builder") closeRunsDrawer();
 }
 function applyRoute(): void {

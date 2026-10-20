@@ -73,7 +73,7 @@ function paintChangesChip(st: BuildState): void {
 const CHANGE_HEAD: Record<SettingsGroup, string> = { requirements: "Requirements", weights: "Weights per point", pool: "Pool", buffs: "Buffs", character: "Character", search: "Search" };
 // The popover: a header with the count and whether any are unsaved; the unsaved edits first (template → saved → now), then the changes
 // from the template by group (template → this build), an added requirement marked and a soft one tagged; each row's name
-// opens Build Settings on that setting; Reset to the template (asks first) and Save as template at the foot.
+// opens Auto Build Settings on that setting; Reset to the template (asks first) and Save as template at the foot.
 function openChangesPopover(anchor: HTMLButtonElement): void {
   if (!session.profile || !session.character) return;
   const st = commands.buildState(), name = who(session.character), tplName = st.template ?? "";

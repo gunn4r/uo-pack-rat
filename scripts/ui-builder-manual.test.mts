@@ -22,7 +22,8 @@ test("[slow] Manual mode: a picked piece fills its slot, moves the totals and le
     await openBuilder(page);
     await page.click('#b-mode [data-value="manual"]');
     await page.waitForSelector("#b-manual:not([hidden]) #mb-suit .mb-slot");
-    assert.equal(await page.locator("#b-settings").isVisible(), false, "Automatic's Settings are out of the way");
+    assert.equal(await page.locator("#b-run").isVisible(), false, "Automatic's Build is out of the way");
+    assert.equal(await page.locator("#b-settings").isVisible(), true, "Auto Build Settings stays, in the same place");
     const ring = page.locator('.mb-slot-pick[data-slot="ring"]');
     await ring.click();
     await page.waitForSelector("#mb-picker:not([hidden]) tbody tr.item");
@@ -93,7 +94,8 @@ test("[slow] Manual mode: a picked piece fills its slot, moves the totals and le
 });
 
 // Manual's hand-offs (issue #12): Fill the rest automatically fills the empty slots in one undo step and keeps the
-// placed piece; Save as run puts the suit in the runs drawer as a manual run, which opens in the result view with
+// placed piece, here from the Auto Build Settings drawer opened over Manual (no Buffs tab, no Build or Save as template, its
+// footer's Fill the rest); Save as run puts the suit in the runs drawer as a manual run, which opens in the result view with
 // Open in Manual; and an Automatic result's Start from this result loads it into Manual in one undo step.
 test("[slow] Manual hand-offs: fill the rest, save as run, reopen it, and start from an Automatic result", async (t) => {
   if (skipWithoutElectron(t)) return;
@@ -123,7 +125,15 @@ test("[slow] Manual hand-offs: fill the rest, save as run, reopen it, and start 
     await page.waitForFunction(() => document.querySelector(".mb-fill")?.textContent === "Fill canceled: the character changed");
     await page.waitForTimeout(1500);   // sleep: longer than the canceled search could take to land, proving it never does
     assert.equal(await filled(), 1, "the canceled fill left the suit alone");
-    await page.click("#mb-fill");
+    await page.click("#b-settings");
+    await page.locator("#b-drawer").waitFor();
+    assert.match(await page.locator(".overlay-sub:has(#b-drawer-tpl)").innerText(), /^Shared with Automatic · /);
+    assert.equal(await page.locator("#b-tab-buffs").isVisible(), false, "Manual has its own buffs bar");
+    assert.equal(await page.locator("#b-run-foot").isVisible(), false);
+    assert.equal(await page.locator("#b-save-tpl").isVisible(), false);
+    assert.match(await page.locator("#b-changes").innerText(), /^Fill plans the \d+ empty slots with these$/);
+    await page.click("#b-fill-foot");
+    assert.equal(await page.locator("#b-drawer").isVisible(), false, "the drawer closes onto the fill's progress");
     await page.waitForFunction(() => /^(Filled|Nothing filled)/.test(document.querySelector(".mb-fill")?.textContent || ""), undefined, { timeout: 60_000 });
     assert.ok(await filled() > 1, "the search filled empty slots");
     assert.match(await page.locator('.mb-slot-pick[data-slot="ring"]').innerText(), new RegExp(ringName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")), "the placed ring stays");

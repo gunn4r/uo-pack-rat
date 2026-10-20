@@ -202,7 +202,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `scripts/ui-builder-manual.test.mts` — [slow]: Manual mode, its hand-offs and No character.
 - `scripts/ui-builder-pool.test.mts` — [slow]: resist caps, weapon exclusions, the Weapon must have and Only containers chips.
 - `scripts/ui-builder-result.test.mts` — [slow]: What changes, the Fetch list and Plan tooltips, a Fetch list row's place, and the result's own scrolling.
-- `scripts/ui-builder-settings.test.mts` — [slow]: Build Settings: its keys, tabs and scrim, Check your settings, the drawer's extras, swing steps, casting school, rarity and the STR limit.
+- `scripts/ui-builder-settings.test.mts` — [slow]: Auto Build Settings: its keys, tabs and scrim, Check your settings, the drawer's extras, swing steps, casting school, rarity and the STR limit.
 - `scripts/ui-builder-templates.test.mts` — [slow]: the template picker and the Manage templates drawer.
 - `scripts/ui-components.test.mts` — [slow]: `app/ui/components.mts`'s overlays and keyboard behavior in the real Electron window.
 - `scripts/ui-contrast.test.mts` — [slow]: the contrast check from design spec 2.3, run on the real page in both theme families, light and dark.
