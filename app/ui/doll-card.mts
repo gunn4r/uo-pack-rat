@@ -2,15 +2,18 @@
 //
 // map: house
 // owns: `dollCard`, `DollView`, `forgetDollFigures`
-import { box, message, button, txt } from "./components.mts";
+import { box, message, button, tag, txt } from "./components.mts";
 import { el } from "./dom.mts";
 import { showSettings } from "./nav.mts";
 import { DOLL_REASONS, dollPlan, dollRequests, dollUrl, failureNote, type DollNote, type DollPlan, type DollReason } from "./doll-model.mts";
+import { customLook, setCustomLook } from "./customize-model.mts";
+import { openCustomizer } from "./doll-customizer.mts";
 import type { Look, Worn } from "../paperdoll-look.mts";
 
-// What one card shows: the character (`name` null for no character), its scanned look (null when the scan has none), the client's name and whether its scripts read the look, and one figure or a pair (each its worn pieces and a caption).
+// What one card shows: the character (`name` null for no character) and when it was scanned (a look customized over an older scan is dropped), its scanned look (null when the scan has none), the client's name and whether its scripts read the look, and one figure or a pair (each its worn pieces and a caption).
 export interface DollView {
   name: string | null;
+  scannedAt?: string | null;
   title?: string | null;
   appearance: Look | null | undefined;
   client: string;
@@ -46,23 +49,34 @@ const noteNode = (n: DollNote): HTMLElement =>
 let filesEpoch = 0;
 export const forgetDollFigures = (): void => { filesEpoch++; };
 
-// A doll card. `scale`: the figure's size, 2 (whole pixels, pixelated) or 1; `compact`: the Suit Builder's tighter padding; `controls`: what the card head carries on the right.
+// A doll card. `scale`: the figure's size, 2 (whole pixels, pixelated) or 1; `compact`: the Suit Builder's tighter padding; `controls`: what the card head carries on the right, before the "Customized" tag and the Customize button.
 export function dollCard({ id, scale = 2, compact = false, controls = [] }: { id?: string; scale?: 1 | 2; compact?: boolean; controls?: HTMLElement[] } = {}): { node: HTMLElement; show: (v: DollView) => void } {
   const name = el("h2", {}), title = txt("", "t-sm muted doll-title");
   const stage = box("div", { class: `doll-stage${compact ? " doll-compact" : ""}` });
   const note = box("div", { class: "doll-note" });
+  const customized = tag("Customized");
+  const customize = button({ label: "Customize", icon: "person", variant: "ghost", size: "sm", attrs: { "aria-haspopup": "dialog", "aria-expanded": "false" }, onClick: () => { if (view) openCustomizerFor(view); } });
   const node = el("section", { class: "card doll-card", "data-mode": "dark", ...(id ? { id } : {}) },
-    box("header", { class: "doll-head" }, box("div", { class: "doll-name" }, name, title), controls.length ? box("div", { class: "doll-controls" }, ...controls) : null), stage, note);
+    box("header", { class: "doll-head" }, box("div", { class: "doll-name" }, name, title), box("div", { class: "doll-controls" }, ...controls, customized, customize)), stage, note);
   const requests = dollRequests();
-  let abort: AbortController | null = null, plan: DollPlan | null = null, drawn = false;
+  let abort: AbortController | null = null, plan: DollPlan | null = null, drawn = false, view: DollView | null = null;
   // The note under a drawn figure, from the newest update.
   const paintNote = (): void => { note.replaceChildren(...(drawn && plan?.note ? [noteNode(plan.note)] : [])); };
+  // The popover beside the card, starting from the scanned look (or the stand-in) and redrawing the card on every change, with the newest view of the same character (the page builds a new view on every redraw).
+  function openCustomizerFor(v: DollView): void {
+    const base = dollPlan({ name: v.name, appearance: v.appearance, readsLook: v.readsLook, client: v.client });
+    openCustomizer(customize, node, { scanned: base.look, custom: customLook(v.name, v.scannedAt ?? null), standIn: base.gray, nobody: v.name === null,
+      onChange: (look) => { setCustomLook(v.name, v.scannedAt ?? null, look); if (view && view.name === v.name) show(view); } });
+  }
 
   function show(v: DollView): void {
+    view = v;
     name.textContent = v.name ?? "No character";
     title.textContent = v.title ?? "";
     title.hidden = !v.title;
-    const p = plan = dollPlan({ name: v.name, appearance: v.appearance, readsLook: v.readsLook, client: v.client });
+    const custom = customLook(v.name, v.scannedAt ?? null);
+    customized.hidden = !custom;
+    const p = plan = dollPlan({ name: v.name, appearance: v.appearance, readsLook: v.readsLook, client: v.client, custom });
     const pair = v.figures.length === 2;
     const urls = v.figures.map((f, i) => dollUrl(p.look, f.worn, pair ? v.figures[1 - i]!.worn : null, p.gray));
     const my = requests.start(JSON.stringify([filesEpoch, urls, v.figures.map((f) => f.caption ?? ""), v.name]));

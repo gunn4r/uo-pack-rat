@@ -35,7 +35,7 @@ export const FLEX_CLASSES = [
   "tbl-foot", "rowact", "overlay-head", "overlay-foot", "overlay-titles", "toast", "toasts", "msg", "msg-body", "msg-actions",
   "meter", "stepper", "step", "step-dot", "kv", "kv-k", "kv-v", "resist", "slot", "drawer", "drawer-body",
   "dialog", "dialog-body", "dialog-foot", "pop-body", "tipwrap", "empty-state", "art-tile", "cbx", "cbx-text", "cbx-opt", "cbx-foot",
-  "doll-head", "doll-name", "doll-controls", "doll-stage", "doll-figs", "doll-fig", "doll-empty",
+  "doll-head", "doll-name", "doll-controls", "doll-stage", "doll-figs", "doll-fig", "doll-empty", "doll-custom", "doll-group", "doll-swatches", "doll-custom-foot",
 ] as const;
 
 // ---------------------------------------------------------------- icons
@@ -47,6 +47,7 @@ const ICONS = {
   characters: [["circle", { cx: "9", cy: "8", r: "3.5" }], P("M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5"), P("M16 4.5a3.5 3.5 0 0 1 0 7M18 14.8c1.8.7 3 2.4 3.5 5.2")],
   builder: [P("M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z")],
   runs: [["circle", { cx: "12", cy: "12", r: "9" }], P("M12 7v5l3 2")],
+  person: [["circle", { cx: "12", cy: "8", r: "3.5" }], P("M5 20c.9-3.8 3.6-5.8 7-5.8s6.1 2 7 5.8")],
   import: [P("M12 3v12M7 10l5 5 5-5"), P("M4 17v3h16v-3")],
   settings: [["circle", { cx: "12", cy: "12", r: "3" }], P("M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1")],
   close: [P("M18 6 6 18M6 6l12 12")],
@@ -406,7 +407,8 @@ export function popoverPlacement(a: { top: number; bottom: number; left: number 
 // focus inside.
 // It lives on <body>, so one opened from inside a drawer (anchored or placed beside it) is raised over that drawer
 // and its scrim: a click in it lands in it, not on the scrim, and so never closes the drawer.
-export interface PopoverHandle { root: HTMLElement; close: () => void; isOpen: () => boolean }
+// `place`: measure and place it again, for a caller that changed its content after opening it.
+export interface PopoverHandle { root: HTMLElement; close: () => void; isOpen: () => boolean; place: () => void }
 let openPopover: PopoverHandle | null = null;
 export function popover(anchor: HTMLElement, content: Kids, { label, width, minWidth, onClose, role = "dialog", beside }: { label: string; width?: number | undefined; minWidth?: number | undefined; onClose?: (() => void) | undefined; role?: "dialog" | "menu" | "listbox"; beside?: HTMLElement | undefined } = { label: "" }): PopoverHandle {
   // a second press on the anchor of the open popover closes it and opens nothing: the caller gets that closed handle back
@@ -448,7 +450,7 @@ export function popover(anchor: HTMLElement, content: Kids, { label, width, minW
   anchor.addEventListener("keydown", onKey);
   addEventListener("resize", place);
   document.addEventListener("scroll", onScroll, true);
-  const handle: PopoverHandle = { root, close: () => close(), isOpen: () => open };
+  const handle: PopoverHandle = { root, close: () => close(), isOpen: () => open, place };
   openPopover = handle;
   (focusables(root)[0] || root).focus();
   return handle;
