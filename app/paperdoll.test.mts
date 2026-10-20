@@ -61,6 +61,20 @@ test("[fast] gump source: the archive's gump without a hue, a gump.def alias wit
   assert.equal(f.gump(-1), null);
 });
 
+test("[fast] gump source: decoded gumps are kept up to the cache's size in bytes, then read again", () => {
+  const uop = syntheticUop([5, 10].map((id) => ({ name: gumpArtName(id), data: solid(2, 2, RED), bwt: true })));
+  const reads = (cacheBytes: number): number => {
+    let n = 0;
+    const read: ReadAt = (at, k) => { n++; return at + k <= uop.length ? uop.subarray(at, at + k) : null; };
+    const table = readUopTable(read, uop.length)!, src = gumpSource(table, read, new Map(), cacheBytes);
+    src(5); const first = n;
+    src(10); src(5);
+    return n - first;
+  };
+  const one = reads(1 << 20);
+  assert.ok(one > 0 && reads(10) > one, "gump 5 (2 x 2 = 8 bytes) is read again after gump 10 overflows a 10-byte cache");
+});
+
 test("[fast] bodies: human, elf, gargoyle and the GM body are drawn; any other is a form's, and the stand-in takes its place, as it does for no look", () => {
   for (const b of [400, 401, 403, 605, 606, 666, 667, 694, 695, 0x3db]) assert.equal(drawsBody(b), true, String(b));
   assert.equal(drawsBody(0x4e5), false);
