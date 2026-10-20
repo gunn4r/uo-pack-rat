@@ -130,6 +130,7 @@ function showMode(): void {
   if (manual) commands.closeCompare();
   seg!.setValue(session.mode);
   $<HTMLElement>("#tab-builder")!.classList.toggle("manual", manual);
+  $<HTMLElement>("#b-drawer-root")!.classList.toggle("manual", manual);   // the shared Auto Build Settings drawer, opened from Manual
   $<HTMLElement>("#b-manual")!.hidden = !manual;
   paintCharSelect();
   if (manual) void syncManual();
@@ -614,10 +615,13 @@ async function landFill(f: Fill, res: OptimizeResult): Promise<void> {
   if (n) commit({ slots: next }, `Fill the rest: ${plural(n, "slot")}`);
   endFill({ text, tone: short.length ? "warn" : n ? "ok" : "muted" });
 }
+// Why a fill can't start now (none while one runs: its button says Filling…).
+function fillWhy(missing: number): string | null {
+  return fill ? null : !session.profile ? "Import a scan first: the search plans with a character's settings"
+    : session.job ? "A build is running in Automatic" : missing ? "Clear the missing pieces first" : !fillable().length ? "Every slot the search fills is taken" : null;
+}
 function fillButton(missing: number): HTMLElement {
-  const open = fillable().length;
-  const why = fill ? null : !session.profile ? "Import a scan first: the search plans with a character's settings"
-    : session.job ? "A build is running in Automatic" : missing ? "Clear the missing pieces first" : !open ? "Every slot the search fills is taken" : null;
+  const open = fillable().length, why = fillWhy(missing);
   const b = button({ label: fill ? "Filling…" : "Fill the rest automatically", icon: "builder", variant: "primary", size: "sm", disabled: !!fill || !!why, attrs: { id: "mb-fill" }, onClick: () => { void fillRest(); } });
   return why ? tipWrap(b, why) : fill ? b : tooltip(b, `Searches ${plural(open, "empty slot")} with Automatic's requirements and weights, keeping every piece placed here.`);
 }
@@ -701,4 +705,9 @@ function fetchList(): HTMLElement {
 onChange("picker", paintCharSelect);
 onChange("selected", renderManual);
 onChange("roster", () => { void syncManual(); });
-provide({ openInManual, templateBuffs, showAutomatic, setManualFor, buffEditsOf, buffInputsOf, editBuffInputs, applyRunInputs, filling });
+// The Auto Build Settings drawer's footer, opened from Manual: its line and whether its Fill the rest can start.
+function fillFoot(): { note: string; ready: boolean } {
+  const why = fillWhy(missingSlots(slots, items).length);
+  return { note: fill ? "Filling the empty slots…" : why ?? `Fill plans the ${plural(fillable().length, "empty slot")} with these`, ready: !fill && !why };
+}
+provide({ openInManual, templateBuffs, showAutomatic, setManualFor, buffEditsOf, buffInputsOf, editBuffInputs, applyRunInputs, filling, fillFoot, fillRest: () => { void fillRest(); } });

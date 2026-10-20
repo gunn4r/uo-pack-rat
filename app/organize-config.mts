@@ -107,7 +107,7 @@ function queryProblem(q: unknown, at: string): string | null {
   if (!Array.isArray(q.props) || q.props.length > LIMITS.props) return `${at}.props must be a list of at most ${LIMITS.props} property filters`;
   for (const [i, p] of q.props.entries()) {
     if (!isPlainObject(p) || extra(p, ["key", "min", "op"]) || !isText(p.key) || typeof p.min !== "number" || !Number.isFinite(p.min)
-      || (p.op !== undefined && p.op !== "le" && p.op !== "eq")) return `${at}.props[${i}] must be {key, min, op?: "le" | "eq"}`;
+      || (p.op !== undefined && p.op !== "le" && p.op !== "eq" && p.op !== "ne")) return `${at}.props[${i}] must be {key, min, op?: "le" | "eq" | "ne"}`;
   }
   return null;
 }

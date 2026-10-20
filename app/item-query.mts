@@ -49,8 +49,9 @@ export const wantsHits = (sp: URLSearchParams): boolean => sp.get("fields") === 
 export const hitRow = (it: Item): HitRow => ({ serial: it.serial, name: it.name, amount: it.amount, root: it.root, container: it.container, ...(it.location ? { location: { text: it.location.text } } : {}) });
 
 // A property rule: `min` is the threshold and `op` says which side of it passes — absent is "at least"
-// (the rule's original and wire-default meaning, `prop=hci:10`), "le" is "at most", "eq" is "exactly".
-export type PropOp = "le" | "eq";
+// (the rule's original and wire-default meaning, `prop=hci:10`), "le" is "at most", "eq" is "exactly", "ne" is
+// "anything but". An item without the property reads 0 for every op (colVal).
+export type PropOp = "le" | "eq" | "ne";
 export interface PropFilter { key: string; min: number; op?: PropOp | undefined; }
 // The list filters (chars, slot, loc, roots, kind) match ANY of their values; an empty list is no filter.
 // `rarity` matches one tier exactly, `rarityMin` that tier or any above it on the shard's ladder, `rarityMax` that tier or any below it (an item with no tier, or one off the ladder, counts as below every tier).
@@ -78,7 +79,7 @@ export type RuleQuery = Omit<ItemQuery, "loc" | "roots" | "chars" | "seenDays" |
 // `char` and `loc` are repeated params only: a character or container name may itself hold a comma.
 // `flag` (issue #182) is repeated only too, one yes/no property each (`flag=spell channeling`), lower-cased as
 // parseTooltip keeps them: a separate param rather than a `prop` op, because a prop rule is a number on a key.
-// A prop rule is `key:min` (at least) or `key:op:min` with op one of ge, le, eq. `unravel=1` lists unravel candidates and
+// A prop rule is `key:min` (at least) or `key:op:min` with op one of ge, le, eq, ne. `unravel=1` lists unravel candidates and
 // `unravelShow` (comma-separated or repeated) the reasons not to leave out, or `all`.
 export function parseItemQuery(searchParams: URLSearchParams): ItemQuery {
   const sp = searchParams;
@@ -90,7 +91,7 @@ export function parseItemQuery(searchParams: URLSearchParams): ItemQuery {
     if (parts.length < 2) continue;
     const key = parts[0]!;
     const opRaw = parts.length > 2 ? parts[1]! : "ge";
-    if (!["ge", "le", "eq"].includes(opRaw)) continue;
+    if (!["ge", "le", "eq", "ne"].includes(opRaw)) continue;
     const min = +parts[parts.length - 1]!;
     if (key) props.push({ key, min: Number.isFinite(min) ? min : 0, ...(opRaw === "ge" ? {} : { op: opRaw as PropOp }) });
   }
@@ -130,7 +131,7 @@ export function parseItemQuery(searchParams: URLSearchParams): ItemQuery {
 }
 
 function passes(v: number, f: PropFilter): boolean {
-  return f.op === "le" ? v <= f.min : f.op === "eq" ? v === f.min : v >= f.min;
+  return f.op === "le" ? v <= f.min : f.op === "eq" ? v === f.min : f.op === "ne" ? v !== f.min : v >= f.min;
 }
 // The checks on the item itself, shared by the Inventory's query (matches) and an Organize rule (matchesItem).
 // `needle` is the free text, trimmed and lower-cased; `blob` gives the text it is looked for in, built only

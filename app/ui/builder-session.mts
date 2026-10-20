@@ -120,7 +120,7 @@ export interface BuilderCommands {
   redraw(id: SectionId): void;   // one group of the drawer (`b-sec-<id>`) drawn again in place
   focusIn(sec: FocusSection, sel: string, selectText?: boolean): void;   // a control in a group, the drawer opened on its tab
   focusKnob(f: KnobField, err: string): void;   // a bad search knob's field, its error under it, on the Advanced tab
-  paintChanges(): void;   // the drawer footer's "N changes since the last build"
+  paintChanges(): void;   // the drawer footer's "N changes since the last build" (from Manual, what Fill the rest plans)
   showFinished(f: FinishedBuild, focus?: boolean): void;   // a finished build as the result on screen
   // builder-requirements.mts: the Requirements and Goals tabs and the resist caps
   requirementsSection(): HTMLElement;
@@ -158,6 +158,8 @@ export interface BuilderCommands {
   editBuffInputs(name: string | null, values: Readonly<Record<string, number | null>>): void;
   applyRunInputs(name: string | null, b: RunBuffs | undefined): void;
   filling(): boolean;
+  fillFoot(): { note: string; ready: boolean };   // the Auto Build Settings footer opened from Manual: its line, and whether Fill the rest can start
+  fillRest(): void;   // Fill the rest automatically
   // runs.mts: the saved runs, the character's runs beside a result and the other characters' latest runs
   loadRuns(arrive?: boolean | string): Promise<void>;
   openRunsDrawer(): void;
