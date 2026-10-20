@@ -21,12 +21,12 @@ export function slayerLabel(name: string): string {
 }
 // The Slayer filter's rows (issue #189), laid out like the shard's slayer charts (the rules' slayerGroups): each super
 // slayer, then its lesser slayers one step in; a titled list (the talisman slayers); and last, under "Other", any slayer
-// the table lacks. Only slayers the inventory has are listed. A super slayer it lacks stays as an unpickable heading
-// (value null) while one of its lesser slayers is there; a group with nothing in it goes. The first row of each group
-// says so (`first`), for the hairline between groups. No table: the plain A–Z list, one group with no first row.
+// the table lacks. Every slayer of the table is listed, with a count of 0 when the inventory has none, so it can still be
+// picked; a group's super slayer by its first name when the inventory has it under none of them. The first row of each
+// group says so (`first`), for the hairline between groups. No table: the plain A–Z list of the inventory's slayers.
 export type SlayerRow =
   | { kind: "title"; label: string; first?: true }
-  | { kind: "super"; value: string | null; label: string; count: number; first?: true }
+  | { kind: "super"; value: string; label: string; count: number; first?: true }
   | { kind: "slayer"; value: string; label: string; count: number; level: 0 | 1; first?: true };
 type SlayerGroup = { super?: string[] | undefined; heading?: string | undefined; slayers: string[] };
 export function slayerTree(facet: Array<{ name: string; count: number }>, groups: SlayerGroup[] | undefined): SlayerRow[] {
@@ -36,11 +36,10 @@ export function slayerTree(facet: Array<{ name: string; count: number }>, groups
   const out: SlayerRow[] = [];
   const group = (rows: SlayerRow[]): void => { if (rows.length) out.push({ ...rows[0]!, first: true }, ...rows.slice(1)); };
   for (const g of groups ?? []) {
-    const supers = (g.super ?? []).map(take).filter((s) => s != null).map((s): SlayerRow => ({ kind: "super", value: s.name, label: slayerLabel(s.name), count: s.count }));
-    const lesser = g.slayers.map(take).filter((s) => s != null).map((s) => slayer(s, g.super ? 1 : 0));
-    if (!lesser.length && !supers.length) continue;
-    const head: SlayerRow[] = g.heading ? [{ kind: "title", label: g.heading }] : supers.length ? [] : [{ kind: "super", value: null, label: slayerLabel(g.super![0]!), count: 0 }];
-    group([...head, ...supers, ...lesser]);
+    const had = (g.super ?? []).map(take).filter((s) => s != null);
+    const supers = (had.length ? had : (g.super ?? []).slice(0, 1).map((name) => ({ name, count: 0 }))).map((s): SlayerRow => ({ kind: "super", value: s.name, label: slayerLabel(s.name), count: s.count }));
+    const lesser = g.slayers.map((name) => take(name) ?? { name, count: 0 }).map((s) => slayer(s, g.super ? 1 : 0));
+    group([...(g.heading ? [{ kind: "title" as const, label: g.heading }] : []), ...supers, ...lesser]);
   }
   const rest = [...byKey.values()].sort((a, b) => a.name.localeCompare(b.name)).map((s) => slayer(s, 0));
   if (groups?.length) group(rest.length ? [{ kind: "title", label: "Other" }, ...rest] : []);

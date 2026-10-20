@@ -1,12 +1,13 @@
 // properties.test.mts — `app/vault-lib.mts`'s property registry (`PROPERTIES`): the lists derived from it, frozen as the literals they replaced.
 //
-// `[fast]`: `app/vault-lib.mts`'s property registry (`PROPERTIES`): `PROP_PATTERNS`, `PROP_LABELS`, `PROP_FULL`, `NOT_BUILDER_KEYS` and `item-query.mts`'s `EXTRA_COLS` each equal a frozen copy of the hand-written list they replaced (the patterns and the extra columns in order), the keys are unique, and every builtin `app/rules/*.json` caps only known property keys.
+// `[fast]`: `app/vault-lib.mts`'s property registry (`PROPERTIES`): `PROP_PATTERNS`, `PROP_LABELS`, `PROP_FULL`, `NOT_BUILDER_KEYS` and `item-query.mts`'s `EXTRA_COLS` each equal a frozen copy of the hand-written list they replaced (the patterns and the extra columns in order), the keys are unique, every builtin `app/rules/*.json` caps only known property keys, and the property rule's `PROPERTY_CATALOGUE` holds gear properties only, each unmodelled one parsing from a real tooltip line under its key.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { PROPERTIES, PROP_PATTERNS, PROP_LABELS, PROP_FULL, NOT_BUILDER_KEYS } from "./vault-lib.mts";
+import { PROPERTIES, PROP_PATTERNS, PROP_LABELS, PROP_FULL, NOT_BUILDER_KEYS, PROPERTY_CATALOGUE, FLAG_CATALOGUE, CATALOGUE_GROUPS, flagKey, flagLabel, labelOf, parseTooltip, setRules } from "./vault-lib.mts";
+import type { RulesV1 } from "./schema/types.d.mts";
 import { EXTRA_COLS } from "./item-query.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -95,4 +96,32 @@ test("[fast] properties: every builtin shard rules file caps only known properti
     const rules = JSON.parse(readFileSync(join(HERE, "rules", f), "utf8")) as { caps: Record<string, number> };
     for (const k of Object.keys(rules.caps)) assert.ok(known.has(k), `${f}: caps.${k} is not a property key`);
   }
+});
+
+// The property rule's catalogue: each property no registry entry models, with a tooltip line from a real scan. The line must
+// parse into `extras` under the entry's key, or the option could never match anything.
+const CATALOGUE_LINES: Record<string, string> = {
+  "hit mana drain": "Hit Mana Drain 62%", "hit fatigue": "Hit Fatigue 38%", "splintering weapon": "Splintering Weapon 20%", velocity: "Velocity 39%", swarm: "Swarm 20%",
+  "weapon speed": "Weapon Speed 3.25s", "physical damage": "Physical Damage 100%", "fire damage": "Fire Damage 100%", "cold damage": "Cold Damage 60%",
+  "poison damage": "Poison Damage 70%", "energy damage": "Energy Damage 50%", "chaos damage": "Chaos Damage 60%", range: "Range 10",
+  "archery damage modifier": "Archery Damage Modifier: 10%", "damage eater": "Damage Eater 11%", "kinetic eater": "Kinetic Eater 14%", "fire eater": "Fire Eater 15%",
+  "cold eater": "Cold Eater 13%", "poison eater": "Poison Eater 10%", "energy eater": "Energy Eater 8%", "soul charge": "Soul Charge 20%",
+  "last parry chance": "Last Parry Chance: 32%", "lower requirements": "Lower Requirements 20%", "mining bonus": "Mining Bonus +3",
+  "blacksmithing bonus": "Blacksmithing Bonus: 18%", "artifact rarity": "Artifact Rarity 11",
+};
+test("[fast] PROPERTY_CATALOGUE: unique keys in known groups, gear properties only, and every unmodelled entry parses from its real tooltip line", () => {
+  setRules(JSON.parse(readFileSync(join(HERE, "rules", "uoalive.json"), "utf8")) as RulesV1);
+  const keys = PROPERTY_CATALOGUE.map((c) => c.key);
+  assert.equal(new Set(keys).size, keys.length, "no key twice");
+  for (const c of PROPERTY_CATALOGUE) assert.ok(CATALOGUE_GROUPS.includes(c.group), c.key);
+  for (const k of ["psLevel", "sotPoints", "tagPenalty", "stamPool", "manaPool", "hitsPool"]) assert.ok(!keys.includes(k), `${k} is no gear property`);
+  const registry = new Map(PROPERTIES.map((p) => [p.key as string, p]));
+  for (const k of keys.filter((x) => registry.has(x))) assert.ok("pattern" in registry.get(k)! || registry.get(k)!.kind === "extra", `${k} is read from a tooltip`);
+  const unmodelled = keys.filter((k) => !registry.has(k));
+  assert.deepEqual(unmodelled.sort(), Object.keys(CATALOGUE_LINES).sort());
+  for (const k of unmodelled) assert.equal(typeof parseTooltip(["Item", CATALOGUE_LINES[k]!]).extras[k], "number", `${CATALOGUE_LINES[k]} parses as ${k}`);
+  for (const f of FLAG_CATALOGUE) assert.equal(flagKey(f), f, `${f} is a flag key`);
+  assert.deepEqual([...FLAG_CATALOGUE].sort((a, b) => flagLabel(a).localeCompare(flagLabel(b))), [...FLAG_CATALOGUE], "Yes or no is A to Z by name");
+  assert.equal(labelOf("weapon speed"), "Weapon Speed", "a chip names an unmodelled property in Title Case");
+  assert.equal(PROPERTY_CATALOGUE.find((c) => c.key === "hci")!.name, "Hit Chance Increase");
 });

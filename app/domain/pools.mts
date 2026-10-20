@@ -269,9 +269,10 @@ export function propertyKeys(inv: ItemsLike): string[] {
 // Issue #133: the numeric tooltip lines no property models (parseTooltip's extras: "splintering weapon", "hit fatigue",
 // "weapon speed"), skill bonuses and ranges left out, so a property filter can put a threshold on them
 // (item-query.mts's colVal reads them). Apart from propertyKeys, which the Suit Builder's weights and floors list too.
+// Gear only, like flagKeys: a Bulk Order Deed's "Amount To Make: 20" or a book's page count is no property.
 export function extraKeys(inv: ItemsLike): string[] {
   const set = new Set<string>();
-  for (const it of Object.values(inv.items)) for (const [k, v] of Object.entries(it.extras || {})) if (typeof v === "number" && !SKILL_SET.has(k)) set.add(k);
+  for (const it of Object.values(inv.items)) if (it.gear) for (const [k, v] of Object.entries(it.extras || {})) if (typeof v === "number" && !SKILL_SET.has(k)) set.add(k);
   return [...set].sort();
 }
 // Issue #182: the yes/no properties a filter can require (parseTooltip's flags), the ones present in the inventory.

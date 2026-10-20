@@ -1,7 +1,7 @@
 // domain/properties.mts — the property registry (every property key the app knows, in display order) and what is derived from it: the tooltip patterns, labels and full names, a property in words, the typical ranges and importance conversion, skill-bonus names, and the five resists' names.
 //
 // map: scan
-// owns: `PROPERTIES`, `PropKey`, `PROP_PATTERNS`, `PROP_LABELS`, `PROP_FULL`, `NOT_BUILDER_KEYS`, `typicalRange`, `importanceOf`, `weightOfImportance`, `SKILL_NAMES`, `labelOf`, `fullOf`, `propName`, `RESIST_META`, `RESIST_KEYS`
+// owns: `PROPERTIES`, `PropKey`, `PROPERTY_CATALOGUE`, `FLAG_CATALOGUE`, `PROP_PATTERNS`, `PROP_LABELS`, `PROP_FULL`, `NOT_BUILDER_KEYS`, `typicalRange`, `importanceOf`, `weightOfImportance`, `SKILL_NAMES`, `labelOf`, `fullOf`, `propName`, `RESIST_META`, `RESIST_KEYS`
 import type { Diagnostic } from "../runs-types.mts";
 
 // A tooltip line's parsed numeric property may carry a single value, or (durability-style) a
@@ -118,8 +118,43 @@ export const SKILL_NAMES: string[] = ["alchemy", "anatomy", "animal lore", "anim
   "stealing", "stealth", "swordsmanship", "tactics", "tailoring", "taste identification", "throwing", "tinkering", "tracking", "veterinary", "wrestling"];
 export const SKILL_SET = new Set(SKILL_NAMES);
 const titleCase = (x: string): string => x.replace(/\b\w/g, (c) => c.toUpperCase());
-export const labelOf = (k: string): string => (k.startsWith("sk:") ? "+" + titleCase(k.slice(3)) : PROP_LABELS[k] || k);
-export const fullOf = (k: string): string => (k.startsWith("sk:") ? `${titleCase(k.slice(3))} skill bonus from items` : PROP_FULL[k] || k);
+
+// The property catalogue: every gear property the Inventory's property rule offers, whether or not an item carries it, in
+// the list's groups and order, by the shard's names, with the unit its tooltip line shows. A modelled property is named
+// by its registry key; one no property models by the key parseTooltip files its line under in `extras` ("weapon speed"),
+// which a rule saved before it was listed already names. A property the shard has but no scan has shown yet (Hit Curse,
+// Lower Ammo Cost, Bane, Searing Weapon, Assassin Honed, the Resonances) is added once a real tooltip line shows how it
+// reads: an option nothing can match would only mislead. Scroll filters (psLevel, sotPoints) are not gear properties.
+export const CATALOGUE_GROUPS = ["Resists", "Casting", "Combat", "Weapon", "Defense & eaters", "Stats & pools", "Other"] as const;
+export type CatalogueGroup = (typeof CATALOGUE_GROUPS)[number];
+export interface CatalogueEntry { key: string; name: string; unit: "" | "%" | "s" | "tiles" | "stones" | "skill"; group: CatalogueGroup }
+const fromRegistry = (key: PropKey, unit: CatalogueEntry["unit"], group: CatalogueGroup): CatalogueEntry => ({ key, name: key === "weight" ? "Weight" : PROPERTIES.find((p) => p.key === key)!.full, unit, group });
+const fromLine = (key: string, unit: CatalogueEntry["unit"], group: CatalogueGroup): CatalogueEntry => ({ key, name: titleCase(key), unit, group });
+export const PROPERTY_CATALOGUE: readonly CatalogueEntry[] = [
+  ...(["physResist", "fireResist", "coldResist", "poisonResist", "energyResist"] as const).map((k) => fromRegistry(k, "%", "Resists")),
+  fromRegistry("fc", "", "Casting"), fromRegistry("fcr", "", "Casting"), fromRegistry("lmc", "%", "Casting"), fromRegistry("lrc", "%", "Casting"),
+  fromRegistry("sdi", "%", "Casting"), fromRegistry("manaRegen", "", "Casting"), fromRegistry("castingFocus", "%", "Casting"), fromRegistry("mageWeapon", "skill", "Casting"),
+  ...(["hci", "dci", "ssi", "di", "reflectPhys", "hitLifeLeech", "hitStamLeech", "hitManaLeech"] as const).map((k) => fromRegistry(k, "%", "Combat")),
+  fromLine("hit mana drain", "%", "Combat"), fromLine("hit fatigue", "%", "Combat"),
+  ...(["hitLowerDef", "hitLowerAttack", "hitFireball", "hitLightning", "hitHarm", "hitMagicArrow", "hitDispel", "hitPhysArea", "hitFireArea", "hitColdArea", "hitPoisonArea", "hitEnergyArea"] as const).map((k) => fromRegistry(k, "%", "Combat")),
+  fromLine("splintering weapon", "%", "Combat"), fromLine("velocity", "%", "Combat"), fromLine("swarm", "%", "Combat"),
+  fromLine("weapon speed", "s", "Weapon"),
+  ...["physical", "fire", "cold", "poison", "energy", "chaos"].map((d) => fromLine(`${d} damage`, "%", "Weapon")),
+  fromLine("range", "tiles", "Weapon"), fromLine("archery damage modifier", "%", "Weapon"),
+  ...["damage", "kinetic", "fire", "cold", "poison", "energy"].map((e) => fromLine(`${e} eater`, "%", "Defense & eaters")),
+  fromLine("soul charge", "%", "Defense & eaters"), fromLine("last parry chance", "%", "Defense & eaters"),
+  ...(["strBonus", "dexBonus", "intBonus", "hpi", "stamInc", "manaInc", "hpRegen", "stamRegen"] as const).map((k) => fromRegistry(k, "", "Stats & pools")),
+  fromRegistry("strReq", "", "Other"), fromLine("lower requirements", "%", "Other"), fromRegistry("weight", "stones", "Other"), fromRegistry("luck", "", "Other"),
+  fromRegistry("enhancePotions", "%", "Other"), fromRegistry("selfRepair", "", "Other"), fromLine("mining bonus", "", "Other"), fromLine("blacksmithing bonus", "%", "Other"),
+  fromLine("artifact rarity", "", "Other"),
+];
+// The yes/no properties (flag keys, pools.mts's flagKey), every one seen on gear in real scans.
+export const FLAG_CATALOGUE: readonly string[] = ["balanced", "battle lust", "blessed", "blood drinker", "crafting failure protection", "exceptional", "(imbued)", "insured",
+  "mage armor", "night sight", "part of an armor set", "reactive paralyze", "spell channeling", "use best weapon skill"];
+const CATALOGUE_NAMES: Record<string, string> = Object.fromEntries(PROPERTY_CATALOGUE.map((c) => [c.key, c.name]));
+// A tooltip line no property models reads by its catalogue name ("Weapon Speed"), anything else by its key.
+export const labelOf = (k: string): string => (k.startsWith("sk:") ? "+" + titleCase(k.slice(3)) : PROP_LABELS[k] || CATALOGUE_NAMES[k] || k);
+export const fullOf = (k: string): string => (k.startsWith("sk:") ? `${titleCase(k.slice(3))} skill bonus from items` : PROP_FULL[k] || CATALOGUE_NAMES[k] || k);
 // A property in words, wherever the page names it in full (the Suit Builder's goals, weight and requirement rows, the score
 // breakdown, the result's gauges and table, a diagnostic: "Physical resist", "Hit chance", "Stamina increase"; issue #302,
 // one name per property): the registry's `name`, else its full name in sentence case; a skill bonus "Magery skill bonus". A
