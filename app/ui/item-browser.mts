@@ -31,7 +31,7 @@ import { filterContext, tagEls, rarityEl, locationEl } from "./item-parts.mts";
 import { houseNameOf, mapHouses } from "./house-links.mts";
 import { retryLoad } from "./inventory-data.mts";
 import { BREAKPOINTS, upTo } from "./breakpoints.mts";
-import { plural } from "./format.mts";
+import { plural, textHit } from "./format.mts";
 
 const CHUNK = 500;              // rows per GET /api/items request (the server's own cap)
 const NARROW = upTo(BREAKPOINTS.narrow);
@@ -173,7 +173,7 @@ function checklist({ title, options, selected, onChange, searchable = options.le
     const kids: HTMLElement[] = [];
     let group: string | undefined;
     for (const o of options) {
-      if (filter && !`${o.label} ${o.mono || ""} ${o.group || ""}`.toLowerCase().includes(filter)) continue;
+      if (!textHit(filter, o.label, o.mono, o.group)) continue;
       if (o.group && o.group !== group) { group = o.group; kids.push(txt(o.group, "inv-opt-group t-sm muted")); }
       const cb = el("input", { type: "checkbox", value: o.value });
       cb.checked = picked.includes(o.value);
@@ -565,7 +565,7 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
     };
     const draw = (filter: string): void => {
       const kids: HTMLElement[] = [];
-      const hit = (words: string): boolean => !filter || words.toLowerCase().includes(filter);
+      const hit = (words: string): boolean => textHit(filter, words);
       for (const group of CATALOGUE_GROUPS) {
         const es = PROPERTY_CATALOGUE.filter((c) => c.group === group && hit(`${c.name} ${label(c.key)}`));
         if (!es.length) continue;
@@ -634,7 +634,7 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
       const kids: HTMLElement[] = [];
       for (const g of groups) {
         if (!open.has(g.group)) continue;
-        const keys = g.keys.filter((k) => !filter || `${colShort(k, label)} ${colFull(k, full)}`.toLowerCase().includes(filter));
+        const keys = g.keys.filter((k) => textHit(filter, colShort(k, label), colFull(k, full)));
         if (!keys.length) continue;
         kids.push(txt(g.group, "inv-opt-group t-sm muted"));
         for (const k of keys) {

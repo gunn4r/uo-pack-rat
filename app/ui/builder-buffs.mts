@@ -12,6 +12,7 @@ import type { Buff, BuffResult, BuffWho, Skills, Stats } from "../buffs.mts";
 import type { PropMap } from "../vault-lib.mts";
 import { el, label } from "./dom.mts";
 import { box, txt, button, icon, filterChip, token, badge, tag, message, searchInput, switchControl } from "./components.mts";
+import { textHit } from "./format.mts";
 
 export interface BuffView {
   name: string | null;                   // the character whose skills the numbers take, or null for No character
@@ -188,7 +189,7 @@ function groupHead(g: (typeof BUFF_GROUPS)[number], v: BuffView, a: PickerAction
 function paintBuffPicker(host: HTMLElement, id: Ids, v: BuffView, a: PickerActions, foot: (v: BuffView) => string, repaint: (v: BuffView) => void): void {
   const list = host.querySelector<HTMLElement>(".bf-list")!, focused = list.contains(document.activeElement) ? document.activeElement!.id : null, top = list.scrollTop;
   const search = host.querySelector<HTMLInputElement>(`#${id("search")}`)!, q = search.value.trim().toLowerCase();
-  const hits = BUFFS.filter((b) => !q || [b.name, b.group, buffText(b.id, v.values, v.stats, v.totals, v.who, v.caps)].some((s) => s.toLowerCase().includes(q)));
+  const hits = BUFFS.filter((b) => textHit(q, b.name, b.group, buffText(b.id, v.values, v.stats, v.totals, v.who, v.caps)));
   host.querySelector(`#${id("h")}`)!.textContent = v.name ? `Buffs for ${v.name}` : "Buffs";
   const forms = v.on.filter((id) => buffById(id)?.excl === "form").length;
   host.querySelector(".bf-status")!.textContent = [q ? `${hits.length} of ${BUFFS.length} match “${search.value.trim()}”` : null, `${v.on.length} on`,

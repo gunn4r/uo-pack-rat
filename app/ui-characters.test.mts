@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { capOver, capBadgeText, atCap, bonusBreakdown, poolChanges, moveText, tagTone, lowDurability, lowDurabilityCount, lowDurabilitySummary, SHEET_CATALOGUE, DEFAULT_SHEET_PROPS, SLOT_GROUPS } from "./ui/sheet.mts";
 import { GEAR_SLOTS, NOBODY } from "./vault-lib.mts";
 import { characterNames, rosterView, triple, sheetMeta, openedRoots, type RosterRow } from "./ui/roster.mts";
-import { plural } from "./ui/format.mts";
+import { plural, textHit } from "./ui/format.mts";
 
 test("[fast] sheet: the cap badge says how far the raw value is past the cap, and nothing at or under it", () => {
   assert.equal(capOver(72, 70), 2);
@@ -120,6 +120,19 @@ test("[fast] roster: sorts by a resist's shown (capped) value or by scan time, a
   assert.deepEqual(names(rosterView(ROWS, "", { key: "scan", dir: 1 })), ["Dorran", "Kestrel", "Aldo"]);
   // a tie falls back to the name
   assert.deepEqual(names(rosterView(ROWS, "", { key: "physResist", dir: -1 })), ["Dorran", "Kestrel", "Aldo"]);
+});
+
+test("[fast] roster: the search also finds a character by a top skill, as the Suit Builder's picker does (#487)", () => {
+  const rows = ROWS.map((r) => (r.name === "Dorran" ? { ...r, skills: "Magery 120 · Evaluating Intelligence 110" } : r));
+  assert.deepEqual(names(rosterView(rows, " magery ", { key: "name", dir: 1 })), ["Dorran"]);
+});
+
+test("[fast] textHit: the typed text, trimmed and in any case, anywhere in a row's words; an empty search finds every row (#487)", () => {
+  assert.equal(textHit("", "Anything"), true);
+  assert.equal(textHit("  ", null), true);
+  assert.equal(textHit(" CHEST ", "Metal Chest", "0x40"), true);
+  assert.equal(textHit("chest 0x40", "Metal Chest", "0x40"), true, "the words taken together");
+  assert.equal(textHit("box", "Metal Chest", undefined, null), false);
 });
 
 test("[fast] roster: the search matches anywhere in the name, ignoring case and surrounding spaces", () => {
