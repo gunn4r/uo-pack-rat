@@ -327,10 +327,11 @@ export const flagLabel = (f: string): string => f.replace(/[()]/g, "").trim().sp
 // The name once more with its punctuation as spaces, so "transcendence animal lore" finds "Scroll of Transcendence
 // (Animal Lore - 0.1 Pts)" (issue #181).
 const plainName = (it: Item): string => it.name.replace(/[^\p{L}\p{N}.]+/gu, " ");
+// Its tags too (#487: every search finds "cursed"), which a scan's tooltip lines also hold.
 export function itemOwnBlob(it: Item): string {
-  return [it.name, plainName(it), ...(it.lines || []), it.rarity || "", it.kind || ""].join(" \n ").toLowerCase();
+  return [it.name, plainName(it), ...(it.lines || []), it.rarity || "", it.kind || "", ...(it.tags || [])].join(" \n ").toLowerCase();
 }
 
 export function itemSearchBlob(it: Item): string {
-  return [it.name, plainName(it), ...(it.lines || []), it.location?.text || "", it.rarity || "", it.kind || ""].join(" \n ").toLowerCase();
+  return [it.name, plainName(it), ...(it.lines || []), it.location?.text || "", it.rarity || "", it.kind || "", ...(it.tags || [])].join(" \n ").toLowerCase();
 }

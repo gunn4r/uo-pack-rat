@@ -1,6 +1,6 @@
 // item-query.test.mts — `app/item-query.mts`, the item-list filtering, sorting, paging and faceting shared by the page and `GET /api/items`.
 //
-// `app/item-query.mts` (the pure item-list filtering/sorting/paging/faceting shared by the browser and the server's `GET /api/items`): `parseItemQuery`'s defaults and clamping, the list filters taken as repeated params (character, slot, kind, location, root container, house), prop rules with an operator (at least, at most, exactly, anything but, an item without the property reading 0), every `applyItemQuery` filter (type by `itemTypeOf`, free text, also by an Organize label through `places`, kind, slot, location, root, character, rarity and rarity-at-least, seenDays, slayer, nogarg, med, hideTags, a prop rule incl. `EXTRA_COLS` keys) and sort (by prop column, by rarity ladder order), paging (offset/limit against `total`/`pieces`), group mode's JSON-safe shape and its stack and piece counts, `facetsOf` (including the places the Location filter's tree is built from, and gear-only `extraKeys`), `propCounts`, `rarityRank` (a Reforged tier with its base tier, eight tiers in both shipped ladders), `rarityMax` (an item with no tier or one off the ladder counting as below every tier, an unknown ceiling ignored, a floor above the ceiling matching nothing), and `matchesItem` (an Organize rule's per-item checks, agreeing with `applyItemQuery` on every filter a rule keeps, its free text never matching location text), and `unravel`/`unravelShow` read off the query string (issue #271). All `[fast]`.
+// `app/item-query.mts` (the pure item-list filtering/sorting/paging/faceting shared by the browser and the server's `GET /api/items`): `parseItemQuery`'s defaults and clamping, the list filters taken as repeated params (character, slot, kind, location, root container, house), prop rules with an operator (at least, at most, exactly, anything but, an item without the property reading 0), every `applyItemQuery` filter (type by `itemTypeOf`, free text, also by an Organize label through `places`, kind, slot, location, root, character, rarity and rarity-at-least, seenDays, slayer, nogarg, med, hideTags, a prop rule incl. `EXTRA_COLS` keys) and sort (by prop column, by rarity ladder order), paging (offset/limit against `total`/`pieces`), group mode's JSON-safe shape and its stack and piece counts, `facetsOf` (including the places the Location filter's tree is built from, and gear-only `extraKeys`), `propCounts`, `rarityRank` (a Reforged tier with its base tier, eight tiers in both shipped ladders), `rarityMax` (an item with no tier or one off the ladder counting as below every tier, an unknown ceiling ignored, a floor above the ceiling matching nothing), and text search by tags as well (#487), `matchesItem` (an Organize rule's per-item checks, agreeing with `applyItemQuery` on every filter a rule keeps, its free text never matching location text), and `unravel`/`unravelShow` read off the query string (issue #271). All `[fast]`.
 //
 // applyItemQuery's predicate and sort keep parity with what the Inventory screen used to do on its own. Hand-built fixture items (no scan files, no server) keep this fast and pure.
 import { test } from "node:test";
@@ -376,6 +376,12 @@ test("[fast] propCounts: how many stacks carry each numeric and yes/no property"
   const c = propCounts(items);
   assert.deepEqual(c.props, { "splintering weapon": 2, "weapon speed": 2, swordsmanship: 1, hci: 2, fc: 1, weight: 1 }, "a range is no number, a Strength requirement of 0 none");
   assert.deepEqual(c.flags, { "spell channeling": 1, "night sight": 2 });
+});
+
+test("[fast] text search finds an item by its tags, in the Inventory and in an Organize rule alike (#487)", () => {
+  const cursed = mk({ name: "Bow", tags: ["cursed"], lines: ["Bow"] });
+  assert.deepEqual(names((applyItemQuery([cursed], parseItemQuery(new URLSearchParams("q=cursed")), ctx) as ItemQueryRows).rows), ["Bow"]);
+  assert.equal(matchesItem(cursed, rule("q=cursed")), true);
 });
 
 test("[fast] applyItemQuery: prop rules at most and exactly", () => {
