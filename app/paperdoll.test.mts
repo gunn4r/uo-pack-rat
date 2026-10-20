@@ -1,6 +1,6 @@
 // paperdoll.test.mts — `app/paperdoll.mts` (issue #57), the paperdoll figure, on synthetic client files.
 //
-// `app/paperdoll.mts` (issue #57) on synthetic gumps, tiledata and hues (no game art): gump.def and Equipconv.def read as ClassicUO reads them (a line kept only when it starts with a digit, comments, an alias only for a gump the archive lacks, the first alt that exists, an earlier alias counting as existing, Equipconv's 0 and -1 gumps and a gump past 65,535 skipped, a later line winning); the gump source (the archive first, gump.def's alias with its hue, nothing for a gump that does not decode); which bodies are drawn and the stand-in for none or a form's body; `paperdollOrder` and `isCovered` on hand-picked cases from ClassicUO's rules (both were also checked against ClassicUO's own PaperdollOrder.Build and MobileView.IsCovered on 200,000 random worn sets, outside the repo); and a composed figure: the live scan's elf (body 606, skin 0x851D, hair 0x2FCC hue 519, face 0x3B46 hue 0x824D) with the skin partial on the body and the hair and face hued in full, the face under the hair, the female gump offset falling back to the male one and back, Equipconv and a gump.def alias with its hue, a robe hiding the torso and an open robe not, the arms-late table, the 0x0001 lining drawn only over something, pieces on the look's own layers, the backpack, unknown graphics and duplicate layers, the GM body, the crop box of a pair and the stand-in's grey. All `[fast]`.
+// `app/paperdoll.mts` (issue #57) on synthetic gumps, tiledata and hues (no game art): gump.def and Equipconv.def read as ClassicUO reads them (a line kept only when it starts with a digit, comments, an alias only for a gump the archive lacks, the first alt that exists, an earlier alias counting as existing, Equipconv's 0 and -1 gumps and a gump past 65,535 skipped, a later line winning); the gump source (the archive first, gump.def's alias with its hue, nothing for a gump that does not decode); which bodies are drawn and the stand-in for none or a form's body; `paperdollOrder` and `isCovered` on hand-picked cases from ClassicUO's rules (both were also checked against ClassicUO's own PaperdollOrder.Build and MobileView.IsCovered on 200,000 random worn sets, outside the repo); and a composed figure: the live scan's elf (body 606, skin 0x851D, hair 0x2FCC hue 519, face 0x3B46 hue 0x824D) with the skin partial on the body and the hair and face hued in full, the face under the hair, the female gump offset falling back to the male one and back (also when the female id passes 0xFFFF, never wrapping to gump 0), the hued layers kept up to the cache size in bytes, Equipconv and a gump.def alias with its hue, a robe hiding the torso and an open robe not, the arms-late table, the 0x0001 lining drawn only over something, pieces on the look's own layers, the backpack, unknown graphics and duplicate layers, the GM body, the crop box of a pair and the stand-in's grey. All `[fast]`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readHues, readUopTable, toRgba, uopIndex, gumpArtName, type ReadAt } from "./art.mts";
@@ -132,6 +132,25 @@ test("[fast] figure: a female piece with no female gump uses the male one, and a
   assert.equal(px(female, 7, 0), 0x8000 | BLUE);
   const f = elfFiles({ 0x0c: solid(8, 2, GREY), [60000 + 0x200]: solid(1, 1, BLUE, 7, 0) }, tiles);
   assert.equal(px(createPaperdoll(f).compose({ ...STAND_IN }, [{ graphic: 0x1500, hue: 0 }])!, 7, 0), 0x8000 | BLUE);
+});
+
+test("[fast] figure: a female gump past 0xFFFF takes the male one, never the gump its id wraps to", () => {
+  const tiles = [{ graphic: 0x1500, flags: FLAG.wearable, layer: LAYER.Torso, anim: 5536 }];   // 5536 + 60000 = 65536, which wraps to gump 0
+  const fig = createPaperdoll(elfFiles({ 0: solid(1, 1, RED, 7, 0), [50000 + 5536]: solid(1, 1, BLUE, 7, 0) }, tiles)).compose(ELF, [{ graphic: 0x1500, hue: 0 }])!;
+  assert.equal(px(fig, 7, 0), 0x8000 | BLUE);
+});
+
+test("[fast] figure: the hued layers are kept up to the cache's size in bytes, then read again", () => {
+  const reads = (cacheBytes: number): number => {
+    const f = elfFiles(), gump = f.gump;
+    let n = 0;
+    const r = createPaperdoll({ ...f, gump: (id) => { if (id === 0x0f) n++; return gump(id); } }, cacheBytes);
+    const a = r.compose(ELF, [])!, b = r.compose(ELF, [])!;
+    assert.deepEqual(b.pixels, a.pixels);
+    return n;
+  };
+  assert.equal(reads(1 << 20), 1, "the body is read once");
+  assert.equal(reads(50), 2, "the body (8 x 2 = 48 bytes) and the face do not fit in 50 bytes together");
 });
 
 test("[fast] figure: Equipconv.def swaps a piece's gump for this body, and a gump.def alias is hued in full by its line, then by the piece", () => {

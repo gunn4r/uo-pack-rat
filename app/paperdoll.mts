@@ -130,7 +130,7 @@ function gumpIdFor(body: number, anim: number, female: boolean, conv: EquipConv,
   const gump = conv.get(body)?.get(anim);
   if (gump !== undefined) anim = gump > MALE_GUMP_OFFSET ? (gump >= FEMALE_GUMP_OFFSET ? gump - FEMALE_GUMP_OFFSET : gump - MALE_GUMP_OFFSET) : gump;
   let offset = female ? FEMALE_GUMP_OFFSET : MALE_GUMP_OFFSET;
-  if (anim + offset > MAX_GUMP || !has((anim + offset) & 0xffff)) offset = female ? MALE_GUMP_OFFSET : FEMALE_GUMP_OFFSET;
+  if (anim + offset > 0xffff || !has(anim + offset)) offset = female ? MALE_GUMP_OFFSET : FEMALE_GUMP_OFFSET;
   return (anim + offset) & 0xffff;
 }
 
@@ -298,17 +298,20 @@ export const CANVAS = { width: 260, height: 237 } as const;
 const LINING = 0x8001;   // raw colour 0x0001, as decodeGump stores it
 export interface PaperdollFiles { gump: GumpSource; tiles: TileData; hues: Hues; equipConv: EquipConv }
 interface HuedLayer { pixels: Uint16Array; width: number; height: number; lining: Uint8Array }
-const HUED_CACHE_MAX = 2048;
+// The hued layers kept, in bytes (3 a pixel): about 180 full-size 260 x 237 layers. Past it the cache starts over.
+const HUED_CACHE_BYTES = 32 * 1024 * 1024;
 
-// A renderer over one set of client files, keeping each hued layer (gump, hue, partial) in memory.
-export function createPaperdoll(files: PaperdollFiles) {
+// A renderer over one set of client files, keeping each hued layer (gump, hue, partial) in memory, up to `cacheBytes`.
+export function createPaperdoll(files: PaperdollFiles, cacheBytes = HUED_CACHE_BYTES) {
   const hued = new Map<string, HuedLayer | null>();
+  let bytes = 0;
   const has = (id: number): boolean => files.gump(id) !== null;
   function layer(id: number, hue: number, partial: boolean): HuedLayer | null {
     const key = `${id}:${hue}:${partial ? 1 : 0}`;
     if (!hued.has(key)) {
-      if (hued.size >= HUED_CACHE_MAX) hued.clear();
-      const g = files.gump(id);
+      const g = files.gump(id), size = g ? g.art.pixels.length * 3 : 0;
+      if (bytes + size > cacheBytes) { hued.clear(); bytes = 0; }
+      bytes += size;
       if (!g) hued.set(key, null);
       else {
         const def = g.hue ? hueFor(files.hues, g.hue, false) : null, own = hueFor(files.hues, hue, partial), src = g.art.pixels;
@@ -324,7 +327,7 @@ export function createPaperdoll(files: PaperdollFiles) {
     }
     return hued.get(key)!;
   }
-  // Paints a layer over the canvas: a lining pixel only where something is already drawn under it.
+  // Paints a layer over the canvas: a lining pixel only where something is already drawn under it. This also drops the body's own 0x0001 outline pixels at its edge (a gargoyle body has about 15 such pinholes); intended.
   function paint(canvas: Uint16Array, l: HuedLayer | null): void {
     if (!l) return;
     const w = Math.min(l.width, CANVAS.width), h = Math.min(l.height, CANVAS.height);
