@@ -278,6 +278,8 @@ export interface Facets {
   // Numeric extras a property filter can threshold (issue #133): offered by the Inventory's property rule only,
   // never by the Suit Builder, whose keys propKeys feeds.
   extraKeys: string[];
+  // The same over every item, gear or not: what a property rule can still match (MCP's search_items checks against it).
+  allExtraKeys: string[];
   // Yes/no properties a filter can require (issue #182; vault-lib.mts's flagKeys says which flags count), lower-cased.
   flagKeys: string[];
   gearSkills: string[];
@@ -314,5 +316,5 @@ export function facetsOf(items: Item[], { rarity = [] }: { rarity?: RulesV1Rarit
   const weaponSkills = WEAPON_SKILLS.map((name) => ({ name, count: skillsOf.filter((s) => s.includes(name)).length })).filter((w) => w.count);
   const typeOf = items.map(itemTypeOf);
   const types = ITEM_TYPES.map((name) => ({ name, count: typeOf.filter((t) => t === name).length })).filter((t) => t.count);
-  return { slots, locations, places, rarities, slayers, slayerAny, kinds, weaponSkills, types, propKeys: propertyKeys({ items }), extraKeys: extraKeys({ items }), flagKeys: flagKeys({ items }), gearSkills: gearSkills({ items }), itemCount: items.length };
+  return { slots, locations, places, rarities, slayers, slayerAny, kinds, weaponSkills, types, propKeys: propertyKeys({ items }), extraKeys: extraKeys({ items }), allExtraKeys: extraKeys({ items }, { gearOnly: false }), flagKeys: flagKeys({ items }), gearSkills: gearSkills({ items }), itemCount: items.length };
 }

@@ -68,8 +68,8 @@ const PAGE: Record<string, Schema> = {
 };
 const pageOf = (a: Record<string, unknown>): { limit: number; offset: number } => ({ limit: (a.limit as number | undefined) ?? 25, offset: (a.offset as number | undefined) ?? 0 });
 // search_items' `location` and `house` as the route's params (#487): a location text as it is, or read through Organize's
-// labels (a labelled path back to its scanned text; a label alone to its container, a floor container as `root`), and each
-// house by id or name to `house=<id>`. An unknown house is refused, naming the houses.
+// labels (a labelled path back to its scanned text; a label alone to `within` its container, a floor container or a bag,
+// so every bag nested inside it counts), and each house by id or name to `house=<id>`. An unknown house is refused, naming the houses.
 async function whereParams(ctx: ToolContext, locations: string[], houses: string[]): Promise<Array<[string, string]>> {
   const out: Array<[string, string]> = [];
   if (locations.length) {
@@ -77,19 +77,22 @@ async function whereParams(ctx: ToolContext, locations: string[], houses: string
     const byLabel = new Map([...labelledPlaces(inv.containers, org.config.labels)].map(([raw, shown]): [string, string] => [shown.toLowerCase(), raw]));
     for (const v of locations) {
       const named = Object.values(org.config.labels).find((l) => l.name.toLowerCase() === v.toLowerCase()), c = named && inv.containers[String(named.serial)];
-      if (c && c.parent == null) out.push(["root", String(c.serial)]);
+      if (c) out.push(["within", String(c.serial)]);
       else out.push(["loc", byLabel.get(v.toLowerCase()) ?? v]);
     }
   }
   if (houses.length) {
     const { houses: all } = await ctx.api<ApiResponse<"GET /api/houses">>("/api/houses");
-    for (const v of houses) {
-      const h = all.find((x) => x.id.toLowerCase() === v.toLowerCase() || x.name?.toLowerCase() === v.toLowerCase());
-      if (!h) throw new ToolError(`no house ${JSON.stringify(v)}; the houses are ${all.map((x) => (x.name ? `${x.name} (${x.id})` : x.id)).join(", ") || "none (a scan with a house capture adds one)"}`);
-      out.push(["house", h.id]);
-    }
+    for (const v of houses) for (const h of housesNamed(all, v)) out.push(["house", h.id]);
   }
   return out;
+}
+// The houses a House map id or name picks, whatever its case: every house of that name, as two can share one. None is refused, naming the houses.
+type HouseRow = ApiResponse<"GET /api/houses">["houses"][number];
+function housesNamed(all: HouseRow[], v: string): HouseRow[] {
+  const q = v.toLowerCase(), picked = all.filter((h) => h.id.toLowerCase() === q || h.name?.toLowerCase() === q);
+  if (!picked.length) throw new ToolError(`no house ${JSON.stringify(v)}; the houses are ${all.map((h) => (h.name ? `${h.name} (${h.id})` : h.id)).join(", ") || "none (a scan with a house capture adds one)"}`);
+  return picked;
 }
 const SERIAL: Schema = { type: "integer", minimum: 1, maximum: MAX_SERIAL, description: "An item or container serial (the decimal number in Pack Rat's rows)." };
 const ID: Schema = { type: "string", pattern: "^[\\w-]{1,64}$" };
@@ -319,7 +322,7 @@ export const TOOLS: Tool[] = [
       const inv = await inventory(ctx);
       const f = inv.facets;
       return { characters: Object.keys(inv.characters).filter((n) => !isPseudoCharacter(n)).sort(), itemCount: inv.itemCount, slots: f.slots, kinds: f.kinds, rarities: f.rarities, slayers: f.slayers,
-        weaponSkills: f.weaponSkills, types: f.types, flags: f.flagKeys, properties: f.propKeys.map((key) => ({ key, name: fullOf(key) })), extraKeys: [...(f.extraKeys as string[]), ...Object.keys(EXTRA_COLS)] };
+        weaponSkills: f.weaponSkills, types: f.types, flags: f.flagKeys, properties: f.propKeys.map((key) => ({ key, name: fullOf(key) })), extraKeys: [...f.allExtraKeys, ...Object.keys(EXTRA_COLS)] };
     },
   },
   {
@@ -330,7 +333,7 @@ export const TOOLS: Tool[] = [
       character: { type: "array", maxItems: 50, items: { type: "string", maxLength: 64 }, description: "Only items these characters hold or wear." },
       slot: { type: "array", maxItems: 30, items: { type: "string", maxLength: 32 }, description: "Gear slots (inventory_facets lists them), \"?\" for none." },
       kind: { type: "array", maxItems: 30, items: { type: "string", maxLength: 32 }, description: "Item kinds: gear, reagent, scroll, …" },
-      location: { type: "array", maxItems: 50, items: { type: "string", maxLength: 300 }, description: "Exact location texts, as the rows' `where` shows them, or the same path with Organize labels in it. A label alone (\"Shields\", any case) is that labelled container: everything inside it when it stands on the floor." },
+      location: { type: "array", maxItems: 50, items: { type: "string", maxLength: 300 }, description: "Exact location texts, as the rows' `where` shows them, or the same path with Organize labels in it. A label alone (\"Shields\", any case) is everything inside that labelled container, bags in bags included; it is searched on its own, not with other locations, houses or containers." },
       house: { type: "array", maxItems: 20, items: { type: "string", maxLength: 64 }, description: "Houses on the House map, by id (\"1-3000-1000\") or name, any case: everything in their containers." },
       container: { type: "array", maxItems: 50, items: SERIAL, description: "Root container serials: everything anywhere inside them." },
       rarity: { type: "string", maxLength: 64, description: "Exactly this rarity tier." },
@@ -356,15 +359,16 @@ export const TOOLS: Tool[] = [
     annotations: { title: "Search items", ...READ },
     async handler(a, ctx) {
       const { limit, offset } = pageOf(a);
-      const f = (await inventory(ctx)).facets as InventoryDoc["facets"] & { slots: string[]; slayers: Array<{ name: string }>; extraKeys: string[] };
+      const f = (await inventory(ctx)).facets as InventoryDoc["facets"] & { slots: string[]; slayers: Array<{ name: string }> };
       // The route matches slots, kinds and slayers exactly and tags in lower case (as scans store them): a model's
       // "Ring" or "Orc Slayer" is mapped onto the inventory's own spelling here.
       const spelled = (known: string[]) => (v: string): string => known.find((k) => k.toLowerCase() === v.toLowerCase()) ?? v;
       const slot = spelled(f.slots), kind = spelled(f.kinds.map((k) => k.name)), slayer = spelled(f.slayers.map((x) => x.name)), lower = (v: string): string => v.toLowerCase();
       // Each property rule must parse the way the route parses it (item-query.mts's parseItemQuery), with a number and a
       // key the inventory has; a rule the route would drop would otherwise search the whole inventory without a word.
-      // The Inventory's property filter also takes the extras no property models (strReq, weight: item-query.mts's EXTRA_COLS).
-      const known = [...f.propKeys, ...f.extraKeys, ...Object.keys(EXTRA_COLS)], keyOf = spelled(known);
+      // The route also matches the extras no property models, on any item (a deed's "amount to make", a tool's "uses
+      // remaining"), and the columns item-query.mts's EXTRA_COLS adds (strReq, weight).
+      const known = [...f.propKeys, ...f.allExtraKeys, ...Object.keys(EXTRA_COLS)], keyOf = spelled(known);
       const props = ((a.props as string[] | undefined) || []).map((rule) => {
         const parsed = parseItemQuery(new URLSearchParams([["prop", rule]])).props;
         const value = rule.split(":").at(-1)!.trim();
@@ -380,6 +384,8 @@ export const TOOLS: Tool[] = [
       const lists: Array<[string, string, (v: string) => string]> = [["character", "char", String], ["slot", "slot", slot], ["kind", "kind", kind], ["container", "root", String],
         ["flags", "flag", String], ["weaponSkills", "wskill", String], ["types", "type", String], ["tags", "tag", lower], ["hideTags", "hide", lower]];
       for (const [arg, param, norm] of lists) for (const v of (a[arg] as unknown[] | undefined) || []) sp.append(param, norm(String(v)));
+      // The route takes `within` as a narrowing on top of the other places, which would turn "any of" into "both".
+      if (sp.has("within") && ["loc", "root", "house"].some((p) => sp.has(p))) throw new ToolError("a label alone (everything inside that container) cannot be combined with other locations, houses or containers in one search; search them separately");
       for (const rule of props) sp.append("prop", rule);
       if (a.noGargoyle) sp.set("nogarg", "1");
       if (a.medable) sp.set("med", "1");
@@ -671,12 +677,7 @@ export const TOOLS: Tool[] = [
       const { limit, offset } = pageOf(a);
       if (a.outside && a.house !== undefined) throw new ToolError("name a house, or set outside (not both)");
       const [inv, { houses }, map, org] = await Promise.all([inventory(ctx), ctx.api<ApiResponse<"GET /api/houses">>("/api/houses"), ctx.api<ApiResponse<"GET /api/house-map">>("/api/house-map"), ctx.api<OrganizeDoc>("/api/organize")]);
-      let picked = houses;
-      if (typeof a.house === "string") {
-        const q = a.house.toLowerCase();
-        picked = houses.filter((h) => h.id.toLowerCase() === q || h.name?.toLowerCase() === q);
-        if (!picked.length) throw new ToolError(`no house ${JSON.stringify(a.house)}; the houses are ${houses.map((h) => (h.name ? `${h.name} (${h.id})` : h.id)).join(", ") || "none (a scan with a house capture adds one)"}`);
-      }
+      const picked = typeof a.house === "string" ? housesNamed(houses, a.house) : houses;
       const label = (serial: number): { name: string; pinned: boolean } | null => { const l = org.config.labels[String(serial)]; return l ? { name: l.name, pinned: !!l.pinned } : null; };
       const fill = (c: Container | undefined): ContainerCapacity | null => c?.capacity ?? null;
       const rows: Array<Record<string, unknown> & { serial: number; scanned: boolean }> = [];
