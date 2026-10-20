@@ -7,7 +7,8 @@ export const BREAKPOINTS = {
   compact: 1023,  // the Suit Builder's result tiles go three to a row
   stacked: 1099,  // the House map lays its panes out in one column
   narrow: 1179,   // the sidebar collapses, the peek and the Manual picker lie over the page, the Inventory toolbar sheds its unset chips
-  medium: 1279,   // tighter Inventory and Suit Builder columns, a narrower peek
+  medium: 1279,   // tighter Inventory and Suit Builder columns, a narrower peek; the Manual doll moves from its column into a band at the top of the picker
+  doll: 1395,     // the Manual doll column draws its figure at 1× (and drops its heading), so the picker keeps its 480 px
   roomy: 1599,    // the runs drawer takes its wide width above this
   wide: 1799,     // the House map folds its levels pane while the contents drawer is open, up to here
 } as const;

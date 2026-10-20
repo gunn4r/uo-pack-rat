@@ -310,7 +310,7 @@
 .mb-suit .card-head > :not(.ellip):not(h2) { flex: none; }
 /* compact: all nineteen slots stay in view beside the picker at 1440 × 900, in two columns (armor and
    weapons; clothing and jewelry), each group's cards as many across as its column fits */
-.mb-suit > .card-head { min-height: 0; padding-top: var(--space-2); padding-bottom: var(--space-2); }
+.mb-suit > .card-head { min-height: 0; padding-top: var(--space-2); padding-bottom: var(--space-2); flex-wrap: wrap; row-gap: 6px; height: auto; }   /* wraps rather than clipping Clear all beside the doll column */
 /* Fill the rest automatically and Save as run, then the search's progress (dot, words, bar, Cancel) or its outcome */
 .mb-suit-acts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3); border-bottom: var(--border-width) solid var(--color-border); }
 .mb-fill { flex: 1 1 240px; min-width: 0; display: flex; align-items: center; gap: var(--space-2); }
@@ -327,6 +327,8 @@
 .pr .mb-slot-pick:focus-visible { outline: none; box-shadow: var(--ring-focus); }
 .pr .mb-slot.mb-empty .mb-slot-pick { border-style: dashed; background: var(--color-surface-subtle); }
 .pr .mb-slot.mb-missing .mb-slot-pick { border-color: var(--color-warning); }
+/* the slot a previewed two-hander (or one-hander) would clear (issue #57, the live doll) */
+.pr .mb-slot.mb-conflict .mb-slot-pick { outline: 2px dashed var(--color-warning); outline-offset: 2px; }
 .pr .mb-slot.mb-sel .mb-slot-pick { border-style: solid; border-color: var(--color-accent); box-shadow: 0 0 0 1px var(--color-accent); background: var(--color-surface); }
 /* the slot and the piece's name on one line, clear of the Clear button */
 .mb-slot-line { display: flex; align-items: center; gap: var(--space-2); min-width: 0; padding-right: var(--control-sm); }
@@ -350,6 +352,13 @@
 .mb-status { padding: var(--space-1) var(--space-4) var(--space-1-5); min-height: var(--lh-sm); color: var(--color-text-muted); }
 .mb-browser { padding: 0 var(--space-4) var(--space-4); gap: var(--space-2); }
 .mb-browser .inv-toolbar { flex-wrap: wrap; }
+/* the live doll (issue #57, ui/manual-doll.mts): its own column between the suit and the hint or picker, a fixed width so the
+   figure (centered, shrunk to fit) never moves the columns; on a narrow window a band at the top of the picker instead */
+.mb-doll { flex: none; width: 300px; min-height: 0; overflow-y: auto; }   /* 2×: the suit, this column and the picker at its 480 px fit from a 1,396 px window (measured) */
+.mb-doll:empty { display: none; }
+.mb-doll-band:empty { display: none; }
+.mb-doll-band { flex: none; padding: 0 var(--space-4) var(--space-2); }
+
 .mb-browser .inv-search { flex: 1 1 100%; width: auto; }
 .mb-browser .inv-card { border: var(--border-width) solid var(--color-border); border-radius: var(--radius-md); }
 .mb-browser .tbl-foot { flex: none; overflow: hidden; container-type: inline-size; }
@@ -408,6 +417,16 @@
 }
 @media (max-width: 1279px) {
   .b-after { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+/* under the doll breakpoint the Manual doll is drawn at 1× in a narrower column, without its heading */
+@media (max-width: 1395px) {
+  .mb-doll { width: 180px; }
+}
+/* up to medium the doll column would push the picker under its 480 px (measured: 1,002 px of columns in a 916 px row at a
+   1,180 px window), so the doll moves into a band at the top of the picker (builder-manual.mts places it) */
+@media (max-width: 1279px) {
+  .mb-doll { display: none; }
+  .mb-main { min-height: 620px; }   /* the band's 160 px on top, the list still keeps about six rows (Manual scrolls on a shorter window) */
 }
 /* narrow: the hint goes and the picker lies over the slot cards */
 @media (max-width: 1179px) {

@@ -1,6 +1,6 @@
 // manual-model.test.mts — `app/ui/manual-model.mts`, the Suit Builder Manual mode's pure logic (issue #12).
 //
-// `app/ui/manual-model.mts`, the Suit Builder Manual mode's pure logic (issue #12): a No character run's settings (race human, No character's STR limit), the slot groups holding every slot the classifier knows (`GEAR_SLOTS`) exactly once and in its order, the undo history (undo, redo, 40 steps kept, a new change dropping the redo branch, a change that changes nothing not recorded) and the undo and redo keys per platform, a total past its cap shown at the cap with "+N wasted" and the line under each total, resists in paperdoll terms held at the Resisting Spells minimum, a race's cap and the player's override, the picker's slot filter (the slot itself, so the two-handed slot lists two-handers and shields), the one-hand/two-hand rule checked against the optimizer's own `optIsValidAssignment` (it clears exactly what the optimizer would refuse), a saved suit read back (known slots, whole serials), the slots whose serial no longer resolves and a saved piece the classifier has since moved going to its slot now (`reslotted`, with the notice for one dropped because its slot is taken), `LAYER_TO_SLOT` against the paperdoll layer table (issue #202), and a picker row's delta (gains and losses apart, counted up to the cap, a change wholly past the cap muted, the profile's floor and weight properties after the strip's). All `[fast]`.
+// `app/ui/manual-model.mts`, the Suit Builder Manual mode's pure logic (issue #12): a No character run's settings (race human, No character's STR limit), the live doll's pill and previewed suit (`dollPill`, `previewSuit`, issue #57: a preview, one that clears the other hand (warning even when that piece is missing from the scans), an empty slot being chosen, No character), the slot groups holding every slot the classifier knows (`GEAR_SLOTS`) exactly once and in its order, the undo history (undo, redo, 40 steps kept, a new change dropping the redo branch, a change that changes nothing not recorded) and the undo and redo keys per platform, a total past its cap shown at the cap with "+N wasted" and the line under each total, resists in paperdoll terms held at the Resisting Spells minimum, a race's cap and the player's override, the picker's slot filter (the slot itself, so the two-handed slot lists two-handers and shields), the one-hand/two-hand rule checked against the optimizer's own `optIsValidAssignment` (it clears exactly what the optimizer would refuse), a saved suit read back (known slots, whole serials), the slots whose serial no longer resolves and a saved piece the classifier has since moved going to its slot now (`reslotted`, with the notice for one dropped because its slot is taken), `LAYER_TO_SLOT` against the paperdoll layer table (issue #202), and a picker row's delta (gains and losses apart, counted up to the cap, a change wholly past the cap muted, the profile's floor and weight properties after the strip's). All `[fast]`.
 //
 // Lives in app/ for the reason app/ui-render.test.mts gives.
 import { test } from "node:test";
@@ -10,7 +10,7 @@ import { setRules, effectiveProfile, profileResistCaps, GEAR_SLOTS, LAYER_TO_SLO
 import type { RulesV1 } from "./schema/types.d.mts";
 import { optIsValidAssignment } from "../scripts/optimizer-core.mts";
 import { paperdollCaps, withBuffs } from "./ui/builder-model.mts";
-import { MANUAL_GROUPS, emptyHistory, record, undoStep, redoStep, historyKey, historyKeyNames, HISTORY_MAX, capped, capLine, slotQuery, handConflict, handNote, savedSlots, missingSlots, reslotted, reslotNote, deltaKeys, slotDelta, STRIP_KEYS, noCharacterRunSettings } from "./ui/manual-model.mts";
+import { MANUAL_GROUPS, emptyHistory, record, undoStep, redoStep, historyKey, historyKeyNames, HISTORY_MAX, capped, capLine, slotQuery, handConflict, handNote, savedSlots, missingSlots, reslotted, reslotNote, deltaKeys, slotDelta, STRIP_KEYS, noCharacterRunSettings, dollPill, previewSuit, type ManualDollState } from "./ui/manual-model.mts";
 
 setRules(JSON.parse(readFileSync(new URL("./rules/uoalive.json", import.meta.url), "utf8")) as RulesV1);
 
@@ -184,4 +184,21 @@ test("[fast] manual model: a No character run keeps the panel's requirements but
   const snap = { floors: { lrc: 100 }, weights: { luck: 1 }, race: "elf", strLimit: 140 };
   assert.deepEqual(noCharacterRunSettings(snap, 125), { floors: { lrc: 100 }, weights: { luck: 1 }, race: "human", strLimit: 125 });
   assert.equal(snap.race, "elf", "the panel's snapshot is left as it is");
+});
+
+test("[fast] manual doll: the pill names a preview, warns when it clears the other hand, says an empty slot being chosen or No character's body, and the figure wears the preview", () => {
+  const piece = (serial: number, name: string, twoHanded = false): never => ({ serial, name, twoHanded }) as never;
+  const sword = piece(1, "Katana"), shield = piece(2, "Buckler"), staff = piece(3, "Black Staff", true), arms = piece(4, "Leaf Arms");
+  const base: ManualDollState = { name: "Kestrel", suit: { oneHanded: sword, twoHanded: shield }, worn: [], choosing: "arms", preview: null };
+  assert.deepEqual(dollPill(base, false), { text: "Arms: empty", tone: null }, "the slot being chosen is empty");
+  assert.deepEqual(dollPill({ ...base, choosing: "oneHanded" }, false), null, "a filled slot being chosen: no pill");
+  assert.deepEqual(dollPill({ ...base, preview: { slot: "arms", item: arms, cleared: null } }, false), { text: "Preview · Arms: Leaf Arms", tone: "accent" });
+  const clash: ManualDollState = { ...base, choosing: "twoHanded", preview: { slot: "twoHanded", item: staff, cleared: "oneHanded" } };
+  assert.deepEqual(dollPill(clash, false), { text: "Preview · Weapon 2H / Shield: Black Staff. Picking it takes Katana off Weapon (1H).", tone: "warn" });
+  assert.deepEqual(previewSuit(clash).map((x) => x.serial), [3], "the cleared hand and the slot's old piece are off the figure");
+  assert.deepEqual(previewSuit({ ...base, preview: { slot: "arms", item: arms, cleared: null } }).map((x) => x.serial), [1, 2, 4]);
+  assert.deepEqual(dollPill({ ...base, name: null, choosing: null }, false), { text: "No character: a default body", tone: null });
+  assert.equal(dollPill(clash, true), null, "showing what the character wears: no pill");
+  const missing: ManualDollState = { ...clash, suit: { twoHanded: shield } };
+  assert.deepEqual(dollPill(missing, false), { text: "Preview · Weapon 2H / Shield: Black Staff. Picking it takes the piece off Weapon (1H).", tone: "warn" }, "the other hand's piece missing from the scans still warns, as pick() names it");
 });
