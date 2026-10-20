@@ -157,7 +157,7 @@ test("[slow] What changes: Gauges for what the build asks, Table with every prop
     assert.equal(await page.locator(".b-shares").count(), 0, "the table carries the breakdown");
     const rows = await page.locator(".b-chg-tbl tbody tr").evaluateAll((trs) => trs.map((tr) => [...tr.querySelectorAll("td")].map((td) => td.textContent ?? "")));
     const names = rows.map((r) => r[0]);
-    for (const r of ["Physical resist", "Fire resist", "Cold resist", "Poison resist", "Energy resist"]) assert.ok(names.includes(r), `${r} in the table`);
+    for (const r of ["Physical Resist", "Fire Resist", "Cold Resist", "Poison Resist", "Energy Resist"]) assert.ok(names.includes(r), `${r} in the table`);
     assert.ok(rows.some((r) => r[4] === "0"), "an unchanged property is listed too");
     const moved = rows.filter((r) => r[4] !== "0" && !/ resist$/.test(r[0]!)).map((r) => r[0]!);
     assert.ok(gauges.every((g) => moved.includes(g)), "a gauge only for a property that moves");
@@ -165,7 +165,7 @@ test("[slow] What changes: Gauges for what the build asks, Table with every prop
     const asked = await page.evaluate(() => [...document.querySelectorAll<HTMLInputElement>("#b-sec-weights .rule-row input[type=number], #b-sec-req .rule-row input[type=number]")]
       .filter((i) => !/ weight$/.test(i.getAttribute("aria-label") ?? "") || Number(i.value) !== 0).map((i) => (i.getAttribute("aria-label") ?? "").replace(/ (weight|minimum)$/, "")));
     assert.ok(gauges.every((g) => asked.includes(g)), `every gauge is weighted or required: ${gauges.join(", ")}`);
-    assert.ok(!(gauges.includes("Stamina increase") && gauges.includes("Stamina from gear and buffs")), "no pool beside its bonus");
+    assert.ok(!(gauges.includes("Stamina Increase") && gauges.includes("Stamina from gear and buffs")), "no pool beside its bonus");
     assert.ok(moved.length > gauges.length, "the build moves more than it asks for");
     assert.equal(more, moved.length - gauges.length, "the link counts the moved properties with no gauge");
     const saved = (): boolean => { try { return (JSON.parse(readFileSync(join(dataDir, "ui-prefs.json"), "utf8")) as { builderChanges?: string }).builderChanges === "table"; } catch { return false; } };

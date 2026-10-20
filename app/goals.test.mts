@@ -80,9 +80,9 @@ test("[fast] goals: a goals change is one settings change, and the weights it se
   const melee: Goals = { ranks: [["ssi"], ["hci", "dci"], ["di"]], swing: { mode: "fastest" }, leftover: "luck" };
   const run = (g: Goals) => ({ goals: g, ...compileGoals(g, { tagPenalty: -25 }) });
   const moved: Goals = { ...melee, ranks: [["hci", "dci"], ["ssi"], ["di"]] };
-  assert.deepEqual(settingsDiff(run(melee), run(moved)), ["goals: Hit chance = Defense chance › Swing speed › Damage, spare points to luck"]);
-  assert.deepEqual(settingsDiff(run(melee), run({ ...melee, swing: { mode: "every", seconds: 1.5 } })), ["goals: Swing speed every 1.5 s › Hit chance = Defense chance › Damage, spare points to luck"]);
-  assert.deepEqual(settingsDiff(run(melee), run({ ...melee, leftover: "none" })), ["goals: Swing speed › Hit chance = Defense chance › Damage, spare points to nothing"]);
+  assert.deepEqual(settingsDiff(run(melee), run(moved)), ["goals: Hit Chance Increase = Defense Chance Increase › Swing Speed Increase › Damage Increase, spare points to luck"]);
+  assert.deepEqual(settingsDiff(run(melee), run({ ...melee, swing: { mode: "every", seconds: 1.5 } })), ["goals: Swing Speed Increase every 1.5 s › Hit Chance Increase = Defense Chance Increase › Damage Increase, spare points to luck"]);
+  assert.deepEqual(settingsDiff(run(melee), run({ ...melee, leftover: "none" })), ["goals: Swing Speed Increase › Hit Chance Increase = Defense Chance Increase › Damage Increase, spare points to nothing"]);
   assert.deepEqual(settingsDiff(run(melee), run(structuredClone(melee))), [], "the same goals");
   // with the weights set by hand on either side, the weights are what differs, as before goals
   const own = { ...run(melee), goals: { ...melee, ownWeights: true }, weights: { ...run(melee).weights, luck: 1 } };
@@ -104,7 +104,7 @@ test("[fast] goals: a swing every N s caps SSI at that step for the weapon worn 
   assert.equal(plan({ ...ssi, swing: { mode: "every", seconds: 2 } }).caps.ssi, 1);
   assert.equal(plan({ ...ssi, swing: { mode: "fastest" } }).caps.ssi, 60, "the fastest swing: the shard's cap");
   assert.equal(plan({ ...ssi, swing: { mode: "every", seconds: 1.5 }, ownWeights: true }).caps.ssi, 60, "weights set by hand: no goal caps anything");
-  assert.equal(plan({ ranks: [["hci"]], leftover: "none", swing: { mode: "every", seconds: 1.5 } }).caps.ssi, 60, "no Swing speed goal");
+  assert.equal(plan({ ranks: [["hci"]], leftover: "none", swing: { mode: "every", seconds: 1.5 } }).caps.ssi, 60, "no Swing Speed Increase goal");
   assert.equal(plan({ ...ssi, swing: { mode: "every", seconds: 1.5 } }).swing?.steps, true);
   // the step table both solvers score with keeps no point past the cap
   const worn = wornBy("Kestrel").filter((it) => it.slot).map(toOptItem), axe = heldWeapon(Object.fromEntries(worn.map((it) => [it.slot!, it])))!;

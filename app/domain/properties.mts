@@ -20,9 +20,8 @@ export type ExtrasMap = Record<string, ExtraValue>;
 // fold (the pools) or read off the item (the "extra" columns). `builder` is whether the Suit Builder's weight and
 // requirement rows offer it. `typical` is the span a good suit covers in each property the builder offers: the usual
 // shard cap where there is one (a resist's 70), else what a good suit gathers (typicalRange, and so a weight's
-// importance, read it). `name` is the property in words wherever the page names it in full (propName), when that is not
-// its full name in sentence case: the goals' words for the long tooltip names, and pools that say what they add up. The
-// exports below are derived from it.
+// importance, read it). `name` is a derived pool's words wherever the page names it in full (propName), since a pool is no
+// shard property and has no shard name. The exports below are derived from it.
 type PropKind = "number" | "extra";
 interface PropDef<K extends string = string> { key: K; pattern?: RegExp; label: string; full: string; builder: boolean; kind: PropKind; typical?: number; name?: string }
 const tip = (text: string): RegExp => new RegExp(`${text}[^-\\d]*(-?\\d+)`);
@@ -35,11 +34,11 @@ export const PROPERTIES = [
   typ(parsed("physResist", "physical resist", "Phys", "Physical Resist"), 70), typ(parsed("fireResist", "fire resist", "Fire", "Fire Resist"), 70),
   typ(parsed("coldResist", "cold resist", "Cold", "Cold Resist"), 70), typ(parsed("poisonResist", "poison resist", "Poison", "Poison Resist"), 70),
   typ(parsed("energyResist", "energy resist", "Energy", "Energy Resist"), 70),
-  named(typ(parsed("hci", "hit chance increase", "HCI", "Hit Chance Increase"), 45), "Hit chance"), named(typ(parsed("dci", "defense chance increase", "DCI", "Defense Chance Increase"), 45), "Defense chance"),
-  named(typ(parsed("ssi", "swing speed increase", "SSI", "Swing Speed Increase"), 60), "Swing speed"), named(typ(parsed("di", "damage increase", "DI", "Damage Increase"), 100), "Damage"),
+  typ(parsed("hci", "hit chance increase", "HCI", "Hit Chance Increase"), 45), typ(parsed("dci", "defense chance increase", "DCI", "Defense Chance Increase"), 45),
+  typ(parsed("ssi", "swing speed increase", "SSI", "Swing Speed Increase"), 60), typ(parsed("di", "damage increase", "DI", "Damage Increase"), 100),
   typ(parsed("lmc", "lower mana cost", "LMC", "Lower Mana Cost"), 40), typ(parsed("lrc", "lower reagent cost", "LRC", "Lower Reagent Cost"), 100),
   typ(parsed("fc", "faster casting", "FC", "Faster Casting"), 2), typ(parsed("fcr", "faster cast recovery", "FCR", "Faster Cast Recovery"), 6),
-  named(typ(parsed("sdi", "spell damage increase", "SDI", "Spell Damage Increase"), 100), "Spell damage"),
+  typ(parsed("sdi", "spell damage increase", "SDI", "Spell Damage Increase"), 100),
   typ(parsed("hpi", "hit point increase", "HP+", "Hit Point Increase"), 25), typ(parsed("hpRegen", "hit point regeneration", "HPR", "Hit Point Regeneration"), 18),
   typ(parsed("stamInc", "stamina increase", "Stam+", "Stamina Increase"), 20), typ(parsed("stamRegen", "stamina regeneration", "SR", "Stamina Regeneration"), 24),
   typ(parsed("manaInc", "mana increase", "Mana+", "Mana Increase"), 20), typ(parsed("manaRegen", "mana regeneration", "MR", "Mana Regeneration"), 30),
@@ -170,17 +169,19 @@ export function catalogueGroups(keys: readonly string[], nameOf: (k: string) => 
 // A tooltip line no property models reads by its catalogue name ("Weapon Speed"), anything else by its key.
 export const labelOf = (k: string): string => (k.startsWith("sk:") ? "+" + titleCase(k.slice(3)) : PROP_LABELS[k] || CATALOGUE_NAMES[k] || k);
 export const fullOf = (k: string): string => (k.startsWith("sk:") ? `${titleCase(k.slice(3))} skill bonus from items` : PROP_FULL[k] || CATALOGUE_NAMES[k] || k);
-// A property in words, wherever the page names it in full (the Suit Builder's goals, weight and requirement rows, the score
-// breakdown, the result's gauges and table, a diagnostic: "Physical resist", "Hit chance", "Stamina increase"; issue #302,
-// one name per property): the registry's `name`, else its full name in sentence case; a skill bonus "Magery skill bonus". A
-// summary or badge uses the short label ("Phys", "HCI").
+// A property in words, wherever the page names it (the Suit Builder's goals, weight and requirement rows, the score
+// breakdown, the result's table, the runs and compare views, the character sheet, a filter token, a diagnostic): the
+// shard's full name, as the property catalogue has it ("Physical Resist", "Hit Chance Increase"; one name per property,
+// the owner's call replacing #302's sentence case). A derived pool reads by its `name`, a skill bonus "Magery skill
+// bonus". Only a tight layout (a column head, a gauge, a badge) uses the short label ("Phys", "HCI").
 const PROP_NAMES: Record<string, string> = Object.fromEntries(NUMBER_PROPS.flatMap((p): Array<[string, string]> => ("name" in p && p.name ? [[p.key, p.name]] : [])));
 export function propName(k: string): string {
   if (k.startsWith("sk:")) return `${labelOf(k).slice(1)} skill bonus`;
-  return PROP_NAMES[k] ?? fullOf(k).replace(/(?!^)\b([A-Z])([a-z]+)/g, (_m, a: string, b: string) => a.toLowerCase() + b);
+  return PROP_NAMES[k] ?? fullOf(k);
 }
-// A property in a sentence ("swing speed", "hit chance"): propName, lower-cased at the start.
-export const goalWord = (k: string): string => { const w = propName(k); return w[0]!.toLowerCase() + w.slice(1); };
+// A property in a sentence: its name as it is ("Swing Speed Increase", "Magery skill bonus"), a pool lower-cased at the
+// start ("stamina from gear and buffs" reads as plain words).
+export const goalWord = (k: string): string => { const w = propName(k); return PROP_NAMES[k] ? w[0]!.toLowerCase() + w.slice(1) : w; };
 
 // The five resists in paperdoll order, with the names the page shows: the long one ("Physical"), the short one
 // ("Phys") and the colour token (--res-phys).

@@ -48,7 +48,7 @@ export function compileGoals(g: Goals, kept: Readonly<Record<string, number>> = 
   for (const k of LEFTOVER_GROUPS[g.leftover]) if (!goal.has(k)) weights[k] = per(k, LEFTOVER_IMPORTANCE);
   return { weights, swingSteps: goal.has("ssi") };
 }
-// Goals in a line, for a settings diff: "Swing speed every 1.5 s › Hit chance = Defense chance › Damage, spare points to luck".
+// Goals in a line, for a settings diff: "Swing Speed Increase every 1.5 s › Hit Chance Increase = Defense Chance Increase › Damage Increase, spare points to luck".
 export function goalsText(g: Goals): string {
   return `${g.ranks.map((r) => r.map((k) => goalLabel(g, k)).join(" = ")).join(" › ") || "no goals"}, spare points to ${LEFTOVER_LABELS[g.leftover].toLowerCase()}${g.strategy === "strict" ? ", strict order" : ""}${g.fewestChanges ? ", fewest changes" : ""}`;
 }

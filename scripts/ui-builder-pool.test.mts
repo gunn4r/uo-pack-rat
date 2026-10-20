@@ -25,7 +25,7 @@ test("[slow] a raised resist cap is marked, built with, shown in the result and 
     assert.match(await fireRow.innerText(), /shard cap/);
     await fire.fill("95");
     assert.match(await fireRow.innerText(), /raised from 70/);
-    assert.equal(await fireRow.getByRole("button", { name: "Reset Fire resist cap to the shard's 70" }).count(), 1);
+    assert.equal(await fireRow.getByRole("button", { name: "Reset Fire Resist cap to the shard's 70" }).count(), 1);
     // A buff (issue #12): Divine Fury turned on in Automatic's picker is on in the Buffs tab's list, and the build
     // plans with it: its headline says so, and "Show without buffs" redraws the totals without it.
     await settings(page, "buffs");
@@ -69,7 +69,7 @@ test("[slow] a raised resist cap is marked, built with, shown in the result and 
 
     // Reset: back to the shard's cap, no override left.
     await fire.fill("95");
-    await fireRow.getByRole("button", { name: /^Reset Fire resist cap/ }).click();
+    await fireRow.getByRole("button", { name: /^Reset Fire Resist cap/ }).click();
     assert.equal(await fire.inputValue(), "70");
     assert.match(await page.locator("#b-sec-caps .rule-row[data-key=fireResist]").innerText(), /shard cap/);
     assert.deepEqual(errors, []);

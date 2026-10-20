@@ -318,7 +318,7 @@ test("[slow] drawer extras: notched weight sliders, buffs by school, each requir
     await settings(page, "requirements");
     assert.equal(await page.locator("#b-sec-req .b-need-status").first().innerText(), "", "no status before a build");
     // a soft DCI 45 the suit misses, and an SSI 30 it meets with a faster step to come
-    for (const [q, v] of [["Swing speed", "30"], ["Defense chance", "45"]] as const) {
+    for (const [q, v] of [["Swing Speed Increase", "30"], ["Defense Chance Increase", "45"]] as const) {
       await page.click("#b-addfloor");
       await page.keyboard.type(q);
       await page.keyboard.press("Enter");
@@ -373,7 +373,7 @@ test("[slow] swing steps: the switch, the swing line, Next step from the result,
     await settings(page, "weights");
     const sw = page.locator("#b-swing-steps");
     await sw.waitFor({ timeout: 10_000 });
-    assert.equal(await sw.isChecked(), true, "Melee's Swing speed goal scores SSI by step");
+    assert.equal(await sw.isChecked(), true, "Melee's Swing Speed Increase goal scores SSI by step");
     assert.match(String(await page.locator("#b-sec-weights .b-swing-set").textContent()), /Counts SSI only where the swing gets faster\. War Axe 3 s at stamina \d+: .+ ≥ \d+/);
     await sw.uncheck();
     assert.match(await page.locator("#b-tpl-state").innerText(), /SSI by point/);

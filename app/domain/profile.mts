@@ -5,7 +5,7 @@
 import type { RulesV1 } from "../schema/types.d.mts";
 import type { ResistStep } from "../solver/scoring.mts";
 import { getRules } from "./rules.mts";
-import { importanceText, labelOf, RESIST_KEYS } from "./properties.mts";
+import { importanceText, propName, RESIST_KEYS } from "./properties.mts";
 import { SLOT_LABELS } from "./slots.mts";
 import type { Character } from "./fold.mts";
 import { migrateWeaponSetting, SPELLBOOKS } from "./pools.mts";
@@ -409,7 +409,7 @@ export interface SettingsChange { group: SettingsGroup; text: string; key?: stri
 export function settingsChanges(a: RunSettings = {}, b: RunSettings = {}): SettingsChange[] {
   const out: SettingsChange[] = [];
   const add = (group: SettingsGroup, text: string, more: Omit<SettingsChange, "group" | "text"> = {}): void => { out.push({ group, text, ...more }); };
-  const L = labelOf;
+  const L = propName;
   // with goals setting the weights on both sides (issue #292), changed goals are one line, and the weights and swing-step
   // switch they set are not compared
   const fromGoals = goalsActive(a.goals) && goalsActive(b.goals);
@@ -460,7 +460,7 @@ export function settingsChanges(a: RunSettings = {}, b: RunSettings = {}): Setti
   const others = (s: RunSettings) => !!s.allowOthersWorn;   // a saved run is normalized to allowOthersWorn before it ever reaches here
   if (others(a) !== others(b)) add("pool", others(b) ? "others' worn gear allowed" : "others' worn gear excluded");
   flag("exact", "exact search on", "exact search off", "search");
-  if (!fromGoals) flag("swingSteps", "+SSI by step", "SSI by point", "weights");
+  if (!fromGoals) flag("swingSteps", "+Swing Speed Increase by step", "Swing Speed Increase by point", "weights");
   if ((a.castingSchool || "") !== (b.castingSchool || "")) add("character", b.castingSchool ? `casting school ${b.castingSchool}` : "casting school from skills");
   if ((a.rarity || "") !== (b.rarity || "")) add("pool", b.rarity ? `prefer ${b.rarity} rarity` : "any rarity");
   const [wOn, wOff] = setDiff(a.excludeWeapons, b.excludeWeapons);

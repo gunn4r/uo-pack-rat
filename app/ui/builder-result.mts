@@ -172,7 +172,7 @@ function whatChanges(rows: ChangeRow[], matter: string[], nextSsi: number | null
     box("div", { class: "b-chg-head" }, el("h3", { class: "t-md", id: "b-chg-h" }, "What changes"), txt(changesSummary(gauges), "t-sm muted"), el("span", { class: "spacer" }), seg),
     ...(changesView === "table" ? changesTable(rows, past, hasShares) : [
       gauges.length ? box("ul", { class: "b-gauges", "aria-labelledby": "b-chg-h" }, ...gauges.map((r) => gauge(r, nextSsi, past[r.key]?.text))) : null,
-      loose.length ? box("div", { class: "b-past" }, ...loose.map((k) => txt(`${label(k)} ${past[k]!.text}`, "t-sm muted"))) : null,
+      loose.length ? box("div", { class: "b-past" }, ...loose.map((k) => txt(`${propName(k)} ${past[k]!.text}`, "t-sm muted"))) : null,
       more ? button({ label: `+${plural(more, "more change")} in Table`, variant: "ghost", size: "sm", cls: "b-chg-more", onClick: () => show("table") }) : null]));
 }
 // One gauge: the short name (the full one for a screen reader), the suit's total against its cap and the change in what counts, a track filled to the suit's total with a tick at what is worn now, and its note. A change against the build (builder-model.mts worse) is in the bad tone, a gain in the ok tone.
@@ -346,7 +346,7 @@ function otherSuitsCard(res: OptimizeResult, view: number | null): HTMLElement {
     const ta = totalsOf(s.best), d = s.score - res.score;
     const slotsDiff = GEAR_SLOTS.filter((sl) => (s.best[sl]?.serial || 0) !== (res.best[sl]?.serial || 0));
     const propDiff = [...new Set([...Object.keys(ta), ...Object.keys(tb)])].filter((k) => k !== "tagPenalty" && (ta[k] || 0) !== (tb[k] || 0))
-      .sort((x, y) => label(x).localeCompare(label(y))).map((k) => { const v = (ta[k] || 0) - (tb[k] || 0); return `${label(k)} ${v > 0 ? "+" : "−"}${Math.abs(v)}`; });
+      .sort((x, y) => propName(x).localeCompare(propName(y))).map((k) => { const v = (ta[k] || 0) - (tb[k] || 0); return `${propName(k)} ${v > 0 ? "+" : "−"}${Math.abs(v)}`; });
     const tick = check({ label: "", checked: picked.has(String(i)), attrs: { "aria-label": i === 0 ? "Select the best suit" : `Select suit ${i + 1}` }, onChange: (on) => {
       const r = toggleCompare(picked, String(i), on, 3, "suits");
       picked = r.next; pickRefused = r.refused;

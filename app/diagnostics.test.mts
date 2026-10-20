@@ -71,7 +71,7 @@ test("[fast] a floor exactly at the bound is reachable: no diagnostic, and the M
 
 test("[fast] a floor one above the bound: floor_unreachable with the best possible; hard offers Lower and Make soft, soft only Lower", () => {
   const [hard] = preBuildDiagnostics({ pools: ssiPools, ...ssiSlots, profile: ssiProfile(36) });
-  assert.deepEqual(hard, { code: "floor_unreachable", level: "warn", property: "ssi", message: "Swing speed 36 can't be reached with your inventory (best possible: 35).",
+  assert.deepEqual(hard, { code: "floor_unreachable", level: "warn", property: "ssi", message: "Swing Speed Increase 36 can't be reached with your inventory (best possible: 35).",
     values: { floor: 36, best: 35 }, actions: [{ kind: "setFloor", property: "ssi", value: 35 }, { kind: "makeSoft", property: "ssi" }] });
   const soft = preBuildDiagnostics({ pools: ssiPools, ...ssiSlots, profile: ssiProfile(36, { hardFloors: [] }) });
   assert.deepEqual(soft.map((d) => [d.level, d.actions]), [["info", [{ kind: "setFloor", property: "ssi", value: 35 }]]]);
@@ -92,7 +92,7 @@ test("[fast] best possible is in the player's terms: the cap, the Resisting Spel
   assert.deepEqual(resultDiagnostics({ pools: res, ...ssiSlots, profile: resist(40), result: { totals: { after: { physResist: 0 } } } }), []);
   // Divine Fury's +10 SSI: the player's floor of 60 is 50 from gear; the pool's 35 is 45 with the buff
   const [ssi] = preBuildDiagnostics({ pools: ssiPools, ...ssiSlots, profile: ssiProfile(50, { caps: { ssi: 50 }, buffs: { floors: { ssi: 60 } } }) });
-  assert.deepEqual([ssi!.values, ssi!.message], [{ floor: 60, best: 45 }, "Swing speed 60 can't be reached with your inventory (best possible: 45)."]);
+  assert.deepEqual([ssi!.values, ssi!.message], [{ floor: 60, best: 45 }, "Swing Speed Increase 60 can't be reached with your inventory (best possible: 45)."]);
 });
 
 // Issue #265: a suit's own Resisting Spells bonus lifts the minimum (resistSteps), so a floor only that lift meets is in reach.
@@ -160,8 +160,8 @@ test("[fast] floor_unreachable comes out of both solver paths, and a met floor r
 
 test("[fast] the page: an action's words and its edit to the panel's profile", () => {
   const lowerTo = { kind: "setFloor", property: "ssi", value: 55 } as const, soft = { kind: "makeSoft", property: "ssi" } as const;
-  assert.deepEqual(actionWords(lowerTo), { label: "Lower to 55", done: "Lowered ✓", toast: "Swing speed requirement lowered to 55. Build again to use it.", stale: "The requirement changed since this build, so this no longer applies." });
-  assert.deepEqual(actionWords(soft), { label: "Make soft", done: "Made soft ✓", toast: "Swing speed requirement is soft now. Build again to use it.", stale: "The requirement changed since this build, so this no longer applies." });
+  assert.deepEqual(actionWords(lowerTo), { label: "Lower to 55", done: "Lowered ✓", toast: "Swing Speed Increase requirement lowered to 55. Build again to use it.", stale: "The requirement changed since this build, so this no longer applies." });
+  assert.deepEqual(actionWords(soft), { label: "Make soft", done: "Made soft ✓", toast: "Swing Speed Increase requirement is soft now. Build again to use it.", stale: "The requirement changed since this build, so this no longer applies." });
   const p: { floors?: Record<string, number>; softFloors?: string[] } = { floors: { ssi: 60 } };
   applyAction(p, lowerTo); applyAction(p, soft); applyAction(p, soft);
   assert.deepEqual(p, { floors: { ssi: 55 }, softFloors: ["ssi"] });
@@ -210,7 +210,7 @@ test("[fast] a malformed profile is read as far as it goes, and a resist floor a
   // a Physical floor of 75 clipped to the cap of 70
   const res = { ring: [mk(1, "ring", { physResist: 20 })] };
   const [phys] = preBuildDiagnostics({ pools: res, ...ssiSlots, profile: { floors: { physResist: 70 }, caps: { physResist: 70 }, hardFloors: ["physResist"] } });
-  assert.equal(phys!.message, "Physical resist 70 (its cap) can't be reached with your inventory (best possible: 20).");
+  assert.equal(phys!.message, "Physical Resist 70 (its cap) can't be reached with your inventory (best possible: 20).");
 });
 
 test("[fast] propertyReach's candidate rule against a bound written out: a serial listed twice counts once, and a worn piece missing from the pool is a candidate", () => {
@@ -390,11 +390,11 @@ test("[fast] swing_linear: steps asked for but the weapon is not fixed, with Loc
   const profile: DiagnosticsProfile = { swing: { steps: true } };
   const two = resultDiagnostics({ profile, current: { twoHanded: axe }, result: { best: { twoHanded: axe } }, swingNote: "the pool holds weapons with 2 different speeds" });
   assert.deepEqual(two.map((d) => [d.code, d.level, d.actions]), [["swing_linear", "warn", [{ kind: "lockSlot", slot: "twoHanded" }]]]);
-  assert.equal(two[0]!.message, "SSI was scored per point: the pool holds weapons with 2 different speeds. Lock the weapon slot to score swing speed by step.");
+  assert.equal(two[0]!.message, "Swing Speed Increase was scored per point: the pool holds weapons with 2 different speeds. Lock the weapon slot to score swing speed by step.");
   assert.deepEqual(resultDiagnostics({ profile, current: { oneHanded: sword }, result: { best: { oneHanded: sword } }, swingNote: "x" })[0]!.actions, [{ kind: "lockSlot", slot: "oneHanded" }]);
   // a lock keeps what is worn: with another weapon worn there, the sentence says to equip the suit's first
   const other = resultDiagnostics({ profile, current: { oneHanded: { ...sword, serial: 9 } }, result: { best: { oneHanded: sword } }, swingNote: "x" })[0]!;
-  assert.deepEqual([other.message, other.actions], ["SSI was scored per point: x. Equip the weapon you want and lock its slot to score swing speed by step.", []]);
+  assert.deepEqual([other.message, other.actions], ["Swing Speed Increase was scored per point: x. Equip the weapon you want and lock its slot to score swing speed by step.", []]);
   const none = resultDiagnostics({ profile, result: { best: {} }, swingNote: "no weapon in the pool has a known speed" });
   assert.deepEqual(none[0]!.actions, [], "no weapon to lock");
   assert.deepEqual(resultDiagnostics({ profile, result: { best: { oneHanded: sword } } }), [], "steps were used: nothing to say");
@@ -405,12 +405,12 @@ test("[fast] swing_next_step: steps off and the next faster step within 10 SSI, 
   const [d] = resultDiagnostics({ profile: off, result: { swing: SWING } });
   assert.equal(d!.code, "swing_next_step");
   assert.equal(d!.level, "info");
-  assert.equal(d!.message, "SSI 45 swings every 2.0 s at this suit's stamina (89). 51 would make it 1.75 s, and so would 1 more stamina.");
+  assert.equal(d!.message, "Swing Speed Increase 45 swings every 2.0 s at this suit's stamina (89). 51 would make it 1.75 s, and so would 1 more stamina.");
   assert.deepEqual(d!.actions, [{ kind: "swingSteps", on: true }, { kind: "setFloor", property: "ssi", value: 51 }]);
   assert.deepEqual(d!.values, { ssi: 45, seconds: 2, stamina: 89, next: 51, nextSeconds: 1.75, moreStamina: 1 });
   // at stamina 50 the next band (60) still swings at 2.0 s with 45: no stamina half
   const low = { ...SWING, stamina: 50 };
-  assert.equal(resultDiagnostics({ profile: off, result: { swing: low } })[0]!.message, "SSI 45 swings every 2.0 s at this suit's stamina (50). 51 would make it 1.75 s.");
+  assert.equal(resultDiagnostics({ profile: off, result: { swing: low } })[0]!.message, "Swing Speed Increase 45 swings every 2.0 s at this suit's stamina (50). 51 would make it 1.75 s.");
   assert.deepEqual(resultDiagnostics({ profile: { swing: { steps: true } }, result: { swing: SWING } }), [], "steps on: quiet");
   assert.deepEqual(resultDiagnostics({ profile: off, result: { swing: { ...SWING, ssi: 40 } } }), [], "11 away: quiet");
   assert.deepEqual(resultDiagnostics({ profile: off, result: { swing: { ...SWING, ssi: 60, seconds: 1.75 } } }), [], "no faster step within the cap: quiet");
@@ -423,7 +423,7 @@ test("[fast] the page: the swing actions' words, when they apply and their edits
   assert.ok([on, lock, step].every(handledAction));
   assert.equal(actionWords(on).label, "Score swing speed by step");
   assert.equal(actionWords(lock).label, "Lock Weapon (1H)");
-  assert.equal(actionWords(step, "swing_next_step").label, "SSI floor 51 (soft)");
+  assert.equal(actionWords(step, "swing_next_step").label, "Swing Speed Increase floor 51 (soft)");
   assert.equal(actionWords(step, "floor_unreachable").label, "Lower to 51");
   // a step's floor raises the requirement, or adds it; Lower never raises one
   assert.equal(actionApplies(p, step, undefined, "swing_next_step"), true);
@@ -444,7 +444,7 @@ test("[fast] the page: the swing actions' words, when they apply and their edits
   assert.deepEqual(nextSwingStep(SWING), { value: 51, seconds: 1.75, tip: "1.75 s at stamina 89; another suit's stamina can move the step." });
   assert.equal(nextSwingStep({ ...SWING, ssi: 51, seconds: 1.75 }), null);
   const line = swingLines({ ...SWING, ssi: 45, share: 10 }, "Longsword", ["Divine Fury"]);
-  assert.equal(line.head, "Longsword 3.5 s · stamina 89 · SSI 45 (+10 Divine Fury) → swings every 2.0 s");
+  assert.equal(line.head, "Longsword 3.5 s · stamina 89 · Swing Speed Increase 45 (+10 Divine Fury) → swings every 2.0 s");
   assert.deepEqual(line.steps, [{ text: "2.5 s ≥ 1", reached: true }, { text: "2.25 s ≥ 12", reached: true }, { text: "2.0 s ≥ 24", reached: true }, { text: "1.75 s ≥ 51", reached: false }]);
   assert.equal(line.out, "1.5 s out of reach");
   assert.equal(swingLines({ ...SWING, steps: [{ seconds: 1.25, ssi: 40 }] }, null).out, null, "1.25 s is the floor");

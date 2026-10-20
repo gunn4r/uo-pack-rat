@@ -211,7 +211,7 @@ test("[fast] buffs plan: a resist override above the shard's cap is set aside wh
   assert.deepEqual([prof.caps.fireResist, prof.floors.fireResist], [95, 95], "planned at the shard's 70: gear supplies 70 + 25");
   assert.deepEqual([prof.caps.coldResist, prof.floors.coldResist], [55, 55], "Cold at its own 60, less Reaper's +5");
   assert.deepEqual([prof.mins!.fireResist, prof.mins!.coldResist], [65, 35], "the minimum of 40, less each share");
-  assert.equal(overrideNote("fireResist", 95, r!), "Fire 95 override ignored: Reaper Form's −25 is counted");
+  assert.equal(overrideNote("fireResist", 95, r!), "Fire Resist 95 override ignored: Reaper Form's −25 is counted");
   assert.equal(plannedProfile(p, RS100, withRS(plan(["divineFury"]))).buffs!.overridesIgnored, undefined, "no buff lowers Fire: the override counts");
   checkPlan({ ...p, resistCaps: { coldResist: 60 } }, RS100, reaper, "Reaper with Cold at 60");
 });

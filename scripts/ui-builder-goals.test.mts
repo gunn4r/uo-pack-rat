@@ -35,19 +35,19 @@ test("[slow] goals: the ranked list, its counts, =, spare points, How the goals 
     await page.waitForSelector("#b-goals-h");
     assert.equal(await page.locator("#b-goals-h").innerText(), "What should this suit be best at?");
     const rows = (): Promise<string[]> => page.locator("#b-sec-goals .b-goal").evaluateAll((ls) => ls.map((l) => `${l.querySelector(".b-goal-name")!.textContent} ${l.querySelector(".b-goal-counts")!.textContent}`));
-    assert.deepEqual(await rows(), ["1.Swing speed counts 100 · needs SSI 17", "2.Hit chance counts 80 · max 45", "2.Defense chance counts 80 · max 45", "3.Damage counts 65 · max 100"]);
+    assert.deepEqual(await rows(), ["1.Swing Speed Increase counts 100 · needs 17", "2.Hit Chance Increase counts 80 · max 45", "2.Defense Chance Increase counts 80 · max 45", "3.Damage Increase counts 65 · max 100"]);
     assert.equal(await page.locator("#b-sec-weights").isHidden(), true, "the weights stay out of sight");
     // ↓ moves Swing speed's rank under the linked pair, and the focus stays on the row's arrows
-    await page.getByRole("button", { name: "Move Swing speed down", exact: true }).click();
-    assert.deepEqual(await rows(), ["1.Hit chance counts 100 · max 45", "1.Defense chance counts 100 · max 45", "2.Swing speed counts 80 · needs SSI 17", "3.Damage counts 65 · max 100"]);
+    await page.getByRole("button", { name: "Move Swing Speed Increase down", exact: true }).click();
+    assert.deepEqual(await rows(), ["1.Hit Chance Increase counts 100 · max 45", "1.Defense Chance Increase counts 100 · max 45", "2.Swing Speed Increase counts 80 · needs 17", "3.Damage Increase counts 65 · max 100"]);
     assert.equal(await page.evaluate(() => document.activeElement?.closest(".b-goal")?.getAttribute("data-key")), "ssi");
-    assert.equal(await page.getByRole("button", { name: "Move Hit chance and Defense chance down" }).count(), 2, "a linked rank's arrows name both, on both rows");
-    await page.getByRole("button", { name: "Move Swing speed up", exact: true }).click();
+    assert.equal(await page.getByRole("button", { name: "Move Hit Chance Increase and Defense Chance Increase down" }).count(), 2, "a linked rank's arrows name both, on both rows");
+    await page.getByRole("button", { name: "Move Swing Speed Increase up", exact: true }).click();
     // "=" links Damage to the rank above
     const link = page.locator('.b-goal[data-key="di"] .pill');
     assert.equal(await link.getAttribute("aria-pressed"), "false");
     await link.click();
-    assert.deepEqual(await rows(), ["1.Swing speed counts 100 · needs SSI 17", "2.Hit chance counts 80 · max 45", "2.Defense chance counts 80 · max 45", "2.Damage counts 80 · max 100"]);
+    assert.deepEqual(await rows(), ["1.Swing Speed Increase counts 100 · needs 17", "2.Hit Chance Increase counts 80 · max 45", "2.Defense Chance Increase counts 80 · max 45", "2.Damage Increase counts 80 · max 100"]);
     assert.equal(await page.locator('.b-goal[data-key="di"] .pill').getAttribute("aria-pressed"), "true");
     await page.locator('.b-goal[data-key="di"] .pill').click();
     assert.match(await page.locator("#b-tpl-state").innerText(), /equal the Melee template/, "back as the template had it");
@@ -58,7 +58,7 @@ test("[slow] goals: the ranked list, its counts, =, spare points, How the goals 
     const count = (want: string): Promise<unknown> => page.waitForFunction((w) => document.querySelector("#b-changes")?.textContent === w, want, { timeout: 10_000 });
     await count("No changes since the last build");
     const went = await page.locator("#b-goals-went").innerText();
-    assert.match(went, /^How the goals went\n1\.\s*Swing speed\n[\d.]+ s with .+ · SSI \d+[\s\S]*3\.\s*Damage[\s\S]*Spare points(: none left over| went to: )/);
+    assert.match(went, /^How the goals went\n1\.\s*Swing Speed Increase\n[\d.]+ s with .+ · Swing Speed Increase \d+[\s\S]*3\.\s*Damage[\s\S]*Spare points(: none left over| went to: )/);
     assert.doesNotMatch(went, /as high as the gear allows|went to: \S+ −/, "no unproven verdict, and no loss as a destination");
     // built from goals, SSI counted per point is a note under the swing goal, not a warning in Check your settings
     assert.doesNotMatch(await page.locator(".b-head-card").innerText(), /SSI was scored per point/);
@@ -82,7 +82,7 @@ test("[slow] goals: the ranked list, its counts, =, spare points, How the goals 
     await count("No changes since the last build");
 
     // the run's Load these settings brings its goals back
-    await page.getByRole("button", { name: "Move Swing speed down", exact: true }).click();
+    await page.getByRole("button", { name: "Move Swing Speed Increase down", exact: true }).click();
     await count("1 change since the last build");
     const loadRun = async (): Promise<void> => {
       await closeSettings(page);
@@ -95,7 +95,7 @@ test("[slow] goals: the ranked list, its counts, =, spare points, How the goals 
     };
     await loadRun();
     await settings(page, "weights", { weights: false });
-    assert.deepEqual(await rows(), ["1.Swing speed counts 100 · needs SSI 17", "2.Hit chance counts 80 · max 45", "2.Defense chance counts 80 · max 45", "3.Damage counts 65 · max 100"], "the run's goals are back");
+    assert.deepEqual(await rows(), ["1.Swing Speed Increase counts 100 · needs 17", "2.Hit Chance Increase counts 80 · max 45", "2.Defense Chance Increase counts 80 · max 45", "3.Damage Increase counts 65 · max 100"], "the run's goals are back");
     await count("No changes since the last build");
 
     // at phone width the drawer fits without a sideways scroll
@@ -193,7 +193,7 @@ test("[slow] goals runs: the first-visit goals, the run line in goal names, and 
     await openBuilder(page);
     await page.waitForFunction(() => /Melee will build for/.test(document.querySelector("#b-start .b-start-sum")?.textContent || ""), undefined, { timeout: 10_000 });
     const most = await page.locator("#b-start .b-start-sum .b-imps").innerText();
-    assert.match(most, /^1\. Swing speed\s+100\s+2\. Hit chance = Defense chance\s+80\s+3\. Damage\s+65$/);
+    assert.match(most, /^1\. Swing Speed Increase\s+100\s+2\. Hit Chance Increase = Defense Chance Increase\s+80\s+3\. Damage Increase\s+65$/);
     const sum = await page.locator("#b-start .b-start-sum").innerText();
     assert.match(sum, /Spare points: Luck\s+Goals in Auto Build Settings/);
     assert.doesNotMatch(sum, /more in Auto Build Settings/, "the spare points are no extra row");
@@ -209,11 +209,11 @@ test("[slow] goals runs: the first-visit goals, the run line in goal names, and 
     await closeSettings(page);
     const swingRow = (): Promise<string> => page.locator("#b-goals-went .b-went > li").first().innerText();
     const before = await swingRow();
-    assert.match(before, /^1\.\s*Swing speed\n/);
+    assert.match(before, /^1\.\s*Swing Speed Increase\n/);
 
     // a goals change since: the run's banner names the run's goals by their names
     await settings(page, "weights", { weights: false });
-    await page.getByRole("button", { name: "Move Swing speed down", exact: true }).click();
+    await page.getByRole("button", { name: "Move Swing Speed Increase down", exact: true }).click();
     await closeSettings(page);
     // the worn Double Bladed Staff, a newer scan later, is a slower weapon under another name
     const scan = readFileSync(join(ROOT, "app", "fixtures", "demo-Dorran.json"), "utf8"), now = new Date(Date.now() - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0, 19);
@@ -226,9 +226,9 @@ test("[slow] goals runs: the first-visit goals, the run line in goal names, and 
     await page.waitForFunction(() => /Your gear changed since/.test(document.querySelector("#b-run-banner")?.textContent || ""), undefined, { timeout: 10_000 });
     await closeSettings(page);
     const banner = await page.locator("#b-run-banner").innerText();
-    assert.match(banner, /goals: Swing speed every [\d.]+ s › Hit chance = Defense chance › Damage, spare points to luck/);
+    assert.match(banner, /goals: Swing Speed Increase every [\d.]+ s › Hit Chance Increase = Defense Chance Increase › Damage Increase, spare points to luck/);
     assert.doesNotMatch(banner, /SSI|HCI|DCI/, "goal names, not abbreviations");
-    assert.equal(await swingRow(), before, "the reopened run's Swing speed line is the build's");
+    assert.equal(await swingRow(), before, "the reopened run's Swing Speed Increase line is the build's");
     assert.doesNotMatch(await page.locator("#b-goals-went").innerText(), /Practice Staff/, "not the weapon worn now");
     assert.ok(await sidewaysAt(app, page, { width: 420, height: 900 }) <= 0, "no sideways scroll at 420 on the reopened run");
     assert.deepEqual(errors, []);
@@ -260,7 +260,7 @@ test("[slow] weight scale: the row shows importance with a trade-off hover, and 
       return !!e && new RegExp(w).test(e.textContent ?? "");
     }, want, { timeout: 5_000 });
     assert.equal(await field.inputValue(), "5.56", "the importance as stored, to two decimals");
-    await hover("^At these settings, 1 (Defense chance|Hit chance) is worth about 200 Luck\\.$");
+    await hover("^At these settings, 1 (Defense Chance Increase|Hit Chance Increase) is worth about 200 Luck\\.$");
     await field.fill("2000");
     await hover("^Luck has the highest weight: the other weights are compared with it\\.$");
     await field.fill("");
@@ -285,7 +285,7 @@ test("[slow] weight scale: the row shows importance with a trade-off hover, and 
     await closeSettings(page);
     await block.getByRole("button", { name: `Set Luck to ${to}` }).click();
     assert.equal(await field.inputValue(), to, "the panel's weight is set");
-    await hover("^At these settings, 1 (Defense chance|Hit chance) is worth about \\d+ Luck\\.$");
+    await hover("^At these settings, 1 (Defense Chance Increase|Hit Chance Increase) is worth about \\d+ Luck\\.$");
     assert.match(await page.locator("#b-tpl-state").innerText(), new RegExp(`Luck weight [\\d.]+ → ${to.replace(".", "\\.")}`), "the template badge names the change");
     assert.equal(await block.getByRole("button", { name: "Set ✓" }).isDisabled(), true);
     assert.deepEqual(errors, []);
