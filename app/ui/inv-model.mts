@@ -144,11 +144,19 @@ export interface FilterToken {
 }
 const OP_SIGN = { ge: "≥", le: "≤", eq: "=", ne: "≠" } as const;
 export const propRuleLabel = (f: PropFilter, propLabel: (k: string) => string): string => `${propLabel(f.key)} ${OP_SIGN[f.op || "ge"]} ${f.min}`;
-// The property popover's note under a ≠ 0 rule: an item without the property reads 0 (item-query.mts's colVal).
 // The note under a Mage Weapon rule: the value is the tooltip's own, a negative skill penalty, so the comparisons read as
 // numbers do (≥ -20 is a penalty of 20 or less), and an item without it reads 0.
 export const MAGE_WEAPON_HINT = "Mage Weapon is negative, as on its tooltip: ≥ -20 keeps penalties of 20 or less, and items that are no mage weapon read 0.";
-export const neZeroHint = (op: string, value: string): string | null => (op === "ne" && value.trim() !== "" && +value === 0 ? "Items without this property count as 0." : null);
+// The note under a property rule about the items without the property, which read 0 (item-query.mts's colVal): a ≠ or ≤
+// rule that 0 passes lets them through ("FC ≠ -1" takes every reagent), and ≠ 0 leaves them out. Shown by the property
+// popover and, for each of a rule's property filters, by the Organize rule editor (`missingHints`).
+export function missingHint(op: string, value: string, name: string): string | null {
+  if (value.trim() === "" || !Number.isFinite(+value)) return null;
+  if (op === "ne" && +value === 0) return `Items without ${name} count as 0.`;
+  return op === "ne" || (op === "le" && +value >= 0) ? `Items without ${name} also match (they count as 0).` : null;
+}
+export const missingHints = (props: PropFilter[], nameOf: (key: string) => string): string[] =>
+  [...new Set(props.map((f) => missingHint(f.op || "ge", String(f.min), nameOf(f.key))).filter((h): h is string => h != null))];
 const without = <T,>(list: T[], v: T): T[] => list.filter((x) => x !== v);
 // "Greater Magic Item" reads "Greater Magic" on a chip; the token keeps the whole name.
 export const shortTier = (tier: string): string => tier.replace(/\s+Item$/i, "");

@@ -76,7 +76,7 @@ Under the list are two pickers, each with its counts: "Everything no rule takes"
 - Name, and a preset to start from (`GET /api/organize/presets`; picking one replaces the names and the filter).
 - "Name is any of" (one per line).
 - Search, Kind pills and a rarity range.
-- Any other filter the rule carries, as removable tokens: slot, types, weapon skills, property rules, yes/no properties, slayer, hidden and required tags, and the build a By build rule takes ("Build: Caster").
+- Any other filter the rule carries, as removable tokens: slot, types, weapon skills, property rules, yes/no properties, slayer, hidden and required tags, and the build a By build rule takes ("Build: Caster"). Under them, a note for each property rule that items without the property pass ("Items without Faster Casting also match (they count as 0)." for a ≠ or ≤ rule that 0 passes; `missingHints`), and the live count below shows the effect.
 - **Skip pieces of saved suits** (issue #133, `RuleMatch.skipSuits`): a piece of any saved Suit Builder run is left to the rules below, as the Undesirables presets have it.
 - A live count, "Matches 12 items (e.g. …)", from `POST /api/organize/match` about 300 ms after typing pauses. A note says when rules above this one may claim some of them first.
 - The targets in fill order, with ↑/↓/× per container. "Add a container…" lists each labeled container, with the scanned bags inside it indented under it, and never a pinned, blacklisted or unopened one. Picking an unlabeled bag labels it by its engraving or name when the rule is saved (`withTargetLabels`).
