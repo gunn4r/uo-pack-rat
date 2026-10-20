@@ -2,7 +2,7 @@
 //
 // map: house
 // owns: `CREATION`, `CREATION_LABELS`, `creationOptions`
-import { hueOf, type Hues } from "./art.mts";
+import { hex555, hueOf, type Hues } from "./art.mts";
 import type { CreationRace, HairStyle, PaperdollOptionsApiResponse, Swatch } from "./api/paperdoll.mts";
 import type { Race } from "./paperdoll-look.mts";
 
@@ -45,10 +45,9 @@ export const CREATION: Readonly<Record<Race, { skin: readonly number[]; hair: re
 export const CREATION_LABELS: ReadonlySet<number> = new Set(Object.values(CREATION).flatMap((r) => [...r.male, ...r.female, ...r.facial].map(([l]) => l)));
 const RENAMED = new Map([[1011060, "Short beard & moustache"], [1011061, "Long beard & moustache"]]);
 
-const hex = (c: number): string => `#${[(c >> 10) & 31, (c >> 5) & 31, c & 31].map((v) => ((v << 3) | (v >> 2)).toString(16).padStart(2, "0")).join("")}`;
 // The choices: each palette entry as the hue it gives (entry + 1) with its swatch colour (entry `entry` of that hue's ramp; a hue the file lacks is left out) and names (`labels`, from Cliloc.enu; "Style n" where the file has none). A palette's repeats are listed once.
 export function creationOptions(hues: Hues, labels: ReadonlyMap<number, string>): PaperdollOptionsApiResponse {
-  const swatches = (list: readonly number[], entry: number): Swatch[] => [...new Set(list)].flatMap((p) => { const hue = p + 1, h = hueOf(hues, hue); return h ? [{ hue, color: hex(h.colours[entry]!) }] : []; });
+  const swatches = (list: readonly number[], entry: number): Swatch[] => [...new Set(list)].flatMap((p) => { const hue = p + 1, h = hueOf(hues, hue); return h ? [{ hue, color: hex555(h.colours[entry]!) }] : []; });
   const styles = (list: Styles): HairStyle[] => list.map(([l, graphic], i) => ({ graphic, label: RENAMED.get(l) ?? labels.get(l) ?? (graphic ? `Style ${i}` : "None") }));
   const race = (r: (typeof CREATION)[Race]): CreationRace => ({ skin: swatches(r.skin, 18), hair: swatches(r.hair, 20), hairStyles: { male: styles(r.male), female: styles(r.female) }, facialHair: styles(r.facial) });
   return { ok: true, races: { human: race(CREATION.human), elf: race(CREATION.elf), gargoyle: race(CREATION.gargoyle) } };

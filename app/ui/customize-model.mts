@@ -1,4 +1,4 @@
-// ui/customize-model.mts — the doll card's Customize popover (issue #57) as data: a look turned into the game's character-creation choices and back, only valid combinations (changing race or gender re-picks the nearest valid choice), and the session-only looks the player made, one per character and one for no character, dropped by a reload or a newer scan of that character. Pure apart from that in-memory map, so a node test covers it.
+// ui/customize-model.mts — the doll card's Customize popover (issue #57) as data: a look turned into the game's character-creation choices and back (a scanned value outside the game's lists, such as a dyed hair color, kept as it is), a race or gender change re-picking only what it makes invalid, and the session-only looks the player made, one per character and one for no character, dropped by a reload or a newer scan of that character. Pure apart from that in-memory map, so a node test covers it.
 //
 // map: house
 // owns: `Choice`, `choiceOf`, `lookOfChoice`, `repick`, `hasFacialHair`, `sameLook`, `customLook`, `setCustomLook`
@@ -14,13 +14,13 @@ const DEFAULT_SKIN = 0x03ea;
 // Male humans and male gargoyles have facial hair, as in the game; elves and female characters none.
 export const hasFacialHair = (c: Pick<Choice, "race" | "female">): boolean => !c.female && c.race !== "elf";
 
-// A look as choices, then made valid (repick). A look with no skin (the stand-in) takes the default human skin.
-export function choiceOf(look: Look, options: Options): Choice {
+// A look as choices, as it is: a hue outside its race's palette or a style outside the game's lists stays (the popover shows it as "Current"). A look with no skin (the stand-in) takes the default human skin.
+export function choiceOf(look: Look): Choice {
   const hairHue = look.hair?.hue ?? 0;
-  return repick({
+  return {
     race: raceOf(look.body), female: FEMALE_BODIES.has(look.body), skin: look.hue & 0x3fff || DEFAULT_SKIN,
     hairStyle: look.hair?.graphic ?? 0, hairHue, facialStyle: look.beard?.graphic ?? 0, facialHue: look.beard?.hue ?? hairHue, facialSameAsHair: !look.beard || look.beard.hue === hairHue,
-  }, options);
+  };
 }
 // The look the choices make. `face` (the scan's) is kept only while the race is the scan's own.
 export function lookOfChoice(c: Choice, scanned: Look): Look {
@@ -32,18 +32,19 @@ export function lookOfChoice(c: Choice, scanned: Look): Look {
     face: raceOf(scanned.body) === c.race ? scanned.face : null,
   };
 }
-// The nearest valid choices for their race and gender: a hair or facial-hair style not offered becomes none, a hue not in the race's palette its first entry, and facial hair goes for a female or an elf.
-export function repick(c: Choice, options: Options): Choice {
-  const r = options[c.race], styles = c.female ? r.hairStyles.female : r.hairStyles.male;
-  const inPalette = (hue: number, list: Array<{ hue: number }>): number => (list.some((s) => s.hue === hue) ? hue : list[0]?.hue ?? 0);
-  const facial = hasFacialHair(c) && r.facialHair.some((s) => s.graphic === c.facialStyle) ? c.facialStyle : 0;
+// The choices after a change from `prev` to `next`, with only what a race or gender change makes invalid re-picked: a new race takes its palettes' first entry for a hue not in them, a hair style the new race and gender don't offer becomes none, and facial hair goes for a female or an elf. Any other change is kept as it is, so a scanned value outside the lists survives a skin or hair change.
+export function repick(prev: Choice, next: Choice, options: Options): Choice {
+  const raceChanged = next.race !== prev.race;
+  if (!raceChanged && next.female === prev.female) return next;
+  const r = options[next.race], styles = next.female ? r.hairStyles.female : r.hairStyles.male;
+  const inPalette = (hue: number, list: Array<{ hue: number }>): number => (!raceChanged || list.some((s) => s.hue === hue) ? hue : list[0]?.hue ?? 0);
   return {
-    ...c,
-    skin: inPalette(c.skin, r.skin),
-    hairStyle: styles.some((s) => s.graphic === c.hairStyle) ? c.hairStyle : 0,
-    hairHue: inPalette(c.hairHue, r.hair),
-    facialStyle: facial,
-    facialHue: inPalette(c.facialHue, r.hair),
+    ...next,
+    skin: inPalette(next.skin, r.skin),
+    hairStyle: styles.some((s) => s.graphic === next.hairStyle) ? next.hairStyle : 0,
+    hairHue: inPalette(next.hairHue, r.hair),
+    facialStyle: hasFacialHair(next) && r.facialHair.some((s) => s.graphic === next.facialStyle) ? next.facialStyle : 0,
+    facialHue: inPalette(next.facialHue, r.hair),
   };
 }
 const piece = (w: Worn | null): string => (w ? `${w.graphic}:${w.hue}` : "");

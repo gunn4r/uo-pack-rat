@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { badPathShape } from "../installer.mts";
 import { uoFolderFromTazuo, loadTileData, type TileData } from "../tiledata.mts";
 import { decodeFacet, type FacetBitmap } from "../facet-map.mts";
-import { decodeStatic, gumpArtName, hueOf, itemArtName, readHues, readUopEntry, readUopTable, toRgba, uopIndex, type Hues, type ReadAt, type StaticArt, type UopTable } from "../art.mts";
+import { decodeStatic, gumpArtName, hex555, hueOf, itemArtName, readHues, readUopEntry, readUopTable, toRgba, uopIndex, type Hues, type ReadAt, type StaticArt, type UopTable } from "../art.mts";
 import { createPaperdoll, figureBox, grayRgba, gumpSource, readEquipConv, readGumpDef } from "../paperdoll.mts";
 import type { Look, Worn } from "../paperdoll-look.mts";
 import { CREATION_LABELS, creationOptions } from "../paperdoll-creation.mts";
@@ -110,8 +110,7 @@ export function createHousesService({ settings, uoFolderFinder }: { settings: ()
       let art: StaticArt | null;
       try { const raw = readUopEntry(artMemo.table, itemArtName(graphic), read); art = raw && decodeStatic(raw); } catch { art = null; }
       if (!art) return { reason: "no-art" };
-      if (huesKey && hueMemo?.key !== huesKey) { let hues: Hues | null; try { hues = readHues(readFileSync(huesPath)); } catch { hues = null; } hueMemo = { key: huesKey, hues }; }
-      const hues = huesKey ? hueMemo?.hues : null, img = toRgba(art, hues ? hueOf(hues, hue) : null);
+      const hues = huesKey ? huesAt(huesPath) : null, img = toRgba(art, hues ? hueOf(hues, hue) : null);
       if (!img) return { reason: "no-art" };
       const png = encodePngRgba(img.width, img.height, img.rgba);
       keep(key, png);
@@ -157,6 +156,23 @@ export function createHousesService({ settings, uoFolderFinder }: { settings: ()
     keep(key, out);
     return { png: out, etag };
   }
+  // A client file read whole, refused past `max` bytes (a hues.mul is about 260 KB, a Cliloc.enu about 5 MB): a wrong or damaged file is never loaded into memory.
+  const readCapped = (path: string, max: number): Buffer => { if (statSync(path).size > max) throw new Error("too large"); return readFileSync(path); };
+  // A hues.mul read once while its stamp stays the same (item art, the paperdoll and its choices share it), or null when it is missing, over 4 MB or not whole groups.
+  function huesAt(path: string): Hues | null {
+    const key = stamp(path);
+    if (!key) return null;
+    if (hueMemo?.key !== key) { let hues: Hues | null; try { hues = readHues(readCapped(path, 4 << 20)); } catch { hues = null; } hueMemo = { key, hues }; }
+    return hueMemo.hues;
+  }
+  // The colour a worn piece's hue swatch shows (issue #57, the character sheet's gear list): entry 18 of each hue's ramp as "#rrggbb", keyed by the hue as asked (its partial and spectral bits ignored); a hue the file lacks is left out. `reason`: no folder, or no readable hues.mul (`missing`).
+  function hueColors(list: number[]): Record<string, string> | { reason: string } {
+    const at = artFolder();
+    if ("reason" in at) return at;
+    const hues = huesAt(join(at.folder, "hues.mul"));
+    if (!hues) return { reason: "missing" };
+    return Object.fromEntries(list.flatMap((h) => { const c = hueOf(hues, h & 0x3fff); return c ? [[String(h), hex555(c.colours[18]!)]] : []; }));
+  }
   // The Customize popover's choices (issue #57): the game's character-creation lists with swatch colours from the UO folder's hues.mul and names from its Cliloc.enu (names fall back to "Style n" without it), kept while both files' stamps stay the same. `reason`: no folder, or no hues.mul (`missing`) or one that does not read (`unreadable`).
   let optionsMemo: { key: string; options: PaperdollOptionsApiResponse | null } | null = null;
   function paperdollOptions(): PaperdollOptionsApiResponse | { reason: string } {
@@ -166,9 +182,9 @@ export function createHousesService({ settings, uoFolderFinder }: { settings: ()
     if (!huesKey) return { reason: "missing" };
     const key = `${huesKey}|${stamp(clilocPath) ?? ""}`;
     if (optionsMemo?.key !== key) {
-      let hues: Hues | null, labels: Map<number, string> | null;
-      try { hues = readHues(readFileSync(huesPath)); } catch { hues = null; }
-      try { labels = readCliloc(readFileSync(clilocPath), CREATION_LABELS); } catch { labels = null; }
+      const hues = huesAt(huesPath);
+      let labels: Map<number, string> | null;
+      try { labels = readCliloc(readCapped(clilocPath, 32 << 20), CREATION_LABELS); } catch { labels = null; }
       optionsMemo = { key, options: hues ? creationOptions(hues, labels ?? new Map()) : null };
     }
     return optionsMemo.options ?? { reason: "unreadable" };
@@ -184,8 +200,7 @@ export function createHousesService({ settings, uoFolderFinder }: { settings: ()
     const td = loadTileData(tiles);
     if (!table || !td) return null;
     const text = (path: string | null): string => { try { return path ? readFileSync(path, "latin1") : ""; } catch { return ""; } };
-    let huesFile: Hues | null;
-    try { huesFile = hues ? readHues(readFileSync(hues)) : null; } catch { huesFile = null; }
+    const huesFile = hues ? huesAt(hues) : null;
     const defs = readGumpDef(text(gumpDef), (id) => uopIndex(table, gumpArtName(id)) >= 0);
     return createPaperdoll({ gump: gumpSource(table, read, defs), tiles: td, hues: huesFile, equipConv: readEquipConv(text(equipConv)) });
   }
@@ -206,6 +221,6 @@ export function createHousesService({ settings, uoFolderFinder }: { settings: ()
     }
     return m;
   }
-  return { tileData: houseTileData, facetBitmap, facetPng, itemArt, paperdoll, paperdollOptions, model: houseModel };
+  return { tileData: houseTileData, facetBitmap, facetPng, itemArt, paperdoll, paperdollOptions, hueColors, model: houseModel };
 }
 export type HousesService = ReturnType<typeof createHousesService>;

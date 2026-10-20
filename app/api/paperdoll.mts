@@ -1,7 +1,7 @@
-// paperdoll.mts — what GET /api/paperdoll/options answers (issue #57): the game's character-creation choices for the doll card's Customize popover, labelled from the client's Cliloc.enu and coloured from its hues.mul. Types only and node-free, so the route `satisfies` it, the page re-exports it (app/ui/api-types.mts) and the route map names it (app/api/routes.mts).
+// paperdoll.mts — what GET /api/paperdoll/options and GET /api/hue-colors answer (issue #57): the game's character-creation choices for the doll card's Customize popover, labelled from the client's Cliloc.enu and coloured from its hues.mul. Types only and node-free, so the route `satisfies` it, the page re-exports it (app/ui/api-types.mts) and the route map names it (app/api/routes.mts).
 //
 // map: api
-// owns: `PaperdollOptionsApiResponse`, `CreationRace`, `Swatch`, `HairStyle`
+// owns: `PaperdollOptionsApiResponse`, `CreationRace`, `Swatch`, `HairStyle`, `HueColorsApiResponse`
 import type { Race } from "../paperdoll-look.mts";
 
 // A hue to pick and the colour its swatch shows ("#rrggbb": entry 18 of a skin hue's ramp, entry 20 of a hair hue's).
@@ -11,3 +11,5 @@ export interface HairStyle { graphic: number; label: string }
 // One race's choices, in the game's own order: its skin and hair-colour palettes, hair styles per gender, and facial hair (male only; none for elves).
 export interface CreationRace { skin: Swatch[]; hair: Swatch[]; hairStyles: { male: HairStyle[]; female: HairStyle[] }; facialHair: HairStyle[] }
 export interface PaperdollOptionsApiResponse { ok: true; races: Record<Race, CreationRace> }
+// GET /api/hue-colors?hues=…: the color each asked hue's swatch shows, "#rrggbb" by the hue as asked; a hue the client's hues.mul lacks is left out.
+export interface HueColorsApiResponse { ok: true; colors: Record<string, string> }

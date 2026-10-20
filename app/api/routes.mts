@@ -12,7 +12,7 @@ import type { HostPickFolderApiResponse, OpenPathBody, PickFolderBody } from "./
 import type { ImportPasteApiResponse, ImportPasteBody, RescanApiResponse } from "./import.mts";
 import type { ItemKindsApiResponse, ItemKindsPostBody } from "./kinds.mts";
 import type { McpApiResponse, McpPutBody } from "./mcp.mts";
-import type { PaperdollOptionsApiResponse } from "./paperdoll.mts";
+import type { HueColorsApiResponse, PaperdollOptionsApiResponse } from "./paperdoll.mts";
 import type { KindOverrides } from "../vault-lib.mts";
 import type { BlacklistApiResponse, BlacklistPostBody, ForgetApiResponse, InventoryApiResponse, ItemHitsApiResponse, ItemsApiResponse, ItemsBySerialApiResponse, MissingApiResponse } from "./inventory.mts";
 import type { MoveBackApiResponse, MovePlanApiResponse, MoveTripApiResponse, OrganizeApiResponse, OrganizeMatchApiResponse, OrganizePlanApiResponse, OrganizePresetsApiResponse, OrganizeProposeApiResponse, OrganizeProposeBody, OrganizePutApiResponse, OrganizeTripApiResponse } from "../organize-types.mts";
@@ -57,6 +57,7 @@ export interface ApiRoutes {
   "GET /api/item-art/<graphic>.png": ApiEntry<Png>;
   "GET /api/paperdoll.png": ApiEntry<Png>;
   "GET /api/paperdoll/options": ApiEntry<PaperdollOptionsApiResponse>;
+  "GET /api/hue-colors": ApiEntry<HueColorsApiResponse>;
   "GET /api/house-map": ApiEntry<HouseMapApiResponse>;
   "PUT /api/house-map/<id>": ApiEntry<HouseMapPutApiResponse, HouseEntry>;
   "GET /api/house-claims": ApiEntry<HouseClaimsApiResponse>;
