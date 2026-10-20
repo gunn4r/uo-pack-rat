@@ -1,6 +1,6 @@
 // houses.test.mts — `app/services/houses.mts` on its own: why there is no tiledata.mul, facet or item art, and the facet and item art PNG caches.
 //
-// `app/services/houses.mts`: why there is no tiledata.mul or facet as the settings change, and the facet PNG cache answering a repeat and dropping the oldest past 32 MB; item art (issue #174) from a synthetic artLegacyMUL.uop and hues.mul: the reasons there is none (no client, a Settings folder that is gone, no art file, one that is not a UOP table, no art for the graphic), a PNG cut to the opaque box and kept for a repeat, a hue recolouring it under its own ETag, and a hue drawn unhued without hues.mul. All `[fast]`.
+// `app/services/houses.mts`: why there is no tiledata.mul or facet as the settings change, and the facet PNG cache answering a repeat and dropping the oldest past 32 MB; item art (issue #174) from a synthetic artLegacyMUL.uop and hues.mul: the reasons there is none (no client, a Settings folder that is gone, no art file, one that is not a UOP table, no art for the graphic), a PNG cut to the opaque box and kept for a repeat, a hue recolouring it under its own ETag, a hue drawn unhued without hues.mul, and a partial hue (the tiledata.mul flag or the 0x8000 bit) taking only the grey pixels under an ETag of its own. All `[fast]`.
 //
 // The reason is read from the settings on every call (no client, a set folder that is gone or not an absolute path).
 import { test } from "node:test";
@@ -14,6 +14,9 @@ import { createHousesService } from "./houses.mts";
 import { itemArtName } from "../art.mts";
 import { syntheticArt, syntheticHues, syntheticUop } from "../art-fixture.mts";
 import { rgb555 } from "../facet-fixture.mts";
+import { syntheticTileData } from "../tiledata-fixture.mts";
+import { FLAG } from "../tiledata.mts";
+import { inflateSync } from "node:zlib";
 
 test("[fast] houses service: the reason there is no tiledata.mul or facet follows the settings", () => {
   let settings: SettingsDoc = { shard: DEFAULT_SHARD, client: null };
@@ -80,5 +83,36 @@ test("[fast] houses service: item art comes from the UO folder's art file, cut a
     const hued = service.itemArt(0x0e40, 1);
     assert.ok("png" in hued && !hued.png.equals(plain.png) && hued.etag !== plain.etag);
     assert.ok(!plain.etag.includes(uo), "the ETag never names the folder");
+  } finally { rmSync(uo, { recursive: true, force: true }); }
+});
+
+// A PNG's RGBA pixels (the encoder writes one IDAT run with filter 0 on every row).
+function pngPixels(b: Buffer): number[] {
+  const w = b.readUInt32BE(16), parts: Buffer[] = [];
+  for (let o = 8; o < b.length;) { const n = b.readUInt32BE(o); if (b.toString("latin1", o + 4, o + 8) === "IDAT") parts.push(b.subarray(o + 8, o + 8 + n)); o += 12 + n; }
+  const raw = inflateSync(Buffer.concat(parts)), out: number[] = [];
+  for (let o = 0; o < raw.length; o += 1 + w * 4) out.push(...raw.subarray(o + 1, o + 1 + w * 4));
+  return out;
+}
+
+test("[fast] houses service: item art takes a hue partially when tiledata.mul flags the graphic (or the hue carries 0x8000): only grey pixels change, under a new ETag", () => {
+  const settings: SettingsDoc = { shard: DEFAULT_SHARD, client: null };
+  const uo = mkdtempSync(join(tmpdir(), "pr-art-partial-"));
+  const service = createHousesService({ settings: () => ({ ...settings, uoFolder: uo }), uoFolderFinder: () => null });
+  try {
+    // A red pixel and a grey one on two graphics; a hue that is all blue.
+    const art = syntheticArt(2, 1, [[[0, rgb555(31, 0, 0), rgb555(8, 8, 8)]]]);
+    writeFileSync(join(uo, "artLegacyMUL.uop"), syntheticUop([{ name: itemArtName(0x0e40), data: art }, { name: itemArtName(0x0e41), data: art }]));
+    writeFileSync(join(uo, "hues.mul"), syntheticHues([new Uint16Array(32).fill(rgb555(0, 0, 31))]));
+    const red = [255, 0, 0, 255], blue = [0, 0, 255, 255];
+    const pixels = (graphic: number, hue: number): number[] => { const r = service.itemArt(graphic, hue); assert.ok("png" in r); return pngPixels(r.png); };
+    assert.deepEqual(pixels(0x0e40, 1), [...blue, ...blue], "no tiledata.mul: every pixel takes the hue");
+    const fullTag = service.itemArt(0x0e40, 1);
+    writeFileSync(join(uo, "tiledata.mul"), syntheticTileData([{ graphic: 0x0e40, flags: FLAG.partialHue | FLAG.wearable }]));
+    assert.deepEqual(pixels(0x0e40, 1), [...red, ...blue], "the partial-hue flag: only the grey pixel takes the hue");
+    const partTag = service.itemArt(0x0e40, 1);
+    assert.ok("etag" in fullTag && "etag" in partTag && fullTag.etag !== partTag.etag, "the partial drawing has its own ETag");
+    assert.deepEqual(pixels(0x0e41, 1), [...blue, ...blue], "a graphic without the flag is dyed whole");
+    assert.deepEqual(pixels(0x0e41, 0x8001), [...red, ...blue], "the hue's own 0x8000 bit is partial too");
   } finally { rmSync(uo, { recursive: true, force: true }); }
 });
