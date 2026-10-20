@@ -19,8 +19,13 @@ export interface DollView {
   client: string;
   readsLook: boolean;
   figures: Array<{ worn: Worn[]; caption?: string }>;
+  // The Suit Builder's result card (layout 2A): its own heading in place of the name, buttons after Customize (the Full sheet toggle), and what the card holds under the figures (the stat tiles).
+  heading?: string;
+  actions?: HTMLElement[];
+  below?: HTMLElement[];
 }
 
+type Frame = Pick<DollView, "name" | "heading" | "title" | "actions" | "below">;
 type Loaded = { src: string; width: number; height: number } | { reason: DollReason };
 // One figure as a data: URL (the page's CSP allows data: images, not blob:), decoded off-screen; or why there is none.
 async function load(url: string, signal: AbortSignal): Promise<Loaded> {
@@ -50,14 +55,14 @@ let filesEpoch = 0;
 export const forgetDollFigures = (): void => { filesEpoch++; };
 
 // A doll card. `scale`: the figure's size, 2 (whole pixels, pixelated) or 1; `compact`: the Suit Builder's tighter padding; `controls`: what the card head carries on the right, before the "Customized" tag and the Customize button.
-export function dollCard({ id, scale = 2, compact = false, controls = [] }: { id?: string; scale?: 1 | 2; compact?: boolean; controls?: HTMLElement[] } = {}): { node: HTMLElement; show: (v: DollView) => void } {
+export function dollCard({ id, scale = 2, compact = false, controls = [] }: { id?: string; scale?: 1 | 2; compact?: boolean; controls?: HTMLElement[] } = {}): { node: HTMLElement; show: (v: DollView) => void; frame: (v: Frame) => void } {
   const name = el("h2", {}), title = txt("", "t-sm muted doll-title");
   const stage = box("div", { class: `doll-stage${compact ? " doll-compact" : ""}` });
-  const note = box("div", { class: "doll-note" });
+  const note = box("div", { class: "doll-note" }), below = box("div", { class: "doll-below" }), actions = box("div", { class: "doll-actions" });
   const customized = tag("Customized");
   const customize = button({ label: "Customize", icon: "person", variant: "ghost", size: "sm", attrs: { "aria-haspopup": "dialog", "aria-expanded": "false" }, onClick: () => { if (view) openCustomizerFor(view); } });
   const node = el("section", { class: "card doll-card", "data-mode": "dark", ...(id ? { id } : {}) },
-    box("header", { class: "doll-head" }, box("div", { class: "doll-name" }, name, title), box("div", { class: "doll-controls" }, ...controls, customized, customize)), stage, note);
+    box("header", { class: "doll-head" }, box("div", { class: "doll-name" }, name, title), box("div", { class: "doll-controls" }, ...controls, customized, customize, actions)), stage, note, below);
   const requests = dollRequests();
   let abort: AbortController | null = null, plan: DollPlan | null = null, drawn = false, view: DollView | null = null;
   // The note under a drawn figure, from the newest update.
@@ -69,11 +74,17 @@ export function dollCard({ id, scale = 2, compact = false, controls = [] }: { id
       onChange: (look) => { setCustomLook(v.name, v.scannedAt ?? null, look); if (view && view.name === v.name) show(view); } });
   }
 
-  function show(v: DollView): void {
-    view = v;
-    name.textContent = v.name ?? "No character";
+  // The card around the figures: its heading, title, buttons and what it holds under them, drawn at once while the figures may still be on their way.
+  function frame(v: Frame): void {
+    name.textContent = v.heading ?? v.name ?? "No character";
     title.textContent = v.title ?? "";
     title.hidden = !v.title;
+    actions.replaceChildren(...(v.actions ?? []));
+    below.replaceChildren(...(v.below ?? []));
+  }
+  function show(v: DollView): void {
+    view = v;
+    frame(v);
     const custom = customLook(v.name, v.scannedAt ?? null);
     customized.hidden = !custom;
     const p = plan = dollPlan({ name: v.name, appearance: v.appearance, readsLook: v.readsLook, client: v.client, custom });
@@ -96,10 +107,10 @@ export function dollCard({ id, scale = 2, compact = false, controls = [] }: { id
       stage.replaceChildren(box("div", { class: "doll-figs" }, ...got.map((g, i) => {
         const f = g as { src: string; width: number; height: number }, caption = v.figures[i]!.caption;
         const img = el("img", { class: "doll-img", src: f.src, alt: caption ? `${v.name ?? "Stand-in"}, ${caption}` : `${v.name ?? "Stand-in"}'s paperdoll`, width: String(f.width * scale), height: String(f.height * scale), draggable: "false" });
-        return el("figure", { class: "doll-fig" }, img, caption ? el("figcaption", { class: "t-sm muted" }, caption) : null);
+        return el("figure", { class: "doll-fig" }, img, caption ? el("figcaption", { class: "caps" }, caption) : null);
       })));
       paintNote();
     });
   }
-  return { node, show };
+  return { node, show, frame };
 }

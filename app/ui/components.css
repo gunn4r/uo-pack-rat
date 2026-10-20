@@ -346,6 +346,8 @@
 .doll-empty { display: flex; flex: 1 1 auto; }
 .doll-note:empty { display: none; }
 .doll-note { padding: 0 var(--space-4) var(--space-4); }
+.doll-actions { display: contents; }
+.doll-below:empty { display: none; }
 /* the Customize popover (ui/doll-customizer.mts): groups of controls, the palettes as 14 px swatches 18 to a row, the picked one outlined */
 .doll-custom { display: flex; flex-direction: column; gap: var(--space-3); }
 .doll-group { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); }
