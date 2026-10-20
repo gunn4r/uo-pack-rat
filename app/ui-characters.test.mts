@@ -1,12 +1,12 @@
 // ui-characters.test.mts — the Characters screen's pure logic (`app/ui/sheet.mts`'s formatters, `app/ui/roster.mts`).
 //
-// the Characters screen's pure logic: `app/ui/sheet.mts`'s formatters (the "cap +N" badge from a raw value past its cap, the at-cap meter, an attribute's "(own + gear)" split including a negative bonus, "now → after", a slot tile's two key numbers — nearest their shard cap, uncapped properties against 100, skill bonuses as "Magery +20", bookkeeping keys never shown and a power scroll's `psLevel` never offered on the Properties card — the tag tones, pluralising, and the durability watch: a piece low at 20% of its max or 10 points, never with a max of 0, at or past its max, or with no durability line, the count and its summary sentence) and `app/ui/roster.mts`'s search and sort (by name either way, by a resist's capped value or scan time with an unscanned character last, ties by name) and the sheet's scan summary (`sheetMeta`: the count of root containers the character's scans opened, backpack, bank and the containers inside others left out, its `#/containers/<Name>` link, and no count at none), and the worn-gear tiles holding every gear slot exactly once (issue #218), and the character list (`characterNames`: scanned, then profiled, once each, never No character's pseudo name, issue #12). No DOM. All `[fast]`. The roster search also matches a build label (issue #336).
+// the Characters screen's pure logic: `app/ui/sheet.mts`'s formatters (the "cap +N" badge from a raw value past its cap, the at-cap meter, an attribute's "(own + gear)" split including a negative bonus, "now → after", bookkeeping keys and a power scroll's `psLevel` never offered on the Properties card — the tag tones, pluralising, and the durability watch: a piece low at 20% of its max or 10 points, never with a max of 0, at or past its max, or with no durability line, the count and its summary sentence) and `app/ui/roster.mts`'s search and sort (by name either way, by a resist's capped value or scan time with an unscanned character last, ties by name) and the sheet's scan summary (`sheetMeta`: the count of root containers the character's scans opened, backpack, bank and the containers inside others left out, its `#/containers/<Name>` link, and no count at none), and the worn-gear slot groups holding every gear slot exactly once (issue #218), and the character list (`characterNames`: scanned, then profiled, once each, never No character's pseudo name, issue #12). No DOM. All `[fast]`. The roster search also matches a build label (issue #336).
 //
 // Lives in app/ rather than app/ui/ for the reason app/ui-render.test.mts gives.
 import "../scripts/localstorage-shim-for-tests.mts";   // a localStorage stub for the page modules below; none reads it at module scope today (app/ui/store.mts no longer does)
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { capOver, capBadgeText, atCap, bonusBreakdown, poolChanges, moveText, keyNumbers, tagTone, lowDurability, lowDurabilityCount, lowDurabilitySummary, SHEET_CATALOGUE, DEFAULT_SHEET_PROPS, SLOT_GROUPS } from "./ui/sheet.mts";
+import { capOver, capBadgeText, atCap, bonusBreakdown, poolChanges, moveText, tagTone, lowDurability, lowDurabilityCount, lowDurabilitySummary, SHEET_CATALOGUE, DEFAULT_SHEET_PROPS, SLOT_GROUPS } from "./ui/sheet.mts";
 import { GEAR_SLOTS, NOBODY } from "./vault-lib.mts";
 import { characterNames, rosterView, triple, sheetMeta, openedRoots, type RosterRow } from "./ui/roster.mts";
 import { plural } from "./ui/format.mts";
@@ -48,18 +48,6 @@ test("[fast] sheet: a figure that moves reads 'now → after', one that doesn't 
   assert.equal(moveText(10, 27, "%"), "10% → 27%");
   assert.equal(moveText(60, 60), "60");
   assert.equal(moveText(5, 5, "%"), "5%");
-});
-
-test("[fast] sheet: a slot tile shows the two properties nearest their cap, in the item's own order", () => {
-  const caps = { physResist: 70, fireResist: 70, energyResist: 70, lmc: 40, fc: 2 };
-  // Energy 27/70 and Fire 25/70 beat Phys 3/70; shown in the order the item lists them
-  assert.deepEqual(keyNumbers({ physResist: 3, fireResist: 25, energyResist: 27 }, caps), ["Fire 25", "Energy 27"]);
-  // an uncapped property is measured against 100 (Luck 126 outranks Phys 9/70), a skill bonus reads "Magery +20"
-  assert.deepEqual(keyNumbers({ luck: 126, physResist: 9, fireResist: 7 }, caps), ["Luck 126", "Phys 9"]);
-  assert.deepEqual(keyNumbers({ "sk:magery": 20, fc: 1, fireResist: 12 }, caps), ["Magery +20", "FC 1"]);
-  // bookkeeping keys, zeros and non-numbers never show; fewer than two is fine
-  assert.deepEqual(keyNumbers({ tagPenalty: 4, hitsPool: 10, dci: 0, lmc: Number.NaN, fireResist: 5 }, caps), ["Fire 5"]);
-  assert.deepEqual(keyNumbers({}, caps), []);
 });
 
 test("[fast] sheet: the Properties card lists each property once, shows today's set plus the three leeches by default", () => {

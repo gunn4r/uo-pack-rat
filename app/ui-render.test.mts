@@ -42,6 +42,8 @@ class FakeElement {
     return names.some((k) => this.hasAttribute(k)) ? this : this.parentElement?.closest(sel) ?? null;
   }
   addEventListener(): void {}
+  // single-class selectors only (".gear-hue"), the form the sheet's hue swatches are found with
+  querySelectorAll(sel: string): FakeElement[] { return elements(this).filter((e) => e.className.split(" ").includes(sel.slice(1))); }
   append(...kids: Array<FakeElement | FakeText>): void { for (const k of kids) { this.childNodes.push(k); if (k instanceof FakeElement) k.parentElement = this; } }
   get textContent(): string { return this.childNodes.map((c) => c.textContent).join(""); }
 }

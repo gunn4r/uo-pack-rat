@@ -16,7 +16,9 @@ import { session } from "./builder-session.mts";
 import { registerScreen, showCharacterItems, showItem } from "./nav.mts";
 import { openWizard } from "./wizard.mts";
 import { relativeWhen } from "./messages.mts";
-import { sheetNode, wornSet, resistFigures, atCap, lowDurabilityCount, lowDurabilitySummary, type ResistFigure, type SheetItem } from "./sheet.mts";
+import { sheetNode, wornSet, resistFigures, atCap, lowDurabilityCount, lowDurabilitySummary, type ResistFigure, type SheetAssignment, type SheetItem } from "./sheet.mts";
+import { dollCard } from "./doll-card.mts";
+import { wornPieces } from "./doll-model.mts";
 import type { Item } from "../vault-lib.mts";
 import type { RunsListApiResponse } from "./api-types.mts";
 import { characterNames, rosterView, triple, sheetMeta, type RosterRow, type RosterSort } from "./roster.mts";
@@ -212,7 +214,18 @@ function renderSheet(name: string): void {
   }
   const low = lowDurabilitySummary(lowDurabilityCount(state.inv!.worn[name] || []));
   body().replaceChildren(...compactChildren([metaLine(name), low ? message({ tone: "warn", text: low }) : null,
-    sheetNode(name, wornSet(name), null, { onSlot: slotDetail })]));
+    sheetNode(name, wornSet(name), null, { onSlot: slotDetail, doll: (set) => dollFor(name, set) })]));
+}
+
+// The sheet's paperdoll (issue #57): the character's look in what they wear, the card kept per character between redraws so a redraw of the same suit fetches nothing again.
+const dollCards = new Map<string, ReturnType<typeof dollCard>>();
+function dollFor(name: string, set: SheetAssignment): HTMLElement {
+  let card = dollCards.get(name);
+  if (!card) dollCards.set(name, (card = dollCard()));
+  const c = state.inv!.characters[name], adapter = state.setup?.adapters.find((a) => a.id === c?.adapter?.id);
+  card.show({ name, scannedAt: c?.scannedAt ?? null, appearance: c?.appearance, client: adapter?.name ?? c?.adapter?.client ?? "This client", readsLook: adapter?.appearance ?? true,
+    figures: [{ worn: wornPieces(Object.values(set).filter((x): x is SheetItem => !!x)) }] });
+  return card.node;
 }
 
 // A character deleted, renamed or moved off the account would otherwise keep its row and its worn set

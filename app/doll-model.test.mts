@@ -1,9 +1,9 @@
 // doll-model.test.mts — `app/ui/doll-model.mts` (issue #57): what a doll card shows, as data.
 //
-// `app/ui/doll-model.mts` (issue #57): the GET /api/paperdoll.png address (the look, the worn pieces, a pair and the gray stand-in, with the `graphic:hue` lists left readable), the plan for a character (its own look in color; the gray stand-in with a note for no look when the client can read it and when it cannot, for a form's body, and for no character), and the note for each reason there is no figure (client files not found, files not supported, a figure that could not be drawn). All `[fast]`.
+// `app/ui/doll-model.mts` (issue #57): the GET /api/paperdoll.png address (the look, the worn pieces, a pair and the gray stand-in, with the `graphic:hue` lists left readable), a sheet's pieces as the worn list (`wornPieces`: no graphic left out, no hue as 0), the plan for a character (its own look in color; the gray stand-in with a note for no look when the client can read it and when it cannot, for a form's body, and for no character), and the note for each reason there is no figure (client files not found, files not supported, a figure that could not be drawn). All `[fast]`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DOLL_REASONS, dollPlan, dollUrl, failureNote } from "./ui/doll-model.mts";
+import { DOLL_REASONS, dollPlan, dollUrl, failureNote, wornPieces } from "./ui/doll-model.mts";
 import { STAND_IN, type Look } from "./paperdoll-look.mts";
 
 // The live scan's elf.
@@ -12,6 +12,10 @@ const ELF: Look = { body: 606, hue: 0x851d, hair: { graphic: 0x2fcc, hue: 519 },
 test("[fast] doll model: the figure's address carries the look, the worn pieces, a pair and the gray", () => {
   assert.equal(dollUrl(ELF, [{ graphic: 0x1415, hue: 0 }, { graphic: 0x13bf, hue: 2587 }], null, false), "/api/paperdoll.png?body=606&hue=34077&hair=12236:519&face=15174:33357&worn=5141:0,5055:2587");
   assert.equal(dollUrl(STAND_IN, [], [{ graphic: 1, hue: 2 }], true), "/api/paperdoll.png?body=400&hue=0&worn=&pair=1:2&gray=1");
+});
+
+test("[fast] doll model: a sheet's pieces as what the figure wears, a piece with no graphic left out and no hue as 0", () => {
+  assert.deepEqual(wornPieces([{ graphic: 0x1415, hue: 2587 }, { graphic: 0x13bf }, { hue: 5 }, { graphic: null, hue: 1 }]), [{ graphic: 0x1415, hue: 2587 }, { graphic: 0x13bf, hue: 0 }]);
 });
 
 test("[fast] doll model: a character's own look in color; a stand-in, gray, with a note saying why", () => {
