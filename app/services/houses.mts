@@ -136,6 +136,9 @@ export function createHousesService({ settings, uoFolderFinder }: { settings: ()
     const [gumps, tiles, hues, gumpDef, equipConv] = DOLL_FILES.map((f) => join(at.folder, f));
     const stamps = [gumps!, tiles!, hues!, gumpDef!, equipConv!].map(stamp);
     if (!stamps[0] || !stamps[1]) return { reason: "missing" };
+    // The pieces in one order, so the same suit asked in another order is the same image, ETag and cache entry.
+    const byPiece = (a: Worn, b: Worn): number => a.graphic - b.graphic || a.hue - b.hue;
+    worn = [...worn].sort(byPiece); pair = pair && [...pair].sort(byPiece);
     const filesKey = stamps.join("|"), key = `${filesKey}|doll|${JSON.stringify([look, worn, pair, grey])}`, etag = `"${createHash("sha1").update(key).digest("hex").slice(0, 20)}"`;
     const hit = kept(key);
     if (hit) return { png: hit, etag };
