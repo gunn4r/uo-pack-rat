@@ -5,7 +5,7 @@
 import { floorMet, heldTotal, liftedMin, RESIST_SKILL_KEY, type ResistStep } from "../solver/scoring.mts";
 import { getRules } from "./rules.mts";
 import { labelOf, PROP_LABELS, SKILL_SET, type PropMap } from "./properties.mts";
-import { GEAR_SLOTS, HAND_SLOTS, REQUIRED_SLOTS, SLOT_GROUP, SPELLBOOK_RE } from "./slots.mts";
+import { GEAR_SLOTS, HAND_SLOTS, REQUIRED_SLOTS, SLOT_GROUP } from "./slots.mts";
 import { slayersOf } from "./kinds.mts";
 import type { Inventory, Item } from "./fold.mts";
 
@@ -143,13 +143,13 @@ export function builderKeys(inv: ItemsLike): string[] {
 // Throwing (ServUO BaseWeapon.GetUsedSkill), so with `ubws` on it passes while any of those three is allowed.
 export const WEAPON_SKILLS: string[] = ["archery", "swordsmanship", "fencing", "mace fighting", "throwing"];
 export const MELEE_SKILLS: string[] = ["swordsmanship", "fencing", "mace fighting"];
-// Issue #259: the list may also hold SPELLBOOKS ("spellbook"), which keeps every spellbook (a one-handed piece whose name
-// SPELLBOOK_RE matches) out of the pool. WEAPON_EXCLUDES is everything the list accepts, in the order the page shows it.
+// Issue #259: the list may also hold SPELLBOOKS ("spellbook"), which keeps every spellbook (itemTypeOf's, #487) out of
+// the pool. WEAPON_EXCLUDES is everything the list accepts, in the order the page shows it.
 export const SPELLBOOKS = "spellbook";
 export const WEAPON_EXCLUDES: string[] = [...WEAPON_SKILLS, SPELLBOOKS];
 export const ubwsLetsIn = (excluded: string[], ubws = true): boolean => ubws && MELEE_SKILLS.some((w) => !excluded.includes(w));
 export function weaponAllowed(it: Item, excluded: string[] = [], ubws = true): boolean {
-  if (it.slot === "oneHanded" && excluded.includes(SPELLBOOKS) && SPELLBOOK_RE.test(it.name || "")) return false;
+  if (excluded.includes(SPELLBOOKS) && itemTypeOf(it) === "spellbook") return false;
   if (!excluded.some((w) => w !== SPELLBOOKS) || (it.slot !== "oneHanded" && it.slot !== "twoHanded")) return true;
   const own = String(it.skillReq || "").toLowerCase();
   if ((it.flags || []).includes("use best weapon skill")) {
