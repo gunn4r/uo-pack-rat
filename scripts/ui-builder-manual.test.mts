@@ -189,7 +189,9 @@ test("[slow] No character: built in Automatic from its own profile, saved as a r
     await closeSettings(page);
     await page.hover("#b-result .tipwrap:has(#b-grab-all)");
     await page.waitForFunction(() => [...document.querySelectorAll(".tip")].some((e) => e.textContent === "Log a character in to grab"));
-    assert.equal(await page.locator("#b-result section[aria-label='Suit totals'] > .card-head h2").innerText(), "Suit totals");
+    // the result's after-the-change card is the dark doll card (layout 2A, issue #57): the stand-in body under "Suit totals"
+    assert.equal(await page.locator("#b-result .doll-card .doll-name h2").innerText(), "Suit totals");
+    assert.equal(await page.locator("#b-result .doll-card[data-mode=dark]").count(), 1);
     await noPseudo("result");
     // with a bridge online on Kestrel, Grab puts the pieces in her backpack and the toast names her
     const queued: Array<{ action: string; serial: number }> = [];

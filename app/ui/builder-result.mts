@@ -15,7 +15,7 @@ import { $, el, label, fmtN, fmtSecs, fmtRunTime, slotLabel, whereText } from ".
 import { box, txt, button, icon, badge, message, meter, segmented, switchControl, check, table, tableFoot, rowActions, tipWrap, tooltip, keyValue, token, resistTile } from "./components.mts";
 import { prefs } from "./prefs.mts";
 import { sheetNode, sheetParts } from "./sheet.mts";
-import { sheetDoll } from "./sheet-doll.mts";
+import { resultDoll, sheetDoll } from "./sheet-doll.mts";
 import { bridgeActionReason, runBridgeAction } from "./bridge.mts";
 import { resolveItems } from "./items.mts";
 import { session, commands, announce, provide, onChange } from "./builder-session.mts";
@@ -368,25 +368,22 @@ function otherSuitsCard(res: OptimizeResult, view: number | null): HTMLElement {
     unequal ? box("div", { class: "card-pad" }, el("p", { class: "muted b-unequal" }, txt(unequal))) : null);
 }
 
-// ---- 5. <name> after the change: only the values that move
+// ---- 5. <name> after the change: only the values that move, under the paperdolls (layout 2A, issue #57)
 function afterCard(name: string, current: OptSuit, suit: OptSuit, prof: EffectiveProfile): HTMLElement {
-  // No character wears nothing: the suit's item totals, as Manual's stats card draws them
-  if (name === NOBODY) return el("section", { class: "card b-flush", "aria-label": "Suit totals" },
-    box("div", { class: "card-head" }, el("h2", {}, "Suit totals"), txt("Item totals: no character", "t-sm muted")),
-    box("div", { class: "sheet card-pad" }, sheetParts(null, {}, suit, { compare: false, statsOnly: true }).props));
+  // No character wears nothing: the new suit on the stand-in body, then the suit's item totals, as Manual's stats card draws them
+  if (name === NOBODY) return resultDoll(NOBODY, {}, suit, { heading: "Suit totals", title: "Item totals: no character",
+    below: [box("div", { class: "sheet card-pad" }, sheetParts(null, {}, suit, { compare: false, statsOnly: true }).props)] });
   const c = state.inv!.characters[name];
   const rows = afterChange((c?.stats || {}) as Record<string, unknown>, (c?.maxes || {}) as Record<string, unknown>, totalsOf(current), totalsOf(suit));
   const tiles = rows.map((r) => box("div", { class: "b-stat" }, txt(r.label, "t-sm muted"),
     r.delta ? el("span", {}, txt(`${r.before ?? "?"} → `, "muted"), txt(r.after ?? "?", "strong")) : txt(r.before ?? "?", "strong"),
     txt(r.delta ? `${r.delta > 0 ? "+" : "−"}${Math.abs(r.delta)}` : "no change", `t-sm ${r.delta > 0 ? "tone-ok" : r.delta < 0 ? "tone-bad" : "muted"}`)));
   const full = button({ label: sheetOpen ? "Hide full sheet" : "Full sheet", variant: "ghost", size: "sm", attrs: { "aria-expanded": String(sheetOpen) }, onClick: () => { sheetOpen = !sheetOpen; rerender(); } });
-  // The full before/after sheet is sheet.mts's in-game style sheet for now (see docs/ui/characters.md: the Characters
-  // screen's shared "now → after" sheet replaces it).
-  return el("section", { class: "card b-flush", "aria-label": "Character after the change" },
-    box("div", { class: "card-head" }, el("h2", {}, `${name} after the change`), txt("Only values that move", "t-sm muted"), el("span", { class: "spacer" }), full),
-    box("div", { class: "b-after" }, ...tiles),
-    el("p", { class: "t-sm muted b-after-note" }, txt("Hits, Stamina and Mana after are estimates: current max plus the change in STR/2, DEX, INT and the +HP/+Stam/+Mana properties.")),
-    sheetOpen ? el("div", { class: "b-sheet-wrap" }, sheetNode(name, current, suit, { resistCaps: profileResistCaps(prof), doll: (set) => sheetDoll("builder", name, set) })) : null);
+  // The dark card: Wearing now beside New suit, then the values that move; the Full sheet (sheet.mts's sheetNode, its doll in the new suit) opens under the card, in the page's own theme.
+  const card = resultDoll(name, current, suit, { heading: `${name} after the change`, title: "Only values that move", actions: [full],
+    below: [box("div", { class: "b-after" }, ...tiles),
+      el("p", { class: "t-sm muted b-after-note" }, txt("Hits, Stamina and Mana after are estimates: current max plus the change in STR/2, DEX, INT and the +HP/+Stam/+Mana properties."))] });
+  return sheetOpen ? box("div", { class: "b-after-group" }, card, el("div", { class: "b-sheet-wrap" }, sheetNode(name, current, suit, { resistCaps: profileResistCaps(prof), doll: (set) => sheetDoll("builder", name, set) }))) : card;
 }
 
 // ---- 6. solver details: collapsed; the score lives here, not in the headline
