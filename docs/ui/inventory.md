@@ -420,7 +420,7 @@ The folded groups (`unravelCollapsed`: relic, held, essence, residue) and the ro
 
 ## Container art
 
-A container whose scan recorded its graphic shows its in-game art at 24 px (issue #174; `ui/item-art.mts` `containerArt`, from `GET /api/item-art`, with the hue). It appears:
+A container whose scan recorded its graphic shows its in-game art at 24 px (issue #174; `ui/item-art.mts` `containerArt`, from `GET /api/item-art`, with the hue; a graphic whose tiledata.mul entry has the partial-hue flag takes the hue on its grey pixels only, as in game, issue #504). It appears:
 
 - before the name in the Containers view, with its label's color swatch in the tile's corner;
 - before an item's place in the Location column and the item peek. That is the art of the container the item sits in directly; a worn piece has none.
