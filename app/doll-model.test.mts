@@ -26,6 +26,7 @@ test("[fast] doll model: a character's own look in color; a stand-in, gray, with
   assert.deepEqual([cannot.gray, cannot.note?.title, cannot.note?.actions], [true, "Razor Enhanced's scripts can't read your character's look, so the figure is a stand-in.", undefined]);
   const form = dollPlan({ name: "Punch", appearance: { ...ELF, body: 746 }, readsLook: true, client: "TazUO" });
   assert.deepEqual([form.look, form.gray, form.note?.title], [STAND_IN, true, "Punch was in another form when scanned."], "a form's hair and face are not used either");
+  assert.deepEqual(dollPlan({ name: "Punch", appearance: ELF, inForm: true, readsLook: true, client: "TazUO" }), { look: ELF, gray: false, note: { tone: "info", title: "In another form when last scanned." } }, "an earlier scan's look in color, with a small note");
   const nobody = dollPlan({ name: null, appearance: ELF, readsLook: true, client: "TazUO" });
   assert.deepEqual([nobody.look, nobody.gray, nobody.note?.title], [STAND_IN, true, "No character is chosen, so the suit is shown on a stand-in body."]);
 });
