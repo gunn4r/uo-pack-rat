@@ -14,7 +14,7 @@ import type { ItemKindsApiResponse, ItemKindsPostBody } from "./kinds.mts";
 import type { McpApiResponse, McpPutBody } from "./mcp.mts";
 import type { HueColorsApiResponse, PaperdollOptionsApiResponse } from "./paperdoll.mts";
 import type { KindOverrides } from "../vault-lib.mts";
-import type { BlacklistApiResponse, BlacklistPostBody, ForgetApiResponse, InventoryApiResponse, ItemHitsApiResponse, ItemsApiResponse, ItemsBySerialApiResponse, MissingApiResponse } from "./inventory.mts";
+import type { BlacklistApiResponse, BlacklistPostBody, ForgetApiResponse, InventoryApiResponse, ItemHitsApiResponse, ItemPropCountsApiResponse, ItemsApiResponse, ItemsBySerialApiResponse, MissingApiResponse } from "./inventory.mts";
 import type { MoveBackApiResponse, MovePlanApiResponse, MoveTripApiResponse, OrganizeApiResponse, OrganizeMatchApiResponse, OrganizePlanApiResponse, OrganizePresetsApiResponse, OrganizeProposeApiResponse, OrganizeProposeBody, OrganizePutApiResponse, OrganizeTripApiResponse } from "../organize-types.mts";
 import type { OrganizeConfig, RuleMatch } from "../organize-config.mts";
 import type { ProfileEdit } from "../profile-edits.mts";
@@ -68,7 +68,7 @@ export interface ApiRoutes {
   // inventory.mts
   "GET /api/inventory": ApiEntry<InventoryApiResponse>;
   "GET /api/missing": ApiEntry<MissingApiResponse>;
-  "GET /api/items": ApiEntry<ItemsApiResponse | ItemHitsApiResponse>;   // ItemHitsApiResponse with fields=hits
+  "GET /api/items": ApiEntry<ItemsApiResponse | ItemHitsApiResponse | ItemPropCountsApiResponse>;   // ItemHitsApiResponse with fields=hits, ItemPropCountsApiResponse with fields=props
   "GET /api/items/by-serial": ApiEntry<ItemsBySerialApiResponse>;
   // kinds.mts
   "GET /api/item-kinds": ApiEntry<ItemKindsApiResponse>;

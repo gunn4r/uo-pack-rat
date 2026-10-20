@@ -14,7 +14,7 @@
 // property column; alphabetical is the useful default for a name column), reproduced exactly, not fixed.
 //
 // map: query
-// owns: `parseItemQuery`, `matchesItem`, `applyItemQuery`, `facetsOf`, `ItemQuery`, `RuleQuery`, `EXTRA_COLS`, `colVal`, `rarityRank`, `HIT_LIMIT`
+// owns: `parseItemQuery`, `matchesItem`, `applyItemQuery`, `facetsOf`, `propCounts`, `ItemQuery`, `RuleQuery`, `EXTRA_COLS`, `colVal`, `rarityRank`, `HIT_LIMIT`
 import { itemSearchBlob, itemOwnBlob, groupByName, compareNames, KINDS, SLOT_LABELS, propertyKeys, extraKeys, flagKeys, flagKey, gearSkills, weaponSkillsOf, WEAPON_SKILLS, PROPERTIES } from "./vault-lib.mts";
 import type { Item, ItemGroup } from "./vault-lib.mts";
 import type { RulesV1, RulesV1RarityItem } from "./schema/types.d.mts";
@@ -47,6 +47,22 @@ export const HIT_LIMIT = 10000;
 export interface HitRow { serial: number; name: string; amount: number; root: number | null; container: number | null; location?: { text: string } | undefined }
 export const wantsHits = (sp: URLSearchParams): boolean => sp.get("fields") === "hits";
 export const hitRow = (it: Item): HitRow => ({ serial: it.serial, name: it.name, amount: it.amount, root: it.root, container: it.container, ...(it.location ? { location: { text: it.location.text } } : {}) });
+// The property rule's counts (`fields=props`): of the matching stacks, how many carry each numeric property (a modelled
+// one, a numeric tooltip line, a Strength requirement, a weight) and each yes/no property (by flagKey), page and grouping aside.
+export const wantsPropCounts = (sp: URLSearchParams): boolean => sp.get("fields") === "props";
+export interface PropCounts { props: Record<string, number>; flags: Record<string, number> }
+export function propCounts(items: Item[]): PropCounts {
+  const props: Record<string, number> = {}, flags: Record<string, number> = {};
+  const add = (m: Record<string, number>, k: string): void => { m[k] = (m[k] || 0) + 1; };
+  for (const it of items) {
+    for (const k of Object.keys(it.props)) add(props, k);
+    for (const [k, v] of Object.entries(it.extras || {})) if (typeof v === "number") add(props, k);
+    if (it.strReq) add(props, "strReq");
+    if (it.weight != null) add(props, "weight");
+    for (const f of new Set((it.flags || []).map(flagKey))) add(flags, f);
+  }
+  return { props, flags };
+}
 
 // A property rule: `min` is the threshold and `op` says which side of it passes — absent is "at least"
 // (the rule's original and wire-default meaning, `prop=hci:10`), "le" is "at most", "eq" is "exactly", "ne" is

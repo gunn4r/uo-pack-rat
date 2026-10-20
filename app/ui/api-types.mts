@@ -36,7 +36,7 @@ export type { UiPrefs, UiPrefsApiResponse, ProfilesApiResponse, ProfilesPatchApi
 // ---------------------------------------------------------------- inventory / items
 
 // The inventory routes' shapes come from app/api/inventory.mts.
-export type { InventoryData, InventoryApiResponse, MissingApiResponse, ItemsApiResponse, ItemHitsApiResponse, ItemsBySerialApiResponse } from "../api/inventory.mts";
+export type { InventoryData, InventoryApiResponse, MissingApiResponse, ItemsApiResponse, ItemHitsApiResponse, ItemPropCountsApiResponse, ItemsBySerialApiResponse } from "../api/inventory.mts";
 
 
 // ---------------------------------------------------------------- setup / wizard / adapters

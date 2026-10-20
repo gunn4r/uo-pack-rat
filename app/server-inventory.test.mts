@@ -1,6 +1,6 @@
 // server-inventory.test.mts — HTTP tests of the inventory routes, Forget and the blacklist.
 //
-// `GET /api/inventory` folding the demo fixtures (facets, worn gear and counts, every field the page's non-paged tabs read, no item list), a new scan picked up without a restart, `readScans()` skipping an invalid or unparsable scan file, missing items counted per root and listed by `GET /api/missing`, `GET /api/items` paging, sorting and searching, `GET /api/items/by-serial`; `POST /api/forget` (409 under `--demo`, a bad root, name bounds, only a schema-valid tombstone written, a boolean, unsafe integer or out-of-range serial refused) and its `changed` event (with a run deletion's) on open streams; `POST /api/forget-character` (refusals, one tombstone, the character dropped and given back on a newer scan, 409 under `--demo`); and `/api/blacklist` (issue #38: add, list, remove, bad bodies and entries dropped, Keep and Remove through the fold). Unravel candidates from `GET /api/items?unravel=1` (issue #271): their ingredient and weight, heaviest first, the pieces left out (worn, in a saved run, insured, pinned, kept) and `unravelShow`, and the Keep list through `PUT /api/settings`. Gather into a bag's remembered bag per character (`unravelBag`) checked and saved.
+// `GET /api/inventory` folding the demo fixtures (facets, worn gear and counts, every field the page's non-paged tabs read, no item list), a new scan picked up without a restart, `readScans()` skipping an invalid or unparsable scan file, missing items counted per root and listed by `GET /api/missing`, `GET /api/items` paging, sorting and searching and its property counts (`fields=props`), `GET /api/items/by-serial`; `POST /api/forget` (409 under `--demo`, a bad root, name bounds, only a schema-valid tombstone written, a boolean, unsafe integer or out-of-range serial refused) and its `changed` event (with a run deletion's) on open streams; `POST /api/forget-character` (refusals, one tombstone, the character dropped and given back on a newer scan, 409 under `--demo`); and `/api/blacklist` (issue #38: add, list, remove, bad bodies and entries dropped, Keep and Remove through the fold). Unravel candidates from `GET /api/items?unravel=1` (issue #271): their ingredient and weight, heaviest first, the pieces left out (worn, in a saved run, insured, pinned, kept) and `unravelShow`, and the Keep list through `PUT /api/settings`. Gather into a bag's remembered bag per character (`unravelBag`) checked and saved.
 //
 // Tags: [smoke] and [fast].
 import { test, before, after, afterEach } from "node:test";
@@ -216,6 +216,12 @@ test("[fast] /api/items pages, sorts and searches", async () => {
   const sot = asJson<ItemsPageResponse>(await (await get("/api/items?q=" + encodeURIComponent("transcendence chivalry"))).json());
   assert.ok(sot.rows!.length > 0 && sot.rows!.every((r) => r.name === "Scroll of Transcendence (Chivalry - 0.6 Pts)"), JSON.stringify(sot.rows!.map((r) => r.name)));
   assert.equal(sot.rows![0]!.lines[0], "Scroll Of Transcendence", "the in-game name stays the tooltip's first line");
+  // The property rule's counts: fields=props counts, over every stack the query matches, the stacks carrying each property.
+  const counts = asJson<{ ok: boolean; total: number; props: Record<string, number>; flags: Record<string, number> }>(await (await get("/api/items?fields=props&kind=gear&limit=5")).json());
+  const gear = asJson<ItemsPageResponse>(await (await get("/api/items?kind=gear&limit=500")).json());
+  assert.equal(counts.total, gear.total, "the page size does not limit the count");
+  assert.equal(counts.props.physResist, gear.rows!.filter((r) => "physResist" in r.props).length);
+  assert.ok(Object.values({ ...counts.props, ...counts.flags }).every((n) => n > 0 && n <= counts.total));
   const clamp = asJson<ItemsPageResponse>(await (await get("/api/items?limit=9999")).json());
   assert.equal(clamp.limit, 500);
   // The House map's search (issue #10): fields=hits answers the same query with only what the map reads, many rows a page.
