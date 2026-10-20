@@ -7,7 +7,7 @@
 // HTML/CSS injection inside the app window through this builder.
 //
 // map: ui-components
-// owns: `sheetNode`, `SLOT_GROUPS`, `SHEET_GROUPS`, `RESISTS`
+// owns: `sheetNode`, `SLOT_GROUPS`, `SHEET_GROUPS`, `RESISTS`, `forgetHueColors`
 import { totalsOf, resistMinimum, paperdollResist, RESIST_SKILL_KEY, PROP_FULL, SLOTS_IN_GROUP, RESIST_META } from "../vault-lib.mts";
 import type { ExtrasMap, OptItem, ResistCap } from "../vault-lib.mts";
 import { state } from "./store.mts";
@@ -33,8 +33,8 @@ export interface SheetOptions {
   // A piece in the worn-gear list was clicked (or pressed from the keyboard): show that piece. Without it the pieces
   // still show the page's item tooltip (dom.mts's itemTip), on hover and on keyboard focus.
   onSlot?: ((item: SheetItem, tile: HTMLElement) => void) | undefined;
-  // The one-suit sheet's paperdoll (issue #57): given the worn set with its extras, the node drawn beside the worn gear.
-  // Without it the gear list fills the row.
+  // The sheet's paperdoll (issue #57): given the suit the gear list shows (`after` when there is one) with the worn
+  // extras, the node drawn beside the worn gear. Without it the gear list fills the row.
   doll?: ((set: SheetAssignment) => HTMLElement) | undefined;
   // The Suit Builder's now → after sheet: the resist caps its build used, the player's overrides included. The
   // Characters screen passes none and shows the shard's caps.
@@ -84,7 +84,7 @@ export const tagTone = (t: string): "bad" | "warn" | undefined => (t === "cursed
 // Durability watch (issue #98): a worn piece is low once its durability is at 20% of its max or at 10
 // points, so it can be repaired before it breaks mid-fight. The scan's "Durability 12 / 255" line is
 // extras.durability; no line, a max of 0, or a piece at (or past) its max, which no repair would raise, is
-// never low. Returns the tile's badge text, or null.
+// never low. Returns the gear list's tag text, or null.
 export const LOW_DURABILITY_SHARE = 0.2, LOW_DURABILITY_POINTS = 10;
 export function lowDurability(it: { extras?: ExtrasMap | undefined }): string | null {
   const d = it.extras?.durability;
@@ -164,9 +164,8 @@ function openPropsPicker(anchor: HTMLElement, redraw: () => void): void {
   ], { label: "Properties shown", width: 288 });
   h.root.classList.add("inv-pop", "inv-settings-pop");
 }
-// The worn-gear tiles, in fixed groups so every row has equal height and nothing is orphaned. A kilt or skirt (issue
-// #202) is a Clothing tile only when one is worn, so the usual 3 × 2 groups stay whole.
-// The slots in each come from vault-lib's GEAR_SLOT_GROUPS, weapons and jewelry sharing one tile.
+// The worn-gear list's order: its rows follow these groups, a kilt or skirt (issue #202) with the Clothing.
+// The slots in each come from vault-lib's GEAR_SLOT_GROUPS, weapons and jewelry sharing one group.
 export const SLOT_GROUPS: Array<[string, string[]]> = [
   ["Armor", [...SLOTS_IN_GROUP.Armor]],
   ["Weapons and jewelry", [...SLOTS_IN_GROUP.Weapons, ...SLOTS_IN_GROUP.Jewelry]],
@@ -224,25 +223,29 @@ function kvList(pairs: Array<[string, Node]>, cls = ""): HTMLDivElement {
 // sheetNode(name, before, after, opts) — `after` null draws the one-suit sheet (the Characters screen);
 // with an `after` every figure that moves reads "now → after" and the gear list shows the `after` suit, its
 // new pieces badged. Only called once load() has populated state.inv/state.rules.
-// Layout 1B (issue #57): the KPI row, then the caller's doll (`opts.doll`) beside the worn gear card (the row as tall as
-// the doll; the list scrolls inside its card), then the properties. A before/after sheet's pieces carry no graphic, so it
-// has the list alone for now.
+// Layout 1B (issue #57): the KPI row, then the caller's doll (`opts.doll`, wearing the suit the gear list shows: `after`
+// when there is one) beside the worn gear card (the row as tall as the doll; the list scrolls inside its card), then the
+// properties.
 export function sheetNode(name: string, before: SheetAssignment, after: SheetAssignment | null, opts: SheetOptions = {}): HTMLElement {
   const { resists, lists, gear, props } = sheetParts(name, before, after, opts);
-  const doll = gear && after == null && opts.doll ? opts.doll(withExtras(name, before)(before)) : null;
+  const doll = gear && opts.doll ? opts.doll(withExtras(name, before)(after ?? before)) : null;
   return box("div", { class: `sheet${after != null && opts.compare !== false ? " sheet-diff" : ""}`, "data-character": name },
     box("div", { class: "sheet-kpis" }, ...resists, ...lists),
     gear ? box("div", { class: `sheet-row${doll ? "" : " sheet-row-nodoll"}` }, doll, box("div", { class: "sheet-gear-cell" }, gear)) : null,
     props);
 }
-// The worn-gear list's hue swatches, colored from the client's hues.mul (GET /api/hue-colors) once the colors arrive; a swatch whose hue the client has no color for stays empty.
+// The worn-gear list's hue swatches, colored from the client's hues.mul (GET /api/hue-colors, at most 64 hues a request) once the colors arrive; a swatch whose hue has no color (no client files, or a hue the file lacks) shows nothing. Settings clears the colors when the UO folder changes (forgetHueColors).
 const hueColorCache = new Map<number, string | null>();
+export const forgetHueColors = (): void => { hueColorCache.clear(); };
 function paintHues(root: HTMLElement): void {
-  const spans = [...root.querySelectorAll<HTMLElement>(".gear-hue")], paint = (): void => { for (const s of spans) { const c = hueColorCache.get(Number(s.dataset.hue)); if (c) s.style.background = c; } };
-  const want = [...new Set(spans.map((s) => Number(s.dataset.hue)).filter((h) => !hueColorCache.has(h)))].slice(0, 64);
+  const spans = [...root.querySelectorAll<HTMLElement>(".gear-hue")];
+  const paint = (): void => { for (const s of spans) { const c = hueColorCache.get(Number(s.dataset.hue)); if (c) { s.style.background = c; s.dataset.painted = ""; } } };
+  const want = [...new Set(spans.map((s) => Number(s.dataset.hue)).filter((h) => !hueColorCache.has(h)))];
   paint();
-  if (!want.length) return;
-  void api<HueColorsApiResponse>(`/api/hue-colors?hues=${want.join(",")}`).then((r) => { for (const h of want) hueColorCache.set(h, r.colors[String(h)] ?? null); paint(); }).catch(() => { /* no client files: the swatches stay empty */ });
+  for (let i = 0; i < want.length; i += 64) {
+    const batch = want.slice(i, i + 64);
+    void api<HueColorsApiResponse>(`/api/hue-colors?hues=${batch.join(",")}`).then((r) => { for (const h of batch) hueColorCache.set(h, r.colors[String(h)] ?? null); paint(); }).catch(() => { /* no client files: no swatches */ });
+  }
 }
 // The sheet's parts: the KPI row's five resist tiles and its Attributes and Pools lists, the worn gear card and the
 // properties card (with the skills). The Suit Builder's Manual mode draws the lists and the properties for its suit;

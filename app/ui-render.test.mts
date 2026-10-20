@@ -1,6 +1,6 @@
 // ui-render.test.mts — the page's DOM builders for scan-supplied values (the character sheet, the tooltip, the peek's properties), which once built markup as a raw string.
 //
-// the page's two builders that used to assemble markup as a string out of scan-supplied values, now DOM builders: `app/ui/sheet.mts`'s `sheetNode` (a character's `stats`/`maxes`, their name and their skill names all render as text, never markup; a skill entry that isn't a `{value, cap}` pair renders instead of throwing and taking the Characters tab and the Suit Builder down with it) and `app/ui/dom.mts`'s `tipNode`/`safeColor` (tooltip lines, item name and location as text; a line's own `<BASEFONT COLOR>` only ever reaches a `style` through the strict `#rgb`/`#rrggbb` check; the tooltip's layout: the name in its tier's colour with the item's tags, resist lines in their element's colour class, durability muted, the tier and place in the footer, the tag and tier lines not repeated), `sheet.mts`'s `sheetParts` for the Suit Builder's Manual stats card (the suit's own figures with a character's base, no "now → after", and with no character no attributes, pools or skills; issue #12), the result sheet counting worn boots once when the result replaces them and on both sides of an old twelve-slot run, and a worn piece a filter kept out of the search replaced, not added to, by the result's piece in its slot (issue #202), `app/ui/peek.mts`'s `propertyLines` (the item peek's Properties: name/value pairs, requirements muted, a set piece's full-set block kept whole and muted), and `app/ui/dom.mts`'s `tipHostOf` (a row's cells ask for its item tooltip, its `data-no-tip` actions cell does not, issue #69). It lives in `app/` rather than `app/ui/`, the same as `app/import-children.test.mts` and `app/wizard-default-adapter.test.mts`, because `tsconfig.browser.json` compiles `app/ui/**` for the browser. It carries its own small DOM stub (`createElement`/`createTextNode`/`append`/`setAttribute` plus an escaping serializer) rather than adding a jsdom dependency — enough surface for `el()` and the two builders, and the serializer is what makes "the output contains no `<img`" a statement about markup rather than about the characters in a text node. All `[fast]`.
+// the page's two builders that used to assemble markup as a string out of scan-supplied values, now DOM builders: `app/ui/sheet.mts`'s `sheetNode` (a character's `stats`/`maxes`, their name and their skill names all render as text, never markup; a skill entry that isn't a `{value, cap}` pair renders instead of throwing and taking the Characters tab and the Suit Builder down with it) and `app/ui/dom.mts`'s `tipNode`/`safeColor` (tooltip lines, item name and location as text; a line's own `<BASEFONT COLOR>` only ever reaches a `style` through the strict `#rgb`/`#rrggbb` check; the tooltip's layout: the name in its tier's colour with the item's tags, resist lines in their element's colour class, durability muted, the tier and place in the footer, the tag and tier lines not repeated), `sheet.mts`'s `sheetParts` for the Suit Builder's Manual stats card (the suit's own figures with a character's base, no "now → after", and with no character no attributes, pools or skills; issue #12), the result sheet counting worn boots once when the result replaces them and on both sides of an old twelve-slot run, and a worn piece a filter kept out of the search replaced, not added to, by the result's piece in its slot (issue #202), `app/ui/peek.mts`'s `propertyLines` (the item peek's Properties: name/value pairs, requirements muted, a set piece's full-set block kept whole and muted), the sheet's doll wearing the suit the gear list shows (the new one on a before/after sheet), the worn-gear list's hue swatches (asked 64 hues a request, painted once their colors arrive, kept until `forgetHueColors`), and `app/ui/dom.mts`'s `tipHostOf` (a row's cells ask for its item tooltip, its `data-no-tip` actions cell does not, issue #69). It lives in `app/` rather than `app/ui/`, the same as `app/import-children.test.mts` and `app/wizard-default-adapter.test.mts`, because `tsconfig.browser.json` compiles `app/ui/**` for the browser. It carries its own small DOM stub (`createElement`/`createTextNode`/`append`/`setAttribute` plus an escaping serializer) rather than adding a jsdom dependency — enough surface for `el()` and the two builders, and the serializer is what makes "the output contains no `<img`" a statement about markup rather than about the characters in a text node. All `[fast]`.
 //
 // Nothing a scan file carries can reach the parser as markup: Phase 7 security review, Area 2, Important 1/2 and Note 3. A node:test file has no business in the browser build, hence app/. The sheet's resists are held at the Resisting Spells minimum, the lifted ones named in its footnote (issue #261).
 import "../scripts/localstorage-shim-for-tests.mts";   // a localStorage stub for the page modules below; none reads it at module scope today (app/ui/store.mts no longer does), so it is a safety net, kept first so it would be in place before any import evaluates
@@ -35,7 +35,8 @@ class FakeElement {
   hasAttribute(k: string): boolean { return k in this.attrs; }
   // dom.mts's itemTip sets data-serial through dataset and makes the item focusable
   tabIndex = -1;
-  get dataset(): Record<string, string> { return new Proxy(this.attrs, { set: (a, k, v) => { a[`data-${String(k)}`] = String(v); return true; } }); }
+  get dataset(): Record<string, string> { return new Proxy(this.attrs, { get: (a, k) => a[`data-${String(k)}`], set: (a, k, v) => { a[`data-${String(k)}`] = String(v); return true; } }); }
+  style: Record<string, string> = {};
   // attribute selectors only ("[a], [b]"), the form tipHostOf asks with
   closest(sel: string): FakeElement | null {
     const names = sel.split(",").map((s) => s.trim().slice(1, -1));
@@ -64,7 +65,7 @@ function elements(n: FakeElement): FakeElement[] {
   createTextNode: (s: string) => new FakeText(s),
 };
 
-const { sheetNode, sheetParts } = await import("./ui/sheet.mts");
+const { sheetNode, sheetParts, forgetHueColors } = await import("./ui/sheet.mts");
 const { safeColor, tipNode, tipHostOf, el } = await import("./ui/dom.mts");
 const { state } = await import("./ui/store.mts");
 const { setRules } = await import("./vault-lib.mts");
@@ -311,4 +312,40 @@ test("[fast] propertyLines splits the peek's remaining lines into name and value
     { name: "Only When Full Set Is Present", value: "", muted: true },
     { name: "Physical Resist", value: "2%", muted: true },
   ]);
+});
+
+test("[fast] sheetNode: the gear list's hue swatches are asked for 64 hues at a time, painted once their colors arrive, and asked again after forgetHueColors", async () => {
+  const asked: number[] = [], realFetch = globalThis.fetch;
+  globalThis.fetch = (async (u: string) => {
+    const hues = new URL(u, "http://page").searchParams.get("hues")!.split(",");
+    asked.push(hues.length);
+    return new Response(JSON.stringify({ ok: true, colors: Object.fromEntries(hues.map((h) => [h, "#123456"])) }));
+  }) as typeof fetch;
+  try {
+    const pieces = Array.from({ length: 70 }, (_, i) => ({ serial: 100 + i, name: "Robe", slot: null, props: {}, graphic: 0x1f03, hue: 2 + i }));
+    withCharacter("Kestrel", {});
+    const set = Object.fromEntries(pieces.map((p) => [String(p.serial), p])) as never;
+    const settle = (): Promise<void> => new Promise((r) => setTimeout(r, 20));
+    const node = sheetNode("Kestrel", set, null) as unknown as Node;
+    await settle();
+    assert.deepEqual(asked, [64, 6], "70 hues in two requests");
+    assert.equal(elements(node).filter((e) => e.className === "gear-hue" && "data-painted" in e.attrs).length, 70, "every swatch painted");
+    sheetNode("Kestrel", set, null);
+    await settle();
+    assert.equal(asked.length, 2, "the colors are kept");
+    forgetHueColors();
+    sheetNode("Kestrel", set, null);
+    await settle();
+    assert.deepEqual(asked, [64, 6, 64, 6], "asked again after the UO folder changed");
+  } finally { globalThis.fetch = realFetch; }
+});
+
+test("[fast] sheetNode: the doll wears the suit the gear list shows, the new suit on a before/after sheet", () => {
+  withCharacter("Kestrel", {});
+  const worn = { serial: 1, name: "Old Helm", slot: "helmet", props: {} }, next = { serial: 2, name: "New Helm", slot: "helmet", props: {} };
+  const seen: number[][] = [];
+  const doll = (set: Record<string, { serial: number } | null | undefined>): HTMLElement => { seen.push(Object.values(set).filter(Boolean).map((x) => x!.serial)); return el("div", {}); };
+  sheetNode("Kestrel", { helmet: worn } as never, null, { doll: doll as never });
+  sheetNode("Kestrel", { helmet: worn } as never, { helmet: next } as never, { doll: doll as never });
+  assert.deepEqual(seen, [[1], [2]]);
 });

@@ -157,7 +157,7 @@ test("[fast] sheet: the scan summary counts the containers the character's scans
   assert.equal(sheetMeta("Sir Ana", "now", 0, spaced).opened!.href, "#/containers/Sir%20Ana", "the name is encoded for the hash");
 });
 
-test("[fast] sheet: the worn-gear tiles list every gear slot exactly once", () => {
+test("[fast] sheet: the worn-gear slot groups list every gear slot exactly once", () => {
   const listed = SLOT_GROUPS.flatMap(([, slots]) => slots);
   assert.deepEqual([...listed].sort(), [...GEAR_SLOTS].sort());
   assert.equal(new Set(listed).size, listed.length);
