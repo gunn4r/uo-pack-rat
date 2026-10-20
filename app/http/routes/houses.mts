@@ -94,7 +94,7 @@ export function routes(ctx: ServerContext): Route[] {
       if ("reason" in got) return send(res, 404, { ok: false, reason: got.reason });
       return send(res, 200, got satisfies PaperdollOptionsApiResponse);
     } },
-    // The worn-gear list's hue swatches (issue #57): one request for every hue on the sheet.
+    // The Customize popover's "Current" swatches (issue #57): the colors of a scanned look's hues the game's palettes lack.
     { method: "GET", path: "/api/hue-colors", handle: (_req, res, url) => {
       const parts = (url.searchParams.get("hues") ?? "").split(",").filter(Boolean);
       if (parts.length > 64 || !parts.every((t) => /^\d{1,5}$/.test(t) && +t <= 0xffff)) return send(res, 400, { ok: false, error: "hues must be at most 64 whole numbers to 65535, comma-separated" });
