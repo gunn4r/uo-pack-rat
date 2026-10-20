@@ -5,9 +5,9 @@
 // app/manual-model.test.mts checks it directly; ui/builder-manual.mts draws what it returns.
 //
 // map: builder
-// owns: `TOTAL_KEYS`, `STAT_KEYS`, `MANUAL_GROUPS`, `handConflict`, `slotDelta`, `fillableSlots`
-import { RESIST_KEYS, GEAR_SLOTS, labelOf } from "../vault-lib.mts";
-import type { PropMap } from "../vault-lib.mts";
+// owns: `TOTAL_KEYS`, `STAT_KEYS`, `MANUAL_GROUPS`, `handConflict`, `slotDelta`, `fillableSlots`, `dollPill`, `previewSuit`, `ManualDollState`
+import { RESIST_KEYS, GEAR_SLOTS, SLOT_LABELS, labelOf } from "../vault-lib.mts";
+import type { Item, PropMap } from "../vault-lib.mts";
 import type { ItemQuery } from "../item-query.mts";
 
 const num = (n: number): string => n.toLocaleString("en-US", { maximumFractionDigits: 2 });
@@ -194,3 +194,33 @@ export const keptSlots = (suit: Suit, covered: readonly string[]): string[] => O
 // The fetch list's pieces: those the character doesn't wear, every piece with No character (`name` null).
 export const fetchPieces = <T extends { equippedBy?: string | null | undefined }>(pieces: T[], name: string | null): T[] =>
   pieces.filter((it) => !name || it.equippedBy !== name);
+
+// ---- the live doll (issue #57, ui/manual-doll.mts)
+const SLOT_NAME = (s: string): string => SLOT_LABELS[s] || s;
+// What Manual shows: the character (null for No character), the suit by slot, what the character wears now, the slot open in the picker, and the piece previewed in it (with the slot it would clear).
+export interface ManualDollState {
+  name: string | null;
+  suit: Record<string, Item>;
+  worn: Item[];
+  choosing: string | null;
+  preview: { slot: string; item: Item; cleared: string | null } | null;
+}
+// The pill above the figure: a preview (warn when it would clear another slot), the slot being chosen while it is empty, or No character's body; none while showing what the character wears.
+export function dollPill(s: ManualDollState, showingNow: boolean): { text: string; tone: "accent" | "warn" | null } | null {
+  if (showingNow) return null;
+  const p = s.preview;
+  if (p) {
+    const text = `Preview · ${SLOT_NAME(p.slot)}: ${p.item.name}`, gone = p.cleared ? s.suit[p.cleared] : undefined;
+    return gone ? { text: `${text}. Picking it takes ${gone.name} off ${SLOT_NAME(p.cleared!)}.`, tone: "warn" } : { text, tone: "accent" };
+  }
+  if (s.choosing && !s.suit[s.choosing]) return { text: `${SLOT_NAME(s.choosing)}: empty`, tone: null };
+  if (s.name === null) return { text: "No character: a default body", tone: null };
+  return null;
+}
+// The pieces the figure wears: the suit with the preview in its slot (and the slot it clears emptied).
+export function previewSuit(s: ManualDollState): Item[] {
+  if (!s.preview) return Object.values(s.suit);
+  const { [s.preview.slot]: _was, ...rest } = s.suit;
+  if (s.preview.cleared) delete rest[s.preview.cleared];
+  return [...Object.values(rest), s.preview.item];
+}

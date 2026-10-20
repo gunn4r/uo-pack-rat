@@ -52,7 +52,7 @@
   /* Breakpoints (window widths): media queries cannot read custom properties, so the stylesheets write them as
      literals. The list is ui/breakpoints.mts, which says what each one changes; scripts/css-guard.test.mts
      fails on any other width in an @media rule. max-width: 720 (tight), 1023 (compact), 1099 (stacked),
-     1179 (narrow), 1279 (medium), 1799 (wide); a min-width is one pixel above one: 1100, 1600 (roomy).
+     1179 (narrow), 1279 (medium), 1395 (doll), 1799 (wide); a min-width is one pixel above one: 1100, 1600 (roomy).
      @container queries measure their own container and are not breakpoints. */
 
   /* z-layers */

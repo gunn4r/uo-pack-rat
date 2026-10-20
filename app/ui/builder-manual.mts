@@ -33,9 +33,11 @@ import { sheetParts, wornSet } from "./sheet.mts";
 import { createItemBrowser } from "./item-browser.mts";
 import type { ItemBrowser } from "./item-browser.mts";
 import type { UiPrefs, OptimizeResult, OptimizeStartApiResponse, OptSuit } from "./api-types.mts";
-import { MANUAL_GROUPS, emptyHistory, record, undoStep, redoStep, historyKey, historyKeyNames, type History, type Suit, TOTAL_KEYS, STAT_KEYS, STRIP_KEYS, capped, capLine, slotQuery, handConflict, handNote, suitFrom, fillableSlots, fetchPieces, fillPicks, keptSlots, noCharacterRunSettings, listWords, applyEditStep, type FillStart, type EditStep, type Reslot, savedSlots, missingSlots, reslotted, reslotNote, deltaKeys, slotDelta } from "./manual-model.mts";
+import { MANUAL_GROUPS, emptyHistory, record, undoStep, redoStep, historyKey, historyKeyNames, type History, type Suit, TOTAL_KEYS, STAT_KEYS, STRIP_KEYS, capped, capLine, slotQuery, handConflict, type ManualDollState, handNote, suitFrom, fillableSlots, fetchPieces, fillPicks, keptSlots, noCharacterRunSettings, listWords, applyEditStep, type FillStart, type EditStep, type Reslot, savedSlots, missingSlots, reslotted, reslotNote, deltaKeys, slotDelta } from "./manual-model.mts";
 import { buffMarker, buffStrip, createBuffPicker, keepChipFocus, type BuffActions, type BuffPicker, type BuffView } from "./builder-buffs.mts";
 import { plural } from "./format.mts";
+import { manualDoll } from "./manual-doll.mts";
+import { BREAKPOINTS, upTo } from "./breakpoints.mts";
 
 let noCharacter = false;
 // The suit: a serial per slot, and the records those serials resolved to (a slot whose serial is not here is missing).
@@ -53,6 +55,11 @@ let countBuffs = true;
 let buffsOpen = false;
 let buffPicker: BuffPicker | null = null;
 let replaced: { on: string; off: string } | null = null;
+// The live doll (issue #57): one card, in its column or, on a narrow window, in the band at the top of the picker; the piece hovered or focused in the picker, previewed on it.
+const doll = manualDoll();
+let preview: ManualDollState["preview"] = null;
+// Up to `medium` the doll column would push the picker under its minimum, so the doll sits in a band at the top of the picker.
+const BAND = matchMedia(upTo(BREAKPOINTS.medium));
 // The suit's undo history, its steps holding the suit and its buffs (in memory: a reload starts a new one; another
 // character keeps it, the suit is shared).
 // A step that also changed the Count buffs switch or some buff numbers (Open in Manual) carries them too, so undo puts
@@ -98,7 +105,8 @@ export function initManual(): void {
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Escape" || !(pickSlot || buffsOpen) || e.defaultPrevented || root.offsetParent === null || root.closest("[inert]") || modalOpen()) return;
     e.preventDefault();
-    if (pickSlot) closePicker(); else closeBuffs();
+    if (preview) setPreview(null);   // Esc first restores the New suit, then closes the picker
+    else if (pickSlot) closePicker(); else closeBuffs();
   });
   // ⌘Z / ⇧⌘Z (Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z elsewhere) undo and redo a change to the suit while Manual is on screen.
   // Never from a text field, a select or anything editable (the search keeps its own undo), and not behind a dialog,
@@ -111,6 +119,10 @@ export function initManual(): void {
     e.preventDefault();
     stepHistory(kind);
   });
+  const placeDoll = (): void => { doll.node.classList.toggle("doll-band", BAND.matches); $<HTMLElement>(BAND.matches ? "#mb-doll-band" : "#mb-doll")!.append(doll.node); };
+  placeDoll();
+  BAND.addEventListener("change", placeDoll);
+  wirePreview($<HTMLElement>("#mb-browser")!);
   showMode();
 }
 function showMode(): void {
@@ -256,7 +268,7 @@ function pick(it: Item): void {
   const cleared = handConflict(slot, it, held());
   const next = { ...slots, [slot]: it.serial };
   if (cleared) delete next[cleared];
-  items[it.serial] = it;
+  items[it.serial] = it; preview = null;
   setStatus(cleared ? `${it.name} is in ${slotLabel(slot)}. ${handNote(items[slots[cleared]!]?.name || "The piece", slotLabel(cleared))}` : `${it.name} is in ${slotLabel(slot)}.`);
   commit({ slots: next }, `${slotLabel(slot)} → ${it.name}`);
 }
@@ -312,6 +324,7 @@ function draw(): void {
   root.querySelector("#mb-stats")!.replaceWith(statsCard());
   root.querySelector("#mb-fetch")!.replaceWith(fetchList());
   paintPicker();
+  paintDoll();
   if (cancelFocused) $<HTMLElement>("#mb-fill-cancel")?.focus();   // a change made during a fill redraws the row
 }
 function totalsCard(): HTMLElement {
@@ -403,9 +416,38 @@ function slotCard(slot: string): HTMLElement {
   return box("div", { class: `mb-slot${serial == null ? " mb-empty" : ""}${serial != null && !it ? " mb-missing" : ""}${sel ? " mb-sel" : ""}` }, open, clear);
 }
 
+// ---------------------------------------------------------------- the doll
+// The doll in the suit as it is, or with the previewed piece; the slot card a preview would clear gets a dashed warn outline.
+function paintDoll(): void {
+  const name = manualCharacter();
+  doll.paint({ name, suit: suitItems(), worn: name ? (state.inv!.worn[name] || []) : [], choosing: pickSlot, preview });
+  for (const c of document.querySelectorAll<HTMLElement>("#b-manual .mb-slot")) c.classList.toggle("mb-conflict", !!preview?.cleared && c.querySelector(`[data-slot="${preview.cleared}"]`) !== null);
+}
+function setPreview(next: ManualDollState["preview"]): void {
+  if (next?.item.serial === preview?.item.serial && next?.slot === preview?.slot) return;
+  preview = next;
+  paintDoll();
+}
+// A picker row hovered, or given keyboard focus, previews its piece in the slot; leaving the rows (pointer or focus) restores the New suit.
+function wirePreview(host: HTMLElement): void {
+  const rowItem = (t: EventTarget | null): Item | null => {
+    const tr = (t as HTMLElement | null)?.closest?.<HTMLElement>("tr.item[data-index]");
+    return tr && browser ? browser.page.rows[+tr.dataset.index!] ?? null : null;
+  };
+  const show = (it: Item | null): void => {
+    const slot = pickSlot;
+    if (!slot || !it || slots[slot] === it.serial) { setPreview(null); return; }
+    setPreview({ slot, item: it, cleared: handConflict(slot, it, held()) });
+  };
+  host.addEventListener("mouseover", (e) => { if ((e.target as HTMLElement).closest("tbody")) show(rowItem(e.target)); });
+  host.addEventListener("mouseleave", () => { if (!host.contains(document.activeElement) || !rowItem(document.activeElement)) setPreview(null); });
+  host.addEventListener("focusin", (e) => { const it = rowItem(e.target); if (it) show(it); });
+  host.addEventListener("focusout", (e) => { if (!rowItem(e.relatedTarget)) setPreview(null); });
+}
+
 // ---------------------------------------------------------------- the picker
 function openPicker(slot: string): void {
-  pickSlot = slot;
+  pickSlot = slot; preview = null;
   buffsOpen = false; replaced = null;
   setStatus("");
   Object.assign(fixed, slotQuery(slot));
@@ -424,7 +466,7 @@ function openPicker(slot: string): void {
 }
 function closePicker(): void {
   const slot = pickSlot;
-  pickSlot = null;
+  pickSlot = null; preview = null;
   draw();
   $<HTMLElement>(`#b-manual .mb-slot-pick[data-slot="${slot}"]`)?.focus();
 }

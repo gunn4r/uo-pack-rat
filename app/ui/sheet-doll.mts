@@ -1,7 +1,7 @@
 // ui/sheet-doll.mts — the paperdolls of a character's suits (issue #57): the sheet's doll (layout 1B, the Characters screen and the Suit Builder's Full sheet) and the Suit Builder result's pair (layout 2A: Wearing now beside New suit), each on a doll card kept per place and character, so a redraw of the same suits fetches nothing again. An optimizer piece carries no graphic or hue: those are looked up by serial (resolveItems) before the figures are drawn. No character (the Suit Builder's NOBODY) is the stand-in body.
 //
 // map: ui-components
-// owns: `sheetDoll`, `resultDoll`
+// owns: `sheetDoll`, `resultDoll`, `viewOf`
 import { state } from "./store.mts";
 import { NOBODY } from "../vault-lib.mts";
 import { dollCard, type DollView } from "./doll-card.mts";
@@ -19,7 +19,7 @@ function entry(place: string, name: string): Entry {
   return e;
 }
 // The card's view of a character, or of no character (the stand-in), without its figures.
-function viewOf(name: string): Omit<DollView, "figures"> {
+export function viewOf(name: string): Omit<DollView, "figures"> {
   if (name === NOBODY) return { name: null, appearance: null, client: "", readsLook: true };
   const c = state.inv!.characters[name], adapter = state.setup?.adapters.find((a) => a.id === c?.adapter?.id);
   return { name, scannedAt: c?.scannedAt ?? null, appearance: c?.appearance, client: adapter?.name ?? c?.adapter?.client ?? "This client", readsLook: adapter?.appearance ?? true };
