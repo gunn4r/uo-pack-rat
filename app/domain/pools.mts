@@ -5,7 +5,7 @@
 import { floorMet, heldTotal, liftedMin, RESIST_SKILL_KEY, type ResistStep } from "../solver/scoring.mts";
 import { getRules } from "./rules.mts";
 import { labelOf, PROP_LABELS, SKILL_SET, type PropMap } from "./properties.mts";
-import { GEAR_SLOTS, HAND_SLOTS, REQUIRED_SLOTS, SLOT_GROUP, SPELLBOOK_RE } from "./slots.mts";
+import { GEAR_SLOTS, HAND_SLOTS, REQUIRED_SLOTS, SLOT_GROUP } from "./slots.mts";
 import { slayersOf } from "./kinds.mts";
 import type { Inventory, Item } from "./fold.mts";
 
@@ -81,14 +81,14 @@ export function buildPools(inv: Inventory, character: string | null, opts: Build
     const opt = toOptItem(it) as PooledOptItem;
     if (character != null && it.equippedBy === character) { if (!current[it.slot] && !pinned) current[it.slot] = opt; }
     if (it.equippedBy && it.equippedBy !== character && !allowOthersWorn) { skipped.worn.push(it); continue; }
-    if (excludeGargoyle && it.gargoyle) { skipped.gargoyle.push(it); continue; }
-    if (medOnly && !it.medable) { skipped.nonMed.push(it); continue; }
+    if (!gargoyleOk(it, excludeGargoyle)) { skipped.gargoyle.push(it); continue; }
+    if (!meditationOk(it, medOnly)) { skipped.nonMed.push(it); continue; }
     if (!weaponAllowed(it, excludeWeapons, ubwsAnyWeapon)) { skipped.weapon.push(it); continue; }
     if (hasSkillBonus(it, excludeSkills)) { skipped.skill.push(it); continue; }
     if (it.strReq > strength) { skipped.str.push(it); continue; }
-    if (it.tags.some((t) => excludeTags.includes(t))) { skipped.tags.push(it); continue; }
+    if (hasTag(it, excludeTags)) { skipped.tags.push(it); continue; }
     // with an Only containers list, an unworn piece in no container (carried by a trip with no backpack to put it in) is outside it
-    const outside = it.root == null ? only.size > 0 && !it.equippedBy : (only.size > 0 && !only.has(+it.root)) || exRoots.has(+it.root);
+    const outside = it.root == null ? only.size > 0 && !it.equippedBy : (only.size > 0 && !underRoot(it, only)) || underRoot(it, exRoots);
     if (outside) { skipped.roots.push(it); continue; }
     // last, so `flagless` counts only weapons every other filter let through
     if (!weaponHasFlags(it, weaponMustHave)) { skipped.weapon.push(it); flagless++; continue; }
@@ -143,13 +143,13 @@ export function builderKeys(inv: ItemsLike): string[] {
 // Throwing (ServUO BaseWeapon.GetUsedSkill), so with `ubws` on it passes while any of those three is allowed.
 export const WEAPON_SKILLS: string[] = ["archery", "swordsmanship", "fencing", "mace fighting", "throwing"];
 export const MELEE_SKILLS: string[] = ["swordsmanship", "fencing", "mace fighting"];
-// Issue #259: the list may also hold SPELLBOOKS ("spellbook"), which keeps every spellbook (a one-handed piece whose name
-// SPELLBOOK_RE matches) out of the pool. WEAPON_EXCLUDES is everything the list accepts, in the order the page shows it.
+// Issue #259: the list may also hold SPELLBOOKS ("spellbook"), which keeps every spellbook (itemTypeOf's, #487) out of
+// the pool. WEAPON_EXCLUDES is everything the list accepts, in the order the page shows it.
 export const SPELLBOOKS = "spellbook";
 export const WEAPON_EXCLUDES: string[] = [...WEAPON_SKILLS, SPELLBOOKS];
 export const ubwsLetsIn = (excluded: string[], ubws = true): boolean => ubws && MELEE_SKILLS.some((w) => !excluded.includes(w));
 export function weaponAllowed(it: Item, excluded: string[] = [], ubws = true): boolean {
-  if (it.slot === "oneHanded" && excluded.includes(SPELLBOOKS) && SPELLBOOK_RE.test(it.name || "")) return false;
+  if (excluded.includes(SPELLBOOKS) && itemTypeOf(it) === "spellbook") return false;
   if (!excluded.some((w) => w !== SPELLBOOKS) || (it.slot !== "oneHanded" && it.slot !== "twoHanded")) return true;
   const own = String(it.skillReq || "").toLowerCase();
   if ((it.flags || []).includes("use best weapon skill")) {
@@ -193,9 +193,16 @@ export function itemTypeOf(it: Pick<Item, "gear" | "slot" | "twoHanded" | "skill
 // The required properties a piece lacks, its flags read through flagKey; none for a piece that is no weapon.
 export function missingFlags(it: Item, required: string[] = []): string[] {
   if (!required.length || !isWeapon(it)) return [];
-  const own = (it.flags || []).map(flagKey);
-  return required.filter((f) => !own.includes(f));
+  return required.filter((f) => !hasFlag(it, f));
 }
+// The piece-level checks the Inventory's filters (item-query.mts's itemPasses) and the Suit Builder's pool (buildPools)
+// share (#487), so both read a setting the same way; each caller keeps its own reasons for what it leaves out.
+export const gargoyleOk = (it: Pick<Item, "gargoyle">, noGargoyle: boolean): boolean => !noGargoyle || !it.gargoyle;
+export const meditationOk = (it: Pick<Item, "medable">, medOnly: boolean): boolean => !medOnly || !!it.medable;
+export const hasTag = (it: Pick<Item, "tags">, tags: readonly string[]): boolean => it.tags.some((t) => tags.includes(t));
+export const underRoot = (it: Pick<Item, "root">, roots: ReadonlySet<number>): boolean => it.root != null && roots.has(+it.root);
+// A yes/no property, both sides read through flagKey ("Spell Channeling" is "spell channeling").
+export const hasFlag = (it: Pick<Item, "flags">, flag: string): boolean => (it.flags || []).some((x) => flagKey(x) === flagKey(flag));
 export const weaponHasFlags = (it: Item, required: string[] = []): boolean => !missingFlags(it, required).length;
 // The rule weaponMustHave is held to (profiles.v3.schema.json says the same): known yes/no properties, each once.
 export function weaponMustHaveError(v: unknown, path = "weaponMustHave"): string | null {

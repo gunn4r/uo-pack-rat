@@ -1,6 +1,6 @@
 // organize.test.mts — `app/organize.mts`, Organize's planner (issue #11), on hand-built house scans folded by the real fold.
 //
-// `app/organize.mts`, the planner, on hand-built house scans (`app/organize-fixture.mts`) folded by the real fold: scope (unlabelled, pinned, blacklisted, never-opened, backpack, positionless and vanished containers), first match wins, location-free rules, the overlay and in-place, the capacity simulation (freed slots, nested caps, stack merges, stone caps), sites and cross-site reports, full chests trading contents, trash containers left alone, the room report counting nested free room once, trips within item, stone and byte limits, carried items, determinism, the plan stamp, a trip command `queueTrip` accepts, and Put away's sources (issue #131: only what lies directly in the picked container, never a bag in it or its contents or a pinned item, blessed and insured items and the catch-all's items filed like any, into the site the character stands in; a container in a labelled chest likewise); one `[smoke]` replays the TazUO fixture's trips and checks no put overfills a container. The rest `[fast]`.
+// `app/organize.mts`, the planner, on hand-built house scans (`app/organize-fixture.mts`) folded by the real fold: scope (unlabelled, pinned, blacklisted, never-opened, backpack, positionless and vanished containers), first match wins, location-free rules, the overlay and in-place, the capacity simulation (freed slots, nested caps, stack merges, stone caps), sites and cross-site reports, full chests trading contents, trash containers left alone, the room report counting nested free room once, trips within item, stone and byte limits, carried items, determinism, the plan stamp, a trip command `queueTrip` accepts, and Put away's sources (issue #131: only what lies directly in the picked container, never a bag in it or its contents or a pinned item, blessed and insured items and the catch-all's items filed like any, into the site the character stands in; a container in a labelled chest likewise); one `[smoke]` replays the TazUO fixture's trips and checks no put overfills a container. The rest `[fast]`; `buildOf` telling a spellbook and a shield apart by the Type filter's test (`itemTypeOf`, #487), not by name.
 //
 // The scans come from app/organize-fixture.mts, folded by the real foldSnapshots, plus a fold of the TazUO adapter fixture. Pure: no server.
 import { test } from "node:test";
@@ -9,7 +9,7 @@ import { readFileSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { foldSnapshots, setRules, PROP_PATTERNS, SKILL_NAMES, type Inventory } from "./vault-lib.mts";
+import { foldSnapshots, setRules, PROP_PATTERNS, SKILL_NAMES, type Inventory, type Item } from "./vault-lib.mts";
 import { houseScan, AT, type BoxSpec, type ThingSpec } from "./organize-fixture.mts";
 import { emptyRuleQuery, emptyOrganizeConfig, BUILDS, CATCH_ALL_ID, EMPTY_BAGS_ID, type OrganizeConfig, type OrganizeRule, type ContainerLabel, type RuleMatch } from "./organize-config.mts";
 import type { RuleQuery } from "./item-query.mts";
@@ -130,6 +130,15 @@ test("[fast] rule names and item names compare with spaces and punctuation remov
   assert.deepEqual(takes("spiders silk"), ["Spiders' Silk"]);
   assert.deepEqual(takes("'"), [], "a name that is only punctuation matches nothing");
   assert.deepEqual(takes("120 Skill"), ["A Legendary Scroll Of Magery (120 Skill)"], "a rule name's leading number is not a stack count");
+});
+
+// #487: a spellbook and a shield are the Type filter's, whatever their names, so an artifact book with no "book" in its
+// name is Caster and an artifact shield with no "shield" in its name Tank.
+test("[fast] buildOf reads spellbooks and shields as the Type filter does, by hand and weapon lines, not by name", () => {
+  const held = (name: string, slot: string): Item => ({ serial: 1, name, slot, gear: true, twoHanded: false, skillReq: null, props: {}, extras: {}, flags: [] } as unknown as Item);
+  assert.equal(buildOf(held("Song Of The Seas", "oneHanded")), "caster");
+  assert.equal(buildOf(held("Aegis Of Grace", "twoHanded")), "tank");
+  assert.equal(buildOf({ ...held("Ancient Blade", "oneHanded"), skillReq: "swordsmanship", extras: { "weapon damage": [11, 13] } } as unknown as Item), "melee");
 });
 
 test("[fast] a rule's build takes gear by its caster and melee markers, then its resists, and never takes anything else", () => {
