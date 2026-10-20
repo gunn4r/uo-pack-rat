@@ -115,7 +115,7 @@ test("[slow] refresh, Clear all, the virtual table and Forget keep the page's st
     const names = await characterNames(page);
     await pickCharacter(page, names[1]!);
     // The Weapons chip's choices, counted in its popover: wiring the panel twice would draw a second chip. It is in the
-    // Build Settings drawer's Pool tab (issue #272).
+    // Auto Build Settings drawer's Pool tab (issue #272).
     const weaponChoices = async (): Promise<number> => {
       assert.equal(await page.locator("#b-weapon").count(), 1, "one Weapons chip");
       if (await page.locator("#b-drawer").isHidden()) await page.click("#b-settings");

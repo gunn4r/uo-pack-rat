@@ -138,8 +138,10 @@ export interface FilterToken {
   remove: (q: ItemQuery) => ItemQuery;
   cause: (total: number) => string;
 }
-const OP_SIGN = { ge: "≥", le: "≤", eq: "=" } as const;
+const OP_SIGN = { ge: "≥", le: "≤", eq: "=", ne: "≠" } as const;
 export const propRuleLabel = (f: PropFilter, propLabel: (k: string) => string): string => `${propLabel(f.key)} ${OP_SIGN[f.op || "ge"]} ${f.min}`;
+// The property popover's note under a ≠ 0 rule: an item without the property reads 0 (item-query.mts's colVal).
+export const neZeroHint = (op: string, value: string): string | null => (op === "ne" && value.trim() !== "" && +value === 0 ? "Items without this property count as 0." : null);
 const without = <T,>(list: T[], v: T): T[] => list.filter((x) => x !== v);
 // "Greater Magic Item" reads "Greater Magic" on a chip; the token keeps the whole name.
 export const shortTier = (tier: string): string => tier.replace(/\s+Item$/i, "");

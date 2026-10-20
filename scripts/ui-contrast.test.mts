@@ -24,7 +24,7 @@ async function route(page: Page, hash: string, ready: string): Promise<void> {
   await page.waitForSelector(ready, { timeout: 15_000 });
   await animationsDone(page);
 }
-// The Suit Builder's Build Settings drawer (issue #272) open on one of its tabs.
+// The Suit Builder's Auto Build Settings drawer (issue #272) open on one of its tabs.
 async function settingsTab(page: Page, tab: string): Promise<void> {
   if (await page.locator("#b-drawer").isHidden()) await page.click("#b-settings");
   await page.click(`#b-tab-${tab}`);

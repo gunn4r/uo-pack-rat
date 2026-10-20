@@ -1,6 +1,6 @@
 // ui/builder-start.mts — the Suit Builder's first-visit view (issue #272), shown while no result is on screen for the
 // selected character or No character: the template cards (the panel's own template, suggested built-ins and the player's
-// own), a read-only summary of what Build will build for and the weights that matter most, each opening the Build Settings
+// own), a read-only summary of what Build will build for and the weights that matter most, each opening the Auto Build Settings
 // drawer on its tab, and a big Build; beside it what the character wears now and the other characters' latest runs. It is
 // drawn from the panel's state (the session's profile and knobs), so an edit in the drawer redraws it. The numbers and
 // words come from ui/builder-model.mts; it shares the builder's state through ui/builder-session.mts.
@@ -58,7 +58,7 @@ function mainColumn(name: string): HTMLElement {
   const build = button({ label: nobody ? "Build the suit" : `Build ${name}'s suit`, variant: "primary", size: "lg", attrs: { id: "b-start-build", "data-k": "build", "aria-keyshortcuts": "Meta+Enter Control+Enter" }, onClick: () => commands.build() });
   return box("div", { class: "b-arrive-main" },
     box("div", {}, el("h2", { class: "t-xl", tabindex: "-1", "data-k": "head" }, nobody ? "What should the suit be for?" : `What should ${name}'s suit be for?`),
-      el("p", { class: "muted" }, `Pick a starting point: it becomes ${nobody ? "the" : `${name}'s`} saved settings. Every setting can be changed in Build Settings before or after you build.`)),
+      el("p", { class: "muted" }, `Pick a starting point: it becomes ${nobody ? "the" : `${name}'s`} saved settings. Every setting can be changed in Auto Build Settings before or after you build.`)),
     templateCards(name), builtins ? all : null,
     summaryCard(name),
     box("div", { class: "b-start-build" }, build, txt("Usually a few seconds · ⌘↵", "muted")));
@@ -119,7 +119,7 @@ function summaryCard(name: string): HTMLElement {
         ...line("pool", "Pool", poolLine(p.excludeWeapons, p.ubwsAnyWeapon !== false, pieces?.n ?? null, p.rarity)), ...line("advanced", "Search", searchLine(k)))),
     box("div", { class: "b-sum-half" }, el("h3", { class: "t-md strong" }, "What matters most"), ...(goalsActive(p.goals) ? goalsMost(p.goals, open) : [
       top.rows.length ? box("ul", { class: "b-imps" }, ...top.rows.map(weightRow)) : el("p", { class: "muted" }, "No weights yet."),
-      open("weights", top.more ? `+ ${top.more} more in Build Settings` : "Weights in Build Settings")])));
+      open("weights", top.more ? `+ ${top.more} more in Auto Build Settings` : "Weights in Auto Build Settings")])));
 }
 // The goals by rank, each a row that opens the Goals tab with what it counts as a bar, then the spare-points line.
 function goalsMost(g: Goals, open: (tab: string, text: string) => HTMLElement): HTMLElement[] {
@@ -127,7 +127,7 @@ function goalsMost(g: Goals, open: (tab: string, text: string) => HTMLElement): 
   const row = (r: (typeof s.rows)[number]): HTMLElement => box("li", {}, box("button", { type: "button", class: "b-imp b-imp-goal", "data-k": `g:${r.rank}`, "aria-label": `${r.rank}. ${r.names}, counts ${r.counts}`, onclick: () => commands.openSettingsTab("weights") },
     el("span", { class: "b-imp-gname" }, txt(`${r.rank}.`, "muted"), ` ${r.names}`), el("span", { class: "b-wbar", style: `--fill:${r.counts}%`, "aria-hidden": "true" }), txt(String(r.counts), "b-imp-n")));
   return [s.rows.length ? box("ol", { class: "b-imps" }, ...s.rows.map(row)) : el("p", { class: "muted" }, "No goals yet."),
-    el("p", { class: "t-sm b-imp-spare" }, s.spare), open("weights", s.more ? `+ ${s.more} more ${s.more === 1 ? "goal" : "goals"} in Build Settings` : "Goals in Build Settings")];
+    el("p", { class: "t-sm b-imp-spare" }, s.spare), open("weights", s.more ? `+ ${s.more} more ${s.more === 1 ? "goal" : "goals"} in Auto Build Settings` : "Goals in Auto Build Settings")];
 }
 
 // ---- the side column: what the character wears now, its five resists and the top weighted other properties

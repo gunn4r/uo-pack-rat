@@ -1,12 +1,12 @@
 /* ui/builder.css — the Suit Builder screen (ui/builder.mts, ui/builder-result.mts; design spec 4.6, 4.7): the
-   one-line top bar, the Build Settings drawer with its tabs and footer, the running build's progress card, the result, the
+   one-line top bar, the Auto Build Settings drawer with its tabs and footer, the running build's progress card, the result, the
    compare view.
    Tokens only (docs/ui.md). Every flex/grid box here holds element children only (the one-span rule). */
 
 /* ---------------------------------------------------------------- layout: the result full width */
-/* the screen never scrolls: the results column scrolls inside its own box, the Build Settings drawer's body inside the drawer */
+/* the screen never scrolls: the results column scrolls inside its own box, the Auto Build Settings drawer's body inside the drawer */
 #tab-builder .page.b-page { position: relative; flex-direction: row; align-items: stretch; gap: var(--space-4); overflow: hidden; }
-/* the sentence bar (issue #321): "Best suit for [character] using [build]", Build Settings and Build held right as one group
+/* the sentence bar (issue #321): "Best suit for [character] using [build]", Auto Build Settings and Build held right as one group
    that never splits; on a narrow window the pickers wrap and the group keeps to the right. Under it a quieter row: Automatic |
    Manual with its hint, and Saved runs at the right */
 #b-topbar { height: auto; flex-direction: column; align-items: stretch; gap: 0; padding: 0; }
@@ -53,11 +53,13 @@
 .b-av[data-hue="8"] { --av: var(--color-area-8); }
 .b-av-none, .b-ic { --av: var(--color-border-strong); color: var(--color-text-muted); }
 .b-ic { flex: none; width: 28px; height: 28px; border-radius: var(--radius-md); display: inline-flex; align-items: center; justify-content: center; background: var(--color-surface-sunken); }
-/* Manual's fill plans with the drawer's settings, and has its own button; the build is the drawer's too */
-#tab-builder.manual #b-settings, #tab-builder.manual #b-run, #tab-builder.manual #b-tpl-top, #tab-builder.manual .b-w-for { display: none; }
-/* open, the Build Settings button reads pressed */
+/* Manual's fill plans with the drawer's settings and keeps its button; Build and the build picker are Automatic's */
+#tab-builder.manual #b-run, #tab-builder.manual #b-tpl-top, #tab-builder.manual .b-w-for { display: none; }
+/* open, the Auto Build Settings button reads pressed */
 .pr #b-settings[aria-expanded="true"] { background: var(--color-chip-set); color: var(--color-on-chip-set); }
-/* the Build Settings drawer (the shared .drawer component, index.html): its template line, tabs and footer */
+/* the Auto Build Settings drawer (the shared .drawer component, index.html): its template line, tabs and footer. Opened from
+   Manual it says it is shared with Automatic, drops Buffs (Manual has its own) and Save as template, and its footer fills the rest */
+#b-drawer-root:not(.manual) :is(.b-shared, #b-fill-foot), #b-drawer-root.manual :is(#b-tab-buffs, #b-save-tpl, #b-run-foot) { display: none; }
 #b-tpl-info { padding: var(--space-3) var(--space-5) 0; }
 .b-tabs { flex: none; display: flex; gap: var(--space-1); padding: 0 var(--space-3); border-bottom: var(--border-width) solid var(--color-border); overflow-x: auto; }
 .pr .b-tab { flex: none; padding: var(--space-2) var(--space-2); border: 0; border-bottom: 2px solid transparent; background: none; color: var(--color-text-muted); font-weight: var(--weight-medium); cursor: pointer; }
@@ -439,7 +441,7 @@
   .b-gauges { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 /* a phone-width top bar: the sentence's words and the key hints go (the pickers and buttons keep their names), each picker
-   takes a full row, and Build Settings and Build share one; the result's gauges go two to a row and its table packs tighter */
+   takes a full row, and Auto Build Settings and Build share one; the result's gauges go two to a row and its table packs tighter */
 @media (max-width: 720px) {
   #b-topbar .kbd, .b-w, .b-mode-hint { display: none; }
   .b-sent > .b-pick, .b-tpl-top > .b-pick { flex: 1 1 100%; max-width: none; }
