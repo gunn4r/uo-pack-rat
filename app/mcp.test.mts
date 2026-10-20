@@ -300,11 +300,13 @@ test("[fast] search_items: property rules the route cannot parse are refused, an
     for (const rule of ["lrc:lt:20", "lrc", "lrc:", ":20", "lrc:eq:abc", "lrc:ge"]) {
       const r = await call(port, "search_items", { props: [rule] });
       assert.equal(r.ok, false, rule);
-      assert.match(r.text, /is not one of key:min, key:le:max, key:eq:value/, rule);
+      assert.match(r.text, /is not one of key:min, key:le:max, key:eq:value, key:ne:value/, rule);
     }
     assert.match((await call(port, "search_items", { props: ["nosuchkey:5"] })).text, /no item has the property "nosuchkey"/);
     const total = async (args: Record<string, unknown>): Promise<number> => { const r = await call(port, "search_items", args); assert.equal(r.ok, true, r.text); return r.data.total; };
     assert.equal(await total({ props: ["LRC:20"] }), await total({ props: ["lrc:20"] }));
+    // Anything but: with an item without the property reading 0, ≠ 0 and ≥ 1 agree on a property that is never negative.
+    assert.equal(await total({ props: ["lrc:ne:0"] }), await total({ props: ["lrc:1"] }));
     // The extras the Inventory's property filter also offers.
     for (const rule of ["strReq:le:60", "weight:le:5"]) assert.ok(await total({ props: [rule] }) > 0, rule);
     assert.ok(((await call(port, "inventory_facets")).data.extraKeys as string[]).includes("strReq"));

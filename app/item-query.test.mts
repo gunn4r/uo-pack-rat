@@ -1,6 +1,6 @@
 // item-query.test.mts — `app/item-query.mts`, the item-list filtering, sorting, paging and faceting shared by the page and `GET /api/items`.
 //
-// `app/item-query.mts` (the pure item-list filtering/sorting/paging/faceting shared by the browser and the server's `GET /api/items`): `parseItemQuery`'s defaults and clamping, the list filters taken as repeated params (character, slot, kind, location, root container), prop rules with an operator (at least, at most, exactly), every `applyItemQuery` filter (kind, slot, location, root, character, rarity and rarity-at-least, seenDays, slayer, nogarg, med, hideTags, a prop rule incl. `EXTRA_COLS` keys) and sort (by prop column, by rarity ladder order), paging (offset/limit against `total`/`pieces`), group mode's JSON-safe shape and its stack and piece counts, `facetsOf` (including the places the Location filter's tree is built from), `rarityRank` (a Reforged tier with its base tier, eight tiers in both shipped ladders), `rarityMax` (an item with no tier or one off the ladder counting as below every tier, an unknown ceiling ignored, a floor above the ceiling matching nothing), and `matchesItem` (an Organize rule's per-item checks, agreeing with `applyItemQuery` on every filter a rule keeps, its free text never matching location text), and `unravel`/`unravelShow` read off the query string (issue #271). All `[fast]`.
+// `app/item-query.mts` (the pure item-list filtering/sorting/paging/faceting shared by the browser and the server's `GET /api/items`): `parseItemQuery`'s defaults and clamping, the list filters taken as repeated params (character, slot, kind, location, root container), prop rules with an operator (at least, at most, exactly, anything but, an item without the property reading 0), every `applyItemQuery` filter (kind, slot, location, root, character, rarity and rarity-at-least, seenDays, slayer, nogarg, med, hideTags, a prop rule incl. `EXTRA_COLS` keys) and sort (by prop column, by rarity ladder order), paging (offset/limit against `total`/`pieces`), group mode's JSON-safe shape and its stack and piece counts, `facetsOf` (including the places the Location filter's tree is built from), `rarityRank` (a Reforged tier with its base tier, eight tiers in both shipped ladders), `rarityMax` (an item with no tier or one off the ladder counting as below every tier, an unknown ceiling ignored, a floor above the ceiling matching nothing), and `matchesItem` (an Organize rule's per-item checks, agreeing with `applyItemQuery` on every filter a rule keeps, its free text never matching location text), and `unravel`/`unravelShow` read off the query string (issue #271). All `[fast]`.
 //
 // applyItemQuery's predicate and sort keep parity with what the Inventory screen used to do on its own. Hand-built fixture items (no scan files, no server) keep this fast and pure.
 import { test } from "node:test";
@@ -228,8 +228,8 @@ test("[fast] parseItemQuery: list filters take repeated params, slot and kind al
 });
 
 test("[fast] parseItemQuery: prop rules carry an operator, and an unknown one drops the rule", () => {
-  assert.deepEqual(parseItemQuery(new URLSearchParams("prop=hci:ge:10&prop=lmc:le:4&prop=fc:eq:2&prop=dci:gt:1")).props,
-    [{ key: "hci", min: 10 }, { key: "lmc", min: 4, op: "le" }, { key: "fc", min: 2, op: "eq" }]);
+  assert.deepEqual(parseItemQuery(new URLSearchParams("prop=hci:ge:10&prop=lmc:le:4&prop=fc:eq:2&prop=fc:ne:-1&prop=dci:gt:1")).props,
+    [{ key: "hci", min: 10 }, { key: "lmc", min: 4, op: "le" }, { key: "fc", min: 2, op: "eq" }, { key: "fc", min: -1, op: "ne" }]);
 });
 
 test("[fast] applyItemQuery: any-of lists for slot, kind, character and location", () => {
@@ -329,6 +329,14 @@ test("[fast] applyItemQuery: prop rules at most and exactly", () => {
   const rows = (s: string): string[] => names((applyItemQuery(ITEMS, parseItemQuery(new URLSearchParams(s)), ctx) as ItemQueryRows).rows).sort();
   assert.deepEqual(rows("kind=gear&prop=hci:le:10&prop=hci:ge:1"), ["Vile Ring"]);
   assert.deepEqual(rows("prop=dci:eq:8"), ["Chainmail Tunic"]);
+});
+
+test("[fast] applyItemQuery: a ≠ prop rule, an item without the property reading 0", () => {
+  const rows = (s: string): string[] => names((applyItemQuery(ITEMS, parseItemQuery(new URLSearchParams(s)), ctx) as ItemQueryRows).rows).sort();
+  assert.deepEqual(rows("kind=gear&prop=dci:ne:0"), ["Chainmail Tunic", "Leather Gloves", "Vile Ring"], "≠ 0 leaves out the items without DCI");
+  assert.deepEqual(rows("slot=oneHanded&prop=hci:ne:12"), ["Orc Slayer Cutlass"]);
+  assert.equal(rows("prop=hci:ne:-1").length, ITEMS.length, "an item without HCI reads 0, which is not -1");
+  assert.equal(matchesItem(ITEMS[2]!, rule("prop=hci:ne:0")), false, "an Organize rule reads it the same way");
 });
 
 test("[fast] applyItemQuery: group mode also reports the stacks and pieces behind the names", () => {

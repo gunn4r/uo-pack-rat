@@ -89,7 +89,8 @@ The filter state is the browser's `query`, the shape `item-query.mts`'s `parseIt
   - Weapon skill (issue #188) is written `wskill=swordsmanship`, with lower-cased skill names, and its tokens read "Weapon skill: Swordsmanship".
   - The facets' `weaponSkills` counts each skill from `vault-lib.mts`'s `weaponSkillsOf`. A Use Best Weapon Skill weapon also counts under Swordsmanship, Fencing and Mace Fighting, which the chip's popover says.
 - **Rarity** is a range (`rarityMin`, `rarityMax`). An item with no tier counts as below every tier, and a Reforged tier ranks with its base tier.
-- **Property rules** carry an operator (`prop=lmc:le:4`), and can name a numeric tooltip line no property models (issue #133: the facets' `extraKeys`, such as `prop=splintering weapon:10`).
+- **Property rules** carry an operator (≥, ≤, = or ≠: `prop=lmc:le:4`, `prop=fc:ne:-1`), and can name a numeric tooltip line no property models (issue #133: the facets' `extraKeys`, such as `prop=splintering weapon:10`).
+  - An item without the property reads 0 under every operator, so `fc:ne:-1` keeps the items with no FC, and ≠ 0 leaves them out, which a note under the rule says (`neZeroHint`).
 - **Yes/no properties** are required with `flag` (issue #182: `flag=spell channeling`, repeated; every one must be present).
   - They are offered from the facets' `flagKeys` as the property rule's last group, **Yes or no**; each option's muted second line reads "Yes / no".
   - Picking one hides the comparison and the number, moves the focus to Add rule, and shows a Title Case token ("Spell Channeling").
