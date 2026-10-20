@@ -34,6 +34,7 @@
     "app/swing.*",
     "app/solver/scoring.*",
     "app/house-areas.*",
+    "app/paperdoll-look.*",
     "app/guards.*",
     "app/data-dir-notice.*",
     "app/schema/validate.*",

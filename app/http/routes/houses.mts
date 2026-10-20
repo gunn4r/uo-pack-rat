@@ -5,7 +5,7 @@
 // - `GET /api/houses/<id>` (one house's model: app/house-model.mts, tiledata.mul via app/tiledata.mts or the uoFolder setting)
 // - `GET /api/facet-map/<facet>.png?x0&y0&x1&y1&w` (x-region: the region drawn, slid inside the facet; a facet overview from the same UO folder's facetNN.mul: app/facet-map.mts, app/png.mts; 404 {reason} when there is none)
 // - `GET /api/item-art/<graphic>.png?hue=<n>` (issue #174: an item's art from the same UO folder's artLegacyMUL.uop and hues.mul, cut to its opaque box, as an RGBA PNG: app/art.mts, app/png.mts; graphic and hue 0 to 65535 or a 400; an ETag over the files' stamps, the graphic and the hue, a 304 on If-None-Match; 404 {reason}: no-client, no-tazuo-profile, override-missing, missing, unreadable or no-art, never the path)
-// - `GET /api/paperdoll.png?body&hue&hair&beard&face&worn&pair&grey` (issue #57: a character's figure from the same UO folder's gumpartLegacyMUL.uop, tiledata.mul and hues.mul, with gump.def and Equipconv.def: app/paperdoll.mts. body and hue whole numbers to 65535; hair, beard and face each `graphic:hue` or left out; worn and pair each a comma list of at most 32 `graphic:hue` pieces, pair the other figure of a side-by-side pair, both cut to one box; grey=1 for the stand-in's grey; a 400 for anything else. An ETag over the files' stamps and the request, a 304 on If-None-Match; 404 {reason}: no-client, no-tazuo-profile, override-missing, missing, unreadable, no-body or empty, never the path)
+// - `GET /api/paperdoll.png?body&hue&hair&beard&face&worn&pair&gray` (issue #57: a character's figure from the same UO folder's gumpartLegacyMUL.uop, tiledata.mul and hues.mul, with gump.def and Equipconv.def: app/paperdoll.mts. body and hue whole numbers to 65535; hair, beard and face each `graphic:hue` or left out; worn and pair each a comma list of at most 32 `graphic:hue` pieces, pair the other figure of a side-by-side pair, both cut to one box; gray=1 for the stand-in's gray; a 400 for anything else. An ETag over the files' stamps and the request, a 304 on If-None-Match; 404 {reason}: no-client, no-tazuo-profile, override-missing, missing, unsupported, unreadable, no-body or empty, never the path)
 // - `GET /api/house-map`
 // - `PUT /api/house-map/<id>` {name, bounds?, areas?} (`<data>/house-map.json`, the player's house names and drawn areas: app/house-names.mts; an empty name with no areas removes the entry; 400 on a bad name, area or id, 409 when a change would grow it past 500 names or 1 MB)
 // - `GET /api/house-claims`
@@ -19,7 +19,7 @@ import type { HouseApiResponse, HouseClaimsApiResponse, HouseMapApiResponse, Hou
 import type { OkApiResponse } from "../../api/routes.mts";
 import { plotBounds, plotSize } from "../../house-model.mts";
 import { checkHouseEntry, isHouseId, MAX_ENTRY_BYTES } from "../../house-names.mts";
-import type { Look, Worn } from "../../paperdoll.mts";
+import type { Look, Worn } from "../../paperdoll-look.mts";
 import { encodePng } from "../../png.mts";
 import { readBody } from "../../read-body.mts";
 import { claimsOver } from "../../store/house-claims.mts";
@@ -80,7 +80,7 @@ export function routes(ctx: ServerContext): Route[] {
     { method: "GET", path: "/api/paperdoll.png", handle: (req, res, url) => {
       const look = paperdollQuery(url.searchParams);
       if (!look) return send(res, 400, { ok: false, error: "body and hue must be whole numbers to 65535; hair, beard and face graphic:hue; worn and pair at most 32 graphic:hue pieces, comma-separated" });
-      const got = houseService.paperdoll(look.look, look.worn, look.pair, look.grey);
+      const got = houseService.paperdoll(look.look, look.worn, look.pair, look.gray);
       if ("reason" in got) return send(res, 404, { ok: false, reason: got.reason });
       const headers = { "cache-control": "private, no-cache", etag: got.etag };
       return req.headers["if-none-match"] === got.etag ? send(res, 304, "", "image/png", headers) : send(res, 200, got.png, "image/png", headers);
@@ -119,17 +119,17 @@ export function routes(ctx: ServerContext): Route[] {
   ];
 }
 
-// GET /api/paperdoll.png's query, or null when any part is malformed: body and hue whole numbers to 65535; hair, beard and face each graphic:hue (left out or empty for none); worn and pair comma lists of at most 32 graphic:hue pieces (pair left out for a figure shown alone); grey "1" or left out.
+// GET /api/paperdoll.png's query, or null when any part is malformed: body and hue whole numbers to 65535; hair, beard and face each graphic:hue (left out or empty for none); worn and pair comma lists of at most 32 graphic:hue pieces (pair left out for a figure shown alone); gray "1" or left out.
 const MAX_PIECES = 32;
-function paperdollQuery(q: URLSearchParams): { look: Look; worn: Worn[]; pair: Worn[] | null; grey: boolean } | null {
+function paperdollQuery(q: URLSearchParams): { look: Look; worn: Worn[]; pair: Worn[] | null; gray: boolean } | null {
   const whole = (t: string | null): number | null => (t !== null && /^\d{1,5}$/.test(t) && +t <= 0xffff ? +t : null);
   const piece = (t: string): Worn | null => { const [g, h, ...rest] = t.split(":"), graphic = whole(g ?? null), hue = whole(h ?? null); return graphic === null || hue === null || rest.length ? null : { graphic, hue }; };
   const list = (t: string | null): Worn[] | null => { if (!t) return []; const parts = t.split(",").map(piece); return parts.length <= MAX_PIECES && parts.every(Boolean) ? parts as Worn[] : null; };
-  const body = whole(q.get("body")), hue = whole(q.get("hue")), grey = q.get("grey");
-  if (body === null || hue === null || (grey !== null && grey !== "1")) return null;
+  const body = whole(q.get("body")), hue = whole(q.get("hue")), gray = q.get("gray");
+  if (body === null || hue === null || (gray !== null && gray !== "1")) return null;
   const layers: Array<Worn | null> = [];
   for (const k of ["hair", "beard", "face"]) { const t = q.get(k); if (!t) layers.push(null); else { const p = piece(t); if (!p) return null; layers.push(p); } }
   const worn = list(q.get("worn")), pair = q.has("pair") ? list(q.get("pair")) : null;
   if (!worn || (q.has("pair") && !pair)) return null;
-  return { look: { body, hue, hair: layers[0]!, beard: layers[1]!, face: layers[2]! }, worn, pair, grey: grey === "1" };
+  return { look: { body, hue, hair: layers[0]!, beard: layers[1]!, face: layers[2]! }, worn, pair, gray: gray === "1" };
 }

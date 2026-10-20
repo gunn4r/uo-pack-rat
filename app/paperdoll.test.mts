@@ -1,6 +1,6 @@
-// paperdoll.test.mts — `app/paperdoll.mts` (issue #57), the paperdoll figure, on synthetic client files.
+// paperdoll.test.mts — `app/paperdoll.mts` and `app/paperdoll-look.mts` (issue #57), the paperdoll figure, on synthetic client files.
 //
-// `app/paperdoll.mts` (issue #57) on synthetic gumps, tiledata and hues (no game art): gump.def and Equipconv.def read as ClassicUO reads them (a line kept only when it starts with a digit, comments, an alias only for a gump the archive lacks, the first alt that exists, an earlier alias counting as existing, Equipconv's 0 and -1 gumps and a gump past 65,535 skipped, a later line winning); the gump source (the archive first, gump.def's alias with its hue, nothing for a gump that does not decode); which bodies are drawn and the stand-in for none or a form's body; `paperdollOrder` and `isCovered` on hand-picked cases from ClassicUO's rules (both were also checked against ClassicUO's own PaperdollOrder.Build and MobileView.IsCovered on 200,000 random worn sets, outside the repo); and a composed figure: the live scan's elf (body 606, skin 0x851D, hair 0x2FCC hue 519, face 0x3B46 hue 0x824D) with the skin partial on the body and the hair and face hued in full, the face under the hair, the female gump offset falling back to the male one and back, Equipconv and a gump.def alias with its hue, a robe hiding the torso and an open robe not, the arms-late table, the 0x0001 lining drawn only over something, pieces on the look's own layers, the backpack, unknown graphics and duplicate layers, the GM body, the crop box of a pair and the stand-in's grey. All `[fast]`.
+// `app/paperdoll.mts` (issue #57) on synthetic gumps, tiledata and hues (no game art): gump.def and Equipconv.def read as ClassicUO reads them (a line kept only when it starts with a digit, comments, an alias only for a gump the archive lacks, the first alt that exists, an earlier alias counting as existing, Equipconv's 0 and -1 gumps and a gump past 65,535 skipped, a later line winning); the gump source (the archive first, gump.def's alias with its hue, nothing for a gump that does not decode); which bodies are drawn and the stand-in for none or a form's body; `paperdollOrder` and `isCovered` on hand-picked cases from ClassicUO's rules (both were also checked against ClassicUO's own PaperdollOrder.Build and MobileView.IsCovered on 200,000 random worn sets, outside the repo); and a composed figure: the live scan's elf (body 606, skin 0x851D, hair 0x2FCC hue 519, face 0x3B46 hue 0x824D) with the skin partial on the body and the hair and face hued in full, the face under the hair, the female gump offset falling back to the male one and back, Equipconv and a gump.def alias with its hue, a robe hiding the torso and an open robe not, the arms-late table, the 0x0001 lining drawn only over something, pieces on the look's own layers, the backpack, unknown graphics and duplicate layers, the GM body, the crop box of a pair and the stand-in's gray. All `[fast]`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readHues, readUopTable, toRgba, uopIndex, gumpArtName, type ReadAt } from "./art.mts";
@@ -8,7 +8,8 @@ import { syntheticGump, syntheticHues, syntheticUop } from "./art-fixture.mts";
 import { rgb555 } from "./facet-fixture.mts";
 import { FLAG, readTileData } from "./tiledata.mts";
 import { syntheticTileData, type FixtureTile } from "./tiledata-fixture.mts";
-import { CANVAS, LAYER, STAND_IN, createPaperdoll, drawsBody, figureBox, greyRgba, gumpSource, isCovered, lookOf, paperdollOrder, readEquipConv, readGumpDef, type Look, type Worn } from "./paperdoll.mts";
+import { CANVAS, LAYER, createPaperdoll, figureBox, grayRgba, gumpSource, isCovered, paperdollOrder, readEquipConv, readGumpDef } from "./paperdoll.mts";
+import { STAND_IN, drawsBody, lookOf, type Look, type Worn } from "./paperdoll-look.mts";
 
 const GREY = rgb555(16, 16, 16), RED = rgb555(31, 0, 0), BLUE = rgb555(0, 0, 31), GREEN = rgb555(0, 31, 0);
 // A gump `w` x `h` filled with one colour, from (x0, y0) on (transparent before it).
@@ -109,17 +110,17 @@ function elfFiles(extra: Record<number, Buffer> = {}, tiles: FixtureTile[] = [],
   const hues = Array.from({ length: 1400 }, () => new Uint16Array(32));
   hues[1309 - 1] = ramp(1); hues[519 - 1] = ramp(2); hues[589 - 1] = ramp(3); hues[7 - 1] = ramp(7); hues[8 - 1] = ramp(8);
   return files({
-    0x0f: syntheticGump(8, 2, [[[GREY, 4], [RED, 4]], [[GREY, 8]]]),          // the body: grey skin, and a red pixel run the partial skin hue leaves alone
+    0x0f: syntheticGump(8, 2, [[[GREY, 4], [RED, 4]], [[GREY, 8]]]),          // the body: gray skin, and a red pixel run the partial skin hue leaves alone
     [60000 + 0x101]: solid(3, 1, GREY, 0, 1),                                    // the face, on row 1, x 0-2
     [60000 + 0x100]: solid(2, 1, GREY, 2, 1),                                    // the hair, on row 1, x 2-3: over the face at x 2
     ...extra,
   }, [{ graphic: 0x2fcc, flags: FLAG.wearable, layer: 11, anim: 0x100 }, { graphic: 0x3b46, flags: FLAG.wearable, layer: 15, anim: 0x101 }, ...tiles], hues, gumpDef, equipConv);
 }
 
-test("[fast] figure: the live scan's elf — the skin hues only the body's grey, the face and hair take their hues in full, and the hair is drawn over the face", () => {
+test("[fast] figure: the live scan's elf — the skin hues only the body's gray, the face and hair take their hues in full, and the hair is drawn over the face", () => {
   const fig = createPaperdoll(elfFiles()).compose(ELF, [])!;
   assert.deepEqual([fig.width, fig.height], [CANVAS.width, CANVAS.height]);
-  assert.equal(px(fig, 0, 0), hued(1, 16), "skin on grey");
+  assert.equal(px(fig, 0, 0), hued(1, 16), "skin on gray");
   assert.equal(px(fig, 5, 0), 0x8000 | RED, "the partial skin leaves the red alone");
   assert.equal(px(fig, 0, 1), hued(3, 16), "the face, hue 589");
   assert.equal(px(fig, 2, 1), hued(2, 16), "the hair over the face, hue 519");
@@ -185,7 +186,7 @@ test("[fast] figure: the GM body is drawn with hue 0x3EA under its overlay in th
   assert.deepEqual([px(fig, 0, 0), px(fig, 1, 0)], [hued(4, 16), hued(5, 16)]);
 });
 
-test("[fast] figure box: the union of a pair's opaque boxes plus 6 pixels, kept on the canvas; the stand-in's grey is each pixel's luminance", () => {
+test("[fast] figure box: the union of a pair's opaque boxes plus 6 pixels, kept on the canvas; the stand-in's gray is each pixel's luminance", () => {
   const a = { width: CANVAS.width, height: CANVAS.height, pixels: new Uint16Array(CANVAS.width * CANVAS.height) }, b = { ...a, pixels: new Uint16Array(a.pixels.length) };
   a.pixels[20 * CANVAS.width + 10] = 0x8000 | RED;
   b.pixels[40 * CANVAS.width + 30] = 0x8000 | RED;
@@ -195,5 +196,5 @@ test("[fast] figure box: the union of a pair's opaque boxes plus 6 pixels, kept 
   b.pixels[(CANVAS.height - 1) * CANVAS.width + CANVAS.width - 1] = 0x8000 | RED;
   assert.deepEqual(figureBox([b]), { x0: 24, y0: 34, x1: CANVAS.width - 1, y1: CANVAS.height - 1 });
   assert.equal(figureBox([{ ...a, pixels: new Uint16Array(a.pixels.length) }]), null);
-  assert.deepEqual([...greyRgba(Buffer.from([255, 0, 0, 255, 0, 0, 255, 128]))], [77, 77, 77, 255, 28, 28, 28, 128]);
+  assert.deepEqual([...grayRgba(Buffer.from([255, 0, 0, 255, 0, 0, 255, 128]))], [77, 77, 77, 255, 28, 28, 28, 128]);
 });
