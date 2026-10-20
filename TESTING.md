@@ -103,6 +103,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `app/organize-state.test.mts` — `app/organize-state.mts` (issue #11): trip results read into the overlay, settled entries dropped and a damaged state file salvaged.
 - `app/organize-strategies.test.mts` — `app/organize-strategies.mts`, Organize's Auto mode (issue #11, spec §5).
 - `app/organize.test.mts` — `app/organize.mts`, Organize's planner (issue #11), on hand-built house scans folded by the real fold.
+- `app/paperdoll.test.mts` — `app/paperdoll.mts` (issue #57), the paperdoll figure, on synthetic client files.
 - `app/png.test.mts` — `app/png.mts` (issue #164), the PNG writer.
 - `app/profile-edits.test.mts` — `app/profile-edits.mts`: each ProfileEdit made on a profiles file (buffs, a label, a character's settings kept around what the panel doesn't edit, a deleted character, a template put, updated, deleted and renamed with its characters following), each made again changing nothing more, the ones that can't be made refused with why (a template gone, a name taken, a label for no such character), a list stopping at the first refusal, and the shape check.
 - `app/profiles-patch.test.mts` — `patchProfiles` (PATCH /api/profiles' save, `app/http/routes/prefs.mts`) when two saves race the first read of a v2 file: neither loses the other's edits.

@@ -1,7 +1,7 @@
 // art.mts — art from the player's own client files: the UOP container (its table of entries, each found by the lookup3 hash of its name, and an entry stored, inflated, or inflated and BWT-decoded), one item's static art in artLegacyMUL.uop (issue #174), one gump in gumpartLegacyMUL.uop (the paperdoll, issue #57), and the colours of hues.mul. Pure, apart from the read callback the caller passes: nothing here throws on a file that does not add up or reads past a buffer; every decoder answers null instead. The table is read block by block and an entry only when it is asked for, never the whole payload.
 //
 // map: house
-// owns: `readUopTable`, `readUopEntry`, `uopHash`, `bwtDecompress`, `gumpArtName`, `decodeGump`, `decodeStatic`, `readHues`, `hueOf`, `hueFor`, `toRgba`
+// owns: `readUopTable`, `readUopEntry`, `uopIndex`, `uopHash`, `bwtDecompress`, `gumpArtName`, `decodeGump`, `decodeStatic`, `readHues`, `hueOf`, `hueFor`, `huePixel`, `opaqueBox`, `toRgba`
 import { inflateSync } from "node:zlib";
 
 // Jenkins' lookup3 hashlittle2 with both seeds 0, as the UOP format names its entries: the 64-bit result is b << 32 | c.
@@ -80,25 +80,30 @@ export function readUopTable(read: ReadAt, fileSize: number): UopTable | null {
 
 // The entry of that name's data: read as stored (flag 0), inflated (flag 1), or inflated and then BWT-decoded (flag 3, every gump of a 7.x gumpartLegacyMUL.uop; `bwtDecompress`). An inflated entry must come out at its decompressed length. Null when there is no such entry, it does not read, it does not unpack, or it is packed any other way. `maxBytes` caps what is read, inflated or BWT-decoded.
 export function readUopEntry(t: UopTable, name: string, read: ReadAt, maxBytes = 1 << 20): Uint8Array | null {
+  const i = uopIndex(t, name);
+  if (i < 0) return null;
+  const flag = t.flag[i]!, stored = t.stored[i]!, size = t.size[i]!;
+  if (stored > maxBytes || (flag !== 0 && flag !== 1 && flag !== 3) || (flag !== 0 && size > maxBytes)) return null;
+  const data = read(t.at[i]!, stored);
+  if (!data || data.length < stored) return null;
+  if (flag === 0) return data;
+  let out: Uint8Array;
+  try { out = inflateSync(data, { maxOutputLength: maxBytes }); } catch { return null; }
+  if (out.length !== size) return null;
+  return flag === 1 ? out : bwtDecompress(out, maxBytes);
+}
+
+// Where the table lists the entry of that name, or -1: whether the file has it, without reading it.
+export function uopIndex(t: UopTable, name: string): number {
   const h = uopHash(name);
   let lo = 0, hi = t.hashes.length - 1;
   while (lo <= hi) {
     const mid = (lo + hi) >> 1, x = t.hashes[mid]!;
     if (x < h) lo = mid + 1;
     else if (x > h) hi = mid - 1;
-    else {
-      const flag = t.flag[mid]!, stored = t.stored[mid]!, size = t.size[mid]!;
-      if (stored > maxBytes || (flag !== 0 && flag !== 1 && flag !== 3) || (flag !== 0 && size > maxBytes)) return null;
-      const data = read(t.at[mid]!, stored);
-      if (!data || data.length < stored) return null;
-      if (flag === 0) return data;
-      let out: Uint8Array;
-      try { out = inflateSync(data, { maxOutputLength: maxBytes }); } catch { return null; }
-      if (out.length !== size) return null;
-      return flag === 1 ? out : bwtDecompress(out, maxBytes);
-    }
+    else return mid;
   }
-  return null;
+  return -1;
 }
 
 // The gump of that id in gumpartLegacyMUL.uop.
@@ -249,20 +254,33 @@ export function hueFor(hues: Hues, hue: number, partial: boolean): { colours: Ui
   return h && { colours: h.colours, partial };
 }
 
-// The art as 8-bit RGBA cut to its opaque box, the hue applied (each pixel's 5-bit red channel picks one of its 32 colours; a partial hue only grey pixels, r = g = b). Null when no pixel is opaque.
-export function toRgba(art: StaticArt, hue: { colours: Uint16Array; partial: boolean } | null = null): { width: number; height: number; rgba: Buffer } | null {
+// An opaque pixel with the hue applied: its 5-bit red channel picks one of the hue's 32 colours, and a partial hue takes only grey pixels (r = g = b). The result keeps the 0x8000 opaque bit.
+export function huePixel(p: number, hue: { colours: Uint16Array; partial: boolean } | null): number {
+  const r = (p >> 10) & 31;
+  return hue && (!hue.partial || (r === ((p >> 5) & 31) && r === (p & 31))) ? 0x8000 | hue.colours[r]! : p;
+}
+
+// The smallest box (inclusive corners) holding every opaque pixel, or null when there is none.
+export interface Box { x0: number; y0: number; x1: number; y1: number }
+export function opaqueBox(art: StaticArt): Box | null {
   let x0 = art.width, y0 = art.height, x1 = -1, y1 = -1;
   for (let y = 0; y < art.height; y++) for (let x = 0; x < art.width; x++) {
     if (art.pixels[y * art.width + x] === 0) continue;
     if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
   }
-  if (x1 < 0) return null;
-  const width = x1 - x0 + 1, height = y1 - y0 + 1, rgba = Buffer.alloc(width * height * 4), to8 = (c: number): number => (c << 3) | (c >> 2);
+  return x1 < 0 ? null : { x0, y0, x1, y1 };
+}
+
+// The art as 8-bit RGBA cut to `box` (its opaque box unless given), the hue applied (huePixel). Null when there is no box.
+export function toRgba(art: StaticArt, hue: { colours: Uint16Array; partial: boolean } | null = null, box: Box | null = opaqueBox(art)): { width: number; height: number; rgba: Buffer } | null {
+  if (!box) return null;
+  const width = box.x1 - box.x0 + 1, height = box.y1 - box.y0 + 1, rgba = Buffer.alloc(width * height * 4), to8 = (c: number): number => (c << 3) | (c >> 2);
   for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
-    let p = art.pixels[(y + y0) * art.width + x + x0]!;
+    const sx = x + box.x0, sy = y + box.y0;
+    if (sx < 0 || sy < 0 || sx >= art.width || sy >= art.height) continue;
+    let p = art.pixels[sy * art.width + sx]!;
     if (p === 0) continue;
-    const r = (p >> 10) & 31;
-    if (hue && (!hue.partial || (r === ((p >> 5) & 31) && r === (p & 31)))) p = hue.colours[r]!;
+    p = huePixel(p, hue);
     const o = (y * width + x) * 4;
     rgba[o] = to8((p >> 10) & 31); rgba[o + 1] = to8((p >> 5) & 31); rgba[o + 2] = to8(p & 31); rgba[o + 3] = 255;
   }
