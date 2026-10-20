@@ -7,7 +7,7 @@
 // {pools, current} request skips the pool step. Its answer is a status and the body the route sends.
 //
 // map: builder
-// owns: `createBuildsService`, `BuildsService`, `BuildRequest`, `poolOptions`, `givenSettings`, `scannedWho`, `manualSuitError`
+// owns: `createBuildsService`, `BuildsService`, `BuildRequest`, `poolOptions`, `autoCandidates`, `givenSettings`, `scannedWho`, `manualSuitError`
 import { onlyRootsDiagnostics, weaponFlagDiagnostics, type Diagnostic } from "../diagnostics.mts";
 import { optionalSlotsFor } from "../mip.mts";
 import { reusableRun, poolSnapshot, type RunOpts, type SavedRun } from "../runs-lib.mts";
@@ -34,6 +34,19 @@ export function poolOptions(inv: Inventory, character: string | null, s: Record<
   const pool = poolFromSpec(specFromRunSettings(s as RunSettings), who ? inv.characters[who] as Character : null);
   const { allowOthersWorn, strLimit, excludeTags, excludeRoots, allowGargoyle, medOnly, excludeWeapons, ubwsAnyWeapon, excludeSkills, lockedSlots, weaponMustHave } = pool;
   return { pool, poolOpts: { allowOthersWorn: allowOthersWorn && !!character, strength: strLimit, excludeTags, excludeRoots, excludeGargoyle: !allowGargoyle, medOnly, excludeWeapons, ubwsAnyWeapon, excludeSkills, weaponMustHave, lockedSlots: pins ? [] : lockedSlots, ...(pins ? { pinned: pins } : {}) } };
+}
+// The pieces a by-character build with these settings would pick from (#487, the Manual picker's "Only what Auto would
+// use"): its pool's candidates, and in a locked slot the piece worn there (unless the settings rule it out), which is
+// all a build keeps in it.
+export function autoCandidates(inv: Inventory, character: string | null, s: Record<string, unknown>): Set<number> {
+  const { pool: { onlyRoots, lockedSlots }, poolOpts } = poolOptions(inv, character, s);
+  const { pools, current, blocked } = buildPools(inv, scannedWho(character), { ...poolOpts, onlyRoots });
+  const keep = new Set<number>();
+  for (const slot of GEAR_SLOTS) {
+    if (lockedSlots.includes(slot)) { if (current[slot] && !blocked.includes(slot)) keep.add(current[slot]!.serial); }
+    else for (const o of pools[slot] || []) keep.add(o.serial);
+  }
+  return keep;
 }
 // Manual's suit against the inventory (a fill's `pinned`, a manual run's `suit`): each serial a gear piece of its slot in
 // the scans, and no two-handed weapon beside a one-hander.

@@ -67,12 +67,15 @@ export interface ItemSource {
   // How many of the stacks a query matches carry each property, for the property rule's list.
   propCounts: (query: ItemQuery) => Promise<PropCounts>;
 }
-// The default source: GET /api/items, and the facets of the inventory as last loaded.
-export const itemsSource: ItemSource = {
-  fetch: (query, offset, limit) => api<ItemsApiResponse>(`/api/items?${queryParams({ ...query, offset, limit }).toString()}`),
+// GET /api/items, and the facets of the inventory as last loaded. `extra` adds parameters the filters do not hold, read
+// at each request (the Manual picker's auto=, "Only what Auto would use").
+export const itemsSourceWith = (extra: () => string): ItemSource => ({
+  fetch: (query, offset, limit) => api<ItemsApiResponse>(`/api/items?${queryParams({ ...query, offset, limit }).toString()}${extra()}`),
   facets: () => state.facets,
-  propCounts: (query) => api<ItemPropCountsApiResponse>(`/api/items?${queryParams(query).toString()}&fields=props`),
-};
+  propCounts: (query) => api<ItemPropCountsApiResponse>(`/api/items?${queryParams(query).toString()}&fields=props${extra()}`),
+});
+// The default source.
+export const itemsSource: ItemSource = itemsSourceWith(() => "");
 // A checkbox before each list row and a header checkbox for the rows loaded (the Inventory's selection, issue #270: ui/move-to.mts
 // keeps it). `locked` says why a row cannot be ticked (a worn item); `header` is the header checkbox's look.
 export interface SelectionHooks {

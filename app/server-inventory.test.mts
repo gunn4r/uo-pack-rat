@@ -1,6 +1,6 @@
 // server-inventory.test.mts — HTTP tests of the inventory routes, Forget and the blacklist.
 //
-// `GET /api/inventory` folding the demo fixtures (facets, worn gear and counts, every field the page's non-paged tabs read, no item list), a new scan picked up without a restart, `readScans()` skipping an invalid or unparsable scan file, missing items counted per root and listed by `GET /api/missing`, `GET /api/items` paging, sorting and searching and its property counts (`fields=props`), `GET /api/items/by-serial`; `POST /api/forget` (409 under `--demo`, a bad root, name bounds, only a schema-valid tombstone written, a boolean, unsafe integer or out-of-range serial refused) and its `changed` event (with a run deletion's) on open streams; `POST /api/forget-character` (refusals, one tombstone, the character dropped and given back on a newer scan, 409 under `--demo`); and `/api/blacklist` (issue #38: add, list, remove, bad bodies and entries dropped, Keep and Remove through the fold). Unravel candidates from `GET /api/items?unravel=1` (issue #271): their ingredient and weight, heaviest first, the pieces left out (worn, in a saved run, insured, pinned, kept) and `unravelShow`, and the Keep list through `PUT /api/settings`. Gather into a bag's remembered bag per character (`unravelBag`) checked and saved.
+// `GET /api/inventory` folding the demo fixtures (facets, worn gear and counts, every field the page's non-paged tabs read, no item list), a new scan picked up without a restart, `readScans()` skipping an invalid or unparsable scan file, missing items counted per root and listed by `GET /api/missing`, `GET /api/items` paging, sorting and searching and its property counts (`fields=props`), `auto=` narrowing it to a Suit Builder pool (400 on a malformed one), `GET /api/items/by-serial`; `POST /api/forget` (409 under `--demo`, a bad root, name bounds, only a schema-valid tombstone written, a boolean, unsafe integer or out-of-range serial refused) and its `changed` event (with a run deletion's) on open streams; `POST /api/forget-character` (refusals, one tombstone, the character dropped and given back on a newer scan, 409 under `--demo`); and `/api/blacklist` (issue #38: add, list, remove, bad bodies and entries dropped, Keep and Remove through the fold). Unravel candidates from `GET /api/items?unravel=1` (issue #271): their ingredient and weight, heaviest first, the pieces left out (worn, in a saved run, insured, pinned, kept) and `unravelShow`, and the Keep list through `PUT /api/settings`. Gather into a bag's remembered bag per character (`unravelBag`) checked and saved.
 //
 // Tags: [smoke] and [fast].
 import { test, before, after, afterEach } from "node:test";
@@ -222,6 +222,18 @@ test("[fast] /api/items pages, sorts and searches", async () => {
   assert.equal(counts.total, gear.total, "the page size does not limit the count");
   assert.equal(counts.props.physResist, gear.rows!.filter((r) => "physResist" in r.props).length);
   assert.ok(Object.values({ ...counts.props, ...counts.flags }).every((n) => n > 0 && n <= counts.total));
+  // The Manual picker's "Only what Auto would use" (#487): auto= narrows the search to a build's pool for those settings.
+  const who = Object.keys(inv.inventory.characters)[0]!;
+  const auto = (v: unknown, more = ""): Promise<Response> => get(`/api/items?limit=500${more}&auto=${encodeURIComponent(JSON.stringify(v))}`);
+  const pool = asJson<ItemsPageResponse>(await (await auto({ character: who, settings: {} })).json());
+  assert.ok(pool.total > 0 && pool.total < gear.total && pool.rows!.every((r) => r.kind === "gear"), "a build's pool: some gear, never all of it");
+  const medPool = asJson<ItemsPageResponse>(await (await auto({ character: who, settings: { medOnly: true } })).json());
+  assert.ok(medPool.total < pool.total, "the pool settings narrow it");
+  const poolCounts = asJson<{ total: number }>(await (await auto({ character: who, settings: {} }, "&fields=props")).json());
+  assert.equal(poolCounts.total, pool.total, "the property counts are over the same pieces");
+  for (const bad of ["{", JSON.stringify([]), JSON.stringify({ character: "Nobody Scanned" }), JSON.stringify({ character: who, settings: { medOnly: "yes" } })]) {
+    assert.equal((await get(`/api/items?auto=${encodeURIComponent(bad)}`)).status, 400, bad);
+  }
   const clamp = asJson<ItemsPageResponse>(await (await get("/api/items?limit=9999")).json());
   assert.equal(clamp.limit, 500);
   // The House map's search (issue #10): fields=hits answers the same query with only what the map reads, many rows a page.
