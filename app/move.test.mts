@@ -42,7 +42,7 @@ test("[fast] a selection is its listed serials the scans still have and every it
   assert.deepEqual(resolveSelection(inv, { query: "q=ring", except: [] }).map((it) => it.serial), [RING, WORN]);
   assert.deepEqual(resolveSelection(inv, { query: "q=ring", except: [WORN] }).map((it) => it.serial), [RING]);
   assert.deepEqual(resolveSelection(inv, { query: "q=ring", except: [WORN], serials: [PEARL] }).map((it) => it.serial), [PEARL, RING], "rows ticked outside the query join it");
-  assert.deepEqual(resolveSelection(inv, { query: "house=1-100-100" }, [], {}, new Map([[FAR, "1-100-100"]])).map((it) => it.serial), [FARAWAY], "a house filter, by the house each ground container stands in");
+  assert.deepEqual(resolveSelection(inv, { query: "house=1-100-100" }, [], {}, () => new Map([[FAR, "1-100-100"]])).map((it) => it.serial), [FARAWAY], "a house filter, by the house each ground container stands in");
 });
 
 test("[fast] a selection's query text finds the items in a container by its Organize label, the bags inside it too", () => {
