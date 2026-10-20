@@ -1,0 +1,2 @@
+- **The same property groups everywhere**: the Suit Builder's Add requirement, Add a goal and Add weight pickers and the character sheet's Properties shown list now group properties as the Inventory's property rule does (Resists, Casting, Combat, Stats & pools, Skill bonuses, Other), instead of one long A–Z list.
+- For contributors: `catalogueGroups` in `app/domain/properties.mts` sorts any list of property keys into the catalogue's groups and order; `builder-requirements.mts`'s `propertyPicker` and `sheet.mts`'s Properties shown popover use it.
