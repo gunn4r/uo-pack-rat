@@ -165,7 +165,7 @@ export function createHousesService({ settings, uoFolderFinder }: { settings: ()
     if (hueMemo?.key !== key) { let hues: Hues | null; try { hues = readHues(readCapped(path, 4 << 20)); } catch { hues = null; } hueMemo = { key, hues }; }
     return hueMemo.hues;
   }
-  // The colour a worn piece's hue swatch shows (issue #57, the character sheet's gear list): entry 18 of each hue's ramp as "#rrggbb", keyed by the hue as asked (its partial and spectral bits ignored); a hue the file lacks is left out. `reason`: no folder, or no readable hues.mul (`missing`).
+  // The colour a hue's swatch shows (issue #57, the Customize popover's "Current" swatches for a scanned look's hues outside the palettes): entry 18 of each hue's ramp as "#rrggbb", keyed by the hue as asked (its partial and spectral bits ignored); a hue the file lacks is left out. `reason`: no folder, or no readable hues.mul (`missing`).
   function hueColors(list: number[]): Record<string, string> | { reason: string } {
     const at = artFolder();
     if ("reason" in at) return at;

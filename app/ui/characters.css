@@ -73,10 +73,6 @@
 .gear-piece:focus-visible { outline: none; box-shadow: var(--ring-focus); }
 .gear-piece .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: var(--weight-semibold); }
 .gear-piece > :not(.nm) { flex: none; }
-/* a piece with no hue, or no color yet, keeps the swatch's room, so the names line up */
-.gear-hue, .gear-hue-none { width: 10px; height: 10px; }
-/* a swatch is drawn only once its color has arrived */
-.gear-hue[data-painted] { border-radius: 2px; box-shadow: inset 0 0 0 1px var(--color-border-strong); }
 
 .sheet-props { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: var(--space-3) var(--space-5); padding: var(--space-3) var(--space-4); }
 .prop-group { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
