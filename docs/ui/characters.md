@@ -42,7 +42,7 @@ Part of the UI docs: [`docs/ui.md`](../ui.md) has the hard rules, tokens, compon
   - A label is at most 40 characters on one line, with no control characters (`labelError`, and the schema's pattern).
 - **The rest of the row:** last scan, STR · DEX · INT, Hits · Stam · Mana, the five paperdoll resists with a meter to the cap, pieces worn, "Build suit" and a ⋯ menu.
 
-The top-bar search filters the rows by names and build labels, and the header buttons sort them.
+The top-bar search filters the rows by names, build labels and top skills (as the Suit Builder's character picker shows them, `textHit`, #487), and the header buttons sort them.
 
 ## A character's page (`#/characters/<Name>`)
 
