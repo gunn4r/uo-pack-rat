@@ -11,9 +11,9 @@
 //
 // map: ui-components
 // owns: `createItemBrowser`, `itemsSource`
-import { SLOT_LABELS, SLOT_GROUP, RESIST_KEYS, tagUnits, flagLabel } from "../vault-lib.mts";
+import { SLOT_LABELS, SLOT_GROUP, RESIST_KEYS, tagUnits, flagLabel, FLAG_CATALOGUE, PROPERTY_CATALOGUE, CATALOGUE_GROUPS, ITEM_TYPE_LABELS, typesOfSlot, type ItemType } from "../vault-lib.mts";
 import type { Item } from "../vault-lib.mts";
-import type { Facets, ItemQuery, ItemQueryGroups, Place, PropOp } from "../item-query.mts";
+import type { Facets, ItemQuery, ItemQueryGroups, Place, PropCounts, PropOp } from "../item-query.mts";
 import { state } from "./store.mts";
 import { el, label, full, slotLabel, whereText } from "./dom.mts";
 import { api } from "./api.mts";
@@ -22,9 +22,9 @@ import { optionsKeeping, colsFromPrefs, COLS_VERSION } from "./view-state.mts";
 import { relativeWhen } from "./messages.mts";
 import { txt, box, icon, button, searchInput, filterChip, token, pill, segmented, switchControl, popover, closePopover, message, menu, input, nextId, toast } from "./components.mts";
 import type { Kids, MenuItem, PopoverHandle } from "./components.mts";
-import { splitSerial, placeNames, queryParams, withFixed, activeFilters, clearAll, matchLine, countFact, emptyCause, rowWindow, chunksToFetch, gridKey, colShort, colFull, groupColumns, COL_GROUPS, DEFAULT_COLS, ITEM_COLS, shortTier, rootName, slayerTree, slayerLabel, neZeroHint } from "./inv-model.mts";
+import { splitSerial, placeNames, queryParams, withFixed, activeFilters, clearAll, matchLine, countFact, emptyCause, rowWindow, chunksToFetch, gridKey, colShort, colFull, groupColumns, COL_GROUPS, DEFAULT_COLS, ITEM_COLS, shortTier, rootName, slayerTree, slayerLabel, neZeroHint, MAGE_WEAPON_HINT } from "./inv-model.mts";
 import type { FilterToken } from "./inv-model.mts";
-import type { ItemsApiResponse, UiPrefs } from "./api-types.mts";
+import type { ItemPropCountsApiResponse, ItemsApiResponse, UiPrefs } from "./api-types.mts";
 import { openRuleEditor } from "./rule-editor.mts";
 import { showItemTip, hideItemTip } from "./dom.mts";
 import { filterContext, tagEls, rarityEl, locationEl } from "./item-parts.mts";
@@ -64,11 +64,14 @@ export interface DetailHooks {
 export interface ItemSource {
   fetch: (query: ItemQuery, offset: number, limit: number) => Promise<ItemsApiResponse>;
   facets: () => Facets | null;
+  // How many of the stacks a query matches carry each property, for the property rule's list.
+  propCounts: (query: ItemQuery) => Promise<PropCounts>;
 }
 // The default source: GET /api/items, and the facets of the inventory as last loaded.
 export const itemsSource: ItemSource = {
   fetch: (query, offset, limit) => api<ItemsApiResponse>(`/api/items?${queryParams({ ...query, offset, limit }).toString()}`),
   facets: () => state.facets,
+  propCounts: (query) => api<ItemPropCountsApiResponse>(`/api/items?${queryParams(query).toString()}&fields=props`),
 };
 // A checkbox before each list row and a header checkbox for the rows loaded (the Inventory's selection, issue #270: ui/move-to.mts
 // keeps it). `locked` says why a row cannot be ticked (a worn item); `header` is the header checkbox's look.
@@ -126,14 +129,14 @@ export interface ItemBrowser {
 // A browser's filters and sort start here — the exact shape parseItemQuery (item-query.mts) reads off a
 // URLSearchParams (inv-model.mts's queryParams builds the query string from it; offset/limit are set per chunk).
 // Nothing hidden by default: power scrolls are Cursed.
-const BLANK_QUERY: ItemQuery ={ q: "", chars: [], slot: [], loc: [], roots: [], houses: [], rarity: "", rarityMin: "", rarityMax: "", kind: [], seenDays: 0, slayer: "", nogarg: false, med: false, hideTags: [], tags: [], props: [], flags: [], wskill: [], group: false, sort: "name", dir: 1, offset: 0, limit: 500 };
+const BLANK_QUERY: ItemQuery ={ q: "", chars: [], slot: [], loc: [], roots: [], houses: [], rarity: "", rarityMin: "", rarityMax: "", kind: [], seenDays: 0, slayer: "", nogarg: false, med: false, hideTags: [], tags: [], props: [], flags: [], wskill: [], type: [], group: false, sort: "name", dir: 1, offset: 0, limit: 500 };
 
 // ---------------------------------------------------------------- the filter state
-type ChipId = "char" | "slot" | "loc" | "rarity" | "kind" | "wskill" | "slayer" | "seen";
-const FACETS: ChipId[] = ["char", "slot", "loc", "rarity", "kind", "wskill"];
-const CHIP_NAMES: Record<ChipId, string> = { char: "Character", slot: "Slot", loc: "Location", rarity: "Rarity", kind: "Kind", wskill: "Weapon skill", slayer: "Slayer", seen: "Seen" };
+type ChipId = "char" | "slot" | "loc" | "rarity" | "kind" | "type" | "wskill" | "slayer" | "seen";
+const FACETS: ChipId[] = ["char", "slot", "loc", "rarity", "kind", "type", "wskill"];
+const CHIP_NAMES: Record<ChipId, string> = { char: "Character", slot: "Slot", loc: "Location", rarity: "Rarity", kind: "Kind", type: "Type", wskill: "Weapon skill", slayer: "Slayer", seen: "Seen" };
 // The query fields each chip sets: a fixed one hides the chip.
-const CHIP_FIELDS: Record<ChipId, Array<keyof ItemQuery>> = { char: ["chars"], slot: ["slot"], loc: ["loc", "roots", "houses"], rarity: ["rarityMin", "rarityMax"], kind: ["kind"], wskill: ["wskill"], slayer: ["slayer"], seen: ["seenDays"] };
+const CHIP_FIELDS: Record<ChipId, Array<keyof ItemQuery>> = { char: ["chars"], slot: ["slot"], loc: ["loc", "roots", "houses"], rarity: ["rarityMin", "rarityMax"], kind: ["kind"], type: ["type"], wskill: ["wskill"], slayer: ["slayer"], seen: ["seenDays"] };
 
 // Toolbar keyboard (spec 3.6): one tab stop; ←/→ move between the controls, Home/End jump. In the search
 // field the arrows move the caret until it reaches an end. The List/Grouped radios keep ↑/↓ for their value.
@@ -214,6 +217,14 @@ function slotOptions(q: ItemQuery, f: Facets | null): Option[] {
 // Issue #188: the weapon skills weapons count under, with Use Best Weapon Skill weapons under each melee skill.
 function weaponSkillOptions(q: ItemQuery, f: Facets | null): Option[] {
   return keeping((f?.weaponSkills || []).map((w) => ({ value: w.name, label: flagLabel(w.name), count: w.count })), q.wskill, flagLabel);
+}
+// The Type chip's choices; a browser fixed to some slots (the Manual picker) offers only the types those slots hold,
+// whose whole-inventory counts are then that picker's, since a type sits in one slot or one group.
+const typeLabel = (t: string): string => ITEM_TYPE_LABELS[t as ItemType] ?? t;
+const typesIn = (slots: string[] | undefined): Set<string> | null => (slots?.length ? new Set(slots.flatMap(typesOfSlot)) : null);
+function typeOptions(q: ItemQuery, f: Facets | null, slots: string[] | undefined): Option[] {
+  const only = typesIn(slots);
+  return keeping((f?.types || []).filter((t) => !only || only.has(t.name)).map((t) => ({ value: t.name, label: typeLabel(t.name), count: t.count })), q.type, typeLabel);
 }
 function kindOptions(q: ItemQuery, f: Facets | null): Option[] {
   return keeping((f?.kinds || []).map((k) => ({ value: k.name, label: k.name, count: k.count })), q.kind, String);
@@ -357,7 +368,8 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
   // ---------------------------------------------------------------- toolbar
   const chips = {} as Record<ChipId, HTMLButtonElement>;
   let search: HTMLInputElement, addChip: HTMLButtonElement, viewSeg: HTMLDivElement & { setValue: (v: string) => void }, settingsBtn: HTMLButtonElement;
-  const isFixed = (id: ChipId): boolean => CHIP_FIELDS[id].some((f) => f in fixed);
+  // A Type chip with one choice to offer (a picker fixed to a helmet) is as good as fixed.
+  const isFixed = (id: ChipId): boolean => CHIP_FIELDS[id].some((f) => f in fixed) || (id === "type" && (typesIn(fixed.slot)?.size ?? 2) < 2);
 
   // A chip's words: "Slot", "Slot: Ring", "Slot: Ring +2".
   function chipText(id: ChipId): string {
@@ -370,6 +382,7 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
       case "rarity": return q.rarityMin && q.rarityMax ? `Rarity: ${shortTier(q.rarityMin)} – ${shortTier(q.rarityMax)}`
         : q.rarityMin ? `Rarity ≥ ${shortTier(q.rarityMin)}` : q.rarityMax ? `Rarity ≤ ${shortTier(q.rarityMax)}` : name;
       case "kind": return many(q.kind);
+      case "type": return many(q.type.map(typeLabel));
       case "wskill": return many(q.wskill.map(flagLabel));
       case "slayer": return q.slayer === "*" ? "Any slayer" : `Slayer: ${slayerLabel(q.slayer)}`;
       case "seen": return `Seen: ${q.seenDays === 1 ? "24 h" : `${q.seenDays} days`}`;
@@ -383,6 +396,7 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
       case "loc": return q.loc.length + q.roots.length + q.houses.length > 0;
       case "rarity": return !!(q.rarityMin || q.rarityMax);
       case "kind": return q.kind.length > 0;
+      case "type": return q.type.length > 0;
       case "wskill": return q.wskill.length > 0;
       case "slayer": return !!q.slayer;
       case "seen": return !!q.seenDays;
@@ -396,7 +410,9 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
       c.querySelector("span")!.textContent = chipText(id);
       c.classList.toggle("set", on);
       // Slayer and Seen live behind "+ Filter" and show as a chip only while set.
-      c.hidden = isFixed(id) || ((id === "slayer" || id === "seen") && !on);
+      // Weapon skill goes while the Type filter picks only pieces that are no weapon (Shield, Spellbook…).
+      const noWeapons = query.type.length > 0 && !query.type.some((t) => t === "one-handed" || t === "two-handed");
+      c.hidden = isFixed(id) || ((id === "slayer" || id === "seen") && !on) || (id === "wskill" && !on && noWeapons);
     }
     if (search.value.trim().toLowerCase() !== query.q) search.value = query.q;
     viewSeg.setValue(query.group ? "grouped" : "list");
@@ -454,8 +470,9 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
     const rows = tree.map((r): RadioRow => {
       const cls = (...c: string[]) => [...c, r.first ? "sep" : ""].filter(Boolean).join(" ") || undefined;
       if (r.kind === "title") return { value: null, label: txt(r.label, "t-sm muted"), cls: cls("title") };
-      if (r.kind === "super") return { value: r.value, label: el("span", { class: "ellip" }, r.label, el("span", { class: "inv-opt-tag", "aria-hidden": "true" }, "Super")), count: r.value == null ? undefined : r.count, cls: cls() };
-      return { value: r.value, label: txt(r.label, "ellip"), count: r.count, cls: cls(r.level ? "sub" : "") };
+      const zero = r.count ? "" : " muted";
+      if (r.kind === "super") return { value: r.value, label: el("span", { class: `ellip${zero}` }, r.label, el("span", { class: "inv-opt-tag", "aria-hidden": "true" }, "Super")), count: r.count, cls: cls() };
+      return { value: r.value, label: txt(r.label, `ellip${zero}`), count: r.count, cls: cls(r.level ? "sub" : "") };
     });
     return [box("div", { class: "inv-pop-head" }, txt("Slayer", "caps")),
       radioList("Slayer", [{ value: "", label: txt("No slayer filter") }, { value: "*", label: txt("Any slayer"), count: f?.slayerAny || 0 }, ...rows],
@@ -484,6 +501,7 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
       case "char": return checklist({ title: "Character", options: charOptions(q, source.facets()), selected: q.chars, onChange: (v) => setQuery({ ...query, chars: v }) });
       case "slot": return checklist({ title: "Slot", options: slotOptions(q, source.facets()), selected: q.slot, searchable: false, onChange: (v) => setQuery({ ...query, slot: v }) });
       case "kind": return checklist({ title: "Kind", options: kindOptions(q, source.facets()), selected: q.kind, onChange: (v) => setQuery({ ...query, kind: v }) });
+      case "type": return checklist({ title: "Type", options: typeOptions(q, source.facets(), fixed.slot), selected: q.type, searchable: false, onChange: (v) => setQuery({ ...query, type: v }) });
       case "wskill": return [...checklist({ title: "Weapon skill", options: weaponSkillOptions(q, source.facets()), selected: q.wskill, searchable: false, onChange: (v) => setQuery({ ...query, wskill: v }) }),
         txt("Use Best Weapon Skill weapons count under Swordsmanship, Fencing and Mace Fighting.", "t-sm muted")];
       case "loc": return checklist({ title: "Location", options: locationOptions(q, source.facets()), selected: [...q.houses.map((h) => `house:${h}`), ...q.roots.map((r) => `root:${r}`), ...q.loc.map((l) => `loc:${l}`)], searchable: true,
@@ -509,12 +527,11 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
     );
     menu(addChip, entries, { label: "Add a filter" });
   }
-  // A property rule: the property (searchable, grouped like the column picker), ≥ ≤ = ≠, a number. Rules
-  // add up (an item must pass every one), which the popover says. A yes/no property (issue #182, the last group)
-  // is just "has": picking one hides the comparison and the number.
+  // A property rule: the property (searchable, from the whole catalogue in its groups, each with how many stacks in view
+  // carry it; none dims it but keeps its place), ≥ ≤ = ≠, a number. Rules add up (an item must pass every one), which the
+  // popover says. A yes/no property (issue #182, the last group) is just "has": picking one hides the comparison and the number.
   function propertyPanel(close: () => void): Kids {
-    const keys = [...new Set([...state.propKeys, ...(source.facets()?.extraKeys || []), "strReq", "weight"])];
-    const flags = source.facets()?.flagKeys || [];
+    let counts: PropCounts | null = null;
     let key = "", op = "ge", flag = false;
     const chosen = txt("Pick a property", "t-sm muted");
     const find = searchInput({ label: "Find a property", placeholder: "Find a property" });
@@ -522,7 +539,7 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
     const list = box("div", { class: "inv-opts inv-prop-list", role: "listbox", "aria-label": "Properties" });
     const num = input({ type: "number", value: 1, size: "sm", attrs: { "aria-label": "Value" } });
     const hint = txt("", "t-sm muted");
-    const showHint = (): void => { const h = flag ? null : neZeroHint(op, num.value); hint.textContent = h || ""; hint.hidden = !h; };
+    const showHint = (): void => { const h = flag ? null : neZeroHint(op, num.value) ?? (key === "mageWeapon" ? MAGE_WEAPON_HINT : null); hint.textContent = h || ""; hint.hidden = !h; };
     showHint();
     num.addEventListener("input", showHint);
     const opSeg = segmented({ label: "Comparison", options: [{ value: "ge", label: "≥" }, { value: "le", label: "≤" }, { value: "eq", label: "=" }, { value: "ne", label: "≠" }], value: "ge", onChange: (v) => { op = v; showHint(); } });
@@ -539,27 +556,28 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
       for (const o of list.querySelectorAll("[role=option]")) o.setAttribute("aria-selected", String(o === b));
       if (isFlag) add.focus(); else { num.focus(); num.select(); }
     };
+    const option = (k: string, name: string, unit: string, n: number | undefined, isFlag: boolean): HTMLElement => {
+      const zero = n === 0 ? " muted" : "";
+      const b = box("button", { type: "button", class: "menu-item inv-prop", role: "option", "aria-selected": String(flag === isFlag && k === key) },
+        el("span", { class: `ellip${zero}` }, name, unit ? txt(` ${unit}`, "muted") : null), txt(n == null ? "" : n.toLocaleString("en-US"), `inv-opt-count${zero}`));
+      b.addEventListener("click", () => pick(b, k, name, isFlag));
+      return b;
+    };
     const draw = (filter: string): void => {
       const kids: HTMLElement[] = [];
-      for (const g of groupColumns(keys)) {
-        const ks = g.keys.filter((k) => !filter || `${label(k)} ${colFull(k, full)}`.toLowerCase().includes(filter));
-        if (!ks.length) continue;
-        kids.push(txt(g.group, "inv-opt-group t-sm muted"));
-        for (const k of ks) {
-          const b = box("button", { type: "button", class: "menu-item inv-prop", role: "option", "aria-selected": String(!flag && k === key) }, txt(colFull(k, full), "ellip"), txt(label(k), "t-sm muted"));
-          b.addEventListener("click", () => pick(b, k, colFull(k, full), false));
-          kids.push(b);
-        }
+      const hit = (words: string): boolean => !filter || words.toLowerCase().includes(filter);
+      for (const group of CATALOGUE_GROUPS) {
+        const es = PROPERTY_CATALOGUE.filter((c) => c.group === group && hit(`${c.name} ${label(c.key)}`));
+        if (!es.length) continue;
+        kids.push(txt(group, "inv-opt-group t-sm muted"));
+        for (const c of es) kids.push(option(c.key, c.name, c.unit, counts ? counts.props[c.key] || 0 : undefined, false));
       }
-      const fs = flags.filter((f) => !filter || f.includes(filter));
+      const fs = FLAG_CATALOGUE.filter((f) => hit(flagLabel(f)));
       if (fs.length) kids.push(txt("Yes or no", "inv-opt-group t-sm muted"));
-      for (const f of fs) {
-        const b = box("button", { type: "button", class: "menu-item inv-prop", role: "option", "aria-selected": String(flag && f === key) }, txt(flagLabel(f), "ellip"), txt("Yes / no", "t-sm muted"));
-        b.addEventListener("click", () => pick(b, f, flagLabel(f), true));
-        kids.push(b);
-      }
+      for (const f of fs) kids.push(option(f, flagLabel(f), "", counts ? counts.flags[f] || 0 : undefined, true));
       list.replaceChildren(...(kids.length ? kids : [txt("No property matches.", "t-sm muted")]));
     };
+    void source.propCounts(withFixed(query, fixed)).then((c) => { counts = c; draw(find.input.value.trim().toLowerCase()); }, () => {});
     find.input.addEventListener("input", () => draw(find.input.value.trim().toLowerCase()));
     num.addEventListener("keydown", (e) => { if (e.key === "Enter") add.click(); });
     draw("");

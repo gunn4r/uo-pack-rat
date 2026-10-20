@@ -1,11 +1,11 @@
 // domain/pools.mts — what the optimizer picks from: buildPools turns the inventory into each slot's candidates for a character (STR-gated, tag-filtered, weapons by skill and must-have flags), toOptItem an item into the solver's shape, totalsOf a suit's totals and requirementReport its rows; plus the property, extra, flag and skill keys an inventory offers the builder and the filters.
 //
 // map: builder
-// owns: `OptItem`, `buildPools`, `toOptItem`, `totalsOf`, `requirementReport`, `gearSkills`, `builderKeys`, `propertyKeys`, `extraKeys`, `flagKeys`, `flagKey`, `flagLabel`, `weaponAllowed`, `weaponSkillsOf`, `WEAPON_SKILLS`, `itemSearchBlob`
+// owns: `OptItem`, `buildPools`, `toOptItem`, `totalsOf`, `requirementReport`, `gearSkills`, `builderKeys`, `propertyKeys`, `extraKeys`, `flagKeys`, `flagKey`, `flagLabel`, `weaponAllowed`, `weaponSkillsOf`, `WEAPON_SKILLS`, `itemTypeOf`, `ITEM_TYPES`, `itemSearchBlob`
 import { floorMet, heldTotal, liftedMin, RESIST_SKILL_KEY, type ResistStep } from "../solver/scoring.mts";
 import { getRules } from "./rules.mts";
 import { labelOf, PROP_LABELS, SKILL_SET, type PropMap } from "./properties.mts";
-import { GEAR_SLOTS, HAND_SLOTS, REQUIRED_SLOTS, SPELLBOOK_RE } from "./slots.mts";
+import { GEAR_SLOTS, HAND_SLOTS, REQUIRED_SLOTS, SLOT_GROUP, SPELLBOOK_RE } from "./slots.mts";
 import { slayersOf } from "./kinds.mts";
 import type { Inventory, Item } from "./fold.mts";
 
@@ -173,6 +173,23 @@ export function weaponSkillsOf(it: Pick<Item, "slot" | "skillReq" | "flags">): s
 export const WEAPON_MUST_HAVE: string[] = ["spell channeling", "balanced"];
 export const isWeapon = (it: Pick<Item, "slot" | "skillReq" | "extras">): boolean =>
   (it.slot === "oneHanded" || it.slot === "twoHanded") && (!!it.skillReq || typeof it.extras?.["weapon speed"] === "number");
+// The Type filter: what a piece is, in the shard's words. A weapon is one- or two-handed by its tooltip's "One-handed
+// Weapon" / "Two-handed Weapon" line (classify's twoHanded, which falls back to the name only without one); a held piece
+// that is no weapon is a shield in the two-handed slot (whatever its name: an artifact shield says nothing) and a
+// spellbook in the one-handed one; the rest by its slot's group. Anything else, and every item that is not gear, is Other.
+export const ITEM_TYPES = ["shield", "two-handed", "one-handed", "spellbook", "armor", "jewelry", "clothing", "other"] as const;
+export type ItemType = (typeof ITEM_TYPES)[number];
+export const ITEM_TYPE_LABELS: Readonly<Record<ItemType, string>> = { shield: "Shield", "two-handed": "Two-handed weapon", "one-handed": "One-handed weapon", spellbook: "Spellbook", armor: "Armor", jewelry: "Jewelry", clothing: "Clothing", other: "Other" };
+const GROUP_TYPE: Readonly<Record<string, ItemType>> = { Armor: "armor", Jewelry: "jewelry", Clothing: "clothing" };
+// The types a slot holds: a hand two (a weapon, or a shield or spellbook), any other slot its group's.
+export const typesOfSlot = (slot: string): ItemType[] => (slot === "twoHanded" ? ["two-handed", "shield"] : slot === "oneHanded" ? ["one-handed", "spellbook"] : [GROUP_TYPE[SLOT_GROUP[slot] ?? ""] ?? "other"]);
+export function itemTypeOf(it: Pick<Item, "gear" | "slot" | "twoHanded" | "skillReq" | "extras">): ItemType {
+  if (!it.gear || !it.slot) return "other";
+  if (isWeapon(it)) return it.twoHanded ? "two-handed" : "one-handed";
+  if (it.slot === "twoHanded") return "shield";
+  if (it.slot === "oneHanded") return "spellbook";
+  return GROUP_TYPE[SLOT_GROUP[it.slot] ?? ""] ?? "other";
+}
 // The required properties a piece lacks, its flags read through flagKey; none for a piece that is no weapon.
 export function missingFlags(it: Item, required: string[] = []): string[] {
   if (!required.length || !isWeapon(it)) return [];
@@ -269,9 +286,10 @@ export function propertyKeys(inv: ItemsLike): string[] {
 // Issue #133: the numeric tooltip lines no property models (parseTooltip's extras: "splintering weapon", "hit fatigue",
 // "weapon speed"), skill bonuses and ranges left out, so a property filter can put a threshold on them
 // (item-query.mts's colVal reads them). Apart from propertyKeys, which the Suit Builder's weights and floors list too.
+// Gear only, like flagKeys: a Bulk Order Deed's "Amount To Make: 20" or a book's page count is no property.
 export function extraKeys(inv: ItemsLike): string[] {
   const set = new Set<string>();
-  for (const it of Object.values(inv.items)) for (const [k, v] of Object.entries(it.extras || {})) if (typeof v === "number" && !SKILL_SET.has(k)) set.add(k);
+  for (const it of Object.values(inv.items)) if (it.gear) for (const [k, v] of Object.entries(it.extras || {})) if (typeof v === "number" && !SKILL_SET.has(k)) set.add(k);
   return [...set].sort();
 }
 // Issue #182: the yes/no properties a filter can require (parseTooltip's flags), the ones present in the inventory.

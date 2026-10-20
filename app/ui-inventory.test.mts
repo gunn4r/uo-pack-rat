@@ -1,6 +1,6 @@
 // ui-inventory.test.mts — `app/ui/inv-model.mts`, the Inventory screen's pure rules.
 //
-// `app/ui/inv-model.mts`, the Inventory screen's pure rules: `plural` ("1 stack", "1,204 pieces"), `queryParams` round-tripping a full filter state through the server's `parseItemQuery`, the active-filter tokens (their words, each removing only itself, the search counted as a filter and cleared by Clear all, the Rarity at most token and its empty-result sentence), the strip's "45 of 160 stacks match" and the footer's count fact, the empty-result sentence (the one filter that excludes everything alone, a single filter being its own cause, else the combination), tier and rule labels, a Location option named by its Organize label with the scanned name beside its serial (`placeNames`), the property popover's ≠ 0 note (`neZeroHint`), the nine default columns and the column picker's groups and order, the virtual table's row window (clamped at the end) and chunk fetches, and the table's keyboard model (arrows, Home/End, Page keys, Enter/Space, Esc). All `[fast]`.
+// `app/ui/inv-model.mts`, the Inventory screen's pure rules: `plural` ("1 stack", "1,204 pieces"), `queryParams` round-tripping a full filter state through the server's `parseItemQuery`, the active-filter tokens (their words, a type's among them, each removing only itself, the search counted as a filter and cleared by Clear all, the Rarity at most token and its empty-result sentence), the strip's "45 of 160 stacks match" and the footer's count fact, the empty-result sentence (the one filter that excludes everything alone, a single filter being its own cause, else the combination), tier and rule labels, a Location option named by its Organize label with the scanned name beside its serial (`placeNames`), the property popover's ≠ 0 note (`neZeroHint`), the nine default columns and the column picker's groups and order, the virtual table's row window (clamped at the end) and chunk fetches, and the table's keyboard model (arrows, Home/End, Page keys, Enter/Space, Esc). All `[fast]`.
 //
 // The rendered screen is driven by scripts/ui-state.test.mts.
 import test from "node:test";
@@ -27,7 +27,7 @@ test("[fast] plural agrees with its count and groups thousands", () => {
 });
 
 test("[fast] queryParams round-trips through the server's parser", () => {
-  const q: ItemQuery = { ...BASE, houses: ["1-3000-1000", "1-4000-1000"], q: "ring", chars: ["Dorran", "Kestrel"], slot: ["ring", "?"], loc: ["Metal Chest, left"], roots: [12], rarityMin: "Greater Magic Item", kind: ["gear"], seenDays: 7, slayer: "*", nogarg: true, med: true, hideTags: ["cursed"], tags: ["brittle", "antique"], props: [{ key: "lmc", min: 8 }, { key: "hci", min: 5, op: "le" }], flags: ["spell channeling", "mage armor"], wskill: ["fencing", "mace fighting"], group: true, sort: "hci", dir: -1, offset: 500, limit: 500 };
+  const q: ItemQuery = { ...BASE, houses: ["1-3000-1000", "1-4000-1000"], type: ["shield", "two-handed"], q: "ring", chars: ["Dorran", "Kestrel"], slot: ["ring", "?"], loc: ["Metal Chest, left"], roots: [12], rarityMin: "Greater Magic Item", kind: ["gear"], seenDays: 7, slayer: "*", nogarg: true, med: true, hideTags: ["cursed"], tags: ["brittle", "antique"], props: [{ key: "lmc", min: 8 }, { key: "hci", min: 5, op: "le" }], flags: ["spell channeling", "mage armor"], wskill: ["fencing", "mace fighting"], group: true, sort: "hci", dir: -1, offset: 500, limit: 500 };
   assert.deepEqual(parseItemQuery(queryParams(q)), q);
   assert.deepEqual(parseItemQuery(queryParams(BASE)), BASE);
 });
@@ -81,6 +81,15 @@ test("[fast] a weapon skill is a token of its own, and Clear all clears it (issu
   assert.deepEqual(tokens[0]!.remove(q).wskill, ["mace fighting"], "removing one leaves the other");
   assert.equal(tokens[0]!.cause(3), "None of the 3 stacks is a Swordsmanship weapon.");
   assert.deepEqual(clearAll(q).wskill, []);
+});
+
+test("[fast] a type is a token of its own, named as the Type chip names it, and Clear all clears it", () => {
+  const q: ItemQuery = { ...BASE, type: ["shield", "two-handed"] };
+  const tokens = activeFilters(q, CTX);
+  assert.deepEqual(tokens.map((t) => t.label), ["Type: Shield", "Type: Two-handed weapon"]);
+  assert.deepEqual(tokens[0]!.remove(q).type, ["two-handed"]);
+  assert.equal(tokens[0]!.cause(3), "None of the 3 stacks has the type Shield.");
+  assert.deepEqual(clearAll(q).type, []);
 });
 
 test("[fast] activeFilters counts the search as a filter, and Clear all clears it too", () => {
@@ -199,33 +208,33 @@ test("[fast] slayerLabel names a slayer the way its item does", () => {
   assert.equal(slayerLabel("Exorcism (demons)"), "Exorcism Slayer", "a lower-case bracket only describes the group and goes");
   assert.equal(slayerLabel("Repond (humanoids)"), "Repond Slayer");
 });
+const sup = (value: string, count: number, label = `${value} Slayer`) => ({ kind: "super", value, label, count, first: true });
+const les = (value: string, count: number, level: 0 | 1 = 1) => ({ kind: "slayer", value, label: `${value} Slayer`, count, level });
 test("[fast] slayerTree puts each super slayer before its lesser slayers, in the table's order", () => {
   assert.deepEqual(slayerTree(f(["Bat", 1], ["Dragon", 2], ["Reptile", 3], ["Snake", 4], ["Undead (Silver)", 5]), GROUPS), [
-    { kind: "super", value: "Reptile", label: "Reptile Slayer", count: 3, first: true },
-    { kind: "slayer", value: "Dragon", label: "Dragon Slayer", count: 2, level: 1 },
-    { kind: "slayer", value: "Snake", label: "Snake Slayer", count: 4, level: 1 },
-    { kind: "super", value: "Undead (Silver)", label: "Undead Slayer (Silver)", count: 5, first: true },
-    { kind: "title", label: "Talisman slayers", first: true },
-    { kind: "slayer", value: "Bat", label: "Bat Slayer", count: 1, level: 0 },
+    sup("Demon", 0), les("Gargoyle", 0),
+    sup("Reptile", 3), les("Dragon", 2), les("Snake", 4),
+    sup("Undead (Silver)", 5, "Undead Slayer (Silver)"),
+    sup("Fey", 0),
+    { kind: "title", label: "Talisman slayers", first: true }, les("Bat", 1, 0), les("Mage", 0, 0),
   ]);
 });
-test("[fast] slayerTree keeps a missing super slayer as a heading over its lesser slayers, and hides empty groups", () => {
-  assert.deepEqual(slayerTree(f(["Gargoyle", 7]), GROUPS), [
-    { kind: "super", value: null, label: "Demon Slayer", count: 0, first: true },
-    { kind: "slayer", value: "Gargoyle", label: "Gargoyle Slayer", count: 7, level: 1 },
+test("[fast] slayerTree lists every slayer of the table, at 0 when the inventory has none, a super slayer by its first name", () => {
+  assert.deepEqual(slayerTree([], GROUPS), [
+    sup("Demon", 0), les("Gargoyle", 0), sup("Reptile", 0), les("Dragon", 0), les("Snake", 0), sup("Undead", 0), sup("Fey", 0),
+    { kind: "title", label: "Talisman slayers", first: true }, les("Bat", 0, 0), les("Mage", 0, 0),
   ]);
-  assert.deepEqual(slayerTree([], GROUPS), []);
 });
 test("[fast] slayerTree files a slayer the table lacks under Other, A–Z, and matches names in any case", () => {
-  assert.deepEqual(slayerTree(f(["Zebra", 1], ["fey", 2], ["Balron", 3]), GROUPS), [
-    { kind: "super", value: "fey", label: "Fey Slayer", count: 2, first: true },
+  const tree = slayerTree(f(["Zebra", 1], ["fey", 2], ["Balron", 3]), GROUPS);
+  assert.deepEqual(tree[6], sup("fey", 2, "Fey Slayer"));
+  assert.deepEqual(tree.slice(-3), [
     { kind: "title", label: "Other", first: true },
-    { kind: "slayer", value: "Balron", label: "Balron Slayer", count: 3, level: 0 },
-    { kind: "slayer", value: "Zebra", label: "Zebra Slayer", count: 1, level: 0 },
+    les("Balron", 3, 0), les("Zebra", 1, 0),
   ]);
 });
 test("[fast] slayerTree marks the first row of every group, so two super slayers in a row from different groups are kept apart", () => {
-  assert.deepEqual(slayerTree(f(["Fey", 1], ["Undead", 2], ["Undead (Silver)", 3]), GROUPS).map((r) => r.kind !== "title" && "first" in r ? `${r.label} first` : r.label),
+  assert.deepEqual(slayerTree(f(["Fey", 1], ["Undead", 2], ["Undead (Silver)", 3]), GROUPS).map((r) => r.kind !== "title" && "first" in r ? `${r.label} first` : r.label).slice(5, 8),
     ["Undead Slayer first", "Undead Slayer (Silver)", "Fey Slayer first"]);
 });
 test("[fast] slayerTree without a table is the plain A–Z list", () => {

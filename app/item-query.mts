@@ -14,8 +14,8 @@
 // property column; alphabetical is the useful default for a name column), reproduced exactly, not fixed.
 //
 // map: query
-// owns: `parseItemQuery`, `matchesItem`, `applyItemQuery`, `facetsOf`, `ItemQuery`, `RuleQuery`, `EXTRA_COLS`, `colVal`, `rarityRank`, `HIT_LIMIT`
-import { itemSearchBlob, itemOwnBlob, groupByName, compareNames, KINDS, SLOT_LABELS, propertyKeys, extraKeys, flagKeys, flagKey, gearSkills, weaponSkillsOf, WEAPON_SKILLS, PROPERTIES } from "./vault-lib.mts";
+// owns: `parseItemQuery`, `matchesItem`, `applyItemQuery`, `facetsOf`, `propCounts`, `ItemQuery`, `RuleQuery`, `EXTRA_COLS`, `colVal`, `rarityRank`, `HIT_LIMIT`
+import { itemSearchBlob, itemOwnBlob, groupByName, compareNames, KINDS, SLOT_LABELS, propertyKeys, extraKeys, flagKeys, flagKey, gearSkills, weaponSkillsOf, WEAPON_SKILLS, PROPERTIES, itemTypeOf, ITEM_TYPES } from "./vault-lib.mts";
 import type { Item, ItemGroup } from "./vault-lib.mts";
 import type { RulesV1, RulesV1RarityItem } from "./schema/types.d.mts";
 import { unravelInfo, LEFT_OUT, type LeftOut, type UnravelInfo } from "./unravel.mts";
@@ -47,6 +47,22 @@ export const HIT_LIMIT = 10000;
 export interface HitRow { serial: number; name: string; amount: number; root: number | null; container: number | null; location?: { text: string } | undefined }
 export const wantsHits = (sp: URLSearchParams): boolean => sp.get("fields") === "hits";
 export const hitRow = (it: Item): HitRow => ({ serial: it.serial, name: it.name, amount: it.amount, root: it.root, container: it.container, ...(it.location ? { location: { text: it.location.text } } : {}) });
+// The property rule's counts (`fields=props`): of the matching stacks, how many carry each numeric property (a modelled
+// one, a numeric tooltip line, a Strength requirement, a weight) and each yes/no property (by flagKey), page and grouping aside.
+export const wantsPropCounts = (sp: URLSearchParams): boolean => sp.get("fields") === "props";
+export interface PropCounts { props: Record<string, number>; flags: Record<string, number> }
+export function propCounts(items: Item[]): PropCounts {
+  const props: Record<string, number> = {}, flags: Record<string, number> = {};
+  const add = (m: Record<string, number>, k: string): void => { m[k] = (m[k] || 0) + 1; };
+  for (const it of items) {
+    for (const k of Object.keys(it.props)) add(props, k);
+    for (const [k, v] of Object.entries(it.extras || {})) if (typeof v === "number") add(props, k);
+    if (it.strReq) add(props, "strReq");
+    if (it.weight != null) add(props, "weight");
+    for (const f of new Set((it.flags || []).map(flagKey))) add(flags, f);
+  }
+  return { props, flags };
+}
 
 // A property rule: `min` is the threshold and `op` says which side of it passes — absent is "at least"
 // (the rule's original and wire-default meaning, `prop=hci:10`), "le" is "at most", "eq" is "exactly", "ne" is
@@ -58,22 +74,23 @@ export interface PropFilter { key: string; min: number; op?: PropOp | undefined;
 // `hideTags` drops an item with any of its tags, `tags` (issue #133) keeps only an item with any of its tags.
 // `flags` (issue #182) keeps only an item with EVERY one of its yes/no properties, like the property rules it sits beside.
 // `wskill` (issue #188) is a list filter too: a weapon counting under any of its skills (vault-lib.mts's weaponSkillsOf).
+// `type` is one as well: what a piece is (vault-lib.mts's itemTypeOf: shield, two-handed, one-handed, spellbook, armor, …).
 // `unravel` (issue #271) keeps only pieces that unravel into something, each row carrying what (`UnravelRow`), less the ones
 // left out by default (unravel.mts's LEFT_OUT) unless `unravelShow` names their reasons; sort `unravel` is by weight.
 export interface ItemQuery {
   q: string; chars: string[]; slot: string[]; loc: string[]; roots: number[]; houses: string[]; rarity: string; rarityMin: string; rarityMax: string; kind: string[];
-  seenDays: number; slayer: string; nogarg: boolean; med: boolean; hideTags: string[]; tags: string[]; props: PropFilter[]; flags: string[]; wskill: string[]; group: boolean;
+  seenDays: number; slayer: string; nogarg: boolean; med: boolean; hideTags: string[]; tags: string[]; props: PropFilter[]; flags: string[]; wskill: string[]; type: string[]; group: boolean;
   sort: string; dir: 1 | -1; offset: number; limit: number;
   unravel?: boolean | undefined; unravelShow?: LeftOut[] | undefined;
 }
 
 // An Organize rule's query (issue #11): the Inventory's filters on the item itself. Location, character and
 // seen filters are left out, and so are the view and paging, because a rule must keep matching an item after
-// it moves. `tags`, `flags` and `wskill` are optional: rules saved before them (issues #133, #182, #188) have none.
-export type RuleQuery = Omit<ItemQuery, "loc" | "roots" | "houses" | "chars" | "seenDays" | "group" | "sort" | "dir" | "offset" | "limit" | "tags" | "flags" | "wskill" | "unravel" | "unravelShow"> & { tags?: string[]; flags?: string[]; wskill?: string[] };
+// it moves. `tags`, `flags`, `wskill` and `type` are optional: rules saved before them (issues #133, #182, #188) have none.
+export type RuleQuery = Omit<ItemQuery, "loc" | "roots" | "houses" | "chars" | "seenDays" | "group" | "sort" | "dir" | "offset" | "limit" | "tags" | "flags" | "wskill" | "type" | "unravel" | "unravelShow"> & { tags?: string[]; flags?: string[]; wskill?: string[]; type?: string[] };
 
 // Reads every filter/sort/paging knob off a URLSearchParams (GET /api/items' query string, or the page's
-// own future use of the same parser). `hide`, `tag`, `prop`, `slot`, `kind` and `wskill` accept either a single
+// own future use of the same parser). `hide`, `tag`, `prop`, `slot`, `kind`, `wskill` and `type` accept either a single
 // comma-separated value (hide=a,b) or repeated params (hide=a&hide=b) — both are flattened the same way.
 // `char` and `loc` are repeated params only: a character or container name may itself hold a comma. So is `house`, a
 // House map house id: every container standing in that house, as applyItemQuery's `houseOf` says.
@@ -121,6 +138,7 @@ export function parseItemQuery(searchParams: URLSearchParams): ItemQuery {
     props,
     flags: listOf("flag").map((s) => s.toLowerCase()),
     wskill: splitAll("wskill").map((s) => s.toLowerCase()),
+    type: splitAll("type").map((s) => s.toLowerCase()),
     group: sp.get("group") === "1" && !wantsHits(sp),
     sort: sp.get("sort") || "name",
     dir: sp.get("dir") === "-1" ? -1 : 1,
@@ -151,6 +169,7 @@ function itemPasses(it: Item, q: RuleQuery, needle: string, blob: (it: Item) => 
   for (const f of q.props) if (!passes(colVal(it, f.key), f)) return false;
   if (q.flags?.some((f) => !it.flags?.some((x) => flagKey(x) === flagKey(f)))) return false;
   if (q.wskill?.length && !weaponSkillsOf(it).some((w) => q.wskill!.some((s) => s.toLowerCase() === w))) return false;
+  if (q.type?.length && !q.type.some((t) => t.toLowerCase() === itemTypeOf(it))) return false;
   if (needle && !blob(it).includes(needle)) return false;
   return true;
 }
@@ -249,6 +268,8 @@ export interface Facets {
   kinds: Array<{ name: string; count: number }>;
   // The weapon skills weapons count under (issue #188, vault-lib.mts's weaponSkillsOf), in WEAPON_SKILLS order.
   weaponSkills: Array<{ name: string; count: number }>;
+  // The Type chip's choices (vault-lib.mts's ITEM_TYPES, in that order) with how many stacks each, the empty ones left out.
+  types: Array<{ name: string; count: number }>;
   propKeys: string[];
   // Numeric extras a property filter can threshold (issue #133): offered by the Inventory's property rule only,
   // never by the Suit Builder, whose keys propKeys feeds.
@@ -287,5 +308,7 @@ export function facetsOf(items: Item[], { rarity = [] }: { rarity?: RulesV1Rarit
   const kinds = KINDS.filter((k) => items.some((i) => i.kind === k)).map((name) => ({ name, count: items.filter((i) => i.kind === name).length }));
   const skillsOf = items.map(weaponSkillsOf);
   const weaponSkills = WEAPON_SKILLS.map((name) => ({ name, count: skillsOf.filter((s) => s.includes(name)).length })).filter((w) => w.count);
-  return { slots, locations, places, rarities, slayers, slayerAny, kinds, weaponSkills, propKeys: propertyKeys({ items }), extraKeys: extraKeys({ items }), flagKeys: flagKeys({ items }), gearSkills: gearSkills({ items }), itemCount: items.length };
+  const typeOf = items.map(itemTypeOf);
+  const types = ITEM_TYPES.map((name) => ({ name, count: typeOf.filter((t) => t === name).length })).filter((t) => t.count);
+  return { slots, locations, places, rarities, slayers, slayerAny, kinds, weaponSkills, types, propKeys: propertyKeys({ items }), extraKeys: extraKeys({ items }), flagKeys: flagKeys({ items }), gearSkills: gearSkills({ items }), itemCount: items.length };
 }

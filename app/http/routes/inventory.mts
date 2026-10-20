@@ -8,14 +8,14 @@
 //
 // map: server
 // owns: `routes`
-import { parseItemQuery, applyItemQuery, facetsOf, wantsHits, hitRow, type ItemQueryRows, type ItemQueryGroups, type UnravelContext } from "../../item-query.mts";
+import { parseItemQuery, applyItemQuery, facetsOf, wantsHits, hitRow, wantsPropCounts, propCounts, type ItemQueryRows, type ItemQueryGroups, type UnravelContext } from "../../item-query.mts";
 import { labelledPlaces, type Item } from "../../vault-lib.mts";
 import { leftOutReasons } from "../../unravel.mts";
 import { suitPieces } from "../../runs-lib.mts";
 import { unravelKeep } from "../../store/settings.mts";
 import { send } from "../respond.mts";
 import type { Route } from "../router.mts";
-import type { InventoryApiResponse, ItemHitsApiResponse, ItemsApiResponse, ItemsBySerialApiResponse, MissingApiResponse } from "../../api/inventory.mts";
+import type { InventoryApiResponse, ItemHitsApiResponse, ItemPropCountsApiResponse, ItemsApiResponse, ItemsBySerialApiResponse, MissingApiResponse } from "../../api/inventory.mts";
 import type { ServerContext } from "../context.mts";
 
 export function routes(ctx: ServerContext): Route[] {
@@ -53,8 +53,14 @@ export function routes(ctx: ServerContext): Route[] {
     { method: "GET", path: "/api/items", handle: async (_req, res, url) => {
       const { inv, houses } = await getInventory();
       const query = parseItemQuery(url.searchParams);
+      const places = labelledPlaces(inv.containers, organizeStore.read().config.labels);
       const houseOf = query.houses.length ? houseService.houseOfContainers(inv, houses, houseClaimsStore.read()) : undefined;
-      const result = applyItemQuery(Object.values(inv.items), query, { rarity: appSettings.rules().rarity, places: labelledPlaces(inv.containers, organizeStore.read().config.labels), ...(houseOf ? { houseOf } : {}), ...(query.unravel ? { unravel: unravelContext() } : {}) });
+      const where = { rarity: appSettings.rules().rarity, places, ...(houseOf ? { houseOf } : {}) };
+      if (wantsPropCounts(url.searchParams)) {
+        const { rows, total } = applyItemQuery(Object.values(inv.items), { ...query, group: false, unravel: false, offset: 0, limit: Number.MAX_SAFE_INTEGER }, where) as ItemQueryRows;
+        return send(res, 200, { ok: true, total, ...propCounts(rows) } satisfies ItemPropCountsApiResponse);
+      }
+      const result = applyItemQuery(Object.values(inv.items), query, { ...where, ...(query.unravel ? { unravel: unravelContext() } : {}) });
       if (wantsHits(url.searchParams)) return send(res, 200, { ok: true, total: result.total, offset: query.offset, limit: query.limit, rows: (result as ItemQueryRows).rows.map(hitRow) } satisfies ItemHitsApiResponse);
       // applyItemQuery returns the ItemQueryRows | ItemQueryGroups union; narrow at each call site
       // by query.group, same as app/item-query.test.mts does — `total` is common to both branches.

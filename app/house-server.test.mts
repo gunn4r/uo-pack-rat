@@ -57,6 +57,7 @@ test("[fast] /api/items?house= takes every item in the house's containers, and n
       const rows = (await get<{ rows: Array<{ name: string }> }>(s, "/api/items?house=1-3000-1000")).body.rows.map((r) => r.name);
       assert.deepEqual(rows, claimed ? ["Heater Shield"] : [], claimed ? "the chest's item, not the pack's" : "a house no claim covers is no filter's house");
       assert.equal((await get<{ total: number }>(s, "/api/items?house=1-3000-1000&root=" + PACK)).body.total, claimed ? 2 : 1, "a house and a root add up");
+      assert.equal((await get<{ total: number }>(s, "/api/items?house=1-3000-1000&fields=props")).body.total, claimed ? 1 : 0, "the property rule's counts take the house too");
     } finally { await s.close(); }
   }
 });
