@@ -56,9 +56,10 @@ The ⋯ menus are `menu(anchor, items, {label})` from `components.mts`: a popove
 
 The sheet itself is one themed component, `sheetNode(name, before, after, opts?)` in `ui/sheet.mts`, used by the Characters screen and the Suit Builder result:
 
-- `before`: the suit to show, a `SheetAssignment` (`Record<string, SheetItem>` keyed by slot or serial; a `SheetItem` is `{serial, name, slot, props, rarity?, tags?, extras?}`, which both a scanned `Item` and an optimizer `OptItem` satisfy). `wornSet(name)` gives the character's worn set in this shape.
-- `after`: `null` for the one-suit sheet; a second assignment for the "now → after" variant, where every figure that moves reads "18 → 22" (the after number in success or danger color), the slot tiles show the `after` suit with its new pieces badged "New", and the footnote adds the Hits/Stamina/Mana estimate note. Worn pieces `before` leaves out (those a run saved with twelve slots never planned, or no slot holds) count on both sides; a piece in `before` counts once.
-- `opts.onSlot(item, tile)`: called when a filled slot tile is pressed; with or without it the tiles carry the page's item tooltip (`itemTip`), on hover and keyboard focus. The Characters screen opens the piece's tooltip (the same `tipNode` as the hover tooltip) in an always-dark popover (`.item-pop`), with "Open in Inventory", which shows the piece in the Inventory's item peek (`inventory.mts`'s `showItem`); the hover tooltip stays away from the tile while it is open.
+- `before`: the suit to show, a `SheetAssignment` (`Record<string, SheetItem>` keyed by slot or serial; a `SheetItem` is `{serial, name, slot, props, rarity?, tags?, extras?, graphic?, hue?}`, which both a scanned `Item` and an optimizer `OptItem` satisfy). `wornSet(name)` gives the character's worn set in this shape.
+- `after`: `null` for the one-suit sheet; a second assignment for the "now → after" variant, where every figure that moves reads "18 → 22" (the after number in success or danger color), the gear list shows the `after` suit with its new pieces badged "New", and the footnote adds the Hits/Stamina/Mana estimate note. Worn pieces `before` leaves out (those a run saved with twelve slots never planned, or no slot holds) count on both sides; a piece in `before` counts once.
+- `opts.onSlot(item, tile)`: called when a piece in the gear list is pressed; with or without it the pieces carry the page's item tooltip (`itemTip`), on hover and keyboard focus. The Characters screen opens the piece's tooltip (the same `tipNode` as the hover tooltip) in an always-dark popover (`.item-pop`), with "Open in Inventory", which shows the piece in the Inventory's item peek (`inventory.mts`'s `showItem`); the hover tooltip stays away from the piece while it is open.
+- `opts.doll(set)`: the sheet's paperdoll, given the suit the gear list shows (`after` when there is one) with the worn extras; the node is drawn beside the worn gear. The Characters screen and the Suit Builder's Full sheet both pass `ui/sheet-doll.mts`'s `sheetDoll` (one doll card per screen and character, kept between redraws; an optimizer piece's graphic and hue are looked up by serial through `resolveItems` before the figure is drawn); without it the gear list fills the row.
 
 `sheetNode` returns a `div.sheet` (with `data-character`).
 
@@ -68,13 +69,10 @@ Seven tiles: the five resists as value / cap, with a meter and a "cap +N" badge 
 
 ### Worn gear and Properties
 
-Then come two cards in a 7fr / 5fr grid:
+Then comes a row (layout 1B, issue #57): the paperdoll on the left, 420 px wide, and the worn gear filling the rest at the doll's height, then the Properties card under them.
 
-- **Worn gear:**
-  - Armor 3 × 2, Weapons and jewelry 3 × 2, and Clothing 3 × 2;
-  - plus a Kilt / Skirt tile, only while one is worn (issue #202);
-  - anything else goes under Other;
-  - borders take the rarity color, and empty slots are dashed.
+- **Paperdoll:** the doll card (`app/ui/doll-card.mts`) drawing the character's look in the shown suit (`wornPieces` turns each piece's `graphic` and `hue` into what the renderer draws): what they wear on the Characters screen, the new suit on the Suit Builder's Full sheet.
+- **Worn gear:** a table with one row per filled slot, in the slot groups' order (Armor, Weapons and jewelry, Clothing, the Kilt / Skirt only while one is worn, issue #202), then anything else as Other. Each row is the slot and the piece: a swatch of its hue (entry 18 of the hue's ramp in the client's hues.mul, from `GET /api/hue-colors` 64 hues a request, cleared when the UO folder changes; a swatch with no color shows nothing, keeping its room), its name, a "New" badge, its quality tags (antique, brittle, cursed, prized, blessed) and the low-durability tag. The list scrolls inside the row when it is longer than the doll; "Nothing worn." when no slot is filled.
 - **Properties:**
   - the chosen properties, as key/value lists with the shard cap muted, in Casting, Combat, Leech, Regeneration, Pools and other, and Other;
   - the card's "Properties shown" popover picks them from every property the tooltip reader knows. The choice is saved as the ui-prefs `sheetProps`, default `SHEET_GROUPS`;
@@ -83,12 +81,12 @@ Then come two cards in a 7fr / 5fr grid:
 
 ### Layout
 
-The sheet lays itself out from its own width with container queries (`ui/characters.css`): below 1040 px the attributes and pools drop under the resists, and below 960 px the cards stack. So it fits whatever column it is put in. `resistFigures(name, set)` is the resist maths the roster shares with it.
+The sheet lays itself out from its own width with container queries (`ui/characters.css`): below 1040 px the attributes and pools drop under the resists, and below 960 px the gear list goes under the doll, at most 480 px tall. So it fits whatever column it is put in. `resistFigures(name, set)` is the resist maths the roster shares with it.
 
 ### Low durability
 
-The one-suit sheet badges a worn piece that is low on durability ("Low durability 12/255") on its slot tile. A piece is low at 20% of its max or 10 points (`lowDurability`). A piece is never low when its max is 0, when it has no durability line, or when it is at or past its max.
+The one-suit sheet tags a worn piece that is low on durability ("Low durability 12/255") in its gear-list row. A piece is low at 20% of its max or 10 points (`lowDurability`). A piece is never low when its max is 0, when it has no durability line, or when it is at or past its max.
 
-The Characters sheet page puts a one-line warning under the meta line ("2 worn pieces are low on durability"). Nothing shows when nothing is low. The now → after sheet shows no badge, since an optimizer piece carries no durability.
+The Characters sheet page puts a one-line warning under the meta line ("2 worn pieces are low on durability"). Nothing shows when nothing is low. The now → after sheet shows no tag, since an optimizer piece carries no durability.
 
-The pure formatters (`capBadgeText`, `atCap`, `bonusBreakdown`, `moveText`, `keyNumbers`, `tagTone`, `lowDurability`, `lowDurabilityCount`, `lowDurabilitySummary`) are exported and unit-tested in `app/ui-characters.test.mts`, with the counts worded by `format.mts`'s `plural`.
+The pure formatters (`capBadgeText`, `atCap`, `bonusBreakdown`, `moveText`, `tagTone`, `lowDurability`, `lowDurabilityCount`, `lowDurabilitySummary`) are exported and unit-tested in `app/ui-characters.test.mts`, with the counts worded by `format.mts`'s `plural`.

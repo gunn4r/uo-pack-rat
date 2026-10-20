@@ -55,18 +55,28 @@
 .kv.kv-tight .kv-k, .kv.kv-tight .kv-v { min-height: 20px; border: 0; }
 .kv.kv-tight .kv-v { white-space: nowrap; }
 
-.sheet-cols { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: var(--space-4); align-items: start; }
-.sheet-slots { display: flex; flex-direction: column; gap: var(--space-4); padding: var(--space-4); }
-.slot-group { display: flex; flex-direction: column; gap: var(--space-2); }
-.slot-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2); }
-.pr .sheet button.slot { cursor: pointer; font: inherit; font-weight: var(--weight-regular); }
-.sheet .slot.empty { padding: var(--space-2) var(--space-3); text-align: left; }   /* not the old page-level .empty (styles.css) */
-.pr .sheet button.slot:hover { background: var(--color-surface-subtle); color: var(--color-text); }
-.pr .sheet button.slot:focus-visible { outline: none; box-shadow: var(--ring-focus); }
-.slot-head { display: flex; align-items: center; gap: var(--space-1-5); }
-.slot-meta { display: flex; align-items: center; gap: var(--space-1-5); min-width: 0; }
-.slot-meta > .muted { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sheet .slot > .badge { align-self: flex-start; }   /* "Low durability 12/255" (issue #98), its own width */
+/* layout 1B (issue #57): the doll card beside the worn gear card. The row is as tall as the doll card: the gear card is
+   held in its cell (absolute, inset 0) so it never adds height, and its list scrolls inside under a sticky head. A row
+   whose doll card holds only a message keeps room for the list. */
+.sheet-row { display: grid; grid-template-columns: 420px minmax(0, 1fr); gap: var(--space-4); align-items: stretch; min-height: 420px; }
+.sheet-row.sheet-row-nodoll { grid-template-columns: minmax(0, 1fr); min-height: 0; }
+.sheet-row-nodoll .sheet-gear-cell > .sheet-gear { position: static; max-height: 480px; }
+.sheet-gear-cell { position: relative; min-width: 0; }
+.sheet-gear-cell > .sheet-gear { position: absolute; inset: 0; display: flex; flex-direction: column; overflow: hidden; }
+.gear-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.gear-tbl { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.gear-tbl th { position: sticky; top: 0; z-index: 1; height: var(--row-dense); padding: 0 var(--space-4); text-align: left; font-size: var(--text-sm); font-weight: var(--weight-medium); color: var(--color-text-muted); background: var(--color-surface-subtle); border-bottom: var(--border-width) solid var(--color-border); }
+.gear-tbl th:first-child { width: 120px; }
+.gear-tbl td { height: var(--row-dense); padding: 0 var(--space-4); border-bottom: var(--border-width) solid var(--color-border); white-space: nowrap; }
+.gear-piece { display: flex; align-items: center; gap: var(--space-2); width: 100%; min-width: 0; padding: 0; border: 0; background: none; color: var(--color-text); font: inherit; text-align: left; cursor: pointer; }
+.gear-piece:hover .nm { text-decoration: underline; }
+.gear-piece:focus-visible { outline: none; box-shadow: var(--ring-focus); }
+.gear-piece .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: var(--weight-semibold); }
+.gear-piece > :not(.nm) { flex: none; }
+/* a piece with no hue, or no color yet, keeps the swatch's room, so the names line up */
+.gear-hue, .gear-hue-none { width: 10px; height: 10px; }
+/* a swatch is drawn only once its color has arrived */
+.gear-hue[data-painted] { border-radius: 2px; box-shadow: inset 0 0 0 1px var(--color-border-strong); }
 
 .sheet-props { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: var(--space-3) var(--space-5); padding: var(--space-3) var(--space-4); }
 .prop-group { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
@@ -80,7 +90,8 @@
   .sheet-kpis > .kpi-list { grid-column: span 5; }
 }
 @container (max-width: 960px) {
-  .sheet-cols { grid-template-columns: minmax(0, 1fr); }
+  .sheet-row { grid-template-columns: minmax(0, 1fr); min-height: 0; }
+  .sheet-gear-cell > .sheet-gear { position: static; max-height: 480px; }
 }
 
 /* a worn piece's tooltip in a popover: tipNode's own rules (styles.css, .tipcard-host), always dark */

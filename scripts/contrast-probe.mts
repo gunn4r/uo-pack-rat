@@ -66,7 +66,7 @@ export function probeContrast(): ContrastRow[] {
   const push = (kind: ContrastRow["kind"], el: Element, fg: RGBA, bg: RGBA, need: number, extra = ""): void => {
     out.push({ kind, text: label(el), fg: hex(fg), bg: hex(bg), ratio: +ratio(fg, bg).toFixed(2), need, extra, disabled: disabledOf(el) });
   };
-  const CONTROLS = "button, input:not([type=checkbox]):not([type=radio]):not([type=range]), select, textarea, .fchip, .token, .pill, .chip, .seg, .bridge, .slot:not(.empty), .kbd";
+  const CONTROLS = "button, input:not([type=checkbox]):not([type=radio]):not([type=range]), select, textarea, .fchip, .token, .pill, .chip, .seg, .bridge, .kbd";
   for (const el of document.querySelectorAll("body *")) {
     if (["SCRIPT", "STYLE", "OPTION", "path", "circle", "rect"].includes(el.tagName)) continue;
     if (hidden(el)) continue;

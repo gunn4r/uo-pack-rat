@@ -17,6 +17,7 @@ import { registerScreen, showCharacterItems, showItem } from "./nav.mts";
 import { openWizard } from "./wizard.mts";
 import { relativeWhen } from "./messages.mts";
 import { sheetNode, wornSet, resistFigures, atCap, lowDurabilityCount, lowDurabilitySummary, type ResistFigure, type SheetItem } from "./sheet.mts";
+import { sheetDoll } from "./sheet-doll.mts";
 import type { Item } from "../vault-lib.mts";
 import type { RunsListApiResponse } from "./api-types.mts";
 import { characterNames, rosterView, triple, sheetMeta, type RosterRow, type RosterSort } from "./roster.mts";
@@ -212,7 +213,7 @@ function renderSheet(name: string): void {
   }
   const low = lowDurabilitySummary(lowDurabilityCount(state.inv!.worn[name] || []));
   body().replaceChildren(...compactChildren([metaLine(name), low ? message({ tone: "warn", text: low }) : null,
-    sheetNode(name, wornSet(name), null, { onSlot: slotDetail })]));
+    sheetNode(name, wornSet(name), null, { onSlot: slotDetail, doll: (set) => sheetDoll("characters", name, set) })]));
 }
 
 // A character deleted, renamed or moved off the account would otherwise keep its row and its worn set

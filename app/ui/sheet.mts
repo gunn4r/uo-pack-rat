@@ -1,21 +1,21 @@
 // ui/sheet.mts — the character sheet (design spec 4.5), shared by the Characters screen and the Suit
-// Builder's result panel: a KPI row (five resists against their caps, attributes, pools), the worn gear
-// as slot tiles in fixed groups, the properties as key/value lists, the skills and a footnote. The
+// Builder's result panel: a KPI row (five resists against their caps, attributes, pools), the paperdoll beside the
+// worn gear as a list (layout 1B, issue #57), the properties as key/value lists, the skills and a footnote. The
 // before/after form ("now → after") is the same sheet with both numbers on every figure that moves.
 // Built as DOM nodes, never an HTML string (Phase 7 security review, Area 2, Important 1): a scan file
 // is attacker-controlled text, and a pasted "here's my suit" scan once turned into persistent
 // HTML/CSS injection inside the app window through this builder.
 //
 // map: ui-components
-// owns: `sheetNode`, `SLOT_GROUPS`, `SHEET_GROUPS`, `RESISTS`
+// owns: `sheetNode`, `SLOT_GROUPS`, `SHEET_GROUPS`, `RESISTS`, `forgetHueColors`
 import { totalsOf, resistMinimum, paperdollResist, RESIST_SKILL_KEY, PROP_FULL, SLOTS_IN_GROUP, RESIST_META } from "../vault-lib.mts";
 import type { ExtrasMap, OptItem, ResistCap } from "../vault-lib.mts";
 import { state } from "./store.mts";
-import { el, itemTip, label, slotLabel } from "./dom.mts";
+import { el, itemTip, slotLabel } from "./dom.mts";
 import { prefs } from "./prefs.mts";
-import { rarityToken } from "./items.mts";
 import { txt, box, badge, tag, meter, message, button, check, searchInput, popover } from "./components.mts";
-import type { SkillEntry } from "./api-types.mts";
+import { api } from "./api.mts";
+import type { HueColorsApiResponse, SkillEntry } from "./api-types.mts";
 import { capNote } from "./builder-model.mts";
 import { STAT_MAX } from "../buffs.mts";
 import { plural } from "./format.mts";
@@ -25,14 +25,17 @@ import { plural } from "./format.mts";
 // so this is what `before`/`after` accept rather than either concrete type: Item's own
 // `twoHanded: boolean` (required) isn't assignable to OptItem's `twoHanded?: true | undefined`, so a type
 // naming both callers' real shapes has to omit it. `rarity` and `tags` are only on a scanned Item; a
-// piece without them draws a plain tile. `extras` (a scanned Item's durability) drives the low-durability badge. Assignable to totalsOf's parameter, since every field OptItem
+// piece without them shows no tags. `extras` (a scanned Item's durability) drives the low-durability tag, and `graphic` and `hue` (a scanned Item's) the paperdoll and the hue swatch. Assignable to totalsOf's parameter, since every field OptItem
 // requires is present here.
-export type SheetItem = Pick<OptItem, "serial" | "name" | "slot" | "props"> & { rarity?: string | null | undefined; tags?: string[] | undefined; extras?: ExtrasMap | undefined };
+export type SheetItem = Pick<OptItem, "serial" | "name" | "slot" | "props"> & { rarity?: string | null | undefined; tags?: string[] | undefined; extras?: ExtrasMap | undefined; graphic?: number | null | undefined; hue?: number | null | undefined };
 export type SheetAssignment = Partial<Record<string, SheetItem | null | undefined>>;
 export interface SheetOptions {
-  // A filled slot tile was clicked (or pressed from the keyboard): show that piece. Without it the tiles
+  // A piece in the worn-gear list was clicked (or pressed from the keyboard): show that piece. Without it the pieces
   // still show the page's item tooltip (dom.mts's itemTip), on hover and on keyboard focus.
   onSlot?: ((item: SheetItem, tile: HTMLElement) => void) | undefined;
+  // The sheet's paperdoll (issue #57): given the suit the gear list shows (`after` when there is one) with the worn
+  // extras, the node drawn beside the worn gear. Without it the gear list fills the row.
+  doll?: ((set: SheetAssignment) => HTMLElement) | undefined;
   // The Suit Builder's now → after sheet: the resist caps its build used, the player's overrides included. The
   // Characters screen passes none and shows the shard's caps.
   resistCaps?: Record<string, ResistCap> | undefined;
@@ -72,21 +75,16 @@ export function poolChanges(d: Record<string, number>, buffs: Record<string, num
     mana: v(d, "intBonus") - over.int + v(d, "manaInc") + v(buffs, "manaPool") };
 }
 export const moveText = (b: number, a: number, suffix = ""): string => (b === a ? `${a}${suffix}` : `${b}${suffix} → ${a}${suffix}`);
-// Up to two numbers a slot tile shows under the piece's name: the properties nearest their shard cap (a
-// property with no cap is measured against 100), in the order the item lists them. Skill bonuses read
-// "Magery +20". Bookkeeping keys the fold adds (tag penalty, pool sizes) are not properties.
+// Bookkeeping keys the fold adds (tag penalty, pool sizes) are not properties.
 const NOT_SHOWN = new Set(["tagPenalty", "stamPool", "manaPool", "hitsPool", "psLevel", "sotPoints"]);
-export function keyNumbers(props: Record<string, number>, caps: Record<string, number>, n = 2): string[] {
-  const entries = Object.entries(props).filter(([k, v]) => !NOT_SHOWN.has(k) && Number.isFinite(v) && v > 0);
-  const top = new Set([...entries].sort((x, y) => y[1] / (caps[y[0]] || 100) - x[1] / (caps[x[0]] || 100)).slice(0, n).map(([k]) => k));
-  return entries.filter(([k]) => top.has(k)).map(([k, v]) => (k.startsWith("sk:") ? `${label(k).replace(/^\+/, "")} +${v}` : `${label(k)} ${v}`));
-}
+// The quality tags the worn-gear list shows after a piece's name.
+const QUALITY_TAGS = new Set(["antique", "brittle", "cursed", "prized", "blessed"]);
 // Item flags as tags: cursed in danger, brittle and antique in warning, the rest neutral.
 export const tagTone = (t: string): "bad" | "warn" | undefined => (t === "cursed" ? "bad" : t === "brittle" || t === "antique" ? "warn" : undefined);
 // Durability watch (issue #98): a worn piece is low once its durability is at 20% of its max or at 10
 // points, so it can be repaired before it breaks mid-fight. The scan's "Durability 12 / 255" line is
 // extras.durability; no line, a max of 0, or a piece at (or past) its max, which no repair would raise, is
-// never low. Returns the tile's badge text, or null.
+// never low. Returns the gear list's tag text, or null.
 export const LOW_DURABILITY_SHARE = 0.2, LOW_DURABILITY_POINTS = 10;
 export function lowDurability(it: { extras?: ExtrasMap | undefined }): string | null {
   const d = it.extras?.durability;
@@ -166,9 +164,8 @@ function openPropsPicker(anchor: HTMLElement, redraw: () => void): void {
   ], { label: "Properties shown", width: 288 });
   h.root.classList.add("inv-pop", "inv-settings-pop");
 }
-// The worn-gear tiles, in fixed groups so every row has equal height and nothing is orphaned. A kilt or skirt (issue
-// #202) is a Clothing tile only when one is worn, so the usual 3 × 2 groups stay whole.
-// The slots in each come from vault-lib's GEAR_SLOT_GROUPS, weapons and jewelry sharing one tile.
+// The worn-gear list's order: its rows follow these groups, a kilt or skirt (issue #202) with the Clothing.
+// The slots in each come from vault-lib's GEAR_SLOT_GROUPS, weapons and jewelry sharing one group.
 export const SLOT_GROUPS: Array<[string, string[]]> = [
   ["Armor", [...SLOTS_IN_GROUP.Armor]],
   ["Weapons and jewelry", [...SLOTS_IN_GROUP.Weapons, ...SLOTS_IN_GROUP.Jewelry]],
@@ -224,12 +221,31 @@ function kvList(pairs: Array<[string, Node]>, cls = ""): HTMLDivElement {
 
 // ---------------------------------------------------------------- the sheet
 // sheetNode(name, before, after, opts) — `after` null draws the one-suit sheet (the Characters screen);
-// with an `after` every figure that moves reads "now → after" and the tiles show the `after` suit, its
+// with an `after` every figure that moves reads "now → after" and the gear list shows the `after` suit, its
 // new pieces badged. Only called once load() has populated state.inv/state.rules.
+// Layout 1B (issue #57): the KPI row, then the caller's doll (`opts.doll`, wearing the suit the gear list shows: `after`
+// when there is one) beside the worn gear card (the row as tall as the doll; the list scrolls inside its card), then the
+// properties.
 export function sheetNode(name: string, before: SheetAssignment, after: SheetAssignment | null, opts: SheetOptions = {}): HTMLElement {
   const { resists, lists, gear, props } = sheetParts(name, before, after, opts);
+  const doll = gear && opts.doll ? opts.doll(withExtras(name, before)(after ?? before)) : null;
   return box("div", { class: `sheet${after != null && opts.compare !== false ? " sheet-diff" : ""}`, "data-character": name },
-    box("div", { class: "sheet-kpis" }, ...resists, ...lists), box("div", { class: "sheet-cols" }, gear, props));
+    box("div", { class: "sheet-kpis" }, ...resists, ...lists),
+    gear ? box("div", { class: `sheet-row${doll ? "" : " sheet-row-nodoll"}` }, doll, box("div", { class: "sheet-gear-cell" }, gear)) : null,
+    props);
+}
+// The worn-gear list's hue swatches, colored from the client's hues.mul (GET /api/hue-colors, at most 64 hues a request) once the colors arrive; a swatch whose hue has no color (no client files, or a hue the file lacks) shows nothing. Settings clears the colors when the UO folder changes (forgetHueColors).
+const hueColorCache = new Map<number, string | null>();
+export const forgetHueColors = (): void => { hueColorCache.clear(); };
+function paintHues(root: HTMLElement): void {
+  const spans = [...root.querySelectorAll<HTMLElement>(".gear-hue")];
+  const paint = (): void => { for (const s of spans) { const c = hueColorCache.get(Number(s.dataset.hue)); if (c) { s.style.background = c; s.dataset.painted = ""; } } };
+  const want = [...new Set(spans.map((s) => Number(s.dataset.hue)).filter((h) => !hueColorCache.has(h)))];
+  paint();
+  for (let i = 0; i < want.length; i += 64) {
+    const batch = want.slice(i, i + 64);
+    void api<HueColorsApiResponse>(`/api/hue-colors?hues=${batch.join(",")}`).then((r) => { for (const h of batch) hueColorCache.set(h, r.colors[String(h)] ?? null); paint(); }).catch(() => { /* no client files: no swatches */ });
+  }
 }
 // The sheet's parts: the KPI row's five resist tiles and its Attributes and Pools lists, the worn gear card and the
 // properties card (with the skills). The Suit Builder's Manual mode draws the lists and the properties for its suit;
@@ -284,7 +300,7 @@ export function sheetParts(name: string | null, before: SheetAssignment, after: 
   const lists = [box("div", { class: "resist kpi kpi-list" }, txt("Attributes", "t-sm muted"), attrs),
     box("div", { class: "resist kpi kpi-list" }, txt("Pools", "t-sm muted"), pools)];
 
-  // worn gear: the shown suit plus the extras, one tile per fixed slot, anything else under "Other"
+  // worn gear (design 1B, issue #57): the shown suit plus the extras as a list, one row per worn slot in the slot groups' order, anything else as "Other"; each row the slot, then the piece (its hue's swatch, the name, the quality tags and a low-durability tag) as a button that shows the piece's tooltip and, pressed, its detail
   const gearCard = (): HTMLElement => {
     const bySlot = new Map<string, SheetItem>(), other: SheetItem[] = [];
     const nowSerials = new Set(Object.values(extras(before)).filter(Boolean).map((x) => (x as SheetItem).serial));
@@ -292,31 +308,25 @@ export function sheetParts(name: string | null, before: SheetAssignment, after: 
       if (!it) continue;
       if (it.slot && FIXED_SLOTS.has(it.slot) && !bySlot.has(it.slot)) bySlot.set(it.slot, it); else other.push(it);
     }
-    const caps = (state.rules?.caps || {}) as Record<string, number>;
-    const tile = (slot: string | null, it: SheetItem | undefined): HTMLElement => {
-      const head = txt(slot ? slotLabel(slot) : "Other", "t-sm muted");
-      if (!it) return box("div", { class: "slot empty" }, head, txt("Empty", "faint"));
-      const token = rarityToken(it.rarity);
-      const nums = keyNumbers(it.props || {}, caps), tags = (it.tags || []).slice(0, 2);
+    const row = (slot: string | null, it: SheetItem): HTMLElement => {
       const isNew = diff && !nowSerials.has(it.serial);
-      // only the one-suit sheet: an optimizer piece carries no durability, so a before/after sheet would badge some pieces and not others
-      const low = single ? lowDurability(it) : null;
-      const t = box("button", { type: "button", class: "slot", ...(token ? { style: `border-color:var(${token})` } : {}) },
-        isNew ? box("span", { class: "slot-head" }, head, badge("New", "accent")) : head,
-        txt(it.name, "nm"),
-        tags.length || nums.length ? box("span", { class: "slot-meta t-sm" }, ...tags.map((x) => tag(x, tagTone(x))), nums.length ? txt(nums.join(" · "), "muted") : null) : null,
-        low ? badge(low, "warn") : null);
-      if (opts.onSlot) t.addEventListener("click", () => opts.onSlot!(it, t));
-      return itemTip(t, it);
+      // only the one-suit sheet: an optimizer piece carries no durability, so a before/after sheet would tag some pieces and not others
+      const low = single ? lowDurability(it) : null, hue = (it.hue ?? 0) & 0x3fff;
+      const piece = box("button", { type: "button", class: "gear-piece", "data-serial": String(it.serial) },
+        el("span", hue ? { class: "gear-hue", "data-hue": String(hue), "aria-hidden": "true" } : { class: "gear-hue-none", "aria-hidden": "true" }),
+        txt(it.name, "nm"), isNew ? badge("New", "accent") : null,
+        ...(it.tags || []).filter((x) => QUALITY_TAGS.has(x)).map((x) => tag(x, tagTone(x))), low ? tag(low, "warn") : null);
+      if (opts.onSlot) piece.addEventListener("click", () => opts.onSlot!(it, piece));
+      return el("tr", {}, el("td", { class: "t-sm muted" }, slot ? slotLabel(slot) : "Other"), el("td", {}, itemTip(piece, it)));
     };
     const shown = (s: string): boolean => !WORN_ONLY.has(s) || bySlot.has(s);
-    const groups = SLOT_GROUPS.map(([title, slots]) => box("div", { class: "slot-group" }, txt(title, "caps"),
-      box("div", { class: "slot-grid" }, ...slots.filter(shown).map((s) => tile(s, bySlot.get(s))))));
-    if (other.length) groups.push(box("div", { class: "slot-group" }, txt("Other", "caps"), box("div", { class: "slot-grid" }, ...other.map((it) => tile(it.slot, it)))));
-    const gear = el("section", { class: "card", "aria-label": "Worn gear" },
-      box("div", { class: "card-head" }, el("h2", {}, "Worn gear"), txt(`${bySlot.size} of ${[...FIXED_SLOTS].filter(shown).length} slots`, "t-sm muted"), el("span", { class: "spacer" }), opts.onSlot ? txt("Click a slot for the item detail", "t-sm muted") : null),
-      box("div", { class: "sheet-slots" }, ...groups));
-    return gear;
+    const rows = [...SLOT_GROUPS.flatMap(([, slots]) => slots.filter((s) => bySlot.has(s)).map((s) => row(s, bySlot.get(s)!))), ...other.map((it) => row(it.slot, it))];
+    const table = el("table", { class: "gear-tbl" }, el("thead", {}, el("tr", {}, el("th", { scope: "col" }, "Slot"), el("th", { scope: "col" }, "Piece"))),
+      el("tbody", {}, ...(rows.length ? rows : [el("tr", {}, el("td", { colspan: "2", class: "t-sm muted" }, "Nothing worn."))])));
+    paintHues(table);
+    return el("section", { class: "card sheet-gear", "aria-label": "Worn gear" },
+      box("div", { class: "card-head" }, el("h2", {}, "Worn gear"), txt(`${bySlot.size} of ${[...FIXED_SLOTS].filter(shown).length} slots`, "t-sm muted"), el("span", { class: "spacer" }), opts.onSlot ? txt("Click a piece for its detail", "t-sm muted") : null),
+      box("div", { class: "gear-scroll" }, table));
   };
 
   // properties: value / shard cap, the caps muted

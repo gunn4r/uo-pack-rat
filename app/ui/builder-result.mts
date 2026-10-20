@@ -15,6 +15,7 @@ import { $, el, label, fmtN, fmtSecs, fmtRunTime, slotLabel, whereText } from ".
 import { box, txt, button, icon, badge, message, meter, segmented, switchControl, check, table, tableFoot, rowActions, tipWrap, tooltip, keyValue, token, resistTile } from "./components.mts";
 import { prefs } from "./prefs.mts";
 import { sheetNode, sheetParts } from "./sheet.mts";
+import { sheetDoll } from "./sheet-doll.mts";
 import { bridgeActionReason, runBridgeAction } from "./bridge.mts";
 import { resolveItems } from "./items.mts";
 import { session, commands, announce, provide, onChange } from "./builder-session.mts";
@@ -385,7 +386,7 @@ function afterCard(name: string, current: OptSuit, suit: OptSuit, prof: Effectiv
     box("div", { class: "card-head" }, el("h2", {}, `${name} after the change`), txt("Only values that move", "t-sm muted"), el("span", { class: "spacer" }), full),
     box("div", { class: "b-after" }, ...tiles),
     el("p", { class: "t-sm muted b-after-note" }, txt("Hits, Stamina and Mana after are estimates: current max plus the change in STR/2, DEX, INT and the +HP/+Stam/+Mana properties.")),
-    sheetOpen ? el("div", { class: "b-sheet-wrap" }, sheetNode(name, current, suit, { resistCaps: profileResistCaps(prof) })) : null);
+    sheetOpen ? el("div", { class: "b-sheet-wrap" }, sheetNode(name, current, suit, { resistCaps: profileResistCaps(prof), doll: (set) => sheetDoll("builder", name, set) })) : null);
 }
 
 // ---- 6. solver details: collapsed; the score lives here, not in the headline
