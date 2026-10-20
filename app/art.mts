@@ -1,7 +1,7 @@
 // art.mts — art from the player's own client files: the UOP container (its table of entries, each found by the lookup3 hash of its name, and an entry stored, inflated, or inflated and BWT-decoded), one item's static art in artLegacyMUL.uop (issue #174), one gump in gumpartLegacyMUL.uop (the paperdoll, issue #57), and the colours of hues.mul. Pure, apart from the read callback the caller passes: nothing here throws on a file that does not add up or reads past a buffer; every decoder answers null instead. The table is read block by block and an entry only when it is asked for, never the whole payload.
 //
 // map: house
-// owns: `readUopTable`, `readUopEntry`, `uopIndex`, `uopHash`, `bwtDecompress`, `gumpArtName`, `decodeGump`, `decodeStatic`, `readHues`, `hueOf`, `hueFor`, `huePixel`, `opaqueBox`, `toRgba`
+// owns: `readUopTable`, `readUopEntry`, `uopIndex`, `uopHash`, `bwtDecompress`, `gumpArtName`, `decodeGump`, `decodeStatic`, `readHues`, `hueOf`, `hex555`, `hueFor`, `huePixel`, `opaqueBox`, `toRgba`
 import { inflateSync } from "node:zlib";
 
 // Jenkins' lookup3 hashlittle2 with both seeds 0, as the UOP format names its entries: the 64-bit result is b << 32 | c.
@@ -247,6 +247,9 @@ export function hueOf(hues: Hues, hue: number): { colours: Uint16Array; partial:
   for (let k = 0; k < 32; k++) colours[k] = v.getUint16(at + k * 2, true) & 0x7fff;
   return { colours, partial: (hue & 0x8000) !== 0 };
 }
+
+// A 15-bit colour as "#rrggbb", each 5-bit channel widened as the client does ((v << 3) | (v >> 2)).
+export const hex555 = (c: number): string => `#${[(c >> 10) & 31, (c >> 5) & 31, c & 31].map((v) => ((v << 3) | (v >> 2)).toString(16).padStart(2, "0")).join("")}`;
 
 // A hue as the paperdoll applies it (issue #57): hueOf's colours, with the partial switch the caller passes instead of the hue's own 0x8000 bit. The body's skin is always partial; a worn item, hair, beard or face is partial only when its tiledata has the partial-hue flag.
 export function hueFor(hues: Hues, hue: number, partial: boolean): { colours: Uint16Array; partial: boolean } | null {

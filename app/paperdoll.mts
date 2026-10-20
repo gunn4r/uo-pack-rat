@@ -4,7 +4,7 @@
 // owns: `LAYER`, `CANVAS`, `readGumpDef`, `readEquipConv`, `gumpSource`, `paperdollOrder`, `isCovered`, `createPaperdoll`, `figureBox`, `grayRgba`
 import { decodeGump, gumpArtName, hueFor, huePixel, opaqueBox, readUopEntry, uopIndex, type Box, type Hues, type ReadAt, type StaticArt, type UopTable } from "./art.mts";
 import { FLAG, type TileData } from "./tiledata.mts";
-import { BODY_GUMP, type Look, type Worn } from "./paperdoll-look.mts";
+import { BODY_GUMP, FEMALE_BODIES, GARGOYLE_BODIES, type Look, type Worn } from "./paperdoll-look.mts";
 
 // ClassicUO's Layer numbers.
 export const LAYER = {
@@ -112,8 +112,6 @@ export function gumpSource(table: UopTable, read: ReadAt, defs: GumpDefs, cacheB
 }
 
 // ---- body -----------------------------------------------------------------------------------------------------------
-const FEMALE = new Set([401, 403, 606, 667, 695]);
-const GARGOYLE = new Set([666, 667, 694, 695]);
 
 // ---- gump id ----------------------------------------------------------------------------------------------------------
 // GetAnimID: a dead gargoyle's shroud, then Equipconv.def for this body, then the female (60000) or male (50000) offset, taking the other one when that gump is missing. Not ported: Bodyconv.def (no human, elf or gargoyle body is converted) and tileart.uop's appearance remap.
@@ -281,7 +279,7 @@ function hooded(robeGfx: number, body: number): boolean {
   } else if (robeGfx < 0xa0b0) {
     if (robeGfx < 0xa0ab && robeGfx !== 0x7816) return false;
   } else if (robeGfx !== 0xb2b7) return false;
-  return !GARGOYLE.has(body);
+  return !GARGOYLE_BODIES.has(body);
 }
 
 // ---- composing ----------------------------------------------------------------------------------------------------------
@@ -336,7 +334,7 @@ export function createPaperdoll(files: PaperdollFiles, cacheBytes = HUED_CACHE_B
   function compose(look: Look, worn: Worn[]): StaticArt | null {
     const bodyGump = BODY_GUMP.get(look.body);
     if (bodyGump === undefined) return null;
-    const female = FEMALE.has(look.body);
+    const female = FEMALE_BODIES.has(look.body);
     const canvas = new Uint16Array(CANVAS.width * CANVAS.height);
     paint(canvas, layer(bodyGump, look.body === 0x03db ? 0x03ea : look.hue, true));
     if (look.body === 0x03db) paint(canvas, layer(0xc72b, look.hue, true));
@@ -355,7 +353,7 @@ export function createPaperdoll(files: PaperdollFiles, cacheBytes = HUED_CACHE_B
     const gfx = new Array<number>(N).fill(0);
     for (const [at, item] of on) gfx[at] = item.anim;
     const at: WornAt = (l) => on.get(l) ?? null;
-    for (const l of paperdollOrder(gfx, female || GARGOYLE.has(look.body))) {
+    for (const l of paperdollOrder(gfx, female || GARGOYLE_BODIES.has(look.body))) {
       const item = on.get(l);
       if (!item || isCovered(at, look.body, l)) continue;
       paint(canvas, layer(gumpIdFor(look.body, item.anim, female, files.equipConv, has), item.hue & 0x3fff, item.partial));

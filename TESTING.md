@@ -67,6 +67,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `app/classicuo-web-adapter.test.mts` — stands in for app/contracts.test.mts for the ClassicUO web client adapter, which ships no fixture.scan.json yet.
 - `app/config.test.mts` — `app/config.mts`'s `resolveConfig` and the per-adapter bridge paths.
 - `app/contracts.test.mts` — folds every adapter's fixture.scan.json against its own capabilities.json, checking the two agree with each other and with the shared scan and bridge schemas.
+- `app/customize-model.test.mts` — `app/ui/customize-model.mts` (issue #57): the doll card's Customize popover as data.
 - `app/diagnostics.test.mts` — `app/diagnostics.mts` and the per-slot bound it shares with the MIP (`app/mip.mts` propertyReach, issue #217).
 - `app/dialog-prompt.test.mts` — `app/ui/dialog.mts`'s `normalizePromptValue()`, the DOM-free part of the in-page prompt.
 - `app/doll-model.test.mts` — `app/ui/doll-model.mts` (issue #57): what a doll card shows, as data.
@@ -104,6 +105,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `app/organize-state.test.mts` — `app/organize-state.mts` (issue #11): trip results read into the overlay, settled entries dropped and a damaged state file salvaged.
 - `app/organize-strategies.test.mts` — `app/organize-strategies.mts`, Organize's Auto mode (issue #11, spec §5).
 - `app/organize.test.mts` — `app/organize.mts`, Organize's planner (issue #11), on hand-built house scans folded by the real fold.
+- `app/paperdoll-creation.test.mts` — `app/paperdoll-creation.mts` and `app/cliloc.mts` (issue #57): the Customize popover's choices and the client's strings they are named from.
 - `app/paperdoll.test.mts` — `app/paperdoll.mts` and `app/paperdoll-look.mts` (issue #57), the paperdoll figure, on synthetic client files.
 - `app/png.test.mts` — `app/png.mts` (issue #164), the PNG writer.
 - `app/profile-edits.test.mts` — `app/profile-edits.mts`: each ProfileEdit made on a profiles file (buffs, a label, a character's settings kept around what the panel doesn't edit, a deleted character, a template put, updated, deleted and renamed with its characters following), each made again changing nothing more, the ones that can't be made refused with why (a template gone, a name taken, a label for no such character), a list stopping at the first refusal, and the shape check.

@@ -349,3 +349,13 @@
 .doll-empty { display: flex; flex: 1 1 auto; }
 .doll-note:empty { display: none; }
 .doll-note { padding: 0 var(--space-4) var(--space-4); }
+/* the Customize popover (ui/doll-customizer.mts): groups of controls, the palettes as 14 px swatches 18 to a row, the picked one outlined */
+.doll-custom { display: flex; flex-direction: column; gap: var(--space-3); }
+.doll-group { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); }
+.doll-swatches { display: grid; grid-template-columns: repeat(18, 14px); gap: 2px; }
+.doll-swatch { width: 14px; height: 14px; padding: 0; border: 0; border-radius: 2px; cursor: pointer; }
+.doll-swatch[aria-checked="true"] { outline: 2px solid var(--color-focus); outline-offset: 1px; }
+/* the scanned look's own color, which the game's palette lacks: outlined so it shows even without a color */
+.doll-swatch-current { box-shadow: inset 0 0 0 1px var(--color-border-strong); }
+.doll-custom-foot { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
+.doll-custom-note { flex: 1 1 100%; }
