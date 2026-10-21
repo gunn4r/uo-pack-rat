@@ -36,7 +36,7 @@ class FakeElement {
   // dom.mts's itemTip sets data-serial through dataset and makes the item focusable
   tabIndex = -1;
   get dataset(): Record<string, string> { return new Proxy(this.attrs, { get: (a, k) => a[`data-${String(k)}`], set: (a, k, v) => { a[`data-${String(k)}`] = String(v); return true; } }); }
-  style: Record<string, string> & { setProperty?: (k: string, v: string) => void } = { setProperty(this: Record<string, string>, k: string, v: string) { this[k] = v; } } as never;
+  style: Record<string, string> = {};
   // attribute selectors only ("[a], [b]"), the form tipHostOf asks with
   closest(sel: string): FakeElement | null {
     const names = sel.split(",").map((s) => s.trim().slice(1, -1));
@@ -317,7 +317,7 @@ test("[fast] sheetNode: a worn piece's name takes its rarity's color token, and 
   const art = { serial: 1, name: "Orc Helm", slot: "helmet", props: {}, rarity: "Major Artifact" }, odd = { serial: 2, name: "Odd Ring", slot: "ring", props: {}, rarity: "Shiny" };
   const node = sheetNode("Kestrel", { helmet: art, ring: odd } as never, null) as unknown as Node;
   const names = elements(node).filter((e) => e.className === "gi-name");
-  assert.deepEqual(names.map((e) => [e.textContent, e.style["--gi-rarity"] ?? null]), [["Orc Helm", "var(--rarity-major-artifact)"], ["Odd Ring", null]]);
+  assert.deepEqual(names.map((e) => [e.textContent, e.style.color ?? null]), [["Orc Helm", "var(--rarity-major-artifact)"], ["Odd Ring", null]]);
 });
 
 test("[fast] sheetNode: the doll wears the suit the gear list shows, the new suit on a before/after sheet", () => {

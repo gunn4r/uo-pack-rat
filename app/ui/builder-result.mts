@@ -312,8 +312,8 @@ function planCard(current: OptSuit, suit: OptSuit, name: string, all: string[], 
     // a saved run's piece that moved or is gone: its mark in Where, and under the piece's name while Where is hidden (narrow)
     const mark = pieceMark(gear, (changed ? next : now)?.serial, whereText), markCls = `t-sm b-mark ${mark === GONE_MARK ? "faint" : "tone-warn"}`;
     const where = mark ? txt(mark, markCls) : !changed ? txt("") : item ? txt(item.equippedBy ? `worn by ${item.equippedBy}` : whereText(item.location?.text), "t-sm muted") : next ? txt(GONE_MARK, "t-sm faint") : txt("");
-    // the piece to fetch carries its icon; Wearing now is too narrow for one
-    const instead = !changed ? txt("keep", "muted") : next ? gearItem(next) : txt("nothing", "faint");
+    // the piece to fetch carries its icon and reads semibold, so the direction of the swap shows; Wearing now is too narrow for an icon
+    const instead = !changed ? txt("keep", "muted") : next ? gearItem(next, { cls: "strong" }) : txt("nothing", "faint");
     // each piece's name answers for its own tooltip, the worn one and its replacement
     return { cells: [slotLabel(slot), now ? gearItem(now, { showIcon: false }) : txt("Empty", "faint"),
       mark ? box("span", {}, instead, txt(mark, `${markCls} b-mark-narrow`)) : instead,

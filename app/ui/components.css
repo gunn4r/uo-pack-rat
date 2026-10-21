@@ -336,9 +336,6 @@
 /* ---- a piece of gear (ui/gear-item.mts, issues #504, #503): the icon, the name in its rarity color, the quantity, tags and badges, in one row that never wraps; the name is cut short instead */
 .gi { display: inline-flex; align-items: center; gap: var(--space-2); min-width: 0; max-width: 100%; vertical-align: middle; }
 .gi > .gi-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.gi-name { color: var(--gi-rarity, inherit); }
-/* a filled cell sets its own on-* text color, which a rarity color would fail against */
-.tbl td.diff .gi-name { color: inherit; }
 .gi > :not(.gi-name) { flex: none; }
 .gi-qty { color: var(--color-text-muted); font-size: var(--text-sm); font-variant-numeric: tabular-nums; }
 /* interactive: a bare button; the name underlines on hover, the whole piece takes the focus ring */
