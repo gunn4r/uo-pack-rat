@@ -39,7 +39,6 @@
 .inv-tbl th:first-child { z-index: calc(var(--z-sticky) + 1); background: var(--color-surface-subtle); }
 .inv-tbl tr.vpad td { padding: 0; border: 0; height: 0; background: none; box-shadow: none; position: static; }
 .inv-tbl tr.skel-row td { background: var(--color-surface); }
-.inv-name { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .inv-tags { display: flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden; }
 .inv-tags .tag { flex: none; margin-left: 0; }
 /* A container's serial never shows cut: when it does not fit beside the name it wraps to a second line,

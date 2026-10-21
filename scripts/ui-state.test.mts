@@ -187,7 +187,7 @@ test("[slow] the item peek opens from a row, follows the arrow keys and closes w
     await page.waitForSelector("#inv-peek:not([hidden])");
     assert.equal(await rows.nth(0).getAttribute("aria-selected"), "true");
     const title = await page.locator("#peek-title").innerText();
-    assert.equal(title, await rows.nth(0).locator(".inv-name > .ellip").innerText());
+    assert.equal(title, await rows.nth(0).locator(".inv-name > .gi-name").innerText());
     await page.keyboard.press("ArrowDown");
     await page.waitForFunction((s) => document.querySelector("#inv-table tbody tr.item.sel")?.getAttribute("data-serial") !== s, first);
     assert.equal(await rows.nth(1).getAttribute("aria-selected"), "true", "the peek follows the row the arrows moved to");

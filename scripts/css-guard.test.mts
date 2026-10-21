@@ -67,6 +67,7 @@ const ALLOWED: Record<string, [reason: string, selectors: string[]][]> = {
     ["the Auto Build Settings drawer's body is unpadded: its groups pad themselves, each up to the drawer's edges", [".b-drawer-body.drawer-body"]],
     ["look: a Manage templates card's buttons wrap a long template name inside themselves rather than overflowing the drawer", [".pr .tm-acts .btn"]],
     ["a phone-width Suit Builder top bar drops its key hints, the drawer's buttons say the keys in aria-keyshortcuts", ["#b-topbar .kbd"]],
+    ["a Manual slot card's piece keeps its first line clear of the Clear button over the card's top-right corner", [".mb-slot-pick .gi-card-line"]],
     ["smaller: the Manual suit's card head, the buff list's skill fields, check strip, picker popover and What changed popover are denser than the defaults", [".mb-suit > .card-head", ".pr .bf-skill .input.num", ".bf-strip > .check", ".pop-body:has(> .bf-pick)", ".pop.pop-diff .pop-body"]],
     ["look: a set cap or planned skill field is outlined in the accent, a negative weight's ± is tinted warn, a pressed row button is filled, a planned buff token is dashed, the buff tags are tinted, the pick list is regular weight", [".pr .rule-row .input.cap-set:not([aria-invalid=\"true\"])", ".pr .btn.b-wsign[aria-pressed=\"true\"]", ".pr .bf-skill .input.num.bf-plan", ".pr .rowact .btn.on", ".token.bf-planned", ".tag.bf-tag-accent", ".tag.bf-tag-ok", ".pr .b-pick-list .menu-item"]],
   ],
