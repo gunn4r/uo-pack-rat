@@ -1,1 +1,0 @@
-- **Inventory rows and Manual slot cards show the piece** (issues #504, #503): the Inventory table and the Manual picker name each piece with its icon and its name in its rarity's color, and a Manual slot card shows the piece's 32 px icon with its name on a line of its own, so a long slot name such as Weapon 2H / Shield no longer hides it.

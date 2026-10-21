@@ -1,2 +1,0 @@
-- **The doll keeps your look when you scan in a form**: a scan taken in Horrific Beast, Wraith or another form no longer swaps the character's figure for the stand-in. The card keeps the look from the newest scan in your own form and notes "In another form when last scanned."
-- For contributors: the fold keeps the newest `appearance` whose body `drawsBody` and sets the character's `inForm` when the newest look was a form's; retention keeps both scans. The scan schema's appearance layers now allow extra keys, like the block itself.

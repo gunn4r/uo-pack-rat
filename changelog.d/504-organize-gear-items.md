@@ -1,1 +1,0 @@
-- **Organize shows each piece's icon and rarity color** (issues #504, #503): a trip's moves, what a stopped trip left in your backpack (now as chips) and the items a trip could not move show each piece with its in-game icon and its name in its rarity's color.

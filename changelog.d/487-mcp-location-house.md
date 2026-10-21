@@ -1,2 +1,0 @@
-- **AI assistants can search by label and by house**: the MCP `search_items` tool takes an Organize label as a location ("Shields" finds everything in that container) and a new `house` argument, by the House map's name or id.
-- For contributors: `mcp-tools.mts`'s `whereParams` maps `location` through `labelledPlaces` (a label alone on a floor container to `root`) and `house` to the route's `house=<id>`, refusing an unknown house with the list.

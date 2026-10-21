@@ -1,2 +1,0 @@
-- **Containers filters, small fixes**: the Kind and House menus open on the current choice, so the arrow keys start from it.
-- For contributors: `menu` focuses its `checked` item on opening; the Containers list redraws on `houselinkschange` only while it is the shown tab.

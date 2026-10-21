@@ -1,2 +1,0 @@
-- A search for items inside a container that names no container (`within=abc`) now matches nothing instead of every item.
-- For contributors: `queryWhere` (`app/item-query.mts`) builds `applyItemQuery`'s context (rarity, Organize labels as places, containers, and the house lookup only when the query names a house) for `GET /api/items`, the Move routes and the Inventory's Select all; the Location filter's "On the ground" list uses a Set.

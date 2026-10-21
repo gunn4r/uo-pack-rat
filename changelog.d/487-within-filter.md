@@ -1,1 +1,0 @@
-- For contributors: a core `within=<container serial>` filter (`ItemQuery.within`, matched through `applyItemQuery`'s `containers`) keeps the items anywhere inside a container, bags inside bags included (#487). MCP's `container_contents` and the House map's drawer read through it, so a bag's contents are paged by the server instead of being gathered from its root's items.
