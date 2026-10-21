@@ -1,0 +1,2 @@
+- **Only what Auto would use**: the Suit Builder's Manual picker has a switch that lists only the pieces the Automatic build would pick from with its current pool settings (containers, gargoyle and meditation rules, forbidden skill bonuses, weapon types, strength, tags, locked slots).
+- For contributors: `GET /api/items` takes `auto={"character","settings"}` (JSON), answered from `autoCandidates` in `app/services/builds.mts` (the real `buildPools`); `filter-bar.mts` gains `itemsSourceWith(extra)` for parameters the filters don't hold.

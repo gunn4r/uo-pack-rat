@@ -1,7 +1,7 @@
 // ui/builder-manual.mts — the Suit Builder's Manual mode (issue #12): an Automatic | Manual switch in the top bar,
 // and in Manual a suit built by hand. The totals strip (resists, the casting and combat totals and the stats, each
 // against its cap), the slot cards, and beside them the picker: one item browser (item-browser.mts) fixed to
-// the selected slot, with a delta column saying what each row would change. A pick fills the slot and the picker
+// the selected slot, with a delta column saying what each row would change, and "Only what Auto would use" (issue #487) narrowing it to the pieces the Automatic panel's pool settings let a build pick from. A pick fills the slot and the picker
 // stays on it, so piece after piece can be tried. The mode, "No character" and the suit (a serial per slot) are
 // ui-prefs fields, so they survive a reload; a scan reload resolves the serials again, and one that no longer
 // resolves shows as a missing card. The numbers come from ui/manual-model.mts. Buffs, abilities and forms (app/buffs.mts,
@@ -19,7 +19,7 @@ import { evaluateSuit, type SuitEvaluation } from "../evaluate.mts";
 import type { ItemQuery } from "../item-query.mts";
 import { state, invStamp } from "./store.mts";
 import { $, el, label, slotLabel, itemTip } from "./dom.mts";
-import { box, txt, button, icon, segmented, tag, confirmDialog, modalOpen, tooltip, tipWrap, progress, toast } from "./components.mts";
+import { box, txt, button, icon, segmented, switchControl, tag, confirmDialog, modalOpen, tooltip, tipWrap, progress, toast } from "./components.mts";
 import { api } from "./api.mts";
 import { prefs } from "./prefs.mts";
 import { setCharacterBuffs } from "./profiles.mts";
@@ -31,9 +31,10 @@ import { optimizeErrorMessage } from "./messages.mts";
 import { itemActions } from "./item-parts.mts";
 import { sheetParts, wornSet } from "./sheet.mts";
 import { createItemBrowser } from "./item-browser.mts";
+import { itemsSourceWith } from "./filter-bar.mts";
 import type { ItemBrowser } from "./item-browser.mts";
 import type { UiPrefs, OptimizeResult, OptimizeStartApiResponse, OptSuit } from "./api-types.mts";
-import { MANUAL_GROUPS, emptyHistory, record, undoStep, redoStep, historyKey, historyKeyNames, type History, type Suit, TOTAL_KEYS, STAT_KEYS, STRIP_KEYS, capped, capLine, slotQuery, handConflict, type ManualDollState, handNote, suitFrom, fillableSlots, fetchPieces, fillPicks, keptSlots, noCharacterRunSettings, listWords, applyEditStep, type FillStart, type EditStep, type Reslot, savedSlots, missingSlots, reslotted, reslotNote, deltaKeys, slotDelta } from "./manual-model.mts";
+import { MANUAL_GROUPS, emptyHistory, record, undoStep, redoStep, historyKey, historyKeyNames, type History, type Suit, TOTAL_KEYS, STAT_KEYS, STRIP_KEYS, capped, capLine, slotQuery, handConflict, type ManualDollState, handNote, suitFrom, fillableSlots, fetchPieces, fillPicks, keptSlots, noCharacterRunSettings, listWords, autoLockNote, applyEditStep, type FillStart, type EditStep, type Reslot, savedSlots, missingSlots, reslotted, reslotNote, deltaKeys, slotDelta } from "./manual-model.mts";
 import { buffMarker, buffStrip, createBuffPicker, keepChipFocus, type BuffActions, type BuffPicker, type BuffView } from "./builder-buffs.mts";
 import { plural } from "./format.mts";
 import { manualDoll } from "./manual-doll.mts";
@@ -100,6 +101,10 @@ export function initManual(): void {
   // page after a click on text) and gives its slot card (or Add buff) the focus; a popover, a drawer, a dialog or a
   // search being cleared keeps its own Esc.
   $<HTMLButtonElement>("#mb-picker-close")!.onclick = closePicker;
+  // "Only what Auto would use" (#487): the picker lists only the pieces the Automatic panel's pool settings let a build
+  // pick from (GET /api/items' auto=, the server's buildPools); off by default, for this session.
+  const auto = switchControl({ label: "Only what Auto would use", checked: false, attrs: { id: "mb-auto-only" }, onChange: (on) => { autoOnly = on; setStatus(autoNote()); if (browser) browser.setQuery({ ...browser.query }); } });
+  $<HTMLButtonElement>("#mb-picker-close")!.before(auto.root);
   buffPicker = createBuffPicker($<HTMLElement>("#mb-buffs")!, "bf", buffActions, (v) =>
     (v.count ? "The totals, the stats and every slot's Change column count the buffs that are on." : "Count buffs in the totals is off: the totals leave the buffs out."));
   document.addEventListener("keydown", (e) => {
@@ -454,14 +459,18 @@ function wirePreview(host: HTMLElement): void {
 }
 
 // ---------------------------------------------------------------- the picker
+let autoOnly = false;
+// With the switch on, a slot the Automatic panel locks lists only its worn piece (or nothing): the status line says why.
+const autoNote = (): string => (pickSlot ? autoLockNote(autoOnly, slotLabel(pickSlot), (poolSettings().lockedSlots || []).includes(pickSlot)) : "");
+const autoParam = (): string => (autoOnly ? `&auto=${encodeURIComponent(JSON.stringify({ character: manualCharacter(), settings: poolSettings() }))}` : "");
 function openPicker(slot: string): void {
   pickSlot = slot; preview = null;
   buffsOpen = false; replaced = null;
-  setStatus("");
+  setStatus(autoNote());
   Object.assign(fixed, slotQuery(slot));
   const host = $<HTMLElement>("#mb-browser")!;
   if (!browser) {
-    browser = createItemBrowser(host, { fixed, columns: ["tags"], extraColumn: { label: "Change", title: "What the suit's totals do with this piece in the slot", width: 240, cell: deltaCell },
+    browser = createItemBrowser(host, { fixed, source: itemsSourceWith(autoParam), columns: ["tags"], extraColumn: { label: "Change", title: "What the suit's totals do with this piece in the slot", width: 240, cell: deltaCell },
       onActivate: (it) => pick(it), rowActions: itemActions, persist: false,
       // Marks the row whose piece is in the slot now; there is no detail panel to open.
       detail: { open: () => false, serial: () => (pickSlot ? slots[pickSlot] ?? null : null), close: () => {}, refresh: () => {} } });

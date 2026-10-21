@@ -4,7 +4,7 @@
 // Organize rule editor (rule-editor.mts) draw the same one; a surface leaves out the chips it has no use for.
 //
 // map: ui-components
-// owns: `createFilterBar`, `itemsSource`, `ItemSource`
+// owns: `createFilterBar`, `itemsSource`, `itemsSourceWith`, `ItemSource`
 import { SLOT_LABELS, SLOT_GROUP, tagUnits, flagLabel, FLAG_CATALOGUE, PROPERTY_CATALOGUE, CATALOGUE_GROUPS, ITEM_TYPE_LABELS, typesOfSlot, type ItemType } from "../vault-lib.mts";
 import type { Facets, ItemQuery, Place, PropCounts, PropOp } from "../item-query.mts";
 import { state } from "./store.mts";
@@ -27,12 +27,15 @@ export interface ItemSource {
   // How many of the stacks a query matches carry each property, for the property rule's list.
   propCounts: (query: ItemQuery) => Promise<PropCounts>;
 }
-// The default source: GET /api/items, and the facets of the inventory as last loaded.
-export const itemsSource: ItemSource = {
-  fetch: (query, offset, limit) => api<ItemsApiResponse>(`/api/items?${queryParams({ ...query, offset, limit }).toString()}`),
+// GET /api/items, and the facets of the inventory as last loaded. `extra` adds parameters the filters do not hold, read
+// at each request (the Manual picker's auto=, "Only what Auto would use").
+export const itemsSourceWith = (extra: () => string): ItemSource => ({
+  fetch: (query, offset, limit) => api<ItemsApiResponse>(`/api/items?${queryParams({ ...query, offset, limit }).toString()}${extra()}`),
   facets: () => state.facets,
-  propCounts: (query) => api<ItemPropCountsApiResponse>(`/api/items?${queryParams(query).toString()}&fields=props`),
-};
+  propCounts: (query) => api<ItemPropCountsApiResponse>(`/api/items?${queryParams(query).toString()}&fields=props${extra()}`),
+});
+// The default source.
+export const itemsSource: ItemSource = itemsSourceWith(() => "");
 
 // ---------------------------------------------------------------- the filter state
 export type ChipId = "char" | "slot" | "loc" | "rarity" | "kind" | "type" | "wskill" | "slayer" | "seen";
