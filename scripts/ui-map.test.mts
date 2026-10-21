@@ -963,10 +963,11 @@ test("[slow] House map: the small map opens the world map lightbox by click or E
   } finally { await close(); }
 });
 
-test("[slow] House map: every text, control edge and icon passes contrast on the map, a selected stack, the contents drawer, a callout, the no-tiledata note and the empty state, in both theme families light and dark; at 1000 × 700 the panes stack and nothing scrolls sideways", async (t) => {
+test("[slow] House map: every text, control edge and icon passes contrast on the map, a selected stack, the contents drawer, a callout, the no-tiledata note, the empty state and the Stack plan's hit line (a rarity-colored name on its gold wash), in both theme families light and dark; at 1000 × 700 the panes stack and nothing scrolls sideways", async (t) => {
   if (skipWithoutElectron(t)) return;
   const rows: Array<ContrastRow & { where: string }> = [];
   const { dir } = seed({ items: true });
+  writeVault(dir, true, [{ serial: 0x40500400, name: "Ringmail Leggings", in: FRONT[1]!, lines: ["Major Magic Item"] }]);   // a piece with a rarity, for the Stack plan's hit line
   const { app, page, errors, size, close } = await launch(dir);
   try {
     await go(page, "#/map", "#map-svg .map-stack");
@@ -989,6 +990,15 @@ test("[slow] House map: every text, control edge and icon passes contrast on the
     await page.locator(`#map-svg [data-stack="${front}"]`).hover();
     await page.waitForSelector("#map-callout:not([hidden])");
     await measure(page, "callout", /top first/, rows);
+    // The Stack plan's hit line on its gold wash: a rarity-colored gear name (issue #504) measured in every look.
+    await page.mouse.move(size.width - 20, 4);
+    await page.fill("#map-q", "leggings");
+    await page.locator('#map-view [data-value="plan"]').click();
+    await page.waitForSelector("#map-plan .sp-row.hit .gi-name");
+    assert.match(await page.locator("#map-plan .sp-row.hit .gi-name").first().getAttribute("style") ?? "", /--rarity-major-magic/);
+    await measure(page, "stack plan hit", /Ringmail Leggings/, rows);
+    await page.fill("#map-q", "");
+    await page.locator('#map-view [data-value="angle"]').click();
     // The houses list without tiledata: the real body read through the page (a route's own refetch lacks the app's token and gets 401), then answered with the reason swapped in.
     const real = await page.evaluate(async () => (await fetch("/api/houses")).json() as Promise<Record<string, unknown>>);
     await page.route("**/api/houses", (route) => route.fulfill({ json: { ...real, tiledata: false, tiledataFrom: { folder: null, source: null, reason: "no-client" } } }));
@@ -1530,7 +1540,8 @@ test("[slow] House map Stack plan: a search scrolls to its first matching card, 
     assert.equal(await page.locator("#map-plan .sp-card.has-hit").count(), 2);
     assert.equal(await page.locator("#map-plan .sp-card.faded").count(), 22);
     assert.equal(await page.locator(`#map-plan .sp-row[data-chest="${RUBY_FRONT}"] .sp-hitline`).textContent(), "Ruby × 1");
-    assert.equal(await page.locator(`#map-plan .sp-row[data-chest="${RUBY_FRONT}"] .sp-hitline`).getAttribute("title"), "Ruby × 1");
+    assert.equal(await page.locator(`#map-plan .sp-row[data-chest="${RUBY_FRONT}"] .sp-hitline`).getAttribute("title"), null, "no native title: each name shows its item tooltip");
+    assert.equal(await page.locator(`#map-plan .sp-row[data-chest="${RUBY_FRONT}"] .sp-hitline .gi[data-serial]`).count(), 1);
     assert.equal(await page.locator("#map-pins").count(), 0);
     assert.equal(await page.locator("#map-hits-title").textContent(), "2 items in 2 containers");
     // a match in the panel selects its stack in the plan

@@ -328,4 +328,5 @@ button.sp-area-name:focus-visible { outline: 2px solid var(--color-focus); outli
 .sp-card.has-hit { border-color: var(--color-highlight); box-shadow: 0 0 0 1px var(--color-highlight), var(--shadow-chip); }
 .sp-card.has-hit.sel { box-shadow: 0 0 0 1px var(--color-highlight), 0 0 0 3px var(--color-accent); }
 .sp-card.has-hit .sp-row:not(.hit) { opacity: 0.5; }
-.sp-row.hit { background: color-mix(in srgb, var(--color-highlight) 16%, var(--color-surface)); box-shadow: inset 3px 0 0 var(--color-highlight); }
+/* 10%: light enough that every rarity color reads on it (issue #504); the gold bar, the card's border and the dimmed rows mark the hit too */
+.sp-row.hit { background: color-mix(in srgb, var(--color-highlight) 10%, var(--color-surface)); box-shadow: inset 3px 0 0 var(--color-highlight); }

@@ -935,14 +935,14 @@ function planCard(m: HouseModel, c: PlanCard, h: HouseHits | null): HTMLElement 
     box("div", { class: "sp-card-head" }, txt(head.title, "t-sm strong"), txt(head.count, "t-xs muted")),
     box("ol", { class: "sp-rows", "aria-label": `Containers in ${head.title}, top first` }, ...rows.map((r) => planRow(r, hits?.find((x) => x.serial === r.serial) ?? null))));
 }
-// A container's row: its code; its label as a chip in the label's color, then the in-game name; its fill bar and count out of its own maximum (or why it is not known); while it matches a search, the items found. The found items keep the row's text color, not their rarity's: on the highlighted row a rarity color falls to 4.2:1 in Britannia dark.
+// A container's row: its code; its label as a chip in the label's color, then the in-game name; its fill bar and count out of its own maximum (or why it is not known); while it matches a search, the items found. Each found item is a gear item in its rarity's color with its own item tooltip.
 function planRow(r: PlanRow, hit: HitChest | null): HTMLElement {
-  const color = r.label?.color ? safeColor(r.label.color) : null, found = hit?.lines.map((l) => `${l.name} × ${fmtN(l.amount)}`).join(", ") ?? "";   // the title: every line, for when the row cuts them
+  const color = r.label?.color ? safeColor(r.label.color) : null;
   return box("li", { class: `sp-row${r.opened ? "" : " unopened"}${hit ? " hit" : ""}`, "data-chest": String(r.serial) },
     txt(r.code, "mono t-sm strong"),
     box("span", { class: "sp-l1" }, r.label ? box("span", { class: "badge sp-chip", title: `Label: ${r.label.name}`, ...(color ? { style: `--chip:${color}` } : {}) }, txt(r.label.name)) : null, txt(r.name, `ellip t-sm${r.label ? " muted" : ""}`)),
     box("span", { class: "sp-l2" }, r.fill ? meter(r.fill.items, r.fill.max, { tone: fillTone(r.fill), label: `${r.fill.items} of ${r.fill.max} items` }) : null, txt(r.fillText, r.fill ? "t-xs num" : "t-xs muted")),
-    hit ? box("span", { class: "sp-hitline t-xs", title: found }, el("span", { class: "ellip" }, ...hit.lines.flatMap((l, i) => [i ? ", " : "", gearItem({ ...l.item, amount: 1, rarity: null }, { variant: "inline", showIcon: false, tip: false }), ` × ${fmtN(l.amount)}`]))) : null);
+    hit ? box("span", { class: "sp-hitline t-xs" }, el("span", { class: "ellip" }, ...hit.lines.flatMap((l, i) => [i ? ", " : "", gearItem({ ...l.item, amount: 1 }, { variant: "inline", showIcon: false }), ` × ${fmtN(l.amount)}`]))) : null);
 }
 // The selected card's accent outline, and the roving tab stop: the focused card, else the selected one, else the first.
 function paintPlan(): void {

@@ -354,7 +354,7 @@ One card is the tab stop (roving). The arrow keys move to the nearest card that 
 
 ### While searching
 
-- A matching card has a gold outline. Its matching rows have a gold bar on a light gold wash, and a line naming the items found (cut with …, with the whole line in its title; gear items without icons, in the row's text color, since a rarity color falls under 4.5:1 on the gold wash in Britannia dark). Its other rows are dimmed.
+- A matching card has a gold outline. Its matching rows have a gold bar on a light gold wash, and a line naming the items found (cut with …): gear items without icons, each in its rarity's color with its own item tooltip. The wash is 10% gold, light enough for every rarity color. Its other rows are dimmed.
 - Cards with no match fade.
 - The pills count the matches ("3 of 27").
 - The panel lists the matches, as on the map.
