@@ -149,7 +149,7 @@ function stairRun(x0: number, y: number, z: number): HouseTile[] {
   return t;
 }
 
-// The README's House map house (scripts/readme-shots.mts; no test reads it): a lived-in two-storey home, 24 x 24 with its
+// The README's House map house (scripts/readme-shots.mts; no test reads it): a lived-in two-storey home, 23 x 23 with its
 // walls, at (X0, Y0). Four rooms joined by doorways: a crafting room (north-west) with work tables, the storage room
 // (north-east) with chests in rows along its walls, the entry hall (south-west) with the front door, a side table and the
 // stairs behind a banister, and a living room (south-east) with a dining table. Upstairs, over every room, more storage
@@ -158,7 +158,10 @@ function stairRun(x0: number, y: number, z: number): HouseTile[] {
 export function showcaseHouse(X0 = 1600, Y0 = 1700): { house: HouseSource; chests: HouseContainerInput[]; groups: Record<string, number[]> } {
   const at = (rooms: Array<[number, number, number, number]>): Array<[number, number]> => rooms.flatMap(([x0, y0, x1, y1]) => rect(X0 + x0, Y0 + y0, X0 + x1, Y0 + y1));
   const doors = at([[9, 5, 9, 5], [4, 10, 4, 10], [9, 17, 9, 17], [16, 12, 16, 12], [4, 22, 4, 22]]);
-  const ground = walled([...at([[1, 1, 8, 9], [10, 1, 21, 11], [1, 11, 8, 21], [10, 13, 21, 21]]), ...doors], doors, { graphic: G.planks, z: 27 });
+  // walled() rings the front door's tile too; the three walls it puts outside the house, in front of the door, go.
+  const porch = new Set(at([[3, 23, 5, 23]]).map(([x, y]) => `${x}:${y}`));
+  const ground = walled([...at([[1, 1, 8, 9], [10, 1, 21, 11], [1, 11, 8, 21], [10, 13, 21, 21]]), ...doors], doors, { graphic: G.planks, z: 27 })
+    .filter((t) => !(t[0] === G.stoneWall && porch.has(`${t[1]}:${t[2]}`)));
   const upperWalls = ground.filter((t) => t[0] === G.stoneWall).map(([g, x, y, , imp]): HouseTile => [g, x, y, 27, imp]);
   const chests: HouseContainerInput[] = [], groups: Record<string, number[]> = {};
   let serial = 0x40030000;
