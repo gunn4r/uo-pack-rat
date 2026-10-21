@@ -967,7 +967,8 @@ test("[slow] House map: every text, control edge and icon passes contrast on the
   if (skipWithoutElectron(t)) return;
   const rows: Array<ContrastRow & { where: string }> = [];
   const { dir } = seed({ items: true });
-  writeVault(dir, true, [{ serial: 0x40500400, name: "Ringmail Leggings", in: FRONT[1]!, lines: ["Major Magic Item"] }]);   // a piece with a rarity, for the Stack plan's hit line
+  // two tiers of one name in one container, for the Stack plan's hit line: each its own line in its own color
+  writeVault(dir, true, [{ serial: 0x40500400, name: "Ringmail Leggings", in: FRONT[1]!, lines: ["Major Magic Item"] }, { serial: 0x40500401, name: "Ringmail Leggings", in: FRONT[1]!, lines: ["Lesser Artifact"] }]);
   const { app, page, errors, size, close } = await launch(dir);
   try {
     await go(page, "#/map", "#map-svg .map-stack");
@@ -995,8 +996,12 @@ test("[slow] House map: every text, control edge and icon passes contrast on the
     await page.fill("#map-q", "leggings");
     await page.locator('#map-view [data-value="plan"]').click();
     await page.waitForSelector("#map-plan .sp-row.hit .gi-name");
-    assert.match(await page.locator("#map-plan .sp-row.hit .gi-name").first().getAttribute("style") ?? "", /--rarity-major-magic/);
+    assert.deepEqual((await page.locator("#map-plan .sp-row.hit .sp-hit .gi-name").evaluateAll((es) => es.map((e) => (e.getAttribute("style") ?? "").match(/--rarity-[a-z-]+/)?.[0]))).sort(), ["--rarity-lesser-artifact", "--rarity-major-magic"], "two tiers of one name: two lines, each in its own color");
+    assert.deepEqual(await page.locator("#map-plan .sp-row.hit .sp-hit").allTextContents(), ["Ringmail Leggings (Major Magic Item) × 1", "Ringmail Leggings (Lesser Artifact) × 1"], "a screen reader hears each tier (hidden after the name)");
+    // only the Stack plan's lines may answer for the name: the search panel and any callout name the same pieces, so they are taken off the page while this scene is measured
+    await page.evaluate(() => { for (const e of document.querySelectorAll<HTMLElement>("#map-panel, #map-callout, #map-pins")) e.style.display = "none"; });
     await measure(page, "stack plan hit", /Ringmail Leggings/, rows);
+    await page.evaluate(() => { for (const e of document.querySelectorAll<HTMLElement>("#map-panel, #map-callout, #map-pins")) e.style.display = ""; });
     await page.fill("#map-q", "");
     await page.locator('#map-view [data-value="angle"]').click();
     // The houses list without tiledata: the real body read through the page (a route's own refetch lacks the app's token and gets 401), then answered with the reason swapped in.
@@ -1539,10 +1544,24 @@ test("[slow] House map Stack plan: a search scrolls to its first matching card, 
     assert.deepEqual((await chestsOf(page, "#map-plan .sp-row.hit")).sort(), [FILLED.at(-1)!, RUBY_FRONT].sort());
     assert.equal(await page.locator("#map-plan .sp-card.has-hit").count(), 2);
     assert.equal(await page.locator("#map-plan .sp-card.faded").count(), 22);
-    assert.equal(await page.locator(`#map-plan .sp-row[data-chest="${RUBY_FRONT}"] .sp-hitline`).textContent(), "Ruby × 1");
+    assert.deepEqual(await page.locator(`#map-plan .sp-row[data-chest="${RUBY_FRONT}"] .sp-hit`).evaluateAll((es) => es.map((e) => [e.querySelector(".gi-name")?.textContent, e.querySelector(".num")?.textContent])), [["Ruby", " × 1"]]);
+    assert.equal(await page.locator(`#map-plan .sp-row[data-chest="${RUBY_FRONT}"] .sp-hitline .sr`).count(), 0, "one find: nothing hidden to add, and no tier for a name of its own");
+    assert.equal(await page.locator(`#map-plan .sp-row[data-chest="${RUBY_FRONT}"] .sp-hitline .sp-more`).count(), 0, "nothing more to say with one item");
     assert.equal(await page.locator(`#map-plan .sp-row[data-chest="${RUBY_FRONT}"] .sp-hitline`).getAttribute("title"), null, "no native title: each name shows its item tooltip");
     assert.equal(await page.locator(`#map-plan .sp-row[data-chest="${RUBY_FRONT}"] .sp-hitline .gi[data-serial]`).count(), 1);
     assert.equal(await page.locator(`#map-plan .sp-row[data-chest="${RUBY_FRONT}"] .sp-hitline .gi`).getAttribute("tabindex"), null, "no tab stop: the cards keep their roving one");
+    // 43 pearls in the chest under the drawer's: three named, one per line and each drawn inside the card, "+40 more", the whole list for a screen reader
+    await page.fill("#map-q", "pearl");
+    const under = page.locator(`#map-plan .sp-row.hit[data-chest="${FILLED.at(-2)}"] .sp-hitline`);
+    await under.waitFor();
+    assert.equal(await under.locator(".sp-hit .gi").count(), 3);
+    assert.equal(await under.evaluate((ul) => { const b = ul.getBoundingClientRect(); return [...ul.querySelectorAll(".sp-hit .gi-name")].every((n) => { const r = n.getBoundingClientRect(); return r.width > 0 && r.right <= b.right + 0.5 && r.bottom <= b.bottom + 0.5; }); }), true, "every counted name is drawn");
+    assert.equal(await under.locator(".sp-more > span:first-child").textContent(), "+40 more");
+    // the 40 not drawn are read after "+40 more", so a screen reader hears all 43 once
+    assert.match(await under.locator(".sp-more .sr").textContent() ?? "", /^: Pearl 04 × 1, .*Pearl S03 × 1$/);
+    assert.equal((await under.locator(".sp-more .sr").textContent() ?? "").split(", ").length, 40);
+    await page.fill("#map-q", "ruby");
+    await page.waitForSelector(`#map-plan .sp-row.hit[data-chest="${RUBY_FRONT}"]`);
     assert.equal(await page.locator("#map-pins").count(), 0);
     assert.equal(await page.locator("#map-hits-title").textContent(), "2 items in 2 containers");
     // a match in the panel selects its stack in the plan

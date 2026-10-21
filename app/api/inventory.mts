@@ -33,7 +33,7 @@ export interface MissingApiResponse { ok: boolean; items: MissingItem[] }
 // GET /api/items — the ItemQueryRows | ItemQueryGroups union applyItemQuery() returns (item-query.mts), plus the
 // request's own offset/limit echoed back.
 export type ItemsApiResponse = { ok: boolean; offset: number; limit: number } & (ItemQueryRows | ItemQueryGroups);
-// GET /api/items?fields=hits (the House map's search): each match's serial, name, amount, container, root and place.
+// GET /api/items?fields=hits (the House map's search): each match's serial, name, amount, rarity, container, root and place.
 export interface ItemHitsApiResponse { ok: boolean; total: number; offset: number; limit: number; rows: HitRow[] }
 // GET /api/items?fields=props (the property rule's list): of the `total` matching stacks, how many carry each property.
 export type ItemPropCountsApiResponse = { ok: boolean; total: number } & PropCounts;

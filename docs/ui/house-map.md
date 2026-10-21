@@ -271,7 +271,7 @@ The search (issue #10) is the box at the top bar's right end (`#map-q`).
 
 ### The query
 
-It finds items with the Inventory's own query: `GET /api/items?q=&fields=hits`, the same query answered with lean rows (`item-query.mts` `hitRow`), up to `HIT_LIMIT` a page, so one request is normal.
+It finds items with the Inventory's own query: `GET /api/items?q=&fields=hits`, the same query answered with lean rows (`item-query.mts` `hitRow`, rarity included), up to `HIT_LIMIT` a page, so one request is normal. A container's finds are grouped by name and rarity (`houseHits`), so two tiers of one name are two lines, each in its own color, and read out with their tier (`tierWord`).
 
 - It runs 150 ms after typing, as in the Inventory. Nothing is filtered in the page, and an item's tooltip fetches the whole record by serial.
 - The query is in the route (`#/map/<house>?q=`), so a reload or a deep link keeps it, and switching houses keeps it.
@@ -354,7 +354,7 @@ One card is the tab stop (roving). The arrow keys move to the nearest card that 
 
 ### While searching
 
-- A matching card has a gold outline. Its matching rows have a gold bar on a light gold wash, and a line naming the items found (cut with …): gear items without icons, each in its rarity's color with its own item tooltip on hover (no tab stop: the cards keep their roving one). The wash is 10% gold, light enough for every rarity color. Its other rows are dimmed.
+- A matching card has a gold outline. Its matching rows have a gold bar on a light gold wash, and the items found (`hitLine`), one per line: the first three as gear items without icons, each in its rarity's color with its own item tooltip on hover (no tab stop: the cards keep their roving one), the name cut at the card's width and its count kept, then a muted "+N more" line; a screen reader reads each line as it is (a repeated name with its tier) and the finds not drawn after "+N more", from visually hidden text, so it hears each find once. The wash is 10% gold, light enough for every rarity color. Its other rows are dimmed.
 - Cards with no match fade.
 - The pills count the matches ("3 of 27").
 - The panel lists the matches, as on the map.
