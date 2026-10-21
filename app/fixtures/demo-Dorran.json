@@ -183,24 +183,12 @@
  ],
  "roots": [
   {
-   "serial": 1879834700,
-   "kind": "backpack",
-   "name": "Backpack"
-  },
-  {
    "serial": 1879834624,
    "kind": "ground",
    "name": "Metal Chest"
   }
  ],
  "containers": {
-  "1879834700": {
-   "serial": 1879834700,
-   "name": "Backpack",
-   "kind": "backpack",
-   "root": 1879834700,
-   "parent": null
-  },
   "1879834624": {
    "serial": 1879834624,
    "name": "Metal Chest",
@@ -765,7 +753,7 @@
     "Blessed",
     "12 Spells"
    ],
-   "container": 1879834700
+   "container": 1879834624
   }
  ],
  "_bench": {
