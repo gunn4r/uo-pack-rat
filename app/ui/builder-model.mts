@@ -80,14 +80,14 @@ export function rarityHelp(rarity: string | undefined): string {
 export function rarityTotal(best: Record<string, { tieCost?: number | undefined } | null | undefined>, rarity: string | undefined, ladderLength: number): number {
   return Object.values(best).reduce((n, it) => (it && it.tieCost != null ? n + (rarity === "higher" ? ladderLength - it.tieCost : it.tieCost) : n), 0);
 }
-// A strict-order stage in words (issue #292), named by what it scores: "your requirements", its goals ("Hit chance and
-// Defense chance"), "getting closer to soft requirements", "fewest changes", "tagged pieces" or "spare points".
+// A strict-order stage in words (issue #292), named by what it scores: "your requirements", its goals ("Hit Chance
+// Increase and Defense Chance Increase"), "getting closer to soft requirements", "fewest changes", "tagged pieces" or "spare points".
 export function stageName(st: { kind: string; keys: string[] | null }): string {
   return st.kind === "requirements" ? "your requirements" : st.kind === "softPartial" ? "getting closer to soft requirements" : st.kind === "changes" ? "fewest changes"
     : st.kind === "tags" ? "tagged pieces" : st.kind === "spare" ? "spare points" : andList((st.keys || []).map(propName));
 }
-// What a strict-order build is solving now, for the progress card: "Strict order: getting Hit chance and Defense chance
-// as high as they go", "Strict order: meeting your requirements", "Strict order: spare points".
+// What a strict-order build is solving now, for the progress card: "Strict order: getting Hit Chance Increase and Defense
+// Chance Increase as high as they go", "Strict order: meeting your requirements", "Strict order: spare points".
 export function stageProgress(st: { kind: string; keys: string[] | null }): string {
   if (st.kind === "goal") { const n = (st.keys || []).length; return `Strict order: getting ${stageName(st)} as high as ${n === 1 ? "it goes" : "they go"}`; }
   return `Strict order: ${st.kind === "requirements" ? "meeting your requirements" : st.kind === "changes" ? "changing as few pieces as possible" : st.kind === "tags" ? "avoiding tagged pieces" : stageName(st)}`;
@@ -171,7 +171,7 @@ export function effectiveFloor(k: string, floor: number, caps: Record<string, nu
 }
 // The requirement row's warning when its floor is past its resist's cap: "Counts only up to the Fire cap, 70".
 export function floorCapWarning(k: string, floor: number, cap: number | null): string | null {
-  return RESIST_KEYS.includes(k) && cap != null && floor > cap ? `Counts only up to the ${labelOf(k)} cap, ${cap}` : null;
+  return RESIST_KEYS.includes(k) && cap != null && floor > cap ? `Counts only up to the ${propName(k)} cap, ${cap}` : null;
 }
 // The Faster Casting cap and where it comes from (vault-lib.mts fcCapFor): "cap 4: Chivalry", "cap 2: Magery 70+".
 export const fcCapText = (fc: FcCap): string => `cap ${fcCapSource(fc)}`;
@@ -187,10 +187,10 @@ const overridden = (view: Record<string, ResistCap>): string[] => RESIST_KEYS.fi
 export function resistMinimumText(name: string, min: number | null): string | null {
   return min == null || min <= 0 ? null : `Resisting Spells keeps each of ${name}'s resists at ${min} or more: a resist requirement of ${min} or less is met by any suit.`;
 }
-// A result's line about its caps, for the compare view: "Fire 95 (raised from 70)", or "Shard caps".
+// A result's line about its caps, for the compare view: "Fire Resist 95 (raised from 70)", or "Shard caps".
 export function capsLine(view: Record<string, ResistCap>): string {
   const set = overridden(view);
-  return set.length ? set.map((k) => `${labelOf(k)} ${view[k]!.cap} (${capNote(view[k]!)})`).join(" · ") : "Shard caps";
+  return set.length ? set.map((k) => `${propName(k)} ${view[k]!.cap} (${capNote(view[k]!)})`).join(" · ") : "Shard caps";
 }
 export const anyOverridden = (view: Record<string, ResistCap>): boolean => overridden(view).length > 0;
 
@@ -259,7 +259,7 @@ export function locationCrumbs(text: string | null | undefined): string[] {
 // negative weight, where less is better).
 export interface ChangeRow { key: string; now: number; suit: number; cap: number | null; delta: number; share: number | null; floor: number | null; sign: 1 | -1 }
 const ORDER = new Map<string, number>(PROPERTIES.map((p, i) => [p.key, i]));
-const byRegistry = (a: string, b: string): number => (ORDER.get(a) ?? ORDER.size) - (ORDER.get(b) ?? ORDER.size) || labelOf(a).localeCompare(labelOf(b));
+const byRegistry = (a: string, b: string): number => (ORDER.get(a) ?? ORDER.size) - (ORDER.get(b) ?? ORDER.size) || propName(a).localeCompare(propName(b));
 export const andList = (xs: string[]): string => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}`);
 // Every property of the result, the Table view's rows: those either suit carries, every requirement and weight, and the `extra` keys (a buff's past-cap amount), in the registry's order (resists first, skill bonuses last), none the builder never offers (the tag penalty among them).
 export function changeRows(before: PropMap, after: PropMap, caps: Record<string, number>, { floors = {}, weights = {}, shares = [], extra = [] }: { floors?: Record<string, number> | undefined; weights?: Record<string, number> | undefined; shares?: ScoreShare[] | undefined; extra?: string[] | undefined } = {}): ChangeRow[] {
@@ -298,10 +298,10 @@ export function gaugeTrack(r: ChangeRow): { fill: number; tick: number } {
   const scale = r.cap ?? Math.max(Math.abs(r.now), Math.abs(r.suit)), pct = (v: number): number => (scale > 0 ? Math.min(100, (100 * Math.abs(v)) / scale) : 0);
   return { fill: pct(r.suit), tick: pct(r.now) };
 }
-// The "What changes" summary from its gauges: "5 up · 3 down · DCI, HCI and DI reach their caps · 1 requirement not met", counting what the gauges show by the direction of the counted change (a cap counts when the suit reaches it and the suit worn now does not).
+// The "What changes" summary from its gauges: "5 up · 3 down · Defense Chance Increase and Damage Increase reach their caps · 1 requirement not met", counting what the gauges show by the direction of the counted change (a cap counts when the suit reaches it and the suit worn now does not).
 export function changesSummary(gauges: ChangeRow[]): string {
   const up = gauges.filter((r) => r.delta > 0).length, down = gauges.filter((r) => r.delta < 0).length;
-  const capped = gauges.filter((r) => r.cap != null && r.suit >= r.cap && r.now < r.cap).map((r) => labelOf(r.key));
+  const capped = gauges.filter((r) => r.cap != null && r.suit >= r.cap && r.now < r.cap).map((r) => propName(r.key));
   const short = gauges.filter(missed).length;
   return [up ? `${up} up` : "", down ? `${down} down` : "", capped.length ? `${andList(capped)} ${capped.length === 1 ? "reaches its cap" : "reach their caps"}` : "", short ? `${plural(short, "requirement")} not met` : ""].filter(Boolean).join(" · ") || "No other property changes";
 }
@@ -439,12 +439,12 @@ export function actionWords(a: PanelAction, code?: DiagnosticCode): { label: str
   }
   if (a.kind === "swingSteps") {
     const stale = "The swing step switch changed since this build, so this no longer applies.";
-    return a.on ? { label: "Score swing speed by step", done: "Scoring by step ✓", toast: "SSI is scored by swing step now. Build again to use it.", stale }
-      : { label: "Score SSI per point", done: "Per point ✓", toast: "SSI is scored per point now. Build again to use it.", stale };
+    return a.on ? { label: "Score swing speed by step", done: "Scoring by step ✓", toast: "Swing Speed Increase is scored by swing step now. Build again to use it.", stale }
+      : { label: "Score Swing Speed Increase per point", done: "Per point ✓", toast: "Swing Speed Increase is scored per point now. Build again to use it.", stale };
   }
   if (a.kind === "lockSlot") { const sl = SLOT_LABELS[a.slot] || a.slot; return { label: `Lock ${sl}`, done: "Locked ✓", toast: `${sl} is locked to what is worn now. Build again to use it.`, stale: `${sl} was locked since this build, so this no longer applies.` }; }
   const req = `${propName(a.property)} requirement`, stale = "The requirement changed since this build, so this no longer applies.";
-  if (a.kind === "setFloor" && raises(code)) return { label: `${labelOf(a.property)} floor ${a.value} (soft)`, done: "Set ✓", toast: `${req} set to ${a.value}, soft. Build again to use it.`, stale };
+  if (a.kind === "setFloor" && raises(code)) return { label: `${propName(a.property)} floor ${a.value} (soft)`, done: "Set ✓", toast: `${req} set to ${a.value}, soft. Build again to use it.`, stale };
   return a.kind === "setFloor"
     ? { label: `Lower to ${a.value}`, done: "Lowered ✓", toast: `${req} lowered to ${a.value}. Build again to use it.`, stale }
     : { label: "Make soft", done: "Made soft ✓", toast: `${req} is soft now. Build again to use it.`, stale };
@@ -523,10 +523,10 @@ export function shareRows(shares: ScoreShare[], fold = SHARE_FOLD): ShareRow[] {
 }
 
 // ---------------------------------------------------------------- swing (app/swing.mts)
-// A result's swing line and its steps: "Longsword 3.5 s · stamina 95 · SSI 45 (+10 Divine Fury) → swings every 1.75 s", then the last few steps at that stamina with the reached ones marked, and the next faster delay when the cap keeps it out of reach. `buffs` names what gave the share.
+// A result's swing line and its steps: "Longsword 3.5 s · stamina 95 · Swing Speed Increase 45 (+10 Divine Fury) → swings every 1.75 s", then the last few steps at that stamina with the reached ones marked, and the next faster delay when the cap keeps it out of reach. `buffs` names what gave the share.
 export function swingLines(sw: SwingResult, weapon: string | null, buffs: string[] = [], shown = 4): { head: string; steps: Array<{ text: string; reached: boolean }>; out: string | null } {
   const share = sw.share ? ` (${signed(sw.share)} ${buffs.length ? buffs.join(", ") : "buffs"})` : "";
-  const head = `${weapon ?? "Weapon"} ${speedText(sw.speed)} · stamina ${sw.stamina} · SSI ${sw.ssi}${share} → swings every ${delayText(sw.seconds)}`;
+  const head = `${weapon ?? "Weapon"} ${speedText(sw.speed)} · stamina ${sw.stamina} · ${propName("ssi")} ${sw.ssi}${share} → swings every ${delayText(sw.seconds)}`;
   const steps = sw.steps.slice(-shown).map((st) => ({ text: `${delayText(st.seconds)} ≥ ${st.ssi}`, reached: sw.ssi >= st.ssi }));
   const fastest = sw.steps.length ? sw.steps[sw.steps.length - 1]!.seconds : sw.seconds;
   return { head, steps, out: fastest > MIN_TICKS * 0.25 ? `${delayText(fastest - 0.25)} out of reach` : null };
@@ -606,8 +606,8 @@ export function suggestTemplates(cands: ReadonlyArray<{ ref: string; text: strin
   const score = (text: string): number => { const t = text.toLowerCase(); return trained.reduce((s, [k, v]) => (t.includes(k) ? s + v : s), 0); };
   return cands.map((c, i) => ({ ref: c.ref, s: score(c.text), i })).sort((a, b) => b.s - a.s || a.i - b.i).slice(0, n).map((c) => c.ref);
 }
-// The summary's Needs line: each requirement ("DCI 45"), a soft one marked "(soft)", the five resists as one "Resists 70"
-// when they are alike; "None" with none. `name` is a property's short name.
+// The summary's Needs line: each requirement ("Defense Chance Increase 45"), a soft one marked "(soft)", the five resists
+// as one "Resists 70" when they are alike; "None" with none. `name` is a property's name (propName).
 export function needsLine(floors: Readonly<Record<string, number>>, soft: readonly string[], name: (k: string) => string): string {
   const tag = (k: string): string => (soft.includes(k) ? " (soft)" : "");
   const first = RESIST_KEYS[0]!, alike = RESIST_KEYS.every((k) => floors[k] != null && floors[k] === floors[first] && tag(k) === tag(first));
@@ -632,13 +632,13 @@ export function poolLine(excluded: string[] = [], ubws = false, pieces: number |
 export const searchLine = (k: Pick<Knobs, "exact" | "budgetS" | "restarts">): string => (k.exact ? `Exact, up to ${k.budgetS} s` : `Heuristic, ${k.restarts} restarts`);
 
 // ---------------------------------------------------------------- goals (issue #292, vault-lib.mts compileGoals)
-// A goal's property in a sentence ("swing speed"), from vault-lib.mts's propName, the one name per property.
+// A goal's property in a sentence ("Swing Speed Increase"; a pool as plain words, "stamina from gear and buffs"), from vault-lib.mts's propName, the one name per property.
 export { goalWord };
 // The goals as rows, most important first: each property with its rank (from 1), whether it shares that rank with the row above, and what it counts.
 export interface GoalRow { key: string; rank: number; linked: boolean; counts: number }
 export const goalRows = (g: Goals): GoalRow[] => g.ranks.flatMap((r, i) => r.map((key, j) => ({ key, rank: i + 1, linked: j > 0, counts: rankImportance(i) })));
 // The first-visit view's "What matters most" with goals in force (issue #302): one row per rank, its goals' names joined
-// ("Hit chance = Defense chance", Swing speed with its swing time) and what it counts, the first `n`, how many goals the
+// ("Hit Chance Increase = Defense Chance Increase", Swing Speed Increase with its swing time) and what it counts, the first `n`, how many goals the
 // ranks past them hold, and where spare points go ("Spare points: Luck", "Spare points: not used").
 export function goalSummary(g: Goals, n = 4): { rows: Array<{ rank: number; names: string; counts: number }>; more: number; spare: string } {
   const rows = g.ranks.map((r, i) => ({ rank: i + 1, names: r.map((k) => goalLabel(g, k)).join(" = "), counts: rankImportance(i) }));
@@ -664,7 +664,7 @@ export const removeGoal = (g: Goals, key: string): Goals => ({ ...g, ranks: g.ra
 export const addGoal = (g: Goals, key: string): Goals => (g.ranks.some((r) => r.includes(key)) ? g : { ...g, ranks: [...g.ranks.map((r) => [...r]), [key]] });
 
 // "How the goals went" on a result: each goal's suit total against its cap (held there), maxed when it reaches it. Swing
-// speed with a known swing is maxed when that swing reaches its goal (`ssiMaxed`, swingOutcome), not by its SSI. Totals
+// Speed Increase with a known swing is maxed when that swing reaches its goal (`ssiMaxed`, swingOutcome), not by its SSI. Totals
 // and caps are paperdoll terms.
 export interface GoalOutcome { key: string; rank: number; value: number; cap: number | null; maxed: boolean }
 export function goalOutcomes(g: Goals, suit: PropMap, caps: Readonly<Record<string, number>>, ssiMaxed: boolean | null = null): GoalOutcome[] {
@@ -673,7 +673,7 @@ export function goalOutcomes(g: Goals, suit: PropMap, caps: Readonly<Record<stri
     return { key, rank, value, cap, maxed: key === "ssi" && ssiMaxed != null ? ssiMaxed : cap != null && value >= cap };
   });
 }
-// A goal's verdict in words, never claiming more than is known: "maxed"; "went down to make room for hit chance" when a
+// A goal's verdict in words, never claiming more than is known: "maxed"; "went down to make room for Hit Chance Increase" when a
 // trade gave it up; else that something came first: for the top goal the requirements or the pieces there are, for any
 // other higher goals or the requirements.
 export function goalVerdict(o: GoalOutcome, trades: readonly GoalTrade[]): string {
@@ -682,7 +682,7 @@ export function goalVerdict(o: GoalOutcome, trades: readonly GoalTrade[]): strin
   if (t) return `went down to make room for ${andList(t.ups.map((u) => goalWord(u.key)))}`;
   return o.rank === 1 ? "not maxed: your requirements, or the pieces you have, came first" : "not maxed: higher goals or your requirements came first";
 }
-// Swing speed's line in seconds, from the suit's own swing (its weapon and stamina), with its SSI as secondary text:
+// Swing Speed Increase's line in seconds, from the suit's own swing (its weapon and stamina), with its SSI as secondary text:
 // "As fast as possible" reads "1.75 s with Broadsword (fastest it can reach)", or "2.75 s with Broadsword" with what the
 // goal's weapon could reach (`worn`: "1.25 s possible with Double Bladed Staff"); a swing time reads "1.5 s with War Axe ·
 // goal met", or "1.75 s with War Axe · goal was every 1.5 s". When the swing time is missed with another weapon than the
@@ -692,7 +692,7 @@ export function goalVerdict(o: GoalOutcome, trades: readonly GoalTrade[]): strin
 export interface SwingOutcome { text: string; ssi: string; after: string | null; maxed: boolean; verdict: string | null }
 const aWeapon = (w: string): string => (/^the\b/i.test(w) ? w : `${/^[aeiou]/i.test(w) ? "an" : "a"} ${w}`);
 export function swingOutcome(g: Goals, sw: { seconds: number; ssi: number; speed?: number | undefined }, weapon: string | null, fastest: boolean, worn: { seconds: number; weapon: string | null; speed?: number | undefined } | null = null): SwingOutcome {
-  const goal = g.swing?.mode === "every" ? g.swing.seconds ?? null : null, w = weapon ?? "the weapon", at = `${delayText(sw.seconds)} with ${w}`, ssi = `SSI ${num(sw.ssi)}`;
+  const goal = g.swing?.mode === "every" ? g.swing.seconds ?? null : null, w = weapon ?? "the weapon", at = `${delayText(sw.seconds)} with ${w}`, ssi = `${propName("ssi")} ${num(sw.ssi)}`;
   if (goal != null) {
     const met = sw.seconds <= goal, other = !!worn?.weapon && (sw.speed != null && worn.speed != null ? sw.speed !== worn.speed : worn.weapon !== weapon);
     if (!met && other && weapon) return { text: at, ssi, after: null, maxed: false, verdict: `the suit uses ${aWeapon(weapon)}; the ${delayText(goal)} goal was set for your ${worn!.weapon}` };
@@ -712,8 +712,8 @@ export function goalTrades(g: Goals, now: PropMap, suit: PropMap, caps: Readonly
     return ups.length ? [{ key: d.key, from: d.from, to: d.to, ups }] : [];
   }).slice(0, n);
 }
-// A trade in words: "−1 swing speed (56 → 55, still a 1.5 s swing) for +15 hit chance and +10 damage". `swing`, the delays
-// worn now and in the suit, when the goal given up is Swing speed.
+// A trade in words: "−1 Swing Speed Increase (56 → 55, still a 1.5 s swing) for +15 Hit Chance Increase and +10 Damage
+// Increase". `swing`, the delays worn now and in the suit, when the goal given up is Swing Speed Increase.
 export function tradeText(t: GoalTrade, swing: { from: number; to: number } | null = null): string {
   const s = t.key === "ssi" && swing ? `, ${swing.from === swing.to ? `still a ${delayText(swing.to)}` : `${delayText(swing.from)} → ${delayText(swing.to)}`} swing` : "";
   const ups = t.ups.map((u) => `+${num(u.by)} ${goalWord(u.key)}`);

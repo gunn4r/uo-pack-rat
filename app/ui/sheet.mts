@@ -103,12 +103,14 @@ const numOrNull = (v: unknown): number | null => (Number.isFinite(Number(v)) ? N
 export const RESISTS: Array<[string, string, string]> = RESIST_META.map((r) => [r.key, r.long, r.token.slice("--res-".length)]);
 // The Properties card's groups (spec 4.5), every row shown until the player picks otherwise. [key, label, suffix].
 type SheetRow = [string, string, string?];
+// Each row by the property's one name, the catalogue's (vault-lib's PROP_FULL: "Hit Chance Increase").
+const rowsOf = (keys: Array<[string, string?]>): SheetRow[] => keys.map(([k, unit]) => [k, PROP_FULL[k]!, ...(unit ? [unit] : [])] as SheetRow);
 export const SHEET_GROUPS: Array<[string, SheetRow[]]> = [
-  ["Casting", [["fc", "Faster Casting"], ["fcr", "Faster Cast Recovery"], ["sdi", "Spell Damage", "%"], ["lmc", "Lower Mana Cost", "%"], ["lrc", "Lower Reagent Cost", "%"], ["castingFocus", "Casting Focus", "%"]]],
-  ["Combat", [["hci", "Hit Chance", "%"], ["dci", "Defense Chance", "%"], ["ssi", "Swing Speed", "%"], ["di", "Damage Increase", "%"], ["reflectPhys", "Reflect Damage", "%"]]],
-  ["Leech", [["hitLifeLeech", "Hit Life Leech", "%"], ["hitManaLeech", "Hit Mana Leech", "%"], ["hitStamLeech", "Hit Stamina Leech", "%"]]],
-  ["Regeneration", [["hpRegen", "Hits Regen"], ["stamRegen", "Stam Regen"], ["manaRegen", "Mana Regen"]]],
-  ["Pools and other", [["hpi", "HP Increase"], ["stamInc", "Stam Increase"], ["manaInc", "Mana Increase"], ["enhancePotions", "Enhance Potions", "%"], ["luck", "Luck"]]],
+  ["Casting", rowsOf([["fc"], ["fcr"], ["sdi", "%"], ["lmc", "%"], ["lrc", "%"], ["castingFocus", "%"]])],
+  ["Combat", rowsOf([["hci", "%"], ["dci", "%"], ["ssi", "%"], ["di", "%"], ["reflectPhys", "%"]])],
+  ["Leech", rowsOf([["hitLifeLeech", "%"], ["hitManaLeech", "%"], ["hitStamLeech", "%"]])],
+  ["Regeneration", rowsOf([["hpRegen"], ["stamRegen"], ["manaRegen"]])],
+  ["Pools and other", rowsOf([["hpi"], ["stamInc"], ["manaInc"], ["enhancePotions", "%"], ["luck"]])],
 ];
 export const DEFAULT_SHEET_PROPS = SHEET_GROUPS.flatMap(([, rows]) => rows.map(([k]) => k));
 // Everything the card can list: the groups above, then under "Other" each further property the tooltip

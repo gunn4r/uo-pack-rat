@@ -276,7 +276,7 @@ export function planBuild(spec: BuildSpec, { character, worn, race, suit, goalSw
   const share = (k: string): number => (r.shares[k] || []).filter((x) => !x.outside).reduce((n, x) => n + x.value, 0);
   const stamBase = plan.stats.dex + share("dexBonus") + share("stamPool");
   const wornStam = totalsOf(Object.fromEntries(worn.map((it) => [String(it.serial), toOptItem(it)]))).stamPool || 0;
-  // a Swing speed goal is set for the weapon worn now at the worn suit's stamina, which the run keeps with the stamina before
+  // a Swing Speed Increase goal is set for the weapon worn now at the worn suit's stamina, which the run keeps with the stamina before
   // gear (one out of the run-settings check's range is not kept and caps nothing); a reopened run plans from the ones it
   // was built with, its suit's swing too. A swing every N s caps SSI at what that delay takes there: SSI past it counts
   // nothing, and the step table reads that cap from `swing.goalSsi` (app/swing.mts stepsFor)
@@ -290,8 +290,8 @@ export function planBuild(spec: BuildSpec, { character, worn, race, suit, goalSw
   const swing = gs && goalSwing ? { stamBase: gs.stamBase, refStamina: gs.stamina } : { stamBase, refStamina };
   return { base, plan, profile: { ...scored, swing: { ...swing, steps: !!intent.swingSteps, ...(goalSsi != null ? { goalSsi } : {}) } }, buffs, pool, opts, snapshot: gs ? { ...snapshot, goalSwing: { ...gs } } : snapshot };
 }
-// The SSI a Swing speed goal of a swing every N s stops counting at (issue #292): the least effective SSI that gives that
-// delay for a weapon of `speedS` at `stamina`; null for the fastest swing, goals not in force, no Swing speed goal, or a
+// The SSI a Swing Speed Increase goal of a swing every N s stops counting at (issue #292): the least effective SSI that gives that
+// delay for a weapon of `speedS` at `stamina`; null for the fastest swing, goals not in force, no Swing Speed Increase goal, or a
 // delay past the SSI cap.
 export function goalSsiCap(goals: Goals | null | undefined, speedS: number, stamina: number): number | null {
   if (!goalsActive(goals) || goals.swing?.mode !== "every" || goals.swing.seconds == null || !goals.ranks.some((r) => r.includes("ssi"))) return null;

@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import { effectiveProfile, profileResistCaps, setRules } from "./vault-lib.mts";
 import type { Character, Item, Profile, PropMap } from "./vault-lib.mts";
 import type { RulesV1 } from "./schema/types.d.mts";
-import { BUFFS, BUFF_IDS, BUFF_GROUPS, BUFF_INPUTS, applyBuffs, buffAvailability, buffById, buffEffectTags, buffShift, isSchool, TAG_WORDS, buffSkillValues, buffText, buffsDiff, gearNeedsText, isBuffList, isBuffSkills, isBuffSkillsByCharacter, isRunBuffs, manualProfile, normalizeBuffListsByCharacter, normalizeBuffs, ownEntry, plannedFromWorn, plannedProfile, runBuffs, savedBuffs, toggleBuff } from "./buffs.mts";
+import { BUFFS, BUFF_IDS, BUFF_GROUPS, BUFF_INPUTS, applyBuffs, buffAvailability, buffById, buffEffectTags, buffShift, isSchool, tagWord, buffSkillValues, buffText, buffsDiff, gearNeedsText, isBuffList, isBuffSkills, isBuffSkillsByCharacter, isRunBuffs, manualProfile, normalizeBuffListsByCharacter, normalizeBuffs, ownEntry, plannedFromWorn, plannedProfile, runBuffs, savedBuffs, toggleBuff } from "./buffs.mts";
 import type { BuffPlan, Skills, Stats } from "./buffs.mts";
 
 setRules(JSON.parse(readFileSync(new URL("./rules/uoalive.json", import.meta.url), "utf8")) as RulesV1);
@@ -75,14 +75,14 @@ test("[fast] buffs: Magery: Bless takes 1 + Eval / 10 percent of the raw stats, 
   // no character: no raw stats, so the share is a percent and adds nothing
   const free = applyBuffs({}, CAPS, ["bless"], {}, null);
   assert.deepEqual(free.shares.strBonus, [{ id: "bless", value: 0, pct: 13 }]);
-  assert.equal(buffText("bless", {}, null, {}), "STR, DEX, INT +13% of base");
+  assert.equal(buffText("bless", {}, null, {}), "Strength Bonus, Dexterity Bonus, Intelligence Bonus +13% of base");
   // Reactive Armor: Phys 15 + Inscription / 20, the others −5
   assert.deepEqual(alone("reactiveArmor", { Inscription: 0 }).add, { physResist: 15, fireResist: -5, coldResist: -5, poisonResist: -5, energyResist: -5 });
   assert.equal(alone("reactiveArmor", { Inscription: 100 }).add.physResist, 20);
   // Protection with no character's Resisting Spells: Phys −15 + Inscription / 20 and FC −2 after the cap
   assert.deepEqual(alone("protection", { Inscription: 0 }).add, { physResist: -15 });
   assert.deepEqual(alone("protection", { Inscription: 100 }).add, { physResist: -10 });
-  assert.equal(buffText("protection", { Inscription: 0 }, null, {}), "Phys −15 · FC −2 after the cap · Resisting Spells −35");
+  assert.equal(buffText("protection", { Inscription: 0 }, null, {}), "Physical Resist −15 · Faster Casting −2 after the cap · Resisting Spells −35");
 });
 
 test("[fast] buffs: Magic Reflection by the shard wiki: Phys −(20 − Inscription / 20) and its cap −5, the others +10", () => {
@@ -95,7 +95,7 @@ test("[fast] buffs: Magic Reflection by the shard wiki: Phys −(20 − Inscript
   const all = applyBuffs({}, CAPS, ["reactiveArmor", "protection", "magicReflection"], { Inscription: 0 }, null);
   assert.equal(all.totals.physResist, 15 - 15 - 20);
   assert.equal(all.caps.physResist, 65);
-  assert.equal(buffText("magicReflection", { Inscription: 0 }, null, {}), "Phys −20 · Fire, Cold, Poison, Energy +10 · Phys cap −5");
+  assert.equal(buffText("magicReflection", { Inscription: 0 }, null, {}), "Physical Resist −20 · Fire Resist, Cold Resist, Poison Resist, Energy Resist +10 · Physical Resist cap −5");
 });
 
 test("[fast] buffs: Protection lowers Resisting Spells, and so the minimum it holds each resist at", () => {
@@ -238,13 +238,13 @@ test("[fast] buffs: the inputs take an edit, else the character's skill, else 12
 });
 
 test("[fast] buffs: the picker's words for an entry", () => {
-  assert.equal(buffText("divineFury", { Chivalry: 105 }, null, {}), "HCI +10 · DI +10 · SSI +10 · DCI −20");
-  assert.equal(buffText("consecrateWeapon", { Chivalry: 105 }, null, {}), "DI +7 past the cap · hits the lowest resist");
-  assert.equal(buffText("reaperForm", {}, null, {}), "SSI +5 · SDI +10 · Phys, Cold, Poison, Energy +5 · Fire −25");
-  assert.equal(buffText("stoneForm", { Mysticism: 120, "Focus or Imbuing": 120 }, null, {}), "All resists +10 · SSI −10 · FC −2 · DI +5 past the cap · Resist caps +5");
-  assert.equal(buffText("whiteTiger", {}, null, {}), "DCI +20 · DCI cap +5");
-  assert.equal(buffText("wolfKitsune", {}, null, {}), "HCI +20 · Hits +20");
-  assert.equal(buffText("savingThrow", { "Mastery level": 1 }, null, {}), "HCI +5 · STR +5");
+  assert.equal(buffText("divineFury", { Chivalry: 105 }, null, {}), "Hit Chance Increase +10 · Damage Increase +10 · Swing Speed Increase +10 · Defense Chance Increase −20");
+  assert.equal(buffText("consecrateWeapon", { Chivalry: 105 }, null, {}), "Damage Increase +7 past the cap · hits the lowest resist");
+  assert.equal(buffText("reaperForm", {}, null, {}), "Swing Speed Increase +5 · Spell Damage Increase +10 · Physical Resist, Cold Resist, Poison Resist, Energy Resist +5 · Fire Resist −25");
+  assert.equal(buffText("stoneForm", { Mysticism: 120, "Focus or Imbuing": 120 }, null, {}), "All resists +10 · Swing Speed Increase −10 · Faster Casting −2 · Damage Increase +5 past the cap · Resist caps +5");
+  assert.equal(buffText("whiteTiger", {}, null, {}), "Defense Chance Increase +20 · Defense Chance Increase cap +5");
+  assert.equal(buffText("wolfKitsune", {}, null, {}), "Hit Chance Increase +20 · Hits +20");
+  assert.equal(buffText("savingThrow", { "Mastery level": 1 }, null, {}), "Hit Chance Increase +5 · Strength Bonus +5");
 });
 
 test("[fast] buffs: the saved choices' checks", () => {
@@ -351,13 +351,13 @@ test("[fast] buffs: the debuffs cast on you, in their own group, folded by defau
   // your Resisting Spells 100 takes 10 points off; 120 more than cancels it
   assert.equal(applyBuffs({}, CAPS, ["curse"], { "Enemy Eval Int": 120, "Resisting Spells": 100 }, fury).totals.strBonus, -13);
   assert.deepEqual(applyBuffs({}, CAPS, ["curse"], { "Enemy Eval Int": 0, "Resisting Spells": 120 }, fury).shares.strBonus, undefined);
-  assert.equal(buffText("curse", { "Enemy Eval Int": 120 }, null, {}), "STR, DEX, INT −20% of base · Fire, Cold, Poison, Energy cap −10");
+  assert.equal(buffText("curse", { "Enemy Eval Int": 120 }, null, {}), "Strength Bonus, Dexterity Bonus, Intelligence Bonus −20% of base · Fire Resist, Cold Resist, Poison Resist, Energy Resist cap −10");
   // Corpse Skin: malus min(15, (Necromancy + Spirit Speak) × 0.075), Fire and Poison caps 70 − malus
   const cs = applyBuffs({}, CAPS, ["corpseSkin"], { "Enemy Necro + SS": 240 }, null);
   assert.deepEqual([cs.totals.fireResist, cs.totals.poisonResist, cs.totals.coldResist, cs.totals.physResist, cs.caps.fireResist, cs.caps.poisonResist], [-15, -15, 10, 10, 55, 55]);
   assert.equal(applyBuffs({}, CAPS, ["corpseSkin"], { "Enemy Necro + SS": 100 }, null).caps.fireResist, 63);
-  assert.match(buffText("mindRot", {}, null, {}), /spells cost 25% more mana, after LMC/);
-  assert.equal(buffText("corpseSkin", { "Enemy Necro + SS": 240 }, null, {}), "Fire, Poison −15 · Cold, Phys +10 · Fire, Poison cap 55");
+  assert.match(buffText("mindRot", {}, null, {}), /spells cost 25% more mana, after Lower Mana Cost/);
+  assert.equal(buffText("corpseSkin", { "Enemy Necro + SS": 240 }, null, {}), "Fire Resist, Poison Resist −15 · Cold Resist, Physical Resist +10 · Fire Resist, Poison Resist cap 55");
 });
 
 test("[fast] buffs: resist caps change in ServUO's order: additions, then Curse on the running cap, then Corpse Skin's absolute cap", () => {
@@ -493,33 +493,33 @@ test("[fast] buffs: manualProfile plans a hand-picked suit from that suit's weap
   assert.equal(none.buffs?.who.race, null, "no character: no race");
 });
 
-test("[fast] buffs: the Buffs tab's effect tags come from each entry's own effects, caps and extras, in one word per property (issue #272)", () => {
+test("[fast] buffs: the Buffs tab's effect tags come from each entry's own effects, caps and extras, in one name per property (issue #272)", () => {
   const { values } = buffSkillValues(null, {}), tags = (id: string, skills: Skills = values): string[] => buffEffectTags(id, skills, null, {}, {}, CAPS).map((t) => t.text);
-  assert.deepEqual(tags("divineFury"), ["hit chance up", "damage up", "swing speed up", "defense chance down"]);
+  assert.deepEqual(tags("divineFury"), ["Hit Chance Increase up", "Damage Increase up", "Swing Speed Increase up", "Defense Chance Increase down"]);
   // a tag that lowers something for the suit is marked, for the warn tone
   assert.deepEqual(buffEffectTags("divineFury", values, null, {}, {}, CAPS).map((t) => t.down), [false, false, false, true]);
   assert.deepEqual(buffEffectTags("curse", values, null, {}, {}, CAPS).map((t) => t.down), [true, true]);
   // below Chivalry 90 Consecrate Weapon adds no damage: only what no total shows is left
   assert.deepEqual(tags("consecrateWeapon", { ...values, Chivalry: 60 }), ["hits the lowest resist"]);
-  assert.deepEqual(tags("consecrateWeapon"), ["damage up", "hits the lowest resist"]);
-  // the resists moving one way are named together: all five as "resists", some by their words
-  assert.deepEqual(tags("reaperForm"), ["swing speed up", "spell damage up", "physical, cold, poison, energy resists up", "fire resist down"]);
-  assert.deepEqual(tags("etherealForm"), ["resists down", "8% mana leech"]);
-  assert.deepEqual(tags("bless"), ["stats up"]);
-  assert.deepEqual(tags("whiteTiger"), ["defense chance up", "defense chance cap up"]);
-  assert.deepEqual(tags("stoneForm"), ["resists up", "swing speed down", "faster casting down", "damage up", "resist caps up"]);
-  assert.deepEqual(tags("corpseSkin"), ["fire, poison resists down", "physical, cold resists up", "fire, poison resist caps down"]);
+  assert.deepEqual(tags("consecrateWeapon"), ["Damage Increase up", "hits the lowest resist"]);
+  // the resists moving one way are named together: all five as "Resists", some by their names
+  assert.deepEqual(tags("reaperForm"), ["Swing Speed Increase up", "Spell Damage Increase up", "Physical, Cold, Poison, Energy Resists up", "Fire Resist down"]);
+  assert.deepEqual(tags("etherealForm"), ["Resists down", "8% mana leech"]);
+  assert.deepEqual(tags("bless"), ["Stats up"]);
+  assert.deepEqual(tags("whiteTiger"), ["Defense Chance Increase up", "Defense Chance Increase cap up"]);
+  assert.deepEqual(tags("stoneForm"), ["Resists up", "Swing Speed Increase down", "Faster Casting down", "Damage Increase up", "Resist caps up"]);
+  assert.deepEqual(tags("corpseSkin"), ["Fire, Poison Resists down", "Physical, Cold Resists up", "Fire, Poison Resist caps down"]);
   // a pool reads as its stat, like the stat's regeneration
-  assert.deepEqual(tags("jukari"), ["fire resist up", "stamina up"]);
-  assert.deepEqual(tags("wolfKitsune"), ["hit chance up", "hit points up"]);
-  assert.deepEqual(tags("ratRabbit"), ["stealth up"]);
+  assert.deepEqual(tags("jukari"), ["Fire Resist up", "Stamina up"]);
+  assert.deepEqual(tags("wolfKitsune"), ["Hit Chance Increase up", "Hit Points up"]);
+  assert.deepEqual(tags("ratRabbit"), ["Stealth up"]);
   // Gargoyle Berserk with no HP lost changes nothing
   assert.deepEqual(tags("berserk", { ...values, "HP lost": 0 }), ["no suit effect"]);
-  // every property the catalog moves has its one word
+  // every property the catalog moves has a name, never its raw key
   const c = { s: (i: string) => values[i] ?? 0, stats: { str: 100, dex: 100, int: 100 }, totals: {}, resist: null, who: {}, caps: CAPS };
   for (const b of BUFFS) {
     assert.ok(tags(b.id).length, b.id);
-    for (const k of [...b.effects(c).map((e) => e.key), ...Object.keys({ ...b.caps?.(c), ...b.capsLate?.(c), ...b.capsSet?.(c) })]) assert.ok(k.startsWith("sk:") || Object.hasOwn(TAG_WORDS, k), `${b.id}: ${k}`);
+    for (const k of [...b.effects(c).map((e) => e.key), ...Object.keys({ ...b.caps?.(c), ...b.capsLate?.(c), ...b.capsSet?.(c) })]) assert.notEqual(tagWord(k), k, `${b.id}: ${k}`);
   }
 });
 

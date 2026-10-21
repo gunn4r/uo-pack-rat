@@ -9,7 +9,7 @@ import { NOBODY } from "../vault-lib.mts";
 import { BUILTIN_PREFIX, TEMPLATE_NAME_MAX, findTemplate, templateRefs, templateSettings, templateSpecFrom } from "../build-spec.mts";
 import { buffById } from "../buffs.mts";
 import { state } from "./store.mts";
-import { el, label } from "./dom.mts";
+import { el } from "./dom.mts";
 import { promptText } from "./dialog.mts";
 import { box, txt, button, icon, message, confirmDialog, createDrawer, type DrawerHandle, toast } from "./components.mts";
 import { editProfiles, setCharacterBuffs, type ProfilesSave } from "./profiles.mts";
@@ -36,7 +36,7 @@ const savedUsers = (ref: string): string[] => Object.keys(state.profiles!.charac
 // A template's settings in one line: what it needs, its top weights, its buffs.
 function templateSummary(t: NonNullable<ReturnType<typeof findTemplate>>): string {
   const st = templateSettings(t), top = topWeights(st.weights || {}).rows.map((r) => propName(r.key)), buffs = (t.spec.buffs?.on ?? []).map((id) => buffById(id)?.name ?? id);
-  return [`Needs: ${needsLine(st.floors || {}, st.softFloors || [], label) || "nothing"}`, `Weights: ${top.join(", ") || "none"}`, `Buffs: ${buffs.join(", ") || "none"}`].join(" · ");
+  return [`Needs: ${needsLine(st.floors || {}, st.softFloors || [], propName) || "nothing"}`, `Weights: ${top.join(", ") || "none"}`, `Buffs: ${buffs.join(", ") || "none"}`].join(" · ");
 }
 function paintTemplatesDrawer(): void {
   if (!templatesDrawer) return;

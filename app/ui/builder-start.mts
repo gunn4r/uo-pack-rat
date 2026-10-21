@@ -92,7 +92,7 @@ function templateCards(name: string): HTMLElement {
     if (!t) return null;   // deleted since the view was shown
     const builtin = ref.startsWith(BUILTIN_PREFIX), on = ref === current, st = templateSettings(t);
     const tag = ref === suggested ? "Suggested" : builtin ? "Built-in" : "Yours";
-    const line = builtin ? t.description || needsLine(st.floors || {}, st.softFloors || [], label) : t.savedAt ? `Saved ${shortDate(t.savedAt)}` : "Your template";
+    const line = builtin ? t.description || needsLine(st.floors || {}, st.softFloors || [], propName) : t.savedAt ? `Saved ${shortDate(t.savedAt)}` : "Your template";
     return box("button", { type: "button", class: `b-tpl-card${on ? " on" : ""}`, "aria-pressed": String(on), "data-k": `tpl:${ref}`, title: line, onclick: () => commands.pickTemplate(ref) },
       badge(tag, tag === "Yours" ? undefined : "accent"), txt(templateName(state.builtinTemplates, ref), "strong"), txt(line, "t-sm muted b-tpl-line"));
   };
@@ -115,7 +115,7 @@ function summaryCard(name: string): HTMLElement {
   };
   return box("section", { class: "card b-start-sum", "aria-label": "Summary" },
     box("div", { class: "b-sum-half" }, el("h3", { class: "t-md strong" }, `${ref ? templateName(state.builtinTemplates, ref) : "These settings"} will build for`),
-      box("dl", { class: "b-sum" }, ...line("requirements", "Needs", needsLine(p.floors || {}, p.softFloors || [], label)), ...line("buffs", "Buffs", buffs.join(", ") || "None"),
+      box("dl", { class: "b-sum" }, ...line("requirements", "Needs", needsLine(p.floors || {}, p.softFloors || [], propName)), ...line("buffs", "Buffs", buffs.join(", ") || "None"),
         ...line("pool", "Pool", poolLine(p.excludeWeapons, p.ubwsAnyWeapon !== false, pieces?.n ?? null, p.rarity)), ...line("advanced", "Search", searchLine(k)))),
     box("div", { class: "b-sum-half" }, el("h3", { class: "t-md strong" }, "What matters most"), ...(goalsActive(p.goals) ? goalsMost(p.goals, open) : [
       top.rows.length ? box("ul", { class: "b-imps" }, ...top.rows.map(weightRow)) : el("p", { class: "muted" }, "No weights yet."),

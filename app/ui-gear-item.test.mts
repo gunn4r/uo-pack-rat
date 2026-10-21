@@ -1,6 +1,6 @@
 // ui-gear-item.test.mts — `app/ui/gear-item.mts`'s `gearItem` on a fake DOM, and the tooltip title's icon.
 //
-// `app/ui/gear-item.mts`'s `gearItem`: the row's parts in order (the icon as an aria-hidden tile with an empty alt, the name in its rarity's color token, the quantity, only the quality tags, then `after`), no color for a tier without a token, an empty box of the same size when there is no graphic and no tile at all with `showIcon: false`, the button `onOpen` makes, what a press hands it, its name (the piece and its quantity) and the tags and badges that describe it, the card's two lines beside a 32 px icon, the item tooltip's host (with `focus: false` on hover only, no tab stop), the graphic, hue and rarity filled from the page's item cache, the missing ones looked up by serial in one batched request and the piece redrawn with them (a serial waiting or in flight asked once; one the server answered without not asked again until `forgetGearMisses`, but one whose request failed asked again; an answer arriving after `forgetGearMisses` neither drawn nor cached, its serials asked again), and the one-span rule on every variant; `app/ui/item-art.mts`'s `artTile` keeping its box, and its badge, when there is no art or it fails to load; `app/ui/dom.mts`'s `tipNode` title carrying a 32 px icon when the item's graphic is known. Lives in app/ rather than app/ui/ for the reason app/ui-render.test.mts gives. Tags: [fast].
+// `app/ui/gear-item.mts`'s `gearItem`: the row's parts in order (the icon as an aria-hidden tile with an empty alt, the name in its rarity's color token, the quantity, only the quality tags, then `after`), no color for a tier without a token, an empty box of the same size when there is no graphic and no tile at all with `showIcon: false`, the button `onOpen` makes, what a press hands it, its name (the piece and its quantity) and the tags and badges that describe it, the card's two lines beside a 32 px icon, the item tooltip's host (on hover only with `focus: false`, none with `tip: false`), no empty box with `keepBox: false`, the graphic, hue and rarity filled from the page's item cache, the missing ones looked up by serial in one batched request and the piece redrawn with them (a serial waiting or in flight asked once; one the server answered without not asked again until `forgetGearMisses`, but one whose request failed asked again; an answer arriving after `forgetGearMisses` neither drawn nor cached, its serials asked again), and the one-span rule on every variant; `app/ui/item-art.mts`'s `artTile` keeping its box, and its badge, when there is no art or it fails to load; `app/ui/dom.mts`'s `tipNode` title carrying a 32 px icon when the item's graphic is known. Lives in app/ rather than app/ui/ for the reason app/ui-render.test.mts gives. Tags: [fast].
 import "../scripts/localstorage-shim-for-tests.mts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -87,6 +87,13 @@ test("[fast] gearItem: no color for a tier without a token, an empty box with no
   assert.equal(name!.style.color, undefined);
   const bare = draw({ serial: 3, name: "Ring", rarity: null, graphic: 7 }, { showIcon: false });
   assert.deepEqual(bare.children.map((c) => c.className), ["gi-name"]);
+});
+
+test("[fast] gearItem tip false: no data-serial and never wired as a tooltip (not made focusable), so the host around it answers; keepBox false: no box without art", () => {
+  const n = draw({ serial: 41, name: "Cloak", rarity: null, graphic: null }, { tip: false, keepBox: false });
+  assert.equal(n.getAttribute("data-serial"), null);
+  assert.equal(n.tabIndex, -1);
+  assert.deepEqual(n.children.map((c) => c.className), ["gi-name"], "no empty box");
 });
 
 test("[fast] gearItem focus false: the tooltip's host on hover, but no tab stop", () => {
