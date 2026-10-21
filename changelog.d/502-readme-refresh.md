@@ -1,0 +1,2 @@
+- The README and the user guide describe this release: item icons and rarity colors, the Inventory's Location, Type and property-rule filters, the paperdoll on the character sheet and in the Suit Builder, Manual's live preview and Only what Auto would use. Every screenshot is new, with three more for the property rule, an Organize rule and Manual.
+- For contributors: `npm run readme:shots` builds the page before it captures, gives the demo characters a few skills, and links the client's facet maps (read only) so the House map shows its world-map thumbnail.
