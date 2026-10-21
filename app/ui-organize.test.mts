@@ -241,7 +241,7 @@ test("[fast] the catch-all's and the empty bags' plan ids match the planner's", 
   assert.equal(EMPTY_BAGS_ID, "empty-bags");
 });
 
-const move = (serial: number, name: string, from: number | null, to: number, ruleId: string, trip: number, amount = 1): PlanMove => ({ serial, name, amount, from, to, ruleId, alsoMatched: [], trip });
+const move = (serial: number, name: string, from: number | null, to: number, ruleId: string, trip: number, amount = 1): PlanMove => ({ serial, name, amount, from, to, ruleId, alsoMatched: [], trip, graphic: null, hue: null, rarity: null });
 const PLAN: OrganizePlan = {
   inventoryStamp: "2026-09-28T10:00:00Z", stamp: "abcd1234", sites: [{ index: 0, roots: [A, B] }],
   moves: [move(11, "Black Pearl", B, A, "rule-1", 1, 40), move(12, "Ruby", null, C, "rule-2", 1), move(13, "Garlic", B, A, "rule-1", 2)],
@@ -250,7 +250,7 @@ const PLAN: OrganizePlan = {
   room: [{ ruleId: "rule-1", needSlots: 10, freeSlots: 2, shortfall: 8 }, { ruleId: "rule-2", needSlots: 1, freeSlots: 7, shortfall: 0 }],
   crossSite: [{ ruleId: "rule-2", count: 1 }, { ruleId: CATCH_ALL_ID, count: 12 }],
   warnings: [{ kind: "stale-container", serial: B, detail: "last scanned 9 days ago" }, { kind: "unknown-capacity", serial: B, detail: "its tooltip has no Contents line" }, { kind: "unknown-capacity", serial: GONE, detail: "not in any scan" }],
-  carried: [{ serial: 12, name: "Ruby" }], unclaimed: 3, seconds: 480, emptyBags: [],
+  carried: [{ serial: 12, name: "Ruby", graphic: null, hue: null, rarity: null }], unclaimed: 3, seconds: 480, emptyBags: [],
 };
 const nameOf = containerNameOf(CFG, CONTAINERS), ruleName = ruleNameOf(CFG);
 
@@ -321,7 +321,7 @@ test("[fast] tripRows groups a 1,000-move plan into one row per trip without los
 test("[fast] carriedView names what a stopped trip left in the backpack and which trip puts it away", () => {
   assert.deepEqual(carriedView(PLAN, 3), { text: "1 item from trip 3 is in your backpack.", shown: PLAN.carried, more: 0, putAway: 1, reason: null });
   assert.equal(carriedView(PLAN, null)!.text, "1 item from an earlier trip is in your backpack.");
-  const stuck = carriedView({ ...PLAN, moves: PLAN.moves.filter((m) => m.from != null), carried: Array.from({ length: 7 }, (_, i) => ({ serial: i, name: `Gem ${i}` })) }, 2)!;
+  const stuck = carriedView({ ...PLAN, moves: PLAN.moves.filter((m) => m.from != null), carried: Array.from({ length: 7 }, (_, i) => ({ serial: i, name: `Gem ${i}`, graphic: null, hue: null, rarity: null })) }, 2)!;
   assert.deepEqual({ ...stuck, shown: stuck.shown.map((c) => c.name) }, { text: "7 items from trip 2 are in your backpack.", shown: ["Gem 0", "Gem 1", "Gem 2", "Gem 3", "Gem 4"], more: 2, putAway: null, reason: "None of them has a place with room at this house. Put them away by hand." });
   assert.equal(carriedView({ ...PLAN, carried: [] }, 1), null);
 });
@@ -383,9 +383,12 @@ test("[fast] a trip's outcome: stopped, partial and failed each stop Run all wit
   assert.equal(outcomeText("failed", 3, { ok: false, msg: "expired: queued 73s ago, not run" }), "Trip 3 failed: expired: queued 73s ago, not run");
 });
 
-test("[fast] failedSteps names each failed item once, from the trip's own moves", () => {
+test("[fast] failedSteps names and draws each failed item once, from the trip's own moves", () => {
   const r: BridgeResultEntry = { ok: true, msg: "", steps: [{ op: "take", serial: 11, ok: false, msg: "not there" }, { op: "put", serial: 11, ok: false, msg: "not carried" }, { op: "put", serial: 99, ok: false, msg: "bounced (full, or refused)" }, { op: "put", serial: 12, ok: true, msg: "" }] };
-  assert.deepEqual(failedSteps(r, new Map([[11, "Black Pearl"]])), [{ serial: 11, name: "Black Pearl", msg: "not there" }, { serial: 99, name: "0x63", msg: "bounced (full, or refused)" }]);
+  const pearl = { name: "Black Pearl", graphic: 0x0f7a, hue: 0, rarity: "Lesser Artifact" };
+  assert.deepEqual(failedSteps(r, new Map([[11, pearl]])), [{ serial: 11, ...pearl, msg: "not there" }, { serial: 99, name: "0x63", graphic: null, hue: null, rarity: null, msg: "bounced (full, or refused)" }]);
+  // Move to's names carry no look: it reads as null.
+  assert.deepEqual(failedSteps(r, new Map([[11, { name: "Black Pearl" }]]))[0], { serial: 11, name: "Black Pearl", graphic: null, hue: null, rarity: null, msg: "not there" });
   assert.deepEqual(failedSteps({ ok: true, msg: "" }, new Map()), []);
 });
 

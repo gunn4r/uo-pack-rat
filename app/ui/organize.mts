@@ -22,7 +22,7 @@ import { loadOrganize, refreshPlaces, saveConfig } from "./organize-data.mts";
 import { targetChip, deleteRule, openRuleEditor } from "./rule-editor.mts";
 import { openAutoOrganize } from "./auto-organize.mts";
 import { CATCH_ALL_ID, EMPTY_BAGS_ID, emptyBagsNote, organizeStage, moveRule, matchSummary, targetView, targetOptions, ruleCountParts, ruleNameOf, containerNameOf, planHeadline, unclaimedNote, roomLines, crossSiteLines, warningGroups, tripRows, moveWhere, tripGate, carriedView, pinnedWith, stepWatch, failedSteps, outcomeText, runAllNext, tripRefusal, adoptWatch, resumedNote, type TripRow, type TripWatch, type FailedStep } from "./organize-model.mts";
-import type { BridgeStatusApiResponse, OrganizeConfig, OrganizePlan, OrganizePlanApiResponse, OrganizeRunningTrip, OrganizeRule, OrganizeTripApiResponse, PlanRuleReport } from "./api-types.mts";
+import type { BridgeStatusApiResponse, OrganizeConfig, OrganizePlan, OrganizePlanApiResponse, OrganizeRunningTrip, OrganizeRule, OrganizeTripApiResponse, PlanMove, PlanRuleReport } from "./api-types.mts";
 
 const body = (): HTMLElement => $<HTMLElement>("#org-body")!;
 const containers = () => state.inv?.containers || {};
@@ -32,9 +32,9 @@ let loadingPlan = false;
 let dragFrom: number | null = null;
 let notice: { tone: "info" | "warn" | "bad"; text: string } | null = null;
 // The trip in flight: what the page waits on (organize-model.mts's stepWatch), whether Run all goes on after it,
-// the plan's move count before it (Run all stops if a clean trip does not shorten the plan), and its items'
-// names for the failed-step list.
-interface Run { watch: TripWatch; all: boolean; before: number; names: Map<number, string>; stopping: boolean }
+// the plan's move count before it (Run all stops if a clean trip does not shorten the plan), and its moves by
+// serial, which name and draw the failed-step list.
+interface Run { watch: TripWatch; all: boolean; before: number; pieces: Map<number, PlanMove>; stopping: boolean }
 let run: Run | null = null;
 // Trips the page stopped following (reported back or given up on): a plan fetched before one ended can still name
 // it, and a trip given up on can stay in flight on the server while its bridge answers; neither is followed again.
@@ -196,7 +196,7 @@ async function refreshPlan(): Promise<void> {
   const adopted = adoptWatch(running, !!run || queueing, ended, Date.now());
   if (adopted) {
     notice = { tone: "info", text: resumedNote(adopted.index) };
-    follow(adopted, false, 0, new Map((state.organize.plan?.moves || []).map((m) => [m.serial, m.name] as const)));
+    follow(adopted, false, 0, new Map((state.organize.plan?.moves || []).map((m) => [m.serial, m] as const)));
   }
   paintPlan();
   paintCounts();
@@ -307,7 +307,7 @@ async function startTrip(index: number, all: boolean): Promise<void> {
   if (!plan || run || queueing) return;
   notice = null;
   failed = null;
-  const names = new Map(plan.moves.filter((m) => m.trip === index).map((m) => [m.serial, m.name] as const));
+  const pieces = new Map(plan.moves.filter((m) => m.trip === index).map((m) => [m.serial, m] as const));
   let r: OrganizeTripApiResponse;
   queueing = true;
   paintControls();
@@ -315,13 +315,13 @@ async function startTrip(index: number, all: boolean): Promise<void> {
   catch (e) { queueing = false; notice = { tone: "bad", text: tripRefusal(errorText(e)) }; await refreshPlan(); return; }
   queueing = false;
   const now = Date.now();
-  follow({ id: r.id, index, queuedAt: now, picked: false, heard: now }, all, plan.moves.length, names);
+  follow({ id: r.id, index, queuedAt: now, picked: false, heard: now }, all, plan.moves.length, pieces);
   paintControls();
 }
-function follow(watch: TripWatch, all: boolean, before: number, names: Map<number, string>): void {
+function follow(watch: TripWatch, all: boolean, before: number, pieces: Map<number, PlanMove>): void {
   bridge.pending.set(watch.id, `Trip ${watch.index}`);   // bridge.mts's poll toasts the bridge's own summary of it
   lastTrip = watch.index;
-  run = { watch, all, before, names, stopping: false };
+  run = { watch, all, before, pieces, stopping: false };
   setNavBusy("organize", true, "Organize trip running");
   runTimer = setInterval(() => { void check(); }, 5000) as unknown as number;   // also when the status poll goes quiet
 }
@@ -336,7 +336,7 @@ async function check(): Promise<void> {
   finishRun();
   notice = null;
   if (step.kind === "lost") { notice = { tone: "bad", text: step.message }; await refreshPlan(); return; }
-  const fails = failedSteps(step.result, r.names);
+  const fails = failedSteps(step.result, r.pieces);
   if (fails.length) failed = { index: r.watch.index, steps: fails };
   const text = outcomeText(step.outcome, r.watch.index, step.result);
   if (text) notice = { tone: step.outcome === "stopped" ? "info" : "warn", text };
