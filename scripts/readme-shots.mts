@@ -29,29 +29,34 @@ import { chromium, type Browser, type Page } from "playwright";
 import { houseScan } from "../app/organize-fixture.mts";
 import { claimHouses, vaultHouse, FIXTURE_TILES } from "../app/house-fixture.mts";
 import { syntheticTileData } from "../app/tiledata-fixture.mts";
+import { buildUi } from "./build-ui.mts";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const OUT = join(ROOT, "docs", "images");
 const SIZE = { width: 1280, height: 800 };
 const only = process.argv.slice(2);
 // The real client folder (PACKRAT_SHOTS_UO), and the files the House map's folder links from it: the art and the
-// paperdoll's files, everything the server reads but tiledata.mul (app/services/houses.mts).
+// paperdoll's files and the facet overviews, everything the server reads but tiledata.mul (app/services/houses.mts).
 const REAL_UO = process.env.PACKRAT_SHOTS_UO || null;
-const ART_FILES = ["artLegacyMUL.uop", "gumpartLegacyMUL.uop", "hues.mul", "gump.def", "Equipconv.def"];
+const ART_FILES = ["artLegacyMUL.uop", "gumpartLegacyMUL.uop", "hues.mul", "gump.def", "Equipconv.def", ...[0, 1, 2, 3, 4, 5].map((f) => `facet0${f}.mul`)];
 if (REAL_UO && !["tiledata.mul", "artLegacyMUL.uop", "gumpartLegacyMUL.uop"].every((f) => existsSync(join(REAL_UO, f)))) {
   throw new Error(`PACKRAT_SHOTS_UO=${REAL_UO} is not a 7.x UO folder: it needs tiledata.mul, artLegacyMUL.uop and gumpartLegacyMUL.uop`);
 }
 const wanted = (name: string): boolean => only.length === 0 || only.some((w) => name.startsWith(w));
 
-// The demo scans with Kestrel at Imbuing 70 (for Unravel). With `house`, also the vault house of app/house-fixture.mts:
+// The demo scans with a few skills each (the Suit Builder's header names them), Kestrel at Imbuing 70 (for Unravel). With `house`, also the vault house of app/house-fixture.mts:
 // 120 chests in stacks of five, partly full, some labeled, a few holding things to find on the map. `map`: the client's
 // UO folder is the vault's synthetic tiledata.mul (the House map's shots), with the real folder's art linked beside it;
 // otherwise it is the real folder itself when there is one, whose tiledata the paperdoll's worn pieces need.
+const SKILLS: Record<string, Record<string, number>> = {
+  Dorran: { Swordsmanship: 100, Tactics: 100, Anatomy: 90, Healing: 85, Parry: 80 },
+  Kestrel: { Magery: 100, "Evaluating Intelligence": 95, Meditation: 90, Imbuing: 70 },
+};
 function seed(dir: string, house: boolean, map: boolean): { home: string } {
   mkdirSync(join(dir, "scans"), { recursive: true });
   for (const name of ["Dorran", "Kestrel"]) {
     const scan = JSON.parse(readFileSync(join(ROOT, "app", "fixtures", `demo-${name}.json`), "utf8")) as { skills: Record<string, unknown> };
-    if (name === "Kestrel") scan.skills = { ...scan.skills, Imbuing: { base: 70, value: 70, cap: 100 } };
+    scan.skills = { ...scan.skills, ...Object.fromEntries(Object.entries(SKILLS[name]!).map(([k, v]) => [k, { base: v, value: v, cap: 100 }])) };
     writeFileSync(join(dir, "scans", `demo-${name}.json`), JSON.stringify(scan));
   }
   const home = join(dir, "home"), client = join(dir, "client"), scripts = join(client, "TazUO", "LegionScripts"), uo = join(client, "UO");
@@ -118,14 +123,18 @@ const typeSlowly = (page: Page, selector: string, text: string): Promise<void> =
 const pause = (page: Page, ms: number): Promise<void> => page.waitForTimeout(ms);   // sleep: a beat for the viewer of the GIF
 
 // A still: the page at 2x.
-async function still(browser: Browser, name: string, shoot: (page: Page) => Promise<void>): Promise<void> {
+// `size`: another window size (Manual's doll column needs 1440 px); `keep`: leave the pointer and focus where `shoot` put
+// them, for a shot of a hover preview or an open popover.
+async function still(browser: Browser, name: string, shoot: (page: Page) => Promise<void>, { size = SIZE, keep = false }: { size?: { width: number; height: number }; keep?: boolean } = {}): Promise<void> {
   if (!wanted(name)) return;
-  const context = await browser.newContext({ viewport: SIZE, deviceScaleFactor: 2, colorScheme: "light" });
+  const context = await browser.newContext({ viewport: size, deviceScaleFactor: 2, colorScheme: "light" });
   const page = await context.newPage();
   try {
     await shoot(page);
-    await page.mouse.move(SIZE.width - 2, SIZE.height - 2);   // no hover tooltip or row actions in the picture
-    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    if (!keep) {
+      await page.mouse.move(size.width - 2, size.height - 2);   // no hover tooltip or row actions in the picture
+      await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+    }
     await pause(page, 400);
     await page.screenshot({ path: join(OUT, `${name}.png`) });
     report(`${name}.png`);
@@ -191,6 +200,7 @@ async function cleanup(): Promise<void> {
 process.once("SIGINT", () => { void cleanup().finally(() => process.exit(130)); });
 
 mkdirSync(OUT, { recursive: true });
+buildUi();   // the server serves app/dist/, so the shots show the page as the source has it now
 const browser = await launchBrowser();
 try {
   const url = await serve(true);
@@ -211,9 +221,19 @@ try {
     await page.mouse.move(SIZE.width - 2, SIZE.height - 2);
     await pause(page, 2500);
   });
+  // The property rule: the catalogue with its counts, ≠, and the note on items without the property.
+  await still(browser, "inventory-filters", async (page) => {
+    await go(page, url, "inventory", "#inv-table tbody tr.item");
+    await page.click("#f-add");
+    await page.getByRole("menuitem", { name: "Property rule…" }).click();
+    await page.locator(".pop .inv-prop-list").getByText("Faster Casting", { exact: true }).first().click();
+    await page.locator('.pop [role=radio][data-value="ne"]').click();
+    await page.locator(".pop input[type=number]").fill("-1");
+    await pause(page, 600);
+  }, { keep: true });
   await still(browser, "characters", async (page) => {
     await go(page, url, "characters/Dorran", "#tab-characters:not([hidden])");
-  });
+  }, { size: { width: 1280, height: 1000 } });
   // The House map on its own server: the vault's synthetic tiles, the real art beside them.
   const mapUrl = await serve(true, true);
   await still(browser, "house-map", async (page) => {
@@ -247,6 +267,25 @@ try {
   await still(browser, "organize", async (page) => {
     await go(page, plain, "organize", "#org-plan #org-headline");
   });
+  // A rule with the Inventory's filter bar: Type Shield and Faster Casting ≠ -1, its tokens and the note under them.
+  await still(browser, "organize-rule", async (page) => {
+    await go(page, plain, "organize", "#org-add");
+    await page.click("#org-add");
+    await page.getByRole("menuitem", { name: "Blank rule" }).click();
+    await page.waitForSelector("#rule-drawer:not([hidden]) #rule-name");
+    await page.fill("#rule-name", "Shields without an FC penalty");
+    await page.click("#rule-f-type");
+    await page.locator(".pop label").filter({ hasText: /^Shield/ }).first().click();
+    await page.keyboard.press("Escape");
+    await page.click("#rule-f-add");
+    await page.getByRole("menuitem", { name: "Property rule…" }).click();
+    await page.locator(".pop .inv-prop-list").getByText("Faster Casting", { exact: true }).first().click();
+    await page.locator('.pop [role=radio][data-value="ne"]').click();
+    await page.locator(".pop input[type=number]").fill("-1");
+    await page.getByRole("button", { name: "Add rule" }).click();
+    await page.waitForSelector("#rule-drawer .rule-missing");
+    await pause(page, 1200);   // the live count lands
+  });
   // Each build on a server of its own: a second build of the same settings would show the first as a saved run.
   let fresh = await serve(true);
   await still(browser, "suit-builder", async (page) => {
@@ -264,6 +303,20 @@ try {
     await page.locator(".b-results").evaluate((e) => e.scrollBy({ top: 500, behavior: "smooth" }));
     await pause(page, 2500);
   });
+  // Manual: the live doll previewing a ring, the picker narrowed to what Auto would use. 1440 px wide, where the doll has
+  // its own column (narrower, it folds into a band over the picker).
+  await still(browser, "manual", async (page) => {
+    await go(page, url, "builder", "#b-run");
+    await page.click('#b-mode [data-value="manual"]');
+    await page.waitForSelector("#b-manual:not([hidden]) #mb-suit .mb-slot");
+    await page.click('.mb-slot-pick[data-slot="ring"]');
+    await page.waitForSelector("#mb-picker:not([hidden]) tbody tr.item");
+    await page.locator("#mb-auto-only").check();
+    await pause(page, 1200);
+    await page.locator("#mb-picker tbody tr.item").nth(2).hover();
+    await page.waitForFunction(() => document.querySelector("#mb-doll-card .doll-pill")?.textContent?.startsWith("Preview"));
+    await pause(page, 1500);   // the previewed figure loads
+  }, { size: { width: 1440, height: 900 }, keep: true });
 } finally {
   await browser.close();
   await cleanup();
