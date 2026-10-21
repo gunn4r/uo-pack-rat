@@ -1,0 +1,1 @@
+- The Organize rule and Suit Builder screenshots in the README and user guide show gear named in sentences in its rarity color.
