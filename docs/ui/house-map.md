@@ -354,7 +354,7 @@ One card is the tab stop (roving). The arrow keys move to the nearest card that 
 
 ### While searching
 
-- A matching card has a gold outline. Its matching rows have a gold bar on a light gold wash, and a line naming the items found (cut with …): gear items without icons, each in its rarity's color with its own item tooltip on hover (no tab stop: the cards keep their roving one). The wash is 10% gold, light enough for every rarity color. Its other rows are dimmed.
+- A matching card has a gold outline. Its matching rows have a gold bar on a light gold wash, and the items found (`hitLine`), one per line: the first three as gear items without icons, each in its rarity's color with its own item tooltip on hover (no tab stop: the cards keep their roving one), the name cut at the card's width and its count kept, then a muted "+N more" line; a screen reader hears the whole list once, from visually hidden text. The wash is 10% gold, light enough for every rarity color. Its other rows are dimmed.
 - Cards with no match fade.
 - The pills count the matches ("3 of 27").
 - The panel lists the matches, as on the map.

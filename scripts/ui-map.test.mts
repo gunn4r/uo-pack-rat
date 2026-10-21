@@ -1539,10 +1539,23 @@ test("[slow] House map Stack plan: a search scrolls to its first matching card, 
     assert.deepEqual((await chestsOf(page, "#map-plan .sp-row.hit")).sort(), [FILLED.at(-1)!, RUBY_FRONT].sort());
     assert.equal(await page.locator("#map-plan .sp-card.has-hit").count(), 2);
     assert.equal(await page.locator("#map-plan .sp-card.faded").count(), 22);
-    assert.equal(await page.locator(`#map-plan .sp-row[data-chest="${RUBY_FRONT}"] .sp-hitline`).textContent(), "Ruby × 1");
+    assert.deepEqual(await page.locator(`#map-plan .sp-row[data-chest="${RUBY_FRONT}"] .sp-hit`).evaluateAll((es) => es.map((e) => [e.querySelector(".gi-name")?.textContent, e.querySelector(".num")?.textContent])), [["Ruby", "× 1"]]);
+    assert.equal(await page.locator(`#map-plan .sp-row[data-chest="${RUBY_FRONT}"] .sp-hitline .sr`).textContent(), "Found: Ruby × 1", "the whole list for a screen reader");
+    assert.equal(await page.locator(`#map-plan .sp-row[data-chest="${RUBY_FRONT}"] .sp-hitline .sp-more`).count(), 0, "nothing more to say with one item");
     assert.equal(await page.locator(`#map-plan .sp-row[data-chest="${RUBY_FRONT}"] .sp-hitline`).getAttribute("title"), null, "no native title: each name shows its item tooltip");
     assert.equal(await page.locator(`#map-plan .sp-row[data-chest="${RUBY_FRONT}"] .sp-hitline .gi[data-serial]`).count(), 1);
     assert.equal(await page.locator(`#map-plan .sp-row[data-chest="${RUBY_FRONT}"] .sp-hitline .gi`).getAttribute("tabindex"), null, "no tab stop: the cards keep their roving one");
+    // 43 pearls in the chest under the drawer's: three named, one per line and each drawn inside the card, "+40 more", the whole list for a screen reader
+    await page.fill("#map-q", "pearl");
+    const under = page.locator(`#map-plan .sp-row.hit[data-chest="${FILLED.at(-2)}"] .sp-hitline`);
+    await under.waitFor();
+    assert.equal(await under.locator(".sp-hit .gi").count(), 3);
+    assert.equal(await under.evaluate((ul) => { const b = ul.getBoundingClientRect(); return [...ul.querySelectorAll(".sp-hit .gi-name")].every((n) => { const r = n.getBoundingClientRect(); return r.width > 0 && r.right <= b.right + 0.5 && r.bottom <= b.bottom + 0.5; }); }), true, "every counted name is drawn");
+    assert.equal(await under.locator(".sp-more").textContent(), "+40 more");
+    assert.match(await under.locator(".sr").textContent() ?? "", /^Found: Pearl 01 × 1, .*Pearl S03 × 1$/);
+    assert.equal((await under.locator(".sr").textContent() ?? "").split(", ").length, 43);
+    await page.fill("#map-q", "ruby");
+    await page.waitForSelector(`#map-plan .sp-row.hit[data-chest="${RUBY_FRONT}"]`);
     assert.equal(await page.locator("#map-pins").count(), 0);
     assert.equal(await page.locator("#map-hits-title").textContent(), "2 items in 2 containers");
     // a match in the panel selects its stack in the plan

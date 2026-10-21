@@ -1,0 +1,1 @@
+- **The Stack plan lists what a matching container holds** (issue #504): a matching row names its first three finds, one per line in their rarity's colors, then "+N more", and a screen reader hears the whole list.
