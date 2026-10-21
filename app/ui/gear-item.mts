@@ -3,7 +3,7 @@
 // Every screen that names an item draws it through `gearItem`, so the color, the tooltip and the icon come from one place.
 //
 // map: ui-components
-// owns: `gearItem`, `QUALITY_TAGS`
+// owns: `gearItem`, `QUALITY_TAGS`, `forgetGearMisses`
 import { itemTip, tagChip, type TooltipItem } from "./dom.mts";
 import { box, txt } from "./components.mts";
 import { artTile } from "./item-art.mts";
@@ -44,21 +44,32 @@ function filled(it: GearItemSource): GearItemSource {
   return { ...it, graphic: has(it, "graphic") ? it.graphic : known.graphic, hue: has(it, "hue") ? it.hue : known.hue, rarity: has(it, "rarity") ? it.rarity : known.rarity, tags: it.tags ?? known.tags };
 }
 
-// Lookups by serial, gathered for one tick and sent together (resolveItems asks only for serials the cache lacks).
-const waiting = new Map<number, Array<() => void>>();
+// Lookups by serial, gathered for one tick and sent together (resolveItems asks only for serials the cache lacks). A serial waiting or in flight is not asked again, and one the server did not answer for is not asked again until a new inventory (forgetGearMisses).
+const pending = new Map<number, Array<() => void>>(), queued = new Set<number>(), missed = new Set<number>();
 let flushing: ReturnType<typeof setTimeout> | null = null;
+export const forgetGearMisses = (): void => { missed.clear(); };
 function whenKnown(serial: number, then: () => void): void {
-  const list = waiting.get(serial);
-  if (list) list.push(then); else waiting.set(serial, [then]);
+  if (missed.has(serial)) return;
+  const list = pending.get(serial);
+  if (list) { list.push(then); return; }
+  pending.set(serial, [then]);
+  queued.add(serial);
   flushing ??= setTimeout(() => {
     flushing = null;
-    const batch = new Map(waiting);
-    waiting.clear();
-    void resolveItems([...batch.keys()]).then((found) => { for (const [serial, fns] of batch) if (found[serial]) for (const fn of fns) fn(); });
+    const batch = [...queued];
+    queued.clear();
+    void resolveItems(batch).then((found) => {
+      for (const serial of batch) {
+        const fns = pending.get(serial) || [];
+        pending.delete(serial);
+        if (found[serial]) for (const fn of fns) fn(); else missed.add(serial);
+      }
+    });
   }, 0);
 }
 
-function parts(it: GearItemSource, o: GearItemOptions, size: 24 | 32): HTMLElement[] {
+let noteIds = 0;
+function parts(node: HTMLElement, it: GearItemSource, o: GearItemOptions, size: 24 | 32): HTMLElement[] {
   const token = rarityToken(it.rarity);
   const name = txt(it.name, "gi-name");
   if (token) name.style.color = `var(${token})`;
@@ -66,6 +77,13 @@ function parts(it: GearItemSource, o: GearItemOptions, size: 24 | 32): HTMLEleme
   const tags = o.showTags ? (it.tags || []).filter((t) => QUALITY_TAGS.has(t)).map((t) => tagChip(t)) : [];
   const icon = o.showIcon === false ? null : artTile(it.graphic, { size, hue: it.hue ?? 0, keepBox: true });
   const tail = [qty, ...tags, ...(o.after || [])].filter((x): x is HTMLElement => !!x);
+  // A button is named by the piece alone; its tags and badges describe it.
+  if (o.onOpen) {
+    node.setAttribute("aria-label", qty ? `${it.name} ×${it.amount}` : it.name);
+    const notes = [...tags, ...(o.after || [])].filter((x): x is HTMLElement => !!x);
+    for (const n of notes) n.id ||= `gi-note-${++noteIds}`;
+    if (notes.length) node.setAttribute("aria-describedby", notes.map((n) => n.id).join(" ")); else node.removeAttribute("aria-describedby");
+  }
   if (o.variant !== "card") return [icon, name, ...tail].filter((x): x is HTMLElement => !!x);
   const line = box("span", { class: "gi-card-line" }, o.label ? txt(o.label, "caps muted") : null, name, ...tail);
   return [icon, box("span", { class: "gi-card-text" }, line, o.sub ? txt(o.sub, "t-sm muted ellip") : null)].filter((x): x is HTMLElement => !!x);
@@ -77,11 +95,11 @@ export function gearItem(item: GearItemSource, o: GearItemOptions = {}): HTMLEle
   let it = filled(item);
   const cls = `gi gi-${variant}${o.onOpen ? " gi-link" : ""}${o.cls ? ` ${o.cls}` : ""}`;
   const node = o.onOpen ? box("button", { type: "button", class: cls }) : box("span", { class: cls });
-  node.append(...parts(it, o, size));
+  node.append(...parts(node, it, o, size));
   if (o.onOpen) node.addEventListener("click", () => o.onOpen!(it, node));
   if (o.tip !== false) itemTip(node, it);
   else node.dataset.serial = String(it.serial);
   const lacking = (o.showIcon !== false && !has(it, "graphic")) || !has(it, "rarity") || (o.showTags && !it.tags);
-  if (lacking && !state.itemCache.has(it.serial)) whenKnown(it.serial, () => { it = filled(item); node.replaceChildren(...parts(it, o, size)); if (o.tip !== false) itemTip(node, it, { focus: false }); });
+  if (lacking && !state.itemCache.has(it.serial)) whenKnown(it.serial, () => { it = filled(item); node.replaceChildren(...parts(node, it, o, size)); if (o.tip !== false) itemTip(node, it, { focus: false }); });
   return node;
 }

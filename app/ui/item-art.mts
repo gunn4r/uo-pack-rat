@@ -18,7 +18,7 @@ function tileOf(size: 24 | 32, more = ""): HTMLElement {
 }
 // `badge`: drawn in the tile's corner (the chest's color swatch on the House map), and kept as the fallback when there is no art. `keepBox`: with no art, an empty tile of the same size instead (a gear item's icon, issue #504, so names in a column stay lined up).
 export function artTile(graphic: number | null | undefined, opts: { size: 24 | 32; hue?: number; badge?: HTMLElement | null; keepBox?: boolean }): HTMLElement | null {
-  const fallback = opts.badge ?? null, box = (): HTMLElement => tileOf(opts.size, " art-none");
+  const fallback = opts.badge ?? null, box = (): HTMLElement => { const t = tileOf(opts.size, " art-none"); if (fallback) t.append(fallback); return t; };
   if (graphic == null) return opts.keepBox ? box() : fallback;
   const url = artUrl(graphic, opts.hue);
   if (missing.has(url)) return opts.keepBox ? box() : fallback;

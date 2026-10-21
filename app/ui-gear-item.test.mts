@@ -1,6 +1,6 @@
 // ui-gear-item.test.mts — `app/ui/gear-item.mts`'s `gearItem` on a fake DOM, and the tooltip title's icon.
 //
-// `app/ui/gear-item.mts`'s `gearItem`: the row's parts in order (the icon as an aria-hidden tile with an empty alt, the name in its rarity's color token, the quantity, only the quality tags, then `after`), no color for a tier without a token, an empty box of the same size when there is no graphic and no tile at all with `showIcon: false`, the button `onOpen` makes and what a press hands it, the card's two lines beside a 32 px icon, the item tooltip's host, the graphic, hue and rarity filled from the page's item cache, the missing ones looked up by serial in one batched request and the piece redrawn with them, and the one-span rule on every variant; `app/ui/item-art.mts`'s `artTile` keeping its box when the art fails to load; `app/ui/dom.mts`'s `tipNode` title carrying a 32 px icon when the item's graphic is known. Lives in app/ rather than app/ui/ for the reason app/ui-render.test.mts gives. Tags: [fast].
+// `app/ui/gear-item.mts`'s `gearItem`: the row's parts in order (the icon as an aria-hidden tile with an empty alt, the name in its rarity's color token, the quantity, only the quality tags, then `after`), no color for a tier without a token, an empty box of the same size when there is no graphic and no tile at all with `showIcon: false`, the button `onOpen` makes, what a press hands it, its name (the piece and its quantity) and the tags and badges that describe it, the card's two lines beside a 32 px icon, the item tooltip's host, the graphic, hue and rarity filled from the page's item cache, the missing ones looked up by serial in one batched request and the piece redrawn with them (a serial waiting or in flight asked once, one the server lacks not asked again until `forgetGearMisses`), and the one-span rule on every variant; `app/ui/item-art.mts`'s `artTile` keeping its box, and its badge, when there is no art or it fails to load; `app/ui/dom.mts`'s `tipNode` title carrying a 32 px icon when the item's graphic is known. Lives in app/ rather than app/ui/ for the reason app/ui-render.test.mts gives. Tags: [fast].
 import "../scripts/localstorage-shim-for-tests.mts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -25,6 +25,7 @@ class FakeElement {
   get dataset(): Record<string, string> { return new Proxy(this.attrs, { get: (a, k) => a[`data-${String(k)}`], set: (a, k, v) => { a[`data-${String(k)}`] = String(v); return true; } }); }
   setAttribute(k: string, v: unknown): void { this.attrs[k] = String(v); }
   getAttribute(k: string): string | null { return k in this.attrs ? this.attrs[k]! : null; }
+  removeAttribute(k: string): void { delete this.attrs[k]; }
   addEventListener(type: string, fn: (e: unknown) => void): void { (this.listeners[type] ||= []).push(fn); }
   dispatch(type: string): void { for (const fn of this.listeners[type] || []) fn({ preventDefault() {}, stopPropagation() {} }); }
   append(...kids: Array<FakeElement | FakeText | string>): void { for (const k of kids) { const n = typeof k === "string" ? new FakeText(k) : k; n.parentNode = this; this.childNodes.push(n); } }
@@ -47,7 +48,7 @@ let known: Record<number, unknown> = {};
   return { ok: true, status: 200, json: async () => ({ ok: true, items: Object.fromEntries(serials.filter((s) => known[s]).map((s) => [s, known[s]])) }) };
 };
 
-const { gearItem } = await import("./ui/gear-item.mts");
+const { gearItem, forgetGearMisses } = await import("./ui/gear-item.mts");
 const { artTile } = await import("./ui/item-art.mts");
 const { tipNode } = await import("./ui/dom.mts");
 const { FLEX_CLASSES } = await import("./ui/components.mts");
@@ -95,6 +96,17 @@ test("[fast] gearItem onOpen: a button that hands the item and itself to onOpen 
   assert.deepEqual(seen, [[4, n]]);
 });
 
+test("[fast] gearItem button: named by the piece and its quantity, described by its tags and badges", () => {
+  const badge = (globalThis as unknown as { document: { createElement: (t: string) => El } }).document.createElement("span");
+  const n = draw({ serial: 7, name: "Arrow", amount: 40, rarity: null, graphic: 0xf3f, tags: ["cursed"] }, { onOpen: () => {}, showTags: true, after: [badge as unknown as HTMLElement] });
+  assert.equal(n.getAttribute("aria-label"), "Arrow ×40");
+  const idOf = (e: El): string => (e as unknown as { id: string }).id;
+  const tag = n.children.find((c) => c.textContent === "Cursed")!;
+  assert.ok(idOf(tag) && idOf(badge));
+  assert.equal(n.getAttribute("aria-describedby"), `${idOf(tag)} ${idOf(badge)}`);
+  assert.equal(draw({ serial: 8, name: "Ring", rarity: null, graphic: 1 }, { onOpen: () => {} }).getAttribute("aria-describedby"), null, "nothing to describe it");
+});
+
 test("[fast] gearItem card: a 32 px icon beside two lines, the label and name, then `sub`", () => {
   const n = draw({ serial: 5, name: "Leather Gorget", rarity: "Greater Magic Item", graphic: 0x13c7 }, { variant: "card", label: "Neck", sub: "LRC 9 · LMC 8" });
   assert.ok(has(n, "gi-card"));
@@ -134,8 +146,24 @@ test("[fast] gearItem fills graphic, hue and rarity from the item cache, and loo
   assert.equal(b.children[0]!.children[0]!.getAttribute("src"), "/api/item-art/7028.png");
   assert.ok(has(c.children[0]!, "art-none"), "a serial the server lacks keeps its box");
   draw({ serial: 11, name: "Axe" });
+  draw({ serial: 13, name: "Gone" });
   await tick();
-  assert.equal(asked.length, 1, "a looked-up serial is not asked again");
+  assert.equal(asked.length, 1, "neither a found serial nor one the server lacks is asked again");
+  forgetGearMisses();
+  draw({ serial: 13, name: "Gone" });
+  await tick();
+  assert.match(asked[1]!, /serials=13$/, "a new inventory asks for a missed serial again");
+});
+
+test("[fast] gearItem: a serial waiting or in flight is asked once, however often it is drawn", async () => {
+  known = { 20: { serial: 20, name: "Kilt", graphic: 0x1537, hue: 0, rarity: null, tags: [] } };
+  asked.length = 0;
+  const first = draw({ serial: 20, name: "Kilt" });
+  await new Promise((r) => setTimeout(r, 0));
+  const second = draw({ serial: 20, name: "Kilt" });
+  await tick();
+  assert.equal(asked.length, 1);
+  for (const n of [first, second]) assert.equal(n.children[0]!.children[0]!.getAttribute("src"), "/api/item-art/5431.png", "both drawings get the icon");
 });
 
 test("[fast] artTile keepBox: a failed load leaves an empty box, not a gap", () => {
@@ -145,6 +173,8 @@ test("[fast] artTile keepBox: a failed load leaves an empty box, not a gap", () 
   assert.ok(has(tile, "art-none") && tile.children.length === 0);
   assert.ok(has(artTile(0x9999, { size: 24, keepBox: true }) as unknown as El, "art-none"), "a URL that failed is not asked again");
   assert.equal(artTile(null, { size: 24 }), null, "without keepBox, no art is no tile");
+  const badge = (globalThis as unknown as { document: { createElement: (t: string) => El } }).document.createElement("span");
+  for (const g of [null, 0x9999]) assert.equal((artTile(g, { size: 24, keepBox: true, badge: badge as unknown as HTMLElement }) as unknown as El).children[0], badge, "the badge stays in the empty box");
 });
 
 test("[fast] tipNode: the title carries the item's 32 px icon when its graphic is known", () => {
