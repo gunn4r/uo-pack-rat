@@ -10,7 +10,7 @@ import { fastestMs, msOf } from "./timing-fixture.mts";
 import { fixtureTileData, vaultHouse, roofHouse, courtyardHouse, castleHouse, foundationHouse, stairHouse, G } from "./house-fixture.mts";
 import type { Container, Item } from "./vault-lib.mts";
 import type { HouseArea, HouseModel, Stack } from "./ui/api-types.mts";
-import { project, tilePolygon, boxFaces, pts, paintOrder, boundsOf, fit, zoomAt, vbText, anchorOf, W, chestViews, colourOf, legendOf, chestLabel, cutAway, calloutLines, houseTotals, pickHouse, houseLabel, houseName, carryOver, carryOverText, PLAIN, chestCount, nearestInDirection, tiledataNote, stackWhere, plainGrid, sceneOf, drawnZs, CHEST_H, FURNITURE_H, whereOf, whereTitle, FACET_SIZE, cropAround, facetMapUrl, markersOf, facetMapNote, parseRegion, markerRadii, contentsOf, contentsSummary, filterContents, drawerChest, drawerMeta, slotsText, drawerPicker, DRAWER_TABS_MAX, parseMapHash, mapHash, floorContainerOf, positionWords, houseHits, levelHits, levelHitText, areaHitText, hitsSummary, searchCount, calloutHead, calloutRow, CALLOUT_W, CALLOUT_MIN, hitsView, houseIndex, elsewhereOf, outsideText, DRAWER_W, DRAWER_MIN, drawerMax, clampDrawer, drawerKey, piecesOf, frontCorner, fitLabel, pillsOf, placePill, LABEL_FIT, areaOfStack, levelAreas, restName, unproject, tileAt, rectOf, sizeText, unionTiles, coveredCells, outlineOf, nextAreaId, nextAreaColor, moveCursor, clampTile, liveAreas, withOrphans, redrawFailed, AREA_COLORS, AREA_COLOR_NAMES, planTracks, trackAt, gapText, stackPlan, planHead, planRows, bareText, planNeighbor, type ChestView, type ContentsNode } from "./ui/house-map-model.mts";
+import { project, tilePolygon, boxFaces, pts, paintOrder, boundsOf, fit, zoomAt, vbText, anchorOf, W, chestViews, colourOf, legendOf, chestLabel, cutAway, calloutLines, houseTotals, pickHouse, houseLabel, houseName, carryOver, carryOverText, PLAIN, chestCount, nearestInDirection, tiledataNote, stackWhere, plainGrid, sceneOf, drawnZs, CHEST_H, FURNITURE_H, whereOf, whereTitle, FACET_SIZE, cropAround, facetMapUrl, markersOf, facetMapNote, parseRegion, markerRadii, contentsOf, contentsSummary, filterContents, drawerChest, drawerMeta, slotsText, drawerPicker, DRAWER_TABS_MAX, parseMapHash, mapHash, floorContainerOf, positionWords, houseHits, tierWord, levelHits, levelHitText, areaHitText, hitsSummary, searchCount, calloutHead, calloutRow, CALLOUT_W, CALLOUT_MIN, hitsView, houseIndex, elsewhereOf, outsideText, DRAWER_W, DRAWER_MIN, drawerMax, clampDrawer, drawerKey, piecesOf, frontCorner, fitLabel, pillsOf, placePill, LABEL_FIT, areaOfStack, levelAreas, restName, unproject, tileAt, rectOf, sizeText, unionTiles, coveredCells, outlineOf, nextAreaId, nextAreaColor, moveCursor, clampTile, liveAreas, withOrphans, redrawFailed, AREA_COLORS, AREA_COLOR_NAMES, planTracks, trackAt, gapText, stackPlan, planHead, planRows, bareText, planNeighbor, type ChestView, type ContentsNode } from "./ui/house-map-model.mts";
 
 const td = fixtureTileData();
 const has = (cls: string, c: string): boolean => cls.split(" ").includes(c);
@@ -833,6 +833,13 @@ test("[fast] house map search: two tiers of one name in a container are two line
   const items = [thing(1, "Bone Leggings", chest, { root: chest, rarity: "Lesser Artifact" }), thing(2, "Bone Leggings", chest, { root: chest, rarity: "Greater Magic Item", amount: 2 }), thing(3, "Bone Leggings", chest, { root: chest, rarity: "Lesser Artifact" })];
   const lines = houseHits(m, items, containers).chests[0]!.lines;
   assert.deepEqual(lines.map((l) => [l.name, l.amount, l.item.rarity]), [["Bone Leggings", 2, "Lesser Artifact"], ["Bone Leggings", 2, "Greater Magic Item"]]);
+});
+
+test("[fast] house map search: a find is read out with its tier only when another find of the container has its name", () => {
+  const line = (name: string, rarity: string | null) => ({ name, amount: 1, item: { serial: 0, name, amount: 1, rarity, root: null, container: null } });
+  const a = line("Bone Leggings", "Lesser Artifact"), b = line("Bone Leggings", null), c = line("Ruby", "Lesser Artifact");
+  assert.deepEqual([a, b, c].map((l) => tierWord(l, [a, b, c])), ["Lesser Artifact", "no rarity", null]);
+  assert.equal(tierWord(a, [a, c]), null, "a name of its own needs no tier");
 });
 
 test("[fast] house map search: the left pane's counts per level, area and rest, and their words", () => {

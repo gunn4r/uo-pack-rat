@@ -997,6 +997,7 @@ test("[slow] House map: every text, control edge and icon passes contrast on the
     await page.locator('#map-view [data-value="plan"]').click();
     await page.waitForSelector("#map-plan .sp-row.hit .gi-name");
     assert.deepEqual((await page.locator("#map-plan .sp-row.hit .sp-hit .gi-name").evaluateAll((es) => es.map((e) => (e.getAttribute("style") ?? "").match(/--rarity-[a-z-]+/)?.[0]))).sort(), ["--rarity-lesser-artifact", "--rarity-major-magic"], "two tiers of one name: two lines, each in its own color");
+    assert.match(await page.locator("#map-plan .sp-row.hit .sp-hitline .sr").first().textContent() ?? "", /Ringmail Leggings \(Major Magic Item\) × 1, Ringmail Leggings \(Lesser Artifact\) × 1/, "a screen reader hears each tier");
     await measure(page, "stack plan hit", /Ringmail Leggings/, rows);
     await page.fill("#map-q", "");
     await page.locator('#map-view [data-value="angle"]').click();

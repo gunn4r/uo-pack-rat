@@ -271,7 +271,7 @@ The search (issue #10) is the box at the top bar's right end (`#map-q`).
 
 ### The query
 
-It finds items with the Inventory's own query: `GET /api/items?q=&fields=hits`, the same query answered with lean rows (`item-query.mts` `hitRow`, rarity included), up to `HIT_LIMIT` a page, so one request is normal. A container's finds are grouped by name and rarity (`houseHits`), so two tiers of one name are two lines, each in its own color.
+It finds items with the Inventory's own query: `GET /api/items?q=&fields=hits`, the same query answered with lean rows (`item-query.mts` `hitRow`, rarity included), up to `HIT_LIMIT` a page, so one request is normal. A container's finds are grouped by name and rarity (`houseHits`), so two tiers of one name are two lines, each in its own color, and read out with their tier (`tierWord`).
 
 - It runs 150 ms after typing, as in the Inventory. Nothing is filtered in the page, and an item's tooltip fetches the whole record by serial.
 - The query is in the route (`#/map/<house>?q=`), so a reload or a deep link keeps it, and switching houses keeps it.

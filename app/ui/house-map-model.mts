@@ -653,6 +653,10 @@ export function positionWords(index: number, count: number): string {
 // A match as the search reads it: GET /api/items?fields=hits's row (a whole Item will do too).
 export type Hit = Pick<Item, "serial" | "name" | "amount" | "rarity" | "root" | "container"> & { location?: { text: string } | undefined };
 export interface HitLine { name: string; amount: number; item: Hit }
+// The tier a find is read out with, so a screen reader can tell two tiers of one name apart (their colors do it on screen): its rarity when another of the container's finds has the same name, else null.
+export function tierWord(l: HitLine, lines: readonly HitLine[]): string | null {
+  return lines.some((o) => o !== l && o.name === l.name) ? l.item.rarity ?? "no rarity" : null;
+}
 export interface HitChest { serial: number; stack: Stack; index: number; position: string; amount: number; lines: HitLine[] }
 export interface HouseHits { chests: HitChest[]; stacks: Map<string, HitChest[]>; serials: Set<number>; amount: number; outside: Hit[] }
 const amountOf = (it: Pick<Item, "amount">): number => it.amount || 1;

@@ -22,7 +22,7 @@ import { PLAIN, pickHouse, plainGrid, chestCount, houseLabel, houseName, carryOv
   cutAway, calloutLines, nearestInDirection, houseTotals, legendOf, stackWhere, anchorOf, zoomAt, fillWords, whereOf, whereTitle, cropAround, facetMapUrl, markersOf, facetMapNote, markerRadii,
   drawerChest, drawerMeta, slotsText, drawerPicker, DRAWER_W, DRAWER_MIN, drawerMax, clampDrawer, drawerKey, contentsOf, contentsSummary, filterContents, areaOfStack, levelAreas, tileAt, clampTile, rectOf, sizeText, unionTiles, coveredCells, outlineOf, pillsOf, fitLabel, placePill as pillBox, LABEL_FIT, type AreaPill,
   nextAreaId, nextAreaColor, moveCursor, project, tilePolygon, pts, liveAreas, withOrphans, redrawFailed, AREA_COLORS, AREA_COLOR_NAMES, MAX_AREAS, MAX_RECTS, areaName, drawnZs, CHEST_H,
-  mapHash, parseMapHash, houseHits, levelHits, stackPlan, planHead, planRows, planNeighbor, gapText, bareText, type Plan, type PlanCard, type PlanRow, levelHitText, areaHitText, hitsSummary, searchCount, calloutHead, calloutRow, CALLOUT_MAX, hitsView, elsewhereOf, outsideText,
+  mapHash, parseMapHash, houseHits, tierWord, levelHits, stackPlan, planHead, planRows, planNeighbor, gapText, bareText, type Plan, type PlanCard, type PlanRow, levelHitText, areaHitText, hitsSummary, searchCount, calloutHead, calloutRow, CALLOUT_MAX, hitsView, elsewhereOf, outsideText,
   type MapRoute, type HouseHits, type HitChest, type HitLine, type Tally, type Elsewhere, type PlainModel, type Tile, type Contents, type ContentsNode, type Marker, type View, type Mode, type Box, type Colour, type ChestView, type Piece, type Prism, type Pt, type Dir } from "./house-map-model.mts";
 import type { AreaRect, ContainerLabel, HouseArea, HouseModel, UiPrefs, HousesApiResponse, HouseMapEntry, HouseMapPutApiResponse, ItemsApiResponse, ItemHitsApiResponse, InventoryData, Stack } from "./api-types.mts";
 import { HIT_LIMIT, type HitRow } from "../item-query.mts";
@@ -232,7 +232,7 @@ function buildPins(m: HouseModel, h: HouseHits | null): void {
         return box("div", { class: "map-pin-chest" },
           box("div", { class: "map-pin-l1" }, txt(v.code, "mono t-sm strong"), txt(v.name, "ellip t-sm")),
           box("div", { class: "map-pin-line" }, txt(c.position, "t-xs muted")),
-          ...c.lines.slice(0, PIN_LINES).map((l) => itemTip(box("div", { class: "map-pin-line" }, lineName(l, "t-xs"), txt(`× ${fmtN(l.amount)}`, "t-xs num muted")), l.item, { focus: false })),
+          ...c.lines.slice(0, PIN_LINES).map((l) => itemTip(box("div", { class: "map-pin-line" }, lineName(l, c.lines, "t-xs"), txt(`× ${fmtN(l.amount)}`, "t-xs num muted")), l.item, { focus: false })),
           c.lines.length > PIN_LINES ? box("div", { class: "map-pin-line" }, txt(`and ${fmtN(c.lines.length - PIN_LINES)} more`, "t-xs muted")) : null);
       }));
   }), box("div", { class: "map-pin-more", id: "map-pin-more" }));
@@ -299,7 +299,7 @@ function hitRow(m: HouseModel, c: HitChest, v: ChestView, areas: readonly HouseA
       box("button", { type: "button", class: "map-hit-pick", "data-act": "pick", title: `Select Stack ${c.stack.letter}`, onclick: go }, txt(v.code, "mono strong"), txt(v.name, "ellip strong")),
       txt(`${areaName(areas, c.stack)} · Stack ${c.stack.letter} · ${c.position}`, "t-sm muted ellip"),
       box("ul", { class: "map-hit-items", "aria-label": `Matching items in ${v.code} ${v.name}` },
-        ...c.lines.slice(0, HIT_LINES).map((l) => itemTip(box("li", { class: "map-hit-item" }, lineName(l, "t-sm"), txt(`× ${fmtN(l.amount)}`, "t-sm num muted")), l.item)),
+        ...c.lines.slice(0, HIT_LINES).map((l) => itemTip(box("li", { class: "map-hit-item" }, lineName(l, c.lines, "t-sm"), txt(`× ${fmtN(l.amount)}`, "t-sm num muted")), l.item)),
         c.lines.length > HIT_LINES ? box("li", { class: "map-hit-item" }, txt(`and ${fmtN(c.lines.length - HIT_LINES)} more`, "t-sm muted")) : null)),
     box("div", { class: "map-chest-actions" }, button({ label: "Show items", size: "sm", attrs: { "data-act": "items" }, onClick: () => { select(c.serial); openDrawer(c.serial); } })));
 }
@@ -926,7 +926,7 @@ function areaPill(a: HouseArea, containers: number, t: Tally | null): HTMLElemen
   return box("button", { type: "button", class: "sp-area-name", title: `Show only ${a.name}`, "aria-label": `Show only ${a.name}, ${t ? `${t.matches} of ${plural(t.containers, "container")} match` : plural(containers, "container")}`, onclick: () => zoomToArea(a) }, txt(a.name), count);
 }
 // A matching line's piece, named by the gear item without an icon (the line is too small for one); its count follows it. The line itself is the tooltip host.
-const lineName = (l: HitLine, size: string): HTMLElement => el("span", { class: `ellip ${size}` }, gearItem({ ...l.item, amount: 1 }, { variant: "inline", showIcon: false, tip: false }));
+const lineName = (l: HitLine, lines: readonly HitLine[], size: string): HTMLElement => { const tier = tierWord(l, lines); return el("span", { class: `ellip ${size}` }, gearItem({ ...l.item, amount: 1 }, { variant: "inline", showIcon: false, tip: false }), tier ? el("span", { class: "sr" }, ` (${tier})`) : null); };
 function planCard(m: HouseModel, c: PlanCard, h: HouseHits | null): HTMLElement {
   const s = c.stack, head = planHead(s), hits = h?.stacks.get(s.letter) ?? null;
   const rows = planRows(chestViews(m, s, state.inv!, labels()));
@@ -950,7 +950,7 @@ function hitLine(hit: HitChest): HTMLElement {
   return el("ul", { class: "sp-hitline t-xs" },
     ...shown.map((l) => el("li", { class: "sp-hit", "aria-hidden": "true" }, el("span", { class: "ellip" }, gearItem({ ...l.item, amount: 1 }, { variant: "inline", showIcon: false, focus: false })), txt(`× ${fmtN(l.amount)}`, "num muted"))),
     more ? el("li", { class: "muted sp-more", "aria-hidden": "true" }, `+${fmtN(more)} more`) : null,
-    el("li", { class: "sr" }, `Found: ${hit.lines.map((l) => `${l.name} × ${fmtN(l.amount)}`).join(", ")}`));
+    el("li", { class: "sr" }, `Found: ${hit.lines.map((l) => { const tier = tierWord(l, hit.lines); return `${l.name}${tier ? ` (${tier})` : ""} × ${fmtN(l.amount)}`; }).join(", ")}`));
 }
 // The selected card's accent outline, and the roving tab stop: the focused card, else the selected one, else the first.
 function paintPlan(): void {
