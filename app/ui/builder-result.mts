@@ -135,7 +135,7 @@ function headlineCard(res: OptimizeResult, current: OptSuit, suit: OptSuit, prof
   const rows = changeRows(was.totals, now.totals, now.caps, { floors: pdFloors, weights: prof.weights, shares: shareList, extra: [...Object.keys(prof.floors), ...Object.keys(past)] });
   // the next swing step is the result's, so only while the SSI shown is the one it swings at (not with "Show without buffs" taking a buff's share off)
   const nextSsi = view == null && res.swing && res.swing.ssi === (now.totals.ssi || 0) ? nextSwingStep(res.swing)?.value ?? null : null;
-  // built from goals, SSI counted per point is said under the Swing speed goal in How the goals went, not as a warning here
+  // built from goals, SSI counted per point is said under the Swing Speed Increase goal in How the goals went, not as a warning here
   const checks = settingsCheck(resultChecks(res, !!prof.buffs, view != null).filter((d) => !(meta?.goals && d.code === "swing_linear")), name);
   // the best suit's swing (an alternative's would need its own stamina), with the buffs that gave its share named
   const ssiBuffs = res.swing?.share ? (withBuffs(after, skill, base, prof.buffs, rsCap).shares.ssi || []).filter((x) => !x.outside).map((x) => buffById(x.id)?.name || x.id) : [];
@@ -229,7 +229,7 @@ function scoreBreakdown(shares: ScoreShare[] | undefined): HTMLElement | null {
 
 // How the goals went (issue #292), beside a result built from goals: each goal's total in the suit shown against its cap
 // (a swing-time goal's SSI, else the build's) and its verdict (builder-model.mts goalVerdict: maxed, given up in a trade, or
-// what came first); Swing speed in seconds from the suit's own swing (swingOutcome), with a note when its swing could only be
+// what came first); Swing Speed Increase in seconds from the suit's own swing (swingOutcome), with a note when its swing could only be
 // counted per point; the trades the build made from what is worn now (a higher goal down while a lower one went up); and
 // where the spare points went or what they gave up. In paperdoll terms, with the buffs it was planned with.
 function goalsCard(g: Goals, gs: GoalSwingWeapon | null, current: OptSuit, suit: OptSuit, prof: EffectiveProfile, name: string, perPoint: boolean): HTMLElement {

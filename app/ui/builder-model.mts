@@ -80,14 +80,14 @@ export function rarityHelp(rarity: string | undefined): string {
 export function rarityTotal(best: Record<string, { tieCost?: number | undefined } | null | undefined>, rarity: string | undefined, ladderLength: number): number {
   return Object.values(best).reduce((n, it) => (it && it.tieCost != null ? n + (rarity === "higher" ? ladderLength - it.tieCost : it.tieCost) : n), 0);
 }
-// A strict-order stage in words (issue #292), named by what it scores: "your requirements", its goals ("Hit chance and
-// Defense chance"), "getting closer to soft requirements", "fewest changes", "tagged pieces" or "spare points".
+// A strict-order stage in words (issue #292), named by what it scores: "your requirements", its goals ("Hit Chance
+// Increase and Defense Chance Increase"), "getting closer to soft requirements", "fewest changes", "tagged pieces" or "spare points".
 export function stageName(st: { kind: string; keys: string[] | null }): string {
   return st.kind === "requirements" ? "your requirements" : st.kind === "softPartial" ? "getting closer to soft requirements" : st.kind === "changes" ? "fewest changes"
     : st.kind === "tags" ? "tagged pieces" : st.kind === "spare" ? "spare points" : andList((st.keys || []).map(propName));
 }
-// What a strict-order build is solving now, for the progress card: "Strict order: getting Hit chance and Defense chance
-// as high as they go", "Strict order: meeting your requirements", "Strict order: spare points".
+// What a strict-order build is solving now, for the progress card: "Strict order: getting Hit Chance Increase and Defense
+// Chance Increase as high as they go", "Strict order: meeting your requirements", "Strict order: spare points".
 export function stageProgress(st: { kind: string; keys: string[] | null }): string {
   if (st.kind === "goal") { const n = (st.keys || []).length; return `Strict order: getting ${stageName(st)} as high as ${n === 1 ? "it goes" : "they go"}`; }
   return `Strict order: ${st.kind === "requirements" ? "meeting your requirements" : st.kind === "changes" ? "changing as few pieces as possible" : st.kind === "tags" ? "avoiding tagged pieces" : stageName(st)}`;
@@ -638,7 +638,7 @@ export { goalWord };
 export interface GoalRow { key: string; rank: number; linked: boolean; counts: number }
 export const goalRows = (g: Goals): GoalRow[] => g.ranks.flatMap((r, i) => r.map((key, j) => ({ key, rank: i + 1, linked: j > 0, counts: rankImportance(i) })));
 // The first-visit view's "What matters most" with goals in force (issue #302): one row per rank, its goals' names joined
-// ("Hit chance = Defense chance", Swing speed with its swing time) and what it counts, the first `n`, how many goals the
+// ("Hit Chance Increase = Defense Chance Increase", Swing Speed Increase with its swing time) and what it counts, the first `n`, how many goals the
 // ranks past them hold, and where spare points go ("Spare points: Luck", "Spare points: not used").
 export function goalSummary(g: Goals, n = 4): { rows: Array<{ rank: number; names: string; counts: number }>; more: number; spare: string } {
   const rows = g.ranks.map((r, i) => ({ rank: i + 1, names: r.map((k) => goalLabel(g, k)).join(" = "), counts: rankImportance(i) }));
@@ -664,7 +664,7 @@ export const removeGoal = (g: Goals, key: string): Goals => ({ ...g, ranks: g.ra
 export const addGoal = (g: Goals, key: string): Goals => (g.ranks.some((r) => r.includes(key)) ? g : { ...g, ranks: [...g.ranks.map((r) => [...r]), [key]] });
 
 // "How the goals went" on a result: each goal's suit total against its cap (held there), maxed when it reaches it. Swing
-// speed with a known swing is maxed when that swing reaches its goal (`ssiMaxed`, swingOutcome), not by its SSI. Totals
+// Speed Increase with a known swing is maxed when that swing reaches its goal (`ssiMaxed`, swingOutcome), not by its SSI. Totals
 // and caps are paperdoll terms.
 export interface GoalOutcome { key: string; rank: number; value: number; cap: number | null; maxed: boolean }
 export function goalOutcomes(g: Goals, suit: PropMap, caps: Readonly<Record<string, number>>, ssiMaxed: boolean | null = null): GoalOutcome[] {
@@ -673,7 +673,7 @@ export function goalOutcomes(g: Goals, suit: PropMap, caps: Readonly<Record<stri
     return { key, rank, value, cap, maxed: key === "ssi" && ssiMaxed != null ? ssiMaxed : cap != null && value >= cap };
   });
 }
-// A goal's verdict in words, never claiming more than is known: "maxed"; "went down to make room for hit chance" when a
+// A goal's verdict in words, never claiming more than is known: "maxed"; "went down to make room for Hit Chance Increase" when a
 // trade gave it up; else that something came first: for the top goal the requirements or the pieces there are, for any
 // other higher goals or the requirements.
 export function goalVerdict(o: GoalOutcome, trades: readonly GoalTrade[]): string {
@@ -682,7 +682,7 @@ export function goalVerdict(o: GoalOutcome, trades: readonly GoalTrade[]): strin
   if (t) return `went down to make room for ${andList(t.ups.map((u) => goalWord(u.key)))}`;
   return o.rank === 1 ? "not maxed: your requirements, or the pieces you have, came first" : "not maxed: higher goals or your requirements came first";
 }
-// Swing speed's line in seconds, from the suit's own swing (its weapon and stamina), with its SSI as secondary text:
+// Swing Speed Increase's line in seconds, from the suit's own swing (its weapon and stamina), with its SSI as secondary text:
 // "As fast as possible" reads "1.75 s with Broadsword (fastest it can reach)", or "2.75 s with Broadsword" with what the
 // goal's weapon could reach (`worn`: "1.25 s possible with Double Bladed Staff"); a swing time reads "1.5 s with War Axe ·
 // goal met", or "1.75 s with War Axe · goal was every 1.5 s". When the swing time is missed with another weapon than the
@@ -712,8 +712,8 @@ export function goalTrades(g: Goals, now: PropMap, suit: PropMap, caps: Readonly
     return ups.length ? [{ key: d.key, from: d.from, to: d.to, ups }] : [];
   }).slice(0, n);
 }
-// A trade in words: "−1 swing speed (56 → 55, still a 1.5 s swing) for +15 hit chance and +10 damage". `swing`, the delays
-// worn now and in the suit, when the goal given up is Swing speed.
+// A trade in words: "−1 Swing Speed Increase (56 → 55, still a 1.5 s swing) for +15 Hit Chance Increase and +10 Damage
+// Increase". `swing`, the delays worn now and in the suit, when the goal given up is Swing Speed Increase.
 export function tradeText(t: GoalTrade, swing: { from: number; to: number } | null = null): string {
   const s = t.key === "ssi" && swing ? `, ${swing.from === swing.to ? `still a ${delayText(swing.to)}` : `${delayText(swing.from)} → ${delayText(swing.to)}`} swing` : "";
   const ups = t.ups.map((u) => `+${num(u.by)} ${goalWord(u.key)}`);

@@ -180,7 +180,7 @@ export interface EffectiveProfile {
   // (so a result can show them, and runs with other buffs key apart), and the caps and floors before them.
   buffs?: PlannedBuffs | undefined;
   // What the build knows of the character's swing (app/build-spec.mts planBuild), absent with no character: stamina before gear (raw DEX and the buffs' shares), the worn suit's stamina, and whether SSI is scored by step.
-  // `goalSsi`: a Swing speed goal's SSI cap in item terms (issue #302), absent without one; the step table credits no point more.
+  // `goalSsi`: a Swing Speed Increase goal's SSI cap in item terms (issue #302), absent without one; the step table credits no point more.
   swing?: { stamBase: number; refStamina: number; steps: boolean; goalSsi?: number | undefined } | undefined;
   // The step table both solvers score SSI with (app/swing.mts stepTable), put on by the optimize worker.
   ssiSteps?: Array<{ ssi: number; stam: number; credit: number }> | undefined;
@@ -394,9 +394,9 @@ export interface RunSettings {
   castingSchool?: string | undefined;
   rarity?: RarityPreference | undefined;
   goals?: Goals | undefined;   // the goals its weights came from (issue #292); absent for a run built from weights set by hand
-  goalSwing?: GoalSwingWeapon | undefined;   // the weapon and stamina a Swing speed goal was set for (issue #302); absent in a run saved before it
+  goalSwing?: GoalSwingWeapon | undefined;   // the weapon and stamina a Swing Speed Increase goal was set for (issue #302); absent in a run saved before it
 }
-// What a Swing speed goal was set for: the weapon worn when it was built (its name and base speed in seconds), the stamina
+// What a Swing Speed Increase goal was set for: the weapon worn when it was built (its name and base speed in seconds), the stamina
 // it was worked out at (with the worn suit), and the stamina before gear (raw DEX and the buffs' shares), which the suit's own swing reads.
 export interface GoalSwingWeapon { weapon: string; speed: number; stamina: number; stamBase: number }
 // A run's buffs: which were on, and the numbers they scale with (app/buffs.mts's inputs, Resisting Spells aside).

@@ -7,7 +7,7 @@
 //
 // map: builder
 // owns: `BUFFS`, `BUFF_INPUTS`, `BUFF_GROUPS`, `applyBuffs`, `minimumWith`, `buffPlanOf`, `manualProfile`, `manualBase`, `manualPlan`, `plannedProfile`, `planBuffs`, `isBuffList`, `normalizeBuffs`, `isRunBuffs`, `savedBuffs`
-import { RESIST_KEYS, SKILL_NAMES, minResistAt, skillInSuit, labelOf, propName, effectiveProfile, profileResistCaps, toOptItem, totalsOf } from "./vault-lib.mts";
+import { RESIST_KEYS, RESIST_META, SKILL_NAMES, minResistAt, skillInSuit, labelOf, propName, effectiveProfile, profileResistCaps, toOptItem, totalsOf } from "./vault-lib.mts";
 import type { BuffShift, SuitSkill, Character, EffectiveProfile, Item, Profile, PropMap, RunBuffs } from "./vault-lib.mts";
 
 // ---------------------------------------------------------------- the numbers a buff scales with
@@ -435,9 +435,10 @@ export const isSchool = (group: string): boolean => SKILL_NAMES.includes(group.t
 export function buffAvailability(b: Buff, values: Skills, planned: ReadonlySet<string>, edits: Readonly<Record<string, number>>, who: BuffWho): { needs: string | null; unscanned: string[] } {
   return { needs: buffNeeds(b, values, who), unscanned: b.inputs.filter((i) => planned.has(i) && !Object.hasOwn(edits, i)) };
 }
-// What an entry changes in the suit maths, in short words from its own definition at these numbers: each property its
-// effects move ("swing speed up", "defense chance down"; all five resists, or all three stats, moving together as one
-// "resists up"), each cap it changes ("defense chance cap up"), then what no total shows ("hits the lowest resist").
+// What an entry changes in the suit maths, from its own definition at these numbers: each property its effects move, by
+// its name ("Swing Speed Increase up", "Defense Chance Increase down"; all five resists, or all three stats, moving
+// together as one "Resists up"), each cap it changes ("Defense Chance Increase cap up"), then what no total shows ("hits
+// the lowest resist").
 // "no suit effect" when it does none of these. `down` marks a tag that lowers something for the suit (the page tints it).
 export interface EffectTag { text: string; down: boolean }
 export function buffEffectTags(id: string, skills: Skills, stats: Stats | null, totals: PropMap, who: BuffWho = {}, caps: Readonly<Record<string, number>> = {}): EffectTag[] {
@@ -452,7 +453,7 @@ export function buffEffectTags(id: string, skills: Skills, stats: Stats | null, 
       const same = fam ? fam.filter((f) => moves.some(([x, y]) => x === f && y === d)) : [k];
       same.forEach((x) => done.add(`${x} ${d}`));
       const all = same.length > 1 && same.length === fam!.length, many = res && same.length > 1;
-      const base = all ? (res ? "resist" : "stats") : `${same.map(tagWord).join(", ")}${res ? " resist" : ""}`;
+      const base = all ? (res ? "Resist" : "Stats") : res ? `${same.map(resistWord).join(", ")} Resist` : same.map(tagWord).join(", ");
       out.push(`${base}${many ? (cap ? " caps" : "s") : cap} ${d}`);
     }
     return out;
@@ -463,17 +464,12 @@ export function buffEffectTags(id: string, skills: Skills, stats: Stats | null, 
   const tags = [...new Set([...words(moves, ""), ...words(capMoves, " cap"), ...(b.extra?.(c) || [])])];
   return (tags.length ? tags : ["no suit effect"]).map((text) => ({ text, down: text.endsWith(" down") }));
 }
-// The one word each property an entry moves takes in its tags (a resist's alone, "fire" + " resist"); a skill bonus is the
-// skill's name. Every key the catalog's effects and caps use has one (app/buffs.test.mts checks).
-export const TAG_WORDS: Readonly<Record<string, string>> = {
-  physResist: "physical", fireResist: "fire", coldResist: "cold", poisonResist: "poison", energyResist: "energy",
-  strBonus: "strength", dexBonus: "dexterity", intBonus: "intelligence",
-  hci: "hit chance", dci: "defense chance", di: "damage", sdi: "spell damage", ssi: "swing speed", fc: "faster casting", castingFocus: "casting focus",
-  hpRegen: "hit point regeneration", stamRegen: "stamina regeneration", manaRegen: "mana regeneration",
-  hitsPool: "hit points", stamPool: "stamina", manaPool: "mana",
-  hitLightning: "hit lightning", hitFireball: "hit fireball", hitHarm: "hit harm", hitMagicArrow: "hit magic arrow", hitDispel: "hit dispel",
-};
-const tagWord = (k: string): string => (k.startsWith("sk:") ? labelOf(k).slice(1).toLowerCase() : TAG_WORDS[k] ?? k);
+// The name each property an entry moves takes in its tags: its one name (propName, "Damage Increase"), a skill bonus its
+// skill's ("Stealth"), and a pool its stat's, as the pools are no shard property. Resists moving together share one
+// "Resist" ("Physical, Cold Resists"), by RESIST_META's long names.
+const POOL_WORDS: Readonly<Record<string, string>> = { hitsPool: "Hit Points", stamPool: "Stamina", manaPool: "Mana" };
+export const tagWord = (k: string): string => (k.startsWith("sk:") ? labelOf(k).slice(1) : POOL_WORDS[k] ?? propName(k));
+const resistWord = (k: string): string => RESIST_META.find((m) => m.key === k)?.long ?? k;
 
 // ---------------------------------------------------------------- toggling
 // Turns `id` on or off. On, it replaces any entry of its exclusive set (one form at a time), named in `replaced`.

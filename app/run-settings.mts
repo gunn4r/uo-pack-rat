@@ -40,7 +40,7 @@ const LISTS = ["softFloors", "lockedSlots", "excludeTags", "excludeRoots", "excl
 // Read only by an exact search: without one the page leaves these fields unchecked (builder-model.mts firstKnobError),
 // so a run with `exact: false` may carry any number in them.
 const EXACT_ONLY = ["budgetMs", "altCount", "altTol"];
-// A run's Swing speed goal weapon (vault-lib.mts GoalSwingWeapon): only its four fields, a name (blank for a weapon with
+// A run's Swing Speed Increase goal weapon (vault-lib.mts GoalSwingWeapon): only its four fields, a name (blank for a weapon with
 // none), a speed from 0 to 10 s, and the stamina and stamina before gear each from 0 to 1000. build-spec.mts planBuild
 // keeps only one that passes, so a build never fails on it.
 const STAMINA = (n: unknown): boolean => typeof n === "number" && Number.isFinite(n) && n >= 0 && n <= 1000;

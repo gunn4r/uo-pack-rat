@@ -6,7 +6,7 @@ import { delayText } from "../swing.mts";
 import { NOT_BUILDER_KEYS, PROP_LABELS, propName, SKILL_SET, weightOfImportance } from "./properties.mts";
 
 // Goals (issue #292): the properties to get as high as the gear allows, up to each one's cap, most important first, a rank
-// holding two or more that count the same; what spare points go to; and for a Swing speed goal, the fastest swing or a
+// holding two or more that count the same; what spare points go to; and for a Swing Speed Increase goal, the fastest swing or a
 // swing every `seconds` (the SSI that takes with the weapon worn now caps SSI, app/build-spec.mts planBuild). `ownWeights`:
 // the weights were edited by hand since the goals set them, so the goals are kept only to start from again. Goals compile
 // to the profile's weights through the importance conversion above (compileGoals), so the solvers, saved runs and every
@@ -36,7 +36,7 @@ export const LEFTOVER_GROUPS: Record<GoalLeftover, readonly string[]> = { luck: 
 export const LEFTOVER_LABELS: Record<GoalLeftover, string> = { luck: "Luck", melee: "Melee stats", caster: "Caster stats", none: "Nothing" };
 // Whether goals set the profile's weights: there are goals, and the weights were not edited by hand since.
 export const goalsActive = (g: Goals | null | undefined): g is Goals => !!g && !g.ownWeights;
-// The weights goals set, and whether SSI is scored by swing step (when Swing speed is a goal): each rank's properties at
+// The weights goals set, and whether SSI is scored by swing step (when Swing Speed Increase is a goal): each rank's properties at
 // that rank's importance, then the spare-points group's properties that are not goals at LEFTOVER_IMPORTANCE. A weight the
 // builder never offers (the tag penalty) is kept from `kept`, the profile's weights. A weight is rounded to 12 significant
 // digits, so DI's 65 is 2.925 per point rather than 2.9250000000000003.
@@ -83,7 +83,7 @@ export function goalsError(v: unknown, label: string): string | null {
   return null;
 }
 
-// A goal as a list names it: Swing speed with its swing time when it has one ("Swing speed every 1.5 s").
+// A goal as a list names it: Swing Speed Increase with its swing time when it has one ("Swing Speed Increase every 1.5 s").
 export const goalLabel = (g: Goals, k: string): string => (k === "ssi" && g.swing?.mode === "every" && g.swing.seconds != null ? `${propName(k)} every ${delayText(g.swing.seconds)}` : propName(k));
 
 // A copy of goals that shares no list with them.

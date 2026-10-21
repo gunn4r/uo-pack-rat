@@ -213,7 +213,7 @@ function goalChoices(taken: readonly string[]): string[] {
   return [...new Set([...ranked, ...Object.values(LEFTOVER_GROUPS).flat(), ...RESIST_KEYS, ...Object.keys(session.profile!.weights!)])].filter((k) => !NOT_BUILDER_KEYS.has(k) && !taken.includes(k));
 }
 // The Goals tab's top: with goals in force, the ranked list (each row's rank and name, what it counts and its cap, "=" to
-// share the rank above, ↑ ↓ ✕; Swing speed's swing time under its row), "+ Add a goal", where spare points go, and the
+// share the rank above, ↑ ↓ ✕; Swing Speed Increase's swing time under its row), "+ Add a goal", where spare points go, and the
 // switch that shows the weights they set. With the weights edited by hand since, a note that starts from the goals again;
 // with no goals at all, nothing (the weights below are the tab, as before goals).
 function goalsSection(): HTMLElement {
@@ -301,7 +301,7 @@ function ssiGoalCap(g: Goals): number | null {
   const worn = wornSwing();
   return worn ? goalSsiCap(g, worn.sw.speed, worn.sw.stamina) : null;
 }
-// Under the Swing speed goal: the swing it aims for, "As fast as possible" or one of the worn weapon's steps ("Every 1.5 s"),
+// Under the Swing Speed Increase goal: the swing it aims for, "As fast as possible" or one of the worn weapon's steps ("Every 1.5 s"),
 // and what that needs: "1.5 s with Katana at 95 stamina: needs Swing Speed Increase 45".
 function swingGoal(g: Goals): HTMLElement {
   const worn = wornSwing(), steps = worn?.sw.steps ?? [], every = g.swing?.mode === "every" ? g.swing.seconds ?? null : null;

@@ -278,7 +278,7 @@ test("[slow] drawer extras: notched weight sliders, buffs by school, each requir
     assert.ok(heads.some((h) => /^Necromancy skill 50$/i.test(h)), "Horrific Beast (40) is usable at Necromancy 50");
     assert.ok(!heads.some((h) => /^Spellweaving/i.test(h)), "Spellweaving, not in the scan, waits for Show all");
     assert.equal(await page.locator('#b-sec-buffs .b-bf[data-buff="vampiricEmbrace"]').count(), 0);
-    assert.match(await page.locator('#b-sec-buffs .b-bf[data-buff="divineFury"]').innerText(), /swing speed up[\s\S]*defense chance down/);
+    assert.match(await page.locator('#b-sec-buffs .b-bf[data-buff="divineFury"]').innerText(), /Swing Speed Increase up[\s\S]*Defense Chance Increase down/);
     await page.click("#b-bf-all");
     assert.equal(await page.evaluate(() => document.activeElement?.id), "b-bf-all", "Show all keeps the focus");
     // greyed exactly when the plan blocks it; a skill the scan lacks is counted at 120 and only said
