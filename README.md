@@ -22,13 +22,13 @@ Search every character's gear, bags, chests and bank in one table, each piece wi
 
 A character sheet with your character's paperdoll in the gear they wear, resists, stats and every property against the shard's cap.
 
-![Dorran's character sheet: five resist cards, attributes, the worn gear slots and the properties table](docs/images/characters.png)
+![Dorran's character sheet: resist cards, attributes, the paperdoll in the worn gear, each piece with its icon](docs/images/characters.png)
 
 ### Build your best suit
 
 Pick a template such as Melee, Caster or Tank, or set your own goals, and the Suit Builder searches everything you own for the best suit. It plans around the buffs you fight with, shows your character in what they wear now beside the new suit, and keeps runs you can compare. You can also build a suit by hand on a live paperdoll and let it fill the gaps.
 
-![Pressing Build on the Suit Builder: a proven-best suit for Dorran appears with each resist's before and after, then the slot-by-slot plan](docs/images/suit-builder.gif)
+![Pressing Build on the Suit Builder: a proven-best suit for Dorran appears with each resist's before and after, then the plan: what is worn now beside each new piece](docs/images/suit-builder.gif)
 
 ### Map your house
 

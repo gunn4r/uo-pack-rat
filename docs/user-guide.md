@@ -102,6 +102,8 @@ Scans show up in **Inventory** within a few seconds; you don't have to press any
 - **Type** keeps shields, two- or one-handed weapons, spellbooks, armor, jewelry or clothing.
 - **+ Filter › Property rule** picks any gear property by its shard name, with how many items in view carry it, and keeps items with at least, at most, exactly or anything but a value. An item without the property counts as 0, and the rule says so when that lets such items through ("Faster Casting ≠ -1" also keeps every reagent).
 
+![A property rule being added in the Inventory: Faster Casting picked from the list, ≠ -1, and the note that items without it count as 0](images/inventory-filters.png)
+
 Click a row to see the item's properties and where it is.
 
 With the bridge running, **Highlight** marks an item and its container in game, **Go to** walks you to its chest, and **Grab** walks there and puts it in your backpack. To find a chest itself, use **Highlight in game** in its ⋯ menu under Inventory › Containers; that list has its own search and Kind and House filters.
@@ -122,6 +124,8 @@ A result shows your character twice, in what they wear now and in the new suit, 
 
 **Manual** lets you build a suit by hand on a live paperdoll and see its totals, buffs included. Hover or arrow through the picker's rows to preview a piece on the figure, and turn on **Only what Auto would use** to list just the pieces an automatic build may pick. Then let the search fill the slots you left empty (with the settings in **Auto Build Settings**, which Manual opens too), save it as a run, or start from an automatic result.
 
+![Manual mode choosing a ring: the picker lists only what Auto would use, and the hovered ring is previewed on the live paperdoll](images/manual.png)
+
 ![A Suit Builder result: the best suit for the demo character, with each resist's before and after, what changes, and how each goal went](images/suit-builder.png)
 
 ## House map
@@ -141,6 +145,8 @@ Organize gives every item in your house a home.
 ### Rules
 
 Label the chests that are yours (Inventory › Containers, ⋯ › Label…), then add rules on the **Organize** screen. Start from a preset such as Magery reagents or Rings, or save the Inventory's current filters as a rule. The rule's filters are the Inventory's own (search, slot, type, kind, rarity, property rules, slayer, tags), without character, location or seen, so a rule keeps matching an item after it moves. Pick the containers each rule fills, in order: your labeled chests, or a bag inside one. While you edit a rule it says how many of your items it matches.
+
+![A new rule for shields without a Faster Casting penalty: Type Shield and Faster Casting ≠ -1, matching 4 items](images/organize-rule.png)
 
 Items go to the first rule they match; anything no rule takes stays put, or goes to the container you pick for everything else.
 

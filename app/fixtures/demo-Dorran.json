@@ -110,6 +110,8 @@
   {
    "serial": 1879834635,
    "name": "Spellbook",
+   "graphic": 3834,
+   "hue": 0,
    "amount": 1,
    "tooltip": [
     "Spellbook",
