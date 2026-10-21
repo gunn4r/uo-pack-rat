@@ -117,7 +117,7 @@ test("[slow] the item tooltip shows on every screen that draws an item: Inventor
     await page.click("#b-drawer-close");
     await page.click("#b-run");
     await page.waitForFunction(() => /Best suit for/.test(document.querySelector("#b-result h2")?.textContent || ""), undefined, { timeout: 60_000 });
-    await tipShows(page, page.locator("#b-result .b-tip").first(), "a Suit Builder result piece");
+    await tipShows(page, page.locator("#b-result .gi").first(), "a Suit Builder result piece");
 
     await go(page, "#/map", "#map-svg .map-stack");
     await page.locator("#map-svg .map-stack").first().focus();

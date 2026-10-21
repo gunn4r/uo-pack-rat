@@ -12,11 +12,10 @@ import { DEFAULT_SHARD } from "../rules.mts";
 import type { SettingsDoc } from "../store/settings.mts";
 import { createHousesService } from "./houses.mts";
 import { itemArtName } from "../art.mts";
-import { syntheticArt, syntheticHues, syntheticUop } from "../art-fixture.mts";
+import { pngPixels, syntheticArt, syntheticHues, syntheticUop } from "../art-fixture.mts";
 import { rgb555 } from "../facet-fixture.mts";
 import { syntheticTileData } from "../tiledata-fixture.mts";
 import { FLAG } from "../tiledata.mts";
-import { inflateSync } from "node:zlib";
 
 test("[fast] houses service: the reason there is no tiledata.mul or facet follows the settings", () => {
   let settings: SettingsDoc = { shard: DEFAULT_SHARD, client: null };
@@ -85,15 +84,6 @@ test("[fast] houses service: item art comes from the UO folder's art file, cut a
     assert.ok(!plain.etag.includes(uo), "the ETag never names the folder");
   } finally { rmSync(uo, { recursive: true, force: true }); }
 });
-
-// A PNG's RGBA pixels (the encoder writes one IDAT run with filter 0 on every row).
-function pngPixels(b: Buffer): number[] {
-  const w = b.readUInt32BE(16), parts: Buffer[] = [];
-  for (let o = 8; o < b.length;) { const n = b.readUInt32BE(o); if (b.toString("latin1", o + 4, o + 8) === "IDAT") parts.push(b.subarray(o + 8, o + 8 + n)); o += 12 + n; }
-  const raw = inflateSync(Buffer.concat(parts)), out: number[] = [];
-  for (let o = 0; o < raw.length; o += 1 + w * 4) out.push(...raw.subarray(o + 1, o + 1 + w * 4));
-  return out;
-}
 
 test("[fast] houses service: item art takes a hue partially when tiledata.mul flags the graphic (or the hue carries 0x8000): only grey pixels change, under a new ETag", () => {
   const settings: SettingsDoc = { shard: DEFAULT_SHARD, client: null };

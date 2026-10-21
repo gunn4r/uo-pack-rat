@@ -19,13 +19,16 @@ const BATCH = 200;   // matches the server's per-request cap on GET /api/items/b
 // no record for (rescanned away, or just wrong) is absent from the result, never an error; a failed
 // network call leaves those serials unresolved for this call rather than throwing, so callers never
 // need their own try/catch around a lookup that's inherently best-effort.
-export async function resolveItems(serials: Array<number | null | undefined>): Promise<Record<number, Item>> {
+// `answered`, when given, gets every serial whose request the server answered (whether or not it knew the serial), so a caller can tell "not in the inventory" from "not asked". `current`, when given, says whether the answer still describes the inventory the page shows: an answer that arrives once it says no is not cached.
+export async function resolveItems(serials: Array<number | null | undefined>, { answered, current }: { answered?: Set<number>; current?: () => boolean } = {}): Promise<Record<number, Item>> {
   const need = [...new Set(serials.filter((s) => s != null).map(Number))].filter((s) => !state.itemCache.has(s));
   for (let i = 0; i < need.length; i += BATCH) {
     const chunk = need.slice(i, i + BATCH);
     try {
       const res = await api<ItemsBySerialApiResponse>(`/api/items/by-serial?serials=${chunk.join(",")}`);
+      if (current && !current()) continue;
       for (const [serial, it] of Object.entries(res.items || {})) state.itemCache.set(+serial, it);
+      for (const s of chunk) answered?.add(s);
     } catch { /* leave this chunk's serials unresolved */ }
   }
   const out: Record<number, Item> = {};

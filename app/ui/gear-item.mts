@@ -46,42 +46,52 @@ function filled(it: GearItemSource): GearItemSource {
   return { ...it, graphic: has(it, "graphic") ? it.graphic : known.graphic, hue: has(it, "hue") ? it.hue : known.hue, rarity: has(it, "rarity") ? it.rarity : known.rarity, tags: it.tags ?? known.tags };
 }
 
-// Lookups by serial, gathered for one tick and sent together (resolveItems asks only for serials the cache lacks). A serial waiting or in flight is not asked again, and one the server did not answer for is not asked again until a new inventory (forgetGearMisses).
+// Lookups by serial, gathered for one tick and sent together (resolveItems asks only for serials the cache lacks). A serial waiting or in flight is not asked again, and one the server answered without is not asked again until a new inventory (forgetGearMisses). A new inventory also outdates every answer still on its way: it is neither drawn nor cached, and its serials are asked again of the new inventory, so the pieces waiting on them still get drawn. A request that failed records no miss.
 const pending = new Map<number, Array<() => void>>(), queued = new Set<number>(), missed = new Set<number>();
-let flushing: ReturnType<typeof setTimeout> | null = null;
-export const forgetGearMisses = (): void => { missed.clear(); };
+let flushing: ReturnType<typeof setTimeout> | null = null, generation = 0;
+export const forgetGearMisses = (): void => {
+  missed.clear();
+  generation++;
+  for (const serial of pending.keys()) queued.add(serial);
+  if (queued.size) flushSoon();
+};
 function whenKnown(serial: number, then: () => void): void {
   if (missed.has(serial)) return;
   const list = pending.get(serial);
   if (list) { list.push(then); return; }
   pending.set(serial, [then]);
   queued.add(serial);
+  flushSoon();
+}
+function flushSoon(): void {
   flushing ??= setTimeout(() => {
     flushing = null;
-    const batch = [...queued];
+    const batch = [...queued], gen = generation, answered = new Set<number>();
     queued.clear();
-    void resolveItems(batch).then((found) => {
+    void resolveItems(batch, { answered, current: () => gen === generation }).then((found) => {
+      if (gen !== generation) return;
       for (const serial of batch) {
         const fns = pending.get(serial) || [];
         pending.delete(serial);
-        if (found[serial]) for (const fn of fns) fn(); else missed.add(serial);
+        if (found[serial]) for (const fn of fns) fn(); else if (answered.has(serial)) missed.add(serial);
       }
     });
   }, 0);
 }
 
 let noteIds = 0;
+const amountText = (n: number): string => n.toLocaleString("en-US");
 function parts(node: HTMLElement, it: GearItemSource, o: GearItemOptions, size: 24 | 32): HTMLElement[] {
   const token = rarityToken(it.rarity);
   const name = txt(it.name, "gi-name");
   if (token) name.style.color = `var(${token})`;
-  const qty = (it.amount || 1) > 1 ? txt(`×${it.amount}`, "gi-qty") : null;
+  const qty = (it.amount || 1) > 1 ? txt(` ×${amountText(it.amount!)}`, "gi-qty") : null;
   const tags = o.showTags ? (it.tags || []).filter((t) => QUALITY_TAGS.has(t)).map((t) => tagChip(t)) : [];
   const icon = o.showIcon === false ? null : artTile(it.graphic, { size, hue: it.hue ?? 0, keepBox: o.keepBox !== false });
   const tail = [qty, ...tags, ...(o.after || [])].filter((x): x is HTMLElement => !!x);
   // A button is named by the piece alone; its tags and badges describe it.
   if (o.onOpen) {
-    node.setAttribute("aria-label", qty ? `${it.name} ×${it.amount}` : it.name);
+    node.setAttribute("aria-label", qty ? `${it.name} ×${amountText(it.amount!)}` : it.name);
     const notes = [...tags, ...(o.after || [])].filter((x): x is HTMLElement => !!x);
     for (const n of notes) n.id ||= `gi-note-${++noteIds}`;
     if (notes.length) node.setAttribute("aria-describedby", notes.map((n) => n.id).join(" ")); else node.removeAttribute("aria-describedby");
