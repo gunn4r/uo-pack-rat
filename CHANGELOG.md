@@ -4,7 +4,7 @@
 
 Entries not yet released are in `changelog.d/`, one file per pull request (`CONTRIBUTING.md`, Changelog). `node scripts/changelog.mts --release <version>` moves them here.
 
-<!-- released-sha256: d94788b17dd95203f8823b1e7aa6315b96dc9c96eaf858588688f41eab894061 (written by node scripts/changelog.mts) -->
+<!-- released-sha256: 7d28513f0617dd31735b259f51dffeccde2a31f86f7b660bb5f1d1706687377f (written by node scripts/changelog.mts) -->
 
 ## 0.3.0 — 2026-10-21
 
@@ -26,7 +26,7 @@ Pack Rat now draws your characters and your gear the way the game does.
 - **A Type filter:** shields, one- or two-handed weapons, spellbooks, armor, jewelry or clothing.
 - **Property rules take ≠.** "Faster Casting ≠ -1" keeps everything but the -1 pieces, and the rule says when items without the property get through.
 - **The Property rule lists every gear property** under the shard's full names, in clear groups, with how many items in view carry each one.
-- **Organize rules use the same filters as the Inventory.**
+- **Organize rules use the same filters as the Inventory**, and Auto organize gives spellbooks their own group.
 
 **Manual building**
 - **Only what Auto would use** narrows the Manual picker to the pieces an automatic build may pick.
@@ -34,8 +34,9 @@ Pack Rat now draws your characters and your gear the way the game does.
 
 Reinstall the game scripts from Settings after updating (TazUO 2.22.0). Your scans then record your character's look, which the paperdoll needs. Razor Enhanced and the web client are unchanged.
 
-<details><summary>All changes (45)</summary>
+<details><summary>All changes (46)</summary>
 
+- **Spellbooks get their own Auto organize group**: Simple and Detailed put every spellbook (Scrapper's Compendium included) in a Spellbooks group instead of the Weapons chest, which now takes only weapons and shields. A setup made before gets the new group proposed the next time you run Auto organize. The Type filter calls a held one-handed piece a spellbook only by a book's name or graphic: a weapon scanned without its skill line stays a one-handed weapon, and a held tool with properties is Other. The Weapons preset leaves spellbooks out, and a new Spellbooks preset takes them.
 - **The Suit Builder shows each piece's icon and rarity color** (issues #504, #503): the Plan's Wear instead column (now semibold), the Fetch list (now a row of chips) and Compare's pieces show each piece's in-game icon beside its name in its rarity's color, and the Plan's Wearing now column and Other suits color their names too. Britannia's light "differs" fill is a shade paler so every rarity color reads on it.
 - **Quantities read "Pearl ×1,500"** (issue #504): a gear item's quantity has a space before it and a thousands separator.
 - **A worn piece's popover is only widened while its icon shows** (issue #504): if the icon's art fails to load, the popover goes back to its usual width.
@@ -86,8 +87,9 @@ Reinstall the game scripts from Settings after updating (TazUO 2.22.0). Your sca
 
 ### For contributors
 
-<details><summary>Contributor notes (44)</summary>
+<details><summary>Contributor notes (46)</summary>
 
+- Organize's `weapons` preset matches Type one-handed, two-handed or shield (in place of the two held slots); the new `spellbooks` preset matches Type spellbook and replaces Detailed's name list (`SPELLBOOK_NAMES`, removed).
 - A gear item records a missing serial only when the server answered, and, when the inventory reloads, neither draws nor caches an answer still on its way but asks again (issue #504). The item art tests share one PNG decoder, `pngPixels` in `app/art-fixture.mts`, and `resolveItems` takes an optional `answered` set and `current` check. The contrast test's compare scenes must measure a rarity-colored name on a "differs" cell.
 - `GET /api/missing` items carry `graphic`, `hue`, `rarity` and `lines` (the tooltip) from the last scan that saw them; `missingSinceLastScan` takes a `rarityOf` reader (the server passes the tooltip parser), so the module itself still reads no shard rules.
 - `scripts/gear-item-guard.test.mts` (issues #504, #503) is a static scan that catches the common ways an `app/ui` module could build an item's name, icon or rarity color by hand instead of using `gearItem`, with its few exceptions listed and reasoned. The enforcement is a runtime check in `scripts/ui-contrast.test.mts` (`scripts/gear-name-probe.mts`): on every scene, any visible text that is a gear item's name (alone, or followed by " ×" or ":") must sit inside gearItem's `.gi-name`, outside a short list of exempt places (slot labels, the tooltip), each with its reason.
@@ -97,6 +99,7 @@ Reinstall the game scripts from Settings after updating (TazUO 2.22.0). Your sca
 - `demo-Dorran.json` keeps the Spellbook he used to wear in his Metal Chest, and `npm run readme:shots` seeds Dorran with Fencing and Kestrel with Mace Fighting for the weapons they wear, and scrolls the Organize rule drawer to its top before its shot.
 - `npm run readme:shots` builds the page before it captures, gives the demo characters a few skills, and links the client's facet maps (read only) so the House map shows its world-map thumbnail.
 - The demo characters carry a look (a fictional human body, skin, hair and beard, with real game ids), so the paperdoll draws them. `npm run readme:shots` takes `PACKRAT_SHOTS_UO=<UO folder>` to draw item icons and paperdolls from a real 7.x client at capture time; without it the shots still run without the art. `scripts/no-game-art.test.mts` fails if a client file (`.mul`, `.uop`, `.idx`, the client's `.def` tables), an art cache or an image outside `docs/images/` and the app's icons is in the git index.
+- The README's House map shots draw `showcaseHouse()` (`app/house-fixture.mts`), a furnished two-storey house with four rooms and 38 chests in rows, instead of the 120-chest test vault, zoomed so it fills the map; the search GIF ends on the top-down view.
 - `GET /api/items` takes `auto={"character","settings"}` (JSON), answered from `autoCandidates` in `app/services/builds.mts` (the real `buildPools`); `filter-bar.mts` gains `itemsSourceWith(extra)` for parameters the filters don't hold.
 - `catalogueGroups` in `app/domain/properties.mts` sorts any list of property keys into the catalogue's groups and order; `builder-requirements.mts`'s `propertyPicker` and `sheet.mts`'s Properties shown popover use it.
 - The filters live in `ui/containers.mts` (`filter`, `passes`, a `#cont-toolbar` above the table), reusing the Inventory toolbar's search and chip classes and the shared `menu`.
