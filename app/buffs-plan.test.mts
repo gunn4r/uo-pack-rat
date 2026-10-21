@@ -95,16 +95,16 @@ test("[fast] buffs plan: Corpse Skin, Stone Form and Curse together, each cap ch
 });
 
 test("[fast] buffs plan: a character lacking the buff's skill plans at 120; an edit plans at its number, for that character only", () => {
-  const fury = { Swordsmanship: { value: 120 } }, mythos = { Chivalry: { value: 105 } };
-  const lacking = buffSkillValues(fury, {});
+  const sable = { Swordsmanship: { value: 120 } }, rowan = { Chivalry: { value: 105 } };
+  const lacking = buffSkillValues(sable, {});
   assert.ok(lacking.planned.has("Chivalry"));
   assert.equal(plannedProfile(ALL, null, { ...plan(["divineFury"]), skills: lacking.values }).floors.dci, 40, "120 Chivalry, 15,000 karma: the top tier's DCI −10");
-  const own = buffSkillValues(mythos, {});
+  const own = buffSkillValues(rowan, {});
   assert.equal(plannedProfile(ALL, null, { ...plan(["divineFury"]), skills: own.values }).floors.dci, 50, "the character's own 105: the flat tier's −20");
-  const edited = buffSkillValues(fury, { Chivalry: 105 });
+  const edited = buffSkillValues(sable, { Chivalry: 105 });
   assert.ok(edited.planned.has("Chivalry"));
   assert.equal(plannedProfile(ALL, null, { ...plan(["divineFury"]), skills: edited.values }).floors.dci, 50, "an edit to 105");
-  assert.equal(buffSkillValues(mythos, {}).values.Chivalry, 105, "another character's edit never reaches this one (edits are passed per character)");
+  assert.equal(buffSkillValues(rowan, {}).values.Chivalry, 105, "another character's edit never reaches this one (edits are passed per character)");
 });
 
 test("[fast] buffs plan: a stat slot takes its largest share beside gear STR, which always stacks", () => {
