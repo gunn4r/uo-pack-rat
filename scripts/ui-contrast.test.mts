@@ -327,7 +327,7 @@ const SCENES: Scene[] = [
   { name: "builder compare runs", enter: async (p) => {
     await p.click("#b-runs-compare");
     await p.waitForSelector("#b-compare-view:not([hidden]) .b-cmp");
-  }, leave: async (p) => { await p.getByRole("button", { name: "Back to result" }).click(); }, mustMeasure: RARITY_ON_DIFF },
+  }, leave: async (p) => { await p.getByRole("button", { name: "Back to result" }).click(); } },   // the demo's two runs differ by no rarity piece; compare suits carries the rarity check
   { name: "builder character picker", enter: async (p) => { await p.click("#b-char"); await p.keyboard.type("e"); await p.waitForSelector(".pop .cbx-hit"); }, leave: (p) => p.keyboard.press("Escape") },
   { name: "builder build picker", enter: async (p) => { await p.click("#b-tpl"); await p.waitForSelector(".pop .cbx-list"); }, leave: (p) => p.keyboard.press("Escape") },
   { name: "builder property picker", enter: async (p) => { await settingsTab(p, "requirements"); await p.click("#b-addfloor"); await p.waitForSelector(".pop .b-pick-list"); }, leave: (p) => p.keyboard.press("Escape") },
