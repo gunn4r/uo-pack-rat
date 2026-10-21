@@ -187,7 +187,7 @@ function renderRoster(): void {
 function slotDetail(it: SheetItem, tile: HTMLElement): void {
   hideItemTip();
   const item = it as Item;
-  const p = popover(tile, [tipNode(item), button({ label: "Open in Inventory", size: "sm", icon: "inventory", onClick: () => showItem(item) })], { label: item.name, width: 280 });
+  const p = popover(tile, [tipNode(item), button({ label: "Open in Inventory", size: "sm", icon: "inventory", onClick: () => showItem(item) })], { label: item.name, width: item.graphic != null ? 320 : 280 });   // 40 px more for the title's icon, as #tip
   p.root.classList.add("item-pop", "tipcard-host");
   p.root.setAttribute("data-theme", "default");
   p.root.setAttribute("data-mode", "dark");

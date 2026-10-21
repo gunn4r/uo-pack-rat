@@ -777,6 +777,18 @@ test("[fast] fold: a character keeps its look from the newest scan that has one,
   assert.deepEqual(foldSnapshots([at("2026-09-13T00:00:00Z", look), at("2026-09-13T01:00:00Z", bald)]).characters.Kestrel!.appearance, bald);
 });
 
+test("[fast] fold: a scan taken in a form keeps the newest look the figure draws and marks the character in a form (issue #57)", () => {
+  const look = { body: 401, hue: 0x83EA, hair: { graphic: 0x203C, hue: 0x044E }, beard: null, face: null };
+  const beast = { body: 746, hue: 0, hair: null, beard: null, face: null }, wraith = { body: 747, hue: 0, hair: null, beard: null, face: null };
+  const at = (scannedAt: string, appearance?: ScanV2["appearance"]): ScanV2 => ({ ...kestrel, scannedAt, ...(appearance ? { appearance } : {}) });
+  const fold = (...scans: ScanV2[]) => { const c = foldSnapshots(scans).characters.Kestrel!; return [c.appearance, c.inForm ?? false]; };
+  assert.deepEqual(fold(at("2026-09-13T00:00:00Z", look), at("2026-09-13T01:00:00Z", beast)), [look, true], "the real look stays, marked in a form");
+  assert.deepEqual(fold(at("2026-09-13T00:00:00Z", look), at("2026-09-13T01:00:00Z", beast), at("2026-09-13T02:00:00Z")), [look, true], "a scan without a look keeps the mark");
+  assert.deepEqual(fold(at("2026-09-13T00:00:00Z", look), at("2026-09-13T01:00:00Z", beast), at("2026-09-13T02:00:00Z", look)), [look, false], "a scan out of form clears it");
+  assert.deepEqual(fold(at("2026-09-13T00:00:00Z", beast), at("2026-09-13T01:00:00Z", wraith)), [wraith, true], "with no drawable look, the newest form's");
+  assert.equal("inForm" in foldSnapshots([at("2026-09-13T00:00:00Z", look)]).characters.Kestrel!, false, "only set when true");
+});
+
 test("[fast] bagLabel prefers the engraving", () => {
   assert.equal(bagLabel({ serial: 1, name: "Bag", tooltip: ["Bag", "Engraved: DEXXER armor"] }), "DEXXER armor");
   assert.equal(bagLabel({ serial: 1, name: "Metal Chest", tooltip: ["Metal Chest"] }), "Metal Chest");

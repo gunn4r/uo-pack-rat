@@ -6,9 +6,9 @@ import { createHash } from "node:crypto";
 import { closeSync, fstatSync, openSync, readFileSync, readSync, existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { badPathShape } from "../installer.mts";
-import { uoFolderFromTazuo, loadTileData, type TileData } from "../tiledata.mts";
+import { FLAG, uoFolderFromTazuo, loadTileData, type TileData } from "../tiledata.mts";
 import { decodeFacet, type FacetBitmap } from "../facet-map.mts";
-import { decodeStatic, gumpArtName, hex555, hueOf, itemArtName, readHues, readUopEntry, readUopTable, toRgba, uopIndex, type Hues, type ReadAt, type StaticArt, type UopTable } from "../art.mts";
+import { decodeStatic, gumpArtName, hex555, hueFor, hueOf, itemArtName, readHues, readUopEntry, readUopTable, toRgba, uopIndex, type Hues, type ReadAt, type StaticArt, type UopTable } from "../art.mts";
 import { createPaperdoll, figureBox, grayRgba, gumpSource, readEquipConv, readGumpDef } from "../paperdoll.mts";
 import type { Look, Worn } from "../paperdoll-look.mts";
 import { CREATION_LABELS, creationOptions } from "../paperdoll-creation.mts";
@@ -87,7 +87,7 @@ export function createHousesService({ settings, uoFolderFinder }: { settings: ()
     facetPngBytes += out.length;
     return out;
   }
-  // Item art (issue #174): the UO folder's artLegacyMUL.uop table (its table blocks only, never the payload) and hues.mul, each read once while the file stays the same, and an entry read only when its graphic is asked for. A table that does not read is tried again after 30 s (a passing read error), sooner when the file changes. The PNGs are kept by file stamps, graphic and hue up to 4 MB in all (the paperdoll's figures with them), the least recently used dropped first, and never written to disk. `etag` names the files' stamps, graphic and hue (hashed, so never the path). A hue the hues.mul does not have, or with no hues.mul, draws the art unhued. `reason` as for the facet: no folder, the art file missing or not a UOP table, or no art for that graphic.
+  // Item art (issue #174): the UO folder's artLegacyMUL.uop table (its table blocks only, never the payload) and hues.mul, each read once while the file stays the same, and an entry read only when its graphic is asked for. A table that does not read is tried again after 30 s (a passing read error), sooner when the file changes. The PNGs are kept by file stamps, graphic and hue up to 4 MB in all (the paperdoll's figures with them), the least recently used dropped first, and never written to disk. `etag` names the files' stamps, graphic and hue (hashed, so never the path). A hue the hues.mul does not have, or with no hues.mul, draws the art unhued. A hue is partial (only grey pixels take it) when its number carries 0x8000 or the graphic's tiledata.mul entry has the partial-hue flag, the paperdoll's rule (issue #504): scans never record the 0x8000 bit, so the flag is what keeps a hued cleaver's handle its own colour. The partial switch is part of the key, so a changed tiledata.mul draws and names a new PNG. `reason` as for the facet: no folder, the art file missing or not a UOP table, or no art for that graphic.
   let artMemo: { key: string; table: UopTable | null; at: number } | null = null, hueMemo: { key: string; hues: Hues | null } | null = null;
   const artPngs = new Map<string, Buffer>();
   let artPngBytes = 0;
@@ -99,7 +99,8 @@ export function createHousesService({ settings, uoFolderFinder }: { settings: ()
     const artPath = join(at.folder, "artLegacyMUL.uop"), artKey = stamp(artPath);
     if (!artKey) return { reason: "missing" };
     const huesPath = join(at.folder, "hues.mul"), huesKey = hue & 0x3fff ? stamp(huesPath) : null;
-    const key = `${artKey}|${huesKey ?? ""}|${graphic}|${hue}`, etag = `"${createHash("sha1").update(key).digest("hex").slice(0, 20)}"`;
+    const partial = huesKey !== null && ((hue & 0x8000) !== 0 || ((loadTileData(join(at.folder, "tiledata.mul"))?.info(graphic)?.flags ?? 0n) & FLAG.partialHue) !== 0n);
+    const key = `${artKey}|${huesKey ?? ""}|${graphic}|${hue}|${partial ? "p" : "f"}`, etag = `"${createHash("sha1").update(key).digest("hex").slice(0, 20)}"`;
     const hit = kept(key);
     if (hit) return { png: hit, etag };
     let fd: number;
@@ -111,7 +112,7 @@ export function createHousesService({ settings, uoFolderFinder }: { settings: ()
       let art: StaticArt | null;
       try { const raw = readUopEntry(artMemo.table, itemArtName(graphic), read); art = raw && decodeStatic(raw); } catch { art = null; }
       if (!art) return { reason: "no-art" };
-      const hues = huesKey ? huesAt(huesPath) : null, img = toRgba(art, hues ? hueOf(hues, hue) : null);
+      const hues = huesKey ? huesAt(huesPath) : null, img = toRgba(art, hues ? hueFor(hues, hue & 0x3fff, partial) : null);
       if (!img) return { reason: "no-art" };
       const png = encodePngRgba(img.width, img.height, img.rgba);
       keep(key, png);

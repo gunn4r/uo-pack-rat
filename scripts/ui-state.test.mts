@@ -354,8 +354,8 @@ test("[slow] a character's sheet opens from the roster, and a character can be f
     await page.getByRole("button", { name: `Next character: ${other}` }).click();
     await page.waitForSelector(`#tab-characters .sheet[data-character="${other}"]`);
     // a worn piece in the gear list shows that piece's tooltip lines
-    const tile = page.locator("#tab-characters .sheet button.gear-piece").first();
-    const piece = await tile.locator(".nm").innerText();
+    const tile = page.locator("#tab-characters .sheet button.gi").first();
+    const piece = await tile.locator(".gi-name").innerText();
     await tile.click();
     assert.ok((await page.locator(".pop.item-pop").innerText()).includes(piece), `the slot popover names ${piece}`);
     await page.keyboard.press("Escape");
@@ -389,9 +389,9 @@ test("[slow] a character's sheet opens from the roster, and a character can be f
     assert.equal(await page.locator("#f-text").inputValue(), "");
     // A worn piece's popover opens it in the Inventory's item peek.
     await page.evaluate((n) => { location.hash = `#/characters/${encodeURIComponent(n)}`; }, other);
-    const slot = page.locator("#tab-characters .sheet button.gear-piece").first();
+    const slot = page.locator("#tab-characters .sheet button.gi").first();
     await slot.waitFor({ timeout: 10_000 });
-    const worn = await slot.locator(".nm").innerText();
+    const worn = await slot.locator(".gi-name").innerText();
     await slot.click();
     await page.locator(".pop.item-pop").getByRole("button", { name: "Open in Inventory" }).click();
     await page.waitForSelector("#inv-peek:not([hidden])", { timeout: 10_000 });
@@ -508,9 +508,9 @@ test("[slow] a worn piece low on durability is badged on the sheet and beside it
     await page.evaluate(() => { location.hash = "#/characters/Dorran"; });
     await page.waitForSelector('#tab-characters .sheet[data-character="Dorran"]', { timeout: 10_000 });
     // the tag is drawn in capitals; its text is the words
-    const badges = page.locator("#tab-characters .sheet .gear-piece .tag.warn", { hasText: /durability/i });
+    const badges = page.locator("#tab-characters .sheet .gi .tag.warn", { hasText: /durability/i });
     assert.deepEqual(await badges.allTextContents(), ["Low durability 12/150"]);
-    const tile = page.locator('#tab-characters .gear-piece[data-serial="1879834625"]');
+    const tile = page.locator('#tab-characters .gi[data-serial="1879834625"]');
     assert.equal(await tile.locator(".tag.warn", { hasText: /durability/i }).textContent(), "Low durability 12/150", "the tag is on the low piece's own row");
     const [tb, bb] = [await tile.locator("xpath=ancestor::td").boundingBox(), await tile.locator(".tag.warn", { hasText: /durability/i }).boundingBox()];
     assert.ok(tb && bb && bb.x >= tb.x && bb.x + bb.width <= tb.x + tb.width + 0.5, `the tag fits inside its row (cell ${JSON.stringify(tb)}, tag ${JSON.stringify(bb)})`);

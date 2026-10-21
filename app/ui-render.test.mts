@@ -316,7 +316,7 @@ test("[fast] sheetNode: a worn piece's name takes its rarity's color token, and 
   withCharacter("Kestrel", {});
   const art = { serial: 1, name: "Orc Helm", slot: "helmet", props: {}, rarity: "Major Artifact" }, odd = { serial: 2, name: "Odd Ring", slot: "ring", props: {}, rarity: "Shiny" };
   const node = sheetNode("Kestrel", { helmet: art, ring: odd } as never, null) as unknown as Node;
-  const names = elements(node).filter((e) => e.className === "nm");
+  const names = elements(node).filter((e) => e.className === "gi-name");
   assert.deepEqual(names.map((e) => [e.textContent, e.style.color ?? null]), [["Orc Helm", "var(--rarity-major-artifact)"], ["Odd Ring", null]]);
 });
 

@@ -16,6 +16,7 @@
 import { isPseudoCharacter, parseStamp } from "./scan-schema.mts";
 import { houseGroups, latestHouses } from "./house-capture.mts";
 import type { Inventory } from "./vault-lib.mts";
+import { drawsBody } from "./paperdoll-look.mts";
 import type { ScanV2 } from "./schema/types.d.mts";
 import type { Retention } from "./api/setup.mts";
 
@@ -67,7 +68,8 @@ export function scansToPrune(scans: ScanFile[], fold: (s: ScanV2[]) => Inventory
   for (const s of scans) {
     if (stamp(s) >= cutoff || isPseudoCharacter(s.doc.character)) keep.add(s.file);
     for (const root of s.doc.roots || []) if (root.opened !== false) claim(`${+root.serial}`, s);
-    if (s.doc.appearance) claim(`look:${s.doc.character}`, s);   // the fold keeps a character's look from its newest scan that has one
+    // The fold keeps a character's look from its newest scan with one the figure draws, and says whether the newest look was a form's.
+    if (s.doc.appearance) { claim(`look:${s.doc.character}`, s); if (drawsBody(s.doc.appearance.body)) claim(`drawn-look:${s.doc.character}`, s); }
   }
   for (const s of newest.values()) keep.add(s.file);
   let folded: Inventory | undefined;

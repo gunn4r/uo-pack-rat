@@ -155,6 +155,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `app/tiledata.test.mts` — `app/tiledata.mts` (issue #10): reading a 7.x tiledata.mul, classifying a tile the way the house map draws it, and finding the file.
 - `app/ui-characters.test.mts` — the Characters screen's pure logic (`app/ui/sheet.mts`'s formatters, `app/ui/roster.mts`).
 - `app/ui-components.test.mts` — `app/ui/components.mts`'s builders on a fake DOM just big enough for them.
+- `app/ui-gear-item.test.mts` — `app/ui/gear-item.mts`'s `gearItem` on a fake DOM, and the tooltip title's icon.
 - `app/ui-inventory.test.mts` — `app/ui/inv-model.mts`, the Inventory screen's pure rules.
 - `app/ui-item-tip.test.mts` — `app/ui/item-tip.mts`, where the item tooltip gets its item (issue #10).
 - `app/ui-map.test.mts` — `app/ui/house-map-model.mts`, the House map's pure rules (issues #10 and #164).
