@@ -4,7 +4,7 @@
 
 Entries not yet released are in `changelog.d/`, one file per pull request (`CONTRIBUTING.md`, Changelog). `node scripts/changelog.mts --release <version>` moves them here.
 
-<!-- released-sha256: e6a90374e0f0695f6c3df1c25e68e2c272d759cbc4b03e7c5aeb5cc2a746ba85 (written by node scripts/changelog.mts) -->
+<!-- released-sha256: d94788b17dd95203f8823b1e7aa6315b96dc9c96eaf858588688f41eab894061 (written by node scripts/changelog.mts) -->
 
 ## 0.3.0 — 2026-10-21
 
@@ -34,7 +34,7 @@ Pack Rat now draws your characters and your gear the way the game does.
 
 Reinstall the game scripts from Settings after updating (TazUO 2.22.0). Your scans then record your character's look, which the paperdoll needs. Razor Enhanced and the web client are unchanged.
 
-<details><summary>All changes (44)</summary>
+<details><summary>All changes (45)</summary>
 
 - **The Suit Builder shows each piece's icon and rarity color** (issues #504, #503): the Plan's Wear instead column (now semibold), the Fetch list (now a row of chips) and Compare's pieces show each piece's in-game icon beside its name in its rarity's color, and the Plan's Wearing now column and Other suits color their names too. Britannia's light "differs" fill is a shade paler so every rarity color reads on it.
 - **Quantities read "Pearl ×1,500"** (issue #504): a gear item's quantity has a space before it and a thousands separator.
@@ -50,6 +50,7 @@ Reinstall the game scripts from Settings after updating (TazUO 2.22.0). Your sca
 - **The Stack plan lists what a matching container holds** (issue #504): a matching row names its first three finds, one per line in their rarity's colors, then "+N more", and a screen reader hears the whole list.
 - **Two tiers of one item are listed apart on the House map** (issue #504): the Stack plan, the callouts and the search panel give each tier of a name its own line, in its own rarity color and read out with its tier by a screen reader, instead of counting them together under the first one's color. The callouts and the search panel say "and 3 more", not "and 3 mores".
 - **Unravel shows each piece's icon** (issues #504, #503): every candidate in the Unravel view shows its in-game icon beside its name in its rarity's color, and the Scrolls detail names its scrolls with the same shared element.
+- The README and user guide screenshots no longer show the demo character Dorran holding a spellbook beside a two-handed staff, which the game does not allow.
 - The README and the user guide describe this release: item icons and rarity colors, the Inventory's Location, Type and property-rule filters, the paperdoll on the character sheet and in the Suit Builder, Manual's live preview and Only what Auto would use. Every screenshot is new, with three more for the property rule, an Organize rule and Manual.
 - The Organize rule and Suit Builder screenshots in the README and user guide show gear named in sentences in its rarity color.
 - **Only what Auto would use**: the Suit Builder's Manual picker has a switch that lists only the pieces the Automatic build would pick from with its current pool settings (containers, gargoyle and meditation rules, forbidden skill bonuses, weapon types, strength, tags, locked slots).
@@ -85,7 +86,7 @@ Reinstall the game scripts from Settings after updating (TazUO 2.22.0). Your sca
 
 ### For contributors
 
-<details><summary>Contributor notes (43)</summary>
+<details><summary>Contributor notes (44)</summary>
 
 - A gear item records a missing serial only when the server answered, and, when the inventory reloads, neither draws nor caches an answer still on its way but asks again (issue #504). The item art tests share one PNG decoder, `pngPixels` in `app/art-fixture.mts`, and `resolveItems` takes an optional `answered` set and `current` check. The contrast test's compare scenes must measure a rarity-colored name on a "differs" cell.
 - `GET /api/missing` items carry `graphic`, `hue`, `rarity` and `lines` (the tooltip) from the last scan that saw them; `missingSinceLastScan` takes a `rarityOf` reader (the server passes the tooltip parser), so the module itself still reads no shard rules.
@@ -93,6 +94,7 @@ Reinstall the game scripts from Settings after updating (TazUO 2.22.0). Your sca
 - **`gearItem` in `app/ui/gear-item.mts` is the one element that names a piece of gear** (issue #504): icon, rarity color, quantity, quality tags, the item tooltip and an optional open action, in row, inline, chip and card variants, filling a partial record's graphic, hue and rarity from the item cache or one batched lookup. `artTile` gains `keepBox`.
 - `gearText(text, pieces)` (`app/ui/gear-item.mts`) draws a sentence with each named piece as an inline gear item. `POST /api/organize/match`'s `sample` and `POST /api/move/plan`'s `wornPieces` (was `wornNames`) are pieces (`NamedPiece`: serial, name, look). The runtime gear-name check in `scripts/ui-contrast.test.mts` now also flags a gear name inside a longer text, except a name that is also a slot's label.
 - `GET /api/organize/plan`'s moves and carried items carry each piece's `graphic`, `hue` and `rarity` from the inventory record (issues #504, #503), and a failed step takes its move's, so Organize draws its gear items with no item lookup and the carried message is not announced twice.
+- `demo-Dorran.json` keeps the Spellbook he used to wear in his Metal Chest, and `npm run readme:shots` seeds Dorran with Fencing and Kestrel with Mace Fighting for the weapons they wear, and scrolls the Organize rule drawer to its top before its shot.
 - `npm run readme:shots` builds the page before it captures, gives the demo characters a few skills, and links the client's facet maps (read only) so the House map shows its world-map thumbnail.
 - The demo characters carry a look (a fictional human body, skin, hair and beard, with real game ids), so the paperdoll draws them. `npm run readme:shots` takes `PACKRAT_SHOTS_UO=<UO folder>` to draw item icons and paperdolls from a real 7.x client at capture time; without it the shots still run without the art. `scripts/no-game-art.test.mts` fails if a client file (`.mul`, `.uop`, `.idx`, the client's `.def` tables), an art cache or an image outside `docs/images/` and the app's icons is in the git index.
 - `GET /api/items` takes `auto={"character","settings"}` (JSON), answered from `autoCandidates` in `app/services/builds.mts` (the real `buildPools`); `filter-bar.mts` gains `itemsSourceWith(extra)` for parameters the filters don't hold.
