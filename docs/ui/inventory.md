@@ -178,25 +178,25 @@ Every screen writes its ui-prefs fields through `ui/prefs.mts`'s `prefs.set(patc
 
 ## Item peek
 
-`ui/peek.mts`: a row click, Enter or Space opens the selected item in a panel docked beside the table (400 px, 360 below 1280, laid over the table below 1180).
+`ui/peek.mts`: a row click, Enter or Space opens the selected item in a panel docked beside the table (400 px, 360 below 1280, laid over the table below 1180). Its title is a `gearItem` (a 32 px icon, the whole name wrapped).
 
-While it is open, ↑/↓ step through rows with the peek following, and Esc closes it (focus goes back to the row). Both work from the table, the panel or the bare page: a click on the panel's text leaves focus on `<body>`, so the keys are heard on the document. A field being typed in, a popover, a dialog or a drawer keeps its own keys.
+While it is open, ↑/↓ step through rows with the peek following, and Esc closes it (focus back on the row). Both work from the table, the panel or the bare page (a click on its text leaves focus on `<body>`, so the keys are heard on the document); a field, popover, dialog or drawer keeps its own keys.
 
-Its tag chips carry the shard's meaning for each tag (the rules' `tagInfo`, `dom.mts`'s `tagChip`) as a tooltip on hover and focus. Its footer's Highlight, Grab and Go to are gated like the row actions.
+Its tag chips show the shard's meaning of each tag (the rules' `tagInfo`, `dom.mts`'s `tagChip`) on hover and focus; its footer's Highlight, Grab and Go to are gated like the row actions.
 
 ## Item tooltip
 
-The item tooltip is `dom.mts`'s `tipNode`, `installTooltip`, `showItemTip` and `itemTip` (issue #10): the one `#tip`, always dark, 280 px. It shows 400 ms after the pointer settles on anything with `data-serial`, or after an item has had keyboard focus for 400 ms (with `aria-describedby="tip"` on it while open). It is `pointer-events: none`, placed inside the window.
+The item tooltip is `dom.mts`'s `tipNode`, `installTooltip`, `showItemTip` and `itemTip` (issue #10): the one `#tip`, always dark, 280 px (320 with an icon). It shows 400 ms after the pointer settles on anything with `data-serial`, or after an item has had keyboard focus for 400 ms (with `aria-describedby="tip"` on it while open). It is `pointer-events: none`, placed inside the window.
 
 ### Wiring an item
 
-Wherever the page draws an item it wires it with `itemTip(node, item, {focus})`. That sets `data-serial`, registers the record drawn and, unless `focus` is false, makes the node focusable and shows the tooltip on keyboard focus.
+Wherever the page draws an item it wires it with `itemTip(node, item, {focus})`: it sets `data-serial`, registers the record and, unless `focus` is false, makes the node focusable for a keyboard tooltip.
 
 `ui/item-tip.mts` resolves what to show:
 
 - the registered record, when it carries its tooltip lines;
 - else `state.itemCache`;
-- else one `GET /api/items/by-serial`. A serial the server says it does not know is asked for once per inventory, and a partial record, if registered, is shown instead. A lookup that failed on the network is asked again on the next hover.
+- else one `GET /api/items/by-serial`. A serial the server does not know is asked once per inventory (a registered partial record shows instead); a lookup that failed on the network is asked again on the next hover.
 
 Wired today:
 

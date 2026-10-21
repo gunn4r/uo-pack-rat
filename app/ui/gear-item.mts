@@ -23,8 +23,10 @@ export interface GearItemOptions {
   showTags?: boolean | undefined;
   // A button: pressed (a click, Enter or Space), it calls `onOpen`, which shows the item's detail.
   onOpen?: ((item: GearItemSource, node: HTMLElement) => void) | undefined;
-  // false: no item tooltip of its own, for an element inside a host that already shows it (a table row).
+  // false: no item tooltip at all: no data-serial, nothing registered, so a host around it (a table row) that shows the tooltip still answers for it.
   tip?: boolean | undefined;
+  // false: no empty box when there is no art (a title, where the box would only indent the name).
+  keepBox?: boolean | undefined;
   // Elements after the name and tags (a "New" badge, a low-durability tag).
   after?: Array<HTMLElement | null> | undefined;
   // A card's first words before the name (its slot), and its second line.
@@ -85,7 +87,7 @@ function parts(node: HTMLElement, it: GearItemSource, o: GearItemOptions, size: 
   if (token) name.style.color = `var(${token})`;
   const qty = (it.amount || 1) > 1 ? txt(` ×${amountText(it.amount!)}`, "gi-qty") : null;
   const tags = o.showTags ? (it.tags || []).filter((t) => QUALITY_TAGS.has(t)).map((t) => tagChip(t)) : [];
-  const icon = o.showIcon === false ? null : artTile(it.graphic, { size, hue: it.hue ?? 0, keepBox: true });
+  const icon = o.showIcon === false ? null : artTile(it.graphic, { size, hue: it.hue ?? 0, keepBox: o.keepBox !== false });
   const tail = [qty, ...tags, ...(o.after || [])].filter((x): x is HTMLElement => !!x);
   // A button is named by the piece alone; its tags and badges describe it.
   if (o.onOpen) {
@@ -108,7 +110,6 @@ export function gearItem(item: GearItemSource, o: GearItemOptions = {}): HTMLEle
   node.append(...parts(node, it, o, size));
   if (o.onOpen) node.addEventListener("click", () => o.onOpen!(it, node));
   if (o.tip !== false) itemTip(node, it);
-  else node.dataset.serial = String(it.serial);
   const lacking = (o.showIcon !== false && !has(it, "graphic")) || !has(it, "rarity") || (o.showTags && !it.tags);
   if (lacking && !state.itemCache.has(it.serial)) whenKnown(it.serial, () => { it = filled(item); node.replaceChildren(...parts(node, it, o, size)); if (o.tip !== false) itemTip(node, it, { focus: false }); });
   return node;

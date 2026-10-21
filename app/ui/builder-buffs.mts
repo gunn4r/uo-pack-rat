@@ -10,7 +10,8 @@
 import { BUFFS, BUFF_GROUPS, BUFF_INPUTS, EXCLUSIVE, buffById, buffContext, buffNeeds, buffText, capWord, signed, signedPct } from "../buffs.mts";
 import type { Buff, BuffResult, BuffWho, Skills, Stats } from "../buffs.mts";
 import type { PropMap } from "../vault-lib.mts";
-import { el, label } from "./dom.mts";
+import { el } from "./dom.mts";
+import { propName } from "../vault-lib.mts";
 import { box, txt, button, icon, filterChip, token, badge, tag, message, searchInput, switchControl } from "./components.mts";
 import { textHit } from "./format.mts";
 
@@ -142,10 +143,10 @@ function row(b: Buff, v: BuffView, a: PickerActions, id: Ids): HTMLElement {
   const needs = buffNeeds(b, v.values, v.who);
   if (needs && b.race && !on) cb.disabled = true;   // another race's passive: nothing to turn on (one already on can go off)
   const unsure = v.all.unsure.filter((x) => x.id === b.id).map((x) =>
-    `${label(x.key)}: the larger of this and ${nameOf(x.with)}'s ${signed(v.all.shares[x.key]?.find((s) => s.id === x.with)?.value ?? 0)} counts, depending on base ${label(x.key)}`);
+    `${propName(x.key)}: the larger of this and ${nameOf(x.with)}'s ${signed(v.all.shares[x.key]?.find((s) => s.id === x.with)?.value ?? 0)} counts, depending on base ${propName(x.key)}`);
   const beaten = v.all.beaten.filter((x) => x.id === b.id).map((x) => {
     const won = v.all.shares[x.key]?.find((s) => s.id === x.by);
-    return `${label(x.key)}: ${nameOf(x.by)}'s ${won?.pct != null ? signedPct(won.pct) : signed(won?.value ?? 0)} counts instead`;
+    return `${propName(x.key)}: ${nameOf(x.by)}'s ${won?.pct != null ? signedPct(won.pct) : signed(won?.value ?? 0)} counts instead`;
   });
   const note = off ? `Turned off: ${nameOf(v.replaced!.on)} is your form now` : b.note;
   return el("label", { class: `bf-item${off ? " bf-off" : ""}` }, cb, box("span", { class: "bf-item-text" },

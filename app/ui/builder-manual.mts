@@ -25,7 +25,7 @@ import { prefs } from "./prefs.mts";
 import { setCharacterBuffs } from "./profiles.mts";
 import { resolveItems, rarityToken } from "./items.mts";
 import { fetchCard, followJob, grabAllButton, keyProps, progressText, verdict, RESIST_NAMES } from "./builder-parts.mts";
-import { capNote, fcCapSource, knobError, paperdollCaps, who, type KnobField } from "./builder-model.mts";
+import { capNote, propName, fcCapSource, knobError, paperdollCaps, who, type KnobField } from "./builder-model.mts";
 import { session, commands, provide, onChange, readControls, type BuffInputs, type BuilderMode } from "./builder-session.mts";
 import { optimizeErrorMessage } from "./messages.mts";
 import { itemActions } from "./item-parts.mts";
@@ -332,12 +332,13 @@ function totalsCard(): HTMLElement {
   const name = manualCharacter(), prof = profile(), resists = profileResistCaps(prof), base = paperdollCaps(resists, prof.caps.fc);
   const suit = suitOpt(), ev = evaluated(), r = ev.buffs, t = ev.effectiveTotals, caps = ev.caps;
   // One compact row: each total as "value / cap", in the ok tone at its cap, with "+N" (warn) for what is wasted past
-  // it; the line a fuller tile would show ("23 to cap") is its tooltip and, for a screen reader, part of its text.
+  // it; the property's full name and the line a fuller tile would show ("Lower Mana Cost: 23 to cap") are its tooltip, the
+  // line also part of a screen reader's text after the short head.
   // Under a total the buffs touch, their marker line; a cap they raised is underlined.
   const cell = (k: string, cap: number | undefined, head: HTMLElement, note: string | null, sep: boolean): HTMLElement => {
     const v = t[k] || 0, { shown, wasted } = capped(v, cap), line = `${capLine(v, cap).text}${note ? `, cap ${note}` : ""}`;
     const raised = cap != null && cap !== base[k];
-    return box("div", { class: `mb-total${sep ? " mb-sep" : ""}`, "data-key": k, title: line }, head,
+    return box("div", { class: `mb-total${sep ? " mb-sep" : ""}`, "data-key": k, title: `${propName(k)}: ${line}` }, head,
       box("span", { class: "mb-total-v" }, txt(shown, `strong${cap != null && v >= cap ? " tone-ok" : ""}`),
         cap == null ? null : raised ? el("span", { class: "muted" }, "/ ", el("span", { class: "bf-capup" }, String(cap))) : txt(`/ ${cap}`, note ? "strong b-cap-note" : "muted"),
         wasted ? txt(`+${wasted}`, "t-sm tone-warn") : null, el("span", { class: "sr" }, `: ${line}`)),
@@ -372,7 +373,7 @@ function statsCard(): HTMLElement {
   const added = Object.fromEntries(Object.keys(r.shares).filter((k) => !RESIST_KEYS.includes(k)).map((k) => [k, (r.totals[k] || 0) - (t[k] || 0)]));
   const counted = countBuffs && buffs.length;
   const { lists, props } = sheetParts(name, worn, suit, { compare: false, statsOnly: true, ...(counted ? { buffs: added, caps: r.caps } : {}) });
-  const past = Object.keys(r.outside).filter((k) => !STRIP_KEYS.includes(k)).flatMap((k) => (r.shares[k] || []).filter((x) => x.outside).map((x) => `${label(k)} ${signed(x.value)} (${buffById(x.id)!.name})`));
+  const past = Object.keys(r.outside).filter((k) => !STRIP_KEYS.includes(k)).flatMap((k) => (r.shares[k] || []).filter((x) => x.outside).map((x) => `${propName(k)} ${signed(x.value)} (${buffById(x.id)!.name})`));
   // The resists are the totals strip's; the attributes and pools (the character's own, so none with no character) are not.
   return box("div", { class: "sheet mb-stats", id: "mb-stats", role: "group", "aria-label": name ? `${name} in this suit` : "This suit's item totals" },
     name ? box("div", { class: "mb-kpis" }, ...lists) : null,
@@ -608,7 +609,7 @@ async function landFill(f: Fill, res: OptimizeResult): Promise<void> {
   }
   const n = Object.keys(next).length - Object.keys(slots).length;
   const gear = Object.fromEntries(GEAR_SLOTS.flatMap((s) => (next[s] != null && items[next[s]!] ? [[s, toOptItem(items[next[s]!]!)]] : [])));
-  const short = requirementReport(totalsOf(gear), f.prof).filter((r) => r.met === false).map((r) => label(r.key));
+  const short = requirementReport(totalsOf(gear), f.prof).filter((r) => r.met === false).map((r) => propName(r.key));
   // the requirements still missed, else how sure the search is (a proof here is about the empty slots only)
   const v = res.method === "exact" && res.proven ? "best for the empty slots" : verdict(res).text.toLowerCase();
   const text = [n ? `Filled ${plural(n, "slot")}` : "Nothing filled: no piece in the pool improves the suit", short.length ? `short of ${short.join(", ")}` : v].filter(Boolean).join(" · ");
