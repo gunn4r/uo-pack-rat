@@ -337,7 +337,9 @@
 .mb-slot-line > .caps { flex: none; }
 .mb-slot-line > .mb-name, .mb-slot-line > .mb-choose { flex: 1 1 auto; min-width: 0; }
 .mb-slot-pick .ellip { display: block; }
-.mb-name { font-weight: var(--weight-medium); }
+.mb-name, .mb-slot-pick .gi-name { font-weight: var(--weight-medium); }
+/* a piece's card: its first line leaves room for Clear, over the card's top-right corner */
+.mb-slot-pick .gi-card-line { padding-right: var(--control-sm); }
 .mb-choose { display: flex; align-items: center; gap: var(--space-1-5); color: var(--color-text-muted); }
 .mb-slot.mb-sel .mb-choose { color: var(--color-accent); }
 /* the character's attributes and pools in this suit (sheet.mts's lists; the resists are the totals strip's) */

@@ -29,6 +29,7 @@ import { openRuleEditor } from "./rule-editor.mts";
 import { createFilterBar, itemsSource, type ItemSource } from "./filter-bar.mts";
 import { showItemTip, hideItemTip } from "./dom.mts";
 import { filterContext, tagEls, rarityEl, locationEl } from "./item-parts.mts";
+import { gearItem } from "./gear-item.mts";
 import { retryLoad } from "./inventory-data.mts";
 import { BREAKPOINTS, upTo } from "./breakpoints.mts";
 import { plural, textHit } from "./format.mts";
@@ -147,7 +148,7 @@ const SEL = "__sel";       // the checkbox column's
 function cell(col: ColDef, it: Item): HTMLTableCellElement {
   const td = el("td", col.num ? { class: "num" } : {});
   switch (col.key) {
-    case "name": td.append(box("span", { class: "inv-name" }, txt(it.name, "ellip"), (it.amount || 1) > 1 ? txt(`×${it.amount.toLocaleString("en-US")}`, "t-sm muted") : null)); break;
+    case "name": td.append(gearItem(it, { tip: false, cls: "inv-name" })); break;   // the row is its tooltip host
     case "tags": if (it.tags.length) td.append(box("span", { class: "inv-tags" }, ...tagEls(it))); break;
     case "rarity": { const r = rarityEl(it.rarity); if (r) td.append(r); break; }
     case "slot": if (it.slot) td.append(txt(slotLabel(it.slot))); break;

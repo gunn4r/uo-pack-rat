@@ -4,15 +4,23 @@
 //   npm run readme:shots -- house   only the images whose name starts with one of the words given
 //
 // It seeds a throwaway data folder (the demo scans, Kestrel at Imbuing 70, and the synthetic vault house of
-// app/house-fixture.mts), starts the server on it with a game-client search home of its own, so nothing on this
+// app/house-fixture.mts), starts the server on it with a game-client search home of its own, so nothing else on this
 // computer is read, and drives the page with Playwright: Chromium when `npx playwright install chromium` has been
 // run, else the installed Chrome. Stills are 1280 × 800 at 2x; GIFs are recorded at 1280 × 800 and turned into
 // 15 fps, 960 px wide GIFs by ffmpeg (skipped, saying so, when ffmpeg is not on the PATH). Never the Electron app.
 //
+// Item icons and the paperdoll are drawn from a real 7.x client's files, which never enter the repo:
+//   PACKRAT_SHOTS_UO=<UO folder> npm run readme:shots
+// points the seeded client at that folder, read at capture time (the server keeps what it decodes in memory only). The
+// House map's shots keep the vault's synthetic tiledata.mul, with the folder's art files linked beside it. Without the
+// variable the shots still run: the icon boxes stay empty and each paperdoll card shows the app's "couldn't find your
+// Ultima Online client files" note (the stand-in figure is drawn from the client's art too). Only the PNGs and GIFs
+// written to docs/images/ are ever committed (scripts/no-game-art.test.mts fails on a client file or decoded art).
+//
 // map: tooling
 // owns: the README's screenshots and GIFs
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -26,11 +34,20 @@ const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const OUT = join(ROOT, "docs", "images");
 const SIZE = { width: 1280, height: 800 };
 const only = process.argv.slice(2);
+// The real client folder (PACKRAT_SHOTS_UO), and the files the House map's folder links from it: the art and the
+// paperdoll's files, everything the server reads but tiledata.mul (app/services/houses.mts).
+const REAL_UO = process.env.PACKRAT_SHOTS_UO || null;
+const ART_FILES = ["artLegacyMUL.uop", "gumpartLegacyMUL.uop", "hues.mul", "gump.def", "Equipconv.def"];
+if (REAL_UO && !["tiledata.mul", "artLegacyMUL.uop", "gumpartLegacyMUL.uop"].every((f) => existsSync(join(REAL_UO, f)))) {
+  throw new Error(`PACKRAT_SHOTS_UO=${REAL_UO} is not a 7.x UO folder: it needs tiledata.mul, artLegacyMUL.uop and gumpartLegacyMUL.uop`);
+}
 const wanted = (name: string): boolean => only.length === 0 || only.some((w) => name.startsWith(w));
 
 // The demo scans with Kestrel at Imbuing 70 (for Unravel). With `house`, also the vault house of app/house-fixture.mts:
-// 120 chests in stacks of five, partly full, some labeled, a few holding things to find on the map.
-function seed(dir: string, house: boolean): { home: string } {
+// 120 chests in stacks of five, partly full, some labeled, a few holding things to find on the map. `map`: the client's
+// UO folder is the vault's synthetic tiledata.mul (the House map's shots), with the real folder's art linked beside it;
+// otherwise it is the real folder itself when there is one, whose tiledata the paperdoll's worn pieces need.
+function seed(dir: string, house: boolean, map: boolean): { home: string } {
   mkdirSync(join(dir, "scans"), { recursive: true });
   for (const name of ["Dorran", "Kestrel"]) {
     const scan = JSON.parse(readFileSync(join(ROOT, "app", "fixtures", `demo-${name}.json`), "utf8")) as { skills: Record<string, unknown> };
@@ -40,6 +57,8 @@ function seed(dir: string, house: boolean): { home: string } {
   const home = join(dir, "home"), client = join(dir, "client"), scripts = join(client, "TazUO", "LegionScripts"), uo = join(client, "UO");
   for (const d of [home, scripts, join(client, "Profiles", "Settings"), uo]) mkdirSync(d, { recursive: true });
   writeFileSync(join(dir, "settings.json"), JSON.stringify({ schemaVersion: 1, shard: "uoalive", setupDone: true, autoUpdateCheck: false, client: { adapter: "tazuo", scriptsDir: scripts } }));
+  const useUo = (folder: string): void => writeFileSync(join(client, "Profiles", "Settings", "p.json"), JSON.stringify({ ultimaonlinedirectory: folder }));
+  if (REAL_UO && !map) useUo(REAL_UO);
   if (!house) return { home };
   const { house: vault, chests } = vaultHouse();
   const finds = ["Katana", "Ruby", "Katana", "Black Pearl", "Ruby", "Katana", "Sapphire", "Ruby"];
@@ -52,8 +71,16 @@ function seed(dir: string, house: boolean): { home: string } {
   const labels: Record<string, unknown> = {};
   chests.forEach((c, i) => { const stack = Math.floor(i / 5); if (stack % 3 === 0) { const [name, color] = kinds[(stack / 3) % kinds.length]!; labels[c.serial] = { serial: c.serial, name, color, origin: "manual" }; } });
   writeFileSync(join(dir, "organize.json"), JSON.stringify({ version: 1, catchAll: null, pinnedItems: [], rules: [], labels }));
+  if (REAL_UO && !map) return { home };
   writeFileSync(join(uo, "tiledata.mul"), syntheticTileData(FIXTURE_TILES));
-  writeFileSync(join(client, "Profiles", "Settings", "p.json"), JSON.stringify({ ultimaonlinedirectory: uo }));
+  // A link, not a copy, so the art stays in the client folder; a copy only where links are not allowed (Windows without
+  // the right), into this throwaway folder, which is deleted at the end.
+  for (const f of REAL_UO ? ART_FILES : []) {
+    const from = join(REAL_UO!, f);
+    if (!existsSync(from)) continue;
+    try { symlinkSync(from, join(uo, f)); } catch { copyFileSync(from, join(uo, f)); }
+  }
+  useUo(uo);
   return { home };
 }
 
@@ -138,14 +165,30 @@ function report(file: string): void {
   console.log(`${file}  ${Math.round(statSync(join(OUT, file)).size / 1024)} KB`);
 }
 
-const servers: Array<{ dir: string; child: ChildProcess }> = [];
-async function serve(house: boolean): Promise<string> {
-  const dir = mkdtempSync(join(tmpdir(), "packrat-shots-"));
-  const { home } = seed(dir, house);
-  const { url, child } = await startServer(dir, home);
-  servers.push({ dir, child });
+// Each server's throwaway data folder, listed before anything is written to it, so a failed start or a Ctrl+C still
+// removes it; `child` once the server runs.
+const servers: Array<{ dir: string; child: ChildProcess | null }> = [];
+async function serve(house: boolean, map = false): Promise<string> {
+  const entry: { dir: string; child: ChildProcess | null } = { dir: mkdtempSync(join(tmpdir(), "packrat-shots-")), child: null };
+  servers.push(entry);
+  const { home } = seed(entry.dir, house, map);
+  const { url, child } = await startServer(entry.dir, home);
+  entry.child = child;
   return url;
 }
+// Stops each server, waits for it to exit (Windows keeps its files open until then), then removes its folder; a folder
+// that won't go (EBUSY) is named, not fatal.
+async function cleanup(): Promise<void> {
+  for (const { dir, child } of servers.splice(0)) {
+    if (child && child.exitCode === null && child.signalCode === null) {
+      const exited = new Promise((ok) => child.once("exit", ok));
+      child.kill();
+      await Promise.race([exited, new Promise((ok) => setTimeout(ok, 5000))]);   // sleep: at most 5 s for the server to exit
+    }
+    try { rmSync(dir, { recursive: true, force: true }); } catch (e) { console.warn(`could not remove ${dir}: ${(e as Error).message}`); }
+  }
+}
+process.once("SIGINT", () => { void cleanup().finally(() => process.exit(130)); });
 
 mkdirSync(OUT, { recursive: true });
 const browser = await launchBrowser();
@@ -171,10 +214,12 @@ try {
   await still(browser, "characters", async (page) => {
     await go(page, url, "characters/Dorran", "#tab-characters:not([hidden])");
   });
+  // The House map on its own server: the vault's synthetic tiles, the real art beside them.
+  const mapUrl = await serve(true, true);
   await still(browser, "house-map", async (page) => {
-    await go(page, url, "map", "#tab-map:not([hidden]) svg");
+    await go(page, mapUrl, "map", "#tab-map:not([hidden]) svg");
   });
-  await gif(browser, url, "house-map-search", "map", "#tab-map:not([hidden]) svg", async (page) => {
+  await gif(browser, mapUrl, "house-map-search", "map", "#tab-map:not([hidden]) svg", async (page) => {
     await pause(page, 1000);
     await typeSlowly(page, "#map-search input", "katana");
     await page.keyboard.press("Enter");
@@ -221,5 +266,5 @@ try {
   });
 } finally {
   await browser.close();
-  for (const { dir, child } of servers) { child.kill(); rmSync(dir, { recursive: true, force: true }); }
+  await cleanup();
 }

@@ -23,7 +23,8 @@ import { box, txt, button, icon, segmented, switchControl, tag, confirmDialog, m
 import { api } from "./api.mts";
 import { prefs } from "./prefs.mts";
 import { setCharacterBuffs } from "./profiles.mts";
-import { resolveItems, rarityToken } from "./items.mts";
+import { resolveItems } from "./items.mts";
+import { gearItem } from "./gear-item.mts";
 import { fetchCard, followJob, grabAllButton, keyProps, progressText, verdict, RESIST_NAMES } from "./builder-parts.mts";
 import { capNote, propName, fcCapSource, knobError, paperdollCaps, who, type KnobField } from "./builder-model.mts";
 import { session, commands, provide, onChange, readControls, type BuffInputs, type BuilderMode } from "./builder-session.mts";
@@ -398,17 +399,15 @@ function suitCard(): HTMLElement {
     box("div", { class: "mb-suit-body" }, ...MANUAL_GROUPS.map((column) => box("div", { class: "mb-suit-col" },
       ...column.map(([title, group]) => box("div", { class: "mb-group", role: "group", "aria-label": title }, txt(title, "caps muted"), box("div", { class: "mb-grid" }, ...group.map(slotCard))))))));
 }
-// A slot card, two lines: a button that opens the picker on the slot (the slot and the piece's name in its rarity's
-// color, then its key properties, with where it lives in its item tooltip; "Empty"; or "Missing" for a serial the
-// scans no longer have), and Clear.
+// A slot card: a button that opens the picker on the slot (the piece as a 32 px card `gearItem`: its icon, its name in
+// its rarity's color, then the slot and its key properties, with where it lives in its item tooltip; else two lines,
+// the slot and "Empty", or "Missing" for a serial the scans no longer have), and Clear.
 function slotCard(slot: string): HTMLElement {
   const serial = slots[slot], it = serial != null ? items[serial] : undefined, sel = pickSlot === slot, nm = slotLabel(slot);
-  let head: HTMLElement, line: HTMLElement;
+  let head: HTMLElement | null = null, line: HTMLElement;
   if (it) {
-    const token = rarityToken(it.rarity), props = keyProps(it.props);
-    head = txt(it.name, "mb-name ellip");
-    if (token) head.style.color = `var(${token})`;
-    line = txt(props || "No properties", "t-sm muted ellip");
+    // The name has the first line to itself (the cards are narrow, and the icon takes its share); the slot leads the second.
+    line = gearItem(it, { variant: "card", size: 32, sub: `${nm} · ${keyProps(it.props) || "No properties"}`, tip: false });   // the button is its tooltip host
   } else if (serial != null) {
     head = txt("Missing", "mb-name tone-warn");
     line = txt(`No longer in your scans · 0x${serial.toString(16)}`, "t-sm muted ellip");
@@ -417,7 +416,7 @@ function slotCard(slot: string): HTMLElement {
     line = txt(sel ? "Pick a piece in the list" : "Click to choose a piece", "t-sm faint ellip");
   }
   const open = box("button", { type: "button", class: "mb-slot-pick", "data-slot": slot, "aria-expanded": String(sel), "aria-controls": "mb-picker", onclick: () => openPicker(slot) },
-    box("span", { class: "mb-slot-line" }, txt(nm, "caps muted"), head), line);
+    head ? box("span", { class: "mb-slot-line" }, txt(nm, "caps muted"), head) : null, line);
   if (it) itemTip(open, it);
   const clear = serial != null ? button({ label: `Clear ${nm}`, icon: "close", iconOnly: true, variant: "ghost", size: "sm", cls: "mb-clear", onClick: () => clearSlot(slot) }) : null;
   return box("div", { class: `mb-slot${serial == null ? " mb-empty" : ""}${serial != null && !it ? " mb-missing" : ""}${sel ? " mb-sel" : ""}` }, open, clear);

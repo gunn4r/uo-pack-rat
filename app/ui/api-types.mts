@@ -93,7 +93,7 @@ export type { BridgeCurrentCommand, TripStepResult, BridgeResultEntry, BridgeAda
 export type { OrganizeConfig, ContainerLabel, OrganizeRule, RuleMatch, Origin, Build } from "../organize-config.mts";
 export type { SpellSchool } from "../vault-lib.mts";
 export type {
-  WarningKind as PlanWarningKind, PlanWarning, PlanMove, PlanTrip, RuleReport as PlanRuleReport, RoomReport as PlanRoomReport, Plan as OrganizePlan,
+  WarningKind as PlanWarningKind, PlanWarning, PlanMove, PlanTrip, PieceLook, RuleReport as PlanRuleReport, RoomReport as PlanRoomReport, Plan as OrganizePlan,
   OrganizeRunningTrip, OrganizePlanApiResponse,
   StrategyId as AutoStrategy, Candidate as ProposalCandidate, GroupReport as ProposalGroup, Layout as ProposalLayout, Proposal as OrganizeProposal, OrganizeProposeApiResponse,
 } from "../organize-types.mts";

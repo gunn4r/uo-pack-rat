@@ -112,6 +112,8 @@ Reports come first:
 - what a stopped trip left in the backpack (the first five as gear chips, then "and N more"), with Put them away;
 - a trip's failed steps, each the piece as a `gearItem` and the reason, with Pin this item.
 
+The plan's moves and carried items carry each piece's look (`graphic`, `hue`, `rarity`, organize-types.mts's `PieceLook`, set by `lookOf` from the inventory record), and a failed step takes its move's, so none of these pieces is looked up: the carried message is a `role=status` region, and a redraw after a lookup would announce it again.
+
 Then the headline: "N items to move in M trips, about K minutes", from the planner's per-trip estimate (`tripSeconds` in `app/organize.mts`). Under it are Run trip N / Run all / Stop, and the trip list: one collapsed `<details>` per trip, whose move table is built the first time it opens; its Item cell is a `gearItem` (icon, rarity color, quantity), the row its tooltip host.
 
 A client whose bridge does not declare `trip` gets the plan and a sentence instead of Run buttons. Offline or busy states disable the buttons, with their reason (`tripGate`).

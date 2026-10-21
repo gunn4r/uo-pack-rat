@@ -24,6 +24,16 @@
   "x": 1,
   "y": 1
  },
+ "appearance": {
+  "body": 401,
+  "hue": 1040,
+  "hair": {
+   "graphic": 8253,
+   "hue": 1131
+  },
+  "beard": null,
+  "face": null
+ },
  "equipped": [
   {
    "serial": 1879769093,
