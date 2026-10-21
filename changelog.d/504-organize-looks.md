@@ -1,0 +1,1 @@
+- For contributors: `GET /api/organize/plan`'s moves and carried items carry each piece's `graphic`, `hue` and `rarity` from the inventory record (issues #504, #503), and a failed step takes its move's, so Organize draws its gear items with no item lookup and the carried message is not announced twice.
