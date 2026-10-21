@@ -4,7 +4,7 @@
 
 Entries not yet released are in `changelog.d/`, one file per pull request (`CONTRIBUTING.md`, Changelog). `node scripts/changelog.mts --release <version>` moves them here.
 
-<!-- released-sha256: 83627c205c01ab3d52ee127746c707ea421a6e7e4ce00b2f04376a19b05f5ffc (written by node scripts/changelog.mts) -->
+<!-- released-sha256: e6a90374e0f0695f6c3df1c25e68e2c272d759cbc4b03e7c5aeb5cc2a746ba85 (written by node scripts/changelog.mts) -->
 
 ## 0.3.0 — 2026-10-21
 
@@ -25,7 +25,7 @@ Pack Rat now draws your characters and your gear the way the game does.
 - **Location lists your houses** with their containers, and finds a container by its Organize label.
 - **A Type filter:** shields, one- or two-handed weapons, spellbooks, armor, jewelry or clothing.
 - **Property rules take ≠.** "Faster Casting ≠ -1" keeps everything but the -1 pieces, and the rule says when items without the property get through.
-- **The Property rule lists every gear property** under the shard's full names, in clear groups, with how many of your items carry each one.
+- **The Property rule lists every gear property** under the shard's full names, in clear groups, with how many items in view carry each one.
 - **Organize rules use the same filters as the Inventory.**
 
 **Manual building**
