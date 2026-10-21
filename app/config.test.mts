@@ -9,8 +9,8 @@ import { tmpdir } from "node:os";
 import { resolveConfig, ensureLayout, corePath } from "./config.mts";
 
 test("[smoke] config: defaults to ~/.pack-rat and port 8765", () => {
-  const c = resolveConfig([], {}, "/home/x");
-  assert.equal(c.dataDir, resolve(join("/home/x", ".pack-rat")));
+  const c = resolveConfig([], {}, "/home/example");
+  assert.equal(c.dataDir, resolve(join("/home/example", ".pack-rat")));
   assert.equal(c.port, 8765);
   assert.equal(c.demo, false);
   assert.equal(c.open, false);
@@ -28,7 +28,7 @@ test("[smoke] config: defaults to ~/.pack-rat and port 8765", () => {
 // exactly bridgeFor("tazuo")'s own paths, so an existing TazUO player's data directory needs no
 // migration: the fixed key and the per-adapter resolver produce byte-identical paths for "tazuo".
 test("[smoke] config: bridgeFor/bridgeQueueFor/bridgeStatusFor are per-adapter, and bridgeFor(\"tazuo\") equals the legacy fixed bridge path", () => {
-  const c = resolveConfig([], {}, "/home/x");
+  const c = resolveConfig([], {}, "/home/example");
   assert.equal(c.paths.bridgeFor("tazuo"), c.paths.bridge, "no migration for an existing TazUO player: same path either way");
   assert.equal(c.paths.bridgeQueueFor("tazuo"), c.paths.bridgeQueue);
   assert.equal(c.paths.bridgeStatusFor("tazuo"), c.paths.bridgeStatus);
