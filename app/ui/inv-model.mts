@@ -97,6 +97,8 @@ export function queryParams(q: ItemQuery): URLSearchParams {
   for (const l of q.loc) p.append("loc", l);
   for (const r of q.roots) p.append("root", String(r));
   for (const h of q.houses) p.append("house", h);
+  // An empty within matches nothing (item-query.mts), so it is sent as `within=`, never left out (which means no filter).
+  if (q.within && !q.within.length) p.set("within", "");
   for (const w of q.within ?? []) p.append("within", String(w));
   if (q.rarity) p.set("rarity", q.rarity);
   if (q.rarityMin) p.set("rarityMin", q.rarityMin);
