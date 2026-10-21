@@ -10,6 +10,7 @@
 // owns: `showScrolls`
 import type { Item } from "../vault-lib.mts";
 import { state } from "./store.mts";
+import { gearItem } from "./gear-item.mts";
 import { $, el, fmtN, itemTip, whereText } from "./dom.mts";
 import { fetchAllItems, inventoryLoader } from "./inventory-data.mts";
 import { txt, box, icon, button, badge, keyValue, detailPane, detailSection, message, meter, searchInput, segmented, tableFoot } from "./components.mts";
@@ -265,7 +266,7 @@ function drawDetail(shown: Row[]): void {
             txt(whoText(g.location), "t-sm muted scr-place-who"),
             el("ul", { class: "scr-list" }, ...g.items.map((it) => {
               const level = power ? String(it.props.psLevel) : fmtTenths(toTenths(it.props.sotPoints ?? 0));
-              return itemTip(box("li", {}, badge(level, power && nx && it.props.psLevel === nx.from ? "accent" : undefined), txt((it.amount || 1) > 1 ? `${listName(it.name)} ×${fmtN(it.amount)}` : listName(it.name), "ellip"), ...tagEls(it)), it);
+              return itemTip(box("li", {}, badge(level, power && nx && it.props.psLevel === nx.from ? "accent" : undefined), el("span", { class: "ellip" }, gearItem({ ...it, name: listName(it.name) }, { showIcon: false, tip: false })), ...tagEls(it)), it);   // no icon: every scroll looks alike
             })));
         }))],
     actions: [button({ label: "Show in Inventory", icon: "inventory", block: true, attrs: { id: "scr-show" }, onClick: () => showSearch(power ? powerQuery(r.skill) : sotQuery(r.skill)) })], actionsCls: "scr-acts",
