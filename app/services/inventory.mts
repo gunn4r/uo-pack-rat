@@ -3,7 +3,7 @@
 // map: services
 // owns: `createInventoryService`, `FoldValue`, `InvValue`
 import { statSync } from "node:fs";
-import { foldSnapshots, type Inventory, type KindOverrides } from "../vault-lib.mts";
+import { foldSnapshots, parseTooltip, type Inventory, type KindOverrides } from "../vault-lib.mts";
 import { missingSinceLastScan, type MissingItem } from "../missing.mts";
 import { latestHouses, type HouseSource } from "../house-capture.mts";
 import { overlaidInventory } from "../organize.mts";
@@ -46,7 +46,7 @@ export function createInventoryService({ scanStore, itemKindsStore, organizeStat
     if (foldCache.sig !== sig) {   // sig and value are only ever set together
       const snaps = scanStore.all();
       const fold = foldSnapshots(snaps, itemKindsStore.read());
-      foldCache = { sig, value: { fold, missing: missingSinceLastScan(snaps, fold), snapshotCount: snaps.length, houses: latestHouses(snaps) } };
+      foldCache = { sig, value: { fold, missing: missingSinceLastScan(snaps, fold, (lines) => parseTooltip(lines).rarity), snapshotCount: snaps.length, houses: latestHouses(snaps) } };
     }
     const folded = foldCache.value!;
     let stateSig = "no-state";
