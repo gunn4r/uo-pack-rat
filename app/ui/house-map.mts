@@ -926,7 +926,8 @@ function areaPill(a: HouseArea, containers: number, t: Tally | null): HTMLElemen
   return box("button", { type: "button", class: "sp-area-name", title: `Show only ${a.name}`, "aria-label": `Show only ${a.name}, ${t ? `${t.matches} of ${plural(t.containers, "container")} match` : plural(containers, "container")}`, onclick: () => zoomToArea(a) }, txt(a.name), count);
 }
 // A matching line's piece, named by the gear item without an icon (the line is too small for one); its count follows it. The line itself is the tooltip host.
-const lineName = (l: HitLine, lines: readonly HitLine[], size: string): HTMLElement => { const tier = tierWord(l, lines); return el("span", { class: `ellip ${size}` }, gearItem({ ...l.item, amount: 1 }, { variant: "inline", showIcon: false, tip: false }), tier ? el("span", { class: "sr" }, ` (${tier})`) : null); };
+// `own`: the name is its own tooltip host (hover only, no tab stop), else the line around it is.
+const lineName = (l: HitLine, lines: readonly HitLine[], size: string, own = false): HTMLElement => { const tier = tierWord(l, lines); return el("span", { class: `ellip ${size}`.trim() }, gearItem({ ...l.item, amount: 1 }, { variant: "inline", showIcon: false, ...(own ? { focus: false } : { tip: false }) }), tier ? el("span", { class: "sr" }, ` (${tier})`) : null); };
 function planCard(m: HouseModel, c: PlanCard, h: HouseHits | null): HTMLElement {
   const s = c.stack, head = planHead(s), hits = h?.stacks.get(s.letter) ?? null;
   const rows = planRows(chestViews(m, s, state.inv!, labels()));
@@ -944,13 +945,13 @@ function planRow(r: PlanRow, hit: HitChest | null): HTMLElement {
     box("span", { class: "sp-l2" }, r.fill ? meter(r.fill.items, r.fill.max, { tone: fillTone(r.fill), label: `${r.fill.items} of ${r.fill.max} items` }) : null, txt(r.fillText, r.fill ? "t-xs num" : "t-xs muted")),
     hit ? hitLine(hit) : null);
 }
-// The items a matching row found, one per line: the first PIN_LINES (the callouts' cap) as gear items in their rarity's color, each cut at the card's width with its count kept, each with its item tooltip on hover and no tab stop (the cards keep their one roving stop); then "+N more" on its own line, N the finds not drawn. A screen reader hears the whole list once, from the hidden text.
+// The items a matching row found, one per line: the first PIN_LINES (the callouts' cap) as gear items in their rarity's color, each cut at the card's width with its count kept, each with its item tooltip on hover and no tab stop (the cards keep their one roving stop); then "+N more" on its own line, N the finds not drawn. A screen reader reads each line as it is, a repeated name with its tier, and the rest of the list after "+N more" from hidden text, so it hears every find once.
 function hitLine(hit: HitChest): HTMLElement {
-  const shown = hit.lines.slice(0, PIN_LINES), more = hit.lines.length - shown.length;
+  const shown = hit.lines.slice(0, PIN_LINES), rest = hit.lines.slice(PIN_LINES);
+  const said = (l: HitLine): string => { const tier = tierWord(l, hit.lines); return `${l.name}${tier ? ` (${tier})` : ""} × ${fmtN(l.amount)}`; };
   return el("ul", { class: "sp-hitline t-xs" },
-    ...shown.map((l) => el("li", { class: "sp-hit", "aria-hidden": "true" }, el("span", { class: "ellip" }, gearItem({ ...l.item, amount: 1 }, { variant: "inline", showIcon: false, focus: false })), txt(`× ${fmtN(l.amount)}`, "num muted"))),
-    more ? el("li", { class: "muted sp-more", "aria-hidden": "true" }, `+${fmtN(more)} more`) : null,
-    el("li", { class: "sr" }, `Found: ${hit.lines.map((l) => { const tier = tierWord(l, hit.lines); return `${l.name}${tier ? ` (${tier})` : ""} × ${fmtN(l.amount)}`; }).join(", ")}`));
+    ...shown.map((l) => el("li", { class: "sp-hit" }, lineName(l, hit.lines, "", true), txt(`× ${fmtN(l.amount)}`, "num muted"))),
+    rest.length ? el("li", { class: "muted sp-more" }, txt(`+${fmtN(rest.length)} more`), el("span", { class: "sr" }, `: ${rest.map(said).join(", ")}`)) : null);
 }
 // The selected card's accent outline, and the roving tab stop: the focused card, else the selected one, else the first.
 function paintPlan(): void {

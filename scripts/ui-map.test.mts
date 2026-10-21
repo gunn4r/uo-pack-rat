@@ -997,7 +997,7 @@ test("[slow] House map: every text, control edge and icon passes contrast on the
     await page.locator('#map-view [data-value="plan"]').click();
     await page.waitForSelector("#map-plan .sp-row.hit .gi-name");
     assert.deepEqual((await page.locator("#map-plan .sp-row.hit .sp-hit .gi-name").evaluateAll((es) => es.map((e) => (e.getAttribute("style") ?? "").match(/--rarity-[a-z-]+/)?.[0]))).sort(), ["--rarity-lesser-artifact", "--rarity-major-magic"], "two tiers of one name: two lines, each in its own color");
-    assert.match(await page.locator("#map-plan .sp-row.hit .sp-hitline .sr").first().textContent() ?? "", /Ringmail Leggings \(Major Magic Item\) × 1, Ringmail Leggings \(Lesser Artifact\) × 1/, "a screen reader hears each tier");
+    assert.deepEqual(await page.locator("#map-plan .sp-row.hit .sp-hit").allTextContents(), ["Ringmail Leggings (Major Magic Item)× 1", "Ringmail Leggings (Lesser Artifact)× 1"], "a screen reader hears each tier (hidden after the name)");
     await measure(page, "stack plan hit", /Ringmail Leggings/, rows);
     await page.fill("#map-q", "");
     await page.locator('#map-view [data-value="angle"]').click();
@@ -1542,7 +1542,7 @@ test("[slow] House map Stack plan: a search scrolls to its first matching card, 
     assert.equal(await page.locator("#map-plan .sp-card.has-hit").count(), 2);
     assert.equal(await page.locator("#map-plan .sp-card.faded").count(), 22);
     assert.deepEqual(await page.locator(`#map-plan .sp-row[data-chest="${RUBY_FRONT}"] .sp-hit`).evaluateAll((es) => es.map((e) => [e.querySelector(".gi-name")?.textContent, e.querySelector(".num")?.textContent])), [["Ruby", "× 1"]]);
-    assert.equal(await page.locator(`#map-plan .sp-row[data-chest="${RUBY_FRONT}"] .sp-hitline .sr`).textContent(), "Found: Ruby × 1", "the whole list for a screen reader");
+    assert.equal(await page.locator(`#map-plan .sp-row[data-chest="${RUBY_FRONT}"] .sp-hitline .sr`).count(), 0, "one find: nothing hidden to add, and no tier for a name of its own");
     assert.equal(await page.locator(`#map-plan .sp-row[data-chest="${RUBY_FRONT}"] .sp-hitline .sp-more`).count(), 0, "nothing more to say with one item");
     assert.equal(await page.locator(`#map-plan .sp-row[data-chest="${RUBY_FRONT}"] .sp-hitline`).getAttribute("title"), null, "no native title: each name shows its item tooltip");
     assert.equal(await page.locator(`#map-plan .sp-row[data-chest="${RUBY_FRONT}"] .sp-hitline .gi[data-serial]`).count(), 1);
@@ -1553,9 +1553,10 @@ test("[slow] House map Stack plan: a search scrolls to its first matching card, 
     await under.waitFor();
     assert.equal(await under.locator(".sp-hit .gi").count(), 3);
     assert.equal(await under.evaluate((ul) => { const b = ul.getBoundingClientRect(); return [...ul.querySelectorAll(".sp-hit .gi-name")].every((n) => { const r = n.getBoundingClientRect(); return r.width > 0 && r.right <= b.right + 0.5 && r.bottom <= b.bottom + 0.5; }); }), true, "every counted name is drawn");
-    assert.equal(await under.locator(".sp-more").textContent(), "+40 more");
-    assert.match(await under.locator(".sr").textContent() ?? "", /^Found: Pearl 01 × 1, .*Pearl S03 × 1$/);
-    assert.equal((await under.locator(".sr").textContent() ?? "").split(", ").length, 43);
+    assert.equal(await under.locator(".sp-more > span:first-child").textContent(), "+40 more");
+    // the 40 not drawn are read after "+40 more", so a screen reader hears all 43 once
+    assert.match(await under.locator(".sp-more .sr").textContent() ?? "", /^: Pearl 04 × 1, .*Pearl S03 × 1$/);
+    assert.equal((await under.locator(".sp-more .sr").textContent() ?? "").split(", ").length, 40);
     await page.fill("#map-q", "ruby");
     await page.waitForSelector(`#map-plan .sp-row.hit[data-chest="${RUBY_FRONT}"]`);
     assert.equal(await page.locator("#map-pins").count(), 0);
