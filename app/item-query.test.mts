@@ -1,15 +1,15 @@
 // item-query.test.mts — `app/item-query.mts`, the item-list filtering, sorting, paging and faceting shared by the page and `GET /api/items`.
 //
-// `app/item-query.mts` (the pure item-list filtering/sorting/paging/faceting shared by the browser and the server's `GET /api/items`): `parseItemQuery`'s defaults and clamping, the list filters taken as repeated params (character, slot, kind, location, root container, house), prop rules with an operator (at least, at most, exactly, anything but, an item without the property reading 0), every `applyItemQuery` filter (type by `itemTypeOf`, free text, also by an Organize label through `places`, kind, slot, location, root, character, rarity and rarity-at-least, seenDays, slayer, nogarg, med, hideTags, a prop rule incl. `EXTRA_COLS` keys) and sort (by prop column, by rarity ladder order), paging (offset/limit against `total`/`pieces`), group mode's JSON-safe shape and its stack and piece counts, `facetsOf` (including the places the Location filter's tree is built from, and gear-only `extraKeys`), `propCounts`, `rarityRank` (a Reforged tier with its base tier, eight tiers in both shipped ladders), `rarityMax` (an item with no tier or one off the ladder counting as below every tier, an unknown ceiling ignored, a floor above the ceiling matching nothing), and `matchesItem` (an Organize rule's per-item checks, agreeing with `applyItemQuery` on every filter a rule keeps, its free text never matching location text), and `unravel`/`unravelShow` read off the query string (issue #271). All `[fast]`.
+// `app/item-query.mts` (the pure item-list filtering/sorting/paging/faceting shared by the browser and the server's `GET /api/items`): `parseItemQuery`'s defaults and clamping, the list filters taken as repeated params (character, slot, kind, location, root container, house, and `within` for anything nested inside a container, matching nothing when it names none), `queryWhere`'s context (the house lookup only for a house filter), prop rules with an operator (at least, at most, exactly, anything but, an item without the property reading 0), every `applyItemQuery` filter (type by `itemTypeOf`, free text, also by an Organize label through `places`, kind, slot, location, root, character, rarity and rarity-at-least, seenDays, slayer, nogarg, med, hideTags, a prop rule incl. `EXTRA_COLS` keys) and sort (by prop column, by rarity ladder order), paging (offset/limit against `total`/`pieces`), group mode's JSON-safe shape and its stack and piece counts, `facetsOf` (including the places the Location filter's tree is built from, and gear-only `extraKeys`), `propCounts`, `rarityRank` (a Reforged tier with its base tier, eight tiers in both shipped ladders), `rarityMax` (an item with no tier or one off the ladder counting as below every tier, an unknown ceiling ignored, a floor above the ceiling matching nothing), and `matchesItem` (an Organize rule's per-item checks, agreeing with `applyItemQuery` on every filter a rule keeps, its free text never matching location text), and `unravel`/`unravelShow` read off the query string (issue #271). All `[fast]`.
 //
 // applyItemQuery's predicate and sort keep parity with what the Inventory screen used to do on its own. Hand-built fixture items (no scan files, no server) keep this fast and pure.
 import { test } from "node:test";
 import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
-import { EXTRA_COLS, colVal, rarityRank, parseItemQuery, applyItemQuery, facetsOf, matchesItem, propCounts } from "./item-query.mts";
+import { EXTRA_COLS, colVal, rarityRank, parseItemQuery, applyItemQuery, facetsOf, matchesItem, propCounts, queryWhere } from "./item-query.mts";
 import type { ItemQueryRows, ItemQueryGroups, RuleQuery } from "./item-query.mts";
 import { KINDS, flagLabel, flagKeys, itemTypeOf, typesOfSlot } from "./vault-lib.mts";
-import type { Item } from "./vault-lib.mts";
+import type { Container, Item } from "./vault-lib.mts";
 import type { RulesV1RarityItem } from "./schema/types.d.mts";
 
 const NOW = Date.parse("2026-09-16T00:00:00Z");
@@ -376,6 +376,32 @@ test("[fast] propCounts: how many stacks carry each numeric and yes/no property"
   const c = propCounts(items);
   assert.deepEqual(c.props, { "splintering weapon": 2, "weapon speed": 2, swordsmanship: 1, hci: 2, fc: 1, weight: 1 }, "a range is no number, a Strength requirement of 0 none");
   assert.deepEqual(c.flags, { "spell channeling": 1, "night sight": 2 });
+});
+
+test("[fast] applyItemQuery: within keeps the items anywhere inside a container, a bag inside a bag included (#487)", () => {
+  const box = (serial: number, parent: number | null) => ({ serial, parent, root: 1, kind: "ground" });
+  const containers = { 1: box(1, null), 2: box(2, 1), 3: box(3, 2), 4: box(4, null) } as unknown as Record<string, Container>;
+  const items = [mk({ name: "In Chest", container: 1 }), mk({ name: "In Bag", container: 2 }), mk({ name: "In Pouch", container: 3 }), mk({ name: "Elsewhere", container: 4 })];
+  const rows = (s: string, opts: Parameters<typeof applyItemQuery>[2] = { ...ctx, containers }): string[] => names((applyItemQuery(items, parseItemQuery(new URLSearchParams(s)), opts) as ItemQueryRows).rows).sort();
+  assert.deepEqual(parseItemQuery(new URLSearchParams("within=2&within=x")).within, [2]);
+  assert.equal(parseItemQuery(new URLSearchParams("")).within, undefined, "no within, no field");
+  assert.deepEqual(rows("within=1"), ["In Bag", "In Chest", "In Pouch"]);
+  assert.deepEqual(rows("within=2"), ["In Bag", "In Pouch"]);
+  assert.deepEqual(rows("within=3&within=4"), ["Elsewhere", "In Pouch"]);
+  assert.deepEqual(rows("within=2", ctx), [], "without the containers nothing is inside anything");
+  assert.deepEqual(rows("within=abc"), [], "a within that names no container matches nothing, rather than turning the filter off");
+  assert.deepEqual(rows("within="), []);
+});
+
+test("[fast] queryWhere: the labels as places, the containers, and the houses only when the query names one", () => {
+  const containers = { 1: { serial: 1, parent: null, root: 1, kind: "ground", name: "Metal Chest" } } as unknown as Record<string, Container>;
+  let calls = 0;
+  const houseOf = (): ReadonlyMap<number, string> => { calls++; return new Map([[1, "1-3000-1000"]]); };
+  const none = queryWhere(parseItemQuery(new URLSearchParams("q=ring")), containers, { labels: { 1: { name: "Rings" } }, houseOf });
+  assert.equal(calls, 0, "no house filter, no house lookup");
+  assert.deepEqual([[...none.places.values()], none.houseOf.size, none.containers], [["Rings"], 0, containers]);
+  assert.deepEqual([...queryWhere(parseItemQuery(new URLSearchParams("house=1-3000-1000")), containers, { houseOf }).houseOf], [[1, "1-3000-1000"]]);
+  assert.equal(calls, 1);
 });
 
 test("[fast] applyItemQuery: prop rules at most and exactly", () => {

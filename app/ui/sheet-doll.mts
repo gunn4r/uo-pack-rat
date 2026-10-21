@@ -22,7 +22,7 @@ function entry(place: string, name: string): Entry {
 export function viewOf(name: string): Omit<DollView, "figures"> {
   if (name === NOBODY) return { name: null, appearance: null, client: "", readsLook: true };
   const c = state.inv!.characters[name], adapter = state.setup?.adapters.find((a) => a.id === c?.adapter?.id);
-  return { name, scannedAt: c?.scannedAt ?? null, appearance: c?.appearance, client: adapter?.name ?? c?.adapter?.client ?? "This client", readsLook: adapter?.appearance ?? true };
+  return { name, scannedAt: c?.scannedAt ?? null, appearance: c?.appearance, inForm: c?.inForm, client: adapter?.name ?? c?.adapter?.client ?? "This client", readsLook: adapter?.appearance ?? true };
 }
 // Shows `suits` on the card once every piece has its graphic and hue; only the newest call for a card draws, so a lookup that comes back late never replaces newer suits.
 function showSuits(e: Entry, view: Omit<DollView, "figures">, suits: Array<{ set: SheetAssignment; caption?: string }>): void {

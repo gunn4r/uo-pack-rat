@@ -320,5 +320,5 @@ test("[fast] scan schema: appearance holds a body, a skin hue and the hair, bear
   assert.equal(invalid({ ...bounded, appearance: { ...appearance, body: 65536 } }), "/appearance/body greater than maximum 65535");
   assert.equal(invalid({ ...bounded, appearance: { ...appearance, hue: 1.5 } }), "/appearance/hue expected integer");
   assert.equal(invalid({ ...bounded, appearance: { ...appearance, hair: { graphic: 0x2FBF } } }), "/appearance/hair missing required: hue");
-  assert.equal(invalid({ ...bounded, appearance: { ...appearance, face: { graphic: 1, hue: 2, serial: 3 } } }), "/appearance/face/serial additional property not allowed: serial");
+  assert.equal(validateScan({ ...bounded, appearance: { ...appearance, face: { graphic: 1, hue: 2, serial: 3 } } }).ok, true, "a newer adapter's addition inside a layer is kept too");
 });

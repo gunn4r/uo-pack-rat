@@ -6,6 +6,7 @@ import { isPseudoCharacter, parseStamp } from "../scan-schema.mts";
 import type { ScanV2, ScanV2Adapter, ScanV2Appearance } from "../schema/types.d.mts";
 import type { ExtrasMap, PropMap } from "./properties.mts";
 import { displayName, parseTooltip, stripHtml } from "./tooltip.mts";
+import { drawsBody } from "../paperdoll-look.mts";
 import { classify, SPELLBOOK_RE } from "./slots.mts";
 import { kindOf, medableOf, NO_KIND_OVERRIDES, overriddenKind, slayersOf, type KindOverrides } from "./kinds.mts";
 
@@ -95,8 +96,11 @@ export interface Character {
   resists: Record<string, unknown> | null;
   skills: Record<string, unknown>;
   adapter: ScanV2Adapter | null;
-  // The look from the newest scan that had one (issue #57), or null: a scan without it keeps what an earlier one said.
+  // The look from the newest scan that had one whose body the figure draws (issue #57), or null: a scan without a look, or
+  // one taken in a form (Horrific Beast, Wraith, a ghost), keeps what an earlier one said. With no such scan, the newest look at all.
   appearance: ScanV2Appearance | null;
+  // Set when the newest scan with a look was taken in a form, so the card can say so over the earlier look.
+  inForm?: true;
 }
 
 export interface ScanSummary {
@@ -267,9 +271,12 @@ export function foldSnapshots(snapshots: ScanV2[], overrides: KindOverrides = NO
       inv.items[raw.serial] = foldItem(raw, { root: null, container: null, equippedBy: char, layer: raw.layer || null, seenAt: snap.scannedAt, scannedBy: char });
     }
     if (!isPseudoCharacter(char)) {
+      const before = inv.characters[char], prev = before?.appearance ?? null, seen = snap.appearance ?? null;
+      const appearance = !seen || (!drawsBody(seen.body) && prev && drawsBody(prev.body)) ? prev : seen;
+      const inForm = seen ? !drawsBody(seen.body) : !!before?.inForm;
       inv.characters[char] = { name: char, stats: snap.stats || {}, scannedAt: snap.scannedAt, position: snap.position || null,
         maxes: snap.maxes || null, resists: snap.resists || null, skills: snap.skills || {}, adapter: snap.adapter || null,
-        appearance: snap.appearance ?? inv.characters[char]?.appearance ?? null };
+        appearance, ...(inForm ? { inForm: true as const } : {}) };
     }
     inv.scans.push({ character: char, scannedAt: snap.scannedAt, items: (snap.items || []).length, roots: [...roots] });
   }

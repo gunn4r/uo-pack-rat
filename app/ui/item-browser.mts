@@ -31,7 +31,7 @@ import { showItemTip, hideItemTip } from "./dom.mts";
 import { filterContext, tagEls, rarityEl, locationEl } from "./item-parts.mts";
 import { retryLoad } from "./inventory-data.mts";
 import { BREAKPOINTS, upTo } from "./breakpoints.mts";
-import { plural } from "./format.mts";
+import { plural, textHit } from "./format.mts";
 
 const CHUNK = 500;              // rows per GET /api/items request (the server's own cap)
 const NARROW = upTo(BREAKPOINTS.narrow);
@@ -294,7 +294,7 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
       const kids: HTMLElement[] = [];
       for (const g of groups) {
         if (!open.has(g.group)) continue;
-        const keys = g.keys.filter((k) => !filter || `${colShort(k, label)} ${colFull(k, full)}`.toLowerCase().includes(filter));
+        const keys = g.keys.filter((k) => textHit(filter, colShort(k, label), colFull(k, full)));
         if (!keys.length) continue;
         kids.push(txt(g.group, "inv-opt-group t-sm muted"));
         for (const k of keys) {

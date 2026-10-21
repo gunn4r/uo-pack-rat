@@ -2,7 +2,7 @@
 //
 // map: ui-screens
 // owns: `selectionHooks`, `attachMoveTo`
-import { applyItemQuery } from "../item-query.mts";
+import { applyItemQuery, queryWhere } from "../item-query.mts";
 import { bagLabel, type Container, type Item } from "../vault-lib.mts";
 import { state, bridge } from "./store.mts";
 import { $, el } from "./dom.mts";
@@ -83,8 +83,8 @@ async function selectAll(): Promise<void> {
   try { r = await api<MovePlanApiResponse>("/api/move/plan", { method: "POST", body: { selection: selectionBody({ ...emptySelection(), all: { query, count: 0, worn: 0 } }) } }); }
   catch (e) { toast(errorText(e), "bad"); return; }
   const q = { ...query, group: false, offset: 0, limit: 1 }, rarity = state.rules?.rarity || [];
-  const houseOf = houseIds();
-  matchesAll = (it) => applyItemQuery([it], q, { rarity, places: state.organize.places, houseOf }).total === 1;
+  const where = queryWhere(q, state.inv?.containers ?? {}, { labels: state.organize.config?.labels ?? {}, rarity, houseOf: houseIds });
+  matchesAll = (it) => applyItemQuery([it], q, where).total === 1;
   change(selectAllMatching(sel, query, r.selected - r.worn, r.worn, matches), wornNote(r.wornNames.slice(0, r.worn === 1 ? 1 : 0), r.worn));
 }
 async function grabSelected(): Promise<void> {

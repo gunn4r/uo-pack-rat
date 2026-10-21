@@ -74,7 +74,11 @@ export async function openRuleEditor(o: { rule?: OrganizeRule; preset?: boolean;
   drawer().open();
 }
 // The drawer's body from the draft. `focus` names the control to focus (on open, or after a redraw it caused).
+// The drawn filter bar's pending search keystrokes, applied to the draft (FilterBar.flushSearch): Save and every redraw
+// run it first, so text typed in the last 150 ms is never lost.
+let flushSearch = (): void => {};
 function draw(focus?: string): void {
+  flushSearch();
   const d = draft!, cfg = state.organize.config!, ctx = filterContext(), where = state.inv?.containers || {};
   const nameIn = input({ value: d.name, attrs: { id: "rule-name", maxlength: "64" } });
   nameIn.addEventListener("input", () => { d.name = nameIn.value; });
@@ -101,6 +105,7 @@ function draw(focus?: string): void {
   const bar = createFilterBar({ query: () => ({ ...BASE, ...d.query }), setQuery: (q) => setQuery(ruleQueryFrom(q).query), source: itemsSource,
     omit: ["char", "loc", "seen"], hideKinds: ["container"], placeholder: "Search name, property, slayer", slashHint: false,
     idOf: (n) => ({ id: n === "f-text" ? "rule-q" : `rule-${n}` }) });
+  flushSearch = bar.flushSearch;
   // A build (Auto organize's By build) or a spell school (a school's scroll preset) has no control of its own: it
   // shows as a token, and removing it drops it.
   function drawTokens(): void {
@@ -168,6 +173,7 @@ async function countNow(): Promise<void> {
 const draftMatch = (d: Draft, names: string[]): RuleMatch => ({ query: d.query, ...(names.length ? { names } : {}), ...(d.build ? { build: d.build } : {}), ...(d.school ? { school: d.school } : {}), ...(d.skipSuits ? { skipSuits: true } : {}) });
 const countSoon = debounced(() => { void countNow(); }, MATCH_DEBOUNCE_MS);
 async function save(): Promise<void> {
+  flushSearch();
   const d = draft!;
   const c = checkDraft(d.name, d.namesText);
   d.errors = c.errors;

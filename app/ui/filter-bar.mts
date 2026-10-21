@@ -1,6 +1,6 @@
-// ui/filter-bar.mts — the item filters' toolbar (#487): the search box, the facet chips (Character, Slot, Location,
-// Rarity, Kind, Type, Weapon skill; Slayer and Seen while set) with their popovers, and "+ Filter" (property rules, slayer,
-// seen, tags, gargoyle and meditation). The Inventory and the Suit Builder's Manual picker (item-browser.mts) and the
+// ui/filter-bar.mts — the item filters' toolbar (#487): the search, the facet chips and their popovers, and "+ Filter".
+// The chips are Character, Slot, Location, Rarity, Kind, Type and Weapon skill, with Slayer and Seen while set; "+ Filter"
+// adds property rules, slayer, seen, tags, gargoyle and meditation. The Inventory and the Suit Builder's Manual picker (item-browser.mts) and the
 // Organize rule editor (rule-editor.mts) draw the same one; a surface leaves out the chips it has no use for.
 //
 // map: ui-components
@@ -17,6 +17,7 @@ import { splitSerial, placeNames, queryParams, withFixed, shortTier, rootName, s
 import type { ItemPropCountsApiResponse, ItemsApiResponse } from "./api-types.mts";
 import { rarityEl } from "./item-parts.mts";
 import { houseNameOf, mapHouses } from "./house-links.mts";
+import { textHit } from "./format.mts";
 
 // Where a browser's rows and filter choices come from: one chunk of the rows matching a query (the fixed fields already
 // applied), and the facets its chips list.
@@ -53,7 +54,7 @@ function checklist({ title, options, selected, onChange, searchable = options.le
     const kids: HTMLElement[] = [];
     let group: string | undefined;
     for (const o of options) {
-      if (filter && !`${o.label} ${o.mono || ""} ${o.group || ""}`.toLowerCase().includes(filter)) continue;
+      if (!textHit(filter, o.label, o.mono, o.group)) continue;
       if (o.group && o.group !== group) { group = o.group; kids.push(txt(o.group, "inv-opt-group t-sm muted")); }
       const cb = el("input", { type: "checkbox", value: o.value });
       cb.checked = picked.includes(o.value);
@@ -136,13 +137,13 @@ function locationOptions(q: ItemQuery, f: Facets | null): Option[] {
     ground.push(...ps.filter((p) => !["equipped", "backpack", "bank"].includes(p.kind)));
   }
   const houses = mapHouses(), houseOf = new Map(houses.flatMap((h) => h.serials.map((s): [number, string] => [s, h.id])));
-  const housed = ground.filter((p) => p.root != null && houseOf.has(p.root));
+  const housed = ground.filter((p) => p.root != null && houseOf.has(p.root)), inHouse = new Set(housed);
   for (const h of houses) {
     const count = housed.reduce((a, p) => a + (houseOf.get(p.root!) === h.id ? p.count : 0), 0);
     if (count || q.houses.includes(h.id)) out.push({ value: `house:${h.id}`, label: h.name, group: "Houses", count });
   }
   for (const h of houses) add(h.name, housed.filter((p) => houseOf.get(p.root!) === h.id));
-  add("On the ground", ground.filter((p) => !housed.includes(p)));
+  add("On the ground", ground.filter((p) => !inHouse.has(p)));
   for (const h of q.houses) if (!out.some((o) => o.value === `house:${h}`)) out.push({ value: `house:${h}`, label: `${houseNameOf(h)} (none now)`, group: "No longer scanned" });
   for (const r of q.roots) if (!out.some((o) => o.value === `root:${r}`)) out.push({ value: `root:${r}`, label: `${rootName(r, [])} (none now)`, group: "No longer scanned" });
   for (const l of q.loc) if (!out.some((o) => o.value === `loc:${l}`)) out.push({ value: `loc:${l}`, label: `${l} (none now)`, group: "No longer scanned" });
@@ -202,12 +203,14 @@ export interface FilterBar {
   sync: () => void;
   // A search keystroke still waiting out its debounce is dropped (any other change supersedes it).
   cancelSearch: () => void;
+  // …or applied now (the rule editor's Save, and its redraws, so the last keystrokes are never lost).
+  flushSearch: () => void;
 }
 export function createFilterBar(o: FilterBarOptions): FilterBar {
   const query = o.query, source = o.source, fixed = o.fixed ?? {}, omit = o.omit ?? [], hideKinds = o.hideKinds ?? [];
   const idOf = o.idOf ?? ((): { id?: string } => ({}));
   let searchTimer = 0;
-  const setQuery = (next: ItemQuery): void => { clearTimeout(searchTimer); o.setQuery(next); };
+  const setQuery = (next: ItemQuery): void => { clearTimeout(searchTimer); searchTimer = 0; o.setQuery(next); };
   const chips = {} as Partial<Record<ChipId, HTMLButtonElement>>;
   // A Type chip with one choice to offer (a picker fixed to a helmet) is as good as fixed; so is a chip left out.
   const isFixed = (id: ChipId): boolean => omit.includes(id) || CHIP_FIELDS[id].some((f) => f in fixed) || (id === "type" && (typesIn(fixed.slot)?.size ?? 2) < 2);
@@ -264,6 +267,7 @@ export function createFilterBar(o: FilterBarOptions): FilterBar {
   search.addEventListener("input", () => {
     clearTimeout(searchTimer);
     searchTimer = setTimeout(() => {
+      searchTimer = 0;
       const q = search.value.trim().toLowerCase();
       if (q !== query().q) setQuery({ ...query(), q });
     }, 150) as unknown as number;
@@ -389,7 +393,7 @@ export function createFilterBar(o: FilterBarOptions): FilterBar {
     };
     const draw = (filter: string): void => {
       const kids: HTMLElement[] = [];
-      const hit = (words: string): boolean => !filter || words.toLowerCase().includes(filter);
+      const hit = (words: string): boolean => textHit(filter, words);
       for (const group of CATALOGUE_GROUPS) {
         const es = PROPERTY_CATALOGUE.filter((c) => c.group === group && hit(`${c.name} ${label(c.key)}`));
         if (!es.length) continue;
@@ -409,5 +413,11 @@ export function createFilterBar(o: FilterBarOptions): FilterBar {
   }
 
   sync();
-  return { search, searchRoot: s.root, chips: Object.values(chips) as HTMLButtonElement[], addChip, sync, cancelSearch: () => clearTimeout(searchTimer) };
+  const flushSearch = (): void => {
+    if (!searchTimer) return;
+    clearTimeout(searchTimer); searchTimer = 0;
+    const q = search.value.trim().toLowerCase();
+    if (q !== query().q) setQuery({ ...query(), q });
+  };
+  return { search, searchRoot: s.root, chips: Object.values(chips) as HTMLButtonElement[], addChip, sync, cancelSearch: () => { clearTimeout(searchTimer); searchTimer = 0; }, flushSearch };
 }
