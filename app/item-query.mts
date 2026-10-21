@@ -14,7 +14,7 @@
 // property column; alphabetical is the useful default for a name column), reproduced exactly, not fixed.
 //
 // map: query
-// owns: `parseItemQuery`, `matchesItem`, `applyItemQuery`, `queryWhere`, `facetsOf`, `propCounts`, `ItemQuery`, `RuleQuery`, `EXTRA_COLS`, `colVal`, `rarityRank`, `HIT_LIMIT`
+// owns: `parseItemQuery`, `matchesItem`, `applyItemQuery`, `queryWhere`, `passes`, `facetsOf`, `propCounts`, `ItemQuery`, `RuleQuery`, `EXTRA_COLS`, `colVal`, `rarityRank`, `HIT_LIMIT`
 import { containerChain, labelledPlaces, itemSearchBlob, itemOwnBlob, gargoyleOk, meditationOk, hasTag, hasFlag, groupByName, compareNames, KINDS, SLOT_LABELS, propertyKeys, extraKeys, flagKeys, flagKey, gearSkills, weaponSkillsOf, WEAPON_SKILLS, PROPERTIES, itemTypeOf, ITEM_TYPES } from "./vault-lib.mts";
 import type { Container, Item, ItemGroup } from "./vault-lib.mts";
 import type { RulesV1, RulesV1RarityItem } from "./schema/types.d.mts";
@@ -151,7 +151,8 @@ export function parseItemQuery(searchParams: URLSearchParams): ItemQuery {
   };
 }
 
-function passes(v: number, f: PropFilter): boolean {
+// Whether a value passes a property rule; an item without the property is checked as 0 (colVal).
+export function passes(v: number, f: PropFilter): boolean {
   return f.op === "le" ? v <= f.min : f.op === "eq" ? v === f.min : f.op === "ne" ? v !== f.min : v >= f.min;
 }
 // The checks on the item itself, shared by the Inventory's query (matches) and an Organize rule (matchesItem).
@@ -185,7 +186,7 @@ function matches(it: Item, q: ItemQuery, seenCut: number, minRank: number, maxRa
 }
 
 // Whether an item passes an Organize rule's query (issue #11): the Inventory's per-item checks, with the free
-// text matched against the item only (itemOwnBlob: name, tooltip lines, kind, rarity), never its location, so a
+// text matched against the item only (itemOwnBlob: name, tooltip lines, kind, rarity, tags), never its location, so a
 // "reag" rule never claims a sword in a chest labelled Reagents. `rarity` is the shard's ladder, as for
 // applyItemQuery; without it rarityMin and rarityMax filter nothing.
 export function matchesItem(it: Item, rq: RuleQuery, { rarity = [] }: { rarity?: RulesV1RarityItem[] } = {}): boolean {
@@ -221,10 +222,11 @@ export interface ItemQueryGroups { groups: ItemGroupJson[]; total: number; stack
 
 // What applyItemQuery reads an inventory's query against, built in one place so no caller leaves a part out: the shard's
 // rarity ladder, Organize's labels as `places`, the inventory's `containers` and, only when the query names a house (it is
-// costly), the house each ground container stands in from `houseOf()`.
+// costly), the house each ground container stands in from `houseOf()`. A caller that already holds labelledPlaces of those
+// labels (the page's state.organize.places) passes it as `places` instead.
 export interface QueryWhere { rarity: RulesV1RarityItem[]; places: ReadonlyMap<string, string>; houseOf: ReadonlyMap<number, string>; containers: Record<string, Container> }
-export function queryWhere(query: Pick<ItemQuery, "houses">, containers: Record<string, Container>, { labels = {}, rarity = [], houseOf }: { labels?: Readonly<Record<string, { name: string }>>; rarity?: RulesV1RarityItem[]; houseOf?: (() => ReadonlyMap<number, string>) | undefined } = {}): QueryWhere {
-  return { rarity, places: labelledPlaces(containers, labels), houseOf: query.houses.length && houseOf ? houseOf() : new Map(), containers };
+export function queryWhere(query: Pick<ItemQuery, "houses">, containers: Record<string, Container>, { labels = {}, places, rarity = [], houseOf }: { labels?: Readonly<Record<string, { name: string }>>; places?: ReadonlyMap<string, string> | undefined; rarity?: RulesV1RarityItem[]; houseOf?: (() => ReadonlyMap<number, string>) | undefined } = {}): QueryWhere {
+  return { rarity, places: places ?? labelledPlaces(containers, labels), houseOf: query.houses.length && houseOf ? houseOf() : new Map(), containers };
 }
 
 // applyItemQuery(items, query, {rarity, now}) → {rows, total, pieces} normally, or {groups, total} when
@@ -286,6 +288,8 @@ export interface Facets {
   // Numeric extras a property filter can threshold (issue #133): offered by the Inventory's property rule only,
   // never by the Suit Builder, whose keys propKeys feeds.
   extraKeys: string[];
+  // The same over every item, gear or not: what a property rule can still match (MCP's search_items checks against it).
+  allExtraKeys: string[];
   // Yes/no properties a filter can require (issue #182; vault-lib.mts's flagKeys says which flags count), lower-cased.
   flagKeys: string[];
   gearSkills: string[];
@@ -322,5 +326,5 @@ export function facetsOf(items: Item[], { rarity = [] }: { rarity?: RulesV1Rarit
   const weaponSkills = WEAPON_SKILLS.map((name) => ({ name, count: skillsOf.filter((s) => s.includes(name)).length })).filter((w) => w.count);
   const typeOf = items.map(itemTypeOf);
   const types = ITEM_TYPES.map((name) => ({ name, count: typeOf.filter((t) => t === name).length })).filter((t) => t.count);
-  return { slots, locations, places, rarities, slayers, slayerAny, kinds, weaponSkills, types, propKeys: propertyKeys({ items }), extraKeys: extraKeys({ items }), flagKeys: flagKeys({ items }), gearSkills: gearSkills({ items }), itemCount: items.length };
+  return { slots, locations, places, rarities, slayers, slayerAny, kinds, weaponSkills, types, propKeys: propertyKeys({ items }), extraKeys: extraKeys({ items }), allExtraKeys: extraKeys({ items }, { gearOnly: false }), flagKeys: flagKeys({ items }), gearSkills: gearSkills({ items }), itemCount: items.length };
 }

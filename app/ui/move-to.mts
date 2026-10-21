@@ -83,7 +83,7 @@ async function selectAll(): Promise<void> {
   try { r = await api<MovePlanApiResponse>("/api/move/plan", { method: "POST", body: { selection: selectionBody({ ...emptySelection(), all: { query, count: 0, worn: 0 } }) } }); }
   catch (e) { toast(errorText(e), "bad"); return; }
   const q = { ...query, group: false, offset: 0, limit: 1 }, rarity = state.rules?.rarity || [];
-  const where = queryWhere(q, state.inv?.containers ?? {}, { labels: state.organize.config?.labels ?? {}, rarity, houseOf: houseIds });
+  const where = queryWhere(q, state.inv?.containers ?? {}, { places: state.organize.places, rarity, houseOf: houseIds });
   matchesAll = (it) => applyItemQuery([it], q, where).total === 1;
   change(selectAllMatching(sel, query, r.selected - r.worn, r.worn, matches), wornNote(r.wornNames.slice(0, r.worn === 1 ? 1 : 0), r.worn));
 }

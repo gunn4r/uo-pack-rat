@@ -293,10 +293,11 @@ export function propertyKeys(inv: ItemsLike): string[] {
 // Issue #133: the numeric tooltip lines no property models (parseTooltip's extras: "splintering weapon", "hit fatigue",
 // "weapon speed"), skill bonuses and ranges left out, so a property filter can put a threshold on them
 // (item-query.mts's colVal reads them). Apart from propertyKeys, which the Suit Builder's weights and floors list too.
-// Gear only, like flagKeys: a Bulk Order Deed's "Amount To Make: 20" or a book's page count is no property.
-export function extraKeys(inv: ItemsLike): string[] {
+// Gear only, like flagKeys: a Bulk Order Deed's "Amount To Make: 20" or a book's page count is no property. `gearOnly:
+// false` takes every item's, the keys a property rule still matches (MCP's search_items checks a rule's key against them).
+export function extraKeys(inv: ItemsLike, { gearOnly = true }: { gearOnly?: boolean } = {}): string[] {
   const set = new Set<string>();
-  for (const it of Object.values(inv.items)) if (it.gear) for (const [k, v] of Object.entries(it.extras || {})) if (typeof v === "number" && !SKILL_SET.has(k)) set.add(k);
+  for (const it of Object.values(inv.items)) if (it.gear || !gearOnly) for (const [k, v] of Object.entries(it.extras || {})) if (typeof v === "number" && !SKILL_SET.has(k)) set.add(k);
   return [...set].sort();
 }
 // Issue #182: the yes/no properties a filter can require (parseTooltip's flags), the ones present in the inventory.
@@ -334,10 +335,11 @@ export const flagLabel = (f: string): string => f.replace(/[()]/g, "").trim().sp
 // The name once more with its punctuation as spaces, so "transcendence animal lore" finds "Scroll of Transcendence
 // (Animal Lore - 0.1 Pts)" (issue #181).
 const plainName = (it: Item): string => it.name.replace(/[^\p{L}\p{N}.]+/gu, " ");
+// Its tags too (#487: every search finds "cursed"), which a scan's tooltip lines also hold.
 export function itemOwnBlob(it: Item): string {
-  return [it.name, plainName(it), ...(it.lines || []), it.rarity || "", it.kind || ""].join(" \n ").toLowerCase();
+  return [it.name, plainName(it), ...(it.lines || []), it.rarity || "", it.kind || "", ...(it.tags || [])].join(" \n ").toLowerCase();
 }
 
 export function itemSearchBlob(it: Item): string {
-  return [it.name, plainName(it), ...(it.lines || []), it.location?.text || "", it.rarity || "", it.kind || ""].join(" \n ").toLowerCase();
+  return [it.name, plainName(it), ...(it.lines || []), it.location?.text || "", it.rarity || "", it.kind || "", ...(it.tags || [])].join(" \n ").toLowerCase();
 }

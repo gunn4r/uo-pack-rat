@@ -12,6 +12,7 @@ import { api } from "./api.mts";
 import type { ItemsBySerialApiResponse } from "./api-types.mts";
 import { tag, tooltip } from "./components.mts";   // components.mts imports el() from here; safe, as neither calls the other while loading
 import { createTipResolver, type TooltipItem } from "./item-tip.mts";
+import { artTile } from "./item-art.mts";
 
 export { EXTRA_COLS, colVal } from "../item-query.mts";
 export type { TooltipItem } from "./item-tip.mts";
@@ -143,7 +144,7 @@ export function tagChip(t: string, { describe = false }: { describe?: boolean } 
   if (info) { chip.tabIndex = 0; chip.classList.add("tag-info"); tooltip(chip, info); }
   return chip;
 }
-// tipNode(it) — the item tooltip (design spec 4.3), built as DOM nodes: the name in its rarity colour and
+// tipNode(it) — the item tooltip (design spec 4.3), built as DOM nodes: the item's 32 px icon (issue #503), the name in its rarity colour and
 // the item's tags; its tooltip lines in the game's order, resist lines in their element's colour and
 // durability and requirements muted; a footer with the rarity tier and where the item is. Every value
 // in here comes off a scan file's own tooltip lines, so nothing is ever markup, and the one colour a
@@ -169,7 +170,7 @@ export function tipNode(it: TooltipItem): HTMLDivElement {
   // with the tier cut it off.
   const foot = [tier ? el("span", tierColor ? { style: `color:${tierColor}` } : {}, tier) : null, it.location ? el("span", { class: "muted tip-where" }, whereText(it.location.text)) : null].filter((x): x is HTMLSpanElement => !!x);
   return el("div", { class: "tipcard" },
-    el("div", { class: "tip-head" }, el("span", { class: "strong tip-name", ...(tierColor ? { style: `color:${tierColor}` } : {}) }, qty + it.name), ...tagEls),
+    el("div", { class: "tip-head" }, artTile(it.graphic, { size: 32, hue: it.hue ?? 0 }), el("span", { class: "strong tip-name", ...(tierColor ? { style: `color:${tierColor}` } : {}) }, qty + it.name), ...tagEls),
     // The name the game uses, when the shown one differs (a Scroll of Transcendence's names its skill, issue #181).
     gameName(it) !== it.name ? el("div", { class: "muted tip-game" }, `In game: ${gameName(it)}`) : null,
     body.length ? el("div", { class: "divider" }) : null,

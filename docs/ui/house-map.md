@@ -401,7 +401,7 @@ The container picker (`drawerPicker`) is one of two forms, since the segmented c
 
 Below the picker are:
 
-- a filter on name, tooltip lines, rarity, kind and tags (`filterContents`, client-side, kept from container to container);
+- a filter on name, tooltip lines, rarity, kind and tags (`filterContents`, client-side, kept from container to container), by the core's text rule (`matchesItem` with just the text, as an Organize rule's text, #487);
 - **Open in Inventory** (`showContainer`).
 
 ### Items
