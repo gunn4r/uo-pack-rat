@@ -322,7 +322,7 @@ A row click, Enter or Space opens a panel in the item peek's look (`#scr-peek`, 
 - the skill, with ↑ / ↓ / close;
 - how many scrolls are in how many containers;
 - the roll-up (Next roll-up, Still needed, Bind everything when something binds, a meter), or the binder plan;
-- the scrolls grouped by place: the place's name and serial, and who scanned it ("On the ground · scanned by Kestrel"). Each row is a level or points badge, the name and its tags, wired with `itemTip`.
+- the scrolls grouped by place: the place's name and serial, and who scanned it ("On the ground · scanned by Kestrel"). Each row is a level or points badge, the name as a `gearItem` without an icon (every scroll's art is alike) and its tags, wired with `itemTip`.
 
 Its footer has **Show in Inventory**, the Items view searching for all that skill's scrolls. ↑/↓ on a row move focus and, while the panel is open, the panel follows. Esc closes it and gives the row its focus back.
 
@@ -370,7 +370,7 @@ Each has a count, a line and **Select these**, with the rows heaviest first.
 A row has:
 
 - a checkbox;
-- the name (with the item tooltip), its rarity tier, and the reasons it would be left out;
+- the piece as a `gearItem` (issue #504: its icon and its name in its rarity's color, with the item tooltip), its rarity tier, and the reasons it would be left out;
 - its place;
 - the ingredient, with a **maybe** tag when its weight is within the margin of a line (its title names the two ingredients);
 - the chance line ("50% at 70, else Residue", "Refused until then (now 70)", "Always at Imbuing 45+");
