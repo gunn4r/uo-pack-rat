@@ -1,6 +1,6 @@
 // ui-state.test.mts — [slow]: the page's state transitions in the real Electron window.
 //
-// `[slow]`: the page's state transitions in the real Electron window (same launch as `scripts/ui-smoke.test.mts`, on a writable `--data` directory seeded with the demo scans, since Forget refuses to write under `--demo`): a refresh keeps the Slot chip on the filter the table uses; Clear all clears the switches behind "+ Filter" and the search too, and hides the active strip; the table is virtual (a screenful of rows drawn, the last reached by scrolling); the item peek opens from a row click with the row selected, follows ↑/↓, closes with Esc (focus back on the row) and its Close button, reopens with Enter, and a row that keeps keyboard focus shows its tooltip after the delay; hovering a row shows its tooltip, hovering its action buttons hides it or keeps a pending one from opening, and hovering the row again brings it back; with the table scrolled to its end, a Forget of the biggest container (from its row's ⋯ menu) still leaves rows on screen, keeps the builder's character and does not add weapon options; a build started for one character and finished while another is selected is not drawn under the other one, says whose build finished, and appears when its character is selected again; a saved run opened (with its fetch held back) just before a character switch is not drawn under the new character, and a slow run list for the old character does not fill the new one's drawer; a character's name in the Characters roster opens their sheet at `#/characters/<Name>`, next/previous and the breadcrumb walk the roster and back, a piece in the worn-gear list opens its tooltip, and Forget, reached from the row's ⋯ menu by keyboard (↑ wraps to it), removes the character's row, its worn set from the Location filter and its builder entry; "Show <name>'s items" sets the Inventory's Character filter rather than the search, and a piece's "Open in Inventory" shows that piece in the item peek; a failed `/api/profiles` during load (answered 500 through Playwright's request routing) still opens the first-run wizard, renders Settings and Import, and names the failed route in the Characters and Suit Builder tabs; and the Inventory column choice survives a restart of the app, whose page comes back on a new origin. Skipped the same way as the UI smoke test. Rarity at most (issue #11) leaves only the tier picked and lower ones, named in the active strip and on the chip. Also (issue #99) a container with items missing since its last scan: the "3 missing" badge on its row, none on a chest scanned once, and Show missing items listing them (a shrunk stack as "64 fewer"), a row's item tooltip drawn inside the dialog and the tooltip still on the page (and working) after the dialog is gone. A worn piece scanned low on durability (issue #98) gets its low-durability tag inside its own gear-list row and the sheet its one-line summary, a character with nothing low gets neither, and the roster badges it beside the character's name, inside the sticky Character cell and on screen without scrolling, with the sentence as the badge's accessible name and tooltip. A character scanned with Resisting Spells 100 (issue #261) has each resist held at 40 on the sheet's resist tiles, and the footnote names the ones the minimum lifts.
+// `[slow]`: the page's state transitions in the real Electron window (same launch as `scripts/ui-smoke.test.mts`, on a writable `--data` directory seeded with the demo scans, since Forget refuses to write under `--demo`): a refresh keeps the Slot chip on the filter the table uses; Clear all clears the switches behind "+ Filter" and the search too, and hides the active strip; the table is virtual (a screenful of rows drawn, the last reached by scrolling); the item peek opens from a row click with the row selected, follows ↑/↓, closes with Esc (focus back on the row) and its Close button, reopens with Enter, and a row that keeps keyboard focus shows its tooltip after the delay; hovering a row shows its tooltip, hovering its action buttons hides it or keeps a pending one from opening, and hovering the row again brings it back; the Containers filters (a search by serial in any case, the Kind menu marking its current choice, a Kind with no container, Clear filters; issue #487); with the table scrolled to its end, a Forget of the biggest container (from its row's ⋯ menu) still leaves rows on screen, keeps the builder's character and does not add weapon options; a build started for one character and finished while another is selected is not drawn under the other one, says whose build finished, and appears when its character is selected again; a saved run opened (with its fetch held back) just before a character switch is not drawn under the new character, and a slow run list for the old character does not fill the new one's drawer; a character's name in the Characters roster opens their sheet at `#/characters/<Name>`, next/previous and the breadcrumb walk the roster and back, a piece in the worn-gear list opens its tooltip, and Forget, reached from the row's ⋯ menu by keyboard (↑ wraps to it), removes the character's row, its worn set from the Location filter and its builder entry; "Show <name>'s items" sets the Inventory's Character filter rather than the search, and a piece's "Open in Inventory" shows that piece in the item peek; a failed `/api/profiles` during load (answered 500 through Playwright's request routing) still opens the first-run wizard, renders Settings and Import, and names the failed route in the Characters and Suit Builder tabs; and the Inventory column choice survives a restart of the app, whose page comes back on a new origin. Skipped the same way as the UI smoke test. Rarity at most (issue #11) leaves only the tier picked and lower ones, named in the active strip and on the chip. Also (issue #99) a container with items missing since its last scan: the "3 missing" badge on its row, none on a chest scanned once, and Show missing items listing them (a shrunk stack as "64 fewer"), a row's item tooltip drawn inside the dialog and the tooltip still on the page (and working) after the dialog is gone. A worn piece scanned low on durability (issue #98) gets its low-durability tag inside its own gear-list row and the sheet its one-line summary, a character with nothing low gets neither, and the roster badges it beside the character's name, inside the sticky Character cell and on screen without scrolling, with the sentence as the badge's accessible name and tooltip. A character scanned with Resisting Spells 100 (issue #261) has each resist held at 40 on the sheet's resist tiles, and the footnote names the ones the minimum lifts.
 //
 // Each of the first cases is a bug the 2026-09-22 review reproduced in a browser: a refresh resetting the filter while the table stayed filtered, the table showing nothing after a Forget shrank it, Forget re-running the whole page load (duplicated weapon options, the builder jumping to the first character), a build shown under whichever character was selected when it finished, a failed request leaving Settings on "loading…" forever, and no way to forget a character.
 import test from "node:test";
@@ -130,6 +130,24 @@ test("[slow] refresh, Clear all, the virtual table and Forget keep the page's st
 
     await openTab(page, "containers");
     const rows = page.locator("#cont-table tbody tr[data-root]");
+    // The Containers filters (#487): a search by serial narrows the rows and the footer says how many of all; a Kind with
+    // no container (the demo's are on the ground) shows Clear filters, which brings every row back.
+    const everyRow = await rows.count();
+    const serial = (await rows.first().locator(".mono").innerText()).trim();
+    await page.fill("#cont-q", `  ${serial.toUpperCase()} `);   // textHit: trimmed, any case
+    await page.waitForFunction(() => document.querySelectorAll("#cont-table tbody tr[data-root]").length === 1);
+    assert.match(await page.locator("#cont-foot").innerText(), new RegExp(`^1 of ${everyRow} containers`));
+    await page.fill("#cont-q", "");
+    assert.equal(await page.getAttribute("#cont-kind", "aria-haspopup"), "menu");
+    await page.click("#cont-kind");
+    assert.equal(await page.getByRole("menuitemradio", { name: /^Any kind/ }).getAttribute("aria-checked"), "true", "the current choice is marked");
+    await page.getByRole("menuitemradio", { name: /^Backpack/ }).click();
+    await page.click("#cont-kind");
+    assert.equal(await page.getByRole("menuitemradio", { name: /^Backpack/ }).getAttribute("aria-checked"), "true");
+    assert.equal(await page.getByRole("menuitemradio", { name: /^Any kind/ }).getAttribute("aria-checked"), "false");
+    await page.keyboard.press("Escape");
+    await page.click("#cont-empty button");
+    await page.waitForFunction((n) => document.querySelectorAll("#cont-table tbody tr[data-root]").length === n, everyRow);
     const counts = await rows.locator("td:nth-child(5)").allInnerTexts();
     const biggest = counts.map((c) => Number(c.replace(/,/g, ""))).reduce((best, n, i, all) => (n > all[best]! ? i : best), 0);
     await rows.nth(biggest).getByRole("button", { name: /^Actions for / }).click();
@@ -354,8 +372,8 @@ test("[slow] a character's sheet opens from the roster, and a character can be f
     await page.getByRole("button", { name: `Next character: ${other}` }).click();
     await page.waitForSelector(`#tab-characters .sheet[data-character="${other}"]`);
     // a worn piece in the gear list shows that piece's tooltip lines
-    const tile = page.locator("#tab-characters .sheet button.gear-piece").first();
-    const piece = await tile.locator(".nm").innerText();
+    const tile = page.locator("#tab-characters .sheet button.gi").first();
+    const piece = await tile.locator(".gi-name").innerText();
     await tile.click();
     assert.ok((await page.locator(".pop.item-pop").innerText()).includes(piece), `the slot popover names ${piece}`);
     await page.keyboard.press("Escape");
@@ -389,9 +407,9 @@ test("[slow] a character's sheet opens from the roster, and a character can be f
     assert.equal(await page.locator("#f-text").inputValue(), "");
     // A worn piece's popover opens it in the Inventory's item peek.
     await page.evaluate((n) => { location.hash = `#/characters/${encodeURIComponent(n)}`; }, other);
-    const slot = page.locator("#tab-characters .sheet button.gear-piece").first();
+    const slot = page.locator("#tab-characters .sheet button.gi").first();
     await slot.waitFor({ timeout: 10_000 });
-    const worn = await slot.locator(".nm").innerText();
+    const worn = await slot.locator(".gi-name").innerText();
     await slot.click();
     await page.locator(".pop.item-pop").getByRole("button", { name: "Open in Inventory" }).click();
     await page.waitForSelector("#inv-peek:not([hidden])", { timeout: 10_000 });
@@ -477,17 +495,17 @@ test("[slow] the character sheet's shown properties are chosen in a popover and 
     const card = page.locator('#tab-characters section[aria-label="Properties"]');
     const rows = (): Promise<string[]> => card.locator(".sheet-props .kv-k").allInnerTexts();
     const shown = await rows();
-    for (const r of ["Faster Casting", "Hit Chance", "Hit Life Leech", "Hit Mana Leech", "Hit Stamina Leech", "Luck"]) assert.ok(shown.includes(r), `${r} is shown by default`);
+    for (const r of ["Faster Casting", "Hit Chance Increase", "Hit Life Leech", "Hit Mana Leech", "Hit Stamina Leech", "Luck"]) assert.ok(shown.includes(r), `${r} is shown by default`);
     assert.ok(!shown.includes("Hit Fireball"), "a property outside the default set is off");
     await card.getByRole("button", { name: "Properties shown" }).click();
     const pop = page.getByRole("dialog", { name: "Properties shown" });
     await pop.locator('input[value="hitFireball"]').check();
     await pop.locator('input[value="hci"]').uncheck();
     const after = await rows();
-    assert.ok(after.includes("Hit Fireball") && !after.includes("Hit Chance"), `the card follows the choice, got ${JSON.stringify(after)}`);
+    assert.ok(after.includes("Hit Fireball") && !after.includes("Hit Chance Increase"), `the card follows the choice, got ${JSON.stringify(after)}`);
     await pop.getByRole("button", { name: "Reset to default" }).click();
     const reset = await rows();
-    assert.ok(reset.includes("Hit Chance") && reset.includes("Hit Life Leech") && !reset.includes("Hit Fireball"), `Reset puts the default back, got ${JSON.stringify(reset)}`);
+    assert.ok(reset.includes("Hit Chance Increase") && reset.includes("Hit Life Leech") && !reset.includes("Hit Fireball"), `Reset puts the default back, got ${JSON.stringify(reset)}`);
     assert.deepEqual(errors, []);
   } finally {
     await close();
@@ -508,9 +526,9 @@ test("[slow] a worn piece low on durability is badged on the sheet and beside it
     await page.evaluate(() => { location.hash = "#/characters/Dorran"; });
     await page.waitForSelector('#tab-characters .sheet[data-character="Dorran"]', { timeout: 10_000 });
     // the tag is drawn in capitals; its text is the words
-    const badges = page.locator("#tab-characters .sheet .gear-piece .tag.warn", { hasText: /durability/i });
+    const badges = page.locator("#tab-characters .sheet .gi .tag.warn", { hasText: /durability/i });
     assert.deepEqual(await badges.allTextContents(), ["Low durability 12/150"]);
-    const tile = page.locator('#tab-characters .gear-piece[data-serial="1879834625"]');
+    const tile = page.locator('#tab-characters .gi[data-serial="1879834625"]');
     assert.equal(await tile.locator(".tag.warn", { hasText: /durability/i }).textContent(), "Low durability 12/150", "the tag is on the low piece's own row");
     const [tb, bb] = [await tile.locator("xpath=ancestor::td").boundingBox(), await tile.locator(".tag.warn", { hasText: /durability/i }).boundingBox()];
     assert.ok(tb && bb && bb.x >= tb.x && bb.x + bb.width <= tb.x + tb.width + 0.5, `the tag fits inside its row (cell ${JSON.stringify(tb)}, tag ${JSON.stringify(bb)})`);

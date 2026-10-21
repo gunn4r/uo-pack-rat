@@ -72,7 +72,7 @@ Seven tiles: the five resists as value / cap, with a meter and a "cap +N" badge 
 Then comes a row (layout 1B, issue #57): the paperdoll on the left, 420 px wide, and the worn gear filling the rest at the doll's height, then the Properties card under them.
 
 - **Paperdoll:** the doll card (`app/ui/doll-card.mts`) drawing the character's look in the shown suit (`wornPieces` turns each piece's `graphic` and `hue` into what the renderer draws): what they wear on the Characters screen, the new suit on the Suit Builder's Full sheet.
-- **Worn gear:** a table with one row per filled slot, in the slot groups' order (Armor, Weapons and jewelry, Clothing, the Kilt / Skirt only while one is worn, issue #202), then anything else as Other. Each row is the slot and the piece: its name in its rarity's color (the tier's `--rarity-*` token, as Manual's slot cards and the tooltip title; no color for a tier without one), a "New" badge, its quality tags (antique, brittle, cursed, prized, blessed) and the low-durability tag. The list scrolls inside the row when it is longer than the doll; "Nothing worn." when no slot is filled.
+- **Worn gear:** a table with one row per filled slot, in the slot groups' order (Armor, Weapons and jewelry, Clothing, the Kilt / Skirt only while one is worn, issue #202), then anything else as Other. Each row is the slot and the piece, a `gearItem` (issue #504): its icon, its name in its rarity's color, its quality tags (antique, brittle, cursed, prized, blessed), a "New" badge and the low-durability tag. The list scrolls inside the row when it is longer than the doll; "Nothing worn." when no slot is filled.
 - **Properties:**
   - the chosen properties, as key/value lists with the shard cap muted, in Casting, Combat, Leech, Regeneration, Pools and other, and Other;
   - the card's "Properties shown" popover picks them from every property the tooltip reader knows, listed in the property catalogue's groups and order (`catalogueGroups`, #487) like the Inventory's property rule. The choice is saved as the ui-prefs `sheetProps`, default `SHEET_GROUPS`;
@@ -89,4 +89,4 @@ The one-suit sheet tags a worn piece that is low on durability ("Low durability 
 
 The Characters sheet page puts a one-line warning under the meta line ("2 worn pieces are low on durability"). Nothing shows when nothing is low. The now → after sheet shows no tag, since an optimizer piece carries no durability.
 
-The pure formatters (`capBadgeText`, `atCap`, `bonusBreakdown`, `moveText`, `tagTone`, `lowDurability`, `lowDurabilityCount`, `lowDurabilitySummary`) are exported and unit-tested in `app/ui-characters.test.mts`, with the counts worded by `format.mts`'s `plural`.
+The pure formatters (`capBadgeText`, `atCap`, `bonusBreakdown`, `moveText`, `lowDurability`, `lowDurabilityCount`, `lowDurabilitySummary`) are exported and unit-tested in `app/ui-characters.test.mts`, with the counts worded by `format.mts`'s `plural`.

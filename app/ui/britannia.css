@@ -49,7 +49,7 @@
   --color-success-soft: #e2e9c4;  --color-on-success-soft: #2a531f;
   --color-warning: #924a0c;       --color-on-warning: #fdf8ea;
   --color-warning-hover: #793d09; --color-on-warning-hover: #fdf8ea;
-  --color-warning-soft: #f7d2b2;  --color-on-warning-soft: #6e3606;
+  --color-warning-soft: #fae3ce;  --color-on-warning-soft: #6e3606;   /* light enough that every rarity color reads on a "differs" cell (issue #504) */
   --color-danger: #8e2433;        --color-on-danger: #fdf8ea;         /* the logo crimson */
   --color-danger-hover: #761d2a;  --color-on-danger-hover: #fdf8ea;
   --color-danger-soft: #f4d8d2;   --color-on-danger-soft: #7c1f2c;

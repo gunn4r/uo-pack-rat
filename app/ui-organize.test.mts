@@ -11,7 +11,7 @@ import { labelledPlaces } from "./vault-lib.mts";
 import type { Container } from "./vault-lib.mts";
 import { PENDING_GRACE_MS } from "./organize-state.mts";
 import type { BridgeResultEntry, OrganizeConfig, OrganizePlan, OrganizeProposal, OrganizeRule, PlanMove, ProposalCandidate, ProposalGroup } from "./ui/api-types.mts";
-import { CATCH_ALL_ID, EMPTY_BAGS_ID, emptyBagsNote, moveRule, withLabel, withoutLabel, pinNote, pinnedWith, upsertRule, withoutRule, newRuleId, ruleQueryFrom, blankQuery, droppedNote, ruleNameFrom, checkDraft, matchSummary, extraFilters, targetView, fillText, fillTone, targetOptions, withTargetLabels, matchLine, debounced, MATCH_DEBOUNCE_MS, organizeStage, ruleNameOf, containerNameOf, ruleCountParts, planHeadline, aboutTime, unclaimedNote, roomLines, crossSiteLines, warningGroups, tripRows, moveName, moveWhere, carriedView, tripGate, stepWatch, outcomeOf, outcomeText, failedSteps, runAllNext, tripRefusal, adoptWatch, resumedNote, GRACE_MS, TRIP_MS, STRATEGY_TEXT, candidateGroups, candidateNote, proposalHeadline, groupStatus, groupAway, intoText, proposalNotes, proposalStays, canTrySimple, acceptGate } from "./ui/organize-model.mts";
+import { CATCH_ALL_ID, EMPTY_BAGS_ID, emptyBagsNote, moveRule, withLabel, withoutLabel, pinNote, pinnedWith, upsertRule, withoutRule, newRuleId, ruleQueryFrom, blankQuery, droppedNote, ruleNameFrom, checkDraft, matchSummary, ruleTokens, targetView, fillText, fillTone, targetOptions, withTargetLabels, matchLine, debounced, MATCH_DEBOUNCE_MS, organizeStage, ruleNameOf, containerNameOf, ruleCountParts, planHeadline, aboutTime, unclaimedNote, roomLines, crossSiteLines, warningGroups, tripRows, moveName, moveWhere, carriedView, tripGate, stepWatch, outcomeOf, outcomeText, failedSteps, runAllNext, tripRefusal, adoptWatch, resumedNote, GRACE_MS, TRIP_MS, STRATEGY_TEXT, candidateGroups, candidateNote, proposalHeadline, groupStatus, groupAway, intoText, proposalNotes, proposalStays, canTrySimple, acceptGate } from "./ui/organize-model.mts";
 
 const A = 0x40000001, B = 0x40000002, C = 0x40000003, GONE = 0x40000009;
 const chest = (serial: number, over: Partial<Container> = {}): Container => ({ serial, root: serial, parent: null, kind: "ground", name: "Metal Chest", tooltip: ["Metal Chest"], label: `Metal Chest (0x${serial.toString(16)})`, capacity: { items: 61, maxItems: 125, stones: null, maxStones: null }, scannedBy: "Tester", scannedAt: "2026-09-28T10:00:00Z", ...over });
@@ -125,11 +125,11 @@ test("[fast] a rule's one-line summary: its names first, then the Inventory's fi
   assert.equal(matchSummary({ query: { ...blankQuery(), kind: ["gear"], tags: ["brittle"] }, skipSuits: true }, CTX), "Kind: gear · Tagged: brittle · Not in a saved suit");
 });
 
-test("[fast] extraFilters lists the filters the editor has no control for, and removes one at a time", () => {
+test("[fast] ruleTokens lists every filter of a rule, as the Inventory's strip does, and removes one at a time", () => {
   const query = { ...blankQuery(), q: "x", kind: ["gear"], slot: ["ring"], rarityMin: "Lesser Artifact", props: [{ key: "lmc", min: 8 }] };
-  const extra = extraFilters(query, CTX);
-  assert.deepEqual(extra.map((t) => t.label), ["Slot: Ring", "LMC ≥ 8"]);
-  const noSlot = extra[0]!.remove(query);
+  const extra = ruleTokens(query, CTX);
+  assert.deepEqual(extra.map((t) => t.label), ["Search: x", "Slot: Ring", "Rarity ≥ Lesser Artifact", "Kind: gear", "LMC ≥ 8"]);
+  const noSlot = extra.find((t) => t.label === "Slot: Ring")!.remove(query);
   assert.deepEqual([noSlot.slot, noSlot.kind, noSlot.q, noSlot.props.length], [[], ["gear"], "x", 1]);
   assert.deepEqual(Object.keys(noSlot).sort(), Object.keys(query).sort(), "still exactly a rule query");
 });

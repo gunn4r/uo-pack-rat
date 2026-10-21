@@ -4,7 +4,7 @@
 // owns: `OptItem`, `buildPools`, `toOptItem`, `totalsOf`, `requirementReport`, `gearSkills`, `builderKeys`, `propertyKeys`, `extraKeys`, `flagKeys`, `flagKey`, `flagLabel`, `weaponAllowed`, `weaponSkillsOf`, `WEAPON_SKILLS`, `itemTypeOf`, `ITEM_TYPES`, `itemSearchBlob`
 import { floorMet, heldTotal, liftedMin, RESIST_SKILL_KEY, type ResistStep } from "../solver/scoring.mts";
 import { getRules } from "./rules.mts";
-import { labelOf, PROP_LABELS, SKILL_SET, type PropMap } from "./properties.mts";
+import { propName, PROP_LABELS, SKILL_SET, type PropMap } from "./properties.mts";
 import { GEAR_SLOTS, HAND_SLOTS, REQUIRED_SLOTS, SLOT_GROUP } from "./slots.mts";
 import { slayersOf } from "./kinds.mts";
 import type { Inventory, Item } from "./fold.mts";
@@ -275,7 +275,7 @@ export function requirementReport(totals: PropMap, profile: RequirementProfileIn
   for (const k of [...keys].sort((a, b) => (floors[b] ? 1 : 0) - (floors[a] ? 1 : 0) || a.localeCompare(b))) {
     // a resist under its minimum reaches the minimum, so its value says that, and `met` agrees with it
     const v = totals[k] || 0, floor = floors[k], cap = caps[k], min = liftedMin(profile, k, totals[RESIST_SKILL_KEY] || 0), held = heldTotal(v, min);
-    rows.push({ key: k, label: labelOf(k), value: held, floor: floor ?? null, cap: cap ?? null,
+    rows.push({ key: k, label: propName(k), value: held, floor: floor ?? null, cap: cap ?? null,
       met: floor == null ? null : floorMet(v, floor, min), capped: cap != null && v >= cap, over: cap != null ? Math.max(0, v - cap) : 0 });
   }
   return rows;
@@ -335,10 +335,11 @@ export const flagLabel = (f: string): string => f.replace(/[()]/g, "").trim().sp
 // The name once more with its punctuation as spaces, so "transcendence animal lore" finds "Scroll of Transcendence
 // (Animal Lore - 0.1 Pts)" (issue #181).
 const plainName = (it: Item): string => it.name.replace(/[^\p{L}\p{N}.]+/gu, " ");
+// Its tags too (#487: every search finds "cursed"), which a scan's tooltip lines also hold.
 export function itemOwnBlob(it: Item): string {
-  return [it.name, plainName(it), ...(it.lines || []), it.rarity || "", it.kind || ""].join(" \n ").toLowerCase();
+  return [it.name, plainName(it), ...(it.lines || []), it.rarity || "", it.kind || "", ...(it.tags || [])].join(" \n ").toLowerCase();
 }
 
 export function itemSearchBlob(it: Item): string {
-  return [it.name, plainName(it), ...(it.lines || []), it.location?.text || "", it.rarity || "", it.kind || ""].join(" \n ").toLowerCase();
+  return [it.name, plainName(it), ...(it.lines || []), it.location?.text || "", it.rarity || "", it.kind || "", ...(it.tags || [])].join(" \n ").toLowerCase();
 }

@@ -155,6 +155,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `app/tiledata.test.mts` — `app/tiledata.mts` (issue #10): reading a 7.x tiledata.mul, classifying a tile the way the house map draws it, and finding the file.
 - `app/ui-characters.test.mts` — the Characters screen's pure logic (`app/ui/sheet.mts`'s formatters, `app/ui/roster.mts`).
 - `app/ui-components.test.mts` — `app/ui/components.mts`'s builders on a fake DOM just big enough for them.
+- `app/ui-gear-item.test.mts` — `app/ui/gear-item.mts`'s `gearItem` on a fake DOM, and the tooltip title's icon.
 - `app/ui-inventory.test.mts` — `app/ui/inv-model.mts`, the Inventory screen's pure rules.
 - `app/ui-item-tip.test.mts` — `app/ui/item-tip.mts`, where the item tooltip gets its item (issue #10).
 - `app/ui-map.test.mts` — `app/ui/house-map-model.mts`, the House map's pure rules (issues #10 and #164).
@@ -173,7 +174,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `scripts/api-routes.test.mts` — a [smoke] guard that `app/api/routes.mts`'s route map and the routes `app/http/routes/` registers agree, both ways (issue #338).
 - `scripts/build-schema-types.test.mts` — the JSON Schema to TypeScript generator (`scripts/build-schema-types.mts`).
 - `scripts/build-ui.test.mts` — `scripts/build-ui.mts`'s `buildUi()`, the page build.
-- `scripts/changelog.test.mts` — `scripts/changelog.mts`: a [smoke] guard that the committed fragments and CHANGELOG.md are in shape, a [smoke] release of a copy of them, and the release that puts the fragments together.
+- `scripts/changelog.test.mts` — `scripts/changelog.mts`: a [smoke] guard that the committed fragments and CHANGELOG.md are in shape and every fragment's name starts with its issue number, a [smoke] release of a copy of them, and the release that puts the fragments together.
 - `scripts/compat-shims.test.mts` — a [fast] guard that docs/architecture.md's "Compatibility shims" table and the code's `compat: <id>` comments name the same shims.
 - `scripts/css-guard.test.mts` — a [smoke] guard that keeps screen stylesheets from restyling the shared components, the window breakpoints in one list, and every color a token.
 - `scripts/docs-freshness.test.mts` — a [smoke] guard that the Markdown stays readable and true to the code (issue #338).

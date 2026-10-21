@@ -331,6 +331,28 @@
 .art-img { display: block; max-width: 100%; max-height: 100%; }
 .art-img.art-2x { image-rendering: pixelated; max-width: none; max-height: none; }
 .art-tile > :not(.art-img) { position: absolute; right: 0; bottom: 0; }
+.art-tile.art-none { background: transparent; }
+
+/* ---- a piece of gear (ui/gear-item.mts, issues #504, #503): the icon, the name in its rarity color, the quantity, tags and badges, in one row that never wraps; the name is cut short instead */
+.gi { display: inline-flex; align-items: center; gap: var(--space-2); min-width: 0; max-width: 100%; vertical-align: middle; }
+.gi > .gi-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gi > :not(.gi-name) { flex: none; }
+/* a detail pane's title (detailPane): the whole name, wrapped, beside its 32 px icon, which lines up with the first line */
+.peek-title .gi { align-items: flex-start; }
+.peek-title .gi > .gi-name { white-space: normal; overflow-wrap: anywhere; }
+.gi-qty { color: var(--color-text-muted); font-size: var(--text-sm); font-variant-numeric: tabular-nums; }
+/* interactive: a bare button; the name underlines on hover, the whole piece takes the focus ring */
+.gi.gi-link { padding: 0; border: 0; background: none; color: var(--color-text); font: inherit; text-align: left; cursor: pointer; border-radius: var(--radius-sm); }
+.gi.gi-link:hover > .gi-name, .gi.gi-link:hover .gi-card-line > .gi-name { text-decoration: underline; text-underline-offset: 2px; }
+.gi.gi-link:focus-visible { outline: none; box-shadow: var(--ring-focus); }
+/* chip: a compact pill for a list of pieces in a sentence */
+.gi.gi-chip { gap: var(--space-1); height: 28px; padding: 0 var(--space-2) 0 2px; border: var(--border-width) solid var(--color-border); border-radius: var(--radius-full); background: var(--color-surface-subtle); font-size: var(--text-sm); }
+/* card: the icon beside two lines, the lines one grid item so their inline flow never splits */
+.gi.gi-card { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: var(--space-2); }
+.gi-card-text { display: flex; flex-direction: column; min-width: 0; }
+.gi-card-line { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.gi-card-line > .gi-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gi-card-line > :not(.gi-name) { flex: none; }
 
 /* ---- the doll card (ui/doll-card.mts, issue #57): dark in both themes (data-mode="dark" takes the theme family's dark tokens), the head and the backdrop one surface, the backdrop a radial gradient that reaches the card's own colour before any edge (closest-side), so there is no seam; the figure frameless, at whole-pixel scale */
 .doll-card { display: block; overflow: hidden; }

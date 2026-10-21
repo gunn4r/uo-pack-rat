@@ -35,7 +35,7 @@ export const FLEX_CLASSES = [
   "btn", "field", "search", "check", "seg", "fchip", "token", "pill", "badge", "tag", "rar-tier", "card-head",
   "tbl-foot", "rowact", "overlay-head", "overlay-foot", "overlay-titles", "toast", "toasts", "msg", "msg-body", "msg-actions",
   "meter", "stepper", "step", "step-dot", "kv", "kv-k", "kv-v", "resist", "drawer", "drawer-body",
-  "dialog", "dialog-body", "dialog-foot", "pop-body", "tipwrap", "empty-state", "art-tile", "cbx", "cbx-text", "cbx-opt", "cbx-foot",
+  "dialog", "dialog-body", "dialog-foot", "pop-body", "tipwrap", "empty-state", "art-tile", "gi", "gi-card", "gi-card-text", "gi-card-line", "cbx", "cbx-text", "cbx-opt", "cbx-foot",
   "doll-card", "doll-band", "doll-pill", "doll-head", "doll-name", "doll-controls", "doll-stage", "doll-figs", "doll-fig", "doll-empty", "doll-custom", "doll-group", "doll-swatches", "doll-custom-foot",
 ] as const;
 
@@ -305,10 +305,10 @@ export function resistTile(name: string, token: string, ...kids: Kids): HTMLDivE
 
 // ---------------------------------------------------------------- detail pane
 // A side detail pane's contents (the Inventory's item peek, the Scrolls view's skill detail; styled in inventory.css):
-// the title with Previous / Next / Close, a meta line, the sections, then the actions and the keys hint. The caller
+// the title (text, or an element such as an item's gearItem) with Previous / Next / Close, a meta line, the sections, then the actions and the keys hint. The caller
 // owns the pane element, showing it and its keys (Esc, the arrows); `noun` names what the arrows step through.
 export const detailSection = (title: string, ...kids: Kids): HTMLElement => box("section", { class: "peek-sec", "aria-label": title }, txt(title, "caps"), ...kids);
-export function detailPane(pane: HTMLElement, o: { title: string; titleId: string; noun: string; nouns: string; meta: Kids; sections: Kids; actions: Kids; actionsCls?: string; onStep: (delta: number) => void; onClose: () => void }): void {
+export function detailPane(pane: HTMLElement, o: { title: string | HTMLElement; titleId: string; noun: string; nouns: string; meta: Kids; sections: Kids; actions: Kids; actionsCls?: string; onStep: (delta: number) => void; onClose: () => void }): void {
   pane.setAttribute("aria-labelledby", o.titleId);
   pane.replaceChildren(
     box("div", { class: "peek-head" },
@@ -629,7 +629,8 @@ export function clearToasts(): void { document.getElementById("toasts")?.replace
 // with an icon; a disabled item stays in the list (aria-disabled) and carries its reason as a title.
 // The menu is as wide as its longest item, so no item's words wrap: `width` is only its minimum, and it
 // never grows past 360 px or the window (components.css, .pop[role="menu"]).
-export interface MenuItem { label: string; onSelect: () => void; danger?: boolean | undefined; kbd?: string | undefined; count?: string | number | undefined; icon?: IconName | undefined; disabled?: string | null | undefined }
+// `checked` makes the item one of a single choice (role menuitemradio): true marks the current one with a check.
+export interface MenuItem { label: string; onSelect: () => void; danger?: boolean | undefined; kbd?: string | undefined; count?: string | number | undefined; icon?: IconName | undefined; disabled?: string | null | undefined; checked?: boolean | undefined }
 export function menu(anchor: HTMLElement, items: Array<MenuItem | "divider">, { label, width = 220 }: { label: string; width?: number }): PopoverHandle & { counts: Map<string, HTMLSpanElement> } {
   const counts = new Map<string, HTMLSpanElement>();
   const buttons: HTMLButtonElement[] = [];
@@ -638,9 +639,9 @@ export function menu(anchor: HTMLElement, items: Array<MenuItem | "divider">, { 
     if (it === "divider") return el("div", { class: "divider", role: "separator" });
     const count = txt(it.count ?? "", "count");
     counts.set(it.label, count);
-    const b = box("button", { type: "button", class: `menu-item${it.danger ? " danger" : ""}`, role: "menuitem", tabindex: buttons.length ? "-1" : "0",
+    const b = box("button", { type: "button", class: `menu-item${it.danger ? " danger" : ""}`, role: it.checked == null ? "menuitem" : "menuitemradio", ...(it.checked == null ? {} : { "aria-checked": String(it.checked) }), tabindex: buttons.length ? "-1" : "0",
       ...(it.disabled ? { "aria-disabled": "true", title: it.disabled } : {}),
-      onclick: () => { if (it.disabled) return; handle?.close(); it.onSelect(); } }, it.icon ? icon(it.icon, { size: "sm" }) : null, txt(it.label), it.kbd ? kbd(it.kbd) : count);
+      onclick: () => { if (it.disabled) return; handle?.close(); it.onSelect(); } }, it.checked ? icon("check", { size: "sm" }) : it.icon ? icon(it.icon, { size: "sm" }) : null, txt(it.label), it.kbd ? kbd(it.kbd) : count);
     buttons.push(b);
     return b;
   });

@@ -32,7 +32,7 @@ test("[slow] the Fetch list's pieces show the item tooltip on hover and on keybo
     await openBuilder(page);
     await pressBuild(page);
     await built(page);
-    const pieces = page.locator("section[aria-label='Fetch list'] .b-fetch-piece");
+    const pieces = page.locator("section[aria-label='Fetch list'] .gi");
     assert.ok(await pieces.count() > 1, "the fetch list names its pieces one by one");
     const name = await pieces.nth(1).innerText();
     await pieces.nth(1).scrollIntoViewIfNeeded();
@@ -59,9 +59,9 @@ test("[slow] the Plan's worn and replacement names each show their own piece's t
     await built(page);
     const plan = page.locator(".b-plan tbody");
     assert.equal(await plan.locator("tr[data-serial]").count(), 0, "the rows carry no serial of their own");
-    const row = plan.locator("tr", { has: page.locator("td:nth-child(2) .b-tip") }).filter({ has: page.locator("td:nth-child(3) .b-tip") }).first();
+    const row = plan.locator("tr", { has: page.locator("td:nth-child(2) .gi") }).filter({ has: page.locator("td:nth-child(3) .gi") }).first();
     await row.scrollIntoViewIfNeeded();
-    const [now, next] = [row.locator("td").nth(1).locator(".b-tip"), row.locator("td").nth(2).locator(".b-tip")];
+    const [now, next] = [row.locator("td").nth(1).locator(".gi"), row.locator("td").nth(2).locator(".gi")];
     assert.equal(await hoverTip(page, now), await now.innerText());
     assert.equal(await hoverTip(page, next), await next.innerText());
     assert.notEqual(await now.getAttribute("data-serial"), await next.getAttribute("data-serial"));
@@ -76,7 +76,7 @@ test("[slow] the Plan's worn and replacement names each show their own piece's t
     assert.equal(await tipName(page), await next.innerText());
     // An unchanged ("keep") row still shows the worn piece's tooltip.
     await page.getByRole("switch", { name: "Show unchanged slots" }).click();
-    const kept = plan.locator("tr", { has: page.locator("td:nth-child(3)", { hasText: /^keep$/ }) }).filter({ has: page.locator("td:nth-child(2) .b-tip") }).first().locator("td").nth(1).locator(".b-tip");
+    const kept = plan.locator("tr", { has: page.locator("td:nth-child(3)", { hasText: /^keep$/ }) }).filter({ has: page.locator("td:nth-child(2) .gi") }).first().locator("td").nth(1).locator(".gi");
     await kept.scrollIntoViewIfNeeded();
     assert.equal(await hoverTip(page, kept), await kept.innerText());
     assert.deepEqual(errors, []);
@@ -157,15 +157,15 @@ test("[slow] What changes: Gauges for what the build asks, Table with every prop
     assert.equal(await page.locator(".b-shares").count(), 0, "the table carries the breakdown");
     const rows = await page.locator(".b-chg-tbl tbody tr").evaluateAll((trs) => trs.map((tr) => [...tr.querySelectorAll("td")].map((td) => td.textContent ?? "")));
     const names = rows.map((r) => r[0]);
-    for (const r of ["Physical resist", "Fire resist", "Cold resist", "Poison resist", "Energy resist"]) assert.ok(names.includes(r), `${r} in the table`);
+    for (const r of ["Physical Resist", "Fire Resist", "Cold Resist", "Poison Resist", "Energy Resist"]) assert.ok(names.includes(r), `${r} in the table`);
     assert.ok(rows.some((r) => r[4] === "0"), "an unchanged property is listed too");
-    const moved = rows.filter((r) => r[4] !== "0" && !/ resist$/.test(r[0]!)).map((r) => r[0]!);
+    const moved = rows.filter((r) => r[4] !== "0" && !/ Resist$/.test(r[0]!)).map((r) => r[0]!);
     assert.ok(gauges.every((g) => moved.includes(g)), "a gauge only for a property that moves");
     // only what the build asks for: a non-zero weight or a requirement; a pool never beside its bonus
     const asked = await page.evaluate(() => [...document.querySelectorAll<HTMLInputElement>("#b-sec-weights .rule-row input[type=number], #b-sec-req .rule-row input[type=number]")]
       .filter((i) => !/ weight$/.test(i.getAttribute("aria-label") ?? "") || Number(i.value) !== 0).map((i) => (i.getAttribute("aria-label") ?? "").replace(/ (weight|minimum)$/, "")));
     assert.ok(gauges.every((g) => asked.includes(g)), `every gauge is weighted or required: ${gauges.join(", ")}`);
-    assert.ok(!(gauges.includes("Stamina increase") && gauges.includes("Stamina from gear and buffs")), "no pool beside its bonus");
+    assert.ok(!(gauges.includes("Stamina Increase") && gauges.includes("Stamina from gear and buffs")), "no pool beside its bonus");
     assert.ok(moved.length > gauges.length, "the build moves more than it asks for");
     assert.equal(more, moved.length - gauges.length, "the link counts the moved properties with no gauge");
     const saved = (): boolean => { try { return (JSON.parse(readFileSync(join(dataDir, "ui-prefs.json"), "utf8")) as { builderChanges?: string }).builderChanges === "table"; } catch { return false; } };
@@ -213,7 +213,7 @@ test("[slow] What changes: Gauges for what the build asks, Table with every prop
     await closeSettings(page);
     assert.match(await page.locator(".b-chg").innerText(), /\+\d+ past the cap \(Enemy of One\)/, "the note under What changes");
     await page.click("#b-chg-view [data-value=table]");
-    const di = page.locator(".b-chg-tbl tbody tr", { has: page.locator("td:first-child", { hasText: /^Damage$/ }) }).locator("td").nth(3);
+    const di = page.locator(".b-chg-tbl tbody tr", { has: page.locator("td:first-child", { hasText: /^Damage Increase$/ }) }).locator("td").nth(3);
     assert.match(await di.innerText(), /· \+\d+ past/);
     assert.match(await di.locator(".b-cap-past").getAttribute("title") ?? "", /past the cap \(Enemy of One\)/);
     assert.deepEqual(errors, []);

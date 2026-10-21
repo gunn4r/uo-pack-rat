@@ -45,7 +45,7 @@ export const SCREENS: Record<string, string | string[]> = {
   organize: "ui-organize", "auto-organize": "ui-organize", "rule-editor": "ui-organize",
   "organize-model": ["ui-organize", "ui-map"], kinds: "ui-organize",
   "builder-buffs": "ui-builder-*", "builder-header": "ui-builder-*", "builder-templates": "ui-builder-*", "builder-requirements": "ui-builder-*", "builder-job": "ui-builder-*", "builder-manual": "ui-builder-*", "manual-model": "ui-builder-*",
-  "item-browser": ["ui-state", "ui-builder-*"],
+  "item-browser": ["ui-state", "ui-builder-*"], "filter-bar": ["ui-state", "ui-builder-*", "ui-organize"],
   "doll-card": "ui-contrast", "doll-model": "ui-contrast", "sheet-doll": ["ui-state", "ui-contrast", "ui-builder-*"], "manual-doll": ["ui-builder-manual", "ui-contrast"], "doll-customizer": "ui-contrast", "customize-model": "ui-contrast",
 };
 
@@ -67,7 +67,8 @@ export const SHARED_UI: Record<string, string> = {
   breakpoints: "the window breakpoints",
   items: "the item helpers every item list uses",
   "item-parts": "the item widgets most screens draw",
-  "item-art": "container art on five screens",
+  "item-art": "container and item art on every screen that names an item",
+  "gear-item": "the one element that names a piece of gear, on every screen",
   "inventory-data": "the inventory every screen draws from",
   "organize-data": "Organize's setup, read by the Inventory views and Move to as well",
   profiles: "the profiles the Suit Builder and Characters both write",
