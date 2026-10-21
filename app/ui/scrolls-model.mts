@@ -9,7 +9,7 @@
 // owns: `powerRows`, `sotPlan`, `bindEverything`
 import type { Item } from "../vault-lib.mts";
 import type { RulesV1ScrollBinderPowerScrollsItem } from "../schema/types.d.mts";
-import { plural } from "./format.mts";
+import { plural, textHit } from "./format.mts";
 
 
 export type Step = RulesV1ScrollBinderPowerScrollsItem;
@@ -188,8 +188,7 @@ export function scrollFacts({ power, sot, binders, binder }: { power: PowerRow[]
   return [...facts, plural(binders, "empty Scroll Binder"), ready ? `${plural(ready, "skill")} ready to bind` : "Nothing is ready to bind yet"];
 }
 export function filterRows<T extends { skill: string }>(rows: T[], q: string): T[] {
-  const needle = q.trim().toLowerCase();
-  return needle ? rows.filter((r) => r.skill.toLowerCase().includes(needle)) : rows;
+  return rows.filter((r) => textHit(q, r.skill));
 }
 // The Inventory search that finds exactly a skill's scrolls (at one level): the name's "scroll of <skill> (" pins the
 // whole skill, so "Lore" never finds Animal Lore. The search reads names lower-cased.

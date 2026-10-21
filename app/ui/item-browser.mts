@@ -10,7 +10,7 @@
 // a pager click.
 //
 // map: ui-components
-// owns: `createItemBrowser`, `itemsSource`
+// owns: `createItemBrowser`, `itemsSource`, `itemsSourceWith`
 import { SLOT_LABELS, SLOT_GROUP, RESIST_KEYS, tagUnits, flagLabel, FLAG_CATALOGUE, PROPERTY_CATALOGUE, CATALOGUE_GROUPS, ITEM_TYPE_LABELS, typesOfSlot, type ItemType } from "../vault-lib.mts";
 import type { Item } from "../vault-lib.mts";
 import type { Facets, ItemQuery, ItemQueryGroups, Place, PropCounts, PropOp } from "../item-query.mts";
@@ -31,7 +31,7 @@ import { filterContext, tagEls, rarityEl, locationEl } from "./item-parts.mts";
 import { houseNameOf, mapHouses } from "./house-links.mts";
 import { retryLoad } from "./inventory-data.mts";
 import { BREAKPOINTS, upTo } from "./breakpoints.mts";
-import { plural } from "./format.mts";
+import { plural, textHit } from "./format.mts";
 
 const CHUNK = 500;              // rows per GET /api/items request (the server's own cap)
 const NARROW = upTo(BREAKPOINTS.narrow);
@@ -176,7 +176,7 @@ function checklist({ title, options, selected, onChange, searchable = options.le
     const kids: HTMLElement[] = [];
     let group: string | undefined;
     for (const o of options) {
-      if (filter && !`${o.label} ${o.mono || ""} ${o.group || ""}`.toLowerCase().includes(filter)) continue;
+      if (!textHit(filter, o.label, o.mono, o.group)) continue;
       if (o.group && o.group !== group) { group = o.group; kids.push(txt(o.group, "inv-opt-group t-sm muted")); }
       const cb = el("input", { type: "checkbox", value: o.value });
       cb.checked = picked.includes(o.value);
@@ -259,13 +259,13 @@ function locationOptions(q: ItemQuery, f: Facets | null): Option[] {
     ground.push(...ps.filter((p) => !["equipped", "backpack", "bank"].includes(p.kind)));
   }
   const houses = mapHouses(), houseOf = new Map(houses.flatMap((h) => h.serials.map((s): [number, string] => [s, h.id])));
-  const housed = ground.filter((p) => p.root != null && houseOf.has(p.root));
+  const housed = ground.filter((p) => p.root != null && houseOf.has(p.root)), inHouse = new Set(housed);
   for (const h of houses) {
     const count = housed.reduce((a, p) => a + (houseOf.get(p.root!) === h.id ? p.count : 0), 0);
     if (count || q.houses.includes(h.id)) out.push({ value: `house:${h.id}`, label: h.name, group: "Houses", count });
   }
   for (const h of houses) add(h.name, housed.filter((p) => houseOf.get(p.root!) === h.id));
-  add("On the ground", ground.filter((p) => !housed.includes(p)));
+  add("On the ground", ground.filter((p) => !inHouse.has(p)));
   for (const h of q.houses) if (!out.some((o) => o.value === `house:${h}`)) out.push({ value: `house:${h}`, label: `${houseNameOf(h)} (none now)`, group: "No longer scanned" });
   for (const r of q.roots) if (!out.some((o) => o.value === `root:${r}`)) out.push({ value: `root:${r}`, label: `${rootName(r, [])} (none now)`, group: "No longer scanned" });
   for (const l of q.loc) if (!out.some((o) => o.value === `loc:${l}`)) out.push({ value: `loc:${l}`, label: `${l} (none now)`, group: "No longer scanned" });
@@ -568,7 +568,7 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
     };
     const draw = (filter: string): void => {
       const kids: HTMLElement[] = [];
-      const hit = (words: string): boolean => !filter || words.toLowerCase().includes(filter);
+      const hit = (words: string): boolean => textHit(filter, words);
       for (const group of CATALOGUE_GROUPS) {
         const es = PROPERTY_CATALOGUE.filter((c) => c.group === group && hit(`${c.name} ${label(c.key)}`));
         if (!es.length) continue;
@@ -637,7 +637,7 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
       const kids: HTMLElement[] = [];
       for (const g of groups) {
         if (!open.has(g.group)) continue;
-        const keys = g.keys.filter((k) => !filter || `${colShort(k, label)} ${colFull(k, full)}`.toLowerCase().includes(filter));
+        const keys = g.keys.filter((k) => textHit(filter, colShort(k, label), colFull(k, full)));
         if (!keys.length) continue;
         kids.push(txt(g.group, "inv-opt-group t-sm muted"));
         for (const k of keys) {

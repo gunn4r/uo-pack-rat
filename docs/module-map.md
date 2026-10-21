@@ -45,7 +45,7 @@ Three files keep names from before the project became Pack Rat: `app/vault-serve
 <!-- module-map:start query -->
 | Module | Role | Owns |
 |---|---|---|
-| `app/item-query.mts` | Pure item-list filtering/sorting/paging/faceting, shared by the browser (ui/dom.mts re-exports EXTRA_COLS/colVal; ui/inventory.mts's filtered()/renderInventory() logic will move here in a later task) and the server (vault-server.mts's GET /api/items, GET /api/inventory's facets). | `parseItemQuery`, `matchesItem`, `applyItemQuery`, `facetsOf`, `propCounts`, `ItemQuery`, `RuleQuery`, `EXTRA_COLS`, `colVal`, `rarityRank`, `HIT_LIMIT` |
+| `app/item-query.mts` | Pure item-list filtering/sorting/paging/faceting, shared by the browser (ui/dom.mts re-exports EXTRA_COLS/colVal; ui/inventory.mts's filtered()/renderInventory() logic will move here in a later task) and the server (vault-server.mts's GET /api/items, GET /api/inventory's facets). | `parseItemQuery`, `matchesItem`, `applyItemQuery`, `queryWhere`, `facetsOf`, `propCounts`, `ItemQuery`, `RuleQuery`, `EXTRA_COLS`, `colVal`, `rarityRank`, `HIT_LIMIT` |
 <!-- module-map:end -->
 
 ## Shard rules
@@ -400,7 +400,7 @@ The page is `app/index.html` plus `app/ui/`, compiled by `scripts/build-ui.mts` 
 |---|---|---|
 | `app/ui/components.mts` | The page's component primitives (docs/ui.md), as small DOM builders over dom.mts's el(). | `box`, `txt`, `button`, `input`, `select`, `popover`, `combobox`, `createDrawer`, `openDialog`, `confirmDialog`, `table`, `menu`, `toast`, `resistTile`, `detailPane`, `FLEX_CLASSES` |
 | `app/ui/dialog.mts` | The one-field prompt dialog, on components.mts's openDialog. | `promptText` |
-| `app/ui/item-browser.mts` | The item browser (issue #12): the filter toolbar and its popovers, the active-filter strip, the columns and density popover, and the virtual table over its data source (GET /api/items by default), as a factory that can be mounted more than once. | `createItemBrowser`, `itemsSource` |
+| `app/ui/item-browser.mts` | The item browser (issue #12): the filter toolbar and its popovers, the active-filter strip, the columns and density popover, and the virtual table over its data source (GET /api/items by default), as a factory that can be mounted more than once. | `createItemBrowser`, `itemsSource`, `itemsSourceWith` |
 | `app/ui/item-parts.mts` | The item widgets every screen shares: an item's rarity, tags and location as elements, the row actions (Highlight, Grab, Go to) and the ⋯ menu, and the filter context the filter wording needs. | `rarityEl`, `tagEls`, `locationEl`, `tagWords`, `itemActions`, `itemMenu`, `filterContext`, `setItemNav` |
 | `app/ui/manual-doll.mts` | The Suit Builder Manual's live doll (issue #57, design 3.4 option A): the character in the suit being built, redrawn on every change, on one doll card that Manual puts in its own column (2× from the `doll` breakpoint up, 1× below it) or, on a narrow window, in a band at the top of the picker. | `manualDoll` |
 | `app/ui/paste-scanner.mts` | The Copy scanner script button for a paste-transport client (the ClassicUO web client): the wizard's copy step and Settings › Game client both use it. | `scannerCopy` |
@@ -442,7 +442,7 @@ The page is `app/index.html` plus `app/ui/`, compiled by `scripts/build-ui.mts` 
 <!-- module-map:start ui-models -->
 | Module | Role | Owns |
 |---|---|---|
-| `app/ui/format.mts` | Pure text formatting the whole page shares: a count and its noun. | `plural` |
+| `app/ui/format.mts` | Pure text formatting the whole page shares: a count and its noun, and the one rule a typed search matches a list's words by. | `plural`, `textHit` |
 | `app/ui/import-preview.mts` | The Import drawer's preview card, as data: what a parsed scan holds, whether it replaces one already in Pack Rat, and the sentence the primary button says. | `scanPreview` |
 | `app/ui/inv-model.mts` | The Inventory screen's pure rules: the query string a filter state sends, the active-filter tokens and their wording, the counts and plurals in the strip and the footer, the sentence that explains an empty result, which slice of rows the virtual table draws and fetches, and the table's keyboard model. | `DEFAULT_COLS`, `ITEM_COLS`, `COL_GROUPS`, `queryParams`, `activeFilters` |
 | `app/ui/move-model.mts` | Move to's pure rules (issue #270): the Inventory's selection (ticked rows, a shift-click range, the rows loaded so far, then every item matching the filter; a worn item is never in it), the containers the picker offers, and the words of the selection bar, the picker and the result line. | `Selection`, `toggleRows`, `selectAllMatching`, `selectionBody`, `destGroups` |

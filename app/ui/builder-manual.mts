@@ -33,7 +33,7 @@ import { sheetParts, wornSet } from "./sheet.mts";
 import { createItemBrowser, itemsSourceWith } from "./item-browser.mts";
 import type { ItemBrowser } from "./item-browser.mts";
 import type { UiPrefs, OptimizeResult, OptimizeStartApiResponse, OptSuit } from "./api-types.mts";
-import { MANUAL_GROUPS, emptyHistory, record, undoStep, redoStep, historyKey, historyKeyNames, type History, type Suit, TOTAL_KEYS, STAT_KEYS, STRIP_KEYS, capped, capLine, slotQuery, handConflict, type ManualDollState, handNote, suitFrom, fillableSlots, fetchPieces, fillPicks, keptSlots, noCharacterRunSettings, listWords, applyEditStep, type FillStart, type EditStep, type Reslot, savedSlots, missingSlots, reslotted, reslotNote, deltaKeys, slotDelta } from "./manual-model.mts";
+import { MANUAL_GROUPS, emptyHistory, record, undoStep, redoStep, historyKey, historyKeyNames, type History, type Suit, TOTAL_KEYS, STAT_KEYS, STRIP_KEYS, capped, capLine, slotQuery, handConflict, type ManualDollState, handNote, suitFrom, fillableSlots, fetchPieces, fillPicks, keptSlots, noCharacterRunSettings, listWords, autoLockNote, applyEditStep, type FillStart, type EditStep, type Reslot, savedSlots, missingSlots, reslotted, reslotNote, deltaKeys, slotDelta } from "./manual-model.mts";
 import { buffMarker, buffStrip, createBuffPicker, keepChipFocus, type BuffActions, type BuffPicker, type BuffView } from "./builder-buffs.mts";
 import { plural } from "./format.mts";
 import { manualDoll } from "./manual-doll.mts";
@@ -102,7 +102,7 @@ export function initManual(): void {
   $<HTMLButtonElement>("#mb-picker-close")!.onclick = closePicker;
   // "Only what Auto would use" (#487): the picker lists only the pieces the Automatic panel's pool settings let a build
   // pick from (GET /api/items' auto=, the server's buildPools); off by default, for this session.
-  const auto = switchControl({ label: "Only what Auto would use", checked: false, attrs: { id: "mb-auto-only" }, onChange: (on) => { autoOnly = on; if (browser) browser.setQuery({ ...browser.query }); } });
+  const auto = switchControl({ label: "Only what Auto would use", checked: false, attrs: { id: "mb-auto-only" }, onChange: (on) => { autoOnly = on; setStatus(autoNote()); if (browser) browser.setQuery({ ...browser.query }); } });
   $<HTMLButtonElement>("#mb-picker-close")!.before(auto.root);
   buffPicker = createBuffPicker($<HTMLElement>("#mb-buffs")!, "bf", buffActions, (v) =>
     (v.count ? "The totals, the stats and every slot's Change column count the buffs that are on." : "Count buffs in the totals is off: the totals leave the buffs out."));
@@ -458,11 +458,13 @@ function wirePreview(host: HTMLElement): void {
 
 // ---------------------------------------------------------------- the picker
 let autoOnly = false;
+// With the switch on, a slot the Automatic panel locks lists only its worn piece (or nothing): the status line says why.
+const autoNote = (): string => (pickSlot ? autoLockNote(autoOnly, slotLabel(pickSlot), (poolSettings().lockedSlots || []).includes(pickSlot)) : "");
 const autoParam = (): string => (autoOnly ? `&auto=${encodeURIComponent(JSON.stringify({ character: manualCharacter(), settings: poolSettings() }))}` : "");
 function openPicker(slot: string): void {
   pickSlot = slot; preview = null;
   buffsOpen = false; replaced = null;
-  setStatus("");
+  setStatus(autoNote());
   Object.assign(fixed, slotQuery(slot));
   const host = $<HTMLElement>("#mb-browser")!;
   if (!browser) {

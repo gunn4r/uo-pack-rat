@@ -6,7 +6,7 @@ import { bagLabel, compareNames, TRASH_RE, type Container, type Item } from "../
 import type { ItemQuery } from "../item-query.mts";
 import { queryParams } from "./inv-model.mts";
 import type { MovePlanSummary } from "./api-types.mts";
-import { plural } from "./format.mts";
+import { plural, textHit } from "./format.mts";
 
 // ---------------------------------------------------------------- the selection
 // `items`: rows ticked one by one (outside `all`'s filter once it is set), by serial. `all`: every item matching that filter (its query as the table had it), `count` of them not worn; `except`: rows matching it the player unticked since. `anchor`: the row index a shift-click extends from. The selection never holds a worn item.
@@ -118,7 +118,7 @@ export function destGroups(containers: Readonly<Record<string, Container>>, hous
   return [...groups].sort(([a], [b]) => (a === OUTSIDE ? 1 : b === OUTSIDE ? -1 : compareNames(a, b)))
     .map(([title, rows]) => ({ title, rows: rows.sort((x, y) => compareNames(x.sub === title ? x.name : `${x.sub} ${x.name}`, y.sub === title ? y.name : `${y.sub} ${y.name}`) || x.serial - y.serial) }));
 }
-export const matchesDest = (r: DestRow, group: string, q: string): boolean => !q || `${r.name} ${r.sub} ${group}`.toLowerCase().includes(q.trim().toLowerCase());
+export const matchesDest = (r: DestRow, group: string, q: string): boolean => textHit(q, r.name, r.sub, group);
 // A row's room line before a container is picked: `need` = the selected items not worn, `here` = those already in it.
 export function roomText(fill: { items: number; max: number }, need: number, here: number): { text: string; short: boolean } {
   const room = Math.max(0, fill.max - fill.items), want = need - here;

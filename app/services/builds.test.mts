@@ -1,6 +1,6 @@
 // builds.test.mts — `app/services/builds.mts`, a checked build request into a started job or a saved run that answers it (issue #338).
 //
-// `[fast]`, on the TazUO fixture's inventory with a stand-in jobs service and run store: a by-character build submits the prepared input under its run key, saved, with the pool's figures on its meta and in the answer; the answer passes on a meta warning only when it is text; a character with no scans is a 404; a saved run with the same key answers at once, and the newest run of the character is the warm start otherwise; a fill is never saved nor answered by a saved run, even one under its own key, and a pin that is no gear piece of its slot is a 400; a hand-built request skips the pool step; and a full jobs service is a 429. `autoCandidates` (the Manual picker's "Only what Auto would use", #487) is the pool's pieces, held to the pool settings, a locked slot giving only its worn piece.
+// `[fast]`, on the TazUO fixture's inventory with a stand-in jobs service and run store: a by-character build submits the prepared input under its run key, saved, with the pool's figures on its meta and in the answer; the answer passes on a meta warning only when it is text; a character with no scans is a 404; a saved run with the same key answers at once, and the newest run of the character is the warm start otherwise; a fill is never saved nor answered by a saved run, even one under its own key, and a pin that is no gear piece of its slot is a 400; a hand-built request skips the pool step; and a full jobs service is a 429. `autoCandidates` (the Manual picker's "Only what Auto would use", #487) is the pool's pieces, held to the pool settings, plus every piece worn (a build keeps it), a locked slot giving only its worn piece.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { fixture, defaultProfiles } from "../solver-fixture.mts";
@@ -88,7 +88,11 @@ test("[fast] builds: autoCandidates is the pool a by-character build picks from,
   assert.ok(items.length > 0 && items.every((it) => it.gear && it.slot), "gear pieces, each with its slot");
   assert.ok(items.every((it) => !it.equippedBy || it.equippedBy === "Fixture"), "nobody else's worn piece");
   const med = [...autoCandidates(inv, "Fixture", { medOnly: true })].map((s) => inv.items[s]!);
-  assert.ok(med.length < items.length && med.every((it) => it.medable), "Meditation-safe only");
+  assert.ok(med.length < items.length && med.every((it) => it.medable || it.equippedBy === "Fixture"), "Meditation-safe only, but for what is worn");
+  // a build keeps the worn piece whatever the filters say ("keep what you wear"), so the picker lists it too
+  const wornUnsafe = Object.values(inv.items).filter((it) => it.equippedBy === "Fixture" && it.gear && !it.medable);
+  assert.ok(wornUnsafe.length > 0, "the fixture wears a piece that is not Meditation-safe");
+  for (const it of wornUnsafe) assert.ok(med.some((m) => m.serial === it.serial), `${it.name}, worn, is still listed with Meditation only`);
   const worn = items.find((it) => it.equippedBy === "Fixture")!;
   const locked = [...autoCandidates(inv, "Fixture", { lockedSlots: [worn.slot!] })].map((s) => inv.items[s]!).filter((it) => it.slot === worn.slot);
   assert.deepEqual(locked.map((it) => it.serial), [worn.serial], "a locked slot keeps what is worn there");
