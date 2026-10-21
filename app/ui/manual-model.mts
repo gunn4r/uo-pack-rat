@@ -58,6 +58,9 @@ export function handConflict(slot: string, pick: Held, suit: Partial<Record<stri
   return null;
 }
 // The status line after a pick cleared a slot.
+// "Only what Auto would use" on a slot the Automatic panel locks (#487): the picker lists only the piece worn there, or
+// nothing, so the status line says why; "" otherwise.
+export const autoLockNote = (on: boolean, slotName: string, locked: boolean): string => (on && locked ? `Auto keeps ${slotName} locked: it uses only the piece worn there.` : "");
 export const handNote = (removed: string, slotName: string): string => `${removed} left ${slotName}: a two-handed weapon takes both hands.`;
 
 // A saved suit (ui-prefs `manualSuit`) as the page uses it: only the slots it knows, each a whole serial.

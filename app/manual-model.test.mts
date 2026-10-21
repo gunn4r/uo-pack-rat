@@ -1,6 +1,6 @@
 // manual-model.test.mts — `app/ui/manual-model.mts`, the Suit Builder Manual mode's pure logic (issue #12).
 //
-// `app/ui/manual-model.mts`, the Suit Builder Manual mode's pure logic (issue #12): a No character run's settings (race human, No character's STR limit), the live doll's pill and previewed suit (`dollPill`, `previewSuit`, issue #57: a preview, one that clears the other hand (warning even when that piece is missing from the scans), an empty slot being chosen, No character), the slot groups holding every slot the classifier knows (`GEAR_SLOTS`) exactly once and in its order, the undo history (undo, redo, 40 steps kept, a new change dropping the redo branch, a change that changes nothing not recorded) and the undo and redo keys per platform, a total past its cap shown at the cap with "+N wasted" and the line under each total, resists in paperdoll terms held at the Resisting Spells minimum, a race's cap and the player's override, the picker's slot filter (the slot itself, so the two-handed slot lists two-handers and shields), the one-hand/two-hand rule checked against the optimizer's own `optIsValidAssignment` (it clears exactly what the optimizer would refuse), a saved suit read back (known slots, whole serials), the slots whose serial no longer resolves and a saved piece the classifier has since moved going to its slot now (`reslotted`, with the notice for one dropped because its slot is taken), `LAYER_TO_SLOT` against the paperdoll layer table (issue #202), and a picker row's delta (gains and losses apart, counted up to the cap, a change wholly past the cap muted, the profile's floor and weight properties after the strip's). All `[fast]`.
+// `app/ui/manual-model.mts`, the Suit Builder Manual mode's pure logic (issue #12): a No character run's settings (race human, No character's STR limit), the live doll's pill and previewed suit (`dollPill`, `previewSuit`, issue #57: a preview, one that clears the other hand (warning even when that piece is missing from the scans), an empty slot being chosen, No character), the slot groups holding every slot the classifier knows (`GEAR_SLOTS`) exactly once and in its order, the undo history (undo, redo, 40 steps kept, a new change dropping the redo branch, a change that changes nothing not recorded) and the undo and redo keys per platform, a total past its cap shown at the cap with "+N wasted" and the line under each total, resists in paperdoll terms held at the Resisting Spells minimum, a race's cap and the player's override, the picker's slot filter (the slot itself, so the two-handed slot lists two-handers and shields), the one-hand/two-hand rule checked against the optimizer's own `optIsValidAssignment` (it clears exactly what the optimizer would refuse), a saved suit read back (known slots, whole serials), the slots whose serial no longer resolves and a saved piece the classifier has since moved going to its slot now (`reslotted`, with the notice for one dropped because its slot is taken), `LAYER_TO_SLOT` against the paperdoll layer table (issue #202), and a picker row's delta (gains and losses apart, counted up to the cap, a change wholly past the cap muted, the profile's floor and weight properties after the strip's). All `[fast]`. The note "Only what Auto would use" shows on a slot Auto locks (#487).
 //
 // Lives in app/ for the reason app/ui-render.test.mts gives.
 import { test } from "node:test";
@@ -10,7 +10,7 @@ import { setRules, effectiveProfile, profileResistCaps, GEAR_SLOTS, LAYER_TO_SLO
 import type { RulesV1 } from "./schema/types.d.mts";
 import { optIsValidAssignment } from "../scripts/optimizer-core.mts";
 import { paperdollCaps, withBuffs } from "./ui/builder-model.mts";
-import { MANUAL_GROUPS, emptyHistory, record, undoStep, redoStep, historyKey, historyKeyNames, HISTORY_MAX, capped, capLine, slotQuery, handConflict, handNote, savedSlots, missingSlots, reslotted, reslotNote, deltaKeys, slotDelta, STRIP_KEYS, noCharacterRunSettings, dollPill, previewSuit, type ManualDollState } from "./ui/manual-model.mts";
+import { autoLockNote, MANUAL_GROUPS, emptyHistory, record, undoStep, redoStep, historyKey, historyKeyNames, HISTORY_MAX, capped, capLine, slotQuery, handConflict, handNote, savedSlots, missingSlots, reslotted, reslotNote, deltaKeys, slotDelta, STRIP_KEYS, noCharacterRunSettings, dollPill, previewSuit, type ManualDollState } from "./ui/manual-model.mts";
 
 setRules(JSON.parse(readFileSync(new URL("./rules/uoalive.json", import.meta.url), "utf8")) as RulesV1);
 
@@ -201,4 +201,10 @@ test("[fast] manual doll: the pill names a preview, warns when it clears the oth
   assert.equal(dollPill(clash, true), null, "showing what the character wears: no pill");
   const missing: ManualDollState = { ...clash, suit: { twoHanded: shield } };
   assert.deepEqual(dollPill(missing, false), { text: "Preview · Weapon 2H / Shield: Black Staff. Picking it takes the piece off Weapon (1H).", tone: "warn" }, "the other hand's piece missing from the scans still warns, as pick() names it");
+});
+
+test("[fast] manual model: \"Only what Auto would use\" on a locked slot says why the list holds only the worn piece (#487)", () => {
+  assert.equal(autoLockNote(true, "Ring", true), "Auto keeps Ring locked: it uses only the piece worn there.");
+  assert.equal(autoLockNote(true, "Ring", false), "", "an unlocked slot needs no note");
+  assert.equal(autoLockNote(false, "Ring", true), "", "nor does the switch off");
 });
