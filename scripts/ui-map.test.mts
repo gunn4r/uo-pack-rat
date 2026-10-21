@@ -1542,6 +1542,7 @@ test("[slow] House map Stack plan: a search scrolls to its first matching card, 
     assert.equal(await page.locator(`#map-plan .sp-row[data-chest="${RUBY_FRONT}"] .sp-hitline`).textContent(), "Ruby × 1");
     assert.equal(await page.locator(`#map-plan .sp-row[data-chest="${RUBY_FRONT}"] .sp-hitline`).getAttribute("title"), null, "no native title: each name shows its item tooltip");
     assert.equal(await page.locator(`#map-plan .sp-row[data-chest="${RUBY_FRONT}"] .sp-hitline .gi[data-serial]`).count(), 1);
+    assert.equal(await page.locator(`#map-plan .sp-row[data-chest="${RUBY_FRONT}"] .sp-hitline .gi`).getAttribute("tabindex"), null, "no tab stop: the cards keep their roving one");
     assert.equal(await page.locator("#map-pins").count(), 0);
     assert.equal(await page.locator("#map-hits-title").textContent(), "2 items in 2 containers");
     // a match in the panel selects its stack in the plan
