@@ -768,9 +768,12 @@ test("[fast] fold: a character's adapter identity is exposed on inv.characters f
   assert.deepEqual(inv.characters.Kestrel!.adapter!.capabilities.bridge, ["highlight", "grab", "goto"]);
 });
 
+// The demo scan without its look, so a test says which scans have one.
+const withoutLook = (scan: ScanV2): ScanV2 => { const { appearance: _look, ...rest } = scan; return rest; };
+
 test("[fast] fold: a character keeps its look from the newest scan that has one, and a newer look replaces it whole (issue #57)", () => {
   const look = { body: 401, hue: 0x83EA, hair: { graphic: 0x203C, hue: 0x044E }, beard: null, face: null };
-  const at = (scannedAt: string, appearance?: ScanV2["appearance"]): ScanV2 => ({ ...kestrel, scannedAt, ...(appearance ? { appearance } : {}) });
+  const at = (scannedAt: string, appearance?: ScanV2["appearance"]): ScanV2 => ({ ...withoutLook(kestrel), scannedAt, ...(appearance ? { appearance } : {}) });
   assert.equal(foldSnapshots([at("2026-09-13T00:00:00Z")]).characters.Kestrel!.appearance, null, "no scan has one");
   assert.deepEqual(foldSnapshots([at("2026-09-13T00:00:00Z", look), at("2026-09-13T01:00:00Z")]).characters.Kestrel!.appearance, look, "a newer scan without one keeps it");
   const bald = { ...look, hair: null };
@@ -780,7 +783,7 @@ test("[fast] fold: a character keeps its look from the newest scan that has one,
 test("[fast] fold: a scan taken in a form keeps the newest look the figure draws and marks the character in a form (issue #57)", () => {
   const look = { body: 401, hue: 0x83EA, hair: { graphic: 0x203C, hue: 0x044E }, beard: null, face: null };
   const beast = { body: 746, hue: 0, hair: null, beard: null, face: null }, wraith = { body: 747, hue: 0, hair: null, beard: null, face: null };
-  const at = (scannedAt: string, appearance?: ScanV2["appearance"]): ScanV2 => ({ ...kestrel, scannedAt, ...(appearance ? { appearance } : {}) });
+  const at = (scannedAt: string, appearance?: ScanV2["appearance"]): ScanV2 => ({ ...withoutLook(kestrel), scannedAt, ...(appearance ? { appearance } : {}) });
   const fold = (...scans: ScanV2[]) => { const c = foldSnapshots(scans).characters.Kestrel!; return [c.appearance, c.inForm ?? false]; };
   assert.deepEqual(fold(at("2026-09-13T00:00:00Z", look), at("2026-09-13T01:00:00Z", beast)), [look, true], "the real look stays, marked in a form");
   assert.deepEqual(fold(at("2026-09-13T00:00:00Z", look), at("2026-09-13T01:00:00Z", beast), at("2026-09-13T02:00:00Z")), [look, true], "a scan without a look keeps the mark");
