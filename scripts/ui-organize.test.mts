@@ -1,6 +1,6 @@
 // ui-organize.test.mts — [slow]: Organize (issue #11) in the real Electron window over the demo scans.
 //
-// `[slow]`: Organize in the real Electron window over the demo scans on a writable `--data` folder: the empty state that teaches labelling, Containers' Label… and Fill column, labels in the Items rows, the Rules card (fill, counts, catch-all, reordering by keyboard and drag), a save over a setup another window changed refused and the setup reloaded, and quick saves of its own (↓ twice, two selects) each building on the one before (issue #280), the rule drawer (presets, fill order, a forgotten target, the note that items without a property pass a ≠ rule), a bag inside a chest picked as a target and labelled on save with the live match count (the demo scans copied into `scans/` with a pouch added, no `--demo`), Save as rule…, a mocked 600-move plan (reports first, trips collapsed), a client without `trip`, a trip run through the bridge's queue (Stop, a failed put, Pin this item), a salvaged setup refusing trips until Save setup, the screen at 1000 × 700, and Auto organize (Accept, running it again, Detailed, a 1000 × 700 drawer), and item kinds (issue #150: Review unclassified items, Classify this… and Reset to automatic, Settings' Export as an Electron download and Import through the file input).
+// `[slow]`: Organize in the real Electron window over the demo scans on a writable `--data` folder: the empty state that teaches labelling, Containers' Label… and Fill column, labels in the Items rows, the Rules card (fill, counts, catch-all, reordering by keyboard and drag), a save over a setup another window changed refused and the setup reloaded, and quick saves of its own (↓ twice, two selects) each building on the one before (issue #280), the rule drawer (presets, the Inventory's filter bar without Character, Location and Seen, its search kept when Save comes inside the debounce, fill order, a forgotten target, the note that items without a property pass a ≠ rule), a bag inside a chest picked as a target and labelled on save with the live match count (the demo scans copied into `scans/` with a pouch added, no `--demo`), Save as rule…, a mocked 600-move plan (reports first, trips collapsed), a client without `trip`, a trip run through the bridge's queue (Stop, a failed put, Pin this item), a salvaged setup refusing trips until Save setup, the screen at 1000 × 700, and Auto organize (Accept, running it again, Detailed, a 1000 × 700 drawer), and item kinds (issue #150: Review unclassified items, Classify this… and Reset to automatic, Settings' Export as an Electron download and Import through the file input).
 //
 // Also a page reloaded mid-trip picking the trip back up. Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
 import test from "node:test";
@@ -253,6 +253,12 @@ test("[slow] + Rule from a preset, then targets in fill order; the editor lists 
     assert.equal(await page.locator("#rule-skip-suits").isChecked(), true);
     assert.equal(await page.locator("#rule-delete").isVisible(), false, "a new rule has nothing to delete");
     assert.match(await page.locator("#rule-drawer").innerText(), /Splintering Weapon ≥ 1[\s\S]*Tagged: brittle/);
+    // The Inventory's filter bar (#487): no Character, Location or Seen chip, and Kind never offers containers.
+    assert.equal(await page.locator("#rule-f-char, #rule-f-loc, #rule-f-seen").count(), 0);
+    await page.click("#rule-f-kind");
+    assert.doesNotMatch(await page.locator(".pop").innerText(), /\bcontainer\b/i);
+    await page.keyboard.press("Escape");
+    assert.equal(await page.locator("#rule-drawer").isVisible(), true, "Esc closes the popover, not the drawer");
     await page.selectOption("#rule-add-target", String(DORRAN));
     await page.click("#rule-save");
     const fodder = await until(() => readOrganize(dataDir), (f) => f?.rules.length === 2, "the Undesirables rule saved");
@@ -305,10 +311,13 @@ test("[slow] a bag inside a labelled chest can be picked as a target, is labelle
     assert.match(opts[at(POUCH)]![1]!, /^\s+Pouch · 1\/125$/, "indented under the chest, with its fill");
     await page.selectOption("#rule-add-target", String(POUCH));
     assert.match(await page.locator("#rule-targets").innerText(), /Pouch[\s\S]*1\/125/);
+    // Text typed in the filter bar's search and saved at once, inside its 150 ms debounce, is kept (flushSearch).
+    await page.fill("#rule-q", "Ring");
     await page.click("#rule-save");
     await page.waitForSelector("#rule-drawer", { state: "hidden" });
     const saved = await until(() => readOrganize(dataDir), (f) => f?.rules.length === 2, "the rule saved");
     assert.deepEqual(saved!.rules[1]!.targets, [POUCH]);
+    assert.equal(saved!.rules[1]!.match.query.q, "ring", "the last keystrokes reach the saved rule");
     assert.deepEqual(saved!.labels[String(POUCH)], { serial: POUCH, name: "Pouch", origin: "manual" }, "the bag was labelled with the rule");
     assert.match(await page.locator('.org-rule[data-rule="rule-2"]').innerText(), /Pouch[\s\S]*1\/125/);
     assert.deepEqual(errors, []);

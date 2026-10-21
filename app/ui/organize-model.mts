@@ -22,7 +22,8 @@ import { plural } from "./format.mts";
 // strings, so the test pins them together).
 export const CATCH_ALL_ID = "catch-all";
 export const EMPTY_BAGS_ID = "empty-bags";
-const BASE: ItemQuery = parseItemQuery(new URLSearchParams());
+// The blank Inventory query, which a rule query fills in to stand as an ItemQuery.
+export const BASE: ItemQuery = parseItemQuery(new URLSearchParams());
 
 // Label colours offered by Label…: a swatch beside the label, never text colour, so contrast is not at stake.
 export const LABEL_COLOURS: ReadonlyArray<{ name: string; value: string }> = [
@@ -129,12 +130,9 @@ export function matchSummary(match: RuleMatch, ctx: FilterContext): string {
   if (names.length) parts.unshift(`Name: ${names.slice(0, 3).join(", ")}${names.length > 3 ? ` +${names.length - 3} more` : ""}`);
   return parts.length ? parts.join(" · ") : "Every item (no filter yet)";
 }
-// The filters the rule editor has no control of its own for (search, kind and the rarity range have one): slot,
-// exact rarity, property rules, slayer, hidden tags and the two switches, as removable tokens.
-const EDITED = /^(q|kind:.*|rarityMin|rarityMax)$/;
-export function extraFilters(query: RuleQuery, ctx: FilterContext): Array<{ label: string; removeLabel: string; remove: (q: RuleQuery) => RuleQuery }> {
-  return activeFilters({ ...BASE, ...query }, ctx).filter((t) => !EDITED.test(t.id))
-    .map((t) => ({ label: t.label, removeLabel: t.removeLabel, remove: (q: RuleQuery) => ruleQueryFrom(t.remove({ ...BASE, ...q })).query }));
+// A rule's filters as removable tokens, as the Inventory's filter strip shows them.
+export function ruleTokens(query: RuleQuery, ctx: FilterContext): Array<{ label: string; removeLabel: string; remove: (q: RuleQuery) => RuleQuery }> {
+  return activeFilters({ ...BASE, ...query }, ctx).map((t) => ({ label: t.label, removeLabel: t.removeLabel, remove: (q: RuleQuery) => ruleQueryFrom(t.remove({ ...BASE, ...q })).query }));
 }
 // The rule editor's live count (POST /api/organize/match): how many items the filter takes on its own, with a
 // few names, and a reminder that a rule above this one takes an item first. Null while there is no answer.
