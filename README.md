@@ -14,19 +14,19 @@ Pack Rat is a free desktop app for Ultima Online players. It keeps a list of eve
 
 ### Find anything you own
 
-Search every character's gear, bags, chests and bank in one table, by name, property, slayer or location. Click an item to see its properties and where it is. With the in-game bridge running, **Highlight** marks it in game, **Go to** walks you to its chest, and **Grab** puts it in your backpack.
+Search every character's gear, bags, chests and bank in one table, each piece with its in-game icon and its name in its rarity's color. Narrow it by property (at least, at most, exactly or not), type, slot, slayer, house or Organize label. Click an item to see its properties and where it is. With the in-game bridge running, **Highlight** marks it in game, **Go to** walks you to its chest, and **Grab** puts it in your backpack.
 
 ![Typing "hit chance" in the Inventory search narrows the list to matching pieces, then a click opens one piece's details](docs/images/inventory-search.gif)
 
 ### See each character at a glance
 
-A character sheet with resists, stats, worn gear and every property against the shard's cap.
+A character sheet with your character's paperdoll in the gear they wear, resists, stats and every property against the shard's cap.
 
 ![Dorran's character sheet: five resist cards, attributes, the worn gear slots and the properties table](docs/images/characters.png)
 
 ### Build your best suit
 
-Pick a template such as Melee, Caster or Tank, or set your own goals, and the Suit Builder searches everything you own for the best suit. It plans around the buffs you fight with, shows what changes slot by slot, and keeps runs you can compare. You can also build a suit by hand and let it fill the gaps.
+Pick a template such as Melee, Caster or Tank, or set your own goals, and the Suit Builder searches everything you own for the best suit. It plans around the buffs you fight with, shows your character in what they wear now beside the new suit, and keeps runs you can compare. You can also build a suit by hand on a live paperdoll and let it fill the gaps.
 
 ![Pressing Build on the Suit Builder: a proven-best suit for Dorran appears with each resist's before and after, then the slot-by-slot plan](docs/images/suit-builder.gif)
 
