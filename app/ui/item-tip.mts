@@ -19,6 +19,8 @@ export interface TooltipItem {
   rarity?: string | null | undefined;
   tags?: string[] | undefined;
   location?: { text: string } | undefined;
+  graphic?: number | null | undefined;
+  hue?: number | null | undefined;
 }
 
 // Complete enough to draw: it carries the item's own tooltip lines (line 0 is the name).

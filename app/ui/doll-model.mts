@@ -22,12 +22,12 @@ export function wornPieces(pieces: ReadonlyArray<{ graphic?: number | null | und
 
 // A message the card shows. Each button opens Settings at the part it names: the UO folder card (`uofolder`) or the Game client's scanner row (`scanner`, where the scanner is reinstalled or copied; the app has no separate scan guide). The first is the primary one.
 export interface DollNote { tone: "info" | "warn"; title: string; text?: string; actions?: Array<{ label: string; to: "uofolder" | "scanner" }> }
-// What a card draws for a character (`name` null for no character): the look to draw, whether it is the stand-in (drawn gray), and the note under it. A look the player customized (`custom`) is drawn in color in its place; a stand-in keeps its note.
+// What a card draws for a character (`name` null for no character): the look to draw, whether it is the stand-in (drawn gray), and the note under it. A look the player customized (`custom`) is drawn in color in its place; a stand-in keeps its note, while the in-a-form note about the scanned look goes, as that look is not shown.
 export interface DollPlan { look: Look; gray: boolean; note: DollNote | null }
 // `inForm`: the newest scan was taken in a form, so `appearance` is an earlier scan's look (or the form's, when no scan has another).
 export function dollPlan(o: { name: string | null; appearance: Look | null | undefined; inForm?: boolean | undefined; readsLook: boolean; client: string; custom?: Look | null | undefined }): DollPlan {
   const plan = basePlan(o);
-  return o.custom ? { ...plan, look: o.custom, gray: false } : plan;
+  return o.custom ? { look: o.custom, gray: false, note: plan.gray ? plan.note : null } : plan;
 }
 function basePlan({ name, appearance, inForm, readsLook, client }: { name: string | null; appearance: Look | null | undefined; inForm?: boolean | undefined; readsLook: boolean; client: string }): DollPlan {
   if (name === null) return { look: lookOf(null).look, gray: true, note: { tone: "info", title: "No character is chosen, so the suit is shown on a stand-in body." } };
