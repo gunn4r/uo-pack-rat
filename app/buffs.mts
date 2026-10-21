@@ -7,7 +7,7 @@
 //
 // map: builder
 // owns: `BUFFS`, `BUFF_INPUTS`, `BUFF_GROUPS`, `applyBuffs`, `minimumWith`, `buffPlanOf`, `manualProfile`, `manualBase`, `manualPlan`, `plannedProfile`, `planBuffs`, `isBuffList`, `normalizeBuffs`, `isRunBuffs`, `savedBuffs`
-import { RESIST_KEYS, SKILL_NAMES, minResistAt, skillInSuit, labelOf, effectiveProfile, profileResistCaps, toOptItem, totalsOf } from "./vault-lib.mts";
+import { RESIST_KEYS, RESIST_META, SKILL_NAMES, minResistAt, skillInSuit, labelOf, propName, effectiveProfile, profileResistCaps, toOptItem, totalsOf } from "./vault-lib.mts";
 import type { BuffShift, SuitSkill, Character, EffectiveProfile, Item, Profile, PropMap, RunBuffs } from "./vault-lib.mts";
 
 // ---------------------------------------------------------------- the numbers a buff scales with
@@ -143,7 +143,7 @@ export const BUFFS: Buff[] = [
       const top = c.s("Chivalry") >= 120 && c.s("Karma") >= 10000;
       return [{ key: "hci", value: top ? 15 : 10 }, { key: "di", value: top ? 20 : 10 }, { key: "ssi", value: top ? 15 : 10 }, { key: "dci", value: top ? -10 : -20 }];
     },
-    note: "Below Chivalry 120 and 10,000 karma it is the flat tier: HCI +10 · DI +10 · SSI +10 · DCI −20" },
+    note: "Below Chivalry 120 and 10,000 karma it is the flat tier: Hit Chance Increase +10 · Damage Increase +10 · Swing Speed Increase +10 · Defense Chance Increase −20" },
   // Consecrate Weapon: ConsecrateWeapon.cs ConsecrateDamageBonus, added to BaseWeapon's percentageBonus, past the DI cap.
   { id: "consecrateWeapon", name: "Consecrate Weapon", group: "Chivalry", inputs: ["Chivalry"],
     effects: (c) => [{ key: "di", value: c.s("Chivalry") >= 90 ? tr((c.s("Chivalry") - 90) / 2) : 0, outside: true }],
@@ -175,7 +175,7 @@ export const BUFFS: Buff[] = [
       const f = c.s("Arcane Focus");
       return [{ key: "ssi", value: 5 + f }, { key: "sdi", value: 10 + f }, ...resists(5 + f, RESIST_KEYS.filter((k) => k !== "fireResist")), { key: "fireResist", value: -25 }];
     },
-    note: "Can't ride. SSI: the shard wiki says 5, ServUO's code 10; this counts 5. Each Arcane Focus level adds 1" },
+    note: "Can't ride. Swing Speed Increase: the shard wiki says 5, ServUO's code 10; this counts 5. Each Arcane Focus level adds 1" },
 
   // Magery. Bless, Strength, Agility, Cunning: SpellHelper.GetOffset, one "[Magic] <stat> Buff" per stat, the largest kept (AddStatBonus).
   { id: "bless", name: "Bless", group: "Magery", inputs: ["Evaluating Intelligence"],
@@ -211,7 +211,7 @@ export const BUFFS: Buff[] = [
   // when the weapon lacks it (a weapon that has it keeps its own, and its own FC −1 is in the suit already).
   ...ENCHANTS.map(([key, spell]): Buff => ({ id: `enchant.${key}`, name: `Enchant: Hit ${spell}`, group: "Mysticism", inputs: MYST, excl: "enchant",
     effects: (c) => [{ key, value: tr((60 * mystSum(c)) / 240) }, ...(c.s("Mysticism") >= 80 && c.s("Focus or Imbuing") >= 80 && !c.who.weaponFlags?.includes("spell channeling") ? [{ key: "fc", value: -1 }] : [])],
-    note: "On a weapon with no hit spell. At 80 in both skills it also gains Spell Channeling (FC −1)" })),
+    note: "On a weapon with no hit spell. At 80 in both skills it also gains Spell Channeling (Faster Casting −1)" })),
 
   // Ninjitsu. Animal Form: HCI +20 (AOS.cs) and Hits +20 after the HPI cap (PlayerMobile.cs HitsMax); wiki Animal_Form (85).
   { id: "wolfKitsune", name: "Animal Form: Wolf or Bake Kitsune", group: "Ninjitsu", inputs: ["Ninjitsu"], excl: "form", min: ["Ninjitsu", 85],
@@ -266,12 +266,12 @@ export const BUFFS: Buff[] = [
   { id: "human", name: "Human: Tough", group: "Racial", inputs: [], race: "human", effects: () => [{ key: "hpRegen", value: 2 }] },
   // Gargoyle: HCI +5 (AOS.cs:805), MR +2 (RegenRates.cs:286) and an HCI cap of 50 (BaseWeapon.cs:1451), the cap unverified here.
   { id: "gargoyle", name: "Gargoyle", group: "Racial", inputs: [], race: "gargoyle", confidence: "medium",
-    effects: () => [{ key: "hci", value: 5 }, { key: "manaRegen", value: 2 }], caps: () => ({ hci: 5 }), note: "The HCI cap of 50 is ServUO's; unverified on UO Alive" },
+    effects: () => [{ key: "hci", value: 5 }, { key: "manaRegen", value: 2 }], caps: () => ({ hci: 5 }), note: "The Hit Chance Increase cap of 50 is ServUO's; unverified on UO Alive" },
   // Gargoyle Berserk: the shard wiki's tiers (Gargoyle_Race), +15 DI and +3 SDI per 20% of HP lost, at most 60 and 12.
   // ServUO's PlayerMobile.cs GetRacialBerserkBuff starts only at half HP: 30 / 6, 45 / 9, 60 / 12.
   { id: "berserk", name: "Gargoyle Berserk", group: "Racial", inputs: ["HP lost"], race: "gargoyle", confidence: "medium",
     effects: (c) => { const t = tr(c.s("HP lost") / 20); return [{ key: "di", value: Math.min(60, 15 * t) }, { key: "sdi", value: Math.min(12, 3 * t) }]; },
-    note: "Shard wiki tiers. ServUO starts at half your HP lost: DI 30 / 45 / 60, SDI 6 / 9 / 12" },
+    note: "Shard wiki tiers. ServUO starts at half your HP lost: Damage Increase 30 / 45 / 60, Spell Damage Increase 6 / 9 / 12" },
 
   // The rest of the self buffs, each less sure or less common.
   // Curse Weapon: weapon hits heal 50% of the damage (BaseWeapon.cs:2755), on top of Vampiric Embrace's 20%.
@@ -282,7 +282,7 @@ export const BUFFS: Buff[] = [
   { id: "arcaneEmpowerment", name: "Arcane Empowerment", group: "Spellweaving", inputs: ["Spellweaving", "Arcane Focus"], min: ["Spellweaving", 24], confidence: "medium",
     effects: (c) => [{ key: "sdi", value: Math.floor(c.s("Spellweaving") / 12) + 5 * c.s("Arcane Focus") }],
     extra: (c) => [`healing +${10 + Math.floor(c.s("Spellweaving") / 12) + 5 * c.s("Arcane Focus")}%`],
-    note: "Lasts about 20 s. ServUO's code adds 1 more SDI per Arcane Focus level" },
+    note: "Lasts about 20 s. ServUO's code adds 1 more Spell Damage Increase per Arcane Focus level" },
   // Attunement: AttuneWeapon.cs:109-112, a pool of melee damage absorbed, not a resist.
   { id: "attunement", name: "Attunement", group: "Spellweaving", inputs: ["Spellweaving", "Arcane Focus"],
     effects: () => [], extra: (c) => [`absorbs the next ${tr(18 + ((c.s("Spellweaving") - 10) / 10) * 3 + c.s("Arcane Focus") * 6)} melee damage`] },
@@ -328,12 +328,12 @@ export const BUFFS: Buff[] = [
     effects: () => [{ key: "poisonResist", value: 10 }, { key: "energyResist", value: 5 }] },
   // Urali: Mana +10, and the same FC −2 after the cap as Protection (Spell.cs:1062), which it shares.
   { id: "urali", name: "Urali Trance Tonic", group: "Potions", inputs: [], confidence: "low", unconfirmed: true,
-    effects: () => [{ key: "manaPool", value: 10 }, { key: "fc", value: -2, outside: true, slot: true }], note: "Its FC −2 and Protection's are one penalty" },
+    effects: () => [{ key: "manaPool", value: 10 }, { key: "fc", value: -2, outside: true, slot: true }], note: "Its Faster Casting −2 and Protection's are one penalty" },
   // Food and tinctures. Grapes of Wrath and the High Seas fish pies: Misc/AOS.cs (630, 669, FishPieEffect).
   { id: "grapesOfWrath", name: "Grapes of Wrath", group: "Food and tinctures", inputs: [], confidence: "medium", unconfirmed: true,
     effects: () => [{ key: "di", value: 35 }, { key: "sdi", value: 15 }] },
   ...([["di", 5], ["sdi", 5], ["hci", 8], ["dci", 8], ["hpRegen", 3], ["stamRegen", 3], ["manaRegen", 3]] as Array<[string, number]>).map(([key, value]): Buff => ({
-    id: `fishPie.${key}`, name: `Fish pie: ${labelOf(key)} +${value}`, group: "Food and tinctures", inputs: [], confidence: "medium", unconfirmed: true,
+    id: `fishPie.${key}`, name: `Fish pie: ${propName(key)} +${value}`, group: "Food and tinctures", inputs: [], confidence: "medium", unconfirmed: true,
     effects: () => [{ key, value }], note: "Each kind of fish pie gives one of these" })),
   // Skill tinctures: UO Alive's own (Patch Notes Mar 20 2026), an hour's boost of a size the shard hasn't published.
   ...([["minstrel", "Tincture of the Minstrel", "Musicianship"], ["shadows", "Tincture of Shadows", "Stealth"]] as const).map(([id, name, sk]): Buff => ({
@@ -358,7 +358,7 @@ export const BUFFS: Buff[] = [
     capsSet: (c) => { const m = tr(Math.min(15, c.s("Enemy Necro + SS") * 0.075)); return { fireResist: 70 - m, poisonResist: 70 - m }; } },
   // Mind Rot: MindRot.cs:125, spells cost 25% more mana on a player, after Lower Mana Cost.
   { id: "mindRot", name: "Mind Rot", group: "Debuffs (cast on you)", inputs: [], confidence: "medium",
-    effects: () => [], extra: () => ["spells cost 25% more mana, after LMC"] },
+    effects: () => [], extra: () => ["spells cost 25% more mana, after Lower Mana Cost"] },
 ];
 export const BUFF_IDS: string[] = BUFFS.map((b) => b.id);
 const BY_ID = new Map(BUFFS.map((b) => [b.id, b]));
@@ -435,9 +435,10 @@ export const isSchool = (group: string): boolean => SKILL_NAMES.includes(group.t
 export function buffAvailability(b: Buff, values: Skills, planned: ReadonlySet<string>, edits: Readonly<Record<string, number>>, who: BuffWho): { needs: string | null; unscanned: string[] } {
   return { needs: buffNeeds(b, values, who), unscanned: b.inputs.filter((i) => planned.has(i) && !Object.hasOwn(edits, i)) };
 }
-// What an entry changes in the suit maths, in short words from its own definition at these numbers: each property its
-// effects move ("swing speed up", "defense chance down"; all five resists, or all three stats, moving together as one
-// "resists up"), each cap it changes ("defense chance cap up"), then what no total shows ("hits the lowest resist").
+// What an entry changes in the suit maths, from its own definition at these numbers: each property its effects move, by
+// its name ("Swing Speed Increase up", "Defense Chance Increase down"; all five resists, or all three stats, moving
+// together as one "Resists up"), each cap it changes ("Defense Chance Increase cap up"), then what no total shows ("hits
+// the lowest resist").
 // "no suit effect" when it does none of these. `down` marks a tag that lowers something for the suit (the page tints it).
 export interface EffectTag { text: string; down: boolean }
 export function buffEffectTags(id: string, skills: Skills, stats: Stats | null, totals: PropMap, who: BuffWho = {}, caps: Readonly<Record<string, number>> = {}): EffectTag[] {
@@ -452,7 +453,7 @@ export function buffEffectTags(id: string, skills: Skills, stats: Stats | null, 
       const same = fam ? fam.filter((f) => moves.some(([x, y]) => x === f && y === d)) : [k];
       same.forEach((x) => done.add(`${x} ${d}`));
       const all = same.length > 1 && same.length === fam!.length, many = res && same.length > 1;
-      const base = all ? (res ? "resist" : "stats") : `${same.map(tagWord).join(", ")}${res ? " resist" : ""}`;
+      const base = all ? (res ? "Resist" : "Stats") : res ? `${same.map(resistWord).join(", ")} Resist` : same.map(tagWord).join(", ");
       out.push(`${base}${many ? (cap ? " caps" : "s") : cap} ${d}`);
     }
     return out;
@@ -463,17 +464,12 @@ export function buffEffectTags(id: string, skills: Skills, stats: Stats | null, 
   const tags = [...new Set([...words(moves, ""), ...words(capMoves, " cap"), ...(b.extra?.(c) || [])])];
   return (tags.length ? tags : ["no suit effect"]).map((text) => ({ text, down: text.endsWith(" down") }));
 }
-// The one word each property an entry moves takes in its tags (a resist's alone, "fire" + " resist"); a skill bonus is the
-// skill's name. Every key the catalog's effects and caps use has one (app/buffs.test.mts checks).
-export const TAG_WORDS: Readonly<Record<string, string>> = {
-  physResist: "physical", fireResist: "fire", coldResist: "cold", poisonResist: "poison", energyResist: "energy",
-  strBonus: "strength", dexBonus: "dexterity", intBonus: "intelligence",
-  hci: "hit chance", dci: "defense chance", di: "damage", sdi: "spell damage", ssi: "swing speed", fc: "faster casting", castingFocus: "casting focus",
-  hpRegen: "hit point regeneration", stamRegen: "stamina regeneration", manaRegen: "mana regeneration",
-  hitsPool: "hit points", stamPool: "stamina", manaPool: "mana",
-  hitLightning: "hit lightning", hitFireball: "hit fireball", hitHarm: "hit harm", hitMagicArrow: "hit magic arrow", hitDispel: "hit dispel",
-};
-const tagWord = (k: string): string => (k.startsWith("sk:") ? labelOf(k).slice(1).toLowerCase() : TAG_WORDS[k] ?? k);
+// The name each property an entry moves takes in its tags: its one name (propName, "Damage Increase"), a skill bonus its
+// skill's ("Stealth"), and a pool its stat's, as the pools are no shard property. Resists moving together share one
+// "Resist" ("Physical, Cold Resists"), by RESIST_META's long names.
+const POOL_WORDS: Readonly<Record<string, string>> = { hitsPool: "Hit Points", stamPool: "Stamina", manaPool: "Mana" };
+export const tagWord = (k: string): string => (k.startsWith("sk:") ? labelOf(k).slice(1) : POOL_WORDS[k] ?? propName(k));
+const resistWord = (k: string): string => RESIST_META.find((m) => m.key === k)?.long ?? k;
 
 // ---------------------------------------------------------------- toggling
 // Turns `id` on or off. On, it replaces any entry of its exclusive set (one form at a time), named in `replaced`.
@@ -640,7 +636,7 @@ export function buffsDiff(a: unknown, b: unknown): string[] {
 
 // ---------------------------------------------------------------- the words
 const POOL_NAMES: Record<string, string> = { hitsPool: "Hits", stamPool: "Stamina", manaPool: "Mana" };
-const nameOf = (k: string): string => POOL_NAMES[k] ?? (k.startsWith("sk:") ? labelOf(k).slice(1) : labelOf(k));   // "Stealth +20", not "+Stealth +20"
+const nameOf = (k: string): string => POOL_NAMES[k] ?? (k.startsWith("sk:") ? labelOf(k).slice(1) : propName(k));   // "Stealth +20", not "+Stealth +20"
 export const signed = (n: number): string => `${n < 0 ? "−" : "+"}${Math.abs(n)}`;
 export const signedPct = (n: number): string => `${signed(Math.round(n * 100) / 100)}%`;
 // A bonus added past the cap, or a penalty applied after it (Protection's FC −2): "past" or "after".
@@ -668,7 +664,7 @@ export function gearNeedsText(k: string, need: number, gearCap: number | undefin
 // is counted".
 export function overrideNote(k: string, override: number, r: BuffResult): string {
   const lows = (r.shares[k] || []).filter((x) => !x.outside && x.value < 0).map((x) => `${BY_ID.get(x.id)!.name}'s ${signed(x.value)}`);
-  return `${labelOf(k)} ${override} override ignored: ${lows.join(" and ")} ${lows.length > 1 ? "are" : "is"} counted`;
+  return `${propName(k)} ${override} override ignored: ${lows.join(" and ")} ${lows.length > 1 ? "are" : "is"} counted`;
 }
 // "Phys, Cold, Poison, Energy +5", "All resists +5", "STR, DEX, INT +14": resists, and stats, with the same text are
 // named together; any other key on its own.
@@ -679,8 +675,9 @@ function joined(items: Array<[string, string]>): string[] {
   for (const [k, t] of items) { const g = `${family(k)} ${t}`; if (!groups.has(g)) groups.set(g, { t, keys: [] }); groups.get(g)!.keys.push(k); }
   return [...groups.values()].map(({ t, keys }) => `${keys.length === RESIST_KEYS.length && family(keys[0]!) === "resist" ? "All resists" : keys.map(nameOf).join(", ")} ${t}`);
 }
-// An entry's line in the picker for these skills and stats: "HCI +10 · DI +10 · SSI +10 · DCI −20",
-// "DI +7 past the cap · hits the lowest resist", "STR, DEX, INT +13% of base" with no character.
+// An entry's line in the picker for these skills and stats: "Hit Chance Increase +10 · Damage Increase +10 · …",
+// "Damage Increase +7 past the cap · hits the lowest resist", "Strength Bonus, Dexterity Bonus, Intelligence Bonus +13% of
+// base" with no character.
 // `caps` are the caps before any buff, so a cap change reads as it would on its own.
 export function buffText(id: string, skills: Skills, stats: Stats | null, totals: PropMap, who: BuffWho = {}, caps: Readonly<Record<string, number>> = {}): string {
   const b = BY_ID.get(id)!, c = buffContext(skills, stats, totals, who, caps);

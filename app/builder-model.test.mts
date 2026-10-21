@@ -33,10 +33,10 @@ test("[fast] builder model: No character's pseudo name reads as words, a charact
 });
 
 test("[fast] builder model: property names read as words in rule rows", () => {
-  assert.equal(propName("physResist"), "Physical resist");
-  assert.equal(propName("hci"), "Hit chance");
+  assert.equal(propName("physResist"), "Physical Resist");
+  assert.equal(propName("hci"), "Hit Chance Increase");
   assert.equal(propName("stamPool"), "Stamina from gear and buffs");
-  assert.equal(propName("strBonus"), "Strength bonus");
+  assert.equal(propName("strBonus"), "Strength Bonus");
   assert.equal(propName("sk:magery"), "Magery skill bonus");
 });
 
@@ -174,8 +174,8 @@ test("[fast] builder model: What changes lists every property, gauges the moved 
   assert.deepEqual(gaugeTrack(g.find((r) => r.key === "ssi")!), { fill: (100 * 55) / 60, tick: 50 });
   assert.deepEqual(gaugeTrack(g.find((r) => r.key === "luck")!), { fill: (100 * 120) / 340, tick: 100 }, "no cap: against the larger of the two");
   assert.deepEqual(gaugeTrack(row({ key: "strBonus", now: -5, suit: -2, delta: 3 })), { fill: 40, tick: 100 }, "negative totals with no cap draw by size");
-  assert.equal(changesSummary(g), "5 up · 2 down · HCI, DCI and DI reach their caps");
-  assert.equal(changesSummary(g.filter((r) => r.key === "dci")), "1 up · DCI reaches its cap");
+  assert.equal(changesSummary(g), "5 up · 2 down · Hit Chance Increase, Defense Chance Increase and Damage Increase reach their caps");
+  assert.equal(changesSummary(g.filter((r) => r.key === "dci")), "1 up · Defense Chance Increase reaches its cap");
   assert.equal(changesSummary([]), "No other property changes");
 });
 
@@ -223,9 +223,9 @@ test("[fast] builder model: compare keeps differing rows, marks cells that diffe
   assert.deepEqual(m.totals.map((r) => [r.key, r.best]), [
     ["physResist", [false, false, true]], ["dexBonus", [false, false, true]], ["fc", [true, true, false]], ["hitLightning", [true, true, false]],
   ]);
-  assert.deepEqual(m.hiddenTotals, ["Fire resist"]);
+  assert.deepEqual(m.hiddenTotals, ["Fire Resist"]);
   assert.equal(m.hiddenPieces, 1);
-  assert.equal(hiddenRowsNote(3, m.hiddenTotals, m.hiddenPieces), "Rows where all three agree are hidden: 1 slot, Fire resist");
+  assert.equal(hiddenRowsNote(3, m.hiddenTotals, m.hiddenPieces), "Rows where all three agree are hidden: 1 slot, Fire Resist");
   const all = compareModel(members, ["helmet", "cloak", "oneHanded"], ["fireResist"], { fireResist: 70 }, false);
   assert.equal(all.pieces.length, 3, "Differences only off shows every slot");
   assert.deepEqual(all.totals[0]!.best, [false, false, false], "a row where every suit agrees has no best cell");
@@ -246,7 +246,7 @@ test("[fast] builder model: a fourth run cannot be ticked for comparison, and sa
 test("[fast] builder model: a run's automatic label and its badges", () => {
   assert.equal(runAutoLabel(null, {}).text, "First saved run");
   assert.equal(runAutoLabel({ floors: { di: 20 } }, { floors: { di: 20 } }).text, "Same settings as the run before");
-  assert.equal(runAutoLabel({ floors: { di: 20 } }, { floors: { di: 30 } }).text, "DI floor 20 → 30");
+  assert.equal(runAutoLabel({ floors: { di: 20 } }, { floors: { di: 30 } }).text, "Damage Increase floor 20 → 30");
   // Resisting Spells' minimum of 40: Cold's 10 reads 40, which meets its requirement of 40; Poison's 50 misses 65
   const badges = runBadges(8, { physResist: 69, fireResist: 80, coldResist: 10, poisonResist: 50, energyResist: 65 }, { physResist: 65, fireResist: 65, coldResist: 40, poisonResist: 65, energyResist: 65 }, 40, { physResist: 70, fireResist: 70, coldResist: 70, poisonResist: 70, energyResist: 70 });
   assert.deepEqual(badges.map((b) => b.text), ["8 changes", "4 of 5 met", "Phys 69", "Fire 70", "Cold 40", "Poison 50", "Energy 65"]);
@@ -264,7 +264,7 @@ test("[fast] builder model: a run's buffs show in its label and diff, and a run 
   const df = runBuffs(["divineFury"], values)!, old = { floors: { ssi: 60 } };
   assert.equal(runAutoLabel(old, { ...old, buffs: df }).text, "+Divine Fury");
   assert.equal(runAutoLabel({ ...old, buffs: df }, old).text, "−Divine Fury");
-  assert.equal(runAutoLabel(old, { floors: { ssi: 50 }, buffs: df }).text, "SSI floor 60 → 50 · +Divine Fury");
+  assert.equal(runAutoLabel(old, { floors: { ssi: 50 }, buffs: df }).text, "Swing Speed Increase floor 60 → 50 · +Divine Fury");
   assert.equal(runAutoLabel(old, { ...old }).text, "Same settings as the run before", "two runs from before buffs");
   assert.deepEqual(runSettingsDiff({ ...old, buffs: df }, { ...old, buffs: runBuffs(["divineFury"], { ...values, Chivalry: 120 }) }), ["Chivalry 105 → 120"]);
 });
@@ -303,7 +303,7 @@ test("[fast] resist caps: notes, the Requirements note, the compare line", () =>
   assert.equal(resistMinimumText("Ana", null), null, "no minimum, nothing said");
   assert.equal(resistMinimumText("Ana", 0), null, "a minimum of 0 meets no requirement: nothing said");
   assert.equal(capsLine(human), "Shard caps");
-  assert.equal(capsLine(resistCapsFor("human", { fireResist: 95 })), "Fire 95 (raised from 70)");
+  assert.equal(capsLine(resistCapsFor("human", { fireResist: 95 })), "Fire Resist 95 (raised from 70)");
   assert.equal(anyOverridden(elf), false, "an Elf's Energy 75 is the shard's own");
   assert.equal(anyOverridden(resistCapsFor("human", { energyResist: 75 })), true);
 });
@@ -327,7 +327,7 @@ test("[fast] resist caps: a floor above its cap counts only up to it, warns, and
   assert.equal(effectiveFloor("fireResist", 90, caps), 70);
   assert.equal(effectiveFloor("fireResist", 60, caps), 60);
   assert.equal(effectiveFloor("hci", 90, caps), 90, "only resists are clamped");
-  assert.equal(floorCapWarning("fireResist", 90, 70), "Counts only up to the Fire cap, 70");
+  assert.equal(floorCapWarning("fireResist", 90, 70), "Counts only up to the Fire Resist cap, 70");
   assert.equal(floorCapWarning("fireResist", 70, 70), null);
   assert.equal(floorCapWarning("hci", 90, 45), null);
   // Fire 90 required, cap back at 70, suit Fire 86: met, as the headline and the solver say.
@@ -340,22 +340,22 @@ test("[fast] resist caps: a floor above its cap counts only up to it, warns, and
 
 test("[fast] builder model: a weight row's hover says the trade-off with the top weight, in whole units of the smaller one (issue #274)", () => {
   const w = melee.weights!;   // from its goals: SSI 100, HCI = DCI 80, DI 65, Luck 5
-  assert.equal(weightTradeoff("luck", w), "At these settings, 1 Swing speed is worth about 167 Luck.");
-  assert.equal(weightTradeoff("dci", w), "At these settings, 1 Defense chance is worth about 1.1 Swing speed.");
-  assert.equal(weightTradeoff("ssi", w), "Swing speed has the highest weight: the other weights are compared with it.");
-  assert.equal(weightTradeoff("physResist", { dci: 10, physResist: 6 }), "At these settings, 1 Defense chance is worth about 2 Physical resist.");
-  assert.equal(weightTradeoff("di", { di: 1, luck: 0.5 }), "At these settings, 1 Damage is worth about 2 Luck.", "the top by importance, Luck, is worth less per point");
-  assert.equal(weightTradeoff("luck", { luck: 0.001, dci: 10 }), "At these settings, 1 Defense chance is worth far more than 1,000 Luck.", "no number past 1,000");
-  assert.equal(weightTradeoff("luck", { tagPenalty: 100, dci: 1, luck: 0.05 }), "At these settings, 1 Defense chance is worth about 20 Luck.", "the tag penalty is not a weight row");
+  assert.equal(weightTradeoff("luck", w), "At these settings, 1 Swing Speed Increase is worth about 167 Luck.");
+  assert.equal(weightTradeoff("dci", w), "At these settings, 1 Defense Chance Increase is worth about 1.1 Swing Speed Increase.");
+  assert.equal(weightTradeoff("ssi", w), "Swing Speed Increase has the highest weight: the other weights are compared with it.");
+  assert.equal(weightTradeoff("physResist", { dci: 10, physResist: 6 }), "At these settings, 1 Defense Chance Increase is worth about 2 Physical Resist.");
+  assert.equal(weightTradeoff("di", { di: 1, luck: 0.5 }), "At these settings, 1 Damage Increase is worth about 2 Luck.", "the top by importance, Luck, is worth less per point");
+  assert.equal(weightTradeoff("luck", { luck: 0.001, dci: 10 }), "At these settings, 1 Defense Chance Increase is worth far more than 1,000 Luck.", "no number past 1,000");
+  assert.equal(weightTradeoff("luck", { tagPenalty: 100, dci: 1, luck: 0.05 }), "At these settings, 1 Defense Chance Increase is worth about 20 Luck.", "the tag penalty is not a weight row");
   // a negative weight, either way round; a zero weight; no positive weight to compare with
-  assert.equal(weightTradeoff("intBonus", { dci: 10, intBonus: -2 }), "At these settings, 1 Defense chance makes up for about 5 Intelligence bonus.");
-  assert.equal(weightTradeoff("intBonus", { dci: 1, intBonus: -5 }), "At these settings, 1 Intelligence bonus takes away what about 5 Defense chance adds.");
-  assert.equal(weightTradeoff("intBonus", { dci: 10, intBonus: -7.2 }), "At these settings, 1 Defense chance makes up for about 1.4 Intelligence bonus.", "one decimal under 1.5");
-  assert.equal(weightTradeoff("hci", { dci: 10, hci: 10 }), "At these settings, 1 Hit chance is worth about 1 Defense chance.");
+  assert.equal(weightTradeoff("intBonus", { dci: 10, intBonus: -2 }), "At these settings, 1 Defense Chance Increase makes up for about 5 Intelligence Bonus.");
+  assert.equal(weightTradeoff("intBonus", { dci: 1, intBonus: -5 }), "At these settings, 1 Intelligence Bonus takes away what about 5 Defense Chance Increase adds.");
+  assert.equal(weightTradeoff("intBonus", { dci: 10, intBonus: -7.2 }), "At these settings, 1 Defense Chance Increase makes up for about 1.4 Intelligence Bonus.", "one decimal under 1.5");
+  assert.equal(weightTradeoff("hci", { dci: 10, hci: 10 }), "At these settings, 1 Hit Chance Increase is worth about 1 Defense Chance Increase.");
   assert.equal(weightTradeoff("luck", { dci: 10, luck: 0 }), "At weight 0, Luck doesn't count.");
-  assert.equal(weightTradeoff("intBonus", { intBonus: -2 }), "Intelligence bonus counts against the score.");
+  assert.equal(weightTradeoff("intBonus", { intBonus: -2 }), "Intelligence Bonus counts against the score.");
   // a Resisting Spells skill bonus also lifts the resist minimums, which its weight leaves out
-  assert.equal(weightTradeoff("sk:resisting spells", { dci: 10, "sk:resisting spells": 2 }), "At these settings, 1 Defense chance is worth about 5 Resisting Spells skill bonus. It also raises your resist minimums.");
+  assert.equal(weightTradeoff("sk:resisting spells", { dci: 10, "sk:resisting spells": 2 }), "At these settings, 1 Defense Chance Increase is worth about 5 Resisting Spells skill bonus. It also raises your resist minimums.");
 });
 
 test("[fast] builder model: a new weight starts at importance 25 for every property, and a weight field merely touched keeps its exact value (issue #274)", () => {
@@ -406,32 +406,32 @@ test("[fast] rarity preference: help line, settings change, rarity total and the
 test("[fast] builder model: a strict-order build's proof in words, and the goals line naming the strategy and fewest changes (issue #292)", () => {
   const stages = [{ kind: "requirements", keys: null, value: 0 }, { kind: "goal", keys: ["ssi"], value: 31 }, { kind: "goal", keys: ["hci", "dci"], value: 90 }, { kind: "changes", keys: null, value: 3 }, { kind: "spare", keys: ["luck"], value: 120 }];
   assert.equal(strictDetail({ stages, proven: 5 }, "exact"), "Strict order: each goal proven best in turn, most important first");
-  assert.equal(strictDetail({ stages, proven: 2 }, "exact"), "Strict order: proven best up to Swing speed; from Hit chance and Defense chance on, the best found (not proven)");
-  assert.equal(strictDetail({ stages, proven: 1 }, "exact"), "Strict order: proven for your requirements only; from Swing speed on, the best found (not proven)");
-  assert.equal(strictDetail({ stages, proven: 3 }, "exact"), "Strict order: proven best up to Hit chance and Defense chance; from fewest changes on, the best found (not proven)");
+  assert.equal(strictDetail({ stages, proven: 2 }, "exact"), "Strict order: proven best up to Swing Speed Increase; from Hit Chance Increase and Defense Chance Increase on, the best found (not proven)");
+  assert.equal(strictDetail({ stages, proven: 1 }, "exact"), "Strict order: proven for your requirements only; from Swing Speed Increase on, the best found (not proven)");
+  assert.equal(strictDetail({ stages, proven: 3 }, "exact"), "Strict order: proven best up to Hit Chance Increase and Defense Chance Increase; from fewest changes on, the best found (not proven)");
   assert.equal(strictDetail({ stages, proven: 0 }, "exact"), "Strict order: the best found, not proven; raise the time budget to prove it");
   assert.equal(strictDetail({ stages, proven: 0 }, "heuristic"), "Strict order: the best found, not proven; turn on Exact search to prove it", "a heuristic build has no budget to raise");
   // the progress card names what is being solved
-  assert.deepEqual(stages.map(stageProgress), ["Strict order: meeting your requirements", "Strict order: getting Swing speed as high as it goes", "Strict order: getting Hit chance and Defense chance as high as they go",
+  assert.deepEqual(stages.map(stageProgress), ["Strict order: meeting your requirements", "Strict order: getting Swing Speed Increase as high as it goes", "Strict order: getting Hit Chance Increase and Defense Chance Increase as high as they go",
     "Strict order: changing as few pieces as possible", "Strict order: spare points"]);
   assert.equal(stageProgress({ kind: "softPartial", keys: null }), "Strict order: getting closer to soft requirements");
   assert.equal(stageProgress({ kind: "tags", keys: ["tagPenalty"] }), "Strict order: avoiding tagged pieces");
   const g: Goals = { ranks: [["ssi"], ["hci"]], leftover: "luck" };
-  assert.deepEqual(settingsDiff({ goals: g }, { goals: { ...g, strategy: "strict", fewestChanges: true } }), ["goals: Swing speed › Hit chance, spare points to luck, strict order, fewest changes"]);
+  assert.deepEqual(settingsDiff({ goals: g }, { goals: { ...g, strategy: "strict", fewestChanges: true } }), ["goals: Swing Speed Increase › Hit Chance Increase, spare points to luck, strict order, fewest changes"]);
   assert.deepEqual(settingsDiff({ goals: g }, { goals: { ...g, strategy: "value" } }), [], "Best value named is Best value");
 });
 
 test("[fast] builder model: what made up the score, largest first, shares under 2% folded into Other, a negative one set apart after them (issue #273)", () => {
   const rows = shareRows([{ property: "di", share: 0.41 }, { property: "physResist", share: 0.3, fromMin: true }, { property: "hci", share: 0.2 }, { property: "luck", share: 0.012 }, { property: "lmc", share: 0.004 }, { property: "intBonus", share: -0.074 }]);
-  assert.deepEqual(rows.map((r) => [r.label, r.pct, r.negative]), [["Damage", "41%", false], ["Physical resist", "30%", false], ["Hit chance", "20%", false], ["Other (2)", "2%", false], ["Intelligence bonus", "−7%", true]]);
+  assert.deepEqual(rows.map((r) => [r.label, r.pct, r.negative]), [["Damage Increase", "41%", false], ["Physical Resist", "30%", false], ["Hit Chance Increase", "20%", false], ["Other (2)", "2%", false], ["Intelligence Bonus", "−7%", true]]);
   assert.equal(rows[1]!.note, "includes the Resisting Spells minimum");
-  assert.equal(rows[3]!.holds, "Luck, Lower mana cost");
+  assert.equal(rows[3]!.holds, "Luck, Lower Mana Cost");
   assert.deepEqual(rows.map((r) => r.key), ["di", "physResist", "hci", null, "intBonus"], "each row names its property for its weight link; Other has none");
   // a lone small share keeps its own name; a share that rounds to nothing says so
-  assert.deepEqual(shareRows([{ property: "di", share: 0.996 }, { property: "luck", share: 0.004 }]).map((r) => [r.label, r.pct]), [["Damage", "100%"], ["Luck", "<1%"]]);
+  assert.deepEqual(shareRows([{ property: "di", share: 0.996 }, { property: "luck", share: 0.004 }]).map((r) => [r.label, r.pct]), [["Damage Increase", "100%"], ["Luck", "<1%"]]);
   assert.deepEqual(shareRows([]), [], "a run saved before #273 has none");
   // Show all: a fold of 0 lists every property on its own row
-  assert.deepEqual(shareRows([{ property: "di", share: 0.9 }, { property: "luck", share: 0.01 }, { property: "lmc", share: 0.01 }, { property: "hci", share: 0 }], 0).map((r) => [r.label, r.pct]), [["Damage", "90%"], ["Luck", "1%"], ["Lower mana cost", "1%"], ["Hit chance", "0%"]]);
+  assert.deepEqual(shareRows([{ property: "di", share: 0.9 }, { property: "luck", share: 0.01 }, { property: "lmc", share: 0.01 }, { property: "hci", share: 0 }], 0).map((r) => [r.label, r.pct]), [["Damage Increase", "90%"], ["Luck", "1%"], ["Lower Mana Cost", "1%"], ["Hit Chance Increase", "0%"]]);
 });
 
 test("[fast] builder model: a requirement's line from the result shown: met, short, a floor or a total past its cap, the next swing step (issue #272)", () => {
@@ -535,13 +535,13 @@ test("[fast] builder model: the first-visit summary's lines (issue #272)", () =>
 const MELEE_GOALS: Goals = { ranks: [["ssi"], ["hci", "dci"], ["di"]], swing: { mode: "fastest" }, leftover: "luck" };
 test("[fast] builder model: the goal rows, their names and the Goals tab's edits (issue #292)", () => {
   assert.deepEqual(goalRows(MELEE_GOALS), [{ key: "ssi", rank: 1, linked: false, counts: 100 }, { key: "hci", rank: 2, linked: false, counts: 80 }, { key: "dci", rank: 2, linked: true, counts: 80 }, { key: "di", rank: 3, linked: false, counts: 65 }]);
-  assert.deepEqual(["ssi", "hci", "di", "physResist", "lmc", "sk:magery"].map(propName), ["Swing speed", "Hit chance", "Damage", "Physical resist", "Lower mana cost", "Magery skill bonus"]);
-  assert.equal(goalWord("hci"), "hit chance");
+  assert.deepEqual(["ssi", "hci", "di", "physResist", "lmc", "sk:magery"].map(propName), ["Swing Speed Increase", "Hit Chance Increase", "Damage Increase", "Physical Resist", "Lower Mana Cost", "Magery skill bonus"]);
+  assert.equal(goalWord("hci"), "Hit Chance Increase");
   // issue #302: a pool and the property that feeds it can't be mixed up; the weight rows and the score breakdown use these names too
-  assert.deepEqual(["stamPool", "stamInc", "manaPool", "manaInc", "hitsPool", "hpi"].map(propName), ["Stamina from gear and buffs", "Stamina increase", "Mana from gear and buffs", "Mana increase", "Hit points from gear and buffs", "Hit point increase"]);
+  assert.deepEqual(["stamPool", "stamInc", "manaPool", "manaInc", "hitsPool", "hpi"].map(propName), ["Stamina from gear and buffs", "Stamina Increase", "Mana from gear and buffs", "Mana Increase", "Hit points from gear and buffs", "Hit Point Increase"]);
   assert.equal(new Set(["stamPool", "stamInc", "manaPool", "manaInc", "hitsPool", "hpi", "stamRegen", "manaRegen", "hpRegen"].map(propName)).size, 9);
-  assert.deepEqual(shareRows([{ property: "ssi", share: 0.5 }, { property: "stamInc", share: 0.5 }]).map((r) => r.label), ["Swing speed", "Stamina increase"], "the breakdown reads the goals' names");
-  assert.match(weightTradeoff("ssi", { ssi: 1 }), /^Swing speed has/, "so does a weight row's hover");
+  assert.deepEqual(shareRows([{ property: "ssi", share: 0.5 }, { property: "stamInc", share: 0.5 }]).map((r) => r.label), ["Swing Speed Increase", "Stamina Increase"], "the breakdown reads the goals' names");
+  assert.match(weightTradeoff("ssi", { ssi: 1 }), /^Swing Speed Increase has/, "so does a weight row's hover");
   // ↑ and ↓ move a whole rank; the ends go nowhere
   assert.deepEqual(moveGoal(MELEE_GOALS, "di", -1).ranks, [["ssi"], ["di"], ["hci", "dci"]]);
   assert.deepEqual(moveGoal(MELEE_GOALS, "dci", -1).ranks, [["hci", "dci"], ["ssi"], ["di"]], "a linked row moves with its rank");
@@ -570,15 +570,15 @@ test("[fast] builder model: how the goals went, the trades the build made and wh
   assert.deepEqual(goalOutcomes(MELEE_GOALS, suit, caps), [
     { key: "ssi", rank: 1, value: 55, cap: 60, maxed: false }, { key: "hci", rank: 2, value: 45, cap: 45, maxed: true },
     { key: "dci", rank: 2, value: 45, cap: 45, maxed: true }, { key: "di", rank: 3, value: 100, cap: 100, maxed: true }]);
-  assert.equal(goalOutcomes(MELEE_GOALS, suit, caps, true)[0]!.maxed, true, "Swing speed is maxed by its swing, not its SSI");
+  assert.equal(goalOutcomes(MELEE_GOALS, suit, caps, true)[0]!.maxed, true, "Swing Speed Increase is maxed by its swing, not its SSI");
   assert.equal(goalOutcomes(MELEE_GOALS, { ...suit, ssi: 60 }, caps, false)[0]!.maxed, false, "at the SSI cap with a swing short of its goal");
   assert.deepEqual(goalOutcomes({ ranks: [["luck"]], leftover: "none" }, suit, caps), [{ key: "luck", rank: 1, value: 320, cap: null, maxed: false }], "no cap: never maxed");
   // SSI went down while HCI, ranked below it, went up; DI's 110 is held at its cap of 100, so it did not move
   const trades = goalTrades(MELEE_GOALS, now, suit, caps);
   assert.deepEqual(trades, [{ key: "ssi", from: 56, to: 55, ups: [{ key: "hci", by: 15 }] }]);
-  assert.equal(tradeText(trades[0]!, { from: 1.5, to: 1.5 }), "−1 swing speed (56 → 55, still a 1.5 s swing) for +15 hit chance");
-  assert.equal(tradeText(trades[0]!, { from: 1.5, to: 1.75 }), "−1 swing speed (56 → 55, 1.5 s → 1.75 s swing) for +15 hit chance");
-  assert.equal(tradeText({ key: "hci", from: 45, to: 40, ups: [{ key: "di", by: 10 }, { key: "luck", by: 50 }] }), "−5 hit chance (45 → 40) for +10 damage and +50 luck");
+  assert.equal(tradeText(trades[0]!, { from: 1.5, to: 1.5 }), "−1 Swing Speed Increase (56 → 55, still a 1.5 s swing) for +15 Hit Chance Increase");
+  assert.equal(tradeText(trades[0]!, { from: 1.5, to: 1.75 }), "−1 Swing Speed Increase (56 → 55, 1.5 s → 1.75 s swing) for +15 Hit Chance Increase");
+  assert.equal(tradeText({ key: "hci", from: 45, to: 40, ups: [{ key: "di", by: 10 }, { key: "luck", by: 50 }] }), "−5 Hit Chance Increase (45 → 40) for +10 Damage Increase and +50 Luck");
   // a lower goal down for a higher one up is no trade; nor a loss with no gain below it; linked goals share a rank
   assert.deepEqual(goalTrades(MELEE_GOALS, { ssi: 50, di: 100 }, { ssi: 55, di: 90 }, caps), []);
   assert.deepEqual(goalTrades(MELEE_GOALS, { hci: 45, dci: 30 }, { hci: 40, dci: 45 }, caps), [], "HCI and DCI share their rank");
@@ -586,18 +586,18 @@ test("[fast] builder model: how the goals went, the trades the build made and wh
   assert.equal(goalTrades(many, { a: 9, b: 9, c: 9, d: 9, e: 0 }, { a: 8, b: 8, c: 8, d: 8, e: 9 }, {}).length, 3, "at most three");
   // verdicts say only what is known: maxed, given up in a trade, or what came first
   const out = goalOutcomes(MELEE_GOALS, suit, caps);
-  assert.deepEqual(out.map((o) => goalVerdict(o, trades)), ["went down to make room for hit chance", "maxed", "maxed", "maxed"]);
+  assert.deepEqual(out.map((o) => goalVerdict(o, trades)), ["went down to make room for Hit Chance Increase", "maxed", "maxed", "maxed"]);
   assert.equal(goalVerdict({ key: "ssi", rank: 1, value: 40, cap: 60, maxed: false }, []), "not maxed: your requirements, or the pieces you have, came first");
   assert.equal(goalVerdict({ key: "di", rank: 3, value: 40, cap: 100, maxed: false }, []), "not maxed: higher goals or your requirements came first");
   // Swing speed in seconds from the suit's own swing, against a swing-time goal or its fastest step
   const every: Goals = { ...MELEE_GOALS, swing: { mode: "every", seconds: 1.5 } };
   const broad = { seconds: 1.25, weapon: "Double Bladed Staff" };
-  assert.deepEqual(swingOutcome(MELEE_GOALS, { seconds: 1.75, ssi: 31 }, "Broadsword", true, broad), { text: "1.75 s with Broadsword (fastest it can reach)", ssi: "SSI 31", after: null, maxed: true, verdict: null });
-  assert.deepEqual(swingOutcome(MELEE_GOALS, { seconds: 2.75, ssi: 0 }, "Broadsword", false, broad), { text: "2.75 s with Broadsword", ssi: "SSI 0", after: "1.25 s possible with Double Bladed Staff", maxed: false, verdict: null });
+  assert.deepEqual(swingOutcome(MELEE_GOALS, { seconds: 1.75, ssi: 31 }, "Broadsword", true, broad), { text: "1.75 s with Broadsword (fastest it can reach)", ssi: "Swing Speed Increase 31", after: null, maxed: true, verdict: null });
+  assert.deepEqual(swingOutcome(MELEE_GOALS, { seconds: 2.75, ssi: 0 }, "Broadsword", false, broad), { text: "2.75 s with Broadsword", ssi: "Swing Speed Increase 0", after: "1.25 s possible with Double Bladed Staff", maxed: false, verdict: null });
   assert.equal(swingOutcome(MELEE_GOALS, { seconds: 1.25, ssi: 0 }, "Broadsword", false, broad).after, null, "nothing faster to point at");
-  assert.deepEqual(swingOutcome(every, { seconds: 1.5, ssi: 29 }, "War Axe", false, { seconds: 1.25, weapon: "War Axe" }), { text: "1.5 s with War Axe · goal met", ssi: "SSI 29", after: null, maxed: true, verdict: null });
+  assert.deepEqual(swingOutcome(every, { seconds: 1.5, ssi: 29 }, "War Axe", false, { seconds: 1.25, weapon: "War Axe" }), { text: "1.5 s with War Axe · goal met", ssi: "Swing Speed Increase 29", after: null, maxed: true, verdict: null });
   // issue #302: missed with another weapon than the goal's, the verdict names the weapon the goal was set for (by speed when both are known)
-  assert.deepEqual(swingOutcome(every, { seconds: 1.75, ssi: 31 }, "Longsword", false, { seconds: 1.25, weapon: "Katana" }), { text: "1.75 s with Longsword", ssi: "SSI 31", after: null, maxed: false, verdict: "the suit uses a Longsword; the 1.5 s goal was set for your Katana" });
+  assert.deepEqual(swingOutcome(every, { seconds: 1.75, ssi: 31 }, "Longsword", false, { seconds: 1.25, weapon: "Katana" }), { text: "1.75 s with Longsword", ssi: "Swing Speed Increase 31", after: null, maxed: false, verdict: "the suit uses a Longsword; the 1.5 s goal was set for your Katana" });
   assert.equal(swingOutcome(every, { seconds: 1.75, ssi: 31 }, "Executioner's Axe", false, { seconds: 1.25, weapon: "Katana" }).verdict, "the suit uses an Executioner's Axe; the 1.5 s goal was set for your Katana");
   assert.equal(swingOutcome(every, { seconds: 1.75, ssi: 31, speed: 3.25 }, "Radiant Scimitar", false, { seconds: 1.25, weapon: "Scimitar", speed: 3.25 }).verdict, null, "the same speed: the goal applies");
   assert.equal(swingOutcome(every, { seconds: 1.75, ssi: 31, speed: 3.25 }, "Katana", false, { seconds: 1.25, weapon: "Katana", speed: 2.5 }).verdict?.startsWith("the suit uses a Katana"), true, "another speed under the same name");
@@ -609,21 +609,21 @@ test("[fast] builder model: how the goals went, the trades the build made and wh
   assert.equal(spareLine(MELEE_GOALS, { luck: 126 }, { luck: 96 }), "Spare points: none left over. The goals cost some Luck (126 → 96)");
   assert.equal(spareLine({ ...MELEE_GOALS, leftover: "none" }, now, suit), null);
   assert.equal(spareLine({ ranks: [["luck"]], leftover: "luck" }, now, suit), null, "every member a goal");
-  assert.equal(spareLine({ ranks: [["dexBonus"]], leftover: "melee" }, { strBonus: 5 }, { strBonus: 3, stamInc: 8, hpRegen: 2 }), "Spare points went to: Stamina increase +8, Hit point regeneration +2");
+  assert.equal(spareLine({ ranks: [["dexBonus"]], leftover: "melee" }, { strBonus: 5 }, { strBonus: 3, stamInc: 8, hpRegen: 2 }), "Spare points went to: Stamina Increase +8, Hit Point Regeneration +2");
   assert.equal(spareLine({ ranks: [["dexBonus"]], leftover: "melee" }, { strBonus: 5 }, { strBonus: 3 }), `Spare points: none left over. The goals cost some ${propName("strBonus")} (5 → 3)`);
 });
 
 // Issue #302: the first-visit view's "What matters most" with goals: one row per rank by the goals' names, the spare points on their own line.
 test("[fast] builder model: the first-visit summary lists the goals by rank and where spare points go (issue #302)", () => {
-  assert.deepEqual(goalSummary(MELEE_GOALS), { rows: [{ rank: 1, names: "Swing speed", counts: 100 }, { rank: 2, names: "Hit chance = Defense chance", counts: 80 }, { rank: 3, names: "Damage", counts: 65 }], more: 0, spare: "Spare points: Luck" });
-  assert.equal(goalSummary({ ...MELEE_GOALS, swing: { mode: "every", seconds: 1.5 } }).rows[0]!.names, "Swing speed every 1.5 s");
+  assert.deepEqual(goalSummary(MELEE_GOALS), { rows: [{ rank: 1, names: "Swing Speed Increase", counts: 100 }, { rank: 2, names: "Hit Chance Increase = Defense Chance Increase", counts: 80 }, { rank: 3, names: "Damage Increase", counts: 65 }], more: 0, spare: "Spare points: Luck" });
+  assert.equal(goalSummary({ ...MELEE_GOALS, swing: { mode: "every", seconds: 1.5 } }).rows[0]!.names, "Swing Speed Increase every 1.5 s");
   const six: Goals = { ranks: [["a"], ["b"], ["c"], ["d"], ["e"], ["f"]], leftover: "caster" };
   assert.deepEqual([goalSummary(six).rows.length, goalSummary(six).more, goalSummary(six).spare], [4, 2, "Spare points: Caster stats"]);
   assert.equal(goalSummary({ ranks: [], leftover: "none" }).spare, "Spare points: not used");
   // "+ N more goals" counts the goals the hidden ranks hold, a linked rank's each
   const linked: Goals = { ranks: [["a"], ["b"], ["c"], ["d"], ["luck", "lmc"], ["sdi"]], leftover: "luck" };
   assert.deepEqual([goalSummary(linked).rows.length, goalSummary(linked).more], [4, 3]);
-  assert.equal(goalSummary({ ...MELEE_GOALS, swing: { mode: "every", seconds: 2 } }).rows[0]!.names, "Swing speed every 2.0 s", "seconds as the page writes them");
+  assert.equal(goalSummary({ ...MELEE_GOALS, swing: { mode: "every", seconds: 2 } }).rows[0]!.names, "Swing Speed Increase every 2.0 s", "seconds as the page writes them");
 });
 
 // Issue #321: the build picker's state line, for every case. The old "modified" badge compared the panel with the template
@@ -643,8 +643,8 @@ test("[fast] the build state line: no template, clean, unsaved changes, changed 
 });
 test("[fast] the build state in full: what changed from the template and what is not saved", () => {
   assert.equal(buildStateDetail({ name: "Dorran", template: "Melee" }), "These settings equal the Melee template. No unsaved changes.");
-  assert.equal(buildStateDetail({ name: "Dorran", template: "Melee", changedLines: ["DI floor 20 → 30", "Luck weight added"], unsavedLines: ["DI floor 20 → 30"] }),
-    "Changed from Melee: DI floor 20 → 30 · Luck weight added. Not saved to Dorran's profile yet: DI floor 20 → 30.");
+  assert.equal(buildStateDetail({ name: "Dorran", template: "Melee", changedLines: ["Damage Increase floor 20 → 30", "Luck weight added"], unsavedLines: ["Damage Increase floor 20 → 30"] }),
+    "Changed from Melee: Damage Increase floor 20 → 30 · Luck weight added. Not saved to Dorran's profile yet: Damage Increase floor 20 → 30.");
   assert.equal(buildStateDetail({ name: NOBODY, template: null, unsavedLines: ["race elf → human"] }), "These settings are not from a template; Save as template stores them as one. Not saved to No character's profile yet: race elf → human.");
   assert.match(buildStateDetail({ name: "Dorran", template: "gone", missing: true }), /^These settings came from a template named gone, which no longer exists\./);
 });

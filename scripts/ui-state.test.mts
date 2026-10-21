@@ -477,17 +477,17 @@ test("[slow] the character sheet's shown properties are chosen in a popover and 
     const card = page.locator('#tab-characters section[aria-label="Properties"]');
     const rows = (): Promise<string[]> => card.locator(".sheet-props .kv-k").allInnerTexts();
     const shown = await rows();
-    for (const r of ["Faster Casting", "Hit Chance", "Hit Life Leech", "Hit Mana Leech", "Hit Stamina Leech", "Luck"]) assert.ok(shown.includes(r), `${r} is shown by default`);
+    for (const r of ["Faster Casting", "Hit Chance Increase", "Hit Life Leech", "Hit Mana Leech", "Hit Stamina Leech", "Luck"]) assert.ok(shown.includes(r), `${r} is shown by default`);
     assert.ok(!shown.includes("Hit Fireball"), "a property outside the default set is off");
     await card.getByRole("button", { name: "Properties shown" }).click();
     const pop = page.getByRole("dialog", { name: "Properties shown" });
     await pop.locator('input[value="hitFireball"]').check();
     await pop.locator('input[value="hci"]').uncheck();
     const after = await rows();
-    assert.ok(after.includes("Hit Fireball") && !after.includes("Hit Chance"), `the card follows the choice, got ${JSON.stringify(after)}`);
+    assert.ok(after.includes("Hit Fireball") && !after.includes("Hit Chance Increase"), `the card follows the choice, got ${JSON.stringify(after)}`);
     await pop.getByRole("button", { name: "Reset to default" }).click();
     const reset = await rows();
-    assert.ok(reset.includes("Hit Chance") && reset.includes("Hit Life Leech") && !reset.includes("Hit Fireball"), `Reset puts the default back, got ${JSON.stringify(reset)}`);
+    assert.ok(reset.includes("Hit Chance Increase") && reset.includes("Hit Life Leech") && !reset.includes("Hit Fireball"), `Reset puts the default back, got ${JSON.stringify(reset)}`);
     assert.deepEqual(errors, []);
   } finally {
     await close();

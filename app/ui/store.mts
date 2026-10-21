@@ -73,10 +73,10 @@ export interface BuildMeta {
   skipped: Record<string, unknown> | undefined;
   reused: SavedRunLike | null;
   goals?: Goals | undefined;   // the goals in force the run was built from (issue #292): the result's "How the goals went"
-  goalSwing?: GoalSwingWeapon | undefined;   // the weapon and stamina its Swing speed goal was set for (issue #302); absent in a run saved before it
+  goalSwing?: GoalSwingWeapon | undefined;   // the weapon and stamina its Swing Speed Increase goal was set for (issue #302); absent in a run saved before it
   gearChanges?: GearChanges | undefined;     // a saved run's: what changed in the gear since it was built (issue #291), for the slot table's marks
 }
-// A result's goals meta from its run's settings: the goals in force and the weapon its Swing speed goal was set for; none for weights set by hand.
+// A result's goals meta from its run's settings: the goals in force and the weapon its Swing Speed Increase goal was set for; none for weights set by hand.
 export const goalsMeta = (st: RunSettings): Pick<BuildMeta, "goals" | "goalSwing"> => (goalsActive(st.goals) ? { goals: st.goals, ...(st.goalSwing ? { goalSwing: st.goalSwing } : {}) } : {});
 export interface BridgeState {
   online: boolean;
