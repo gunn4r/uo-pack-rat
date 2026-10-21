@@ -32,13 +32,14 @@ const scan = (scannedAt: string, items: ReturnType<typeof item>[], { roots = [CH
   return doc as unknown as ScanV2;
 };
 // What is missing, without each item's look (its own test below).
-const missing = (snaps: ScanV2[]) => Object.fromEntries(Object.entries(missingSinceLastScan(snaps, foldSnapshots(snaps))).map(([k, list]) => [k, list.map(({ graphic: _g, hue: _h, rarity: _r, ...rest }) => rest)]));
+const missing = (snaps: ScanV2[]) => Object.fromEntries(Object.entries(missingSinceLastScan(snaps, foldSnapshots(snaps))).map(([k, list]) => [k, list.map(({ graphic: _g, hue: _h, rarity: _r, lines: _l, ...rest }) => rest)]));
 
-test("[fast] a missing item carries its look at its last scan: graphic, hue and the rarity its tooltip named (read by the rarityOf the caller passes)", () => {
+test("[fast] a missing item carries its look at its last scan: graphic, hue, its tooltip lines and the rarity they named (read by the rarityOf the caller passes)", () => {
   const ring = { ...item(RING, CHEST, "Ring", 1, 1153), tooltip: ["Ring", "Greater Artifact"] };
   const snaps = [scan(T1, [ring, item(GEM, CHEST, "Gem")]), scan(T2, [item(GEM, CHEST, "Gem")])];
   const [got] = missingSinceLastScan(snaps, foldSnapshots(snaps), (lines) => parseTooltip(lines).rarity)[CHEST]!;
   assert.deepEqual([got!.graphic, got!.hue, got!.rarity], [0x0f7a, 1153, "Greater Artifact"]);
+  assert.deepEqual(got!.lines, ["Ring", "Greater Artifact"], "its tooltip as last scanned, for the dialog's hover");
   assert.equal(missingSinceLastScan(snaps, foldSnapshots(snaps))[CHEST]![0]!.rarity, null, "no rarity reader: no rarity");
 });
 
@@ -150,7 +151,7 @@ test("[fast] missingSinceLastScan reads no shard rules (issue #181)", () => {
   const rules = getRules();
   setRules(null as unknown as RulesV1);
   try {
-    assert.deepEqual(missingSinceLastScan(snaps, inv), { [CHEST]: [{ serial: PEARL, name: "Scroll of Transcendence (Chivalry - 0.6 Pts)", amount: 1, lastSeen: T1, graphic: 0x0f7a, hue: 0, rarity: null }] });
+    assert.deepEqual(missingSinceLastScan(snaps, inv), { [CHEST]: [{ serial: PEARL, name: "Scroll of Transcendence (Chivalry - 0.6 Pts)", amount: 1, lastSeen: T1, graphic: 0x0f7a, hue: 0, rarity: null, lines: ["Scroll Of Transcendence", "Skill: Chivalry 0.6 Skill Points"] }] });
   } finally {
     setRules(rules);
   }

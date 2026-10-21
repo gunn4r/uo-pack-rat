@@ -1,2 +1,2 @@
-- **Missing items show what they looked like** (issues #504, #503): Show missing items lists each piece with its icon and its name in its rarity's color, as its last scan saw it.
-- For contributors: `GET /api/missing` items carry `graphic`, `hue` and `rarity` from the last scan that saw them; `missingSinceLastScan` takes a `rarityOf` reader (the server passes the tooltip parser), so the module itself still reads no shard rules.
+- **Missing items show what they looked like** (issues #504, #503): Show missing items lists each piece with its icon and its name in its rarity's color, as its last scan saw it, and hovering a row shows that piece's tooltip from the same scan.
+- For contributors: `GET /api/missing` items carry `graphic`, `hue`, `rarity` and `lines` (the tooltip) from the last scan that saw them; `missingSinceLastScan` takes a `rarityOf` reader (the server passes the tooltip parser), so the module itself still reads no shard rules.

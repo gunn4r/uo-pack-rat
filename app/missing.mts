@@ -16,8 +16,8 @@ import { shownName, TRASH_RE } from "./vault-lib.mts";
 import type { Inventory } from "./vault-lib.mts";
 import type { ScanV2 } from "./schema/types.d.mts";
 
-// `graphic`, `hue` and `rarity`: how the piece looked at its last scan there (its icon and its name's color; the item is gone from the inventory, so nothing else can say).
-export interface MissingItem { serial: number; name: string; amount: number; fewer?: number; lastSeen: string; graphic: number | null; hue: number | null; rarity: string | null }
+// `graphic`, `hue`, `rarity` and `lines`: how the piece looked at its last scan there (its icon, its name's color and its tooltip; the item is gone from the inventory, so nothing else can say). `lines` is the tooltip as scanned, line 0 the name; a bag has its name alone.
+export interface MissingItem { serial: number; name: string; amount: number; fewer?: number; lastSeen: string; graphic: number | null; hue: number | null; rarity: string | null; lines: string[] }
 interface Seen { name: string; amount: number; kind: string | null; graphic: number | null; hue: number | null; lines: string[] | null }   // kind: null for a bag, which never merges
 interface Stack { root: number | null; amount: number; seenAt: number }
 
@@ -87,7 +87,7 @@ export function missingSinceLastScan(snapshots: ScanV2[], inv: Inventory, rarity
     return stacks.get(kind) ?? [];
   };
   // Its look at the last scan that saw it; the tooltip is parsed only for what is reported.
-  const look = (was: Seen): Pick<MissingItem, "graphic" | "hue" | "rarity"> => ({ graphic: was.graphic, hue: was.hue, rarity: was.lines ? rarityOf(was.lines) : null });
+  const look = (was: Seen): Pick<MissingItem, "graphic" | "hue" | "rarity" | "lines"> => ({ graphic: was.graphic, hue: was.hue, rarity: was.lines ? rarityOf(was.lines) : null, lines: was.lines ?? [was.name] });
   const out: Record<string, MissingItem[]> = {};   // keyed by a root's serial: always digits, never "__proto__"
   for (const [root, [prev, latest]] of lastTwo) {
     // A root a Forget (or a character's Forget) removed is not in the fold, and has nothing to report.
