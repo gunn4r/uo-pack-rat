@@ -1,7 +1,7 @@
 // organize-presets.mts — ready-made rule filters for Organize (issue #11). A preset is copied into a rule
 // (ruleFromPreset), and editing the rule never changes the preset. Where two presets overlap, the rule placed
 // higher wins (first match): put Shields above Weapons, Armour: neck above Necklaces, the power scroll,
-// Transcendence scroll and school scroll presets above Spell scrolls, and a rule for spellbooks above Weapons (a spellbook sits in the one-handed slot). Pure,
+// Transcendence scroll and school scroll presets above Spell scrolls. Weapons leaves spellbooks out by Type (a spellbook sits in the one-handed slot), and Spellbooks takes them. Pure,
 // so the page can list them too. The undesirables at the end (issue #133) belong at the top of the rules, so they claim
 // first; they skip every piece of a saved suit, and Auto organize never uses them.
 //
@@ -50,7 +50,9 @@ export const PRESETS: readonly OrganizePreset[] = [
   { id: "earrings", name: "Earrings", match: slots(["earrings"]) },
   { id: "talismans", name: "Talismans", match: slots(["talisman"]) },
   { id: "shields", name: "Shields", match: slots(["twoHanded"], ["shield", "buckler"]) },
-  { id: "weapons", name: "Weapons", match: slots(["oneHanded", "twoHanded"]) },
+  // A weapon or a shield by Type, which is the held slots less spellbooks (held in the one-handed slot too, with their own preset).
+  { id: "weapons", name: "Weapons", match: { query: q({ kind: ["gear"], type: ["one-handed", "two-handed", "shield"] }) } },
+  { id: "spellbooks", name: "Spellbooks", match: { query: q({ kind: ["gear"], type: ["spellbook"] }) } },
   { id: "armour-head", name: "Armor: head", match: slots(["helmet"]) },
   // The neck slot holds necklaces too: armour is a piece named by vault-lib's NECK_ARMOR_WORDS.
   { id: "armour-neck", name: "Armor: neck", match: slots(["neck"], [...NECK_ARMOR_WORDS]) },

@@ -1,6 +1,6 @@
 // organize-strategies.test.mts — `app/organize-strategies.mts`, Organize's Auto mode (issue #11, spec §5).
 //
-// `app/organize-strategies.mts`, Auto organize (issue #11): the Simple and Detailed group tables (valid rule filters; every fixture kind lands in its group; shirts and cloth kilts in Other gear and a gargish kilt in the hand armor, issue #202), `assignGroups` (largest first, existing homes, ties, chains, more groups than chests, chests holding only one group's items kept), and `proposeOrganize` on hand-built house scans: which chests are offered and why not, more groups than chests and zero chests, a chain for a huge group, a group across two houses, re-running after manual edits, re-running on its own accepted setup and after its trips (idempotence), determinism, the player's catch-all, and a setup past the rule limit. All `[fast]`.
+// `app/organize-strategies.mts`, Auto organize (issue #11): the Simple and Detailed group tables (valid rule filters; every fixture kind lands in its group; shirts and cloth kilts in Other gear and a gargish kilt in the hand armor, issue #202; every spellbook in Spellbooks by Type, none in Weapons, and a setup saved before that group gets it proposed), `assignGroups` (largest first, existing homes, ties, chains, more groups than chests, chests holding only one group's items kept), and `proposeOrganize` on hand-built house scans: which chests are offered and why not, more groups than chests and zero chests, a chain for a huge group, a group across two houses, re-running after manual edits, re-running on its own accepted setup and after its trips (idempotence), determinism, the player's catch-all, and a setup past the rule limit. All `[fast]`.
 //
 // On hand-built house scans (app/organize-fixture.mts) folded by the real foldSnapshots. Pure: no server.
 import { test } from "node:test";
@@ -27,8 +27,10 @@ const fold = (boxes: BoxSpec[], things: ThingSpec[] = []): Inventory => foldSnap
 // One of each thing the strategies sort (Task 0 checked how each classifies), in serial order.
 const NAMES = ["Black Pearl", "Ruby", "Katana", "Platemail Gorget", "Gold Necklace", "Gold Ring", "Bone Armor", "Heater Shield", "Spellbook", "Greater Heal Potion", "Bandage", "Iron Ingot", "Recall Rune", "Scissors", "Greater Heal", "An Exalted Scroll Of Mysticism (110 Skill)", "Apple", "Grave Dust", "Board"];
 const ITEM = 0x40001000;
-// A spell's name is a scroll only on a scroll graphic (issue #134), and the fixture's default graphic is a reagent's.
-const gfx = (name: string): { graphic?: number } => (name === "Greater Heal" ? { graphic: 0x1F49 } : {});
+// A spell's name is a scroll only on a scroll graphic (issue #134), and the fixture's default graphic is a reagent's. A
+// weapon carries its skill line, as every scanned one does: without it a held piece is no weapon (Type: a one-handed
+// piece that is no weapon is a spellbook).
+const gfx = (name: string): { graphic?: number; lines?: string[] } => (name === "Greater Heal" ? { graphic: 0x1F49 } : name === "Katana" ? { lines: ["Skill Required: Swordsmanship"] } : {});
 const things = (inBox: number, names: readonly string[] = NAMES, from = 1): ThingSpec[] => names.map((name, i) => ({ serial: ITEM + from + i, name, in: inBox, ...gfx(name) }));
 const grouped = (strategy: keyof typeof STRATEGIES): [string, string, string[]][] =>
   groupItems(STRATEGIES[strategy], Object.values(fold([{ serial: A }], things(A)).items)).map((g) => [g.key, g.name, g.items.map((it) => it.name)]);
@@ -47,7 +49,8 @@ test("[fast] Simple: one group per family, gear sorted by slot before any name p
   assert.deepEqual(grouped("simple"), [
     ["armour", "Armor", ["Platemail Gorget", "Bone Armor"]],
     ["jewelry", "Jewelry", ["Gold Necklace", "Gold Ring"]],
-    ["weapons", "Weapons", ["Katana", "Heater Shield", "Spellbook"]],
+    ["weapons", "Weapons", ["Katana", "Heater Shield"]],
+    ["spellbooks", "Spellbooks", ["Spellbook"]],
     ["reagents", "Reagents", ["Black Pearl", "Grave Dust"]],
     ["skill-scrolls", "Skill scrolls", ["An Exalted Scroll Of Mysticism (110 Skill)"]],
     ["scrolls", "Spell scrolls", ["Greater Heal"]],
@@ -147,6 +150,45 @@ test("[fast] every strategy gives treasure maps, messages in a bottle and SOS a 
 test("[fast] Detailed: Spellbooks share a chest with the books, not the weapons (issue #123)", () => {
   const family = (key: string): string => STRATEGIES.detailed.find((d) => d.key === key)!.family;
   assert.deepEqual(["spellbooks", "books", "runes"].map(family), ["runes-books", "runes-books", "runes-books"]);
+});
+
+// Spellbooks have their own group in Simple and Detailed, taken by Type (a held piece that is no weapon and no shield),
+// so one named like no other book (Scrapper's Compendium) is one too, and Weapons, which takes weapons and shields by
+// Type, never holds one.
+test("[fast] Simple and Detailed: every spellbook goes to Spellbooks by its Type, whatever its name, and Weapons takes none", () => {
+  const books = ["Necromancer Spellbook", "Scrapper's Compendium", "Spellbook"];
+  const items = Object.values(fold([{ serial: A }], things(A, ["Katana", "Heater Shield", ...books])).items);
+  for (const strategy of ["simple", "detailed"] as const) {
+    const groups = groupItems(STRATEGIES[strategy], items), of = (key: string): string[] => (groups.find((g) => g.key === key)?.items.map((it) => it.name) ?? []).sort();
+    assert.deepEqual(of("spellbooks"), books, `${strategy}: the spellbooks`);
+    assert.deepEqual(of("weapons"), strategy === "simple" ? ["Heater Shield", "Katana"] : ["Katana"], `${strategy}: Weapons keeps the weapons (and Simple the shield)`);
+  }
+});
+
+test("[fast] a Simple setup saved before Spellbooks had a group gets one proposed like any new group; its plan moves the books there, and re-running after the trips moves nothing", () => {
+  const inv = fold([{ serial: A, max: 20 }, { serial: B, pos: at(102), max: 20 }, { serial: C, pos: at(104), max: 20 }],
+    [...things(A, ["Katana", "Katana", "Katana", "Spellbook", "Scrapper's Compendium"]), ...things(B, ["Black Pearl", "Garlic"], 8)]);
+  // What Simple accepted then: Weapons by slot alone (spellbooks with it), no Spellbooks rule and no label for one. The
+  // weapons outnumber the books in their chest, so Weapons keeps it (each group goes where most of it already is).
+  const label = (serial: number, name: string) => ({ serial, name, origin: "strategy:simple" as const });
+  const old: OrganizeConfig = { ...emptyOrganizeConfig(),
+    labels: { [A]: label(A, "Weapons"), [B]: label(B, "Reagents") },
+    rules: [
+      { id: "auto-weapons", name: "Weapons", match: { query: { ...emptyRuleQuery(), kind: ["gear"], slot: ["oneHanded", "twoHanded"] } }, targets: [A], origin: "strategy:simple" },
+      { id: "auto-reagents", name: "Reagents", match: { query: { ...emptyRuleQuery(), kind: ["reagent"] } }, targets: [B], origin: "strategy:simple" },
+    ] };
+  assert.equal(checkOrganizeConfig(old).ok, true);
+  const p = ok(proposeOrganize(inv, old, [], OPTS({ containers: [A, B, C] })));
+  const spellbooks = p.config.rules.find((r) => r.id === "auto-spellbooks");
+  assert.deepEqual([spellbooks?.name, spellbooks?.targets], ["Spellbooks", [C]], "the new group gets the empty chest");
+  assert.equal(p.config.labels[String(C)]!.name, "Spellbooks");
+  assert.deepEqual(p.config.rules.find((r) => r.id === "auto-weapons")!.targets, [A], "Weapons keeps its chest");
+  const plan = planOrganize(inv, p.config, [], { now: NOW });
+  assert.deepEqual(plan.moves.map((m) => [m.name, m.from, m.to]).sort(), [["Scrapper's Compendium", A, C], ["Spellbook", A, C]]);
+  const done: OverlayMove[] = plan.moves.map((m) => ({ serial: m.serial, name: m.name, from: m.from, to: m.to, at: new Date(NOW).toISOString(), trip: "t1" }));
+  const after = ok(proposeOrganize(inv, p.config, done, OPTS({ containers: [A, B, C] })));
+  assert.equal(after.plan.moves, 0, "re-running after the trips moves nothing");
+  assert.deepEqual(after.config, p.config);
 });
 
 // Issue #123: the neck slot holds armour and necklaces alike; both strategies split them with the one Armour: neck
@@ -264,7 +306,7 @@ test("[fast] Simple and Detailed: shirts and cloth kilts are other gear, a gargi
 // Gear for By build, one piece of each build, each written as its tooltip reads.
 const BUILD_GEAR: ThingSpec[] = [
   { name: "Gold Ring", lines: ["Faster Casting 1", "Lower Mana Cost 8"] },
-  { name: "Katana", lines: ["Hit Chance Increase 15", "Swing Speed Increase 10"] },
+  { name: "Katana", lines: ["Hit Chance Increase 15", "Swing Speed Increase 10", "Skill Required: Swordsmanship"] },
   { name: "Gold Bracelet", lines: ["Faster Casting 1", "Damage Increase 10"] },
   { name: "Platemail Gorget", lines: ["Physical Resist 10", "Fire Resist 10"] },
   { name: "Leather Gloves", lines: ["Physical Resist 5"] },

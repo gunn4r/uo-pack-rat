@@ -134,8 +134,6 @@ export const MELEE_SKILLS = ["swordsmanship", "tactics", "anatomy", "archery", "
   "chivalry", "parrying"];
 // A piece's summed resists at least this, with no caster or melee marker, is Tank gear.
 const TANK_RESISTS = 20;
-// The names Detailed's Spellbooks group (issue #129) gathers: Spellbook, Necromancer Spellbook, Book Of Bushido…
-export const SPELLBOOK_NAMES: readonly string[] = ["spellbook", "book of", "tome"];
 // Which build a piece of gear is: the side with more distinct markers, Hybrid on a tie. A piece with none is Melee when
 // it is a weapon (it has a damage range), Caster when it is a spellbook (issue #129: every one, a Book Of Chivalry or
 // Bushido too), else Tank when it is a shield (issue #123), or its resists add up to TANK_RESISTS, else Other. Spellbook
