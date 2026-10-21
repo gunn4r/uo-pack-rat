@@ -186,6 +186,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `scripts/layering.test.mts` — a [smoke] guard for the import layering of app/, scripts/ and electron/.
 - `scripts/make-adapter-fixture.test.mts` — `scripts/make-adapter-fixture.mts` run as a real child process, the way a maintainer invokes it, against temp in/out paths.
 - `scripts/module-map.test.mts` — a [smoke] guard that keeps `docs/module-map.md` from falling behind the tree.
+- `scripts/no-game-art.test.mts` — a [smoke] guard that no game client file or art decoded from one is ever committed (issue #502).
 - `scripts/no-unbounded-loop.test.mts` — a [smoke] guard that no adapter `.py` file contains an unbounded-loop literal anywhere.
 - `scripts/optimizer-core.test.mts` — the offline test harness for the suit optimizer core (`scripts/optimizer-core.mts`).
 - `scripts/packaging.test.mts` — the electron-builder config, which is product interface: which files reach a player's machine, under which target, with which identifiers.
