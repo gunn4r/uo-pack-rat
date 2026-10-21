@@ -108,18 +108,6 @@
    ]
   },
   {
-   "serial": 1879834635,
-   "name": "Spellbook",
-   "graphic": 3834,
-   "hue": 0,
-   "amount": 1,
-   "tooltip": [
-    "Spellbook",
-    "Blessed",
-    "12 Spells"
-   ]
-  },
-  {
    "serial": 1879834648,
    "name": "Orc Mask",
    "graphic": 5147,
@@ -751,6 +739,19 @@
    "tooltip": [
     "7 Mark",
     "Weight: 5 Stones"
+   ],
+   "container": 1879834624
+  },
+  {
+   "serial": 1879834635,
+   "name": "Spellbook",
+   "graphic": 3834,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Spellbook",
+    "Blessed",
+    "12 Spells"
    ],
    "container": 1879834624
   }
