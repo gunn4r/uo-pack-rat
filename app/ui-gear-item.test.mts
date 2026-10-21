@@ -51,7 +51,7 @@ let known: Record<number, unknown> = {}, hold: Promise<void> | null = null, fail
   return { ok: true, status: 200, json: async () => ({ ok: true, items: Object.fromEntries(serials.filter((s) => known[s]).map((s) => [s, known[s]])) }) };
 };
 
-const { gearItem, gearText, forgetGearMisses } = await import("./ui/gear-item.mts");
+const { gearItem, gearText, slotPieces, forgetGearMisses } = await import("./ui/gear-item.mts");
 const { artTile } = await import("./ui/item-art.mts");
 const { tipNode } = await import("./ui/dom.mts");
 const { FLEX_CLASSES } = await import("./ui/components.mts");
@@ -77,6 +77,16 @@ test("[fast] gearText: a sentence with each named piece as an inline gear item w
   const suit = { serial: 7, name: "Longsword", graphic: 0xf61, hue: 0, rarity: "Greater Magic Item" }, worn = { serial: 8, name: "Longsword", graphic: 0xf61, hue: 0, rarity: null };
   const two = (gearText("the suit uses a Longsword; the goal was set for your Longsword", [suit, worn]) as Array<string | El>).filter((p): p is El => typeof p !== "string");
   assert.deepEqual(two.map((n) => n.dataset.serial), ["7", "8"]);
+});
+
+test("[fast] slotPieces: each slot's label plain and its piece once as a gear item, even a piece named after its slot", () => {
+  const ring = { serial: 9, name: "Ring", graphic: 0x108a, hue: 0, rarity: "Greater Artifact" }, mask = { serial: 10, name: "Orc Mask", graphic: 0x141b, hue: 0, rarity: null };
+  const parts = slotPieces([["Head", mask], ["Neck", null], ["Ring", ring]]) as Array<string | El>;
+  assert.equal(parts.map((p) => (typeof p === "string" ? p : `[${p.textContent}]`)).join(""), "Head ([Orc Mask]), Neck, Ring ([Ring])");
+  const items = parts.filter((p): p is El => typeof p !== "string");
+  assert.deepEqual(items.map((n) => n.dataset.serial), ["10", "9"], "each piece drawn once");
+  assert.ok(parts.includes("Ring"), "the Ring slot's label stays plain text");
+  assert.equal(all(items[1]!).find((x) => has(x, "gi-name"))!.style.color, "var(--rarity-greater-artifact)", "the piece named Ring is colored");
 });
 
 test("[fast] gearItem row: icon, name in its rarity's token, quantity, quality tags, then `after`", () => {

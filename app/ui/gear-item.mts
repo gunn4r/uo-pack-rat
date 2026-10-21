@@ -1,9 +1,9 @@
-// ui/gear-item.mts — the element that names a piece of gear (#504, #503): icon, rarity color, quantity, tags, tooltip, open action.
+// ui/gear-item.mts — names a piece of gear (#504, #503): icon, rarity color, quantity, tags, tooltip, open action.
 //
 // Every screen that names an item draws it through `gearItem`, so the color, the tooltip and the icon come from one place.
 //
 // map: ui-components
-// owns: `gearItem`, `gearText`, `gearInText`, `QUALITY_TAGS`, `forgetGearMisses`
+// owns: `gearItem`, `gearText`, `gearInText`, `slotPieces`, `QUALITY_TAGS`, `forgetGearMisses`
 import { itemTip, tagChip, type TooltipItem } from "./dom.mts";
 import { box, txt } from "./components.mts";
 import { artTile } from "./item-art.mts";
@@ -141,4 +141,10 @@ export function gearText(text: string, pieces: ReadonlyArray<GearItemSource | nu
   }
   if (from < text.length) out.push(text.slice(from));
   return out;
+}
+
+// Slots with what each holds, built from parts rather than matched in text: "Head (Orc Mask), Neck, Ring (Ring)". The
+// label is always plain, even when the piece is named after its slot; the piece, when there is one, is drawn once.
+export function slotPieces(slots: ReadonlyArray<[label: string, piece: GearItemSource | null | undefined]>): Array<string | HTMLElement> {
+  return slots.flatMap(([label, piece], i) => [i ? ", " : "", label, ...(piece ? [" (", gearInText(piece), ")"] : [])]).filter((x) => x !== "");
 }

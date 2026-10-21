@@ -19,7 +19,7 @@ import { resultDoll, sheetDoll } from "./sheet-doll.mts";
 import { bridgeActionReason, runBridgeAction } from "./bridge.mts";
 import { resolveItems } from "./items.mts";
 import { session, commands, announce, provide, onChange } from "./builder-session.mts";
-import { gearItem, gearText, type GearItemSource } from "./gear-item.mts";
+import { gearItem, gearText, slotPieces, type GearItemSource } from "./gear-item.mts";
 import { RESIST_NAMES, keyProps, verdict, grabAllButton, fetchCard, settingsCheck } from "./builder-parts.mts";
 import { savedBuffs, plannedFromWorn, buffById, buffsDiff, runBuffs, signed } from "../buffs.mts";
 import type { RunBuffs } from "../vault-lib.mts";
@@ -328,11 +328,10 @@ function planCard(current: OptSuit, suit: OptSuit, name: string, all: string[], 
     for (const td of tbl.querySelectorAll("tbody td:last-child")) td.classList.add("b-act");
     for (const td of tbl.querySelectorAll("tbody td:first-child")) td.classList.add("slot-cell");   // a slot's label
   }
-  const unchangedNames = unchanged.map((sl) => (current[sl] ? `${slotLabel(sl)} (${current[sl]!.name})` : slotLabel(sl)));
   return el("section", { class: "card b-flush", "aria-label": "Plan" },
     box("div", { class: "card-head" }, el("h2", {}, "Plan"), txt(`${plural(changes.length, "slot")} ${changes.length === 1 ? "changes" : "change"} · ${unchanged.length} stay`, "t-sm muted"), el("span", { class: "spacer" }), sw.root),
     tbl || box("div", { class: "card-pad" }, el("p", { class: "muted" }, txt(`Nothing to change: what ${who(name)} wears is already this suit.`))),
-    !showUnchanged && unchanged.length && changes.length ? tableFoot(el("span", { class: "ellip" }, ...gearText(`Unchanged: ${unchangedNames.join(", ")}`, unchanged.map((sl) => current[sl])))) : null);
+    !showUnchanged && unchanged.length && changes.length ? tableFoot(el("span", { class: "ellip" }, "Unchanged: ", ...slotPieces(unchanged.map((sl) => [slotLabel(sl), current[sl]])))) : null);
 }
 // ---- 3. fetch list: ui/builder-parts.mts fetchCard
 // ---- 4. other suits within the tolerance, tick 2 or 3 to compare
