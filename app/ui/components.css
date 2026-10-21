@@ -337,6 +337,9 @@
 .gi { display: inline-flex; align-items: center; gap: var(--space-2); min-width: 0; max-width: 100%; vertical-align: middle; }
 .gi > .gi-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gi > :not(.gi-name) { flex: none; }
+/* a name inside a sentence (gearText): plain inline text on the sentence's baseline, wrapping with it */
+.gi.gi-in-text { display: inline; vertical-align: baseline; }
+.gi.gi-in-text > .gi-name { overflow: visible; white-space: normal; }
 /* a detail pane's title (detailPane): the whole name, wrapped, beside its 32 px icon, which lines up with the first line */
 .peek-title .gi { align-items: flex-start; }
 .peek-title .gi > .gi-name { white-space: normal; overflow-wrap: anywhere; }

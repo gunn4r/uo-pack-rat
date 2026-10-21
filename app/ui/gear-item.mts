@@ -1,9 +1,9 @@
-// ui/gear-item.mts — the one element that names a piece of gear (issues #504, #503): icon, rarity color, quantity, tags, tooltip and an optional open action.
+// ui/gear-item.mts — the element that names a piece of gear (#504, #503): icon, rarity color, quantity, tags, tooltip, open action.
 //
 // Every screen that names an item draws it through `gearItem`, so the color, the tooltip and the icon come from one place.
 //
 // map: ui-components
-// owns: `gearItem`, `QUALITY_TAGS`, `forgetGearMisses`
+// owns: `gearItem`, `gearText`, `gearInText`, `QUALITY_TAGS`, `forgetGearMisses`
 import { itemTip, tagChip, type TooltipItem } from "./dom.mts";
 import { box, txt } from "./components.mts";
 import { artTile } from "./item-art.mts";
@@ -115,4 +115,30 @@ export function gearItem(item: GearItemSource, o: GearItemOptions = {}): HTMLEle
   const lacking = (o.showIcon !== false && !has(it, "graphic")) || !has(it, "rarity") || (o.showTags && !it.tags);
   if (lacking && !state.itemCache.has(it.serial)) whenKnown(it.serial, () => { it = filled(item); node.replaceChildren(...parts(node, it, o, size)); if (o.tip !== false) itemTip(node, it, { focus: false }); });
   return node;
+}
+
+// A piece named inside a sentence: an inline gearItem without an icon that flows and wraps as text (its rarity color, its tooltip on hover).
+export const gearInText = (p: GearItemSource): HTMLElement => gearItem(p, { variant: "inline", showIcon: false, focus: false, cls: "gi-in-text" });
+// A sentence that names pieces of gear ("2.75 s with Broadsword"), as text with each named piece drawn in it as an inline
+// gearItem without an icon (its rarity color, its tooltip on hover), flowing and wrapping as text: every whole-word match
+// of a piece's name, the longer name first where two overlap. Pieces sharing a name take its matches in the order they
+// are listed (the suit's Longsword, then the worn one), the last of them any further ones. A piece the sentence does not
+// name, or a null one, is left out.
+export function gearText(text: string, pieces: ReadonlyArray<GearItemSource | null | undefined>): Array<string | HTMLElement> {
+  const named = pieces.filter((p): p is GearItemSource => !!p?.name);
+  const names = [...new Set(named.map((p) => p.name))].sort((a, b) => b.length - a.length), used = new Map<string, number>();
+  const out: Array<string | HTMLElement> = [];
+  const word = (c: string | undefined): boolean => !!c && /[\p{L}\p{N}]/u.test(c);
+  let i = 0, from = 0;
+  while (i < text.length) {
+    const name = names.find((n) => text.startsWith(n, i) && !word(text[i - 1]) && !word(text[i + n.length]));
+    if (!name) { i++; continue; }
+    const same = named.filter((q) => q.name === name), k = used.get(name) ?? 0, p = same[Math.min(k, same.length - 1)]!;
+    used.set(name, k + 1);
+    if (i > from) out.push(text.slice(from, i));
+    out.push(gearInText(p));
+    i += name.length; from = i;
+  }
+  if (from < text.length) out.push(text.slice(from));
+  return out;
 }

@@ -51,7 +51,7 @@ let known: Record<number, unknown> = {}, hold: Promise<void> | null = null, fail
   return { ok: true, status: 200, json: async () => ({ ok: true, items: Object.fromEntries(serials.filter((s) => known[s]).map((s) => [s, known[s]])) }) };
 };
 
-const { gearItem, forgetGearMisses } = await import("./ui/gear-item.mts");
+const { gearItem, gearText, forgetGearMisses } = await import("./ui/gear-item.mts");
 const { artTile } = await import("./ui/item-art.mts");
 const { tipNode } = await import("./ui/dom.mts");
 const { FLEX_CLASSES } = await import("./ui/components.mts");
@@ -61,6 +61,23 @@ const all = (n: El): El[] => [n, ...n.children.flatMap(all)];
 const has = (n: El, c: string): boolean => n.classList.contains(c);
 const draw = (...a: Parameters<typeof gearItem>): El => gearItem(...a) as unknown as El;
 const tick = (): Promise<void> => new Promise((r) => setTimeout(r, 5));
+
+test("[fast] gearText: a sentence with each named piece as an inline gear item without an icon, whole words only, the longer name first", () => {
+  const ring = { serial: 1, name: "Ring", graphic: 0x108a, hue: 0, rarity: "Greater Artifact" }, staff = { serial: 2, name: "Bladed Staff Of Haste", graphic: 0x26bd, hue: 0, rarity: null };
+  const short = { serial: 3, name: "Bladed Staff", graphic: 0x26bd, hue: 0, rarity: null };
+  const parts = gearText("2.75 s with Bladed Staff Of Haste; Ringmail is no Ring.", [short, null, ring, staff]) as Array<string | El>;
+  const shown = parts.map((p) => (typeof p === "string" ? p : `[${p.textContent}]`)).join("");
+  assert.equal(shown, "2.75 s with [Bladed Staff Of Haste]; Ringmail is no [Ring].", "the longer name wins its overlap, and Ringmail is not the Ring");
+  const items = parts.filter((p): p is El => typeof p !== "string");
+  assert.ok(items.every((n) => has(n, "gi-inline") && !all(n).some((x) => has(x, "art-tile"))), "inline, no icon");
+  assert.equal(all(items[1]!).find((x) => has(x, "gi-name"))!.style.color, "var(--rarity-greater-artifact)");
+  assert.ok(items.every((n) => has(n, "gi-in-text")), "flows as text in its sentence");
+  assert.deepEqual(gearText("Nothing named here.", [ring]), ["Nothing named here."]);
+  // Two pieces of one name take its matches in the order listed: the suit's Longsword, then the worn one.
+  const suit = { serial: 7, name: "Longsword", graphic: 0xf61, hue: 0, rarity: "Greater Magic Item" }, worn = { serial: 8, name: "Longsword", graphic: 0xf61, hue: 0, rarity: null };
+  const two = (gearText("the suit uses a Longsword; the goal was set for your Longsword", [suit, worn]) as Array<string | El>).filter((p): p is El => typeof p !== "string");
+  assert.deepEqual(two.map((n) => n.dataset.serial), ["7", "8"]);
+});
 
 test("[fast] gearItem row: icon, name in its rarity's token, quantity, quality tags, then `after`", () => {
   const after = (globalThis as unknown as { document: { createElement: (t: string) => El } }).document.createElement("span");

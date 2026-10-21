@@ -15,7 +15,7 @@
 // owns: `routes`
 import { isBoundedInt, isBoundedString, MAX_SERIAL } from "../../guards.mts";
 import { againstRules, backSteps, destProblem, leftReason, MAX_SELECTION, planMoves, resolveSelection, type LeftReason, type MoveStep, type Selection } from "../../move.mts";
-import { applyOverlay } from "../../organize.mts";
+import { applyOverlay, lookOf } from "../../organize.mts";
 import { checkOrganizeConfig, LIMITS, matchProblem, MAX_SETUP_BYTES, salvagedRefusal, type RuleMatch } from "../../organize-config.mts";
 import { PRESETS } from "../../organize-presets.mts";
 import { proposeOrganize, STRATEGY_IDS, type StrategyId } from "../../organize-strategies.mts";
@@ -149,7 +149,7 @@ export function routes(ctx: ServerContext): Route[] {
         movable++;
         here[it.container!] = (here[it.container!] ?? 0) + 1;
       }
-      const base = { ok: true, selected: items.length, worn: worn.length, wornNames: worn.slice(0, 3).map((it) => it.name), movable, here, left };
+      const base = { ok: true, selected: items.length, worn: worn.length, wornPieces: worn.slice(0, 3).map((it) => ({ serial: +it.serial, name: it.name, ...lookOf(it) })), movable, here, left };
       if (to === undefined) return send(res, 200, base satisfies MovePlanApiResponse);
       const { fold, config, state } = await organizeService.organizeInputs();
       const view = applyOverlay(fold, state.moves).inv;

@@ -186,9 +186,11 @@ test("[fast] saving a rule labels each unlabelled bag it picked, by the bag's ow
 });
 
 test("[fast] the live match line says how many items the filter takes, with examples, and that higher rules may claim some", () => {
-  assert.deepEqual(matchLine({ count: 3, pieces: 43, sample: ["Black Pearl", "Garlic", "Sulfurous Ash"] }, 2), { text: "Matches 3 items (e.g. Black Pearl, Garlic, Sulfurous Ash)", note: "Rules above this one may claim some of them first." });
-  assert.deepEqual(matchLine({ count: 1, pieces: 1, sample: ["Ruby"] }, 0), { text: "Matches 1 item (e.g. Ruby)", note: null });
-  assert.deepEqual(matchLine({ count: 0, pieces: 0, sample: [] }, 3), { text: "Matches no item in your labeled containers.", note: null });
+  const piece = (serial: number, name: string) => ({ serial, name, graphic: null, hue: null, rarity: null });
+  const three = [piece(1, "Black Pearl"), piece(2, "Garlic"), piece(3, "Sulfurous Ash")];
+  assert.deepEqual(matchLine({ count: 3, pieces: 43, sample: three }, 2), { text: "Matches 3 items", sample: three, note: "Rules above this one may claim some of them first." });
+  assert.deepEqual(matchLine({ count: 1, pieces: 1, sample: [piece(4, "Ruby")] }, 0), { text: "Matches 1 item", sample: [piece(4, "Ruby")], note: null });
+  assert.deepEqual(matchLine({ count: 0, pieces: 0, sample: [] }, 3), { text: "Matches no item in your labeled containers.", sample: [], note: null });
   assert.equal(matchLine(null, 1), null);
 });
 

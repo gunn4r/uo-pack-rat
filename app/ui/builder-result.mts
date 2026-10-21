@@ -19,7 +19,7 @@ import { resultDoll, sheetDoll } from "./sheet-doll.mts";
 import { bridgeActionReason, runBridgeAction } from "./bridge.mts";
 import { resolveItems } from "./items.mts";
 import { session, commands, announce, provide, onChange } from "./builder-session.mts";
-import { gearItem } from "./gear-item.mts";
+import { gearItem, gearText, type GearItemSource } from "./gear-item.mts";
 import { RESIST_NAMES, keyProps, verdict, grabAllButton, fetchCard, settingsCheck } from "./builder-parts.mts";
 import { savedBuffs, plannedFromWorn, buffById, buffsDiff, runBuffs, signed } from "../buffs.mts";
 import type { RunBuffs } from "../vault-lib.mts";
@@ -140,7 +140,7 @@ function headlineCard(res: OptimizeResult, current: OptSuit, suit: OptSuit, prof
   const checks = settingsCheck(resultChecks(res, !!prof.buffs, view != null).filter((d) => !(meta?.goals && d.code === "swing_linear")), name);
   // the best suit's swing (an alternative's would need its own stamina), with the buffs that gave its share named
   const ssiBuffs = res.swing?.share ? (withBuffs(after, skill, base, prof.buffs, rsCap).shares.ssi || []).filter((x) => !x.outside).map((x) => buffById(x.id)?.name || x.id) : [];
-  const swing = view == null && res.swing ? swingLine(res.swing, heldWeapon(suit)?.name ?? null, ssiBuffs) : null;
+  const swing = view == null && res.swing ? swingLine(res.swing, heldWeapon(suit), ssiBuffs) : null;
   return box("section", { class: "card b-head-card", "aria-label": view == null ? "Best suit" : `Suit ${view + 2}` },
     box("div", { class: "b-headline" },
       box("div", { class: "b-headline-text" }, box("div", { class: "b-row" }, el("h2", { class: "t-xl" }, `${manual ? "Manual suit" : view == null ? "Best suit" : `Suit #${view + 2}`}${name === NOBODY ? " · No character" : ` for ${name}`}`), vb), el("p", { class: "muted" }, txt(line)), plannedWith(prof, name)),
@@ -244,14 +244,14 @@ function goalsCard(g: Goals, gs: GoalSwingWeapon | null, current: OptSuit, suit:
   const from = swingIn(current), to = swingIn(suit), worn = heldWeapon(current);
   const set = gs ?? (worn && prof.swing ? { weapon: worn.name, speed: worn.speed!, stamina: prof.swing.refStamina } : null);
   const goalWeapon = set ? { seconds: swingSeconds(set.speed, set.stamina, SSI_CAP), weapon: set.weapon || null, speed: set.speed } : null;
-  const swing = to ? swingOutcome(g, to, heldWeapon(suit)?.name ?? null, !nextSwingStep(to), goalWeapon) : null;
+  const held = heldWeapon(suit), swing = to ? swingOutcome(g, to, held?.name ?? null, !nextSwingStep(to), goalWeapon) : null;
   // Strict order makes no trades by construction (a higher goal is never given up for a lower one)
   const strict = g.strategy === "strict", trades = strict ? [] : goalTrades(g, was.totals, now.totals, caps), rows = goalOutcomes(g, now.totals, caps, swing?.maxed ?? null);
   return box("section", { class: "card b-side-card", id: "b-goals-went", "aria-labelledby": "b-goals-went-h" }, el("h3", { class: "t-md", id: "b-goals-went-h" }, "How the goals went"),
     box("ol", { class: "b-went" }, ...rows.map((r) => box("li", {}, box("span", { class: "b-went-name" }, txt(`${r.rank}.`, "muted"), txt(propName(r.key))),
-      r.key === "ssi" && swing ? box("span", { class: "b-went-swing" }, txt(swing.text, "b-went-val"), txt(` · ${swing.ssi}`, "t-sm muted"), swing.after ? txt(` (${swing.after})`, "t-sm muted") : null)
+      r.key === "ssi" && swing ? box("span", { class: "b-went-swing" }, el("span", { class: "b-went-val" }, ...gearText(swing.text, [held])), txt(` · ${swing.ssi}`, "t-sm muted"), swing.after ? el("span", { class: "t-sm muted" }, " (", ...gearText(swing.after, [worn]), ")") : null)
         : txt(r.cap != null ? `${numText(r.value)} / ${numText(r.cap)}` : numText(r.value), "b-went-val"),
-      txt((r.key === "ssi" && swing?.verdict) || goalVerdict(r, trades), `t-sm ${r.maxed ? "tone-ok" : "muted"}`),
+      r.key === "ssi" && swing?.verdict ? el("span", { class: "t-sm muted" }, ...gearText(swing.verdict, [held, worn])) : txt(goalVerdict(r, trades), `t-sm ${r.maxed ? "tone-ok" : "muted"}`),
       r.key === "ssi" && perPoint ? txt("Swing time isn't counted in steps here, because the suit isn't tied to one weapon.", "t-sm muted") : null))),
     trades.length ? box("ul", { class: "b-trades" }, ...trades.map((t) => el("li", { class: "t-sm" }, txt(`Trade made: ${tradeText(t, from && to ? { from: from.seconds, to: to.seconds } : null)}`))))
       : strict ? el("p", { class: "t-sm muted b-no-trades" }, txt(`Strict order: no trades. ${STRICT_PROMISE}`)) : null,
@@ -262,10 +262,10 @@ function goalsCard(g: Goals, gs: GoalSwingWeapon | null, current: OptSuit, suit:
 }
 
 // The swing line under the resists: the weapon, stamina and SSI and the delay they give, then the steps at that stamina with the reached ones in the ok tone.
-function swingLine(sw: SwingResult, weapon: string | null, buffs: string[]): HTMLElement {
-  const m = swingLines(sw, weapon, buffs);
+function swingLine(sw: SwingResult, weapon: GearItemSource | null, buffs: string[]): HTMLElement {
+  const m = swingLines(sw, weapon?.name ?? null, buffs);
   const steps = m.steps.flatMap((st, i) => [i ? txt(" · ", "faint") : null, st.reached ? txt(`${st.text} ✓`, "tone-ok") : txt(st.text)]).filter((x): x is HTMLElement => !!x);
-  return box("div", { class: "b-swing", "aria-label": "Swing speed" }, el("p", {}, txt(m.head)),
+  return box("div", { class: "b-swing", "aria-label": "Swing speed" }, el("p", {}, ...gearText(m.head, [weapon])),
     m.steps.length || m.out ? el("p", { class: "t-sm muted" }, txt(`Steps at stamina ${sw.stamina}: `), ...steps, m.out ? txt(`${m.steps.length ? " · " : ""}${m.out}`) : null) : null);
 }
 
@@ -332,7 +332,7 @@ function planCard(current: OptSuit, suit: OptSuit, name: string, all: string[], 
   return el("section", { class: "card b-flush", "aria-label": "Plan" },
     box("div", { class: "card-head" }, el("h2", {}, "Plan"), txt(`${plural(changes.length, "slot")} ${changes.length === 1 ? "changes" : "change"} · ${unchanged.length} stay`, "t-sm muted"), el("span", { class: "spacer" }), sw.root),
     tbl || box("div", { class: "card-pad" }, el("p", { class: "muted" }, txt(`Nothing to change: what ${who(name)} wears is already this suit.`))),
-    !showUnchanged && unchanged.length && changes.length ? tableFoot(txt(`Unchanged: ${unchangedNames.join(", ")}`, "ellip")) : null);
+    !showUnchanged && unchanged.length && changes.length ? tableFoot(el("span", { class: "ellip" }, ...gearText(`Unchanged: ${unchangedNames.join(", ")}`, unchanged.map((sl) => current[sl])))) : null);
 }
 // ---- 3. fetch list: ui/builder-parts.mts fetchCard
 // ---- 4. other suits within the tolerance, tick 2 or 3 to compare
