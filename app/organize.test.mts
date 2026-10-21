@@ -136,9 +136,9 @@ test("[fast] rule names and item names compare with spaces and punctuation remov
 
 // #487: a spellbook and a shield are the Type filter's, whatever their names, so an artifact book with no "book" in its
 // name is Caster and an artifact shield with no "shield" in its name Tank.
-test("[fast] buildOf reads spellbooks and shields as the Type filter does, by hand and weapon lines, not by name", () => {
+test("[fast] buildOf reads spellbooks and shields as the Type filter does, by hand and weapon lines, and an artifact book named like none by its graphic", () => {
   const held = (name: string, slot: string): Item => ({ serial: 1, name, slot, gear: true, twoHanded: false, skillReq: null, props: {}, extras: {}, flags: [] } as unknown as Item);
-  assert.equal(buildOf(held("Song Of The Seas", "oneHanded")), "caster");
+  assert.equal(buildOf({ ...held("Song Of The Seas", "oneHanded"), graphic: 0x0efa } as unknown as Item), "caster");
   assert.equal(buildOf(held("Aegis Of Grace", "twoHanded")), "tank");
   assert.equal(buildOf({ ...held("Ancient Blade", "oneHanded"), skillReq: "swordsmanship", extras: { "weapon damage": [11, 13] } } as unknown as Item), "melee");
 });

@@ -347,13 +347,17 @@ test("[fast] applyItemQuery: a house filter takes the items whose root stands in
   assert.deepEqual(rows("house=1-3000-1000", ctx), [], "without houseOf no item is in a house");
 });
 
-test("[fast] itemTypeOf: a weapon by its hands, a held piece that is no weapon a shield or a spellbook, the rest by slot group; the type filter and facet", () => {
+test("[fast] itemTypeOf: a weapon by its hands, a held piece that is no weapon a shield, or in one hand a spellbook by a book's name or graphic, a weapon by a weapon's name, else Other; the rest by slot group; the type filter and facet", () => {
   const held = (name: string, slot: string, twoHanded: boolean, skillReq: string | null) => mk({ name, slot, twoHanded, skillReq, gear: true });
   const items = [held("Heater Shield", "twoHanded", false, null), held("Gnarled Staff Of Restoration", "twoHanded", true, "Mace Fighting"), held("Katana", "oneHanded", false, "Swordsmanship"),
     held("Spellbook", "oneHanded", false, null), mk({ name: "Plate Gorget", slot: "neck", gear: true }), mk({ name: "Gold Ring", slot: "ring", gear: true }), mk({ name: "Cloak", slot: "cloak", gear: true }),
     mk({ name: "Bandage", kind: "bandage", slot: null, gear: false }), mk({ name: "Odd Thing", slot: null, gear: true })];
   assert.deepEqual(items.map(itemTypeOf), ["shield", "two-handed", "one-handed", "spellbook", "armor", "jewelry", "clothing", "other", "other"]);
   assert.equal(itemTypeOf(mk({ name: "Bow", slot: "twoHanded", twoHanded: true, gear: true, extras: { "weapon speed": 4.25 } })), "two-handed");
+  // A held one-handed piece that is no weapon: a spellbook by a book's name or graphic, a weapon by a weapon's name (a
+  // scan with no skill line), anything else (a held tool with properties) Other.
+  assert.deepEqual([held("Katana", "oneHanded", false, null), held("Scrapper's Compendium", "oneHanded", false, null), mk({ name: "Ornate Book", slot: "oneHanded", gear: true, graphic: 0x2d9d }),
+    held("Ancient Smithy Hammer", "oneHanded", false, null)].map(itemTypeOf), ["one-handed", "spellbook", "spellbook", "other"]);
   const rows = (s: string): string[] => names((applyItemQuery(items, parseItemQuery(new URLSearchParams(s)), ctx) as ItemQueryRows).rows).sort();
   assert.deepEqual(rows("type=shield"), ["Heater Shield"]);
   assert.deepEqual(rows("type=Shield,two-handed"), ["Gnarled Staff Of Restoration", "Heater Shield"], "any of them, in any case");
