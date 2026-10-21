@@ -7,6 +7,7 @@
 // owns: `reload`, `retryLoad`, `fetchAllItems`, `inventoryLoader`
 import { state, newestStamp } from "./store.mts";
 import { forgetTipMisses } from "./dom.mts";
+import { forgetGearMisses } from "./gear-item.mts";
 import { api } from "./api.mts";
 import { loadOrganize, refreshPlaces } from "./organize-data.mts";
 import { loadHouseLinks } from "./house-links.mts";
@@ -76,6 +77,7 @@ export async function reload(): Promise<void> {
   void loadHouseLinks();   // Show on map, on item rows and in the Containers view
   state.itemCache.clear();   // a rescan can move or drop a piece — stale by-serial lookups must not survive it
   forgetTipMisses();
+  forgetGearMisses();
   state.facets = state.inv.facets;
   state.propKeys = state.inv.propKeys;
   refreshPlaces();

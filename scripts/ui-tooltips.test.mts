@@ -107,8 +107,8 @@ test("[slow] the item tooltip shows on every screen that draws an item: Inventor
     await page.fill("#f-text", "");
     await setRows(page, "List");
 
-    await go(page, "#/characters/Dorran", "#tab-characters .sheet .gear-piece[data-serial]");
-    await tipShows(page, page.locator("#tab-characters .sheet .gear-piece[data-serial]").first(), "a character sheet piece");
+    await go(page, "#/characters/Dorran", "#tab-characters .sheet .gi[data-serial]");
+    await tipShows(page, page.locator("#tab-characters .sheet .gi[data-serial]").first(), "a character sheet piece");
 
     await go(page, "#/builder/Dorran", "#b-start");
     await page.click("#b-settings");   // the time budget is under Advanced, in the Settings drawer (issue #272)
@@ -173,8 +173,8 @@ test("[slow] the item tooltip skips action buttons, hides on Esc and on a scroll
     assert.equal(await shown(page), false);
     assert.equal(await page.locator("#map-drawer .map-item").first().getAttribute("aria-describedby"), null);
     // a character sheet piece's pop and the hover tooltip never show together
-    await go(page, "#/characters/Dorran", "#tab-characters .sheet .gear-piece[data-serial]");
-    const slot = page.locator("#tab-characters .sheet .gear-piece[data-serial]").first();
+    await go(page, "#/characters/Dorran", "#tab-characters .sheet .gi[data-serial]");
+    const slot = page.locator("#tab-characters .sheet .gi[data-serial]").first();
     await slot.click();
     await page.waitForSelector(".item-pop");
     await page.mouse.move(2, 2);
