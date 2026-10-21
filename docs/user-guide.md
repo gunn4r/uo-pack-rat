@@ -156,7 +156,7 @@ For gear you never want (imbuing fodder, say), put a rule at the top that sends 
 
 **Auto organize** does the setting up for you. Press **Auto organize…** on the Organize screen and choose a strategy:
 
-- **Simple:** one container for each kind of thing: armor, weapons, jewelry, reagents, skill scrolls, spell scrolls, treasure maps and SOS, resources with the refinements, tools with the instruments and crafting tools, decor, quest and event items, and so on.
+- **Simple:** one container for each kind of thing: armor, weapons, spellbooks, jewelry, reagents, skill scrolls, spell scrolls, treasure maps and SOS, resources with the refinements, tools with the instruments and crafting tools, decor, quest and event items, and so on.
 - **Detailed:** armor by slot, reagents by school, power scrolls by level, spell scrolls by school, resources by type, crafting tools apart from the other tools.
 - **By build:** gear sorted into Caster, Melee, Hybrid, Tank and Other gear by its properties (a spellbook with none counts as Caster), everything else as in Simple.
 

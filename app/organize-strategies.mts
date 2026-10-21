@@ -9,7 +9,7 @@
 import { isDeepStrictEqual } from "node:util";
 import { checkOrganizeConfig, emptyRuleQuery, LIMITS, type Build, type ContainerLabel, type OrganizeConfig, type OrganizeRule, type Origin, type RuleMatch } from "./organize-config.mts";
 import { PRESETS } from "./organize-presets.mts";
-import { ancestry, applyOverlay, claimOf, emptyBagsOf, planOrganize, posOk, ruleMatches, scopeOf, sitesOf, SPELLBOOK_NAMES, type OverlayMove, type ScopeOptions } from "./organize.mts";
+import { ancestry, applyOverlay, claimOf, emptyBagsOf, planOrganize, posOk, ruleMatches, scopeOf, sitesOf, type OverlayMove, type ScopeOptions } from "./organize.mts";
 import { bagLabel, isPseudoCharacter, TRASH_RE, type Container, type ContainerCapacity, type Inventory, type Item } from "./vault-lib.mts";
 import type { RuleQuery } from "./item-query.mts";
 import type { RulesV1RarityItem } from "./schema/types.d.mts";
@@ -40,9 +40,10 @@ const SKILL_SCROLLS: RuleMatch = { query: q({ kind: ["scroll"] }), names: ["scro
 
 // Order matters only where filters overlap, and there it is first match wins, as for rules: gear is split by slot
 // (every gear item has kind "gear", so no name pattern reaches it), the armour neck filter sits above Jewelry's neck
-// slot, Shields and Spellbooks above Weapons (both are held), power scrolls above the other scrolls, and each school
-// of reagents and each resource type above the rest of its kind. Shields and spellbooks are Weapons in Simple; in
-// Detailed a spellbook is in the books' family, so when chests run short it shares theirs, not the Weapons chest.
+// slot, Shields above Weapons (both are held), power scrolls above the other scrolls, and each school of reagents and
+// each resource type above the rest of its kind. Weapons takes weapons and shields by Type, so a spellbook (held in the
+// one-handed slot) goes to Spellbooks in both Simple and Detailed; it is in the books' family, so when chests run short
+// it shares theirs, not the Weapons chest. Shields are Weapons in Simple.
 // Simple's Resources takes refinements by a second filter (issue #129), as Detailed's Refinements does, so its first
 // rule keeps the id an earlier proposal gave it; instruments are tools (vault-lib's kindOf), so Tools needs none, and
 // crafting tools come in by a second filter the same way (issue #150). Decor and Quest & event items are in Other's
@@ -53,6 +54,7 @@ const SIMPLE: readonly GroupDef[] = [
   def("armour", "Armor", "armour", gear(["helmet", "chest", "arms", "hands", "legs"]), preset("armour-neck")),
   def("jewelry", "Jewelry", "jewelry", gear(["ring", "bracelet", "neck", "earrings", "talisman"])),
   def("weapons", "Weapons", "weapons", preset("weapons")),
+  def("spellbooks", "Spellbooks", "runes-books", preset("spellbooks")),
   def("other-gear", "Other gear", "other-gear", kinds("gear")),
   def("reagents", "Reagents", "reagents", kinds("reagent")),
   def("skill-scrolls", "Skill scrolls", "scrolls", SKILL_SCROLLS),
@@ -85,7 +87,7 @@ const DETAILED: readonly GroupDef[] = [
   def("earrings", "Earrings", "jewelry", preset("earrings")),
   def("talismans", "Talismans", "jewelry", preset("talismans")),
   def("shields", "Shields", "weapons", preset("shields")),
-  def("spellbooks", "Spellbooks", "runes-books", gear(["oneHanded"], [...SPELLBOOK_NAMES])),
+  def("spellbooks", "Spellbooks", "runes-books", preset("spellbooks")),
   def("weapons", "Weapons", "weapons", preset("weapons")),
   def("ammo", "Ammo", "weapons", preset("ammo")),
   def("other-gear", "Other gear", "other-gear", kinds("gear")),
