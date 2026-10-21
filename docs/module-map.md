@@ -45,7 +45,7 @@ Three files keep names from before the project became Pack Rat: `app/vault-serve
 <!-- module-map:start query -->
 | Module | Role | Owns |
 |---|---|---|
-| `app/item-query.mts` | Pure item-list filtering/sorting/paging/faceting, shared by the browser (ui/dom.mts re-exports EXTRA_COLS/colVal; ui/inventory.mts's filtered()/renderInventory() logic will move here in a later task) and the server (vault-server.mts's GET /api/items, GET /api/inventory's facets). | `parseItemQuery`, `matchesItem`, `applyItemQuery`, `queryWhere`, `facetsOf`, `propCounts`, `ItemQuery`, `RuleQuery`, `EXTRA_COLS`, `colVal`, `rarityRank`, `HIT_LIMIT` |
+| `app/item-query.mts` | Pure item-list filtering/sorting/paging/faceting, shared by the browser (ui/dom.mts re-exports EXTRA_COLS/colVal; ui/inventory.mts's filtered()/renderInventory() logic will move here in a later task) and the server (vault-server.mts's GET /api/items, GET /api/inventory's facets). | `parseItemQuery`, `matchesItem`, `applyItemQuery`, `queryWhere`, `passes`, `facetsOf`, `propCounts`, `ItemQuery`, `RuleQuery`, `EXTRA_COLS`, `colVal`, `rarityRank`, `HIT_LIMIT` |
 <!-- module-map:end -->
 
 ## Shard rules
