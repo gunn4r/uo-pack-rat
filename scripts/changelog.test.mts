@@ -73,6 +73,8 @@ test("[fast] fragmentError takes one-line entries in a lower-case file name", ()
   assert.match(fragmentError("empty.md", "\n\n")!, /empty/);
   assert.match(fragmentError("wrapped.md", "- **Fixed.** A long entry\n  wrapped onto a second line.\n")!, /one paragraph is one line/);
   assert.match(fragmentError("heading.md", "## Unreleased\n- **Fixed.**\n")!, /starting with "- "/);
+  assert.equal(fragmentError("c.md", "- For contributors: `x` moved.\n- **For contributors: y** z.\n"), null);
+  assert.match(fragmentError("c.md", "- For contributors (issue #1): `x` moved.\n")!, /contributor entry starts/);
 });
 
 test("[fast] sectionText puts the player-facing entries first and the contributor ones under their subheading, prefix dropped, each group in order", () => {
@@ -81,6 +83,7 @@ test("[fast] sectionText puts the player-facing entries first and the contributo
   assert.equal(sectionText(["- **A.** Player."]), "- **A.** Player.", "no contributor entries: no subheading");
   assert.equal(sectionText(["- **For contributors: only** this."]), `${CONTRIBUTORS_HEADING}\n\n- **Only** this.`, "only contributor entries: the subheading alone");
   assert.equal(sectionText(["- **Not for contributors: x**"]), "- **Not for contributors: x**", "the prefix only at the start of the title");
+  assert.equal(sectionText(["- **P.** p.", "- For contributors: `x` moved.", "- For contributors: the cache **grows**."]), `- **P.** p.\n\n${CONTRIBUTORS_HEADING}\n\n- \`x\` moved.\n- The cache **grows**.`, "the prefix before the title, unbolded, is a contributor entry too");
 });
 
 test("[fast] released puts the entries above the earlier versions and re-seals", () => {

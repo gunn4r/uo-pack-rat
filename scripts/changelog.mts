@@ -1,6 +1,6 @@
 // changelog.mts — the changelog's fragments: each pull request adds `changelog.d/<short-name>.md`, and a release puts them together into CHANGELOG.md.
 //
-// A fragment holds one or more entries, one line each, every line starting with "- " in CHANGELOG.md's style. CHANGELOG.md itself holds only released versions: its Unreleased section is a fixed pointer to changelog.d/ plus a seal, the SHA-256 of everything below it, so a direct edit to the file shows up as a broken seal. At release, the fragments go in newest first and are deleted, the player-facing entries first and then, under `### For contributors`, every entry whose title starts with "For contributors: ", that prefix dropped (`sectionText`). An optional `changelog.d/_highlights.md`, the release's short summary in Markdown with no headings of its own, opens the section under `### Highlights`, and both entry lists are then folded into collapsed `<details>` blocks; it is deleted with the fragments. `--highlights` gives a version already released its summary the same way. Newest means the highest issue number at the start of the name (`338-changelog-fragments.md`, as the branch `338-changelog-fragments` names it), names without a number first, ties by name: the order depends on the file names alone, never on git history. A release with no fragments changes nothing.
+// A fragment holds one or more entries, one line each, every line starting with "- " in CHANGELOG.md's style. CHANGELOG.md itself holds only released versions: its Unreleased section is a fixed pointer to changelog.d/ plus a seal, the SHA-256 of everything below it, so a direct edit to the file shows up as a broken seal. At release, the fragments go in newest first and are deleted, the player-facing entries first and then, under `### For contributors`, every entry starting "For contributors: " (in the bold title or before it), that prefix dropped (`sectionText`). An optional `changelog.d/_highlights.md`, the release's short summary in Markdown with no headings of its own, opens the section under `### Highlights`, and both entry lists are then folded into collapsed `<details>` blocks; it is deleted with the fragments. `--highlights` gives a version already released its summary the same way. Newest means the highest issue number at the start of the name (`338-changelog-fragments.md`, as the branch `338-changelog-fragments` names it), names without a number first, ties by name: the order depends on the file names alone, never on git history. A release with no fragments changes nothing.
 //
 //   node scripts/changelog.mts                       print the unreleased entries, as the release would write them
 //   node scripts/changelog.mts --check               exit 1 when a fragment or CHANGELOG.md is out of shape
@@ -37,7 +37,9 @@ export function fragmentError(name: string, text: string): string | null {
   const lines = lf(text).split("\n").filter((l) => l.trim() !== "");
   if (!lines.length) return `${name} is empty`;
   const bad = lines.find((l) => !l.startsWith("- "));
-  return bad === undefined ? null : `${name}: every line is one entry starting with "- " (one paragraph is one line), not "${bad.slice(0, 60)}"`;
+  if (bad !== undefined) return `${name}: every line is one entry starting with "- " (one paragraph is one line), not "${bad.slice(0, 60)}"`;
+  const odd = lines.find((l) => /^- (\*\*)?For contributors\b/.test(l) && !CONTRIBUTOR.test(l));
+  return odd === undefined ? null : `${name}: a contributor entry starts "- **For contributors: " or "- For contributors: ", not "${odd.slice(0, 60)}"`;
 }
 
 // The entry lines of a fragment, trailing spaces trimmed.
@@ -90,10 +92,10 @@ export function highlightsError(text: string): string | null {
 }
 
 // A version section's entries as released: the player-facing ones first, then the contributor ones under their own
-// subheading with the title's "For contributors: " prefix dropped (its next letter capitalised), each group in the order
+// subheading with the "For contributors: " prefix dropped, in the bold title or before it (its next letter capitalised), each group in the order
 // given. With highlights, they open the section under "### Highlights" and both lists are folded into <details> blocks
 // (GitHub shows them collapsed, with their count), so the summary is what a reader sees first.
-const CONTRIBUTOR = /^- \*\*For contributors: /;
+const CONTRIBUTOR = /^- (\*\*)?For contributors: /;
 export const CONTRIBUTORS_HEADING = "### For contributors";
 export const HIGHLIGHTS_HEADING = "### Highlights";
 const DETAILS_OPEN = /^<details><summary>[^<]*<\/summary>$/;
@@ -110,7 +112,7 @@ export function sectionText(lines: string[], highlights: string | null = null): 
   return renderSection({
     highlights: highlights === null ? null : lf(highlights).trim(),
     players: lines.filter((l) => !CONTRIBUTOR.test(l)),
-    contributors: lines.filter((l) => CONTRIBUTOR.test(l)).map((l) => l.replace(CONTRIBUTOR, "- **").replace(/^- \*\*([a-z])/, (_m, c: string) => `- **${c.toUpperCase()}`)),
+    contributors: lines.filter((l) => CONTRIBUTOR.test(l)).map((l) => l.replace(CONTRIBUTOR, (_m, b?: string) => `- ${b ?? ""}`).replace(/^- (\*\*)?([a-z])/, (_m, b: string | undefined, c: string) => `- ${b ?? ""}${c.toUpperCase()}`)),
   });
 }
 // A released section's body read back into its parts, for --highlights: only the layout renderSection writes (entries,

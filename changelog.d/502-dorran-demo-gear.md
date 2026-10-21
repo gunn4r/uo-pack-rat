@@ -1,2 +1,0 @@
-- The README and user guide screenshots no longer show the demo character Dorran holding a spellbook beside a two-handed staff, which the game does not allow.
-- For contributors: `demo-Dorran.json` keeps the Spellbook he used to wear in his Metal Chest, and `npm run readme:shots` seeds Dorran with Fencing and Kestrel with Mace Fighting for the weapons they wear, and scrolls the Organize rule drawer to its top before its shot.

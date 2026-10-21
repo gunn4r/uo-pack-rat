@@ -1,1 +1,0 @@
-- For contributors: the Inventory's filters (`item-query.mts`'s `itemPasses`) and the Suit Builder's pool (`buildPools`) share their piece-level checks, `gargoyleOk`, `meditationOk`, `hasTag`, `underRoot` and `hasFlag` in `app/domain/pools.mts` (#487), so both read a setting the same way; `buildPools` keeps its skip reasons. No change in behaviour.

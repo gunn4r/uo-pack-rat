@@ -1,1 +1,0 @@
-- For contributors: the README's House map shots draw `showcaseHouse()` (`app/house-fixture.mts`), a furnished two-storey house with four rooms and 38 chests in rows, instead of the 120-chest test vault, zoomed so it fills the map; the search GIF ends on the top-down view.
