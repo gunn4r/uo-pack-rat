@@ -49,8 +49,8 @@ const wanted = (name: string): boolean => only.length === 0 || only.some((w) => 
 // UO folder is the vault's synthetic tiledata.mul (the House map's shots), with the real folder's art linked beside it;
 // otherwise it is the real folder itself when there is one, whose tiledata the paperdoll's worn pieces need.
 const SKILLS: Record<string, Record<string, number>> = {
-  Dorran: { Swordsmanship: 100, Tactics: 100, Anatomy: 90, Healing: 85, Parry: 80 },
-  Kestrel: { Magery: 100, "Evaluating Intelligence": 95, Meditation: 90, Imbuing: 70 },
+  Dorran: { Swordsmanship: 100, Fencing: 100, Tactics: 100, Anatomy: 90, Healing: 85, Parry: 80 },
+  Kestrel: { Magery: 100, "Evaluating Intelligence": 95, Meditation: 90, "Mace Fighting": 80, Imbuing: 70 },
 };
 function seed(dir: string, house: boolean, map: boolean): { home: string } {
   mkdirSync(join(dir, "scans"), { recursive: true });
@@ -285,6 +285,8 @@ try {
     await page.getByRole("button", { name: "Add rule" }).click();
     await page.waitForSelector("#rule-drawer .rule-missing");
     await pause(page, 1200);   // the live count lands
+    // The drawer from its top, its name in view, however far adding the filters scrolled it.
+    await page.locator("#rule-drawer").evaluate((d) => { for (const el of [d, ...d.querySelectorAll("*")]) if (el.scrollTop) el.scrollTop = 0; });
   });
   // Each build on a server of its own: a second build of the same settings would show the first as a saved run.
   let fresh = await serve(true);
