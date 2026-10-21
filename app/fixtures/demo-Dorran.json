@@ -108,18 +108,6 @@
    ]
   },
   {
-   "serial": 1879834635,
-   "name": "Spellbook",
-   "graphic": 3834,
-   "hue": 0,
-   "amount": 1,
-   "tooltip": [
-    "Spellbook",
-    "Blessed",
-    "12 Spells"
-   ]
-  },
-  {
    "serial": 1879834648,
    "name": "Orc Mask",
    "graphic": 5147,
@@ -195,12 +183,24 @@
  ],
  "roots": [
   {
+   "serial": 1879834700,
+   "kind": "backpack",
+   "name": "Backpack"
+  },
+  {
    "serial": 1879834624,
    "kind": "ground",
    "name": "Metal Chest"
   }
  ],
  "containers": {
+  "1879834700": {
+   "serial": 1879834700,
+   "name": "Backpack",
+   "kind": "backpack",
+   "root": 1879834700,
+   "parent": null
+  },
   "1879834624": {
    "serial": 1879834624,
    "name": "Metal Chest",
@@ -753,6 +753,19 @@
     "Weight: 5 Stones"
    ],
    "container": 1879834624
+  },
+  {
+   "serial": 1879834635,
+   "name": "Spellbook",
+   "graphic": 3834,
+   "hue": 0,
+   "amount": 1,
+   "tooltip": [
+    "Spellbook",
+    "Blessed",
+    "12 Spells"
+   ],
+   "container": 1879834700
   }
  ],
  "_bench": {
