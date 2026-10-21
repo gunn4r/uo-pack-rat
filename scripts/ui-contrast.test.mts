@@ -14,7 +14,7 @@ import type { Page } from "playwright";
 import { openFacet, setRows, pickCharacter, characterNames, animationsDone } from "./electron-window.mts";
 import { ROOT, launchApp, skipWithoutElectron, type App } from "./electron-app.mts";
 import { probeContrast, failures, describeFailures, type ContrastRow } from "./contrast-probe.mts";
-import { probeGearNames, gearNames, checkedNames, type GearNameHit } from "./gear-name-probe.mts";
+import { probeGearNames, gearNames, GEAR_NAME_EXEMPT, type GearNameHit } from "./gear-name-probe.mts";
 
 const KESTREL = readFileSync(join(ROOT, "app", "fixtures", "demo-Kestrel.json"), "utf8");
 
@@ -395,7 +395,7 @@ test("[slow] every text, control edge, icon and status dot on the real page pass
     const rows: Array<ContrastRow & { where: string }> = [];
     const seen: string[] = [];
     // Issue #504: on every scene, a gear item's name drawn on the page sits inside gearItem's .gi-name (scripts/gear-name-probe.mts).
-    const names = checkedNames(await page.evaluate(gearNames));
+    const names = await page.evaluate(gearNames), exempt = GEAR_NAME_EXEMPT.map(([s]) => s);
     assert.ok(names.length > 10, `the demo has gear names to look for (${names.length})`);
     const named: Array<GearNameHit & { where: string }> = [];
     for (const scene of SCENES) {
@@ -403,7 +403,7 @@ test("[slow] every text, control edge, icon and status dot on the real page pass
       // hover fills are states, not surfaces: park the pointer on an empty stretch of the top bar (the
       // tooltip scene keeps its hover, it is what that scene measures)
       if (scene.name !== "item tooltip") await page.mouse.move(Math.min(900, size.width - 20), 4);
-      for (const h of await page.evaluate(probeGearNames, names)) named.push({ ...h, where: scene.name });
+      for (const h of await page.evaluate(probeGearNames, [names, exempt] as [string[], string[]])) named.push({ ...h, where: scene.name });
       for (const family of FAMILIES) {
         // the page only (applyLook), not the saved ui-prefs: the scene stays as it is while the look changes
         await page.evaluate(async (f) => (await import("/ui/theme.mjs" as string)).applyLook({ theme: f }), family);
@@ -427,7 +427,7 @@ test("[slow] every text, control edge, icon and status dot on the real page pass
       await page.emulateMedia({ colorScheme: "light" });
       await scene.leave?.(page);
     }
-    assert.deepEqual(named.map((h) => `${h.where}: "${h.name}" in ${h.path}`), [], "a gear item's name drawn without gearItem (app/ui/gear-item.mts)");
+    assert.deepEqual(named.map((h) => `${h.where}: "${h.text}" in ${h.path}`), [], "a gear item's name drawn without gearItem (app/ui/gear-item.mts)");
     const failed = failures(rows);
     assert.equal(failed.length, 0, `contrast failures (${failed.length} of ${rows.length} pairs):\n${describeFailures(failed)}`);
     assert.ok(rows.some((r) => r.kind === "boundary") && rows.some((r) => r.kind === "field-value"), "the probe measured control edges and field values");
@@ -438,9 +438,13 @@ test("[slow] every text, control edge, icon and status dot on the real page pass
     await page.evaluate(() => { const s = document.createElement("span"); s.id = "contrast-canary"; s.textContent = "pale"; s.style.cssText = "color:#bbbbbb;background:#ffffff;position:fixed;top:0;left:0"; document.body.append(s); });
     const canary = failures(await page.evaluate(probeContrast)).filter((r) => r.text === "pale");
     assert.equal(canary.length, 1, "a #bbb on white label is a failing pair");
-    // Nor is the gear-name check: a gear item's name drawn as plain text is reported.
-    await page.evaluate((n) => { const s = document.createElement("span"); s.textContent = n; s.style.cssText = "position:fixed;top:20px;left:0"; document.body.append(s); }, names[0]!);
-    assert.equal((await page.evaluate(probeGearNames, names)).filter((h) => h.name === names[0]).length, 1, "a plain gear name is an offender");
+    // Nor is the gear-name check: a gear item's name drawn as plain text is reported, and so is one with a hand-built quantity inside aria-hidden.
+    await page.evaluate((n) => {
+      const s = document.createElement("span"); s.textContent = n; s.style.cssText = "position:fixed;top:20px;left:0"; document.body.append(s);
+      const q = document.createElement("span"); q.textContent = `${n} ×3`; q.setAttribute("aria-hidden", "true"); q.style.cssText = "position:fixed;top:40px;left:0"; document.body.append(q);
+    }, names[0]!);
+    const caught = (await page.evaluate(probeGearNames, [names, exempt] as [string[], string[]])).filter((h) => h.name === names[0]).map((h) => h.text);
+    assert.deepEqual(caught.sort(), [names[0], `${names[0]} ×3`].sort(), "a plain gear name and a hand-built quantity are offenders");
   } finally {
     await close();
   }

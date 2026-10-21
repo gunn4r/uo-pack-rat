@@ -1,23 +1,43 @@
 // gear-name-probe.mts — finds gear names drawn without `gearItem` (issues #504, #503).
 //
-// Every visible element whose own text is exactly a gear item's name must sit inside a `.gi-name`, the name `app/ui/gear-item.mts` draws in its rarity's color. probeGearNames() runs INSIDE the page (Playwright's page.evaluate), so it stays self-contained: no imports, no closures over module scope. It reports every offender, not the first.
+// Every visible element whose own text is a gear item's name, alone or followed by " ×" (a hand-built quantity) or ":" (a hand-built "name: reason"), must sit inside a `.gi-name`, the name `app/ui/gear-item.mts` draws in its rarity's color. probeGearNames() runs INSIDE the page (Playwright's page.evaluate), so it stays self-contained: no imports, no closures over module scope. It reports every offender, not the first.
 //
-// Left out: the item tooltip wherever it is drawn (.tipcard: #tip and a popover's copy draw the name themselves), a body-level tag tooltip (.tip), screen-reader text (.sr), toasts (#toasts), a grouped Inventory row (.item-group: a group of stacks, not one piece), hidden and aria-hidden subtrees, and form controls (a select's option is a choice, not a drawn piece).
-// gearNames() reads the names to look for from the page's own server (GET /api/items?kind=gear, every page); checkedNames() then drops a name that is also a slot's label (a piece named "Ring" reads the same as the Ring slot, so the page cannot tell them apart).
+// Left out: hidden elements, form controls (a select's option is a choice, not a drawn piece), and the places in GEAR_NAME_EXEMPT, each with its reason.
+// gearNames() reads the names to look for from the page's own server (GET /api/items?kind=gear, every page).
 // Used by scripts/ui-contrast.test.mts on every scene; the static scan in scripts/gear-item-guard.test.mts catches the common hand-built forms earlier.
 //
 // map: tooling
-// owns: `probeGearNames`, `gearNames`, `checkedNames`, `GearNameHit`
-import { SLOT_LABELS } from "../app/domain/slots.mts";
+// owns: `probeGearNames`, `gearNames`, `GEAR_NAME_EXEMPT`, `GearNameHit`
 
-export interface GearNameHit { name: string; tag: string; cls: string; path: string }
+export interface GearNameHit { name: string; text: string; path: string }
 
-export function probeGearNames(names: readonly string[]): GearNameHit[] {
+// Where a gear name may be text of its own: [selector, reason]. A slot's label reads the same as a piece named after
+// the slot ("Ring", "Bracelet"), so a slot cell is exempt by its place, never by the name.
+export const GEAR_NAME_EXEMPT: Array<[string, string]> = [
+  [".tipcard", "the item tooltip, wherever it is drawn (#tip, a popover's copy): it is what gearItem shows, and draws the name itself"],
+  [".sr", "screen-reader text, not drawn"],
+  ["#toasts", "a toast's sentence names the piece in passing"],
+  ["tr.item-group", "a grouped Inventory row names a group of stacks, not one piece"],
+  ["td.inv-slot", "the Inventory's Slot column: a slot's label"],
+  ["table.b-plan tbody td:first-child", "the Suit Builder plan's Slot cell: a slot's label"],
+  ["table.gear-tbl tbody td:first-child", "a character sheet's worn-gear Slot cell: a slot's label"],
+  [".mb-slot-line > .caps", "a Manual slot card's slot label"],
+  ["table.b-cmp tbody td:first-child", "Compare's row label: a slot's or a total's label"],
+  [".b-checks .check", "a Suit Builder checklist (Locked slots, weapon skills): a slot or a skill to tick"],
+];
+
+export function probeGearNames([names, exempt]: [readonly string[], readonly string[]]): GearNameHit[] {
   const want = new Set(names);
-  const skip = ".tipcard, body > .tip, .sr, #toasts, tr.item-group, [aria-hidden='true'], option, select, textarea";
+  const skip = ["option", "select", "textarea", ...exempt].join(", ");
   const hidden = (el: Element): boolean => {
     const s = getComputedStyle(el);
     return s.display === "none" || s.visibility === "hidden" || el.getClientRects().length === 0;
+  };
+  // The gear name the text is, or starts with before a " ×" or a ":".
+  const nameIn = (t: string): string | null => {
+    if (want.has(t)) return t;
+    for (const m of t.matchAll(/ ×|:/g)) if (want.has(t.slice(0, m.index))) return t.slice(0, m.index);
+    return null;
   };
   const path = (el: Element): string => {
     const out: string[] = [];
@@ -27,8 +47,9 @@ export function probeGearNames(names: readonly string[]): GearNameHit[] {
   const hits: GearNameHit[] = [];
   for (const el of document.body.querySelectorAll("*")) {
     const own = [...el.childNodes].filter((n) => n.nodeType === Node.TEXT_NODE).map((n) => n.textContent || "").join("").replace(/\s+/g, " ").trim();
-    if (!own || !want.has(own) || el.closest(".gi-name") || el.closest(skip) || hidden(el)) continue;
-    hits.push({ name: own, tag: el.tagName.toLowerCase(), cls: el.className && typeof el.className === "string" ? el.className : "", path: path(el) });
+    const name = own ? nameIn(own) : null;
+    if (!name || el.closest(".gi-name") || el.closest(skip) || hidden(el)) continue;
+    hits.push({ name, text: own.slice(0, 80), path: path(el) });
   }
   return hits;
 }
@@ -43,10 +64,4 @@ export async function gearNames(): Promise<string[]> {
     if (!r.rows.length) break;
   }
   return [...out];
-}
-
-// The names worth looking for: every gear name but those that are also a slot's label.
-export function checkedNames(all: readonly string[]): string[] {
-  const labels = new Set(Object.values(SLOT_LABELS));
-  return all.filter((n) => !labels.has(n));
 }
