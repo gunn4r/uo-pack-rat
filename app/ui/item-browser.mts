@@ -22,7 +22,7 @@ import { optionsKeeping, colsFromPrefs, COLS_VERSION } from "./view-state.mts";
 import { relativeWhen } from "./messages.mts";
 import { txt, box, icon, button, searchInput, filterChip, token, pill, segmented, switchControl, popover, closePopover, message, menu, input, nextId, toast } from "./components.mts";
 import type { Kids, MenuItem, PopoverHandle } from "./components.mts";
-import { splitSerial, placeNames, queryParams, withFixed, activeFilters, clearAll, matchLine, countFact, emptyCause, rowWindow, chunksToFetch, gridKey, colShort, colFull, groupColumns, COL_GROUPS, DEFAULT_COLS, ITEM_COLS, shortTier, rootName, slayerTree, slayerLabel, neZeroHint, MAGE_WEAPON_HINT } from "./inv-model.mts";
+import { splitSerial, placeNames, queryParams, withFixed, activeFilters, clearAll, matchLine, countFact, emptyCause, rowWindow, chunksToFetch, gridKey, colShort, colFull, groupColumns, COL_GROUPS, DEFAULT_COLS, ITEM_COLS, shortTier, rootName, slayerTree, slayerLabel, missingHint, MAGE_WEAPON_HINT } from "./inv-model.mts";
 import type { FilterToken } from "./inv-model.mts";
 import type { ItemPropCountsApiResponse, ItemsApiResponse, UiPrefs } from "./api-types.mts";
 import { openRuleEditor } from "./rule-editor.mts";
@@ -539,7 +539,7 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
     const list = box("div", { class: "inv-opts inv-prop-list", role: "listbox", "aria-label": "Properties" });
     const num = input({ type: "number", value: 1, size: "sm", attrs: { "aria-label": "Value" } });
     const hint = txt("", "t-sm muted");
-    const showHint = (): void => { const h = flag ? null : neZeroHint(op, num.value) ?? (key === "mageWeapon" ? MAGE_WEAPON_HINT : null); hint.textContent = h || ""; hint.hidden = !h; };
+    const showHint = (): void => { const h = flag || !key ? null : key === "mageWeapon" ? MAGE_WEAPON_HINT : missingHint(op, num.value, full(key)); hint.textContent = h || ""; hint.hidden = !h; };
     showHint();
     num.addEventListener("input", showHint);
     const opSeg = segmented({ label: "Comparison", options: [{ value: "ge", label: "≥" }, { value: "le", label: "≤" }, { value: "eq", label: "=" }, { value: "ne", label: "≠" }], value: "ge", onChange: (v) => { op = v; showHint(); } });
