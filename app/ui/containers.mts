@@ -26,7 +26,7 @@ import { reload } from "./inventory-data.mts";
 import { houseOfContainer, houseNameOf, mapHouses, showOnMap } from "./house-links.mts";
 import { PLAIN } from "./house-map-model.mts";
 import { openedRoots } from "./roster.mts";
-import { registerScreen, showContainer } from "./nav.mts";
+import { parseRoute, registerScreen, showContainer } from "./nav.mts";
 import { splitSerial } from "./item-parts.mts";
 import { bridgeActionReason, runBridgeAction } from "./bridge.mts";
 import type { ContainerLabel, ForgetApiResponse, MissingApiResponse, OrganizeConfig } from "./api-types.mts";
@@ -137,7 +137,7 @@ export function showContainers(name: string | null): void {
 registerScreen({ name: "containers", show: (r) => showContainers(r.scanner) });
 document.addEventListener("inventorychange", () => renderContainers());
 // The house links load after the inventory: the House filter and its counts read them.
-document.addEventListener("houselinkschange", () => { if (state.inv) renderContainers(); });
+document.addEventListener("houselinkschange", () => { if (state.inv && parseRoute().tab === "containers") renderContainers(); });
 // A saved Organize setup changes how the containers read.
 document.addEventListener("organizechange", () => { if (state.inv) renderContainers(); });
 const showAll = (): HTMLElement => el("a", { href: "#/containers", id: "cont-show-all" }, "Show all");

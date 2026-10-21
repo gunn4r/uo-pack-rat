@@ -647,6 +647,9 @@ export function menu(anchor: HTMLElement, items: Array<MenuItem | "divider">, { 
   });
   handle = popover(anchor, kids, { label, minWidth: width, role: "menu" });
   handle.root.classList.add("pop-menu");
+  // A single-choice menu opens on its current choice, as a radio group does.
+  const current = buttons.find((b) => b.getAttribute("aria-checked") === "true");
+  if (current) { buttons.forEach((b) => { b.tabIndex = b === current ? 0 : -1; }); current.focus(); }
   handle.root.addEventListener("keydown", (e: KeyboardEvent) => {
     const i = buttons.indexOf(document.activeElement as HTMLButtonElement);
     const to = e.key === "ArrowDown" ? (i + 1) % buttons.length : e.key === "ArrowUp" ? (i - 1 + buttons.length) % buttons.length : e.key === "Home" ? 0 : e.key === "End" ? buttons.length - 1 : -1;
