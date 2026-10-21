@@ -22,7 +22,7 @@ import { PLAIN, pickHouse, plainGrid, chestCount, houseLabel, houseName, carryOv
   cutAway, calloutLines, nearestInDirection, houseTotals, legendOf, stackWhere, anchorOf, zoomAt, fillWords, whereOf, whereTitle, cropAround, facetMapUrl, markersOf, facetMapNote, markerRadii,
   drawerChest, drawerMeta, slotsText, drawerPicker, DRAWER_W, DRAWER_MIN, drawerMax, clampDrawer, drawerKey, contentsOf, contentsSummary, filterContents, areaOfStack, levelAreas, tileAt, clampTile, rectOf, sizeText, unionTiles, coveredCells, outlineOf, pillsOf, fitLabel, placePill as pillBox, LABEL_FIT, type AreaPill,
   nextAreaId, nextAreaColor, moveCursor, project, tilePolygon, pts, liveAreas, withOrphans, redrawFailed, AREA_COLORS, AREA_COLOR_NAMES, MAX_AREAS, MAX_RECTS, areaName, drawnZs, CHEST_H,
-  mapHash, parseMapHash, houseHits, levelHits, stackPlan, planHead, planRows, planNeighbor, gapText, bareText, type Plan, type PlanCard, type PlanRow, levelHitText, areaHitText, hitsSummary, searchCount, calloutHead, calloutRow, CALLOUT_MAX, hitsView, elsewhereOf, outsideText,
+  mapHash, parseMapHash, houseHits, tierWord, levelHits, stackPlan, planHead, planRows, planNeighbor, gapText, bareText, type Plan, type PlanCard, type PlanRow, levelHitText, areaHitText, hitsSummary, searchCount, calloutHead, calloutRow, CALLOUT_MAX, hitsView, elsewhereOf, outsideText,
   type MapRoute, type HouseHits, type HitChest, type HitLine, type Tally, type Elsewhere, type PlainModel, type Tile, type Contents, type ContentsNode, type Marker, type View, type Mode, type Box, type Colour, type ChestView, type Piece, type Prism, type Pt, type Dir } from "./house-map-model.mts";
 import type { AreaRect, ContainerLabel, HouseArea, HouseModel, UiPrefs, HousesApiResponse, HouseMapEntry, HouseMapPutApiResponse, ItemsApiResponse, ItemHitsApiResponse, InventoryData, Stack } from "./api-types.mts";
 import { HIT_LIMIT, type HitRow } from "../item-query.mts";
@@ -232,8 +232,8 @@ function buildPins(m: HouseModel, h: HouseHits | null): void {
         return box("div", { class: "map-pin-chest" },
           box("div", { class: "map-pin-l1" }, txt(v.code, "mono t-sm strong"), txt(v.name, "ellip t-sm")),
           box("div", { class: "map-pin-line" }, txt(c.position, "t-xs muted")),
-          ...c.lines.slice(0, PIN_LINES).map((l) => itemTip(box("div", { class: "map-pin-line" }, lineName(l, "t-xs"), txt(`× ${fmtN(l.amount)}`, "t-xs num muted")), l.item, { focus: false })),
-          c.lines.length > PIN_LINES ? box("div", { class: "map-pin-line" }, txt(`and ${plural(c.lines.length - PIN_LINES, "more")}`, "t-xs muted")) : null);
+          ...c.lines.slice(0, PIN_LINES).map((l) => itemTip(box("div", { class: "map-pin-line" }, lineName(l, c.lines, "t-xs"), txt(`× ${fmtN(l.amount)}`, "t-xs num muted")), l.item, { focus: false })),
+          c.lines.length > PIN_LINES ? box("div", { class: "map-pin-line" }, txt(`and ${fmtN(c.lines.length - PIN_LINES)} more`, "t-xs muted")) : null);
       }));
   }), box("div", { class: "map-pin-more", id: "map-pin-more" }));
 }
@@ -299,8 +299,8 @@ function hitRow(m: HouseModel, c: HitChest, v: ChestView, areas: readonly HouseA
       box("button", { type: "button", class: "map-hit-pick", "data-act": "pick", title: `Select Stack ${c.stack.letter}`, onclick: go }, txt(v.code, "mono strong"), txt(v.name, "ellip strong")),
       txt(`${areaName(areas, c.stack)} · Stack ${c.stack.letter} · ${c.position}`, "t-sm muted ellip"),
       box("ul", { class: "map-hit-items", "aria-label": `Matching items in ${v.code} ${v.name}` },
-        ...c.lines.slice(0, HIT_LINES).map((l) => itemTip(box("li", { class: "map-hit-item" }, lineName(l, "t-sm"), txt(`× ${fmtN(l.amount)}`, "t-sm num muted")), l.item)),
-        c.lines.length > HIT_LINES ? box("li", { class: "map-hit-item" }, txt(`and ${plural(c.lines.length - HIT_LINES, "more")}`, "t-sm muted")) : null)),
+        ...c.lines.slice(0, HIT_LINES).map((l) => itemTip(box("li", { class: "map-hit-item" }, lineName(l, c.lines, "t-sm"), txt(`× ${fmtN(l.amount)}`, "t-sm num muted")), l.item)),
+        c.lines.length > HIT_LINES ? box("li", { class: "map-hit-item" }, txt(`and ${fmtN(c.lines.length - HIT_LINES)} more`, "t-sm muted")) : null)),
     box("div", { class: "map-chest-actions" }, button({ label: "Show items", size: "sm", attrs: { "data-act": "items" }, onClick: () => { select(c.serial); openDrawer(c.serial); } })));
 }
 
@@ -926,7 +926,8 @@ function areaPill(a: HouseArea, containers: number, t: Tally | null): HTMLElemen
   return box("button", { type: "button", class: "sp-area-name", title: `Show only ${a.name}`, "aria-label": `Show only ${a.name}, ${t ? `${t.matches} of ${plural(t.containers, "container")} match` : plural(containers, "container")}`, onclick: () => zoomToArea(a) }, txt(a.name), count);
 }
 // A matching line's piece, named by the gear item without an icon (the line is too small for one); its count follows it. The line itself is the tooltip host.
-const lineName = (l: HitLine, size: string): HTMLElement => el("span", { class: `ellip ${size}` }, gearItem({ ...l.item, amount: 1 }, { variant: "inline", showIcon: false, tip: false }));
+// `own`: the name is its own tooltip host (hover only, no tab stop), else the line around it is.
+const lineName = (l: HitLine, lines: readonly HitLine[], size: string, own = false): HTMLElement => { const tier = tierWord(l, lines); return el("span", { class: `ellip ${size}`.trim() }, gearItem({ ...l.item, amount: 1 }, { variant: "inline", showIcon: false, ...(own ? { focus: false } : { tip: false }) }), tier ? el("span", { class: "sr" }, ` (${tier})`) : null); };
 function planCard(m: HouseModel, c: PlanCard, h: HouseHits | null): HTMLElement {
   const s = c.stack, head = planHead(s), hits = h?.stacks.get(s.letter) ?? null;
   const rows = planRows(chestViews(m, s, state.inv!, labels()));
@@ -935,14 +936,22 @@ function planCard(m: HouseModel, c: PlanCard, h: HouseHits | null): HTMLElement 
     box("div", { class: "sp-card-head" }, txt(head.title, "t-sm strong"), txt(head.count, "t-xs muted")),
     box("ol", { class: "sp-rows", "aria-label": `Containers in ${head.title}, top first` }, ...rows.map((r) => planRow(r, hits?.find((x) => x.serial === r.serial) ?? null))));
 }
-// A container's row: its code; its label as a chip in the label's color, then the in-game name; its fill bar and count out of its own maximum (or why it is not known); while it matches a search, the items found. Each found item is a gear item in its rarity's color with its own item tooltip on hover, adding no tab stop: the cards keep their one roving stop.
+// A container's row: its code; its label as a chip in the label's color, then the in-game name; its fill bar and count out of its own maximum (or why it is not known); while it matches a search, the items found. The items found are `hitLine`'s.
 function planRow(r: PlanRow, hit: HitChest | null): HTMLElement {
   const color = r.label?.color ? safeColor(r.label.color) : null;
   return box("li", { class: `sp-row${r.opened ? "" : " unopened"}${hit ? " hit" : ""}`, "data-chest": String(r.serial) },
     txt(r.code, "mono t-sm strong"),
     box("span", { class: "sp-l1" }, r.label ? box("span", { class: "badge sp-chip", title: `Label: ${r.label.name}`, ...(color ? { style: `--chip:${color}` } : {}) }, txt(r.label.name)) : null, txt(r.name, `ellip t-sm${r.label ? " muted" : ""}`)),
     box("span", { class: "sp-l2" }, r.fill ? meter(r.fill.items, r.fill.max, { tone: fillTone(r.fill), label: `${r.fill.items} of ${r.fill.max} items` }) : null, txt(r.fillText, r.fill ? "t-xs num" : "t-xs muted")),
-    hit ? box("span", { class: "sp-hitline t-xs" }, el("span", { class: "ellip" }, ...hit.lines.flatMap((l, i) => [i ? ", " : "", gearItem({ ...l.item, amount: 1 }, { variant: "inline", showIcon: false, focus: false }), ` × ${fmtN(l.amount)}`]))) : null);
+    hit ? hitLine(hit) : null);
+}
+// The items a matching row found, one per line: the first PIN_LINES (the callouts' cap) as gear items in their rarity's color, each cut at the card's width with its count kept, each with its item tooltip on hover and no tab stop (the cards keep their one roving stop); then "+N more" on its own line, N the finds not drawn. A screen reader reads each line as it is, a repeated name with its tier, and the rest of the list after "+N more" from hidden text, so it hears every find once.
+function hitLine(hit: HitChest): HTMLElement {
+  const shown = hit.lines.slice(0, PIN_LINES), rest = hit.lines.slice(PIN_LINES);
+  const said = (l: HitLine): string => { const tier = tierWord(l, hit.lines); return `${l.name}${tier ? ` (${tier})` : ""} × ${fmtN(l.amount)}`; };
+  return el("ul", { class: "sp-hitline t-xs" },
+    ...shown.map((l) => el("li", { class: "sp-hit" }, lineName(l, hit.lines, "", true), txt(` × ${fmtN(l.amount)}`, "num muted"))),
+    rest.length ? el("li", { class: "muted sp-more" }, txt(`+${fmtN(rest.length)} more`), el("span", { class: "sr" }, `: ${rest.map(said).join(", ")}`)) : null);
 }
 // The selected card's accent outline, and the roving tab stop: the focused card, else the selected one, else the first.
 function paintPlan(): void {

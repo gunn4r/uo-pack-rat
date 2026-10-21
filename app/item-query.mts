@@ -41,12 +41,13 @@ export function rarityRank(ladder: RulesV1RarityItem[] | null | undefined, name:
 
 const CLAMP_LIMIT = (n: number): number => Math.max(1, Math.min(500, n));
 // The House map's search (issue #10): `fields=hits` answers each match with only what the map reads (its container and scan
-// root, for which house and container hold it, and its place's words; an item tooltip fetches the rest by serial), so a page may
+// root, for which house and container hold it, its place's words, and its rarity, which colors its name and keeps two tiers of
+// one name apart; an item tooltip fetches the rest by serial), so a page may
 // hold HIT_LIMIT rows (the default) and one request answers nearly any query. `group` does not apply to it.
 export const HIT_LIMIT = 10000;
-export interface HitRow { serial: number; name: string; amount: number; root: number | null; container: number | null; location?: { text: string } | undefined }
+export interface HitRow { serial: number; name: string; amount: number; rarity: string | null; root: number | null; container: number | null; location?: { text: string } | undefined }
 export const wantsHits = (sp: URLSearchParams): boolean => sp.get("fields") === "hits";
-export const hitRow = (it: Item): HitRow => ({ serial: it.serial, name: it.name, amount: it.amount, root: it.root, container: it.container, ...(it.location ? { location: { text: it.location.text } } : {}) });
+export const hitRow = (it: Item): HitRow => ({ serial: it.serial, name: it.name, amount: it.amount, rarity: it.rarity, root: it.root, container: it.container, ...(it.location ? { location: { text: it.location.text } } : {}) });
 // The property rule's counts (`fields=props`): of the matching stacks, how many carry each numeric property (a modelled
 // one, a numeric tooltip line, a Strength requirement, a weight) and each yes/no property (by flagKey), page and grouping aside.
 export const wantsPropCounts = (sp: URLSearchParams): boolean => sp.get("fields") === "props";

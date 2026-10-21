@@ -229,9 +229,9 @@ test("[fast] /api/items pages, sorts and searches", async () => {
   assert.equal(hits.total, search.total);
   assert.equal(hits.limit, 9999, "a hits page may be far larger than 500");
   assert.deepEqual(hits.rows.map((r) => r.serial), search.rows!.map((r) => r.serial));
-  for (const r of hits.rows) assert.deepEqual(Object.keys(r).sort(), ["amount", "container", "name", "root", "serial", ...("location" in r ? ["location"] : [])].sort(), JSON.stringify(r));
+  for (const r of hits.rows) assert.deepEqual(Object.keys(r).sort(), ["amount", "container", "name", "rarity", "root", "serial", ...("location" in r ? ["location"] : [])].sort(), JSON.stringify(r));
   const full = search.rows!.find((r) => r.serial === hits.rows[0]!.serial)!;
-  assert.deepEqual(hits.rows[0], { serial: full.serial, name: full.name, amount: full.amount, root: full.root, container: full.container, ...(full.location ? { location: { text: full.location.text } } : {}) });
+  assert.deepEqual(hits.rows[0], { serial: full.serial, name: full.name, amount: full.amount, rarity: full.rarity, root: full.root, container: full.container, ...(full.location ? { location: { text: full.location.text } } : {}) });
   const every = asJson<{ total: number; rows: unknown[] }>(await (await get("/api/items?fields=hits&group=1")).json());
   assert.equal(every.rows.length, total, "one request is normal: the default hits page holds the whole fixture, and group is ignored");
   const grouped = asJson<ItemsPageResponse>(await (await get("/api/items?group=1")).json());

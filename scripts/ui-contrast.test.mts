@@ -309,6 +309,7 @@ const SCENES: Scene[] = [
     await ticks.nth(0).check(); await ticks.nth(1).check();
     await p.getByRole("button", { name: "Compare 2 suits" }).click();
     await p.waitForSelector("#b-compare-view:not([hidden]) .b-cmp");
+    await p.waitForSelector(RARITY_ON_DIFF);   // a piece's rarity comes from a batched lookup a tick after the table draws
   }, leave: async (p) => { await p.getByRole("button", { name: "Back to result" }).click(); }, mustMeasure: RARITY_ON_DIFF },
   { name: "runs drawer menu and rename", enter: async (p) => {
     // a second run, so there are two to tick
