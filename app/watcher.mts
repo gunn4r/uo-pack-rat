@@ -424,7 +424,7 @@ export function startWatcher(
     if (closed) return false;
     try {
       // The real path, not the given one: on Windows a path with an 8.3 short component (GitHub's
-      // runners put the temp folder under C:\Users\RUNNER~1) aborts the whole process inside libuv
+      // runners put the temp folder under C:\Users\<runner>~1) aborts the whole process inside libuv
       // on the first event, which reports the file under its long form.
       const w = watch(realpathSync.native(inboxDir), onWatchEvent);
       w.on("error", (e) => {

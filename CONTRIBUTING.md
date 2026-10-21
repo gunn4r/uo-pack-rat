@@ -87,7 +87,15 @@ Several people or agents often work on this repository at once, each on a branch
 
 ## The scrub guard
 
-This repository is public. `scripts/scrub.test.mts` (`[smoke]`, so it runs even in `npm run test:smoke`) fails the whole suite if any tracked file carries the maintainer's name or machine, the private workspace this project grew out of, a real in-game character name, the project's retired product name, or a `/Users/<real name>` home path outside the `/Users/example` placeholder. Each pattern's exact allow-list — the handful of files deliberately permitted to carry the maintainer's public GitHub handle, such as `package.json`'s `author` field or the repository URL in `README.md` — lives in `scripts/scrub.test.mts` itself, next to the reason it's there.
+This repository is public. `scripts/scrub.test.mts` (`[smoke]`, so it runs even in `npm run test:smoke`) fails the whole suite if any tracked file carries a private pattern, the project's retired product name, or a home folder path (`/Users/<name>`, `/home/<name>` or `C:\Users\<name>`) other than the `example` placeholder. The public patterns' allow-lists — the handful of files deliberately permitted to carry the maintainer's public GitHub handle, such as `package.json`'s `author` field or the repository URL in `README.md` — live in `scripts/scrub.test.mts` itself, next to the reason each is there.
+
+Private patterns are never written in the repository, the guard included. They come from outside it, and each is matched as a whole word in any case, in every tracked file:
+
+- **Your machine:** your user name, your home folder's name, and your git `user.name` and the local part of `user.email`, each whole and as its words of four letters or more. They are skipped in CI, where they are the runner's.
+- **Your private list:** `~/.config/pack-rat/scrub-private.txt`, if you have one: one word or phrase of three characters or more per line (a shorter one is ignored with a warning), with `#` starting a comment. Put anything there that must never be published, such as in-game character names or the name of a private folder.
+- **The environment:** `PACKRAT_SCRUB_PRIVATE`, a comma-separated list, for CI or a one-off check.
+
+A private hit or a home folder names the file but never the matched text, since CI logs are public.
 
 If it fires on something you wrote: reword the offending line so the information isn't there — a real name becomes "the maintainer," a real path becomes `/Users/example` or `~/…`, a real character name becomes one of the fixture names the test suite already uses (`Dorran`, `Kestrel`, `Rowan`, `Sable`). **Never edit the guard's patterns or allow-lists to make a failure go away** — if you genuinely believe a new file needs a new allowance (a new place the maintainer's handle legitimately has to appear, for instance), say so in your PR description and let a maintainer decide; don't add yourself to the allow-list to get a red test green.
 
