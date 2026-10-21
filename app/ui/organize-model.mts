@@ -137,10 +137,11 @@ export function ruleTokens(query: RuleQuery, ctx: FilterContext): Array<{ label:
 // The rule editor's live count (POST /api/organize/match): how many items the filter takes on its own, with a
 // few names, and a reminder that a rule above this one takes an item first. Null while there is no answer.
 export const MATCH_DEBOUNCE_MS = 300;
-export function matchLine(r: Pick<OrganizeMatchApiResponse, "count" | "pieces" | "sample"> | null, rulesAbove: number): { text: string; note: string | null } | null {
+// `text` leads the line; the page follows it with " (e.g. " and each of `sample` as an inline gear item, then ")".
+export function matchLine(r: Pick<OrganizeMatchApiResponse, "count" | "pieces" | "sample"> | null, rulesAbove: number): { text: string; sample: OrganizeMatchApiResponse["sample"]; note: string | null } | null {
   if (!r) return null;
-  if (!r.count) return { text: "Matches no item in your labeled containers.", note: null };
-  return { text: `Matches ${plural(r.count, "item")} (e.g. ${r.sample.join(", ")})`, note: rulesAbove > 0 ? "Rules above this one may claim some of them first." : null };
+  if (!r.count) return { text: "Matches no item in your labeled containers.", sample: [], note: null };
+  return { text: `Matches ${plural(r.count, "item")}`, sample: r.sample, note: rulesAbove > 0 ? "Rules above this one may claim some of them first." : null };
 }
 // `fn` once calls have paused for `ms`, with the last call's arguments (typing in the rule editor).
 export function debounced<A extends unknown[]>(fn: (...args: A) => void, ms: number): (...args: A) => void {

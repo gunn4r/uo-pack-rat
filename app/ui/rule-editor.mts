@@ -13,6 +13,7 @@ import { $, el, full, safeColor, compactChildren } from "./dom.mts";
 import { missingHints } from "./inv-model.mts";
 import { box, txt, button, meter, message, field, input, select, textarea, check, token, createDrawer, confirmDialog, toast, type DrawerHandle } from "./components.mts";
 import { containerArt } from "./item-art.mts";
+import { gearInText } from "./gear-item.mts";
 import { errorText } from "./messages.mts";
 import { filterContext } from "./item-parts.mts";
 import { createFilterBar, itemsSource } from "./filter-bar.mts";
@@ -159,7 +160,9 @@ function draw(focus?: string): void {
 const rulesAbove = (d: Draft): number => (d.isNew ? state.organize.config!.rules.length : Math.max(0, state.organize.config!.rules.findIndex((r) => r.id === d.id)));
 function matchEl(): HTMLElement {
   const d = draft!, line = matchLine(d.match, rulesAbove(d));
-  return box("div", { class: "rule-match", id: "rule-match", role: "status", "aria-live": "polite" }, line ? txt(line.text, "t-sm") : null, line?.note ? txt(line.note, "t-sm muted") : null);
+  // the sample pieces carry their look, so none is looked up and redrawn inside the live region
+  const eg = line?.sample.length ? [" (e.g. ", ...line.sample.flatMap((p, i) => [i ? ", " : "", gearInText(p)]), ")"] : [];
+  return box("div", { class: "rule-match", id: "rule-match", role: "status", "aria-live": "polite" }, line ? el("span", { class: "t-sm" }, line.text, ...eg) : null, line?.note ? txt(line.note, "t-sm muted") : null);
 }
 let countSeq = 0;
 async function countNow(): Promise<void> {
