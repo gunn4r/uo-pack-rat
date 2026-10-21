@@ -1,12 +1,12 @@
 // missing.test.mts — `app/missing.mts`, Missing since last scan (issue #99): what left a root container between its last two scans and is nowhere else in the inventory now.
 //
-// `app/missing.mts`, Missing since last scan (issue #99), over hand-built scans folded by the real fold: a root scanned once reports nothing; an item gone from a root and from everywhere else is missing with when it was last seen there; one moved to another scanned container or now worn is not; a stack that shrank in place is "N fewer" and one that grew is nothing; only a root's last two opened scans are compared; a bag that went takes its contents with it; what a bag the newest scan could not open still holds, what sat in a trash container, and a forgotten root report nothing; a vanished stack merged into a same-kind stack in another scanned chest, or combined with one in the same chest, is not missing, one sold outright is, a same-kind stack seen only before the previous scan explains nothing, one too small explains only its amount (the rest is "N fewer"), a stack partly used in place is "N fewer" even with more elsewhere, and a single item is never taken as merged into a same-named one. `[fast]`; `app/server.test.mts` covers `missingCounts` in `GET /api/inventory` and `GET /api/missing`, and a blacklisted root reporting nothing in either.
+// `app/missing.mts`, Missing since last scan (issue #99), over hand-built scans folded by the real fold: a root scanned once reports nothing; an item gone from a root and from everywhere else is missing with when it was last seen there; one moved to another scanned container or now worn is not; a stack that shrank in place is "N fewer" and one that grew is nothing; only a root's last two opened scans are compared; a bag that went takes its contents with it; what a bag the newest scan could not open still holds, what sat in a trash container, and a forgotten root report nothing; a vanished stack merged into a same-kind stack in another scanned chest, or combined with one in the same chest, is not missing, one sold outright is, a same-kind stack seen only before the previous scan explains nothing, one too small explains only its amount (the rest is "N fewer"), a stack partly used in place is "N fewer" even with more elsewhere, and a single item is never taken as merged into a same-named one; a missing item carries its graphic, hue and rarity from its last scan (the rarity read by the caller's `rarityOf`). `[fast]`; `app/server.test.mts` covers `missingCounts` in `GET /api/inventory` and `GET /api/missing`, and a blacklisted root reporting nothing in either.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { foldSnapshots, getRules, setRules } from "./vault-lib.mts";
+import { foldSnapshots, getRules, parseTooltip, setRules } from "./vault-lib.mts";
 import { missingSinceLastScan } from "./missing.mts";
 import { validateScan } from "./scan-schema.mts";
 import type { RulesV1, ScanV2 } from "./schema/types.d.mts";
@@ -31,7 +31,17 @@ const scan = (scannedAt: string, items: ReturnType<typeof item>[], { roots = [CH
   assert.equal(v.ok, true, JSON.stringify(v.errors));
   return doc as unknown as ScanV2;
 };
-const missing = (snaps: ScanV2[]) => missingSinceLastScan(snaps, foldSnapshots(snaps));
+// What is missing, without each item's look (its own test below).
+const missing = (snaps: ScanV2[]) => Object.fromEntries(Object.entries(missingSinceLastScan(snaps, foldSnapshots(snaps))).map(([k, list]) => [k, list.map(({ graphic: _g, hue: _h, rarity: _r, lines: _l, ...rest }) => rest)]));
+
+test("[fast] a missing item carries its look at its last scan: graphic, hue, its tooltip lines and the rarity they named (read by the rarityOf the caller passes)", () => {
+  const ring = { ...item(RING, CHEST, "Ring", 1, 1153), tooltip: ["Ring", "Greater Artifact"] };
+  const snaps = [scan(T1, [ring, item(GEM, CHEST, "Gem")]), scan(T2, [item(GEM, CHEST, "Gem")])];
+  const [got] = missingSinceLastScan(snaps, foldSnapshots(snaps), (lines) => parseTooltip(lines).rarity)[CHEST]!;
+  assert.deepEqual([got!.graphic, got!.hue, got!.rarity], [0x0f7a, 1153, "Greater Artifact"]);
+  assert.deepEqual(got!.lines, ["Ring", "Greater Artifact"], "its tooltip as last scanned, for the dialog's hover");
+  assert.equal(missingSinceLastScan(snaps, foldSnapshots(snaps))[CHEST]![0]!.rarity, null, "no rarity reader: no rarity");
+});
 
 test("[fast] a root scanned once has nothing missing", () => {
   assert.deepEqual(missing([scan(T1, [item(RING, CHEST, "Ring")])]), {});
@@ -141,7 +151,7 @@ test("[fast] missingSinceLastScan reads no shard rules (issue #181)", () => {
   const rules = getRules();
   setRules(null as unknown as RulesV1);
   try {
-    assert.deepEqual(missingSinceLastScan(snaps, inv), { [CHEST]: [{ serial: PEARL, name: "Scroll of Transcendence (Chivalry - 0.6 Pts)", amount: 1, lastSeen: T1 }] });
+    assert.deepEqual(missingSinceLastScan(snaps, inv), { [CHEST]: [{ serial: PEARL, name: "Scroll of Transcendence (Chivalry - 0.6 Pts)", amount: 1, lastSeen: T1, graphic: 0x0f7a, hue: 0, rarity: null, lines: ["Scroll Of Transcendence", "Skill: Chivalry 0.6 Skill Points"] }] });
   } finally {
     setRules(rules);
   }

@@ -16,6 +16,7 @@ import { validateScan } from "./scan-schema.mts";
 import { buildUi } from "../scripts/build-ui.mts";
 import { buildSchemaTypes } from "../scripts/build-schema-types.mts";
 import { asJson, HERE, UOALIVE, sseReader, JSON_HEADERS, logText, type InventorySummary, type InventoryResponse, type ItemsPageResponse, type ItemsBySerialResponse } from "./server-routes-fixture.mts";
+import type { MissingApiResponse } from "./api/inventory.mts";
 
 // Order matters: build the schema types before buildUi() runs, not because tsconfig.browser.json's
 // `include` enforces it (a missing literal entry there is silently dropped, not an error — verified)
@@ -140,7 +141,7 @@ test("[fast] /api/inventory counts missing items per root and /api/missing lists
   const dir = mkdtempSync(join(tmpdir(), "qm-"));
   const scansDir = join(dir, "scans");
   mkdirSync(scansDir, { recursive: true });
-  const first = JSON.parse(readFileSync(join(HERE, "fixtures", "demo-Kestrel.json"), "utf8")) as { scannedAt: string; roots: Array<{ serial: number }>; items: Array<{ serial: number; name: string }> };
+  const first = JSON.parse(readFileSync(join(HERE, "fixtures", "demo-Kestrel.json"), "utf8")) as { scannedAt: string; roots: Array<{ serial: number }>; items: Array<{ serial: number; name: string; tooltip: string[] }> };
   const gone = first.items.find((it) => !first.items.some((o) => o !== it && o.serial === it.serial))!;
   // Recent stamps: retention prunes a scan older than its window that the fold no longer needs.
   const day = (n: number): string => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 19);   // v1 stamps are naive local time
@@ -151,8 +152,10 @@ test("[fast] /api/inventory counts missing items per root and /api/missing lists
     const root = String(first.roots[0]!.serial);
     const inv = asJson<InventoryResponse>(await (await fetch(s2.url + "/api/inventory")).json());
     assert.deepEqual(inv.inventory.missingCounts, { [root]: 1 });
-    const m = asJson<{ ok: boolean; items: Array<{ serial: number; name: string }> }>(await (await fetch(s2.url + "/api/missing?root=" + root)).json());
+    const m = asJson<MissingApiResponse>(await (await fetch(s2.url + "/api/missing?root=" + root)).json());
     assert.deepEqual(m.items.map((it) => [it.serial, it.name]), [[gone.serial, gone.name]]);
+    // Its tooltip as last scanned, so the dialog's row shows it on hover (the item is no longer in the inventory to look up).
+    assert.deepEqual(m.items[0]!.lines, gone.tooltip);
     const none = asJson<{ items: unknown[] }>(await (await fetch(s2.url + "/api/missing?root=12345")).json());
     assert.deepEqual(none.items, []);
     assert.equal((await fetch(s2.url + "/api/missing?root=abc")).status, 400);

@@ -252,7 +252,7 @@ It saves through `POST /api/item-kinds` and runs `reload()`, so the table, the K
 
 ### Missing items
 
-A root with items missing since its last scan (issue #99) shows an "N missing" warn tag after its name, and gets **Show missing items**. That opens a dialog listing each item's name, amount (a stack that shrank in place reads "N fewer") and when it was last seen there, sorted by name, fetched from `GET /api/missing?root=`. `GET /api/inventory` carries only the counts (`missingCounts`).
+A root with items missing since its last scan (issue #99) shows an "N missing" warn tag after its name, and gets **Show missing items**. Its dialog lists each item (a `gearItem` as that scan saw it, with its tooltip on hover), amount (a stack that shrank reads "N fewer") and when last seen there, by name, from `GET /api/missing?root=`. `GET /api/inventory` carries only the counts (`missingCounts`).
 
 The server computes them beside the fold in `app/missing.mts`: a root's previous scan against its latest, less two things:
 
