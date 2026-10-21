@@ -632,7 +632,7 @@ export function poolLine(excluded: string[] = [], ubws = false, pieces: number |
 export const searchLine = (k: Pick<Knobs, "exact" | "budgetS" | "restarts">): string => (k.exact ? `Exact, up to ${k.budgetS} s` : `Heuristic, ${k.restarts} restarts`);
 
 // ---------------------------------------------------------------- goals (issue #292, vault-lib.mts compileGoals)
-// A goal's property in a sentence ("swing speed"), from vault-lib.mts's propName, the one name per property.
+// A goal's property in a sentence ("Swing Speed Increase"; a pool as plain words, "stamina from gear and buffs"), from vault-lib.mts's propName, the one name per property.
 export { goalWord };
 // The goals as rows, most important first: each property with its rank (from 1), whether it shares that rank with the row above, and what it counts.
 export interface GoalRow { key: string; rank: number; linked: boolean; counts: number }
