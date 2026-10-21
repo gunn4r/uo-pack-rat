@@ -3,7 +3,7 @@
 //   npm run readme:shots            every image
 //   npm run readme:shots -- house   only the images whose name starts with one of the words given
 //
-// It seeds a throwaway data folder (the demo scans, Kestrel at Imbuing 70, and the synthetic vault house of
+// It seeds a throwaway data folder (the demo scans, Kestrel at Imbuing 70, and the synthetic showcase house of
 // app/house-fixture.mts), starts the server on it with a game-client search home of its own, so nothing else on this
 // computer is read, and drives the page with Playwright: Chromium when `npx playwright install chromium` has been
 // run, else the installed Chrome. Stills are 1280 × 800 at 2x; GIFs are recorded at 1280 × 800 and turned into
@@ -12,7 +12,7 @@
 // Item icons and the paperdoll are drawn from a real 7.x client's files, which never enter the repo:
 //   PACKRAT_SHOTS_UO=<UO folder> npm run readme:shots
 // points the seeded client at that folder, read at capture time (the server keeps what it decodes in memory only). The
-// House map's shots keep the vault's synthetic tiledata.mul, with the folder's art files linked beside it. Without the
+// House map's shots keep the house's synthetic tiledata.mul, with the folder's art files linked beside it. Without the
 // variable the shots still run: the icon boxes stay empty and each paperdoll card shows the app's "couldn't find your
 // Ultima Online client files" note (the stand-in figure is drawn from the client's art too). Only the PNGs and GIFs
 // written to docs/images/ are ever committed (scripts/no-game-art.test.mts fails on a client file or decoded art).
@@ -27,7 +27,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, type Browser, type Page } from "playwright";
 import { houseScan } from "../app/organize-fixture.mts";
-import { claimHouses, vaultHouse, FIXTURE_TILES } from "../app/house-fixture.mts";
+import { claimHouses, showcaseHouse, FIXTURE_TILES } from "../app/house-fixture.mts";
 import { syntheticTileData } from "../app/tiledata-fixture.mts";
 import { buildUi } from "./build-ui.mts";
 
@@ -44,9 +44,9 @@ if (REAL_UO && !["tiledata.mul", "artLegacyMUL.uop", "gumpartLegacyMUL.uop"].eve
 }
 const wanted = (name: string): boolean => only.length === 0 || only.some((w) => name.startsWith(w));
 
-// The demo scans with a few skills each (the Suit Builder's header names them), Kestrel at Imbuing 70 (for Unravel). With `house`, also the vault house of app/house-fixture.mts:
-// 120 chests in stacks of five, partly full, some labeled, a few holding things to find on the map. `map`: the client's
-// UO folder is the vault's synthetic tiledata.mul (the House map's shots), with the real folder's art linked beside it;
+// The demo scans with a few skills each (the Suit Builder's header names them), Kestrel at Imbuing 70 (for Unravel). With `house`, also the showcase house of app/house-fixture.mts:
+// four rooms and an upper floor, 38 chests in rows, partly full, labeled by what they hold, a few holding things to find
+// on the map. `map`: the client's UO folder is the house's synthetic tiledata.mul (the House map's shots), with the real folder's art linked beside it;
 // otherwise it is the real folder itself when there is one, whose tiledata the paperdoll's worn pieces need.
 const SKILLS: Record<string, Record<string, number>> = {
   Dorran: { Swordsmanship: 100, Fencing: 100, Tactics: 100, Anatomy: 90, Healing: 85, Parry: 80 },
@@ -65,16 +65,18 @@ function seed(dir: string, house: boolean, map: boolean): { home: string } {
   const useUo = (folder: string): void => writeFileSync(join(client, "Profiles", "Settings", "p.json"), JSON.stringify({ ultimaonlinedirectory: folder }));
   if (REAL_UO && !map) useUo(REAL_UO);
   if (!house) return { home };
-  const { house: vault, chests } = vaultHouse();
-  const finds = ["Katana", "Ruby", "Katana", "Black Pearl", "Ruby", "Katana", "Sapphire", "Ruby"];
-  const things = finds.map((name, i) => ({ serial: 0x40600000 + i, name, in: chests[(i * 17 + 4) % chests.length]!.serial }));
+  const { house: showcase, chests, groups } = showcaseHouse();
+  // Things to find, spread over the rooms: [name, the label group of the chest it is in (or null: an unlabeled one), which chest of it].
+  const unlabeled = chests.filter((c) => !Object.values(groups).some((g) => g.includes(c.serial))).map((c) => c.serial);
+  const finds: Array<[string, string | null, number]> = [["Katana", "Weapons", 1], ["Ruby", "Jewelry", 2], ["Katana", null, 4], ["Black Pearl", "Reagents", 3], ["Ruby", null, 1], ["Katana", "Jewelry", 6], ["Sapphire", "Jewelry", 5], ["Ruby", "Armor", 2]];
+  const things = finds.map(([name, group, k], i) => ({ serial: 0x40600000 + i, name, in: (group ? groups[group]! : unlabeled)[k]! }));
   const v = houseScan({ character: "Dorran", scannedAt: "2025-12-31T12:00:00Z", things, boxes: chests.map((c, i) => ({ serial: c.serial, name: c.name, pos: { x: c.x, y: c.y, z: c.z, facet: 1 }, count: (i * 37) % 126 })) });
-  writeFileSync(join(dir, "scans", "vault.json"), JSON.stringify({ ...v, house: { facet: 1, capturedAt: vault.capturedAt, at: { x: 3003, y: 1003 }, tiles: vault.tiles, items: vault.items } }));
-  claimHouses(dir, [vault]);
-  // A label on every chest of some stacks, so the map shows the label colors.
-  const kinds: Array<[string, string]> = [["Reagents", "#2f7f7f"], ["Armor", "#8a5a2b"], ["Weapons", "#a33b3b"], ["Jewelry", "#6b4fa0"], ["Scrolls", "#3d6fb0"]];
+  writeFileSync(join(dir, "scans", "house.json"), JSON.stringify({ ...v, house: { facet: 1, capturedAt: showcase.capturedAt, at: { x: chests[0]!.x, y: chests[0]!.y + 10 }, tiles: showcase.tiles, items: showcase.items } }));
+  claimHouses(dir, [showcase]);
+  // A label on the chests of each group, so the map shows the label colors.
+  const colors: Record<string, string> = { Reagents: "#2f7f7f", Armor: "#8a5a2b", Weapons: "#a33b3b", Jewelry: "#6b4fa0", Scrolls: "#3d6fb0" };
   const labels: Record<string, unknown> = {};
-  chests.forEach((c, i) => { const stack = Math.floor(i / 5); if (stack % 3 === 0) { const [name, color] = kinds[(stack / 3) % kinds.length]!; labels[c.serial] = { serial: c.serial, name, color, origin: "manual" }; } });
+  for (const [name, serials] of Object.entries(groups)) for (const serial of serials) labels[serial] = { serial, name, color: colors[name], origin: "manual" };
   writeFileSync(join(dir, "organize.json"), JSON.stringify({ version: 1, catchAll: null, pinnedItems: [], rules: [], labels }));
   if (REAL_UO && !map) return { home };
   writeFileSync(join(uo, "tiledata.mul"), syntheticTileData(FIXTURE_TILES));
@@ -234,24 +236,29 @@ try {
   await still(browser, "characters", async (page) => {
     await go(page, url, "characters/Dorran", "#tab-characters:not([hidden])");
   }, { size: { width: 1280, height: 1000 } });
-  // The House map on its own server: the vault's synthetic tiles, the real art beside them.
+  // The House map on its own server: the house's synthetic tiles, the real art beside them. The still is zoomed in a wheel
+  // step, so the house fills the map.
   const mapUrl = await serve(true, true);
   await still(browser, "house-map", async (page) => {
     await go(page, mapUrl, "map", "#tab-map:not([hidden]) svg");
+    const box = (await page.locator("#map-svg").boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.wheel(0, -100);   // one wheel step in about the centre: 1.15x, the corners just in view
+    await pause(page, 600);
   });
   await gif(browser, mapUrl, "house-map-search", "map", "#tab-map:not([hidden]) svg", async (page) => {
     await pause(page, 1000);
     await typeSlowly(page, "#map-search input", "katana");
     await page.keyboard.press("Enter");
     await pause(page, 2500);
-    await page.locator('#map-view [data-value="plan"]').click();
+    await page.locator('#map-view [data-value="top"]').click();
     await pause(page, 2000);
   });
   await still(browser, "unravel", async (page) => {
     await go(page, url, "unravel", ".unr-row");
   });
 
-  // Organize on the demo chests alone (the vault's 120 empty chests would fill the proposal).
+  // Organize on the demo chests alone (the house's empty chests would fill the proposal).
   const plain = await serve(false);
   await gif(browser, plain, "organize", "organize", "#tab-organize:not([hidden]) #org-auto", async (page) => {
     await pause(page, 800);

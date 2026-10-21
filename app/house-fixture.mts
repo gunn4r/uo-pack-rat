@@ -149,6 +149,41 @@ function stairRun(x0: number, y: number, z: number): HouseTile[] {
   return t;
 }
 
+// The README's House map house (scripts/readme-shots.mts; no test reads it): a lived-in two-storey home, 23 x 23 with its
+// walls, at (X0, Y0). Four rooms joined by doorways: a crafting room (north-west) with work tables, the storage room
+// (north-east) with chests in rows along its walls, the entry hall (south-west) with the front door, a side table and the
+// stairs behind a banister, and a living room (south-east) with a dining table. Upstairs, over every room, more storage
+// along the north wall. Only impassable furniture is drawn on the map, so there are no rugs. `groups` names the chests a label
+// would go on, by what they hold.
+export function showcaseHouse(X0 = 1600, Y0 = 1700): { house: HouseSource; chests: HouseContainerInput[]; groups: Record<string, number[]> } {
+  const at = (rooms: Array<[number, number, number, number]>): Array<[number, number]> => rooms.flatMap(([x0, y0, x1, y1]) => rect(X0 + x0, Y0 + y0, X0 + x1, Y0 + y1));
+  const doors = at([[9, 5, 9, 5], [4, 10, 4, 10], [9, 17, 9, 17], [16, 12, 16, 12], [4, 22, 4, 22]]);
+  // walled() rings the front door's tile too; the three walls it puts outside the house, in front of the door, go.
+  const porch = new Set(at([[3, 23, 5, 23]]).map(([x, y]) => `${x}:${y}`));
+  const ground = walled([...at([[1, 1, 8, 9], [10, 1, 21, 11], [1, 11, 8, 21], [10, 13, 21, 21]]), ...doors], doors, { graphic: G.planks, z: 27 })
+    .filter((t) => !(t[0] === G.stoneWall && porch.has(`${t[1]}:${t[2]}`)));
+  const upperWalls = ground.filter((t) => t[0] === G.stoneWall).map(([g, x, y, , imp]): HouseTile => [g, x, y, 27, imp]);
+  const chests: HouseContainerInput[] = [], groups: Record<string, number[]> = {};
+  let serial = 0x40030000;
+  const chest = (group: string | null, x: number, y: number, z = 7, name = "Metal Chest"): void => {
+    chests.push({ serial, name, facet: 1, x: X0 + x, y: Y0 + y, z });
+    if (group) (groups[group] ??= []).push(serial);
+    serial++;
+  };
+  for (let x = 10; x <= 21; x++) chest(x <= 15 ? "Reagents" : "Scrolls", x, 1);
+  for (const y of [3, 5, 7, 9]) { chest("Armor", 21, y); chest("Armor", 21, y, 11); }
+  for (const y of [7, 8, 9, 10]) chest("Weapons", 10, y);
+  for (const [x, y] of [[1, 9], [2, 9], [8, 1]] as const) chest(null, x, y, 7, "Wooden Chest");
+  for (const y of [14, 15, 20]) chest(null, 21, y, 7, "Wooden Chest");
+  for (let x = 12; x <= 19; x++) chest("Jewelry", x, 1, 27);
+  let item = 0x40000301;
+  const items: HouseItem[] = [];
+  const put = (graphic: number, spots: Array<[number, number]>): void => { for (const [x, y] of spots) items.push([item++, graphic, x, y, 7]); };
+  put(G.table, at([[3, 3, 4, 3], [6, 3, 6, 3], [3, 6, 3, 7], [14, 16, 16, 17], [7, 13, 7, 13]]));
+  put(G.banister, at([[2, 19, 5, 19]]));
+  return { house: source([...ground, ...upperWalls, ...stairRun(X0 + 2, Y0 + 20, 7)], items), chests, groups };
+}
+
 // An 8 x 8 walled room at (2000, 3000) with a 2nd floor (z 27) over its 6 x 6 interior and a stair run climbing east along its north row: z 7, 12, 17, 22 at x 2001..2004, on its blocks.
 export function stairHouse(): HouseSource {
   return source([...walled(rect(2001, 3001, 2006, 3006), [], { graphic: G.planks, z: 27 }), ...stairRun(2001, 3001, 7)]);
