@@ -65,3 +65,6 @@
 .auto-status { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); }
 /* The proposal table's cells hold sentences (the chests a group gets, why it is short): they wrap, not clip. */
 #auto-proposal .tbl td { white-space: normal; padding-block: var(--space-1-5); }
+/* what a stopped trip left in the backpack: its pieces as gear chips, wrapping, then why they cannot be put away */
+.org-carried { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1-5); }
+.org-carried-text { display: flex; flex-direction: column; gap: var(--space-1-5); }
