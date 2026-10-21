@@ -1,0 +1,1 @@
+- **An item's detail shows its icon** (issues #504, #503): the panel beside the Inventory table opens with the item's 32 px in-game icon beside its name, which takes its rarity's color and wraps rather than being cut.

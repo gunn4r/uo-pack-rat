@@ -15,6 +15,7 @@ import { relativeWhen } from "./messages.mts";
 import { txt, box, button, badge, meter, tipWrap, resistTile, detailPane, detailSection } from "./components.mts";
 import type { IconName } from "./components.mts";
 
+import { gearItem } from "./gear-item.mts";
 import { rarityEl, locationEl, tagEls, tagWords } from "./item-parts.mts";
 import { plural } from "./format.mts";
 
@@ -119,7 +120,8 @@ function draw(it: Item, focus: boolean): void {
     return why ? tipWrap(b, why) : b;
   });
   detailPane(p, {
-    title: it.name, titleId: nameId, noun: "item", nouns: "rows",
+    // the quantity has its own row under Where it is; with no art, no empty box before the name
+    title: gearItem({ ...it, amount: 1 }, { variant: "inline", size: 32, tip: false, keepBox: false }), titleId: nameId, noun: "item", nouns: "rows",
     meta: [rarityEl(it.rarity, "strong"), ...tagEls(it, { describe: true }), it.gear && it.medable ? badge("Meditation-safe", "ok") : null],
     sections: [
       detailSection("Where it is", kvRows(where)),
