@@ -2,7 +2,8 @@
 //
 // map: house
 // owns: `project`, `paintOrder`, `chestViews`, `pickHouse`
-import { bagLabel, compareNames, itemOwnBlob, type Container, type Item } from "../vault-lib.mts";
+import { bagLabel, compareNames, type Container, type Item } from "../vault-lib.mts";
+import { matchesItem, parseItemQuery } from "../item-query.mts";
 import { splitSerial } from "./inv-model.mts";
 import { areaOfStack, inRects } from "../house-areas.mts";
 import type { AreaRect, Cell, ContainerLabel, FacetMapReason, HouseArea, HouseMapEntry, HouseModel, HouseSummary, InventoryData, Spot, Stack, TiledataFrom } from "./api-types.mts";
@@ -319,17 +320,19 @@ export function contentsSummary(c: Contents): string {
   if (!c.total) return "Empty";
   return c.bags ? `${plural(c.total, "item")} · ${c.loose} loose, ${c.inBags} in ${plural(c.bags, "container")}` : plural(c.total, "item");
 }
-// The drawer's filter: an item whose name, tooltip lines, rarity, kind or tags hold the text (any case); a bag stays when it matches itself (with all it holds) or holds a match, counting what it kept.
+// The drawer's filter: the core's search-text rule on the item itself (item-query.mts's matchesItem with just the text, as
+// an Organize rule's text: name, tooltip lines, which hold its tags, rarity and kind, any case; #487); a bag stays when it
+// matches itself (with all it holds) or holds a match, counting what it kept.
 export function filterContents(nodes: readonly ContentsNode[], text: string): ContentsNode[] {
-  const needle = text.trim().toLowerCase();
-  if (!needle) return [...nodes];
-  const hit = (it: Item): boolean => `${itemOwnBlob(it)} \n ${it.tags.join(" ")}`.toLowerCase().includes(needle);
-  return nodes.flatMap((n): ContentsNode[] => {
-    if (hit(n.item)) return [n];
+  if (!text.trim()) return [...nodes];
+  const rq = parseItemQuery(new URLSearchParams([["q", text]]));
+  const keep = (ns: readonly ContentsNode[]): ContentsNode[] => ns.flatMap((n): ContentsNode[] => {
+    if (matchesItem(n.item, rq)) return [n];
     if (n.kind === "item") return [];
-    const kids = filterContents(n.kids, needle);
+    const kids = keep(n.kids);
     return kids.length ? [{ ...n, kids, count: countOf(kids) }] : [];
   });
+  return keep(nodes);
 }
 
 // ---------------------------------------------------------------- areas (issue #10)

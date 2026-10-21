@@ -186,7 +186,7 @@ function matches(it: Item, q: ItemQuery, seenCut: number, minRank: number, maxRa
 }
 
 // Whether an item passes an Organize rule's query (issue #11): the Inventory's per-item checks, with the free
-// text matched against the item only (itemOwnBlob: name, tooltip lines, kind, rarity), never its location, so a
+// text matched against the item only (itemOwnBlob: name, tooltip lines, kind, rarity, tags), never its location, so a
 // "reag" rule never claims a sword in a chest labelled Reagents. `rarity` is the shard's ladder, as for
 // applyItemQuery; without it rarityMin and rarityMax filter nothing.
 export function matchesItem(it: Item, rq: RuleQuery, { rarity = [] }: { rarity?: RulesV1RarityItem[] } = {}): boolean {

@@ -336,7 +336,7 @@ export const TOOLS: Tool[] = [
     name: "search_items",
     description: "Search the inventory with the Inventory screen's filters. Every filter is optional and they combine; list filters match any of their values, and slots, kinds, slayers and tags match whatever their case. Returns compact rows (serial, name, kind, slot, rarity, where, the container and root serials, wornBy, props); get_item has the full tooltip.",
     inputSchema: { type: "object", additionalProperties: false, properties: {
-      q: { type: "string", maxLength: 200, description: "Free text in the name, tooltip lines, kind, rarity or location." },
+      q: { type: "string", maxLength: 200, description: "Free text in the name, tooltip lines, kind, rarity, tags or location." },
       character: { type: "array", maxItems: 50, items: { type: "string", maxLength: 64 }, description: "Only items these characters hold or wear." },
       slot: { type: "array", maxItems: 30, items: { type: "string", maxLength: 32 }, description: "Gear slots (inventory_facets lists them), \"?\" for none." },
       kind: { type: "array", maxItems: 30, items: { type: "string", maxLength: 32 }, description: "Item kinds: gear, reagent, scroll, …" },
