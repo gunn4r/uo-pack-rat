@@ -9,7 +9,8 @@
 // map: organize
 // owns: `openRuleEditor`
 import { state } from "./store.mts";
-import { $, el, safeColor, compactChildren } from "./dom.mts";
+import { $, el, full, safeColor, compactChildren } from "./dom.mts";
+import { missingHints } from "./inv-model.mts";
 import { box, txt, button, meter, message, field, input, select, textarea, pill, check, token, createDrawer, confirmDialog, toast, type DrawerHandle } from "./components.mts";
 import { containerArt } from "./item-art.mts";
 import { errorText } from "./messages.mts";
@@ -130,7 +131,8 @@ function draw(focus?: string): void {
     field({ label: "Search", control: qIn }),
     box("div", { class: "field" }, el("span", { class: "label" }, "Kind"), kindPills),
     box("div", { class: "rule-rarity" }, field({ label: "Rarity at least", control: rMin }), field({ label: "Rarity at most", control: rMax })),
-    extras.length ? box("div", { class: "field" }, el("span", { class: "label" }, "Also filtered by"), box("span", { class: "rule-extras" }, ...extras.map((x) => token({ label: x.label, removeLabel: x.removeLabel, onRemove: () => { d.query = x.remove(d.query); draw(); } })))) : null,
+    extras.length ? box("div", { class: "field" }, el("span", { class: "label" }, "Also filtered by"), box("span", { class: "rule-extras" }, ...extras.map((x) => token({ label: x.label, removeLabel: x.removeLabel, onRemove: () => { d.query = x.remove(d.query); draw(); } }))),
+      ...missingHints(d.query.props, full).map((h) => txt(h, "t-sm muted rule-missing"))) : null,
     box("div", { class: "field" }, suits.root, txt("A piece of any suit the Suit Builder saved is left to the rules below, however well it fits this one.", "t-sm muted")),
     matchEl(),
     el("h3", { class: "t-md" }, "Where they go"),
