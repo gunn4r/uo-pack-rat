@@ -151,7 +151,7 @@ function cell(col: ColDef, it: Item): HTMLTableCellElement {
     case "name": td.append(gearItem(it, { tip: false, cls: "inv-name" })); break;   // the row is its tooltip host
     case "tags": if (it.tags.length) td.append(box("span", { class: "inv-tags" }, ...tagEls(it))); break;
     case "rarity": { const r = rarityEl(it.rarity); if (r) td.append(r); break; }
-    case "slot": if (it.slot) td.append(txt(slotLabel(it.slot))); break;
+    case "slot": td.classList.add("slot-cell"); if (it.slot) td.append(txt(slotLabel(it.slot))); break;
     case "location": td.append(locationEl(it)); break;
     case "amount": td.append(txt((it.amount || 1).toLocaleString("en-US"))); break;
     case "kind": td.append(txt(it.kind)); break;
@@ -426,7 +426,7 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
       const g = p.groups[i];
       if (!g) return skeletonRow(cols, i);
       // a group of one stack is that item, with its tooltip; several stacks may differ, so no one of them speaks for the group
-      tr = el("tr", { class: "item", ...(g.stacks === 1 ? { "data-serial": g.serial } : {}), "data-index": i, "aria-rowindex": i + 2, tabindex: "-1" }, ...cols.map((c) => groupCell(c, g)));
+      tr = el("tr", { class: "item item-group", ...(g.stacks === 1 ? { "data-serial": g.serial } : {}), "data-index": i, "aria-rowindex": i + 2, tabindex: "-1" }, ...cols.map((c) => groupCell(c, g)));
     } else {
       const it = p.rows[i];
       if (!it) return skeletonRow(cols, i);
