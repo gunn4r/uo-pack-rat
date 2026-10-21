@@ -950,7 +950,7 @@ function hitLine(hit: HitChest): HTMLElement {
   const shown = hit.lines.slice(0, PIN_LINES), rest = hit.lines.slice(PIN_LINES);
   const said = (l: HitLine): string => { const tier = tierWord(l, hit.lines); return `${l.name}${tier ? ` (${tier})` : ""} × ${fmtN(l.amount)}`; };
   return el("ul", { class: "sp-hitline t-xs" },
-    ...shown.map((l) => el("li", { class: "sp-hit" }, lineName(l, hit.lines, "", true), txt(`× ${fmtN(l.amount)}`, "num muted"))),
+    ...shown.map((l) => el("li", { class: "sp-hit" }, lineName(l, hit.lines, "", true), txt(` × ${fmtN(l.amount)}`, "num muted"))),
     rest.length ? el("li", { class: "muted sp-more" }, txt(`+${fmtN(rest.length)} more`), el("span", { class: "sr" }, `: ${rest.map(said).join(", ")}`)) : null);
 }
 // The selected card's accent outline, and the roving tab stop: the focused card, else the selected one, else the first.

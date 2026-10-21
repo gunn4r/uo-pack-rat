@@ -997,8 +997,11 @@ test("[slow] House map: every text, control edge and icon passes contrast on the
     await page.locator('#map-view [data-value="plan"]').click();
     await page.waitForSelector("#map-plan .sp-row.hit .gi-name");
     assert.deepEqual((await page.locator("#map-plan .sp-row.hit .sp-hit .gi-name").evaluateAll((es) => es.map((e) => (e.getAttribute("style") ?? "").match(/--rarity-[a-z-]+/)?.[0]))).sort(), ["--rarity-lesser-artifact", "--rarity-major-magic"], "two tiers of one name: two lines, each in its own color");
-    assert.deepEqual(await page.locator("#map-plan .sp-row.hit .sp-hit").allTextContents(), ["Ringmail Leggings (Major Magic Item)× 1", "Ringmail Leggings (Lesser Artifact)× 1"], "a screen reader hears each tier (hidden after the name)");
+    assert.deepEqual(await page.locator("#map-plan .sp-row.hit .sp-hit").allTextContents(), ["Ringmail Leggings (Major Magic Item) × 1", "Ringmail Leggings (Lesser Artifact) × 1"], "a screen reader hears each tier (hidden after the name)");
+    // only the Stack plan's lines may answer for the name: the search panel and any callout name the same pieces, so they are taken off the page while this scene is measured
+    await page.evaluate(() => { for (const e of document.querySelectorAll<HTMLElement>("#map-panel, #map-callout, #map-pins")) e.style.display = "none"; });
     await measure(page, "stack plan hit", /Ringmail Leggings/, rows);
+    await page.evaluate(() => { for (const e of document.querySelectorAll<HTMLElement>("#map-panel, #map-callout, #map-pins")) e.style.display = ""; });
     await page.fill("#map-q", "");
     await page.locator('#map-view [data-value="angle"]').click();
     // The houses list without tiledata: the real body read through the page (a route's own refetch lacks the app's token and gets 401), then answered with the reason swapped in.
@@ -1541,7 +1544,7 @@ test("[slow] House map Stack plan: a search scrolls to its first matching card, 
     assert.deepEqual((await chestsOf(page, "#map-plan .sp-row.hit")).sort(), [FILLED.at(-1)!, RUBY_FRONT].sort());
     assert.equal(await page.locator("#map-plan .sp-card.has-hit").count(), 2);
     assert.equal(await page.locator("#map-plan .sp-card.faded").count(), 22);
-    assert.deepEqual(await page.locator(`#map-plan .sp-row[data-chest="${RUBY_FRONT}"] .sp-hit`).evaluateAll((es) => es.map((e) => [e.querySelector(".gi-name")?.textContent, e.querySelector(".num")?.textContent])), [["Ruby", "× 1"]]);
+    assert.deepEqual(await page.locator(`#map-plan .sp-row[data-chest="${RUBY_FRONT}"] .sp-hit`).evaluateAll((es) => es.map((e) => [e.querySelector(".gi-name")?.textContent, e.querySelector(".num")?.textContent])), [["Ruby", " × 1"]]);
     assert.equal(await page.locator(`#map-plan .sp-row[data-chest="${RUBY_FRONT}"] .sp-hitline .sr`).count(), 0, "one find: nothing hidden to add, and no tier for a name of its own");
     assert.equal(await page.locator(`#map-plan .sp-row[data-chest="${RUBY_FRONT}"] .sp-hitline .sp-more`).count(), 0, "nothing more to say with one item");
     assert.equal(await page.locator(`#map-plan .sp-row[data-chest="${RUBY_FRONT}"] .sp-hitline`).getAttribute("title"), null, "no native title: each name shows its item tooltip");
