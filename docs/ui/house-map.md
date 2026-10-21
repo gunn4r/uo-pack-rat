@@ -354,7 +354,7 @@ One card is the tab stop (roving). The arrow keys move to the nearest card that 
 
 ### While searching
 
-- A matching card has a gold outline. Its matching rows have a gold bar on a light gold wash, and a line naming the items found (cut with …, with the whole line in its title). Its other rows are dimmed.
+- A matching card has a gold outline. Its matching rows have a gold bar on a light gold wash, and a line naming the items found (cut with …, with the whole line in its title; gear items without icons, in the row's text color, since a rarity color falls under 4.5:1 on the gold wash in Britannia dark). Its other rows are dimmed.
 - Cards with no match fade.
 - The pills count the matches ("3 of 27").
 - The panel lists the matches, as on the map.
@@ -411,7 +411,7 @@ Items come from `GET /api/items?root=<serial>` in 500-row pages, each serial kep
 `contentsOf` builds the tree once per fetch (the filter only filters it). Items in a container cycle are shown loose.
 
 - **Bags** come first, as `<details>` groups with their item count, nested inside nested. A closed bag stays closed through a redraw.
-- **Items** follow. Each item is a button of two lines, built from the Inventory's pieces (`rarityEl`, `tagEls`, peek.mts's `propertyLines` and `RESISTS`). Resist numbers on an item's second line are in the body face with tabular figures (mono is for identifiers).
+- **Items** follow. Each item is a button of two lines, built from the Inventory's pieces (`gearItem` for the icon, name and quantity, issue #504; `rarityEl`, `tagEls`, peek.mts's `propertyLines` and `RESISTS`). A bag's head names it with `gearItem` too, and the pins and the search panel name their matching pieces with it, without icons. Resist numbers on an item's second line are in the body face with tabular figures (mono is for identifiers).
 - **Tooltips:** each item has its item tooltip on hover and focus, which shows whatever a cut line leaves out. Bags carry theirs too.
 - **Clicking an item** opens the Inventory row's ⋯ menu (`itemMenu`). Its Open details, anywhere but the Inventory's own Items view, opens the Inventory with the item in the peek.
 

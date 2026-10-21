@@ -1,0 +1,1 @@
+- **The House map shows each piece's icon and rarity color** (issues #504, #503): the contents drawer's items and bags show their in-game icons beside names in their rarity's color, and the map's callouts and search results color the pieces they name.

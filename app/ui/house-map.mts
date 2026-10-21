@@ -9,6 +9,7 @@ import { prefs } from "./prefs.mts";
 import { box, txt, button, segmented, pill, message, meter, keyValue, modalOpen, tipWrap, input, copyText, icon, kbd, menu, popover, closePopover, confirmDialog, select as selectEl, searchInput, badge, toast } from "./components.mts";
 import { labelContainer } from "./containers.mts";
 import { parseRoute, registerScreen, showContainer, showSearch } from "./nav.mts";
+import { gearItem } from "./gear-item.mts";
 import { itemMenu, itemActions, rarityEl, tagEls } from "./item-parts.mts";
 import { propertyLines, RESISTS } from "./peek.mts";
 import { bridgeActionReason, runBridgeAction, sendBridge, type BridgeTarget } from "./bridge.mts";
@@ -22,7 +23,7 @@ import { PLAIN, pickHouse, plainGrid, chestCount, houseLabel, houseName, carryOv
   drawerChest, drawerMeta, slotsText, drawerPicker, DRAWER_W, DRAWER_MIN, drawerMax, clampDrawer, drawerKey, contentsOf, contentsSummary, filterContents, areaOfStack, levelAreas, tileAt, clampTile, rectOf, sizeText, unionTiles, coveredCells, outlineOf, pillsOf, fitLabel, placePill as pillBox, LABEL_FIT, type AreaPill,
   nextAreaId, nextAreaColor, moveCursor, project, tilePolygon, pts, liveAreas, withOrphans, redrawFailed, AREA_COLORS, AREA_COLOR_NAMES, MAX_AREAS, MAX_RECTS, areaName, drawnZs, CHEST_H,
   mapHash, parseMapHash, houseHits, levelHits, stackPlan, planHead, planRows, planNeighbor, gapText, bareText, type Plan, type PlanCard, type PlanRow, levelHitText, areaHitText, hitsSummary, searchCount, calloutHead, calloutRow, CALLOUT_MAX, hitsView, elsewhereOf, outsideText,
-  type MapRoute, type HouseHits, type HitChest, type Tally, type Elsewhere, type PlainModel, type Tile, type Contents, type ContentsNode, type Marker, type View, type Mode, type Box, type Colour, type ChestView, type Piece, type Prism, type Pt, type Dir } from "./house-map-model.mts";
+  type MapRoute, type HouseHits, type HitChest, type HitLine, type Tally, type Elsewhere, type PlainModel, type Tile, type Contents, type ContentsNode, type Marker, type View, type Mode, type Box, type Colour, type ChestView, type Piece, type Prism, type Pt, type Dir } from "./house-map-model.mts";
 import type { AreaRect, ContainerLabel, HouseArea, HouseModel, UiPrefs, HousesApiResponse, HouseMapEntry, HouseMapPutApiResponse, ItemsApiResponse, ItemHitsApiResponse, InventoryData, Stack } from "./api-types.mts";
 import { HIT_LIMIT, type HitRow } from "../item-query.mts";
 import { houseLinks, setHouses } from "./house-links.mts";
@@ -231,7 +232,7 @@ function buildPins(m: HouseModel, h: HouseHits | null): void {
         return box("div", { class: "map-pin-chest" },
           box("div", { class: "map-pin-l1" }, txt(v.code, "mono t-sm strong"), txt(v.name, "ellip t-sm")),
           box("div", { class: "map-pin-line" }, txt(c.position, "t-xs muted")),
-          ...c.lines.slice(0, PIN_LINES).map((l) => itemTip(box("div", { class: "map-pin-line" }, txt(l.name, "ellip t-xs"), txt(`× ${fmtN(l.amount)}`, "t-xs num muted")), l.item, { focus: false })),
+          ...c.lines.slice(0, PIN_LINES).map((l) => itemTip(box("div", { class: "map-pin-line" }, lineName(l, "t-xs"), txt(`× ${fmtN(l.amount)}`, "t-xs num muted")), l.item, { focus: false })),
           c.lines.length > PIN_LINES ? box("div", { class: "map-pin-line" }, txt(`and ${plural(c.lines.length - PIN_LINES, "more")}`, "t-xs muted")) : null);
       }));
   }), box("div", { class: "map-pin-more", id: "map-pin-more" }));
@@ -298,7 +299,7 @@ function hitRow(m: HouseModel, c: HitChest, v: ChestView, areas: readonly HouseA
       box("button", { type: "button", class: "map-hit-pick", "data-act": "pick", title: `Select Stack ${c.stack.letter}`, onclick: go }, txt(v.code, "mono strong"), txt(v.name, "ellip strong")),
       txt(`${areaName(areas, c.stack)} · Stack ${c.stack.letter} · ${c.position}`, "t-sm muted ellip"),
       box("ul", { class: "map-hit-items", "aria-label": `Matching items in ${v.code} ${v.name}` },
-        ...c.lines.slice(0, HIT_LINES).map((l) => itemTip(box("li", { class: "map-hit-item" }, txt(l.name, "ellip t-sm"), txt(`× ${fmtN(l.amount)}`, "t-sm num muted")), l.item)),
+        ...c.lines.slice(0, HIT_LINES).map((l) => itemTip(box("li", { class: "map-hit-item" }, lineName(l, "t-sm"), txt(`× ${fmtN(l.amount)}`, "t-sm num muted")), l.item)),
         c.lines.length > HIT_LINES ? box("li", { class: "map-hit-item" }, txt(`and ${plural(c.lines.length - HIT_LINES, "more")}`, "t-sm muted")) : null)),
     box("div", { class: "map-chest-actions" }, button({ label: "Show items", size: "sm", attrs: { "data-act": "items" }, onClick: () => { select(c.serial); openDrawer(c.serial); } })));
 }
@@ -924,6 +925,8 @@ function areaPill(a: HouseArea, containers: number, t: Tally | null): HTMLElemen
   if (S.area === a.id) return box("span", { class: "sp-area-name" }, txt(a.name), count);
   return box("button", { type: "button", class: "sp-area-name", title: `Show only ${a.name}`, "aria-label": `Show only ${a.name}, ${t ? `${t.matches} of ${plural(t.containers, "container")} match` : plural(containers, "container")}`, onclick: () => zoomToArea(a) }, txt(a.name), count);
 }
+// A matching line's piece, named by the gear item without an icon (the line is too small for one); its count follows it. The line itself is the tooltip host.
+const lineName = (l: HitLine, size: string): HTMLElement => el("span", { class: `ellip ${size}` }, gearItem({ ...l.item, amount: 1 }, { variant: "inline", showIcon: false, tip: false }));
 function planCard(m: HouseModel, c: PlanCard, h: HouseHits | null): HTMLElement {
   const s = c.stack, head = planHead(s), hits = h?.stacks.get(s.letter) ?? null;
   const rows = planRows(chestViews(m, s, state.inv!, labels()));
@@ -932,14 +935,14 @@ function planCard(m: HouseModel, c: PlanCard, h: HouseHits | null): HTMLElement 
     box("div", { class: "sp-card-head" }, txt(head.title, "t-sm strong"), txt(head.count, "t-xs muted")),
     box("ol", { class: "sp-rows", "aria-label": `Containers in ${head.title}, top first` }, ...rows.map((r) => planRow(r, hits?.find((x) => x.serial === r.serial) ?? null))));
 }
-// A container's row: its code; its label as a chip in the label's color, then the in-game name; its fill bar and count out of its own maximum (or why it is not known); while it matches a search, the items found.
+// A container's row: its code; its label as a chip in the label's color, then the in-game name; its fill bar and count out of its own maximum (or why it is not known); while it matches a search, the items found. The found items keep the row's text color, not their rarity's: on the highlighted row a rarity color falls to 4.2:1 in Britannia dark.
 function planRow(r: PlanRow, hit: HitChest | null): HTMLElement {
-  const color = r.label?.color ? safeColor(r.label.color) : null, found = hit?.lines.map((l) => `${l.name} × ${fmtN(l.amount)}`).join(", ") ?? "";
+  const color = r.label?.color ? safeColor(r.label.color) : null, found = hit?.lines.map((l) => `${l.name} × ${fmtN(l.amount)}`).join(", ") ?? "";   // the title: every line, for when the row cuts them
   return box("li", { class: `sp-row${r.opened ? "" : " unopened"}${hit ? " hit" : ""}`, "data-chest": String(r.serial) },
     txt(r.code, "mono t-sm strong"),
     box("span", { class: "sp-l1" }, r.label ? box("span", { class: "badge sp-chip", title: `Label: ${r.label.name}`, ...(color ? { style: `--chip:${color}` } : {}) }, txt(r.label.name)) : null, txt(r.name, `ellip t-sm${r.label ? " muted" : ""}`)),
     box("span", { class: "sp-l2" }, r.fill ? meter(r.fill.items, r.fill.max, { tone: fillTone(r.fill), label: `${r.fill.items} of ${r.fill.max} items` }) : null, txt(r.fillText, r.fill ? "t-xs num" : "t-xs muted")),
-    hit ? box("span", { class: "sp-hitline t-xs", title: found }, txt(found, "ellip")) : null);
+    hit ? box("span", { class: "sp-hitline t-xs", title: found }, el("span", { class: "ellip" }, ...hit.lines.flatMap((l, i) => [i ? ", " : "", gearItem({ ...l.item, amount: 1, rarity: null }, { variant: "inline", showIcon: false, tip: false }), ` × ${fmtN(l.amount)}`]))) : null);
 }
 // The selected card's accent outline, and the roving tab stop: the focused card, else the selected one, else the first.
 function paintPlan(): void {
@@ -1594,18 +1597,17 @@ function nodeEl(n: ContentsNode): HTMLElement {
   group.open = !D?.closed.has(serial);
   group.addEventListener("toggle", () => { if (group.open) D?.closed.delete(serial); else D?.closed.add(serial); });
   group.append(
-    itemTip(box("summary", { class: "map-bag-head", id: `map-drawer-bag-${serial}` }, icon("chevron-right", { size: "sm" }), txt(n.item.name, "ellip strong map-bag-name"), txt(plural(n.count, "item"), "t-sm muted num")), n.item),
+    itemTip(box("summary", { class: "map-bag-head", id: `map-drawer-bag-${serial}` }, icon("chevron-right", { size: "sm" }), el("span", { class: "ellip strong map-bag-name" }, gearItem(n.item, { tip: false })), txt(plural(n.count, "item"), "t-sm muted num")), n.item),
     box("div", { class: "map-bag-kids" }, ...n.kids.map(nodeEl)));
   return group;
 }
 const ROW_ACTS = ["highlight", "grab", "goto", "more"];
 // An item in two lines, the Inventory's own pieces: the name and tags, then the rarity, the properties and the resists. Hovering or focusing it shows the item tooltip, which has everything a cut line leaves out. A click opens the item's menu. At its right end, shown on hover and focus and always in the tab order, the Inventory row's actions (itemActions), in a data-no-tip zone so aiming at them never pops the tooltip.
 function itemRow(it: Item): HTMLElement {
-  const name = (it.amount || 1) > 1 ? `${it.name} ×${it.amount.toLocaleString("en-US")}` : it.name;
   const props = propertyLines(it).filter((l) => !l.muted).map((l) => (l.value ? `${l.name} ${l.value}` : l.name)).join(" · ");
   const res = RESISTS.filter(([k]) => it.props[k]), rarity = rarityEl(it.rarity, "t-sm");
   const main = box("button", { type: "button", class: "map-item", id: `map-drawer-item-${it.serial}`, "aria-haspopup": "menu", onclick: (e: Event) => itemMenu(e.currentTarget as HTMLElement, it) },
-    box("span", { class: "map-item-l1" }, txt(name, "ellip map-item-name"), ...tagEls(it)),
+    box("span", { class: "map-item-l1" }, el("span", { class: "ellip map-item-name" }, gearItem(it, { tip: false })), ...tagEls(it)),
     rarity || props || res.length ? box("span", { class: "map-item-l2" }, rarity, props ? txt(props, "ellip t-sm muted map-item-props") : null,
       res.length ? box("span", { class: "map-item-res" }, ...res.map(([k, short, token]) => el("span", { style: `color:var(${token})` }, `${short.slice(0, 2)}${it.props[k]}`))) : null) : null);
   const acts = itemActions(it);
