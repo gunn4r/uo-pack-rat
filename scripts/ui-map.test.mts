@@ -967,7 +967,8 @@ test("[slow] House map: every text, control edge and icon passes contrast on the
   if (skipWithoutElectron(t)) return;
   const rows: Array<ContrastRow & { where: string }> = [];
   const { dir } = seed({ items: true });
-  writeVault(dir, true, [{ serial: 0x40500400, name: "Ringmail Leggings", in: FRONT[1]!, lines: ["Major Magic Item"] }]);   // a piece with a rarity, for the Stack plan's hit line
+  // two tiers of one name in one container, for the Stack plan's hit line: each its own line in its own color
+  writeVault(dir, true, [{ serial: 0x40500400, name: "Ringmail Leggings", in: FRONT[1]!, lines: ["Major Magic Item"] }, { serial: 0x40500401, name: "Ringmail Leggings", in: FRONT[1]!, lines: ["Lesser Artifact"] }]);
   const { app, page, errors, size, close } = await launch(dir);
   try {
     await go(page, "#/map", "#map-svg .map-stack");
@@ -995,7 +996,7 @@ test("[slow] House map: every text, control edge and icon passes contrast on the
     await page.fill("#map-q", "leggings");
     await page.locator('#map-view [data-value="plan"]').click();
     await page.waitForSelector("#map-plan .sp-row.hit .gi-name");
-    assert.match(await page.locator("#map-plan .sp-row.hit .gi-name").first().getAttribute("style") ?? "", /--rarity-major-magic/);
+    assert.deepEqual((await page.locator("#map-plan .sp-row.hit .sp-hit .gi-name").evaluateAll((es) => es.map((e) => (e.getAttribute("style") ?? "").match(/--rarity-[a-z-]+/)?.[0]))).sort(), ["--rarity-lesser-artifact", "--rarity-major-magic"], "two tiers of one name: two lines, each in its own color");
     await measure(page, "stack plan hit", /Ringmail Leggings/, rows);
     await page.fill("#map-q", "");
     await page.locator('#map-view [data-value="angle"]').click();

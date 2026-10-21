@@ -827,6 +827,14 @@ test("[fast] house map search: the matches in a house by container (stack order,
   assert.deepEqual([...h.serials].sort(), [top, bottom, other].sort());
 });
 
+test("[fast] house map search: two tiers of one name in a container are two lines, each standing for a piece of its own tier", () => {
+  const m = vault(), chest = m.stacks[0]!.serials[0]!;
+  const containers: Record<string, { parent: number | null }> = Object.fromEntries(m.stacks.flatMap((s) => s.serials.map((x) => [String(x), { parent: null }])));
+  const items = [thing(1, "Bone Leggings", chest, { root: chest, rarity: "Lesser Artifact" }), thing(2, "Bone Leggings", chest, { root: chest, rarity: "Greater Magic Item", amount: 2 }), thing(3, "Bone Leggings", chest, { root: chest, rarity: "Lesser Artifact" })];
+  const lines = houseHits(m, items, containers).chests[0]!.lines;
+  assert.deepEqual(lines.map((l) => [l.name, l.amount, l.item.rarity]), [["Bone Leggings", 2, "Lesser Artifact"], ["Bone Leggings", 2, "Greater Magic Item"]]);
+});
+
 test("[fast] house map search: the left pane's counts per level, area and rest, and their words", () => {
   const m = vault(), north: HouseArea = { id: "a1", name: "North", level: 0, color: "area-1", rects: [{ x0: 3001, y0: 1001, x1: 3005, y1: 1001 }] };
   const inNorth = m.stacks.find((s) => s.y === 1001)!, elsewhere = m.stacks.find((s) => s.y === 1005)!;

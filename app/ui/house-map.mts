@@ -233,7 +233,7 @@ function buildPins(m: HouseModel, h: HouseHits | null): void {
           box("div", { class: "map-pin-l1" }, txt(v.code, "mono t-sm strong"), txt(v.name, "ellip t-sm")),
           box("div", { class: "map-pin-line" }, txt(c.position, "t-xs muted")),
           ...c.lines.slice(0, PIN_LINES).map((l) => itemTip(box("div", { class: "map-pin-line" }, lineName(l, "t-xs"), txt(`× ${fmtN(l.amount)}`, "t-xs num muted")), l.item, { focus: false })),
-          c.lines.length > PIN_LINES ? box("div", { class: "map-pin-line" }, txt(`and ${plural(c.lines.length - PIN_LINES, "more")}`, "t-xs muted")) : null);
+          c.lines.length > PIN_LINES ? box("div", { class: "map-pin-line" }, txt(`and ${fmtN(c.lines.length - PIN_LINES)} more`, "t-xs muted")) : null);
       }));
   }), box("div", { class: "map-pin-more", id: "map-pin-more" }));
 }
@@ -300,7 +300,7 @@ function hitRow(m: HouseModel, c: HitChest, v: ChestView, areas: readonly HouseA
       txt(`${areaName(areas, c.stack)} · Stack ${c.stack.letter} · ${c.position}`, "t-sm muted ellip"),
       box("ul", { class: "map-hit-items", "aria-label": `Matching items in ${v.code} ${v.name}` },
         ...c.lines.slice(0, HIT_LINES).map((l) => itemTip(box("li", { class: "map-hit-item" }, lineName(l, "t-sm"), txt(`× ${fmtN(l.amount)}`, "t-sm num muted")), l.item)),
-        c.lines.length > HIT_LINES ? box("li", { class: "map-hit-item" }, txt(`and ${plural(c.lines.length - HIT_LINES, "more")}`, "t-sm muted")) : null)),
+        c.lines.length > HIT_LINES ? box("li", { class: "map-hit-item" }, txt(`and ${fmtN(c.lines.length - HIT_LINES)} more`, "t-sm muted")) : null)),
     box("div", { class: "map-chest-actions" }, button({ label: "Show items", size: "sm", attrs: { "data-act": "items" }, onClick: () => { select(c.serial); openDrawer(c.serial); } })));
 }
 

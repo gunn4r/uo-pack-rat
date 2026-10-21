@@ -651,7 +651,7 @@ export function positionWords(index: number, count: number): string {
 }
 // A query's matches in a house: each matching container (in the house's stack order, top first within a stack) with its height in the stack and its matching items by name (amounts added up, in name order, the first of each name standing for it in a tooltip); each stack's matching containers; the matches' total amount; and the matches outside the house.
 // A match as the search reads it: GET /api/items?fields=hits's row (a whole Item will do too).
-export type Hit = Pick<Item, "serial" | "name" | "amount" | "root" | "container"> & { location?: { text: string } | undefined };
+export type Hit = Pick<Item, "serial" | "name" | "amount" | "rarity" | "root" | "container"> & { location?: { text: string } | undefined };
 export interface HitLine { name: string; amount: number; item: Hit }
 export interface HitChest { serial: number; stack: Stack; index: number; position: string; amount: number; lines: HitLine[] }
 export interface HouseHits { chests: HitChest[]; stacks: Map<string, HitChest[]>; serials: Set<number>; amount: number; outside: Hit[] }
@@ -668,7 +668,8 @@ export function houseHits(m: HouseModel, items: readonly Hit[], containers: Tree
   }
   const chests = [...by].map(([serial, list]): HitChest & { order: number } => {
     const { stack, index, order } = where.get(serial)!, names = new Map<string, HitLine>();
-    for (const it of list) { const l = names.get(it.name); if (l) l.amount += amountOf(it); else names.set(it.name, { name: it.name, amount: amountOf(it), item: it }); }
+    // one line per name and tier: two tiers of one name are two lines, each in its own color with its own tooltip
+    for (const it of list) { const k = `${it.name}\0${it.rarity ?? ""}`, l = names.get(k); if (l) l.amount += amountOf(it); else names.set(k, { name: it.name, amount: amountOf(it), item: it }); }
     return { serial, stack, index, order, position: positionWords(index, stack.serials.length), amount: list.reduce((a, it) => a + amountOf(it), 0), lines: [...names.values()].sort((a, b) => compareNames(a.name, b.name)) };
   }).sort((a, b) => a.order - b.order || b.index - a.index).map(({ order: _, ...c }): HitChest => c);
   const stacks = new Map<string, HitChest[]>();
