@@ -1,6 +1,6 @@
 // item-query.test.mts — `app/item-query.mts`, the item-list filtering, sorting, paging and faceting shared by the page and `GET /api/items`.
 //
-// `app/item-query.mts` (the pure item-list filtering/sorting/paging/faceting shared by the browser and the server's `GET /api/items`): `parseItemQuery`'s defaults and clamping, the list filters taken as repeated params (character, slot, kind, location, root container, house, and `within` for anything nested inside a container, matching nothing when it names none), `queryWhere`'s context (the house lookup only for a house filter), prop rules with an operator (at least, at most, exactly, anything but, an item without the property reading 0), every `applyItemQuery` filter (type by `itemTypeOf`, free text, also by an Organize label through `places`, kind, slot, location, root, character, rarity and rarity-at-least, seenDays, slayer, nogarg, med, hideTags, a prop rule incl. `EXTRA_COLS` keys) and sort (by prop column, by rarity ladder order), paging (offset/limit against `total`/`pieces`), group mode's JSON-safe shape and its stack and piece counts, `facetsOf` (including the places the Location filter's tree is built from, and gear-only `extraKeys`), `propCounts`, `rarityRank` (a Reforged tier with its base tier, eight tiers in both shipped ladders), `rarityMax` (an item with no tier or one off the ladder counting as below every tier, an unknown ceiling ignored, a floor above the ceiling matching nothing), and `matchesItem` (an Organize rule's per-item checks, agreeing with `applyItemQuery` on every filter a rule keeps, its free text never matching location text), and `unravel`/`unravelShow` read off the query string (issue #271). All `[fast]`.
+// `app/item-query.mts` (the pure item-list filtering/sorting/paging/faceting shared by the browser and the server's `GET /api/items`): `parseItemQuery`'s defaults and clamping, the list filters taken as repeated params (character, slot, kind, location, root container, house, and `within` for anything nested inside a container, matching nothing when it names none), `queryWhere`'s context (the house lookup only for a house filter), prop rules with an operator (at least, at most, exactly, anything but, an item without the property reading 0), every `applyItemQuery` filter (type by `itemTypeOf`, free text (tags included, as in an Organize rule), also by an Organize label through `places`, kind, slot, location, root, character, rarity and rarity-at-least, seenDays, slayer, nogarg, med, hideTags, a prop rule incl. `EXTRA_COLS` keys) and sort (by prop column, by rarity ladder order), paging (offset/limit against `total`/`pieces`), group mode's JSON-safe shape and its stack and piece counts, `facetsOf` (including the places the Location filter's tree is built from, gear-only `extraKeys` and every item's `allExtraKeys`), `propCounts`, `rarityRank` (a Reforged tier with its base tier, eight tiers in both shipped ladders), `rarityMax` (an item with no tier or one off the ladder counting as below every tier, an unknown ceiling ignored, a floor above the ceiling matching nothing), and `matchesItem` (an Organize rule's per-item checks, agreeing with `applyItemQuery` on every filter a rule keeps, its free text never matching location text), and `unravel`/`unravelShow` read off the query string (issue #271). All `[fast]`.
 //
 // applyItemQuery's predicate and sort keep parity with what the Inventory screen used to do on its own. Hand-built fixture items (no scan files, no server) keep this fast and pure.
 import { test } from "node:test";
@@ -328,10 +328,11 @@ test("[fast] matchesItem: a numeric extra takes a threshold, and tags keeps only
   assert.equal(matchesItem(SPLINTERS[1]!, old), true, "a rule saved before tags existed has none, and requires none");
   assert.deepEqual(names((applyItemQuery(SPLINTERS, parseItemQuery(new URLSearchParams("tag=brittle&prop=splintering%20weapon:1")), ctx) as ItemQueryRows).rows), ["Splintering Axe"]);
 });
-test("[fast] facetsOf: extraKeys lists gear's numeric extras, never a skill bonus, a range or a deed's line, and propKeys stays the modelled properties", () => {
+test("[fast] facetsOf: extraKeys lists gear's numeric extras, never a skill bonus, a range or a deed's line, allExtraKeys every item's, and propKeys stays the modelled properties", () => {
   const deed = mk({ name: "Bulk Order Deed", kind: "deed", slot: null, gear: false, extras: { "amount to make": 20, "bronze shield": 0 } });
   const f = facetsOf([...SPLINTERS, deed]);
   assert.deepEqual(f.extraKeys, ["splintering weapon", "weapon speed"]);
+  assert.deepEqual(f.allExtraKeys, ["amount to make", "bronze shield", "splintering weapon", "weapon speed"]);
   assert.deepEqual(f.propKeys, []);
 });
 
@@ -378,6 +379,12 @@ test("[fast] propCounts: how many stacks carry each numeric and yes/no property"
   assert.deepEqual(c.flags, { "spell channeling": 1, "night sight": 2 });
 });
 
+test("[fast] text search finds an item by its tags, in the Inventory and in an Organize rule alike (#487)", () => {
+  const cursed = mk({ name: "Bow", tags: ["cursed"], lines: ["Bow"] });
+  assert.deepEqual(names((applyItemQuery([cursed], parseItemQuery(new URLSearchParams("q=cursed")), ctx) as ItemQueryRows).rows), ["Bow"]);
+  assert.equal(matchesItem(cursed, rule("q=cursed")), true);
+});
+
 test("[fast] applyItemQuery: within keeps the items anywhere inside a container, a bag inside a bag included (#487)", () => {
   const box = (serial: number, parent: number | null) => ({ serial, parent, root: 1, kind: "ground" });
   const containers = { 1: box(1, null), 2: box(2, 1), 3: box(3, 2), 4: box(4, null) } as unknown as Record<string, Container>;
@@ -402,6 +409,8 @@ test("[fast] queryWhere: the labels as places, the containers, and the houses on
   assert.deepEqual([[...none.places.values()], none.houseOf.size, none.containers], [["Rings"], 0, containers]);
   assert.deepEqual([...queryWhere(parseItemQuery(new URLSearchParams("house=1-3000-1000")), containers, { houseOf }).houseOf], [[1, "1-3000-1000"]]);
   assert.equal(calls, 1);
+  const cached = new Map([["Metal Chest", "Cached"]]);
+  assert.equal(queryWhere(parseItemQuery(new URLSearchParams("")), containers, { labels: { 1: { name: "Rings" } }, places: cached }).places, cached, "places already built are used as they are");
 });
 
 test("[fast] applyItemQuery: prop rules at most and exactly", () => {

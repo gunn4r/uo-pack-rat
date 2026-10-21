@@ -8,12 +8,12 @@
 import { SLOT_LABELS, SLOT_GROUP, tagUnits, flagLabel, FLAG_CATALOGUE, PROPERTY_CATALOGUE, CATALOGUE_GROUPS, ITEM_TYPE_LABELS, typesOfSlot, type ItemType } from "../vault-lib.mts";
 import type { Facets, ItemQuery, Place, PropCounts, PropOp } from "../item-query.mts";
 import { state } from "./store.mts";
-import { el, label, slotLabel, whereText } from "./dom.mts";
+import { el, label, full, slotLabel, whereText } from "./dom.mts";
 import { api } from "./api.mts";
 import { optionsKeeping } from "./view-state.mts";
 import { txt, box, button, searchInput, filterChip, pill, segmented, switchControl, popover, menu, input, nextId } from "./components.mts";
 import type { Kids, MenuItem, PopoverHandle } from "./components.mts";
-import { splitSerial, placeNames, queryParams, withFixed, shortTier, rootName, slayerTree, slayerLabel, neZeroHint, MAGE_WEAPON_HINT } from "./inv-model.mts";
+import { splitSerial, placeNames, queryParams, withFixed, shortTier, rootName, slayerTree, slayerLabel, missingHint, MAGE_WEAPON_HINT } from "./inv-model.mts";
 import type { ItemPropCountsApiResponse, ItemsApiResponse } from "./api-types.mts";
 import { rarityEl } from "./item-parts.mts";
 import { houseNameOf, mapHouses } from "./house-links.mts";
@@ -367,7 +367,7 @@ export function createFilterBar(o: FilterBarOptions): FilterBar {
     const list = box("div", { class: "inv-opts inv-prop-list", role: "listbox", "aria-label": "Properties" });
     const num = input({ type: "number", value: 1, size: "sm", attrs: { "aria-label": "Value" } });
     const hint = txt("", "t-sm muted");
-    const showHint = (): void => { const h = flag ? null : neZeroHint(op, num.value) ?? (key === "mageWeapon" ? MAGE_WEAPON_HINT : null); hint.textContent = h || ""; hint.hidden = !h; };
+    const showHint = (): void => { const h = flag || !key ? null : key === "mageWeapon" ? MAGE_WEAPON_HINT : missingHint(op, num.value, full(key)); hint.textContent = h || ""; hint.hidden = !h; };
     showHint();
     num.addEventListener("input", showHint);
     const opSeg = segmented({ label: "Comparison", options: [{ value: "ge", label: "≥" }, { value: "le", label: "≤" }, { value: "eq", label: "=" }, { value: "ne", label: "≠" }], value: "ge", onChange: (v) => { op = v; showHint(); } });

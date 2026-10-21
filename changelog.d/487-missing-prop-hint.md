@@ -1,0 +1,2 @@
+- **Property rules say when items without the property get through**: an item without a property counts as 0, so "Faster Casting ≠ -1" also takes every reagent. The Inventory's property rule now says "Items without Faster Casting also match (they count as 0)." under any rule that 0 passes ("FC ≠ -1", "FC = 0", "FC ≥ 0"), and the Organize rule editor shows the same note under its filters, above the live count.
+- For contributors: `missingHint` and `missingHints` (`app/ui/inv-model.mts`) replace `neZeroHint`, driven by `item-query.mts`'s now exported `passes`.

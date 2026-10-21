@@ -1,0 +1,2 @@
+- **Search finds tags everywhere**: the Inventory's search, Organize rules' text and the House map drawer's filter all match an item's tags ("cursed", "brittle"), and the drawer's filter now uses the same text rule as the rest of the app.
+- For contributors: `house-map-model.mts`'s `filterContents` matches through `item-query.mts`'s `matchesItem` with just the text (#487), and `itemOwnBlob` / `itemSearchBlob` include the item's tags.

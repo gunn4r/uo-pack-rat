@@ -11,8 +11,8 @@
 import { totalsOf, catalogueGroups, resistMinimum, paperdollResist, RESIST_SKILL_KEY, PROP_FULL, SLOTS_IN_GROUP, RESIST_META } from "../vault-lib.mts";
 import type { ExtrasMap, OptItem, ResistCap } from "../vault-lib.mts";
 import { state } from "./store.mts";
-import { rarityToken } from "./items.mts";
-import { el, itemTip, slotLabel } from "./dom.mts";
+import { el, slotLabel } from "./dom.mts";
+import { gearItem } from "./gear-item.mts";
 import { prefs } from "./prefs.mts";
 import { txt, box, badge, tag, meter, message, button, check, searchInput, popover } from "./components.mts";
 import type { SkillEntry } from "./api-types.mts";
@@ -77,10 +77,6 @@ export function poolChanges(d: Record<string, number>, buffs: Record<string, num
 export const moveText = (b: number, a: number, suffix = ""): string => (b === a ? `${a}${suffix}` : `${b}${suffix} → ${a}${suffix}`);
 // Bookkeeping keys the fold adds (tag penalty, pool sizes) are not properties.
 const NOT_SHOWN = new Set(["tagPenalty", "stamPool", "manaPool", "hitsPool", "psLevel", "sotPoints"]);
-// The quality tags the worn-gear list shows after a piece's name.
-const QUALITY_TAGS = new Set(["antique", "brittle", "cursed", "prized", "blessed"]);
-// Item flags as tags: cursed in danger, brittle and antique in warning, the rest neutral.
-export const tagTone = (t: string): "bad" | "warn" | undefined => (t === "cursed" ? "bad" : t === "brittle" || t === "antique" ? "warn" : undefined);
 // Durability watch (issue #98): a worn piece is low once its durability is at 20% of its max or at 10
 // points, so it can be repaired before it breaks mid-fight. The scan's "Durability 12 / 255" line is
 // extras.durability; no line, a max of 0, or a piece at (or past) its max, which no repair would raise, is
@@ -107,12 +103,14 @@ const numOrNull = (v: unknown): number | null => (Number.isFinite(Number(v)) ? N
 export const RESISTS: Array<[string, string, string]> = RESIST_META.map((r) => [r.key, r.long, r.token.slice("--res-".length)]);
 // The Properties card's groups (spec 4.5), every row shown until the player picks otherwise. [key, label, suffix].
 type SheetRow = [string, string, string?];
+// Each row by the property's one name, the catalogue's (vault-lib's PROP_FULL: "Hit Chance Increase").
+const rowsOf = (keys: Array<[string, string?]>): SheetRow[] => keys.map(([k, unit]) => [k, PROP_FULL[k]!, ...(unit ? [unit] : [])] as SheetRow);
 export const SHEET_GROUPS: Array<[string, SheetRow[]]> = [
-  ["Casting", [["fc", "Faster Casting"], ["fcr", "Faster Cast Recovery"], ["sdi", "Spell Damage", "%"], ["lmc", "Lower Mana Cost", "%"], ["lrc", "Lower Reagent Cost", "%"], ["castingFocus", "Casting Focus", "%"]]],
-  ["Combat", [["hci", "Hit Chance", "%"], ["dci", "Defense Chance", "%"], ["ssi", "Swing Speed", "%"], ["di", "Damage Increase", "%"], ["reflectPhys", "Reflect Damage", "%"]]],
-  ["Leech", [["hitLifeLeech", "Hit Life Leech", "%"], ["hitManaLeech", "Hit Mana Leech", "%"], ["hitStamLeech", "Hit Stamina Leech", "%"]]],
-  ["Regeneration", [["hpRegen", "Hits Regen"], ["stamRegen", "Stam Regen"], ["manaRegen", "Mana Regen"]]],
-  ["Pools and other", [["hpi", "HP Increase"], ["stamInc", "Stam Increase"], ["manaInc", "Mana Increase"], ["enhancePotions", "Enhance Potions", "%"], ["luck", "Luck"]]],
+  ["Casting", rowsOf([["fc"], ["fcr"], ["sdi", "%"], ["lmc", "%"], ["lrc", "%"], ["castingFocus", "%"]])],
+  ["Combat", rowsOf([["hci", "%"], ["dci", "%"], ["ssi", "%"], ["di", "%"], ["reflectPhys", "%"]])],
+  ["Leech", rowsOf([["hitLifeLeech", "%"], ["hitManaLeech", "%"], ["hitStamLeech", "%"]])],
+  ["Regeneration", rowsOf([["hpRegen"], ["stamRegen"], ["manaRegen"]])],
+  ["Pools and other", rowsOf([["hpi"], ["stamInc"], ["manaInc"], ["enhancePotions", "%"], ["luck"]])],
 ];
 export const DEFAULT_SHEET_PROPS = SHEET_GROUPS.flatMap(([, rows]) => rows.map(([k]) => k));
 // Everything the card can list: the groups above, then under "Other" each further property the tooltip
@@ -290,7 +288,7 @@ export function sheetParts(name: string | null, before: SheetAssignment, after: 
   const lists = [box("div", { class: "resist kpi kpi-list" }, txt("Attributes", "t-sm muted"), attrs),
     box("div", { class: "resist kpi kpi-list" }, txt("Pools", "t-sm muted"), pools)];
 
-  // worn gear (design 1B, issue #57): the shown suit plus the extras as a list, one row per worn slot in the slot groups' order, anything else as "Other"; each row the slot, then the piece (the name in its rarity's color, the quality tags and a low-durability tag) as a button that shows the piece's tooltip and, pressed, its detail
+  // worn gear (design 1B, issue #57): the shown suit plus the extras as a list, one row per worn slot in the slot groups' order, anything else as "Other"; each row the slot, then the piece as a gear item (ui/gear-item.mts: its icon, the name in its rarity's color, the quality tags, plus a low-durability tag) that shows the piece's tooltip and, pressed, its detail
   const gearCard = (): HTMLElement => {
     const bySlot = new Map<string, SheetItem>(), other: SheetItem[] = [];
     const nowSerials = new Set(Object.values(extras(before)).filter(Boolean).map((x) => (x as SheetItem).serial));
@@ -301,14 +299,9 @@ export function sheetParts(name: string | null, before: SheetAssignment, after: 
     const row = (slot: string | null, it: SheetItem): HTMLElement => {
       const isNew = diff && !nowSerials.has(it.serial);
       // only the one-suit sheet: an optimizer piece carries no durability, so a before/after sheet would tag some pieces and not others
-      const low = single ? lowDurability(it) : null, token = rarityToken(it.rarity), nm = txt(it.name, "nm");
-      // the tier's --rarity-* token (legible in each mode), as Manual's slot cards and the tooltip title color a name
-      if (token) nm.style.color = `var(${token})`;
-      const piece = box("button", { type: "button", class: "gear-piece", "data-serial": String(it.serial) },
-        nm, isNew ? badge("New", "accent") : null,
-        ...(it.tags || []).filter((x) => QUALITY_TAGS.has(x)).map((x) => tag(x, tagTone(x))), low ? tag(low, "warn") : null);
-      if (opts.onSlot) piece.addEventListener("click", () => opts.onSlot!(it, piece));
-      return el("tr", {}, el("td", { class: "t-sm muted" }, slot ? slotLabel(slot) : "Other"), el("td", {}, itemTip(piece, it)));
+      const low = single ? lowDurability(it) : null;
+      const piece = gearItem(it, { showTags: true, after: [isNew ? badge("New", "accent") : null, low ? tag(low, "warn") : null], onOpen: opts.onSlot ? (got, node) => opts.onSlot!(got as SheetItem, node) : undefined });
+      return el("tr", {}, el("td", { class: "t-sm muted" }, slot ? slotLabel(slot) : "Other"), el("td", {}, piece));
     };
     const shown = (s: string): boolean => !WORN_ONLY.has(s) || bySlot.has(s);
     const rows = [...SLOT_GROUPS.flatMap(([, slots]) => slots.filter((s) => bySlot.has(s)).map((s) => row(s, bySlot.get(s)!))), ...other.map((it) => row(it.slot, it))];

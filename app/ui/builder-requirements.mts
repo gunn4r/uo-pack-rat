@@ -213,7 +213,7 @@ function goalChoices(taken: readonly string[]): string[] {
   return [...new Set([...ranked, ...Object.values(LEFTOVER_GROUPS).flat(), ...RESIST_KEYS, ...Object.keys(session.profile!.weights!)])].filter((k) => !NOT_BUILDER_KEYS.has(k) && !taken.includes(k));
 }
 // The Goals tab's top: with goals in force, the ranked list (each row's rank and name, what it counts and its cap, "=" to
-// share the rank above, ↑ ↓ ✕; Swing speed's swing time under its row), "+ Add a goal", where spare points go, and the
+// share the rank above, ↑ ↓ ✕; Swing Speed Increase's swing time under its row), "+ Add a goal", where spare points go, and the
 // switch that shows the weights they set. With the weights edited by hand since, a note that starts from the goals again;
 // with no goals at all, nothing (the weights below are the tab, as before goals).
 function goalsSection(): HTMLElement {
@@ -285,13 +285,13 @@ function focusGoalArrow(key: string, word: "up" | "down"): void {
   const b = word === "up" ? up : down, other = word === "up" ? down : up;
   (b && !b.disabled ? b : other && !other.disabled ? other : x)?.focus();
 }
-// What a goal row says after what it counts: its cap ("max 45"); for Swing speed the SSI its swing needs, the goal's step
-// (a swing time's cap) or the fastest step of the weapon worn now ("needs SSI 51"), else the cap; "" with none.
+// What a goal row says after what it counts: its cap ("max 45"); for Swing Speed Increase what its swing needs, the goal's
+// step (a swing time's cap) or the fastest step of the weapon worn now ("needs 51"), else the cap; "" with none.
 function goalCapText(g: Goals, k: string): string {
   if (k === "ssi") {
     const cap = ssiGoalCap(g), fastest = g.swing?.mode !== "every" ? wornSwing()?.sw.steps.at(-1) : undefined;
-    if (cap != null) return `needs SSI ${cap}`;
-    if (fastest) return `needs SSI ${fastest.ssi}`;
+    if (cap != null) return `needs ${cap}`;
+    if (fastest) return `needs ${fastest.ssi}`;
   }
   const cap = capFor(k);
   return cap != null ? `max ${cap}` : "";
@@ -301,8 +301,8 @@ function ssiGoalCap(g: Goals): number | null {
   const worn = wornSwing();
   return worn ? goalSsiCap(g, worn.sw.speed, worn.sw.stamina) : null;
 }
-// Under the Swing speed goal: the swing it aims for, "As fast as possible" or one of the worn weapon's steps ("Every 1.5 s"),
-// and what that needs: "1.5 s with Katana at 95 stamina: needs SSI 45".
+// Under the Swing Speed Increase goal: the swing it aims for, "As fast as possible" or one of the worn weapon's steps ("Every 1.5 s"),
+// and what that needs: "1.5 s with Katana at 95 stamina: needs Swing Speed Increase 45".
 function swingGoal(g: Goals): HTMLElement {
   const worn = wornSwing(), steps = worn?.sw.steps ?? [], every = g.swing?.mode === "every" ? g.swing.seconds ?? null : null;
   const options = [{ value: "", label: "As fast as possible" }, ...steps.map((st) => ({ value: String(st.seconds), label: `Every ${delayText(st.seconds)}` })),
@@ -310,9 +310,9 @@ function swingGoal(g: Goals): HTMLElement {
   const sel = select(options, every != null ? String(every) : "", { size: "sm", attrs: { id: "b-swing-goal", "aria-label": "Swing speed goal" } });
   sel.addEventListener("change", () => setGoals({ ...g, swing: sel.value ? { mode: "every", seconds: Number(sel.value) } : { mode: "fastest" } }, "#b-swing-goal"));
   const target = every != null ? steps.find((st) => st.seconds === every) : steps.at(-1);
-  const line = !worn ? (session.character === NOBODY ? "Pick a character to see swing times." : "Wear a weapon to see the swing each SSI gives.")
-    : target ? `${delayText(target.seconds)} with ${worn.weapon} at ${worn.sw.stamina} stamina: needs SSI ${target.ssi}`
-    : every != null ? `${worn.weapon} can't swing every ${delayText(every)} at ${worn.sw.stamina} stamina within the SSI cap.` : `${worn.weapon} is at its fastest swing at ${worn.sw.stamina} stamina.`;
+  const line = !worn ? (session.character === NOBODY ? "Pick a character to see swing times." : "Wear a weapon to see the swing each Swing Speed Increase value gives.")
+    : target ? `${delayText(target.seconds)} with ${worn.weapon} at ${worn.sw.stamina} stamina: needs Swing Speed Increase ${target.ssi}`
+    : every != null ? `${worn.weapon} can't swing every ${delayText(every)} at ${worn.sw.stamina} stamina within the Swing Speed Increase cap.` : `${worn.weapon} is at its fastest swing at ${worn.sw.stamina} stamina.`;
   return box("div", { class: "b-swing-goal" }, sel, txt(line, "t-sm muted"));
 }
 // The weight rows at 0 that keep a negative sign, by character and property, for the page session.
@@ -421,7 +421,7 @@ function swingStepsSetting(): HTMLElement {
   const sw = switchControl({ label: "Score swing speed by step", checked: !!p.swingSteps, attrs: { id: "b-swing-steps" }, onChange: (v) => { ownWeights(); p.swingSteps = v; commands.updateTemplateBadge(); } });
   const steps = worn ? swingLines(worn.sw, worn.weapon).steps.map((s) => s.text).join(" · ") : "";
   return box("div", { class: "b-swing-set" }, sw.root,
-    el("p", { class: "help" }, txt(`Counts SSI only where the swing gets faster.${worn && steps ? ` ${worn.weapon} ${speedText(worn.sw.speed)} at stamina ${worn.sw.stamina}: ${steps}.` : ""}`)));
+    el("p", { class: "help" }, txt(`Counts Swing Speed Increase only where the swing gets faster.${worn && steps ? ` ${worn.weapon} ${speedText(worn.sw.speed)} at stamina ${worn.sw.stamina}: ${steps}.` : ""}`)));
 }
 // "Next step: 58" fills the SSI requirement with the next step faster than the last result's swing, else the worn suit's.
 function nextStepButton(): HTMLElement | null {

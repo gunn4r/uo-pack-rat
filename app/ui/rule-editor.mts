@@ -9,7 +9,8 @@
 // map: organize
 // owns: `openRuleEditor`
 import { state } from "./store.mts";
-import { $, el, safeColor, compactChildren } from "./dom.mts";
+import { $, el, full, safeColor, compactChildren } from "./dom.mts";
+import { missingHints } from "./inv-model.mts";
 import { box, txt, button, meter, message, field, input, select, textarea, check, token, createDrawer, confirmDialog, toast, type DrawerHandle } from "./components.mts";
 import { containerArt } from "./item-art.mts";
 import { errorText } from "./messages.mts";
@@ -100,7 +101,9 @@ function draw(focus?: string): void {
   // The Inventory's filter bar (#487) on the rule's query; a change redraws only the tokens and the count, so an
   // open popover keeps its anchor. Bags never move (they are places), so "container" is not a kind a rule takes.
   const tokens = box("span", { class: "rule-extras" });
-  const filters = box("div", { class: "field" }, el("span", { class: "label" }, "Filtered by"), tokens);
+  // Under the tokens, a note for each property rule that items without the property pass (#508, missingHints).
+  const hints = box("div", {});
+  const filters = box("div", { class: "field" }, el("span", { class: "label" }, "Filtered by"), tokens, hints);
   const setQuery = (q: RuleQuery): void => { d.query = q; bar.sync(); drawTokens(); countSoon(); };
   const bar = createFilterBar({ query: () => ({ ...BASE, ...d.query }), setQuery: (q) => setQuery(ruleQueryFrom(q).query), source: itemsSource,
     omit: ["char", "loc", "seen"], hideKinds: ["container"], placeholder: "Search name, property, slayer", slashHint: false,
@@ -113,6 +116,7 @@ function draw(focus?: string): void {
       ...(d.school ? [{ label: `School: ${SCHOOL_TEXT[d.school]}`, removeLabel: "Remove the school filter", remove: (q: RuleQuery) => { d.school = undefined; return q; } }] : []), ...ruleTokens(d.query, ctx)];
     filters.hidden = !all.length;
     tokens.replaceChildren(...all.map((x) => token({ label: x.label, removeLabel: x.removeLabel, onRemove: () => setQuery(x.remove(d.query)) })));
+    hints.replaceChildren(...missingHints(d.query.props, full).map((h) => txt(h, "t-sm muted rule-missing")));
   }
   drawTokens();
   // Issue #133: an Undesirables rule never takes a piece a saved Suit Builder run counts on.

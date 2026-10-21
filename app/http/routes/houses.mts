@@ -69,7 +69,7 @@ export function routes(ctx: ServerContext): Route[] {
       const out = houseService.facetPng(`${got.key}|${region}|${w}`, () => { const img = renderRegion(f, r, w); return encodePng(img.width, img.height, img.rgb); });
       return send(res, 200, out, "image/png", { "x-region": region });
     } },
-    // An item's art (issue #174): GET /api/item-art/<graphic>.png?hue=<n>, the graphic and the hue (0 by default, none) whole numbers from 0 to 65535, as a PNG cut to its opaque box, from the same UO folder's artLegacyMUL.uop and hues.mul. The ETag names the files' stamps, graphic and hue, so a repeat with If-None-Match is a 304. A 404 says why there is none as a reason word (as the facet map's, or no-art for a graphic the file has no art for), never with the path.
+    // An item's art (issue #174): GET /api/item-art/<graphic>.png?hue=<n>, the graphic and the hue (0 by default, none) whole numbers from 0 to 65535, as a PNG cut to its opaque box, from the same UO folder's artLegacyMUL.uop and hues.mul. The ETag names the files' stamps, graphic, hue and whether the hue is partial (tiledata.mul's flag, issue #504), so a repeat with If-None-Match is a 304. A 404 says why there is none as a reason word (as the facet map's, or no-art for a graphic the file has no art for), never with the path.
     { method: "GET", path: /^\/api\/item-art\//, handle: (req, res, url) => {
       const m = /^\/api\/item-art\/(\d{1,5})\.png$/.exec(url.pathname), hueText = url.searchParams.get("hue") ?? "0";
       const graphic = m ? Number(m[1]) : NaN, hue = /^\d{1,5}$/.test(hueText) ? Number(hueText) : NaN;

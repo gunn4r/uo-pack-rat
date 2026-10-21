@@ -1,6 +1,6 @@
 // ui-organize.test.mts — [slow]: Organize (issue #11) in the real Electron window over the demo scans.
 //
-// `[slow]`: Organize in the real Electron window over the demo scans on a writable `--data` folder: the empty state that teaches labelling, Containers' Label… and Fill column, labels in the Items rows, the Rules card (fill, counts, catch-all, reordering by keyboard and drag), a save over a setup another window changed refused and the setup reloaded, and quick saves of its own (↓ twice, two selects) each building on the one before (issue #280), the rule drawer (presets, the Inventory's filter bar without Character, Location and Seen, its search kept when Save comes inside the debounce, fill order, a forgotten target), a bag inside a chest picked as a target and labelled on save with the live match count (the demo scans copied into `scans/` with a pouch added, no `--demo`), Save as rule…, a mocked 600-move plan (reports first, trips collapsed), a client without `trip`, a trip run through the bridge's queue (Stop, a failed put, Pin this item), a salvaged setup refusing trips until Save setup, the screen at 1000 × 700, and Auto organize (Accept, running it again, Detailed, a 1000 × 700 drawer), and item kinds (issue #150: Review unclassified items, Classify this… and Reset to automatic, Settings' Export as an Electron download and Import through the file input).
+// `[slow]`: Organize in the real Electron window over the demo scans on a writable `--data` folder: the empty state that teaches labelling, Containers' Label… and Fill column, labels in the Items rows, the Rules card (fill, counts, catch-all, reordering by keyboard and drag), a save over a setup another window changed refused and the setup reloaded, and quick saves of its own (↓ twice, two selects) each building on the one before (issue #280), the rule drawer (presets, the Inventory's filter bar without Character, Location and Seen, its search kept when Save comes inside the debounce, fill order, a forgotten target, the note that items without a property pass a ≠ rule), a bag inside a chest picked as a target and labelled on save with the live match count (the demo scans copied into `scans/` with a pouch added, no `--demo`), Save as rule…, a mocked 600-move plan (reports first, trips collapsed), a client without `trip`, a trip run through the bridge's queue (Stop, a failed put, Pin this item), a salvaged setup refusing trips until Save setup, the screen at 1000 × 700, and Auto organize (Accept, running it again, Detailed, a 1000 × 700 drawer), and item kinds (issue #150: Review unclassified items, Classify this… and Reset to automatic, Settings' Export as an Electron download and Import through the file input).
 //
 // Also a page reloaded mid-trip picking the trip back up. Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
 import test from "node:test";
@@ -15,7 +15,7 @@ import type { Page } from "playwright";
 // The two demo chests (app/fixtures/demo-*.json), side by side at 1000, 1000: Dorran's holds 40 of 125 items,
 // Kestrel's 120 of 125.
 const DORRAN = 0x700c0000, KESTREL = 0x700b0000;
-interface SeedRule { id: string; name: string; names?: string[]; kind?: string[]; targets: number[] }
+interface SeedRule { id: string; name: string; names?: string[]; kind?: string[]; props?: Array<{ key: string; min: number; op?: string }>; targets: number[] }
 const EMPTY_QUERY = { q: "", slot: [], rarity: "", rarityMin: "", rarityMax: "", kind: [], slayer: "", nogarg: false, med: false, hideTags: [], props: [] };
 // A data folder with the wizard done and, unless `rules` is null, both demo chests labelled and these rules.
 function dataDirWith(rules: SeedRule[] | null): string {
@@ -24,7 +24,7 @@ function dataDirWith(rules: SeedRule[] | null): string {
   if (rules) writeFileSync(join(dir, "organize.json"), JSON.stringify({
     version: 1, catchAll: null, pinnedItems: [],
     labels: { [DORRAN]: { serial: DORRAN, name: "Reagents", origin: "manual" }, [KESTREL]: { serial: KESTREL, name: "Jewellery", color: "#2f7f7f", origin: "manual" } },
-    rules: rules.map((r) => ({ id: r.id, name: r.name, match: { query: { ...EMPTY_QUERY, kind: r.kind || [] }, ...(r.names ? { names: r.names } : {}) }, targets: r.targets, origin: "manual" })),
+    rules: rules.map((r) => ({ id: r.id, name: r.name, match: { query: { ...EMPTY_QUERY, kind: r.kind || [], props: r.props || [] }, ...(r.names ? { names: r.names } : {}) }, targets: r.targets, origin: "manual" })),
   }));
   return dir;
 }
@@ -320,6 +320,23 @@ test("[slow] a bag inside a labelled chest can be picked as a target, is labelle
     assert.equal(saved!.rules[1]!.match.query.q, "ring", "the last keystrokes reach the saved rule");
     assert.deepEqual(saved!.labels[String(POUCH)], { serial: POUCH, name: "Pouch", origin: "manual" }, "the bag was labelled with the rule");
     assert.match(await page.locator('.org-rule[data-rule="rule-2"]').innerText(), /Pouch[\s\S]*1\/125/);
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
+test("[slow] the rule drawer notes that items without a property pass a ≠ rule, beside the live count", async (t) => {
+  if (skipWithoutElectron(t)) return;
+  const dataDir = dataDirWith([{ id: "rule-1", name: "Not FC -1", props: [{ key: "fc", min: -1, op: "ne" }], targets: [DORRAN] }]);
+  const { page, errors, close } = await launch(dataDir);
+  try {
+    await go(page, "#/organize", '.org-rule[data-rule="rule-1"]');
+    await page.locator('.org-rule[data-rule="rule-1"]').getByRole("button", { name: /^Actions for / }).click();
+    await page.getByRole("menuitem", { name: "Edit…" }).click();
+    await page.waitForSelector("#rule-drawer:not([hidden]) .rule-missing");
+    assert.equal(await page.locator("#rule-drawer .rule-missing").innerText(), "Items without Faster Casting also match (they count as 0).");
+    await page.waitForFunction(() => /Matches \d/.test(document.querySelector("#rule-match")?.textContent || ""), undefined, { timeout: 15_000 });
     assert.deepEqual(errors, []);
   } finally {
     await close();

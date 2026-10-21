@@ -1,11 +1,11 @@
 // ui-inventory.test.mts — `app/ui/inv-model.mts`, the Inventory screen's pure rules.
 //
-// `app/ui/inv-model.mts`, the Inventory screen's pure rules: `plural` ("1 stack", "1,204 pieces"), `queryParams` round-tripping a full filter state through the server's `parseItemQuery`, the active-filter tokens (their words, a type's among them, each removing only itself, the search counted as a filter and cleared by Clear all, the Rarity at most token and its empty-result sentence), the strip's "45 of 160 stacks match" and the footer's count fact, the empty-result sentence (the one filter that excludes everything alone, a single filter being its own cause, else the combination), tier and rule labels, a Location option named by its Organize label with the scanned name beside its serial (`placeNames`), the property popover's ≠ 0 note (`neZeroHint`), the nine default columns and the column picker's groups and order, the virtual table's row window (clamped at the end) and chunk fetches, and the table's keyboard model (arrows, Home/End, Page keys, Enter/Space, Esc). All `[fast]`.
+// `app/ui/inv-model.mts`, the Inventory screen's pure rules: `plural` ("1 stack", "1,204 pieces"), `queryParams` round-tripping a full filter state through the server's `parseItemQuery`, the active-filter tokens (their words, a type's among them, each removing only itself, the search counted as a filter and cleared by Clear all, the Rarity at most token and its empty-result sentence), the strip's "45 of 160 stacks match" and the footer's count fact, the empty-result sentence (the one filter that excludes everything alone, a single filter being its own cause, else the combination), tier and rule labels, a Location option named by its Organize label with the scanned name beside its serial (`placeNames`), the property rule's note about items without the property (`missingHint`, `missingHints`: they also match under any rule that 0 passes, count as 0 under ≠ 0), the nine default columns and the column picker's groups and order, the virtual table's row window (clamped at the end) and chunk fetches, and the table's keyboard model (arrows, Home/End, Page keys, Enter/Space, Esc). All `[fast]`.
 //
 // The rendered screen is driven by scripts/ui-state.test.mts.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { queryParams, withFixed, activeFilters, clearAll, matchLine, countFact, emptyCause, rowWindow, chunksToFetch, gridKey, colGroup, groupColumns, DEFAULT_COLS, shortTier, propRuleLabel, neZeroHint, slayerTree, slayerLabel, placeNames } from "./ui/inv-model.mts";
+import { queryParams, withFixed, activeFilters, clearAll, matchLine, countFact, emptyCause, rowWindow, chunksToFetch, gridKey, colGroup, groupColumns, DEFAULT_COLS, shortTier, propRuleLabel, slayerTree, slayerLabel, placeNames, missingHint, missingHints } from "./ui/inv-model.mts";
 import { parseItemQuery } from "./item-query.mts";
 import type { ItemQuery } from "./item-query.mts";
 import { plural } from "./ui/format.mts";
@@ -30,6 +30,7 @@ test("[fast] queryParams round-trips through the server's parser", () => {
   const q: ItemQuery = { ...BASE, within: [5, 6], houses: ["1-3000-1000", "1-4000-1000"], type: ["shield", "two-handed"], q: "ring", chars: ["Dorran", "Kestrel"], slot: ["ring", "?"], loc: ["Metal Chest, left"], roots: [12], rarityMin: "Greater Magic Item", kind: ["gear"], seenDays: 7, slayer: "*", nogarg: true, med: true, hideTags: ["cursed"], tags: ["brittle", "antique"], props: [{ key: "lmc", min: 8 }, { key: "hci", min: 5, op: "le" }], flags: ["spell channeling", "mage armor"], wskill: ["fencing", "mace fighting"], group: true, sort: "hci", dir: -1, offset: 500, limit: 500 };
   assert.deepEqual(parseItemQuery(queryParams(q)), q);
   assert.deepEqual(parseItemQuery(queryParams(BASE)), BASE);
+  assert.deepEqual(parseItemQuery(queryParams({ ...BASE, within: [] })), { ...BASE, within: [] }, "an empty within (nothing) stays empty, not left out (no filter)");
 });
 
 test("[fast] a house is a Location token named by the House map, and Clear all clears it", () => {
@@ -143,9 +144,13 @@ test("[fast] tier and rule labels", () => {
   assert.equal(propRuleLabel({ key: "lmc", min: -1, op: "ne" }, CTX.propLabel), "LMC ≠ -1");
 });
 
-test("[fast] neZeroHint: the property popover's note shows under ≠ 0 only", () => {
-  assert.equal(neZeroHint("ne", "0"), "Items without this property count as 0.");
-  for (const [op, v] of [["ne", "1"], ["ne", ""], ["eq", "0"], ["ge", "0"]]) assert.equal(neZeroHint(op!, v!), null, `${op} ${v}`);
+test("[fast] missingHint: any rule that 0 passes says items without the property match too, and ≠ 0 that they count as 0", () => {
+  const also = "Items without Faster Casting also match (they count as 0).";
+  for (const [op, v] of [["ne", "-1"], ["ne", "2"], ["le", "0"], ["le", "4"], ["eq", "0"], ["ge", "0"], ["ge", "-20"]]) assert.equal(missingHint(op!, v!, "Faster Casting"), also, `${op} ${v}`);
+  assert.equal(missingHint("ne", "0", "Faster Casting"), "Items without Faster Casting count as 0.");
+  for (const [op, v] of [["ne", ""], ["ne", "x"], ["le", "-1"], ["eq", "2"], ["ge", "1"]]) assert.equal(missingHint(op!, v!, "Faster Casting"), null, `${op} ${v}`);
+  assert.deepEqual(missingHints([{ key: "fc", min: -1, op: "ne" }, { key: "fc", min: 2, op: "le" }, { key: "lrc", min: 10 }, { key: "lmc", min: 0, op: "ne" }], (k) => ({ fc: "Faster Casting", lmc: "Lower Mana Cost" })[k] ?? k),
+    [also, "Items without Lower Mana Cost count as 0."], "one note per property and wording, none for a rule 0 fails");
 });
 
 test("[fast] the default columns are Tags and the nine of the spec, and every column lands in a picker group", () => {

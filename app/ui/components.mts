@@ -35,7 +35,7 @@ export const FLEX_CLASSES = [
   "btn", "field", "search", "check", "seg", "fchip", "token", "pill", "badge", "tag", "rar-tier", "card-head",
   "tbl-foot", "rowact", "overlay-head", "overlay-foot", "overlay-titles", "toast", "toasts", "msg", "msg-body", "msg-actions",
   "meter", "stepper", "step", "step-dot", "kv", "kv-k", "kv-v", "resist", "drawer", "drawer-body",
-  "dialog", "dialog-body", "dialog-foot", "pop-body", "tipwrap", "empty-state", "art-tile", "cbx", "cbx-text", "cbx-opt", "cbx-foot",
+  "dialog", "dialog-body", "dialog-foot", "pop-body", "tipwrap", "empty-state", "art-tile", "gi", "gi-card", "gi-card-text", "gi-card-line", "cbx", "cbx-text", "cbx-opt", "cbx-foot",
   "doll-card", "doll-band", "doll-pill", "doll-head", "doll-name", "doll-controls", "doll-stage", "doll-figs", "doll-fig", "doll-empty", "doll-custom", "doll-group", "doll-swatches", "doll-custom-foot",
 ] as const;
 
@@ -305,10 +305,10 @@ export function resistTile(name: string, token: string, ...kids: Kids): HTMLDivE
 
 // ---------------------------------------------------------------- detail pane
 // A side detail pane's contents (the Inventory's item peek, the Scrolls view's skill detail; styled in inventory.css):
-// the title with Previous / Next / Close, a meta line, the sections, then the actions and the keys hint. The caller
+// the title (text, or an element such as an item's gearItem) with Previous / Next / Close, a meta line, the sections, then the actions and the keys hint. The caller
 // owns the pane element, showing it and its keys (Esc, the arrows); `noun` names what the arrows step through.
 export const detailSection = (title: string, ...kids: Kids): HTMLElement => box("section", { class: "peek-sec", "aria-label": title }, txt(title, "caps"), ...kids);
-export function detailPane(pane: HTMLElement, o: { title: string; titleId: string; noun: string; nouns: string; meta: Kids; sections: Kids; actions: Kids; actionsCls?: string; onStep: (delta: number) => void; onClose: () => void }): void {
+export function detailPane(pane: HTMLElement, o: { title: string | HTMLElement; titleId: string; noun: string; nouns: string; meta: Kids; sections: Kids; actions: Kids; actionsCls?: string; onStep: (delta: number) => void; onClose: () => void }): void {
   pane.setAttribute("aria-labelledby", o.titleId);
   pane.replaceChildren(
     box("div", { class: "peek-head" },

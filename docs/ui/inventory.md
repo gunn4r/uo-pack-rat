@@ -9,7 +9,7 @@ Part of the UI docs: [`docs/ui.md`](../ui.md) has the hard rules, tokens, compon
 | Module | What it draws and does |
 | --- | --- |
 | `ui/item-browser.mts` | The item browser (`createItemBrowser`): toolbar, active-filter strip, virtual table. One instance per mount, so it is reused (the Suit Builder's picker) |
-| `ui/filter-bar.mts` | The filter bar (`createFilterBar`): search, facet chips and their popovers, "+ Filter". Shared by the item browser and the Organize rule editor, which leaves out Character, Location and Seen (issue #487) |
+| `ui/filter-bar.mts` | The filter bar (`createFilterBar`), shared with the Organize rule editor (#487) |
 | `ui/inventory.mts` | The Items view: one item browser with the Inventory's options |
 | `ui/inv-model.mts` | Pure: the query string, the active-filter tokens and their wording, counts, the empty-result sentence, the row window, the keyboard model, `slayerTree` |
 | `ui/peek.mts` | The item peek beside the table |
@@ -61,7 +61,7 @@ Part of the UI docs: [`docs/ui.md`](../ui.md) has the hard rules, tokens, compon
 
 ### How to extend it
 
-- **A filter:** add the query field to `app/item-query.mts`'s `parseItemQuery`, then the token and its wording to `inv-model.mts` with a test. Then add the control in `filter-bar.mts`, going through `setQuery()`; the Inventory, the Manual picker and the rule editor all get it. `docs/change-checklists.md` "Add an item property or property filter" lists the rest.
+- **A filter:** add the query field to `app/item-query.mts`'s `parseItemQuery`, then the token and its wording to `inv-model.mts` with a test. Then add the control in `filter-bar.mts`, going through `setQuery()`. `docs/change-checklists.md` "Add an item property or property filter" lists the rest.
 - **A column:** put its key in its group in `inv-model.mts` (`COL_GROUPS`; `ITEM_COLS` holds the item's own fields).
   - A column that is on by default also goes in `DEFAULT_COLS`.
   - So that column lists saved earlier get it once, raise `COLS_VERSION` and have `withNewDefaults` (`view-state.mts`) add it. Today that function adds only Tags.
@@ -99,7 +99,7 @@ The filter state is the browser's `query`, the shape `item-query.mts`'s `parseIt
   - Each option counts the stacks in view that carry it (`GET /api/items?…&fields=props`, `propCounts`, over the browser's query with its fixed fields): "Faster Casting 46". One no stack in view carries keeps its place, dimmed, with "0", and picking it gives the usual empty state ("None of the 300 stacks has Swarm ≥ 1.").
   - Every entry's tooltip line has been seen on the shard, in a scan or its vendor listings (Hit Curse, the Resonances, Lower Ammo Cost, Searing Weapon, Cannot Be Repaired); Bane and Assassin Honed are offered as plain-name yes/no lines, as the shard shows such properties. A property no tooltip has shown yet stays out until one does.
   - Values keep the tooltip's sign: Mage Weapon is negative ("Mage Weapon -10 Skill"), so a note under its rule (`MAGE_WEAPON_HINT`) says that ≥ -20 keeps penalties of 20 or less and that items with no Mage Weapon read 0. Power scroll level and Scroll of Transcendence points are scroll filters, not gear properties, so the popover does not offer them; a rule or link that names them still filters.
-  - An item without the property reads 0 under every operator, so `fc:ne:-1` keeps the items with no FC, and ≠ 0 leaves them out, which a note under the rule says (`neZeroHint`).
+  - An item without the property reads 0 under every operator, so `fc:ne:-1` keeps the items with no FC, and ≠ 0 leaves them out. A note under the rule says so (`missingHint`): "Items without Faster Casting also match (they count as 0)." for any rule that 0 passes (item-query.mts's `passes`; a Mage Weapon rule shows its own note instead), "Items without Faster Casting count as 0." for ≠ 0.
 - **Yes/no properties** are required with `flag` (issue #182: `flag=spell channeling`, repeated; every one must be present).
   - They are offered from `FLAG_CATALOGUE` as the property rule's last group, **Yes or no**, each with its count like the numeric ones.
   - Picking one hides the comparison and the number, moves the focus to Add rule, and shows a Title Case token ("Spell Channeling").
@@ -179,25 +179,25 @@ Every screen writes its ui-prefs fields through `ui/prefs.mts`'s `prefs.set(patc
 
 ## Item peek
 
-`ui/peek.mts`: a row click, Enter or Space opens the selected item in a panel docked beside the table (400 px, 360 below 1280, laid over the table below 1180).
+`ui/peek.mts`: a row click, Enter or Space opens the selected item in a panel docked beside the table (400 px, 360 below 1280, laid over the table below 1180). Its title is a `gearItem` (a 32 px icon, the whole name wrapped).
 
-While it is open, ↑/↓ step through rows with the peek following, and Esc closes it (focus goes back to the row). Both work from the table, the panel or the bare page: a click on the panel's text leaves focus on `<body>`, so the keys are heard on the document. A field being typed in, a popover, a dialog or a drawer keeps its own keys.
+While it is open, ↑/↓ step through rows with the peek following, and Esc closes it (focus back on the row). Both work from the table, the panel or the bare page (a click on its text leaves focus on `<body>`, so the keys are heard on the document); a field, popover, dialog or drawer keeps its own keys.
 
-Its tag chips carry the shard's meaning for each tag (the rules' `tagInfo`, `dom.mts`'s `tagChip`) as a tooltip on hover and focus. Its footer's Highlight, Grab and Go to are gated like the row actions.
+Its tag chips show the shard's meaning of each tag (the rules' `tagInfo`, `dom.mts`'s `tagChip`) on hover and focus; its footer's Highlight, Grab and Go to are gated like the row actions.
 
 ## Item tooltip
 
-The item tooltip is `dom.mts`'s `tipNode`, `installTooltip`, `showItemTip` and `itemTip` (issue #10): the one `#tip`, always dark, 280 px. It shows 400 ms after the pointer settles on anything with `data-serial`, or after an item has had keyboard focus for 400 ms (with `aria-describedby="tip"` on it while open). It is `pointer-events: none`, placed inside the window.
+The item tooltip is `dom.mts`'s `tipNode`, `installTooltip`, `showItemTip` and `itemTip` (issue #10): the one `#tip`, always dark, 280 px (320 with an icon). It shows 400 ms after the pointer settles on anything with `data-serial`, or after an item has had keyboard focus for 400 ms (with `aria-describedby="tip"` on it while open). It is `pointer-events: none`, placed inside the window.
 
 ### Wiring an item
 
-Wherever the page draws an item it wires it with `itemTip(node, item, {focus})`. That sets `data-serial`, registers the record drawn and, unless `focus` is false, makes the node focusable and shows the tooltip on keyboard focus.
+Wherever the page draws an item it wires it with `itemTip(node, item, {focus})`: it sets `data-serial`, registers the record and, unless `focus` is false, makes the node focusable for a keyboard tooltip.
 
 `ui/item-tip.mts` resolves what to show:
 
 - the registered record, when it carries its tooltip lines;
 - else `state.itemCache`;
-- else one `GET /api/items/by-serial`. A serial the server says it does not know is asked for once per inventory, and a partial record, if registered, is shown instead. A lookup that failed on the network is asked again on the next hover.
+- else one `GET /api/items/by-serial`. A serial the server does not know is asked once per inventory (a registered partial record shows instead); a lookup that failed on the network is asked again on the next hover.
 
 Wired today:
 
@@ -323,7 +323,7 @@ A row click, Enter or Space opens a panel in the item peek's look (`#scr-peek`, 
 - the skill, with ↑ / ↓ / close;
 - how many scrolls are in how many containers;
 - the roll-up (Next roll-up, Still needed, Bind everything when something binds, a meter), or the binder plan;
-- the scrolls grouped by place: the place's name and serial, and who scanned it ("On the ground · scanned by Kestrel"). Each row is a level or points badge, the name and its tags, wired with `itemTip`.
+- the scrolls grouped by place: the place's name and serial, and who scanned it ("On the ground · scanned by Kestrel"). Each row is a level or points badge, the name (a `gearItem`, no icon) and its tags, wired with `itemTip`.
 
 Its footer has **Show in Inventory**, the Items view searching for all that skill's scrolls. ↑/↓ on a row move focus and, while the panel is open, the panel follows. Esc closes it and gives the row its focus back.
 
@@ -371,7 +371,7 @@ Each has a count, a line and **Select these**, with the rows heaviest first.
 A row has:
 
 - a checkbox;
-- the name (with the item tooltip), its rarity tier, and the reasons it would be left out;
+- the piece as a `gearItem` (icon, rarity-colored name, item tooltip), its rarity tier, and the reasons it would be left out;
 - its place;
 - the ingredient, with a **maybe** tag when its weight is within the margin of a line (its title names the two ingredients);
 - the chance line ("50% at 70, else Residue", "Refused until then (now 70)", "Always at Imbuing 45+");

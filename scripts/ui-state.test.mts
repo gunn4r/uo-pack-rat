@@ -354,8 +354,8 @@ test("[slow] a character's sheet opens from the roster, and a character can be f
     await page.getByRole("button", { name: `Next character: ${other}` }).click();
     await page.waitForSelector(`#tab-characters .sheet[data-character="${other}"]`);
     // a worn piece in the gear list shows that piece's tooltip lines
-    const tile = page.locator("#tab-characters .sheet button.gear-piece").first();
-    const piece = await tile.locator(".nm").innerText();
+    const tile = page.locator("#tab-characters .sheet button.gi").first();
+    const piece = await tile.locator(".gi-name").innerText();
     await tile.click();
     assert.ok((await page.locator(".pop.item-pop").innerText()).includes(piece), `the slot popover names ${piece}`);
     await page.keyboard.press("Escape");
@@ -389,9 +389,9 @@ test("[slow] a character's sheet opens from the roster, and a character can be f
     assert.equal(await page.locator("#f-text").inputValue(), "");
     // A worn piece's popover opens it in the Inventory's item peek.
     await page.evaluate((n) => { location.hash = `#/characters/${encodeURIComponent(n)}`; }, other);
-    const slot = page.locator("#tab-characters .sheet button.gear-piece").first();
+    const slot = page.locator("#tab-characters .sheet button.gi").first();
     await slot.waitFor({ timeout: 10_000 });
-    const worn = await slot.locator(".nm").innerText();
+    const worn = await slot.locator(".gi-name").innerText();
     await slot.click();
     await page.locator(".pop.item-pop").getByRole("button", { name: "Open in Inventory" }).click();
     await page.waitForSelector("#inv-peek:not([hidden])", { timeout: 10_000 });
@@ -477,17 +477,17 @@ test("[slow] the character sheet's shown properties are chosen in a popover and 
     const card = page.locator('#tab-characters section[aria-label="Properties"]');
     const rows = (): Promise<string[]> => card.locator(".sheet-props .kv-k").allInnerTexts();
     const shown = await rows();
-    for (const r of ["Faster Casting", "Hit Chance", "Hit Life Leech", "Hit Mana Leech", "Hit Stamina Leech", "Luck"]) assert.ok(shown.includes(r), `${r} is shown by default`);
+    for (const r of ["Faster Casting", "Hit Chance Increase", "Hit Life Leech", "Hit Mana Leech", "Hit Stamina Leech", "Luck"]) assert.ok(shown.includes(r), `${r} is shown by default`);
     assert.ok(!shown.includes("Hit Fireball"), "a property outside the default set is off");
     await card.getByRole("button", { name: "Properties shown" }).click();
     const pop = page.getByRole("dialog", { name: "Properties shown" });
     await pop.locator('input[value="hitFireball"]').check();
     await pop.locator('input[value="hci"]').uncheck();
     const after = await rows();
-    assert.ok(after.includes("Hit Fireball") && !after.includes("Hit Chance"), `the card follows the choice, got ${JSON.stringify(after)}`);
+    assert.ok(after.includes("Hit Fireball") && !after.includes("Hit Chance Increase"), `the card follows the choice, got ${JSON.stringify(after)}`);
     await pop.getByRole("button", { name: "Reset to default" }).click();
     const reset = await rows();
-    assert.ok(reset.includes("Hit Chance") && reset.includes("Hit Life Leech") && !reset.includes("Hit Fireball"), `Reset puts the default back, got ${JSON.stringify(reset)}`);
+    assert.ok(reset.includes("Hit Chance Increase") && reset.includes("Hit Life Leech") && !reset.includes("Hit Fireball"), `Reset puts the default back, got ${JSON.stringify(reset)}`);
     assert.deepEqual(errors, []);
   } finally {
     await close();
@@ -508,9 +508,9 @@ test("[slow] a worn piece low on durability is badged on the sheet and beside it
     await page.evaluate(() => { location.hash = "#/characters/Dorran"; });
     await page.waitForSelector('#tab-characters .sheet[data-character="Dorran"]', { timeout: 10_000 });
     // the tag is drawn in capitals; its text is the words
-    const badges = page.locator("#tab-characters .sheet .gear-piece .tag.warn", { hasText: /durability/i });
+    const badges = page.locator("#tab-characters .sheet .gi .tag.warn", { hasText: /durability/i });
     assert.deepEqual(await badges.allTextContents(), ["Low durability 12/150"]);
-    const tile = page.locator('#tab-characters .gear-piece[data-serial="1879834625"]');
+    const tile = page.locator('#tab-characters .gi[data-serial="1879834625"]');
     assert.equal(await tile.locator(".tag.warn", { hasText: /durability/i }).textContent(), "Low durability 12/150", "the tag is on the low piece's own row");
     const [tb, bb] = [await tile.locator("xpath=ancestor::td").boundingBox(), await tile.locator(".tag.warn", { hasText: /durability/i }).boundingBox()];
     assert.ok(tb && bb && bb.x >= tb.x && bb.x + bb.width <= tb.x + tb.width + 0.5, `the tag fits inside its row (cell ${JSON.stringify(tb)}, tag ${JSON.stringify(bb)})`);
