@@ -178,7 +178,7 @@ Every screen writes its ui-prefs fields through `ui/prefs.mts`'s `prefs.set(patc
 
 ## Item peek
 
-`ui/peek.mts`: a row click, Enter or Space opens the selected item in a panel docked beside the table (400 px, 360 below 1280, laid over the table below 1180).
+`ui/peek.mts`: a row click, Enter or Space opens the selected item in a panel docked beside the table (400 px, 360 below 1280, laid over the table below 1180). Its title is the item as a `gearItem` (issue #504): the 32 px icon when the scan recorded a graphic, and the whole name, wrapped, in its rarity's color.
 
 While it is open, ↑/↓ step through rows with the peek following, and Esc closes it (focus goes back to the row). Both work from the table, the panel or the bare page: a click on the panel's text leaves focus on `<body>`, so the keys are heard on the document. A field being typed in, a popover, a dialog or a drawer keeps its own keys.
 
@@ -186,7 +186,7 @@ Its tag chips carry the shard's meaning for each tag (the rules' `tagInfo`, `dom
 
 ## Item tooltip
 
-The item tooltip is `dom.mts`'s `tipNode`, `installTooltip`, `showItemTip` and `itemTip` (issue #10): the one `#tip`, always dark, 280 px. It shows 400 ms after the pointer settles on anything with `data-serial`, or after an item has had keyboard focus for 400 ms (with `aria-describedby="tip"` on it while open). It is `pointer-events: none`, placed inside the window.
+The item tooltip is `dom.mts`'s `tipNode`, `installTooltip`, `showItemTip` and `itemTip` (issue #10): the one `#tip`, always dark, 280 px (320 px when its title carries the item's 32 px icon, issue #503). It shows 400 ms after the pointer settles on anything with `data-serial`, or after an item has had keyboard focus for 400 ms (with `aria-describedby="tip"` on it while open). It is `pointer-events: none`, placed inside the window.
 
 ### Wiring an item
 
