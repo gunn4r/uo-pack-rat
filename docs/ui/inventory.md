@@ -249,7 +249,7 @@ It saves through `POST /api/item-kinds` and runs `reload()`, so the table, the K
 
 `ui/containers.mts`: one row per root container, grouped by character with the ground last, with a Fill column and a ⋯ menu (Show these items, Label…, Blacklist…, Forget…).
 
-Above it (`#cont-toolbar`, issue #487): a search over label, name, hex serial, scanner and kind, and **Kind** and **House** menus ("Not in a house" includes the plain grid), each value counted among what the other filters leave. Filtered, the footer reads "N of M containers"; nothing left shows **Clear filters**.
+Above it (`#cont-toolbar`, issue #487): a search over label, name, hex serial, scanner and kind, and **Kind** and **House** menus ("Not in a house" includes the plain grid), each value counted under the other filters. Filtered, the footer reads "N of M containers"; nothing left shows **Clear filters**.
 
 ### Missing items
 

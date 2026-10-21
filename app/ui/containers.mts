@@ -30,7 +30,7 @@ import { registerScreen, showContainer } from "./nav.mts";
 import { splitSerial } from "./item-parts.mts";
 import { bridgeActionReason, runBridgeAction } from "./bridge.mts";
 import type { ContainerLabel, ForgetApiResponse, MissingApiResponse, OrganizeConfig } from "./api-types.mts";
-import { plural } from "./format.mts";
+import { plural, textHit } from "./format.mts";
 
 const KIND_NAMES: Record<string, string> = { backpack: "Backpack", bank: "Bank", ground: "On the ground" };
 // Same total width as before the Fill column, so the table still fits a 1000 px window without scrolling.
@@ -136,6 +136,8 @@ export function showContainers(name: string | null): void {
 }
 registerScreen({ name: "containers", show: (r) => showContainers(r.scanner) });
 document.addEventListener("inventorychange", () => renderContainers());
+// The house links load after the inventory: the House filter and its counts read them.
+document.addEventListener("houselinkschange", () => { if (state.inv) renderContainers(); });
 // A saved Organize setup changes how the containers read.
 document.addEventListener("organizechange", () => { if (state.inv) renderContainers(); });
 const showAll = (): HTMLElement => el("a", { href: "#/containers", id: "cont-show-all" }, "Show all");
@@ -149,27 +151,27 @@ const houseText = (id: string): string => (id === NO_HOUSE ? "Not in a house" : 
 // The words a row is found by: its Organize label, its own name, its serial in hex, who scanned it and its kind.
 function rowText(r: Container): string {
   const lab = state.organize.config?.labels[String(r.serial)];
-  return [lab?.name, r.label, bagLabel(r), `0x${(+r.serial).toString(16)}`, r.scannedBy, KIND_NAMES[String(r.kind)] || r.kind].filter(Boolean).join(" ").toLowerCase();
+  return [lab?.name, r.label, bagLabel(r), `0x${(+r.serial).toString(16)}`, r.scannedBy, KIND_NAMES[String(r.kind)] || r.kind].filter(Boolean).join(" ");
 }
 // `ignore`: the chip whose menu is counting, so its own choice does not narrow its counts.
 const passes = (r: Container, ignore?: "kind" | "house"): boolean => (ignore === "kind" || !filter.kind || r.kind === filter.kind)
-  && (ignore === "house" || !filter.house || houseOf(r) === filter.house) && (!filter.q || rowText(r).includes(filter.q));
+  && (ignore === "house" || !filter.house || houseOf(r) === filter.house) && textHit(filter.q, rowText(r));
 let toolbar: { search: HTMLInputElement; kind: HTMLButtonElement; house: HTMLButtonElement } | null = null;
 function buildToolbar(): NonNullable<typeof toolbar> {
   const s = searchInput({ label: "Search containers", placeholder: "Search name, label, serial, character", attrs: { id: "cont-q" } });
   s.root.classList.add("inv-search");
   let timer = 0;
-  s.input.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(() => { filter.q = s.input.value.trim().toLowerCase(); renderContainers(); }, 150) as unknown as number; });
+  s.input.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(() => { filter.q = s.input.value; renderContainers(); }, 150) as unknown as number; });
   s.input.addEventListener("keydown", (e) => { if (e.key === "Escape" && s.input.value) { e.stopPropagation(); s.input.value = ""; filter.q = ""; renderContainers(); } });
   // A chip's menu: "Any …" and each value with how many of the containers the other filters leave carry it.
   const pick = (chip: HTMLButtonElement, field: "kind" | "house", any: string, values: Array<[string, string]>): void => {
     const others = roots().filter((r) => passes(r, field));
     const count = (v: string): number => others.filter((r) => (field === "kind" ? r.kind : houseOf(r)) === v).length;
-    menu(chip, [{ label: any, count: others.length, onSelect: () => { filter[field] = ""; renderContainers(); } },
-      ...values.map(([v, label]) => ({ label, count: count(v), onSelect: () => { filter[field] = v; renderContainers(); } }))], { label: chip.textContent || any });
+    menu(chip, [{ label: any, count: others.length, checked: !filter[field], onSelect: () => { filter[field] = ""; renderContainers(); } },
+      ...values.map(([v, label]) => ({ label, count: count(v), checked: filter[field] === v, onSelect: () => { filter[field] = v; renderContainers(); } }))], { label: chip.textContent || any });
   };
-  const kind = filterChip({ label: "Kind", attrs: { id: "cont-kind" }, onClick: () => pick(kind, "kind", "Any kind", Object.entries(KIND_NAMES)) });
-  const house = filterChip({ label: "House", attrs: { id: "cont-house" }, onClick: () => pick(house, "house", "Any house", [...mapHouses().map((h): [string, string] => [h.id, h.name]), [NO_HOUSE, houseText(NO_HOUSE)]]) });
+  const kind = filterChip({ label: "Kind", attrs: { id: "cont-kind", "aria-haspopup": "menu" }, onClick: () => pick(kind, "kind", "Any kind", Object.entries(KIND_NAMES)) });
+  const house = filterChip({ label: "House", attrs: { id: "cont-house", "aria-haspopup": "menu" }, onClick: () => pick(house, "house", "Any house", [...mapHouses().map((h): [string, string] => [h.id, h.name]), [NO_HOUSE, houseText(NO_HOUSE)]]) });
   $<HTMLElement>("#cont-toolbar")!.replaceChildren(s.root, kind, house);
   return { search: s.input, kind, house };
 }

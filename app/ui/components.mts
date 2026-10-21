@@ -629,7 +629,8 @@ export function clearToasts(): void { document.getElementById("toasts")?.replace
 // with an icon; a disabled item stays in the list (aria-disabled) and carries its reason as a title.
 // The menu is as wide as its longest item, so no item's words wrap: `width` is only its minimum, and it
 // never grows past 360 px or the window (components.css, .pop[role="menu"]).
-export interface MenuItem { label: string; onSelect: () => void; danger?: boolean | undefined; kbd?: string | undefined; count?: string | number | undefined; icon?: IconName | undefined; disabled?: string | null | undefined }
+// `checked` makes the item one of a single choice (role menuitemradio): true marks the current one with a check.
+export interface MenuItem { label: string; onSelect: () => void; danger?: boolean | undefined; kbd?: string | undefined; count?: string | number | undefined; icon?: IconName | undefined; disabled?: string | null | undefined; checked?: boolean | undefined }
 export function menu(anchor: HTMLElement, items: Array<MenuItem | "divider">, { label, width = 220 }: { label: string; width?: number }): PopoverHandle & { counts: Map<string, HTMLSpanElement> } {
   const counts = new Map<string, HTMLSpanElement>();
   const buttons: HTMLButtonElement[] = [];
@@ -638,9 +639,9 @@ export function menu(anchor: HTMLElement, items: Array<MenuItem | "divider">, { 
     if (it === "divider") return el("div", { class: "divider", role: "separator" });
     const count = txt(it.count ?? "", "count");
     counts.set(it.label, count);
-    const b = box("button", { type: "button", class: `menu-item${it.danger ? " danger" : ""}`, role: "menuitem", tabindex: buttons.length ? "-1" : "0",
+    const b = box("button", { type: "button", class: `menu-item${it.danger ? " danger" : ""}`, role: it.checked == null ? "menuitem" : "menuitemradio", ...(it.checked == null ? {} : { "aria-checked": String(it.checked) }), tabindex: buttons.length ? "-1" : "0",
       ...(it.disabled ? { "aria-disabled": "true", title: it.disabled } : {}),
-      onclick: () => { if (it.disabled) return; handle?.close(); it.onSelect(); } }, it.icon ? icon(it.icon, { size: "sm" }) : null, txt(it.label), it.kbd ? kbd(it.kbd) : count);
+      onclick: () => { if (it.disabled) return; handle?.close(); it.onSelect(); } }, it.checked ? icon("check", { size: "sm" }) : it.icon ? icon(it.icon, { size: "sm" }) : null, txt(it.label), it.kbd ? kbd(it.kbd) : count);
     buttons.push(b);
     return b;
   });
