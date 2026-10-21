@@ -8,6 +8,7 @@
 // owns: `box`, `txt`, `button`, `input`, `select`, `popover`, `combobox`, `createDrawer`, `openDialog`, `confirmDialog`, `table`, `menu`, `toast`, `resistTile`, `detailPane`, `FLEX_CLASSES`
 import { el } from "./dom.mts";
 import type { ElAttrs } from "./dom.mts";
+import { textHit } from "./format.mts";
 
 // ---------------------------------------------------------------- text and containers
 // Content a builder accepts where a label goes: a string (wrapped in one span) or a ready node.
@@ -690,8 +691,7 @@ export interface ComboboxHandle { button: HTMLButtonElement; refresh: () => void
 // The groups the typed text leaves: the options whose title and subtitle (or `match`) hold it, in any case; a group with
 // none left goes.
 export function filterGroups(groups: ComboGroup[], query: string): ComboGroup[] {
-  const q = query.trim().toLowerCase();
-  const hit = (o: ComboOption): boolean => !q || (o.match ?? `${o.title} ${o.subtitle ?? ""}`).toLowerCase().includes(q);
+  const hit = (o: ComboOption): boolean => (o.match != null ? textHit(query, o.match) : textHit(query, o.title, o.subtitle));
   return groups.map((g) => ({ ...g, options: g.options.filter(hit) })).filter((g) => g.options.length > 0);
 }
 // A text cut around the first place the query occurs, in any case: [before, the match, after], or [text] when it does not.

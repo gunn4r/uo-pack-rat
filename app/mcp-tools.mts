@@ -326,7 +326,7 @@ export const TOOLS: Tool[] = [
     name: "search_items",
     description: "Search the inventory with the Inventory screen's filters. Every filter is optional and they combine; list filters match any of their values, and slots, kinds, slayers and tags match whatever their case. Returns compact rows (serial, name, kind, slot, rarity, where, the container and root serials, wornBy, props); get_item has the full tooltip.",
     inputSchema: { type: "object", additionalProperties: false, properties: {
-      q: { type: "string", maxLength: 200, description: "Free text in the name, tooltip lines, kind, rarity or location." },
+      q: { type: "string", maxLength: 200, description: "Free text in the name, tooltip lines, kind, rarity, tags or location." },
       character: { type: "array", maxItems: 50, items: { type: "string", maxLength: 64 }, description: "Only items these characters hold or wear." },
       slot: { type: "array", maxItems: 30, items: { type: "string", maxLength: 32 }, description: "Gear slots (inventory_facets lists them), \"?\" for none." },
       kind: { type: "array", maxItems: 30, items: { type: "string", maxLength: 32 }, description: "Item kinds: gear, reagent, scroll, …" },
@@ -415,19 +415,9 @@ export const TOOLS: Tool[] = [
       const c = inv.containers[serial];
       if (!c) throw new ToolError(`no container with serial ${serial} (${hex(serial)}) in the scans`);
       const head = { serial, name: c.label || c.name || hex(serial), kind: c.kind ?? null, root: c.root, ...(c.capacity ? { capacity: c.capacity } : {}), ...(c.opened === false ? { note: "the newest scan could not open it; its contents are from an older scan" } : {}), scannedAt: c.scannedAt };
-      if (c.parent == null) {
-        const r = await ctx.api<{ total: number; rows: Item[] }>(`/api/items?root=${serial}&limit=${limit}&offset=${offset}`);
-        return { container: head, total: r.total, offset, items: r.rows.map(row) };
-      }
-      // A bag inside a root: the root's items, kept when the bag is among the containers they sit in.
-      const inside = (it: Item): boolean => containerChain(inv.containers, it.container).includes(serial);
-      const all: Item[] = [];
-      for (let at = 0; ; at += 500) {
-        const r = await ctx.api<{ total: number; rows: Item[] }>(`/api/items?root=${c.root}&limit=500&offset=${at}`);
-        all.push(...r.rows.filter(inside));
-        if (at + 500 >= r.total) break;
-      }
-      return { container: head, total: all.length, offset, items: all.slice(offset, offset + limit).map(row) };
+      // Everything nested inside it, a root or a bag alike (the core's within filter, #487).
+      const r = await ctx.api<{ total: number; rows: Item[] }>(`/api/items?within=${serial}&limit=${limit}&offset=${offset}`);
+      return { container: head, total: r.total, offset, items: r.rows.map(row) };
     },
   },
   {
