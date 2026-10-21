@@ -394,7 +394,7 @@ export function tripRefusal(msg: string): string {
 
 // ---------------------------------------------------------------- Auto organize
 export const STRATEGY_TEXT: Record<AutoStrategy, { label: string; text: string }> = {
-  simple: { label: "Simple", text: "One container for each kind of thing: armor, weapons, jewelry, reagents, skill scrolls, spell scrolls, treasure maps and SOS, resources and so on." },
+  simple: { label: "Simple", text: "One container for each kind of thing: armor, weapons, spellbooks, jewelry, reagents, skill scrolls, spell scrolls, treasure maps and SOS, resources and so on." },
   detailed: { label: "Detailed", text: "Splits each kind further: armor by slot, jewelry by type, reagents by school, scrolls by kind and spell scrolls by school, resources by type. Short of containers, a kind's small groups share one." },
   build: { label: "By build", text: "Sorts gear by what it is for: caster, melee, hybrid (both equally), tank (shields and resist pieces with neither) and other gear. Everything else is grouped as in Simple." },
 };

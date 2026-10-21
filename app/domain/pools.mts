@@ -5,7 +5,7 @@
 import { floorMet, heldTotal, liftedMin, RESIST_SKILL_KEY, type ResistStep } from "../solver/scoring.mts";
 import { getRules } from "./rules.mts";
 import { propName, PROP_LABELS, SKILL_SET, type PropMap } from "./properties.mts";
-import { GEAR_SLOTS, HAND_SLOTS, REQUIRED_SLOTS, SLOT_GROUP } from "./slots.mts";
+import { GEAR_SLOTS, HAND_SLOTS, REQUIRED_SLOTS, SLOT_GROUP, SPELLBOOK_GRAPHICS, SPELLBOOK_RE, WEAPON_RE } from "./slots.mts";
 import { slayersOf } from "./kinds.mts";
 import type { Inventory, Item } from "./fold.mts";
 
@@ -175,19 +175,21 @@ export const isWeapon = (it: Pick<Item, "slot" | "skillReq" | "extras">): boolea
   (it.slot === "oneHanded" || it.slot === "twoHanded") && (!!it.skillReq || typeof it.extras?.["weapon speed"] === "number");
 // The Type filter: what a piece is, in the shard's words. A weapon is one- or two-handed by its tooltip's "One-handed
 // Weapon" / "Two-handed Weapon" line (classify's twoHanded, which falls back to the name only without one); a held piece
-// that is no weapon is a shield in the two-handed slot (whatever its name: an artifact shield says nothing) and a
-// spellbook in the one-handed one; the rest by its slot's group. Anything else, and every item that is not gear, is Other.
+// that is no weapon is a shield in the two-handed slot (whatever its name: an artifact shield says nothing). In the
+// one-handed slot it is a spellbook only by a book's name (SPELLBOOK_RE) or graphic (SPELLBOOK_GRAPHICS), a one-handed
+// weapon when its name is a weapon's (a scan with no skill line), and Other otherwise (a held tool with properties,
+// such as an Ancient Smithy Hammer). The rest by its slot's group. Anything else, and every item that is not gear, is Other.
 export const ITEM_TYPES = ["shield", "two-handed", "one-handed", "spellbook", "armor", "jewelry", "clothing", "other"] as const;
 export type ItemType = (typeof ITEM_TYPES)[number];
 export const ITEM_TYPE_LABELS: Readonly<Record<ItemType, string>> = { shield: "Shield", "two-handed": "Two-handed weapon", "one-handed": "One-handed weapon", spellbook: "Spellbook", armor: "Armor", jewelry: "Jewelry", clothing: "Clothing", other: "Other" };
 const GROUP_TYPE: Readonly<Record<string, ItemType>> = { Armor: "armor", Jewelry: "jewelry", Clothing: "clothing" };
 // The types a slot holds: a hand two (a weapon, or a shield or spellbook), any other slot its group's.
 export const typesOfSlot = (slot: string): ItemType[] => (slot === "twoHanded" ? ["two-handed", "shield"] : slot === "oneHanded" ? ["one-handed", "spellbook"] : [GROUP_TYPE[SLOT_GROUP[slot] ?? ""] ?? "other"]);
-export function itemTypeOf(it: Pick<Item, "gear" | "slot" | "twoHanded" | "skillReq" | "extras">): ItemType {
+export function itemTypeOf(it: Pick<Item, "gear" | "slot" | "twoHanded" | "skillReq" | "extras" | "name" | "graphic">): ItemType {
   if (!it.gear || !it.slot) return "other";
   if (isWeapon(it)) return it.twoHanded ? "two-handed" : "one-handed";
   if (it.slot === "twoHanded") return "shield";
-  if (it.slot === "oneHanded") return "spellbook";
+  if (it.slot === "oneHanded") return SPELLBOOK_RE.test(it.name) || SPELLBOOK_GRAPHICS.has(it.graphic ?? -1) ? "spellbook" : WEAPON_RE.test(it.name) ? "one-handed" : "other";
   return GROUP_TYPE[SLOT_GROUP[it.slot] ?? ""] ?? "other";
 }
 // The required properties a piece lacks, its flags read through flagKey; none for a piece that is no weapon.

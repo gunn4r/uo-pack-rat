@@ -1068,7 +1068,7 @@ test("[fast] weapon filter: an excluded Spellbooks row keeps spellbooks out and 
   assert.ok(weaponAllowed({ slot: "oneHanded", name: "Kryss", skillReq: "fencing", flags: ["use best weapon skill"] } as unknown as Item, ["fencing", "spellbook"]), "a UBWS weapon unaffected");
   assert.ok(weaponAllowed({ slot: "oneHanded", name: "Sledge Hammer", skillReq: null, flags: ["use best weapon skill"] } as unknown as Item, ["spellbook"], false), "no weapon skill excluded: a UBWS weapon with no Skill Required line stays");
   assert.ok(weaponAllowed({ slot: "twoHanded", name: "Order Shield", skillReq: null, flags: [] } as unknown as Item, ["spellbook"]), "a shield stays");
-  assert.ok(!weaponAllowed({ ...book, name: "Song Of The Seas" }, ["spellbook"]), "a spellbook by the Type filter's test (#487), whatever its name");
+  assert.ok(!weaponAllowed({ ...book, name: "Song Of The Seas", graphic: 0x0efa } as unknown as Item, ["spellbook"]), "a spellbook by the Type filter's test (#487): an artifact book named like none, by its graphic");
   const mk = (serial: number, name: string, extra: Record<string, unknown> = {}): Item => ({ serial, name, slot: "oneHanded", gear: true, props: { hci: 1 }, tags: [], strReq: 0, root: 1, equippedBy: null, gargoyle: false, medable: true, ...extra } as unknown as Item);
   const inv = { items: { 1: mk(1, "Spellbook"), 2: mk(2, "Katana", { skillReq: "swordsmanship" }), 3: mk(3, "Necromancer Spellbook", { equippedBy: "Kestrel", root: null }) } } as unknown as Inventory;
   const r = buildPools(inv, "Kestrel", { excludeWeapons: ["spellbook"] });

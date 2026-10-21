@@ -34,7 +34,7 @@ Pick a template such as Melee, Caster or Tank, or set your own goals, and the Su
 
 The House map draws your house from the game, with every chest stack colored by its label or by how full it is. Search it to see which chests hold what you're after.
 
-![Searching the House map for "katana" lights up the three chests that hold one, then the Stack plan lists every stack](docs/images/house-map-search.gif)
+![Searching the House map for "katana" lights up the three chests that hold one, then the top-down view shows their rooms](docs/images/house-map-search.gif)
 
 ### Organize your storage
 
