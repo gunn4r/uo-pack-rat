@@ -2,6 +2,8 @@
 //
 // `[slow]`: the contrast check (design spec 2.3, `docs/ui.md`) on the real page, in the Electron window over the demo data. Each scene (Inventory, the item tooltip, the Inventory's row actions, filter chips and active strip, rarity and location popovers, "+ Filter" menu, property rule, the tags popover (a hidden and a required tag), table settings, item peek, row-focus tooltip, empty result, grouped view and load-failed message, the Characters roster, its row menu, a character sheet, its doll card holding the client-files message and its Customize popover (issue #57) and a worn piece's popover, Containers and its row menu, a confirm dialog, the toast stack, a finished build, Manual after a fill (its outcome line, the slot cards, the fetch list), the Import drawer (empty, a clean paste with its preview, a paste that does not parse, and scan files), the setup wizard (the shard step, the client cards, a failed folder path, the paste branch's last step), the saved-runs drawer, the bridge popover, the collapsed sidebar, Settings, and Settings' lower sections with a failed update check (the request routed to a fixed answer, not GitHub), and the Suit Builder's states: an overridden resist cap with a result built at it and an out-of-range cap's error, the result's lower cards with Solver details and the full sheet open, compare suits, the drawer's run menu and inline rename, compare runs, the template menu, the property picker, a chip checklist, the Weapons popover with two skills excluded, the Settings drawer's Weights tab, an Advanced field error, the running build and the first-visit view, and Organize, its rule drawer, Label… and Auto organize) is measured in light and in dark, switched through `prefers-color-scheme` (the page follows it live while Appearance is System), with reduced motion so no colour transition is half-way. `scripts/contrast-probe.mts` measures every text/background pair (compositing semi-transparent fills down to an opaque layer), field values, placeholders, control boundaries, icons in icon-only buttons and messages, and status dots; any pair under 4.5:1 (text; 3:1 when large), or 3:1 (edges, icons, dots), fails the test, and a disabled control only needs 3:1 text. A canary (a `#bbb` label on white) proves the probe reports a failure. `[slow]` rather than `[fast]` because it launches Electron and runs a short build.
 //
+// On every scene it also checks (issue #504, scripts/gear-name-probe.mts) that each visible text that is exactly a gear item's name sits inside gearItem's `.gi-name`, reporting every offender; a plain gear name added to the page is the check's canary.
+//
 // Theme families (Default and Britannia) are switched through theme.mts's applyLook. A screen or overlay added to the app gets a scene here. Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -12,6 +14,7 @@ import type { Page } from "playwright";
 import { openFacet, setRows, pickCharacter, characterNames, animationsDone } from "./electron-window.mts";
 import { ROOT, launchApp, skipWithoutElectron, type App } from "./electron-app.mts";
 import { probeContrast, failures, describeFailures, type ContrastRow } from "./contrast-probe.mts";
+import { probeGearNames, gearNames, GEAR_NAME_EXEMPT, type GearNameHit } from "./gear-name-probe.mts";
 
 const KESTREL = readFileSync(join(ROOT, "app", "fixtures", "demo-Kestrel.json"), "utf8");
 
@@ -391,11 +394,16 @@ test("[slow] every text, control edge, icon and status dot on the real page pass
     await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
     const rows: Array<ContrastRow & { where: string }> = [];
     const seen: string[] = [];
+    // Issue #504: on every scene, a gear item's name drawn on the page sits inside gearItem's .gi-name (scripts/gear-name-probe.mts).
+    const names = await page.evaluate(gearNames), exempt = GEAR_NAME_EXEMPT.map(([s]) => s);
+    assert.ok(names.length > 10, `the demo has gear names to look for (${names.length})`);
+    const named: Array<GearNameHit & { where: string }> = [];
     for (const scene of SCENES) {
       await scene.enter(page);
       // hover fills are states, not surfaces: park the pointer on an empty stretch of the top bar (the
       // tooltip scene keeps its hover, it is what that scene measures)
       if (scene.name !== "item tooltip") await page.mouse.move(Math.min(900, size.width - 20), 4);
+      for (const h of await page.evaluate(probeGearNames, [names, exempt] as [string[], string[]])) named.push({ ...h, where: scene.name });
       for (const family of FAMILIES) {
         // the page only (applyLook), not the saved ui-prefs: the scene stays as it is while the look changes
         await page.evaluate(async (f) => (await import("/ui/theme.mjs" as string)).applyLook({ theme: f }), family);
@@ -419,6 +427,7 @@ test("[slow] every text, control edge, icon and status dot on the real page pass
       await page.emulateMedia({ colorScheme: "light" });
       await scene.leave?.(page);
     }
+    assert.deepEqual(named.map((h) => `${h.where}: "${h.text}" in ${h.path}`), [], "a gear item's name drawn without gearItem (app/ui/gear-item.mts)");
     const failed = failures(rows);
     assert.equal(failed.length, 0, `contrast failures (${failed.length} of ${rows.length} pairs):\n${describeFailures(failed)}`);
     assert.ok(rows.some((r) => r.kind === "boundary") && rows.some((r) => r.kind === "field-value"), "the probe measured control edges and field values");
@@ -429,6 +438,13 @@ test("[slow] every text, control edge, icon and status dot on the real page pass
     await page.evaluate(() => { const s = document.createElement("span"); s.id = "contrast-canary"; s.textContent = "pale"; s.style.cssText = "color:#bbbbbb;background:#ffffff;position:fixed;top:0;left:0"; document.body.append(s); });
     const canary = failures(await page.evaluate(probeContrast)).filter((r) => r.text === "pale");
     assert.equal(canary.length, 1, "a #bbb on white label is a failing pair");
+    // Nor is the gear-name check: a gear item's name drawn as plain text is reported, and so is one with a hand-built quantity inside aria-hidden.
+    await page.evaluate((n) => {
+      const s = document.createElement("span"); s.textContent = n; s.style.cssText = "position:fixed;top:20px;left:0"; document.body.append(s);
+      const q = document.createElement("span"); q.textContent = `${n} ×3`; q.setAttribute("aria-hidden", "true"); q.style.cssText = "position:fixed;top:40px;left:0"; document.body.append(q);
+    }, names[0]!);
+    const caught = (await page.evaluate(probeGearNames, [names, exempt] as [string[], string[]])).filter((h) => h.name === names[0]).map((h) => h.text);
+    assert.deepEqual(caught.sort(), [names[0], `${names[0]} ×3`].sort(), "a plain gear name and a hand-built quantity are offenders");
   } finally {
     await close();
   }

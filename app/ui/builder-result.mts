@@ -326,6 +326,7 @@ function planCard(current: OptSuit, suit: OptSuit, name: string, all: string[], 
     tbl.classList.add("b-plan");
     tbl.querySelector("thead th:last-child")!.replaceChildren(el("span", { class: "sr" }, "Actions"));
     for (const td of tbl.querySelectorAll("tbody td:last-child")) td.classList.add("b-act");
+    for (const td of tbl.querySelectorAll("tbody td:first-child")) td.classList.add("slot-cell");   // a slot's label
   }
   const unchangedNames = unchanged.map((sl) => (current[sl] ? `${slotLabel(sl)} (${current[sl]!.name})` : slotLabel(sl)));
   return el("section", { class: "card b-flush", "aria-label": "Plan" },
@@ -459,7 +460,7 @@ function showCompare(spec: () => CompareSpec): void {
   const group = (text: string): HTMLTableRowElement => tr("group", el("td", { colspan: cols.length + 1 }, txt(text, "caps")));
   const body: HTMLTableRowElement[] = [];
   if (s.settingsRow) body.push(group("Settings"), tr("", el("td", {}, "Changed from the first"), ...s.settingsRow.map((t) => el("td", { class: "muted" }, t))));
-  if (m.pieces.length) body.push(group(diffOnly ? "Pieces that differ" : "Pieces"), ...m.pieces.map((r) => tr("", el("td", {}, r.label), ...r.cells.map((c) => el("td", c.diff ? { class: "diff" } : {}, c.serial ? gearItem({ serial: c.serial, name: c.text }) : c.text)))));
+  if (m.pieces.length) body.push(group(diffOnly ? "Pieces that differ" : "Pieces"), ...m.pieces.map((r) => tr("", el("td", { class: "slot-cell" }, r.label), ...r.cells.map((c) => el("td", c.diff ? { class: "diff" } : {}, c.serial ? gearItem({ serial: c.serial, name: c.text }) : c.text)))));
   if (m.totals.length) body.push(group(diffOnly ? "Totals that differ" : "Totals"), ...m.totals.map((r) => tr("", el("td", {}, r.label), ...r.values.map((v, i) => el("td", r.best[i] ? { class: "best" } : {}, fmtN(v).replace("-", "−"))))));
   body.push(group("Outcome"), ...s.outcomeRows.map((rowLabel, ri) => tr("", el("td", {}, rowLabel), ...cols.map((c) => el("td", {}, c.outcome[ri] || "")))));
   body.push(tr("", el("td", { class: "b-cmp-act" }, el("span", { class: "sr" }, "Actions")), ...cols.map((c) => el("td", { class: "b-cmp-act" }, c.action))));
