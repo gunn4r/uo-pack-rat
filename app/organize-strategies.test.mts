@@ -27,10 +27,8 @@ const fold = (boxes: BoxSpec[], things: ThingSpec[] = []): Inventory => foldSnap
 // One of each thing the strategies sort (Task 0 checked how each classifies), in serial order.
 const NAMES = ["Black Pearl", "Ruby", "Katana", "Platemail Gorget", "Gold Necklace", "Gold Ring", "Bone Armor", "Heater Shield", "Spellbook", "Greater Heal Potion", "Bandage", "Iron Ingot", "Recall Rune", "Scissors", "Greater Heal", "An Exalted Scroll Of Mysticism (110 Skill)", "Apple", "Grave Dust", "Board"];
 const ITEM = 0x40001000;
-// A spell's name is a scroll only on a scroll graphic (issue #134), and the fixture's default graphic is a reagent's. A
-// weapon carries its skill line, as every scanned one does: without it a held piece is no weapon (Type: a one-handed
-// piece that is no weapon is a spellbook).
-const gfx = (name: string): { graphic?: number; lines?: string[] } => (name === "Greater Heal" ? { graphic: 0x1F49 } : name === "Katana" ? { lines: ["Skill Required: Swordsmanship"] } : {});
+// A spell's name is a scroll only on a scroll graphic (issue #134), and the fixture's default graphic is a reagent's.
+const gfx = (name: string): { graphic?: number } => (name === "Greater Heal" ? { graphic: 0x1F49 } : {});
 const things = (inBox: number, names: readonly string[] = NAMES, from = 1): ThingSpec[] => names.map((name, i) => ({ serial: ITEM + from + i, name, in: inBox, ...gfx(name) }));
 const grouped = (strategy: keyof typeof STRATEGIES): [string, string, string[]][] =>
   groupItems(STRATEGIES[strategy], Object.values(fold([{ serial: A }], things(A)).items)).map((g) => [g.key, g.name, g.items.map((it) => it.name)]);
@@ -155,13 +153,16 @@ test("[fast] Detailed: Spellbooks share a chest with the books, not the weapons 
 // Spellbooks have their own group in Simple and Detailed, taken by Type (a held piece that is no weapon and no shield),
 // so one named like no other book (Scrapper's Compendium) is one too, and Weapons, which takes weapons and shields by
 // Type, never holds one.
-test("[fast] Simple and Detailed: every spellbook goes to Spellbooks by its Type, whatever its name, and Weapons takes none", () => {
+test("[fast] Simple and Detailed: every spellbook goes to Spellbooks by its Type, whatever its name, and Weapons takes none; a weapon scanned with no tooltip lines stays a weapon and a held tool with properties stays out of Spellbooks", () => {
   const books = ["Necromancer Spellbook", "Scrapper's Compendium", "Spellbook"];
-  const items = Object.values(fold([{ serial: A }], things(A, ["Katana", "Heater Shield", ...books])).items);
+  // The Katana has no tooltip lines (no skill line); the hammer is held, with a property and no skill line.
+  const hammer: ThingSpec = { serial: ITEM + 50, name: "Ancient Smithy Hammer", in: A, graphic: 0x13e3, lines: ["Strength Bonus 5", "Uses Remaining: 600"] };
+  const items = Object.values(fold([{ serial: A }], [...things(A, ["Katana", "Heater Shield", ...books]), hammer]).items);
   for (const strategy of ["simple", "detailed"] as const) {
     const groups = groupItems(STRATEGIES[strategy], items), of = (key: string): string[] => (groups.find((g) => g.key === key)?.items.map((it) => it.name) ?? []).sort();
     assert.deepEqual(of("spellbooks"), books, `${strategy}: the spellbooks`);
     assert.deepEqual(of("weapons"), strategy === "simple" ? ["Heater Shield", "Katana"] : ["Katana"], `${strategy}: Weapons keeps the weapons (and Simple the shield)`);
+    assert.deepEqual(of("other-gear"), ["Ancient Smithy Hammer"], `${strategy}: the held tool is Other gear, not a spellbook`);
   }
 });
 
@@ -306,7 +307,7 @@ test("[fast] Simple and Detailed: shirts and cloth kilts are other gear, a gargi
 // Gear for By build, one piece of each build, each written as its tooltip reads.
 const BUILD_GEAR: ThingSpec[] = [
   { name: "Gold Ring", lines: ["Faster Casting 1", "Lower Mana Cost 8"] },
-  { name: "Katana", lines: ["Hit Chance Increase 15", "Swing Speed Increase 10", "Skill Required: Swordsmanship"] },
+  { name: "Katana", lines: ["Hit Chance Increase 15", "Swing Speed Increase 10"] },
   { name: "Gold Bracelet", lines: ["Faster Casting 1", "Damage Increase 10"] },
   { name: "Platemail Gorget", lines: ["Physical Resist 10", "Fire Resist 10"] },
   { name: "Leather Gloves", lines: ["Physical Resist 5"] },
