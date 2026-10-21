@@ -8,7 +8,8 @@ Part of the UI docs: [`docs/ui.md`](../ui.md) has the hard rules, tokens, compon
 
 | Module | What it draws and does |
 | --- | --- |
-| `ui/item-browser.mts` | The item browser (`createItemBrowser`): toolbar, filter popovers, active-filter strip, virtual table. One instance per mount, so it is reused (the Suit Builder's picker) |
+| `ui/item-browser.mts` | The item browser (`createItemBrowser`): toolbar, active-filter strip, virtual table. One instance per mount, so it is reused (the Suit Builder's picker) |
+| `ui/filter-bar.mts` | The filter bar (`createFilterBar`), shared with the Organize rule editor (#487) |
 | `ui/inventory.mts` | The Items view: one item browser with the Inventory's options |
 | `ui/inv-model.mts` | Pure: the query string, the active-filter tokens and their wording, counts, the empty-result sentence, the row window, the keyboard model, `slayerTree` |
 | `ui/peek.mts` | The item peek beside the table |
@@ -60,7 +61,7 @@ Part of the UI docs: [`docs/ui.md`](../ui.md) has the hard rules, tokens, compon
 
 ### How to extend it
 
-- **A filter:** add the query field to `app/item-query.mts`'s `parseItemQuery`, then the token and its wording to `inv-model.mts` with a test. Then add the control in `item-browser.mts`, going through `setQuery()`. `docs/change-checklists.md` "Add an item property or property filter" lists the rest.
+- **A filter:** add the query field to `app/item-query.mts`'s `parseItemQuery`, then the token and its wording to `inv-model.mts` with a test. Then add the control in `filter-bar.mts`, going through `setQuery()`. `docs/change-checklists.md` "Add an item property or property filter" lists the rest.
 - **A column:** put its key in its group in `inv-model.mts` (`COL_GROUPS`; `ITEM_COLS` holds the item's own fields).
   - A column that is on by default also goes in `DEFAULT_COLS`.
   - So that column lists saved earlier get it once, raise `COLS_VERSION` and have `withNewDefaults` (`view-state.mts`) add it. Today that function adds only Tags.
