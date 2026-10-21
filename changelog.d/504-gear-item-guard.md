@@ -1,0 +1,1 @@
+- For contributors: `scripts/gear-item-guard.test.mts` (issues #504, #503) fails when an `app/ui` module other than `gear-item.mts` builds an item's name, icon or rarity color by hand, so every piece of gear is drawn by `gearItem`; its few exceptions are listed with their reasons.
