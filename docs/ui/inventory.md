@@ -178,7 +178,7 @@ Every screen writes its ui-prefs fields through `ui/prefs.mts`'s `prefs.set(patc
 
 ## Item peek
 
-`ui/peek.mts`: a row click, Enter or Space opens the selected item in a panel docked beside the table (400 px, 360 below 1280, laid over the table below 1180). Its title is the item as a `gearItem` (issue #504): the 32 px icon when the scan recorded a graphic, and the whole name, wrapped, in its rarity's color.
+`ui/peek.mts`: a row click, Enter or Space opens the selected item in a panel docked beside the table (400 px, 360 below 1280, laid over the table below 1180). Its title is the item as a `gearItem` (issue #504): the 32 px icon when there is art (no empty box otherwise), and the whole name, wrapped, in its rarity's color, the icon level with its first line.
 
 While it is open, ↑/↓ step through rows with the peek following, and Esc closes it (focus goes back to the row). Both work from the table, the panel or the bare page: a click on the panel's text leaves focus on `<body>`, so the keys are heard on the document. A field being typed in, a popover, a dialog or a drawer keeps its own keys.
 
