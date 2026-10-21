@@ -10,7 +10,7 @@
 // a pager click.
 //
 // map: ui-components
-// owns: `createItemBrowser`, `itemsSource`, `itemsSourceWith`
+// owns: `createItemBrowser`
 import { RESIST_KEYS } from "../vault-lib.mts";
 import type { Item } from "../vault-lib.mts";
 import type { ItemQuery, ItemQueryGroups } from "../item-query.mts";
@@ -59,8 +59,6 @@ export interface DetailHooks {
   close: (focusRow?: boolean) => void;
   refresh: (find: (serial: number) => Item | undefined, stillThere: boolean) => void;
 }
-// Where a browser's rows and filter choices come from (filter-bar.mts, which draws the filters).
-export { itemsSource, itemsSourceWith, type ItemSource } from "./filter-bar.mts";
 // A checkbox before each list row and a header checkbox for the rows loaded (the Inventory's selection, issue #270: ui/move-to.mts
 // keeps it). `locked` says why a row cannot be ticked (a worn item); `header` is the header checkbox's look.
 export interface SelectionHooks {

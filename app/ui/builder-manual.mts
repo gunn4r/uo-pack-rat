@@ -30,7 +30,8 @@ import { session, commands, provide, onChange, readControls, type BuffInputs, ty
 import { optimizeErrorMessage } from "./messages.mts";
 import { itemActions } from "./item-parts.mts";
 import { sheetParts, wornSet } from "./sheet.mts";
-import { createItemBrowser, itemsSourceWith } from "./item-browser.mts";
+import { createItemBrowser } from "./item-browser.mts";
+import { itemsSourceWith } from "./filter-bar.mts";
 import type { ItemBrowser } from "./item-browser.mts";
 import type { UiPrefs, OptimizeResult, OptimizeStartApiResponse, OptSuit } from "./api-types.mts";
 import { MANUAL_GROUPS, emptyHistory, record, undoStep, redoStep, historyKey, historyKeyNames, type History, type Suit, TOTAL_KEYS, STAT_KEYS, STRIP_KEYS, capped, capLine, slotQuery, handConflict, type ManualDollState, handNote, suitFrom, fillableSlots, fetchPieces, fillPicks, keptSlots, noCharacterRunSettings, listWords, autoLockNote, applyEditStep, type FillStart, type EditStep, type Reslot, savedSlots, missingSlots, reslotted, reslotNote, deltaKeys, slotDelta } from "./manual-model.mts";
