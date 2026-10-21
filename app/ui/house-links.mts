@@ -11,7 +11,12 @@ import type { Item } from "../vault-lib.mts";
 let index = new Map<number, HouseRef>();
 // A failed fetch only leaves the plain grid's containers linked: the rest of the page never waits on it.
 export async function loadHouseLinks(): Promise<void> { setHouses(await api<HousesApiResponse>("/api/houses").then((r) => r.houses, () => [])); }
-export function setHouses(houses: readonly HouseSummary[]): void { index = state.inv ? houseIndex(houses, state.inv.containers) : new Map(); }
+// A new index announces itself ("houselinkschange"): it lands after the inventory's own change event, and a view filtered
+// by house (the Containers list) redraws with it.
+export function setHouses(houses: readonly HouseSummary[]): void {
+  index = state.inv ? houseIndex(houses, state.inv.containers) : new Map();
+  globalThis.document?.dispatchEvent(new Event("houselinkschange"));
+}
 export const houseLinks = (): ReadonlyMap<number, HouseRef> => index;
 // The houses on the House map (the plain grid of other ground containers left out), each with the containers on the
 // ground standing in it, in name order: the Location filter's house rows. `houseIds` is the same by container serial,
