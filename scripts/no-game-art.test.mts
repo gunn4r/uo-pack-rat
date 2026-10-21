@@ -1,6 +1,6 @@
 // no-game-art.test.mts — a [smoke] guard that no game client file or art decoded from one is ever committed (issue #502).
 //
-// a `[smoke]` guard that no game client file or art decoded from one is ever committed (issue #502): every path in the git index (staged or tracked) is checked: no Ultima Online client file (`.mul`, `.uop`, `.idx`, the client's `.def` tables), no art cache, and no image outside the places the repo's own pictures live (the README's screenshots in `docs/images/`, the app's logo and icons), and no PNG in `docs/images/` under 1280 px wide or GIF under 640 px (a screenshot is 2560 px, a GIF 960 px; a decoded sprite is far smaller), the three in-game captures named in IN_GAME aside. Pack Rat draws items and paperdolls from the player's own client files at run time, and `scripts/readme-shots.mts` reads a client folder only while it captures, so nothing decoded from the game belongs in the repo. Also the rule itself, on made-up paths. Skipped when git is unavailable.
+// a `[smoke]` guard that no game client file or art decoded from one is ever committed (issue #502): every path in the git index (staged or tracked) is checked: no Ultima Online client file (`.mul`, `.uop`, `.idx`, the client's `.def` tables), no art cache, and no image outside the places the repo's own pictures live (the README's screenshots in `docs/images/`, the app's logo and icons), and nothing in `docs/images/` but a PNG at least 1280 px wide or a GIF at least 640 px, read from its header (a screenshot is 2560 px, a GIF 960 px; a decoded sprite is far smaller); the in-game captures in IN_GAME need 200 px, and OTHER_FORMATS names the one picture of another format. Pack Rat draws items and paperdolls from the player's own client files at run time, and `scripts/readme-shots.mts` reads a client folder only while it captures, so nothing decoded from the game belongs in the repo. Also the rule itself, on made-up paths. Skipped when git is unavailable.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -16,8 +16,11 @@ const IMAGE = /\.(png|gif|jpe?g|webp|bmp|tiff?|ico|icns)$/i;
 // Where the repo's own pictures live: the README's screenshots, and the app's logo and icons.
 const IMAGE_HOMES = [/^docs\/images\/[^/]+$/, /^app\/assets\/(favicon|icon|logo-mark)\.png$/, /^build\/icon\.png$/];
 
-// The README's in-game captures, recorded from the game window at its own size (smaller than the app's shots).
+// The README's in-game captures, recorded from the game window at its own size (smaller than the app's shots), still
+// held to IN_GAME_MIN so a sprite saved under one of their names fails; and the one picture in another format.
 const IN_GAME = new Set(["docs/images/grab-game.gif", "docs/images/grab-app.gif", "docs/images/put-away-trip.gif"]);
+const IN_GAME_MIN = 200;
+const OTHER_FORMATS = new Set(["docs/images/ingame-panel.jpg"]);
 const MIN_WIDTH = { png: 1280, gif: 640 } as const;
 
 // An image's width from its header: a PNG's IHDR or a GIF's logical screen; null for anything else.
@@ -26,11 +29,14 @@ export function imageWidth(head: Buffer): { kind: "png" | "gif"; width: number }
   if (head.length >= 10 && /^GIF8[79]a$/.test(head.subarray(0, 6).toString("latin1"))) return { kind: "gif", width: head.readUInt16LE(6) };
   return null;
 }
-// What is wrong with a docs/images/ picture by its width: too narrow for a screenshot, so likely decoded art.
+// What is wrong with a file in docs/images/ by its header: not a PNG or GIF (OTHER_FORMATS aside), or too narrow for a
+// screenshot, so likely decoded art.
 export function smallImageProblem(path: string, head: Buffer): string | null {
+  if (OTHER_FORMATS.has(path)) return null;
   const w = imageWidth(head);
-  if (!w || IN_GAME.has(path) || w.width >= MIN_WIDTH[w.kind]) return null;
-  return `${path}: a ${w.kind.toUpperCase()} ${w.width} px wide, under the ${MIN_WIDTH[w.kind]} px of a screenshot (decoded game art?)`;
+  if (!w) return `${path}: not a PNG or GIF, the only formats docs/images/ takes (decoded game art?)`;
+  const min = IN_GAME.has(path) ? IN_GAME_MIN : MIN_WIDTH[w.kind];
+  return w.width >= min ? null : `${path}: a ${w.kind.toUpperCase()} ${w.width} px wide, under the ${min} px of a screenshot (decoded game art?)`;
 }
 
 // What is wrong with each path, one line per problem; none for a clean list.
@@ -54,7 +60,7 @@ test("[smoke] no-game-art: nothing in the git index is a game client file, an ar
   assert.deepEqual(small, [], "a picture in docs/images/ is too small to be a screenshot");
 });
 
-test("[fast] no-game-art: a docs/images/ PNG under 1280 px or GIF under 640 px is refused, a screenshot passes, the in-game captures aside", () => {
+test("[fast] no-game-art: docs/images/ takes a PNG of 1280 px and up or a GIF of 640 px and up, the in-game GIFs from 200 px, and the one named JPEG", () => {
   const png = (width: number): Buffer => { const b = Buffer.alloc(32); Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(b); b.write("IHDR", 12, "latin1"); b.writeUInt32BE(width, 16); b.writeUInt32BE(width, 20); return b; };
   const gif = (width: number): Buffer => { const b = Buffer.alloc(16); b.write("GIF89a", 0, "latin1"); b.writeUInt16LE(width, 6); b.writeUInt16LE(width, 8); return b; };
   assert.deepEqual(imageWidth(png(44)), { kind: "png", width: 44 });
@@ -63,7 +69,11 @@ test("[fast] no-game-art: a docs/images/ PNG under 1280 px or GIF under 640 px i
   assert.match(smallImageProblem("docs/images/doll.gif", gif(200)) ?? "", /GIF 200 px wide, under the 640 px/);
   assert.equal(smallImageProblem("docs/images/organize.gif", gif(960)), null);
   assert.equal(smallImageProblem("docs/images/grab-game.gif", gif(310)), null, "an in-game capture keeps the game window's size");
-  assert.equal(smallImageProblem("docs/images/ingame-panel.jpg", Buffer.from("\xff\xd8\xff")), null, "a JPEG has no width read here");
+  assert.match(smallImageProblem("docs/images/grab-game.gif", gif(44)) ?? "", /GIF 44 px wide, under the 200 px/, "but a sprite saved under its name fails");
+  assert.equal(smallImageProblem("docs/images/ingame-panel.jpg", Buffer.from([0xff, 0xd8, 0xff, 0xe0])), null, "the one JPEG, by name");
+  for (const [name, head] of [["docs/images/sword.webp", Buffer.from("RIFF\0\0\0\0WEBPVP8 ", "latin1")], ["docs/images/sword.jpg", Buffer.from([0xff, 0xd8, 0xff, 0xe0])], ["docs/images/sword.bmp", Buffer.from("BM", "latin1")], ["docs/images/sword.tif", Buffer.from("II*\0", "latin1")]] as const) {
+    assert.match(smallImageProblem(name, head) ?? "", /not a PNG or GIF/, name);
+  }
 });
 
 test("[fast] no-game-art: the rule names client files, art caches and stray images, and passes the repo's own pictures", () => {
