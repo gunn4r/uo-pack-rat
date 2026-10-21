@@ -2,10 +2,10 @@
 //
 // map: organize
 // owns: `resolveSelection`, `destProblem`, `planMoves`, `backSteps`, `againstRules`, `Selection`
-import { applyItemQuery, parseItemQuery } from "./item-query.mts";
+import { applyItemQuery, parseItemQuery, queryWhere } from "./item-query.mts";
 import { ancestry, applyOverlay, claimOf, inventoryStampOf, newSim, packSite, planStamp, posOk, scopeOf, sitesOf, TRIP_DEFAULTS, type OverlayMove, type ScopeOptions, type Want } from "./organize.mts";
 import { CATCH_ALL_ID, type OrganizeConfig } from "./organize-config.mts";
-import { bagLabel, labelledPlaces, TRASH_RE, type Inventory, type Item } from "./vault-lib.mts";
+import { bagLabel, TRASH_RE, type Inventory, type Item } from "./vault-lib.mts";
 import type { PlanMove, PlanTrip } from "./organize-types.mts";
 import type { RulesV1RarityItem } from "./schema/types.d.mts";
 
@@ -14,14 +14,14 @@ export interface Selection { serials?: number[] | undefined; query?: string | un
 export const MAX_SELECTION = 10000;
 
 // The selected items the scans still have, in serial order. `labels` are Organize's, which the query's free text also matches;
-// `houseOf` names the house each ground container stands in, for a query's house filter.
-export function resolveSelection(inv: Inventory, sel: Selection, rarity: RulesV1RarityItem[] = [], labels: OrganizeConfig["labels"] = {}, houseOf: ReadonlyMap<number, string> = new Map()): Item[] {
+// `houseOf` names the house each ground container stands in, for a query's house filter (called only when the query has one).
+export function resolveSelection(inv: Inventory, sel: Selection, rarity: RulesV1RarityItem[] = [], labels: OrganizeConfig["labels"] = {}, houseOf?: () => ReadonlyMap<number, string>): Item[] {
   const out = new Map<number, Item>();
   for (const s of sel.serials ?? []) { const it = inv.items[s]; if (it) out.set(+it.serial, it); }
   if (sel.query != null) {
     const except = new Set(sel.except ?? []);
     const q = { ...parseItemQuery(new URLSearchParams(sel.query)), group: false, offset: 0, limit: Number.MAX_SAFE_INTEGER };
-    for (const it of (applyItemQuery(Object.values(inv.items), q, { rarity, places: labelledPlaces(inv.containers, labels), houseOf }) as { rows: Item[] }).rows) if (!except.has(+it.serial)) out.set(+it.serial, it);
+    for (const it of (applyItemQuery(Object.values(inv.items), q, queryWhere(q, inv.containers, { labels, rarity, houseOf })) as { rows: Item[] }).rows) if (!except.has(+it.serial)) out.set(+it.serial, it);
   }
   return [...out.values()].sort((a, b) => a.serial - b.serial);
 }
