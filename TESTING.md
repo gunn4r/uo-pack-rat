@@ -181,7 +181,7 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `scripts/docs-links.test.mts` — a [smoke] guard that every repo path the Markdown names in backticks exists.
 - `scripts/electron-app.test.mts` — a [smoke] guard that keeps the Electron UI tests on their shared fixture (scripts/electron-app.mts, issue #338).
 - `scripts/electron-guards.test.mts` — the Electron shell's guards, from the phase-7 review: unit tests of the pure decisions and source-level checks on `electron/main.mts`.
-- `scripts/gear-item-guard.test.mts` — a [smoke] guard that keeps every piece of gear on the page drawn by `app/ui/gear-item.mts`'s `gearItem` (issues #504, #503), so its icon, its name's rarity color and its tooltip come from one place.
+- `scripts/gear-item-guard.test.mts` — a [smoke] static scan that catches the common ways to hand-build a piece of gear outside `app/ui/gear-item.mts`'s `gearItem` (issues #504, #503), whose icon, rarity-colored name and tooltip should come from one place.
 - `scripts/gen-contracts.test.mts` — `scripts/gen-contracts.mts`, the generator that copies `adapters/_shared/` fragments into the adapter scripts.
 - `scripts/gen-graphic-layers.test.mts` — `scripts/gen-graphic-layers.mts`, the tiledata reader behind `app/domain/slots.mts`'s wearable-graphic table.
 - `scripts/layering.test.mts` — a [smoke] guard for the import layering of app/, scripts/ and electron/.

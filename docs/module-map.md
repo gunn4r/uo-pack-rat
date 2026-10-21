@@ -468,6 +468,7 @@ Stylesheets (`app/ui/tokens.css`, `app/ui/britannia.css`, `app/ui/components.css
 | `scripts/contrast-probe.mts` | Measures WCAG contrast on the rendered page (design spec 2.3). | `probeContrast` |
 | `scripts/electron-app.mts` | The one way an Electron UI test launches Pack Rat (issue #338, the quality pass's shared fixture): the skip when Electron can't run here, a temp data folder, the launch itself (update check off, the test's own client home, the page's errors collected, the page loaded before a test sets a hash, the window sized), the teardown, a stand-in bridge, a poll for file-backed facts, and what the page showed when a wait failed. | `skipWithoutElectron`, `tempDataDir`, `launchApp`, `pageState`, `explained`, `fakeBridge`, `until` |
 | `scripts/electron-window.mts` | The Electron UI tests' one way to size the window (docs/ui.md, TESTING.md). | `fitWindow`, `testEnv` |
+| `scripts/gear-name-probe.mts` | Finds gear names drawn without `gearItem` (issues #504, #503). | `probeGearNames`, `gearNames`, `checkedNames`, `GearNameHit` |
 | `scripts/localstorage-shim-for-tests.mts` | A minimal globalThis.localStorage stub, installed as a side effect of importing this module (it has no exports). | — |
 | `scripts/module-index.mts` | The module tables in docs/module-map.md, generated from each module's own header. | `headerOf`, `renderTables`, `withTables` |
 | `scripts/readme-shots.mts` | The README's screenshots and GIFs (docs/images/), taken from the demo characters in headless Chromium. | the README's screenshots and GIFs |

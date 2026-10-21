@@ -1,8 +1,10 @@
-// gear-item-guard.test.mts — a [smoke] guard that keeps every piece of gear on the page drawn by `app/ui/gear-item.mts`'s `gearItem` (issues #504, #503), so its icon, its name's rarity color and its tooltip come from one place.
+// gear-item-guard.test.mts — a [smoke] static scan that catches the common ways to hand-build a piece of gear outside `app/ui/gear-item.mts`'s `gearItem` (issues #504, #503), whose icon, rarity-colored name and tooltip should come from one place.
 //
-// It scans every `app/ui/*.mts` but gear-item.mts, comments left out, for four ways to hand-build an item's name:
+// It is a scan, not a proof: a name reached through another variable, an alias, a template or `textContent` passes it. The enforcement is the runtime check in `scripts/ui-contrast.test.mts` (`scripts/gear-name-probe.mts`): on every scene, a gear item's name drawn on the page must sit inside gearItem's `.gi-name`. This scan fails earlier and without a window.
+//
+// It reads every `app/ui/*.mts` but gear-item.mts, comments left out, for four forms:
 // 1. `name`: an item's name as an element's text (`txt(it.name …)`, or `it.name` as a child of `el(…)` / `box(…)`; `item` and `piece` too).
-// 2. `rarity`: painting by rarity (`rarityToken(` / `rarityColor(`), which is how a hand-built name gets its tier's color.
+// 2. `rarity`: painting by rarity (`rarityToken(` / `rarityColor(`, a literal `--rarity-` token or `RARITY_TOKENS`), which is how a hand-built name gets its tier's color.
 // 3. `icon`: an item's icon (`artTile(`).
 // 4. `class`: gear-item.mts's own `gi-name` class, which would dress a hand-built name as a gear item.
 // Today's exceptions are listed below, each with its reason. A new match fails until it becomes a `gearItem` or joins the list with its reason, and a listed one that is gone fails too, so the list stays current.
@@ -19,7 +21,7 @@ type Rule = "name" | "rarity" | "icon" | "class";
 const ITEM = String.raw`(?:it|item|piece)\.name`;
 const PATTERNS: Record<Rule, RegExp[]> = {
   name: [new RegExp(String.raw`\btxt\(\s*${ITEM}\b`), new RegExp(String.raw`\b(?:el|box)\([^;\n]*,\s*${ITEM}\s*[,)]`)],
-  rarity: [/\b(?:rarityToken|rarityColor)\(/],
+  rarity: [/\b(?:rarityToken|rarityColor)\(/, /--rarity-/, /\bRARITY_TOKENS\b/],
   icon: [/\bartTile\(/],
   class: [/\bgi-name\b/],
 };
@@ -33,7 +35,7 @@ function matches(src: string): Set<Rule> {
 }
 
 const ALLOWED: Record<string, Array<[Rule, string]>> = {
-  "items.mts": [["rarity", "defines rarityToken, the tier → --rarity-* token map gear-item.mts paints with"]],
+  "items.mts": [["rarity", "defines rarityToken and RARITY_TOKENS, the tier → --rarity-* token map gear-item.mts paints with"]],
   "dom.mts": [
     ["rarity", "defines rarityColor, and the item tooltip (tipNode) paints its own name and tier footer: the tooltip is what gearItem shows, so it cannot be a gearItem"],
     ["icon", "the item tooltip's 32 px icon, beside that name"],
@@ -47,6 +49,8 @@ test("[smoke] gear-item-guard: the patterns catch each way to hand-build an item
   assert.deepEqual([...matches(`td.append(txt(it.name, "ellip"));`)], ["name"]);
   assert.deepEqual([...matches(`box("span", { class: "x" }, item.name, qty)`)], ["name"]);
   assert.deepEqual([...matches(`head.style.color = \`var(\${rarityToken(it.rarity)})\`;`)], ["rarity"]);
+  assert.deepEqual([...matches(`name.style.color = "var(--rarity-greater-magic)";`)], ["rarity"]);
+  assert.deepEqual([...matches(`for (const t of RARITY_TOKENS) paint(t);`)], ["rarity"]);
   assert.deepEqual([...matches(`row.append(artTile(it.graphic, { size: 24 }));`)], ["icon"]);
   assert.deepEqual([...matches(`txt(label, "gi-name")`)], ["class"]);
   assert.deepEqual([...matches(`// txt(it.name) used to be here\n/* artTile( */ const a = "https://example.org";`)], []);

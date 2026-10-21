@@ -426,7 +426,7 @@ export function createItemBrowser(root: HTMLElement, opts: ItemBrowserOptions): 
       const g = p.groups[i];
       if (!g) return skeletonRow(cols, i);
       // a group of one stack is that item, with its tooltip; several stacks may differ, so no one of them speaks for the group
-      tr = el("tr", { class: "item", ...(g.stacks === 1 ? { "data-serial": g.serial } : {}), "data-index": i, "aria-rowindex": i + 2, tabindex: "-1" }, ...cols.map((c) => groupCell(c, g)));
+      tr = el("tr", { class: "item item-group", ...(g.stacks === 1 ? { "data-serial": g.serial } : {}), "data-index": i, "aria-rowindex": i + 2, tabindex: "-1" }, ...cols.map((c) => groupCell(c, g)));
     } else {
       const it = p.rows[i];
       if (!it) return skeletonRow(cols, i);
