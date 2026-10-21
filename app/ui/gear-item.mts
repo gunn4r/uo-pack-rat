@@ -29,6 +29,8 @@ export interface GearItemOptions {
   keepBox?: boolean | undefined;
   // Elements after the name and tags (a "New" badge, a low-durability tag).
   after?: Array<HTMLElement | null> | undefined;
+  // false: its tooltip shows on hover only, and it adds no tab stop (a list with a roving tab stop of its own, such as the Stack plan's cards).
+  focus?: boolean | undefined;
   // A card's first words before the name (its slot), and its second line.
   label?: string | undefined;
   sub?: string | undefined;
@@ -109,7 +111,7 @@ export function gearItem(item: GearItemSource, o: GearItemOptions = {}): HTMLEle
   const node = o.onOpen ? box("button", { type: "button", class: cls }) : box("span", { class: cls });
   node.append(...parts(node, it, o, size));
   if (o.onOpen) node.addEventListener("click", () => o.onOpen!(it, node));
-  if (o.tip !== false) itemTip(node, it);
+  if (o.tip !== false) itemTip(node, it, { focus: o.focus !== false });
   const lacking = (o.showIcon !== false && !has(it, "graphic")) || !has(it, "rarity") || (o.showTags && !it.tags);
   if (lacking && !state.itemCache.has(it.serial)) whenKnown(it.serial, () => { it = filled(item); node.replaceChildren(...parts(node, it, o, size)); if (o.tip !== false) itemTip(node, it, { focus: false }); });
   return node;

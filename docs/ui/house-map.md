@@ -279,7 +279,7 @@ It finds items with the Inventory's own query: `GET /api/items?q=&fields=hits`, 
 
 ### While the house has matches
 
-- The box has a gold ring (`--color-highlight`) and an "N in M" count: items, by amount, in containers.
+- The box has a gold ring (`--color-highlight`, outside its own edge, which keeps 3:1; while focused, the normal focus ring instead) and an "N in M" count: items, by amount, in containers.
 - Matching containers keep their color with a gold outline, and their stack stands on a gold base. Every other container is a pale ghost.
 - The map zooms to the level's matching stacks when the query changes (`hitsView`, with room above them).
 - Each matching stack gets a pinned callout: "Stack I · 1 of 4 match", then, per matching container, its code, name, place in the stack and the items found.
@@ -354,7 +354,7 @@ One card is the tab stop (roving). The arrow keys move to the nearest card that 
 
 ### While searching
 
-- A matching card has a gold outline. Its matching rows have a gold bar on a light gold wash, and a line naming the items found (cut with …, with the whole line in its title). Its other rows are dimmed.
+- A matching card has a gold outline. Its matching rows have a gold bar on a light gold wash, and a line naming the items found (cut with …): gear items without icons, each in its rarity's color with its own item tooltip on hover (no tab stop: the cards keep their roving one). The wash is 10% gold, light enough for every rarity color. Its other rows are dimmed.
 - Cards with no match fade.
 - The pills count the matches ("3 of 27").
 - The panel lists the matches, as on the map.
@@ -411,7 +411,7 @@ Items come from `GET /api/items?root=<serial>` in 500-row pages, each serial kep
 `contentsOf` builds the tree once per fetch (the filter only filters it). Items in a container cycle are shown loose.
 
 - **Bags** come first, as `<details>` groups with their item count, nested inside nested. A closed bag stays closed through a redraw.
-- **Items** follow. Each item is a button of two lines, built from the Inventory's pieces (`rarityEl`, `tagEls`, peek.mts's `propertyLines` and `RESISTS`). Resist numbers on an item's second line are in the body face with tabular figures (mono is for identifiers).
+- **Items** follow. Each item is a button of two lines, built from the Inventory's pieces (`gearItem` for the icon, name and quantity, issue #504; `rarityEl`, `tagEls`, peek.mts's `propertyLines` and `RESISTS`). A bag's head names it with `gearItem` too, and the pins and the search panel name their matching pieces with it, without icons. Resist numbers on an item's second line are in the body face with tabular figures (mono is for identifiers).
 - **Tooltips:** each item has its item tooltip on hover and focus, which shows whatever a cut line leaves out. Bags carry theirs too.
 - **Clicking an item** opens the Inventory row's ⋯ menu (`itemMenu`). Its Open details, anywhere but the Inventory's own Items view, opens the Inventory with the item in the peek.
 

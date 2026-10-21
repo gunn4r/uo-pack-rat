@@ -79,7 +79,7 @@ const ALLOWED: Record<string, [reason: string, selectors: string[]][]> = {
     [PLACEMENT, [".map-levels > .pill", "#tab-map .map-page > :is(.msg, .map-empty, .panel)", ".map-area-row > .btn", ".map-area-new-field > .input", ".map-stage > .msg", ".map-house-title > .btn", ".map-where-coords > .btn", ".map-drawer-fill > .meter", ".map-drawer-tabs > .seg", ".map-drawer-pick > .select", ".map-drawer-tools > .input", ".map-drawer-body > .msg", ".map-item-l1 > .tag", ".map-item-l2 > .rar-tier", ".sp-l2 > .meter"]],
     ["the world map dialog fills the window", [".pr dialog.dialog.world-map-dialog", ".world-map-dialog .dialog-body", ".world-map-dialog .dialog-foot"]],
     ["smaller: the top bar's search field (room for its count, no native clear button) and the Stack plan's area badges", [".map-search .input", ".map-search .input::-webkit-search-cancel-button", ".sp-area-name .badge"]],
-    ["look: an area's color dot, and the search field highlighted while a search is shown", [".map-pill.dot", ".map-search.active .input"]],
+    ["look: an area's color dot, and the search field highlighted while a search is shown (its focus ring kept while typing)", [".map-pill.dot", ".map-search.active .input", ".map-search.active .input:focus-visible"]],
   ],
   "inventory.css": [
     [FRAME, ["#tab-inventory .page"]],
