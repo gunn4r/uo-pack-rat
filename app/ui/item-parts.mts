@@ -5,10 +5,10 @@
 //
 // map: ui-components
 // owns: `rarityEl`, `tagEls`, `locationEl`, `tagWords`, `itemActions`, `itemMenu`, `filterContext`, `setItemNav`
-import { tagUnits } from "../vault-lib.mts";
+import { tagUnits, propName } from "../vault-lib.mts";
 import type { Item } from "../vault-lib.mts";
 import { state } from "./store.mts";
-import { label, slotLabel, rarityColor, safeColor, whereText, tagChip } from "./dom.mts";
+import { slotLabel, rarityColor, safeColor, whereText, tagChip } from "./dom.mts";
 import { rarityToken } from "./items.mts";
 import { bridgeActionReason, runBridgeAction } from "./bridge.mts";
 import { txt, box, rowActions, menu, copyText, toast } from "./components.mts";
@@ -23,7 +23,7 @@ export { splitSerial } from "./inv-model.mts";
 export function filterContext() {
   return {
     slotLabel: (s: string) => slotLabel(s),
-    propLabel: (k: string) => label(k),
+    propLabel: (k: string) => propName(k),   // a filter token names the property in full ("Lower Mana Cost ≥ 8")
     places: state.facets?.places || [],
     ladder: (state.rules?.rarity || []).map((r) => r.name),
     houseName: houseNameOf,

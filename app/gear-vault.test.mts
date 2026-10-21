@@ -10,8 +10,8 @@ import { createHash } from "node:crypto";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 import {
-  gargoyleOk, meditationOk, hasTag, underRoot, hasFlag,
-  parseTooltip, displayName, gameName, compareNames, classify, foldSnapshots, spellSchoolOf, buildPools, requirementReport, totalsOf, propertyKeys, bagLabel, capacityOf, NOT_BUILDER_KEYS, kindOf, groupByName, slayersOf, medableOf, weaponAllowed, settingsDiff, PROP_LABELS, LAYER_TO_SLOT, LAYER_ALIASES, effectiveProfile, resistMinimum, minResistAt, paperdollResist, skillInSuit, resistStepsFor, liftedMin, RESIST_SKILL_KEY, RESIST_KEYS, toOptItem, labelOf, builderKeys, migrateProfiles, templateFrom, TEMPLATE_KEYS, setRules, getRules, tagUnits, tagInfo,
+  gargoyleOk, meditationOk, hasTag, underRoot, hasFlag, propName,
+  parseTooltip, displayName, gameName, compareNames, classify, foldSnapshots, spellSchoolOf, buildPools, requirementReport, totalsOf, propertyKeys, bagLabel, capacityOf, NOT_BUILDER_KEYS, kindOf, groupByName, slayersOf, medableOf, weaponAllowed, settingsDiff, LAYER_TO_SLOT, LAYER_ALIASES, effectiveProfile, resistMinimum, minResistAt, paperdollResist, skillInSuit, resistStepsFor, liftedMin, RESIST_SKILL_KEY, RESIST_KEYS, toOptItem, labelOf, builderKeys, migrateProfiles, templateFrom, TEMPLATE_KEYS, setRules, getRules, tagUnits, tagInfo,
   WEAPON_SKILLS, WEAPON_EXCLUDES, migrateWeaponSetting, excludeWeaponsError, weaponSkillsOf, weaponHasFlags, weaponMustHaveError, BOOLEAN_FLAGS,
   shardResistCap, resistCapsFor, resistCapsError, profileResistCaps, RESIST_CAP_LIMITS,
 } from "./vault-lib.mts";
@@ -1177,7 +1177,7 @@ test("[fast] settingsDiff names what changed between two runs", () => {
   const a = { floors: { di: 40, hci: 35 }, softFloors: [] as string[], weights: { ssi: 10 }, lockedSlots: [] as string[], excludeWeapons: [] as string[], exact: true, budgetMs: 300000, strLimit: 73 };
   const b = { floors: { di: 80 }, softFloors: ["di"], weights: { ssi: 5, dci: 8 }, lockedSlots: ["twoHanded"], excludeWeapons: ["archery", "throwing"], exact: true, budgetMs: 60000, strLimit: 73 };
   const d = settingsDiff(a, b);
-  const L = (k: string) => PROP_LABELS[k] || k;
+  const L = propName;
   for (const want of [`${L("di")} floor 40 → 80`, `${L("hci")} floor 35 removed`, `${L("ssi")} weight 133 → 67`, `${L("dci")} weight 80 added`, `${L("di")} floor made soft`, "excluding archery, throwing weapons", "budget 300 s → 60 s"])
     assert.ok(d.includes(want), `missing "${want}" in ${JSON.stringify(d)}`);
   assert.ok(d.some((x) => x.startsWith("locked ")));
@@ -1263,7 +1263,7 @@ test("[fast] template drift: settingsDiff between a template and a profile ignor
   const same = { ...tpl, race: "elf", strLimit: 95, excludeRoots: [1], template: "archer" };
   assert.deepEqual(settingsDiff(tpl, templateFrom(same)), []);
   const drift = settingsDiff(tpl, templateFrom({ ...same, floors: { hci: 40 }, allowOthersWorn: true, medOnly: true, lockedSlots: [] }));
-  assert.ok(drift.includes(`${PROP_LABELS.hci} floor 45 → 40`), JSON.stringify(drift));
+  assert.ok(drift.includes(`${propName("hci")} floor 45 → 40`), JSON.stringify(drift));
   assert.ok(drift.includes("others' worn gear allowed"));
   assert.ok(drift.includes("meditation-safe only"));
   assert.ok(drift.some((x) => x.startsWith("unlocked ")));
@@ -1386,9 +1386,9 @@ test("[fast] resist cap overrides: resistCapsError holds the five resist keys to
   const t = templateFrom({ resistCaps: { fireResist: 95 } });
   assert.deepEqual(t.resistCaps, { fireResist: 95 });
   assert.deepEqual(templateFrom({}).resistCaps, {}, "an old template without overrides loads with none");
-  assert.deepEqual(settingsDiff({}, { resistCaps: { fireResist: 95 } }), [`${PROP_LABELS.fireResist} cap set to 95`]);
-  assert.deepEqual(settingsDiff({ resistCaps: { fireResist: 95 } }, { resistCaps: { fireResist: 90 } }), [`${PROP_LABELS.fireResist} cap 95 → 90`]);
-  assert.deepEqual(settingsDiff({ resistCaps: { fireResist: 95 } }, {}), [`${PROP_LABELS.fireResist} cap back to the shard's`]);
+  assert.deepEqual(settingsDiff({}, { resistCaps: { fireResist: 95 } }), [`${propName("fireResist")} cap set to 95`]);
+  assert.deepEqual(settingsDiff({ resistCaps: { fireResist: 95 } }, { resistCaps: { fireResist: 90 } }), [`${propName("fireResist")} cap 95 → 90`]);
+  assert.deepEqual(settingsDiff({ resistCaps: { fireResist: 95 } }, {}), [`${propName("fireResist")} cap back to the shard's`]);
   assert.deepEqual(settingsDiff({ resistCaps: {} }, {}), [], "no overrides on either side is no change");
 });
 

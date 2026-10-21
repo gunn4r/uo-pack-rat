@@ -172,7 +172,7 @@ const SCENES: Scene[] = [
   { name: "builder buff popover", enter: async (p) => {
     await settingsTab(p, "requirements");
     await p.click("#b-addfloor");
-    await p.keyboard.type("Defense chance");
+    await p.keyboard.type("Defense Chance Increase");
     await p.keyboard.press("Enter");
     await settingsTab(p, "buffs");
     await p.click("#b-buff-add");

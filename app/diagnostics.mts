@@ -189,7 +189,7 @@ export function swingDiagnostics({ profile, result, swingNote, current = {} }: R
     const w = heldWeapon(result.best), slot = w ? (w.twoHanded ? "twoHanded" : "oneHanded") : null;
     const worn = !!slot && !!w && (current[slot] as { serial?: unknown } | null | undefined)?.serial === (w as { serial?: unknown }).serial;
     out.push({ code: "swing_linear", level: "warn", property: "ssi",
-      message: `SSI was scored per point: ${swingNote}. ${worn ? "Lock the weapon slot to score swing speed by step." : "Equip the weapon you want and lock its slot to score swing speed by step."}`,
+      message: `Swing Speed Increase was scored per point: ${swingNote}. ${worn ? "Lock the weapon slot to score swing speed by step." : "Equip the weapon you want and lock its slot to score swing speed by step."}`,
       actions: worn ? [{ kind: "lockSlot", slot: slot! }] : [] });
   }
   const sw = result.swing;
@@ -199,7 +199,7 @@ export function swingDiagnostics({ profile, result, swingNote, current = {} }: R
       const more = 30 * (Math.floor(sw.stamina / 30) + 1) - sw.stamina;
       const byStamina = swingSeconds(sw.speed, sw.stamina + more, sw.ssi) <= next.seconds;
       out.push({ code: "swing_next_step", level: "info", property: "ssi",
-        message: `SSI ${sw.ssi} swings every ${delayText(sw.seconds)} at this suit's stamina (${sw.stamina}). ${next.ssi} would make it ${delayText(next.seconds)}${byStamina ? `, and so would ${more} more stamina` : ""}.`,
+        message: `Swing Speed Increase ${sw.ssi} swings every ${delayText(sw.seconds)} at this suit's stamina (${sw.stamina}). ${next.ssi} would make it ${delayText(next.seconds)}${byStamina ? `, and so would ${more} more stamina` : ""}.`,
         values: { ssi: sw.ssi, seconds: sw.seconds, stamina: sw.stamina, next: next.ssi, nextSeconds: next.seconds, ...(byStamina ? { moreStamina: more } : {}) },
         actions: [{ kind: "swingSteps", on: true }, { kind: "setFloor", property: "ssi", value: next.ssi }] });
     }

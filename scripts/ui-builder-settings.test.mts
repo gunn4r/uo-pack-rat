@@ -278,7 +278,7 @@ test("[slow] drawer extras: notched weight sliders, buffs by school, each requir
     assert.ok(heads.some((h) => /^Necromancy skill 50$/i.test(h)), "Horrific Beast (40) is usable at Necromancy 50");
     assert.ok(!heads.some((h) => /^Spellweaving/i.test(h)), "Spellweaving, not in the scan, waits for Show all");
     assert.equal(await page.locator('#b-sec-buffs .b-bf[data-buff="vampiricEmbrace"]').count(), 0);
-    assert.match(await page.locator('#b-sec-buffs .b-bf[data-buff="divineFury"]').innerText(), /swing speed up[\s\S]*defense chance down/);
+    assert.match(await page.locator('#b-sec-buffs .b-bf[data-buff="divineFury"]').innerText(), /Swing Speed Increase up[\s\S]*Defense Chance Increase down/);
     await page.click("#b-bf-all");
     assert.equal(await page.evaluate(() => document.activeElement?.id), "b-bf-all", "Show all keeps the focus");
     // greyed exactly when the plan blocks it; a skill the scan lacks is counted at 120 and only said
@@ -318,7 +318,7 @@ test("[slow] drawer extras: notched weight sliders, buffs by school, each requir
     await settings(page, "requirements");
     assert.equal(await page.locator("#b-sec-req .b-need-status").first().innerText(), "", "no status before a build");
     // a soft DCI 45 the suit misses, and an SSI 30 it meets with a faster step to come
-    for (const [q, v] of [["Swing speed", "30"], ["Defense chance", "45"]] as const) {
+    for (const [q, v] of [["Swing Speed Increase", "30"], ["Defense Chance Increase", "45"]] as const) {
       await page.click("#b-addfloor");
       await page.keyboard.type(q);
       await page.keyboard.press("Enter");
@@ -373,10 +373,10 @@ test("[slow] swing steps: the switch, the swing line, Next step from the result,
     await settings(page, "weights");
     const sw = page.locator("#b-swing-steps");
     await sw.waitFor({ timeout: 10_000 });
-    assert.equal(await sw.isChecked(), true, "Melee's Swing speed goal scores SSI by step");
-    assert.match(String(await page.locator("#b-sec-weights .b-swing-set").textContent()), /Counts SSI only where the swing gets faster\. War Axe 3 s at stamina \d+: .+ ≥ \d+/);
+    assert.equal(await sw.isChecked(), true, "Melee's Swing Speed Increase goal scores SSI by step");
+    assert.match(String(await page.locator("#b-sec-weights .b-swing-set").textContent()), /Counts Swing Speed Increase only where the swing gets faster\. War Axe 3 s at stamina \d+: .+ ≥ \d+/);
     await sw.uncheck();
-    assert.match(await page.locator("#b-tpl-state").innerText(), /SSI by point/);
+    assert.match(await page.locator("#b-tpl-state").innerText(), /Swing Speed Increase by point/);
     await sw.check();
     assert.match(await page.locator("#b-tpl-state").innerText(), /equal the Melee template/);
     await settings(page, "requirements");
@@ -390,9 +390,9 @@ test("[slow] swing steps: the switch, the swing line, Next step from the result,
     await built(page);
     // read in the same poll that finds them, so a redraw can't land between the wait and the read
     const read = async (sel: string): Promise<string> => String(await (await page.waitForFunction((s) => document.querySelector(s)?.textContent || null, sel, { timeout: 10_000 })).jsonValue());
-    assert.match(await read(".b-head-card .b-check"), /SSI was scored per point: the pool holds weapons with \d+ different speeds\. Lock the weapon slot to score swing speed by step\./);
+    assert.match(await read(".b-head-card .b-check"), /Swing Speed Increase was scored per point: the pool holds weapons with \d+ different speeds\. Lock the weapon slot to score swing speed by step\./);
     const line = await read(".b-head-card .b-swing");
-    assert.match(line, /^War Axe 3 s · stamina \d+ · SSI \d+ → swings every [\d.]+ s/);
+    assert.match(line, /^War Axe 3 s · stamina \d+ · Swing Speed Increase \d+ → swings every [\d.]+ s/);
     // Next step is the first step the result's swing has not reached
     const unreached = /(?:: |· )[\d.]+ s ≥ (\d+)(?! ✓)(?: ·|$)/.exec(line.split("Steps at stamina")[1] || "")?.[1];
     assert.ok(unreached, line);
@@ -405,7 +405,7 @@ test("[slow] swing steps: the switch, the swing line, Next step from the result,
     await pressBuild(page);
     await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>("#b-run")?.disabled && /Best suit for/.test(document.querySelector("#b-result h2")?.textContent || "")
       && !/scored per point/.test(document.querySelector("#b-result")?.textContent || ""), undefined, { timeout: 60_000 });
-    assert.match(await read(".b-head-card .b-swing"), /^War Axe 3 s · stamina \d+ · SSI \d+ → swings every [\d.]+ s/);
+    assert.match(await read(".b-head-card .b-swing"), /^War Axe 3 s · stamina \d+ · Swing Speed Increase \d+ → swings every [\d.]+ s/);
     // the saved run keeps the switch (the server writes it as the build finishes: wait for the file)
     const kept = (): boolean => existsSync(join(dataDir, "runs")) && readdirSync(join(dataDir, "runs")).filter((f: string) => f.endsWith(".json"))
       .some((f: string) => (JSON.parse(readFileSync(join(dataDir, "runs", f), "utf8")) as { settings?: { swingSteps?: boolean } }).settings?.swingSteps === true);

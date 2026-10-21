@@ -59,7 +59,7 @@ export interface StepTableInput {
   share: number;                             // the buffs' SSI
   stamRange: { min: number; max: number };   // the lowest and highest gear Stamina pool any suit reaches
   ssiMax?: number | undefined;               // the most item SSI any suit reaches: a point that needs more is left out
-  creditMax?: number | undefined;            // a Swing speed goal's SSI cap (issue #292): no point credits more, however its delay is reached
+  creditMax?: number | undefined;            // a Swing Speed Increase goal's SSI cap (issue #292): no point credits more, however its delay is reached
 }
 // The table both solvers score SSI with: one point per delay reachable in each stamina band any suit can be in. `ssi` is in item terms (the step's SSI less the buffs'), `stam` the gear Stamina pool the band needs, and `credit` what the delay costs in gear SSI at the reference stamina, at least 0 (a delay reached only by raising stamina keeps that price, so 1.5 s one band up can credit more than 60). Points worth nothing and points another beats (no less credit for no more SSI and stamina) are left out.
 export function stepTable({ speedS, stamBase, refStamina, share, stamRange, ssiMax = Infinity, creditMax = Infinity }: StepTableInput): SsiStepPoint[] {
@@ -120,7 +120,7 @@ export function stepsFor(profile: Pick<EffectiveProfile, "swing" | "weights" | "
   if (!sw?.steps || !((profile.weights?.ssi ?? 0) > 0)) return { ssiSteps: null, note: null };
   const { speed, reason } = weaponSpeedOf(pools, current, optionalSlots);
   if (speed == null) return { ssiSteps: null, note: reason };
-  // a Swing speed goal's cap (issue #292), stored with the swing (`goalSsi`, issue #302: one at the formula's 60 too): no point
+  // a Swing Speed Increase goal's cap (issue #292), stored with the swing (`goalSsi`, issue #302: one at the formula's 60 too): no point
   // needs more item SSI than it, and none credits more, so a faster swing counts nothing, through more stamina too. With no
   // such goal the table is as it was: every point is within the formula's cap, and a delay reached by more stamina keeps its full price.
   const share = ssiShareOf(profile), goal = sw.goalSsi ?? Infinity;
