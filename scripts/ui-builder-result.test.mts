@@ -32,7 +32,7 @@ test("[slow] the Fetch list's pieces show the item tooltip on hover and on keybo
     await openBuilder(page);
     await pressBuild(page);
     await built(page);
-    const pieces = page.locator("section[aria-label='Fetch list'] .b-fetch-piece");
+    const pieces = page.locator("section[aria-label='Fetch list'] .gi");
     assert.ok(await pieces.count() > 1, "the fetch list names its pieces one by one");
     const name = await pieces.nth(1).innerText();
     await pieces.nth(1).scrollIntoViewIfNeeded();
@@ -59,9 +59,9 @@ test("[slow] the Plan's worn and replacement names each show their own piece's t
     await built(page);
     const plan = page.locator(".b-plan tbody");
     assert.equal(await plan.locator("tr[data-serial]").count(), 0, "the rows carry no serial of their own");
-    const row = plan.locator("tr", { has: page.locator("td:nth-child(2) .b-tip") }).filter({ has: page.locator("td:nth-child(3) .b-tip") }).first();
+    const row = plan.locator("tr", { has: page.locator("td:nth-child(2) .gi") }).filter({ has: page.locator("td:nth-child(3) .gi") }).first();
     await row.scrollIntoViewIfNeeded();
-    const [now, next] = [row.locator("td").nth(1).locator(".b-tip"), row.locator("td").nth(2).locator(".b-tip")];
+    const [now, next] = [row.locator("td").nth(1).locator(".gi"), row.locator("td").nth(2).locator(".gi")];
     assert.equal(await hoverTip(page, now), await now.innerText());
     assert.equal(await hoverTip(page, next), await next.innerText());
     assert.notEqual(await now.getAttribute("data-serial"), await next.getAttribute("data-serial"));
@@ -76,7 +76,7 @@ test("[slow] the Plan's worn and replacement names each show their own piece's t
     assert.equal(await tipName(page), await next.innerText());
     // An unchanged ("keep") row still shows the worn piece's tooltip.
     await page.getByRole("switch", { name: "Show unchanged slots" }).click();
-    const kept = plan.locator("tr", { has: page.locator("td:nth-child(3)", { hasText: /^keep$/ }) }).filter({ has: page.locator("td:nth-child(2) .b-tip") }).first().locator("td").nth(1).locator(".b-tip");
+    const kept = plan.locator("tr", { has: page.locator("td:nth-child(3)", { hasText: /^keep$/ }) }).filter({ has: page.locator("td:nth-child(2) .gi") }).first().locator("td").nth(1).locator(".gi");
     await kept.scrollIntoViewIfNeeded();
     assert.equal(await hoverTip(page, kept), await kept.innerText());
     assert.deepEqual(errors, []);

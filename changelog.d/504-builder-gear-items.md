@@ -1,0 +1,3 @@
+- **The Suit Builder shows each piece's icon and rarity color** (issues #504, #503): the Plan's Wear instead column, the Fetch list (now a row of chips) and Compare's pieces show each piece's in-game icon beside its name in its rarity's color, and the Plan's Wearing now column and Other suits color their names too.
+- **A worn piece's popover is only widened while its icon shows** (issue #504): if the icon's art fails to load, the popover goes back to its usual width.
+- For contributors: a gear item records a missing serial only when the server answered, and drops answers that arrive after the inventory reloads (issue #504). The item art tests share one PNG decoder, `pngPixels` in `app/art-fixture.mts`, and `resolveItems` takes an optional `answered` set.

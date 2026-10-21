@@ -19,7 +19,8 @@ import { resultDoll, sheetDoll } from "./sheet-doll.mts";
 import { bridgeActionReason, runBridgeAction } from "./bridge.mts";
 import { resolveItems } from "./items.mts";
 import { session, commands, announce, provide, onChange } from "./builder-session.mts";
-import { RESIST_NAMES, keyProps, tipTarget, verdict, grabAllButton, fetchCard, settingsCheck } from "./builder-parts.mts";
+import { gearItem } from "./gear-item.mts";
+import { RESIST_NAMES, keyProps, verdict, grabAllButton, fetchCard, settingsCheck } from "./builder-parts.mts";
 import { savedBuffs, plannedFromWorn, buffById, buffsDiff, runBuffs, signed } from "../buffs.mts";
 import type { RunBuffs } from "../vault-lib.mts";
 import { slotsOf, paperdollCaps, pastCapNotes, runSettingsDiff, withBuffs, afterChange, compareModel, hiddenRowsNote, changeRows, gaugeRows, worse, gaugeNote, gaugeTrack, changesSummary, nextSwingStep, sharePct, resistOutcome, toggleCompare, propName, capNote, capsLine, anyOverridden, effectiveFloor, resultChecks, shareRows, swingLines, who, rarityDetail, rarityTotal, strictDetail, goalOutcomes, goalTrades, goalVerdict, swingOutcome, tradeText, spareLine, pieceMark, GONE_MARK, type ChangeRow, type CompareMember } from "./builder-model.mts";
@@ -311,9 +312,10 @@ function planCard(current: OptSuit, suit: OptSuit, name: string, all: string[], 
     // a saved run's piece that moved or is gone: its mark in Where, and under the piece's name while Where is hidden (narrow)
     const mark = pieceMark(gear, (changed ? next : now)?.serial, whereText), markCls = `t-sm b-mark ${mark === GONE_MARK ? "faint" : "tone-warn"}`;
     const where = mark ? txt(mark, markCls) : !changed ? txt("") : item ? txt(item.equippedBy ? `worn by ${item.equippedBy}` : whereText(item.location?.text), "t-sm muted") : next ? txt(GONE_MARK, "t-sm faint") : txt("");
-    const instead = !changed ? txt("keep", "muted") : next ? tipTarget(txt(next.name, "strong"), next) : txt("nothing", "faint");
+    // the piece to fetch carries its icon; Wearing now is too narrow for one
+    const instead = !changed ? txt("keep", "muted") : next ? gearItem(next) : txt("nothing", "faint");
     // each piece's name answers for its own tooltip, the worn one and its replacement
-    return { cells: [slotLabel(slot), now ? tipTarget(txt(now.name, changed ? "muted" : ""), now) : txt("Empty", "faint"),
+    return { cells: [slotLabel(slot), now ? gearItem(now, { showIcon: false }) : txt("Empty", "faint"),
       mark ? box("span", {}, instead, txt(mark, `${markCls} b-mark-narrow`)) : instead,
       where, next && changed ? txt(keyProps(next.props) || "no properties", keyProps(next.props) ? "muted" : "faint") : txt(""), ra] };
   });
@@ -353,7 +355,7 @@ function otherSuitsCard(res: OptimizeResult, view: number | null): HTMLElement {
       rerender();
     } });
     return { cells: [tick.input, i === 0 ? badge("Best", "best") : txt(`#${i + 1}`), i === 0 ? txt("—", "muted") : txt(Math.abs(d) < 1e-6 ? "ties" : `${d > 0 ? "+" : "−"}${fmtN(Math.abs(Math.round(d)))}`),
-      i === 0 ? txt(res.proven ? "the proven best" : "the best found", "muted") : txt(slotsDiff.map((sl) => `${slotLabel(sl)}: ${s.best[sl] ? s.best[sl]!.name : "nothing"}`).join(" · ")),
+      i === 0 ? txt(res.proven ? "the proven best" : "the best found", "muted") : el("span", {}, ...slotsDiff.flatMap((sl, k) => [k ? " · " : "", `${slotLabel(sl)}: `, s.best[sl] ? gearItem(s.best[sl]!, { variant: "inline", showIcon: false }) : "nothing"])),
       i === 0 ? txt("") : txt(propDiff.join(" · ") || "same totals", "muted"),
       i === shownIdx ? txt("Showing", "t-sm muted") : button({ label: "Show", size: "sm", onClick: () => { session.altView = i === 0 ? null : i - 1; rerender(); } })],
       attrs: picked.has(String(i)) ? { class: "sel" } : {} };
@@ -457,7 +459,7 @@ function showCompare(spec: () => CompareSpec): void {
   const group = (text: string): HTMLTableRowElement => tr("group", el("td", { colspan: cols.length + 1 }, txt(text, "caps")));
   const body: HTMLTableRowElement[] = [];
   if (s.settingsRow) body.push(group("Settings"), tr("", el("td", {}, "Changed from the first"), ...s.settingsRow.map((t) => el("td", { class: "muted" }, t))));
-  if (m.pieces.length) body.push(group(diffOnly ? "Pieces that differ" : "Pieces"), ...m.pieces.map((r) => tr("", el("td", {}, r.label), ...r.cells.map((c) => el("td", c.diff ? { class: "diff" } : {}, c.serial ? tipTarget(txt(c.text), { serial: c.serial, name: c.text }) : c.text)))));
+  if (m.pieces.length) body.push(group(diffOnly ? "Pieces that differ" : "Pieces"), ...m.pieces.map((r) => tr("", el("td", {}, r.label), ...r.cells.map((c) => el("td", c.diff ? { class: "diff" } : {}, c.serial ? gearItem({ serial: c.serial, name: c.text }) : c.text)))));
   if (m.totals.length) body.push(group(diffOnly ? "Totals that differ" : "Totals"), ...m.totals.map((r) => tr("", el("td", {}, r.label), ...r.values.map((v, i) => el("td", r.best[i] ? { class: "best" } : {}, fmtN(v).replace("-", "−"))))));
   body.push(group("Outcome"), ...s.outcomeRows.map((rowLabel, ri) => tr("", el("td", {}, rowLabel), ...cols.map((c) => el("td", {}, c.outcome[ri] || "")))));
   body.push(tr("", el("td", { class: "b-cmp-act" }, el("span", { class: "sr" }, "Actions")), ...cols.map((c) => el("td", { class: "b-cmp-act" }, c.action))));
