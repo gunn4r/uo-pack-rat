@@ -1,4 +1,4 @@
-// changelog.test.mts — `scripts/changelog.mts`: a [smoke] guard that the committed fragments and CHANGELOG.md are in shape, a [smoke] release of a copy of them, and the release that puts the fragments together.
+// changelog.test.mts — `scripts/changelog.mts`: a [smoke] guard that the committed fragments and CHANGELOG.md are in shape and every fragment's name starts with its issue number, a [smoke] release of a copy of them, and the release that puts the fragments together.
 //
 // The guard fails a pull request that adds entries to CHANGELOG.md or edits its released part by hand (the seal no longer matches); its message names the fix, a fragment in `changelog.d/`. The rest drives `fragmentError`, `sectionText` (player-facing entries first, then the contributor ones under `### For contributors` with their prefix dropped, each group in order; with highlights, a `### Highlights` summary on top and both lists folded into `<details>`), `highlightsError`, `released`, `withHighlights` (a released section given or re-given its highlights, every other section byte for byte as it was, and a section of another shape refused) and `release` (`_highlights.md` used and deleted, never read as a fragment) on strings and a throwaway folder.
 import test from "node:test";
@@ -17,6 +17,11 @@ const base = (): string => sealed(`# Changelog\n\n## Unreleased\n\nEntries not y
 
 test("[smoke] the committed changelog fragments and CHANGELOG.md are in shape", () => {
   assert.deepEqual(problems(root), [], "new entries go in changelog.d/<short-name>.md, never in CHANGELOG.md (CONTRIBUTING.md, Changelog)");
+});
+
+// The release orders fragments by the issue number a name starts with; one without it sorts last, out of place.
+test("[smoke] every committed fragment's name starts with its issue number and a hyphen", () => {
+  assert.deepEqual(fragmentNames(root).filter((f) => !/^\d+-/.test(f)), [], "name it changelog.d/<issue>-<short-name>.md (changelog.d/README.md)");
 });
 
 // A throwaway copy of the committed CHANGELOG.md and fragments, with package.json bumped to a version not yet released.
