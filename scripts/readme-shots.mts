@@ -13,7 +13,8 @@
 //   PACKRAT_SHOTS_UO=<UO folder> npm run readme:shots
 // points the seeded client at that folder, read at capture time (the server keeps what it decodes in memory only). The
 // House map's shots keep the vault's synthetic tiledata.mul, with the folder's art files linked beside it. Without the
-// variable the shots still run: the figures are the gray stand-in and the icon boxes stay empty. Only the PNGs and GIFs
+// variable the shots still run: the icon boxes stay empty and each paperdoll card shows the app's "couldn't find your
+// Ultima Online client files" note (the stand-in figure is drawn from the client's art too). Only the PNGs and GIFs
 // written to docs/images/ are ever committed (scripts/no-game-art.test.mts fails on a client file or decoded art).
 //
 // map: tooling
@@ -164,14 +165,30 @@ function report(file: string): void {
   console.log(`${file}  ${Math.round(statSync(join(OUT, file)).size / 1024)} KB`);
 }
 
-const servers: Array<{ dir: string; child: ChildProcess }> = [];
+// Each server's throwaway data folder, listed before anything is written to it, so a failed start or a Ctrl+C still
+// removes it; `child` once the server runs.
+const servers: Array<{ dir: string; child: ChildProcess | null }> = [];
 async function serve(house: boolean, map = false): Promise<string> {
-  const dir = mkdtempSync(join(tmpdir(), "packrat-shots-"));
-  const { home } = seed(dir, house, map);
-  const { url, child } = await startServer(dir, home);
-  servers.push({ dir, child });
+  const entry: { dir: string; child: ChildProcess | null } = { dir: mkdtempSync(join(tmpdir(), "packrat-shots-")), child: null };
+  servers.push(entry);
+  const { home } = seed(entry.dir, house, map);
+  const { url, child } = await startServer(entry.dir, home);
+  entry.child = child;
   return url;
 }
+// Stops each server, waits for it to exit (Windows keeps its files open until then), then removes its folder; a folder
+// that won't go (EBUSY) is named, not fatal.
+async function cleanup(): Promise<void> {
+  for (const { dir, child } of servers.splice(0)) {
+    if (child && child.exitCode === null && child.signalCode === null) {
+      const exited = new Promise((ok) => child.once("exit", ok));
+      child.kill();
+      await Promise.race([exited, new Promise((ok) => setTimeout(ok, 5000))]);   // sleep: at most 5 s for the server to exit
+    }
+    try { rmSync(dir, { recursive: true, force: true }); } catch (e) { console.warn(`could not remove ${dir}: ${(e as Error).message}`); }
+  }
+}
+process.once("SIGINT", () => { void cleanup().finally(() => process.exit(130)); });
 
 mkdirSync(OUT, { recursive: true });
 const browser = await launchBrowser();
@@ -249,5 +266,5 @@ try {
   });
 } finally {
   await browser.close();
-  for (const { dir, child } of servers) { child.kill(); rmSync(dir, { recursive: true, force: true }); }
+  await cleanup();
 }
