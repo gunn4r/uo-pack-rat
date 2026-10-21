@@ -1,0 +1,1 @@
+- **Unravel shows each piece's icon** (issues #504, #503): every candidate in the Unravel view shows its in-game icon beside its name in its rarity's color, and the Scrolls detail names its scrolls with the same shared element.

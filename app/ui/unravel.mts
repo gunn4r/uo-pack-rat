@@ -13,6 +13,7 @@ import { isBoundedInt, MAX_SERIAL } from "../guards.mts";
 import { unravelYield, expectedYield, onHand, LEFT_OUT, INGREDIENTS, type Ingredient, type LeftOut, type UnravelYield } from "../unravel.mts";
 import type { UnravelRow } from "../item-query.mts";
 import { state } from "./store.mts";
+import { gearItem } from "./gear-item.mts";
 import { $, el, itemTip, whereText } from "./dom.mts";
 import { api } from "./api.mts";
 import { fetchAllItems, inventoryLoader } from "./inventory-data.mts";
@@ -263,7 +264,7 @@ function rowEl(r: UnravelRow, skill: number, index: number): HTMLElement {
   const t = yieldText(y, skill), on = isSelected(sel, r, noQuery), reasons = reasonsOf(r), kept = reasons.includes("kept");
   const cb = el("input", { type: "checkbox", class: "unr-cb", "aria-label": `Select ${r.name}`, "data-serial": String(r.serial), ...(isWorn(r) ? { disabled: "", title: WORN_LOCK } : {}) });
   cb.checked = on;
-  const name = itemTip(txt(r.name, "unr-name"), r, { focus: false });
+  const name = itemTip(gearItem(r, { tip: false, cls: "unr-name" }), r, { focus: false });
   const where = whereText(r.location?.text) || "Unknown place";
   return box("div", { class: `unr-row${on ? " sel" : ""}`, "data-serial": String(r.serial), "data-index": String(index), ...(condensed ? { title: `${where} · ${t.why}` } : {}) },
     cb,
