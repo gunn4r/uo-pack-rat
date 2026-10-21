@@ -1,6 +1,6 @@
 // customize-model.test.mts — `app/ui/customize-model.mts` (issue #57): the doll card's Customize popover as data.
 //
-// `app/ui/customize-model.mts` (issue #57) over the game's creation lists (`creationOptions` on a synthetic hues.mul): the live scan's elf turned into choices (its skin and hair in the elf palettes) and back unchanged, its skin with the 0x8000 bit; the stand-in starting from the default human skin; a race or gender change re-picking a hair style it does not offer as none, a skin outside the new race's palette as the palette's first, while any other change keeps a scanned value outside the lists (a dyed hair color, a style the lists lack), and dropping facial hair for a female or an elf; facial hair taking the hair's color unless set apart; the scan's face kept only while the race is the scan's; and the session's looks kept per character (and for no character) until Reset or a newer scan. Also `dollPlan` drawing a customized look in color while a stand-in keeps its note. All `[fast]`.
+// `app/ui/customize-model.mts` (issue #57) over the game's creation lists (`creationOptions` on a synthetic hues.mul): the live scan's elf turned into choices (its skin and hair in the elf palettes) and back unchanged, its skin with the 0x8000 bit; the stand-in starting from the default human skin; a race or gender change re-picking a hair style it does not offer as none, a skin outside the new race's palette as the palette's first, while any other change keeps a scanned value outside the lists (a dyed hair color, a style the lists lack), and dropping facial hair for a female or an elf; facial hair taking the hair's color unless set apart; the scan's face kept only while the race is the scan's; and the session's looks kept per character (and for no character) until Reset or a newer scan. Also `dollPlan` drawing a customized look in color while a stand-in keeps its note and the in-a-form note goes. All `[fast]`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readHues } from "./art.mts";
@@ -64,4 +64,6 @@ test("[fast] customize: a session's looks are kept per character until Reset or 
   assert.equal(customLook(null, null), null, "Reset");
   const plan = dollPlan({ name: "Elfie", appearance: null, readsLook: true, client: "TazUO", custom: look });
   assert.deepEqual([plan.look, plan.gray, plan.note?.title], [look, false, "Rescan to show Elfie's look"]);
+  const formed = dollPlan({ name: "Elfie", appearance: { ...look, body: 606 }, inForm: true, readsLook: true, client: "TazUO", custom: look });
+  assert.deepEqual([formed.look, formed.gray, formed.note], [look, false, null], "the in-a-form note is about the scanned look, which the custom one replaces");
 });
