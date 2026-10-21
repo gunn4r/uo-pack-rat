@@ -41,7 +41,7 @@ const BUDGETS: Record<string, number> = {
   "docs/ui/characters.md": 10000,
   "docs/ui/forms.md": 9000,
   "docs/ui/house-map.md": 39000,
-  "docs/ui/inventory.md": 36000,
+  "docs/ui/inventory.md": 36200,   // + the gear item (issue #504) on the peek, the tooltip, Scrolls and Unravel
   "docs/ui/organize.md": 13000,
   "docs/ui/suit-builder.md": 98000,
   "electron/README.md": 14000,
