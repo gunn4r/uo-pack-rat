@@ -1,2 +1,0 @@
-- **A "not equal" (≠) property rule**: the Inventory's property filter, Organize rules and the MCP `search_items` tool take ≠ beside ≥, ≤ and =, so "Faster Casting ≠ -1" keeps everything but the -1 pieces. An item without the property counts as 0, as for the other comparisons, and the rule says so when you pick ≠ 0.
-- For contributors: `PropOp` gains `"ne"` (`prop=key:ne:value`), read by `parseItemQuery` and `passes`, accepted by `checkOrganizeConfig`, and drawn as ≠ by `propRuleLabel`; `inv-model.mts`'s `neZeroHint` is the popover's note.

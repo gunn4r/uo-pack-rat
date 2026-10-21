@@ -1,2 +1,0 @@
-- **Find a container fast**: the Inventory's Containers list has a search (label, name, serial, character) and Kind and House filters, each with its counts. The footer says how many of all are shown, and Clear filters brings them all back.
-- For contributors: the filters live in `ui/containers.mts` (`filter`, `passes`, a `#cont-toolbar` above the table), reusing the Inventory toolbar's search and chip classes and the shared `menu`.
