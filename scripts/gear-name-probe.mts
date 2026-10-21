@@ -18,11 +18,8 @@ export const GEAR_NAME_EXEMPT: Array<[string, string]> = [
   [".sr", "screen-reader text, not drawn"],
   ["#toasts", "a toast's sentence names the piece in passing"],
   ["tr.item-group", "a grouped Inventory row names a group of stacks, not one piece"],
-  ["td.inv-slot", "the Inventory's Slot column: a slot's label"],
-  ["table.b-plan tbody td:first-child", "the Suit Builder plan's Slot cell: a slot's label"],
-  ["table.gear-tbl tbody td:first-child", "a character sheet's worn-gear Slot cell: a slot's label"],
+  ["td.slot-cell", "a slot's label in a table: the Inventory's Slot column, the Suit Builder plan's and Compare's Slot cells, a character sheet's worn-gear Slot cell"],
   [".mb-slot-line > .caps", "a Manual slot card's slot label"],
-  ["table.b-cmp tbody td:first-child", "Compare's row label: a slot's or a total's label"],
   [".b-checks .check", "a Suit Builder checklist (Locked slots, weapon skills): a slot or a skill to tick"],
 ];
 

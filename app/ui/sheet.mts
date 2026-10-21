@@ -301,7 +301,7 @@ export function sheetParts(name: string | null, before: SheetAssignment, after: 
       // only the one-suit sheet: an optimizer piece carries no durability, so a before/after sheet would tag some pieces and not others
       const low = single ? lowDurability(it) : null;
       const piece = gearItem(it, { showTags: true, after: [isNew ? badge("New", "accent") : null, low ? tag(low, "warn") : null], onOpen: opts.onSlot ? (got, node) => opts.onSlot!(got as SheetItem, node) : undefined });
-      return el("tr", {}, el("td", { class: "t-sm muted" }, slot ? slotLabel(slot) : "Other"), el("td", {}, piece));
+      return el("tr", {}, el("td", { class: "t-sm muted slot-cell" }, slot ? slotLabel(slot) : "Other"), el("td", {}, piece));
     };
     const shown = (s: string): boolean => !WORN_ONLY.has(s) || bySlot.has(s);
     const rows = [...SLOT_GROUPS.flatMap(([, slots]) => slots.filter((s) => bySlot.has(s)).map((s) => row(s, bySlot.get(s)!))), ...other.map((it) => row(it.slot, it))];
