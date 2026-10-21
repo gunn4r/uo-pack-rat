@@ -6,7 +6,8 @@
 // "Label…" / "Edit label…" (ground containers not blacklisted; Organize, issue #11), "Blacklist…" (ground
 // containers) and "Forget…". A container labelled for Organize shows its label, colour and Pinned. The Forget and Blacklist handlers call `reload` from inventory-data.mts. reload(),
 // not load(): a Forget changes the inventory and nothing else, and must keep the filters and the builder
-// as they are.
+// as they are. Above the table (issue #487): a search over the names, labels, serials and scanners, and Kind and
+// House chips, each a menu with its counts; they narrow the rows and the footer counts what is shown.
 //
 // map: ui-screens
 // owns: `renderContainers`, `labelContainer`
@@ -15,20 +16,21 @@ import type { Container } from "../vault-lib.mts";
 import { state } from "./store.mts";
 import { $, el, itemTip, safeColor } from "./dom.mts";
 import { api } from "./api.mts";
-import { txt, box, button, confirmDialog, menu, tableFoot, input, select, switchControl, field, message, openDialog, meter, tag, toast } from "./components.mts";
+import { txt, box, button, confirmDialog, menu, tableFoot, searchInput, filterChip, input, select, switchControl, field, message, openDialog, meter, tag, toast } from "./components.mts";
 import { containerArt } from "./item-art.mts";
 import { relativeWhen, errorText } from "./messages.mts";
 import { loadOrganize, saveConfig } from "./organize-data.mts";
 import { withLabel, withoutLabel, pinNote, LABEL_COLOURS, fillTone } from "./organize-model.mts";
 
 import { reload } from "./inventory-data.mts";
-import { houseOfContainer, showOnMap } from "./house-links.mts";
+import { houseOfContainer, houseNameOf, mapHouses, showOnMap } from "./house-links.mts";
+import { PLAIN } from "./house-map-model.mts";
 import { openedRoots } from "./roster.mts";
 import { registerScreen, showContainer } from "./nav.mts";
 import { splitSerial } from "./item-parts.mts";
 import { bridgeActionReason, runBridgeAction } from "./bridge.mts";
 import type { ContainerLabel, ForgetApiResponse, MissingApiResponse, OrganizeConfig } from "./api-types.mts";
-import { plural } from "./format.mts";
+import { plural, textHit } from "./format.mts";
 
 const KIND_NAMES: Record<string, string> = { backpack: "Backpack", bank: "Bank", ground: "On the ground" };
 // Same total width as before the Fill column, so the table still fits a 1000 px window without scrolling.
@@ -134,9 +136,54 @@ export function showContainers(name: string | null): void {
 }
 registerScreen({ name: "containers", show: (r) => showContainers(r.scanner) });
 document.addEventListener("inventorychange", () => renderContainers());
+// The house links load after the inventory: the House filter and its counts read them.
+document.addEventListener("houselinkschange", () => { if (state.inv) renderContainers(); });
 // A saved Organize setup changes how the containers read.
 document.addEventListener("organizechange", () => { if (state.inv) renderContainers(); });
 const showAll = (): HTMLElement => el("a", { href: "#/containers", id: "cont-show-all" }, "Show all");
+
+// ---------------------------------------------------------------- the filters (issue #487)
+// For this session: the search text, a kind ("" any) and a house (a house id, NO_HOUSE for none, "" any).
+const NO_HOUSE = "-";
+const filter = { q: "", kind: "", house: "" };
+const houseOf = (r: Container): string => { const h = houseOfContainer(+r.serial); return h && h.id !== PLAIN ? h.id : NO_HOUSE; };
+const houseText = (id: string): string => (id === NO_HOUSE ? "Not in a house" : houseNameOf(id));
+// The words a row is found by: its Organize label, its own name, its serial in hex, who scanned it and its kind.
+function rowText(r: Container): string {
+  const lab = state.organize.config?.labels[String(r.serial)];
+  return [lab?.name, r.label, bagLabel(r), `0x${(+r.serial).toString(16)}`, r.scannedBy, KIND_NAMES[String(r.kind)] || r.kind].filter(Boolean).join(" ");
+}
+// `ignore`: the chip whose menu is counting, so its own choice does not narrow its counts.
+const passes = (r: Container, ignore?: "kind" | "house"): boolean => (ignore === "kind" || !filter.kind || r.kind === filter.kind)
+  && (ignore === "house" || !filter.house || houseOf(r) === filter.house) && textHit(filter.q, rowText(r));
+let toolbar: { search: HTMLInputElement; kind: HTMLButtonElement; house: HTMLButtonElement } | null = null;
+function buildToolbar(): NonNullable<typeof toolbar> {
+  const s = searchInput({ label: "Search containers", placeholder: "Search name, label, serial, character", attrs: { id: "cont-q" } });
+  s.root.classList.add("inv-search");
+  let timer = 0;
+  s.input.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(() => { filter.q = s.input.value; renderContainers(); }, 150) as unknown as number; });
+  s.input.addEventListener("keydown", (e) => { if (e.key === "Escape" && s.input.value) { e.stopPropagation(); s.input.value = ""; filter.q = ""; renderContainers(); } });
+  // A chip's menu: "Any …" and each value with how many of the containers the other filters leave carry it.
+  const pick = (chip: HTMLButtonElement, field: "kind" | "house", any: string, values: Array<[string, string]>): void => {
+    const others = roots().filter((r) => passes(r, field));
+    const count = (v: string): number => others.filter((r) => (field === "kind" ? r.kind : houseOf(r)) === v).length;
+    menu(chip, [{ label: any, count: others.length, checked: !filter[field], onSelect: () => { filter[field] = ""; renderContainers(); } },
+      ...values.map(([v, label]) => ({ label, count: count(v), checked: filter[field] === v, onSelect: () => { filter[field] = v; renderContainers(); } }))], { label: chip.textContent || any });
+  };
+  const kind = filterChip({ label: "Kind", attrs: { id: "cont-kind", "aria-haspopup": "menu" }, onClick: () => pick(kind, "kind", "Any kind", Object.entries(KIND_NAMES)) });
+  const house = filterChip({ label: "House", attrs: { id: "cont-house", "aria-haspopup": "menu" }, onClick: () => pick(house, "house", "Any house", [...mapHouses().map((h): [string, string] => [h.id, h.name]), [NO_HOUSE, houseText(NO_HOUSE)]]) });
+  $<HTMLElement>("#cont-toolbar")!.replaceChildren(s.root, kind, house);
+  return { search: s.input, kind, house };
+}
+function syncToolbar(): void {
+  toolbar ??= buildToolbar();
+  const set = (chip: HTMLButtonElement, name: string, v: string, text: (v: string) => string): void => { chip.querySelector("span")!.textContent = v ? `${name}: ${text(v)}` : name; chip.classList.toggle("set", !!v); };
+  set(toolbar.kind, "Kind", filter.kind, (v) => KIND_NAMES[v] || v);
+  set(toolbar.house, "House", filter.house, houseText);
+}
+const clearFilters = (): void => { filter.q = ""; filter.kind = ""; filter.house = ""; if (toolbar) toolbar.search.value = ""; renderContainers(); };
+// The root containers listed: that character's (#/containers/<Name>), else every one.
+const roots = (): Container[] => (scanner ? openedRoots(state.inv!.containers, scanner) : Object.values(state.inv!.containers).filter((c) => c.parent == null));
 
 export function renderContainers(): void {
   const t = $<HTMLTableElement>("#cont-table")!;
@@ -146,24 +193,31 @@ export function renderContainers(): void {
   t.querySelector("colgroup")!.replaceChildren(...COLS.map(([, w]) => el("col", { style: `width:${w}px` })), el("col", { style: "width:48px" }));
   t.querySelector("thead")!.replaceChildren(el("tr", {}, ...COLS.map(([h, , num]) => el("th", { scope: "col", class: num ? "num" : "" }, txt(h))), el("th", { scope: "col" }, txt("Actions", "sr"))));
   const body = t.querySelector("tbody")!;
-  const roots = scanner ? openedRoots(inv.containers, scanner) : Object.values(inv.containers).filter((c) => c.parent == null);
+  syncToolbar();
+  const all = roots(), shown = all.filter((r) => passes(r));
   // Each render swaps the footer for a new one, which keeps the id so the next render finds it.
   const foot = $<HTMLElement>("#cont-foot")!;
   const setFoot = (next: HTMLDivElement): void => { next.id = "cont-foot"; foot.replaceWith(next); };
-  if (!roots.length && scanner) {
+  if (!all.length && scanner) {
     body.replaceChildren(el("tr", {}, el("td", { colspan: COLS.length + 1 }, box("div", { class: "empty-state" }, el("h3", { class: "t-lg" }, `${scanner}'s scans opened no containers`), showAll()))));
     setFoot(tableFoot("No containers"));
     return;
   }
-  if (!roots.length) {
+  if (!all.length) {
     body.replaceChildren(el("tr", {}, el("td", { colspan: COLS.length + 1 }, box("div", { class: "empty-state" }, el("h3", { class: "t-lg" }, "Nothing scanned yet"), el("p", { class: "muted" }, txt("Containers show up here once a scan has opened them."))))));
     setFoot(tableFoot("No containers"));
+    return;
+  }
+  if (!shown.length) {
+    body.replaceChildren(el("tr", {}, el("td", { colspan: COLS.length + 1 }, box("div", { class: "empty-state", id: "cont-empty" }, el("h3", { class: "t-lg" }, "No containers match"),
+      button({ label: "Clear filters", variant: "primary", onClick: clearFilters })))));
+    setFoot(tableFoot(`0 of ${plural(all.length, "container")}`));
     return;
   }
   // Grouped by character, the ground last: a backpack or bank under its owner, a ground container under
   // "On the ground" (whoever scanned it is its own column).
   const groups = new Map<string, Container[]>();
-  for (const r of roots) {
+  for (const r of shown) {
     const g = r.kind === "backpack" || r.kind === "bank" ? r.scannedBy : "On the ground";
     groups.set(g, [...(groups.get(g) || []), r]);
   }
@@ -204,7 +258,7 @@ export function renderContainers(): void {
     }
   }
   body.replaceChildren(...rows);
-  const counted = plural(roots.length, "container") + (scanner ? ` ${scanner}'s scans opened` : "");
-  const next = tableFoot(counted, plural((scanner ? roots.map((r) => inv.rootCounts[r.serial] || 0) : Object.values(inv.rootCounts)).reduce((a, b) => a + b, 0), "item"), scanner ? showAll() : null, "Newest scan of a container wins; Forget one you emptied");
+  const counted = (shown.length < all.length ? `${shown.length} of ` : "") + plural(all.length, "container") + (scanner ? ` ${scanner}'s scans opened` : "");
+  const next = tableFoot(counted, plural(shown.map((r) => inv.rootCounts[r.serial] || 0).reduce((a, b) => a + b, 0), "item"), scanner ? showAll() : null, "Newest scan of a container wins; Forget one you emptied");
   setFoot(next);
 }

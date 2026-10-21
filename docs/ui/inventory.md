@@ -247,7 +247,7 @@ It saves through `POST /api/item-kinds` and runs `reload()`, so the table, the K
 
 ## Containers view
 
-`ui/containers.mts`: one row per root container, grouped by character with the ground last, with a Fill column and a ⋯ menu (Show these items, Label…, Blacklist…, Forget…).
+`ui/containers.mts`: one row per root container, grouped by character with the ground last, with a Fill column and a ⋯ menu (Show these items, Label…, Blacklist…, Forget…). Filters above: search, Kind, House.
 
 ### Missing items
 
