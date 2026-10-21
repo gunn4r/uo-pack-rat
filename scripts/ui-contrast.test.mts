@@ -18,7 +18,10 @@ const KESTREL = readFileSync(join(ROOT, "app", "fixtures", "demo-Kestrel.json"),
 // Each scene brings the page into one state; the probe then measures whatever is visible, and `leave` undoes
 // what must not carry over (an open overlay). Scenes run in order in one window, so a scene may rely on the
 // one before (the build saves a run, which the runs drawer then lists).
-interface Scene { name: string; enter: (page: Page) => Promise<void>; leave?: (page: Page) => Promise<void> }
+// `mustMeasure`: a selector for text the scene exists to check; each match's text must be among the pairs measured, so the scene cannot pass by drawing none.
+interface Scene { name: string; enter: (page: Page) => Promise<void>; leave?: (page: Page) => Promise<void>; mustMeasure?: string }
+// A gear name in its rarity's color on Compare's "differs" fill (issue #504: the fill is light enough for every rarity color).
+const RARITY_ON_DIFF = ".b-cmp td.diff .gi-name[style*='--rarity-']";
 async function route(page: Page, hash: string, ready: string): Promise<void> {
   await page.evaluate((h) => { location.hash = h; }, hash);
   await page.waitForSelector(ready, { timeout: 15_000 });
@@ -306,7 +309,7 @@ const SCENES: Scene[] = [
     await ticks.nth(0).check(); await ticks.nth(1).check();
     await p.getByRole("button", { name: "Compare 2 suits" }).click();
     await p.waitForSelector("#b-compare-view:not([hidden]) .b-cmp");
-  }, leave: async (p) => { await p.getByRole("button", { name: "Back to result" }).click(); } },
+  }, leave: async (p) => { await p.getByRole("button", { name: "Back to result" }).click(); }, mustMeasure: RARITY_ON_DIFF },
   { name: "runs drawer menu and rename", enter: async (p) => {
     // a second run, so there are two to tick
     await settingsTab(p, "advanced"); await p.fill("#b-restarts", "150"); await p.click("#b-drawer-close");
@@ -324,7 +327,7 @@ const SCENES: Scene[] = [
   { name: "builder compare runs", enter: async (p) => {
     await p.click("#b-runs-compare");
     await p.waitForSelector("#b-compare-view:not([hidden]) .b-cmp");
-  }, leave: async (p) => { await p.getByRole("button", { name: "Back to result" }).click(); } },
+  }, leave: async (p) => { await p.getByRole("button", { name: "Back to result" }).click(); } },   // the demo's two runs differ by no rarity piece; compare suits carries the rarity check
   { name: "builder character picker", enter: async (p) => { await p.click("#b-char"); await p.keyboard.type("e"); await p.waitForSelector(".pop .cbx-hit"); }, leave: (p) => p.keyboard.press("Escape") },
   { name: "builder build picker", enter: async (p) => { await p.click("#b-tpl"); await p.waitForSelector(".pop .cbx-list"); }, leave: (p) => p.keyboard.press("Escape") },
   { name: "builder property picker", enter: async (p) => { await settingsTab(p, "requirements"); await p.click("#b-addfloor"); await p.waitForSelector(".pop .b-pick-list"); }, leave: (p) => p.keyboard.press("Escape") },
@@ -403,6 +406,11 @@ test("[slow] every text, control edge, icon and status dot on the real page pass
           const got = await page.evaluate(probeContrast);
           assert.ok(got.length > 10, `${scene.name} (${family} ${mode}) measured only ${got.length} pairs — did the scene render?`);
           for (const r of got) rows.push({ ...r, where: `${scene.name} · ${family} ${mode}` });
+          if (scene.mustMeasure) {
+            const want = await page.locator(scene.mustMeasure).allTextContents();
+            assert.ok(want.length, `${scene.name}: nothing matches ${scene.mustMeasure}`);
+            for (const text of want) assert.ok(got.some((r) => r.kind === "text" && r.text.includes(text.trim().replace(/\s+/g, " ").slice(0, 60))), `${scene.name} (${family} ${mode}): "${text}" was not measured`);
+          }
           seen.push(`${scene.name} · ${family} ${mode}: ${got.length}`);
         }
       }

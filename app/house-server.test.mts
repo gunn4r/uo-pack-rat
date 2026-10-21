@@ -15,8 +15,7 @@ import { syntheticTileData } from "./tiledata-fixture.mts";
 import { syntheticFacet, rgb555, type Run } from "./facet-fixture.mts";
 import { FLAG } from "./tiledata.mts";
 import { gumpArtName, itemArtName } from "./art.mts";
-import { syntheticArt, syntheticGump, syntheticHues, syntheticUop } from "./art-fixture.mts";
-import { inflateSync } from "node:zlib";
+import { pngPixels, syntheticArt, syntheticGump, syntheticHues, syntheticUop } from "./art-fixture.mts";
 import type { HouseModel } from "./house-model.mts";
 
 const PACK = 0x40020001;
@@ -507,15 +506,6 @@ test("[fast] item art: a graphic's art is a PNG with an ETag (a 304 on a repeat)
     assert.deepEqual(await get(bare, "/api/item-art/1.png"), { status: 404, body: { ok: false, reason: "no-client" } });
   } finally { await bare.close(); }
 });
-
-// A PNG's RGBA pixels (the encoder writes one IDAT run with filter 0 on every row).
-const pngPixels = (b: Buffer): number[] => {
-  const [w] = ihdrSize(b), parts: Buffer[] = [];
-  for (let o = 8; o < b.length;) { const n = b.readUInt32BE(o), type = b.toString("latin1", o + 4, o + 8); if (type === "IDAT") parts.push(b.subarray(o + 8, o + 8 + n)); o += 12 + n; }
-  const raw = inflateSync(Buffer.concat(parts)), out: number[] = [];
-  for (let o = 0; o < raw.length; o += 1 + w * 4) out.push(...raw.subarray(o + 1, o + 1 + w * 4));
-  return out;
-};
 
 test("[fast] paperdoll: a figure is a PNG cut to its box plus 6 px with an ETag (a 304 on a repeat); a pair's sides match; gray=1 is gray; a bad query a 400; a form's body, no gumps or no UO folder a 404 with a reason and never the path", async () => {
   const { s } = await serve(true);

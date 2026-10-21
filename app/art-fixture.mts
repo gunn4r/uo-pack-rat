@@ -1,8 +1,8 @@
 // art-fixture.mts — synthetic client files for the art tests (no game data ships in the repo): a UOP container holding named entries (stored, deflated, or BWT-packed and deflated as a 7.x gump file packs them), one item's static art, one gump, and a hues.mul. Each is written as given, so a test can make one that does not add up.
 //
 // map: house
-// owns: `syntheticUop`, `bwtPack`, `bwtList`, `mtfPack`, `syntheticArt`, `syntheticGump`, `syntheticHues`
-import { deflateSync } from "node:zlib";
+// owns: `syntheticUop`, `bwtPack`, `bwtList`, `mtfPack`, `syntheticArt`, `syntheticGump`, `syntheticHues`, `pngPixels`
+import { deflateSync, inflateSync } from "node:zlib";
 import { uopHash } from "./art.mts";
 
 // A UOP v5 file with the entries in one table block (or `perBlock` per block, chained), each stored as is, deflated (`zlib`, flag 1), or BWT-packed and then deflated (`bwt`, flag 3, its decompressed length the packed length). The data follows the table.
@@ -113,5 +113,14 @@ export function syntheticArt(width: number, height: number, rows: Array<Array<[s
 export function syntheticHues(hues: Uint16Array[], groups = Math.max(1, Math.ceil(hues.length / 8))): Buffer {
   const out = Buffer.alloc(groups * 708);
   hues.forEach((cs, i) => { const at = Math.floor(i / 8) * 708 + 4 + (i % 8) * 88; cs.forEach((c, k) => out.writeUInt16LE(c, at + k * 2)); });
+  return out;
+}
+
+// The RGBA pixels of a PNG app/png.mts wrote (one IDAT run, filter type 0 on every row), for the tests that check what was drawn.
+export function pngPixels(b: Buffer): number[] {
+  const w = b.readUInt32BE(16), parts: Buffer[] = [];
+  for (let o = 8; o < b.length;) { const n = b.readUInt32BE(o); if (b.toString("latin1", o + 4, o + 8) === "IDAT") parts.push(b.subarray(o + 8, o + 8 + n)); o += 12 + n; }
+  const raw = inflateSync(Buffer.concat(parts)), out: number[] = [];
+  for (let o = 0; o < raw.length; o += 1 + w * 4) out.push(...raw.subarray(o + 1, o + 1 + w * 4));
   return out;
 }

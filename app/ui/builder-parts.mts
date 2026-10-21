@@ -11,7 +11,8 @@ import { characterBuffs, templateName } from "../build-spec.mts";
 import { normalizeBuffs } from "../buffs.mts";
 import type { FcCap, Item, PropMap } from "../vault-lib.mts";
 import { state, bridge } from "./store.mts";
-import { el, label, fmtN, itemTip, whereText } from "./dom.mts";
+import { el, label, fmtN, whereText } from "./dom.mts";
+import { gearItem } from "./gear-item.mts";
 import { box, txt, button, message, tipWrap, tooltip, copyText, check, searchInput, popover, toast } from "./components.mts";
 import { CLIENT_ID } from "./api.mts";
 import { bridgeActionReason, runBridgeAction, grabAll, grabbable } from "./bridge.mts";
@@ -65,11 +66,6 @@ const serialHex = (s: number): string => `0x${s.toString(16)}`;
 // A piece's key properties, strongest first: "SSI 35 · DCI 11 · Hit Fireball 36".
 export function keyProps(props: PropMap | undefined, n = 3): string {
   return Object.entries(props || {}).filter(([k, v]) => k !== "tagPenalty" && !k.endsWith("Pool") && v).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).slice(0, n).map(([k, v]) => `${label(k)} ${v}`).join(" · ");
-}
-// A piece the item tooltip answers for (dom.mts's itemTip): on hover, and after 400 ms of keyboard focus.
-export function tipTarget<T extends HTMLElement>(node: T, item: { serial: number; name: string }): T {
-  node.classList.add("b-tip");
-  return itemTip(node, item);
 }
 
 export function verdict(res: OptimizeResult): { text: string; tone?: "ok" | "warn" | "bad" | undefined; detail?: string | undefined } {
@@ -158,7 +154,7 @@ export function fetchCard(items: Item[], name: string | null, head: HTMLElement 
     const go = button({ label: "Go to", size: "sm", icon: "goto", disabled: !!goGate, onClick: () => runBridgeAction("goto", first) });
     const grab = button({ label: `Grab ${mine.length || list.length}`, size: "sm", icon: "grab", disabled: !!grabGate, onClick: () => grabAll(list, grabber!) });
     const pieces = el("ul", { class: "b-fetch-pieces", "aria-label": `${plural(list.length, "piece")} to fetch` },
-      ...list.map((it) => el("li", {}, tipTarget(txt(it.name, "b-fetch-piece"), it))));
+      ...list.map((it) => el("li", {}, gearItem(it, { variant: "chip" }))));
     const contHex = cont ? serialHex(+cont.serial) : "";
     return box("div", { class: "b-fetch" },
       box("div", { class: "b-fetch-where" }, crumbsEl(where, contHex),
