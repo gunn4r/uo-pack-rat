@@ -18,9 +18,12 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const lib = (await import(pathToFileURL(join(HERE, "..", "vault-lib.mts")).href)) as typeof VaultLib;
 const model = learnModel(readRealSnapshots(SCANS_DIR), lib);
 
+// Each character's look for the paperdoll (a scan's \`appearance\`): fictional characters drawn with the game's own ids,
+// human female (401) and male (400) bodies, skin hues from the human range (1002-1058), hair and beard graphics
+// (0x203D ponytail, 0x203B short hair, 0x203F short beard) and hues from the hair range (1102-1149), no face item.
 const SPECS = [
-  { character: "Kestrel", n: 120, seed: 11, stats: { str: 70, dex: 100, int: 40 } },
-  { character: "Dorran", n: 40, seed: 12, stats: { str: 110, dex: 60, int: 20 } },
+  { character: "Kestrel", n: 120, seed: 11, stats: { str: 70, dex: 100, int: 40 }, appearance: { body: 401, hue: 1040, hair: { graphic: 8253, hue: 1131 }, beard: null, face: null } },
+  { character: "Dorran", n: 40, seed: 12, stats: { str: 110, dex: 60, int: 20 }, appearance: { body: 400, hue: 1023, hair: { graphic: 8251, hue: 1109 }, beard: { graphic: 8255, hue: 1109 }, face: null } },
 ];
 
 // Pick up to `max` generated gear items, one per optimizer slot, to promote to "worn".
@@ -43,6 +46,7 @@ for (const s of SPECS) {
   scan.character = s.character;
   scan.stats = s.stats;
   scan.position = { x: 1, y: 1 };
+  Object.assign(scan, { appearance: s.appearance });
 
   const worn = pickEquippable(scan.items, 8);
   const wornSerials = new Set(worn.map((it) => it.serial));
