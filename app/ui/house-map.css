@@ -249,6 +249,8 @@ a.map-where-mark:focus-visible .map-where-ring-in { stroke: var(--color-map-mark
 .map-search .map-search-clear { position: absolute; right: 2px; }
 /* a search is on: a gold ring outside the input's own edge, which keeps its 3:1 border (gold alone is under 3:1 on a light page) */
 .map-search.active .input { box-shadow: 0 0 0 2px var(--color-highlight); }
+/* typing in it: the normal focus ring, not the gold one (the "N in M" count still says a search is on) */
+.map-search.active .input:focus-visible { box-shadow: var(--ring-focus); }
 /* A top bar too narrow for everything wraps (the box goes to a second line) rather than squeeze the level pills behind the box. */
 #tab-map #map-topbar { flex-wrap: wrap; height: auto; min-height: var(--topbar-h); row-gap: var(--space-2); padding-block: var(--space-2); }
 #tab-map .map-levels { flex: none; max-width: 100%; }

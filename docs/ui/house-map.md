@@ -279,7 +279,7 @@ It finds items with the Inventory's own query: `GET /api/items?q=&fields=hits`, 
 
 ### While the house has matches
 
-- The box has a gold ring (`--color-highlight`, outside its own edge, which keeps 3:1) and an "N in M" count: items, by amount, in containers.
+- The box has a gold ring (`--color-highlight`, outside its own edge, which keeps 3:1; while focused, the normal focus ring instead) and an "N in M" count: items, by amount, in containers.
 - Matching containers keep their color with a gold outline, and their stack stands on a gold base. Every other container is a pale ghost.
 - The map zooms to the level's matching stacks when the query changes (`hitsView`, with room above them).
 - Each matching stack gets a pinned callout: "Stack I · 1 of 4 match", then, per matching container, its code, name, place in the stack and the items found.
