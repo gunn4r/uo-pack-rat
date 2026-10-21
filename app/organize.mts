@@ -12,8 +12,8 @@ import { RESIST_KEYS, bridgeFeatures, itemTypeOf, gameName, spellSchoolOf, TRASH
 import type { RulesV1RarityItem } from "./schema/types.d.mts";
 import { TRIP_NAME_MAX } from "./bridge-contract.mts";
 import type { TripInput } from "./bridge-trip.mts";
-import type { Carried, EmptyBag, Look, Plan, PlanMove, PlanTrip, PlanWarning, WarningKind } from "./organize-types.mts";
-export type { Carried, EmptyBag, Look, Plan, PlanMove, PlanTrip, PlanWarning, RoomReport, RuleReport, WarningKind } from "./organize-types.mts";
+import type { Carried, EmptyBag, PieceLook, Plan, PlanMove, PlanTrip, PlanWarning, WarningKind } from "./organize-types.mts";
+export type { Carried, EmptyBag, PieceLook, Plan, PlanMove, PlanTrip, PlanWarning, RoomReport, RuleReport, WarningKind } from "./organize-types.mts";
 
 // A container last scanned longer ago than this is warned about, and still planned: the bridge rechecks live
 // state before every step.
@@ -197,8 +197,8 @@ export function claimOf(it: Item, cfg: OrganizeConfig, rarity: RulesV1RarityItem
 export interface OverlayMove { serial: number; name: string; from: number | null; to: number | null; at: string; trip: string; character?: string | undefined; grab?: true | undefined }
 // The inventory as the overlay says it stands: moved items re-homed, and every container's fill (a copy of its
 // Contents line) adjusted for the steps it does not yet include.
-// lookOf(it): an item's look for a plan's moves and carried list (organize-types.mts's Look).
-export const lookOf = (it: Item | undefined): Look => ({ graphic: it?.graphic ?? null, hue: it?.hue ?? null, rarity: it?.rarity ?? null });
+// lookOf(it): an item's look for a plan's moves and carried list (organize-types.mts's PieceLook).
+export const lookOf = (it: Item | undefined): PieceLook => ({ graphic: it?.graphic ?? null, hue: it?.hue ?? null, rarity: it?.rarity ?? null });
 export interface Placed { inv: Inventory; counts: Map<number, ContainerCapacity>; carried: Carried[] }
 
 // Spec §2.2: confirmed moves are applied before planning, so a finished trip is not planned again before the next
