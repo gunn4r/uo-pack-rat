@@ -19,10 +19,13 @@ import { emptySelection, isSelected, isWorn, selectedCount, toggleRows, toggleLo
 import type { ItemBrowser, SelectionHooks } from "./item-browser.mts";
 import type { BridgeStatusApiResponse, MoveBackApiResponse, MovePlanApiResponse, MovePlanSummary, MoveTripApiResponse } from "./api-types.mts";
 import { plural } from "./format.mts";
+import { gearText, type GearItemSource } from "./gear-item.mts";
 
 let browser: ItemBrowser | null = null;
 let sel: Selection = emptySelection();
 let note: string | null = null;
+// The pieces the note names (a worn one), drawn in it as gear items.
+let notePieces: ReadonlyArray<GearItemSource> = [];
 // The query a shift-click's anchor was set under: after a filter change the row indexes mean other rows, so a shift-click starts afresh.
 let anchorQuery: unknown = null;
 let matchesAll: Matches = () => false;
@@ -35,18 +38,20 @@ export const selectionHooks: SelectionHooks = {
   toggle: (index, on, shift) => {
     const r = toggleRows(sel, rows(), index, on, shift && anchorQuery === browser?.query, matches);
     anchorQuery = browser?.query ?? null;
-    change(r.sel, wornNote(r.worn));
+    change(r.sel, wornNote(r.worn), wornRows());
   },
   header: () => loadedState(sel, rows(), matches),
-  toggleLoaded: (on) => { const r = toggleLoaded(sel, rows(), on, matches); change(r.sel, wornNote(r.worn)); },
+  toggleLoaded: (on) => { const r = toggleLoaded(sel, rows(), on, matches); change(r.sel, wornNote(r.worn), wornRows()); },
 };
 export function attachMoveTo(b: ItemBrowser): void {
   browser = b;
   paintBar();
 }
-function change(next: Selection, why: string | null): void {
+const wornRows = (): Item[] => rows().filter((it): it is Item => !!it && isWorn(it));
+function change(next: Selection, why: string | null, pieces: ReadonlyArray<GearItemSource> = []): void {
   sel = next;
   note = why;
+  notePieces = pieces;
   if (!sel.all) matchesAll = () => false;
   browser?.markPicked();
   paintBar();
@@ -70,7 +75,7 @@ function paintBar(): void {
   const grab = grabItems(sel);
   const grabBtn = button({ label: "Grab", size: "sm", disabled: !n || !grab, attrs: { id: "mv-grab" }, onClick: () => { void grabSelected(); } });
   b.replaceChildren(
-    box("div", { class: "mv-what" }, txt(n ? selectedText(n) : "Nothing selected", "strong mv-count"), note ? txt(note, "t-sm muted mv-note") : null, offer),
+    box("div", { class: "mv-what" }, txt(n ? selectedText(n) : "Nothing selected", "strong mv-count"), note ? el("span", { class: "t-sm muted mv-note" }, ...gearText(note, notePieces)) : null, offer),
     box("div", { class: "mv-acts" }, n && !grab ? tipWrap(grabBtn, GRAB_TOO_MANY) : grabBtn,
       button({ label: "Move to…", variant: "primary", size: "sm", disabled: !n, attrs: { id: "mv-move" }, onClick: () => { void openPicker({ selection: selectionBody(sel), host: "inv-move-result", onRun: clearSelection }); } }),
       button({ label: "Clear", size: "sm", attrs: { id: "mv-clear" }, onClick: clearSelection })));
@@ -85,7 +90,7 @@ async function selectAll(): Promise<void> {
   const q = { ...query, group: false, offset: 0, limit: 1 }, rarity = state.rules?.rarity || [];
   const where = queryWhere(q, state.inv?.containers ?? {}, { places: state.organize.places, rarity, houseOf: houseIds });
   matchesAll = (it) => applyItemQuery([it], q, where).total === 1;
-  change(selectAllMatching(sel, query, r.selected - r.worn, r.worn, matches), wornNote(r.wornNames.slice(0, r.worn === 1 ? 1 : 0), r.worn));
+  change(selectAllMatching(sel, query, r.selected - r.worn, r.worn, matches), wornNote(r.wornPieces.slice(0, r.worn === 1 ? 1 : 0).map((p) => p.name), r.worn), r.wornPieces);
 }
 async function grabSelected(): Promise<void> {
   const items = grabItems(sel);
@@ -195,10 +200,10 @@ interface Run {
   body: Record<string, unknown>;
   total: number;
   noRoom: number;
-  noRoomNames: string[];
+  noRoomPieces: Array<{ serial: number; name: string }>;
   against: MovePlanSummary["against"];
   moved: number[];
-  failed: Array<{ name: string; msg: string }>;
+  failed: Array<{ serial: number; name: string; msg: string }>;
   trips: string[];
   names: Map<number, { name: string }>;
   watch: TripWatch | null;
@@ -206,7 +211,7 @@ interface Run {
   stopped: boolean;
   done: boolean;
   lost: string | null;
-  skipped: string[];
+  skipped: Array<{ serial: number; name: string }>;
   pinned: boolean;
   canBack: boolean;
 }
@@ -214,7 +219,7 @@ let run: Run | null = null;
 let lastStatus: BridgeStatusApiResponse | null = null, lastStatusAt = 0;
 async function startRun(r: Pick<Run, "kind" | "dest" | "body" | "total" | "noRoom" | "against" | "host" | "gather">): Promise<void> {
   if (run && run.host !== r.host) { const old = $<HTMLElement>(`#${run.host}`); if (old) { old.hidden = true; old.replaceChildren(); } }
-  run = { ...r, moved: [], failed: [], trips: [], names: new Map(), watch: null, stopping: false, stopped: false, done: false, lost: null, skipped: [], noRoomNames: [], pinned: false, canBack: false };
+  run = { ...r, moved: [], failed: [], trips: [], names: new Map(), watch: null, stopping: false, stopped: false, done: false, lost: null, skipped: [], noRoomPieces: [], pinned: false, canBack: false };
   paintResult();
   await queueNext(run);
 }
@@ -225,8 +230,8 @@ async function queueNext(r: Run): Promise<void> {
   catch (e) { r.lost = errorText(e); return finish(r); }
   if (r !== run) return;
   if (!r.trips.length) {
-    r.skipped = res.skipped.map((s) => s.name);
-    if (r.kind === "back") { r.total = res.remaining; r.noRoom = res.noRoom.length; r.noRoomNames = res.noRoom.map((s) => s.name); }
+    r.skipped = res.skipped;
+    if (r.kind === "back") { r.total = res.remaining; r.noRoom = res.noRoom.length; r.noRoomPieces = res.noRoom; }
   }
   if (!res.id) return finish(r);
   // Stop pressed while this trip was being queued: the flag written then is older than the trip, which the bridge would clear, so write it again.
@@ -248,7 +253,7 @@ function check(): void {
   r.watch = null;
   if (step.kind === "lost") { r.lost = step.message; finish(r); return; }
   for (const s of step.result.steps || []) if (s.op === "put" && s.ok && !r.moved.includes(s.serial)) r.moved.push(s.serial);
-  r.failed.push(...failedSteps(step.result, r.names).map((f) => ({ name: f.name, msg: f.msg })));
+  r.failed.push(...failedSteps(step.result, r.names).map((f) => ({ serial: f.serial, name: f.name, msg: f.msg })));
   if (step.outcome === "stopped" || r.stopping) { r.stopped = true; finish(r); return; }
   if (step.outcome !== "done") { finish(r); return; }
   paintResult();
@@ -292,10 +297,11 @@ function moveBack(r: Run): void {
 
 // ---------------------------------------------------------------- the result line
 const result = (): HTMLElement | null => (run ? $<HTMLElement>(`#${run.host}`) : null);
-// One line in the mockup's look: the head and its notes on the left, the actions on the right.
-function line(tone: "info" | "ok" | "warn" | "bad", head: string, notes: Array<string | null>, actions: Array<HTMLElement | null>): HTMLElement {
+// One line in the mockup's look: the head and its notes on the left, the actions on the right. A note's mention of one of
+// `pieces` (a skipped, unplaced or failed item) is drawn as that gear item.
+function line(tone: "info" | "ok" | "warn" | "bad", head: string, notes: Array<string | null>, actions: Array<HTMLElement | null>, pieces: ReadonlyArray<GearItemSource> = []): HTMLElement {
   return box("div", { class: `mv-result ${tone}`, role: tone === "bad" ? "alert" : "status" },
-    box("span", { class: "mv-lines" }, txt(head, "strong"), ...notes.filter((n): n is string => !!n).map((n) => txt(n, "t-sm"))),
+    box("span", { class: "mv-lines" }, txt(head, "strong"), ...notes.filter((n): n is string => !!n).map((n) => el("span", { class: "t-sm" }, ...gearText(n, pieces)))),
     box("span", { class: "mv-acts" }, ...actions.filter((a): a is HTMLElement => !!a)));
 }
 function paintResult(): void {
@@ -310,7 +316,7 @@ function paintResult(): void {
   }
   if (r.lost && !r.moved.length) { host.replaceChildren(line("bad", back ? "Move back did not run." : "The move did not run.", [r.lost], [dismiss])); return; }
   if (!r.moved.length && !r.failed.length) {
-    host.replaceChildren(line("warn", back ? "Nothing to move back." : "Nothing was moved.", [skippedText(r.skipped), r.stopped ? "It was stopped before any item moved." : null], [dismiss]));
+    host.replaceChildren(line("warn", back ? "Nothing to move back." : "Nothing was moved.", [skippedText(r.skipped.map((s) => s.name)), r.stopped ? "It was stopped before any item moved." : null], [dismiss], r.skipped));
     return;
   }
   const moved = new Set(r.moved);
@@ -318,7 +324,7 @@ function paintResult(): void {
   const why = gate(), backBtn = r.canBack ? button({ label: "Move back", size: "sm", attrs: { id: "mv-back" }, disabled: !!why, onClick: () => moveBack(r) }) : null;
   const counts = { noRoom: r.noRoom, failed: r.failed.length, stopped: r.stopped };
   host.replaceChildren(line(r.failed.length || r.lost ? "warn" : "ok", r.gather && !back ? gatheredText(r.moved.length, r.dest, counts) : movedText(r.moved.length, r.dest, back, counts),
-    [r.gather && !back && !r.stopped ? GATHER_NOTE : null, r.pinned ? pinnedText(against.length, r.dest) : againstText(against, placeOf), back ? skippedText(r.skipped) : null, back ? noRoomText(r.noRoomNames) : null, r.failed.length ? r.failed.slice(0, 3).map((f) => `${f.name}: ${f.msg}`).join(" · ") : null, r.lost],
+    [r.gather && !back && !r.stopped ? GATHER_NOTE : null, r.pinned ? pinnedText(against.length, r.dest) : againstText(against, placeOf), back ? skippedText(r.skipped.map((s) => s.name)) : null, back ? noRoomText(r.noRoomPieces.map((s) => s.name)) : null, r.failed.length ? r.failed.slice(0, 3).map((f) => `${f.name}: ${f.msg}`).join(" · ") : null, r.lost],
     [against.length && !r.pinned ? button({ label: `Pin ${against.length === 1 ? "it" : "them"} here`, size: "sm", attrs: { id: "mv-pin" }, onClick: () => { void pinMoved(r, against.map((a) => a.serial)); } }) : null,
-      backBtn && why ? tipWrap(backBtn, why) : backBtn, dismiss]));
+      backBtn && why ? tipWrap(backBtn, why) : backBtn, dismiss], [...r.skipped, ...r.noRoomPieces, ...r.failed]));
 }

@@ -19,6 +19,7 @@ import { buffsOn, group, checklist, panelFcCap, fcCapNote } from "./builder-part
 import { needStatus, shownImportance, nextSwingStep, speedText, swingLines, propName, newWeight, editedValue, ruleValueError, resistCapError, withResistCap, capNote, resistMinimumText, floorCapWarning, weightTradeoff, goalRows, moveGoal, spareKeys, andList, linkGoal, removeGoal, addGoal } from "./builder-model.mts";
 import type { UiPrefs } from "./api-types.mts";
 import { prefs } from "./prefs.mts";
+import { gearText, type GearItemSource } from "./gear-item.mts";
 
 // Whether the Goals tab shows the weights the goals set under them (ui-prefs `builderFineTune`, issue #292).
 let fineTune = false;
@@ -313,7 +314,7 @@ function swingGoal(g: Goals): HTMLElement {
   const line = !worn ? (session.character === NOBODY ? "Pick a character to see swing times." : "Wear a weapon to see the swing each Swing Speed Increase value gives.")
     : target ? `${delayText(target.seconds)} with ${worn.weapon} at ${worn.sw.stamina} stamina: needs Swing Speed Increase ${target.ssi}`
     : every != null ? `${worn.weapon} can't swing every ${delayText(every)} at ${worn.sw.stamina} stamina within the Swing Speed Increase cap.` : `${worn.weapon} is at its fastest swing at ${worn.sw.stamina} stamina.`;
-  return box("div", { class: "b-swing-goal" }, sel, txt(line, "t-sm muted"));
+  return box("div", { class: "b-swing-goal" }, sel, el("span", { class: "t-sm muted" }, ...gearText(line, [worn?.piece])));
 }
 // The weight rows at 0 that keep a negative sign, by character and property, for the page session.
 const negZero = new Set<string>();
@@ -409,19 +410,19 @@ function weightsSection(): HTMLElement {
 const WEIGHTS_HELP = "How much a good amount of each property matters, about 0 to 100. Higher counts more. Dragging snaps to 5; type any number, a negative one to count against.";
 const GOAL_WEIGHTS_HELP = "The weights your goals set, about 0 to 100. Changing one switches to your own weights.";
 // ---- swing steps (app/swing.mts): the switch on the SSI weight row, and the requirement row's "Next step" The worn suit's swing with the panel's buffs, the weapon a build is known to hold before it runs (a locked hand keeps the worn piece); null when it holds no weapon of known speed.
-function wornSwing(): { sw: SwingResult; weapon: string } | null {
+function wornSwing(): { sw: SwingResult; weapon: string; piece: GearItemSource } | null {
   const name = session.character!, p = session.profile!, worn = state.inv!.worn[name] || [];
   const prof = planBuild(specFromProfile(p, { on: buffsOn(), skills: commands.buffEditsOf(name) }), { character: (state.inv!.characters[name] as Character | undefined) ?? null, worn, race: p.race }).profile;
   const items = worn.filter((it) => it.slot).map(toOptItem), w = heldWeapon(Object.fromEntries(items.map((it) => [it.slot!, it])));
   if (!w || !prof.swing) return null;
-  return { sw: swingOf(w.speed!, prof.swing.stamBase, totalsOf(Object.fromEntries(items.map((it) => [String(it.serial), it]))), ssiShareOf(prof)), weapon: w.name };
+  return { sw: swingOf(w.speed!, prof.swing.stamBase, totalsOf(Object.fromEntries(items.map((it) => [String(it.serial), it]))), ssiShareOf(prof)), weapon: w.name, piece: w };
 }
 function swingStepsSetting(): HTMLElement {
   const p = session.profile!, worn = wornSwing();
   const sw = switchControl({ label: "Score swing speed by step", checked: !!p.swingSteps, attrs: { id: "b-swing-steps" }, onChange: (v) => { ownWeights(); p.swingSteps = v; commands.updateTemplateBadge(); } });
   const steps = worn ? swingLines(worn.sw, worn.weapon).steps.map((s) => s.text).join(" · ") : "";
   return box("div", { class: "b-swing-set" }, sw.root,
-    el("p", { class: "help" }, txt(`Counts Swing Speed Increase only where the swing gets faster.${worn && steps ? ` ${worn.weapon} ${speedText(worn.sw.speed)} at stamina ${worn.sw.stamina}: ${steps}.` : ""}`)));
+    el("p", { class: "help" }, ...gearText(`Counts Swing Speed Increase only where the swing gets faster.${worn && steps ? ` ${worn.weapon} ${speedText(worn.sw.speed)} at stamina ${worn.sw.stamina}: ${steps}.` : ""}`, [worn?.piece])));
 }
 // "Next step: 58" fills the SSI requirement with the next step faster than the last result's swing, else the worn suit's.
 function nextStepButton(): HTMLElement | null {

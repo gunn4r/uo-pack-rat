@@ -12,6 +12,7 @@ import { startTestServer } from "./server-fixture.mts";
 import { houseScan, maxOrganizeConfig, type BoxSpec, type ThingSpec } from "./organize-fixture.mts";
 import { emptyRuleQuery, emptyOrganizeConfig, type OrganizeConfig } from "./organize-config.mts";
 import type { Plan } from "./organize.mts";
+import type { NamedPiece } from "./organize-types.mts";
 import type { Container, Item } from "./vault-lib.mts";
 import { PRESETS } from "./organize-presets.mts";
 import type { Proposal } from "./organize-strategies.mts";
@@ -239,7 +240,7 @@ test("[fast] Move to: POST /api/move/plan counts the selection and plans into th
     assert.equal((await call(s, "/api/organize", body("PUT", CONFIG_DOC))).status, 200);
     const selection = { serials: [PEARL, GEM] };
     const counted = await call(s, "/api/move/plan", body("POST", { selection }));
-    assert.deepEqual(counted.body, { ok: true, selected: 2, worn: 0, wornNames: [], movable: 2, here: { [B]: 2 }, left: {} });
+    assert.deepEqual(counted.body, { ok: true, selected: 2, worn: 0, wornPieces: [], movable: 2, here: { [B]: 2 }, left: {} });
     // The pearl belongs in A; the gems rule files the ruby in B, so the next Organize run would take it out again.
     const plan = await call<{ plan: { moving: number; trips: number; against: { serial: number; target: number }[] } }>(s, "/api/move/plan", body("POST", { selection, to: A }));
     assert.deepEqual([plan.body.plan.moving, plan.body.plan.trips], [2, 1]);
@@ -438,20 +439,24 @@ test("[fast] GET /api/organize/presets lists the preset rule filters for the pag
 test("[fast] POST /api/organize/match counts the movable items in labelled roots a rule filter takes, ignoring rule order", async () => {
   const GARLIC = 0x40001003, ASH = 0x40001004;
   const { s } = await serve([{ serial: GARLIC, name: "Garlic", in: A, amount: 30 }, { serial: ASH, name: "Sulfurous Ash", in: B, amount: 12 }]);
-  const match = (m: unknown) => call<{ count: number; pieces: number; sample: string[]; error?: string }>(s, "/api/organize/match", body("POST", { match: m }));
+  const match = (m: unknown) => call<{ count: number; pieces: number; sample: NamedPiece[]; error?: string }>(s, "/api/organize/match", body("POST", { match: m }));
+  const named = (b: { count: number; pieces: number; sample: NamedPiece[] }) => ({ ...b, sample: b.sample.map((p) => p.name) });
   try {
     const reagents = { query: { ...emptyRuleQuery(), kind: ["reagent"] } };
     assert.deepEqual((await match(reagents)).body, { ok: true, count: 0, pieces: 0, sample: [] }, "nothing is labelled yet: nothing is in reach");
     assert.equal((await call(s, "/api/organize", body("PUT", CONFIG_DOC))).status, 200);
     // The Reagents rule already claims these; a second rule's count still includes them (a higher rule may claim some).
-    assert.deepEqual((await match(reagents)).body, { ok: true, count: 3, pieces: 43, sample: ["Black Pearl", "Garlic", "Sulfurous Ash"] });
-    assert.deepEqual((await match({ query: emptyRuleQuery(), names: ["ruby", "garlic"] })).body, { ok: true, count: 2, pieces: 31, sample: ["Garlic", "Ruby"] });
+    const three = (await match(reagents)).body;
+    assert.deepEqual(named(three), { ok: true, count: 3, pieces: 43, sample: ["Black Pearl", "Garlic", "Sulfurous Ash"] });
+    // Each example is a piece the page draws as a gear item: its serial and look, no lookup.
+    assert.deepEqual(three.sample[1], { serial: GARLIC, name: "Garlic", graphic: 0x0f7a, hue: 0, rarity: null });
+    assert.deepEqual(named((await match({ query: emptyRuleQuery(), names: ["ruby", "garlic"] })).body), { ok: true, count: 2, pieces: 31, sample: ["Garlic", "Ruby"] });
     // An unlabelled root is out of reach, whatever it holds.
     const cfg = structuredClone(CONFIG_DOC);
     delete cfg.labels[String(B)];
     cfg.rules = cfg.rules.filter((r) => !r.targets.includes(B));
     assert.equal((await call(s, "/api/organize", body("PUT", cfg))).status, 200);
-    assert.deepEqual((await match(reagents)).body.sample, ["Garlic"]);
+    assert.deepEqual((await match(reagents)).body.sample.map((p) => p.name), ["Garlic"]);
     // The same strict check PUT uses: a location filter is refused, and so is a match that is not one.
     const loc = await match({ query: { ...emptyRuleQuery(), loc: ["Chest"] } });
     assert.equal(loc.status, 400);

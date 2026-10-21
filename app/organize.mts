@@ -12,7 +12,7 @@ import { RESIST_KEYS, bridgeFeatures, itemTypeOf, gameName, spellSchoolOf, TRASH
 import type { RulesV1RarityItem } from "./schema/types.d.mts";
 import { TRIP_NAME_MAX } from "./bridge-contract.mts";
 import type { TripInput } from "./bridge-trip.mts";
-import type { Carried, EmptyBag, PieceLook, Plan, PlanMove, PlanTrip, PlanWarning, WarningKind } from "./organize-types.mts";
+import type { Carried, EmptyBag, NamedPiece, PieceLook, Plan, PlanMove, PlanTrip, PlanWarning, WarningKind } from "./organize-types.mts";
 export type { Carried, EmptyBag, PieceLook, Plan, PlanMove, PlanTrip, PlanWarning, RoomReport, RuleReport, WarningKind } from "./organize-types.mts";
 
 // A container last scanned longer ago than this is warned about, and still planned: the bridge rechecks live
@@ -172,11 +172,14 @@ function hasName(it: Item, names: readonly string[]): boolean {
 
 // What a rule filter would take if it were the only rule (the rule editor's live count, POST
 // /api/organize/match): the movable items in labelled roots it matches, their pieces (stack amounts) and up to
-// five of their names, stack counts stripped, distinct and in name order.
-export function matchCount(inv: Inventory, cfg: OrganizeConfig, m: RuleMatch, opts: ScopeOptions & { rarity?: RulesV1RarityItem[] | undefined; suitPieces?: ReadonlySet<number> | undefined }): { count: number; pieces: number; sample: string[] } {
+// five of them by name, stack counts stripped, one per distinct name (the lowest serial) and in name order, each
+// with its look so the page draws it as a gear item.
+export function matchCount(inv: Inventory, cfg: OrganizeConfig, m: RuleMatch, opts: ScopeOptions & { rarity?: RulesV1RarityItem[] | undefined; suitPieces?: ReadonlySet<number> | undefined }): { count: number; pieces: number; sample: NamedPiece[] } {
   const hits = scopeOf(inv, cfg, opts).movable.map((s) => inv.items[s]!).filter((it) => ruleMatches(it, m, opts.rarity, opts.suitPieces));
-  const names = [...new Set(hits.map((it) => it.name.replace(STACK_COUNT, "").trim()))].sort((a, b) => a.localeCompare(b, "en"));
-  return { count: hits.length, pieces: hits.reduce((n, it) => n + (it.amount ?? 1), 0), sample: names.slice(0, 5) };
+  const byName = new Map<string, Item>();
+  for (const it of [...hits].sort((a, b) => a.serial - b.serial)) { const n = it.name.replace(STACK_COUNT, "").trim(); if (!byName.has(n)) byName.set(n, it); }
+  const sample = [...byName].sort(([a], [b]) => a.localeCompare(b, "en")).slice(0, 5).map(([name, it]) => ({ serial: +it.serial, name, ...lookOf(it) }));
+  return { count: hits.length, pieces: hits.reduce((n, it) => n + (it.amount ?? 1), 0), sample };
 }
 
 export interface Claim { ruleId: string; alsoMatched: string[] }
