@@ -298,16 +298,15 @@ export function tripRows(plan: OrganizePlan, nameOf: (serial: number) => string)
     return { index: t.index, site: t.site, moves, text: [`Trip ${t.index}`, plural(moves.length, "item"), multi ? `site ${t.site + 1}` : null, into].filter(Boolean).join(" · ") };
   });
 }
-export const moveName = (m: PlanMove): string => (m.amount > 1 ? `${n(m.amount)} ${m.name}` : m.name);
 export const moveWhere = (m: PlanMove, nameOf: (serial: number) => string): string => `${m.from == null ? "your backpack" : nameOf(m.from)} → ${nameOf(m.to)}`;
 // Items a trip took and has not put away (the bridge's carried set). Their puts are planned as from-null moves in
 // the first trips, so Put them away runs that trip; with none planned there is nowhere with room for them here.
-export function carriedView(plan: OrganizePlan, lastTrip: number | null): { text: string; names: string; putAway: number | null; reason: string | null } | null {
+// `shown`: the first five, each drawn as a gear item; `more`: how many past them.
+export function carriedView(plan: OrganizePlan, lastTrip: number | null): { text: string; shown: OrganizePlan["carried"]; more: number; putAway: number | null; reason: string | null } | null {
   const k = plan.carried.length;
   if (!k) return null;
   const putAway = plan.moves.find((m) => m.from == null)?.trip ?? null;
-  const names = plan.carried.slice(0, 5).map((c) => c.name).join(", ") + (k > 5 ? ` and ${k - 5} more` : "");
-  return { text: `${plural(k, "item")} from ${lastTrip ? `trip ${lastTrip}` : "an earlier trip"} ${k === 1 ? "is" : "are"} in your backpack.`, names, putAway, reason: putAway == null ? "None of them has a place with room at this house. Put them away by hand." : null };
+  return { text: `${plural(k, "item")} from ${lastTrip ? `trip ${lastTrip}` : "an earlier trip"} ${k === 1 ? "is" : "are"} in your backpack.`, shown: plan.carried.slice(0, 5), more: Math.max(0, k - 5), putAway, reason: putAway == null ? "None of them has a place with room at this house. Put them away by hand." : null };
 }
 
 // ---------------------------------------------------------------- running trips

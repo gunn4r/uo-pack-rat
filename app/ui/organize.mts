@@ -9,6 +9,7 @@
 // map: organize
 // owns: `showOrganize`
 import { state, bridge } from "./store.mts";
+import { gearItem } from "./gear-item.mts";
 import { $, el, itemTip, compactChildren } from "./dom.mts";
 import { api } from "./api.mts";
 import { box, txt, button, badge, card, message, menu, select, tipWrap, table, type Kids, toast } from "./components.mts";
@@ -20,7 +21,7 @@ import { filterContext } from "./item-parts.mts";
 import { loadOrganize, refreshPlaces, saveConfig } from "./organize-data.mts";
 import { targetChip, deleteRule, openRuleEditor } from "./rule-editor.mts";
 import { openAutoOrganize } from "./auto-organize.mts";
-import { CATCH_ALL_ID, EMPTY_BAGS_ID, emptyBagsNote, organizeStage, moveRule, matchSummary, targetView, targetOptions, ruleCountParts, ruleNameOf, containerNameOf, planHeadline, unclaimedNote, roomLines, crossSiteLines, warningGroups, tripRows, moveName, moveWhere, tripGate, carriedView, pinnedWith, stepWatch, failedSteps, outcomeText, runAllNext, tripRefusal, adoptWatch, resumedNote, type TripRow, type TripWatch, type FailedStep } from "./organize-model.mts";
+import { CATCH_ALL_ID, EMPTY_BAGS_ID, emptyBagsNote, organizeStage, moveRule, matchSummary, targetView, targetOptions, ruleCountParts, ruleNameOf, containerNameOf, planHeadline, unclaimedNote, roomLines, crossSiteLines, warningGroups, tripRows, moveWhere, tripGate, carriedView, pinnedWith, stepWatch, failedSteps, outcomeText, runAllNext, tripRefusal, adoptWatch, resumedNote, type TripRow, type TripWatch, type FailedStep } from "./organize-model.mts";
 import type { BridgeStatusApiResponse, OrganizeConfig, OrganizePlan, OrganizePlanApiResponse, OrganizeRunningTrip, OrganizeRule, OrganizeTripApiResponse, PlanRuleReport } from "./api-types.mts";
 
 const body = (): HTMLElement => $<HTMLElement>("#org-body")!;
@@ -269,7 +270,7 @@ function tripEl(r: TripRow, nameOf: (s: number) => string, ruleName: (id: string
   d.addEventListener("toggle", () => {
     if (!d.open || d.querySelector("table")) return;
     const moves = table({ label: `Trip ${r.index}`, columns: [{ label: "Item" }, { label: "From → to" }, { label: "Rule" }],
-      rows: r.moves.map((m) => ({ attrs: { class: "org-move" }, cells: [moveName(m), moveWhere(m, nameOf), ruleName(m.ruleId)] })) });
+      rows: r.moves.map((m) => ({ attrs: { class: "org-move" }, cells: [gearItem(m, { tip: false }), moveWhere(m, nameOf), ruleName(m.ruleId)] })) });
     moves.querySelectorAll<HTMLElement>("tr.org-move").forEach((tr, i) => itemTip(tr, r.moves[i]!, { focus: false }));   // the item's tooltip on hover
     d.append(moves);
   });
@@ -283,14 +284,15 @@ function carriedEl(plan: OrganizePlan): HTMLElement | null {
   const c = carriedView(plan, lastTrip);
   if (!c) return null;
   const put = c.putAway == null ? null : button({ label: "Put them away", size: "sm", attrs: { id: "org-put-away" }, onClick: () => { void startTrip(c.putAway!, false); } });
-  return message({ tone: "warn", title: c.text, text: c.reason ? `${c.names}. ${c.reason}` : c.names, actions: put && canTrip() ? [gated(put, gate())] : [] });
+  const names = box("span", { class: "org-carried" }, ...c.shown.map((it) => gearItem(it, { variant: "chip" })), c.more ? txt(`and ${c.more} more`, "t-sm muted") : null);
+  return message({ tone: "warn", title: c.text, text: c.reason ? el("span", { class: "org-carried-text" }, names, txt(c.reason)) : names, actions: put && canTrip() ? [gated(put, gate())] : [] });
 }
 // A trip's failed steps, each with Pin this item: for things the server refuses to move (a locked-down item), so
 // the plan stops asking for them.
 function failedEl(f: { index: number; steps: FailedStep[] }): HTMLElement {
   return message({ tone: "bad", title: `Trip ${f.index}: ${f.steps.length === 1 ? "1 item" : `${f.steps.length} items`} could not be moved`,
     text: box("span", { class: "org-failed" }, ...f.steps.map((s) => itemTip(box("span", { class: "org-failed-row" },
-      txt(`${s.name}: ${s.msg}`), button({ label: "Pin this item", size: "sm", variant: "ghost", attrs: { "data-no-tip": "" }, onClick: () => { void pinItem(s); } })), s, { focus: false }))) });
+      el("span", {}, gearItem(s, { variant: "inline", tip: false }), `: ${s.msg}`), button({ label: "Pin this item", size: "sm", variant: "ghost", attrs: { "data-no-tip": "" }, onClick: () => { void pinItem(s); } })), s, { focus: false }))) });
 }
 async function pinItem(s: FailedStep): Promise<void> {
   const err = await saveConfig((cfg) => pinnedWith(cfg, s.serial));

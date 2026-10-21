@@ -109,10 +109,10 @@ Reports come first:
 - items that belong at another house;
 - the planner's warnings, grouped by kind. Containers are named by label and timestamps shown as dates, and a target nearly full after the plan is among them;
 - the empty bags in labeled containers (`emptyBagsNote`: how many, the first five by name and place, and how to gather them);
-- what a stopped trip left in the backpack, with Put them away;
-- a trip's failed steps, each with Pin this item.
+- what a stopped trip left in the backpack (the first five as gear chips, then "and N more"), with Put them away;
+- a trip's failed steps, each the piece as a `gearItem` and the reason, with Pin this item.
 
-Then the headline: "N items to move in M trips, about K minutes", from the planner's per-trip estimate (`tripSeconds` in `app/organize.mts`). Under it are Run trip N / Run all / Stop, and the trip list: one collapsed `<details>` per trip, whose move table is built the first time it opens.
+Then the headline: "N items to move in M trips, about K minutes", from the planner's per-trip estimate (`tripSeconds` in `app/organize.mts`). Under it are Run trip N / Run all / Stop, and the trip list: one collapsed `<details>` per trip, whose move table is built the first time it opens; its Item cell is a `gearItem` (icon, rarity color, quantity), the row its tooltip host.
 
 A client whose bridge does not declare `trip` gets the plan and a sentence instead of Run buttons. Offline or busy states disable the buttons, with their reason (`tripGate`).
 

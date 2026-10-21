@@ -11,7 +11,7 @@ import { labelledPlaces } from "./vault-lib.mts";
 import type { Container } from "./vault-lib.mts";
 import { PENDING_GRACE_MS } from "./organize-state.mts";
 import type { BridgeResultEntry, OrganizeConfig, OrganizePlan, OrganizeProposal, OrganizeRule, PlanMove, ProposalCandidate, ProposalGroup } from "./ui/api-types.mts";
-import { CATCH_ALL_ID, EMPTY_BAGS_ID, emptyBagsNote, moveRule, withLabel, withoutLabel, pinNote, pinnedWith, upsertRule, withoutRule, newRuleId, ruleQueryFrom, blankQuery, droppedNote, ruleNameFrom, checkDraft, matchSummary, ruleTokens, targetView, fillText, fillTone, targetOptions, withTargetLabels, matchLine, debounced, MATCH_DEBOUNCE_MS, organizeStage, ruleNameOf, containerNameOf, ruleCountParts, planHeadline, aboutTime, unclaimedNote, roomLines, crossSiteLines, warningGroups, tripRows, moveName, moveWhere, carriedView, tripGate, stepWatch, outcomeOf, outcomeText, failedSteps, runAllNext, tripRefusal, adoptWatch, resumedNote, GRACE_MS, TRIP_MS, STRATEGY_TEXT, candidateGroups, candidateNote, proposalHeadline, groupStatus, groupAway, intoText, proposalNotes, proposalStays, canTrySimple, acceptGate } from "./ui/organize-model.mts";
+import { CATCH_ALL_ID, EMPTY_BAGS_ID, emptyBagsNote, moveRule, withLabel, withoutLabel, pinNote, pinnedWith, upsertRule, withoutRule, newRuleId, ruleQueryFrom, blankQuery, droppedNote, ruleNameFrom, checkDraft, matchSummary, ruleTokens, targetView, fillText, fillTone, targetOptions, withTargetLabels, matchLine, debounced, MATCH_DEBOUNCE_MS, organizeStage, ruleNameOf, containerNameOf, ruleCountParts, planHeadline, aboutTime, unclaimedNote, roomLines, crossSiteLines, warningGroups, tripRows, moveWhere, carriedView, tripGate, stepWatch, outcomeOf, outcomeText, failedSteps, runAllNext, tripRefusal, adoptWatch, resumedNote, GRACE_MS, TRIP_MS, STRATEGY_TEXT, candidateGroups, candidateNote, proposalHeadline, groupStatus, groupAway, intoText, proposalNotes, proposalStays, canTrySimple, acceptGate } from "./ui/organize-model.mts";
 
 const A = 0x40000001, B = 0x40000002, C = 0x40000003, GONE = 0x40000009;
 const chest = (serial: number, over: Partial<Container> = {}): Container => ({ serial, root: serial, parent: null, kind: "ground", name: "Metal Chest", tooltip: ["Metal Chest"], label: `Metal Chest (0x${serial.toString(16)})`, capacity: { items: 61, maxItems: 125, stones: null, maxStones: null }, scannedBy: "Tester", scannedAt: "2026-09-28T10:00:00Z", ...over });
@@ -305,7 +305,6 @@ test("[fast] tripRows sums each trip in one line and keeps its moves for the tab
   assert.deepEqual(rows.map((r) => [r.index, r.text, r.moves.map((m) => m.serial)]), [[1, "Trip 1 · 2 items · into Reagents, Gems", [11, 12]], [2, "Trip 2 · 1 item · into Reagents", [13]]]);
   const two = tripRows({ ...PLAN, sites: [{ index: 0, roots: [A] }, { index: 1, roots: [B] }] }, nameOf);
   assert.equal(two[0]!.text, "Trip 1 · 2 items · site 1 · into Reagents, Gems");
-  assert.equal(moveName(PLAN.moves[0]!), "40 Black Pearl");
   assert.equal(moveWhere(PLAN.moves[0]!, nameOf), "Display → Reagents");
   assert.equal(moveWhere(PLAN.moves[1]!, nameOf), "your backpack → Gems");
 });
@@ -320,10 +319,10 @@ test("[fast] tripRows groups a 1,000-move plan into one row per trip without los
 });
 
 test("[fast] carriedView names what a stopped trip left in the backpack and which trip puts it away", () => {
-  assert.deepEqual(carriedView(PLAN, 3), { text: "1 item from trip 3 is in your backpack.", names: "Ruby", putAway: 1, reason: null });
+  assert.deepEqual(carriedView(PLAN, 3), { text: "1 item from trip 3 is in your backpack.", shown: PLAN.carried, more: 0, putAway: 1, reason: null });
   assert.equal(carriedView(PLAN, null)!.text, "1 item from an earlier trip is in your backpack.");
   const stuck = carriedView({ ...PLAN, moves: PLAN.moves.filter((m) => m.from != null), carried: Array.from({ length: 7 }, (_, i) => ({ serial: i, name: `Gem ${i}` })) }, 2)!;
-  assert.deepEqual(stuck, { text: "7 items from trip 2 are in your backpack.", names: "Gem 0, Gem 1, Gem 2, Gem 3, Gem 4 and 2 more", putAway: null, reason: "None of them has a place with room at this house. Put them away by hand." });
+  assert.deepEqual({ ...stuck, shown: stuck.shown.map((c) => c.name) }, { text: "7 items from trip 2 are in your backpack.", shown: ["Gem 0", "Gem 1", "Gem 2", "Gem 3", "Gem 4"], more: 2, putAway: null, reason: "None of them has a place with room at this house. Put them away by hand." });
   assert.equal(carriedView({ ...PLAN, carried: [] }, 1), null);
 });
 
