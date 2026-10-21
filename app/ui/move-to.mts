@@ -200,7 +200,7 @@ interface Run {
   moved: number[];
   failed: Array<{ name: string; msg: string }>;
   trips: string[];
-  names: Map<number, string>;
+  names: Map<number, { name: string }>;
   watch: TripWatch | null;
   stopping: boolean;
   stopped: boolean;
@@ -231,7 +231,7 @@ async function queueNext(r: Run): Promise<void> {
   if (!res.id) return finish(r);
   // Stop pressed while this trip was being queued: the flag written then is older than the trip, which the bridge would clear, so write it again.
   if (r.stopping) void api("/api/bridge/stop", { method: "POST", body: {} }).catch(() => undefined);
-  for (const [s, name] of Object.entries(res.names ?? {})) r.names.set(+s, name);
+  for (const [s, name] of Object.entries(res.names ?? {})) r.names.set(+s, { name });
   r.trips.push(res.id);
   const now = Date.now();
   r.watch = { id: res.id, index: res.index ?? 1, queuedAt: now, picked: false, heard: now };

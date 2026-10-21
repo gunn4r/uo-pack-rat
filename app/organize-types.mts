@@ -1,15 +1,17 @@
 // organize-types.mts — Organize's plan and Auto organize's proposal, and the GET /api/organize/plan and POST /api/organize/propose responses built from them; types only, importing only organize-config.mts's types, so the page's browser build can use them: app/organize.mts and app/organize-strategies.mts re-export them, the routes `satisfies` them, and ui/api-types.mts re-exports them.
 //
 // map: organize
-// owns: `Plan`, `PlanMove`, `PlanTrip`, `PlanWarning`, `WarningKind`, `RuleReport`, `RoomReport`, `Carried`, `EmptyBag`, `Proposal`, `ProposeResult`, `StrategyId`, `Family`, `Candidate`, `GroupReport`, `Layout`, `OrganizePlanApiResponse`, `OrganizeProposeApiResponse`, `OrganizeProposeBody`, `OrganizePreset`, `OrganizeApiResponse`, `OrganizePutApiResponse`, `OrganizePresetsApiResponse`, `OrganizeTripApiResponse`, `MovePlanSummary`, `MovePlanApiResponse`, `MoveBackApiResponse`, `MoveTripApiResponse`, `OrganizeMatchApiResponse`
+// owns: `Plan`, `PieceLook`, `PlanMove`, `PlanTrip`, `PlanWarning`, `WarningKind`, `RuleReport`, `RoomReport`, `Carried`, `EmptyBag`, `Proposal`, `ProposeResult`, `StrategyId`, `Family`, `Candidate`, `GroupReport`, `Layout`, `OrganizePlanApiResponse`, `OrganizeProposeApiResponse`, `OrganizeProposeBody`, `OrganizePreset`, `OrganizeApiResponse`, `OrganizePutApiResponse`, `OrganizePresetsApiResponse`, `OrganizeTripApiResponse`, `MovePlanSummary`, `MovePlanApiResponse`, `MoveBackApiResponse`, `MoveTripApiResponse`, `OrganizeMatchApiResponse`
 import type { OrganizeConfig, Origin, RuleMatch } from "./organize-config.mts";
 
 // ---------------------------------------------------------------- the plan (organize.mts planOrganize)
 export type WarningKind = "stale-container" | "missing-target" | "missing-label" | "unknown-capacity" | "old-scripts" | "blacklisted" | "no-position" | "not-ground" | "nearly-full";
 export interface PlanWarning { kind: WarningKind; serial: number; detail: string }
 export interface EmptyBag { serial: number; name: string; container: number }
-export interface Carried { serial: number; name: string }
-export interface PlanMove { serial: number; name: string; amount: number; from: number | null; to: number; ruleId: string; alsoMatched: string[]; trip: number }
+// How a piece looks, off its inventory record (null when the inventory has none): the page draws its icon and its name in its rarity's color with no lookup.
+export interface PieceLook { graphic: number | null; hue: number | null; rarity: string | null }
+export interface Carried extends PieceLook { serial: number; name: string }
+export interface PlanMove extends PieceLook { serial: number; name: string; amount: number; from: number | null; to: number; ruleId: string; alsoMatched: string[]; trip: number }
 export interface PlanTrip { index: number; site: number; takes: number[]; puts: number[] }
 export interface RuleReport { ruleId: string; matched: number; inPlace: number; toMove: number; noRoom: number }
 export interface RoomReport { ruleId: string; needSlots: number; freeSlots: number; shortfall: number }

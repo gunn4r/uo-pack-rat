@@ -19,7 +19,7 @@ import { queueTrip } from "./bridge-trip.mts";
 import type { ScanV2 } from "./schema/types.d.mts";
 import {
   ancestry, scopeOf, ruleMatches, buildOf, matchCount, CASTER_PROPS, CASTER_SKILLS, MELEE_PROPS, MELEE_SKILLS, claimOf, baseName, nameKey, applyOverlay, overlaidInventory, homeOf, newSim, simTake, simPut, mark, rollback, MAX_STACK,
-  sitesOf, packKept, planOrganize, tripCommand, tripInputFrom, lineBytes, emptyBagsOf, directSerials, tripSeconds, STEP_S, type OverlayMove, type Sim, type Plan,
+  sitesOf, packKept, planOrganize, tripCommand, tripInputFrom, lineBytes, emptyBagsOf, directSerials, tripSeconds, STEP_S, type OverlayMove, type Sim, type Plan, type Carried,
 } from "./organize.mts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -27,6 +27,8 @@ const RULES = JSON.parse(readFileSync(join(HERE, "rules", "uoalive.json"), "utf8
 setRules(RULES);
 const NOW = Date.parse(AT) + 3600e3;
 const A = 0x40000001, B = 0x40000002, BAG = 0x40000003, FAR = 0x40000004, STRANGER = 0x40000005, POUCH = 0x40000006, C = 0x40000007, PACK = 0x40000008;
+// A carried list without its look, for the tests about which items are carried.
+const named = (cs: Carried[]): Array<{ serial: number; name: string }> => cs.map(({ serial, name }) => ({ serial, name }));
 const PEARL = 0x40001001, RUBY = 0x40001002, KATANA = 0x40001003, ASH = 0x40001004, GARLIC = 0x40001005, PEARL2 = 0x40001006, PEARL3 = 0x40001007;
 const fold = (boxes: BoxSpec[], things: ThingSpec[] = []): Inventory => foldSnapshots([houseScan({ boxes, things })]);
 const labels = (...serials: number[]): Record<string, ContainerLabel> =>
@@ -274,12 +276,12 @@ test("[fast] an overlay step for an item gone from the scans still counts in its
   assert.equal(placed.counts.get(B)!.items, 1, "B's line predates the step");
 });
 
-test("[fast] an item taken and not yet put is carried, in no container", () => {
-  const inv = fold([{ serial: A }], [{ serial: PEARL, name: "Black Pearl", in: A }]);
+test("[fast] an item taken and not yet put is carried, in no container, with its look off its record", () => {
+  const inv = fold([{ serial: A }], [{ serial: PEARL, name: "Black Pearl", in: A, graphic: 0x0f7a, hue: 1153, lines: ["Lesser Artifact"] }]);
   const placed = applyOverlay(inv, [step(PEARL, "Black Pearl", A, null)]);
   assert.equal(placed.inv.items[PEARL]!.container, null);
   assert.equal(placed.inv.items[PEARL]!.root, null);
-  assert.deepEqual(placed.carried, [{ serial: PEARL, name: "Black Pearl" }]);
+  assert.deepEqual(placed.carried, [{ serial: PEARL, name: "Black Pearl", graphic: 0x0f7a, hue: 1153, rarity: "Lesser Artifact" }]);
   assert.equal(placed.counts.get(A)!.items, 0);
 });
 
@@ -387,7 +389,7 @@ test("[fast] a bag taken and not yet put leaves its contents where they were; th
   const placed = applyOverlay(inv, [taken]);
   assert.deepEqual([placed.counts.get(A)!.items, placed.counts.get(A)!.stones], [3, 4]);
   assert.deepEqual([placed.inv.containers[BAG]!.parent, placed.inv.items[PEARL]!.root], [A, A]);
-  assert.deepEqual(placed.carried, [{ serial: BAG, name: "Bag" }]);
+  assert.deepEqual(named(placed.carried), [{ serial: BAG, name: "Bag" }]);
   assert.equal(overlaidInventory(inv, [taken]).containers[PACK]!.capacity!.items, 1, "the backpack gains the one the chest lost");
 });
 
@@ -568,15 +570,21 @@ test("[fast] two full chests trade contents: each trip takes for both rules, so 
 test("[fast] items a trip carried and did not put are planned as puts with nothing to take", () => {
   const inv = fold([{ serial: A }, { serial: B, pos: at(104) }], [{ serial: PEARL, name: "Black Pearl", in: B }]);
   const plan = planOrganize(inv, config({ labels: labels(A, B), rules: [reagents([A])] }), [step(PEARL, "Black Pearl", B, null)], { now: NOW });
-  assert.deepEqual(plan.carried, [{ serial: PEARL, name: "Black Pearl" }]);
+  assert.deepEqual(named(plan.carried), [{ serial: PEARL, name: "Black Pearl" }]);
   assert.deepEqual(moved(plan), [[PEARL, null, A, 1]]);
   assert.deepEqual(plan.trips, [{ index: 1, site: 0, takes: [], puts: [PEARL] }]);
+});
+
+test("[fast] a plan's moves carry each piece's look off its inventory record, so the page needs no lookup", () => {
+  const inv = fold([{ serial: A }, { serial: B, pos: at(104) }], [{ serial: PEARL, name: "Black Pearl", in: B, graphic: 0x0f7a, hue: 1153, lines: ["Lesser Artifact"] }, { serial: RUBY, name: "Ruby", in: B, graphic: 0x0f13 }]);
+  const plan = planOrganize(inv, config({ labels: labels(A, B), rules: [reagents([A]), gems([A])] }), [], { now: NOW });
+  assert.deepEqual(plan.moves.map((m) => [m.serial, m.graphic, m.hue, m.rarity]).sort((x, y) => x[0]! as number - (y[0]! as number)), [[PEARL, 0x0f7a, 1153, "Lesser Artifact"], [RUBY, 0x0f13, 0, null]]);
 });
 
 test("[fast] a carried item pinned since (a put the server refused) is not planned again", () => {
   const inv = fold([{ serial: A }, { serial: B, pos: at(104) }], [{ serial: PEARL, name: "Black Pearl", in: B }]);
   const plan = planOrganize(inv, config({ labels: labels(A, B), rules: [reagents([A])], pinnedItems: [PEARL] }), [step(PEARL, "Black Pearl", B, null)], { now: NOW });
-  assert.deepEqual(plan.carried, [{ serial: PEARL, name: "Black Pearl" }]);
+  assert.deepEqual(named(plan.carried), [{ serial: PEARL, name: "Black Pearl" }]);
   assert.deepEqual(plan.moves, []);
 });
 

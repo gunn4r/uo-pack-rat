@@ -14,7 +14,7 @@ import { parseItemQuery } from "../item-query.mts";
 import type { ItemQuery, RuleQuery } from "../item-query.mts";
 import { activeFilters } from "./inv-model.mts";
 import type { FilterContext } from "./inv-model.mts";
-import type { BridgeResultEntry, Build, SpellSchool, ContainerLabel, OrganizeConfig, OrganizeMatchApiResponse, OrganizePlan, OrganizeRule, PlanMove, PlanRuleReport, PlanWarning, PlanWarningKind, RuleMatch, AutoStrategy, OrganizeProposal, ProposalCandidate, ProposalGroup, ProposalLayout, OrganizeRunningTrip } from "./api-types.mts";
+import type { BridgeResultEntry, Build, SpellSchool, ContainerLabel, OrganizeConfig, OrganizeMatchApiResponse, OrganizePlan, OrganizeRule, PieceLook, PlanMove, PlanRuleReport, PlanWarning, PlanWarningKind, RuleMatch, AutoStrategy, OrganizeProposal, ProposalCandidate, ProposalGroup, ProposalLayout, OrganizeRunningTrip } from "./api-types.mts";
 import { plural } from "./format.mts";
 
 // The ruleIds the plan reports the catch-all and the gathered empty bags under (app/organize-config.mts's
@@ -362,10 +362,15 @@ export function outcomeText(outcome: TripOutcome, index: number, r: BridgeResult
   }
   return null;
 }
-export interface FailedStep { serial: number; name: string; msg: string }
-export function failedSteps(r: BridgeResultEntry, names: ReadonlyMap<number, string>): FailedStep[] {
+export interface FailedStep extends PieceLook { serial: number; name: string; msg: string }
+// Each failed item once, named and drawn from the trip's own moves (`pieces`; a look left out is null); a serial the trip did not plan gets its hex.
+export function failedSteps(r: BridgeResultEntry, pieces: ReadonlyMap<number, { name: string } & Partial<PieceLook>>): FailedStep[] {
   const out: FailedStep[] = [];
-  for (const s of r.steps || []) if (!s.ok && !out.some((f) => f.serial === s.serial)) out.push({ serial: s.serial, name: names.get(s.serial) ?? `0x${s.serial.toString(16)}`, msg: s.msg });
+  for (const s of r.steps || []) {
+    if (s.ok || out.some((f) => f.serial === s.serial)) continue;
+    const p = pieces.get(s.serial);
+    out.push({ serial: s.serial, name: p?.name ?? `0x${s.serial.toString(16)}`, graphic: p?.graphic ?? null, hue: p?.hue ?? null, rarity: p?.rarity ?? null, msg: s.msg });
+  }
   return out;
 }
 // After a trip reported back cleanly and the plan was fetched again: the next trip to run, a reason to stop (a
