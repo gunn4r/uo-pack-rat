@@ -16,8 +16,9 @@ import { shownName, TRASH_RE } from "./vault-lib.mts";
 import type { Inventory } from "./vault-lib.mts";
 import type { ScanV2 } from "./schema/types.d.mts";
 
-export interface MissingItem { serial: number; name: string; amount: number; fewer?: number; lastSeen: string }
-interface Seen { name: string; amount: number; kind: string | null }   // kind: null for a bag, which never merges
+// `graphic`, `hue` and `rarity`: how the piece looked at its last scan there (its icon and its name's color; the item is gone from the inventory, so nothing else can say).
+export interface MissingItem { serial: number; name: string; amount: number; fewer?: number; lastSeen: string; graphic: number | null; hue: number | null; rarity: string | null }
+interface Seen { name: string; amount: number; kind: string | null; graphic: number | null; hue: number | null; lines: string[] | null }   // kind: null for a bag, which never merges
 interface Stack { root: number | null; amount: number; seenAt: number }
 
 const stampOf = (s: string): number => { const t = parseStamp(s); return Number.isFinite(t) ? t : -Infinity; };
@@ -27,7 +28,7 @@ const kindOf = (name: string, graphic: number | null | undefined, hue: number | 
 // a trash container is left out: the fold drops it too, and the server empties those on a timer.
 function contentsOf(snap: ScanV2): Map<number, Map<number, Seen>> {
   const roots = new Set((snap.roots || []).filter((r) => r.opened !== false).map((r) => +r.serial));
-  const bySerial = new Map(Object.values((snap.containers || {}) as Record<string, { serial: number; root: number; parent?: number | null; name?: string; kind?: string | null }>).map((c) => [+c.serial, c]));
+  const bySerial = new Map(Object.values((snap.containers || {}) as Record<string, { serial: number; root: number; parent?: number | null; name?: string; kind?: string | null; graphic?: number | null; hue?: number | null }>).map((c) => [+c.serial, c]));
   const inTrash = (serial: number): boolean => {
     for (let cur: number | null | undefined = serial, guard = 0; cur != null && guard < 64; guard++) {
       const c = bySerial.get(+cur);
@@ -44,7 +45,7 @@ function contentsOf(snap: ScanV2): Map<number, Map<number, Seen>> {
   };
   for (const c of bySerial.values()) {
     if (c.parent == null || !roots.has(+c.root) || (c.kind != null && c.kind !== "container" && c.kind !== "bag") || inTrash(+c.serial)) continue;
-    add(+c.root, +c.serial, { name: c.name || `0x${(+c.serial).toString(16)}`, amount: 1, kind: null });
+    add(+c.root, +c.serial, { name: c.name || `0x${(+c.serial).toString(16)}`, amount: 1, kind: null, graphic: c.graphic ?? null, hue: c.hue ?? null, lines: null });
   }
   for (const raw of snap.items || []) {
     const root = bySerial.has(+raw.container) ? +bySerial.get(+raw.container)!.root : roots.has(+raw.container) ? +raw.container : null;
@@ -52,12 +53,13 @@ function contentsOf(snap: ScanV2): Map<number, Map<number, Seen>> {
     const amount = raw.amount || 1;
     // The fold's name for it (enrich's displayName), so a Scroll of Transcendence names its skill (issue #181).
     const name = shownName(raw.tooltip?.length ? raw.tooltip : [raw.name], amount) || raw.name || "";
-    add(root, +raw.serial, { name, amount, kind: kindOf(name, raw.graphic, raw.hue) });
+    add(root, +raw.serial, { name, amount, kind: kindOf(name, raw.graphic, raw.hue), graphic: raw.graphic ?? null, hue: raw.hue ?? null, lines: raw.tooltip?.length ? raw.tooltip : null });
   }
   return out;
 }
 
-export function missingSinceLastScan(snapshots: ScanV2[], inv: Inventory): Record<string, MissingItem[]> {
+// `rarityOf` names the tier a missing item's last tooltip shows (the shard rules know the tiers, and this module reads none: the server passes the tooltip parser), else null.
+export function missingSinceLastScan(snapshots: ScanV2[], inv: Inventory, rarityOf: (lines: string[]) => string | null = () => null): Record<string, MissingItem[]> {
   // The fold's own order, so "latest" and "previous" mean what the fold took them to mean.
   const sorted = [...snapshots].sort((a, b) => stampOf(a.scannedAt) - stampOf(b.scannedAt));
   const lastTwo = new Map<number, [ScanV2 | null, ScanV2]>();
@@ -84,6 +86,8 @@ export function missingSinceLastScan(snapshots: ScanV2[], inv: Inventory): Recor
     }
     return stacks.get(kind) ?? [];
   };
+  // Its look at the last scan that saw it; the tooltip is parsed only for what is reported.
+  const look = (was: Seen): Pick<MissingItem, "graphic" | "hue" | "rarity"> => ({ graphic: was.graphic, hue: was.hue, rarity: was.lines ? rarityOf(was.lines) : null });
   const out: Record<string, MissingItem[]> = {};   // keyed by a root's serial: always digits, never "__proto__"
   for (const [root, [prev, latest]] of lastTwo) {
     // A root a Forget (or a character's Forget) removed is not in the fold, and has nothing to report.
@@ -102,11 +106,11 @@ export function missingSinceLastScan(snapshots: ScanV2[], inv: Inventory): Recor
     };
     for (const [serial, was] of before) {
       const is = now.get(serial);
-      if (is) { if (is.amount < was.amount) list.push({ serial, name: was.name, amount: was.amount, fewer: was.amount - is.amount, lastSeen: prev.scannedAt }); continue; }
+      if (is) { if (is.amount < was.amount) list.push({ serial, name: was.name, amount: was.amount, fewer: was.amount - is.amount, lastSeen: prev.scannedAt, ...look(was) }); continue; }
       if (inv.items[serial]) continue;
       const left = was.kind ? roomFor(was.kind) : 0, took = Math.min(was.amount, left);
       if (was.kind) room.set(was.kind, left - took);
-      if (took < was.amount) list.push({ serial, name: was.name, amount: was.amount, ...(took ? { fewer: was.amount - took } : {}), lastSeen: prev.scannedAt });
+      if (took < was.amount) list.push({ serial, name: was.name, amount: was.amount, ...(took ? { fewer: was.amount - took } : {}), lastSeen: prev.scannedAt, ...look(was) });
     }
     if (list.length) out[root] = list;
   }
