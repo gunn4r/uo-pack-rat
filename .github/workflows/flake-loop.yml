@@ -1,0 +1,61 @@
+# TEMPORARY (issue #514): reruns one test many times, and reproduces the race with a slowed requestAnimationFrame; removed before the PR is final.
+name: Flake loop
+
+on:
+  push:
+    branches: [514-organize-drawer-fit]
+
+permissions:
+  contents: read
+
+jobs:
+  loop:
+    name: ${{ matrix.variant }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest]
+        variant: [old-slow-raf, new-slow-raf, new]
+        include:
+          - os: windows-latest
+            variant: new
+          - os: ubuntu-latest
+            variant: new
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: node -e "require('electron')"
+      - if: runner.os == 'Linux'
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+      - name: Prepare the variant
+        shell: bash
+        run: |
+          case "${{ matrix.variant }}" in
+            old-*) git show origin/main:scripts/ui-organize.test.mts > scripts/ui-organize.test.mts ;;
+          esac
+          case "${{ matrix.variant }}" in
+            *slow-raf) sed -i.bak 's|^    await page.click("#org-auto");|    await page.evaluate(() => { const raf = window.requestAnimationFrame.bind(window); window.requestAnimationFrame = (cb) => { setTimeout(() => raf(cb), 400); return 0; }; });\n&|' scripts/ui-organize.test.mts ;;
+          esac
+          grep -n 'org-auto");' -B1 scripts/ui-organize.test.mts | head -4
+      - name: Loop
+        shell: bash
+        run: |
+          N=${{ contains(matrix.variant, 'slow') && 5 || 25 }}; fails=0
+          for i in $(seq 1 $N); do
+            if [ "$RUNNER_OS" = "Linux" ]; then
+              xvfb-run -a node --test --test-name-pattern="Auto organize drawer fits" scripts/ui-organize.test.mts > out.txt 2>&1; rc=$?
+            else
+              node --test --test-name-pattern="Auto organize drawer fits" scripts/ui-organize.test.mts > out.txt 2>&1; rc=$?
+            fi
+            if [ $rc -ne 0 ]; then fails=$((fails+1)); grep -E "not ok|fits the window|Error" out.txt | head -5; fi
+            grep -q "^# pass 1" out.txt || echo "iteration $i: pass count not 1"; 
+          done
+          echo "RESULT ${{ matrix.variant }} ${{ runner.os }}: $fails of $N failed"

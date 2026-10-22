@@ -650,8 +650,10 @@ test("[slow] the Auto organize drawer fits a 1000 × 700 window: nothing scrolls
     await go(page, "#/organize", "#org-auto");
     await page.click("#org-auto");
     await page.waitForSelector('#auto-drawer:not([hidden]) #auto-proposal[aria-busy="false"] #auto-headline');
-    // The drawer slides in: measure it once the slide has finished.
-    await page.waitForFunction(() => document.querySelector("#auto-drawer .drawer")!.getAnimations().length === 0);
+    // The drawer slides in: measure it once the slide has finished. The slide starts only when the drawer takes its
+    // `open` class, a frame after it shows (bindDrawer's requestAnimationFrame), so "no animation" alone also holds
+    // before the slide begins, with the drawer still 24 px past the window's edge (issue #514).
+    await page.waitForFunction(() => { const root = document.querySelector("#auto-drawer")!; return root.classList.contains("open") && root.querySelector(".drawer")!.getAnimations().length === 0; });
     const fit = await page.evaluate(() => {
       const b = document.querySelector("#auto-drawer .drawer-body") as HTMLElement;
       const d = document.querySelector("#auto-drawer .drawer")!.getBoundingClientRect();
