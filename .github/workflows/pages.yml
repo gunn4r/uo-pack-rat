@@ -2,7 +2,8 @@ name: Pages
 
 # The website (site/, issue #537) on GitHub Pages, with the download buttons pointing at the latest release's files.
 # Publishing a release redeploys it; so does a change to the site or its scripts on main, or a run by hand. Nothing is
-# committed: the site is assembled on the runner and deployed as a Pages artifact.
+# committed: the site is assembled on the runner and deployed as a Pages artifact. A pull request that touches the site
+# runs the same build without the deploy, so a change that breaks it shows up before it reaches main.
 on:
   release:
     types: [published]
@@ -14,12 +15,20 @@ on:
       - "app/assets/**"
       - "docs/images/**"
       - ".github/workflows/pages.yml"
+  pull_request:
+    paths:
+      - "site/**"
+      - "scripts/site-*.mts"
+      - "app/assets/**"
+      - "docs/images/**"
+      - ".github/workflows/pages.yml"
   workflow_dispatch:
 
-# One deploy at a time, and a newer one waits instead of cancelling a deploy in flight.
+# One deploy at a time, and a newer one waits instead of cancelling a deploy in flight. A pull request's build-only
+# runs have their own group, where a newer push cancels the older run.
 concurrency:
-  group: pages
-  cancel-in-progress: false
+  group: ${{ github.event_name == 'pull_request' && format('pages-pr-{0}', github.ref) || 'pages' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -60,6 +69,7 @@ jobs:
   deploy:
     name: Deploy to GitHub Pages
     needs: build
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

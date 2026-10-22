@@ -377,15 +377,18 @@ test("[fast] every action every workflow uses is pinned to a full commit sha, an
 });
 
 test("[fast] the Pages workflow reads only, but for its deploy job's pages and id-token scopes, and fails on a missing platform", () => {
-  // The site deploys on a release, a change to main or a run by hand; only the deploy job may write, and only to Pages.
+  // The site deploys on a release, a change to main or a run by hand, and a pull request only builds it; only the deploy
+  // job may write, and only to Pages.
   const pages = workflow("pages.yml");
   assert.match(pages, /\non:\n {2}release:\n {4}types: \[published\]/, "a published release redeploys the site");
   assert.match(pages, /workflow_dispatch/);
+  assert.match(pages, /\n {2}pull_request:\n {4}paths:/, "a pull request touching the site builds it");
   assert.match(pages, /\npermissions:\n {2}contents: read\n/, "the workflow's default is read-only");
   const build = pages.match(/\n {2}build:\n([\s\S]*?)\n {2}deploy:/)?.[1] ?? "";
   assert.doesNotMatch(build, /: write/, "the build job writes nothing");
   const deploy = pages.match(/\n {2}deploy:\n([\s\S]*)$/)?.[1] ?? "";
   assert.match(deploy, /\n {4}permissions:\n {6}pages: write\n {6}id-token: write\n/, "the deploy job gets exactly pages and id-token");
+  assert.match(deploy, /\n {4}if: github\.event_name != 'pull_request'\n/, "a pull request's run never deploys");
   assert.match(build, /node scripts\/site-latest\.mts/, "latest.json comes from site-latest.mts, which fails on a missing or doubled platform");
 });
 
