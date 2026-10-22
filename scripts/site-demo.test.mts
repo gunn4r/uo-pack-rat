@@ -57,3 +57,8 @@ test("[fast] site-demo: framed, the app's focus() keeps the page still and scrol
   assert.deepEqual(calls.splice(0), ["focus preventScroll=false", "svg focus preventScroll=false", "scroll"], "the visitor's key press hands both back");
   assert.equal(listeners.size, 0, "and stops listening");
 });
+
+test("[fast] site-demo: the app sets item art through setAttribute(\"src\"), which the shim points at data:, so the static site sends no art requests", () => {
+  assert.match(readFileSync(join(ROOT, "app", "ui", "item-art.mts"), "utf8"), /img\.setAttribute\("src", url\)/, "the shim catches art set this way only; img.src = would bring the 404s back");
+  assert.match(readFileSync(join(ROOT, "site", "demo", "shim.mjs"), "utf8"), /name === "src" && String\(value\)\.startsWith\("\/api\/item-art\/"\) \? "data:,"/);
+});
