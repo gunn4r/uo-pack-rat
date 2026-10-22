@@ -7,7 +7,7 @@
 // map: tooling
 // owns: `buildSite`, `COPIES`
 import { cpSync, existsSync, mkdirSync, readdirSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -28,7 +28,9 @@ export const COPIES: Array<[string, string]> = [
 // The site in `out`, which must be new or empty and outside `site/`; with `latest`, that file as latest.json.
 export function buildSite({ out, latest = null }: { out: string; latest?: string | null }): void {
   const to = resolve(out);
-  if (!relative(SITE, to).startsWith("..")) throw new Error(`build the site outside site/, not in ${to}`);
+  // On another drive (Windows) relative() is absolute, which is outside too.
+  const rel = relative(SITE, to);
+  if (!rel.startsWith("..") && !isAbsolute(rel)) throw new Error(`build the site outside site/, not in ${to}`);
   if (existsSync(to) && readdirSync(to).length) throw new Error(`${to} is not empty`);
   mkdirSync(to, { recursive: true });
   cpSync(SITE, to, { recursive: true });
