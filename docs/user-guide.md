@@ -61,7 +61,7 @@ chmod +x PackRat-<version>-linux-x86_64.AppImage
 
 The first time Pack Rat opens, a setup window walks you through four steps:
 
-1. **Shard.** Pick the shard you play on.
+1. **Shard.** Pick the shard you play on. Pack Rat is tested on UO Alive only; on another shard, the caps, rarity colors and scripts may not match.
 2. **Client.** Pick your game client: **TazUO**, **Razor Enhanced** (Windows only) or the **ClassicUO web client** (the one you play in a browser).
 3. **Client folder.** Pick the folder your client is installed in. Pack Rat finds TazUO on its own when it can; otherwise click **Choose a folder…** (for TazUO, the `TazUO` folder or the `LegionScripts` folder inside it; for Razor Enhanced, the folder `Razor.exe` is in).
 4. **Install scanner.** If the game is running, stop any running Pack Rat scripts first, so none is replaced while it runs (TazUO: type `-stopall` in the game's chat; Razor Enhanced: press Stop on each in its Scripting tab). Check the box that says you did, click **Install scanner**, then **Finish**. The last screen lists what to press in game, and when.

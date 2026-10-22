@@ -16,7 +16,7 @@ import { api } from "./api.mts";
 import { box, button, check, field, input, message, select, stepper, txt, badge, toast } from "./components.mts";
 import { clientErrorMessage, errorText, hostErrorMessage, installedIntoNote, pathsFileNote } from "./messages.mts";
 import { renderSettings } from "./settings.mts";
-import { changeShard } from "./shard.mts";
+import { changeShard, UNTESTED_NOTICE } from "./shard.mts";
 import { autostartNote, hotkeyLabel, panelControls, PANEL_DEFAULTS } from "./tazuo-panel.mts";
 import { defaultAdapterId, availableAdapters, platformCompatible } from "./adapters.mts";
 import { adapterCopy, clientCard, wizardSteps } from "./adapter-copy.mts";
@@ -164,7 +164,7 @@ function step1(): StepContent {
   return {
     question: "Which shard do you play on?",
     help: "Pack Rat reads item property caps, rarity colors and the Resisting Spells minimum from the shard's rules.",
-    body: [field({ label: "Shard rules", control: sel }), wiz!.shard === "uoalive" ? message({ tone: "info", text: AFK_NOTICE }) : null],
+    body: [field({ label: "Shard rules", control: sel }), message({ tone: "info", text: wiz!.shard === "uoalive" ? AFK_NOTICE : UNTESTED_NOTICE })],
   };
 }
 

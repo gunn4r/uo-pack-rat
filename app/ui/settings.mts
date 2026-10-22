@@ -17,7 +17,7 @@ import { prefs } from "./prefs.mts";
 import { badge, box, button, check, confirmDialog, copyText, input, message, segmented, select, switchControl, txt, toast, type Kids } from "./components.mts";
 
 import { applyLook, currentLook, resolveTheme, BUILT_THEMES, type Appearance } from "./theme.mts";
-import { changeShard } from "./shard.mts";
+import { changeShard, UNTESTED_NOTICE } from "./shard.mts";
 import { openWizard } from "./wizard.mts";
 import { forgetCharacter } from "./characters.mts";
 import { bridgeNote, renderDataDirNotice } from "./bridge.mts";
@@ -104,7 +104,8 @@ function generalSection(): HTMLElement {
       help: isBuilt("britannia") ? "Default is the clean look. Britannia dresses Pack Rat in parchment and brass frames." : "Default is the clean look. A Britannia theme with parchment and brass frames comes in a later release." }),
     row({ title: "Appearance", control: appearance, help: "System follows your computer's light or dark setting." }),
     row({ title: "Shard rules", label: "shard", control: shard, help: "Property caps, the Resisting Spells minimum, rarity colors and the gargoyle race lock.",
-      below: [state.rules && rulesUpgradeNote(state.rules) ? message({ tone: "warn", text: rulesUpgradeNote(state.rules)! }) : null] })));
+      below: [state.settings?.shard && state.settings.shard !== "uoalive" ? message({ tone: "info", text: UNTESTED_NOTICE }) : null,
+        state.rules && rulesUpgradeNote(state.rules) ? message({ tone: "warn", text: rulesUpgradeNote(state.rules)! }) : null] })));
 }
 
 // ---------------------------------------------------------------- Game client: status, setup, reinstall

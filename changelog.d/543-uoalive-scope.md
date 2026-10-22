@@ -1,0 +1,1 @@
+- **Made for UO Alive**: the README and the user guide now say Pack Rat is made for and tested on UO Alive, and the setup window notes that another shard's caps, colors and scripts may not match. The README also gains a short disclaimer.

@@ -6,6 +6,8 @@
 
 Pack Rat is a free desktop app for Ultima Online players. It keeps a list of every item on every character, in every bag, chest and bank box, and works out the best suit of gear you can make from them. It reads your gear through small scripts you run in your own game client, and everything stays on your computer.
 
+Made for [UO Alive](https://uoalive.com). It may work on other shards, but it hasn't been tested on them yet.
+
 ![The Pack Rat Inventory: a search for rings across both demo characters, with one ring's properties and location open on the right](docs/images/inventory.png)
 
 <p align="center"><a href="https://github.com/gunn4r/uo-pack-rat/releases"><b>Download Pack Rat</b></a> for Mac, Windows or Linux · <a href="docs/user-guide.md">User guide</a></p>
@@ -69,7 +71,7 @@ Pack Rat's scripts run inside your game client. The scanner reads your gear, and
 
 1. **Download** the file for your computer from the [Releases page](https://github.com/gunn4r/uo-pack-rat/releases): the `.dmg` for a Mac (`arm64` for Apple chips, `x64` for Intel), the `.exe` for Windows, or the `.AppImage` for Linux.
 2. **Open it.** Pack Rat isn't code-signed, so the first launch shows a warning. On a Mac, right-click the app in Applications and choose **Open**. On Windows, click **More info**, then **Run anyway**. The [user guide](docs/user-guide.md#install) has the details, including the "is damaged" fix on a Mac.
-3. **Follow the setup window.** Pick your shard and your game client (**TazUO**, **Razor Enhanced** or the **ClassicUO web client**), and Pack Rat installs its scripts in your client's folder. More in [First run](docs/user-guide.md#first-run).
+3. **Follow the setup window.** Pick your shard (UO Alive, or a generic rule set for any other) and your game client (**TazUO**, **Razor Enhanced** or the **ClassicUO web client**), and Pack Rat installs its scripts in your client's folder. More in [First run](docs/user-guide.md#first-run).
 4. **Scan in game.** Stand next to your chests and run `packrat-scanner.py`. Your items show up in Pack Rat within a few seconds.
 
 TazUO needs v26.0923.64 or later. The [user guide](docs/user-guide.md#the-game-scripts) lists every script and when to run it.
@@ -103,3 +105,7 @@ If Pack Rat saves you time, you can buy me a coffee.
 ## License
 
 MIT, see `LICENSE`. The bundled IBM Plex Sans and IBM Plex Mono fonts (`app/ui/fonts/`) are © IBM Corp., and the Cinzel font the Britannia theme uses is © The Cinzel Project Authors, all under the SIL Open Font License 1.1; their license texts sit next to them. The Britannia theme's frames and textures are drawn by the app itself; it uses no art from any game or game client.
+
+## Disclaimer
+
+Pack Rat is an independent hobby project. It is not affiliated with or endorsed by Electronic Arts, Broadsword Online Games, UO Alive, or the TazUO, Razor Enhanced or ClassicUO projects. Ultima Online is a trademark of Electronic Arts Inc., and all other trademarks belong to their owners.

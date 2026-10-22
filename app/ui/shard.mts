@@ -1,4 +1,4 @@
-// ui/shard.mts — changeShard(shard): the one place a shard switch is persisted and applied. PUTs
+// ui/shard.mts — changeShard: where a shard switch is saved and applied. PUTs
 // /api/settings then reloads the whole page — the simplest way to re-apply the new shard's rules
 // everywhere (caps, rarity, tag units, pools) at once, since state.rules and everything folded under
 // it (state.inv, the suit builder's pools) live server-side and are only ever (re-)fetched on load().
@@ -8,10 +8,13 @@
 // old shard until a manual reload — Phase 4 final review, Important 3.
 //
 // map: ui-components
-// owns: `changeShard`
+// owns: `changeShard`, `UNTESTED_NOTICE`
 import { api } from "./api.mts";
 import type { SettingsApiResponse } from "./api-types.mts";
 import { toast } from "./components.mts";
+
+// The note shown under a shard pick (the setup wizard's and Settings') for any shard but UO Alive, the only one Pack Rat is tested on.
+export const UNTESTED_NOTICE = "Pack Rat is made for and tested on UO Alive only. On this shard, its property caps, rarity colors and scripts may not match the game.";
 
 // Resolves to true on success (the caller can expect the page to be reloading out from under it) or
 // false on failure (already toasted here; the caller should restore its control's displayed value).
