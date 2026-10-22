@@ -54,6 +54,7 @@
   --plate-shadow: 0 30px 60px -34px rgb(60 40 10 / .55); --shell-bg: #e4dac5; --shell-line: #cdbd99; color-scheme: light; }
 
 * { box-sizing: border-box; }
+html { scroll-padding-top: var(--nav-h, 74px); }
 body { margin: 0; background: var(--ground); color: var(--ink); font: 400 19px/1.6 var(--body); overflow-x: hidden; -webkit-font-smoothing: antialiased; position: relative; isolation: isolate; }
 body::after { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; opacity: var(--grain-o); mix-blend-mode: overlay;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.55'/%3E%3C/svg%3E"); }
@@ -160,11 +161,11 @@ main [id] { scroll-margin-top: calc(var(--nav-h, 74px) + 16px); }
 .dl { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
 .dl-pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
 .dl-os { border: 1px solid var(--line); background: var(--paper); border-radius: 6px; padding: 16px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; align-content: start; position: relative; }
-.dl-os h3 { font: 700 13px/1 var(--body); letter-spacing: .16em; text-transform: uppercase; color: var(--faint); display: flex; justify-content: space-between; gap: 8px; align-items: center; }
-.dl-os h3 .you { display: none; font: 600 10.5px/1 var(--mono); letter-spacing: .06em; color: var(--on-brass); background: var(--brass); padding: 3px 6px; border-radius: 3px; }
+.dl-os .dl-name { margin: 0; font: 700 13px/1 var(--body); letter-spacing: .16em; text-transform: uppercase; color: var(--faint); display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+.dl-os .dl-name .you { display: none; font: 600 10.5px/1 var(--mono); letter-spacing: .06em; color: var(--on-brass); background: var(--brass); padding: 3px 6px; border-radius: 3px; }
 .dl-os.yours { border-color: var(--brass); box-shadow: inset 0 0 0 1px var(--brass), 0 16px 40px -24px var(--glow); }
-.dl-os.yours h3 { color: var(--brass); }
-.dl-os.yours h3 .you { display: inline-block; }
+.dl-os.yours .dl-name { color: var(--brass); }
+.dl-os.yours .dl-name .you { display: inline-block; }
 .dl-btn { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 1px 10px; align-items: center; text-decoration: none; padding: 11px 14px; border-radius: 4px;
   border: 1px solid var(--brass); color: var(--ink); background: transparent; transition: filter .12s, background .12s; }
 .dl-btn svg { width: 17px; height: 17px; grid-row: 1 / span 2; color: var(--brass); }
@@ -176,6 +177,11 @@ main [id] { scroll-margin-top: calc(var(--nav-h, 74px) + 16px); }
 .dl-os.yours .dl-btn.main span { opacity: .75; }
 .dl-sub { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 14px; color: var(--faint); }
 .dl-sub a { color: var(--brass); }
+/* Without script: one plain button per system, all to the latest release. The slot keeps the full block's height either way. */
+.dl-static { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: 12px; }
+.dl-static .dl-btn { border: 1px solid var(--line); background: var(--paper); }
+[data-dl-slot] { min-height: 189px; }
+@media (max-width: 760px) { [data-dl-slot] { min-height: 378px; } }
 .dl-foot { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: baseline; font: 13px/1.6 var(--mono); color: var(--faint); }
 .dl-foot a { color: var(--brass); }
 .dl-foot .linux { font-family: var(--body); font-size: 15px; color: var(--muted); }
@@ -283,12 +289,12 @@ main [id] { scroll-margin-top: calc(var(--nav-h, 74px) + 16px); }
   <div class="dl" data-dl>
     <div class="dl-pair">
       <section class="dl-os" data-os="win" aria-label="Windows">
-        <h3>Windows <span class="you">your system</span></h3>
+        <p class="dl-name">Windows <span class="you">your system</span></p>
         <a class="dl-btn main" data-key="win" href="https://github.com/gunn4r/uo-pack-rat/releases/latest"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5v9m0 0L4.5 7M8 10.5 11.5 7M2.5 13.5h11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><b>Installer</b><span data-meta>Windows 10 and 11</span></a>
         <p class="dl-sub"><a data-key="win-portable" href="https://github.com/gunn4r/uo-pack-rat/releases/latest">Portable, no install</a><span data-size="win-portable"></span></p>
       </section>
       <section class="dl-os" data-os="mac" aria-label="macOS">
-        <h3>macOS <span class="you">your system</span></h3>
+        <p class="dl-name">macOS <span class="you">your system</span></p>
         <a class="dl-btn main" data-key="mac-arm64" href="https://github.com/gunn4r/uo-pack-rat/releases/latest"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5v9m0 0L4.5 7M8 10.5 11.5 7M2.5 13.5h11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><b>Apple silicon</b><span data-meta>M1 and later</span></a>
         <p class="dl-sub"><a data-key="mac-x64" href="https://github.com/gunn4r/uo-pack-rat/releases/latest">Intel Mac?</a><span data-size="mac-x64"></span></p>
       </section>
@@ -317,7 +323,7 @@ main [id] { scroll-margin-top: calc(var(--nav-h, 74px) + 16px); }
       <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><filter id="melt" x="-10%" y="-20%" width="120%" height="180%"><feTurbulence type="fractalNoise" baseFrequency="0.012 0.09" numOctaves="2" seed="7" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="0" xChannelSelector="R" yChannelSelector="G"><animate attributeName="scale" values="0;34" dur="1.05s" begin="indefinite" fill="freeze"/></feDisplacementMap></filter></svg>
       <h1 data-headline><span class="h1-a">Stop opening chests.</span> <em>Search them.</em></h1>
       <p class="lede">A free desktop app for Ultima Online players on <a href="https://uoalive.com">UO Alive</a>. Degenerate hoarder? Same. Pack Rat finds anything you own in seconds, keeps your house organized without some elaborate system, and builds better suits from gear you already have.</p>
-      <div data-dl-slot></div>
+      <div data-dl-slot><div class="dl-static"><a class="dl-btn" href="https://github.com/gunn4r/uo-pack-rat/releases/latest"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5v9m0 0L4.5 7M8 10.5 11.5 7M2.5 13.5h11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><b>Windows</b><span>Latest release</span></a><a class="dl-btn" href="https://github.com/gunn4r/uo-pack-rat/releases/latest"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5v9m0 0L4.5 7M8 10.5 11.5 7M2.5 13.5h11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><b>macOS</b><span>Latest release</span></a><a class="dl-btn" href="https://github.com/gunn4r/uo-pack-rat/releases/latest"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5v9m0 0L4.5 7M8 10.5 11.5 7M2.5 13.5h11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><b>Linux</b><span>Latest release</span></a></div></div>
     </div>
     <div class="relic">
       <img src="img/icon.png" width="176" height="176" alt="The Pack Rat logo: a rat in an overstuffed adventurer's backpack, holding a gold coin">
@@ -344,19 +350,19 @@ main [id] { scroll-margin-top: calc(var(--nav-h, 74px) + 16px); }
         <button type="button" role="tab" aria-selected="false" aria-controls="v-scrolls" id="t-scrolls">Scrolls</button>
         <button type="button" role="tab" aria-selected="false" aria-controls="v-unravel" id="t-unravel">Unravel</button>
       </div>
-      <div class="book-page" role="tabpanel" id="v-items" aria-labeledby="t-items">
+      <div class="book-page" role="tabpanel" id="v-items" aria-labelledby="t-items">
         <div class="copy"><h3>Items</h3><p>One table of every piece, each with its in-game icon and its name in its rarity's color. Click one for its properties and where it is.</p></div>
         <figure class="plate"><img class="d" src="img/inventory.webp" width="1600" height="1087" loading="lazy" alt="The Inventory searched for ring, the Arcane Ring open: Night Sight, Mana Regeneration 3, Faster Cast Recovery 3, Lower Reagent Cost 19%"><img class="l" src="img/inventory-light.webp" width="1600" height="1087" loading="lazy" alt="The Inventory searched for ring, the Arcane Ring open: Night Sight, Mana Regeneration 3, Faster Cast Recovery 3, Lower Reagent Cost 19%"></figure>
       </div>
-      <div class="book-page" role="tabpanel" id="v-containers" aria-labeledby="t-containers" hidden>
+      <div class="book-page" role="tabpanel" id="v-containers" aria-labelledby="t-containers" hidden>
         <div class="copy"><h3>Containers</h3><p>Every chest and bag you've opened, who scanned it and when, and how full it is out of 125.</p></div>
         <figure class="plate"><img class="d" src="img/containers.webp" width="1600" height="582" loading="lazy" alt="The Containers view: metal chests, reagent and scroll chests on the ground, their item counts and fill bars"><img class="l" src="img/containers-light.webp" width="1600" height="582" loading="lazy" alt="The Containers view: metal chests, reagent and scroll chests on the ground, their item counts and fill bars"></figure>
       </div>
-      <div class="book-page" role="tabpanel" id="v-scrolls" aria-labeledby="t-scrolls" hidden>
+      <div class="book-page" role="tabpanel" id="v-scrolls" aria-labelledby="t-scrolls" hidden>
         <div class="copy"><h3>Scrolls</h3><p>Power scrolls by skill and level, with how many you need for the next roll-up, and your Scrolls of Transcendence.</p></div>
         <figure class="plate"><img class="d" src="img/scrolls.webp" width="1600" height="344" loading="lazy" alt="The Scrolls view: Spellweaving, Mysticism and Spirit Speak power scrolls at 110, two of twelve toward a 115"><img class="l" src="img/scrolls-light.webp" width="1600" height="344" loading="lazy" alt="The Scrolls view: Spellweaving, Mysticism and Spirit Speak power scrolls at 110, two of twelve toward a 115"></figure>
       </div>
-      <div class="book-page" role="tabpanel" id="v-unravel" aria-labeledby="t-unravel" hidden>
+      <div class="book-page" role="tabpanel" id="v-unravel" aria-labelledby="t-unravel" hidden>
         <div class="copy"><h3>Unravel</h3><p>The pieces worth unraveling for imbuing ingredients, grouped by what each gives at your Imbuing skill, with a forecast of what you'd get.</p></div>
         <figure class="plate"><img class="d" src="img/unravel.webp" width="1600" height="689" loading="lazy" alt="The Unravel view for Kestrel at Imbuing 70: Relic Fragment, Enchanted Essence and Magical Residue forecasts, then the pieces that wait for Imbuing 95"><img class="l" src="img/unravel-light.webp" width="1600" height="689" loading="lazy" alt="The Unravel view for Kestrel at Imbuing 70: Relic Fragment, Enchanted Essence and Magical Residue forecasts, then the pieces that wait for Imbuing 95"></figure>
       </div>
@@ -426,7 +432,7 @@ main [id] { scroll-margin-top: calc(var(--nav-h, 74px) + 16px); }
   <section class="sec band" id="download"><div class="wrap">
     <div class="get">
       <div><span class="label">Download</span><h2>Free, and yours to keep. <em>Everything stays on your computer.</em></h2><a class="seal" href="https://uoalive.com"><svg class="seal-mark" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14.5" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="16" cy="16" r="11" fill="none" stroke="currentColor" stroke-width=".8" stroke-dasharray="1.6 1.6"/><path d="M16 8.5l2.2 4.5 4.9.7-3.5 3.4.8 4.9L16 19.7 11.6 22l.8-4.9-3.5-3.4 4.9-.7z" fill="currentColor"/></svg><span><b>Made for UO Alive</b><span>Built and tested on uoalive.com</span></span></a><p class="shard-note">It may work on other shards, but it hasn't been tested there yet.</p><p>Pack Rat isn't code-signed yet, so the first launch warns you. On Windows click <b style="color:var(--ink)">More info</b>, then <b style="color:var(--ink)">Run anyway</b>. On a Mac, right-click the app and choose <b style="color:var(--ink)">Open</b>.</p></div>
-      <div data-dl-slot></div>
+      <div data-dl-slot><div class="dl-static"><a class="dl-btn" href="https://github.com/gunn4r/uo-pack-rat/releases/latest"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5v9m0 0L4.5 7M8 10.5 11.5 7M2.5 13.5h11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><b>Windows</b><span>Latest release</span></a><a class="dl-btn" href="https://github.com/gunn4r/uo-pack-rat/releases/latest"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5v9m0 0L4.5 7M8 10.5 11.5 7M2.5 13.5h11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><b>macOS</b><span>Latest release</span></a><a class="dl-btn" href="https://github.com/gunn4r/uo-pack-rat/releases/latest"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5v9m0 0L4.5 7M8 10.5 11.5 7M2.5 13.5h11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><b>Linux</b><span>Latest release</span></a></div></div>
     </div>
   </div></section>
 </main>
@@ -465,20 +471,22 @@ main [id] { scroll-margin-top: calc(var(--nav-h, 74px) + 16px); }
   function mb(bytes) { return Math.round(bytes / 1e6) + " MB"; }
   function day(iso) { return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }).replace(",", ""); }
   function file(key) { return release && release.downloads && release.downloads[key]; }
+  // Only this project's own GitHub URLs from latest.json; anything else keeps the link to the latest release.
+  function ours(url) { return typeof url === "string" && url.indexOf("https://github.com/gunn4r/uo-pack-rat/") === 0 ? url : FALLBACK; }
   var tpl = document.getElementById("dl-template");
-  document.querySelectorAll("[data-dl-slot]").forEach(function (slot) { slot.appendChild(tpl.content.cloneNode(true)); });
+  document.querySelectorAll("[data-dl-slot]").forEach(function (slot) { slot.replaceChildren(tpl.content.cloneNode(true)); });
   function render() {
     document.querySelectorAll("[data-dl]").forEach(function (el) {
       el.querySelectorAll(".dl-os").forEach(function (box) { box.classList.toggle("yours", box.dataset.os === os); });
       // With no Windows or Mac visitor (Linux, a phone), Windows leads so the block still has one filled button.
       if (os !== "win" && os !== "mac") el.querySelector('.dl-os[data-os="win"]').classList.add("yours");
-      el.querySelectorAll("a[data-key]").forEach(function (a) { var f = file(a.dataset.key); a.href = (f && f.url) || FALLBACK; });
+      el.querySelectorAll("a[data-key]").forEach(function (a) { var f = file(a.dataset.key); a.href = ours(f && f.url); });
       el.querySelectorAll("[data-size]").forEach(function (s) { var f = file(s.dataset.size); s.textContent = f ? mb(f.size) : ""; });
       el.querySelectorAll(".dl-btn.main").forEach(function (a) { var f = file(a.dataset.key); if (f) { a.querySelector("[data-meta]").textContent = mb(f.size) + " · ." + f.file.split(".").pop(); a.title = f.file; } });
       if (release) {
         el.querySelector("[data-release]").textContent = "v" + release.version + " · " + day(release.published);
-        el.querySelector("[data-notes]").href = release.notes;
-        el.querySelector("[data-sums]").href = release.checksums;
+        el.querySelector("[data-notes]").href = ours(release.notes);
+        el.querySelector("[data-sums]").href = ours(release.checksums);
       }
     });
   }
@@ -494,7 +502,7 @@ main [id] { scroll-margin-top: calc(var(--nav-h, 74px) + 16px); }
   });
 
   /* Rotating headline: every headline is stacked in one grid cell, so the hero keeps the height of the tallest and
-     nothing below it jumps. The type shrinks just enough for the widest line to fit on one line (desktop). Screen
+     nothing below it jumps. It goes round once and comes back to the first. The type shrinks just enough for the widest line to fit on one line (desktop). Screen
      readers get the first headline once (aria-label), not a live-changing heading; without script the page keeps the
      first headline as written. */
   var HEADLINES = [
@@ -544,13 +552,20 @@ main [id] { scroll-margin-top: calc(var(--nav-h, 74px) + 16px); }
     if (meltAnim && meltAnim.beginElement) meltAnim.beginElement();
     cur = i;
   }
-  function paused() { return document.hidden || h1.matches(":hover"); }
+  function paused() { return document.hidden || h1.matches(":hover") || h1.closest(".hero").matches(":focus-within"); }
   function rotate() {
     clearInterval(timer); h1.textContent = ""; h1.classList.add("rotating");
     h1.setAttribute("aria-label", HEADLINES[0].join(" "));
     items = HEADLINES.map(line); items.forEach(function (it) { h1.appendChild(it); });
     cur = 0; items[0].classList.add("on"); fit();
-    if (!reduce) timer = setInterval(function () { if (!paused()) show((cur + 1) % items.length); }, 5200);
+    // One full cycle, then it rests on the first headline for good (WCAG 2.2.2: no motion longer than five seconds that
+    // can't be stopped).
+    if (!reduce) timer = setInterval(function () {
+      if (paused()) return;
+      var next = (cur + 1) % items.length;
+      show(next);
+      if (next === 0) clearInterval(timer);
+    }, 5200);
   }
   rotate();
   addEventListener("resize", fit);
