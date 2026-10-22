@@ -466,12 +466,15 @@ function updatesSection(setup: SetupApiResponse): HTMLElement {
       below: [lastUpdateCheck ? updateMessage(lastUpdateCheck, setup.version) : null] }),
     row({ title: "Check for updates automatically", control: auto.root, help: "Looks for a newer release shortly after Pack Rat opens and every 6 hours while it stays open, and says so above the screen. Nothing downloads." })), legalNotice());
 }
-// The Appropriate Legal Notices the licence asks for (LICENSE, section 7(b)): the author credit, the repository and the
-// GPL with no warranty. The link opens in the browser, as the app's other external links do.
+// The Appropriate Legal Notices (GPLv3 section 0, and the author credit LICENSE's section 7(b) term asks for): the
+// copyright, the credit and repository, that it is free software under the GPL with additional terms and no warranty,
+// and where to read the licence. The links open in the browser, as the app's other external links do; the licence is
+// the repository's copy, since the page has no way to open the LICENSE file shipped beside it.
 const REPO_URL = "https://github.com/gunn4r/uo-pack-rat";
 function legalNotice(): HTMLElement {
-  return el("p", { class: "help", id: "set-legal" }, "Pack Rat by gunn4r · ",
-    el("a", { href: REPO_URL, target: "_blank", rel: "noopener noreferrer" }, "github.com/gunn4r/uo-pack-rat"), " · Free software under the GNU GPL v3, with no warranty");
+  const link = (href: string, text: string): HTMLElement => el("a", { href, target: "_blank", rel: "noopener noreferrer" }, text);
+  return el("p", { class: "help", id: "set-legal" }, "© 2026 gunn4r · Pack Rat by gunn4r · ", link(REPO_URL, "github.com/gunn4r/uo-pack-rat"),
+    " · Free software under the GNU GPL v3 with additional terms, and no warranty · ", link(`${REPO_URL}/blob/main/LICENSE`, "License"));
 }
 // The automatic check (#67): with the switch above on, GET /api/update-check shortly after load and every
 // 6 hours after that. A release newer than this one shows #update-notice above the screen with a link to

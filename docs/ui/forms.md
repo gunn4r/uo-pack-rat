@@ -76,7 +76,7 @@ Step 3's typed path lives in the wizard's state, so it survives a failed "Use th
 - **Game client:** the client's status, Run setup, Reinstall, and, for TazUO, the in-game panel card (show at login, and its hotkey). The panel card is `ui/tazuo-panel.mts`'s `panelControls`, which the wizard's install step shows too.
 - **Data:** the data and logs folders, Blacklisted containers, export and import of the player's item kinds, Data retention with Clean up now, and the danger zone.
 - **AI assistants (MCP):** the built-in MCP server's two switches and how to connect a client (issue #211).
-- **Updates:** the version, Check for updates, Check automatically, and under them the Appropriate Legal Notices `LICENSE` asks for (`#set-legal`): the author credit, the repository link (opening in the browser) and the GPL v3 with no warranty.
+- **Updates:** the version, Check for updates, Check automatically, and under them the Appropriate Legal Notices `LICENSE` asks for (`#set-legal`): the copyright, the author credit, the repository link, the GPL v3 with additional terms and no warranty, and a License link to the repository's `LICENSE`, both links opening in the browser.
 
 The sections sit at the page's full width, like every other screen, with no section nav (the page is short; bring one back if it grows). A section that needs attention carries a warning dot beside its heading (Game client, when no client is set up). Setting rows are `.set-row`: title and help left, control right, anything spanning below in `.set-row-below`.
 

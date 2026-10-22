@@ -98,6 +98,7 @@ test("[fast] the bundle carries the adapters and the optimizer core's source, no
   assert.ok(has("adapters/**"), "adapters/ must ship — the installer copies the scripts out of it");
   assert.ok(has("electron/**"), "the shell itself must ship");
   assert.ok(has("scripts/optimizer-core.mts"), "the optimizer core ships as source — there is no built copy to ship instead");
+  assert.ok(has("LICENSE"), "the licence ships with every copy (GPLv3 section 4)");
   for (const excluded of ["!**/*.test.mjs", "!**/*.test.mts", "!local/**", "!test_logs/**", "!docs/**", "!app/bench/**"]) {
     assert.ok(files.includes(excluded), `${excluded} must be excluded`);
   }

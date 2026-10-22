@@ -70,6 +70,7 @@
       "electron/**",
       "scripts/optimizer-core.mts",
       "package.json",
+      "LICENSE",
       "tsconfig.browser.json",
       "!**/*.test.mjs",
       "!**/*.test.mts",

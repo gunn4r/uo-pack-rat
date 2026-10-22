@@ -104,7 +104,7 @@ If Pack Rat saves you time, you can buy me a coffee.
 
 ## License
 
-GPLv3: forks must stay open source and keep the 'Pack Rat by gunn4r' credit. See `LICENSE`. The bundled IBM Plex Sans and IBM Plex Mono fonts (`app/ui/fonts/`) are © IBM Corp., and the Cinzel font the Britannia theme uses is © The Cinzel Project Authors, all under the SIL Open Font License 1.1; their license texts sit next to them. The Britannia theme uses no art from any game or game client.
+GPLv3: forks you share must stay open source and keep the 'Pack Rat by gunn4r' credit. See `LICENSE`. The bundled IBM Plex Sans and IBM Plex Mono fonts (`app/ui/fonts/`) are © IBM Corp., and the Cinzel font the Britannia theme uses is © The Cinzel Project Authors, all under the SIL Open Font License 1.1; their licenses sit beside them. The Britannia theme uses no art from any game or game client.
 
 ## Disclaimer
 
