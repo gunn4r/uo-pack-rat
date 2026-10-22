@@ -1,9 +1,14 @@
 // shim.mjs — the website's live demo: the real Pack Rat page (built by `npm run site:demo`, scripts/site-demo.mts) running on a static site with no server behind it.
 //
-// It loads before the app and answers the page's /api/* calls from demo-data.json, the demo characters' responses recorded off a real server when the site was built. A request recorded as it is gets its recording; item searches run the app's own search (item-query.mjs) over every recorded item; a write succeeds and changes nothing; anything else answers 404. The live-update stream stays quiet, except a Suit Builder job's, which replays the one recorded build. Item art and the paperdoll come from the player's own game client, which the website doesn't have: their requests fail as they would with no client set up, and the paperdoll card says so plainly. The host page picks the look: index.html?theme=britannia&appearance=dark#/inventory.
+// It loads before the app and answers the page's /api/* calls from demo-data.json, the demo characters' responses recorded off a real server when the site was built. A request recorded as it is gets its recording; item searches run the app's own search (item-query.mjs) over every recorded item; a write succeeds and changes nothing; anything else answers 404. The live-update stream stays quiet, except a Suit Builder job's, which replays the one recorded build. Item art and the paperdoll come from the player's own game client, which the website doesn't have: their requests fail as they would with no client set up, and the paperdoll card says so plainly. The host page picks the look, and `embed` keeps the app from scrolling it: index.html?theme=britannia&appearance=dark&embed#/inventory.
 import { parseItemQuery, applyItemQuery, hitRow } from "./item-query.mjs";
+import { holdScroll } from "./hold-scroll.mjs";
 
 const look = new URLSearchParams(location.search);
+
+// Framed in the website (?embed): the app may not scroll the page around it until the visitor uses it.
+if (look.has("embed")) holdScroll(window);
+
 const realFetch = window.fetch.bind(window);
 // The override goes in synchronously: the app's module doesn't wait for this one, so every answer waits for the recording.
 let rec = {};

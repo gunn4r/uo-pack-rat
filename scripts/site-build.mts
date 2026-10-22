@@ -34,7 +34,7 @@ export function buildSite({ out, latest = null, demo = null }: { out: string; la
   if (!rel.startsWith("..") && !isAbsolute(rel)) throw new Error(`build the site outside site/, not in ${to}`);
   if (existsSync(to) && readdirSync(to).length) throw new Error(`${to} is not empty`);
   mkdirSync(to, { recursive: true });
-  cpSync(SITE, to, { recursive: true });
+  cpSync(SITE, to, { recursive: true, filter: (src) => !src.endsWith(".d.mts") });   // type declarations are for the tests only
   for (const [from, at] of COPIES) {
     mkdirSync(dirname(join(to, at)), { recursive: true });
     cpSync(join(ROOT, from), join(to, at));

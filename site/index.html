@@ -633,7 +633,7 @@ main [id] { scroll-margin-top: calc(var(--nav-h, 74px) + 16px); }
      enough for it once it's there; otherwise the screenshot stands in. It follows the page's light/dark: Britannia dark,
      Default light. */
   var frame = document.querySelector("[data-app]"), route = "inventory", live = document.querySelectorAll(".window-live");
-  function loadApp() { if (!frame.dataset.on) return; var m = mode(); frame.src = "demo/?theme=" + (m === "light" ? "default" : "britannia") + "&appearance=" + m + "#/" + route; }
+  function loadApp() { if (!frame.dataset.on) return; var m = mode(); frame.src = "demo/?theme=" + (m === "light" ? "default" : "britannia") + "&appearance=" + m + "&embed#/" + route; }
   if (window.matchMedia("(min-width: 761px)").matches) {
     fetch("demo/demo-data.json", { method: "HEAD" }).then(function (r) {
       if (!r.ok) return;

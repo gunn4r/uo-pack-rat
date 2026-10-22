@@ -52,6 +52,7 @@ test("[fast] site-build: the recorded demo goes in demo/, beside the shim from s
   buildSite({ out: join(out, "site"), demo: join(out, "rec") });
   assert.ok(existsSync(join(out, "site", "demo", "demo-data.json")));
   assert.ok(existsSync(join(out, "site", "demo", "shim.mjs")), "the shim comes from site/demo/");
+  assert.ok(!existsSync(join(out, "site", "demo", "hold-scroll.d.mts")), "type declarations stay out of the site");
 });
 
 test("[fast] site-build: refuses to build inside site/ or into a folder that isn't empty", (t) => {
