@@ -27,7 +27,9 @@ const PUBLIC_ROWS: Row[] = [
      ".github/ISSUE_TEMPLATE/config.yml",
      // the Ko-fi page: GitHub's Sponsor button, and the sidebar's "Buy me a coffee" link
      ".github/FUNDING.yml", "app/index.html", "scripts/packaging.test.mts", "scripts/scrub.test.mts",
-     // LICENSE: MIT needs an identifiable copyright holder, and gunn4r is the public account name —
+     // Settings' Appropriate Legal Notices: the author credit and repository the licence's section 7(b) requires, and its test
+     "app/ui/settings.mts", "scripts/ui-forms.test.mts",
+     // LICENSE: the GPL notice names the copyright holder and its section 7 attribution, and gunn4r is the public account name —
      // already the repository owner, the electron-builder appId and package.json's author.
      "LICENSE"], true],
   // A home folder on macOS, Linux or Windows, other than the `example` placeholder. Case-sensitive, so prose such as

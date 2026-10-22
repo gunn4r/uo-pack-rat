@@ -79,7 +79,7 @@ test("[fast] the window icon and the page's favicon ship inside the bundle, smal
 test("[fast] package metadata carries the public identity", () => {
   assert.equal(pkg.name, "pack-rat");
   assert.equal(pkg.productName, "Pack Rat");
-  assert.equal(pkg.license, "MIT");
+  assert.equal(pkg.license, "GPL-3.0-only");
   assert.match(pkg.repository?.url ?? "", /github\.com\/gunn4r\/uo-pack-rat/);
   assert.equal(build.appId, "com.gunn4r.packrat");
 });

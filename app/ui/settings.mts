@@ -464,7 +464,14 @@ function updatesSection(setup: SetupApiResponse): HTMLElement {
   return section("set-updates", "Updates", box("div", { class: "card set-card" },
     row({ title: setup.version ? `Pack Rat ${setup.version}` : "Pack Rat", control: btn, help: "Checks GitHub for a newer release. Nothing downloads without asking.",
       below: [lastUpdateCheck ? updateMessage(lastUpdateCheck, setup.version) : null] }),
-    row({ title: "Check for updates automatically", control: auto.root, help: "Looks for a newer release shortly after Pack Rat opens and every 6 hours while it stays open, and says so above the screen. Nothing downloads." })));
+    row({ title: "Check for updates automatically", control: auto.root, help: "Looks for a newer release shortly after Pack Rat opens and every 6 hours while it stays open, and says so above the screen. Nothing downloads." })), legalNotice());
+}
+// The Appropriate Legal Notices the licence asks for (LICENSE, section 7(b)): the author credit, the repository and the
+// GPL with no warranty. The link opens in the browser, as the app's other external links do.
+const REPO_URL = "https://github.com/gunn4r/uo-pack-rat";
+function legalNotice(): HTMLElement {
+  return el("p", { class: "help", id: "set-legal" }, "Pack Rat by gunn4r · ",
+    el("a", { href: REPO_URL, target: "_blank", rel: "noopener noreferrer" }, "github.com/gunn4r/uo-pack-rat"), " · Free software under the GNU GPL v3, with no warranty");
 }
 // The automatic check (#67): with the switch above on, GET /api/update-check shortly after load and every
 // 6 hours after that. A release newer than this one shows #update-notice above the screen with a link to

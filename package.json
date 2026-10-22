@@ -3,7 +3,7 @@
   "version": "0.3.0",
   "description": "Every item you own, every suit you could wear. Inventory and suit builder for Ultima Online players.",
   "productName": "Pack Rat",
-  "license": "MIT",
+  "license": "GPL-3.0-only",
   "private": true,
   "type": "module",
   "main": "electron/main.mts",
