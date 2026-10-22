@@ -30,12 +30,21 @@
 .inv-scroll > table { flex: none; }
 .inv-tbl { width: 100%; }
 .inv-tbl tr.item { cursor: default; }
-.inv-tbl tr.item:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; }
-/* the sticky Name cell paints over the row's outline, so it draws its own part of the ring */
-.inv-tbl tr.item:focus-visible td:first-child { box-shadow: inset 2px 0 0 var(--color-focus), inset 0 2px 0 var(--color-focus), inset 0 -2px 0 var(--color-focus); }
+/* one ring, inside the row: not the generic [tabindex] ring as well, which drew a second one outside it */
+.inv-tbl tr.item:focus-visible { outline: 2px solid var(--color-focus); outline-offset: -2px; box-shadow: none; }
+/* The sticky cells (the first, and the Name cell after the checkbox one) paint over the row's outline, so each
+   draws its own part of the ring. Their shadow is built from parts, so none drops another: the ring's left edge
+   (--ring-x, first cell) and its top and bottom (--ring-y), a row's accent bar (--bar) and, scrolled sideways, the
+   divider on the sticky column's right edge (--divider). */
+.inv-tbl tr.item td:first-child, .inv-tbl.inv-selectable tr.item td:nth-child(2) { box-shadow: var(--ring-x, 0 0 transparent), var(--ring-y, 0 0 transparent), var(--bar, 0 0 transparent), var(--divider, 0 0 transparent); }
+.inv-tbl tr.item:focus-visible td:first-child { --ring-x: inset 2px 0 0 var(--color-focus); }
+/* the bottom edge is the cell's own border plus 1px inside it, level with the outline over the row's border */
+.inv-tbl tr.item:focus-visible td:first-child, .inv-tbl.inv-selectable tr.item:focus-visible td:nth-child(2) { --ring-y: inset 0 2px 0 var(--color-focus), inset 0 -1px 0 var(--color-focus); border-bottom-color: var(--color-focus); }
+.inv-tbl tr.item.sel td:first-child { --bar: inset 2px 0 0 var(--color-accent); }
+.inv-scroll.scrolled-x .inv-tbl:not(.inv-selectable) td:first-child, .inv-scroll.scrolled-x .inv-tbl.inv-selectable td:nth-child(2) { --divider: 1px 0 0 var(--color-border); }
 /* the sticky Name column, drawn over the columns scrolling under it */
 .inv-tbl th:first-child, .inv-tbl td:first-child { position: sticky; left: 0; z-index: 1; background: var(--color-surface); color: var(--color-text); }
-.inv-scroll.scrolled-x .inv-tbl th:first-child, .inv-scroll.scrolled-x .inv-tbl td:first-child { box-shadow: 1px 0 0 var(--color-border); }
+.inv-scroll.scrolled-x .inv-tbl:not(.inv-selectable) th:first-child { box-shadow: 1px 0 0 var(--color-border); }
 .inv-tbl th:first-child { z-index: calc(var(--z-sticky) + 1); background: var(--color-surface-subtle); }
 .inv-tbl tr.vpad td { padding: 0; border: 0; height: 0; background: none; box-shadow: none; position: static; }
 .inv-tbl tr.skel-row td { background: var(--color-surface); }
@@ -168,7 +177,7 @@
 .scr-tbl td.num a { color: var(--color-link); text-decoration: none; font-weight: var(--weight-medium); }
 .scr-tbl td.num a:hover { text-decoration: underline; }
 .scr-tbl tr.ready:not(.sel) td { background: color-mix(in srgb, var(--color-success-soft) 55%, var(--color-surface)); }
-.scr-tbl tr.ready:not(.sel) td:first-child { box-shadow: inset 3px 0 0 var(--color-success); }
+.scr-tbl tr.ready:not(.sel) td:first-child { --bar: inset 3px 0 0 var(--color-success); }
 .scr-tbl td.scr-state { height: auto; padding: 0; white-space: normal; position: static; }
 .scr-tbl td.scr-state > .muted, .scr-tbl td.scr-state > .msg { display: flex; margin: var(--space-4); }
 .scr-skill { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
@@ -296,10 +305,10 @@
 .inv-tbl th.sel-cell, .inv-tbl td.sel-cell { padding: 0; text-align: center; }
 .inv-tbl .sel-cb { width: 16px; height: 16px; margin: 0; vertical-align: middle; accent-color: var(--color-accent); cursor: pointer; }
 .inv-tbl .sel-lock { display: inline-flex; color: var(--color-text-faint); cursor: help; vertical-align: middle; }
-.inv-tbl.inv-selectable th:nth-child(2), .inv-tbl.inv-selectable td:nth-child(2) { position: sticky; left: 36px; z-index: 1; background: var(--color-surface); color: var(--color-text); }
+/* :where keeps it as weak as the first cell's rule, so a selected or hovered row's tint reaches the Name cell */
+.inv-tbl:where(.inv-selectable) th:nth-child(2), .inv-tbl:where(.inv-selectable) td:nth-child(2) { position: sticky; left: 36px; z-index: 1; background: var(--color-surface); color: var(--color-text); }
 .inv-tbl.inv-selectable th:nth-child(2) { z-index: calc(var(--z-sticky) + 1); background: var(--color-surface-subtle); }
-.inv-scroll.scrolled-x .inv-tbl.inv-selectable th:first-child, .inv-scroll.scrolled-x .inv-tbl.inv-selectable td:first-child { box-shadow: none; }
-.inv-scroll.scrolled-x .inv-tbl.inv-selectable th:nth-child(2), .inv-scroll.scrolled-x .inv-tbl.inv-selectable td:nth-child(2) { box-shadow: 1px 0 0 var(--color-border); }
+.inv-scroll.scrolled-x .inv-tbl.inv-selectable th:nth-child(2) { box-shadow: 1px 0 0 var(--color-border); }
 .inv-tbl tr.item.picked:not(.sel) td { background: var(--color-accent-soft); color: var(--color-on-accent-soft); }
 .inv-selbar { position: relative; z-index: 3; display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-3); background: var(--color-accent-soft); color: var(--color-on-accent-soft); border-bottom: var(--border-width) solid var(--color-border); }
 .mv-what { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: var(--space-3); row-gap: var(--space-0-5); flex: 1 1 auto; min-width: 0; }

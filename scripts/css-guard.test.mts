@@ -4,6 +4,7 @@
 // 2. Every width in an `@media` rule of `app/ui/*.css` is one of `app/ui/breakpoints.mts`'s (a `min-width` one pixel above one), and no `app/ui/*.mts` but that module writes a `max-width`/`min-width` query of its own.
 // 3. Every stylesheet closes each block it opens: a lost `}` nests every later rule in the block above it.
 // 4. No color is written as a literal (`#hex`, `rgb()` / `hsl()` and the other color functions, a named color such as `white`) outside `tokens.css` and `britannia.css`: not in a declaration of any other `app/ui/*.css`, and not in an inline style string of an `app/ui/*.mts` (a `style:` attribute, `.style.x =`, `setProperty()`, `cssText`, `setAttribute("style", …)`). A color is a `var(--…)` token; `transparent`, `currentColor` and `inherit` are fine. A legitimate exception goes in `COLOR_ALLOWED` with its reason.
+// 5. The Inventory table's sticky cells (the first, and the Name cell after the checkbox one) build their box-shadow from parts (`--ring-x`, `--ring-y`, `--bar`, `--divider`) in one rule of `inventory.css`: any other rule there setting box-shadow on them would drop the focus ring, a row's bar or the scroll divider (issue #548).
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
@@ -195,4 +196,13 @@ test("[smoke] css-guard: every color is a token outside tokens.css and britannia
   }
   assert.deepEqual(found.filter((f) => !(f in COLOR_ALLOWED)), [], "a literal color: use its var(--…) token from tokens.css, or list it in COLOR_ALLOWED with its reason");
   assert.deepEqual(Object.keys(COLOR_ALLOWED).filter((f) => !found.includes(f)), [], "a listed color is gone: take it off COLOR_ALLOWED");
+});
+
+test("[smoke] css-guard: only the composing rule sets box-shadow on the Inventory table's sticky cells", () => {
+  const sticky = /td:(first-child|nth-child\(2\))\s*$/;
+  const setters = [...read("inventory.css").matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+    .filter(([, sel, body]) => /(^|;)\s*box-shadow\s*:/.test(body!) && splitTop(sel!, /,/).some((x) => /\.(inv|scr)-tbl\b/.test(x) && sticky.test(x)))
+    .map(([, sel, body]) => `${sel!.trim()} { ${/box-shadow\s*:([^;]*)/.exec(body!)![1]!.trim()} }`);
+  assert.equal(setters.length, 1, `set --ring-x, --ring-y, --bar or --divider instead:\n${setters.join("\n")}`);
+  assert.match(setters[0]!, /\{ var\(--ring-x, [^)]*\), var\(--ring-y, [^)]*\), var\(--bar, [^)]*\), var\(--divider, [^)]*\) \}$/);
 });
