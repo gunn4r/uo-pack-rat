@@ -86,7 +86,7 @@ Everything stays in one folder on your computer. The only thing Pack Rat sends a
 
 ## Verifying a download
 
-Optional. Each release has a `SHA256SUMS` file for checking that a download is exactly the file this project published. The steps are in [RELEASING.md](RELEASING.md#verifying-a-download).
+Each release has a `SHA256SUMS` file to check that a download is the file this project published. The steps are in [RELEASING.md](RELEASING.md#verifying-a-download).
 
 ## Help
 
@@ -104,7 +104,7 @@ If Pack Rat saves you time, you can buy me a coffee.
 
 ## License
 
-MIT, see `LICENSE`. The bundled IBM Plex Sans and IBM Plex Mono fonts (`app/ui/fonts/`) are © IBM Corp., and the Cinzel font the Britannia theme uses is © The Cinzel Project Authors, all under the SIL Open Font License 1.1; their license texts sit next to them. The Britannia theme's frames and textures are drawn by the app itself; it uses no art from any game or game client.
+GPLv3: forks you share must stay open source and keep the 'Pack Rat by gunn4r' credit. See `LICENSE`. The bundled IBM Plex Sans and IBM Plex Mono fonts (`app/ui/fonts/`) are © IBM Corp., and the Cinzel font the Britannia theme uses is © The Cinzel Project Authors, all under the SIL Open Font License 1.1; their licenses sit beside them. The Britannia theme uses no art from any game or game client.
 
 ## Disclaimer
 

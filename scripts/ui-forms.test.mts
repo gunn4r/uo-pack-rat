@@ -305,6 +305,11 @@ test("[slow] Settings: sections with the client warning, theme and appearance, R
 
     // Updates: the running version, and the check's answer as an inline message under its row.
     assert.match(await page.locator("#set-updates").innerText(), /Pack Rat \d+\.\d+\.\d+/);
+    // the Appropriate Legal Notices (LICENSE, section 7(b)), its repository link opening outside the app
+    assert.equal(await page.locator("#set-legal").innerText(), "© 2026 gunn4r · Pack Rat by gunn4r · github.com/gunn4r/uo-pack-rat · Free software under the GNU GPL v3 with additional terms, and no warranty · License");
+    assert.deepEqual(await page.locator("#set-legal a").evaluateAll((as) => as.map((a) => [a.textContent, a.getAttribute("href"), a.getAttribute("target"), a.getAttribute("rel")])), [
+      ["github.com/gunn4r/uo-pack-rat", "https://github.com/gunn4r/uo-pack-rat", "_blank", "noopener noreferrer"],
+      ["License", "https://github.com/gunn4r/uo-pack-rat/blob/main/LICENSE", "_blank", "noopener noreferrer"]]);
     await page.route("**/api/update-check", (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify({ ok: true, configured: true, error: "GitHub releases/latest returned 404" }) }));
     await page.click("#set-check-updates");
     await page.waitForSelector("#set-updates .msg.bad");

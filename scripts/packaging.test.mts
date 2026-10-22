@@ -79,7 +79,7 @@ test("[fast] the window icon and the page's favicon ship inside the bundle, smal
 test("[fast] package metadata carries the public identity", () => {
   assert.equal(pkg.name, "pack-rat");
   assert.equal(pkg.productName, "Pack Rat");
-  assert.equal(pkg.license, "MIT");
+  assert.equal(pkg.license, "GPL-3.0-only");
   assert.match(pkg.repository?.url ?? "", /github\.com\/gunn4r\/uo-pack-rat/);
   assert.equal(build.appId, "com.gunn4r.packrat");
 });
@@ -98,6 +98,7 @@ test("[fast] the bundle carries the adapters and the optimizer core's source, no
   assert.ok(has("adapters/**"), "adapters/ must ship — the installer copies the scripts out of it");
   assert.ok(has("electron/**"), "the shell itself must ship");
   assert.ok(has("scripts/optimizer-core.mts"), "the optimizer core ships as source — there is no built copy to ship instead");
+  assert.ok(has("LICENSE"), "the licence ships with every copy (GPLv3 section 4)");
   for (const excluded of ["!**/*.test.mjs", "!**/*.test.mts", "!local/**", "!test_logs/**", "!docs/**", "!app/bench/**"]) {
     assert.ok(files.includes(excluded), `${excluded} must be excluded`);
   }
