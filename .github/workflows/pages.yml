@@ -20,7 +20,8 @@ on:
     paths:
       - "site/**"
       - "scripts/site-*.mts"
-      - "app/assets/**"
+      - "scripts/shots-lib.mts"
+      - "app/**"
       - "docs/images/**"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
