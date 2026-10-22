@@ -523,7 +523,7 @@ export function stackPlan(m: Pick<HouseModel, "stacks">, areas: readonly HouseAr
     const cards = all.filter((c) => c.area === area);
     if (cards.length) groups.push({ area, containers: count(cards), cards }); else bare.push(area.name);
   }
-  const loose = all.filter((c) => !c.area || !here.includes(c.area));
+  const loose = all.filter((c) => !c.area);
   if (loose.length) groups.push({ area: null, containers: count(loose), cards: loose });
   const cards = groups.flatMap((g) => g.cards);
   return { groups, cards, bare, containers: count(cards) };

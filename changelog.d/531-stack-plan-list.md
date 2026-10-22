@@ -1,1 +1,1 @@
-- **House map Stack plan as a list by area**: the Stack plan now lists only the tiles that hold a stack, grouped under each area you drew and then "Not in an area", instead of a north-up grid full of empty-tile cards. The arrow keys move to the previous or next card.
+- **House map Stack plan as a list by area**: the Stack plan now lists only the tiles that hold a stack, grouped under each area you drew and then "Everything else", instead of a north-up grid full of empty-tile cards. The arrow keys move to the previous or next card.

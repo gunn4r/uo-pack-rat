@@ -328,7 +328,7 @@ Each tile with a stack is a card: "Stack C" and "4 containers" (`planHead`), the
 
 ### Areas, levels and the plain grid
 
-- An area holding a container is a group: a tint and outline in its color around its cards, its name and container count on a pill on its top edge that zooms to it. The stacks in no area come last, in a plain group headed "Not in an area" (no heading when nothing on the level is in an area).
+- An area holding a container is a group: a tint and outline in its color around its cards, its name and container count on a pill on its top edge that zooms to it. The stacks in no area come last, in a plain group headed as the left pane names them, "Everything else" (no heading when nothing on the level is in an area). While searching, its heading counts its matches the way the area pills do.
 - The areas with no container are named under the plan ("The Yard: no containers.").
 - A level with no stacks reads "No containers on this floor."
 - The plain grid gets the same plan from its stacks.

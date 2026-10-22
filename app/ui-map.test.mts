@@ -963,6 +963,16 @@ test("[fast] house map Stack plan: the cards are grouped by area, the level's ar
   assert.equal(bareText(["The Yard", "Porch"]), "The Yard, Porch: no containers.");
   const z = stackPlan(m, [north, corner, yard], 0, "a2");
   assert.deepEqual([z.groups.map((g) => g.area?.id), z.cards.length, z.containers, z.bare], [["a2"], 5, 25, []], "only the area's cards, in one group");
+  assert.equal(restName([north, corner, yard], 0), "Everything else", "the stacks in no area are headed as the left pane names them");
+  // overlapping areas: a stack is in the first one listed that holds its tile, and is drawn once
+  const wide = area("b1", "Whole west", [{ x0: 3001, y0: 1001, x1: 3002, y1: 1005 }]), west = area("b2", "West column", [{ x0: 3001, y0: 1001, x1: 3001, y1: 1005 }]);
+  const o = stackPlan(m, [wide, west], 0);
+  assert.deepEqual(o.groups.map((g) => [g.area?.id ?? null, g.cards.length]), [["b1", 10], [null, 14]], "the first area wins the overlap; the second, all inside it, holds nothing");
+  assert.deepEqual(o.bare, ["West column"]);
+  assert.deepEqual(stackPlan(m, [west, wide], 0).groups.map((g) => [g.area?.id ?? null, g.cards.length]), [["b2", 5], ["b1", 5], [null, 14]], "listed the other way, the column takes its own tiles first");
+  // a stack on a rectangle's edge tile is inside it (rectangles are inclusive)
+  const edge = area("c1", "Edge", [{ x0: 2995, y0: 995, x1: 3001, y1: 1001 }]);
+  assert.deepEqual(stackPlan(m, [edge], 0).groups[0]!.cards.map((c) => [c.stack.x, c.stack.y]), [[3001, 1001]], "the corner tile the rectangle ends on counts");
 });
 
 test("[fast] house map Stack plan: the arrow keys walk the list, up and left to the previous card, down and right to the next, across groups, none past either end", () => {
@@ -977,6 +987,9 @@ test("[fast] house map Stack plan: the arrow keys walk the list, up and left to 
   const north: HouseArea = { id: "a1", name: "North row", level: 0, color: "area-3", rects: [{ x0: 3001, y0: 1005, x1: 3005, y1: 1005 }] };
   const g = stackPlan(m, [north], 0);
   assert.equal(planNeighbor(g, at(3005, 1005), "down"), at(3001, 1001), "from the last card of a group to the first of the next");
+  assert.equal(planNeighbor(g, at(3001, 1001), "up"), at(3005, 1005), "and back up to the last of the group before");
+  assert.equal(planNeighbor(g, at(3001, 1005), "up"), null, "up from the first card of the first group: nothing before it");
+  assert.equal(planNeighbor(g, at(3001, 1005), "left"), null);
 });
 
 test("[fast] setHouses announces the new index (houselinkschange), so a view filtered by house redraws (#487)", async () => {

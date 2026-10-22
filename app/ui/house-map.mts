@@ -22,7 +22,7 @@ import { PLAIN, pickHouse, plainGrid, chestCount, houseLabel, houseName, carryOv
   cutAway, calloutLines, nearestInDirection, houseTotals, legendOf, stackWhere, anchorOf, zoomAt, fillWords, whereOf, whereTitle, cropAround, facetMapUrl, markersOf, facetMapNote, markerRadii,
   drawerChest, drawerMeta, slotsText, drawerPicker, DRAWER_W, DRAWER_MIN, drawerMax, clampDrawer, drawerKey, contentsOf, contentsSummary, filterContents, areaOfStack, levelAreas, tileAt, clampTile, rectOf, sizeText, unionTiles, coveredCells, outlineOf, pillsOf, fitLabel, placePill as pillBox, LABEL_FIT, type AreaPill,
   nextAreaId, nextAreaColor, moveCursor, project, tilePolygon, pts, liveAreas, withOrphans, redrawFailed, AREA_COLORS, AREA_COLOR_NAMES, MAX_AREAS, MAX_RECTS, areaName, drawnZs, CHEST_H,
-  mapHash, parseMapHash, houseHits, tierWord, levelHits, stackPlan, planHead, planRows, planNeighbor, bareText, type Plan, type PlanCard, type PlanGroup, type PlanRow, levelHitText, areaHitText, hitsSummary, searchCount, calloutHead, calloutRow, CALLOUT_MAX, hitsView, elsewhereOf, outsideText,
+  mapHash, parseMapHash, houseHits, tierWord, levelHits, stackPlan, planHead, planRows, planNeighbor, bareText, restName, type Plan, type PlanCard, type PlanGroup, type PlanRow, levelHitText, areaHitText, hitsSummary, searchCount, calloutHead, calloutRow, CALLOUT_MAX, hitsView, elsewhereOf, outsideText,
   type MapRoute, type HouseHits, type HitChest, type HitLine, type Tally, type Elsewhere, type PlainModel, type Tile, type Contents, type ContentsNode, type Marker, type View, type Mode, type Box, type Colour, type ChestView, type Piece, type Prism, type Pt, type Dir } from "./house-map-model.mts";
 import type { AreaRect, ContainerLabel, HouseArea, HouseModel, UiPrefs, HousesApiResponse, HouseMapEntry, HouseMapPutApiResponse, ItemsApiResponse, ItemHitsApiResponse, InventoryData, Stack } from "./api-types.mts";
 import { HIT_LIMIT, type HitRow } from "../item-query.mts";
@@ -885,11 +885,12 @@ function drawPlan(): void {
   planNow = p;
   const foot = p.bare.length ? txt(bareText(p.bare), "t-sm muted") : null;
   if (!p.cards.length) { wrap.replaceChildren(el("p", { class: "muted", id: "map-plan-none" }, zoomed ? `No containers in ${zoomed.name}.` : "No containers on this floor."), ...(foot ? [foot] : [])); return; }
-  // A group's heading: an area's name pill, "Not in an area" for the rest, none when nothing on the level is in an area.
-  const head = (g: PlanGroup): HTMLElement | null => (g.area ? areaPill(g.area, g.containers, tally?.areas.get(g.area.id) ?? null) : p.groups.length > 1 ? box("span", { class: "sp-area-name" }, txt("Not in an area"), txt(String(g.containers), "muted num")) : null);
+  // A group's heading: an area's name pill, the rest's name (restName, as the left pane says it) for the stacks in no area, none when nothing on the level is in an area. While searching, either one counts its matches.
+  const rest = restName(areas, S.level), restTally = tally?.rest ?? null;
+  const head = (g: PlanGroup): HTMLElement | null => (g.area ? areaPill(g.area, g.containers, tally?.areas.get(g.area.id) ?? null) : p.groups.length > 1 ? box("span", { class: "sp-area-name" }, txt(rest), restTally?.matches ? badge(areaHitText(restTally), "best") : txt(String(g.containers), "muted num")) : null);
   const list = box("ol", { class: "sp-groups", role: "list", "aria-label": `Stack plan of ${zoomed ? zoomed.name : `the ${(m.levels[S.level]?.name ?? "level").toLowerCase()}`}, by area` },
     ...p.groups.map((g) => box("li", { class: `sp-area${g.area ? "" : " loose"}`, role: "listitem", ...(g.area ? { "data-area": g.area.id, style: `--area:var(--color-${g.area.color})` } : {}) }, head(g),
-      box("ol", { class: "sp-cards", role: "list", "aria-label": g.area ? `Stacks in ${g.area.name}` : p.groups.length > 1 ? "Stacks not in an area" : "Stacks" }, ...g.cards.map((c) => planCard(m, c, h))))));
+      box("ol", { class: "sp-cards", role: "list", "aria-label": g.area ? `Stacks in ${g.area.name}` : p.groups.length > 1 ? `Stacks in ${rest.toLowerCase()}` : "Stacks" }, ...g.cards.map((c) => planCard(m, c, h))))));
   list.addEventListener("click", (e) => {
     const t = e.target as Element, card = t.closest<HTMLElement>("[data-stack]"), row = t.closest<HTMLElement>("[data-chest]");
     if (!card) return;

@@ -1473,7 +1473,7 @@ test("[slow] House map Stack plan: lists every container of the dense vault, a c
     assert.equal(await page.locator("#map-plan .sp-card").count(), 24);
     assert.deepEqual((await chestsOf(page, "#map-plan .sp-row")).sort((a, b) => a - b), vaultModel.stacks.flatMap((s) => s.serials).sort((a, b) => a - b));
     assert.match(await page.locator("#map-plan .sp-bar").textContent() ?? "", /^Each card is one tile's stack, its containers top first, by area, north to south\..*24 stacks · 120 containers$/);
-    assert.deepEqual(await page.locator("#map-plan .sp-groups > .sp-area > .sp-area-name").evaluateAll((es) => es.map((e) => e.firstChild?.textContent)), ["North row", "Not in an area"], "the area's group, then the stacks in no area");
+    assert.deepEqual(await page.locator("#map-plan .sp-groups > .sp-area > .sp-area-name").evaluateAll((es) => es.map((e) => e.firstChild?.textContent)), ["North row", "Everything else"], "the area's group, then the stacks in no area, named as the left pane names them");
     assert.deepEqual(await page.locator("#map-plan .sp-groups > .sp-area").evaluateAll((es) => es.map((e) => e.querySelectorAll(".sp-card").length)), [5, 19]);
     const nw = vaultModel.stacks.find((s) => s.x === 3001 && s.y === 1001)!, card = page.locator(`#map-plan .sp-card[data-stack="${nw.letter}"]`);
     assert.deepEqual(await chestsOf(page, `#map-plan .sp-card[data-stack="${nw.letter}"] .sp-row`), [...nw.serials].reverse(), "top first");
@@ -1527,6 +1527,7 @@ test("[slow] House map Stack plan: lists every container of the dense vault, a c
 test("[slow] House map Stack plan: a search scrolls to its first matching card, marks the matching rows with the items found, fades the cards with no match and lists the matches in the panel, with no pins; Show on map scrolls to its card (1024 × 768)", async (t) => {
   if (skipWithoutElectron(t)) return;
   const dir = seedRubies();
+  writeFileSync(join(dir, "house-map.json"), JSON.stringify({ version: 1, houses: { [VAULT]: { name: "", bounds: VAULT_BOUNDS, areas: [{ id: "a1", name: "North row", level: 0, color: "area-3", rects: [{ x0: 3001, y0: 1001, x1: 3005, y1: 1001 }] }] } } }));
   const { page, errors, close } = await launch(dir, { want: { width: 1024, height: 768 } });
   try {
     await go(page, `#/map/${VAULT}`, "#map-svg .map-stack");
@@ -1547,6 +1548,7 @@ test("[slow] House map Stack plan: a search scrolls to its first matching card, 
     assert.deepEqual((await chestsOf(page, "#map-plan .sp-row.hit")).sort(), [FILLED.at(-1)!, RUBY_FRONT].sort());
     assert.equal(await page.locator("#map-plan .sp-card.has-hit").count(), 2);
     assert.equal(await page.locator("#map-plan .sp-card.faded").count(), 22);
+    assert.deepEqual(await page.locator("#map-plan .sp-groups > .sp-area > .sp-area-name").evaluateAll((es) => es.map((e) => e.textContent)), ["North row1 of 25", "Everything else1 of 95"], "each group's heading counts its matches, the stacks in no area too");
     assert.deepEqual(await page.locator(`#map-plan .sp-row[data-chest="${RUBY_FRONT}"] .sp-hit`).evaluateAll((es) => es.map((e) => [e.querySelector(".gi-name")?.textContent, e.querySelector(".num")?.textContent])), [["Ruby", " × 1"]]);
     assert.equal(await page.locator(`#map-plan .sp-row[data-chest="${RUBY_FRONT}"] .sp-hitline .sr`).count(), 0, "one find: nothing hidden to add, and no tier for a name of its own");
     assert.equal(await page.locator(`#map-plan .sp-row[data-chest="${RUBY_FRONT}"] .sp-hitline .sp-more`).count(), 0, "nothing more to say with one item");
