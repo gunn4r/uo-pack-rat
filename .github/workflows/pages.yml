@@ -67,6 +67,10 @@ jobs:
       - name: Write latest.json
         # Fails when a platform's asset is missing or matches twice, so a renamed asset can't break a button unnoticed.
         run: node scripts/site-latest.mts "$RUNNER_TEMP/release/release.json" "$RUNNER_TEMP/release/SHA256SUMS" --out "$RUNNER_TEMP/release/latest.json"
+      - name: Generate the schema types
+        # The demo's UI build typechecks against app/schema/types.d.mts, which is generated, not committed (as in ci.yml,
+        # where `npm run typecheck` makes it first).
+        run: npm run build:types
       - name: Record the live demo
         # The real page on the demo characters, recorded off a real server in headless Chrome (the runner's own), so the
         # demo is always this commit's app. It fails if the recording holds a machine path or a character not in the demo.
