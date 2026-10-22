@@ -363,15 +363,33 @@ test("[fast] the release build job as a whole holds no token and no write scope"
   assert.doesNotMatch(job, /GH_TOKEN|GITHUB_TOKEN|secrets\.|: write/, "the build job never sees a token or a write scope");
 });
 
-test("[fast] every action both workflows use is pinned to a full commit sha, and says which tag that was", () => {
+test("[fast] every action every workflow uses is pinned to a full commit sha, and says which tag that was", () => {
   // A mutable tag (`@v4`) is whatever that tag points at on the day CI runs, in a job that can build
   // the installers players download. The trailing `# vX.Y.Z` comment is what makes a pin reviewable
   // and renewable — a bare sha with no note of its version is a pin nobody dares update.
-  for (const name of ["ci.yml", "release.yml"]) {
+  const names = readdirSync(join(root, ".github/workflows")).filter((f) => f.endsWith(".yml"));
+  assert.ok(names.includes("pages.yml"), "the website's workflow is checked too");
+  for (const name of names) {
     for (const line of workflow(name).split("\n").filter((l) => /^\s*-?\s*uses:/.test(l))) {
       assert.match(line, /uses: \S+@[0-9a-f]{40} +# +v\d/, `${name}: pin to a sha and name the tag — ${line.trim()}`);
     }
   }
+});
+
+test("[fast] the Pages workflow reads only, but for its deploy job's pages and id-token scopes, and fails on a missing platform", () => {
+  // The site deploys on a release, a change to main or a run by hand, and a pull request only builds it; only the deploy
+  // job may write, and only to Pages.
+  const pages = workflow("pages.yml");
+  assert.match(pages, /\non:\n {2}release:\n {4}types: \[published\]/, "a published release redeploys the site");
+  assert.match(pages, /workflow_dispatch/);
+  assert.match(pages, /\n {2}pull_request:\n {4}paths:/, "a pull request touching the site builds it");
+  assert.match(pages, /\npermissions:\n {2}contents: read\n/, "the workflow's default is read-only");
+  const build = pages.match(/\n {2}build:\n([\s\S]*?)\n {2}deploy:/)?.[1] ?? "";
+  assert.doesNotMatch(build, /: write/, "the build job writes nothing");
+  const deploy = pages.match(/\n {2}deploy:\n([\s\S]*)$/)?.[1] ?? "";
+  assert.match(deploy, /\n {4}permissions:\n {6}pages: write\n {6}id-token: write\n/, "the deploy job gets exactly pages and id-token");
+  assert.match(deploy, /\n {4}if: github\.event_name != 'pull_request'\n/, "a pull request's run never deploys");
+  assert.match(build, /node scripts\/site-latest\.mts/, "latest.json comes from site-latest.mts, which fails on a missing or doubled platform");
 });
 
 test("[fast] the release workflow can be run by hand to rehearse a build, without publishing anything", () => {

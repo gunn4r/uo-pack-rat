@@ -38,7 +38,9 @@
     "test": "node scripts/test-runner.mts",
     "test:smoke": "node scripts/test-runner.mts --smoke",
     "test:fast": "node scripts/test-runner.mts --fast",
-    "readme:shots": "node scripts/readme-shots.mts"
+    "readme:shots": "node scripts/readme-shots.mts",
+    "site:shots": "node scripts/site-shots.mts",
+    "site:build": "node scripts/site-build.mts"
   },
   "dependencies": {
     "highs": "1.15.4"
