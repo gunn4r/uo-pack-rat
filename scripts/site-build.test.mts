@@ -63,3 +63,13 @@ test("[fast] site-build: refuses to build inside site/ or into a folder that isn
   writeFileSync(join(out, "full", "x"), "");
   assert.throws(() => buildSite({ out: join(out, "full") }), /not empty/);
 });
+
+test("[fast] site-build: the character section's tooltip is the Mighty Ring's own, every line from the demo fixture and nothing else", () => {
+  const html = readFileSync(join(ROOT, "site", "index.html"), "utf8");
+  const box = /<div class="tip" data-item="Mighty Ring">(.*?)<\/div>/.exec(html)?.[1] ?? "";
+  const shown = [...box.matchAll(/<span[^>]*>([^<]*)<\/span>/g)].map((m) => m[1]!);
+  const fixture = JSON.parse(readFileSync(join(ROOT, "app", "fixtures", "demo-Dorran.json"), "utf8"));
+  const ring = JSON.stringify(fixture).match(/"name":"Mighty Ring"[^}]*"tooltip":(\[[^\]]*\])/);
+  assert.ok(ring, "the Mighty Ring is in the demo fixture");
+  assert.deepEqual([...shown].sort(), [...(JSON.parse(ring[1]!) as string[])].sort());
+});
