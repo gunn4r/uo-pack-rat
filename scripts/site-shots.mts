@@ -72,14 +72,13 @@ async function shareImage(browser: Browser): Promise<void> {
   const data = (path: string, type: string): string => `data:${type};base64,${readFileSync(join(ROOT, path)).toString("base64")}`;
   const face = (family: string, file: string, weight: string, style = "normal"): string => `@font-face { font-family: "${family}"; font-style: ${style}; font-weight: ${weight}; src: url("${data(`site/fonts/${file}`, "font/woff2")}"); }`;
   const html = `<style>
-    ${face("Cormorant Garamond", "cormorant-garamond-latin-500-600-normal.woff2", "500 600")}
-    ${face("Cormorant Garamond", "cormorant-garamond-latin-500-italic.woff2", "500", "italic")}
+    ${face("Grenze Gotisch", "grenze-gotisch-latin-500-600-normal.woff2", "500 600")}
     ${face("Alegreya Sans", "alegreya-sans-latin-400-normal.woff2", "400")}
     body { margin: 0; width: 1200px; height: 630px; background: #140f0a; color: #f4ead2; font-family: "Alegreya Sans", sans-serif; overflow: hidden; position: relative; }
     .copy { position: absolute; left: 72px; top: 92px; width: 520px; }
     .copy img { width: 112px; height: 112px; filter: drop-shadow(0 18px 30px rgb(216 177 85 / .3)); }
-    h1 { font: 500 76px/0.98 "Cormorant Garamond", serif; margin: 34px 0 22px; }
-    h1 em { display: block; font-style: italic; color: #b49e78; }
+    h1 { font: 500 76px/0.98 "Grenze Gotisch", serif; margin: 34px 0 22px; }
+    h1 em { display: block; font-style: normal; color: #b49e78; }
     p { font-size: 26px; color: #dccba7; margin: 0; }
     .shot { position: absolute; left: 640px; top: 70px; width: 760px; border-radius: 6px; box-shadow: 0 0 0 1px #46341f, 0 0 0 7px #1f170f, 0 0 0 8px #46341f, 0 40px 80px -30px #000; }
   </style>

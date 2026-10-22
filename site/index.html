@@ -25,8 +25,7 @@
    mode; an old-style serif, grain, and the in-game item tooltip as its signature. Screenshots come in pairs (Britannia
    dark, Default light) and follow the page's mode. The download buttons work without JS (the latest release on GitHub);
    the script fills in each platform's file from latest.json, which the Pages workflow writes. */
-@font-face { font-family: "Cormorant Garamond"; font-style: normal; font-weight: 500 600; font-display: swap; src: url("fonts/cormorant-garamond-latin-500-600-normal.woff2") format("woff2"); }
-@font-face { font-family: "Cormorant Garamond"; font-style: italic; font-weight: 500; font-display: swap; src: url("fonts/cormorant-garamond-latin-500-italic.woff2") format("woff2"); }
+@font-face { font-family: "Grenze Gotisch"; font-style: normal; font-weight: 500 600; font-display: swap; src: url("fonts/grenze-gotisch-latin-500-600-normal.woff2") format("woff2"); }
 @font-face { font-family: "Alegreya Sans"; font-style: normal; font-weight: 400; font-display: swap; src: url("fonts/alegreya-sans-latin-400-normal.woff2") format("woff2"); }
 @font-face { font-family: "Alegreya Sans"; font-style: italic; font-weight: 400; font-display: swap; src: url("fonts/alegreya-sans-latin-400-italic.woff2") format("woff2"); }
 @font-face { font-family: "Alegreya Sans"; font-style: normal; font-weight: 500; font-display: swap; src: url("fonts/alegreya-sans-latin-500-normal.woff2") format("woff2"); }
@@ -40,7 +39,7 @@
   --tip-bg: rgb(6 6 6 / .93); --tip-fg: #efe8d8; --tip-dim: #b3a585; --tip-edge: #5d5240;
   --t-lesser: #20e31c; --t-greater: #1cb5b7; --t-major: #549fff; --t-m-art: #ff8000; --t-l-art: #c680f4;
   --shell-bg: #0e0a06; --shell-line: #33261a;
-  --serif: "Cormorant Garamond", "Iowan Old Style", Georgia, serif;
+  --serif: "Grenze Gotisch", "Iowan Old Style", Georgia, serif;
   --body: "Alegreya Sans", "Gill Sans", "Trebuchet MS", ui-sans-serif, sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
   color-scheme: dark;
@@ -66,6 +65,8 @@ a { color: inherit; }
 h1, h2, h3 { margin: 0; font-family: var(--serif); font-weight: 500; text-wrap: balance; }
 p { margin: 0; }
 em { font-style: italic; color: var(--faint); }
+/* The heading face has no italic: a heading's second line is set apart by colour alone, never a faked oblique. */
+h1 em, h2 em, h3 em { font-style: normal; font-synthesis: none; }
 .wrap { width: 100%; max-width: 76rem; margin-inline: auto; }
 .band { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
 .label { font: 700 12px/1 var(--body); letter-spacing: .2em; text-transform: uppercase; color: var(--brass); }
@@ -91,9 +92,13 @@ em { font-style: italic; color: var(--faint); }
 .plate figcaption b { font-style: normal; color: var(--muted); font-weight: 500; }
 
 /* nav + hero */
-.nav { border-bottom: 1px solid var(--line-soft); }
+.nav { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; border-bottom: 1px solid var(--line-soft); transition: transform .2s ease, background-color .2s ease, border-color .2s ease; }
+/* Scrolled: solid, so the page doesn't show through. Hidden while scrolling down, never while it holds focus. */
+.nav.is-stuck { background: var(--ground); border-bottom-color: var(--line); }
+.nav.is-hidden:not(:focus-within) { transform: translateY(calc(-100% - env(safe-area-inset-top, 0px))); }
+main [id] { scroll-margin-top: calc(var(--nav-h, 74px) + 16px); }
 .nav .wrap { display: flex; align-items: center; gap: 12px 28px; padding-block: 16px; }
-.brand { display: flex; align-items: center; gap: 12px; text-decoration: none; font: 600 24px/1 var(--serif); flex: none; }
+.brand { display: flex; align-items: center; gap: 12px; text-decoration: none; font: 600 26px/1 var(--serif); flex: none; }
 .brand img { width: 40px; height: 40px; border-radius: 50%; box-shadow: 0 0 0 2px #c9a24a; flex: none; }   /* the app's sidebar mark in its brass ring (components.css .brand img) */
 .nav nav { display: flex; gap: 24px; font-size: 16px; color: var(--muted); }
 .nav nav a { text-decoration: none; }
@@ -120,7 +125,7 @@ em { font-style: italic; color: var(--faint); }
 .shard-note a { color: var(--brass); }
 .hero .wrap { padding-block: 32px 96px; display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: 40px 56px; align-items: center; }
 .hero-copy { display: grid; grid-template-columns: minmax(0, 1fr); gap: 22px; }
-.hero h1 { font-size: clamp(44px, 5.4vw, 80px); line-height: .95; letter-spacing: -.01em; }
+.hero h1 { font-size: calc(clamp(44px, 5.4vw, 80px) * 1.08); line-height: .95; letter-spacing: -.01em; }
 .hero h1 .h1-a, .hero h1 em { display: block; }
 @media (min-width: 900px) { .hero h1 .h1-a { white-space: nowrap; } }
 .hero .lede { font-size: 21px; color: var(--muted); }
@@ -465,6 +470,24 @@ em { font-style: italic; color: var(--faint); }
       tabs.forEach(function (o) { var on = o === t; o.setAttribute("aria-selected", String(on)); document.getElementById(o.getAttribute("aria-controls")).hidden = !on; });
     });
   });
+
+  /* The header: hides on the way down (past its own height, after 8px), comes back after 8px up. */
+  var nav = document.querySelector(".nav"), lastY = window.scrollY, turnY = lastY, lastDir = 0, hidden = false, queued = false;
+  function placeNav() {
+    queued = false;
+    var y = Math.max(0, window.scrollY), h = nav.offsetHeight, dir = y > lastY ? 1 : y < lastY ? -1 : 0;
+    if (dir && dir !== lastDir) { turnY = lastY; lastDir = dir; }
+    if (y <= h + 8) hidden = false;
+    else if (dir === 1 && y - turnY > 8) hidden = true;
+    else if (dir === -1 && turnY - y > 8) hidden = false;
+    lastY = y;
+    nav.classList.toggle("is-stuck", y > 0);
+    nav.classList.toggle("is-hidden", hidden);
+    document.documentElement.style.setProperty("--nav-h", h + "px");
+  }
+  window.addEventListener("scroll", function () { if (!queued) { queued = true; requestAnimationFrame(placeNav); } }, { passive: true });
+  window.addEventListener("resize", placeNav, { passive: true });
+  placeNav();
 
   function mode() {
     var t = document.documentElement.getAttribute("data-theme");
