@@ -75,7 +75,7 @@ def rfc3339_now():
 
 # BEGIN generated: manifest
 ADAPTER_ID = "razor-enhanced"
-ADAPTER_VERSION = "1.13.2"
+ADAPTER_VERSION = "1.13.3"
 CAPABILITIES = {
     "layers": ["RightHand", "LeftHand", "Shoes", "Pants", "Shirt", "Head", "Gloves", "Ring",
                "Talisman", "Neck", "Waist", "InnerTorso", "Bracelet", "MiddleTorso", "Earrings",

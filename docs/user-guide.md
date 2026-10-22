@@ -76,7 +76,7 @@ TazUO scripts require **TazUO v26.0923.64 or later**; update TazUO from its laun
 
 The setup window puts these scripts in your client's scripts folder (which ones depends on the client):
 
-- **`packrat-scanner.py`**: the full scan. It reads what you wear, your backpack, and every chest and bag within 3 tiles, including bags inside them. With your bank box open it reads the bank instead of nearby chests. Trash barrels and chests are skipped.
+- **`packrat-scanner.py`**: the full scan. It reads what you wear, your backpack, and every chest and bag within 2 tiles, including bags inside them. A chest 3 tiles away is read only if your client already shows its contents, since the game won't open it from there. With your bank box open it reads the bank instead of nearby chests. Trash barrels and chests are skipped.
 - **`packrat-character-refresh.py`**: a quick refresh of your stats, skills, worn gear and backpack. It takes a few seconds and works anywhere.
 - **`packrat-house-map-refresh.py`** (TazUO only): records just the house you stand in for the **House map**: its floors and walls, furniture and where every chest stands. It opens nothing and leaves the inventory as it was.
 - **`packrat-bridge.py`**: makes the app's **Highlight**, **Grab** and **Go to** buttons work. Start it and leave it running; it stops on its own after 8 hours.

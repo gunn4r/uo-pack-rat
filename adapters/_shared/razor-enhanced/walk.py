@@ -55,13 +55,15 @@ def container_entry(cont, root_serial, opened):
     return entry
 
 
-def scan_root(root_item, kind, label, containers, items, seen):
+def scan_root(root_item, kind, label, containers, items, seen, reach=True):
     """Open root_item and every nested container inside it, breadth-first, up to MAX_NEST levels
     deep, listing everything. Returns (item_count, opened) -- opened=False means the root itself
     could not be opened (too far, locked, a slow server): the app's fold then keeps whatever it last
     knew about this root instead of wiping it (see docs/scan-schema.md's Fold rules). A bag INSIDE
     the root that did not open, or sits deeper than MAX_NEST, is recorded with "opened": False, and
-    the fold keeps whatever it last knew inside that one bag while the rest of the root updates."""
+    the fold keeps whatever it last knew inside that one bag while the rest of the root updates. Out of
+    `reach` (a ground container past the scanner's OPEN_RANGE) nothing is opened or waited on, since the
+    server would refuse: only what the client already holds is read."""
     root_serial = as_int(getattr(root_item, "Serial", 0))
     queue = [root_item]
     seen_containers = set()
@@ -75,11 +77,13 @@ def scan_root(root_item, kind, label, containers, items, seen):
             if cserial in seen_containers:
                 continue
             seen_containers.add(cserial)
-            note_if_closed(cont)
-            try:
-                arrived = bool(Items.WaitForContents(cont, CONTENTS_WAIT_MS))
-            except Exception:
-                arrived = False
+            arrived = False
+            if reach:
+                note_if_closed(cont)
+                try:
+                    arrived = bool(Items.WaitForContents(cont, CONTENTS_WAIT_MS))
+                except Exception:
+                    arrived = False
             try:
                 kids = list(cont.Contains or [])
             except Exception:
