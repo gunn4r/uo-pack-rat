@@ -201,6 +201,24 @@ main [id] { scroll-margin-top: calc(var(--nav-h, 74px) + 16px); }
 .head-l p { color: var(--muted); }
 .head-l p b, .copy p b { color: var(--ink); font-weight: 700; }
 
+
+/* the real app in a window */
+.window { border: 1px solid var(--line); background: var(--paper); border-radius: 8px; overflow: hidden; box-shadow: var(--plate-shadow); }
+.window-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 10px 14px; border-bottom: 1px solid var(--line); font-size: 14px; color: var(--faint); }
+.window-bar .dots { display: flex; gap: 6px; }
+.window-bar .dots i { width: 11px; height: 11px; border-radius: 50%; background: var(--line); }
+.window-bar nav { display: flex; flex-wrap: wrap; gap: 4px; margin-left: auto; }
+.window-bar button { font: 500 14px var(--body); background: transparent; color: var(--muted); border: 1px solid transparent; border-radius: 4px; padding: 5px 10px; cursor: pointer; }
+.window-bar button[aria-pressed="true"] { border-color: var(--brass); color: var(--brass); }
+.window iframe { display: block; width: 100%; height: 760px; border: 0; background: #1a120b; }
+/* The live app is dense: let its window break out of the page column, up to 1680px wide, shrinking with the screen. */
+.window.window-live { --app-w: min(1680px, calc(100vw - 48px)); width: var(--app-w); margin-inline: calc((100% - var(--app-w)) / 2); }
+.window.window-live iframe { height: clamp(760px, 86vh, 1080px); }
+.window-note { font-size: 15px; color: var(--faint); text-align: center; }
+.window-live[hidden] { display: none; }
+/* The screenshot stands in for the live app on a phone, and wherever the demo isn't there to load. */
+@media (min-width: 761px) { .has-demo .window-phone { display: none; } }
+
 /* inventory book: tabs over one plate */
 .book { border: 1px solid var(--line); background: var(--paper); padding: 10px; position: relative; }
 .book::before { content: ""; position: absolute; inset: 4px; border: 1px solid var(--line-soft); pointer-events: none; }
@@ -272,6 +290,7 @@ main [id] { scroll-margin-top: calc(var(--nav-h, 74px) + 16px); }
   .get { padding: 32px 22px; }
 }
 @media (max-width: 760px) {
+  .window-live { display: none !important; }
   .nav nav, .kofi-btn span { display: none; }
   .kofi-btn { padding: 0 11px; }
   .spread { grid-template-columns: minmax(0, 1fr); }
@@ -309,6 +328,7 @@ main [id] { scroll-margin-top: calc(var(--nav-h, 74px) + 16px); }
 <header class="nav band"><div class="wrap">
   <a class="brand" href="#top"><img src="img/logo-mark.png" alt="" width="40" height="40">Pack Rat</a>
   <nav aria-label="Site">
+    <a href="#try">Try it</a>
     <a href="#download">Download</a>
     <a href="https://github.com/gunn4r/uo-pack-rat/blob/main/docs/user-guide.md">User guide</a>
     <a href="https://github.com/gunn4r/uo-pack-rat/blob/main/CHANGELOG.md">Changelog</a>
@@ -405,6 +425,23 @@ main [id] { scroll-margin-top: calc(var(--nav-h, 74px) + 16px); }
         <span class="dim">Weight: 0 stones</span>
       </div>
     </div>
+  </div></section>
+
+  <section class="sec band" id="try"><div class="wrap">
+    <div class="head"><span class="label">Try it here</span><h2>This is the real app, <em>running on two demo characters.</em></h2><p>Search for “lower reagent”, open a ring, look up Dorran, find the katana in the house.</p></div>
+    <div class="window window-live" hidden>
+      <div class="window-bar"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span>Pack Rat · demo data</span>
+        <nav aria-label="Jump to a screen" data-app-nav>
+          <button type="button" data-route="inventory" aria-pressed="true">Inventory</button>
+          <button type="button" data-route="characters/Dorran" aria-pressed="false">Dorran</button>
+          <button type="button" data-route="map" aria-pressed="false">House map</button>
+          <button type="button" data-route="builder" aria-pressed="false">Suit Builder</button>
+        </nav>
+      </div>
+      <iframe data-app title="The Pack Rat app on demo data"></iframe>
+    </div>
+    <p class="window-note window-live" hidden>Item icons and the paperdoll are drawn from your own Ultima Online client once you install, so they're blank here.</p>
+    <figure class="plate window-phone"><img class="d" src="img/inventory.webp" width="1600" height="1087" loading="lazy" alt="The Inventory searched for ring: rarity-colored names, Cursed and Prized tags, and the Arcane Ring's properties and location"><img class="l" src="img/inventory-light.webp" width="1600" height="1087" loading="lazy" alt="The Inventory searched for ring: rarity-colored names, Cursed and Prized tags, and the Arcane Ring's properties and location"><figcaption>On a computer, this is the app itself to try. Here, the Inventory searched for “ring”.</figcaption></figure>
   </div></section>
 
   <section class="sec band" id="inventory"><div class="wrap">
@@ -591,6 +628,42 @@ main [id] { scroll-margin-top: calc(var(--nav-h, 74px) + 16px); }
     return t === "light" || t === "dark" ? t : window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
   }
 
+
+  /* The live demo: the real app on recorded demo data (demo/, built by scripts/site-demo.mts), shown on screens wide
+     enough for it once it's there; otherwise the screenshot stands in. It follows the page's light/dark: Britannia dark,
+     Default light. */
+  var frame = document.querySelector("[data-app]"), route = "inventory", live = document.querySelectorAll(".window-live");
+  function loadApp() { if (!frame.dataset.on) return; var m = mode(); frame.src = "demo/?theme=" + (m === "light" ? "default" : "britannia") + "&appearance=" + m + "#/" + route; }
+  if (window.matchMedia("(min-width: 761px)").matches) {
+    fetch("demo/demo-data.json", { method: "HEAD" }).then(function (r) {
+      if (!r.ok) return;
+      live.forEach(function (el) { el.hidden = false; });
+      document.documentElement.classList.add("has-demo");
+      frame.dataset.on = "1";
+      loadApp();
+    }).catch(function () {});
+  }
+  document.querySelectorAll("[data-app-nav] button").forEach(function (b) {
+    b.addEventListener("click", function () {
+      route = b.dataset.route;
+      document.querySelectorAll("[data-app-nav] button").forEach(function (o) { o.setAttribute("aria-pressed", String(o === b)); });
+      try { frame.contentWindow.location.hash = "#/" + route; } catch (e) { loadApp(); }
+    });
+  });
+  // The app opens on a search for "ring" with one ring open, so the first look shows rarity colors and a tooltip.
+  frame.addEventListener("load", function () {
+    if (route !== "inventory") return;
+    var tries = 0, t = setInterval(function () {
+      var d; try { d = frame.contentDocument; } catch (e) { clearInterval(t); return; }
+      var box = d && d.querySelector("#f-text");
+      if (box && d.querySelector("#inv-table tbody tr.item")) {
+        clearInterval(t);
+        box.value = "ring"; box.dispatchEvent(new Event("input", { bubbles: true }));
+        setTimeout(function () { var row = d.querySelectorAll("#inv-table tbody tr.item")[2]; if (row) row.click(); }, 700);
+      } else if (++tries > 40) clearInterval(t);
+    }, 250);
+  });
+
   // Light/dark: a saved choice wins, else the system's. data-theme on <html> is what the color tokens read;
   // data-mode always says which one is showing (the toggle's icon).
   var media = window.matchMedia("(prefers-color-scheme: light)"), toggle = document.querySelector("[data-theme-toggle]");
@@ -600,12 +673,12 @@ main [id] { scroll-margin-top: calc(var(--nav-h, 74px) + 16px); }
     toggle.setAttribute("aria-label", m === "dark" ? "Switch to light mode" : "Switch to dark mode");
   }
   paintMode();
-  media.addEventListener("change", function () { if (!document.documentElement.hasAttribute("data-theme")) paintMode(); });
+  media.addEventListener("change", function () { if (!document.documentElement.hasAttribute("data-theme")) { paintMode(); loadApp(); } });
   toggle.addEventListener("click", function () {
     var next = mode() === "dark" ? "light" : "dark";
     document.documentElement.setAttribute("data-theme", next);
     try { localStorage.setItem("packrat-theme", next); } catch (e) {}
-    paintMode();
+    paintMode(); loadApp();
   });
 })();
 </script>

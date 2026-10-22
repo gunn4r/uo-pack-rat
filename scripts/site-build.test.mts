@@ -1,4 +1,4 @@
-// site-build.test.mts — the website as it deploys (scripts/site-build.mts): every file the page links resolves in the built folder, latest.json lands beside it, the download buttons work without it, and the build refuses a folder inside site/ or one already full.
+// site-build.test.mts — the website as it deploys (scripts/site-build.mts): every file the page links resolves in the built folder, latest.json and the recorded demo land beside it, the download buttons work without it, and the build refuses a folder inside site/ or one already full.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -42,6 +42,16 @@ test("[fast] site-build: latest.json is copied in, and every download button lin
   const buttons = [...html.matchAll(/<a [^>]*data-key="([^"]+)"[^>]*href="([^"]+)"/g)];
   assert.deepEqual(buttons.map((m) => m[1]).sort(), ["linux", "mac-arm64", "mac-x64", "win", "win-portable"]);
   for (const [, key, href] of buttons) assert.equal(href, "https://github.com/gunn4r/uo-pack-rat/releases/latest", key);
+});
+
+test("[fast] site-build: the recorded demo goes in demo/, beside the shim from site/demo/", (t) => {
+  const out = mkdtempSync(join(tmpdir(), "packrat-site-"));
+  t.after(() => rmSync(out, { recursive: true, force: true }));
+  mkdirSync(join(out, "rec"));
+  writeFileSync(join(out, "rec", "demo-data.json"), "{}");
+  buildSite({ out: join(out, "site"), demo: join(out, "rec") });
+  assert.ok(existsSync(join(out, "site", "demo", "demo-data.json")));
+  assert.ok(existsSync(join(out, "site", "demo", "shim.mjs")), "the shim comes from site/demo/");
 });
 
 test("[fast] site-build: refuses to build inside site/ or into a folder that isn't empty", (t) => {

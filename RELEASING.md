@@ -74,7 +74,7 @@ The checklist, in order:
 
 The website (`site/`, https://gunn4r.github.io/uo-pack-rat/) needs no step of its own. Publishing the release (step 9) runs `.github/workflows/pages.yml`, which reads the latest published release with `gh release view`, writes `latest.json` with `scripts/site-latest.mts` (each download button's file, URL, size and SHA-256 from `SHA256SUMS`) and deploys the site with it. A draft or a prerelease is never "latest", so it never reaches the page. The run fails, and the site keeps its last deploy, if a platform's asset is missing or two assets match one: check the run under Actions after publishing.
 
-To redeploy by hand (after a failed run, or for a change without a release), run the **Pages** workflow from the Actions tab (`workflow_dispatch`) on `main`, or `gh workflow run pages.yml`. A change to `site/` merged to main deploys by itself. GitHub Pages must deploy from GitHub Actions (*Settings → Pages → Source*), and the `github-pages` environment must allow `main` and tags `v*`, or a release's deploy is refused.
+To redeploy by hand (after a failed run, or for a change without a release), run the **Pages** workflow from the Actions tab (`workflow_dispatch`) on `main`, or `gh workflow run pages.yml`. A change to `site/` or `app/` on main deploys by itself, recording the live demo (`scripts/site-demo.mts`). GitHub Pages must deploy from GitHub Actions (*Settings → Pages → Source*), and the `github-pages` environment must allow `main` and tags `v*`, or a release's deploy is refused.
 
 ## Verifying a download
 
