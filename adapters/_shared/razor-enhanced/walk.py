@@ -63,7 +63,9 @@ def scan_root(root_item, kind, label, containers, items, seen, reach=True):
     the root that did not open, or sits deeper than MAX_NEST, is recorded with "opened": False, and
     the fold keeps whatever it last knew inside that one bag while the rest of the root updates. Out of
     `reach` (a ground container past the scanner's OPEN_RANGE) nothing is opened or waited on, since the
-    server would refuse: only what the client already holds is read."""
+    server would refuse: only what the client already holds is read, and a container whose documented
+    Item.ContainerOpened flag is set (its contents arrived this session) counts as arrived, so one that
+    is empty is recorded empty."""
     root_serial = as_int(getattr(root_item, "Serial", 0))
     queue = [root_item]
     seen_containers = set()
@@ -77,7 +79,8 @@ def scan_root(root_item, kind, label, containers, items, seen, reach=True):
             if cserial in seen_containers:
                 continue
             seen_containers.add(cserial)
-            arrived = False
+            # out of reach: arrived when RE says the contents came in this session (Item.ContainerOpened)
+            arrived = not reach and bool(getattr(cont, "ContainerOpened", False))
             if reach:
                 note_if_closed(cont)
                 try:

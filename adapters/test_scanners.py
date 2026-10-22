@@ -1080,6 +1080,14 @@ class RazorScanner(DataDir, unittest.TestCase):
         self.assertNotIn(CHEST2, self.opened(w))
         self.assertTrue(self.root(s, CHEST2)["opened"])
         self.assertIn(RING + 0x300, [i["serial"] for i in s["items"]])
+        # one opened earlier this session that is empty now is recorded empty (Item.ContainerOpened), not unopened
+        w = World(); home(w)
+        w.add(CHEST2, 0, name="Metal Chest", X=13, Y=10, Opened=True, EverOpened=True)
+        self.scan(w)
+        [s] = self.scans("razor-enhanced")[-1:]
+        self.assertNotIn(CHEST2, self.opened(w))
+        self.assertTrue(self.root(s, CHEST2)["opened"])
+        self.assertEqual(s["containers"][str(CHEST2)]["serial"], CHEST2)
 
     def test_a_root_whose_contents_never_arrive_is_recorded_not_opened(self):
         w = World(); home(w); w.locked.add(CHEST)
