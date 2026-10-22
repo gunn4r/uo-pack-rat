@@ -199,7 +199,7 @@ test("[smoke] css-guard: every color is a token outside tokens.css and britannia
 });
 
 test("[smoke] css-guard: only the composing rule sets box-shadow on the Inventory table's sticky cells", () => {
-  const sticky = /td:(first-child|nth-child\(2\))\s*$/;
+  const sticky = /td(:first-child|:nth-child\(2\)|\.sel-cell)[^,\s]*$/;
   const setters = [...read("inventory.css").matchAll(/([^{}]+)\{([^{}]*)\}/g)]
     .filter(([, sel, body]) => /(^|;)\s*box-shadow\s*:/.test(body!) && splitTop(sel!, /,/).some((x) => /\.(inv|scr)-tbl\b/.test(x) && sticky.test(x)))
     .map(([, sel, body]) => `${sel!.trim()} { ${/box-shadow\s*:([^;]*)/.exec(body!)![1]!.trim()} }`);
