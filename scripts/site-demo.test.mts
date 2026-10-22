@@ -38,21 +38,22 @@ test("[fast] site-demo: framed, the app's focus() keeps the page still and scrol
   const calls: string[] = [];
   class Element { scrollIntoView(): void { calls.push("scroll"); } }
   class HTMLElement extends Element { focus(options?: { preventScroll?: boolean }): void { calls.push(`focus preventScroll=${options?.preventScroll ?? false}`); } }
+  class SVGElement extends Element { focus(options?: { preventScroll?: boolean }): void { calls.push(`svg focus preventScroll=${options?.preventScroll ?? false}`); } }
   const listeners = new Map<string, (e: { isTrusted: boolean }) => void>();
   const win = {
-    HTMLElement, Element,
+    HTMLElement, SVGElement, Element,
     addEventListener: (type: string, fn: (e: { isTrusted: boolean }) => void) => { listeners.set(type, fn); },
     removeEventListener: (type: string) => { listeners.delete(type); },
   };
   holdScroll(win);
-  const el = new HTMLElement();
-  el.focus(); el.scrollIntoView();
-  assert.deepEqual(calls.splice(0), ["focus preventScroll=true"], "held: no scroll of any kind");
+  const el = new HTMLElement(), icon = new SVGElement();
+  el.focus(); icon.focus(); el.scrollIntoView();
+  assert.deepEqual(calls.splice(0), ["focus preventScroll=true", "svg focus preventScroll=true"], "held: no scroll of any kind");
   listeners.get("pointerdown")!({ isTrusted: false });
   el.focus(); el.scrollIntoView();
   assert.deepEqual(calls.splice(0), ["focus preventScroll=true"], "a scripted click is not the visitor");
   listeners.get("keydown")!({ isTrusted: true });
-  el.focus(); el.scrollIntoView();
-  assert.deepEqual(calls.splice(0), ["focus preventScroll=false", "scroll"], "the visitor's key press hands both back");
+  el.focus(); icon.focus(); el.scrollIntoView();
+  assert.deepEqual(calls.splice(0), ["focus preventScroll=false", "svg focus preventScroll=false", "scroll"], "the visitor's key press hands both back");
   assert.equal(listeners.size, 0, "and stops listening");
 });

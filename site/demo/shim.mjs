@@ -23,7 +23,7 @@ window.fetch = async (input, init = {}) => {
   const url = new URL(typeof input === "string" ? input : input.url, location.href);
   if (!url.pathname.startsWith("/api/")) return realFetch(input, init);
   await ready;
-  const method = (init.method || "GET").toUpperCase();
+  const method = (init.method || input.method || "GET").toUpperCase();
   const key = `${method} ${url.pathname}${url.search}`;
   if (rec[key]) return json(rec[key]);
   if (method !== "GET") return json({ ok: true });
@@ -42,6 +42,13 @@ window.fetch = async (input, init = {}) => {
   }
   return json({ ok: false, error: "Not available in the website demo" }, 404);
 };
+
+// Nothing leaves the page: a beacon reports sent and goes nowhere.
+navigator.sendBeacon = () => true;
+// Item art comes from the player's own client: an empty source fails at once, with no request, and the app draws its
+// empty tile and asks no more.
+const setAttribute = Element.prototype.setAttribute;
+Element.prototype.setAttribute = function (name, value) { setAttribute.call(this, name, name === "src" && String(value).startsWith("/api/item-art/") ? "data:," : value); };
 
 // The live-update stream: open and quiet. A Suit Builder job's replays the recorded build: a progress packet, then the
 // finished job ("hello" in its done state), so Build always ends on the same proven suit.

@@ -2,6 +2,7 @@
 export function holdScroll(win: {
   HTMLElement: { prototype: { focus(options?: { preventScroll?: boolean }): void } };
   Element: { prototype: { scrollIntoView(...args: unknown[]): void } };
+  SVGElement?: { prototype: { focus(options?: { preventScroll?: boolean }): void } };
   addEventListener(type: string, listener: (e: { isTrusted: boolean }) => void, capture?: boolean): void;
   removeEventListener(type: string, listener: (e: { isTrusted: boolean }) => void, capture?: boolean): void;
 }): void;
