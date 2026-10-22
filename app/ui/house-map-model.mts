@@ -505,46 +505,28 @@ export function nearestInDirection(from: Pt, cands: ReadonlyArray<{ id: string; 
   return best?.id ?? null;
 }
 
-// ---------------------------------------------------------------- the Stack plan (issue #10)
-// A flat, north-up floor plan of a level: every tile holding a stack is a card at its column and row; each run of empty columns (or rows) between them is squeezed into one narrow track. A track is a span of world tiles: one tile with a stack in it, or an empty run.
-export interface Track { from: number; to: number; empty: boolean }
-// The tracks along one axis, from the coordinates of the tiles holding a stack (any order, repeats allowed): each such tile a track of its own, each run of others between them one empty track. The plan starts and ends on a tile.
-export function planTracks(used: readonly number[]): Track[] {
-  const vs = [...new Set(used)].sort((a, b) => a - b), out: Track[] = [];
-  for (const v of vs) {
-    const last = out[out.length - 1];
-    if (last && v > last.to + 1) out.push({ from: last.to + 1, to: v - 1, empty: true });
-    out.push({ from: v, to: v, empty: false });
-  }
-  return out;
-}
-// The track holding a world coordinate, -1 outside the plan.
-export const trackAt = (tracks: readonly Track[], v: number): number => tracks.findIndex((t) => v >= t.from && v <= t.to);
-export const gapText = (n: number): string => (n === 1 ? "1 tile with nothing on it" : `${n} tiles with nothing on them`);
-// The plan of a level (or of the area zoomed to, `only`, by id): its column and row tracks, a card per stack (in reading order: row by row, west to east, with the area it belongs to), the tile cells between them with nothing on them, the areas holding a container with a box per rectangle in track numbers (clipped to the plan; a box over empty tracks only is left out; the top-left box first, where the area's name goes), the level's areas with no container (`bare`) and how many containers the plan shows.
-export interface PlanCard { stack: Stack; col: number; row: number; area: HouseArea | null }
-export interface PlanBox { col0: number; col1: number; row0: number; row1: number }
-export interface Plan { cols: Track[]; rows: Track[]; cards: PlanCard[]; empties: Array<{ col: number; row: number }>; areas: Array<{ area: HouseArea; containers: number; boxes: PlanBox[] }>; bare: string[]; containers: number }
+// ---------------------------------------------------------------- the Stack plan (issue #10, #531)
+// A level's stacks (or the area zoomed to's, `only`, by id) as a list of cards grouped by the area each belongs to
+// (areaOfStack): the level's areas holding a container in their own order, then the stacks in no area; inside a group,
+// reading order (north to south, then west to east). Also the level's areas with no container (`bare`), every card in
+// list order (`cards`, for the arrow keys) and how many containers the plan shows. A tile with nothing on it has no card.
+export interface PlanCard { stack: Stack; area: HouseArea | null }
+export interface PlanGroup { area: HouseArea | null; containers: number; cards: PlanCard[] }
+export interface Plan { groups: PlanGroup[]; cards: PlanCard[]; bare: string[]; containers: number }
 export function stackPlan(m: Pick<HouseModel, "stacks">, areas: readonly HouseArea[], level: number, only: string | null = null): Plan {
   const here = areas.filter((a) => a.level === level && (only == null || a.id === only));
-  const stacks = m.stacks.filter((s) => s.level === level).map((stack) => ({ stack, area: areaOfStack(areas, stack) })).filter((c) => only == null || c.area?.id === only);
-  const cols = planTracks(stacks.map((c) => c.stack.x)), rows = planTracks(stacks.map((c) => c.stack.y));
-  const cards = stacks.map((c): PlanCard => ({ ...c, col: trackAt(cols, c.stack.x), row: trackAt(rows, c.stack.y) })).sort((a, b) => a.row - b.row || a.col - b.col);
-  const taken = new Set(cards.map((c) => `${c.col}:${c.row}`)), empties: Plan["empties"] = [];
-  rows.forEach((r, row) => { if (!r.empty) cols.forEach((c, col) => { if (!c.empty && !taken.has(`${col}:${row}`)) empties.push({ col, row }); }); });
-  // A span of world tiles as the tracks it touches, null when it misses every tile track.
-  const span = (tracks: readonly Track[], lo: number, hi: number): [number, number] | null => {
-    const hit = tracks.flatMap((t, i) => (t.to >= lo && t.from <= hi ? [i] : []));
-    return hit.some((i) => !tracks[i]!.empty) ? [hit[0]!, hit[hit.length - 1]!] : null;
-  };
-  const planAreas: Plan["areas"] = [], bare: string[] = [];
+  const all = m.stacks.filter((s) => s.level === level).map((stack): PlanCard => ({ stack, area: areaOfStack(areas, stack) })).filter((c) => only == null || c.area?.id === only)
+    .sort((a, b) => a.stack.y - b.stack.y || a.stack.x - b.stack.x);
+  const count = (cards: readonly PlanCard[]): number => cards.reduce((n, c) => n + c.stack.serials.length, 0);
+  const groups: PlanGroup[] = [], bare: string[] = [];
   for (const area of here) {
-    const containers = cards.reduce((n, c) => n + (c.area === area ? c.stack.serials.length : 0), 0);
-    if (!containers) { bare.push(area.name); continue; }
-    const boxes = area.rects.flatMap((r): PlanBox[] => { const x = span(cols, r.x0, r.x1), y = span(rows, r.y0, r.y1); return x && y ? [{ col0: x[0], col1: x[1], row0: y[0], row1: y[1] }] : []; });
-    planAreas.push({ area, containers, boxes: boxes.sort((a, b) => a.row0 - b.row0 || a.col0 - b.col0) });
+    const cards = all.filter((c) => c.area === area);
+    if (cards.length) groups.push({ area, containers: count(cards), cards }); else bare.push(area.name);
   }
-  return { cols, rows, cards, empties, areas: planAreas, bare, containers: cards.reduce((n, c) => n + c.stack.serials.length, 0) };
+  const loose = all.filter((c) => !c.area);
+  if (loose.length) groups.push({ area: null, containers: count(loose), cards: loose });
+  const cards = groups.flatMap((g) => g.cards);
+  return { groups, cards, bare, containers: count(cards) };
 }
 export const planHead = (s: Pick<Stack, "letter" | "serials">): { title: string; count: string } => ({ title: `Stack ${s.letter}`, count: plural(s.serials.length, "container") });
 // A card's containers, top first: the code, the label (its name and color) when one renames the container, the in-game name, and the fill out of the container's own maximum, or why it is not known.
@@ -552,10 +534,10 @@ export interface PlanRow { serial: number; code: string; label: { name: string; 
 export const planRows = (views: readonly ChestView[]): PlanRow[] => views.map((v) => ({ serial: v.serial, code: v.code, label: v.color != null || v.name !== v.inGame ? { name: v.name, color: v.color } : null, name: v.inGame, opened: v.opened,
   fill: v.opened ? v.fill : null, fillText: !v.opened ? "Not opened yet" : v.fill ? `${v.fill.items}/${v.fill.max}` : "Fill unknown" }));
 export const bareText = (names: readonly string[]): string => `${names.join(", ")}: no containers.`;
-// The card an arrow key moves to: the nearest that way on the plan's grid (tracks as units, so a squeezed run counts as one), null at the edge.
+// The card an arrow key moves to: the previous one in the plan's list order for up and left, the next for down and right, null at either end.
 export function planNeighbor(p: Pick<Plan, "cards">, letter: string, dir: Dir): string | null {
-  const from = p.cards.find((c) => c.stack.letter === letter);
-  return from ? nearestInDirection([from.col, from.row], p.cards.filter((c) => c !== from).map((c) => ({ id: c.stack.letter, at: [c.col, c.row] as Pt })), dir) : null;
+  const i = p.cards.findIndex((c) => c.stack.letter === letter);
+  return i < 0 ? null : p.cards[dir === "up" || dir === "left" ? i - 1 : i + 1]?.stack.letter ?? null;
 }
 
 // ---------------------------------------------------------------- the plain grid

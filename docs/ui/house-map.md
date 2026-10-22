@@ -311,12 +311,9 @@ The Stack plan (issue #10) is the View control's third option: a flat, text-firs
 
 ### The layout
 
-The middle pane holds `#map-plan` instead of the SVG, so there are no zoom buttons, pan, area labels or callouts. It shows a line "Seen from above, north up. …" with "10 stacks · 28 containers" at its right, then a CSS grid of the level. With an area zoomed to, the grid holds only that area's tiles, and the breadcrumb's level goes back.
+The middle pane holds `#map-plan` instead of the SVG, so there are no zoom buttons, pan, area labels or callouts. It shows a line "Each card is one tile's stack, its containers top first, by area, north to south." with "10 stacks · 28 containers" at its right, then the level's stacks as cards grouped by area (issue #531: a tile with nothing on it takes no room, so a roomy house is not a grid of empty cells). With an area zoomed to, only that area's cards show.
 
-`house-map-model.mts` `stackPlan` works it out:
-
-- `planTracks` makes a track of each column (and row) holding a stack, and squeezes each run of empty ones into one 26 px track (`--plan-gap`), captioned "7 tiles with nothing on them" (`gapText`), turned on its side for a column.
-- Tile tracks are `minmax(168px, 1fr)` (`--plan-card`), so about five cards fit, and a wider plan scrolls inside the pane. Below 1100 px the plan grows with its cards and the page scrolls. It never scrolls sideways on the page.
+`house-map-model.mts` `stackPlan` works it out: each stack's area (`areaOfStack`), a group per area of the level holding a container in the areas' own order, then the stacks in no area; inside a group, reading order (north to south, then west to east). The cards wrap in a grid in each group (`repeat(auto-fill, minmax(168px, 1fr))`); the plan scrolls inside the pane, and below 1100 px it grows with its cards and the page scrolls. It never scrolls sideways on the page.
 
 Whatever the map would zoom to (a "Show on map" stack, or a new search's matches), the plan scrolls into view instead (`scrollPlan`: the stack's card, or the first matching card), leaving the zoom for the map when the view goes back. The "Plain colors" note is not shown there.
 
@@ -329,14 +326,12 @@ Each tile with a stack is a card: "Stack C" and "4 containers" (`planHead`), the
 - the in-game name;
 - a fill bar with "41/125", out of the container's own maximum, or "Not opened yet" / "Fill unknown".
 
-A tile in the plan with nothing on it is a dashed cell.
-
 ### Areas, levels and the plain grid
 
-- An area holding a container is a tint and outline in its color behind its cards (a box per rectangle, clipped to the plan). Its name and container count sit on a pill at its top-left that zooms to it.
+- An area holding a container is a group: a tint and outline in its color around its cards, its name and container count on a pill on its top edge that zooms to it. The stacks in no area come last, in a plain group headed as the left pane names them, "Everything else" (no heading when nothing on the level is in an area). While searching, its heading counts its matches the way the area pills do.
 - The areas with no container are named under the plan ("The Yard: no containers.").
 - A level with no stacks reads "No containers on this floor."
-- The plain grid gets the same plan from its tile positions.
+- The plain grid gets the same plan from its stacks.
 - Between 1100 and 1799 px the levels pane folds as it does for the drawer (`.map-page.plan`), and the area pills carry the areas. Below 1100 px the page stacks as usual.
 - New area and ⋯ › Redraw are disabled there, titled "Switch to Game angle or Top-down to draw". Switching to the plan cancels a drawing or a new area waiting for its name, and a refused redraw does not go back to drawing.
 
@@ -348,9 +343,9 @@ Selection, the panel and the drawer are the map's:
 - a click on a container row selects it and opens that container in the drawer, whose closing gives focus back to the card;
 - the selected card has the accent outline, and the focused card a focus outline drawn over it.
 
-The cards are a list (`ol role="list"`, `display: contents` inside the grid, its items `role="listitem"`, with the squeezed tracks' captions among them in reading order). Each card is a list of its containers, named "Stack C, 4 containers, Loot Corner".
+The plan is a list of groups (`ol.sp-groups role="list"`), each a list of its cards (`ol.sp-cards`, named "Stacks in Loot Corner", items `role="listitem"`). Each card is a list of its containers, named "Stack C, 4 containers, Loot Corner".
 
-One card is the tab stop (roving). The arrow keys move to the nearest card that way on the plan's grid (the map's own `stackKeys`, which asks `planNeighbor` there and `nearestInDirection` on the map). Enter or Space selects, and Esc clears.
+One card is the tab stop (roving). The arrow keys walk the list: up and left to the previous card, down and right to the next, across groups, stopping at either end (the map's own `stackKeys`, which asks `planNeighbor` there and `nearestInDirection` on the map). Enter or Space selects, and Esc clears.
 
 ### While searching
 

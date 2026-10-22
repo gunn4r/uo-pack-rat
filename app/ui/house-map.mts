@@ -22,7 +22,7 @@ import { PLAIN, pickHouse, plainGrid, chestCount, houseLabel, houseName, carryOv
   cutAway, calloutLines, nearestInDirection, houseTotals, legendOf, stackWhere, anchorOf, zoomAt, fillWords, whereOf, whereTitle, cropAround, facetMapUrl, markersOf, facetMapNote, markerRadii,
   drawerChest, drawerMeta, slotsText, drawerPicker, DRAWER_W, DRAWER_MIN, drawerMax, clampDrawer, drawerKey, contentsOf, contentsSummary, filterContents, areaOfStack, levelAreas, tileAt, clampTile, rectOf, sizeText, unionTiles, coveredCells, outlineOf, pillsOf, fitLabel, placePill as pillBox, LABEL_FIT, type AreaPill,
   nextAreaId, nextAreaColor, moveCursor, project, tilePolygon, pts, liveAreas, withOrphans, redrawFailed, AREA_COLORS, AREA_COLOR_NAMES, MAX_AREAS, MAX_RECTS, areaName, drawnZs, CHEST_H,
-  mapHash, parseMapHash, houseHits, tierWord, levelHits, stackPlan, planHead, planRows, planNeighbor, gapText, bareText, type Plan, type PlanCard, type PlanRow, levelHitText, areaHitText, hitsSummary, searchCount, calloutHead, calloutRow, CALLOUT_MAX, hitsView, elsewhereOf, outsideText,
+  mapHash, parseMapHash, houseHits, tierWord, levelHits, stackPlan, planHead, planRows, planNeighbor, bareText, restName, type Plan, type PlanCard, type PlanGroup, type PlanRow, levelHitText, areaHitText, hitsSummary, searchCount, calloutHead, calloutRow, CALLOUT_MAX, hitsView, elsewhereOf, outsideText,
   type MapRoute, type HouseHits, type HitChest, type HitLine, type Tally, type Elsewhere, type PlainModel, type Tile, type Contents, type ContentsNode, type Marker, type View, type Mode, type Box, type Colour, type ChestView, type Piece, type Prism, type Pt, type Dir } from "./house-map-model.mts";
 import type { AreaRect, ContainerLabel, HouseArea, HouseModel, UiPrefs, HousesApiResponse, HouseMapEntry, HouseMapPutApiResponse, ItemsApiResponse, ItemHitsApiResponse, InventoryData, Stack } from "./api-types.mts";
 import { HIT_LIMIT, type HitRow } from "../item-query.mts";
@@ -875,8 +875,8 @@ function paintStacks(): void {
     e.setAttribute("tabindex", letter === roving ? "0" : "-1");
   }
 }
-// ---------------------------------------------------------------- the Stack plan (issue #10)
-// The level (or the area zoomed to) seen from above, north up: a card per stack at its column and row (house-map-model.mts stackPlan), each run of empty tiles squeezed to one narrow captioned track, each area's cards on its tint with its name pill (a click zooms to it; while searching it counts the matches), and under the plan the areas with no container. It is the text-first view: the cards are a list, each a list of its containers top first. One card is the tab stop, the arrow keys move between cards, Enter selects (Esc clears, as on the map); a click on a card selects its stack, on a container row also opens that container in the drawer. While searching, a matching card marks its matching rows and names the items found, the other cards fade.
+// ---------------------------------------------------------------- the Stack plan (issue #10, #531)
+// The level's stacks (or the area zoomed to's) as a list of cards grouped by area (house-map-model.mts stackPlan): each area under its name pill on its tint (a click zooms to it; while searching it counts the matches), then the stacks in no area, and under the list the areas with no container. It is the text-first view for a dense room the drawn map turns into a solid block: a list of groups, each a list of cards, each a list of its containers top first, the cards one roving tab stop (paintPlan) with the arrow keys walking the list.
 let planNow: Plan | null = null;
 function drawPlan(): void {
   const wrap = $<HTMLElement>("#map-plan"), m = S.model;
@@ -885,16 +885,12 @@ function drawPlan(): void {
   planNow = p;
   const foot = p.bare.length ? txt(bareText(p.bare), "t-sm muted") : null;
   if (!p.cards.length) { wrap.replaceChildren(el("p", { class: "muted", id: "map-plan-none" }, zoomed ? `No containers in ${zoomed.name}.` : "No containers on this floor."), ...(foot ? [foot] : [])); return; }
-  const track = (empty: boolean, size: string): string => (empty ? "var(--plan-gap)" : size);
-  const grid = box("div", { class: "sp-grid", style: `grid-template-columns:${p.cols.map((t) => track(t.empty, "minmax(var(--plan-card), 1fr)")).join(" ")};grid-template-rows:${p.rows.map((t) => track(t.empty, "auto")).join(" ")}` });
-  for (const a of p.areas) a.boxes.forEach((b, i) => grid.append(box("div", { class: "sp-area", "data-area": a.area.id, style: `--area:var(--color-${a.area.color});grid-column:${b.col0 + 1} / ${b.col1 + 2};grid-row:${b.row0 + 1} / ${b.row1 + 2}` },
-    i === 0 ? areaPill(a.area, a.containers, tally?.areas.get(a.area.id) ?? null) : null)));
-  for (const e of p.empties) grid.append(el("div", { class: "sp-empty", "aria-hidden": "true", style: `grid-column:${e.col + 1};grid-row:${e.row + 1}` }));
-  // The list reads in the plan's order, row by row: a squeezed column's caption after the first row's card west of it, a squeezed row's before the row under it.
-  const gaps = [...p.cols.flatMap((t, i) => (t.empty ? [{ row: 0, col: i, el: box("li", { class: "sp-gap down", role: "listitem", style: `grid-column:${i + 1};grid-row:1 / -1` }, txt(gapText(t.to - t.from + 1))) }] : [])),
-    ...p.rows.flatMap((t, i) => (t.empty ? [{ row: i, col: -1, el: box("li", { class: "sp-gap", role: "listitem", style: `grid-row:${i + 1};grid-column:1 / -1` }, txt(gapText(t.to - t.from + 1))) }] : []))];
-  const items = [...p.cards.map((c) => ({ row: c.row, col: c.col, el: planCard(m, c, h) })), ...gaps].sort((a, b) => a.row - b.row || a.col - b.col);
-  const list = box("ol", { class: "sp-cards", role: "list", "aria-label": `Stack plan of ${zoomed ? zoomed.name : `the ${(m.levels[S.level]?.name ?? "level").toLowerCase()}`}, north up` }, ...items.map((x) => x.el));
+  // A group's heading: an area's name pill, the rest's name (restName, as the left pane says it) for the stacks in no area, none when nothing on the level is in an area. While searching, either one counts its matches.
+  const rest = restName(areas, S.level), restTally = tally?.rest ?? null;
+  const head = (g: PlanGroup): HTMLElement | null => (g.area ? areaPill(g.area, g.containers, tally?.areas.get(g.area.id) ?? null) : p.groups.length > 1 ? box("span", { class: "sp-area-name" }, txt(rest), restTally?.matches ? badge(areaHitText(restTally), "best") : txt(String(g.containers), "muted num")) : null);
+  const list = box("ol", { class: "sp-groups", role: "list", "aria-label": `Stack plan of ${zoomed ? zoomed.name : `the ${(m.levels[S.level]?.name ?? "level").toLowerCase()}`}, by area` },
+    ...p.groups.map((g) => box("li", { class: `sp-area${g.area ? "" : " loose"}`, role: "listitem", ...(g.area ? { "data-area": g.area.id, style: `--area:var(--color-${g.area.color})` } : {}) }, head(g),
+      box("ol", { class: "sp-cards", role: "list", "aria-label": g.area ? `Stacks in ${g.area.name}` : p.groups.length > 1 ? `Stacks in ${rest.toLowerCase()}` : "Stacks" }, ...g.cards.map((c) => planCard(m, c, h))))));
   list.addEventListener("click", (e) => {
     const t = e.target as Element, card = t.closest<HTMLElement>("[data-stack]"), row = t.closest<HTMLElement>("[data-chest]");
     if (!card) return;
@@ -904,9 +900,8 @@ function drawPlan(): void {
   });
   list.addEventListener("keydown", stackKeys);
   list.addEventListener("focusin", (e) => { const letter = (e.target as HTMLElement).dataset?.stack; if (letter) { S.focus = letter; paintPlan(); } });
-  grid.append(list);
-  wrap.replaceChildren(box("div", { class: "sp-bar" }, txt("Seen from above, north up. Each card is one tile, its containers top first; runs of empty tiles are squeezed.", "t-sm muted"),
-    txt(`${plural(p.cards.length, "stack")} · ${plural(p.containers, "container")}`, "t-sm muted num sp-count")), box("div", { class: "sp-frame" }, grid), ...(foot ? [foot] : []));
+  wrap.replaceChildren(box("div", { class: "sp-bar" }, txt("Each card is one tile's stack, its containers top first, by area, north to south.", "t-sm muted"),
+    txt(`${plural(p.cards.length, "stack")} · ${plural(p.containers, "container")}`, "t-sm muted num sp-count")), list, ...(foot ? [foot] : []));
   paintPlan();
   scrollPlan();
 }
@@ -931,7 +926,7 @@ const lineName = (l: HitLine, lines: readonly HitLine[], size: string, own = fal
 function planCard(m: HouseModel, c: PlanCard, h: HouseHits | null): HTMLElement {
   const s = c.stack, head = planHead(s), hits = h?.stacks.get(s.letter) ?? null;
   const rows = planRows(chestViews(m, s, state.inv!, labels()));
-  return box("li", { class: `sp-card${h ? (hits ? " has-hit" : " faded") : ""}`, role: "listitem", "data-stack": s.letter, tabindex: "-1", style: `grid-column:${c.col + 1};grid-row:${c.row + 1};--code-w:${Math.max(2, ...rows.map((r) => r.code.length))}`,
+  return box("li", { class: `sp-card${h ? (hits ? " has-hit" : " faded") : ""}`, role: "listitem", "data-stack": s.letter, tabindex: "-1", style: `--code-w:${Math.max(2, ...rows.map((r) => r.code.length))}`,
     "aria-label": `${head.title}, ${head.count}${c.area ? `, ${c.area.name}` : ""}${hits ? `, ${plural(hits.length, "match", "matches")}` : ""}` },
     box("div", { class: "sp-card-head" }, txt(head.title, "t-sm strong"), txt(head.count, "t-xs muted")),
     box("ol", { class: "sp-rows", "aria-label": `Containers in ${head.title}, top first` }, ...rows.map((r) => planRow(r, hits?.find((x) => x.serial === r.serial) ?? null))));
@@ -1141,7 +1136,7 @@ function stackKeys(e: KeyboardEvent): void {
   if (!dir) return;
   e.preventDefault();
   const here = m.stacks.find((s) => s.letter === t.dataset.stack)!;
-  // On the Stack plan the nearest card that way on its grid, on the map the nearest stack that way on screen.
+  // On the Stack plan the previous or next card in its list, on the map the nearest stack that way on screen.
   const next = S.plan ? (planNow ? planNeighbor(planNow, here.letter, dir) : null) : nearestInDirection(anchorOf(m, here, S.view), m.stacks.filter((s) => s.level === S.level && s !== here).map((s) => ({ id: s.letter, at: anchorOf(m, s, S.view) })), dir);
   if (next) focusStack(next);
 }
