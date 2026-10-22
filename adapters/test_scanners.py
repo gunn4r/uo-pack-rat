@@ -4,6 +4,8 @@ The fake client is fake_clients.py: a world of items whose containers reveal the
 
 Covers: neither scanner ever records a container it could not read as opened-and-empty (a locked root, Stop while a root opens); a bag inside a root that did not open, or deeper than `MAX_NEST`, is marked `opened: false` while the rest of the root is recorded (scanner and refresh); an empty bag neither blocks nor erases in Razor Enhanced whether `WaitForContents` answers true or false for it; a deed, a bag of sending, a book of any kind (spellbooks of every school, runebooks, a runic atlas) and armour named like a chest are never double-clicked and are recorded as items, while a Commodity Deed Box is opened as the container it is (and containers the client does not flag, a Gargish Chest among them, are still opened by graphic or name); RE's skill names come out as the game's; the scanners and the TazUO refresh close exactly the container windows they opened (innermost first, only after the scan file is written, after a Stop or a failure too, never one that was open before the run); a ground container showing a name plate stays open and is reported (the fake's `GetContainerGump()` answers None while an item has a plate, as TazUO's does); a client build lacking the close calls (`GetContainerGump`, a window's `Dispose`, RE's `Items.Close`) leaves the windows open without raising; and both run with no `__file__` defined.
 
+Issue #28: a ground container 3 tiles away, inside the scan range but past the server's open range of 2, is never double-clicked (TazUO) or waited on (Razor Enhanced); it is recorded not opened, or read as the client already holds it.
+
 Issue #38: a blacklisted ground chest is left out and a blacklisted bag recorded unopened by both scanners and both refreshes, a corrupt or oversized list skips nothing, the Razor Enhanced refresh writes the backpack as its only root and nothing when the backpack does not open, and both adapters' `packrat-blacklist.py` adds a targeted container and writes nothing on cancel, the player's backpack or a non-container. Issue #74: a trash container (a name with "trash" in it, read from the tooltip when the client's own name is the generic one) is never opened or recorded, with its contents, by the TazUO scanner or refresh, while an ordinary barrel on the same graphic is, and the scan summary counts what it skipped. Issue #11: a ground root's containers entry carries its tooltip (a chest that opened empty too) and its `pos` the facet the client reports, left out when the client has no map call, the call raises, or it answers anything but 0-5.
 
 Issue #10: a scan inside a house records its tiles and where the player stood, keeps only the house under the player (a neighbour two tiles away is left out), records furniture inside the footprint but not containers or items outside it, keeps the nearest 5,000 pieces of furniture past the schema's cap and says how many farther ones it left out ("1 farther one" in the singular), leaves `items` out when the ground read raises, captures the same tiles from the front steps, a corner or inside, leaves out a house of more than 20,000 tiles with a summary line saying so, and writes no house section outside a house, on a build without the multi calls or when a call raises. 2.11.0: every container inside the footprint is listed in `house.containers` with its place without being opened, trash containers left out (one the roots pass knew as trash only by its tooltip too), the summary line counting the chests, and no list written when the ground read fails.
@@ -289,6 +291,25 @@ class TazUOScanner(DataDir, unittest.TestCase):
         self.scan(w)
         [s] = self.scans("tazuo")
         self.assertFalse(self.root(s, CHEST)["opened"])
+
+    def test_a_ground_container_past_the_open_range_is_never_double_clicked_and_is_read_as_the_client_holds_it(self):
+        # 3 tiles away: listed (SCAN_RANGE 3) but out of the server's open range of 2, so no double-click.
+        w = World(); home(w)
+        w.add(CHEST2, 0, name="Metal Chest", X=13, Y=10)
+        self.scan(w)
+        [s] = self.scans("tazuo")
+        self.assertNotIn(CHEST2, self.opened(w))
+        self.assertFalse(self.root(s, CHEST2)["opened"], "nothing the client holds: recorded not opened")
+        self.assertTrue(self.root(s, CHEST)["opened"], "the chest in reach still opens")
+        # one the client already holds open is read as it is, still without a double-click
+        w = World(); home(w)
+        w.add(CHEST2, 0, name="Metal Chest", X=13, Y=10, Opened=True)
+        w.add(RING + 0x300, CHEST2, name="Far Ring", container_like=False, OnGround=False)
+        self.scan(w)
+        [s] = self.scans("tazuo")[-1:]
+        self.assertNotIn(CHEST2, self.opened(w))
+        self.assertTrue(self.root(s, CHEST2)["opened"])
+        self.assertIn(RING + 0x300, [i["serial"] for i in s["items"]])
 
     def test_a_bag_that_did_not_open_is_marked_unopened_and_the_rest_of_its_root_recorded(self):
         w = World(); home(w); w.locked.add(BAG)
@@ -1041,6 +1062,32 @@ class RazorScanner(DataDir, unittest.TestCase):
         self.assertEqual(look(CHEST), [0x0E75, 1153])
         self.assertEqual(look(BAG), [0x0E79, 2500])
         self.assertEqual(look(PACK)[0], w.items[PACK].Graphic)
+
+    def test_a_ground_container_past_the_open_range_is_never_opened_and_is_read_as_the_client_holds_it(self):
+        # 3 tiles away: listed (SCAN_RANGE 3) but out of the server's open range of 2, so nothing waits on an open.
+        w = World(); home(w)
+        w.add(CHEST2, 0, name="Metal Chest", X=13, Y=10)
+        self.scan(w)
+        [s] = self.scans("razor-enhanced")
+        self.assertNotIn(CHEST2, self.opened(w))
+        self.assertFalse(self.root(s, CHEST2)["opened"], "nothing the client holds: recorded not opened")
+        self.assertTrue(self.root(s, CHEST)["opened"], "the chest in reach still opens")
+        w = World(); home(w)
+        w.add(CHEST2, 0, name="Metal Chest", X=13, Y=10, Opened=True)
+        w.add(RING + 0x300, CHEST2, name="Far Ring", container_like=False, OnGround=False)
+        self.scan(w)
+        [s] = self.scans("razor-enhanced")[-1:]
+        self.assertNotIn(CHEST2, self.opened(w))
+        self.assertTrue(self.root(s, CHEST2)["opened"])
+        self.assertIn(RING + 0x300, [i["serial"] for i in s["items"]])
+        # one opened earlier this session that is empty now is recorded empty (Item.ContainerOpened), not unopened
+        w = World(); home(w)
+        w.add(CHEST2, 0, name="Metal Chest", X=13, Y=10, Opened=True, EverOpened=True)
+        self.scan(w)
+        [s] = self.scans("razor-enhanced")[-1:]
+        self.assertNotIn(CHEST2, self.opened(w))
+        self.assertTrue(self.root(s, CHEST2)["opened"])
+        self.assertEqual(s["containers"][str(CHEST2)]["serial"], CHEST2)
 
     def test_a_root_whose_contents_never_arrive_is_recorded_not_opened(self):
         w = World(); home(w); w.locked.add(CHEST)

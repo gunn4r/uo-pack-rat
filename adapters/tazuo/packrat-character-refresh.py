@@ -88,7 +88,7 @@ def read_blacklist(path):
 
 # BEGIN generated: manifest
 ADAPTER_ID = "tazuo"
-ADAPTER_VERSION = "2.22.0"
+ADAPTER_VERSION = "2.22.1"
 CAPABILITIES = {
     "layers": ["OneHanded", "TwoHanded", "Shoes", "Pants", "Shirt", "Helmet", "Gloves", "Ring",
                "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic", "Earrings", "Arms",
@@ -345,12 +345,14 @@ def await_tooltips(serials):
     return missing
 
 
-def scan_root(root_serial, kind, label, containers, items, seen):
+def scan_root(root_serial, kind, label, containers, items, seen, reach=True):
     """Open root + every nested container, list everything. Returns the item count, or -1 when the
     root must not be recorded at all (it did not open, or Stop was pressed): the app's fold replaces a
     whole root at once, so a partial read would erase what it knew. A bag INSIDE the root that did not
     open, or sits deeper than MAX_NEST, is recorded with "opened": False, and the fold keeps whatever
-    it last knew inside that one bag."""
+    it last knew inside that one bag. Out of `reach` (a ground container past the scanner's OPEN_RANGE),
+    nothing is double-clicked: the server would refuse it, after a pause and a message, so only what
+    the client already holds is read."""
     root_serial = int(root_serial)
     opened, to_open, listing = set(), [root_serial], []
     for _ in range(MAX_NEST):
@@ -360,12 +362,13 @@ def scan_root(root_serial, kind, label, containers, items, seen):
         for c in fresh:
             if API.StopRequested:
                 return -1
-            note_if_closed(c)
-            try:
-                API.UseObject(c)
-            except Exception:
-                pass
-            API.Pause(PAUSE_OPEN)
+            if reach:
+                note_if_closed(c)
+                try:
+                    API.UseObject(c)
+                except Exception:
+                    pass
+                API.Pause(PAUSE_OPEN)
             opened.add(c)
         listing = API.ItemsInContainer(root_serial, True) or []
         for it in listing:

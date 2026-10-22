@@ -81,7 +81,7 @@ def read_blacklist(path):
 
 # BEGIN generated: manifest
 ADAPTER_ID = "tazuo"
-ADAPTER_VERSION = "2.22.0"
+ADAPTER_VERSION = "2.22.1"
 CAPABILITIES = {
     "layers": ["OneHanded", "TwoHanded", "Shoes", "Pants", "Shirt", "Helmet", "Gloves", "Ring",
                "Talisman", "Necklace", "Waist", "Torso", "Bracelet", "Tunic", "Earrings", "Arms",
@@ -92,7 +92,8 @@ CAPABILITIES = {
 # END generated: manifest
 
 
-SCAN_RANGE = 3           # tiles: ground containers within reach (house chests open only when close)
+SCAN_RANGE = 3           # tiles: ground containers listed (house chests open only when close)
+OPEN_RANGE = 2           # tiles: a ground container farther than this is read as the client holds it, never double-clicked (the server refuses)
 # BEGIN generated: tazuo/house_limits
 HOUSE_RADIUS = 40        # tiles searched around the player for the house's tiles (a castle is about 32 across)
 HOUSE_MAX_TILES = 20000  # a capture larger than this is left out rather than bloating the scan
@@ -511,12 +512,14 @@ def await_tooltips(serials):
     return missing
 
 
-def scan_root(root_serial, kind, label, containers, items, seen):
+def scan_root(root_serial, kind, label, containers, items, seen, reach=True):
     """Open root + every nested container, list everything. Returns the item count, or -1 when the
     root must not be recorded at all (it did not open, or Stop was pressed): the app's fold replaces a
     whole root at once, so a partial read would erase what it knew. A bag INSIDE the root that did not
     open, or sits deeper than MAX_NEST, is recorded with "opened": False, and the fold keeps whatever
-    it last knew inside that one bag."""
+    it last knew inside that one bag. Out of `reach` (a ground container past the scanner's OPEN_RANGE),
+    nothing is double-clicked: the server would refuse it, after a pause and a message, so only what
+    the client already holds is read."""
     root_serial = int(root_serial)
     opened, to_open, listing = set(), [root_serial], []
     for _ in range(MAX_NEST):
@@ -526,12 +529,13 @@ def scan_root(root_serial, kind, label, containers, items, seen):
         for c in fresh:
             if API.StopRequested:
                 return -1
-            note_if_closed(c)
-            try:
-                API.UseObject(c)
-            except Exception:
-                pass
-            API.Pause(PAUSE_OPEN)
+            if reach:
+                note_if_closed(c)
+                try:
+                    API.UseObject(c)
+                except Exception:
+                    pass
+                API.Pause(PAUSE_OPEN)
             opened.add(c)
         listing = API.ItemsInContainer(root_serial, True) or []
         for it in listing:
@@ -781,6 +785,7 @@ def main():
     ground = (API.GetItemsOnGround(SCAN_RANGE) or []) if scan_ground else []
     if SCAN_GROUND and bank_open and GROUND_ONLY_AT_HOME:
         sysmsg("Bank is open: ground containers skipped (backpack + bank only).", INFO_HUE)
+    far = set()
     for g in ground:
         try:
             if dist(g) > SCAN_RANGE:
@@ -795,6 +800,8 @@ def main():
                     TRASHED.add(int(g.Serial))
                 else:
                     roots.append((int(g.Serial), "ground", gname or "container"))
+                    if dist(g) > OPEN_RANGE:
+                        far.add(int(g.Serial))
         except Exception:
             continue
 
@@ -807,7 +814,7 @@ def main():
         # Read into its own lists, so a root the scan is cut short in is never written.
         containers, items = {}, []
         try:
-            n = scan_root(serial, kind, label, containers, items, seen)
+            n = scan_root(serial, kind, label, containers, items, seen, reach=serial not in far)
         except Exception:
             if not API.StopRequested:
                 raise

@@ -1,6 +1,6 @@
 {
   "adapter": "razor-enhanced",
-  "version": "1.13.2",
+  "version": "1.13.3",
   "transport": "folder",
   "protocol": 1,
   "platform": "win32",

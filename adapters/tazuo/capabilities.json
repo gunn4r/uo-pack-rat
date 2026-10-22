@@ -1,6 +1,6 @@
 {
   "adapter": "tazuo",
-  "version": "2.22.0",
+  "version": "2.22.1",
   "transport": "folder",
   "protocol": 1,
   "appearance": true,
