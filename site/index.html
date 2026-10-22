@@ -42,7 +42,7 @@
   --brass: #e3bc5f; --brass-deep: #b98f2e; --on-brass: #1c1307; --crimson: #ef8a95; --glow: rgb(216 177 85 / .25); --grain-o: .3;
   --plate-shadow: 0 30px 60px -30px rgb(0 0 0 / .8);
   --tip-bg: rgb(6 6 6 / .93); --tip-fg: #efe8d8; --tip-dim: #b3a585; --tip-edge: #5d5240;
-  --t-lesser: #20e31c; --t-greater: #1cb5b7; --t-major: #549fff; --t-m-art: #ff8000; --t-l-art: #c680f4;
+  --t-major: #549fff; --t-leg-art: #eb7d77;
   --shell-bg: #0e0a06; --shell-line: #33261a;
   --serif: "Grenze Gotisch", "Iowan Old Style", Georgia, serif;
   --body: "Alegreya Sans", "Gill Sans", "Trebuchet MS", ui-sans-serif, sans-serif;
@@ -88,7 +88,7 @@ h1 em, h2 em, h3 em { font-style: normal; font-synthesis: none; }
   padding: 12px 20px 13px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 1px; font: 500 15px/1.42 var(--body); }
 .tip .n { font-weight: 700; font-size: 17px; }
 .tip .dim { color: var(--tip-dim); font-size: 13.5px; margin-top: 3px; }
-.t-lesser { color: var(--t-lesser); } .t-greater { color: var(--t-greater); } .t-major { color: var(--t-major); } .t-m-art { color: var(--t-m-art); } .t-l-art { color: var(--t-l-art); }
+.t-major { color: var(--t-major); } .t-leg-art { color: var(--t-leg-art); }
 
 /* plates: real app screenshots and in-game captures */
 .plate { margin: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; min-width: 0; }
@@ -443,14 +443,14 @@ html:not(.has-demo) #try, html:not(.has-demo) .nav a[href="#try"] { display: non
     </div>
     <div class="relic">
       <img src="img/icon.png" width="176" height="176" alt="The Pack Rat logo: a rat in an overstuffed adventurer's backpack, holding a gold coin">
-      <div class="tip" aria-label="Pack Rat, described as an in-game item">
-        <span class="n t-m-art">Pack Rat</span>
-        <span class="t-m-art">Major Artifact</span>
+      <div class="tip" aria-label="Pack Rat, described as a Legendary Artifact in game">
+        <span class="n t-leg-art">Pack Rat</span>
+        <span class="t-leg-art">Legendary Artifact</span>
         <span>Blessed</span>
         <span>Searches Every Bank Box</span>
         <span>Remembers Every Chest</span>
         <span>Suit Building 100%</span>
-        <span>Lower Gold Cost 100%</span>
+        <span>Organizing 100%</span>
         <span class="dim">Weight: 0 stones</span>
       </div>
     </div>
