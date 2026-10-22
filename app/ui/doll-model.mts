@@ -42,7 +42,7 @@ function basePlan({ name, appearance, inForm, readsLook, client }: { name: strin
 }
 
 // GET /api/paperdoll.png's 404 reasons, and "error" for a request that failed.
-export const DOLL_REASONS = ["no-client", "no-tazuo-profile", "override-missing", "missing", "unsupported", "unreadable", "no-body", "empty", "error"] as const;
+export const DOLL_REASONS = ["no-client", "no-finder", "no-tazuo-profile", "override-missing", "missing", "unsupported", "unreadable", "no-body", "empty", "error"] as const;
 export type DollReason = (typeof DOLL_REASONS)[number];
 // Why there is no figure, shown in its place.
 export function failureNote(reason: DollReason): DollNote {
