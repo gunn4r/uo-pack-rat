@@ -32,13 +32,13 @@ test("[fast] houses service: the reason there is no tiledata.mul or facet follow
   assert.deepEqual(service.facetBitmap(1), { reason: "override-missing" });
 });
 
-test("[fast] houses service: with no UO folder set, the client's manifest names how to find one (install.uoFolder)", () => {
+test("[fast] houses service: with no UO folder set, the client's manifest names how to find one (install.uoFolder): TazUO looks through its launcher profile, a client with no finder (Razor Enhanced) asks for the folder from Settings", () => {
   const scriptsDir = mkdtempSync(join(tmpdir(), "pr-houses-client-"));
   const finders: Record<string, string> = { tazuo: "tazuo-profile" };
   const settings = (adapter: string): SettingsDoc => ({ shard: DEFAULT_SHARD, client: { adapter, scriptsDir } });
   const reason = (adapter: string) => createHousesService({ settings: () => settings(adapter), uoFolderFinder: (id) => finders[id] ?? null }).tileData().reason;
   assert.equal(reason("tazuo"), "no-tazuo-profile", "a TazUO client: its launcher profile is looked through, and names none here");
-  assert.equal(reason("razor-enhanced"), "no-client", "a client whose manifest names no finder");
+  assert.equal(reason("razor-enhanced"), "no-finder", "a client whose manifest names no finder (Razor Enhanced): set up, but the folder has to come from Settings (issue #421)");
 });
 
 test("[fast] houses service: the facet PNG cache answers a repeat without making it again and drops the oldest past 32 MB", () => {

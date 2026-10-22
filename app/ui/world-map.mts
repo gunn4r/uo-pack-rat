@@ -10,7 +10,7 @@ import type { FacetMapReason, HouseSummary } from "./api-types.mts";
 
 // One request for a facet image: the PNG as a data: URL (the page's CSP allows data: images, not blob:) with the region the server drew, or why there is none.
 export type FacetImage = { src: string; crop: Crop } | { reason: FacetMapReason | "error" };
-const REASONS: readonly string[] = ["override-missing", "no-client", "no-tazuo-profile", "missing", "unreadable"];
+const REASONS: readonly string[] = ["override-missing", "no-client", "no-finder", "no-tazuo-profile", "missing", "unreadable"];
 export async function fetchFacetImage(url: string): Promise<FacetImage> {
   try {
     const r = await fetch(url), crop = parseRegion(r.headers.get("x-region"));
