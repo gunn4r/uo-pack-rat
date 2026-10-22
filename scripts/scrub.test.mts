@@ -31,7 +31,10 @@ const PUBLIC_ROWS: Row[] = [
      "app/ui/settings.mts", "scripts/ui-forms.test.mts",
      // LICENSE: the GPL notice names the copyright holder and its section 7 attribution, and gunn4r is the public account name —
      // already the repository owner, the electron-builder appId and package.json's author.
-     "LICENSE"], true],
+     "LICENSE",
+     // the website: its links to the repository, the Releases page, Ko-fi and its own Pages address, and the tests that
+     // check them (the 0.3.0 release's real asset URLs, the download buttons' fallback link)
+     "site/index.html", "scripts/site-latest.test.mts", "scripts/site-build.test.mts"], true],
   // A home folder on macOS, Linux or Windows, other than the `example` placeholder. Case-sensitive, so prose such as
   // "↑/↓/Home/End" is not a path.
   [/(?:\/Users\/|\/home\/|[A-Za-z]:\\Users\\)(?!example\b)[A-Za-z0-9._-]+/, "a real home directory", ["scripts/scrub.test.mts"]],

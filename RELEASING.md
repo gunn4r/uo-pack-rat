@@ -70,6 +70,12 @@ The checklist, in order:
 9. **Publish the draft.** Write the release notes first: the same highlights as `CHANGELOG.md`'s section, then the download and reinstall notes, then a link to the full changelog (`https://github.com/gunn4r/uo-pack-rat/blob/vX.Y.Z/CHANGELOG.md`, with the section's anchor). Once every artifact has been launched and the checksums verified, publish the draft release on GitHub so it becomes the public `latest` release, then do step 7.
 10. **Announce.** Post wherever this project's users will see it.
 
+## The website
+
+The website (`site/`, https://gunn4r.github.io/uo-pack-rat/) needs no step of its own. Publishing the release (step 9) runs `.github/workflows/pages.yml`, which reads the latest published release with `gh release view`, writes `latest.json` with `scripts/site-latest.mts` (each download button's file, URL, size and SHA-256 from `SHA256SUMS`) and deploys the site with it. A draft or a prerelease is never "latest", so it never reaches the page. The run fails, and the site keeps its last deploy, if a platform's asset is missing or two assets match one: check the run under Actions after publishing.
+
+To redeploy by hand (after fixing a failed run, or to pick up a change without a release), run the **Pages** workflow from the Actions tab (`workflow_dispatch`) on `main`, or `gh workflow run pages.yml`. A change to `site/` merged to main deploys by itself. GitHub Pages must be set to deploy from GitHub Actions (*Settings → Pages → Source*).
+
 ## Verifying a download
 
 Every release carries a `SHA256SUMS` file listing the SHA-256 hash of every other file on the release by filename: `PackRat-<version>-mac-arm64.dmg` and `PackRat-<version>-mac-x64.dmg` with a `.zip` of each, the Windows installer `PackRat-<version>-win-x64.exe`, the portable `PackRat-<version>-portable-win-x64.exe`, `PackRat-<version>-linux-x86_64.AppImage`, and electron-builder's `latest*.yml` and `.blockmap` files. Anyone — a maintainer at step 8, or a player who got a link from somewhere — can check a downloaded file against it. Download `SHA256SUMS` from the release into the same folder as the installer, then:

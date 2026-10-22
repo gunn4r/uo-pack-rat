@@ -1,0 +1,493 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pack Rat — find anything you own in Ultima Online</title>
+<meta name="description" content="Pack Rat is a free desktop app for Ultima Online players on UO Alive. It finds anything you own in seconds, keeps your house organized and builds better suits from gear you already have.">
+<link rel="icon" type="image/png" href="img/logo-mark.png">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Pack Rat">
+<meta property="og:title" content="Pack Rat — stop opening chests. Search them.">
+<meta property="og:description" content="A free desktop app for Ultima Online players on UO Alive: search every item on every character, organize your house, and build the best suit from what you already own.">
+<meta property="og:url" content="https://gunn4r.github.io/uo-pack-rat/">
+<meta property="og:image" content="https://gunn4r.github.io/uo-pack-rat/img/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Pack Rat: stop opening chests. Search them.">
+<meta name="twitter:card" content="summary_large_image">
+<script>
+  // A saved light or dark choice is applied before the page paints, so it never flashes the other one.
+  try { var t = localStorage.getItem("packrat-theme"); if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t); } catch (e) {}
+</script>
+<style>
+/* The Pack Rat website (issue #537). Dark wood and brass from the app's Britannia theme, dark first with a vellum light
+   mode; an old-style serif, grain, and the in-game item tooltip as its signature. Screenshots come in pairs (Britannia
+   dark, Default light) and follow the page's mode. The download buttons work without JS (the latest release on GitHub);
+   the script fills in each platform's file from latest.json, which the Pages workflow writes. */
+@font-face { font-family: "Cormorant Garamond"; font-style: normal; font-weight: 500 600; font-display: swap; src: url("fonts/cormorant-garamond-latin-500-600-normal.woff2") format("woff2"); }
+@font-face { font-family: "Cormorant Garamond"; font-style: italic; font-weight: 500; font-display: swap; src: url("fonts/cormorant-garamond-latin-500-italic.woff2") format("woff2"); }
+@font-face { font-family: "Alegreya Sans"; font-style: normal; font-weight: 400; font-display: swap; src: url("fonts/alegreya-sans-latin-400-normal.woff2") format("woff2"); }
+@font-face { font-family: "Alegreya Sans"; font-style: italic; font-weight: 400; font-display: swap; src: url("fonts/alegreya-sans-latin-400-italic.woff2") format("woff2"); }
+@font-face { font-family: "Alegreya Sans"; font-style: normal; font-weight: 500; font-display: swap; src: url("fonts/alegreya-sans-latin-500-normal.woff2") format("woff2"); }
+@font-face { font-family: "Alegreya Sans"; font-style: normal; font-weight: 700; font-display: swap; src: url("fonts/alegreya-sans-latin-700-normal.woff2") format("woff2"); }
+@font-face { font-family: "IBM Plex Mono"; font-style: normal; font-weight: 400; font-display: swap; src: url("fonts/ibm-plex-mono-latin-400-normal.woff2") format("woff2"); }
+@font-face { font-family: "IBM Plex Mono"; font-style: normal; font-weight: 500; font-display: swap; src: url("fonts/ibm-plex-mono-latin-500-normal.woff2") format("woff2"); }
+:root {
+  --ink: #f4ead2; --muted: #dccba7; --faint: #b49e78; --ground: #140f0a; --paper: #1f170f; --line: #46341f; --line-soft: #33261a;
+  --brass: #e3bc5f; --brass-deep: #b98f2e; --on-brass: #1c1307; --crimson: #ef8a95; --glow: rgb(216 177 85 / .25); --grain-o: .3;
+  --plate-shadow: 0 30px 60px -30px rgb(0 0 0 / .8);
+  --tip-bg: rgb(6 6 6 / .93); --tip-fg: #efe8d8; --tip-dim: #b3a585; --tip-edge: #5d5240;
+  --t-lesser: #20e31c; --t-greater: #1cb5b7; --t-major: #549fff; --t-m-art: #ff8000; --t-l-art: #c680f4;
+  --shell-bg: #0e0a06; --shell-line: #33261a;
+  --serif: "Cormorant Garamond", "Iowan Old Style", Georgia, serif;
+  --body: "Alegreya Sans", "Gill Sans", "Trebuchet MS", ui-sans-serif, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) {
+  --ink: #22180f; --muted: #57452f; --faint: #85704f; --ground: #ece4d3; --paper: #f7f1e4; --line: #cdbd99; --line-soft: #ddd0b3;
+  --brass: #7d5b12; --brass-deep: #5f450c; --on-brass: #fbf5e6; --crimson: #8e2433; --glow: rgb(201 162 74 / .35); --grain-o: .5;
+  --plate-shadow: 0 30px 60px -34px rgb(60 40 10 / .55); --shell-bg: #e4dac5; --shell-line: #cdbd99; color-scheme: light; } }
+:root[data-theme="light"] {
+  --ink: #22180f; --muted: #57452f; --faint: #85704f; --ground: #ece4d3; --paper: #f7f1e4; --line: #cdbd99; --line-soft: #ddd0b3;
+  --brass: #7d5b12; --brass-deep: #5f450c; --on-brass: #fbf5e6; --crimson: #8e2433; --glow: rgb(201 162 74 / .35); --grain-o: .5;
+  --plate-shadow: 0 30px 60px -34px rgb(60 40 10 / .55); --shell-bg: #e4dac5; --shell-line: #cdbd99; color-scheme: light; }
+
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--ground); color: var(--ink); font: 400 19px/1.6 var(--body); overflow-x: hidden; -webkit-font-smoothing: antialiased; position: relative; isolation: isolate; }
+body::after { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; opacity: var(--grain-o); mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.55'/%3E%3C/svg%3E"); }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 30; background: var(--shell-bg); }
+img { max-width: 100%; height: auto; display: block; }
+a { color: inherit; }
+:focus-visible { outline: 2px solid var(--brass); outline-offset: 3px; border-radius: 3px; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }
+h1, h2, h3 { margin: 0; font-family: var(--serif); font-weight: 500; text-wrap: balance; }
+p { margin: 0; }
+em { font-style: italic; color: var(--faint); }
+.wrap { width: 100%; max-width: 76rem; margin-inline: auto; }
+.band { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.label { font: 700 12px/1 var(--body); letter-spacing: .2em; text-transform: uppercase; color: var(--brass); }
+.mono { font-family: var(--mono); }
+
+
+/* Screenshot twins: Britannia (dark) or Default (light), following the page's mode. */
+:root[data-mode="light"] img.d, :root[data-mode="dark"] img.l { display: none; }
+@media (prefers-color-scheme: light) { :root:not([data-mode]) img.d { display: none; } }
+@media (prefers-color-scheme: dark) { :root:not([data-mode]) img.l { display: none; } }
+
+/* the in-game tooltip */
+.tip { background: var(--tip-bg); color: var(--tip-fg); border: 1px solid var(--tip-edge); box-shadow: 0 0 0 1px rgb(0 0 0 / .6), 0 18px 40px -14px rgb(0 0 0 / .65);
+  padding: 12px 20px 13px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 1px; font: 500 15px/1.42 var(--body); }
+.tip .n { font-weight: 700; font-size: 17px; }
+.tip .dim { color: var(--tip-dim); font-size: 13.5px; margin-top: 3px; }
+.t-lesser { color: var(--t-lesser); } .t-greater { color: var(--t-greater); } .t-major { color: var(--t-major); } .t-m-art { color: var(--t-m-art); } .t-l-art { color: var(--t-l-art); }
+
+/* plates: real app screenshots and in-game captures */
+.plate { margin: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; min-width: 0; }
+.plate img { border-radius: 4px; box-shadow: 0 0 0 1px var(--line), 0 0 0 5px var(--paper), 0 0 0 6px var(--line), var(--plate-shadow); background: #1a120b; }
+.plate figcaption { font-size: 15px; font-style: italic; color: var(--faint); }
+.plate figcaption b { font-style: normal; color: var(--muted); font-weight: 500; }
+
+/* nav + hero */
+.nav { border-bottom: 1px solid var(--line-soft); }
+.nav .wrap { display: flex; align-items: center; gap: 12px 28px; padding-block: 16px; }
+.brand { display: flex; align-items: center; gap: 12px; text-decoration: none; font: 600 24px/1 var(--serif); flex: none; }
+.brand img { width: 40px; height: 40px; border-radius: 50%; box-shadow: 0 0 0 2px #c9a24a; flex: none; }   /* the app's sidebar mark in its brass ring (components.css .brand img) */
+.nav nav { display: flex; gap: 24px; font-size: 16px; color: var(--muted); }
+.nav nav a { text-decoration: none; }
+.nav nav a:hover { color: var(--brass); }
+.nav-end { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.icon-btn { width: 38px; height: 38px; display: inline-grid; place-items: center; border-radius: 50%; border: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer; text-decoration: none; }
+.icon-btn:hover { color: var(--brass); border-color: var(--brass); }
+.icon-btn svg { width: 18px; height: 18px; }
+.kofi-btn { display: inline-flex; align-items: center; gap: 8px; min-height: 38px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--brass); color: var(--brass); font: 700 14px/1 var(--body); text-decoration: none; white-space: nowrap; }
+.kofi-btn:hover { background: var(--brass); color: var(--on-brass); }
+.kofi-btn svg { width: 16px; height: 16px; }
+.theme-btn .moon { display: none; }
+:root[data-mode="light"] .theme-btn .sun { display: none; }
+:root[data-mode="light"] .theme-btn .moon { display: block; }
+
+/* The UO Alive seal: our own typographic mark, not UO Alive's logo. If UO Alive gives permission, their logo can go in
+   .seal-mark in place of the drawn ring. */
+.seal { display: inline-flex; align-items: center; gap: 10px; justify-self: start; text-decoration: none; color: var(--ink); padding: 6px 14px 6px 6px; border: 1px solid var(--brass); border-radius: 999px; background: color-mix(in srgb, var(--brass) 8%, transparent); }
+.seal:hover { background: color-mix(in srgb, var(--brass) 16%, transparent); }
+.seal-mark { width: 30px; height: 30px; flex: none; color: var(--brass); }
+.seal b { font: 700 12px/1.1 var(--body); letter-spacing: .16em; text-transform: uppercase; color: var(--brass); display: block; }
+.seal span span { font-size: 14px; color: var(--muted); }
+.shard-note { font-size: 16px; color: var(--muted); }
+.shard-note a { color: var(--brass); }
+.hero .wrap { padding-block: 32px 96px; display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 5fr); gap: 40px 56px; align-items: center; }
+.hero-copy { display: grid; grid-template-columns: minmax(0, 1fr); gap: 22px; }
+.hero h1 { font-size: clamp(44px, 5.4vw, 80px); line-height: .95; letter-spacing: -.01em; }
+.hero h1 .h1-a, .hero h1 em { display: block; }
+@media (min-width: 900px) { .hero h1 .h1-a { white-space: nowrap; } }
+.hero .lede { font-size: 21px; color: var(--muted); }
+.hero .lede a { color: var(--brass); text-underline-offset: 3px; }
+.get .seal { margin-block: 4px 2px; }
+.relic { display: grid; justify-items: center; }
+.relic img { width: 176px; height: 176px; filter: drop-shadow(0 28px 50px var(--glow)); position: relative; }
+.relic .tip { margin-top: -18px; position: relative; min-width: 280px; }
+
+/* downloads: Windows and macOS side by side, Linux a line under */
+.dl { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+.dl-pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+.dl-os { border: 1px solid var(--line); background: var(--paper); border-radius: 6px; padding: 16px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; align-content: start; position: relative; }
+.dl-os h3 { font: 700 13px/1 var(--body); letter-spacing: .16em; text-transform: uppercase; color: var(--faint); display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+.dl-os h3 .you { display: none; font: 600 10.5px/1 var(--mono); letter-spacing: .06em; color: var(--on-brass); background: var(--brass); padding: 3px 6px; border-radius: 3px; }
+.dl-os.yours { border-color: var(--brass); box-shadow: inset 0 0 0 1px var(--brass), 0 16px 40px -24px var(--glow); }
+.dl-os.yours h3 { color: var(--brass); }
+.dl-os.yours h3 .you { display: inline-block; }
+.dl-btn { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 1px 10px; align-items: center; text-decoration: none; padding: 11px 14px; border-radius: 4px;
+  border: 1px solid var(--brass); color: var(--ink); background: transparent; transition: filter .12s, background .12s; }
+.dl-btn svg { width: 17px; height: 17px; grid-row: 1 / span 2; color: var(--brass); }
+.dl-btn b { font: 700 16px/1.25 var(--body); }
+.dl-btn span { font: 12px/1.3 var(--mono); color: var(--faint); overflow-wrap: anywhere; }
+.dl-btn:hover { background: color-mix(in srgb, var(--brass) 12%, transparent); }
+.dl-os.yours .dl-btn.main { background: var(--brass); color: var(--on-brass); border-color: var(--brass); box-shadow: inset 0 0 0 1px rgb(255 255 255 / .18), 0 8px 22px -10px var(--glow); }
+.dl-os.yours .dl-btn.main svg, .dl-os.yours .dl-btn.main span { color: var(--on-brass); }
+.dl-os.yours .dl-btn.main span { opacity: .75; }
+.dl-sub { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 14px; color: var(--faint); }
+.dl-sub a { color: var(--brass); }
+.dl-foot { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: baseline; font: 13px/1.6 var(--mono); color: var(--faint); }
+.dl-foot a { color: var(--brass); }
+.dl-foot .linux { font-family: var(--body); font-size: 15px; color: var(--muted); }
+
+/* sections */
+.sec .wrap { padding-block: 0 128px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 36px; }
+.head { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; justify-items: center; text-align: center; }
+.head h2 { font-size: clamp(36px, 4.8vw, 58px); line-height: 1.02; }
+.head p { color: var(--muted); }
+.head-l { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 16px 56px; align-items: end; }
+.head-l h2 { font-size: clamp(36px, 4.8vw, 58px); line-height: 1.02; }
+.head-l p { color: var(--muted); }
+.head-l p b, .copy p b { color: var(--ink); font-weight: 700; }
+
+
+/* inventory book: tabs over one plate */
+.book { border: 1px solid var(--line); background: var(--paper); padding: 10px; position: relative; }
+.book::before { content: ""; position: absolute; inset: 4px; border: 1px solid var(--line-soft); pointer-events: none; }
+.book-tabs { position: relative; display: flex; flex-wrap: wrap; gap: 4px 24px; padding: 14px 18px 4px; border-bottom: 1px solid var(--line-soft); }
+.book-tabs button { font: 500 22px/1.2 var(--serif); background: none; border: 0; color: var(--faint); padding: 4px 0 12px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.book-tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--brass); }
+.book-page { position: relative; display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 9fr); gap: 32px; padding: 26px 18px 18px; align-items: start; }
+.book-page[hidden] { display: none; }
+.book-page .copy { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; color: var(--muted); }
+.book-page .copy h3 { font-size: 30px; line-height: 1.05; color: var(--ink); }
+
+/* character plate with a tooltip hanging off it */
+.char { display: grid; grid-template-columns: minmax(0, 8fr) minmax(0, 4fr); gap: 40px; align-items: center; }
+.char .plate-wrap { position: relative; }
+.char .tip { position: absolute; right: -28px; bottom: 9%; min-width: 230px; }
+.copy { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; color: var(--muted); }
+.copy h2 { font-size: clamp(34px, 4vw, 50px); line-height: 1.04; color: var(--ink); }
+
+/* suit builder spread */
+.spread { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); border: 1px solid var(--line); background: var(--paper); position: relative; }
+.spread::before { content: ""; position: absolute; inset: 4px; border: 1px solid var(--line-soft); pointer-events: none; }
+.spread > div { padding: 32px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-content: start; position: relative; }
+.spread > div + div { border-left: 1px solid var(--line); }
+.spread h3 { font-size: 32px; line-height: 1.05; }
+.spread p { color: var(--muted); }
+
+/* organize sequence */
+.steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 40px 28px; counter-reset: s; align-items: start; }
+.steps li:first-child { grid-column: 1 / -1; grid-template-columns: minmax(0, 4fr) minmax(0, 8fr); gap: 32px; align-items: center; }
+.themes { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+.steps li { counter-increment: s; display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+.steps li > span { display: block; }
+.steps li > span::before { content: counter(s, upper-roman) "."; display: block; font: 600 30px/1 var(--serif); color: var(--brass); margin-bottom: 6px; }
+.steps h3 { font-size: 26px; line-height: 1.1; }
+.steps p { color: var(--muted); font-size: 17px; margin-top: 6px; }
+
+/* in-game strip */
+.ingame { display: grid; grid-template-columns: 1.563fr 1fr; gap: 28px; align-items: start; }
+
+/* setup ledger */
+.setup { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px; align-items: start; }
+.setup > div { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+.setup h3 { font-size: 26px; line-height: 1.1; }
+.setup p { color: var(--muted); font-size: 17px; }
+.clients { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); border-top: 1px solid var(--line); font-size: 16px; }
+.clients li { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--line); }
+.clients li span:last-child { color: var(--faint); font-size: 14px; text-align: right; }
+
+/* download card + footer */
+.get { border: 1px solid var(--line); background: var(--paper); position: relative; display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 32px 56px; padding: 48px; align-items: center; }
+.get::before { content: ""; position: absolute; inset: 5px; border: 1px solid var(--line-soft); pointer-events: none; }
+.get > div { position: relative; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+.get h2 { font-size: clamp(34px, 4vw, 52px); line-height: 1.02; }
+.get p { color: var(--muted); }
+.foot { border-top: 1px solid var(--line-soft); }
+.foot .wrap { padding-block: 36px 40px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; }
+.foot-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 28px; }
+.foot .brand { font-size: 20px; }
+.foot .brand img { width: 28px; height: 28px; }
+.foot nav { display: flex; flex-wrap: wrap; gap: 6px 22px; font-size: 15px; color: var(--muted); }
+.foot nav a { text-decoration: none; }
+.foot nav a:hover { color: var(--brass); }
+.fine { font-size: 13px; line-height: 1.6; color: var(--faint); display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
+.fine a { color: var(--muted); }
+
+@media (max-width: 1000px) {
+  .hero .wrap, .head-l, .char, .get, .book-page, .setup, .steps li:first-child { grid-template-columns: minmax(0, 1fr); }
+  .char .tip { right: 12px; }
+  .get { padding: 32px 22px; }
+}
+@media (max-width: 760px) {
+  .nav nav, .kofi-btn span { display: none; }
+  .kofi-btn { padding: 0 11px; }
+  .spread { grid-template-columns: minmax(0, 1fr); }
+  .spread > div + div { border-left: 0; border-top: 1px solid var(--line); }
+  .spread > div { padding: 22px 18px; }
+  .ingame, .steps { grid-template-columns: minmax(0, 1fr); }
+  .sec .wrap { padding-bottom: 96px; }
+  .relic .tip { min-width: 0; }
+  .char .tip { position: relative; right: auto; bottom: auto; margin: -36px 10px 0 auto; width: max-content; max-width: calc(100% - 20px); }
+  .book-tabs button { font-size: 19px; }
+}
+@media (max-width: 480px) { .dl-pair { grid-template-columns: minmax(0, 1fr); } }
+</style>
+</head>
+<body>
+
+
+<template id="dl-template">
+  <div class="dl" data-dl>
+    <div class="dl-pair">
+      <section class="dl-os" data-os="win" aria-label="Windows">
+        <h3>Windows <span class="you">your system</span></h3>
+        <a class="dl-btn main" data-key="win" href="https://github.com/gunn4r/uo-pack-rat/releases/latest"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5v9m0 0L4.5 7M8 10.5 11.5 7M2.5 13.5h11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><b>Installer</b><span data-meta>Windows 10 and 11</span></a>
+        <p class="dl-sub"><a data-key="win-portable" href="https://github.com/gunn4r/uo-pack-rat/releases/latest">Portable, no install</a><span data-size="win-portable"></span></p>
+      </section>
+      <section class="dl-os" data-os="mac" aria-label="macOS">
+        <h3>macOS <span class="you">your system</span></h3>
+        <a class="dl-btn main" data-key="mac-arm64" href="https://github.com/gunn4r/uo-pack-rat/releases/latest"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5v9m0 0L4.5 7M8 10.5 11.5 7M2.5 13.5h11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><b>Apple silicon</b><span data-meta>M1 and later</span></a>
+        <p class="dl-sub"><a data-key="mac-x64" href="https://github.com/gunn4r/uo-pack-rat/releases/latest">Intel Mac?</a><span data-size="mac-x64"></span></p>
+      </section>
+    </div>
+    <p class="dl-foot"><span class="linux">Linux: <a data-key="linux" href="https://github.com/gunn4r/uo-pack-rat/releases/latest">AppImage</a> <span data-size="linux"></span></span><span data-release>Free · open source</span><a data-notes href="https://github.com/gunn4r/uo-pack-rat/releases/latest">Release notes</a><a data-sums href="https://github.com/gunn4r/uo-pack-rat/releases/latest">SHA256SUMS</a></p>
+  </div>
+</template>
+
+<header class="nav band"><div class="wrap">
+  <a class="brand" href="#top"><img src="img/logo-mark.png" alt="" width="40" height="40">Pack Rat</a>
+  <nav aria-label="Site">
+    <a href="#download">Download</a>
+    <a href="https://github.com/gunn4r/uo-pack-rat/blob/main/docs/user-guide.md">User guide</a>
+    <a href="https://github.com/gunn4r/uo-pack-rat/blob/main/CHANGELOG.md">Changelog</a>
+  </nav>
+  <div class="nav-end">
+    <a class="icon-btn" href="https://github.com/gunn4r/uo-pack-rat" aria-label="Pack Rat on GitHub"><svg viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg></a>
+    <a class="kofi-btn" href="https://ko-fi.com/gunn4r"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 5h9v4.5A3.5 3.5 0 0 1 7.5 13h-2A3.5 3.5 0 0 1 2 9.5V5Zm9 1h1.3a1.7 1.7 0 0 1 0 3.4H11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M6.5 7.2c-.5-.6-1.6-.3-1.6.5 0 .9 1.6 1.8 1.6 1.8s1.6-.9 1.6-1.8c0-.8-1.1-1.1-1.6-.5Z" fill="currentColor"/></svg><span>Buy me a coffee</span></a>
+    <button type="button" class="icon-btn theme-btn" data-theme-toggle aria-label="Switch to light mode"><svg class="sun" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="3" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M8 1v1.6M8 13.4V15M1 8h1.6M13.4 8H15M3 3l1.1 1.1M11.9 11.9 13 13M3 13l1.1-1.1M11.9 4.1 13 3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg><svg class="moon" viewBox="0 0 16 16" aria-hidden="true"><path d="M13.5 10.2A5.8 5.8 0 0 1 5.8 2.5a5.8 5.8 0 1 0 7.7 7.7Z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg></button>
+  </div>
+</div></header>
+
+<main id="top">
+  <section class="hero band"><div class="wrap">
+    <div class="hero-copy">
+      <h1><span class="h1-a">Stop opening chests.</span> <em>Search them.</em></h1>
+      <p class="lede">A free desktop app for Ultima Online players on <a href="https://uoalive.com">UO Alive</a>. Degenerate hoarder? Same. Pack Rat finds anything you own in seconds, keeps your house organized without some elaborate system, and builds better suits from gear you already have.</p>
+      <div data-dl-slot></div>
+    </div>
+    <div class="relic">
+      <img src="img/icon.png" width="176" height="176" alt="The Pack Rat logo: a rat in an overstuffed adventurer's backpack, holding a gold coin">
+      <div class="tip" aria-label="Pack Rat, described as an in-game item">
+        <span class="n t-m-art">Pack Rat</span>
+        <span class="t-m-art">Major Artifact</span>
+        <span>Blessed</span>
+        <span>Searches Every Bank Box</span>
+        <span>Remembers Every Chest</span>
+        <span>Suit Building 100%</span>
+        <span>Lower Gold Cost 100%</span>
+        <span class="dim">Weight: 0 stones</span>
+      </div>
+    </div>
+  </div></section>
+
+  <section class="sec band" id="inventory"><div class="wrap">
+    <div class="head-l"><div style="display:grid;gap:14px"><span class="label">Inventory</span><h2>Every bag, chest and bank box, <em>in one ledger.</em></h2></div>
+      <p>Search everything every character owns. Narrow it by property (<b>at least, at most, exactly or not</b>), type, slot, slayer, house or label. <b>Highlight</b> marks a piece in game, <b>Go to</b> walks you to its chest, <b>Grab</b> puts it in your backpack.</p></div>
+    <div class="book">
+      <div class="book-tabs" role="tablist" aria-label="Inventory views">
+        <button type="button" role="tab" aria-selected="true" aria-controls="v-items" id="t-items">Items</button>
+        <button type="button" role="tab" aria-selected="false" aria-controls="v-containers" id="t-containers">Containers</button>
+        <button type="button" role="tab" aria-selected="false" aria-controls="v-scrolls" id="t-scrolls">Scrolls</button>
+        <button type="button" role="tab" aria-selected="false" aria-controls="v-unravel" id="t-unravel">Unravel</button>
+      </div>
+      <div class="book-page" role="tabpanel" id="v-items" aria-labeledby="t-items">
+        <div class="copy"><h3>Items</h3><p>One table of every piece, each with its in-game icon and its name in its rarity's color. Click one for its properties and where it is.</p></div>
+        <figure class="plate"><img class="d" src="img/inventory.webp" width="1600" height="1087" loading="lazy" alt="The Inventory searched for ring, the Arcane Ring open: Night Sight, Mana Regeneration 3, Faster Cast Recovery 3, Lower Reagent Cost 19%"><img class="l" src="img/inventory-light.webp" width="1600" height="1087" loading="lazy" alt="The Inventory searched for ring, the Arcane Ring open: Night Sight, Mana Regeneration 3, Faster Cast Recovery 3, Lower Reagent Cost 19%"></figure>
+      </div>
+      <div class="book-page" role="tabpanel" id="v-containers" aria-labeledby="t-containers" hidden>
+        <div class="copy"><h3>Containers</h3><p>Every chest and bag you've opened, who scanned it and when, and how full it is out of 125.</p></div>
+        <figure class="plate"><img class="d" src="img/containers.webp" width="1600" height="582" loading="lazy" alt="The Containers view: metal chests, reagent and scroll chests on the ground, their item counts and fill bars"><img class="l" src="img/containers-light.webp" width="1600" height="582" loading="lazy" alt="The Containers view: metal chests, reagent and scroll chests on the ground, their item counts and fill bars"></figure>
+      </div>
+      <div class="book-page" role="tabpanel" id="v-scrolls" aria-labeledby="t-scrolls" hidden>
+        <div class="copy"><h3>Scrolls</h3><p>Power scrolls by skill and level, with how many you need for the next roll-up, and your Scrolls of Transcendence.</p></div>
+        <figure class="plate"><img class="d" src="img/scrolls.webp" width="1600" height="344" loading="lazy" alt="The Scrolls view: Spellweaving, Mysticism and Spirit Speak power scrolls at 110, two of twelve toward a 115"><img class="l" src="img/scrolls-light.webp" width="1600" height="344" loading="lazy" alt="The Scrolls view: Spellweaving, Mysticism and Spirit Speak power scrolls at 110, two of twelve toward a 115"></figure>
+      </div>
+      <div class="book-page" role="tabpanel" id="v-unravel" aria-labeledby="t-unravel" hidden>
+        <div class="copy"><h3>Unravel</h3><p>The pieces worth unraveling for imbuing ingredients, grouped by what each gives at your Imbuing skill, with a forecast of what you'd get.</p></div>
+        <figure class="plate"><img class="d" src="img/unravel.webp" width="1600" height="689" loading="lazy" alt="The Unravel view for Kestrel at Imbuing 70: Relic Fragment, Enchanted Essence and Magical Residue forecasts, then the pieces that wait for Imbuing 95"><img class="l" src="img/unravel-light.webp" width="1600" height="689" loading="lazy" alt="The Unravel view for Kestrel at Imbuing 70: Relic Fragment, Enchanted Essence and Magical Residue forecasts, then the pieces that wait for Imbuing 95"></figure>
+      </div>
+    </div>
+  </div></section>
+
+  <section class="sec band" id="characters"><div class="wrap">
+    <div class="char">
+      <div class="plate-wrap">
+        <figure class="plate"><img class="d" src="img/character.webp" width="1600" height="1215" loading="lazy" alt="Dorran's character sheet: Physical 18, Fire 70 at the cap, Cold 41, Poison 32, Energy 60; his paperdoll with a double bladed staff; his worn gear"><img class="l" src="img/character-light.webp" width="1600" height="1215" loading="lazy" alt="Dorran's character sheet: Physical 18, Fire 70 at the cap, Cold 41, Poison 32, Energy 60; his paperdoll with a double bladed staff; his worn gear"></figure>
+        <div class="tip" aria-hidden="true"><span class="n t-major">Mighty Ring</span><span class="t-major">Major Magic Item</span><span>Worn by Dorran</span><span class="dim">Ring slot</span></div>
+      </div>
+      <div class="copy"><span class="label">Characters</span><h2>Each character, <em>at a glance.</em></h2><p>The paperdoll in the gear they wear, the five resists against the cap, stats, and every property against the shard's cap.</p><p>Property caps, rarity colors and the gargoyle race lock follow UO Alive's rules.</p></div>
+    </div>
+  </div></section>
+
+  <section class="sec band" id="builder"><div class="wrap">
+    <div class="head"><span class="label">Suit Builder</span><h2>The best suit <em>is already in your house.</em></h2><p>Two ways to build it.</p></div>
+    <div class="spread">
+      <div><span class="label">Automatic</span><h3>Pick a template, press Build.</h3><p>Melee, Caster, Tank or your own goals. The Suit Builder searches everything you own, plans around the buffs you fight with, and proves the suit is the best one. Runs are kept so you can compare.</p>
+        <figure class="plate"><img class="d" src="img/suit.webp" width="1600" height="1015" loading="lazy" alt="Best suit for Dorran, proven optimal: physical 18 to 69, fire 72 to 86, cold 41 to 81, poison 32 to 70, energy 60 to 79, with how each goal went"><img class="l" src="img/suit-light.webp" width="1600" height="1015" loading="lazy" alt="Best suit for Dorran, proven optimal: physical 18 to 69, fire 72 to 86, cold 41 to 81, poison 32 to 70, energy 60 to 79, with how each goal went"></figure></div>
+      <div><span class="label">Manual</span><h3>Dress the paperdoll yourself.</h3><p>Pick a piece slot by slot on a live paperdoll and see every number move as you hover. <b style="color:var(--ink)">Fill the rest automatically</b> finishes the suit around the pieces you chose.</p>
+        <figure class="plate"><img class="d" src="img/manual.webp" width="1600" height="921" loading="lazy" alt="Manual: Dorran's empty slots, the paperdoll previewing an Arcane Ring, and the ring picker with each ring's effect on the totals"><img class="l" src="img/manual-light.webp" width="1600" height="921" loading="lazy" alt="Manual: Dorran's empty slots, the paperdoll previewing an Arcane Ring, and the ring picker with each ring's effect on the totals"></figure></div>
+    </div>
+  </div></section>
+
+  <section class="sec band" id="house"><div class="wrap">
+    <div class="head-l"><div style="display:grid;gap:14px"><span class="label">House map</span><h2>Your house, drawn from the game. <em>Every chest in it.</em></h2></div>
+      <p>Every chest stack colored by its label or by how full it is, at the game's angle, top-down or as a stack plan. Search it and the chests that hold your katana light up.</p></div>
+    <figure class="plate"><img class="d" src="img/house.webp" width="1600" height="1108" loading="lazy" alt="The House map searched for katana: three chests light up on the ground floor, each listed with its stack and label"><img class="l" src="img/house-light.webp" width="1600" height="1108" loading="lazy" alt="The House map searched for katana: three chests light up on the ground floor, each listed with its stack and label"><figcaption><b>“katana”</b>: two items in two chests on the ground floor.</figcaption></figure>
+  </div></section>
+
+  <section class="sec band" id="organize"><div class="wrap">
+    <div class="head"><span class="label">Organize</span><h2>Give every item <em>a home.</em></h2><p>Three steps, and nothing moves until you say so.</p></div>
+    <ol class="steps">
+      <li><span><h3>Rules say where things go.</h3><p>Armor to the armor chest, reagents to the reagent chest. Each item goes to the first rule it matches.</p></span>
+        <figure class="plate"><img class="d" src="img/organize.webp" width="1500" height="760" loading="lazy" alt="Organize rules: Armor, 16 to move; Jewelry; Weapons, 120 of 125 full"><img class="l" src="img/organize-light.webp" width="1500" height="760" loading="lazy" alt="Organize rules: Armor, 16 to move; Jewelry; Weapons, 120 of 125 full"></figure></li>
+      <li><span><h3>Or let Auto organize write them.</h3><p>Simple, detailed or by build. It labels your chests and shows the plan first.</p></span>
+        <figure class="plate"><img class="d" src="img/organize-auto.webp" width="1120" height="1600" loading="lazy" alt="Auto organize: strategy Simple, the containers it may use, and the proposal: 2 containers labeled, 19 rules, 18 items to move in one trip"><img class="l" src="img/organize-auto-light.webp" width="1120" height="1600" loading="lazy" alt="Auto organize: strategy Simple, the containers it may use, and the proposal: 2 containers labeled, 19 rules, 18 items to move in one trip"></figure></li>
+      <li><span><h3>Then Put away.</h3><p>With TazUO the trip runs in game while you watch.</p></span>
+        <figure class="plate"><img src="img/put-away-trip.gif" width="560" height="457" loading="lazy" alt="A Put away trip: three gem stacks leave the backpack and land in a metal chest"></figure></li>
+    </ol>
+  </div></section>
+
+  <section class="sec band" id="ingame"><div class="wrap">
+    <div class="head"><span class="label">In your own client</span><h2>A panel in the game, <em>a bridge to the app.</em></h2><p>Small scripts in your client. The scanner reads what your character can see; the bridge carries out what you press in the app. They never fight, gather or loot.</p></div>
+    <div class="ingame">
+      <figure class="plate"><img src="img/ingame-panel.jpg" width="880" height="563" loading="lazy" alt="The Pack Rat panel in TazUO: the bridge running, a scan from just now, next to a character among the chests"><figcaption>The Pack Rat panel in TazUO starts the scanner and the bridge.</figcaption></figure>
+      <figure class="plate"><img src="img/grab-game.gif" width="310" height="310" loading="lazy" alt="In game, 50 garlic move from a bag into the backpack after Grab is pressed in the app"><figcaption><b>Grab</b>, pressed in the app: 50 garlic, in your backpack.</figcaption></figure>
+    </div>
+  </div></section>
+
+  <section class="sec band" id="setup"><div class="wrap">
+    <div class="head-l"><div style="display:grid;gap:14px"><span class="label">Setting up</span><h2>Five minutes, <em>then scan.</em></h2></div>
+      <p>Everything stays in one folder on your computer. The only thing Pack Rat sends anywhere is the update check.</p></div>
+    <div class="setup">
+      <div><h3>The setup window</h3><p>Choose UO Alive and your game client. Pack Rat installs its scripts in the client's folder.</p>
+        <figure class="plate"><img class="d" src="img/wizard.webp" width="1240" height="880" loading="lazy" alt="Set up Pack Rat, step 1 of 4: which shard do you play on, UO Alive"><img class="l" src="img/wizard-light.webp" width="1240" height="880" loading="lazy" alt="Set up Pack Rat, step 1 of 4: which shard do you play on, UO Alive"></figure>
+        <ul class="clients"><li><span>TazUO</span><span>v26.0923.64 or later</span></li><li><span>Razor Enhanced</span><span>Windows</span></li><li><span>ClassicUO web client</span><span>paste a scan</span></li></ul></div>
+      <div><h3>Import</h3><p>Clients that write scan files are picked up by themselves. The web client pastes its scan instead.</p>
+        <figure class="plate"><img class="d" src="img/import.webp" width="1120" height="760" loading="lazy" alt="Import scans: paste a scan from the ClassicUO web client, or rescan the inbox"><img class="l" src="img/import-light.webp" width="1120" height="760" loading="lazy" alt="Import scans: paste a scan from the ClassicUO web client, or rescan the inbox"></figure></div>
+      <div><h3>Settings and themes</h3><p>Default is the clean look. <b style="color:var(--ink)">Britannia</b>, the one on this page, dresses Pack Rat in parchment and brass. Light, dark or follow your computer.</p>
+        <div class="themes"><figure class="plate"><img src="img/theme-default.webp" width="880" height="860" loading="lazy" alt="The Arcane Ring's detail in the Default theme, light"><figcaption>Default</figcaption></figure><figure class="plate"><img src="img/theme-britannia.webp" width="880" height="860" loading="lazy" alt="The same Arcane Ring in the Britannia theme, dark"><figcaption>Britannia</figcaption></figure></div></div>
+    </div>
+  </div></section>
+
+  <section class="sec band" id="download"><div class="wrap">
+    <div class="get">
+      <div><span class="label">Download</span><h2>Free, and yours to keep. <em>Everything stays on your computer.</em></h2><a class="seal" href="https://uoalive.com"><svg class="seal-mark" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="14.5" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="16" cy="16" r="11" fill="none" stroke="currentColor" stroke-width=".8" stroke-dasharray="1.6 1.6"/><path d="M16 8.5l2.2 4.5 4.9.7-3.5 3.4.8 4.9L16 19.7 11.6 22l.8-4.9-3.5-3.4 4.9-.7z" fill="currentColor"/></svg><span><b>Made for UO Alive</b><span>Built and tested on uoalive.com</span></span></a><p class="shard-note">It may work on other shards, but it hasn't been tested there yet.</p><p>Pack Rat isn't code-signed yet, so the first launch warns you. On Windows click <b style="color:var(--ink)">More info</b>, then <b style="color:var(--ink)">Run anyway</b>. On a Mac, right-click the app and choose <b style="color:var(--ink)">Open</b>.</p></div>
+      <div data-dl-slot></div>
+    </div>
+  </div></section>
+</main>
+
+<footer class="foot band"><div class="wrap">
+  <div class="foot-top">
+    <a class="brand" href="#top"><img src="img/logo-mark.png" alt="" width="28" height="28">Pack Rat</a>
+    <nav aria-label="Footer">
+      <a href="https://github.com/gunn4r/uo-pack-rat/blob/main/docs/user-guide.md">User guide</a>
+      <a href="https://github.com/gunn4r/uo-pack-rat/blob/main/CHANGELOG.md">Changelog</a>
+      <a href="https://github.com/gunn4r/uo-pack-rat/blob/main/PRIVACY.md">Privacy</a>
+      <a href="https://github.com/gunn4r/uo-pack-rat/discussions">Discussions</a>
+      <a href="https://github.com/gunn4r/uo-pack-rat">Source on GitHub</a>
+      <a href="https://ko-fi.com/gunn4r">Buy me a coffee</a>
+    </nav>
+  </div>
+  <div class="fine">
+    <p>Free software under the <a href="https://github.com/gunn4r/uo-pack-rat/blob/main/LICENSE">GNU GPL v3</a> · <a href="https://github.com/gunn4r/uo-pack-rat">Source on GitHub</a></p>
+    <p>Pack Rat is an independent hobby project. It is not affiliated with or endorsed by Electronic Arts, Broadsword Online Games, UO Alive, or the TazUO, Razor Enhanced or ClassicUO projects. Ultima Online is a trademark of Electronic Arts Inc. All other trademarks belong to their owners.</p>
+  </div>
+</div></footer>
+
+<script>
+(function () {
+  /* Downloads, from latest.json. Complete without it: every link goes to the latest release. */
+  var FALLBACK = "https://github.com/gunn4r/uo-pack-rat/releases/latest";
+  var release = null, os = detectOS();
+  function detectOS() {
+    var uad = navigator.userAgentData, s = (uad && uad.platform) || navigator.userAgent || "";
+    if ((uad && uad.mobile) || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) return null;
+    if (/win/i.test(s)) return "win";
+    if (/mac/i.test(s)) return "mac";
+    if (/linux|x11|cros/i.test(s)) return "linux";
+    return null;
+  }
+  function mb(bytes) { return Math.round(bytes / 1e6) + " MB"; }
+  function day(iso) { return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }).replace(",", ""); }
+  function file(key) { return release && release.downloads && release.downloads[key]; }
+  var tpl = document.getElementById("dl-template");
+  document.querySelectorAll("[data-dl-slot]").forEach(function (slot) { slot.appendChild(tpl.content.cloneNode(true)); });
+  function render() {
+    document.querySelectorAll("[data-dl]").forEach(function (el) {
+      el.querySelectorAll(".dl-os").forEach(function (box) { box.classList.toggle("yours", box.dataset.os === os); });
+      // With no Windows or Mac visitor (Linux, a phone), Windows leads so the block still has one filled button.
+      if (os !== "win" && os !== "mac") el.querySelector('.dl-os[data-os="win"]').classList.add("yours");
+      el.querySelectorAll("a[data-key]").forEach(function (a) { var f = file(a.dataset.key); a.href = (f && f.url) || FALLBACK; });
+      el.querySelectorAll("[data-size]").forEach(function (s) { var f = file(s.dataset.size); s.textContent = f ? mb(f.size) : ""; });
+      el.querySelectorAll(".dl-btn.main").forEach(function (a) { var f = file(a.dataset.key); if (f) { a.querySelector("[data-meta]").textContent = mb(f.size) + " · ." + f.file.split(".").pop(); a.title = f.file; } });
+      if (release) {
+        el.querySelector("[data-release]").textContent = "v" + release.version + " · " + day(release.published);
+        el.querySelector("[data-notes]").href = release.notes;
+        el.querySelector("[data-sums]").href = release.checksums;
+      }
+    });
+  }
+  render();
+  fetch("latest.json").then(function (r) { return r.ok ? r.json() : null; }).then(function (j) { if (j) { release = j; render(); } }).catch(function () {});
+
+  /* Inventory book tabs. */
+  var tabs = document.querySelectorAll(".book-tabs [role=tab]");
+  tabs.forEach(function (t) {
+    t.addEventListener("click", function () {
+      tabs.forEach(function (o) { var on = o === t; o.setAttribute("aria-selected", String(on)); document.getElementById(o.getAttribute("aria-controls")).hidden = !on; });
+    });
+  });
+
+  function mode() {
+    var t = document.documentElement.getAttribute("data-theme");
+    return t === "light" || t === "dark" ? t : window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+  }
+
+  // Light/dark: a saved choice wins, else the system's. data-theme on <html> is what the color tokens read;
+  // data-mode always says which one is showing (the toggle's icon).
+  var media = window.matchMedia("(prefers-color-scheme: light)"), toggle = document.querySelector("[data-theme-toggle]");
+  function paintMode() {
+    var m = mode();
+    document.documentElement.dataset.mode = m;
+    toggle.setAttribute("aria-label", m === "dark" ? "Switch to light mode" : "Switch to dark mode");
+  }
+  paintMode();
+  media.addEventListener("change", function () { if (!document.documentElement.hasAttribute("data-theme")) paintMode(); });
+  toggle.addEventListener("click", function () {
+    var next = mode() === "dark" ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", next);
+    try { localStorage.setItem("packrat-theme", next); } catch (e) {}
+    paintMode();
+  });
+})();
+</script>
+</body>
+</html>

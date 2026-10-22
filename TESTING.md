@@ -196,6 +196,8 @@ Each test file says what it covers in its own header comment (a `.test.mts` file
 - `scripts/scrub.test.mts` — a [smoke] guard: this repository is public, and nothing tracked in it may carry private details.
 - `scripts/select-tests.test.mts` — `scripts/select-tests.mts`, the changed-paths → test-files mapping behind `./scripts/test_runner.sh --changed`.
 - `scripts/shell-smoke.test.mts` — proves the packaged Electron shell (`electron/main.mts` + `electron/server-entry.mts`) boots, serves the page and exits clean.
+- `scripts/site-build.test.mts` — the website as it deploys (scripts/site-build.mts): every file the page links resolves in the built folder, latest.json lands beside it, the download buttons work without it, and the build refuses a folder inside site/ or one already full.
+- `scripts/site-latest.test.mts` — the website's latest.json from a release (scripts/site-latest.mts): the real 0.3.0 release maps each platform to its one asset with its size and SHA-256, and a missing, doubled or unlisted asset, a draft or a prerelease fails with every problem named.
 - `scripts/slot-lists.test.mts` — a [smoke] guard for one slot vocabulary (issue #218).
 - `scripts/start.test.mts` — `scripts/start.mts` (`npm start`) as a real child process: a signal reaches the server and a signal death never reads as a clean exit.
 - `scripts/test-index.test.mts` — a [smoke] guard that every test file describes itself in a header and that TESTING.md's test index is current.
