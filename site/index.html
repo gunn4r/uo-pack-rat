@@ -128,6 +128,27 @@ main [id] { scroll-margin-top: calc(var(--nav-h, 74px) + 16px); }
 .hero h1 { font-size: calc(clamp(44px, 5.4vw, 80px) * 1.08); line-height: .95; letter-spacing: -.01em; }
 .hero h1 .h1-a, .hero h1 em { display: block; }
 @media (min-width: 900px) { .hero h1 .h1-a { white-space: nowrap; } }
+/* Rotating headline: all items share one grid cell. The old line melts (each letter sags, stretches and drips away
+   under a heat-haze warp, #melt), then the new one is conjured letter by letter out of a blur with a brass glow. */
+.hero h1.rotating { display: grid; }
+.rot-item { grid-area: 1 / 1; }
+.rot-item .w { white-space: nowrap; }
+.rot-item .c { display: inline-block; white-space: pre; opacity: 0; transform-origin: 50% 0; }
+.rot-item.on .c { animation: conjure .9s cubic-bezier(.2, .7, .2, 1) both; animation-delay: calc(var(--d) + .45s); }
+.rot-item.out { filter: url(#melt); }
+.rot-item.out .c { animation: melt 1.05s cubic-bezier(.55, 0, .9, .45) both; animation-delay: calc(var(--d) * .7); }
+@keyframes conjure {
+  0% { opacity: 0; filter: blur(12px); transform: translateY(-.1em) scale(1.18); text-shadow: 0 0 0 transparent; }
+  55% { opacity: 1; filter: blur(0); text-shadow: 0 0 .35em var(--brass); }
+  100% { opacity: 1; filter: none; transform: none; text-shadow: 0 0 0 transparent; }
+}
+@keyframes melt {
+  0% { opacity: 1; filter: none; transform: none; }
+  35% { opacity: 1; transform: translateY(.06em) scaleY(1.12) skewX(calc(var(--sk) * .4)); }
+  100% { opacity: 0; filter: blur(5px); transform: translateY(.6em) scaleY(1.9) skewX(var(--sk)); }
+}
+@media (min-width: 900px) { .rot-item > em { white-space: nowrap; } }
+@media (prefers-reduced-motion: reduce) { .rot-item .c { animation: none !important; opacity: 1; } .rot-item:not(.on) { visibility: hidden; } }
 .hero .lede { font-size: 21px; color: var(--muted); }
 .hero .lede a { color: var(--brass); text-underline-offset: 3px; }
 .get .seal { margin-block: 4px 2px; }
@@ -293,7 +314,8 @@ main [id] { scroll-margin-top: calc(var(--nav-h, 74px) + 16px); }
 <main id="top">
   <section class="hero band"><div class="wrap">
     <div class="hero-copy">
-      <h1><span class="h1-a">Stop opening chests.</span> <em>Search them.</em></h1>
+      <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><filter id="melt" x="-10%" y="-20%" width="120%" height="180%"><feTurbulence type="fractalNoise" baseFrequency="0.012 0.09" numOctaves="2" seed="7" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="0" xChannelSelector="R" yChannelSelector="G"><animate attributeName="scale" values="0;34" dur="1.05s" begin="indefinite" fill="freeze"/></feDisplacementMap></filter></svg>
+      <h1 data-headline><span class="h1-a">Stop opening chests.</span> <em>Search them.</em></h1>
       <p class="lede">A free desktop app for Ultima Online players on <a href="https://uoalive.com">UO Alive</a>. Degenerate hoarder? Same. Pack Rat finds anything you own in seconds, keeps your house organized without some elaborate system, and builds better suits from gear you already have.</p>
       <div data-dl-slot></div>
     </div>
@@ -470,6 +492,69 @@ main [id] { scroll-margin-top: calc(var(--nav-h, 74px) + 16px); }
       tabs.forEach(function (o) { var on = o === t; o.setAttribute("aria-selected", String(on)); document.getElementById(o.getAttribute("aria-controls")).hidden = !on; });
     });
   });
+
+  /* Rotating headline: every headline is stacked in one grid cell, so the hero keeps the height of the tallest and
+     nothing below it jumps. The type shrinks just enough for the widest line to fit on one line (desktop). Screen
+     readers get the first headline once (aria-label), not a live-changing heading; without script the page keeps the
+     first headline as written. */
+  var HEADLINES = [
+    ["Stop opening chests.", "Search them."],
+    ["Where did I put that ring?", "Pack Rat knows."],
+    ["Forty chests.", "One search box."],
+    ["The best suit", "is already in your house."],
+    ["Somewhere in your house", "is a better ring."],
+    ["Your bank box,", "with a search box."]
+  ];
+  var h1 = document.querySelector("[data-headline]"), timer = null, cur = 0, items = [];
+  var reduce = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  /* Each letter is its own span with a random delay (--d) and drip lean (--sk), so the melt and the conjuring ripple.
+     A word's letters sit in one unbreakable span and the spaces stay plain text, so a narrow screen wraps between
+     words, never inside one. */
+  function letters(el, text, base) {
+    var k = 0;
+    text.split(" ").forEach(function (word, n) {
+      if (n) el.appendChild(document.createTextNode(" "));
+      var w = document.createElement("span"); w.className = "w";
+      Array.from(word).forEach(function (ch) {
+        var c = document.createElement("span"); c.className = "c"; c.textContent = ch;
+        c.style.setProperty("--d", (base + k++ * .018 + Math.random() * .22).toFixed(3) + "s");
+        c.style.setProperty("--sk", ((Math.random() - .5) * 24).toFixed(1) + "deg");
+        w.appendChild(c);
+      });
+      el.appendChild(w);
+      k++;
+    });
+  }
+  function line(h) {
+    var it = document.createElement("span"); it.className = "rot-item"; it.setAttribute("aria-hidden", "true");
+    var a = document.createElement("span"); a.className = "h1-a"; letters(a, h[0], 0);
+    var em = document.createElement("em"); letters(em, h[1], .16);
+    it.append(a, " ", em); return it;
+  }
+  var meltAnim = document.querySelector("#melt animate");
+  function fit() {
+    h1.style.fontSize = "";
+    if (!h1.classList.contains("rotating") || innerWidth < 900) return;
+    var w = h1.clientWidth, widest = 0;
+    items.forEach(function (it) { it.querySelectorAll(".h1-a, em").forEach(function (l) { widest = Math.max(widest, l.scrollWidth); }); });
+    if (widest > w) h1.style.fontSize = (parseFloat(getComputedStyle(h1).fontSize) * w / widest * .98) + "px";
+  }
+  function show(i) {
+    items.forEach(function (it, j) { it.classList.toggle("on", j === i); it.classList.toggle("out", j === cur && j !== i); });
+    if (meltAnim && meltAnim.beginElement) meltAnim.beginElement();
+    cur = i;
+  }
+  function paused() { return document.hidden || h1.matches(":hover"); }
+  function rotate() {
+    clearInterval(timer); h1.textContent = ""; h1.classList.add("rotating");
+    h1.setAttribute("aria-label", HEADLINES[0].join(" "));
+    items = HEADLINES.map(line); items.forEach(function (it) { h1.appendChild(it); });
+    cur = 0; items[0].classList.add("on"); fit();
+    if (!reduce) timer = setInterval(function () { if (!paused()) show((cur + 1) % items.length); }, 5200);
+  }
+  rotate();
+  addEventListener("resize", fit);
+  if (document.fonts) document.fonts.ready.then(fit);
 
   /* The header: hides on the way down (past its own height, after 8px), comes back after 8px up. */
   var nav = document.querySelector(".nav"), lastY = window.scrollY, turnY = lastY, lastDir = 0, hidden = false, queued = false;
