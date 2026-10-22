@@ -46,7 +46,7 @@ const BUDGETS: Record<string, number> = {
   "docs/ui/suit-builder.md": 98000,
   "electron/README.md": 14000,
   "PRIVACY.md": 16000,
-  "README.md": 8000,
+  "README.md": 8600,
   "RELEASING.md": 17000,
   "SECURITY.md": 6000,
   "TESTING.md": 60000,

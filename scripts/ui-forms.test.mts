@@ -100,9 +100,11 @@ test("[slow] Wizard: named stepper with branch-aware labels, radio cards, kept t
     assert.equal(await page.locator("#wizard [aria-current=step]").innerText(), "1\nShard");
     // Changing the shard keeps the wizard open (it is applied at Finish) and the AFK notice follows the pick.
     assert.match(await page.locator("#wizard .wiz-body").innerText(), /UO Alive allows AFK/);
+    assert.doesNotMatch(await page.locator("#wizard .wiz-body").innerText(), /tested on UO Alive only/);
     await page.selectOption("#wiz-shard", "generic-osi");
     assert.equal(await page.locator("#wizard[open]").count(), 1);
     assert.doesNotMatch(await page.locator("#wizard .wiz-body").innerText(), /UO Alive allows AFK/);
+    assert.match(await page.locator("#wizard .wiz-body").innerText(), /tested on UO Alive only/, "any other shard: the note that it is untested there");
     await page.keyboard.press("Enter");   // ↵ is Continue
 
     // Step 2: radio cards, installable first; a client this machine can't run is shown disabled with the reason.
@@ -225,6 +227,26 @@ test("[slow] ClassicUO web client: Settings copies the bundled scanner and says 
   } finally {
     await close();
   }
+});
+
+test("[slow] Settings: a shard other than UO Alive gets the untested note under the shard picker; switching to UO Alive removes it", async (t) => {
+  if (skipWithoutElectron(t)) return;
+  const dataDir = mkdtempSync(join(tmpdir(), "packrat-forms-shard-"));
+  writeFileSync(join(dataDir, "settings.json"), JSON.stringify({ schemaVersion: 1, shard: "generic-osi", setupDone: true }));
+  const { page, errors, close } = await launch(dataDir);
+  try {
+    await page.locator("#inv-table tbody tr.item").first().waitFor({ timeout: 30_000 });
+    await page.evaluate(() => { location.hash = "#/settings"; });
+    await page.waitForSelector("#set-general .set-row");
+    assert.match(await page.locator("#set-general").innerText(), /tested on UO Alive only/);
+    const reloaded = page.waitForEvent("load");   // a shard switch reloads the page
+    await page.selectOption("#shard", "uoalive");
+    await reloaded;
+    await page.waitForSelector("#set-general .set-row");
+    assert.equal(await page.locator("#shard").inputValue(), "uoalive");
+    assert.doesNotMatch(await page.locator("#set-general").innerText(), /tested on UO Alive only/);
+    assert.deepEqual(errors, []);
+  } finally { await close(); }
 });
 
 test("[slow] Settings: sections with the client warning, theme and appearance, Run setup, forget with confirm, update check messages", async (t) => {
