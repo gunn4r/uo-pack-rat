@@ -12,14 +12,16 @@ on:
     paths:
       - "site/**"
       - "scripts/site-*.mts"
-      - "app/assets/**"
+      - "scripts/shots-lib.mts"
+      - "app/**"
       - "docs/images/**"
       - ".github/workflows/pages.yml"
   pull_request:
     paths:
       - "site/**"
       - "scripts/site-*.mts"
-      - "app/assets/**"
+      - "scripts/shots-lib.mts"
+      - "app/**"
       - "docs/images/**"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
@@ -48,6 +50,11 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"
+          cache: npm
+      - name: Install dependencies without running install scripts
+        # As in ci.yml: the build of the page and the demo's recording need TypeScript and Playwright, and no install
+        # script runs.
+        run: npm ci --ignore-scripts
       - name: Read the latest published release
         # `gh release view` with no tag is GitHub's "latest" release: published, never a draft or a prerelease.
         env:
@@ -60,8 +67,16 @@ jobs:
       - name: Write latest.json
         # Fails when a platform's asset is missing or matches twice, so a renamed asset can't break a button unnoticed.
         run: node scripts/site-latest.mts "$RUNNER_TEMP/release/release.json" "$RUNNER_TEMP/release/SHA256SUMS" --out "$RUNNER_TEMP/release/latest.json"
+      - name: Generate the schema types
+        # The demo's UI build typechecks against app/schema/types.d.mts, which is generated, not committed (as in ci.yml,
+        # where `npm run typecheck` makes it first).
+        run: npm run build:types
+      - name: Record the live demo
+        # The real page on the demo characters, recorded off a real server in headless Chrome (the runner's own), so the
+        # demo is always this commit's app. It fails if the recording holds a machine path or a character not in the demo.
+        run: node scripts/site-demo.mts --out "$RUNNER_TEMP/demo"
       - name: Assemble the site
-        run: node scripts/site-build.mts --out _site --latest "$RUNNER_TEMP/release/latest.json"
+        run: node scripts/site-build.mts --out _site --latest "$RUNNER_TEMP/release/latest.json" --demo "$RUNNER_TEMP/demo"
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: _site

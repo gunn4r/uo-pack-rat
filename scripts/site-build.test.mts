@@ -1,4 +1,4 @@
-// site-build.test.mts — the website as it deploys (scripts/site-build.mts): every file the page links resolves in the built folder, latest.json lands beside it, the download buttons work without it, and the build refuses a folder inside site/ or one already full.
+// site-build.test.mts — the website as it deploys (scripts/site-build.mts): every file the page links resolves in the built folder, latest.json and the recorded demo land beside it, the download buttons work without it, and the build refuses a folder inside site/ or one already full.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -44,6 +44,17 @@ test("[fast] site-build: latest.json is copied in, and every download button lin
   for (const [, key, href] of buttons) assert.equal(href, "https://github.com/gunn4r/uo-pack-rat/releases/latest", key);
 });
 
+test("[fast] site-build: the recorded demo goes in demo/, beside the shim from site/demo/", (t) => {
+  const out = mkdtempSync(join(tmpdir(), "packrat-site-"));
+  t.after(() => rmSync(out, { recursive: true, force: true }));
+  mkdirSync(join(out, "rec"));
+  writeFileSync(join(out, "rec", "demo-data.json"), "{}");
+  buildSite({ out: join(out, "site"), demo: join(out, "rec") });
+  assert.ok(existsSync(join(out, "site", "demo", "demo-data.json")));
+  assert.ok(existsSync(join(out, "site", "demo", "shim.mjs")), "the shim comes from site/demo/");
+  assert.ok(!existsSync(join(out, "site", "demo", "hold-scroll.d.mts")), "type declarations stay out of the site");
+});
+
 test("[fast] site-build: refuses to build inside site/ or into a folder that isn't empty", (t) => {
   assert.throws(() => buildSite({ out: join(ROOT, "site", "dist") }), /outside site\//);
   const out = mkdtempSync(join(tmpdir(), "packrat-site-"));
@@ -51,4 +62,14 @@ test("[fast] site-build: refuses to build inside site/ or into a folder that isn
   mkdirSync(join(out, "full"));
   writeFileSync(join(out, "full", "x"), "");
   assert.throws(() => buildSite({ out: join(out, "full") }), /not empty/);
+});
+
+test("[fast] site-build: the character section's tooltip is the Mighty Ring's own, every line from the demo fixture and nothing else", () => {
+  const html = readFileSync(join(ROOT, "site", "index.html"), "utf8");
+  const box = /<div class="tip" data-item="Mighty Ring">(.*?)<\/div>/.exec(html)?.[1] ?? "";
+  const shown = [...box.matchAll(/<span[^>]*>([^<]*)<\/span>/g)].map((m) => m[1]!);
+  const fixture = JSON.parse(readFileSync(join(ROOT, "app", "fixtures", "demo-Dorran.json"), "utf8"));
+  const ring = JSON.stringify(fixture).match(/"name":"Mighty Ring"[^}]*"tooltip":(\[[^\]]*\])/);
+  assert.ok(ring, "the Mighty Ring is in the demo fixture");
+  assert.deepEqual([...shown].sort(), [...(JSON.parse(ring[1]!) as string[])].sort());
 });

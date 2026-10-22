@@ -19,6 +19,9 @@
 <script>
   // A saved light or dark choice is applied before the page paints, so it never flashes the other one.
   try { var t = localStorage.getItem("packrat-theme"); if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t); } catch (e) {}
+  // The live demo's section is laid out from the first paint on screens wide enough for it (taken away later only if the
+  // recording is missing), so nothing below it moves.
+  if (window.matchMedia("(min-width: 761px)").matches) document.documentElement.classList.add("has-demo");
 </script>
 <link rel="preload" href="fonts/grenze-gotisch-latin-500-600-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="fonts/alegreya-sans-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
@@ -92,6 +95,26 @@ h1 em, h2 em, h3 em { font-style: normal; font-synthesis: none; }
 .plate img { border-radius: 4px; box-shadow: 0 0 0 1px var(--line), 0 0 0 5px var(--paper), 0 0 0 6px var(--line), var(--plate-shadow); background: #1a120b; }
 .plate figcaption { font-size: 15px; font-style: italic; color: var(--faint); }
 .plate figcaption b { font-style: normal; color: var(--muted); font-weight: 500; }
+/* Screenshots enlarge in a lightbox (click, Enter or Space). The hint is out of flow, so the figure's grid is untouched. */
+.plate { position: relative; }
+.plate img[role="button"] { cursor: zoom-in; }
+.plate:has(img[role="button"])::after { content: "Enlarge"; position: absolute; top: 12px; right: 12px; padding: 3px 9px 3px 24px; border-radius: 3px; font: 500 12.5px/1.5 var(--body); color: var(--tip-fg); pointer-events: none; opacity: 0; transition: opacity .15s;
+  background: var(--tip-bg) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M9.5 2.5h4v4M13.5 2.5 9 7M6.5 13.5h-4v-4M2.5 13.5 7 9' fill='none' stroke='%23efe8d8' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat 8px 50% / 12px; }
+.plate:has(img[role="button"]:hover)::after, .plate:has(img[role="button"]:focus-visible)::after { opacity: 1; }
+.lightbox { width: 100vw; height: 100vh; max-width: none; max-height: none; margin: 0; padding: 0; border: 0; background: transparent; color: var(--tip-fg); overflow: hidden; }
+.lightbox[open] { display: grid; grid-template-columns: minmax(0, 1fr); place-items: center; }
+.lightbox::backdrop { background: rgb(8 6 4 / .86); }
+.lightbox figure { margin: 0; display: grid; grid-template-columns: minmax(0, 1fr); justify-items: center; gap: 12px; padding: 16px; max-width: 100vw; }
+.lightbox img { display: block; max-width: none; border-radius: 4px; box-shadow: 0 30px 80px -20px #000; }
+.lightbox figcaption { font-size: 15px; color: var(--tip-dim); text-align: center; }
+.lightbox button { position: absolute; display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--tip-edge); background: var(--tip-bg); color: var(--tip-fg); cursor: pointer; }
+.lightbox button svg { width: 18px; height: 18px; }
+.lightbox .lb-close { top: max(12px, env(safe-area-inset-top, 0px)); right: max(12px, env(safe-area-inset-right, 0px)); }
+.lightbox .lb-prev { left: max(12px, env(safe-area-inset-left, 0px)); top: calc(50% - 22px); }
+.lightbox .lb-next { right: max(12px, env(safe-area-inset-right, 0px)); top: calc(50% - 22px); }
+@media (max-width: 760px) { .lightbox .lb-prev, .lightbox .lb-next { top: auto; bottom: max(12px, env(safe-area-inset-bottom, 0px)); } }
+@media (prefers-reduced-motion: no-preference) { .lightbox[open] img { animation: lb-in .18s ease-out; } }
+@keyframes lb-in { from { opacity: 0; transform: scale(.97); } }
 
 /* nav + hero */
 .nav { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; border-bottom: 1px solid var(--line-soft); transition: transform .2s ease, background-color .2s ease, border-color .2s ease; }
@@ -201,6 +224,25 @@ main [id] { scroll-margin-top: calc(var(--nav-h, 74px) + 16px); }
 .head-l p { color: var(--muted); }
 .head-l p b, .copy p b { color: var(--ink); font-weight: 700; }
 
+
+/* the real app in a window */
+.window { border: 1px solid var(--line); background: var(--paper); border-radius: 8px; overflow: hidden; box-shadow: var(--plate-shadow); }
+.window-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 10px 14px; border-bottom: 1px solid var(--line); font-size: 14px; color: var(--faint); }
+.window-bar .dots { display: flex; gap: 6px; }
+.window-bar .dots i { width: 11px; height: 11px; border-radius: 50%; background: var(--line); }
+.window-bar nav { display: flex; flex-wrap: wrap; gap: 4px; margin-left: auto; }
+.window-bar button { font: 500 14px var(--body); background: transparent; color: var(--muted); border: 1px solid transparent; border-radius: 4px; padding: 5px 10px; cursor: pointer; }
+.window-bar button[aria-pressed="true"] { border-color: var(--brass); color: var(--brass); }
+.window iframe { display: block; width: 100%; height: 760px; border: 0; background: #1a120b; }
+/* The live app is dense: let its window break out of the page column, up to 1680px wide, shrinking with the screen. */
+.window.window-live { --app-w: min(1680px, calc(100vw - 48px)); width: var(--app-w); margin-inline: calc((100% - var(--app-w)) / 2); }
+.window.window-live iframe { height: clamp(760px, 86vh, 1080px); }
+.window-note { font-size: 15px; color: var(--faint); text-align: center; }
+html:not(.has-demo) .window-live { display: none; }
+/* The Try section and its nav link show only once the live app is there to load (never on a phone). */
+html:not(.has-demo) #try, html:not(.has-demo) .nav a[href="#try"] { display: none; }
+.phone-only { display: none; }
+
 /* inventory book: tabs over one plate */
 .book { border: 1px solid var(--line); background: var(--paper); padding: 10px; position: relative; }
 .book::before { content: ""; position: absolute; inset: 4px; border: 1px solid var(--line-soft); pointer-events: none; }
@@ -215,7 +257,10 @@ main [id] { scroll-margin-top: calc(var(--nav-h, 74px) + 16px); }
 /* character plate with a tooltip hanging off it */
 .char { display: grid; grid-template-columns: minmax(0, 8fr) minmax(0, 4fr); gap: 40px; align-items: center; }
 .char .plate-wrap { position: relative; }
-.char .tip { position: absolute; right: -28px; bottom: 9%; min-width: 230px; }
+.char .tip-wrap { position: absolute; right: -28px; bottom: -34px; display: grid; justify-items: center; gap: 8px; }
+.char .tip { min-width: 230px; }
+.char .tip .dim + .dim { margin-top: 0; }
+.tip-cap { font-size: 13.5px; color: var(--faint); }
 .copy { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; color: var(--muted); }
 .copy h2 { font-size: clamp(34px, 4vw, 50px); line-height: 1.04; color: var(--ink); }
 
@@ -268,10 +313,12 @@ main [id] { scroll-margin-top: calc(var(--nav-h, 74px) + 16px); }
 
 @media (max-width: 1000px) {
   .hero .wrap, .head-l, .char, .get, .book-page, .setup, .steps li:first-child { grid-template-columns: minmax(0, 1fr); }
-  .char .tip { right: 12px; }
+  .char .tip-wrap { right: 12px; }
   .get { padding: 32px 22px; }
 }
 @media (max-width: 760px) {
+  .window-live, #try { display: none !important; }
+  .phone-only { display: block; }
   .nav nav, .kofi-btn span { display: none; }
   .kofi-btn { padding: 0 11px; }
   .spread { grid-template-columns: minmax(0, 1fr); }
@@ -280,7 +327,7 @@ main [id] { scroll-margin-top: calc(var(--nav-h, 74px) + 16px); }
   .ingame, .steps { grid-template-columns: minmax(0, 1fr); }
   .sec .wrap { padding-bottom: 96px; }
   .relic .tip { min-width: 0; }
-  .char .tip { position: relative; right: auto; bottom: auto; margin: -36px 10px 0 auto; width: max-content; max-width: calc(100% - 20px); }
+  .char .tip-wrap { position: relative; right: auto; bottom: auto; margin: -36px 10px 0 auto; width: max-content; max-width: calc(100% - 20px); }
   .book-tabs button { font-size: 19px; }
 }
 @media (max-width: 480px) { .dl-pair { grid-template-columns: minmax(0, 1fr); } }
@@ -309,6 +356,7 @@ main [id] { scroll-margin-top: calc(var(--nav-h, 74px) + 16px); }
 <header class="nav band"><div class="wrap">
   <a class="brand" href="#top"><img src="img/logo-mark.png" alt="" width="40" height="40">Pack Rat</a>
   <nav aria-label="Site">
+    <a href="#try">Try it</a>
     <a href="#download">Download</a>
     <a href="https://github.com/gunn4r/uo-pack-rat/blob/main/docs/user-guide.md">User guide</a>
     <a href="https://github.com/gunn4r/uo-pack-rat/blob/main/CHANGELOG.md">Changelog</a>
@@ -391,6 +439,7 @@ main [id] { scroll-margin-top: calc(var(--nav-h, 74px) + 16px); }
       </script>
       <p class="lede">A free desktop app for Ultima Online players on <a href="https://uoalive.com">UO Alive</a>. Degenerate hoarder? Same. Pack Rat finds anything you own in seconds, keeps your house organized without some elaborate system, and builds better suits from gear you already have.</p>
       <div data-dl-slot><div class="dl-static"><a class="dl-btn" href="https://github.com/gunn4r/uo-pack-rat/releases/latest"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5v9m0 0L4.5 7M8 10.5 11.5 7M2.5 13.5h11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><b>Windows</b><span>Latest release</span></a><a class="dl-btn" href="https://github.com/gunn4r/uo-pack-rat/releases/latest"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5v9m0 0L4.5 7M8 10.5 11.5 7M2.5 13.5h11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><b>macOS</b><span>Latest release</span></a><a class="dl-btn" href="https://github.com/gunn4r/uo-pack-rat/releases/latest"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5v9m0 0L4.5 7M8 10.5 11.5 7M2.5 13.5h11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><b>Linux</b><span>Latest release</span></a></div></div>
+      <p class="phone-only shard-note">On a computer, this page lets you try the real app on demo data.</p>
     </div>
     <div class="relic">
       <img src="img/icon.png" width="176" height="176" alt="The Pack Rat logo: a rat in an overstuffed adventurer's backpack, holding a gold coin">
@@ -405,6 +454,22 @@ main [id] { scroll-margin-top: calc(var(--nav-h, 74px) + 16px); }
         <span class="dim">Weight: 0 stones</span>
       </div>
     </div>
+  </div></section>
+
+  <section class="sec band" id="try"><div class="wrap">
+    <div class="head"><span class="label">Try it here</span><h2>This is the real app, <em>running on two demo characters.</em></h2><p>Search for “lower reagent”, open a ring, look up Dorran, find the katana in the house.</p></div>
+    <div class="window window-live">
+      <div class="window-bar"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span>Pack Rat · demo data</span>
+        <nav aria-label="Jump to a screen" data-app-nav>
+          <button type="button" data-route="inventory" aria-pressed="true">Inventory</button>
+          <button type="button" data-route="characters/Dorran" aria-pressed="false">Dorran</button>
+          <button type="button" data-route="map" aria-pressed="false">House map</button>
+          <button type="button" data-route="builder" aria-pressed="false">Suit Builder</button>
+        </nav>
+      </div>
+      <iframe data-app loading="lazy" title="The Pack Rat app on demo data"></iframe>
+    </div>
+    <p class="window-note window-live">Item icons and the paperdoll are drawn from your own Ultima Online client once you install, so they're blank here.</p>
   </div></section>
 
   <section class="sec band" id="inventory"><div class="wrap">
@@ -440,7 +505,10 @@ main [id] { scroll-margin-top: calc(var(--nav-h, 74px) + 16px); }
     <div class="char">
       <div class="plate-wrap">
         <figure class="plate"><img class="d" src="img/character.webp" width="1600" height="1215" loading="lazy" alt="Dorran's character sheet: Physical 18, Fire 70 at the cap, Cold 41, Poison 32, Energy 60; his paperdoll with a double bladed staff; his worn gear"><img class="l" src="img/character-light.webp" width="1600" height="1215" loading="lazy" alt="Dorran's character sheet: Physical 18, Fire 70 at the cap, Cold 41, Poison 32, Energy 60; his paperdoll with a double bladed staff; his worn gear"></figure>
-        <div class="tip" aria-hidden="true"><span class="n t-major">Mighty Ring</span><span class="t-major">Major Magic Item</span><span>Worn by Dorran</span><span class="dim">Ring slot</span></div>
+        <div class="tip-wrap" aria-hidden="true">
+          <div class="tip" data-item="Mighty Ring"><span class="n t-major">Mighty Ring</span><span class="t-major">Major Magic Item</span><span>Magery +20</span><span>Strength Bonus 6</span><span>Faster Casting 1</span><span>Fire Resist 12%</span><span class="dim">Weight: 1 Stone</span><span class="dim">Durability 255 / 255</span></div>
+          <span class="tip-cap">Worn by Dorran · ring slot</span>
+        </div>
       </div>
       <div class="copy"><span class="label">Characters</span><h2>Each character, <em>at a glance.</em></h2><p>The paperdoll in the gear they wear, the five resists against the cap, stats, and every property against the shard's cap.</p><p>Property caps, rarity colors and the gargoyle race lock follow UO Alive's rules.</p></div>
     </div>
@@ -522,6 +590,13 @@ main [id] { scroll-margin-top: calc(var(--nav-h, 74px) + 16px); }
   </div>
 </div></footer>
 
+<dialog class="lightbox" aria-label="Enlarged screenshot">
+  <figure><img alt=""><figcaption></figcaption></figure>
+  <button type="button" class="lb-prev" aria-label="Previous screenshot"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3 5 8l5 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+  <button type="button" class="lb-next" aria-label="Next screenshot"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m6 3 5 5-5 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+  <button type="button" class="lb-close" aria-label="Close"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3.5 3.5 9 9m0-9-9 9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button>
+</dialog>
+
 <script>
 (function () {
   /* Downloads, from latest.json. Complete without it: every link goes to the latest release. */
@@ -591,6 +666,41 @@ main [id] { scroll-margin-top: calc(var(--nav-h, 74px) + 16px); }
     return t === "light" || t === "dark" ? t : window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
   }
 
+
+  /* The live demo: the real app on recorded demo data (demo/, built by scripts/site-demo.mts), shown on screens wide
+     enough for it once it's there; otherwise the screenshot stands in. It follows the page's light/dark: Britannia dark,
+     Default light. */
+  var frame = document.querySelector("[data-app]"), route = "inventory";
+  function loadApp() { if (!frame.dataset.on) return; var m = mode(); frame.src = "demo/?theme=" + (m === "light" ? "default" : "britannia") + "&appearance=" + m + "&embed#/" + route; }
+  // The head's script already laid the section out (has-demo) on a wide screen; it goes again only if the recording
+  // isn't there.
+  function noDemo() { document.documentElement.classList.remove("has-demo"); delete frame.dataset.on; frame.removeAttribute("src"); }
+  if (document.documentElement.classList.contains("has-demo")) {
+    frame.dataset.on = "1";
+    loadApp();
+    fetch("demo/demo-data.json", { method: "HEAD" }).then(function (r) { if (!r.ok) noDemo(); }).catch(noDemo);
+  }
+  document.querySelectorAll("[data-app-nav] button").forEach(function (b) {
+    b.addEventListener("click", function () {
+      route = b.dataset.route;
+      document.querySelectorAll("[data-app-nav] button").forEach(function (o) { o.setAttribute("aria-pressed", String(o === b)); });
+      try { frame.contentWindow.location.hash = "#/" + route; } catch (e) { loadApp(); }
+    });
+  });
+  // The app opens on a search for "ring" with one ring open, so the first look shows rarity colors and a tooltip.
+  frame.addEventListener("load", function () {
+    if (route !== "inventory") return;
+    var tries = 0, t = setInterval(function () {
+      var d; try { d = frame.contentDocument; } catch (e) { clearInterval(t); return; }
+      var box = d && d.querySelector("#f-text");
+      if (box && d.querySelector("#inv-table tbody tr.item")) {
+        clearInterval(t);
+        box.value = "ring"; box.dispatchEvent(new Event("input", { bubbles: true }));
+        setTimeout(function () { var row = d.querySelectorAll("#inv-table tbody tr.item")[2]; if (row) row.click(); }, 700);
+      } else if (++tries > 40) clearInterval(t);
+    }, 250);
+  });
+
   // Light/dark: a saved choice wins, else the system's. data-theme on <html> is what the color tokens read;
   // data-mode always says which one is showing (the toggle's icon).
   var media = window.matchMedia("(prefers-color-scheme: light)"), toggle = document.querySelector("[data-theme-toggle]");
@@ -600,12 +710,64 @@ main [id] { scroll-margin-top: calc(var(--nav-h, 74px) + 16px); }
     toggle.setAttribute("aria-label", m === "dark" ? "Switch to light mode" : "Switch to dark mode");
   }
   paintMode();
-  media.addEventListener("change", function () { if (!document.documentElement.hasAttribute("data-theme")) paintMode(); });
+  media.addEventListener("change", function () { if (!document.documentElement.hasAttribute("data-theme")) { paintMode(); loadApp(); } });
   toggle.addEventListener("click", function () {
     var next = mode() === "dark" ? "light" : "dark";
     document.documentElement.setAttribute("data-theme", next);
     try { localStorage.setItem("packrat-theme", next); } catch (e) {}
-    paintMode();
+    paintMode(); loadApp();
+  });
+
+  /* Lightbox: every screenshot and in-game capture (figure.plate) enlarges in a modal <dialog>, which traps focus and
+     closes on Esc. It shows the twin of the current theme at its own size, up to the screen, with the caption (else the
+     alt text) under it; arrows step through the page's figures in order. The page's scroll stays put: it is locked
+     while the dialog is open, with the scrollbar's width kept so nothing moves, and focus goes back to the image. */
+  var box = document.querySelector(".lightbox"), boxImg = box.querySelector("img"), boxCap = box.querySelector("figcaption");
+  var figures = Array.prototype.slice.call(document.querySelectorAll("figure.plate")).filter(function (f) { return f.querySelector("img"); });
+  var at = 0, opener = null, savedY = 0;
+  function shown(f) { var imgs = f.querySelectorAll("img"); return imgs.length > 1 ? f.querySelector(mode() === "light" ? "img.l" : "img.d") || imgs[0] : imgs[0]; }
+  function paint() {
+    var img = shown(figures[at]), cap = figures[at].querySelector("figcaption");
+    boxImg.src = img.currentSrc || img.src;
+    boxImg.alt = img.alt;
+    boxCap.textContent = cap ? cap.textContent.trim() : img.alt;
+    size();
+  }
+  // Sized from the image's own width and height before it loads, so stepping never jumps: the small captures (the
+  // in-game GIFs) at twice their size, the 2x screenshots at their own, either way no bigger than the screen.
+  function size() {
+    var img = shown(figures[at]), w = +img.getAttribute("width") || img.naturalWidth, h = +img.getAttribute("height") || img.naturalHeight;
+    var W = w < 800 ? w * 2 : w, H = W * h / w, k = Math.min(1, window.innerWidth * .95 / W, (window.innerHeight * .95 - 80) / H);
+    boxImg.style.width = Math.round(W * k) + "px"; boxImg.style.height = Math.round(H * k) + "px";
+  }
+  window.addEventListener("resize", function () { if (box.open) size(); });
+  function open(i) {
+    at = i; opener = shown(figures[i]); paint();
+    var root = document.documentElement, gap = window.innerWidth - root.clientWidth;
+    savedY = window.scrollY;
+    root.style.overflow = "hidden"; document.body.style.paddingRight = gap + "px";
+    box.showModal();
+  }
+  box.addEventListener("close", function () {
+    var root = document.documentElement;
+    root.style.overflow = ""; document.body.style.paddingRight = "";
+    window.scrollTo(0, savedY);
+    if (opener) opener.focus({ preventScroll: true });
+  });
+  function step(d) { at = (at + d + figures.length) % figures.length; paint(); }
+  box.querySelector(".lb-close").addEventListener("click", function () { box.close(); });
+  box.querySelector(".lb-prev").addEventListener("click", function () { step(-1); });
+  box.querySelector(".lb-next").addEventListener("click", function () { step(1); });
+  box.addEventListener("click", function (e) { if (e.target === box) box.close(); });
+  box.addEventListener("keydown", function (e) { if (e.key === "ArrowLeft") { e.preventDefault(); step(-1); } else if (e.key === "ArrowRight") { e.preventDefault(); step(1); } });
+  figures.forEach(function (f, i) {
+    f.querySelectorAll("img").forEach(function (img) {
+      img.tabIndex = 0;
+      img.setAttribute("role", "button");
+      img.setAttribute("aria-label", "Enlarge: " + img.alt);
+      img.addEventListener("click", function () { open(i); });
+      img.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(i); } });
+    });
   });
 })();
 </script>

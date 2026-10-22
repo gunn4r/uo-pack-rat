@@ -40,7 +40,8 @@
     "test:fast": "node scripts/test-runner.mts --fast",
     "readme:shots": "node scripts/readme-shots.mts",
     "site:shots": "node scripts/site-shots.mts",
-    "site:build": "node scripts/site-build.mts"
+    "site:build": "node scripts/site-build.mts",
+    "site:demo": "node scripts/site-demo.mts"
   },
   "dependencies": {
     "highs": "1.15.4"
