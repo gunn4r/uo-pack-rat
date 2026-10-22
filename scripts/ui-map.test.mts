@@ -1469,18 +1469,19 @@ test("[slow] House map Stack plan: lists every container of the dense vault, a c
     await page.waitForSelector("#map-plan .sp-card");
     assert.equal(await page.locator('#map-view [data-value="plan"]').getAttribute("aria-checked"), "true");
     assert.deepEqual([await page.locator("#map-svg").count(), await page.locator("#map-canvas .map-zoom").count(), await page.locator("#map-pins").count()], [0, 0, 0], "no drawing, zoom buttons or pins in the plan");
-    // every container once, a card per stack, the teleporter's tile an empty cell
+    // every container once, a card per stack and none for the teleporter's empty tile, grouped by area: North row, then the rest
     assert.equal(await page.locator("#map-plan .sp-card").count(), 24);
     assert.deepEqual((await chestsOf(page, "#map-plan .sp-row")).sort((a, b) => a - b), vaultModel.stacks.flatMap((s) => s.serials).sort((a, b) => a - b));
-    assert.equal(await page.locator("#map-plan .sp-empty").count(), 1);
-    assert.match(await page.locator("#map-plan .sp-bar").textContent() ?? "", /^Seen from above, north up\..*24 stacks · 120 containers$/);
+    assert.match(await page.locator("#map-plan .sp-bar").textContent() ?? "", /^Each card is one tile's stack, its containers top first, by area, north to south\..*24 stacks · 120 containers$/);
+    assert.deepEqual(await page.locator("#map-plan .sp-groups > .sp-area > .sp-area-name").evaluateAll((es) => es.map((e) => e.firstChild?.textContent)), ["North row", "Not in an area"], "the area's group, then the stacks in no area");
+    assert.deepEqual(await page.locator("#map-plan .sp-groups > .sp-area").evaluateAll((es) => es.map((e) => e.querySelectorAll(".sp-card").length)), [5, 19]);
     const nw = vaultModel.stacks.find((s) => s.x === 3001 && s.y === 1001)!, card = page.locator(`#map-plan .sp-card[data-stack="${nw.letter}"]`);
     assert.deepEqual(await chestsOf(page, `#map-plan .sp-card[data-stack="${nw.letter}"] .sp-row`), [...nw.serials].reverse(), "top first");
     assert.equal(await card.locator(".sp-card-head").textContent(), `Stack ${nw.letter}5 containers`);
     assert.equal(await card.getAttribute("aria-label"), `Stack ${nw.letter}, 5 containers, North row`);
     assert.equal(await card.locator(`.sp-row[data-chest="${LABELLED}"] .sp-chip`).textContent(), "Reagents", "the label as a chip");
     assert.match(await card.locator(`.sp-row[data-chest="${LABELLED}"]`).textContent() ?? "", /Metal Chest\d+\/125$/, "the in-game name and the fill out of the container's maximum");
-    assert.match(await page.locator("#map-plan .sp-area .sp-area-name").textContent() ?? "", /^North row25$/, "the area's pill and its count");
+    assert.match(await page.locator("#map-plan .sp-area .sp-area-name").first().textContent() ?? "", /^North row25$/, "the area's pill and its count");
     // drawing waits for a drawing view
     const newArea = page.locator("#map-new-area-0");
     assert.equal(await newArea.isDisabled(), true);
@@ -1499,9 +1500,10 @@ test("[slow] House map Stack plan: lists every container of the dense vault, a c
     await page.keyboard.press("Escape");
     await page.waitForSelector("#map-plan .sp-card.sel", { state: "detached" });
     assert.equal(await page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.stack), nw.letter);
+    // the arrows walk the list: right and down both go to the next card, here along the North row
     await page.keyboard.press("ArrowRight");
     await page.keyboard.press("ArrowDown");
-    const next = letter(vaultModel, 3002, 1002);
+    const next = letter(vaultModel, 3003, 1001);
     assert.equal(await page.evaluate(() => (document.activeElement as HTMLElement | null)?.dataset.stack), next);
     assert.equal(await page.locator('#map-plan .sp-card[tabindex="0"]').getAttribute("data-stack"), next, "one tab stop, on the focused card");
     await page.keyboard.press("Enter");
@@ -1531,7 +1533,8 @@ test("[slow] House map Stack plan: a search scrolls to its first matching card, 
     await page.locator('#map-view [data-value="plan"]').click();
     await page.waitForSelector("#map-plan .sp-card");
     assert.equal(await page.locator("#map-plan").getAttribute("role"), null);
-    assert.equal(await page.locator("#map-plan .sp-cards").getAttribute("role"), "list", "explicit list semantics on the display: contents list");
+    assert.equal(await page.locator("#map-plan .sp-groups").getAttribute("role"), "list", "a list of groups");
+    assert.equal(await page.locator("#map-plan .sp-cards").first().getAttribute("role"), "list", "each group a list of cards");
     assert.equal(await page.locator("#map-plan .sp-card").first().getAttribute("role"), "listitem");
     // a new search brings its first matching card into view
     await scrollAway(page);

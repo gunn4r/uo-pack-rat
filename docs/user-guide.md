@@ -134,7 +134,7 @@ The **House map** draws your house from the game, floor by floor, with every sta
 
 ![The House map of a demo house: the floors on the left, the house drawn at the game's angle in the middle with chests colored by their labels, and the house's totals on the right](images/house-map.png)
 
-Switch between **Game angle**, **Top-down** and **Stack plan** (a list of every stack, top chest first), and color the chests by their **Contents** (a labeled chest takes its label's color) or by **Free space**. **Find items in this house** marks the chests that hold what you search for. **New area** draws named areas on a floor, such as a room or a row of chests. Click a stack to see its chests, label one, highlight it in game or open its contents.
+Switch between **Game angle**, **Top-down** and **Stack plan** (a list of every stack, grouped by area, top chest first), and color the chests by their **Contents** (a labeled chest takes its label's color) or by **Free space**. **Find items in this house** marks the chests that hold what you search for. **New area** draws named areas on a floor, such as a room or a row of chests. Click a stack to see its chests, label one, highlight it in game or open its contents.
 
 ## Organize
 
