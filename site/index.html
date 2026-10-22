@@ -216,8 +216,9 @@ main [id] { scroll-margin-top: calc(var(--nav-h, 74px) + 16px); }
 .window.window-live iframe { height: clamp(760px, 86vh, 1080px); }
 .window-note { font-size: 15px; color: var(--faint); text-align: center; }
 .window-live[hidden] { display: none; }
-/* The screenshot stands in for the live app on a phone, and wherever the demo isn't there to load. */
-@media (min-width: 761px) { .has-demo .window-phone { display: none; } }
+/* The Try section and its nav link show only once the live app is there to load (never on a phone). */
+html:not(.has-demo) #try, html:not(.has-demo) .nav a[href="#try"] { display: none; }
+.phone-only { display: none; }
 
 /* inventory book: tabs over one plate */
 .book { border: 1px solid var(--line); background: var(--paper); padding: 10px; position: relative; }
@@ -290,7 +291,8 @@ main [id] { scroll-margin-top: calc(var(--nav-h, 74px) + 16px); }
   .get { padding: 32px 22px; }
 }
 @media (max-width: 760px) {
-  .window-live { display: none !important; }
+  .window-live, #try { display: none !important; }
+  .phone-only { display: block; }
   .nav nav, .kofi-btn span { display: none; }
   .kofi-btn { padding: 0 11px; }
   .spread { grid-template-columns: minmax(0, 1fr); }
@@ -411,6 +413,7 @@ main [id] { scroll-margin-top: calc(var(--nav-h, 74px) + 16px); }
       </script>
       <p class="lede">A free desktop app for Ultima Online players on <a href="https://uoalive.com">UO Alive</a>. Degenerate hoarder? Same. Pack Rat finds anything you own in seconds, keeps your house organized without some elaborate system, and builds better suits from gear you already have.</p>
       <div data-dl-slot><div class="dl-static"><a class="dl-btn" href="https://github.com/gunn4r/uo-pack-rat/releases/latest"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5v9m0 0L4.5 7M8 10.5 11.5 7M2.5 13.5h11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><b>Windows</b><span>Latest release</span></a><a class="dl-btn" href="https://github.com/gunn4r/uo-pack-rat/releases/latest"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5v9m0 0L4.5 7M8 10.5 11.5 7M2.5 13.5h11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><b>macOS</b><span>Latest release</span></a><a class="dl-btn" href="https://github.com/gunn4r/uo-pack-rat/releases/latest"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5v9m0 0L4.5 7M8 10.5 11.5 7M2.5 13.5h11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><b>Linux</b><span>Latest release</span></a></div></div>
+      <p class="phone-only shard-note">On a computer, this page lets you try the real app on demo data.</p>
     </div>
     <div class="relic">
       <img src="img/icon.png" width="176" height="176" alt="The Pack Rat logo: a rat in an overstuffed adventurer's backpack, holding a gold coin">
@@ -441,7 +444,6 @@ main [id] { scroll-margin-top: calc(var(--nav-h, 74px) + 16px); }
       <iframe data-app title="The Pack Rat app on demo data"></iframe>
     </div>
     <p class="window-note window-live" hidden>Item icons and the paperdoll are drawn from your own Ultima Online client once you install, so they're blank here.</p>
-    <figure class="plate window-phone"><img class="d" src="img/inventory.webp" width="1600" height="1087" loading="lazy" alt="The Inventory searched for ring: rarity-colored names, Cursed and Prized tags, and the Arcane Ring's properties and location"><img class="l" src="img/inventory-light.webp" width="1600" height="1087" loading="lazy" alt="The Inventory searched for ring: rarity-colored names, Cursed and Prized tags, and the Arcane Ring's properties and location"><figcaption>On a computer, this is the app itself to try. Here, the Inventory searched for “ring”.</figcaption></figure>
   </div></section>
 
   <section class="sec band" id="inventory"><div class="wrap">
