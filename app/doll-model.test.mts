@@ -32,7 +32,7 @@ test("[fast] doll model: a character's own look in color; a stand-in, gray, with
 });
 
 test("[fast] doll model: every reason there is no figure has its own note, its buttons opening the UO folder in Settings", () => {
-  for (const r of ["no-client", "no-tazuo-profile", "override-missing", "missing"] as const) {
+  for (const r of ["no-client", "no-finder", "no-tazuo-profile", "override-missing", "missing"] as const) {
     assert.deepEqual([failureNote(r).title, failureNote(r).actions?.map((a) => a.label)], ["Pack Rat couldn't find your Ultima Online client files", ["Choose UO folder", "Why?"]], r);
   }
   assert.deepEqual(["unsupported", "unreadable", "empty"].map((r) => failureNote(r as "empty").title), ["This client's files aren't supported yet", "Your client files couldn't be read", "Nothing could be drawn"]);

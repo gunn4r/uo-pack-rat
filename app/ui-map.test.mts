@@ -160,8 +160,12 @@ test("[fast] house map: an arrow key moves to the nearest stack that way, prefer
 
 test("[fast] house map: the no-tiledata note names its reason, and there is none with tiledata", () => {
   assert.equal(tiledataNote(null), null);
-  for (const r of ["no-client", "no-tazuo-profile", "override-missing", "unreadable"] as const) assert.match(tiledataNote(r)!, /plain colors/, r);
+  for (const r of ["no-client", "no-finder", "no-tazuo-profile", "override-missing", "unreadable"] as const) assert.match(tiledataNote(r)!, /plain colors/, r);
   assert.match(tiledataNote("no-client")!, /No game client is set up/);
+  // A client that cannot find its UO folder by itself (Razor Enhanced) is set up: the note asks for the folder instead (issue #421).
+  assert.match(tiledataNote("no-finder")!, /^Set the UO folder in Settings so the house map can read your client's files\./);
+  assert.doesNotMatch(tiledataNote("no-finder")!, /No game client/);
+  assert.match(tiledataNote("no-tazuo-profile")!, /TazUO's launcher names no UO folder/);
 });
 
 test("[fast] house map: ground chests outside every drawn house group by facet and distance onto a plain grid", () => {
@@ -690,12 +694,13 @@ test("[fast] house map: the region the server drew is read from its x-region hea
 });
 
 test("[fast] house map: why the overview is missing, in plain words", () => {
-  for (const r of ["no-client", "no-tazuo-profile", "override-missing", "missing", "unreadable", "error"] as const) {
+  for (const r of ["no-client", "no-finder", "no-tazuo-profile", "override-missing", "missing", "unreadable", "error"] as const) {
     const t = facetMapNote(r);
     assert.ok(t.length > 20, r);
     assert.ok(!/undefined|null/.test(t), r);
   }
   assert.match(facetMapNote("missing"), /facet/);
+  assert.match(facetMapNote("no-finder"), /^Set the UO folder in Settings/, "a client with no folder finder is asked for the folder, not told none is set up (issue #421)");
 });
 
 // ---------------------------------------------------------------- the contents drawer

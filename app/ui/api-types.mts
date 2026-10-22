@@ -136,6 +136,6 @@ export interface ApiError extends Error {
 export type { MaterialFamily, Level, CellKind, Cell, Furniture, Stack, Spot, TiledataFrom, HouseSummary, HousesApiResponse, HouseApiResponse } from "../house-model-types.mts";
 export type HouseModel = HouseApiResponse["house"];
 // GET /api/facet-map/<facet>.png answers a PNG, or a 404 with why there is none: no UO folder (as TiledataFrom), or the facet file missing or not a facet bitmap.
-export type FacetMapReason = "override-missing" | "no-client" | "no-tazuo-profile" | "missing" | "unreadable";
+export type FacetMapReason = "override-missing" | "no-client" | "no-finder" | "no-tazuo-profile" | "missing" | "unreadable";
 // GET /api/house-map, PUT /api/house-map/<id> and GET /api/house-claims: app/house-model-types.mts.
 export type { HouseBounds, AreaRect, HouseArea, HouseEntry as HouseMapEntry, HouseMapApiResponse, HouseMapPutApiResponse, HouseClaimsApiResponse } from "../house-model-types.mts";

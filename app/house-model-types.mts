@@ -19,7 +19,7 @@ export interface Spot { id: number; level: number; x: number; y: number; telepor
 export interface HouseModel { id: string; facet: number | null; capturedAt: string; captures: number; x0: number; y0: number; x1: number; y1: number; levels: Level[]; cells: Cell[]; furniture: Furniture[]; stacks: Stack[]; spots: Spot[]; codes: Record<string, string>; tiledata: boolean; unopened: number[]; unopenedNames: Record<string, string>; graphics: Record<string, number>; hues: Record<string, number> }
 
 // Where tiledata.mul came from (the uoFolder setting, or TazUO's launcher profile), or why there is none.
-export interface TiledataFrom { folder: string | null; source: "settings" | "tazuo-profile" | null; reason: null | "override-missing" | "no-client" | "no-tazuo-profile" | "unreadable" }
+export interface TiledataFrom { folder: string | null; source: "settings" | "tazuo-profile" | null; reason: null | "override-missing" | "no-client" | "no-finder" | "no-tazuo-profile" | "unreadable" }
 // GET /api/houses
 // width, height and plot are the plot, without a row of front steps outside it (house-model.mts plotBounds).
 export interface HouseSummary { id: string; name?: string | undefined; facet: number | null; capturedAt: string; captures: number; width: number; height: number; plot: { x0: number; y0: number; x1: number; y1: number }; levels: number; containers: number; serials: number[] }

@@ -199,6 +199,7 @@ export function tiledataNote(reason: TiledataFrom["reason"]): string | null {
   switch (reason) {
     case null: return null;
     case "no-client": return `No game client is set up, so Pack Rat has no tiledata.mul to tell walls, floors and materials apart, ${plain}.`;
+    case "no-finder": return `Set the UO folder in Settings so the house map can read your client's files. Until then it has no tiledata.mul, ${plain}.`;
     case "no-tazuo-profile": return `TazUO's launcher names no UO folder holding a tiledata.mul, ${plain}.`;
     case "override-missing": return `The UO folder set in Settings has no tiledata.mul any more, ${plain}.`;
     case "unreadable": return `The tiledata.mul found is not one Pack Rat can read, ${plain}.`;
@@ -257,6 +258,7 @@ export function markerRadii(tiles: number, px: number): { current: number; other
 export function facetMapNote(reason: FacetMapReason | "error"): string {
   switch (reason) {
     case "no-client": return "No game client is set up, so Pack Rat has no UO folder to read the world map from.";
+    case "no-finder": return "Set the UO folder in Settings so Pack Rat can read the world map from your client's files.";
     case "no-tazuo-profile": return "TazUO's launcher names no UO folder, so Pack Rat has no world map to show.";
     case "override-missing": return "The UO folder set in Settings has no world map files any more, so Pack Rat has no world map to show.";
     case "missing": return "The UO folder has no world map file for this facet.";
