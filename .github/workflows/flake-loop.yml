@@ -48,14 +48,16 @@ jobs:
       - name: Loop
         shell: bash
         run: |
-          N=${{ contains(matrix.variant, 'slow') && 5 || 25 }}; fails=0
+          set +e
+          N=${{ contains(matrix.variant, 'slow') && 5 || 25 }}; fails=0; ran=0
           for i in $(seq 1 $N); do
             if [ "$RUNNER_OS" = "Linux" ]; then
               xvfb-run -a node --test --test-name-pattern="Auto organize drawer fits" scripts/ui-organize.test.mts > out.txt 2>&1; rc=$?
             else
               node --test --test-name-pattern="Auto organize drawer fits" scripts/ui-organize.test.mts > out.txt 2>&1; rc=$?
             fi
-            if [ $rc -ne 0 ]; then fails=$((fails+1)); grep -E "not ok|fits the window|Error" out.txt | head -5; fi
-            grep -q "^# pass 1" out.txt || echo "iteration $i: pass count not 1"; 
+            grep -qE "^ℹ pass 1$" out.txt && ran=$((ran+1))
+            if [ $rc -ne 0 ]; then fails=$((fails+1)); echo "iteration $i failed:"; grep -E "✖|fits the window|AssertionError|ℹ (pass|fail|skipped)" out.txt | head -8; fi
           done
-          echo "RESULT ${{ matrix.variant }} ${{ runner.os }}: $fails of $N failed"
+          echo "RESULT ${{ matrix.variant }} ${{ runner.os }}: $fails of $N failed, $ran passed"
+          [ $i -ge 1 ] && tail -12 out.txt
