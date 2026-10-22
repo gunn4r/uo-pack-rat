@@ -1,6 +1,6 @@
 // ui-builder-manual.test.mts — [slow]: Manual mode, its hand-offs and No character.
 //
-// `[slow]`: the Suit Builder's Manual mode and No character in the real Electron window, on a writable `--data` directory seeded with the demo scans. Manual mode (issue #12): the live doll's pill (issue #57: the empty slot being chosen, a focused row previewed, Esc back to the New suit with the picker still open); a slot opens the picker on its pieces (narrowed by "Only what Auto would use" to the Automatic pool, issue #487), a row picked with the keyboard (focus, Enter) fills the slot, moves the totals and says so in the status line, the picker stays on that slot with the picked row marked "In this slot", the undo key empties the slot again (the status line saying what was undone) and redo puts the piece back, Esc closes it with focus back on the slot card, and the mode and the suit are in `ui-prefs.json`; and the hand-offs: another character picked mid-fill cancels the fill and leaves the suit alone, Fill the rest automatically fills empty slots around a placed ring in one undo step and shows the fetch list, Save as run puts a Manual run in the drawer that opens in the result view with Open in Manual, and an Automatic result's Start from this result loads it into Manual as one undo step. No character in Automatic (issue #12): no Race row, the buff picker speaking of no character, no "_nobody" anywhere in the page text, the Caster template's requirements, a build headed "Best suit · No character" with Grab disabled and its reason while no bridge is online, and with a bridge online on Kestrel (stubbed) Grab all queueing one grab per piece and the toast naming her, a Suit totals card, its run in its own drawer, Save profile kept across a reload, Manual on its No character, and Kestrel picked back with her own panel.
+// `[slow]`: the Suit Builder's Manual mode and No character in the real Electron window, on a writable `--data` directory seeded with the demo scans. Manual mode (issue #12): the live doll's pill (issue #57: the empty slot being chosen, a focused row previewed, Esc back to the New suit with the picker still open); a slot opens the picker on its pieces (narrowed by "Only what Auto would use" to the Automatic pool, issue #487), a row picked with the keyboard (focus, Enter) fills the slot, moves the totals and says so in the status line, the picker stays on that slot with the picked row marked "In this slot", the undo key empties the slot again (the status line saying what was undone) and redo puts the piece back, Esc closes it with focus back on the slot card, and the mode and the suit are in `ui-prefs.json`; and the hand-offs: another character picked mid-fill cancels the fill and leaves the suit alone, Fill the rest automatically fills empty slots around a placed ring in one undo step and shows the fetch list, Save as run puts a Manual run in the drawer that opens in the result view with Open in Manual, and an Automatic result's Start from this result loads it into Manual as one undo step. No character in Automatic (issue #12): no Race row, the buff picker speaking of no character, no "_nobody" anywhere in the page text, the Caster template's requirements, a build headed "Best suit · No character" with Grab disabled and its reason while no bridge is online, and with a bridge online on Kestrel (stubbed) Grab all queueing one grab per piece and the toast naming her, a Suit totals card, its run in its own drawer, Save profile kept across a reload, Manual on its No character, and Kestrel picked back with her own panel. With a character picked, Manual's fetch list follows the bridge: Grab goes live when it comes online and off when it goes away (issue #535).
 //
 // Shared steps are in scripts/builder-ui.mts. Skipped when electron or playwright is absent, or under TEST_SKIP_ELECTRON.
 import test from "node:test";
@@ -259,6 +259,46 @@ test("[slow] No character: built in Automatic from its own profile, saved as a r
     await pickCharacter(page, "Kestrel");
     await page.waitForFunction(() => document.querySelector("#b-start h2")?.textContent === "What should Kestrel's suit be for?");
     assert.equal(await page.locator("#b-race").count(), 1);
+    assert.deepEqual(errors, []);
+  } finally {
+    await close();
+  }
+});
+
+// Issue #535: with a character picked, Manual's fetch list follows the bridge, as the result's does: its Grab buttons go
+// live when the bridge comes online and off again when it goes away.
+test("[slow] Manual's fetch list with a character follows the bridge: Grab goes live online and off offline (issue #535)", async (t) => {
+  if (skipWithoutElectron(t)) return;
+  const dataDir = tempDataDir("packrat-ui-manual-bridge-", { demoScans: true });
+  const { page, errors, close } = await launch(dataDir);
+  try {
+    await openBuilder(page);
+    await pickCharacter(page, "Kestrel");
+    await page.click('#b-mode [data-value="manual"]');
+    await page.waitForSelector("#b-manual:not([hidden]) #mb-suit .mb-slot");
+    assert.equal(await page.getAttribute("#b-char", "data-value"), "Kestrel");
+    // a ring Kestrel neither wears nor carries, so the fetch list has something to grab
+    await page.click('.mb-slot-pick[data-slot="ring"]');
+    const rows = page.locator("#mb-picker tbody tr.item");
+    await rows.first().waitFor();
+    const grabAll = page.locator("#mb-fetch #mb-grab-all");
+    for (let i = 0; i < await rows.count(); i++) {
+      const name = (await rows.nth(i).locator("td").first().innerText()).trim();
+      await rows.nth(i).click();
+      await page.waitForFunction((n) => document.querySelector('.mb-slot-pick[data-slot="ring"]')?.textContent?.includes(n), name);
+      if (await grabAll.count() && /^Grab all \d+$/.test((await grabAll.innerText()).trim())) break;
+    }
+    await page.keyboard.press("Escape");
+    assert.match((await grabAll.innerText()).trim(), /^Grab all \d+$/, "a piece to fetch");
+    assert.equal(await grabAll.isDisabled(), true, "offline, Grab all is off");
+    const placeGrab = page.locator("#mb-fetch .b-fetch-acts button", { hasText: "Grab" }).first();
+    assert.equal(await placeGrab.isDisabled(), true, "and so is the place's Grab");
+    await page.route("**/api/bridge/status", (r) => r.fulfill({ json: { ok: true, online: true, character: "Kestrel", results: {} } }));
+    await page.waitForFunction(() => document.querySelector<HTMLButtonElement>("#mb-fetch #mb-grab-all")?.disabled === false, undefined, { timeout: 10_000 });
+    assert.equal(await placeGrab.isDisabled(), false, "online, the place's Grab is live too");
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+    await page.waitForFunction(() => document.querySelector<HTMLButtonElement>("#mb-fetch #mb-grab-all")?.disabled === true, undefined, { timeout: 10_000 });
+    assert.equal(await placeGrab.isDisabled(), true, "offline again, off again");
     assert.deepEqual(errors, []);
   } finally {
     await close();
