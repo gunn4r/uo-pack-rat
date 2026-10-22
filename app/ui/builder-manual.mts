@@ -702,8 +702,9 @@ function templateBuffs(on: readonly string[], label: string): void {
   if (!noCharacter) commit({ buffs: [...on], ...(on.length ? { count: true } : {}) }, label);
 }
 
-// With No character, Grab goes to the bridge's character: the fetch list follows the bridge, as the result's does.
-document.addEventListener("bridgechange", () => { const f = document.getElementById("mb-fetch"); if (f && isManual() && !manualCharacter()) f.replaceWith(fetchList()); });
+// The bridge coming online or going away changes which actions are live, and with No character whose backpack Grab
+// fills: the fetch list follows the bridge, as the result's does.
+document.addEventListener("bridgechange", () => { const f = document.getElementById("mb-fetch"); if (f && isManual()) f.replaceWith(fetchList()); });
 // The fetch list for the suit's pieces the character doesn't wear (the result's, builder-parts.mts fetchCard).
 function fetchList(): HTMLElement {
   const name = manualCharacter(), pieces = fetchPieces(Object.values(suitItems()), name), card = fetchCard(pieces, name, grabAllButton(pieces, name, { id: "mb-grab-all", size: "sm" }));
