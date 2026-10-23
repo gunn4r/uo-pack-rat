@@ -208,8 +208,10 @@ test("[fast] gearItem: a request that failed (offline, a 500) records no miss, s
   for (const [serial, fail] of [[30, "network"], [32, 500]] as const) {
     asked.length = 0;
     failWith = fail;
-    draw({ serial, name: "Sash" });
+    const n = draw({ serial, name: "Sash" });
+    assert.ok(has(n.children[0]!, "art-none"), `${fail}: an empty box while it is looked up`);
     await tick();
+    assert.ok(!has(n.children[0]!, "art-none") && has(n.children[0]!.children[0]!, "art-fb"), `${fail}: the failed lookup still redraws, the waiting box giving way to the glyph`);
     failWith = null;
     draw({ serial, name: "Sash" });
     await tick();
@@ -305,7 +307,12 @@ test("[fast] glyphOf: gear by its type and slot, the rest by its kind, a plain i
   assert.equal(gear("twoHanded", "Heater Shield"), "shield", "a held piece that is no weapon, in the two-handed slot");
   assert.equal(gear("twoHanded", "Composite Bow", { skillReq: "Archery", twoHanded: true }), "bow");
   assert.equal(gear("twoHanded", "Heavy Crossbow", { extras: { "weapon speed": 4 }, twoHanded: true }), "bow", "a bow by its name with no skill line");
-  assert.equal(gear("twoHanded", "Large Battle Axe", { skillReq: "Swordsmanship", twoHanded: true }), "axe");
+  assert.equal(gear("twoHanded", "Large Battle Axe", { skillReq: "Swordsmanship", twoHanded: true }), "axe", "an axe by its name");
+  assert.equal(gear("twoHanded", "Crescent Blade", { skillReq: "Swordsmanship", twoHanded: true }), "sword", "a two-handed sword");
+  assert.equal(gear("twoHanded", "War Hammer", { skillReq: "Mace Fighting", twoHanded: true }), "axe", "Mace Fighting: the hafted weapon");
+  assert.equal(gear("oneHanded", "Mace", { skillReq: "Mace Fighting" }), "axe");
+  assert.equal(gear("oneHanded", "Kryss", { skillReq: "Fencing" }), "sword", "Fencing has no glyph of its own: the sword");
+  assert.equal(gear("twoHanded", "Pike", { extras: { "weapon speed": 4 }, twoHanded: true }), "sword", "no skill line: the sword, the plainest weapon");
   assert.equal(gear("oneHanded", "Ancient Smithy Hammer"), "item", "a held tool");
   assert.deepEqual(["scroll", "book", "map", "deed", "rune", "container", "potion", "reagent", "gem", "resource", "clothing", "food", "key", ""].map((kind) => glyphOf({ kind, name: "x" })),
     ["scroll", "scroll", "scroll", "scroll", "scroll", "bag", "potion", "gem", "gem", "gem", "robe", "item", "item", "item"]);

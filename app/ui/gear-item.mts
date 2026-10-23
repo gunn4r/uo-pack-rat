@@ -75,8 +75,8 @@ function flushSoon(): void {
         const fns = pending.get(serial) || [];
         pending.delete(serial);
         if (answered.has(serial) && !found[serial]) missed.add(serial);
-        // a serial the server lacks redraws too, so the icon's waiting box gives way to its glyph
-        if (found[serial] || answered.has(serial)) for (const fn of fns) fn();
+        // every serial redraws, found or not (lacking, or its request failed), so the icon's waiting box gives way to the art or its glyph
+        for (const fn of fns) fn();
       }
     });
   }, 0);

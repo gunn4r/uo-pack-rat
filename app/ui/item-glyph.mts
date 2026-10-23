@@ -33,7 +33,7 @@ export type GlyphName = keyof typeof GLYPHS;
 // The slot or kind each glyph stands for, where it is not the type alone.
 const SLOT_GLYPH: Readonly<Record<string, GlyphName>> = { helmet: "helm", neck: "helm", chest: "chest", arms: "chest", hands: "gloves", legs: "legs", feet: "boots", ring: "ring" };
 const KIND_GLYPH: Readonly<Record<string, GlyphName>> = { scroll: "scroll", book: "scroll", map: "scroll", deed: "scroll", rune: "scroll", container: "bag", potion: "potion", reagent: "gem", resource: "gem", gem: "gem", refinement: "gem", crafting: "gem", clothing: "robe" };
-const BOW_RE = /\b(bow|crossbow)\b/i;
+const BOW_RE = /\b(bow|crossbow)\b/i, AXE_RE = /\b(axe|hatchet)\b/i;
 
 // The glyph for an item: gear by its type (itemTypeOf) and slot, anything else by its kind; "item" when the record says too little.
 export function glyphOf(it: Partial<Pick<Item, "gear" | "slot" | "twoHanded" | "skillReq" | "extras" | "name" | "graphic" | "kind">>): GlyphName {
@@ -42,8 +42,11 @@ export function glyphOf(it: Partial<Pick<Item, "gear" | "slot" | "twoHanded" | "
   switch (itemTypeOf({ gear: true, slot: it.slot, twoHanded: !!it.twoHanded, skillReq: it.skillReq ?? null, extras: it.extras ?? {}, name, graphic: it.graphic })) {
     case "shield": return "shield";
     case "spellbook": return "spellbook";
-    case "one-handed": return "sword";
-    case "two-handed": return /archery/i.test(it.skillReq ?? "") || BOW_RE.test(name) ? "bow" : "axe";
+    // a weapon by its skill (or its name, with no skill line): a bow for Archery, the axe for Mace Fighting and axes, the sword for the rest
+    case "one-handed": case "two-handed": {
+      const skill = it.skillReq ?? "";
+      return /archery/i.test(skill) || BOW_RE.test(name) ? "bow" : /mace/i.test(skill) || AXE_RE.test(name) ? "axe" : "sword";
+    }
     case "jewelry": return it.slot === "ring" ? "ring" : "jewelry";
     case "armor": return it.slot === "neck" && !isNeckArmor(name) ? "jewelry" : SLOT_GLYPH[it.slot] ?? "chest";
     case "clothing": return SLOT_GLYPH[it.slot] ?? "robe";
