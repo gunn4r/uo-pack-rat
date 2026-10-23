@@ -4,7 +4,7 @@
 
 Entries not yet released are in `changelog.d/`, one file per pull request (`CONTRIBUTING.md`, Changelog). `node scripts/changelog.mts --release <version>` moves them here.
 
-<!-- released-sha256: e4f03ab9547fe56dcb6958a106da2d760a1604baa88830075151a9b9738698d3 (written by node scripts/changelog.mts) -->
+<!-- released-sha256: 130d59a1239bf58bde9483051099c55755524f8f82a93ab7c13404f377b87880 (written by node scripts/changelog.mts) -->
 
 ## 0.3.1 — 2026-10-23
 
@@ -13,7 +13,7 @@ Entries not yet released are in `changelog.d/`, one file per pull request (`CONT
 Pack Rat has a website, and the House map's Stack plan is easier to read.
 
 **A home page**
-- **https://gunn4r.github.io/uo-pack-rat/** shows what Pack Rat does, with screenshots of every screen and download buttons for your own system. On a computer you can try the real app on two demo characters before installing.
+- **A home page on GitHub Pages**, linked from the README, shows what Pack Rat does, with screenshots of every screen and download buttons for your own system. On a computer you can try the real app on two demo characters before installing.
 
 **House map and scans**
 - **The Stack plan lists your stacks by area** instead of a grid full of empty-tile cards.
@@ -25,7 +25,7 @@ Pack Rat has a website, and the House map's Stack plan is easier to read.
 - **The Inventory's focused or selected row** is outlined and tinted across the whole row, Name column included.
 
 **Licence and scope**
-- **Pack Rat is now under the GNU GPL v3**, with the author's credit kept in forks. Releases up to 0.3.0 stay under the MIT License.
+- **Pack Rat is now under the GNU GPL v3**, with the author's credit kept in forks. Everything before this change, 0.3.0 included, stays under the MIT License.
 - **Made for UO Alive**: Pack Rat is built and tested on UO Alive, and the setup window says so when you pick another shard.
 
 Reinstall the game scripts from Settings after updating (TazUO 2.22.1, Razor Enhanced 1.13.3).
@@ -33,7 +33,7 @@ Reinstall the game scripts from Settings after updating (TazUO 2.22.1, Razor Enh
 <details><summary>All changes (8)</summary>
 
 - **Inventory row focus ring**: with the row checkboxes showing, the focused row's ring now runs unbroken across the Name column, and a selected row's tint covers the Name cell too. The ring is drawn once instead of twice, its edge stays level across the pinned columns, and the divider beside the pinned columns stays visible on a focused or selected row while the table is scrolled sideways.
-- **Pack Rat is now under the GNU GPL v3**: from this release it is free software under the GPL v3 with two added terms, so a fork you share must stay open source, keep the author's credit, and be marked as changed rather than passed off as the original. Settings › Updates shows the credit and the licence. Releases up to 0.3.0 stay under the MIT License.
+- **Pack Rat is now under the GNU GPL v3**: from this release it is free software under the GPL v3 with two added terms, so a fork you share must stay open source, keep the author's credit, and be marked as changed rather than passed off as the original. Settings › Updates shows the credit and the licence. Everything before this change, 0.3.0 included, stays under the MIT License.
 - **Made for UO Alive**: the README and the user guide now say Pack Rat is made for and tested on UO Alive, and the setup window notes that another shard's caps, colors and scripts may not match. The README also gains a short disclaimer.
 - **A website**: Pack Rat has a home page on GitHub Pages with what it does, screenshots of every screen (click one to see it full size) and download buttons for the latest release, your own system's first. On a computer it runs the real app on two demo characters, so you can search, open the map and run a build before installing.
 - **Manual's Grab buttons follow the bridge**: with a character picked, the Suit Builder's Manual fetch list now turns its Grab and Go to buttons on as soon as the in-game bridge comes online, and off when it goes away, as the Automatic result does. Before, they kept saying the bridge was offline until the suit changed.
