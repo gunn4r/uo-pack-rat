@@ -1609,7 +1609,7 @@ const ROW_ACTS = ["highlight", "grab", "goto", "more"];
 // An item in two lines, the Inventory's own pieces: the name and tags, then the rarity, the properties and the resists. Hovering or focusing it shows the item tooltip, which has everything a cut line leaves out. A click opens the item's menu. At its right end, shown on hover and focus and always in the tab order, the Inventory row's actions (itemActions), in a data-no-tip zone so aiming at them never pops the tooltip.
 function itemRow(it: Item): HTMLElement {
   const props = propertyLines(it).filter((l) => !l.muted).map((l) => (l.value ? `${l.name} ${l.value}` : l.name)).join(" · ");
-  const res = RESISTS.filter(([k]) => it.props[k]), rarity = rarityEl(it.rarity, "t-sm");
+  const res = RESISTS.filter(([k]) => it.props[k]), rarity = rarityEl(it.rarity, "t-sm", it.artifactRarity);
   const main = box("button", { type: "button", class: "map-item", id: `map-drawer-item-${it.serial}`, "aria-haspopup": "menu", onclick: (e: Event) => itemMenu(e.currentTarget as HTMLElement, it) },
     box("span", { class: "map-item-l1" }, el("span", { class: "ellip map-item-name" }, gearItem(it, { tip: false })), ...tagEls(it)),
     rarity || props || res.length ? box("span", { class: "map-item-l2" }, rarity, props ? txt(props, "ellip t-sm muted map-item-props") : null,

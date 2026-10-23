@@ -70,6 +70,7 @@
   --res-phys: #55636a; --res-fire: #b3261e; --res-cold: #1f5fae; --res-poison: #2d7030; --res-energy: #7b3fb8;
   --rarity-minor-magic: #616161; --rarity-lesser-magic: #10710e; --rarity-greater-magic: #116c6d; --rarity-major-magic: #005bd0;
   --rarity-lesser-artifact: #8f1fda; --rarity-greater-artifact: #736000; --rarity-major-artifact: #984d00; --rarity-legendary-artifact: #bc231c;
+  --rarity-named-artifact-start: #8e3f05; --rarity-named-artifact: #a5134f; --rarity-named-artifact-end: #6629d0;   /* Named Artifact's gradient (issue #568): its name runs start, middle (also the ✦), end */
   /* house map: Default's light values */
   --color-map-grid: rgb(23 34 36 / 0.10); --color-map-below: rgb(23 34 36 / 0.12);
   --color-map-stone: #a9a59c; --color-map-brick: #b9745f; --color-map-plaster: #ded4c3; --color-map-wood: #b98a5f; --color-map-marble: #dcd8d0; --color-map-sandstone: #d8c49b;
@@ -145,6 +146,7 @@
   --res-phys: #b7c2c3; --res-fire: #ff8a7a; --res-cold: #7fb2ff; --res-poison: #7fd48a; --res-energy: #c9a0ff;
   --rarity-minor-magic: #a0a0a0; --rarity-lesser-magic: #20e31c; --rarity-greater-magic: #1cb5b7; --rarity-major-magic: #549fff;
   --rarity-lesser-artifact: #c680f4; --rarity-greater-artifact: #c9a800; --rarity-major-artifact: #ff8000; --rarity-legendary-artifact: #eb7d77;
+  --rarity-named-artifact-start: #ffa24c; --rarity-named-artifact: #ff85bb; --rarity-named-artifact-end: #c2a6ff;   /* Named Artifact's gradient (issue #568): its name runs start, middle (also the ✦), end */
   /* house map: Default's dark values */
   --color-map-grid: rgb(255 255 255 / 0.07); --color-map-below: rgb(255 255 255 / 0.08);
   --color-map-stone: #5e5c57; --color-map-brick: #7b4b3e; --color-map-plaster: #8e877b; --color-map-wood: #7b5b3e; --color-map-marble: #8f8c86; --color-map-sandstone: #8b7b5d;

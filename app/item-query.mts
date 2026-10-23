@@ -14,8 +14,8 @@
 // property column; alphabetical is the useful default for a name column), reproduced exactly, not fixed.
 //
 // map: query
-// owns: `parseItemQuery`, `matchesItem`, `applyItemQuery`, `queryWhere`, `passes`, `facetsOf`, `propCounts`, `ItemQuery`, `RuleQuery`, `EXTRA_COLS`, `colVal`, `rarityRank`, `HIT_LIMIT`
-import { containerChain, labelledPlaces, itemSearchBlob, itemOwnBlob, gargoyleOk, meditationOk, hasTag, hasFlag, groupByName, compareNames, KINDS, SLOT_LABELS, propertyKeys, extraKeys, flagKeys, flagKey, gearSkills, weaponSkillsOf, WEAPON_SKILLS, PROPERTIES, itemTypeOf, ITEM_TYPES } from "./vault-lib.mts";
+// owns: `parseItemQuery`, `matchesItem`, `applyItemQuery`, `queryWhere`, `passes`, `facetsOf`, `propCounts`, `ItemQuery`, `RuleQuery`, `EXTRA_COLS`, `colVal`, `rarityRank`, `rarityTiers`, `HIT_LIMIT`
+import { NAMED_ARTIFACT, containerChain, labelledPlaces, itemSearchBlob, itemOwnBlob, gargoyleOk, meditationOk, hasTag, hasFlag, groupByName, compareNames, KINDS, SLOT_LABELS, propertyKeys, extraKeys, flagKeys, flagKey, gearSkills, weaponSkillsOf, WEAPON_SKILLS, PROPERTIES, itemTypeOf, ITEM_TYPES } from "./vault-lib.mts";
 import type { Container, Item, ItemGroup } from "./vault-lib.mts";
 import type { RulesV1, RulesV1RarityItem } from "./schema/types.d.mts";
 import { unravelInfo, LEFT_OUT, type LeftOut, type UnravelInfo } from "./unravel.mts";
@@ -31,13 +31,17 @@ export const colVal = (it: Item, c: string): number => {
 };
 
 // 1-based position of `name` in the shard's rarity ladder (ascending, lowest tier first), or 0 if the
-// name isn't on the ladder (including no rarity at all). A "Reforged" tier ranks with its base tier. `ladder` is state.rules.rarity in the browser,
+// name isn't on the ladder (including no rarity at all). A "Reforged" tier ranks with its base tier, and Named Artifact (issue #568) above
+// the whole ladder. `ladder` is state.rules.rarity in the browser,
 // currentRules.rarity on the server — always passed in explicitly; this module has no rules of its own.
 export function rarityRank(ladder: RulesV1RarityItem[] | null | undefined, name: string | null | undefined): number {
   const base = String(name || "").replace(/^reforged\s+/i, "").toLowerCase();
+  if (base === NAMED_ARTIFACT.toLowerCase()) return (ladder || []).length + 1;
   const i = (ladder || []).findIndex((r) => r.name.toLowerCase() === base);
   return i >= 0 ? i + 1 : 0;
 }
+// Every tier a filter offers, lowest first: the shard's ladder, then Named Artifact on top.
+export const rarityTiers = (ladder: RulesV1RarityItem[] | null | undefined): string[] => [...(ladder || []).map((r) => r.name), NAMED_ARTIFACT];
 
 const CLAMP_LIMIT = (n: number): number => Math.max(1, Math.min(500, n));
 // The House map's search (issue #10): `fields=hits` answers each match with only what the map reads (its container and scan
@@ -199,7 +203,7 @@ export function matchesItem(it: Item, rq: RuleQuery, { rarity = [] }: { rarity?:
 function sortValue(it: Item, key: string, ladder: RulesV1RarityItem[] | undefined): string | number {
   if (key === "name") return it.name;
   if (key === "seen") return String(it.seenAt);
-  if (key === "rarity") return rarityRank(ladder, it.rarity);
+  if (key === "rarity") return rarityRank(ladder, it.rarity) + (it.artifactRarity ?? 0);   // a named artifact's Artifact Rarity orders it among its tier
   if (key === "kind") return it.kind;
   if (key === "amount") return it.amount || 1;
   if (key === "slot") return SLOT_LABELS[it.slot as string] || it.slot || "?";

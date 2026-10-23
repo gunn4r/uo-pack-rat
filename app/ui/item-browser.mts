@@ -150,7 +150,7 @@ function cell(col: ColDef, it: Item): HTMLTableCellElement {
   switch (col.key) {
     case "name": td.append(gearItem(it, { tip: false, cls: "inv-name" })); break;   // the row is its tooltip host
     case "tags": if (it.tags.length) td.append(box("span", { class: "inv-tags" }, ...tagEls(it))); break;
-    case "rarity": { const r = rarityEl(it.rarity); if (r) td.append(r); break; }
+    case "rarity": { const r = rarityEl(it.rarity, "", it.artifactRarity); if (r) td.append(r); break; }
     case "slot": td.classList.add("slot-cell"); if (it.slot) td.append(txt(slotLabel(it.slot))); break;
     case "location": td.append(locationEl(it)); break;
     case "amount": td.append(txt((it.amount || 1).toLocaleString("en-US"))); break;

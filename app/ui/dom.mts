@@ -3,7 +3,7 @@
 //
 // map: ui-infra
 // owns: `el`, `$`, `fmtN`, `slotLabel`, `rarityColor`, `installTooltip`
-import { SLOT_LABELS, labelOf, fullOf, tagInfo, gameName } from "../vault-lib.mts";
+import { NAMED_ARTIFACT, SLOT_LABELS, labelOf, fullOf, tagInfo, gameName } from "../vault-lib.mts";
 import type { Item } from "../vault-lib.mts";
 import { EXTRA_COLS, rarityRank as rarityRankOf } from "../item-query.mts";
 import { state } from "./store.mts";
@@ -146,14 +146,17 @@ export function tagChip(t: string, { describe = false }: { describe?: boolean } 
 }
 // tipNode(it) — the item tooltip (design spec 4.3), built as DOM nodes: the item's 32 px icon (issue #503), the name in its rarity colour and
 // the item's tags; its tooltip lines in the game's order, resist lines in their element's colour and
-// durability and requirements muted; a footer with the rarity tier and where the item is. Every value
+// durability and requirements muted; a footer with the rarity tier and where the item is. A named artifact (issue #568) shows as
+// the game does: its name in the named gradient and its own "Artifact Rarity N" line, no tier in the footer (only a tier
+// line it also carries). Every value
 // in here comes off a scan file's own tooltip lines, so nothing is ever markup, and the one colour a
 // line may carry (its <BASEFONT COLOR>) reaches a style only through safeColor. Module-scope so it is
 // importable on its own — see app/ui-render.test.mts.
 export function tipNode(it: TooltipItem): HTMLDivElement {
   const lines = (it.lines || []).slice(1).map(tipLine).filter((l) => l.text);
   const tags = new Set((it.tags || []).map((t) => t.toLowerCase()));
-  let tier = it.rarity || null;
+  const named = it.rarity === NAMED_ARTIFACT;
+  let tier = named ? null : it.rarity || null;
   const body: HTMLElement[] = [];
   for (const l of lines) {
     if (RARITY_LINE.test(l.text)) { tier ||= l.text; continue; }
@@ -170,7 +173,7 @@ export function tipNode(it: TooltipItem): HTMLDivElement {
   // with the tier cut it off.
   const foot = [tier ? el("span", tierColor ? { style: `color:${tierColor}` } : {}, tier) : null, it.location ? el("span", { class: "muted tip-where" }, whereText(it.location.text)) : null].filter((x): x is HTMLSpanElement => !!x);
   return el("div", { class: "tipcard" },
-    el("div", { class: "tip-head" }, artTile(it.graphic, { size: 32, hue: it.hue ?? 0 }), el("span", { class: "strong tip-name", ...(tierColor ? { style: `color:${tierColor}` } : {}) }, qty + it.name), ...tagEls),
+    el("div", { class: "tip-head" }, artTile(it.graphic, { size: 32, hue: it.hue ?? 0 }), el("span", { class: "strong tip-name", ...(tierColor ? { style: `color:${tierColor}` } : {}) }, named ? el("span", { class: "rar-named" }, qty + it.name) : qty + it.name), ...tagEls),
     // The name the game uses, when the shown one differs (a Scroll of Transcendence's names its skill, issue #181).
     gameName(it) !== it.name ? el("div", { class: "muted tip-game" }, `In game: ${gameName(it)}`) : null,
     body.length ? el("div", { class: "divider" }) : null,

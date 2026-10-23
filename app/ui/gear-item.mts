@@ -10,6 +10,7 @@ import { artTile, artWaiting } from "./item-art.mts";
 import { glyphOf } from "./item-glyph.mts";
 import { rarityToken, resolveItems } from "./items.mts";
 import { state } from "./store.mts";
+import { NAMED_ARTIFACT } from "../vault-lib.mts";
 
 // What a caller may hand in: a full scanned item, or a partial record (an optimizer piece, a plan's move) that names it by serial. A missing graphic, hue, rarity or tags is filled from the page's item cache, else from one batched lookup by serial.
 export type GearItemSource = TooltipItem & { serial: number; graphic?: number | null | undefined; hue?: number | null | undefined };
@@ -87,7 +88,7 @@ const amountText = (n: number): string => n.toLocaleString("en-US");
 // `waiting`: the graphic is still being looked up, so an empty box holds the icon's place until the answer.
 function parts(node: HTMLElement, it: GearItemSource, o: GearItemOptions, size: 24 | 32, waiting = false): HTMLElement[] {
   const token = rarityToken(it.rarity);
-  const name = txt(it.name, "gi-name");
+  const name = txt(it.name, it.rarity === NAMED_ARTIFACT ? "gi-name rar-named" : "gi-name");
   if (token) name.style.color = `var(${token})`;
   const qty = (it.amount || 1) > 1 ? txt(` ×${amountText(it.amount!)}`, "gi-qty") : null;
   const tags = o.showTags ? (it.tags || []).filter((t) => QUALITY_TAGS.has(t)).map((t) => tagChip(t)) : [];

@@ -40,6 +40,7 @@ export interface Item {
   tags: string[];
   strReq: number;
   rarity: string | null;
+  artifactRarity?: number | undefined;   // a named artifact's "Artifact Rarity N" (issue #568), absent without one
   weight: number | null;
   skillReq: string | null;
   lines: string[];
@@ -347,7 +348,7 @@ function enrich(raw: EnrichRaw, loc: EnrichLoc, overrides: KindOverrides): Item 
   return {
     serial: +raw.serial, name, graphic: raw.graphic, hue: raw.hue, amount: raw.amount || 1,
     props: parsed.props, setBonus: parsed.setBonus, extras: parsed.extras, flags: parsed.flags, tags: parsed.tags, strReq: parsed.strReq,
-    rarity: parsed.rarity, weight: parsed.weight, skillReq: parsed.skillReq, lines: parsed.lines,
+    rarity: parsed.rarity, ...(parsed.artifactRarity != null ? { artifactRarity: parsed.artifactRarity } : {}), weight: parsed.weight, skillReq: parsed.skillReq, lines: parsed.lines,
     gargoyle: /\bgargish\b/i.test(parsed.name || raw.name || "") || parsed.flags.includes("gargoyles only"),
     slayers: slayersOf(parsed.flags),
     medable: medableOf(parsed.name || raw.name || "", cls.slot, cls.gear, parsed.flags),

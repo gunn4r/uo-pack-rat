@@ -268,7 +268,7 @@ function rowEl(r: UnravelRow, skill: number, index: number): HTMLElement {
   const where = whereText(r.location?.text) || "Unknown place";
   return box("div", { class: `unr-row${on ? " sel" : ""}`, "data-serial": String(r.serial), "data-index": String(index), ...(condensed ? { title: `${where} · ${t.why}` } : {}) },
     cb,
-    box("span", { class: "unr-nm" }, name, box("span", { class: "unr-sub" }, rarityEl(r.rarity), ...reasons.map((x) => txt(REASON_CHIP[x], "unr-tag")))),
+    box("span", { class: "unr-nm" }, name, box("span", { class: "unr-sub" }, rarityEl(r.rarity, "", r.artifactRarity), ...reasons.map((x) => txt(REASON_CHIP[x], "unr-tag")))),
     txt(where, "unr-where"),
     box("span", { class: "unr-yield" },
       box("span", { class: "unr-ing-line" }, txt(t.ing, `unr-ing ${t.cls}`), r.unravel.maybe ? el("span", { class: "unr-maybe", title: maybeTitle(r.unravel.weight) }, "maybe") : null),

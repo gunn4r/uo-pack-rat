@@ -1,12 +1,12 @@
 // item-query.test.mts — `app/item-query.mts`, the item-list filtering, sorting, paging and faceting shared by the page and `GET /api/items`.
 //
-// `app/item-query.mts` (the pure item-list filtering/sorting/paging/faceting shared by the browser and the server's `GET /api/items`): `parseItemQuery`'s defaults and clamping, the list filters taken as repeated params (character, slot, kind, location, root container, house, and `within` for anything nested inside a container, matching nothing when it names none), `queryWhere`'s context (the house lookup only for a house filter), prop rules with an operator (at least, at most, exactly, anything but, an item without the property reading 0), every `applyItemQuery` filter (type by `itemTypeOf`, free text (tags included, as in an Organize rule), also by an Organize label through `places`, kind, slot, location, root, character, rarity and rarity-at-least, seenDays, slayer, nogarg, med, hideTags, a prop rule incl. `EXTRA_COLS` keys) and sort (by prop column, by rarity ladder order), paging (offset/limit against `total`/`pieces`), group mode's JSON-safe shape and its stack and piece counts, `facetsOf` (including the places the Location filter's tree is built from, gear-only `extraKeys` and every item's `allExtraKeys`), `propCounts`, `rarityRank` (a Reforged tier with its base tier, eight tiers in both shipped ladders), `rarityMax` (an item with no tier or one off the ladder counting as below every tier, an unknown ceiling ignored, a floor above the ceiling matching nothing), and `matchesItem` (an Organize rule's per-item checks, agreeing with `applyItemQuery` on every filter a rule keeps, its free text never matching location text), and `unravel`/`unravelShow` read off the query string (issue #271). All `[fast]`.
+// `app/item-query.mts` (the pure item-list filtering/sorting/paging/faceting shared by the browser and the server's `GET /api/items`): `parseItemQuery`'s defaults and clamping, the list filters taken as repeated params (character, slot, kind, location, root container, house, and `within` for anything nested inside a container, matching nothing when it names none), `queryWhere`'s context (the house lookup only for a house filter), prop rules with an operator (at least, at most, exactly, anything but, an item without the property reading 0), every `applyItemQuery` filter (type by `itemTypeOf`, free text (tags included, as in an Organize rule), also by an Organize label through `places`, kind, slot, location, root, character, rarity and rarity-at-least, seenDays, slayer, nogarg, med, hideTags, a prop rule incl. `EXTRA_COLS` keys) and sort (by prop column, by rarity ladder order), paging (offset/limit against `total`/`pieces`), group mode's JSON-safe shape and its stack and piece counts, `facetsOf` (including the places the Location filter's tree is built from, gear-only `extraKeys` and every item's `allExtraKeys`), `propCounts`, `rarityRank` (a Reforged tier with its base tier, eight tiers in both shipped ladders, Named Artifact above them with `rarityTiers`, its filter and its sort by Artifact Rarity, issue #568), `rarityMax` (an item with no tier or one off the ladder counting as below every tier, an unknown ceiling ignored, a floor above the ceiling matching nothing), and `matchesItem` (an Organize rule's per-item checks, agreeing with `applyItemQuery` on every filter a rule keeps, its free text never matching location text), and `unravel`/`unravelShow` read off the query string (issue #271). All `[fast]`.
 //
 // applyItemQuery's predicate and sort keep parity with what the Inventory screen used to do on its own. Hand-built fixture items (no scan files, no server) keep this fast and pure.
 import { test } from "node:test";
 import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
-import { EXTRA_COLS, colVal, rarityRank, parseItemQuery, applyItemQuery, facetsOf, matchesItem, propCounts, queryWhere } from "./item-query.mts";
+import { EXTRA_COLS, colVal, rarityRank, rarityTiers, parseItemQuery, applyItemQuery, facetsOf, matchesItem, propCounts, queryWhere } from "./item-query.mts";
 import type { ItemQueryRows, ItemQueryGroups, RuleQuery } from "./item-query.mts";
 import { KINDS, flagLabel, flagKeys, itemTypeOf, typesOfSlot } from "./vault-lib.mts";
 import type { Container, Item } from "./vault-lib.mts";
@@ -452,6 +452,25 @@ test("[fast] rarityRank: known names rank in ladder order, unknown → 0", () =>
   assert.equal(rarityRank(RARITY_LADDER, "Not A Real Tier"), 0);
   assert.equal(rarityRank(RARITY_LADDER, null), 0);
   assert.equal(rarityRank([], "Minor Magic Item"), 0);
+});
+
+// Named artifacts (issue #568): ranked above every tier, sorted higher Artifact Rarity first and unnumbered ones after.
+const NAMED = [
+  mk({ name: "Jaana's Staff", rarity: "Named Artifact", artifactRarity: 11 }),
+  mk({ name: "Bow Of The Infinite Swarm", rarity: "Named Artifact" }),
+  mk({ name: "Low Named", rarity: "Named Artifact", artifactRarity: 2 }),
+];
+test("[fast] rarityRank, rarityTiers, filter and sort: Named Artifact sits above the whole ladder (issue #568)", () => {
+  assert.equal(rarityRank(RARITY_LADDER, "Named Artifact"), RARITY_LADDER.length + 1);
+  assert.deepEqual(rarityTiers(RARITY_LADDER), [...RARITY_LADDER.map((r) => r.name), "Named Artifact"]);
+  const items = [...ITEMS, ...NAMED];
+  const rows = (s: string): string[] => names((applyItemQuery(items, parseItemQuery(new URLSearchParams(s)), ctx) as ItemQueryRows).rows);
+  assert.deepEqual(rows("rarity=Named%20Artifact").sort(), ["Bow Of The Infinite Swarm", "Jaana's Staff", "Low Named"]);
+  assert.deepEqual(rows("rarityMin=Named%20Artifact").sort(), ["Bow Of The Infinite Swarm", "Jaana's Staff", "Low Named"]);
+  assert.deepEqual(rows("rarityMin=Legendary%20Artifact").sort(), ["Bow Of The Infinite Swarm", "Jaana's Staff", "Low Named", "Orc Slayer Cutlass"]);
+  assert.ok(!rows("rarityMax=Legendary%20Artifact").includes("Jaana's Staff"), "a ceiling at the top tier leaves named artifacts out");
+  assert.deepEqual(rows("sort=rarity").slice(0, 4), ["Jaana's Staff", "Low Named", "Bow Of The Infinite Swarm", "Orc Slayer Cutlass"]);
+  assert.deepEqual(facetsOf(items, { rarity: RARITY_LADDER }).rarities.at(-1), "Named Artifact");
 });
 
 test("[fast] rarityRank: a Reforged tier ranks with its base tier, and both shipped ladders have eight tiers (issue #262)", () => {

@@ -167,6 +167,9 @@
 /* rarity: the dot is a ::before on .rar, whose only other child is a single text node */
 .rar-tier { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .rar-tier::before { content: ""; width: 8px; height: 8px; border-radius: var(--radius-full); background: currentColor; flex: none; }
+/* a named artifact (issue #568): its name, or its tier, in a gradient clipped to the text, and a ✦ for the tier's dot */
+.rar-named { background-image: linear-gradient(90deg, var(--rarity-named-artifact-start), var(--rarity-named-artifact) 55%, var(--rarity-named-artifact-end)); -webkit-background-clip: text; background-clip: text; color: transparent; text-decoration-color: var(--rarity-named-artifact); }
+.rar-tier.rar-named::before { content: "✦"; width: auto; height: auto; border-radius: 0; background: none; color: var(--rarity-named-artifact); line-height: 1; }
 
 /* ---------------------------------------------------------------- cards */
 .card { background: var(--color-surface); color: var(--color-text); border: var(--border-width-frame) solid var(--color-border); border-image: var(--frame-image); border-radius: var(--radius-lg); }

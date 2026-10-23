@@ -1,6 +1,6 @@
 // gear-vault.test.mts — `app/vault-lib.mts` (parser, classifier, fold, pools) and the optimizer core through the same loader the server uses.
 //
-// `app/vault-lib.mts`: tooltip parsing (property keys, tags, STR requirement, rarity, extras/flags, a set piece's full-set block kept out of its own props, a power scroll's level as `psLevel`, a Scroll of Transcendence's skill and points as `sotSkill` and `sotPoints` and its `displayName`), the shipped corpus (every `adapters/*/fixture.scan.json` plus both demo scans, parsed and classified the way the fold does it: no prop-carrying gear without a slot, every "... Arms" piece in the arms slot, every set piece's props equal to its lines above the set header, a worn piece taken off landing in its layer's slot, and named TazUO fixture pieces checked by slot and resist), graphic- and name-to-slot classification (with the golden table of issue #202: every layer case the research found, each checked by graphic and by name alone, and a spell scroll's graphic never gear whatever its name), snapshot folding (newest scan of a root wins, skipped roots keep their last contents, tombstones, character tombstones and the scans that outrank them, distinct location text for same-named containers, each container's `capacity` from its Contents line (`capacityOf`: a weight cap, no weight, separators, markup, singular words; null without a maximum or a line), null for a ground root scanned before root tooltips, and an engraved root named by its engraving), optimizer pool building (a worn two-hander leaving the worn one hand empty, other characters' worn gear, with no character every worn piece unless asked for, Only containers (`onlyRoots`: nested bags in, Skip containers after it, worn pieces by their own rule, an empty list no filter, and through the Organize overlay a piece moved into a listed container in and a carried one in no container out), STR gate, tag filter), requirement reports, the weapon exclusion filter and its migration, the weapon properties filter (`weaponMustHave`), `settingsDiff`, profile templates (`migrateProfiles` old → new shape and idempotence, `templateFrom` leaving race/STR out, drift via `settingsDiff`), saved-run keys and reuse (`runs-lib.mts`), plus the optimizer core through the same loader the server uses: exact search against brute force (a hand-built case and 150 random suits), the other-suits list against every brute-force score (80 random suits), progress reporting, and warm starts, every layer name an adapter's `capabilities.json` declares resolving to a slot, and Razor Enhanced's layer names (`LAYER_ALIASES`) classifying exactly as their TazUO equivalents (issue #219). A character keeps its look from its newest scan that has one (issue #57). The piece-level checks the Inventory's filters and the pool share (`gargoyleOk`, `meditationOk`, `hasTag`, `underRoot`, `hasFlag`, #487). Fixtures: `app/fixtures/demo-*.json` (synthetic fixtures, see `app/fixtures/README.md`).
+// `app/vault-lib.mts`: tooltip parsing (property keys, tags, STR requirement, rarity, a Named Artifact from its Artifact Rarity line (with markup, beside a tier line) or the shard's `namedArtifacts` list (issue #568), extras/flags, a set piece's full-set block kept out of its own props, a power scroll's level as `psLevel`, a Scroll of Transcendence's skill and points as `sotSkill` and `sotPoints` and its `displayName`), the shipped corpus (every `adapters/*/fixture.scan.json` plus both demo scans, parsed and classified the way the fold does it: no prop-carrying gear without a slot, every "... Arms" piece in the arms slot, every set piece's props equal to its lines above the set header, a worn piece taken off landing in its layer's slot, and named TazUO fixture pieces checked by slot and resist), graphic- and name-to-slot classification (with the golden table of issue #202: every layer case the research found, each checked by graphic and by name alone, and a spell scroll's graphic never gear whatever its name), snapshot folding (newest scan of a root wins, skipped roots keep their last contents, tombstones, character tombstones and the scans that outrank them, distinct location text for same-named containers, each container's `capacity` from its Contents line (`capacityOf`: a weight cap, no weight, separators, markup, singular words; null without a maximum or a line), null for a ground root scanned before root tooltips, and an engraved root named by its engraving), optimizer pool building (a worn two-hander leaving the worn one hand empty, other characters' worn gear, with no character every worn piece unless asked for, Only containers (`onlyRoots`: nested bags in, Skip containers after it, worn pieces by their own rule, an empty list no filter, and through the Organize overlay a piece moved into a listed container in and a carried one in no container out), STR gate, tag filter), requirement reports, the weapon exclusion filter and its migration, the weapon properties filter (`weaponMustHave`), `settingsDiff`, profile templates (`migrateProfiles` old → new shape and idempotence, `templateFrom` leaving race/STR out, drift via `settingsDiff`), saved-run keys and reuse (`runs-lib.mts`), plus the optimizer core through the same loader the server uses: exact search against brute force (a hand-built case and 150 random suits), the other-suits list against every brute-force score (80 random suits), progress reporting, and warm starts, every layer name an adapter's `capabilities.json` declares resolving to a slot, and Razor Enhanced's layer names (`LAYER_ALIASES`) classifying exactly as their TazUO equivalents (issue #219). A character keeps its look from its newest scan that has one (issue #57). The piece-level checks the Inventory's filters and the pool share (`gargoyleOk`, `meditationOk`, `hasTag`, `underRoot`, `hasFlag`, #487). Fixtures: `app/fixtures/demo-*.json` (synthetic fixtures, see `app/fixtures/README.md`).
 //
 // Tests that use the fixtures must sit below the `const kestrel = …` / `const dorran = …` lines that load them from app/fixtures/. The [slow] cases here are the 150/80-random-suit brute-force comparisons and the demo-inventory exact and warm-start checks.
 import { test } from "node:test";
@@ -1437,6 +1437,34 @@ test("[fast] a rarity line is one of the shard's rarity ladder names, optionally
     setRules({ ...uoalive, rarity: [{ name: "Mythic Relic", colour: "#123456" }] });
     assert.equal(parseTooltip(["Ring", "<BASEFONT COLOR=#123456>Mythic Relic"]).rarity, "Mythic Relic");
     assert.equal(parseTooltip(["Ring", "Lesser Artifact"]).rarity, null);   // not on this shard's ladder
+  } finally {
+    setRules(uoalive);
+  }
+});
+
+test("[fast] an Artifact Rarity line, or a name on the shard's namedArtifacts list, makes a Named Artifact (issue #568)", () => {
+  const staff = ["Jaana's Staff", "<b>Insured</b>", "Weight: 3 Stones", "Artifact Rarity 11", "Spell Channeling", "Mage Weapon -20 Skill", "Luck 220"];
+  const p = parseTooltip(staff);
+  assert.equal(p.rarity, "Named Artifact");
+  assert.equal(p.artifactRarity, 11);
+  assert.equal(p.extras["artifact rarity"], 11);   // still the Property filter's Artifact Rarity
+  assert.ok(p.lines.includes("Artifact Rarity 11"));   // the line stays for the tooltip
+  assert.equal(parseTooltip(["Ring", "<BASEFONT COLOR=#FFFFFF><b>Artifact Rarity 7</b>"]).artifactRarity, 7);
+  const plain = parseTooltip(["Ring", "Luck 100"]);
+  assert.deepEqual([plain.rarity, plain.artifactRarity], [null, null]);
+  // a tier line too: the Artifact Rarity line wins, the tier line stays among the lines
+  const both = parseTooltip(["Ring", "Artifact Rarity 3", "Major Artifact"]);
+  assert.deepEqual([both.rarity, both.artifactRarity, both.lines.includes("Major Artifact")], ["Named Artifact", 3, true]);
+  // uoalive lists Bow Of The Infinite Swarm, which carries no line: Named Artifact with no number, in any case
+  for (const name of ["Bow Of The Infinite Swarm", "bow of the infinite swarm"]) {
+    const bow = parseTooltip([name, "Swarm 20%", "Swing Speed Increase 30%"]);
+    assert.deepEqual([bow.rarity, bow.artifactRarity], ["Named Artifact", null]);
+  }
+  const uoalive = getRules();
+  try {
+    const { namedArtifacts: _list, ...noList } = uoalive;
+    setRules(noList);   // generic-osi has no list
+    assert.equal(parseTooltip(["Bow Of The Infinite Swarm", "Swarm 20%"]).rarity, null);
   } finally {
     setRules(uoalive);
   }

@@ -36,7 +36,7 @@ The port and the token stay the same across restarts, so a client is set up once
 
 ## What a client gets
 
-Every client receives a short usage guide when it connects (the `instructions` of MCP's `initialize`), so there is no skill to install. Paged lists take `limit` (25 by default, 100 at most) and `offset` and answer with `total`. Item rows are compact (serial, name, kind, slot, rarity, where it is, the serials of the container it sits in and of that container's root, who wears it, its properties); `get_item` has the full tooltip. Slots, kinds, slayers and tags match whatever their case, and a property rule that does not parse, or names a property no item has, is refused with the forms it takes.
+Every client receives a short usage guide when it connects (the `instructions` of MCP's `initialize`), so there is no skill to install. Paged lists take `limit` (25 by default, 100 at most) and `offset` and answer with `total`. Item rows are compact (serial, name, kind, slot, rarity and a named artifact's `artifactRarity`, where it is, the serials of the container it sits in and of that container's root, who wears it, its properties); `get_item` has the full tooltip. Slots, kinds, slayers and tags match whatever their case, and a property rule that does not parse, or names a property no item has, is refused with the forms it takes.
 
 Tools that wait (`build_suit` for its result, the in-game tools for the bridge's report) wait 45 seconds by default and 50 at most, inside the 60-second timeout most MCP clients use; past that they answer with an id to poll (`get_suit_build`, `get_action_status`).
 

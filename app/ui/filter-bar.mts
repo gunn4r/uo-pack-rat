@@ -6,7 +6,7 @@
 // map: ui-components
 // owns: `createFilterBar`, `itemsSource`, `itemsSourceWith`, `ItemSource`
 import { SLOT_LABELS, SLOT_GROUP, tagUnits, flagLabel, FLAG_CATALOGUE, PROPERTY_CATALOGUE, CATALOGUE_GROUPS, ITEM_TYPE_LABELS, typesOfSlot, type ItemType } from "../vault-lib.mts";
-import type { Facets, ItemQuery, Place, PropCounts, PropOp } from "../item-query.mts";
+import { rarityTiers, type Facets, type ItemQuery, type Place, type PropCounts, type PropOp } from "../item-query.mts";
 import { state } from "./store.mts";
 import { el, label, full, slotLabel, whereText } from "./dom.mts";
 import { api } from "./api.mts";
@@ -283,11 +283,11 @@ export function createFilterBar(o: FilterBarOptions): FilterBar {
   const addChip = filterChip({ label: "Filter", add: true, attrs: { ...idOf("f-add"), "data-stop": "" }, onClick: () => openAddMenu() });
 
   // ---------------------------------------------------------------- facet popovers
-  // A floor and a ceiling on the shard's ladder, each a single-choice list; picking either sets that bound and
+  // A floor and a ceiling on the shard's ladder (Named Artifact on top), each a single-choice list; picking either sets that bound and
   // closes the popover. Each list draws its own tier labels (a DOM node lives in one place).
   function rarityPanel(close: () => void): Kids {
-    const ladder = state.rules?.rarity || [];
-    const tiers = () => [{ value: "", label: txt("Any rarity") }, ...ladder.map((t) => ({ value: t.name, label: rarityEl(t.name) ?? txt(t.name) }))];
+    const ladder = rarityTiers(state.rules?.rarity);
+    const tiers = () => [{ value: "", label: txt("Any rarity") }, ...ladder.map((t) => ({ value: t, label: rarityEl(t) ?? txt(t) }))];
     return [box("div", { class: "inv-pop-head" }, txt("Rarity at least", "caps")),
       radioList("Rarity at least", tiers(), query().rarityMin, (v) => { setQuery({ ...query(), rarityMin: v }); close(); }),
       box("div", { class: "inv-pop-head" }, txt("Rarity at most", "caps")),

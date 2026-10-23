@@ -54,6 +54,7 @@
     { "name": "Legendary Artifact", "colour": "#e0342b" }
   ],
   "raceLock": { "gargoyleOnly": true },
+  "namedArtifacts": ["Bow Of The Infinite Swarm"],
   "freeSkills": ["Lumberjacking", "Cartography", "Lockpicking", "Remove Trap", "Detecting Hidden", "Mining", "Fishing", "Hiding", "Item Identification", "Camping", "Begging", "Arms Lore", "Forensic Evaluation", "Taste Identification", "Cooking", "Tracking", "Herding"],
   "slayerGroups": [
     { "super": ["Demon", "Abyss", "Exorcism (demons)"], "slayers": ["Gargoyle"] },

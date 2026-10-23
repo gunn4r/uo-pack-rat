@@ -1,6 +1,7 @@
 // contrast-probe.mts — measures WCAG contrast on the rendered page (design spec 2.3). probeContrast() runs
 // INSIDE the page (Playwright's page.evaluate), so it must stay self-contained: no imports, no closures over
-// module scope. For each visible element with its own text it takes the computed text colour and walks up the
+// module scope. For each visible element with its own text it takes the computed text colour (each of its gradient's colours when
+// the text is a gradient clipped to it) and walks up the
 // ancestors compositing every background (semi-transparent fills such as the scrim are blended down to an
 // opaque layer), then computes the ratio. It also measures field values, placeholders, control boundaries
 // (border against the surrounding fill, or fill against surrounding fill, whichever is stronger), switch
@@ -76,7 +77,10 @@ export function probeContrast(): ContrastRow[] {
       const fg0 = parse(s.color)!, bg = bgOf(el), fg = fg0.a < 1 ? over(fg0, bg) : fg0;
       const size = parseFloat(s.fontSize), w = +s.fontWeight;
       const large = size >= 24 || (size >= 18.66 && w >= 700);
-      push("text", el, fg, bg, large ? 3 : 4.5, `${size}px/${w} .${el.className}`);
+      // text drawn by a gradient clipped to it (a named artifact's name, components.css .rar-named): each of the gradient's colors
+      const stops = s.backgroundClip === "text" || s.getPropertyValue("-webkit-background-clip") === "text" ? (s.backgroundImage.match(/rgba?\([^)]+\)/g) || []).map(parse) : [];
+      if (stops.length) for (const c of stops) push("text", el, c!.a < 1 ? over(c!, bg) : c!, bg, large ? 3 : 4.5, `${size}px/${w} .${el.className} gradient`);
+      else push("text", el, fg, bg, large ? 3 : 4.5, `${size}px/${w} .${el.className}`);
     }
     if (["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName) && !["checkbox", "radio", "range"].includes((el as HTMLInputElement).type)) {
       const bg = bgOf(el);
