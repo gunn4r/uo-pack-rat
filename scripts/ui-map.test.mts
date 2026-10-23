@@ -463,7 +463,9 @@ test("[slow] House map: Highlight the stack queues one highlight per chest top f
 
     await page.selectOption("#map-house", COURT);
     const seen = letter(courtModel, 1012, 2012);
-    await page.waitForSelector(`#map-svg [data-stack="${seen}"]`);
+    // Stack letters restart at A in every house, so wait on a chest only the courtyard has: the vault's map
+    // still on screen has a stack by the same letter, and selecting it there loses the selection to the redraw (#561).
+    await page.waitForSelector(`#map-svg [data-chest="${SEEN_ONLY}"]`);
     await page.locator(`#map-svg [data-stack="${seen}"]`).focus();
     await page.keyboard.press("Enter");
     await page.waitForSelector("#map-highlight-stack:not([disabled])");

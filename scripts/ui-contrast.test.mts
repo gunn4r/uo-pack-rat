@@ -410,7 +410,12 @@ test("[slow] every text, control edge, icon and status dot on the real page pass
         for (const mode of ["light", "dark"] as const) {
           // reduced motion: no colour transition is half-way when the probe reads the computed colours
           await page.emulateMedia({ colorScheme: mode, reducedMotion: "reduce" });
-          await page.waitForFunction(([f, m]) => document.documentElement.dataset.theme === f && document.documentElement.dataset.mode === m, [family, mode], { timeout: 5_000 });
+          // 15 s: a slow CI runner can take seconds to repaint a heavy scene in the new mode (#561). If it still
+          // fails, the message says which look the page was left in, so slow and stuck can be told apart.
+          await page.waitForFunction(([f, m]) => document.documentElement.dataset.theme === f && document.documentElement.dataset.mode === m, [family, mode], { timeout: 15_000 }).catch(async (e: Error) => {
+            const was = await page.evaluate(() => `${document.documentElement.dataset.theme} ${document.documentElement.dataset.mode}`).catch(() => "unknown");
+            throw new Error(`${scene.name}: the look never became ${family} ${mode} (the page shows ${was}): ${e.message}`);
+          });
           await animationsDone(page);
           const got = await page.evaluate(probeContrast);
           assert.ok(got.length > 10, `${scene.name} (${family} ${mode}) measured only ${got.length} pairs — did the scene render?`);
