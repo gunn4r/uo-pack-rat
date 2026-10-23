@@ -1,14 +1,15 @@
 #!/usr/bin/env node
-// site-build.mts — assembles the website (issue #537) into one folder for GitHub Pages: `site/`, the repo's own pictures and fonts the page uses (COPIES), latest.json and the live demo when given.
+// site-build.mts — assembles the website (issue #537) into one folder for GitHub Pages: `site/`, the repo's own pictures and fonts the page uses (COPIES), latest.json and the live demo when given, then minifies it (scripts/site-minify.mts).
 //   npm run site:build -- --out <folder> [--latest <latest.json>] [--demo <folder from npm run site:demo>]
 //
-// The page has no build step of its own: this only gathers files, so the logo, the README's in-game captures and the app's mono font are copied from where they live rather than kept twice. The Pages workflow (`.github/workflows/pages.yml`) runs it with the latest.json from `scripts/site-latest.mts`; locally, serve the folder (`python3 -m http.server -d <folder>`) to see the page as it deploys. Without latest.json the download buttons link the Releases page; without the demo the page shows a screenshot where the live app would be.
+// The page has no build step of its own beyond that minifying: this gathers files, so the logo, the README's in-game captures and the app's mono font are copied from where they live rather than kept twice. The Pages workflow (`.github/workflows/pages.yml`) runs it with the latest.json from `scripts/site-latest.mts`; locally, serve the folder (`python3 -m http.server -d <folder>`) to see the page as it deploys. Without latest.json the download buttons link the Releases page; without the demo the page shows a screenshot where the live app would be.
 //
 // map: tooling
 // owns: `buildSite`, `COPIES`
 import { cpSync, existsSync, mkdirSync, readdirSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { minifySite } from "./site-minify.mts";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
 const SITE = join(ROOT, "site");
@@ -26,7 +27,8 @@ export const COPIES: Array<[string, string]> = [
 ];
 
 // The site in `out`, which must be new or empty and outside `site/`; with `latest`, that file as latest.json; with
-// `demo`, the recorded demo (scripts/site-demo.mts) in demo/, beside the shim from site/demo/.
+// `demo`, the recorded demo (scripts/site-demo.mts) in demo/, beside the shim from site/demo/. Then all of it minified
+// (scripts/site-minify.mts).
 export function buildSite({ out, latest = null, demo = null }: { out: string; latest?: string | null; demo?: string | null }): void {
   const to = resolve(out);
   // On another drive (Windows) relative() is absolute, which is outside too.
@@ -41,6 +43,7 @@ export function buildSite({ out, latest = null, demo = null }: { out: string; la
   }
   if (latest) cpSync(latest, join(to, "latest.json"));
   if (demo) cpSync(demo, join(to, "demo"), { recursive: true });
+  minifySite(to);   // the deployed copy only: site/ keeps the readable, commented source
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

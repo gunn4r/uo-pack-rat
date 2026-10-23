@@ -30,7 +30,7 @@ const BUDGETS: Record<string, number> = {
   "docs/bridge-protocol.md": 52000,
   "docs/change-checklists.md": 23000,
   "docs/mcp.md": 17000,
-  "docs/module-map.md": 95000,
+  "docs/module-map.md": 96000,
   "docs/scan-schema.md": 37000,
   "docs/server.md": 12000,
   "docs/shard-rules.md": 22000,
@@ -47,7 +47,7 @@ const BUDGETS: Record<string, number> = {
   "electron/README.md": 14000,
   "PRIVACY.md": 16000,
   "README.md": 8600,
-  "RELEASING.md": 17100,
+  "RELEASING.md": 17500,
   "SECURITY.md": 6000,
   "TESTING.md": 60000,
 };
