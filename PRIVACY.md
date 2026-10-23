@@ -12,7 +12,7 @@ That last claim used to have a hole in it that had nothing to do with the app's 
 
 ## The website
 
-The Pack Rat website counts visits with [GoatCounter](https://www.goatcounter.com/), so the maintainer can see how many people visit and which download buttons they click. It sets no cookies and stores nothing in your browser. Each visit sends the page address, the referring site, the screen size and the browser's user agent and language; GoatCounter doesn't store IP addresses and doesn't follow you to other sites. The app itself never contacts GoatCounter.
+The Pack Rat website counts visits with [GoatCounter](https://www.goatcounter.com/), so the maintainer can see how many people visit and which download buttons they click. It sets no cookies and stores nothing in your browser. Each visit sends the page address, the referring site, the screen size and the browser's user agent and language, and GoatCounter works out a rough location (country or region) from your IP address; it doesn't store the IP address and doesn't follow you to other sites. The app itself never contacts GoatCounter.
 
 ## The local server
 
