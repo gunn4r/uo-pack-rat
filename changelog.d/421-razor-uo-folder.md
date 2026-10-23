@@ -1,2 +1,0 @@
-- **House map with Razor Enhanced**: with no UO folder set in Settings, the House map and its world map now ask you to set the UO folder so they can read your client's files, instead of saying no game client is set up.
-- For contributors: `GET /api/houses`'s `tiledataFrom.reason` and the facet-map, item-art and paperdoll 404s answer `no-finder` for a client whose manifest names no `install.uoFolder` (`no-client` now means no client at all).

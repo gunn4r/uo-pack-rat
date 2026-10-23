@@ -1,1 +1,0 @@
-- **Scans skip chests they can't open**: a chest 3 tiles away was double-clicked anyway, which cost a second or more and a "too far" message in game each time. The TazUO and Razor Enhanced scanners now open only containers within 2 tiles, and read one 3 tiles away only as your client already holds it. Update the scripts from Settings to get this.
