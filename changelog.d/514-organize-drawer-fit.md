@@ -1,1 +1,0 @@
-- For contributors: the Auto organize drawer test (`scripts/ui-organize.test.mts`) waits for the drawer's `open` class before it waits for the slide to end, so it no longer measures the drawer before the slide starts (issue #514).

@@ -10,7 +10,7 @@ Made for [UO Alive](https://uoalive.com). It may work on other shards, but it ha
 
 ![The Pack Rat Inventory: a search for rings across both demo characters, with one ring's properties and location open on the right](docs/images/inventory.png)
 
-<p align="center"><a href="https://github.com/gunn4r/uo-pack-rat/releases"><b>Download Pack Rat</b></a> for Mac, Windows or Linux · <a href="docs/user-guide.md">User guide</a></p>
+<p align="center"><a href="https://github.com/gunn4r/uo-pack-rat/releases"><b>Download Pack Rat</b></a> for Mac, Windows or Linux · <a href="https://gunn4r.github.io/uo-pack-rat/">Website</a> · <a href="docs/user-guide.md">User guide</a></p>
 
 ## What it does
 

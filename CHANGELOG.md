@@ -4,7 +4,54 @@
 
 Entries not yet released are in `changelog.d/`, one file per pull request (`CONTRIBUTING.md`, Changelog). `node scripts/changelog.mts --release <version>` moves them here.
 
-<!-- released-sha256: 7d28513f0617dd31735b259f51dffeccde2a31f86f7b660bb5f1d1706687377f (written by node scripts/changelog.mts) -->
+<!-- released-sha256: 130d59a1239bf58bde9483051099c55755524f8f82a93ab7c13404f377b87880 (written by node scripts/changelog.mts) -->
+
+## 0.3.1 — 2026-10-23
+
+### Highlights
+
+Pack Rat has a website, and the House map's Stack plan is easier to read.
+
+**A home page**
+- **A home page on GitHub Pages**, linked from the README, shows what Pack Rat does, with screenshots of every screen and download buttons for your own system. On a computer you can try the real app on two demo characters before installing.
+
+**House map and scans**
+- **The Stack plan lists your stacks by area** instead of a grid full of empty-tile cards.
+- **Scans skip chests they can't open**, so a chest 3 tiles away no longer costs a "too far" message and a second of waiting.
+- **Razor Enhanced players** are asked to set the UO folder when the House map needs it.
+
+**Fixes**
+- **Manual's Grab and Go to buttons** turn on as soon as the in-game bridge comes online.
+- **The Inventory's focused or selected row** is outlined and tinted across the whole row, Name column included.
+
+**Licence and scope**
+- **Pack Rat is now under the GNU GPL v3**, with the author's credit kept in forks. Everything before this change, 0.3.0 included, stays under the MIT License.
+- **Made for UO Alive**: Pack Rat is built and tested on UO Alive, and the setup window says so when you pick another shard.
+
+Reinstall the game scripts from Settings after updating (TazUO 2.22.1, Razor Enhanced 1.13.3).
+
+<details><summary>All changes (8)</summary>
+
+- **Inventory row focus ring**: with the row checkboxes showing, the focused row's ring now runs unbroken across the Name column, and a selected row's tint covers the Name cell too. The ring is drawn once instead of twice, its edge stays level across the pinned columns, and the divider beside the pinned columns stays visible on a focused or selected row while the table is scrolled sideways.
+- **Pack Rat is now under the GNU GPL v3**: from this release it is free software under the GPL v3 with two added terms, so a fork you share must stay open source, keep the author's credit, and be marked as changed rather than passed off as the original. Settings › Updates shows the credit and the licence. Everything before this change, 0.3.0 included, stays under the MIT License.
+- **Made for UO Alive**: the README and the user guide now say Pack Rat is made for and tested on UO Alive, and the setup window notes that another shard's caps, colors and scripts may not match. The README also gains a short disclaimer.
+- **A website**: Pack Rat has a home page on GitHub Pages with what it does, screenshots of every screen (click one to see it full size) and download buttons for the latest release, your own system's first. On a computer it runs the real app on two demo characters, so you can search, open the map and run a build before installing.
+- **Manual's Grab buttons follow the bridge**: with a character picked, the Suit Builder's Manual fetch list now turns its Grab and Go to buttons on as soon as the in-game bridge comes online, and off when it goes away, as the Automatic result does. Before, they kept saying the bridge was offline until the suit changed.
+- **House map Stack plan as a list by area**: the Stack plan now lists only the tiles that hold a stack, grouped under each area you drew and then "Everything else", instead of a north-up grid full of empty-tile cards. The arrow keys move to the previous or next card.
+- **House map with Razor Enhanced**: with no UO folder set in Settings, the House map and its world map now ask you to set the UO folder so they can read your client's files, instead of saying no game client is set up.
+- **Scans skip chests they can't open**: a chest 3 tiles away was double-clicked anyway, which cost a second or more and a "too far" message in game each time. The TazUO and Razor Enhanced scanners now open only containers within 2 tiles, and read one 3 tiles away only as your client already holds it. Update the scripts from Settings to get this.
+
+</details>
+
+### For contributors
+
+<details><summary>Contributor notes (3)</summary>
+
+- `site/` is the website, deployed to GitHub Pages by `.github/workflows/pages.yml` on each published release, each change to it on main and by hand. `npm run site:shots` regenerates its screenshots (sharing `scripts/shots-lib.mts` with `npm run readme:shots`), `npm run site:demo` records its live demo, `npm run site:build` assembles it, and `scripts/site-latest.mts` writes the latest.json its download buttons read.
+- The Auto organize drawer test (`scripts/ui-organize.test.mts`) waits for the drawer's `open` class before it waits for the slide to end, so it no longer measures the drawer before the slide starts (issue #514).
+- `GET /api/houses`'s `tiledataFrom.reason` and the facet-map, item-art and paperdoll 404s answer `no-finder` for a client whose manifest names no `install.uoFolder` (`no-client` now means no client at all).
+
+</details>
 
 ## 0.3.0 — 2026-10-21
 

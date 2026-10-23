@@ -1,1 +1,0 @@
-- **Manual's Grab buttons follow the bridge**: with a character picked, the Suit Builder's Manual fetch list now turns its Grab and Go to buttons on as soon as the in-game bridge comes online, and off when it goes away, as the Automatic result does. Before, they kept saying the bridge was offline until the suit changed.
