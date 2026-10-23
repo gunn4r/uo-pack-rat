@@ -764,20 +764,6 @@ html:not(.has-demo) #try, html:not(.has-demo) .nav a[href="#try"] { display: non
       try { frame.contentWindow.location.hash = "#/" + route; } catch (e) { loadApp(); }
     });
   });
-  // The app opens on a search for "ring" with one ring open, so the first look shows rarity colors and a tooltip.
-  frame.addEventListener("load", function () {
-    if (route !== "inventory") return;
-    var tries = 0, t = setInterval(function () {
-      var d; try { d = frame.contentDocument; } catch (e) { clearInterval(t); return; }
-      var box = d && d.querySelector("#f-text");
-      if (box && d.querySelector("#inv-table tbody tr.item")) {
-        clearInterval(t);
-        box.value = "ring"; box.dispatchEvent(new Event("input", { bubbles: true }));
-        setTimeout(function () { var row = d.querySelectorAll("#inv-table tbody tr.item")[2]; if (row) row.click(); }, 700);
-      } else if (++tries > 40) clearInterval(t);
-    }, 250);
-  });
-
   // Light/dark: a saved choice wins, else the system's. data-theme on <html> is what the color tokens read;
   // data-mode always says which one is showing (the toggle's icon).
   var media = window.matchMedia("(prefers-color-scheme: light)"), toggle = document.querySelector("[data-theme-toggle]");
