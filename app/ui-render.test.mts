@@ -44,6 +44,8 @@ class FakeElement {
   }
   addEventListener(): void {}
   append(...kids: Array<FakeElement | FakeText>): void { for (const k of kids) { this.childNodes.push(k); if (k instanceof FakeElement) k.parentElement = this; } }
+  // a gear item redraws itself this way once its lookup answers, or fails
+  replaceChildren(...kids: Array<FakeElement | FakeText>): void { this.childNodes = []; this.append(...kids); }
   get textContent(): string { return this.childNodes.map((c) => c.textContent).join(""); }
 }
 const escText = (s: string): string => s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]!));
