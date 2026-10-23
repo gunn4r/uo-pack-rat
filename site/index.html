@@ -23,6 +23,8 @@
   // recording is missing), so nothing below it moves.
   if (window.matchMedia("(min-width: 761px)").matches) document.documentElement.classList.add("has-demo");
 </script>
+<!-- Visit counts: GoatCounter, cookieless and anonymous (PRIVACY.md, "The website"). It skips localhost on its own. -->
+<script data-goatcounter="https://uo-pack-rat.goatcounter.com/count" async src="https://gc.zgo.at/count.js"></script>
 <link rel="preload" href="fonts/grenze-gotisch-latin-500-600-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="fonts/alegreya-sans-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
 <style>
@@ -687,6 +689,11 @@ html:not(.has-demo) #try, html:not(.has-demo) .nav a[href="#try"] { display: non
   function ours(url) { return typeof url === "string" && url.indexOf("https://github.com/gunn4r/uo-pack-rat/") === 0 ? url : FALLBACK; }
   var tpl = document.getElementById("dl-template");
   document.querySelectorAll("[data-dl-slot]").forEach(function (slot) { slot.replaceChildren(tpl.content.cloneNode(true)); });
+  // A download click is counted as a GoatCounter event named by its file (download-win, download-mac-arm64, ...).
+  document.addEventListener("click", function (e) {
+    var a = e.target.closest && e.target.closest("a[data-key]");
+    if (a && window.goatcounter && window.goatcounter.count) window.goatcounter.count({ path: "download-" + a.dataset.key, title: "Download " + a.dataset.key, event: true });
+  });
   function render() {
     document.querySelectorAll("[data-dl]").forEach(function (el) {
       el.querySelectorAll(".dl-os").forEach(function (box) { box.classList.toggle("yours", box.dataset.os === os); });
