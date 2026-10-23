@@ -27,8 +27,8 @@
 <link rel="preload" href="fonts/alegreya-sans-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
 <style>
 /* The Pack Rat website (issue #537). Dark wood and brass from the app's Britannia theme, dark first with a vellum light
-   mode; an old-style serif, grain, and the in-game item tooltip as its signature. Screenshots come in pairs (Britannia
-   dark, Default light) and follow the page's mode. The download buttons work without JS (the latest release on GitHub);
+   mode; an old-style serif, a parchment ground with a moongate, and the in-game item tooltip as its signature.
+   Screenshots come in pairs (Britannia dark, Default light) and follow the page's mode. The download buttons work without JS (the latest release on GitHub);
    the script fills in each platform's file from latest.json, which the Pages workflow writes. */
 @font-face { font-family: "Grenze Gotisch"; font-style: normal; font-weight: 500 600; font-display: swap; src: url("fonts/grenze-gotisch-latin-500-600-normal.woff2") format("woff2"); }
 @font-face { font-family: "Alegreya Sans"; font-style: normal; font-weight: 400; font-display: swap; src: url("fonts/alegreya-sans-latin-400-normal.woff2") format("woff2"); }
@@ -39,7 +39,7 @@
 @font-face { font-family: "IBM Plex Mono"; font-style: normal; font-weight: 500; font-display: swap; src: url("fonts/ibm-plex-mono-latin-500-normal.woff2") format("woff2"); }
 :root {
   --ink: #f4ead2; --muted: #dccba7; --faint: #b49e78; --ground: #140f0a; --paper: #1f170f; --line: #46341f; --line-soft: #33261a;
-  --brass: #e3bc5f; --brass-deep: #b98f2e; --on-brass: #1c1307; --crimson: #ef8a95; --glow: rgb(216 177 85 / .25); --grain-o: .3;
+  --brass: #e3bc5f; --brass-deep: #b98f2e; --on-brass: #1c1307; --crimson: #ef8a95; --glow: rgb(216 177 85 / .25);
   --plate-shadow: 0 30px 60px -30px rgb(0 0 0 / .8);
   --tip-bg: rgb(6 6 6 / .93); --tip-fg: #efe8d8; --tip-dim: #b3a585; --tip-edge: #5d5240;
   --t-major: #549fff; --t-leg-art: #eb7d77;
@@ -51,18 +51,16 @@
 }
 @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) {
   --ink: #22180f; --muted: #57452f; --faint: #85704f; --ground: #ece4d3; --paper: #f7f1e4; --line: #cdbd99; --line-soft: #ddd0b3;
-  --brass: #7d5b12; --brass-deep: #5f450c; --on-brass: #fbf5e6; --crimson: #8e2433; --glow: rgb(201 162 74 / .35); --grain-o: .5;
+  --brass: #7d5b12; --brass-deep: #5f450c; --on-brass: #fbf5e6; --crimson: #8e2433; --glow: rgb(201 162 74 / .35);
   --plate-shadow: 0 30px 60px -34px rgb(60 40 10 / .55); --shell-bg: #e4dac5; --shell-line: #cdbd99; color-scheme: light; } }
 :root[data-theme="light"] {
   --ink: #22180f; --muted: #57452f; --faint: #85704f; --ground: #ece4d3; --paper: #f7f1e4; --line: #cdbd99; --line-soft: #ddd0b3;
-  --brass: #7d5b12; --brass-deep: #5f450c; --on-brass: #fbf5e6; --crimson: #8e2433; --glow: rgb(201 162 74 / .35); --grain-o: .5;
+  --brass: #7d5b12; --brass-deep: #5f450c; --on-brass: #fbf5e6; --crimson: #8e2433; --glow: rgb(201 162 74 / .35);
   --plate-shadow: 0 30px 60px -34px rgb(60 40 10 / .55); --shell-bg: #e4dac5; --shell-line: #cdbd99; color-scheme: light; }
 
 * { box-sizing: border-box; }
 html { scroll-padding-top: var(--nav-h, 74px); }
 body { margin: 0; background: var(--ground); color: var(--ink); font: 400 19px/1.6 var(--body); overflow-x: hidden; -webkit-font-smoothing: antialiased; position: relative; isolation: isolate; }
-body::after { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; opacity: var(--grain-o); mix-blend-mode: overlay;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.55'/%3E%3C/svg%3E"); }
 body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 30; background: var(--shell-bg); }
 img { max-width: 100%; height: auto; display: block; }
 a { color: inherit; }
@@ -181,7 +179,29 @@ main [id] { scroll-margin-top: calc(var(--nav-h, 74px) + 16px); }
 .hero .lede { font-size: 21px; color: var(--muted); }
 .hero .lede a { color: var(--brass); text-underline-offset: 3px; }
 .get .seal { margin-block: 4px 2px; }
+/* The background: an aged parchment over the whole window, a darkened copy in dark mode, with a moongate's glow at the
+   top of the page and its ring behind the hero's icon. The parchment is the maintainer's own generated image (no game
+   art), made from parchment-2.jpeg (2752 x 1536) with:
+     light: cwebp -q 72 -m 6 parchment-2.jpeg -o site/img/parchment.webp
+     dark:  magick parchment-2.jpeg -colorspace Gray -contrast-stretch 0.5%x0.5% +level-colors '#0f0b07','#2b2015' -quality 72 site/img/parchment-dark.webp
+   It switches on the same selectors as the colour tokens, which the head's script settles before the first paint, so
+   only the current theme's image downloads. No blend modes or filters: the body's background is painted on the canvas,
+   outside the isolated body group, so blending against it fails. Both layers sit under the content. */
+.bg-paper { position: fixed; inset: 0; z-index: -1; pointer-events: none; background: url("img/parchment-dark.webp") center / cover no-repeat; }
+@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) .bg-paper { background-image: url("img/parchment.webp"); } }
+:root[data-theme="light"] .bg-paper { background-image: url("img/parchment.webp"); }
+.bgfx { position: absolute; top: 0; left: 0; right: 0; height: 1100px; z-index: -1; pointer-events: none; background:
+  radial-gradient(ellipse 34% 40% at 76% 34%, color-mix(in srgb, #4f86ff 30%, transparent), transparent 70%),
+  radial-gradient(ellipse 60% 55% at 76% 30%, color-mix(in srgb, #8a5cff 12%, transparent), transparent 75%); }
 .relic { display: grid; justify-items: center; }
+/* The moongate's ring, centred behind the hero's icon (40px below its centre) by CSS alone: out of flow, so it takes no
+   grid track and moves nothing. Only on screens wide enough to show it beside the copy; the glow stays everywhere. */
+.relic { position: relative; }
+.relic::before { content: ""; position: absolute; left: 50%; top: calc(88px + 40px); width: 290px; height: 400px; transform: translate(-50%, -50%); border-radius: 50%; pointer-events: none;
+  border: 2px solid color-mix(in srgb, #7fa6ff 55%, transparent);
+  box-shadow: 0 0 40px 6px color-mix(in srgb, #4f86ff 35%, transparent), inset 0 0 50px 8px color-mix(in srgb, #4f86ff 30%, transparent);
+  background: radial-gradient(ellipse at 50% 50%, color-mix(in srgb, #4f86ff 22%, transparent), transparent 70%); }
+@media (max-width: 900px) { .relic::before { display: none; } }
 .relic img { width: 176px; height: 176px; filter: drop-shadow(0 28px 50px var(--glow)); position: relative; }
 .relic .tip { margin-top: -18px; position: relative; min-width: 280px; }
 
@@ -210,7 +230,7 @@ main [id] { scroll-margin-top: calc(var(--nav-h, 74px) + 16px); }
 .dl-static .dl-btn { border: 1px solid var(--line); background: var(--paper); }
 [data-dl-slot] { min-height: 189px; }
 @media (max-width: 760px) { [data-dl-slot] { min-height: 378px; } }
-.dl-foot { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: baseline; font: 13px/1.6 var(--mono); color: var(--faint); }
+.dl-foot { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: baseline; font: 13px/1.6 var(--mono); color: var(--muted); }
 .dl-foot a { color: var(--brass); }
 .dl-foot .linux { font-family: var(--body); font-size: 15px; color: var(--muted); }
 
@@ -334,6 +354,8 @@ html:not(.has-demo) #try, html:not(.has-demo) .nav a[href="#try"] { display: non
 </style>
 </head>
 <body>
+<div class="bg-paper" aria-hidden="true"></div>
+<div class="bgfx" aria-hidden="true"></div>
 
 <template id="dl-template">
   <div class="dl" data-dl>
