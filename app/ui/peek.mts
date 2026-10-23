@@ -120,8 +120,8 @@ function draw(it: Item, focus: boolean): void {
     return why ? tipWrap(b, why) : b;
   });
   detailPane(p, {
-    // the quantity has its own row under Where it is; with no art, no empty box before the name
-    title: gearItem({ ...it, amount: 1 }, { variant: "inline", size: 32, tip: false, keepBox: false }), titleId: nameId, noun: "item", nouns: "rows",
+    // the quantity has its own row under Where it is
+    title: gearItem({ ...it, amount: 1 }, { variant: "inline", size: 32, tip: false }), titleId: nameId, noun: "item", nouns: "rows",
     meta: [rarityEl(it.rarity, "strong"), ...tagEls(it, { describe: true }), it.gear && it.medable ? badge("Meditation-safe", "ok") : null],
     sections: [
       detailSection("Where it is", kvRows(where)),

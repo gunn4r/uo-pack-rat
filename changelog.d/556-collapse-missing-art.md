@@ -1,0 +1,1 @@
+- **No empty icon boxes**: when an item's art can't be drawn (no UO folder set, an unknown graphic, or the website demo), its icon no longer leaves an empty box, so the name starts where the icon would have been. While an item's art is still loading, its place is kept as before.

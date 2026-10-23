@@ -107,17 +107,16 @@ test("[fast] gearItem row: icon, name in its rarity's token, quantity, quality t
   assert.equal(n.attrs["data-serial"], "1", "the item tooltip's host");
 });
 
-test("[fast] gearItem: no color for a tier without a token, an empty box with no graphic, no tile with showIcon false", () => {
+test("[fast] gearItem: no color for a tier without a token, no icon and no box with no graphic (#556), no tile with showIcon false", () => {
   const odd = draw({ serial: 2, name: "Odd Ring", rarity: "Shiny", graphic: null, hue: 0 });
-  const [box, name] = odd.children;
-  assert.ok(has(box!, "art-tile") && has(box!, "art-none") && has(box!, "art-24") && box!.children.length === 0, "an empty box of the same size");
-  assert.equal(name!.style.color, undefined);
+  assert.deepEqual(odd.children.map((c) => c.className), ["gi-name"], "no art: the name starts the row, with no box holding its place");
+  assert.equal(odd.children[0]!.style.color, undefined);
   const bare = draw({ serial: 3, name: "Ring", rarity: null, graphic: 7 }, { showIcon: false });
   assert.deepEqual(bare.children.map((c) => c.className), ["gi-name"]);
 });
 
-test("[fast] gearItem tip false: no data-serial and never wired as a tooltip (not made focusable), so the host around it answers; keepBox false: no box without art", () => {
-  const n = draw({ serial: 41, name: "Cloak", rarity: null, graphic: null }, { tip: false, keepBox: false });
+test("[fast] gearItem tip false: no data-serial and never wired as a tooltip (not made focusable), so the host around it answers", () => {
+  const n = draw({ serial: 41, name: "Cloak", rarity: null, graphic: null }, { tip: false });
   assert.equal(n.getAttribute("data-serial"), null);
   assert.equal(n.tabIndex, -1);
   assert.deepEqual(n.children.map((c) => c.className), ["gi-name"], "no empty box");
@@ -189,7 +188,7 @@ test("[fast] gearItem fills graphic, hue and rarity from the item cache, and loo
   assert.equal(a.children[0]!.children[0]!.getAttribute("src"), "/api/item-art/3913.png?hue=2413");
   assert.equal(a.children[1]!.style.color, "var(--rarity-major-magic)");
   assert.equal(b.children[0]!.children[0]!.getAttribute("src"), "/api/item-art/7028.png");
-  assert.ok(has(c.children[0]!, "art-none"), "a serial the server lacks keeps its box");
+  assert.deepEqual(c.children.map((x) => x.className), ["gi-name"], "a serial the server lacks: the waiting box goes, no icon");
   draw({ serial: 11, name: "Axe" });
   draw({ serial: 13, name: "Gone" });
   await tick();
@@ -249,15 +248,21 @@ test("[fast] gearItem: a serial waiting or in flight is asked once, however ofte
   for (const n of [first, second]) assert.equal(n.children[0]!.children[0]!.getAttribute("src"), "/api/item-art/5431.png", "both drawings get the icon");
 });
 
-test("[fast] artTile keepBox: a failed load leaves an empty box, not a gap", () => {
-  const tile = artTile(0x9999, { size: 24, keepBox: true }) as unknown as El;
-  const img = tile.children[0]!;
-  img.dispatch("error");
-  assert.ok(has(tile, "art-none") && tile.children.length === 0);
-  assert.ok(has(artTile(0x9999, { size: 24, keepBox: true }) as unknown as El, "art-none"), "a URL that failed is not asked again");
-  assert.equal(artTile(null, { size: 24 }), null, "without keepBox, no art is no tile");
-  const badge = (globalThis as unknown as { document: { createElement: (t: string) => El } }).document.createElement("span");
-  for (const g of [null, 0x9999]) assert.equal((artTile(g, { size: 24, keepBox: true, badge: badge as unknown as HTMLElement }) as unknown as El).children[0], badge, "the badge stays in the empty box");
+test("[fast] artTile: art that fails to load takes its tile with it, leaving no box (#556); a graphic that loads keeps its tile", () => {
+  const doc = (globalThis as unknown as { document: { createElement: (t: string) => El } }).document;
+  const host = doc.createElement("span"), tile = artTile(0x9999, { size: 24 }) as unknown as El;
+  host.append(tile);
+  assert.ok(has(tile, "art-tile") && !has(tile, "art-none") && tile.children[0]!.tagName === "IMG", "while it loads, the tile keeps its place (no shift on a slow load)");
+  tile.children[0]!.dispatch("error");
+  assert.equal(host.children.length, 0, "a failed load removes the tile");
+  assert.equal(artTile(0x9999, { size: 24 }), null, "a URL that failed is not asked again, and gives no tile");
+  assert.equal(artTile(null, { size: 24 }), null, "no graphic, no tile");
+  const ok = artTile(0x1544, { size: 24 }) as unknown as El, okHost = doc.createElement("span");
+  okHost.append(ok);
+  ok.children[0]!.dispatch("load");
+  assert.equal(okHost.children[0], ok, "art that loads stays");
+  const badge = doc.createElement("span");
+  for (const g of [null, 0x9999]) assert.equal(artTile(g, { size: 24, badge: badge as unknown as HTMLElement }) as unknown as El, badge, "with a badge, the badge alone takes the art's place");
 });
 
 test("[fast] tipNode: the title carries the item's 32 px icon when its graphic is known", () => {

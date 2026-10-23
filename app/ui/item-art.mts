@@ -1,7 +1,7 @@
-// ui/item-art.mts — an item's or a container's in-game art (issues #174, #503), drawn from the player's own client files through GET /api/item-art: an <img> in a square tile of the given size, scaled down to fit, or twice its size (pixelated) when that still fits (art under 16 px both ways in a 32 px tile), so a pouch still reads as a pouch. When the art does not load (no UO folder, no art for the graphic), `fallback` takes the tile's place (or, with `keepBox`, the tile stays as an empty box), and that URL is not asked again until the page reloads or the UO folder is saved in Settings, so a redraw shows the fallback at once and never a broken image.
+// ui/item-art.mts — an item's or a container's in-game art (issues #174, #503), drawn from the player's own client files through GET /api/item-art: an <img> in a square tile of the given size, scaled down to fit, or twice its size (pixelated) when that still fits (art under 16 px both ways in a 32 px tile), so a pouch still reads as a pouch. When the art does not load (no UO folder, no art for the graphic), `fallback` takes the tile's place, or nothing does: the tile goes, with no empty box left holding its space (issue #556). That URL is not asked again until the page reloads or the UO folder is saved in Settings, so a redraw shows the fallback at once and never a broken image.
 //
 // map: house
-// owns: `artTile`, `artUrl`, `containerArt`
+// owns: `artTile`, `artUrl`, `containerArt`, `artWaiting`
 import { state } from "./store.mts";
 
 export const artUrl = (graphic: number, hue = 0): string => `/api/item-art/${graphic}.png${hue ? `?hue=${hue}` : ""}`;
@@ -16,12 +16,14 @@ function tileOf(size: 24 | 32, more = ""): HTMLElement {
   tile.setAttribute("aria-hidden", "true");
   return tile;
 }
-// `badge`: drawn in the tile's corner (the chest's color swatch on the House map), and kept as the fallback when there is no art. `keepBox`: with no art, an empty tile of the same size instead (a gear item's icon, issue #504, so names in a column stay lined up).
-export function artTile(graphic: number | null | undefined, opts: { size: 24 | 32; hue?: number; badge?: HTMLElement | null; keepBox?: boolean }): HTMLElement | null {
-  const fallback = opts.badge ?? null, box = (): HTMLElement => { const t = tileOf(opts.size, " art-none"); if (fallback) t.append(fallback); return t; };
-  if (graphic == null) return opts.keepBox ? box() : fallback;
+// An empty tile holding the art's place while its graphic is still being looked up, so the art arriving does not shift what follows.
+export const artWaiting = (size: 24 | 32): HTMLElement => tileOf(size, " art-none");
+// `badge`: drawn in the tile's corner (the chest's color swatch on the House map), and kept as the fallback when there is no art.
+export function artTile(graphic: number | null | undefined, opts: { size: 24 | 32; hue?: number; badge?: HTMLElement | null }): HTMLElement | null {
+  const fallback = opts.badge ?? null;
+  if (graphic == null) return fallback;
   const url = artUrl(graphic, opts.hue);
-  if (missing.has(url)) return opts.keepBox ? box() : fallback;
+  if (missing.has(url)) return fallback;
   const img = document.createElement("img");
   img.className = "art-img";
   img.setAttribute("src", url);
@@ -35,7 +37,7 @@ export function artTile(graphic: number | null | undefined, opts: { size: 24 | 3
   });
   img.addEventListener("error", () => {
     missing.add(url);
-    if (opts.keepBox) { img.remove(); tile.classList.add("art-none"); } else if (fallback) tile.replaceWith(fallback); else tile.remove();
+    if (fallback) tile.replaceWith(fallback); else tile.remove();
   });
   return tile;
 }
