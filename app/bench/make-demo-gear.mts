@@ -32,11 +32,13 @@ const CAP: Record<string, number> = { helmet: 50, neck: 30, chest: 50, arms: 45,
 
 const items = Object.values(foldFixtures(join(data, "scans")).items) as unknown as Folded[];
 const characters = [...new Set(items.flatMap((i) => [i.scannedBy, i.equippedBy]).filter((c): c is string => !!c))];
-const named = new RegExp(characters.map((c) => c.replace(/[^A-Za-z]/g, "")).join("|"), "i");
+const named = new RegExp(characters.map((c) => c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"), "i");
+// A line that names a person: who crafted it (rewritten), or who it is blessed for, owned, signed or imbued by (refused below).
+const CRAFTED = /^(?:<[^>]*>)*\s*crafted by\b/i, PERSON = /\b(?:blessed for|owned by|signed by|imbued by|engraved)\b/i;
 
 const clean = (lines: string[]): string[] => lines.slice(1)
   .filter((l) => !/^Weight: /.test(l) && l !== "Insured" && !/^Engraved/i.test(l))
-  .map((l) => (/^Crafted By /.test(l) ? "Crafted By Kestrel" : l));
+  .map((l) => (CRAFTED.test(l) ? "Crafted By Kestrel" : l));
 const isArtifact = (i: Folded): boolean => /artifact/i.test(i.rarity ?? "");
 
 const seen = new Set<string>(), bySlot: Record<string, Folded[]> = {};
@@ -48,7 +50,7 @@ for (const i of items) {
   (bySlot[i.slot] ??= []).push(i);
 }
 const out: DemoGear[] = [];
-for (const [slot, list] of Object.entries(bySlot).sort()) {
+for (const [slot, list] of Object.entries(bySlot).sort(([a], [b]) => a.localeCompare(b))) {
   list.sort((a, b) => +isArtifact(b) - +isArtifact(a) || Object.keys(b.props).length - Object.keys(a.props).length || a.name.localeCompare(b.name));
   for (const i of list.slice(0, CAP[slot] ?? list.length)) out.push({ name: i.name, graphic: i.graphic, hue: i.hue, weight: i.weight ?? 1, lines: clean(i.lines), group: GROUP[slot]! });
 }
@@ -58,6 +60,8 @@ for (const a of artifacts) out.push({ name: a.name, graphic: a.graphic, hue: a.h
 const text = JSON.stringify(out, null, 0).replace(/\},\{/g, "},\n{");
 const leak = text.match(named);
 if (leak) { console.error(`refusing to write: a scanned character's name is still in the gear ("${leak[0]}")`); process.exit(1); }
+const person = out.flatMap((g) => g.lines).find((l) => PERSON.test(l));
+if (person) { console.error(`refusing to write: a line names a person ("${person}")`); process.exit(1); }
 writeFileSync(join(HERE, "..", "fixtures", "demo-gear.json"), text + "\n");
 const count: Record<string, number> = {};
 for (const g of out) count[g.group] = (count[g.group] ?? 0) + 1;
