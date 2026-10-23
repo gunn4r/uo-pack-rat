@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, type Browser, type Page } from "playwright";
-import { houseScan } from "../app/organize-fixture.mts";
+import { houseScan, type ThingSpec } from "../app/organize-fixture.mts";
 import { claimHouses, showcaseHouse, FIXTURE_TILES } from "../app/house-fixture.mts";
 import { syntheticTileData } from "../app/tiledata-fixture.mts";
 
@@ -26,8 +26,8 @@ if (REAL_UO && !["tiledata.mul", "artLegacyMUL.uop", "gumpartLegacyMUL.uop"].eve
 }
 
 // The demo scans with a few skills each (the Suit Builder's header names them), Kestrel at Imbuing 70 (for Unravel). With `house`, also the showcase house of app/house-fixture.mts:
-// four rooms and an upper floor, 38 chests in rows, partly full, labeled by what they hold, a few holding things to find
-// on the map. `map`: the client's UO folder is the house's synthetic tiledata.mul (the House map's shots), with the real folder's art linked beside it;
+// four rooms and an upper floor, 41 chests in rows, labeled by what they hold, a few holding things to find on the map, and
+// the real gear of app/fixtures/demo-gear.json in the Armor, Weapons, Jewelry and Clothing chests. `map`: the client's UO folder is the house's synthetic tiledata.mul (the House map's shots), with the real folder's art linked beside it;
 // otherwise it is the real folder itself when there is one, whose tiledata the paperdoll's worn pieces need.
 const SKILLS: Record<string, Record<string, number>> = {
   Dorran: { Swordsmanship: 100, Fencing: 100, Tactics: 100, Anatomy: 90, Healing: 85, Parry: 80 },
@@ -50,12 +50,18 @@ export function seed(dir: string, house: boolean, map: boolean): { home: string 
   // Things to find, spread over the rooms: [name, the label group of the chest it is in (or null: an unlabeled one), which chest of it].
   const unlabeled = chests.filter((c) => !Object.values(groups).some((g) => g.includes(c.serial))).map((c) => c.serial);
   const finds: Array<[string, string | null, number]> = [["Katana", "Weapons", 1], ["Ruby", "Jewelry", 2], ["Katana", null, 4], ["Black Pearl", "Reagents", 3], ["Ruby", null, 1], ["Katana", "Jewelry", 6], ["Sapphire", "Jewelry", 5], ["Ruby", "Armor", 2]];
-  const things = finds.map(([name, group, k], i) => ({ serial: 0x40600000 + i, name, in: (group ? groups[group]! : unlabeled)[k]! }));
-  const v = houseScan({ character: "Dorran", scannedAt: "2025-12-31T12:00:00Z", things, boxes: chests.map((c, i) => ({ serial: c.serial, name: c.name, pos: { x: c.x, y: c.y, z: c.z, facet: 1 }, count: (i * 37) % 126 })) });
+  const things: ThingSpec[] = finds.map(([name, group, k], i) => ({ serial: 0x40600000 + i, name, in: (group ? groups[group]! : unlabeled)[k]! }));
+  // The real gear of app/fixtures/demo-gear.json (app/bench/make-demo-gear.mts), dealt round the chests of its group.
+  const gear = JSON.parse(readFileSync(join(ROOT, "app", "fixtures", "demo-gear.json"), "utf8")) as Array<{ name: string; graphic: number; hue: number; weight: number; lines: string[]; group: string }>;
+  const dealt: Record<string, number> = {};
+  gear.forEach((g, i) => { const box = groups[g.group]!, n = dealt[g.group] = (dealt[g.group] ?? 0) + 1; things.push({ serial: 0x40700000 + i, name: g.name, in: box[n % box.length]!, graphic: g.graphic, hue: g.hue, weight: g.weight, lines: g.lines }); });
+  // A chest holding gear shows what it holds; the others a made-up fill, so the map shows a spread.
+  const holds = new Set(things.filter((t) => t.serial >= 0x40700000).map((t) => t.in));
+  const v = houseScan({ character: "Dorran", scannedAt: "2025-12-31T12:00:00Z", things, boxes: chests.map((c, i) => ({ serial: c.serial, name: c.name, pos: { x: c.x, y: c.y, z: c.z, facet: 1 }, ...(holds.has(c.serial) ? {} : { count: (i * 37) % 126 }) })) });
   writeFileSync(join(dir, "scans", "house.json"), JSON.stringify({ ...v, house: { facet: 1, capturedAt: showcase.capturedAt, at: { x: chests[0]!.x, y: chests[0]!.y + 10 }, tiles: showcase.tiles, items: showcase.items } }));
   claimHouses(dir, [showcase]);
   // A label on the chests of each group, so the map shows the label colors.
-  const colors: Record<string, string> = { Reagents: "#2f7f7f", Armor: "#8a5a2b", Weapons: "#a33b3b", Jewelry: "#6b4fa0", Scrolls: "#3d6fb0" };
+  const colors: Record<string, string> = { Reagents: "#2f7f7f", Armor: "#8a5a2b", Weapons: "#a33b3b", Jewelry: "#6b4fa0", Scrolls: "#3d6fb0", Clothing: "#4f7a3a" };
   const labels: Record<string, unknown> = {};
   for (const [name, serials] of Object.entries(groups)) for (const serial of serials) labels[serial] = { serial, name, color: colors[name], origin: "manual" };
   writeFileSync(join(dir, "organize.json"), JSON.stringify({ version: 1, catchAll: null, pinnedItems: [], rules: [], labels }));

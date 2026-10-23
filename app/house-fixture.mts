@@ -176,6 +176,7 @@ export function showcaseHouse(X0 = 1600, Y0 = 1700): { house: HouseSource; chest
   for (const [x, y] of [[1, 9], [2, 9], [8, 1]] as const) chest(null, x, y, 7, "Wooden Chest");
   for (const y of [14, 15, 20]) chest(null, 21, y, 7, "Wooden Chest");
   for (let x = 12; x <= 19; x++) chest("Jewelry", x, 1, 27);
+  for (const y of [12, 13, 14]) chest("Clothing", 1, y);
   let item = 0x40000301;
   const items: HouseItem[] = [];
   const put = (graphic: number, spots: Array<[number, number]>): void => { for (const [x, y] of spots) items.push([item++, graphic, x, y, 7]); };
