@@ -93,7 +93,7 @@ These go through the same routes and checks as the app's buttons: the bridge mus
 - The server listens on `127.0.0.1` only, on its own port, and every request needs the token. A request naming any other host, or carrying an `Origin` header (which every web page's request does), is refused, so a website you visit cannot reach it.
 - The token is stored in `mcp.json` in the data folder, a file only your account can read (on Windows, the data folder's own permissions decide). A program on this computer that has the token can read your inventory, so make a new token if it leaks.
 - What a client reads goes where that client sends it. Claude Code, for one, sends tool results to its model like anything else in the conversation. Pack Rat itself still sends nothing anywhere.
-- In-game actions are a second switch on purpose: you can leave MCP read-only. Turning it off refuses new commands; one already queued still runs.
+- In-game actions are a second switch on purpose: with it off, a client can't touch the game; it reads, plans and edits only Pack Rat's own container labels. Turning it off refuses new commands; one already queued still runs.
 - A program that takes port 47615 while Pack Rat is not listening on it receives the token from every client set up for it. Pack Rat assumes a computer used by one person; on a shared one, make a new token if you suspect this.
 
 `docs/threat-model.md` (boundary 14) has the reasoning.

@@ -600,7 +600,7 @@ html:not(.has-demo) #try, html:not(.has-demo) .nav a[href="#try"] { display: non
     <div class="spread">
       <div><span class="label">You ask</span>
         <ol class="asks">
-          <li><p class="ask">“Which of my rings have Lower Reagent Cost 20 or more? Highlight the best one.”</p><p class="does"><code>search_items</code> with <code>lrc:20</code>, then <code>highlight_item</code>: the containers open down to the ring and it lights up in game.</p></li>
+          <li><p class="ask">“Which of my rings have Lower Reagent Cost 20 or more? Highlight the best one.”</p><p class="does"><code>search_items</code> with <code>lrc:20</code>, then <code>highlight_item</code>: the ring is marked in game (with TazUO, the containers open down to it).</p></li>
           <li><p class="ask">“Build Dorran a suit from what's in my house, Lower Reagent Cost first, and compare it with the run I saved last week.”</p><p class="does"><code>list_containers</code> for the house, <code>build_suit</code> with ranked goals and only those containers, then <code>compare_runs</code>.</p></li>
           <li><p class="ask">“Set up Organize for my house and show me the labels before you save them.”</p><p class="does"><code>organize_proposal</code> to show what Auto organize would set up, then <code>label_containers</code> once you say yes.</p></li>
         </ol></div>
@@ -609,13 +609,13 @@ html:not(.has-demo) #try, html:not(.has-demo) .nav a[href="#try"] { display: non
           <div><dt>Read</dt><dd>Search with every Inventory filter, property rules like <code>lrc:20</code> included. Full item tooltips, what's in a container, character sheets, saved runs, scrolls and when each character was last scanned.</dd></div>
           <div><dt>Build</dt><dd>Run the Suit Builder with a character's saved build or a template, buffs and pinned pieces. Score a suit you picked by hand, and compare saved runs side by side.</dd></div>
           <div><dt>Organize</dt><dd>Show what Auto organize would set up and the trips your setup would run. Add, rename, pin or remove container labels, all or nothing. That changes Pack Rat's setup, never the game.</dd></div>
-          <div><dt>In game</dt><dd>Highlight, Go to, Grab, run one Organize trip, or rescan. Only with <b style="color:var(--ink)">Allow in-game actions</b> turned on in Settings and the bridge running in your client.</dd></div>
+          <div><dt>In game</dt><dd>Highlight, Go to, Grab, run one Organize trip, or rescan (Organize trips and rescans with TazUO). Only with <b style="color:var(--ink)">Allow in-game actions</b> turned on in Settings and the bridge running in your client.</dd></div>
         </dl></div>
     </div>
     <ol class="connect">
       <li><h3>Turn it on</h3><p>In <b style="color:var(--ink)">Settings › AI assistants (MCP)</b>, switch on the MCP server. It's off until you do, listens on this computer only and needs its token.</p></li>
       <li><h3>Connect a client</h3><p>For Claude Code, <b style="color:var(--ink)">Copy command</b> and run it once. Other clients take the JSON from <b style="color:var(--ink)">Copy JSON</b>.</p><pre><code>claude mcp add --transport http --scope user pack-rat http://127.0.0.1:47615/mcp --header "Authorization: Bearer &lt;token&gt;"</code></pre></li>
-      <li><h3>Choose what it may do</h3><p>Leave <b style="color:var(--ink)">Allow in-game actions</b> off and the assistant can only read and plan. Turn it on to let it highlight, walk, grab and organize through the bridge.</p></li>
+      <li><h3>Choose what it may do</h3><p>Leave <b style="color:var(--ink)">Allow in-game actions</b> off and the assistant can't touch the game: it reads, plans and edits only Pack Rat's own container labels. Turn it on to let it highlight, walk, grab and organize through the bridge.</p></li>
     </ol>
     <p class="mcp-note">What the assistant reads goes wherever that assistant sends it: Claude Code passes tool results to its model like the rest of the conversation. Pack Rat itself sends nothing.</p>
   </div></section>
