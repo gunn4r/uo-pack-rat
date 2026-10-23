@@ -330,7 +330,9 @@
 .art-tile.art-24 { width: 24px; height: 24px; }
 .art-img { display: block; max-width: 100%; max-height: 100%; }
 .art-img.art-2x { image-rendering: pixelated; max-width: none; max-height: none; }
-.art-tile > :not(.art-img) { position: absolute; right: 0; bottom: 0; }
+.art-tile > :not(.art-img, .art-fb) { position: absolute; right: 0; bottom: 0; }
+/* the item's generic glyph when its art can't be drawn (ui/item-glyph.mts, issue #556): a line icon in one muted tone */
+.art-fb { width: 75%; height: 75%; fill: none; stroke: var(--color-text-faint); stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
 .art-tile.art-none { background: transparent; }
 
 /* ---- a piece of gear (ui/gear-item.mts, issues #504, #503): the icon, the name in its rarity color, the quantity, tags and badges, in one row that never wraps; the name is cut short instead */

@@ -1,8 +1,9 @@
-// ui/item-art.mts — an item's or a container's in-game art (issues #174, #503), drawn from the player's own client files through GET /api/item-art: an <img> in a square tile of the given size, scaled down to fit, or twice its size (pixelated) when that still fits (art under 16 px both ways in a 32 px tile), so a pouch still reads as a pouch. When the art does not load (no UO folder, no art for the graphic), `fallback` takes the tile's place, or nothing does: the tile goes, with no empty box left holding its space (issue #556). That URL is not asked again until the page reloads or the UO folder is saved in Settings, so a redraw shows the fallback at once and never a broken image.
+// ui/item-art.mts — an item's or a container's in-game art (issues #174, #503), drawn from the player's own client files through GET /api/item-art: an <img> in a square tile of the given size, scaled down to fit, or twice its size (pixelated) when that still fits (art under 16 px both ways in a 32 px tile), so a pouch still reads as a pouch. When the art does not load (no UO folder, no art for the graphic), the tile shows the item's generic `glyph` instead (issue #556), or, with none given, `fallback` takes the tile's place or the tile goes. That URL is not asked again until the page reloads or the UO folder is saved in Settings, so a redraw shows the fallback at once and never a broken image.
 //
 // map: house
 // owns: `artTile`, `artUrl`, `containerArt`, `artWaiting`
 import { state } from "./store.mts";
+import { glyphSvg, type GlyphName } from "./item-glyph.mts";
 
 export const artUrl = (graphic: number, hue = 0): string => `/api/item-art/${graphic}.png${hue ? `?hue=${hue}` : ""}`;
 const missing = new Set<string>();
@@ -18,12 +19,13 @@ function tileOf(size: 24 | 32, more = ""): HTMLElement {
 }
 // An empty tile holding the art's place while its graphic is still being looked up, so the art arriving does not shift what follows.
 export const artWaiting = (size: 24 | 32): HTMLElement => tileOf(size, " art-none");
-// `badge`: drawn in the tile's corner (the chest's color swatch on the House map), and kept as the fallback when there is no art.
-export function artTile(graphic: number | null | undefined, opts: { size: 24 | 32; hue?: number; badge?: HTMLElement | null }): HTMLElement | null {
+// `badge`: drawn in the tile's corner (the chest's color swatch on the House map), and kept as the fallback when there is no art. `glyph`: the item's generic icon (ui/item-glyph.mts), drawn in the tile when there is no art, so the tile keeps its place.
+export function artTile(graphic: number | null | undefined, opts: { size: 24 | 32; hue?: number; badge?: HTMLElement | null; glyph?: GlyphName }): HTMLElement | null {
   const fallback = opts.badge ?? null;
-  if (graphic == null) return fallback;
+  const glyphTile = (): HTMLElement => { const t = tileOf(opts.size); t.append(glyphSvg(opts.glyph!)); if (fallback) t.append(fallback); return t; };
+  if (graphic == null) return opts.glyph ? glyphTile() : fallback;
   const url = artUrl(graphic, opts.hue);
-  if (missing.has(url)) return fallback;
+  if (missing.has(url)) return opts.glyph ? glyphTile() : fallback;
   const img = document.createElement("img");
   img.className = "art-img";
   img.setAttribute("src", url);
@@ -37,7 +39,7 @@ export function artTile(graphic: number | null | undefined, opts: { size: 24 | 3
   });
   img.addEventListener("error", () => {
     missing.add(url);
-    if (fallback) tile.replaceWith(fallback); else tile.remove();
+    if (opts.glyph) img.replaceWith(glyphSvg(opts.glyph)); else if (fallback) tile.replaceWith(fallback); else tile.remove();
   });
   return tile;
 }

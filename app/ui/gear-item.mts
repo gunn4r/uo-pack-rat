@@ -7,6 +7,7 @@
 import { itemTip, tagChip, type TooltipItem } from "./dom.mts";
 import { box, txt } from "./components.mts";
 import { artTile, artWaiting } from "./item-art.mts";
+import { glyphOf } from "./item-glyph.mts";
 import { rarityToken, resolveItems } from "./items.mts";
 import { state } from "./store.mts";
 
@@ -74,7 +75,7 @@ function flushSoon(): void {
         const fns = pending.get(serial) || [];
         pending.delete(serial);
         if (answered.has(serial) && !found[serial]) missed.add(serial);
-        // a serial the server lacks redraws too, so the icon's waiting box goes
+        // a serial the server lacks redraws too, so the icon's waiting box gives way to its glyph
         if (found[serial] || answered.has(serial)) for (const fn of fns) fn();
       }
     });
@@ -90,7 +91,7 @@ function parts(node: HTMLElement, it: GearItemSource, o: GearItemOptions, size: 
   if (token) name.style.color = `var(${token})`;
   const qty = (it.amount || 1) > 1 ? txt(` ×${amountText(it.amount!)}`, "gi-qty") : null;
   const tags = o.showTags ? (it.tags || []).filter((t) => QUALITY_TAGS.has(t)).map((t) => tagChip(t)) : [];
-  const icon = o.showIcon === false ? null : waiting ? artWaiting(size) : artTile(it.graphic, { size, hue: it.hue ?? 0 });
+  const icon = o.showIcon === false ? null : waiting ? artWaiting(size) : artTile(it.graphic, { size, hue: it.hue ?? 0, glyph: glyphOf({ ...state.itemCache.get(it.serial), ...it }) });
   const tail = [qty, ...tags, ...(o.after || [])].filter((x): x is HTMLElement => !!x);
   // A button is named by the piece alone; its tags and badges describe it.
   if (o.onOpen) {
@@ -104,7 +105,7 @@ function parts(node: HTMLElement, it: GearItemSource, o: GearItemOptions, size: 
   return [icon, box("span", { class: "gi-card-text" }, line, o.sub ? txt(o.sub, "t-sm muted ellip") : null)].filter((x): x is HTMLElement => !!x);
 }
 
-// One piece of gear as an element: the icon (aria-hidden; nothing at all when there is no art, issue #556, and an empty box of its size only while the graphic is looked up), the name in its rarity's color (cut short with an ellipsis, never wrapped), its quantity, its quality tags and `after`. It shows the item tooltip on hover and keyboard focus, and with `onOpen` it is a button that opens the item.
+// One piece of gear as an element: the icon (aria-hidden; its category's generic glyph when there is no art, issue #556, and an empty box of its size only while the graphic is looked up), the name in its rarity's color (cut short with an ellipsis, never wrapped), its quantity, its quality tags and `after`. It shows the item tooltip on hover and keyboard focus, and with `onOpen` it is a button that opens the item.
 export function gearItem(item: GearItemSource, o: GearItemOptions = {}): HTMLElement {
   const variant = o.variant ?? "row", size = o.size ?? (variant === "card" ? 32 : 24);
   let it = filled(item);

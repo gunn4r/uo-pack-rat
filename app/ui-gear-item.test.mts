@@ -30,6 +30,7 @@ class FakeElement {
   dispatch(type: string): void { for (const fn of this.listeners[type] || []) fn({ preventDefault() {}, stopPropagation() {} }); }
   append(...kids: Array<FakeElement | FakeText | string>): void { for (const k of kids) { const n = typeof k === "string" ? new FakeText(k) : k; n.parentNode = this; this.childNodes.push(n); } }
   replaceChildren(...kids: Array<FakeElement | FakeText>): void { this.childNodes = []; this.append(...kids); }
+  replaceWith(n: FakeElement): void { const p = this.parentNode!; p.childNodes = p.childNodes.map((c) => (c === this ? n : c)); n.parentNode = p; this.parentNode = null; }
   remove(): void { if (this.parentNode) this.parentNode.childNodes = this.parentNode.childNodes.filter((c) => c !== this); this.parentNode = null; }
   get children(): FakeElement[] { return this.childNodes.filter((c): c is FakeElement => c.nodeType === 1); }
   get textContent(): string { return this.childNodes.map((c) => c.textContent).join(""); }
@@ -53,6 +54,7 @@ let known: Record<number, unknown> = {}, hold: Promise<void> | null = null, fail
 
 const { gearItem, gearText, slotPieces, forgetGearMisses } = await import("./ui/gear-item.mts");
 const { artTile } = await import("./ui/item-art.mts");
+const { GLYPHS, glyphOf } = await import("./ui/item-glyph.mts");
 const { tipNode } = await import("./ui/dom.mts");
 const { FLEX_CLASSES } = await import("./ui/components.mts");
 const { state } = await import("./ui/store.mts");
@@ -107,10 +109,12 @@ test("[fast] gearItem row: icon, name in its rarity's token, quantity, quality t
   assert.equal(n.attrs["data-serial"], "1", "the item tooltip's host");
 });
 
-test("[fast] gearItem: no color for a tier without a token, no icon and no box with no graphic (#556), no tile with showIcon false", () => {
-  const odd = draw({ serial: 2, name: "Odd Ring", rarity: "Shiny", graphic: null, hue: 0 });
-  assert.deepEqual(odd.children.map((c) => c.className), ["gi-name"], "no art: the name starts the row, with no box holding its place");
-  assert.equal(odd.children[0]!.style.color, undefined);
+test("[fast] gearItem: no color for a tier without a token, the category's glyph with no graphic (#556), no tile with showIcon false", () => {
+  const odd = draw({ serial: 2, name: "Odd Ring", rarity: "Shiny", graphic: null, hue: 0, gear: true, slot: "ring" } as never);
+  const [box, name] = odd.children;
+  assert.ok(has(box!, "art-tile") && has(box!, "art-24") && box!.children.length === 1 && has(box!.children[0]!, "art-fb"), "no art: the tile keeps its place with a glyph in it");
+  assert.equal(box!.children[0]!.children.length, GLYPHS.ring.length, "the ring's glyph");
+  assert.equal(name!.style.color, undefined);
   const bare = draw({ serial: 3, name: "Ring", rarity: null, graphic: 7 }, { showIcon: false });
   assert.deepEqual(bare.children.map((c) => c.className), ["gi-name"]);
 });
@@ -119,7 +123,7 @@ test("[fast] gearItem tip false: no data-serial and never wired as a tooltip (no
   const n = draw({ serial: 41, name: "Cloak", rarity: null, graphic: null }, { tip: false });
   assert.equal(n.getAttribute("data-serial"), null);
   assert.equal(n.tabIndex, -1);
-  assert.deepEqual(n.children.map((c) => c.className), ["gi-name"], "no empty box");
+  assert.deepEqual(n.children.map((c) => c.className), ["art-tile art-24", "gi-name"], "no art: the generic glyph holds the icon's place");
 });
 
 test("[fast] gearItem focus false: the tooltip's host on hover, but no tab stop", () => {
@@ -188,7 +192,7 @@ test("[fast] gearItem fills graphic, hue and rarity from the item cache, and loo
   assert.equal(a.children[0]!.children[0]!.getAttribute("src"), "/api/item-art/3913.png?hue=2413");
   assert.equal(a.children[1]!.style.color, "var(--rarity-major-magic)");
   assert.equal(b.children[0]!.children[0]!.getAttribute("src"), "/api/item-art/7028.png");
-  assert.deepEqual(c.children.map((x) => x.className), ["gi-name"], "a serial the server lacks: the waiting box goes, no icon");
+  assert.ok(!has(c.children[0]!, "art-none") && has(c.children[0]!.children[0]!, "art-fb"), "a serial the server lacks: the waiting box gives way to the generic glyph");
   draw({ serial: 11, name: "Axe" });
   draw({ serial: 13, name: "Gone" });
   await tick();
@@ -248,6 +252,21 @@ test("[fast] gearItem: a serial waiting or in flight is asked once, however ofte
   for (const n of [first, second]) assert.equal(n.children[0]!.children[0]!.getAttribute("src"), "/api/item-art/5431.png", "both drawings get the icon");
 });
 
+test("[fast] artTile with a glyph: no graphic, a known-missing URL or a failed load draws the glyph in the tile, which keeps its place (#556)", () => {
+  const doc = (globalThis as unknown as { document: { createElement: (t: string) => El } }).document;
+  const host = doc.createElement("span"), tile = artTile(0x9998, { size: 24, glyph: "sword" }) as unknown as El;
+  host.append(tile);
+  assert.equal(tile.children[0]!.tagName, "IMG", "while it loads, the art is asked for");
+  tile.children[0]!.dispatch("error");
+  assert.equal(host.children[0], tile, "the tile stays");
+  assert.deepEqual(tile.children.map((c) => c.className), ["art-fb"], "the image gives way to the glyph");
+  assert.equal(tile.children[0]!.children.length, GLYPHS.sword.length);
+  for (const g of [0x9998, null]) assert.deepEqual((artTile(g, { size: 32, glyph: "potion" }) as unknown as El).children.map((c) => c.className), ["art-fb"], "a known-missing URL or no graphic: the glyph at once");
+  const badge = doc.createElement("span");
+  const withBadge = artTile(null, { size: 32, glyph: "bag", badge: badge as unknown as HTMLElement }) as unknown as El;
+  assert.deepEqual([withBadge.children[0]!.className, withBadge.children[1]], ["art-fb", badge], "a badge stays in the corner beside the glyph");
+});
+
 test("[fast] artTile: art that fails to load takes its tile with it, leaving no box (#556); a graphic that loads keeps its tile", () => {
   const doc = (globalThis as unknown as { document: { createElement: (t: string) => El } }).document;
   const host = doc.createElement("span"), tile = artTile(0x9999, { size: 24 }) as unknown as El;
@@ -271,4 +290,24 @@ test("[fast] tipNode: the title carries the item's 32 px icon when its graphic i
   assert.ok(has(withArt.children[0]!, "art-32"));
   const without = head(tipNode({ name: "Cap", lines: ["Cap"] }));
   assert.ok(!without.children.some((c) => has(c, "art-tile")));
+});
+
+test("[fast] glyphOf: gear by its type and slot, the rest by its kind, a plain item when the record says too little (#556)", () => {
+  const gear = (slot: string, name: string, more: Record<string, unknown> = {}): string => glyphOf({ gear: true, slot, name, ...more });
+  assert.equal(gear("ring", "Gold Ring"), "ring");
+  for (const s of ["bracelet", "earrings", "talisman"]) assert.equal(gear(s, "Thing"), "jewelry", s);
+  assert.equal(gear("neck", "Necklace"), "jewelry", "a necklace is jewelry");
+  assert.equal(gear("neck", "Platemail Gorget"), "helm", "a gorget sits with the helms");
+  assert.deepEqual(["helmet", "chest", "arms", "hands", "legs"].map((s) => gear(s, "Plate")), ["helm", "chest", "chest", "gloves", "legs"]);
+  assert.deepEqual(["feet", "robe", "cloak", "shirt", "waist", "outerLegs", "tunic"].map((s) => gear(s, "Cloth")), ["boots", "robe", "robe", "robe", "robe", "robe", "robe"]);
+  assert.equal(gear("oneHanded", "Katana", { skillReq: "Swordsmanship" }), "sword");
+  assert.equal(gear("oneHanded", "Scrapper's Compendium"), "spellbook");
+  assert.equal(gear("twoHanded", "Heater Shield"), "shield", "a held piece that is no weapon, in the two-handed slot");
+  assert.equal(gear("twoHanded", "Composite Bow", { skillReq: "Archery", twoHanded: true }), "bow");
+  assert.equal(gear("twoHanded", "Heavy Crossbow", { extras: { "weapon speed": 4 }, twoHanded: true }), "bow", "a bow by its name with no skill line");
+  assert.equal(gear("twoHanded", "Large Battle Axe", { skillReq: "Swordsmanship", twoHanded: true }), "axe");
+  assert.equal(gear("oneHanded", "Ancient Smithy Hammer"), "item", "a held tool");
+  assert.deepEqual(["scroll", "book", "map", "deed", "rune", "container", "potion", "reagent", "gem", "resource", "clothing", "food", "key", ""].map((kind) => glyphOf({ kind, name: "x" })),
+    ["scroll", "scroll", "scroll", "scroll", "scroll", "bag", "potion", "gem", "gem", "gem", "robe", "item", "item", "item"]);
+  assert.equal(glyphOf({ name: "A partial record" }), "item");
 });
