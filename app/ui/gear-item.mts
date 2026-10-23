@@ -6,7 +6,8 @@
 // owns: `gearItem`, `gearText`, `gearInText`, `slotPieces`, `QUALITY_TAGS`, `forgetGearMisses`
 import { itemTip, tagChip, type TooltipItem } from "./dom.mts";
 import { box, txt } from "./components.mts";
-import { artTile } from "./item-art.mts";
+import { artTile, artWaiting } from "./item-art.mts";
+import { glyphOf } from "./item-glyph.mts";
 import { rarityToken, resolveItems } from "./items.mts";
 import { state } from "./store.mts";
 
@@ -25,8 +26,6 @@ export interface GearItemOptions {
   onOpen?: ((item: GearItemSource, node: HTMLElement) => void) | undefined;
   // false: no item tooltip at all: no data-serial, nothing registered, so a host around it (a table row) that shows the tooltip still answers for it.
   tip?: boolean | undefined;
-  // false: no empty box when there is no art (a title, where the box would only indent the name).
-  keepBox?: boolean | undefined;
   // Elements after the name and tags (a "New" badge, a low-durability tag).
   after?: Array<HTMLElement | null> | undefined;
   // false: its tooltip shows on hover only, and it adds no tab stop (a list with a roving tab stop of its own, such as the Stack plan's cards).
@@ -75,7 +74,9 @@ function flushSoon(): void {
       for (const serial of batch) {
         const fns = pending.get(serial) || [];
         pending.delete(serial);
-        if (found[serial]) for (const fn of fns) fn(); else if (answered.has(serial)) missed.add(serial);
+        if (answered.has(serial) && !found[serial]) missed.add(serial);
+        // every serial redraws, found or not (lacking, or its request failed), so the icon's waiting box gives way to the art or its glyph
+        for (const fn of fns) fn();
       }
     });
   }, 0);
@@ -83,13 +84,14 @@ function flushSoon(): void {
 
 let noteIds = 0;
 const amountText = (n: number): string => n.toLocaleString("en-US");
-function parts(node: HTMLElement, it: GearItemSource, o: GearItemOptions, size: 24 | 32): HTMLElement[] {
+// `waiting`: the graphic is still being looked up, so an empty box holds the icon's place until the answer.
+function parts(node: HTMLElement, it: GearItemSource, o: GearItemOptions, size: 24 | 32, waiting = false): HTMLElement[] {
   const token = rarityToken(it.rarity);
   const name = txt(it.name, "gi-name");
   if (token) name.style.color = `var(${token})`;
   const qty = (it.amount || 1) > 1 ? txt(` ×${amountText(it.amount!)}`, "gi-qty") : null;
   const tags = o.showTags ? (it.tags || []).filter((t) => QUALITY_TAGS.has(t)).map((t) => tagChip(t)) : [];
-  const icon = o.showIcon === false ? null : artTile(it.graphic, { size, hue: it.hue ?? 0, keepBox: o.keepBox !== false });
+  const icon = o.showIcon === false ? null : waiting ? artWaiting(size) : artTile(it.graphic, { size, hue: it.hue ?? 0, glyph: glyphOf({ ...state.itemCache.get(it.serial), ...it }) });
   const tail = [qty, ...tags, ...(o.after || [])].filter((x): x is HTMLElement => !!x);
   // A button is named by the piece alone; its tags and badges describe it.
   if (o.onOpen) {
@@ -103,17 +105,18 @@ function parts(node: HTMLElement, it: GearItemSource, o: GearItemOptions, size: 
   return [icon, box("span", { class: "gi-card-text" }, line, o.sub ? txt(o.sub, "t-sm muted ellip") : null)].filter((x): x is HTMLElement => !!x);
 }
 
-// One piece of gear as an element: the icon (aria-hidden; an empty box of the same size when there is no art, so names in a column line up), the name in its rarity's color (cut short with an ellipsis, never wrapped), its quantity, its quality tags and `after`. It shows the item tooltip on hover and keyboard focus, and with `onOpen` it is a button that opens the item.
+// One piece of gear as an element: the icon (aria-hidden; its category's generic glyph when there is no art, issue #556, and an empty box of its size only while the graphic is looked up), the name in its rarity's color (cut short with an ellipsis, never wrapped), its quantity, its quality tags and `after`. It shows the item tooltip on hover and keyboard focus, and with `onOpen` it is a button that opens the item.
 export function gearItem(item: GearItemSource, o: GearItemOptions = {}): HTMLElement {
   const variant = o.variant ?? "row", size = o.size ?? (variant === "card" ? 32 : 24);
   let it = filled(item);
   const cls = `gi gi-${variant}${o.onOpen ? " gi-link" : ""}${o.cls ? ` ${o.cls}` : ""}`;
   const node = o.onOpen ? box("button", { type: "button", class: cls }) : box("span", { class: cls });
-  node.append(...parts(node, it, o, size));
+  const lacking = (o.showIcon !== false && !has(it, "graphic")) || !has(it, "rarity") || (o.showTags && !it.tags);
+  const asking = lacking && !state.itemCache.has(it.serial) && !missed.has(it.serial);
+  node.append(...parts(node, it, o, size, asking && o.showIcon !== false && !has(it, "graphic")));
   if (o.onOpen) node.addEventListener("click", () => o.onOpen!(it, node));
   if (o.tip !== false) itemTip(node, it, { focus: o.focus !== false });
-  const lacking = (o.showIcon !== false && !has(it, "graphic")) || !has(it, "rarity") || (o.showTags && !it.tags);
-  if (lacking && !state.itemCache.has(it.serial)) whenKnown(it.serial, () => { it = filled(item); node.replaceChildren(...parts(node, it, o, size)); if (o.tip !== false) itemTip(node, it, { focus: false }); });
+  if (asking) whenKnown(it.serial, () => { it = filled(item); node.replaceChildren(...parts(node, it, o, size)); if (o.tip !== false) itemTip(node, it, { focus: false }); });
   return node;
 }
 

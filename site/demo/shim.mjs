@@ -45,8 +45,8 @@ window.fetch = async (input, init = {}) => {
 
 // Nothing leaves the page: a beacon reports sent and goes nowhere.
 navigator.sendBeacon = () => true;
-// Item art comes from the player's own client: an empty source fails at once, with no request, and the app draws its
-// empty tile and asks no more.
+// Item art comes from the player's own client: an empty source fails at once, with no request, and the app shows the
+// item's generic glyph and asks no more.
 const setAttribute = Element.prototype.setAttribute;
 Element.prototype.setAttribute = function (name, value) { setAttribute.call(this, name, name === "src" && String(value).startsWith("/api/item-art/") ? "data:," : value); };
 

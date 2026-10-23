@@ -68,6 +68,7 @@ export const SHARED_UI: Record<string, string> = {
   items: "the item helpers every item list uses",
   "item-parts": "the item widgets most screens draw",
   "item-art": "container and item art on every screen that names an item",
+  "item-glyph": "the generic item icon, drawn wherever item art is missing",
   "gear-item": "the one element that names a piece of gear, on every screen",
   "inventory-data": "the inventory every screen draws from",
   "organize-data": "Organize's setup, read by the Inventory views and Move to as well",
