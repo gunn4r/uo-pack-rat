@@ -356,7 +356,7 @@ test("[slow] House map: the panel lists a vault stack top first with its label, 
     // a chest the capture saw and no scan opened
     await page.selectOption("#map-house", COURT);
     const seen = letter(courtModel, 1012, 2012);
-    await page.waitForSelector(`#map-svg [data-stack="${seen}"]`);
+    await page.waitForSelector(`#map-svg [data-chest="${SEEN_ONLY}"]`);   // courtyard-only: stack letters restart in every house (#561)
     assert.equal(await page.locator(`#map-svg [data-chest="${SEEN_ONLY}"]`).getAttribute("class"), "map-chest unopened");
     await page.locator(`#map-svg [data-stack="${seen}"]`).focus();
     await page.keyboard.press("Enter");
@@ -463,7 +463,9 @@ test("[slow] House map: Highlight the stack queues one highlight per chest top f
 
     await page.selectOption("#map-house", COURT);
     const seen = letter(courtModel, 1012, 2012);
-    await page.waitForSelector(`#map-svg [data-stack="${seen}"]`);
+    // Stack letters restart at A in every house, so wait on a chest only the courtyard has: the vault's map
+    // still on screen has a stack by the same letter, and selecting it there loses the selection to the redraw (#561).
+    await page.waitForSelector(`#map-svg [data-chest="${SEEN_ONLY}"]`);
     await page.locator(`#map-svg [data-stack="${seen}"]`).focus();
     await page.keyboard.press("Enter");
     await page.waitForSelector("#map-highlight-stack:not([disabled])");
@@ -867,7 +869,7 @@ async function measure(page: Page, name: string, shows: RegExp, rows: Array<Cont
     await page.evaluate(async (f) => (await import("/ui/theme.mjs" as string)).applyLook({ theme: f }), family);
     for (const mode of ["light", "dark"] as const) {
       await page.emulateMedia({ colorScheme: mode, reducedMotion: "reduce" });
-      await page.waitForFunction(([f, m]) => document.documentElement.dataset.theme === f && document.documentElement.dataset.mode === m, [family, mode], { timeout: 5_000 });
+      await page.waitForFunction(([f, m]) => document.documentElement.dataset.theme === f && document.documentElement.dataset.mode === m, [family, mode], { timeout: 15_000 });   // a slow CI runner can take seconds to repaint (#561)
       await animationsDone(page);
       const got = await page.evaluate(probeContrast);
       assert.ok(got.length > 10, `${name} (${family} ${mode}) measured only ${got.length} pairs — did the scene render?`);
