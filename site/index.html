@@ -126,6 +126,7 @@ main [id] { scroll-margin-top: calc(var(--nav-h, 74px) + 16px); }
 .nav nav { display: flex; gap: 24px; font-size: 16px; color: var(--muted); }
 .nav nav a { text-decoration: none; }
 .nav nav a:hover { color: var(--brass); }
+@media (max-width: 900px) { .nav nav a[href="#assistants"] { display: none; } }   /* keeps the header on one line */
 .nav-end { margin-left: auto; display: flex; align-items: center; gap: 10px; }
 .icon-btn { width: 38px; height: 38px; display: inline-grid; place-items: center; border-radius: 50%; border: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer; text-decoration: none; }
 .icon-btn:hover { color: var(--brass); border-color: var(--brass); }
@@ -314,6 +315,24 @@ html:not(.has-demo) #try, html:not(.has-demo) .nav a[href="#try"] { display: non
 .clients { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); border-top: 1px solid var(--line); font-size: 16px; }
 .clients li { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--line); }
 .clients li span:last-child { color: var(--faint); font-size: 14px; text-align: right; }
+/* AI assistants: what you ask and what it does, what it can do, and how to connect it. */
+.asks { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 22px; }
+.asks li { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
+.asks .ask { color: var(--ink); font-size: 18px; border-left: 2px solid var(--brass); padding-left: 14px; }
+.asks .does { color: var(--muted); font-size: 16px; padding-left: 16px; }
+.spread code, .connect code { font: 0.86em/1.4 var(--mono); color: var(--ink); }
+.can { margin: 0; display: grid; grid-template-columns: minmax(0, 1fr); border-top: 1px solid var(--line); }
+.can > div { display: grid; grid-template-columns: minmax(0, 7rem) minmax(0, 1fr); gap: 4px 16px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.can dt { font: 600 21px/1.2 var(--serif); color: var(--brass); }
+.can dd { margin: 0; color: var(--muted); font-size: 17px; }
+.connect { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px; counter-reset: c; align-items: start; }
+.connect li { counter-increment: c; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+.connect li::before { content: counter(c, upper-roman) "."; font: 600 30px/1 var(--serif); color: var(--brass); }
+.connect h3 { font-size: 26px; line-height: 1.1; }
+.connect p { color: var(--muted); font-size: 17px; }
+.connect pre { margin: 0; padding: 10px 12px; font: 12.5px/1.55 var(--mono); background: var(--paper); border: 1px solid var(--line); border-radius: 4px; }
+.connect pre code { font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; }   /* the whole command in view; it still copies as one line */
+.mcp-note { color: var(--muted); font-size: 16px; text-align: center; }
 
 /* download card + footer */
 .get { border: 1px solid var(--line); background: var(--paper); position: relative; display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 32px 56px; padding: 48px; align-items: center; }
@@ -345,7 +364,8 @@ html:not(.has-demo) #try, html:not(.has-demo) .nav a[href="#try"] { display: non
   .spread { grid-template-columns: minmax(0, 1fr); }
   .spread > div + div { border-left: 0; border-top: 1px solid var(--line); }
   .spread > div { padding: 22px 18px; }
-  .ingame, .steps { grid-template-columns: minmax(0, 1fr); }
+  .ingame, .steps, .connect { grid-template-columns: minmax(0, 1fr); }
+  .can > div { grid-template-columns: minmax(0, 1fr); }
   .sec .wrap { padding-bottom: 96px; }
   .relic .tip { min-width: 0; }
   .char .tip-wrap { position: relative; right: auto; bottom: auto; margin: -36px 10px 0 auto; width: max-content; max-width: calc(100% - 20px); }
@@ -380,6 +400,7 @@ html:not(.has-demo) #try, html:not(.has-demo) .nav a[href="#try"] { display: non
   <a class="brand" href="#top"><img src="img/logo-mark.png" alt="" width="40" height="40">Pack Rat</a>
   <nav aria-label="Site">
     <a href="#try">Try it</a>
+    <a href="#assistants">AI assistants</a>
     <a href="#download">Download</a>
     <a href="https://github.com/gunn4r/uo-pack-rat/blob/main/docs/user-guide.md">User guide</a>
     <a href="https://github.com/gunn4r/uo-pack-rat/blob/main/CHANGELOG.md">Changelog</a>
@@ -571,6 +592,32 @@ html:not(.has-demo) #try, html:not(.has-demo) .nav a[href="#try"] { display: non
       <figure class="plate"><img src="img/ingame-panel.jpg" width="880" height="563" loading="lazy" alt="The Pack Rat panel in TazUO: the bridge running, a scan from just now, next to a character among the chests"><figcaption>The Pack Rat panel in TazUO starts the scanner and the bridge.</figcaption></figure>
       <figure class="plate"><img src="img/grab-game.gif" width="310" height="310" loading="lazy" alt="In game, 50 garlic move from a bag into the backpack after Grab is pressed in the app"><figcaption><b>Grab</b>, pressed in the app: 50 garlic, in your backpack.</figcaption></figure>
     </div>
+  </div></section>
+
+  <section class="sec band" id="assistants"><div class="wrap">
+    <div class="head-l"><div style="display:grid;gap:14px"><span class="label">AI assistants</span><h2>Ask in your own words. <em>It looks in your scans.</em></h2></div>
+      <p>Pack Rat has a built-in MCP server, so Claude Code and other MCP clients can search your inventory, read your characters and saved runs, and run the Suit Builder. Every request goes through the same routes and checks as the app's own buttons.</p></div>
+    <div class="spread">
+      <div><span class="label">You ask</span>
+        <ol class="asks">
+          <li><p class="ask">“Which of my rings have Lower Reagent Cost 20 or more? Highlight the best one.”</p><p class="does"><code>search_items</code> with <code>lrc:20</code>, then <code>highlight_item</code>: the ring is marked in game (with TazUO, the containers open down to it).</p></li>
+          <li><p class="ask">“Build Dorran a suit from what's in my house, Lower Reagent Cost first, and compare it with the run I saved last week.”</p><p class="does"><code>list_containers</code> for the house, <code>build_suit</code> with ranked goals and only those containers, then <code>compare_runs</code>.</p></li>
+          <li><p class="ask">“Set up Organize for my house and show me the labels before you save them.”</p><p class="does"><code>organize_proposal</code> to show what Auto organize would set up, then <code>label_containers</code> once you say yes.</p></li>
+        </ol></div>
+      <div><span class="label">It can</span>
+        <dl class="can">
+          <div><dt>Read</dt><dd>Search with every Inventory filter, property rules like <code>lrc:20</code> included. Full item tooltips, what's in a container, character sheets, saved runs, scrolls and when each character was last scanned.</dd></div>
+          <div><dt>Build</dt><dd>Run the Suit Builder with a character's saved build or a template, buffs and pinned pieces. Score a suit you picked by hand, and compare saved runs side by side.</dd></div>
+          <div><dt>Organize</dt><dd>Show what Auto organize would set up and the trips your setup would run. Add, rename, pin or remove container labels, all or nothing. That changes Pack Rat's setup, never the game.</dd></div>
+          <div><dt>In game</dt><dd>Highlight, Go to, Grab, run one Organize trip, or rescan (Organize trips and rescans with TazUO). Only with <b style="color:var(--ink)">Allow in-game actions</b> turned on in Settings and the bridge running in your client.</dd></div>
+        </dl></div>
+    </div>
+    <ol class="connect">
+      <li><h3>Turn it on</h3><p>In <b style="color:var(--ink)">Settings › AI assistants (MCP)</b>, switch on the MCP server. It's off until you do, listens on this computer only and needs its token.</p></li>
+      <li><h3>Connect a client</h3><p>For Claude Code, <b style="color:var(--ink)">Copy command</b> and run it once. Other clients take the JSON from <b style="color:var(--ink)">Copy JSON</b>.</p><pre><code>claude mcp add --transport http --scope user pack-rat http://127.0.0.1:47615/mcp --header "Authorization: Bearer &lt;token&gt;"</code></pre></li>
+      <li><h3>Choose what it may do</h3><p>Leave <b style="color:var(--ink)">Allow in-game actions</b> off and the assistant can't touch the game: it reads, plans and edits only Pack Rat's own container labels. Turn it on to let it highlight, walk, grab and organize through the bridge.</p></li>
+    </ol>
+    <p class="mcp-note">What the assistant reads goes wherever that assistant sends it: Claude Code passes tool results to its model like the rest of the conversation. Pack Rat itself sends nothing.</p>
   </div></section>
 
   <section class="sec band" id="setup"><div class="wrap">
