@@ -14,7 +14,7 @@ Every change: `docs/module-map.md` (where each concept lives, and which are stil
 | The game scripts and the files they share | `adapters/CLAUDE.md` | `docs/adapter-guide.md`, `app/schema/README.md` |
 | Tests and tooling | `scripts/CLAUDE.md` | `TESTING.md` |
 
-The website is `site/` (one static page, minified only in the deployed copy by `scripts/site-minify.mts`, deployed to GitHub Pages by `.github/workflows/pages.yml`; `CONTRIBUTING.md` and `RELEASING.md`, "The website").
+The website is `site/` (one static page, minified only in the deployed copy by `scripts/site-minify.mts`, deployed to GitHub Pages by `.github/workflows/pages.yml`; `CONTRIBUTING.md` and `RELEASING.md`, "The website"). It counts visits and download clicks with GoatCounter (`uo-pack-rat.goatcounter.com`), loading `count.v5.js` pinned by an `integrity` hash: moving to a newer GoatCounter script means updating the URL and the hash together, and PRIVACY.md's "The website" section says what it collects.
 
 Other docs: `docs/scan-schema.md`, `docs/bridge-protocol.md`, `docs/shard-rules.md`, `docs/mcp.md`, `docs/architecture.md` (processes and the data folder), `docs/threat-model.md` (security).
 
