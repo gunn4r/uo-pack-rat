@@ -50,11 +50,11 @@
   color-scheme: dark;
 }
 @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) {
-  --ink: #22180f; --muted: #57452f; --faint: #5f4d33; --ground: #ece4d3; --paper: #f7f1e4; --line: #cdbd99; --line-soft: #ddd0b3;
+  --ink: #22180f; --muted: #4a3a25; --faint: #5f4d33; --ground: #ece4d3; --paper: #f7f1e4; --line: #cdbd99; --line-soft: #ddd0b3;
   --brass: #7d5b12; --brass-deep: #5f450c; --on-brass: #fbf5e6; --crimson: #8e2433; --glow: rgb(201 162 74 / .35);
   --plate-shadow: 0 30px 60px -34px rgb(60 40 10 / .55); --shell-bg: #e4dac5; --shell-line: #cdbd99; color-scheme: light; } }
 :root[data-theme="light"] {
-  --ink: #22180f; --muted: #57452f; --faint: #5f4d33; --ground: #ece4d3; --paper: #f7f1e4; --line: #cdbd99; --line-soft: #ddd0b3;
+  --ink: #22180f; --muted: #4a3a25; --faint: #5f4d33; --ground: #ece4d3; --paper: #f7f1e4; --line: #cdbd99; --line-soft: #ddd0b3;
   --brass: #7d5b12; --brass-deep: #5f450c; --on-brass: #fbf5e6; --crimson: #8e2433; --glow: rgb(201 162 74 / .35);
   --plate-shadow: 0 30px 60px -34px rgb(60 40 10 / .55); --shell-bg: #e4dac5; --shell-line: #cdbd99; color-scheme: light; }
 
@@ -281,7 +281,7 @@ html:not(.has-demo) #try, html:not(.has-demo) .nav a[href="#try"] { display: non
 .char .tip-wrap { position: absolute; right: -28px; bottom: -34px; display: grid; justify-items: center; gap: 8px; }
 .char .tip { min-width: 230px; }
 .char .tip .dim + .dim { margin-top: 0; }
-.tip-cap { font-size: 13.5px; color: var(--muted); }   /* under the screenshot's shadow, so a step darker than a plain caption */
+.tip-cap { font-size: 13.5px; color: var(--muted); background: var(--paper); padding: 1px 8px; border-radius: 3px; }   /* a paper chip: it sits in the screenshot's shadow */
 .copy { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; color: var(--muted); }
 .copy h2 { font-size: clamp(34px, 4vw, 50px); line-height: 1.04; color: var(--ink); }
 
@@ -529,7 +529,7 @@ html:not(.has-demo) #try, html:not(.has-demo) .nav a[href="#try"] { display: non
       <div class="plate-wrap">
         <figure class="plate"><img class="d" src="img/character.webp" width="1600" height="1215" loading="lazy" alt="Dorran's character sheet: Physical 18, Fire 70 at the cap, Cold 41, Poison 32, Energy 60; his paperdoll with a double bladed staff; his worn gear"><img class="l" src="img/character-light.webp" width="1600" height="1215" loading="lazy" alt="Dorran's character sheet: Physical 18, Fire 70 at the cap, Cold 41, Poison 32, Energy 60; his paperdoll with a double bladed staff; his worn gear"></figure>
         <div class="tip-wrap" aria-hidden="true">
-          <div class="tip" role="group" data-item="Mighty Ring"><span class="n t-major">Mighty Ring</span><span class="t-major">Major Magic Item</span><span>Magery +20</span><span>Strength Bonus 6</span><span>Faster Casting 1</span><span>Fire Resist 12%</span><span class="dim">Weight: 1 Stone</span><span class="dim">Durability 255 / 255</span></div>
+          <div class="tip" data-item="Mighty Ring"><span class="n t-major">Mighty Ring</span><span class="t-major">Major Magic Item</span><span>Magery +20</span><span>Strength Bonus 6</span><span>Faster Casting 1</span><span>Fire Resist 12%</span><span class="dim">Weight: 1 Stone</span><span class="dim">Durability 255 / 255</span></div>
           <span class="tip-cap">Worn by Dorran · ring slot</span>
         </div>
       </div>
