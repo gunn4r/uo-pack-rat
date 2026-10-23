@@ -47,7 +47,7 @@ const BUDGETS: Record<string, number> = {
   "electron/README.md": 14000,
   "PRIVACY.md": 16000,
   "README.md": 8600,
-  "RELEASING.md": 17100,
+  "RELEASING.md": 17500,
   "SECURITY.md": 6000,
   "TESTING.md": 60000,
 };

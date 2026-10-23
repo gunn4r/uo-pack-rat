@@ -1,4 +1,4 @@
-// site-minify.test.mts — the deployed website is minified (scripts/site-minify.mts, run by site-build.mts): the built page has no HTML or CSS comments and its inline scripts still compile, the demo's ES modules still import each other and run, and the HTML pass keeps the one space inline text needs while dropping whitespace between blocks.
+// site-minify.test.mts — the deployed website is minified (scripts/site-minify.mts, run by site-build.mts): the built page has no HTML or CSS comments and its inline scripts still compile, the demo's ES modules still import each other and run, the HTML pass keeps the one space inline text needs while dropping whitespace between blocks, and an attribute holding "<" or ">" stops the build rather than being mangled.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -51,4 +51,10 @@ test("[fast] site-minify: whitespace collapses to one space in inline text and g
   assert.equal(minifyHtml("<p>a</p>\n<pre>  keep\n   this </pre>"), "<p>a</p><pre>  keep\n   this </pre>");
   assert.equal(minifyHtml("<span>icon</span>\n<img src=x alt=\"\">"), "<span>icon</span> <img src=x alt=\"\">", "a space beside an inline image can show, so it stays");
   assert.equal(minifyHtml("<style>\n/* c */\na { color: red }\n</style>\n<script>\n// c\nvar x = 1 ;\n</script>"), "<style>a{color:red}</style><script>var x=1;</script>");
+});
+
+test("[fast] site-minify: an attribute value holding \"<\" or \">\" stops the build instead of being mangled", () => {
+  assert.throws(() => minifyHtml('<img alt="a > b" src="x.webp">'), /holds "<" or ">"/);
+  assert.throws(() => minifyHtml("<a title='x <!-- y'>z</a>"), /holds "<" or ">"/);
+  assert.equal(minifyHtml(`<img alt="Dorran's ring &gt; yours" src="x.webp">`), `<img alt="Dorran's ring &gt; yours" src="x.webp">`, "an apostrophe in a double-quoted value and an escaped > are fine");
 });

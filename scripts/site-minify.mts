@@ -13,6 +13,18 @@ import { transformSync } from "esbuild";
 const BLOCK = new Set(["html", "head", "body", "meta", "link", "title", "style", "script", "template", "noscript", "main", "header", "footer", "nav", "section", "article", "aside", "div", "p", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li", "dl", "dt", "dd", "figure", "figcaption", "table", "thead", "tbody", "tr", "td", "th", "form", "fieldset", "dialog", "hr", "br", "filter", "defs", "path", "g", "feturbulence", "fedisplacementmap", "animate", "circle", "rect", "option", "pre", "source"]);
 const tagName = (tag: string): string => (/^<\/?([a-zA-Z][\w-]*)/.exec(tag)?.[1] ?? "").toLowerCase();
 
+// The pass splits tags at the first ">", so an attribute value holding "<" or ">" (alt="a > b", a comment marker) would
+// be cut and mangled: it stops the build instead. A tag that ends inside a quote is one whose value held a ">".
+function checkTag(tag: string): void {
+  let quote = "";
+  for (const ch of tag.slice(1, -1)) {
+    if (quote) { if (ch === quote) quote = ""; else if (ch === "<" || ch === ">") break; }
+    else if (ch === '"' || ch === "'") quote = ch;
+    else if (ch === "<") { quote = "<"; break; }
+  }
+  if (quote) throw new Error(`site-minify: an attribute holds "<" or ">", which the HTML pass can't keep intact; escape it as &lt; or &gt;: ${tag.slice(0, 120)}`);
+}
+
 const code = (source: string, loader: "css" | "js", module: boolean): string =>
   transformSync(source, { loader, minify: true, ...(module ? { format: "esm" as const } : {}) }).code.trim();
 
@@ -31,6 +43,7 @@ export function minifyHtml(html: string): string {
   // Tags stand alone, text between them has its whitespace collapsed; a run that only separates tags goes when either
   // tag is a block-level one.
   const parts = out.split(/(<[^>]+>)/);
+  for (let i = 1; i < parts.length; i += 2) checkTag(parts[i]!);
   for (let i = 0; i < parts.length; i += 2) {
     const text = parts[i]!.replace(/\s+/g, " ");
     if (text === " ") {
