@@ -54,7 +54,7 @@
     { "name": "Legendary Artifact", "colour": "#e0342b" }
   ],
   "raceLock": { "gargoyleOnly": true },
-  "namedArtifacts": ["Bow Of The Infinite Swarm"],
+  "namedArtifacts": ["Bow Of The Infinite Swarm", "Ancient Samurai Do", "Anon's Boots", "Cloak of Life", "Cloak of Light", "Cloak of Power", "Cloak of Silence", "Conjurer's Garb", "Conjurer's Trinket", "Corgul's Enchanted Sash", "Crimson Cincture", "Divinum Luminous", "Dragon Jade Earrings", "Hawkwind's Robe", "Melissa's Cloak", "Minax's Sandals", "Nocturne Earrings", "Obi Di Ense", "Obsidian Earrings", "Ozymandias' Obi", "Ranger's Cloak of Augmentation", "Robe of the Eclipse", "Robe of the Equinox", "Shadow Cloak of Rejuvenation", "Shadow Master's Talisman", "Shroud of the Condemned", "Slither", "Soles of Providence", "Tangle", "Totem of the Tribe", "Unicorn Mane Woven Sandals", "Wizard's Curio"],
   "freeSkills": ["Lumberjacking", "Cartography", "Lockpicking", "Remove Trap", "Detecting Hidden", "Mining", "Fishing", "Hiding", "Item Identification", "Camping", "Begging", "Arms Lore", "Forensic Evaluation", "Taste Identification", "Cooking", "Tracking", "Herding"],
   "slayerGroups": [
     { "super": ["Demon", "Abyss", "Exorcism (demons)"], "slayers": ["Gargoyle"] },
