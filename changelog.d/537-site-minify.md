@@ -1,1 +1,0 @@
-- For contributors: `npm run site:build` now minifies the website it assembles (`scripts/site-minify.mts`: esbuild for the CSS and JS, a small HTML pass), so only the deployed copy is compact and `site/` keeps the readable, commented source.

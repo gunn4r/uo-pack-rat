@@ -4,7 +4,31 @@
 
 Entries not yet released are in `changelog.d/`, one file per pull request (`CONTRIBUTING.md`, Changelog). `node scripts/changelog.mts --release <version>` moves them here.
 
-<!-- released-sha256: 130d59a1239bf58bde9483051099c55755524f8f82a93ab7c13404f377b87880 (written by node scripts/changelog.mts) -->
+<!-- released-sha256: b500918e15541df6c5a4845e7c93b21e913f1e321a181ec81d5418de366e7126 (written by node scripts/changelog.mts) -->
+
+## 0.3.2 — 2026-10-23
+
+### Highlights
+
+A small polish release: items whose art can't be drawn now show a simple icon instead of an empty box.
+
+**Generic item icons**
+- When an item's art is missing (no UO folder set yet, a graphic the client files don't have, or the website demo), its icon slot shows a plain line icon for what it is: a ring, a sword, a bow, a shield, a potion, a scroll and so on.
+- Rows in Inventory, the item detail and the Suit Builder plan stay lined up.
+
+<details><summary>All changes (1)</summary>
+
+- **Generic item icons**: when an item's art can't be drawn (no UO folder set, an unknown graphic, or the website demo), its icon slot shows a simple icon for what the item is (a ring, a sword, a shield, a potion, and so on) instead of an empty box, so rows stay lined up.
+
+</details>
+
+### For contributors
+
+<details><summary>Contributor notes (1)</summary>
+
+- `npm run site:build` now minifies the website it assembles (`scripts/site-minify.mts`: esbuild for the CSS and JS, a small HTML pass), so only the deployed copy is compact and `site/` keeps the readable, commented source.
+
+</details>
 
 ## 0.3.1 — 2026-10-23
 

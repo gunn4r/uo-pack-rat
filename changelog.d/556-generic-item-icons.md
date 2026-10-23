@@ -1,1 +1,0 @@
-- **Generic item icons**: when an item's art can't be drawn (no UO folder set, an unknown graphic, or the website demo), its icon slot shows a simple icon for what the item is (a ring, a sword, a shield, a potion, and so on) instead of an empty box, so rows stay lined up.
