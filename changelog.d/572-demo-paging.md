@@ -1,0 +1,1 @@
+- For contributors: the website demo recording now pages through every item (the server caps a page at 500), so the live demo's searches find all of the demo house's items again.
