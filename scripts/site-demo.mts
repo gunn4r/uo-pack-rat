@@ -92,9 +92,16 @@ export async function recordDemo(out: string): Promise<void> {
     await visit("map", "#tab-map:not([hidden]) svg");
     await visit("settings", "#set-run-setup");
     await visit("import", "#import-body");
-    // Every item, for the shim's own searches.
-    rec.items = (await page.evaluate(async () => (await (await fetch("/api/items?limit=100000")).json()).rows)) as unknown[];
-    delete rec["GET /api/items?limit=100000"];
+    // Every item, for the shim's own searches, a page at a time (the server caps a page at 500).
+    rec.items = (await page.evaluate(async () => {
+      const rows: unknown[] = [];
+      for (let total = Infinity; rows.length < total;) {
+        const r = await (await fetch(`/api/items?limit=500&offset=${rows.length}`)).json() as { rows: unknown[]; total: number };
+        if (!r.rows.length) break;
+        rows.push(...r.rows); total = r.total;
+      }
+      return rows;
+    })) as unknown[];
     // One build, its finished job read back from its event stream once done.
     overwrite = false;
     let clientId = "";
@@ -123,6 +130,8 @@ export async function recordDemo(out: string): Promise<void> {
     await browser.close();
     await cleanup();
   }
+  // The pages read for rec.items above, recorded as they arrived; the items are kept once, in rec.items.
+  for (const key of Object.keys(rec)) if (/^GET \/api\/items\?limit=500&offset=\d+$/.test(key)) delete rec[key];
   const scrubbed = scrubDemo(JSON.stringify(rec), { [ROOT]: "pack-rat", [tmpdir()]: "demo", [realpathSync(tmpdir())]: "demo", [homedir()]: "home" });
   const leaks = demoLeaks(scrubbed, { user: process.env.CI ? "" : userInfo().username });
   if (leaks.length) throw new Error(`the demo recording isn't safe to publish:\n  ${[...new Set(leaks)].slice(0, 20).join("\n  ")}`);
