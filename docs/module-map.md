@@ -13,7 +13,7 @@ Three files keep names from before the project became Pack Rat: `app/vault-serve
 |---|---|---|
 | `app/domain/fold.mts` | The inventory: its shapes (Item, Container, Character, Inventory) and the fold that builds it from the scans in time order (a scan replaces everything under each root it lists, and a character's worn set whole), each item read, classified and kinded on the way; plus where an item is, a container's path, label and capacity, and items grouped by name. | `Item`, `Container`, `Character`, `Inventory`, `ScanSummary`, `ItemLocation`, `containerChain`, `foldSnapshots`, `locationOf`, `containerPath`, `bagLabel`, `labelledPlaces`, `capacityOf`, `TRASH_RE`, `BlacklistEntry`, `groupByName` |
 | `app/domain/properties.mts` | The property registry (every property key the app knows, in display order) and what is derived from it: the tooltip patterns, labels and full names, a property in words, the typical ranges and importance conversion, skill-bonus names, and the five resists' names. | `PROPERTIES`, `PropKey`, `PROPERTY_CATALOGUE`, `FLAG_CATALOGUE`, `catalogueGroups`, `PROP_PATTERNS`, `PROP_LABELS`, `PROP_FULL`, `NOT_BUILDER_KEYS`, `typicalRange`, `importanceOf`, `weightOfImportance`, `SKILL_NAMES`, `labelOf`, `fullOf`, `propName`, `RESIST_META`, `RESIST_KEYS` |
-| `app/domain/tooltip.mts` | Reading an item's tooltip lines: parseTooltip turns them into properties, set bonus, tags, rarity, extras and flags (the patterns come from domain/properties.mts, the tag units and rarity ladder from the shard rules), and the names an item is shown and sorted by. | `ParsedTooltip`, `parseTooltip`, `tagUnits`, `tagInfo`, `stackName`, `shownName`, `gameName`, `displayName`, `compareNames` |
+| `app/domain/tooltip.mts` | Reading an item's tooltip lines: parseTooltip turns them into properties, set bonus, tags, rarity, extras and flags (the patterns come from domain/properties.mts, the tag units and rarity ladder from the shard rules), and the names an item is shown and sorted by. | `ParsedTooltip`, `parseTooltip`, `NAMED_ARTIFACT`, `tagUnits`, `tagInfo`, `stackName`, `shownName`, `gameName`, `displayName`, `compareNames` |
 | `app/import.mts` | The import paths that aren't "an adapter dropped a file and the watcher noticed": a player pasting what the ClassicUO web client's sandboxed scanner printed (it cannot write files at all), and a manual rescan for a player whose folder watcher missed a drop. | `writeScanToInbox` |
 | `app/missing.mts` | Missing since last scan (issue #99): what a root's previous scan saw that is nowhere in the fold now. | `missingSinceLastScan`, `MissingItem` |
 | `app/paste-scan.mts` | Making sense of a pasted scan: find the JSON in what the player pasted, parse it, and run it through the same upgrade + schema validation an inbox file gets. | `parsePastedScan`, `PASTE_BEGIN`/`PASTE_END`, `jsonErrorReason` |
@@ -45,7 +45,7 @@ Three files keep names from before the project became Pack Rat: `app/vault-serve
 <!-- module-map:start query -->
 | Module | Role | Owns |
 |---|---|---|
-| `app/item-query.mts` | Pure item-list filtering/sorting/paging/faceting, shared by the browser (ui/dom.mts re-exports EXTRA_COLS/colVal; ui/inventory.mts's filtered()/renderInventory() logic will move here in a later task) and the server (vault-server.mts's GET /api/items, GET /api/inventory's facets). | `parseItemQuery`, `matchesItem`, `applyItemQuery`, `queryWhere`, `passes`, `facetsOf`, `propCounts`, `ItemQuery`, `RuleQuery`, `EXTRA_COLS`, `colVal`, `rarityRank`, `HIT_LIMIT` |
+| `app/item-query.mts` | Pure item-list filtering/sorting/paging/faceting, shared by the browser (ui/dom.mts re-exports EXTRA_COLS/colVal; ui/inventory.mts's filtered()/renderInventory() logic will move here in a later task) and the server (vault-server.mts's GET /api/items, GET /api/inventory's facets). | `parseItemQuery`, `matchesItem`, `applyItemQuery`, `queryWhere`, `passes`, `facetsOf`, `propCounts`, `ItemQuery`, `RuleQuery`, `EXTRA_COLS`, `colVal`, `rarityRank`, `rarityTiers`, `HIT_LIMIT` |
 <!-- module-map:end -->
 
 ## Shard rules
@@ -59,7 +59,7 @@ Three files keep names from before the project became Pack Rat: `app/vault-serve
 
 | Also here | Role | Owns |
 |---|---|---|
-| `app/rules/uoalive.json`, `app/rules/generic-osi.json` | The builtin shard rules files (`docs/shard-rules.md`). | caps, `raceCaps`, `resistMinimum`, `tagUnits`, `rarity`, `raceLock`, `freeSkills`, `scrollBinder`, `slayerGroups`, `unravel` |
+| `app/rules/uoalive.json`, `app/rules/generic-osi.json` | The builtin shard rules files (`docs/shard-rules.md`). | caps, `raceCaps`, `resistMinimum`, `tagUnits`, `rarity`, `raceLock`, `freeSkills`, `namedArtifacts`, `scrollBinder`, `slayerGroups`, `unravel` |
 | `app/schema/rules.v1.schema.json` | The contract every rules file is checked against. | the rules shape |
 
 ## Suit Builder

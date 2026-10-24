@@ -117,6 +117,7 @@
   --res-phys: #55636a; --res-fire: #b3261e; --res-cold: #1f5fae; --res-poison: #2f7532; --res-energy: #7b3fb8;
   --rarity-minor-magic: #696969; --rarity-lesser-magic: #117a0f; --rarity-greater-magic: #127374; --rarity-major-magic: #0063e1;
   --rarity-lesser-artifact: #9b22ec; --rarity-greater-artifact: #7d6800; --rarity-major-artifact: #a55300; --rarity-legendary-artifact: #cc261e;
+  --rarity-named-artifact-start: #a04806; --rarity-named-artifact: #b8175a; --rarity-named-artifact-end: #7434e6;   /* Named Artifact's gradient (issue #568): its name runs start, middle (also the ✦), end */
   /* house map (ui/house-map.css): floor materials by family, walls and fixtures, and chest fills by colour mode */
   --color-map-grid: rgb(23 34 36 / 0.10); --color-map-below: rgb(23 34 36 / 0.12);
   --color-map-stone: #a9a59c; --color-map-brick: #b9745f; --color-map-plaster: #ded4c3; --color-map-wood: #b98a5f; --color-map-marble: #dcd8d0; --color-map-sandstone: #d8c49b;
@@ -184,6 +185,7 @@
   --res-phys: #b7c2c3; --res-fire: #ff8a7a; --res-cold: #7fb2ff; --res-poison: #7fd48a; --res-energy: #c9a0ff;
   --rarity-minor-magic: #a0a0a0; --rarity-lesser-magic: #20e31c; --rarity-greater-magic: #1cb5b7; --rarity-major-magic: #549fff;
   --rarity-lesser-artifact: #c680f4; --rarity-greater-artifact: #c9a800; --rarity-major-artifact: #ff8000; --rarity-legendary-artifact: #eb7d77;
+  --rarity-named-artifact-start: #ffa24c; --rarity-named-artifact: #ff7fb6; --rarity-named-artifact-end: #bc9dff;   /* Named Artifact's gradient (issue #568): its name runs start, middle (also the ✦), end */
   --color-map-grid: rgb(255 255 255 / 0.07); --color-map-below: rgb(255 255 255 / 0.08);
   --color-map-stone: #5e5c57; --color-map-brick: #7b4b3e; --color-map-plaster: #8e877b; --color-map-wood: #7b5b3e; --color-map-marble: #8f8c86; --color-map-sandstone: #8b7b5d;
   --color-map-dirt: #5f4c3a; --color-map-grass: #50693c; --color-map-water: #406279; --color-map-tile: #5e6f73; --color-map-neutral: #4b4841; --color-map-yard: #4d5f3e;

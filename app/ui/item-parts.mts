@@ -5,8 +5,9 @@
 //
 // map: ui-components
 // owns: `rarityEl`, `tagEls`, `locationEl`, `tagWords`, `itemActions`, `itemMenu`, `filterContext`, `setItemNav`
-import { tagUnits, propName } from "../vault-lib.mts";
+import { NAMED_ARTIFACT, tagUnits, propName } from "../vault-lib.mts";
 import type { Item } from "../vault-lib.mts";
+import { rarityTiers } from "../item-query.mts";
 import { state } from "./store.mts";
 import { slotLabel, rarityColor, safeColor, whereText, tagChip } from "./dom.mts";
 import { rarityToken } from "./items.mts";
@@ -25,7 +26,7 @@ export function filterContext() {
     slotLabel: (s: string) => slotLabel(s),
     propLabel: (k: string) => propName(k),   // a filter token names the property in full ("Lower Mana Cost ≥ 8")
     places: state.facets?.places || [],
-    ladder: (state.rules?.rarity || []).map((r) => r.name),
+    ladder: rarityTiers(state.rules?.rarity),
     houseName: houseNameOf,
   };
 }
@@ -37,9 +38,11 @@ export function tagEls(it: Item, opts: { describe?: boolean } = {}): HTMLElement
   return it.tags.map((t) => tagChip(t, opts));
 }
 // A tier as its dot and name in its --rarity-* colour; a tier with no token keeps its game colour inside a
-// dark subtree, where the game colours were designed to live.
-export function rarityEl(rarity: string | null | undefined, cls = ""): HTMLElement | null {
+// dark subtree, where the game colours were designed to live. Named Artifact (issue #568) is a ✦ and its name in the named
+// gradient (components.css .rar-named), with the item's Artifact Rarity when it has one: "Named Artifact · 11".
+export function rarityEl(rarity: string | null | undefined, cls = "", artifactRarity?: number | undefined): HTMLElement | null {
   if (!rarity) return null;
+  if (rarity === NAMED_ARTIFACT) return box("span", { class: `rar-tier rar-named${cls ? " " + cls : ""}` }, txt(artifactRarity != null ? `${rarity} · ${artifactRarity}` : rarity));
   if (rarityToken(rarity)) return box("span", { class: `rar-tier${cls ? " " + cls : ""}`, style: `color:${rarityColor(rarity)}` }, txt(rarity));
   const raw = rarityColor(rarity);
   return box("span", { class: `rar-tier${cls ? " " + cls : ""}`, "data-theme": "default", "data-mode": "dark", style: raw ? `color:${safeColor(raw) || raw}` : "" }, txt(rarity));

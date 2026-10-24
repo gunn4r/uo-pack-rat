@@ -115,7 +115,7 @@ const hex = (n: number): string => `0x${n.toString(16).toUpperCase()}`;
 function row(it: Item): Record<string, unknown> {
   return {
     serial: it.serial, name: it.name, ...(it.amount > 1 ? { amount: it.amount } : {}), kind: it.kind, ...(it.slot ? { slot: it.slot } : {}),
-    ...(it.rarity ? { rarity: it.rarity } : {}), where: it.location?.text ?? null, ...(it.container != null ? { container: it.container } : {}), ...(it.root != null ? { root: it.root } : {}),
+    ...(it.rarity ? { rarity: it.rarity } : {}), ...(it.artifactRarity != null ? { artifactRarity: it.artifactRarity } : {}), where: it.location?.text ?? null, ...(it.container != null ? { container: it.container } : {}), ...(it.root != null ? { root: it.root } : {}),
     ...(it.equippedBy ? { wornBy: it.equippedBy } : {}),
     ...(Object.keys(it.props).length ? { props: it.props } : {}), ...(it.slayers?.length ? { slayers: it.slayers } : {}), ...(it.tags.length ? { tags: it.tags } : {}),
     ...((it as UnravelRow).unravel ? { unravel: (it as UnravelRow).unravel } : {}),
@@ -343,7 +343,7 @@ export const TOOLS: Tool[] = [
       location: { type: "array", maxItems: 50, items: { type: "string", maxLength: 300 }, description: "Exact location texts, as the rows' `where` shows them, or the same path with Organize labels in it. A label alone (\"Shields\", any case) is everything inside every container with that label, bags in bags included; a label on a bag inside a container is searched on its own, not with other locations, houses or containers." },
       house: { type: "array", maxItems: 20, items: { type: "string", maxLength: 64 }, description: "Houses on the House map, by id (\"1-3000-1000\") or name, any case: everything in their containers." },
       container: { type: "array", maxItems: 50, items: SERIAL, description: "Root container serials: everything anywhere inside them." },
-      rarity: { type: "string", maxLength: 64, description: "Exactly this rarity tier." },
+      rarity: { type: "string", maxLength: 64, description: "Exactly this rarity tier (inventory_facets lists them; Named Artifact ranks above every tier)." },
       rarityMin: { type: "string", maxLength: 64, description: "This tier or any above it." },
       rarityMax: { type: "string", maxLength: 64, description: "This tier or any below it." },
       slayer: { type: "string", maxLength: 64, description: "A slayer name, or \"*\" for any slayer." },

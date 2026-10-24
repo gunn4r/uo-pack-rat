@@ -1,7 +1,7 @@
 // domain/tooltip.mts — reading an item's tooltip lines: parseTooltip turns them into properties, set bonus, tags, rarity, extras and flags (the patterns come from domain/properties.mts, the tag units and rarity ladder from the shard rules), and the names an item is shown and sorted by.
 //
 // map: scan
-// owns: `ParsedTooltip`, `parseTooltip`, `tagUnits`, `tagInfo`, `stackName`, `shownName`, `gameName`, `displayName`, `compareNames`
+// owns: `ParsedTooltip`, `parseTooltip`, `NAMED_ARTIFACT`, `tagUnits`, `tagInfo`, `stackName`, `shownName`, `gameName`, `displayName`, `compareNames`
 import { getRules } from "./rules.mts";
 import { PROP_PATTERNS, type ExtrasMap, type PropMap } from "./properties.mts";
 
@@ -12,6 +12,8 @@ export interface ParsedTooltip {
   tags: string[];
   strReq: number;
   rarity: string | null;
+  // A named artifact's "Artifact Rarity N" (issue #568), or null.
+  artifactRarity: number | null;
   extras: ExtrasMap;
   flags: string[];
   twoHanded: boolean | null;
@@ -54,6 +56,19 @@ function rarityRe(): RegExp {
   return re;
 }
 
+// The tier a named artifact reads as (issue #568), above every tier on the shard's ladder: an item whose tooltip has an
+// "Artifact Rarity N" line, or whose name is on the shard's list of named artifacts that carry no such line (rules
+// `namedArtifacts`). It wins over a tier line on the same item, which stays among its lines.
+export const NAMED_ARTIFACT = "Named Artifact";
+const NAMED_CACHE = new WeakMap<object, Set<string>>();
+function namedArtifact(name: string): boolean {
+  const list = getRules().namedArtifacts;
+  if (!list) return false;
+  let names = NAMED_CACHE.get(list);
+  if (!names) NAMED_CACHE.set(list, names = new Set(list.map((n) => n.toLowerCase())));
+  return names.has(name.toLowerCase());
+}
+
 // The longest line any real tooltip carries is ~54 characters; the scan schema caps one at 512
 // (scan.v2.schema.json's tooltip items), so a validated scan is never truncated here. The cap is
 // repeated at the parser because a scan already on disk from before that bound existed still gets
@@ -88,7 +103,7 @@ const PS_LEVEL_RE = /\bscroll\b.*\((\d{3}) skill\)/i;
 const SOT_NAME_RE = /\bscroll of transcendence\b/i;
 const SOT_LINE_RE = /^(?:skill:\s*)?(.+?)\s+(\d+(?:\.\d+)?)\s+skill(?: points?)?\.?$/i;
 
-// Returns { name, props, setBonus, tags, strReq, rarity, extras, flags, lines }.
+// Returns { name, props, setBonus, tags, strReq, rarity, artifactRarity, extras, flags, lines }.
 //   props    : modeled numeric properties (optimizer keys) of the piece itself
 //   setBonus : modeled properties in an incomplete set's bonus block, which apply only while every
 //              piece of the set is worn; kept apart so a piece is never credited with them on its own
@@ -156,7 +171,10 @@ export function parseTooltip(rawLines?: Array<string | undefined> | undefined, a
   const sot = sotOf(name, lines);
   if (sot) { sotSkill = sot.skill; props.sotPoints = sot.points; }
   if (tags.length) props.tagPenalty = tags.reduce((a, t) => a + TU[t]!, 0);
-  return { name, props, setBonus, tags, strReq, rarity, extras, flags, twoHanded, weight, skillReq, sotSkill, lines };
+  // "Artifact Rarity 11" is read like any other numeric line (extras["artifact rarity"], the Property filter's Artifact Rarity).
+  const ar = extras["artifact rarity"], artifactRarity = typeof ar === "number" ? ar : null;
+  if (artifactRarity != null || namedArtifact(name)) rarity = NAMED_ARTIFACT;
+  return { name, props, setBonus, tags, strReq, rarity, artifactRarity, extras, flags, twoHanded, weight, skillReq, sotSkill, lines };
 }
 
 // The app's name order: A to Z, numbers by value, so "(Animal Lore - 2.0 Pts)" comes before "(Animal Lore - 10.0 Pts)" (issue #181).

@@ -19,10 +19,11 @@ import type { Inventory, OptItem, RarityPreference, ResistStep } from "../vault-
 
 // A rarity preference's per-piece cost (issue #262), stamped on each candidate and worn piece: the solvers minimize its
 // sum among suits within the tolerance. "lower" costs a piece its rank on the shard's ladder, "higher" the ranks above
-// it (an empty slot costs 0 either way); a serial the scans do not have ranks 0, below every tier.
+// it (an empty slot costs 0 either way; a Named Artifact, ranked above the ladder, costs 0 like its top tier); a serial the scans
+// do not have ranks 0, below every tier.
 export function stampTieCost<T extends { serial: number }>(it: T, inv: Inventory, rarity: RarityPreference, ladder: RulesV1RarityItem[]): T & { tieCost: number } {
   const rank = rarityRank(ladder, inv.items[it.serial]?.rarity);
-  return { ...it, tieCost: rarity === "lower" ? rank : ladder.length - rank };
+  return { ...it, tieCost: rarity === "lower" ? rank : Math.max(0, ladder.length - rank) };
 }
 
 export interface PrepareInput {

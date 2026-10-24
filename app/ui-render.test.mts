@@ -284,6 +284,26 @@ test("[fast] tipNode: a Scroll of Transcendence shows its in-game name, muted, u
   assert.equal(byClass(pearls, "tip-game").length, 0, "a stack's count is not a different name");
 });
 
+// Issue #568: a named artifact's tooltip stays as the game shows it: the name in the shimmer, the game's own
+// "Artifact Rarity N" line kept, and no "Named Artifact" text added; a real tier line still shows in the footer.
+test("[fast] tipNode: a named artifact keeps the game's Artifact Rarity line, adds no tier text and draws its name in the shimmer", () => {
+  const byClass = (n: FakeElement, c: string): FakeElement[] => elements(n).filter((e) => e.className.split(" ").includes(c));
+  const staff = tipNode({ name: "Jaana's Staff", rarity: "Named Artifact", lines: ["Jaana's Staff", "Artifact Rarity 11", "Luck 220"] }) as unknown as FakeElement;
+  assert.ok(byClass(staff, "tip-lines")[0]!.childNodes.some((c) => c.textContent === "Artifact Rarity 11"), "the game's Artifact Rarity line is kept");
+  assert.ok(!staff.textContent.includes("Named Artifact"), "no Named Artifact text is added to the tooltip");
+  assert.ok(byClass(staff, "rar-named").some((e) => e.textContent === "Jaana's Staff"), "the name is drawn in the shimmer");
+  const both = tipNode({ name: "Holy Knight's Breastplate", rarity: "Named Artifact", lines: ["Holy Knight's Breastplate", "Artifact Rarity 11", "Major Artifact"] }) as unknown as FakeElement;
+  assert.ok(byClass(both, "tip-foot")[0]!.childNodes.some((c) => c.textContent === "Major Artifact"), "a real tier line still shows in the footer");
+});
+
+test("[fast] rarityEl: a named artifact reads \"Named Artifact · N\", or plain without a number", async () => {
+  const { rarityEl } = await import("./ui/item-parts.mts");
+  const numbered = rarityEl("Named Artifact", "", 11) as unknown as FakeElement;
+  assert.equal(numbered.textContent, "Named Artifact · 11");
+  assert.ok(numbered.className.split(" ").includes("rar-named"));
+  assert.equal((rarityEl("Named Artifact") as unknown as FakeElement).textContent, "Named Artifact");
+});
+
 // Issue #69: a row's action buttons sit inside the row's data-serial host but are not the item, so
 // hovering them asks for no item tooltip; the rest of the row still does.
 test("[fast] tipHostOf: a row's cells ask for its item tooltip, its data-no-tip actions cell does not", () => {

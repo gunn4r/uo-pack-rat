@@ -1,6 +1,6 @@
 // prepare.test.mts — `app/solver/prepare.mts`, everything a build does to its input before the search, and the run key (issue #338).
 //
-// `[fast]`: on the fixture's melee template, the key is the run key of the input as prepared (every transform is before it); the search defaults are filled in without touching the caller's options; a rarity preference stamps a tie cost on every candidate and worn piece, and none without one; Resisting Spells steps the pool cannot reach are dropped before the key, so a profile carrying them keys as one without; a hard floor's raised bonus is on the prepared profile, and past its cap the scale diagnostic says so; an unreachable floor is said before the search; and the SSI step table is the one the worker used to work out for itself, from the prepared profile.
+// `[fast]`: on the fixture's melee template, the key is the run key of the input as prepared (every transform is before it); the search defaults are filled in without touching the caller's options; a rarity preference stamps a tie cost on every candidate and worn piece, and none without one, a Named Artifact costing what the top tier does with higher (issue #568); Resisting Spells steps the pool cannot reach are dropped before the key, so a profile carrying them keys as one without; a hard floor's raised bonus is on the prepared profile, and past its cap the scale diagnostic says so; an unreachable floor is said before the search; and the SSI step table is the one the worker used to work out for itself, from the prepared profile.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { cell } from "../solver-fixture.mts";
@@ -8,7 +8,7 @@ import { DEFAULT_SLOTS, HARD_FLOOR_BONUS, poolStepsFor } from "../mip.mts";
 import { RUN_DEFAULTS } from "../run-settings.mts";
 import { runKey } from "../runs-lib.mts";
 import { getRules, type Inventory } from "../vault-lib.mts";
-import { prepareSolve } from "./prepare.mts";
+import { prepareSolve, stampTieCost } from "./prepare.mts";
 
 const melee = () => cell("melee") as unknown as { pools: Record<string, Array<{ serial: number; speed?: number; props: Record<string, number> }>>; current: Record<string, { serial: number; speed?: number; props: Record<string, number> } | null>; profile: Record<string, unknown> };
 
@@ -61,4 +61,10 @@ test("[fast] prepare: the SSI step table is the one the worker worked out from t
   assert.deepEqual(narrowed.ssiSteps, poolStepsFor(narrowed.profile as Parameters<typeof poolStepsFor>[0], narrowed.pools as Parameters<typeof poolStepsFor>[1], narrowed.current as Parameters<typeof poolStepsFor>[2], ["talisman"], slots).ssiSteps);
   assert.notDeepEqual(narrowed.ssiSteps, input.ssiSteps, "the slots change the table here");
   assert.equal("ssiSteps" in input.profile, false, "the table is not on the profile, so the key is as before");
+});
+
+test("[fast] stampTieCost: a Named Artifact ranks above the ladder, costing what the top tier does with higher and the most with lower (issue #568)", () => {
+  const ladder = getRules().rarity, inv = { items: { 1: { rarity: "Named Artifact" }, 2: { rarity: ladder.at(-1)!.name } } } as unknown as Inventory;
+  assert.deepEqual([stampTieCost({ serial: 1 }, inv, "higher", ladder).tieCost, stampTieCost({ serial: 2 }, inv, "higher", ladder).tieCost], [0, 0]);
+  assert.deepEqual([stampTieCost({ serial: 1 }, inv, "lower", ladder).tieCost, stampTieCost({ serial: 2 }, inv, "lower", ladder).tieCost], [ladder.length + 1, ladder.length]);
 });
