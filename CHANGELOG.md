@@ -4,7 +4,37 @@
 
 Entries not yet released are in `changelog.d/`, one file per pull request (`CONTRIBUTING.md`, Changelog). `node scripts/changelog.mts --release <version>` moves them here.
 
-<!-- released-sha256: b500918e15541df6c5a4845e7c93b21e913f1e321a181ec81d5418de366e7126 (written by node scripts/changelog.mts) -->
+<!-- released-sha256: 6f63e62c04556e99c1c2ee782b8c964ab666957b257a6faad01fd4b07abac070 (written by node scripts/changelog.mts) -->
+
+## 0.3.3 — 2026-10-24
+
+### Highlights
+
+Named artifacts now stand out, and the website demo has a house full of real gear to try the Suit Builder on.
+
+**Named artifacts**
+- Items like Jaana's Staff or Armor of Fortune get a rarity tier of their own, Named Artifact, above Legendary. Their names shimmer and the Rarity column reads "Named Artifact · 11".
+- The Rarity filter offers it, and sorting by rarity puts named artifacts first. Tooltips stay as in game.
+- If you have an Organize rule or saved filter with a rarity ceiling ("at most Legendary Artifact"), it no longer matches named artifacts; check it.
+
+**Website demo**
+- The demo house holds over 500 real pieces and 34 real UO Alive artifacts, so the Suit Builder fills most slots, and the demo opens on the whole inventory.
+
+<details><summary>All changes (3)</summary>
+
+- **Named artifacts stand out** (issue #568): an item whose tooltip has an "Artifact Rarity N" line (Jaana's Staff, Armor of Fortune…) gets a rarity tier of its own, Named Artifact, above every other tier. Its name shows in a gradient with a ✦ for the tier's dot, the Rarity column reads "Named Artifact · 11", the Rarity filter offers it, sorting by rarity puts named artifacts first (higher Artifact Rarity first), and the MCP tools carry the number as `artifactRarity`. On UO Alive, Bow Of The Infinite Swarm, which has no such line, is recognised by name (the rules file's new `namedArtifacts` list).
+- **Named artifacts and saved rarity rules**: named artifacts used to count as having no rarity; now they sit above every tier. A filter or Organize rule with a rarity ceiling ("at most Legendary Artifact", or the "Lesser artifacts and below" preset) no longer matches them, and an "at least" floor now does. Check any rule that used a rarity ceiling.
+- **Fuller website demo**: the demo house's chests now hold over 500 pieces of real gear and 34 real UO Alive artifacts (talismans, sashes, boots, cloaks, robes and more), so the Suit Builder fills most slots instead of leaving them empty, and the demo opens the Inventory unfiltered instead of already searched for "ring".
+
+</details>
+
+### For contributors
+
+<details><summary>Contributor notes (1)</summary>
+
+- `app/bench/make-demo-gear.mts` regenerates `app/fixtures/demo-gear.json` (the showcase house's gear, scrubbed of character and crafter names) from the maintainer's scans plus `app/bench/demo-artifacts.json` (real artifacts, each with its source page); `scripts/shots-lib.mts` deals it round the house's labelled chests. The test fixtures are unchanged.
+
+</details>
 
 ## 0.3.2 — 2026-10-23
 
