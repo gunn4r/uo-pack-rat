@@ -77,8 +77,13 @@ export function probeContrast(): ContrastRow[] {
       const fg0 = parse(s.color)!, bg = bgOf(el), fg = fg0.a < 1 ? over(fg0, bg) : fg0;
       const size = parseFloat(s.fontSize), w = +s.fontWeight;
       const large = size >= 24 || (size >= 18.66 && w >= 700);
-      // text drawn by a gradient clipped to it (a named artifact's name, components.css .rar-named): each of the gradient's colors
-      const stops = s.backgroundClip === "text" || s.getPropertyValue("-webkit-background-clip") === "text" ? (s.backgroundImage.match(/rgba?\([^)]+\)/g) || []).map(parse) : [];
+      // text drawn by a gradient clipped to it (a named artifact's name, components.css .rar-named): each of the gradient's colors.
+      // The gradient may sit on an ancestor (a tier label's inner text span inherits the transparent colour): the browser
+      // paints an element's clipped background through all of its descendants' text, so look up to the element that has it.
+      const clipsText = (c: CSSStyleDeclaration): boolean => c.backgroundClip === "text" || c.getPropertyValue("-webkit-background-clip") === "text";
+      let clip: CSSStyleDeclaration | null = clipsText(s) ? s : null;
+      for (let a = el.parentElement; !clip && fg0.a === 0 && a; a = a.parentElement) { const cs = getComputedStyle(a); if (clipsText(cs)) clip = cs; }
+      const stops = clip ? (clip.backgroundImage.match(/rgba?\([^)]+\)/g) || []).map(parse) : [];
       if (stops.length) for (const c of stops) push("text", el, c!.a < 1 ? over(c!, bg) : c!, bg, large ? 3 : 4.5, `${size}px/${w} .${el.className} gradient`);
       else push("text", el, fg, bg, large ? 3 : 4.5, `${size}px/${w} .${el.className}`);
     }
